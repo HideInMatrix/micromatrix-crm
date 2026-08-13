@@ -1,0 +1,21 @@
+html,
+body,
+#app {
+  height: 100%;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  font-family:
+    'Helvetica Neue',
+    Helvetica,
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

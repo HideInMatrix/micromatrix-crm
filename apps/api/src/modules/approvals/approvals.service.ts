@@ -1,0 +1,513 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  ApprovalFlowVO,
+  ApprovalInstanceVO,
+  ApprovalModule,
+  ApprovalNodeConfig,
+  PaginatedResult,
+} from '@micromatrix/shared'
+import type { AuthUser } from '../../common/auth-user'
+import {
+  ApprovalInstance,
+  ApprovalTask,
+  Prisma,
+} from '../../generated/prisma/client'
+import { PrismaService } from '../../prisma/prisma.service'
+import { NotificationsService } from '../notifications/notifications.service'
+import { SaveFlowDto } from './dto/approval.dto'
+
+const APPROVAL_MODULES: ApprovalModule[] = ['quote', 'contract', 'order', 'receivableRecord']
+
+interface TargetInfo {
+  name: string
+  amount: number
+  approvalStatus: string
+}
+
+@Injectable()
+export class ApprovalsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
+
+  // ===== 流程配置 =====
+
+  async listFlows(tenantId: string): Promise<ApprovalFlowVO[]> {
+    const flows = await this.prisma.approvalFlow.findMany({
+      where: { tenantId },
+      include: { nodes: { orderBy: { sort: 'asc' } } },
+    })
+    return flows.map((flow) => ({
+      id: flow.id,
+      module: flow.module as ApprovalModule,
+      name: flow.name,
+      enabled: flow.enabled,
+      condition: flow.condition as { amountGte?: number } | null,
+      nodes: flow.nodes.map((n) => ({
+        id: n.id,
+        sort: n.sort,
+        name: n.name,
+        approverType: n.approverType,
+        approverIds: n.approverIds,
+        mode: n.mode,
+      })),
+    }))
+  }
+
+  async saveFlow(user: AuthUser, dto: SaveFlowDto) {
+    if (!APPROVAL_MODULES.includes(dto.module as ApprovalModule)) {
+      throw new BadRequestException('不支持的业务对象')
+    }
+    if (dto.enabled && dto.nodes.length === 0) {
+      throw new BadRequestException('启用的流程至少需要一个审批节点')
+    }
+    const data = {
+      name: dto.name,
+      enabled: dto.enabled,
+      condition: (dto.condition ?? undefined) as Prisma.InputJsonValue | undefined,
+    }
+    const flow = await this.prisma.approvalFlow.upsert({
+      where: { tenantId_module: { tenantId: user.tenantId, module: dto.module } },
+      update: data,
+      create: { tenantId: user.tenantId, module: dto.module, ...data },
+    })
+    await this.prisma.approvalNode.deleteMany({ where: { flowId: flow.id } })
+    await this.prisma.approvalNode.createMany({
+      data: dto.nodes.map((node, index) => ({
+        flowId: flow.id,
+        sort: index,
+        name: node.name,
+        approverType: node.approverType,
+        approverIds: node.approverIds ?? [],
+        mode: node.mode,
+      })),
+    })
+    return { id: flow.id, name: `${dto.module} 审批流` }
+  }
+
+  /** 该模块在指定金额下是否需要审批 */
+  async flowRequired(tenantId: string, module: string, amount: number): Promise<boolean> {
+    const flow = await this.enabledFlow(tenantId, module)
+    if (!flow) return false
+    const amountGte = (flow.condition as { amountGte?: number } | null)?.amountGte
+    return amountGte === undefined || amountGte === null || amount >= amountGte
+  }
+
+  // ===== 提交与审批 =====
+
+  async submit(user: AuthUser, module: ApprovalModule, targetId: string) {
+    const target = await this.targetInfo(user.tenantId, module, targetId)
+    if (target.approvalStatus === 'PENDING') throw new BadRequestException('该单据已在审批中')
+    if (target.approvalStatus === 'APPROVED') throw new BadRequestException('该单据已审批通过')
+
+    const flow = await this.enabledFlow(user.tenantId, module)
+    if (!flow) throw new BadRequestException('该业务对象未配置启用的审批流')
+    if (!(await this.flowRequired(user.tenantId, module, target.amount))) {
+      throw new BadRequestException('该单据金额未达到审批条件，无需审批')
+    }
+
+    const snapshot: ApprovalNodeConfig[] = flow.nodes.map((n) => ({
+      name: n.name,
+      approverType: n.approverType,
+      approverIds: n.approverIds,
+      mode: n.mode,
+    }))
+
+    const instance = await this.prisma.approvalInstance.create({
+      data: {
+        tenantId: user.tenantId,
+        module,
+        targetId,
+        targetName: target.name,
+        summary: target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null,
+        nodesSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+        currentNodeIndex: -1,
+        submitterId: user.id,
+        submitterName: user.name,
+      },
+    })
+
+    await this.setBizStatus(module, targetId, 'PENDING')
+    await this.advance(instance.id)
+    return { id: instance.id, name: target.name }
+  }
+
+  async approveTask(user: AuthUser, taskId: string, comment?: string) {
+    const task = await this.ensurePendingTask(user, taskId)
+    await this.prisma.approvalTask.update({
+      where: { id: taskId },
+      data: { status: 'APPROVED', comment, handledAt: new Date() },
+    })
+
+    const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
+      where: { id: task.instanceId },
+    })
+    const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const mode = snapshot[task.nodeIndex]?.mode ?? 'ANY'
+
+    const siblings = await this.prisma.approvalTask.findMany({
+      where: { instanceId: instance.id, nodeIndex: task.nodeIndex, status: 'PENDING' },
+    })
+    if (mode === 'ANY') {
+      await this.prisma.approvalTask.updateMany({
+        where: { instanceId: instance.id, nodeIndex: task.nodeIndex, status: 'PENDING' },
+        data: { status: 'SKIPPED' },
+      })
+      await this.advance(instance.id)
+    } else if (siblings.length === 0) {
+      await this.advance(instance.id)
+    }
+    return { id: taskId, name: instance.targetName }
+  }
+
+  async rejectTask(user: AuthUser, taskId: string, comment?: string) {
+    const task = await this.ensurePendingTask(user, taskId)
+    if (!comment?.trim()) throw new BadRequestException('驳回时请填写审批意见')
+
+    const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
+      where: { id: task.instanceId },
+    })
+    await this.prisma.$transaction([
+      this.prisma.approvalTask.update({
+        where: { id: taskId },
+        data: { status: 'REJECTED', comment, handledAt: new Date() },
+      }),
+      this.prisma.approvalTask.updateMany({
+        where: { instanceId: instance.id, status: 'PENDING' },
+        data: { status: 'SKIPPED' },
+      }),
+      this.prisma.approvalInstance.update({
+        where: { id: instance.id },
+        data: { status: 'REJECTED', finishedAt: new Date() },
+      }),
+    ])
+    await this.setBizStatus(instance.module, instance.targetId, 'REJECTED')
+    await this.notifications.notify(instance.tenantId, instance.submitterId, {
+      type: 'approval',
+      title: '审批被驳回',
+      content: `「${instance.targetName}」被 ${user.name} 驳回：${comment}`,
+      link: '/approvals',
+    })
+    return { id: taskId, name: instance.targetName }
+  }
+
+  async cancel(user: AuthUser, instanceId: string) {
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: { id: instanceId, tenantId: user.tenantId },
+    })
+    if (!instance) throw new NotFoundException('审批不存在')
+    if (instance.submitterId !== user.id) throw new BadRequestException('仅发起人可撤回')
+    if (instance.status !== 'PENDING') throw new BadRequestException('仅审批中的申请可撤回')
+
+    await this.prisma.$transaction([
+      this.prisma.approvalTask.updateMany({
+        where: { instanceId, status: 'PENDING' },
+        data: { status: 'SKIPPED' },
+      }),
+      this.prisma.approvalInstance.update({
+        where: { id: instanceId },
+        data: { status: 'CANCELED', finishedAt: new Date() },
+      }),
+    ])
+    await this.setBizStatus(instance.module, instance.targetId, 'NONE')
+    return { id: instanceId, name: instance.targetName }
+  }
+
+  // ===== 查询 =====
+
+  async myPending(user: AuthUser, page: number, pageSize: number): Promise<PaginatedResult<ApprovalInstanceVO>> {
+    const where: Prisma.ApprovalTaskWhereInput = {
+      tenantId: user.tenantId,
+      approverId: user.id,
+      status: 'PENDING',
+    }
+    const [tasks, total] = await this.prisma.$transaction([
+      this.prisma.approvalTask.findMany({
+        where,
+        include: { instance: { include: { tasks: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.approvalTask.count({ where }),
+    ])
+    const items = await Promise.all(
+      tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user.id)),
+    )
+    return { items, total, page, pageSize }
+  }
+
+  async myApplications(user: AuthUser, page: number, pageSize: number): Promise<PaginatedResult<ApprovalInstanceVO>> {
+    const where: Prisma.ApprovalInstanceWhereInput = {
+      tenantId: user.tenantId,
+      submitterId: user.id,
+    }
+    const [instances, total] = await this.prisma.$transaction([
+      this.prisma.approvalInstance.findMany({
+        where,
+        include: { tasks: true },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.approvalInstance.count({ where }),
+    ])
+    const items = await Promise.all(instances.map((i) => this.toInstanceVO(i, i.tasks, user.id)))
+    return { items, total, page, pageSize }
+  }
+
+  /** 已办：我处理过的 */
+  async myHandled(user: AuthUser, page: number, pageSize: number): Promise<PaginatedResult<ApprovalInstanceVO>> {
+    const where: Prisma.ApprovalTaskWhereInput = {
+      tenantId: user.tenantId,
+      approverId: user.id,
+      status: { in: ['APPROVED', 'REJECTED'] },
+    }
+    const [tasks, total] = await this.prisma.$transaction([
+      this.prisma.approvalTask.findMany({
+        where,
+        include: { instance: { include: { tasks: true } } },
+        orderBy: { handledAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.approvalTask.count({ where }),
+    ])
+    const items = await Promise.all(
+      tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user.id)),
+    )
+    return { items, total, page, pageSize }
+  }
+
+  /** 某业务对象的最新审批实例（详情时间线） */
+  async instanceForTarget(user: AuthUser, module: string, targetId: string): Promise<ApprovalInstanceVO | null> {
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: { tenantId: user.tenantId, module, targetId },
+      include: { tasks: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!instance) return null
+    return this.toInstanceVO(instance, instance.tasks, user.id)
+  }
+
+  // ===== 引擎内部 =====
+
+  /** 推进到下一个有审批人的节点；全部走完则通过 */
+  private async advance(instanceId: string) {
+    const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
+      where: { id: instanceId },
+    })
+    if (instance.status !== 'PENDING') return
+    const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const submitter = await this.prisma.user.findUnique({ where: { id: instance.submitterId } })
+
+    let nodeIndex = instance.currentNodeIndex
+    for (;;) {
+      nodeIndex += 1
+      if (nodeIndex >= snapshot.length) {
+        await this.finalizeApproved(instance)
+        return
+      }
+      const approvers = await this.resolveApprovers(
+        instance.tenantId,
+        snapshot[nodeIndex],
+        submitter?.deptId ?? null,
+        submitter?.leaderId ?? null,
+      )
+      if (approvers.length === 0) continue
+
+      await this.prisma.$transaction([
+        this.prisma.approvalInstance.update({
+          where: { id: instanceId },
+          data: { currentNodeIndex: nodeIndex },
+        }),
+        this.prisma.approvalTask.createMany({
+          data: approvers.map((approverId) => ({
+            tenantId: instance.tenantId,
+            instanceId,
+            nodeIndex,
+            nodeName: snapshot[nodeIndex].name,
+            approverId,
+          })),
+        }),
+      ])
+      await this.notifications.notifyMany(instance.tenantId, approvers, {
+        type: 'approval',
+        title: '有新的审批待处理',
+        content: `${instance.submitterName} 提交的「${instance.targetName}」等待你审批`,
+        link: '/approvals',
+      })
+      return
+    }
+  }
+
+  private async finalizeApproved(instance: ApprovalInstance) {
+    await this.prisma.approvalInstance.update({
+      where: { id: instance.id },
+      data: { status: 'APPROVED', finishedAt: new Date() },
+    })
+    await this.setBizStatus(instance.module, instance.targetId, 'APPROVED')
+    await this.effectApproved(instance.module, instance.targetId)
+    await this.notifications.notify(instance.tenantId, instance.submitterId, {
+      type: 'approval',
+      title: '审批已通过',
+      content: `「${instance.targetName}」已审批通过`,
+      link: '/approvals',
+    })
+  }
+
+  private async resolveApprovers(
+    tenantId: string,
+    node: ApprovalNodeConfig,
+    submitterDeptId: string | null,
+    submitterLeaderId: string | null,
+  ): Promise<string[]> {
+    let ids: string[] = []
+    switch (node.approverType) {
+      case 'USER':
+        ids = node.approverIds
+        break
+      case 'ROLE': {
+        const users = await this.prisma.user.findMany({
+          where: { tenantId, roleId: { in: node.approverIds }, status: 'ACTIVE' },
+          select: { id: true },
+        })
+        ids = users.map((u) => u.id)
+        break
+      }
+      case 'DEPT_LEADER': {
+        if (!submitterDeptId) break
+        const dept = await this.prisma.department.findUnique({ where: { id: submitterDeptId } })
+        if (dept?.leaderId) ids = [dept.leaderId]
+        break
+      }
+      case 'DIRECT_LEADER':
+        if (submitterLeaderId) ids = [submitterLeaderId]
+        break
+    }
+    if (ids.length === 0) return []
+    const active = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(ids)] }, tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    })
+    return active.map((u) => u.id)
+  }
+
+  private async enabledFlow(tenantId: string, module: string) {
+    return this.prisma.approvalFlow.findFirst({
+      where: { tenantId, module, enabled: true },
+      include: { nodes: { orderBy: { sort: 'asc' } } },
+    })
+  }
+
+  private async targetInfo(tenantId: string, module: ApprovalModule, targetId: string): Promise<TargetInfo> {
+    switch (module) {
+      case 'quote': {
+        const quote = await this.prisma.quote.findFirst({ where: { id: targetId, tenantId } })
+        if (!quote) throw new NotFoundException('报价不存在')
+        return { name: `报价 ${quote.name}`, amount: Number(quote.totalAmount), approvalStatus: quote.approvalStatus }
+      }
+      case 'contract': {
+        const contract = await this.prisma.contract.findFirst({ where: { id: targetId, tenantId } })
+        if (!contract) throw new NotFoundException('合同不存在')
+        return { name: `合同 ${contract.name}`, amount: Number(contract.amount), approvalStatus: contract.approvalStatus }
+      }
+      case 'order': {
+        const order = await this.prisma.order.findFirst({ where: { id: targetId, tenantId } })
+        if (!order) throw new NotFoundException('订单不存在')
+        return { name: `订单 ${order.name}`, amount: Number(order.amount), approvalStatus: order.approvalStatus }
+      }
+      case 'receivableRecord': {
+        const record = await this.prisma.receivableRecord.findFirst({ where: { id: targetId, tenantId } })
+        if (!record) throw new NotFoundException('回款记录不存在')
+        return { name: `回款 ¥${Number(record.amount)}`, amount: Number(record.amount), approvalStatus: record.approvalStatus }
+      }
+    }
+  }
+
+  private async setBizStatus(module: string, targetId: string, status: string) {
+    const data = { approvalStatus: status }
+    switch (module) {
+      case 'quote':
+        await this.prisma.quote.update({ where: { id: targetId }, data })
+        break
+      case 'contract':
+        await this.prisma.contract.update({ where: { id: targetId }, data })
+        break
+      case 'order':
+        await this.prisma.order.update({ where: { id: targetId }, data })
+        break
+      case 'receivableRecord':
+        await this.prisma.receivableRecord.update({ where: { id: targetId }, data })
+        break
+    }
+  }
+
+  /** 审批通过后的业务生效动作 */
+  private async effectApproved(module: string, targetId: string) {
+    switch (module) {
+      case 'quote':
+        await this.prisma.quote.update({ where: { id: targetId }, data: { status: 'CONFIRMED' } })
+        break
+      case 'contract':
+        await this.prisma.contract.update({ where: { id: targetId }, data: { status: 'EXECUTING' } })
+        break
+      default:
+        break
+    }
+  }
+
+  private async ensurePendingTask(user: AuthUser, taskId: string): Promise<ApprovalTask> {
+    const task = await this.prisma.approvalTask.findFirst({
+      where: { id: taskId, tenantId: user.tenantId, approverId: user.id, status: 'PENDING' },
+    })
+    if (!task) throw new NotFoundException('待办任务不存在或已处理')
+    return task
+  }
+
+  private async toInstanceVO(
+    instance: ApprovalInstance,
+    tasks: ApprovalTask[],
+    currentUserId: string,
+  ): Promise<ApprovalInstanceVO> {
+    const approverIds = [...new Set(tasks.map((t) => t.approverId))]
+    const users = approverIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: approverIds } },
+          select: { id: true, name: true },
+        })
+      : []
+    const nameMap = new Map(users.map((u) => [u.id, u.name]))
+    const myPending = tasks.find((t) => t.approverId === currentUserId && t.status === 'PENDING')
+
+    return {
+      id: instance.id,
+      module: instance.module as ApprovalModule,
+      targetId: instance.targetId,
+      targetName: instance.targetName,
+      summary: instance.summary,
+      status: instance.status,
+      currentNodeIndex: instance.currentNodeIndex,
+      nodesSnapshot: instance.nodesSnapshot as unknown as ApprovalNodeConfig[],
+      submitterId: instance.submitterId,
+      submitterName: instance.submitterName,
+      finishedAt: instance.finishedAt?.toISOString() ?? null,
+      createdAt: instance.createdAt.toISOString(),
+      tasks: tasks
+        .sort((a, b) => a.nodeIndex - b.nodeIndex || a.createdAt.getTime() - b.createdAt.getTime())
+        .map((t) => ({
+          id: t.id,
+          instanceId: t.instanceId,
+          nodeIndex: t.nodeIndex,
+          nodeName: t.nodeName,
+          approverId: t.approverId,
+          approverName: nameMap.get(t.approverId),
+          status: t.status,
+          comment: t.comment,
+          handledAt: t.handledAt?.toISOString() ?? null,
+        })),
+      myPendingTaskId: myPending?.id ?? null,
+    }
+  }
+}

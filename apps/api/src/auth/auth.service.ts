@@ -1,0 +1,225 @@
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt'
+import { CurrentUser, LoginResult } from '@micromatrix/shared'
+import * as bcrypt from 'bcryptjs'
+import { Prisma } from '../generated/prisma/client'
+import { PrismaService } from '../prisma/prisma.service'
+import { LoginDto } from './dto/login.dto'
+import { RegisterDto } from './dto/register.dto'
+import type { JwtPayload } from './jwt-payload.interface'
+
+type UserWithRelations = Prisma.UserGetPayload<{
+  include: { role: true; tenant: true; dept: true }
+}>
+
+const userInclude = { role: true, tenant: true, dept: true } as const
+
+export interface LoginContext {
+  ip?: string
+  userAgent?: string
+}
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** 注册 = 创建租户 + 根部门 + 管理员角色 + 管理员账号 */
+  async register(dto: RegisterDto): Promise<LoginResult> {
+    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    if (exists) throw new ConflictException('该邮箱已被注册')
+
+    const passwordHash = await bcrypt.hash(dto.password, 10)
+    const slug = await this.generateTenantSlug(dto.tenantName)
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({ data: { name: dto.tenantName, slug } })
+      const rootDept = await tx.department.create({
+        data: { tenantId: tenant.id, name: dto.tenantName },
+      })
+      const adminRole = await tx.role.create({
+        data: {
+          tenantId: tenant.id,
+          name: '管理员',
+          permissions: ['*'],
+          dataScope: 'ALL',
+          isSystem: true,
+        },
+      })
+      const created = await tx.user.create({
+        data: {
+          tenantId: tenant.id,
+          email: dto.email,
+          passwordHash,
+          name: dto.name,
+          roleId: adminRole.id,
+          deptId: rootDept.id,
+        },
+        include: userInclude,
+      })
+
+      const freePlan = await tx.plan.findUnique({ where: { code: 'free' } })
+      if (freePlan) {
+        await tx.subscription.create({
+          data: {
+            tenantId: tenant.id,
+            planId: freePlan.id,
+            status: 'TRIALING',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 14 * 24 * 3600 * 1000),
+          },
+        })
+      }
+      return created
+    })
+
+    return this.buildLoginResult(user)
+  }
+
+  async login(dto: LoginDto, context: LoginContext = {}): Promise<LoginResult> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      include: userInclude,
+    })
+
+    const fail = async (message: string, exception: Error) => {
+      await this.recordLoginLog(dto.email, false, message, context, user)
+      throw exception
+    }
+
+    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+      return fail('邮箱或密码错误', new UnauthorizedException('邮箱或密码错误'))
+    }
+    if (user.status !== 'ACTIVE') {
+      return fail('账号已被禁用', new ForbiddenException('账号已被禁用'))
+    }
+    if (user.tenant.status !== 'ACTIVE') {
+      return fail('企业账户已被停用', new ForbiddenException('企业账户已被停用'))
+    }
+
+    await this.recordLoginLog(dto.email, true, null, context, user)
+    return this.buildLoginResult(user)
+  }
+
+  async refresh(refreshToken: string): Promise<LoginResult> {
+    let payload: { sub: string }
+    try {
+      payload = await this.jwt.verifyAsync(refreshToken, {
+        secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      })
+    } catch {
+      throw new UnauthorizedException('刷新令牌无效或已过期')
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: userInclude,
+    })
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('用户不存在或已被禁用')
+    }
+    return this.buildLoginResult(user)
+  }
+
+  async me(userId: string): Promise<CurrentUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: userInclude,
+    })
+    if (!user) throw new UnauthorizedException('用户不存在')
+    return this.toCurrentUser(user)
+  }
+
+  /** 长效 API 令牌（开放 API 集成用） */
+  async issueApiToken(userId: string): Promise<{ token: string; expiresIn: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } })
+    if (!user) throw new UnauthorizedException('用户不存在')
+    const payload: JwtPayload = { sub: user.id, tenantId: user.tenantId, email: user.email }
+    const token = await this.jwt.signAsync(payload, {
+      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      expiresIn: '365d',
+    })
+    return { token, expiresIn: '365 天' }
+  }
+
+  private async recordLoginLog(
+    email: string,
+    success: boolean,
+    message: string | null,
+    context: LoginContext,
+    user?: UserWithRelations | null,
+  ): Promise<void> {
+    await this.prisma.loginLog
+      .create({
+        data: {
+          tenantId: user?.tenantId,
+          userId: user?.id,
+          email,
+          success,
+          message,
+          ip: context.ip,
+          userAgent: context.userAgent,
+        },
+      })
+      .catch(() => undefined)
+  }
+
+  private async buildLoginResult(user: UserWithRelations): Promise<LoginResult> {
+    const payload: JwtPayload = { sub: user.id, tenantId: user.tenantId, email: user.email }
+    const accessExpiresIn = (this.config.get<string>('JWT_ACCESS_EXPIRES_IN') ??
+      '15m') as JwtSignOptions['expiresIn']
+    const refreshExpiresIn = (this.config.get<string>('JWT_REFRESH_EXPIRES_IN') ??
+      '7d') as JwtSignOptions['expiresIn']
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwt.signAsync(payload, {
+        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: accessExpiresIn,
+      }),
+      this.jwt.signAsync(
+        { sub: user.id },
+        {
+          secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
+          expiresIn: refreshExpiresIn,
+        },
+      ),
+    ])
+    return { accessToken, refreshToken, user: this.toCurrentUser(user) }
+  }
+
+  private toCurrentUser(user: UserWithRelations): CurrentUser {
+    return {
+      id: user.id,
+      tenantId: user.tenantId,
+      tenantName: user.tenant.name,
+      email: user.email,
+      name: user.name,
+      roleName: user.role?.name ?? null,
+      permissions: user.role?.permissions ?? [],
+      deptId: user.deptId,
+      deptName: user.dept?.name ?? null,
+    }
+  }
+
+  private async generateTenantSlug(name: string): Promise<string> {
+    const base =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'tenant'
+    let slug = base
+    while (await this.prisma.tenant.findUnique({ where: { slug } })) {
+      slug = `${base}-${Math.random().toString(36).slice(2, 6)}`
+    }
+    return slug
+  }
+}

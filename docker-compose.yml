@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: mmx-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: micromatrix_crm
+    ports:
+      - '5432:5432'
+    volumes:
+      # postgres:18+ 镜像要求挂载到 /var/lib/postgresql（数据放在版本号子目录，便于 pg_upgrade）
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U crm -d micromatrix_crm']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: mmx-crm-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

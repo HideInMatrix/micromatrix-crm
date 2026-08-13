@@ -1,0 +1,75 @@
+<script setup lang="ts">
+import type { FormInstance, FormRules } from 'element-plus'
+import { reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { extractErrorMessage } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
+
+const router = useRouter()
+const route = useRoute()
+const auth = useAuthStore()
+
+const formRef = ref<FormInstance>()
+const loading = ref(false)
+const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
+
+const rules: FormRules = {
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+  ],
+}
+
+async function handleSubmit() {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+
+  loading.value = true
+  try {
+    await auth.login(form)
+    ElMessage.success('登录成功')
+    router.push((route.query.redirect as string) ?? '/')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="h-full flex-center bg-[var(--el-bg-color-page)]">
+    <el-card class="w-96" shadow="hover">
+      <div class="text-center mb-6">
+        <h1 class="text-xl font-bold">微矩阵 CRM</h1>
+        <p class="text-sm text-[var(--el-text-color-secondary)] mt-1">客户关系管理系统</p>
+      </div>
+
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        @keyup.enter="handleSubmit"
+      >
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="form.email" placeholder="请输入邮箱" />
+        </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" />
+        </el-form-item>
+        <el-button type="primary" class="w-full mt-2" :loading="loading" @click="handleSubmit">
+          登 录
+        </el-button>
+      </el-form>
+
+      <p class="text-xs text-[var(--el-text-color-secondary)] mt-4 text-center">
+        演示账号：admin@demo.com / admin123（需先执行种子数据）
+      </p>
+    </el-card>
+  </div>
+</template>

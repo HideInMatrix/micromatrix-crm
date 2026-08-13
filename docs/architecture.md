@@ -1,0 +1,102 @@
+# 架构设计与技术决策记录
+
+## 总体架构
+
+```mermaid
+flowchart LR
+  subgraph clients [前端]
+    Web[Web 管理端<br/>Vue3 + Element Plus]
+    Mobile[移动端 H5<br/>Vue3 + Vant]
+  end
+  subgraph server [后端 NestJS]
+    Guard[AuthGuard<br/>JWT + 权限码校验]
+    Scope[DataScopeService<br/>数据范围注入]
+    Meta[MetadataService<br/>字段定义/校验/公式]
+    Approval[ApprovalsService<br/>审批引擎]
+    Biz[业务模块 ×14]
+    Cron[定时任务<br/>公海回收/回款提醒/标讯抓取]
+    Notify[NotificationsService<br/>站内信 + SSE]
+  end
+  DB[(PostgreSQL 18<br/>Prisma 7)]
+  Redis[(Redis<br/>预留队列/缓存)]
+
+  Web -->|/api 代理| Guard
+  Mobile -->|/api 代理| Guard
+  Guard --> Biz
+  Biz --> Scope
+  Biz --> Meta
+  Biz --> Approval
+  Biz --> Notify
+  Biz --> DB
+  Cron --> DB
+  Cron --> Notify
+```
+
+monorepo：`apps/api`（NestJS CJS）、`apps/web`、`apps/mobile`（Vite ESM）、`packages/shared`（三端共享类型/权限树/公式求值器）。
+
+## 关键设计决策（ADR）
+
+### ADR-1 多租户：共享库 + tenantId 行级隔离
+
+- 除 `plans` 外全部业务表带 `tenantId`，服务层查询显式过滤；内部阶段单租户运行，商业化开放注册即可
+- 升级路径：PostgreSQL RLS 强制隔离（防止应用层漏加条件）→ 大客户独立 schema
+- 注册流程即租户自助开通（租户+根部门+管理员角色+试用订阅，事务内完成）
+
+### ADR-2 数据范围：ownerId + deptId 双列 + 统一注入
+
+- 五级范围：全部 / 本部门及下级 / 本部门 / 仅本人 / 自定义部门；任何范围下本人负责的数据始终可见
+- 业务表约定 `ownerId`（负责人）与 `deptId`（负责人当时部门，负责人变更时同步），`DataScopeService.scopeFilter(user)` 返回 where 片段由各服务合并
+- 池/公海（inPool/inSea）内数据对全员开放，不走数据范围
+
+### ADR-3 元数据引擎：固定核心列 + customData JSONB
+
+- 每个业务对象保留参与索引/关联/统计的固定列（name/amount/状态/ownerId 等），扩展字段值统一存 `customData` JSONB
+- `FieldDefinition` 单表承载：字段类型（17 种）、必填、选项、公式、表单栅格、列表列配置；系统字段（system=true）不可删、类型不可改，首访按模板自动初始化
+- 系统字段允许 `cf_` 前缀（如线索的 cf_source）：定义受保护但值存 JSONB，选项可编辑
+- 公式字段：安全递归下降解析器（shared/metadata.ts，禁 eval），三端同一实现；保存时不落库、展示时求值
+- 筛选：系统列直接 where；cf_ 走 Prisma JSON path 过滤（equals/string_contains/gt 等）
+- 取舍：跨自定义字段的唯一性/联合索引不支持；列表按 customData 排序暂不支持
+
+### ADR-4 审批引擎：快照 + 任务表驱动
+
+- 提交时冻结流程配置到 `nodesSnapshot`（后续改流程不影响在途审批）
+- 节点审批人运行时解析（指定成员/角色/部门主管/直属上级）；解析为空的节点自动跳过；全部跳过=自动通过
+- 会签（ALL）全员通过进入下一节点；或签（ANY）任一通过、同节点其余任务置 SKIPPED
+- 业务挂接双保险：启用流程后直接生效操作被服务层拦截；审批通过由引擎回调 `effectApproved` 自动生效（报价→已确认、合同→履约中）；回款金额仅统计 NONE/APPROVED
+- 金额触发条件（amountGte）之下的单据无需审批
+
+### ADR-5 标讯：Provider 适配器
+
+- `BiddingProvider` 接口（key/label/requiresCredentials/fetch），`BiddingService` 构造函数注册表
+- 去重指纹 hash = 标题+发布日期，`@@unique([tenantId, hash])` 兜底
+- 内置 DemoProvider 保证无商业账号也能验证全链路；真实数据源为纯增量接入
+
+### ADR-6 通知：站内信 + SSE
+
+- 落库 + 在线推送（每用户多页签 Subject 集合）；EventSource 无法带 Header，stream 端点用 query token 手动校验
+- 触发点：分配 / 审批 / 回款到期 / 公海回收；渠道扩展（邮件/webhook）预留在 NotificationsService 单点
+
+### ADR-7 定时任务：@nestjs/schedule 而非 BullMQ
+
+- 内部规模下 cron 足够（公海回收 2:30 / 标讯抓取 8:00 / 回款提醒 9:00），零额外基础设施
+- Redis 已在 compose 就绪，大批量导入导出等重任务时引入 BullMQ
+
+## 踩坑记录（环境与版本）
+
+| 问题 | 结论 |
+| --- | --- |
+| postgres:18 镜像启动崩溃 | 18+ 数据卷挂载点从 `/var/lib/postgresql/data` 改为 `/var/lib/postgresql`（官方为支持 pg_upgrade 的破坏性变更） |
+| Prisma 7 大版本变化 | 连接串移至 `prisma.config.ts`；生成器 `prisma-client` 输出 TS 源码到 `src/generated`；运行时必须驱动适配器（`@prisma/adapter-pg`）；`migrate dev` 不再自动 generate |
+| Prisma 生成代码被 Node 误判 ESM | CJS 工程必须在生成器声明 `moduleFormat = "cjs"`，否则生成代码含 `import.meta` 触发 Node 语法检测崩溃 |
+| TypeScript 版本 | npm latest 已是 TS7（原生编译器），typescript-eslint 等生态支持上限 <6.1，全仓固定 `~6.0.x`；TS6 移除 `baseUrl`、`moduleResolution: node10`，需用 NodeNext/Bundler |
+| nest build 静默失败 | 与 TS6 组合下出现清空 dist 却不发射的情况，api 构建改为原生 `tsc -p tsconfig.build.json`，dev 用 `tsc -w` + `node --watch` |
+| 共享包 CJS 在 Vite dev 白屏 | dev 模式对 workspace 软链包不做 CJS 预构建，浏览器按 ESM 解析命名导出失败；解法：web/mobile 的 Vite alias 直接指向 `packages/shared/src/index.ts`（源码引用，附带热更新），API 继续用 CJS 产物 |
+| Vant 桌面调试 | 引入 `@vant/touch-emulator`；Element Plus 专属指令（v-loading）不可用于 mobile 工程 |
+| npm 网络 | 项目级 `.npmrc` 指向 npmmirror 镜像源 |
+
+## 安全基线
+
+- JWT access 15 分钟 + refresh 7 天（无状态刷新，撤销升级路径：refresh token 落库）
+- 全局 AuthGuard：@Public 白名单外一律鉴权；@RequirePermissions 声明式权限码校验
+- 密码 bcryptjs(10)；登录成功/失败均记录登录日志（IP/UA）
+- 待补齐（见 roadmap）：自助改密、失败锁定、密码策略

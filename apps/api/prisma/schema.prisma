@@ -1,0 +1,909 @@
+// 多租户约定：除 Plan 外所有业务表都带 tenantId，查询必须显式过滤。
+// 内部使用阶段只有一个租户；未来商业化开放注册即可，无需迁移数据。
+// 后续可升级为 PostgreSQL RLS（行级安全）做数据库层强制隔离。
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  // API 是 CommonJS 工程，生成的客户端需保持一致，否则运行时会被 Node 误判为 ESM
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+// 数据范围（角色的数据可见边界）
+enum DataScope {
+  ALL            // 全部数据
+  DEPT_AND_CHILD // 本部门及下级部门
+  DEPT           // 本部门
+  SELF           // 仅本人
+  CUSTOM         // 自定义部门
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users         User[]
+  roles         Role[]
+  customers     Customer[]
+  contacts      Contact[]
+  subscriptions Subscription[]
+  departments   Department[]
+
+  @@map("tenants")
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  parentId  String?
+  leaderId  String?
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  parent   Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children Department[] @relation("DeptTree")
+  users    User[]
+
+  @@index([tenantId])
+  @@index([tenantId, parentId])
+  @@map("departments")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String
+  email        String     @unique
+  passwordHash String
+  name         String
+  status       UserStatus @default(ACTIVE)
+  roleId       String?
+  deptId       String?
+  // 直属上级（逐级审批的汇报线）
+  leaderId     String?
+  position     String?
+  phone        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  role           Role?       @relation(fields: [roleId], references: [id])
+  dept           Department? @relation(fields: [deptId], references: [id])
+  ownedCustomers Customer[]
+
+  @@index([tenantId])
+  @@index([tenantId, deptId])
+  @@map("users")
+}
+
+model Role {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  // 权限码列表（menu:* 为菜单权限，资源:操作 为动作权限），'*' 表示全部权限
+  permissions String[]  @default([])
+  // 数据范围与自定义部门（dataScope=CUSTOM 时生效）
+  dataScope   DataScope @default(SELF)
+  scopeDeptIds String[] @default([])
+  // 系统内置角色（管理员）不可删除/降权
+  isSystem    Boolean   @default(false)
+  remark      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  users  User[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Customer {
+  id       String  @id @default(cuid())
+  tenantId String
+  name     String
+  industry String?
+  phone    String?
+  email    String?
+  remark   String?
+  // 自定义字段值（cf_* 键），由元数据引擎驱动
+  customData Json?
+  ownerId    String?
+  // 归属部门（负责人变更时同步），数据范围过滤依据
+  deptId       String?
+  // 公海：无负责人，可被领取
+  inSea          Boolean   @default(false)
+  lastFollowedAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id])
+  owner         User?                @relation(fields: [ownerId], references: [id])
+  contacts      Contact[]
+  teamMembers   CustomerTeamMember[]
+  opportunities Opportunity[]
+  quotes        Quote[]
+  contracts     Contract[]
+
+  @@index([tenantId])
+  @@index([tenantId, name])
+  @@index([tenantId, deptId])
+  @@index([tenantId, inSea])
+  @@map("customers")
+}
+
+model CustomerTeamMember {
+  id         String   @id @default(cuid())
+  tenantId   String
+  customerId String
+  userId     String
+  role       String?
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, userId])
+  @@index([tenantId, userId])
+  @@map("customer_team_members")
+}
+
+// ============ 线索 ============
+
+enum LeadStatus {
+  FOLLOWING // 跟进中
+  CONVERTED // 已转化
+  INVALID   // 无效
+}
+
+model Lead {
+  id          String     @id @default(cuid())
+  tenantId    String
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  status      LeadStatus @default(FOLLOWING)
+  // 线索池：无负责人，可被领取
+  inPool     Boolean   @default(false)
+  ownerId    String?
+  deptId     String?
+  customData Json?
+  convertedCustomerId String?
+  lastFollowedAt      DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([tenantId, inPool])
+  @@index([tenantId, deptId])
+  @@index([tenantId, status])
+  @@map("leads")
+}
+
+// ============ 跟进记录（多态：线索/客户/商机/合同） ============
+
+model FollowUpRecord {
+  id         String    @id @default(cuid())
+  tenantId   String
+  targetType String
+  targetId   String
+  type       String
+  content    String
+  nextFollowAt DateTime?
+  ownerId      String
+  ownerName    String
+  createdAt    DateTime  @default(now())
+
+  @@index([tenantId, targetType, targetId])
+  @@map("follow_up_records")
+}
+
+// ============ 商机（可配置阶段） ============
+
+model OpportunityStage {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  // 赢率（0-100），用于漏斗与预测
+  probability Int     @default(0)
+  sort        Int     @default(0)
+  // 结果阶段：赢单/输单（系统内置，不可删除）
+  isWon  Boolean @default(false)
+  isLost Boolean @default(false)
+  system Boolean @default(false)
+
+  opportunities Opportunity[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("opportunity_stages")
+}
+
+model Opportunity {
+  id              String    @id @default(cuid())
+  tenantId        String
+  name            String
+  customerId      String
+  stageId         String
+  amount          Decimal?  @db.Decimal(14, 2)
+  expectedCloseAt DateTime?
+  lostReason      String?
+  remark          String?
+  ownerId         String?
+  deptId          String?
+  customData      Json?
+  wonAt           DateTime?
+  lostAt          DateTime?
+  lastFollowedAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  customer  Customer             @relation(fields: [customerId], references: [id])
+  stage     OpportunityStage     @relation(fields: [stageId], references: [id])
+  stageLogs OpportunityStageLog[]
+
+  @@index([tenantId, stageId])
+  @@index([tenantId, deptId])
+  @@index([tenantId, customerId])
+  @@map("opportunities")
+}
+
+model OpportunityStageLog {
+  id            String   @id @default(cuid())
+  tenantId      String
+  opportunityId String
+  fromStageName String?
+  toStageName   String
+  userName      String
+  createdAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@map("opportunity_stage_logs")
+}
+
+// ============ 产品 ============
+
+enum ProductStatus {
+  ON  // 上架
+  OFF // 下架
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String?
+  category    String?
+  unit        String?
+  price       Decimal       @default(0) @db.Decimal(14, 2)
+  cost        Decimal?      @db.Decimal(14, 2)
+  status      ProductStatus @default(ON)
+  description String?
+  customData  Json?
+  ownerId     String?
+  deptId      String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([tenantId, status])
+  @@map("products")
+}
+
+// ============ 报价 ============
+
+enum QuoteStatus {
+  DRAFT     // 草稿
+  CONFIRMED // 已确认
+  VOID      // 已作废
+}
+
+model Quote {
+  id            String      @id @default(cuid())
+  tenantId      String
+  code          String
+  name          String
+  customerId    String
+  opportunityId String?
+  totalAmount   Decimal     @default(0) @db.Decimal(14, 2)
+  status        QuoteStatus @default(DRAFT)
+  // 审批状态：NONE=无需/未提交, PENDING/APPROVED/REJECTED
+  approvalStatus String     @default("NONE")
+  validUntil    DateTime?
+  remark        String?
+  ownerId       String?
+  deptId        String?
+  customData    Json?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  customer Customer    @relation(fields: [customerId], references: [id])
+  items    QuoteItem[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, customerId])
+  @@index([tenantId, deptId])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id          String  @id @default(cuid())
+  quoteId     String
+  productId   String?
+  productName String
+  unit        String?
+  quantity    Decimal @default(1) @db.Decimal(14, 2)
+  unitPrice   Decimal @default(0) @db.Decimal(14, 2)
+  // 折扣百分比（100 = 不打折）
+  discount Decimal @default(100) @db.Decimal(5, 2)
+  amount   Decimal @default(0) @db.Decimal(14, 2)
+  sort     Int     @default(0)
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quote_items")
+}
+
+// ============ 合同与回款 ============
+
+enum ContractStatus {
+  DRAFT      // 草稿
+  EXECUTING  // 履约中
+  COMPLETED  // 已完成
+  TERMINATED // 已终止
+}
+
+model Contract {
+  id            String         @id @default(cuid())
+  tenantId      String
+  code          String
+  name          String
+  customerId    String
+  opportunityId String?
+  quoteId       String?
+  amount        Decimal        @default(0) @db.Decimal(14, 2)
+  status        ContractStatus @default(DRAFT)
+  approvalStatus String        @default("NONE")
+  signedAt      DateTime?
+  startAt       DateTime?
+  endAt         DateTime?
+  remark        String?
+  ownerId       String?
+  deptId        String?
+  customData    Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  customer          Customer           @relation(fields: [customerId], references: [id])
+  items             ContractItem[]
+  receivablePlans   ReceivablePlan[]
+  receivableRecords ReceivableRecord[]
+  invoices          InvoiceRecord[]
+  orders            Order[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, customerId])
+  @@index([tenantId, deptId])
+  @@map("contracts")
+}
+
+model ContractItem {
+  id          String  @id @default(cuid())
+  contractId  String
+  productId   String?
+  productName String
+  unit        String?
+  quantity    Decimal @default(1) @db.Decimal(14, 2)
+  unitPrice   Decimal @default(0) @db.Decimal(14, 2)
+  discount    Decimal @default(100) @db.Decimal(5, 2)
+  amount      Decimal @default(0) @db.Decimal(14, 2)
+  sort        Int     @default(0)
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+  @@map("contract_items")
+}
+
+model ReceivablePlan {
+  id         String    @id @default(cuid())
+  tenantId   String
+  contractId String
+  period     Int
+  amount     Decimal   @default(0) @db.Decimal(14, 2)
+  dueDate    DateTime
+  remark     String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  contract Contract           @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  records  ReceivableRecord[]
+
+  @@index([tenantId, contractId])
+  @@index([tenantId, dueDate])
+  @@map("receivable_plans")
+}
+
+model ReceivableRecord {
+  id         String   @id @default(cuid())
+  tenantId   String
+  contractId String
+  planId     String?
+  amount     Decimal  @default(0) @db.Decimal(14, 2)
+  receivedAt DateTime
+  method     String?
+  remark     String?
+  approvalStatus String @default("NONE")
+  ownerId    String?
+  deptId     String?
+  createdAt  DateTime @default(now())
+
+  contract Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  plan     ReceivablePlan? @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, contractId])
+  @@map("receivable_records")
+}
+
+// ============ 工商抬头与发票 ============
+
+model InvoiceTitle {
+  id          String   @id @default(cuid())
+  tenantId    String
+  customerId  String?
+  name        String
+  taxNo       String
+  bankName    String?
+  bankAccount String?
+  address     String?
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  invoices InvoiceRecord[]
+
+  @@index([tenantId, customerId])
+  @@map("invoice_titles")
+}
+
+enum InvoiceStatus {
+  PENDING // 待开票
+  ISSUED  // 已开票
+  VOID    // 已作废
+}
+
+model InvoiceRecord {
+  id         String        @id @default(cuid())
+  tenantId   String
+  contractId String
+  titleId    String?
+  amount     Decimal       @default(0) @db.Decimal(14, 2)
+  type       String        @default("增值税普通发票")
+  status     InvoiceStatus @default(PENDING)
+  invoiceNo  String?
+  issuedAt   DateTime?
+  remark     String?
+  ownerId    String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  contract Contract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  title    InvoiceTitle? @relation(fields: [titleId], references: [id])
+
+  @@index([tenantId, contractId])
+  @@map("invoice_records")
+}
+
+// ============ 订单（合同履约执行） ============
+
+enum OrderStatus {
+  PENDING    // 待交付
+  DELIVERING // 交付中
+  ACCEPTED   // 已验收
+  COMPLETED  // 已完成
+  CANCELED   // 已取消
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  tenantId    String
+  code        String
+  name        String
+  contractId  String
+  amount      Decimal     @default(0) @db.Decimal(14, 2)
+  status      OrderStatus @default(PENDING)
+  approvalStatus String   @default("NONE")
+  deliveredAt DateTime?
+  acceptedAt  DateTime?
+  remark      String?
+  ownerId     String?
+  deptId      String?
+  customData  Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, contractId])
+  @@index([tenantId, deptId])
+  @@map("orders")
+}
+
+// ============ 审批流引擎 ============
+
+// 审批人策略
+enum ApproverType {
+  USER          // 指定成员
+  ROLE          // 指定角色（该角色全部成员）
+  DEPT_LEADER   // 发起人部门主管
+  DIRECT_LEADER // 发起人直属上级
+}
+
+// 多审批人模式
+enum ApprovalMode {
+  ALL // 会签（全部通过）
+  ANY // 或签（任一通过）
+}
+
+enum ApprovalInstanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum ApprovalTaskStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+model ApprovalFlow {
+  id       String  @id @default(cuid())
+  tenantId String
+  // 绑定业务对象：quote / contract / order / receivableRecord
+  module   String
+  name     String
+  enabled  Boolean @default(true)
+  // 触发条件：{ amountGte?: number }，不满足条件则无需审批
+  condition Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nodes ApprovalNode[]
+
+  @@unique([tenantId, module])
+  @@map("approval_flows")
+}
+
+model ApprovalNode {
+  id           String       @id @default(cuid())
+  flowId       String
+  sort         Int          @default(0)
+  name         String
+  approverType ApproverType
+  // USER=用户ID集合；ROLE=角色ID集合
+  approverIds String[]     @default([])
+  mode        ApprovalMode @default(ANY)
+
+  flow ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([flowId])
+  @@map("approval_nodes")
+}
+
+model ApprovalInstance {
+  id            String                 @id @default(cuid())
+  tenantId      String
+  module        String
+  targetId      String
+  targetName    String
+  // 摘要（金额等，用于列表展示）
+  summary       String?
+  status        ApprovalInstanceStatus @default(PENDING)
+  currentNodeIndex Int                 @default(0)
+  // 节点快照（提交时冻结流程配置）：[{ name, approverType, mode, approverIds }]
+  nodesSnapshot Json
+  submitterId   String
+  submitterName String
+  finishedAt    DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  tasks ApprovalTask[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, module, targetId])
+  @@index([tenantId, submitterId])
+  @@map("approval_instances")
+}
+
+model ApprovalTask {
+  id         String             @id @default(cuid())
+  tenantId   String
+  instanceId String
+  nodeIndex  Int
+  nodeName   String
+  approverId String
+  status     ApprovalTaskStatus @default(PENDING)
+  comment    String?
+  handledAt  DateTime?
+  createdAt  DateTime           @default(now())
+
+  instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, approverId, status])
+  @@index([instanceId])
+  @@map("approval_tasks")
+}
+
+// ============ 标讯（招投标信息） ============
+
+model BiddingSource {
+  id       String  @id @default(cuid())
+  tenantId String
+  // 适配器标识：demo / jianyu / qianlima ...
+  provider String
+  name     String
+  // 数据源凭证（API Key 等）
+  credentials Json?
+  enabled     Boolean  @default(false)
+  lastFetchAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, provider])
+  @@map("bidding_sources")
+}
+
+model BiddingKeywordSub {
+  id        String   @id @default(cuid())
+  tenantId  String
+  keyword   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, keyword])
+  @@map("bidding_keyword_subs")
+}
+
+model BiddingInfo {
+  id       String  @id @default(cuid())
+  tenantId String
+  title    String
+  // 公告类型：招标公告/中标公告/更正公告等
+  type      String?
+  region    String?
+  buyer     String?
+  budget    Decimal?  @db.Decimal(16, 2)
+  publishedAt DateTime?
+  deadline    DateTime?
+  sourceUrl   String?
+  content     String?
+  // 来源：demo/manual/...
+  source  String?
+  keyword String?
+  // 去重指纹（标题+发布日期）
+  hash            String
+  convertedLeadId String?
+  createdAt       DateTime @default(now())
+
+  @@unique([tenantId, hash])
+  @@index([tenantId, publishedAt])
+  @@map("bidding_infos")
+}
+
+// ============ 公海/线索池回收规则 ============
+
+model PoolRule {
+  id       String  @id @default(cuid())
+  tenantId String
+  // lead / customer
+  module   String
+  enabled  Boolean @default(false)
+  // 超过 N 天未跟进自动回收
+  recycleDays Int @default(30)
+  // 回收前 N 天提醒负责人
+  notifyDays Int @default(3)
+
+  @@unique([tenantId, module])
+  @@map("pool_rules")
+}
+
+model Contact {
+  id         String   @id @default(cuid())
+  tenantId   String
+  customerId String
+  name       String
+  position   String?
+  phone      String?
+  email      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@map("contacts")
+}
+
+// ============ 订阅/套餐（商业化预留，内部阶段不启用计费逻辑） ============
+
+model Plan {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  price     Decimal  @default(0) @db.Decimal(10, 2)
+  maxUsers  Int      @default(10)
+  features  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  planId             String
+  status             SubscriptionStatus @default(TRIALING)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
+
+// ============ 元数据引擎：字段定义（驱动动态表单/列表/筛选） ============
+
+model FieldDefinition {
+  id       String  @id @default(cuid())
+  tenantId String
+  // 业务对象：lead / customer / contact / opportunity / product / quote / contract / order
+  module   String
+  // 字段键：系统字段=实体列名；自定义字段=cf_ 前缀，值存业务表的 customData JSONB
+  key      String
+  label    String
+  // text/textarea/number/currency/percent/date/datetime/select/multiselect/radio
+  // /checkbox/switch/member/dept/phone/email/formula
+  type     String
+  required Boolean @default(false)
+  // 系统字段：不可删除、key/type 不可修改
+  system   Boolean @default(false)
+  hidden   Boolean @default(false)
+  // 选项集（select/multiselect/radio/checkbox）：[{ label, value, color? }]
+  options  Json?
+  // 扩展配置：placeholder/默认值/公式表达式/小数位等
+  config   Json?
+  // 表单布局：排序与栅格宽度（24 栅格制）
+  sort     Int     @default(0)
+  span     Int     @default(12)
+  // 列表配置
+  showInList Boolean @default(true)
+  listWidth  Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, module, key])
+  @@index([tenantId, module])
+  @@map("field_definitions")
+}
+
+// ============ 系统：日志 / 通知 / 设置 / 附件 ============
+
+model OperationLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String?
+  userName   String?
+  module     String
+  action     String
+  targetId   String?
+  targetName String?
+  detail     Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, module])
+  @@map("operation_logs")
+}
+
+model LoginLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  userId    String?
+  email     String
+  ip        String?
+  userAgent String?
+  success   Boolean
+  message   String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("login_logs")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  // 业务类型：assign / approval / receivable / pool / system
+  type      String
+  title     String
+  content   String?
+  // 前端跳转路由
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId, userId, readAt])
+  @@map("notifications")
+}
+
+model SystemSetting {
+  id       String @id @default(cuid())
+  tenantId String
+  key      String
+  value    Json
+
+  @@unique([tenantId, key])
+  @@map("system_settings")
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  uploaderId String?
+  name       String
+  path       String
+  size       Int      @default(0)
+  mime       String?
+  // 挂载对象（跟进记录/合同等）
+  targetType String?
+  targetId   String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, targetType, targetId])
+  @@map("attachments")
+}
