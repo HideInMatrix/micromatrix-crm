@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
 import { Type } from 'class-transformer'
 import {
-  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -48,12 +47,12 @@ export class CreateQuoteDto {
   @IsOptional()
   ownerId?: string
 
-  @ApiProperty({ type: [LineItemDto], description: '明细行' })
+  @ApiPropertyOptional({ type: [LineItemDto], description: '明细行；关联商机且无明细时从商机带入' })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1, { message: '至少添加一行明细' })
   @Type(() => LineItemDto)
   @ValidateNested({ each: true })
-  items!: LineItemDto[]
+  items?: LineItemDto[]
 
   @ApiPropertyOptional()
   @IsObject()

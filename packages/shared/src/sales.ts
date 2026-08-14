@@ -1,5 +1,7 @@
 // ============ 销售核心：线索 / 跟进 / 商机 / 公海 ============
 
+import type { LineItemVO } from './deal'
+
 export type LeadStatus = 'FOLLOWING' | 'CONVERTED' | 'INVALID'
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
@@ -32,6 +34,17 @@ export type FollowTargetType = 'lead' | 'customer' | 'opportunity' | 'contract'
 
 export const FOLLOW_UP_TYPES = ['电话', '拜访', '微信', '邮件', '会议', '其他'] as const
 
+export interface AttachmentVO {
+  id: string
+  name: string
+  size: number
+  mime: string | null
+  targetType: string | null
+  targetId: string | null
+  uploaderId: string | null
+  createdAt: string
+}
+
 export interface FollowUpVO {
   id: string
   targetType: FollowTargetType
@@ -42,6 +55,7 @@ export interface FollowUpVO {
   ownerId: string
   ownerName: string
   createdAt: string
+  attachments?: AttachmentVO[]
 }
 
 // ============ 商机 ============
@@ -76,6 +90,7 @@ export interface OpportunityVO {
   ownerName?: string | null
   deptId: string | null
   customData: Record<string, unknown>
+  items?: LineItemVO[]
   wonAt: string | null
   lostAt: string | null
   createdAt: string

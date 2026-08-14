@@ -33,3 +33,15 @@ export class QueryCustomersDto {
   @IsOptional()
   scope?: 'mine' | 'sea'
 }
+
+export class CheckDuplicateQueryDto {
+  @ApiPropertyOptional({ description: '客户名称（模糊）' })
+  @IsString()
+  @IsOptional()
+  name?: string
+
+  @ApiPropertyOptional({ description: '电话（精确）' })
+  @IsString()
+  @IsOptional()
+  phone?: string
+}

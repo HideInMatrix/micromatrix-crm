@@ -85,6 +85,40 @@ const converted = await post(`/leads/${lead.id}/convert`, sales.headers, {
 })
 check('线索转化（客户+联系人+商机）', Boolean(converted.customerId && converted.opportunityId))
 
+const dups = await get(
+  `/customers/check-duplicate?name=${encodeURIComponent(`冒烟线索-${stamp}`)}`,
+  admin.headers,
+)
+check('客户查重命中', Array.isArray(dups) && dups.some((h) => h.source === 'customer'))
+const related = await get(`/customers/${converted.customerId}/related`, sales.headers)
+check(
+  '客户360关联数据',
+  related.stats && Array.isArray(related.contacts) && Array.isArray(related.opportunities),
+)
+const importedDup = await post('/customers/import', admin.headers, {
+  rows: [{ name: `冒烟线索-${stamp}` }],
+})
+check('导入重复行拦截', importedDup.failed >= 1)
+
+const oppWithItems = await post('/opportunities', manager.headers, {
+  name: `冒烟明细商机-${stamp}`,
+  customerId: converted.customerId,
+  items: [{ productName: '冒烟产品', quantity: 2, unitPrice: 15000, discount: 100 }],
+})
+check(
+  '商机明细汇总金额',
+  oppWithItems.amount === 30000 && oppWithItems.items?.length === 1,
+)
+const quoteFromOpp = await post('/quotes', manager.headers, {
+  name: `冒烟带入报价-${stamp}`,
+  customerId: converted.customerId,
+  opportunityId: oppWithItems.id,
+})
+check(
+  '报价从商机带入明细',
+  quoteFromOpp.totalAmount === 30000 && quoteFromOpp.items?.length === 1,
+)
+
 // 5. 商机推进赢单
 const stages = await get('/opportunities/stages', sales.headers)
 const won = stages.find((s) => s.isWon)
@@ -125,6 +159,23 @@ const order = await post('/orders', manager.headers, {
   amount: 30000,
 })
 check('创建订单', Boolean(order.code))
+
+const form = new FormData()
+form.append('file', new Blob(['scan-copy'], { type: 'text/plain' }), 'scan.txt')
+form.append('targetType', 'contract')
+form.append('targetId', contract.id)
+const uploaded = await fetch(`${base}/attachments/upload`, {
+  method: 'POST',
+  headers: { Authorization: manager.headers.Authorization },
+  body: form,
+}).then((r) => r.json())
+check('上传附件', Boolean(uploaded.id) && uploaded.name === 'scan.txt')
+const listed = await get(`/attachments?targetType=contract&targetId=${contract.id}`, manager.headers)
+check('列出附件', Array.isArray(listed) && listed.some((a) => a.id === uploaded.id))
+const downloaded = await fetch(`${base}/attachments/${uploaded.id}/download`, {
+  headers: { Authorization: manager.headers.Authorization },
+})
+check('下载附件', downloaded.ok)
 
 // 7. 审批流（合同 8 万以上需审批：直接生效被拦截 → 提审 → 两级通过自动生效）
 const bigContract = await post('/contracts', sales.headers, {

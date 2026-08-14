@@ -49,6 +49,12 @@ const router = createRouter({
           meta: { title: '客户管理', perm: 'menu:customer' },
         },
         {
+          path: 'customers/:id',
+          name: 'customer-detail',
+          component: () => import('@/views/CustomerDetailView.vue'),
+          meta: { title: '客户详情', perm: 'menu:customer' },
+        },
+        {
           path: 'opportunities',
           name: 'opportunities',
           component: () => import('@/views/OpportunitiesView.vue'),

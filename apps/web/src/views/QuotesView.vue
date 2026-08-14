@@ -7,11 +7,13 @@ import {
   type QuoteVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { listCustomers } from '@/api/customers'
 import { quoteApi } from '@/api/deal'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
+import { opportunityApi } from '@/api/sales'
 import LineItemsEditor from '@/components/LineItemsEditor.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -20,6 +22,8 @@ import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const route = useRoute()
+const formOpportunityId = ref<string>()
 
 const fields = ref<FieldVO[]>([])
 const loading = ref(false)
@@ -65,9 +69,25 @@ function openCreate() {
   editingId.value = null
   formModel.value = {}
   formCustomerId.value = undefined
+  formOpportunityId.value = undefined
   lineItems.value = []
   searchCustomers('')
   dialogVisible.value = true
+}
+
+async function openFromOpportunity(opportunityId: string) {
+  try {
+    const { data } = await opportunityApi.get(opportunityId)
+    editingId.value = null
+    formOpportunityId.value = data.id
+    formCustomerId.value = data.customerId
+    customerOptions.value = [{ id: data.customerId, name: data.customerName ?? '' }]
+    lineItems.value = (data.items ?? []).map((item) => ({ ...item }))
+    formModel.value = { name: `${data.name}-报价` }
+    dialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 function openEdit(row: QuoteVO) {
@@ -109,6 +129,7 @@ async function handleSave() {
       customData: {},
       customerId: formCustomerId.value,
       items: lineItems.value.filter((i) => i.productName),
+      opportunityId: formOpportunityId.value,
     }
     for (const [key, value] of Object.entries(formModel.value)) {
       if (value === undefined || value === '') continue
@@ -193,6 +214,8 @@ onMounted(async () => {
   const [{ data }] = await Promise.all([metadataApi.fields('quote'), fieldRefs.load()])
   fields.value = data
   loadData()
+  const fromId = route.query.fromOpportunity
+  if (typeof fromId === 'string' && fromId) await openFromOpportunity(fromId)
 })
 </script>
 

@@ -8,6 +8,10 @@ dist/
 # prisma 生成的客户端（prisma generate 重新生成）
 apps/api/src/generated/
 
+# 本地磁盘附件（保留目录占位）
+apps/api/uploads/**
+!apps/api/uploads/.gitkeep
+
 # environment
 .env
 .env.*.local

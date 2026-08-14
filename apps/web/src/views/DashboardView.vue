@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   dashboardApi,
@@ -7,10 +7,15 @@ import {
   type FunnelStage,
   type RankingData,
 } from '@/api/dashboard'
+import { checkDuplicate } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { settingApi } from '@/api/system'
 import EChart from '@/components/EChart.vue'
 import { useAuthStore } from '@/stores/auth'
+import {
+  DUPLICATE_SOURCE_LABELS,
+  type DuplicateHitVO,
+} from '@micromatrix/shared'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -20,6 +25,11 @@ const funnel = ref<FunnelStage[]>([])
 const ranking = ref<RankingData | null>(null)
 const announcement = ref('')
 const loading = ref(false)
+
+const dupForm = reactive({ name: '', phone: '' })
+const dupHits = ref<DuplicateHitVO[]>([])
+const dupLoading = ref(false)
+const dupSearched = ref(false)
 
 const statCards = computed(() => [
   { label: '本月新增线索', value: summary.value?.newLeads ?? '-', link: '/leads' },
@@ -101,6 +111,41 @@ async function loadData() {
 }
 
 onMounted(loadData)
+
+async function handleDuplicateCheck() {
+  if (!dupForm.name.trim() && !dupForm.phone.trim()) {
+    ElMessage.warning('请输入客户名称或电话')
+    return
+  }
+  dupLoading.value = true
+  try {
+    const { data } = await checkDuplicate({
+      name: dupForm.name.trim() || undefined,
+      phone: dupForm.phone.trim() || undefined,
+    })
+    dupHits.value = data
+    dupSearched.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    dupLoading.value = false
+  }
+}
+
+function sourceLabel(hit: DuplicateHitVO) {
+  return DUPLICATE_SOURCE_LABELS[hit.source]
+}
+
+function openHit(hit: DuplicateHitVO) {
+  if (!hit.inScope) {
+    ElMessage.info('该记录不在你的数据范围内')
+    return
+  }
+  if (hit.source === 'customer') router.push(`/customers/${hit.id}`)
+  else if (hit.source === 'opportunity') router.push('/opportunities')
+  else if (hit.source === 'lead') router.push('/leads')
+  else router.push('/customers')
+}
 </script>
 
 <template>
@@ -172,5 +217,44 @@ onMounted(loadData)
         <EChart v-else :option="rankingOption" height="320px" />
       </el-card>
     </div>
+
+    <el-card shadow="never" class="mt-4">
+      <div class="font-medium mb-3">客户查重</div>
+      <div class="flex flex-wrap gap-2 mb-3">
+        <el-input v-model="dupForm.name" placeholder="客户名称" clearable class="!w-56" />
+        <el-input v-model="dupForm.phone" placeholder="电话" clearable class="!w-44" />
+        <el-button type="primary" :loading="dupLoading" @click="handleDuplicateCheck">查重</el-button>
+      </div>
+      <el-table v-if="dupSearched" :data="dupHits" stripe size="small">
+        <el-table-column label="类型" width="90">
+          <template #default="{ row }">{{ DUPLICATE_SOURCE_LABELS[(row as DuplicateHitVO).source] }}</template>
+        </el-table-column>
+        <el-table-column label="名称" min-width="180">
+          <template #default="{ row }">
+            <el-button v-if="row.inScope" link type="primary" @click="openHit(row as DuplicateHitVO)">
+              {{ row.name ?? '-' }}
+            </el-button>
+            <span v-else class="text-[var(--el-text-color-secondary)]">不在你的数据范围内</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="phone" label="电话" width="140">
+          <template #default="{ row }">{{ row.inScope ? (row.phone ?? '-') : '-' }}</template>
+        </el-table-column>
+        <el-table-column label="负责人" width="120">
+          <template #default="{ row }">{{ row.ownerName ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="公海/池" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.inSea" size="small" type="warning">是</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty
+        v-if="dupSearched && dupHits.length === 0"
+        description="未发现疑似重复"
+        :image-size="48"
+      />
+    </el-card>
   </div>
 </template>

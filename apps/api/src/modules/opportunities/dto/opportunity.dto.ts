@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
 import { Type } from 'class-transformer'
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsInt,
@@ -12,7 +13,9 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator'
+import { LineItemDto } from '../../../common/dto/line-item.dto'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
 export class CreateOpportunityDto {
@@ -57,6 +60,13 @@ export class CreateOpportunityDto {
   @IsObject()
   @IsOptional()
   customData?: Record<string, unknown>
+
+  @ApiPropertyOptional({ type: [LineItemDto], description: '产品明细' })
+  @IsOptional()
+  @IsArray()
+  @Type(() => LineItemDto)
+  @ValidateNested({ each: true })
+  items?: LineItemDto[]
 }
 
 export class UpdateOpportunityDto extends PartialType(CreateOpportunityDto) {}

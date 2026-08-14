@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import {
   isCustomFieldKey,
+  lineAmount,
   type FieldVO,
   type FilterCondition,
+  type LineItemVO,
   type OpportunityStageVO,
   type OpportunityVO,
 } from '@micromatrix/shared'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { listCustomers } from '@/api/customers'
 import { opportunityApi } from '@/api/sales'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
+import LineItemsEditor from '@/components/LineItemsEditor.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -19,6 +23,7 @@ import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const router = useRouter()
 const fieldRefs = useFieldRefs()
 
 const viewMode = ref<'list' | 'kanban'>('list')
@@ -43,6 +48,7 @@ const saving = ref(false)
 const dynamicFormRef = ref<InstanceType<typeof DynamicForm>>()
 const formModel = ref<Record<string, unknown>>({})
 const formCustomerId = ref<string>()
+const lineItems = ref<LineItemVO[]>([])
 const customerOptions = ref<{ id: string; name: string }[]>([])
 
 // 跟进 / 阶段
@@ -98,24 +104,32 @@ function openCreate() {
   editingId.value = null
   formModel.value = {}
   formCustomerId.value = undefined
+  lineItems.value = []
   searchCustomers('')
   dialogVisible.value = true
 }
 
-function openEdit(row: OpportunityVO) {
+async function openEdit(row: OpportunityVO) {
   editingId.value = row.id
   formCustomerId.value = row.customerId
   customerOptions.value = [{ id: row.customerId, name: row.customerName ?? '' }]
-  formModel.value = Object.fromEntries(
-    fields.value
-      .filter((f) => f.type !== 'formula')
-      .map((f) => [
-        f.key,
-        isCustomFieldKey(f.key)
-          ? row.customData[f.key]
-          : (row as unknown as Record<string, unknown>)[f.key],
-      ]),
-  )
+  try {
+    const { data } = await opportunityApi.get(row.id)
+    lineItems.value = (data.items ?? []).map((item) => ({ ...item }))
+    formModel.value = Object.fromEntries(
+      fields.value
+        .filter((f) => f.type !== 'formula')
+        .map((f) => [
+          f.key,
+          isCustomFieldKey(f.key)
+            ? data.customData[f.key]
+            : (data as unknown as Record<string, unknown>)[f.key],
+        ]),
+    )
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    return
+  }
   dialogVisible.value = true
 }
 
@@ -128,7 +142,11 @@ async function handleSave() {
   if (!valid) return
   saving.value = true
   try {
-    const payload: Record<string, unknown> = { customData: {}, customerId: formCustomerId.value }
+    const payload: Record<string, unknown> = {
+      customData: {},
+      customerId: formCustomerId.value,
+      items: lineItems.value.filter((i) => i.productName),
+    }
     for (const [key, value] of Object.entries(formModel.value)) {
       if (value === undefined || value === '') continue
       if (isCustomFieldKey(key)) (payload.customData as Record<string, unknown>)[key] = value
@@ -199,6 +217,20 @@ function openFollow(row: OpportunityVO) {
 function formatAmount(amount: number | null) {
   return amount === null ? '-' : `¥${amount.toLocaleString('zh-CN')}`
 }
+
+function toQuote(row: OpportunityVO) {
+  router.push({ path: '/quotes', query: { fromOpportunity: row.id } })
+}
+
+watch(
+  lineItems,
+  () => {
+    const named = lineItems.value.filter((i) => i.productName)
+    if (named.length === 0) return
+    formModel.value.amount = Math.round(named.reduce((sum, i) => sum + lineAmount(i), 0) * 100) / 100
+  },
+  { deep: true },
+)
 
 onMounted(async () => {
   await Promise.all([loadMeta(), fieldRefs.load()])
@@ -278,7 +310,7 @@ onMounted(async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openFollow(row as OpportunityVO)">跟进</el-button>
             <el-button
@@ -290,6 +322,13 @@ onMounted(async () => {
               推进
             </el-button>
             <el-button link @click="openEdit(row as OpportunityVO)">编辑</el-button>
+            <el-button
+              v-if="auth.hasPerm('quote:create')"
+              link
+              @click="toQuote(row as OpportunityVO)"
+            >
+              转报价
+            </el-button>
             <el-button
               v-if="auth.hasPerm('opportunity:delete')"
               link
@@ -359,7 +398,7 @@ onMounted(async () => {
     <el-dialog
       v-model="dialogVisible"
       :title="editingId ? '编辑商机' : '新建商机'"
-      width="640px"
+      width="860px"
       destroy-on-close
     >
       <el-form label-position="top">
@@ -383,6 +422,8 @@ onMounted(async () => {
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
       />
+      <el-divider content-position="left">产品明细</el-divider>
+      <LineItemsEditor v-model="lineItems" />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>

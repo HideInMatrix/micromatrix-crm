@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { CustomerVO, FieldVO, PaginatedResult } from '@micromatrix/shared'
+import {
+  CustomerRelatedVO,
+  CustomerVO,
+  DuplicateHitVO,
+  FieldVO,
+  PaginatedResult,
+} from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
 import { toCsv } from '../common/csv'
 import { formatForExport } from '../common/export-format'
@@ -10,7 +16,7 @@ import { MetadataService } from '../modules/metadata/metadata.service'
 import { NotificationsService } from '../modules/notifications/notifications.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateCustomerDto } from './dto/create-customer.dto'
-import { QueryCustomersDto } from './dto/query-customers.dto'
+import { CheckDuplicateQueryDto, QueryCustomersDto } from './dto/query-customers.dto'
 import { UpdateCustomerDto } from './dto/update-customer.dto'
 
 type CustomerWithOwner = Prisma.CustomerGetPayload<{
@@ -72,13 +78,242 @@ export class CustomersService {
   async findOne(user: AuthUser, id: string): Promise<CustomerVO> {
     const [customer, fields] = await Promise.all([
       this.prisma.customer.findFirst({
-        where: await this.scopedWhere(user, id),
+        where: await this.accessibleWhere(user, id),
         include: ownerInclude,
       }),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
     if (!customer) throw new NotFoundException('客户不存在或不在你的数据范围内')
     return this.toVO(customer, fields)
+  }
+
+  /** 名称模糊 + 电话精确，命中客户/联系人/线索/商机；非数据范围仅露负责人 */
+  async checkDuplicate(user: AuthUser, query: CheckDuplicateQueryDto): Promise<DuplicateHitVO[]> {
+    const name = query.name?.trim()
+    const phone = query.phone?.trim()
+    if (!name && !phone) throw new BadRequestException('请输入客户名称或电话')
+
+    const [customers, contacts, leads, opportunities] = await Promise.all([
+      this.prisma.customer.findMany({
+        where: {
+          tenantId: user.tenantId,
+          OR: [
+            ...(name ? [{ name: { contains: name, mode: 'insensitive' as const } }] : []),
+            ...(phone ? [{ phone }] : []),
+          ],
+        },
+        include: { owner: { select: { name: true } } },
+        take: 10,
+      }),
+      this.prisma.contact.findMany({
+        where: {
+          tenantId: user.tenantId,
+          OR: [
+            ...(name ? [{ name: { contains: name, mode: 'insensitive' as const } }] : []),
+            ...(phone ? [{ phone }] : []),
+          ],
+        },
+        include: { customer: { select: { id: true, name: true, ownerId: true, inSea: true } } },
+        take: 10,
+      }),
+      this.prisma.lead.findMany({
+        where: {
+          tenantId: user.tenantId,
+          status: { not: 'INVALID' },
+          OR: [
+            ...(name ? [{ name: { contains: name, mode: 'insensitive' as const } }] : []),
+            ...(phone ? [{ phone }] : []),
+          ],
+        },
+        take: 10,
+      }),
+      name
+        ? this.prisma.opportunity.findMany({
+            where: {
+              tenantId: user.tenantId,
+              name: { contains: name, mode: 'insensitive' },
+            },
+            include: { customer: { select: { name: true } } },
+            take: 10,
+          })
+        : Promise.resolve([]),
+    ])
+
+    const customerIds = [
+      ...customers.map((c) => c.id),
+      ...contacts.map((c) => c.customerId),
+    ]
+    const [inScopeCustomers, inScopeLeads, inScopeOpps, ownerMap] = await Promise.all([
+      this.inScopeCustomerIds(user, customerIds),
+      this.inScopeLeadIds(user, leads.map((l) => l.id)),
+      this.inScopeOpportunityIds(user, opportunities.map((o) => o.id)),
+      this.userNames([
+        ...customers.map((c) => c.ownerId),
+        ...contacts.map((c) => c.customer.ownerId),
+        ...leads.map((l) => l.ownerId),
+        ...opportunities.map((o) => o.ownerId),
+      ]),
+    ])
+
+    const hits: DuplicateHitVO[] = []
+    for (const row of customers) {
+      const inScope = inScopeCustomers.has(row.id)
+      hits.push({
+        id: row.id,
+        source: 'customer',
+        name: inScope ? row.name : null,
+        phone: inScope ? row.phone : null,
+        ownerName: row.owner?.name ?? null,
+        inSea: row.inSea,
+        inScope,
+      })
+    }
+    for (const row of contacts) {
+      const inScope = inScopeCustomers.has(row.customerId)
+      hits.push({
+        id: row.id,
+        source: 'contact',
+        name: inScope ? `${row.name}（${row.customer.name}）` : null,
+        phone: inScope ? row.phone : null,
+        ownerName: ownerMap.get(row.customer.ownerId ?? '') ?? null,
+        inSea: row.customer.inSea,
+        inScope,
+      })
+    }
+    for (const row of leads) {
+      const inScope = inScopeLeads.has(row.id)
+      hits.push({
+        id: row.id,
+        source: 'lead',
+        name: inScope ? row.name : null,
+        phone: inScope ? row.phone : null,
+        ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+        inSea: row.inPool,
+        inScope,
+      })
+    }
+    for (const row of opportunities) {
+      const inScope = inScopeOpps.has(row.id)
+      hits.push({
+        id: row.id,
+        source: 'opportunity',
+        name: inScope ? `${row.name}（${row.customer.name}）` : null,
+        phone: null,
+        ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+        inSea: false,
+        inScope,
+      })
+    }
+    return hits.slice(0, 20)
+  }
+
+  async related(user: AuthUser, id: string): Promise<CustomerRelatedVO> {
+    await this.ensureAccessible(user, id)
+    const [contacts, opportunities, contracts, followUps, team] = await Promise.all([
+      this.prisma.contact.findMany({
+        where: { tenantId: user.tenantId, customerId: id },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.opportunity.findMany({
+        where: { tenantId: user.tenantId, customerId: id },
+        include: { stage: true },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.contract.findMany({
+        where: { tenantId: user.tenantId, customerId: id },
+        include: {
+          receivableRecords: { select: { amount: true, approvalStatus: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.followUpRecord.findMany({
+        where: { tenantId: user.tenantId, targetType: 'customer', targetId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.customerTeamMember.findMany({
+        where: { tenantId: user.tenantId, customerId: id },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ])
+
+    const [ownerMap, attachMap] = await Promise.all([
+      this.userNames([
+        ...opportunities.map((o) => o.ownerId),
+        ...team.map((m) => m.userId),
+      ]),
+      this.attachmentMap(
+        user.tenantId,
+        'follow-up',
+        followUps.map((f) => f.id),
+      ),
+    ])
+
+    const contractRows = contracts.map((c) => {
+      const paidAmount =
+        Math.round(
+          c.receivableRecords
+            .filter((r) => r.approvalStatus === 'NONE' || r.approvalStatus === 'APPROVED')
+            .reduce((sum, r) => sum + Number(r.amount), 0) * 100,
+        ) / 100
+      return {
+        id: c.id,
+        name: c.name,
+        amount: Number(c.amount),
+        paidAmount,
+        status: c.status,
+        createdAt: c.createdAt.toISOString(),
+      }
+    })
+
+    return {
+      stats: {
+        opportunityCount: opportunities.length,
+        opportunityAmount:
+          Math.round(opportunities.reduce((sum, o) => sum + Number(o.amount ?? 0), 0) * 100) / 100,
+        contractCount: contracts.length,
+        contractAmount:
+          Math.round(contractRows.reduce((sum, c) => sum + c.amount, 0) * 100) / 100,
+        paidAmount: Math.round(contractRows.reduce((sum, c) => sum + c.paidAmount, 0) * 100) / 100,
+      },
+      contacts: contacts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        position: c.position,
+        phone: c.phone,
+        email: c.email,
+      })),
+      opportunities: opportunities.map((o) => ({
+        id: o.id,
+        name: o.name,
+        amount: o.amount ? Number(o.amount) : null,
+        stageName: o.stage.name,
+        ownerName: o.ownerId ? (ownerMap.get(o.ownerId) ?? null) : null,
+        createdAt: o.createdAt.toISOString(),
+      })),
+      contracts: contractRows,
+      followUps: followUps.map((r) => ({
+        id: r.id,
+        targetType: r.targetType as 'customer',
+        targetId: r.targetId,
+        type: r.type,
+        content: r.content,
+        nextFollowAt: r.nextFollowAt?.toISOString() ?? null,
+        ownerId: r.ownerId,
+        ownerName: r.ownerName,
+        createdAt: r.createdAt.toISOString(),
+        attachments: attachMap.get(r.id) ?? [],
+      })),
+      team: team.map((m) => ({
+        id: m.id,
+        userId: m.userId,
+        userName: ownerMap.get(m.userId) ?? '未知',
+        role: m.role,
+        createdAt: m.createdAt.toISOString(),
+      })),
+    }
   }
 
   async create(user: AuthUser, dto: CreateCustomerDto): Promise<CustomerVO> {
@@ -225,13 +460,115 @@ export class CustomersService {
     return { id: memberId }
   }
 
-  private async userNames(ids: string[]): Promise<Map<string, string>> {
-    if (ids.length === 0) return new Map()
+  private async userNames(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.filter((v): v is string => !!v))]
+    if (unique.length === 0) return new Map()
     const users = await this.prisma.user.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: unique } },
       select: { id: true, name: true },
     })
     return new Map(users.map((u) => [u.id, u.name]))
+  }
+
+  private async findExactCustomerDuplicate(user: AuthUser, name: string, phone?: string) {
+    return this.prisma.customer.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        OR: [
+          { name: { equals: name, mode: 'insensitive' } },
+          ...(phone ? [{ phone }] : []),
+        ],
+      },
+      select: { id: true, name: true },
+    })
+  }
+
+  private async inScopeCustomerIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
+    const unique = [...new Set(ids)]
+    if (unique.length === 0) return new Set()
+    const scope = await this.dataScope.scopeFilter(user)
+    const rows = await this.prisma.customer.findMany({
+      where: {
+        id: { in: unique },
+        tenantId: user.tenantId,
+        OR: [{ inSea: true }, scope as Prisma.CustomerWhereInput],
+      },
+      select: { id: true },
+    })
+    return new Set(rows.map((r) => r.id))
+  }
+
+  private async inScopeLeadIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
+    const unique = [...new Set(ids)]
+    if (unique.length === 0) return new Set()
+    const scope = await this.dataScope.scopeFilter(user)
+    const rows = await this.prisma.lead.findMany({
+      where: {
+        id: { in: unique },
+        tenantId: user.tenantId,
+        OR: [{ inPool: true }, scope as Prisma.LeadWhereInput],
+      },
+      select: { id: true },
+    })
+    return new Set(rows.map((r) => r.id))
+  }
+
+  private async inScopeOpportunityIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
+    const unique = [...new Set(ids)]
+    if (unique.length === 0) return new Set()
+    const scope = await this.dataScope.scopeFilter(user)
+    const rows = await this.prisma.opportunity.findMany({
+      where: {
+        id: { in: unique },
+        tenantId: user.tenantId,
+        AND: [scope as Prisma.OpportunityWhereInput],
+      },
+      select: { id: true },
+    })
+    return new Set(rows.map((r) => r.id))
+  }
+
+  private async attachmentMap(tenantId: string, targetType: string, targetIds: string[]) {
+    const map = new Map<string, { id: string; name: string; size: number; mime: string | null; targetType: string | null; targetId: string | null; uploaderId: string | null; createdAt: string }[]>()
+    if (targetIds.length === 0) return map
+    const rows = await this.prisma.attachment.findMany({
+      where: { tenantId, targetType, targetId: { in: targetIds } },
+      orderBy: { createdAt: 'asc' },
+    })
+    for (const row of rows) {
+      if (!row.targetId) continue
+      const list = map.get(row.targetId) ?? []
+      list.push({
+        id: row.id,
+        name: row.name,
+        size: row.size,
+        mime: row.mime,
+        targetType: row.targetType,
+        targetId: row.targetId,
+        uploaderId: row.uploaderId,
+        createdAt: row.createdAt.toISOString(),
+      })
+      map.set(row.targetId, list)
+    }
+    return map
+  }
+
+  private async accessibleWhere(user: AuthUser, id: string): Promise<Prisma.CustomerWhereInput> {
+    const scope = await this.dataScope.scopeFilter(user)
+    return {
+      id,
+      tenantId: user.tenantId,
+      OR: [{ inSea: true }, scope as Prisma.CustomerWhereInput],
+    }
+  }
+
+  private async ensureAccessible(user: AuthUser, id: string) {
+    const found = await this.prisma.customer.findFirst({
+      where: await this.accessibleWhere(user, id),
+      select: { id: true, name: true },
+    })
+    if (!found) throw new NotFoundException('客户不存在或不在你的数据范围内')
+    return found
   }
 
   /** 导出 CSV（按字段配置的列表列） */
@@ -257,10 +594,15 @@ export class CustomersService {
     for (const [index, row] of rows.entries()) {
       try {
         const { customData, ...rest } = row as { customData?: Record<string, unknown> } & Record<string, unknown>
+        const name = String(rest.name ?? '').trim()
+        const phone = rest.phone ? String(rest.phone).trim() : undefined
+        if (!name) throw new BadRequestException('名称为空')
+        const duplicate = await this.findExactCustomerDuplicate(user, name, phone)
+        if (duplicate) throw new BadRequestException(`与已有客户「${duplicate.name}」重复`)
         await this.create(user, {
-          name: String(rest.name ?? ''),
+          name,
           industry: rest.industry ? String(rest.industry) : undefined,
-          phone: rest.phone ? String(rest.phone) : undefined,
+          phone,
           email: rest.email ? String(rest.email) : undefined,
           remark: rest.remark ? String(rest.remark) : undefined,
           customData,

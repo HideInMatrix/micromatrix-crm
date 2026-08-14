@@ -3,6 +3,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [gap-analysis.md](./gap-analysis.md) | 与 CordysCRM 的功能对照表、差距清单（含优先级） |
+| [alignment-log.md](./alignment-log.md) | 对齐探测记录：登录方法、默认表单字段、列表/详情 Tab/系统设置（至 v1.8.1 第 3 轮） |
 | [roadmap.md](./roadmap.md) | 补齐功能的分期实施计划与验收标准 |
 | [architecture.md](./architecture.md) | 架构设计与关键技术决策记录（含踩坑记录） |
 | [conventions.md](./conventions.md) | 开发约定：新增业务对象的标准接入手册 |

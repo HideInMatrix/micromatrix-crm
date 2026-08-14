@@ -81,6 +81,12 @@ export class OpportunitiesController {
     return this.opportunitiesService.stageLogs(user, id)
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: '商机详情（含产品明细）' })
+  findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.opportunitiesService.findOne(user, id)
+  }
+
   @Post()
   @RequirePermissions('opportunity:create')
   @LogOperation('opportunity', 'create')

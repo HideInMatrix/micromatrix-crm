@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AdvancedFilter: typeof import('./../components/form-engine/AdvancedFilter.vue')['default']
+    AttachmentUploader: typeof import('./../components/AttachmentUploader.vue')['default']
     ContractDetailDrawer: typeof import('./../components/ContractDetailDrawer.vue')['default']
     CsvImportDialog: typeof import('./../components/CsvImportDialog.vue')['default']
     CustomerDetailDrawer: typeof import('./../components/CustomerDetailDrawer.vue')['default']
@@ -67,6 +68,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElTree: typeof import('element-plus/es')['ElTree']
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
+    ElUpload: typeof import('element-plus/es')['ElUpload']
     FollowUpDrawer: typeof import('./../components/FollowUpDrawer.vue')['default']
     LineItemsEditor: typeof import('./../components/LineItemsEditor.vue')['default']
     MemberSelectDialog: typeof import('./../components/MemberSelectDialog.vue')['default']

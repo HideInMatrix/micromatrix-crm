@@ -61,6 +61,7 @@ export interface OpportunityListParams extends PageQuery {
 export const opportunityApi = {
   list: (params: OpportunityListParams) =>
     http.get<PaginatedResult<OpportunityVO>>('/opportunities', { params }),
+  get: (id: string) => http.get<OpportunityVO>(`/opportunities/${id}`),
   kanban: () =>
     http.get<{ stages: OpportunityStageVO[]; items: Record<string, OpportunityVO[]> }>(
       '/opportunities/kanban',

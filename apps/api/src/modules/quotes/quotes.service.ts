@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { FieldVO, PaginatedResult, QuoteVO, lineAmount } from '@micromatrix/shared'
+import { FieldVO, PaginatedResult, QuoteVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { generateBizCode } from '../../common/code-gen'
-import { buildFilterClauses, parseFilters } from '../../common/filter-builder'
 import { LineItemDto } from '../../common/dto/line-item.dto'
+import { buildFilterClauses, parseFilters } from '../../common/filter-builder'
+import { normalizeLineItems } from '../../common/line-items'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -79,8 +80,9 @@ export class QuotesService {
       requireAll: true,
     })
     await this.ensureCustomer(user, dto.customerId)
+    const sourceItems = await this.resolveItems(user, dto.customerId, dto.opportunityId, items)
     const owner = await this.resolveOwner(user, ownerId)
-    const normalized = this.normalizeItems(items)
+    const normalized = normalizeLineItems(sourceItems)
 
     const quote = await this.prisma.quote.create({
       data: {
@@ -123,7 +125,7 @@ export class QuotesService {
       data.deptId = owner.deptId
     }
     if (items) {
-      const normalized = this.normalizeItems(items)
+      const normalized = normalizeLineItems(items)
       data.totalAmount = normalized.total
       data.items = { deleteMany: {}, create: normalized.rows }
     }
@@ -158,22 +160,29 @@ export class QuotesService {
     return { id, name: quote.name }
   }
 
-  private normalizeItems(items: LineItemDto[]) {
-    const rows = items.map((item, index) => {
-      const discount = item.discount ?? 100
-      return {
-        productId: item.productId,
-        productName: item.productName,
-        unit: item.unit,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        discount,
-        amount: lineAmount({ quantity: item.quantity, unitPrice: item.unitPrice, discount }),
-        sort: index,
-      }
+  private async resolveItems(
+    user: AuthUser,
+    customerId: string,
+    opportunityId: string | undefined,
+    items: LineItemDto[] | undefined,
+  ): Promise<LineItemDto[]> {
+    if (items && items.length > 0) return items
+    if (!opportunityId) throw new BadRequestException('至少添加一行明细')
+    const opportunity = await this.prisma.opportunity.findFirst({
+      where: { id: opportunityId, tenantId: user.tenantId },
+      include: { items: { orderBy: { sort: 'asc' } } },
     })
-    const total = Math.round(rows.reduce((sum, r) => sum + r.amount, 0) * 100) / 100
-    return { rows, total }
+    if (!opportunity) throw new BadRequestException('关联商机不存在')
+    if (opportunity.customerId !== customerId) throw new BadRequestException('商机与客户不匹配')
+    if (opportunity.items.length === 0) throw new BadRequestException('该商机没有产品明细，请手动添加')
+    return opportunity.items.map((item) => ({
+      productId: item.productId ?? undefined,
+      productName: item.productName,
+      unit: item.unit ?? undefined,
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+      discount: Number(item.discount),
+    }))
   }
 
   private async ensureCustomer(user: AuthUser, customerId: string) {

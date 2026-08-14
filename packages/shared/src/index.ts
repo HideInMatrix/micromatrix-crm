@@ -6,6 +6,8 @@ export * from './permissions'
 export * from './sales'
 export * from './system'
 
+import type { FollowUpVO, TeamMemberVO } from './sales'
+
 // ============ 通用分页 ============
 
 export interface PageQuery {
@@ -70,4 +72,59 @@ export interface CustomerVO {
   customData: Record<string, unknown>
   createdAt: string
   updatedAt: string
+}
+
+export type DuplicateSource = 'customer' | 'contact' | 'lead' | 'opportunity'
+
+export const DUPLICATE_SOURCE_LABELS: Record<DuplicateSource, string> = {
+  customer: '客户',
+  contact: '联系人',
+  lead: '线索',
+  opportunity: '商机',
+}
+
+export interface DuplicateHitVO {
+  id: string
+  source: DuplicateSource
+  /** 不在数据范围内时为 null */
+  name: string | null
+  phone: string | null
+  ownerName: string | null
+  inSea: boolean
+  inScope: boolean
+}
+
+export interface CustomerRelatedVO {
+  stats: {
+    opportunityCount: number
+    opportunityAmount: number
+    contractCount: number
+    contractAmount: number
+    paidAmount: number
+  }
+  contacts: {
+    id: string
+    name: string
+    position: string | null
+    phone: string | null
+    email: string | null
+  }[]
+  opportunities: {
+    id: string
+    name: string
+    amount: number | null
+    stageName: string
+    ownerName: string | null
+    createdAt: string
+  }[]
+  contracts: {
+    id: string
+    name: string
+    amount: number
+    paidAmount: number
+    status: string
+    createdAt: string
+  }[]
+  followUps: FollowUpVO[]
+  team: TeamMemberVO[]
 }

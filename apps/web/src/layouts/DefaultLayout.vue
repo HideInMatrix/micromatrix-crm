@@ -11,7 +11,9 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const isDark = useDark()
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() =>
+  route.path.startsWith('/customers') ? '/customers' : route.path,
+)
 
 /** 按当前用户权限过滤菜单 */
 const visibleMenus = computed<MenuItem[]>(() =>

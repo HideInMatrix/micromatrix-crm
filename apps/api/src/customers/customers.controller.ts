@@ -7,7 +7,7 @@ import { LogOperation } from '../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator'
 import { CustomersService } from './customers.service'
 import { CreateCustomerDto } from './dto/create-customer.dto'
-import { QueryCustomersDto } from './dto/query-customers.dto'
+import { CheckDuplicateQueryDto, QueryCustomersDto } from './dto/query-customers.dto'
 import { UpdateCustomerDto } from './dto/update-customer.dto'
 
 @ApiTags('客户')
@@ -43,6 +43,18 @@ export class CustomersController {
   @ApiOperation({ summary: '批量导入客户（结构化行）' })
   bulkImport(@CurrentUser() user: AuthUser, @Body() body: { rows: Record<string, unknown>[] }) {
     return this.customersService.bulkImport(user, body.rows ?? [])
+  }
+
+  @Get('check-duplicate')
+  @ApiOperation({ summary: '客户查重（名称模糊 + 电话精确）' })
+  checkDuplicate(@CurrentUser() user: AuthUser, @Query() query: CheckDuplicateQueryDto) {
+    return this.customersService.checkDuplicate(user, query)
+  }
+
+  @Get(':id/related')
+  @ApiOperation({ summary: '客户 360 关联数据' })
+  related(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.customersService.related(user, id)
   }
 
   @Get(':id')

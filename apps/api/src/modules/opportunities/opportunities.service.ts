@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import {
   FieldVO,
+  LineItemVO,
   OpportunityStageVO,
   OpportunityVO,
   PaginatedResult,
@@ -8,6 +9,7 @@ import {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { buildFilterClauses, parseFilters } from '../../common/filter-builder'
+import { normalizeLineItems } from '../../common/line-items'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { Opportunity, OpportunityStage, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -27,9 +29,20 @@ const MODULE = 'opportunity'
 type OpportunityWithRefs = Opportunity & {
   customer: { name: string }
   stage: OpportunityStage
+  items?: {
+    id: string
+    productId: string | null
+    productName: string
+    unit: string | null
+    quantity: unknown
+    unitPrice: unknown
+    discount: unknown
+    amount: unknown
+  }[]
 }
 
 const refInclude = { customer: { select: { name: true } }, stage: true } as const
+const detailInclude = { ...refInclude, items: { orderBy: { sort: 'asc' as const } } }
 
 const DEFAULT_STAGES = [
   { name: '初步接触', probability: 10, sort: 0 },
@@ -148,6 +161,16 @@ export class OpportunitiesService {
     return { items: items.map((o) => this.toVO(o, fields, ownerMap)), total, page, pageSize }
   }
 
+  async findOne(user: AuthUser, id: string): Promise<OpportunityVO> {
+    const scope = await this.dataScope.scopeFilter(user)
+    const opportunity = await this.prisma.opportunity.findFirst({
+      where: { id, tenantId: user.tenantId, AND: [scope as Prisma.OpportunityWhereInput] },
+      include: detailInclude,
+    })
+    if (!opportunity) throw new NotFoundException('商机不存在或不在你的数据范围内')
+    return this.toSingleVO(user, opportunity)
+  }
+
   /** 看板：按阶段分组（含各阶段数量与金额合计） */
   async kanban(user: AuthUser): Promise<{
     stages: OpportunityStageVO[]
@@ -180,7 +203,7 @@ export class OpportunitiesService {
   }
 
   async create(user: AuthUser, dto: CreateOpportunityDto): Promise<OpportunityVO> {
-    const { customData, ownerId, stageId, customerId, expectedCloseAt, ...rest } = dto
+    const { customData, ownerId, stageId, customerId, expectedCloseAt, items, amount, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: true,
     })
@@ -196,9 +219,11 @@ export class OpportunitiesService {
     if (!targetStage) throw new BadRequestException('商机阶段无效')
 
     const owner = await this.resolveOwner(user, ownerId)
+    const normalized = items?.length ? normalizeLineItems(items) : null
     const opportunity = await this.prisma.opportunity.create({
       data: {
         ...rest,
+        amount: amount ?? normalized?.total ?? null,
         tenantId: user.tenantId,
         customerId,
         stageId: targetStage.id,
@@ -208,8 +233,9 @@ export class OpportunitiesService {
         customData: validated as Prisma.InputJsonValue,
         wonAt: targetStage.isWon ? new Date() : null,
         lostAt: targetStage.isLost ? new Date() : null,
+        items: normalized ? { create: normalized.rows } : undefined,
       },
-      include: refInclude,
+      include: detailInclude,
     })
     await this.prisma.opportunityStageLog.create({
       data: {
@@ -224,7 +250,8 @@ export class OpportunitiesService {
 
   async update(user: AuthUser, id: string, dto: UpdateOpportunityDto): Promise<OpportunityVO> {
     const existing = await this.ensureInScope(user, id)
-    const { customData, ownerId, stageId: _ignored, customerId, expectedCloseAt, ...rest } = dto
+    const { customData, ownerId, stageId: _ignored, customerId, expectedCloseAt, items, amount, ...rest } =
+      dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
     })
@@ -251,11 +278,17 @@ export class OpportunitiesService {
       data.ownerId = owner.id
       data.deptId = owner.deptId
     }
+    if (items !== undefined) {
+      const normalized = normalizeLineItems(items)
+      data.items = { deleteMany: {}, create: normalized.rows }
+      if (amount === undefined) data.amount = normalized.total
+    }
+    if (amount !== undefined) data.amount = amount
 
     const opportunity = await this.prisma.opportunity.update({
       where: { id },
       data,
-      include: refInclude,
+      include: detailInclude,
     })
     return this.toSingleVO(user, opportunity)
   }
@@ -400,10 +433,24 @@ export class OpportunitiesService {
       ownerName: opportunity.ownerId ? (ownerMap.get(opportunity.ownerId) ?? null) : null,
       deptId: opportunity.deptId,
       customData: { ...customData, ...formulas },
+      items: opportunity.items?.map((item) => this.itemToVO(item)),
       wonAt: opportunity.wonAt?.toISOString() ?? null,
       lostAt: opportunity.lostAt?.toISOString() ?? null,
       createdAt: opportunity.createdAt.toISOString(),
       updatedAt: opportunity.updatedAt.toISOString(),
+    }
+  }
+
+  private itemToVO(item: NonNullable<OpportunityWithRefs['items']>[number]): LineItemVO {
+    return {
+      id: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      unit: item.unit,
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+      discount: Number(item.discount),
+      amount: Number(item.amount),
     }
   }
 

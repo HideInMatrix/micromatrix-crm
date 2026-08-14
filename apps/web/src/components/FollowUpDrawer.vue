@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { FOLLOW_UP_TYPES, type FollowUpVO } from '@micromatrix/shared'
+import type { UploadFile, UploadRawFile } from 'element-plus'
 import { reactive, ref, watch } from 'vue'
+import { attachmentApi } from '@/api/attachments'
 import { extractErrorMessage } from '@/api/http'
 import { followUpApi } from '@/api/sales'
 
@@ -17,9 +19,14 @@ const records = ref<FollowUpVO[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const form = reactive({ type: '电话', content: '', nextFollowAt: '' })
+const pendingFiles = ref<UploadRawFile[]>([])
+const uploadRef = ref<{ clearFiles: () => void } | null>(null)
 
 watch(visible, (open) => {
-  if (open && props.targetId) loadRecords()
+  if (open && props.targetId) {
+    pendingFiles.value = []
+    loadRecords()
+  }
 })
 
 async function loadRecords() {
@@ -35,6 +42,10 @@ async function loadRecords() {
   }
 }
 
+function handlePendingChange(_file: UploadFile, fileList: UploadFile[]) {
+  pendingFiles.value = fileList.map((f) => f.raw).filter(Boolean) as UploadRawFile[]
+}
+
 async function handleSubmit() {
   if (!props.targetId) return
   if (!form.content.trim()) {
@@ -43,15 +54,20 @@ async function handleSubmit() {
   }
   saving.value = true
   try {
-    await followUpApi.create({
+    const { data: created } = await followUpApi.create({
       targetType: props.targetType,
       targetId: props.targetId,
       type: form.type,
       content: form.content.trim(),
       nextFollowAt: form.nextFollowAt || undefined,
     })
+    for (const file of pendingFiles.value) {
+      await attachmentApi.upload(file, 'follow-up', created.id)
+    }
     form.content = ''
     form.nextFollowAt = ''
+    pendingFiles.value = []
+    uploadRef.value?.clearFiles()
     ElMessage.success('跟进已记录')
     loadRecords()
     emit('followed')
@@ -59,6 +75,14 @@ async function handleSubmit() {
     ElMessage.error(extractErrorMessage(error))
   } finally {
     saving.value = false
+  }
+}
+
+async function handleDownload(id: string, name: string) {
+  try {
+    await attachmentApi.download(id, name)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
   }
 }
 </script>
@@ -79,6 +103,16 @@ async function handleSubmit() {
         />
       </div>
       <el-input v-model="form.content" type="textarea" :rows="3" placeholder="跟进内容..." />
+      <el-upload
+        ref="uploadRef"
+        class="mt-2"
+        :auto-upload="false"
+        multiple
+        :on-change="handlePendingChange"
+        accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+      >
+        <el-button size="small">添加附件</el-button>
+      </el-upload>
       <div class="flex justify-end mt-2">
         <el-button type="primary" size="small" :loading="saving" @click="handleSubmit">
           记录跟进
@@ -100,6 +134,18 @@ async function handleSubmit() {
         </div>
         <div v-if="record.nextFollowAt" class="text-xs text-[var(--el-text-color-secondary)] mt-1">
           下次跟进：{{ new Date(record.nextFollowAt).toLocaleString() }}
+        </div>
+        <div v-if="record.attachments?.length" class="mt-1">
+          <el-button
+            v-for="file in record.attachments"
+            :key="file.id"
+            link
+            type="primary"
+            size="small"
+            @click="handleDownload(file.id, file.name)"
+          >
+            {{ file.name }}
+          </el-button>
         </div>
       </el-timeline-item>
     </el-timeline>

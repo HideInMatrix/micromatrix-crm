@@ -14,6 +14,7 @@ import {
 import { reactive, ref, watch } from 'vue'
 import { contractApi } from '@/api/deal'
 import { extractErrorMessage } from '@/api/http'
+import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ contractId: string | null }>()
@@ -232,6 +233,10 @@ const canManageInvoice = () => auth.hasPerm('invoice:manage')
               <template #default="{ row }">¥{{ row.amount.toLocaleString('zh-CN') }}</template>
             </el-table-column>
           </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="附件" name="attachments">
+          <AttachmentUploader target-type="contract" :target-id="contractId" />
         </el-tab-pane>
 
         <el-tab-pane label="回款计划" name="plans">

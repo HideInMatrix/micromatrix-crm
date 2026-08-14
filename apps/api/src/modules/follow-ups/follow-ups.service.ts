@@ -3,11 +3,15 @@ import { FollowUpVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { FollowUpRecord } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { AttachmentsService } from '../attachments/attachments.service'
 import { CreateFollowUpDto, QueryFollowUpsDto } from './dto/follow-up.dto'
 
 @Injectable()
 export class FollowUpsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly attachments: AttachmentsService,
+  ) {}
 
   async list(user: AuthUser, query: QueryFollowUpsDto): Promise<FollowUpVO[]> {
     const records = await this.prisma.followUpRecord.findMany({
@@ -15,7 +19,12 @@ export class FollowUpsService {
       orderBy: { createdAt: 'desc' },
       take: 100,
     })
-    return records.map((r) => this.toVO(r))
+    const attachMap = await this.attachments.listByTargets(
+      user.tenantId,
+      'follow-up',
+      records.map((r) => r.id),
+    )
+    return records.map((r) => this.toVO(r, attachMap.get(r.id)))
   }
 
   async create(user: AuthUser, dto: CreateFollowUpDto): Promise<FollowUpVO> {
@@ -54,7 +63,7 @@ export class FollowUpsService {
     }
   }
 
-  private toVO(record: FollowUpRecord): FollowUpVO {
+  private toVO(record: FollowUpRecord, attachments?: FollowUpVO['attachments']): FollowUpVO {
     return {
       id: record.id,
       targetType: record.targetType as FollowUpVO['targetType'],
@@ -65,6 +74,7 @@ export class FollowUpsService {
       ownerId: record.ownerId,
       ownerName: record.ownerName,
       createdAt: record.createdAt.toISOString(),
+      attachments: attachments ?? [],
     }
   }
 }

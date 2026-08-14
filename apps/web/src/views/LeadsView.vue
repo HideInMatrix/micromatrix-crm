@@ -7,6 +7,7 @@ import {
   type LeadVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { checkDuplicate } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi } from '@/api/sales'
@@ -18,6 +19,7 @@ import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
+import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
@@ -241,6 +243,12 @@ function openConvert(row: LeadVO) {
 async function handleConvert() {
   if (!convertTarget.value) return
   try {
+    const { data: hits } = await checkDuplicate({
+      name: convertTarget.value.name,
+      phone: convertTarget.value.phone ?? undefined,
+    })
+    const proceed = await confirmIfDuplicates(hits, '转化')
+    if (!proceed) return
     const result = await leadApi.convert(convertTarget.value.id, {
       createContact: convertForm.createContact,
       opportunity: convertForm.withOpportunity

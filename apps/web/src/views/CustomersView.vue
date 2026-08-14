@@ -6,7 +6,9 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
+  checkDuplicate,
   createCustomer,
   exportCustomersCsv,
   importCustomers,
@@ -26,8 +28,10 @@ import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
+import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
+const router = useRouter()
 const fieldRefs = useFieldRefs()
 
 const activeTab = ref<'mine' | 'sea'>('mine')
@@ -133,6 +137,17 @@ async function handleSave() {
   saving.value = true
   try {
     const payload = modelToPayload(formModel.value)
+    if (!editingId.value) {
+      const { data: hits } = await checkDuplicate({
+        name: String(payload.name ?? ''),
+        phone: payload.phone ? String(payload.phone) : undefined,
+      })
+      const proceed = await confirmIfDuplicates(hits, '创建')
+      if (!proceed) {
+        saving.value = false
+        return
+      }
+    }
     if (editingId.value) {
       await updateCustomer(editingId.value, payload)
       ElMessage.success('客户已更新')
@@ -199,9 +214,13 @@ async function handleAssignConfirm(userId: string) {
   }
 }
 
-function openDetail(row: CustomerVO) {
+function openPreview(row: CustomerVO) {
   detailTarget.value = row
   detailVisible.value = true
+}
+
+function openDetail(row: CustomerVO) {
+  router.push(`/customers/${row.id}`)
 }
 
 const importVisible = ref(false)
@@ -318,7 +337,8 @@ onMounted(async () => {
             >
               分配
             </el-button>
-            <el-button link @click="openDetail(row as CustomerVO)">详情</el-button>
+            <el-button link @click="openPreview(row as CustomerVO)">预览</el-button>
+            <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>
           </template>
           <template v-else>
             <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>

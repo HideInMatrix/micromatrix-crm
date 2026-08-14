@@ -51,7 +51,7 @@ erDiagram
 | operation_logs / login_logs | 审计；操作日志由拦截器按 @LogOperation 元数据写入 |
 | notifications | 站内信；readAt 未读判定；type+link 驱动前端跳转 |
 | system_settings | 租户级 KV（企业名称/公告等） |
-| attachments | 附件挂载（targetType+targetId）；**上传实现待补**（roadmap P0） |
+| attachments | 附件挂载（targetType+targetId）；本地磁盘上传已落地（roadmap P0） |
 
 ### 元数据引擎
 
@@ -69,7 +69,7 @@ erDiagram
 | customer_team_members | 协作团队 `@@unique([customerId, userId])` |
 | follow_up_records | 多态跟进（targetType: lead/customer/opportunity/contract）；写入时回填目标 lastFollowedAt |
 | opportunity_stages | 可配置阶段；isWon/isLost 系统结果阶段不可删；probability 赢率 |
-| opportunities | stageId + wonAt/lostAt/lostReason；金额 Decimal(14,2) |
+| opportunities | stageId + wonAt/lostAt/lostReason；金额 Decimal(14,2)；`opportunity_items` 产品明细（级联删除） |
 | pool_rules | 每租户每模块一条（lead/customer）；recycleDays/notifyDays 驱动凌晨回收 cron |
 
 ### 交易链路

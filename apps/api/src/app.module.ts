@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule'
 import { AuthModule } from './auth/auth.module'
 import { CommonModule } from './common/common.module'
 import { ApprovalsModule } from './modules/approvals/approvals.module'
+import { AttachmentsModule } from './modules/attachments/attachments.module'
 import { BiddingModule } from './modules/bidding/bidding.module'
 import { AuthGuard } from './common/guards/auth.guard'
 import { OperationLogInterceptor } from './common/interceptors/operation-log.interceptor'
@@ -43,6 +44,7 @@ import { PrismaModule } from './prisma/prisma.module'
     ContactsModule,
     LeadsModule,
     FollowUpsModule,
+    AttachmentsModule,
     OpportunitiesModule,
     ProductsModule,
     QuotesModule,
