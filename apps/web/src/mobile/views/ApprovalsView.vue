@@ -6,7 +6,7 @@ import {
 } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { ref } from 'vue'
-import { approveTask, myApplications, myPendingApprovals, rejectTask } from '@/api'
+import { approveTask, myApplications, myPendingApprovals, rejectTask } from '@/mobile/api'
 import { extractErrorMessage } from '@/api/http'
 
 const activeTab = ref<'pending' | 'mine'>('pending')

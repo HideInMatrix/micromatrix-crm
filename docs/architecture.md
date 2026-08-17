@@ -5,8 +5,11 @@
 ```mermaid
 flowchart LR
   subgraph clients [前端]
-    Web[Web 管理端<br/>Vue3 + Element Plus]
-    Mobile[移动端 H5<br/>Vue3 + Vant]
+    Web[apps/web 单一前端<br/>Vue3 + Vite]
+    PC[PC 页面<br/>Element Plus]
+    Mobile[Mobile 页面<br/>Vant]
+    Web --> PC
+    Web --> Mobile
   end
   subgraph server [后端 NestJS]
     Guard[AuthGuard<br/>JWT + 权限码校验]
@@ -20,7 +23,7 @@ flowchart LR
   DB[(PostgreSQL 18<br/>Prisma 7)]
   Redis[(Redis<br/>预留队列/缓存)]
 
-  Web -->|/api 代理| Guard
+  PC -->|/api 代理| Guard
   Mobile -->|/api 代理| Guard
   Guard --> Biz
   Biz --> Scope
@@ -32,7 +35,9 @@ flowchart LR
   Cron --> Notify
 ```
 
-monorepo：`apps/api`（NestJS CJS）、`apps/web`、`apps/mobile`（Vite ESM）、`packages/shared`（三端共享类型/权限树/公式求值器）。
+monorepo：`apps/api`（NestJS CJS）、`apps/web`（单一 Vite ESM 前端，内部同时承载 PC + Mobile）、`packages/shared`（前后端共享类型/权限树/公式求值器）。
+
+前端运行时不再维护两个独立应用。`apps/web/src/router/index.ts` 在根路由按当前 viewport 选择布局与页面：桌面宽度加载 `src/views + DefaultLayout`，移动宽度加载 `src/mobile/views + mobile/TabbarLayout`。两端共用同一套 Pinia、JWT token、HTTP 拦截器、Vite 代理与构建产物；Chrome DevTools 切换到手机设备模式后刷新即可进入 Mobile 页面，不设置 `?client=` 一类调试路由参数。
 
 ## CordysCRM 语义迁移架构
 
@@ -135,8 +140,8 @@ flowchart LR
 | Prisma 生成代码被 Node 误判 ESM | CJS 工程必须在生成器声明 `moduleFormat = "cjs"`，否则生成代码含 `import.meta` 触发 Node 语法检测崩溃 |
 | TypeScript 版本 | npm latest 已是 TS7（原生编译器），typescript-eslint 等生态支持上限 <6.1，全仓固定 `~6.0.x`；TS6 移除 `baseUrl`、`moduleResolution: node10`，需用 NodeNext/Bundler |
 | nest build 静默失败 | 与 TS6 组合下出现清空 dist 却不发射的情况，api 构建改为原生 `tsc -p tsconfig.build.json`，dev 用 `tsc -w` + `node --watch` |
-| 共享包 CJS 在 Vite dev 白屏 | dev 模式对 workspace 软链包不做 CJS 预构建，浏览器按 ESM 解析命名导出失败；解法：web/mobile 的 Vite alias 直接指向 `packages/shared/src/index.ts`（源码引用，附带热更新），API 继续用 CJS 产物 |
-| Vant 桌面调试 | 引入 `@vant/touch-emulator`；Element Plus 专属指令（v-loading）不可用于 mobile 工程 |
+| 共享包 CJS 在 Vite dev 白屏 | dev 模式对 workspace 软链包不做 CJS 预构建，浏览器按 ESM 解析命名导出失败；解法：`apps/web` 的 Vite alias 直接指向 `packages/shared/src/index.ts`（源码引用，附带热更新），API 继续用 CJS 产物 |
+| PC/Mobile 单工程 | `apps/web` 同时注册 Element Plus Resolver 与 Vant Resolver；移动 viewport 启动时再加载 `@vant/touch-emulator`，避免桌面 PC 页面无意义地启用触摸模拟 |
 | npm 网络 | 项目级 `.npmrc` 指向 npmmirror 镜像源 |
 
 ## 安全基线

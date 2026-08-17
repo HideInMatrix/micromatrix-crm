@@ -2,7 +2,7 @@
 import { FOLLOW_UP_TYPES, type FollowUpVO } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { reactive, ref, watch } from 'vue'
-import { createFollowUp, listFollowUps } from '@/api'
+import { createFollowUp, listFollowUps } from '@/mobile/api'
 import { extractErrorMessage } from '@/api/http'
 
 const props = defineProps<{

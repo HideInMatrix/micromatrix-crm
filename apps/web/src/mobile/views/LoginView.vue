@@ -3,11 +3,11 @@ import { showSuccessToast, showFailToast } from 'vant'
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
-import { login } from '@/api'
-import { setTokens } from '@/utils/token-storage'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
+const auth = useAuthStore()
 
 const loading = ref(false)
 const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
@@ -15,8 +15,7 @@ const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
 async function handleSubmit() {
   loading.value = true
   try {
-    const { data } = await login(form)
-    setTokens(data.accessToken, data.refreshToken)
+    await auth.login(form)
     showSuccessToast('登录成功')
     router.push((route.query.redirect as string) ?? '/')
   } catch (error) {

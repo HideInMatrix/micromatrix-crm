@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { getClientMode, isMobileClient, type ClientMode } from '@/utils/client-mode'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -8,6 +9,8 @@ declare module 'vue-router' {
     title?: string
     /** 访问所需权限码 */
     perm?: string
+    /** 页面只属于某一端；both/未声明表示两端共用 */
+    client?: ClientMode | 'both'
   }
 }
 
@@ -17,129 +20,153 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: () => import('@/views/LoginView.vue'),
-      meta: { public: true, title: '登录' },
+      component: () =>
+        isMobileClient() ? import('@/mobile/views/LoginView.vue') : import('@/views/LoginView.vue'),
+      meta: { public: true, title: '登录', client: 'both' },
     },
     {
       path: '/',
-      component: () => import('@/layouts/DefaultLayout.vue'),
-      redirect: '/dashboard',
+      component: () =>
+        isMobileClient()
+          ? import('@/mobile/layouts/TabbarLayout.vue')
+          : import('@/layouts/DefaultLayout.vue'),
+      redirect: () => (isMobileClient() ? '/home' : '/dashboard'),
       children: [
         {
           path: 'dashboard',
           name: 'dashboard',
           component: () => import('@/views/DashboardView.vue'),
-          meta: { title: '工作台', perm: 'menu:dashboard' },
+          meta: { title: '工作台', perm: 'menu:dashboard', client: 'pc' },
+        },
+        {
+          path: 'home',
+          name: 'mobile-home',
+          component: () => import('@/mobile/views/HomeView.vue'),
+          meta: { title: '工作台', client: 'mobile' },
         },
         {
           path: 'reports',
           component: () => import('@/views/ReportsView.vue'),
-          meta: { title: '销售报表', perm: 'menu:dashboard' },
+          meta: { title: '销售报表', perm: 'menu:dashboard', client: 'pc' },
         },
         {
           path: 'leads',
           name: 'leads',
-          component: () => import('@/views/LeadsView.vue'),
-          meta: { title: '线索管理', perm: 'menu:lead' },
+          component: () =>
+            isMobileClient() ? import('@/mobile/views/LeadsView.vue') : import('@/views/LeadsView.vue'),
+          meta: { title: '线索管理', perm: 'menu:lead', client: 'both' },
         },
         {
           path: 'customers',
           name: 'customers',
-          component: () => import('@/views/CustomersView.vue'),
-          meta: { title: '客户管理', perm: 'menu:customer' },
+          component: () =>
+            isMobileClient()
+              ? import('@/mobile/views/CustomersView.vue')
+              : import('@/views/CustomersView.vue'),
+          meta: { title: '客户管理', perm: 'menu:customer', client: 'both' },
         },
         {
           path: 'contacts',
           name: 'contacts',
           component: () => import('@/views/ContactsView.vue'),
-          meta: { title: '联系人', perm: 'contact:read' },
+          meta: { title: '联系人', perm: 'contact:read', client: 'pc' },
         },
         {
           path: 'customers/:id',
           name: 'customer-detail',
           component: () => import('@/views/CustomerDetailView.vue'),
-          meta: { title: '客户详情', perm: 'menu:customer' },
+          meta: { title: '客户详情', perm: 'menu:customer', client: 'pc' },
         },
         {
           path: 'opportunities',
           name: 'opportunities',
           component: () => import('@/views/OpportunitiesView.vue'),
-          meta: { title: '商机管理', perm: 'menu:opportunity' },
+          meta: { title: '商机管理', perm: 'menu:opportunity', client: 'pc' },
         },
         {
           path: 'products',
           component: () => import('@/views/ProductsView.vue'),
-          meta: { title: '产品管理', perm: 'menu:product' },
+          meta: { title: '产品管理', perm: 'menu:product', client: 'pc' },
         },
         {
           path: 'quotes',
           component: () => import('@/views/QuotesView.vue'),
-          meta: { title: '报价管理', perm: 'menu:quote' },
+          meta: { title: '报价管理', perm: 'menu:quote', client: 'pc' },
         },
         {
           path: 'contracts',
           component: () => import('@/views/ContractsView.vue'),
-          meta: { title: '合同管理', perm: 'menu:contract' },
+          meta: { title: '合同管理', perm: 'menu:contract', client: 'pc' },
         },
         {
           path: 'orders',
           component: () => import('@/views/OrdersView.vue'),
-          meta: { title: '订单管理', perm: 'menu:order' },
+          meta: { title: '订单管理', perm: 'menu:order', client: 'pc' },
         },
         {
           path: 'approvals',
-          component: () => import('@/views/ApprovalsView.vue'),
-          meta: { title: '审批中心', perm: 'menu:approval' },
+          name: 'approvals',
+          component: () =>
+            isMobileClient()
+              ? import('@/mobile/views/ApprovalsView.vue')
+              : import('@/views/ApprovalsView.vue'),
+          meta: { title: '审批中心', perm: 'menu:approval', client: 'both' },
+        },
+        {
+          path: 'mine',
+          name: 'mobile-mine',
+          component: () => import('@/mobile/views/MineView.vue'),
+          meta: { title: '我的', client: 'mobile' },
         },
         {
           path: 'bidding',
           component: () => import('@/views/BiddingView.vue'),
-          meta: { title: '标讯', perm: 'menu:bidding' },
+          meta: { title: '标讯', perm: 'menu:bidding', client: 'pc' },
         },
         {
           path: 'system/departments',
           component: () => import('@/views/system/DepartmentsView.vue'),
-          meta: { title: '组织架构', perm: 'system:dept' },
+          meta: { title: '组织架构', perm: 'system:dept', client: 'pc' },
         },
         {
           path: 'system/members',
           component: () => import('@/views/system/MembersView.vue'),
-          meta: { title: '成员管理', perm: 'system:member' },
+          meta: { title: '成员管理', perm: 'system:member', client: 'pc' },
         },
         {
           path: 'system/roles',
           component: () => import('@/views/system/RolesView.vue'),
-          meta: { title: '角色权限', perm: 'system:role' },
+          meta: { title: '角色权限', perm: 'system:role', client: 'pc' },
         },
         {
           path: 'system/modules',
           component: () => import('@/views/system/ModulesView.vue'),
-          meta: { title: '模块设置', perm: 'system:module' },
+          meta: { title: '模块设置', perm: 'system:module', client: 'pc' },
         },
         {
           path: 'system/sales-settings',
           component: () => import('@/views/system/SalesSettingsView.vue'),
-          meta: { title: '销售设置', perm: 'system:module' },
+          meta: { title: '销售设置', perm: 'system:module', client: 'pc' },
         },
         {
           path: 'system/approval-flows',
           component: () => import('@/views/system/ApprovalFlowsView.vue'),
-          meta: { title: '审批流配置', perm: 'approval:flowManage' },
+          meta: { title: '审批流配置', perm: 'approval:flowManage', client: 'pc' },
         },
         {
           path: 'system/logs',
           component: () => import('@/views/system/LogsView.vue'),
-          meta: { title: '系统日志', perm: 'system:log' },
+          meta: { title: '系统日志', perm: 'system:log', client: 'pc' },
         },
         {
           path: 'system/settings',
           component: () => import('@/views/system/SettingsView.vue'),
-          meta: { title: '企业设置', perm: 'system:setting' },
+          meta: { title: '企业设置', perm: 'system:setting', client: 'pc' },
         },
         {
           path: 'notifications',
           component: () => import('@/views/NotificationsView.vue'),
-          meta: { title: '消息中心' },
+          meta: { title: '消息中心', client: 'pc' },
         },
       ],
     },
@@ -148,6 +175,11 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  const clientMode = getClientMode()
+  if (to.meta.client && to.meta.client !== 'both' && to.meta.client !== clientMode) {
+    return { path: '/' }
+  }
+
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }

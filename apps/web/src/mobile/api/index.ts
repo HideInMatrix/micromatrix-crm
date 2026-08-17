@@ -1,29 +1,17 @@
 import type {
   ApprovalInstanceVO,
-  CurrentUser,
   CustomerVO,
   FieldVO,
   FollowUpVO,
   LeadVO,
-  LoginResult,
   PageQuery,
   PaginatedResult,
 } from '@micromatrix/shared'
-import { http } from './http'
-
-export function login(payload: { email: string; password: string }) {
-  return http.post<LoginResult>('/auth/login', payload)
-}
-
-export function fetchMe() {
-  return http.get<CurrentUser>('/auth/me')
-}
+import { http } from '@/api/http'
 
 export function fetchFields(module: string) {
   return http.get<FieldVO[]>(`/metadata/${module}/fields`)
 }
-
-// ===== 客户 =====
 
 export function listCustomers(params: PageQuery & { scope?: string }) {
   return http.get<PaginatedResult<CustomerVO>>('/customers', { params })
@@ -32,8 +20,6 @@ export function listCustomers(params: PageQuery & { scope?: string }) {
 export function createCustomer(data: Record<string, unknown>) {
   return http.post<CustomerVO>('/customers', data)
 }
-
-// ===== 线索 =====
 
 export function listLeads(params: PageQuery & { scope?: string; status?: string }) {
   return http.get<PaginatedResult<LeadVO>>('/leads', { params })
@@ -47,8 +33,6 @@ export function createLead(data: Record<string, unknown>) {
   return http.post<LeadVO>('/leads', data)
 }
 
-// ===== 跟进 =====
-
 export function listFollowUps(targetType: string, targetId: string) {
   return http.get<FollowUpVO[]>('/follow-ups', { params: { targetType, targetId } })
 }
@@ -61,8 +45,6 @@ export function createFollowUp(data: {
 }) {
   return http.post('/follow-ups', data)
 }
-
-// ===== 审批 =====
 
 export function myPendingApprovals(params: PageQuery) {
   return http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-pending', { params })
@@ -79,8 +61,6 @@ export function approveTask(taskId: string, comment?: string) {
 export function rejectTask(taskId: string, comment: string) {
   return http.post(`/approvals/tasks/${taskId}/reject`, { comment })
 }
-
-// ===== 工作台 =====
 
 export interface MobileSummary {
   newLeads: number

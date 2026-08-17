@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { dashboardSummary, fetchMe, type MobileSummary } from '@/api'
+import { dashboardSummary, type MobileSummary } from '@/mobile/api'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const summary = ref<MobileSummary | null>(null)
-const userName = ref('')
 const loading = ref(false)
 
 async function load() {
   loading.value = true
   try {
-    const [{ data }, { data: me }] = await Promise.all([dashboardSummary(), fetchMe()])
+    const { data } = await dashboardSummary()
     summary.value = data
-    userName.value = me.name
   } finally {
     loading.value = false
   }
@@ -25,7 +25,7 @@ onMounted(load)
 <template>
   <div>
     <div class="bg-[var(--van-primary-color,#1989fa)] text-white px-4 pt-8 pb-12">
-      <div class="text-lg font-medium">你好，{{ userName || '朋友' }}</div>
+      <div class="text-lg font-medium">你好，{{ auth.user?.name || '朋友' }}</div>
       <div class="text-xs opacity-80 mt-1">微矩阵 CRM · 移动工作台</div>
     </div>
 

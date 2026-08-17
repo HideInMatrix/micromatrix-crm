@@ -1,27 +1,21 @@
 <script setup lang="ts">
-import {
-  LEAD_STATUS_LABELS,
-  isCustomFieldKey,
-  type FieldVO,
-  type LeadVO,
-} from '@micromatrix/shared'
+import { isCustomFieldKey, type CustomerVO, type FieldVO } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
-import { onMounted, ref } from 'vue'
-import { claimLead, createLead, fetchFields, listLeads } from '@/api'
+import { ref } from 'vue'
+import { createCustomer, fetchFields, listCustomers } from '@/mobile/api'
 import { extractErrorMessage } from '@/api/http'
-import FollowUpSheet from '@/components/FollowUpSheet.vue'
-import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import FollowUpSheet from '@/mobile/components/FollowUpSheet.vue'
+import MobileDynamicForm from '@/mobile/components/MobileDynamicForm.vue'
 
-const activeTab = ref<'mine' | 'pool'>('mine')
-const items = ref<LeadVO[]>([])
+const keyword = ref('')
+const items = ref<CustomerVO[]>([])
 const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
-const keyword = ref('')
 
 const followShow = ref(false)
-const followTarget = ref<LeadVO | null>(null)
+const followTarget = ref<CustomerVO | null>(null)
 
 const createShow = ref(false)
 const fields = ref<FieldVO[]>([])
@@ -31,10 +25,9 @@ const saving = ref(false)
 async function loadMore() {
   loading.value = true
   try {
-    const { data } = await listLeads({
+    const { data } = await listCustomers({
       page: page.value,
       pageSize: 20,
-      scope: activeTab.value,
       keyword: keyword.value.trim() || undefined,
     })
     if (refreshing.value) {
@@ -59,24 +52,14 @@ function reload() {
   loadMore()
 }
 
-async function handleClaim(lead: LeadVO) {
-  try {
-    await claimLead(lead.id)
-    showSuccessToast('已领取')
-    reload()
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
-function openFollow(lead: LeadVO) {
-  followTarget.value = lead
+function openFollow(customer: CustomerVO) {
+  followTarget.value = customer
   followShow.value = true
 }
 
 async function openCreate() {
   if (fields.value.length === 0) {
-    const { data } = await fetchFields('lead')
+    const { data } = await fetchFields('customer')
     fields.value = data
   }
   formModel.value = {}
@@ -84,9 +67,8 @@ async function openCreate() {
 }
 
 async function handleCreate() {
-  const nameField = formModel.value.name
-  if (!nameField || String(nameField).trim() === '') {
-    showFailToast('请填写线索名称')
+  if (!formModel.value.name || String(formModel.value.name).trim() === '') {
+    showFailToast('请填写客户名称')
     return
   }
   saving.value = true
@@ -97,8 +79,8 @@ async function handleCreate() {
       if (isCustomFieldKey(key)) (payload.customData as Record<string, unknown>)[key] = value
       else payload[key] = value
     }
-    await createLead(payload)
-    showSuccessToast('线索已创建')
+    await createCustomer(payload)
+    showSuccessToast('客户已创建')
     createShow.value = false
     reload()
   } catch (error) {
@@ -107,67 +89,45 @@ async function handleCreate() {
     saving.value = false
   }
 }
-
-onMounted(() => undefined)
 </script>
 
 <template>
   <div class="min-h-full">
-    <van-nav-bar title="线索" fixed placeholder>
+    <van-nav-bar title="客户" fixed placeholder>
       <template #right>
         <span class="text-sm text-[var(--van-primary-color,#1989fa)]" @click="openCreate">新建</span>
       </template>
     </van-nav-bar>
 
-    <van-tabs v-model:active="activeTab" @change="reload">
-      <van-tab title="我的线索" name="mine" />
-      <van-tab title="线索池" name="pool" />
-    </van-tabs>
-
-    <van-search v-model="keyword" placeholder="搜索名称 / 联系人 / 电话" @search="reload" @clear="reload" />
+    <van-search
+      v-model="keyword"
+      placeholder="搜索名称 / 电话 / 邮箱"
+      @search="reload"
+      @clear="reload"
+    />
 
     <van-pull-refresh v-model="refreshing" @refresh="reload">
       <van-list v-model:loading="loading" :finished="finished" finished-text="没有更多了" @load="loadMore">
-        <van-cell-group v-for="lead in items" :key="lead.id" inset class="!mb-3">
-          <van-cell :title="lead.name">
-            <template #label>
-              <div class="text-xs">
-                {{ lead.contactName ?? '无联系人' }} · {{ lead.phone ?? '无电话' }}
-              </div>
-            </template>
+        <van-cell-group v-for="item in items" :key="item.id" inset class="!mb-3">
+          <van-cell :title="item.name" :label="item.industry ?? '行业未填写'">
             <template #value>
-              <van-tag
-                :type="lead.status === 'CONVERTED' ? 'success' : lead.status === 'INVALID' ? 'default' : 'primary'"
-                size="medium"
-              >
-                {{ LEAD_STATUS_LABELS[lead.status] }}
-              </van-tag>
+              <span class="text-xs">{{ item.ownerName ?? '-' }}</span>
             </template>
           </van-cell>
           <van-cell>
             <template #title>
-              <span class="text-xs text-gray-400">
-                {{ lead.lastFollowedAt ? `最近跟进 ${new Date(lead.lastFollowedAt).toLocaleDateString()}` : '尚未跟进' }}
-              </span>
+              <span v-if="item.phone" class="text-xs text-gray-400">{{ item.phone }}</span>
+              <span v-else class="text-xs text-gray-400">无电话</span>
             </template>
             <template #value>
-              <van-button
-                v-if="activeTab === 'pool'"
-                size="small"
-                type="primary"
-                @click="handleClaim(lead)"
-              >
-                领取
-              </van-button>
-              <van-button
-                v-else-if="lead.status === 'FOLLOWING'"
-                size="small"
-                plain
-                type="primary"
-                @click="openFollow(lead)"
-              >
-                跟进
-              </van-button>
+              <div class="flex gap-2 justify-end">
+                <a v-if="item.phone" :href="`tel:${item.phone}`">
+                  <van-button size="small" plain>拨打</van-button>
+                </a>
+                <van-button size="small" plain type="primary" @click="openFollow(item)">
+                  跟进
+                </van-button>
+              </div>
             </template>
           </van-cell>
         </van-cell-group>
@@ -176,7 +136,7 @@ onMounted(() => undefined)
 
     <FollowUpSheet
       v-model="followShow"
-      target-type="lead"
+      target-type="customer"
       :target-id="followTarget?.id ?? null"
       :target-name="followTarget?.name"
       @followed="reload"
@@ -184,7 +144,7 @@ onMounted(() => undefined)
 
     <van-popup v-model:show="createShow" position="bottom" round :style="{ height: '85%' }">
       <div class="p-4">
-        <div class="text-center font-medium mb-3">新建线索</div>
+        <div class="text-center font-medium mb-3">新建客户</div>
         <MobileDynamicForm v-model="formModel" :fields="fields" />
         <div class="px-4 mt-4">
           <van-button type="primary" block :loading="saving" @click="handleCreate">保存</van-button>

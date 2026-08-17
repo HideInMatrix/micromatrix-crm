@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
+import { VantResolver } from '@vant/auto-import-resolver'
 import UnoCSS from 'unocss/vite'
 import AutoImport from 'unplugin-auto-import/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
@@ -17,7 +18,7 @@ export default defineConfig({
     }),
     // 模板中的 El 组件自动注册（按需加载）
     Components({
-      resolvers: [ElementPlusResolver()],
+      resolvers: [ElementPlusResolver(), VantResolver()],
       dts: 'src/types/components.d.ts',
     }),
   ],
