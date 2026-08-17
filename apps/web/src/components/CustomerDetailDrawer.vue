@@ -3,11 +3,12 @@ import type { CustomerVO, TeamMemberVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { getCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { contactApi, customerExtraApi, followUpApi, type ContactVO } from '@/api/sales'
+import { customerExtraApi, followUpApi } from '@/api/sales'
 import type { FollowUpVO } from '@micromatrix/shared'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
+import CustomerContactTable from '@/components/contacts/CustomerContactTable.vue'
 import type { MemberOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
@@ -20,26 +21,18 @@ const visible = defineModel<boolean>({ required: true })
 const auth = useAuthStore()
 
 const activeTab = ref('contacts')
-const contacts = ref<ContactVO[]>([])
 const team = ref<TeamMemberVO[]>([])
 const followUps = ref<FollowUpVO[]>([])
 const loading = ref(false)
 const collaborationType = ref<CustomerVO['collaborationType']>(null)
 const resourceCanManageCustomer = ref(false)
 const resourceCanCollaborateWrite = ref(false)
-const canCollaborateWrite = computed(
-  () => resourceCanCollaborateWrite.value && auth.hasPerm('customer:update'),
-)
 const canManageCustomer = computed(() => resourceCanManageCustomer.value)
 const canEditRelations = computed(
   () =>
     auth.hasPerm('customer:update') &&
     (resourceCanManageCustomer.value || collaborationType.value === 'COLLABORATION'),
 )
-
-const contactDialogVisible = ref(false)
-const editingContact = ref<ContactVO | null>(null)
-const contactForm = ref({ name: '', position: '', phone: '', email: '' })
 
 const teamDialogVisible = ref(false)
 
@@ -54,16 +47,14 @@ async function loadAll() {
   if (!props.customer) return
   loading.value = true
   try {
-    const [customerRes, contactRes, teamRes, followRes] = await Promise.all([
+    const [customerRes, teamRes, followRes] = await Promise.all([
       getCustomer(props.customer.id),
-      contactApi.list(props.customer.id),
       customerExtraApi.teamList(props.customer.id),
       followUpApi.list('customer', props.customer.id),
     ])
     collaborationType.value = customerRes.data.collaborationType ?? null
     resourceCanManageCustomer.value = customerRes.data.canManageCustomer === true
     resourceCanCollaborateWrite.value = customerRes.data.canCollaborateWrite === true
-    contacts.value = contactRes.data
     team.value = teamRes.data
     followUps.value = followRes.data
   } catch (error) {
@@ -71,59 +62,6 @@ async function loadAll() {
   } finally {
     loading.value = false
   }
-}
-
-function openContactCreate() {
-  editingContact.value = null
-  contactForm.value = { name: '', position: '', phone: '', email: '' }
-  contactDialogVisible.value = true
-}
-
-function openContactEdit(contact: ContactVO) {
-  editingContact.value = contact
-  contactForm.value = {
-    name: contact.name,
-    position: contact.position ?? '',
-    phone: contact.phone ?? '',
-    email: contact.email ?? '',
-  }
-  contactDialogVisible.value = true
-}
-
-async function handleContactSave() {
-  if (!props.customer) return
-  if (!contactForm.value.name.trim()) {
-    ElMessage.warning('请输入姓名')
-    return
-  }
-  try {
-    const payload = {
-      name: contactForm.value.name.trim(),
-      position: contactForm.value.position.trim() || undefined,
-      phone: contactForm.value.phone.trim() || undefined,
-      email: contactForm.value.email.trim() || undefined,
-    }
-    if (editingContact.value) {
-      await contactApi.update(editingContact.value.id, payload)
-    } else {
-      await contactApi.create({ ...payload, customerId: props.customer.id })
-    }
-    ElMessage.success('联系人已保存')
-    contactDialogVisible.value = false
-    loadAll()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleContactDelete(contact: ContactVO) {
-  const confirmed = await ElMessageBox.confirm(`删除联系人「${contact.name}」？`, '确认', {
-    type: 'warning',
-  }).catch(() => false)
-  if (!confirmed) return
-  await contactApi.remove(contact.id)
-  ElMessage.success('已删除')
-  loadAll()
 }
 
 async function handleTeamAdd(userId: string) {
@@ -161,54 +99,11 @@ async function handleTeamRemove(member: TeamMemberVO) {
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="联系人" name="contacts">
-          <div class="flex justify-end mb-2">
-            <el-button
-              v-if="canCollaborateWrite && auth.hasPerm('contact:create')"
-              size="small"
-              type="primary"
-              @click="openContactCreate"
-            >
-              添加联系人
-            </el-button>
-          </div>
-          <el-empty v-if="contacts.length === 0" description="暂无联系人" :image-size="60" />
-          <div
-            v-for="contact in contacts"
-            :key="contact.id"
-            class="flex-between py-2.5 border-b border-[var(--el-border-color-lighter)]"
-          >
-            <div>
-              <div class="text-sm font-medium">
-                {{ contact.name }}
-                <span class="text-xs text-[var(--el-text-color-secondary)] ml-1">
-                  {{ contact.position ?? '' }}
-                </span>
-              </div>
-              <div class="text-xs text-[var(--el-text-color-secondary)] mt-1">
-                {{ contact.phone ?? '-' }} · {{ contact.email ?? '-' }}
-              </div>
-            </div>
-            <div>
-              <el-button
-                v-if="canCollaborateWrite && auth.hasPerm('contact:update')"
-                link
-                type="primary"
-                size="small"
-                @click="openContactEdit(contact)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                v-if="canCollaborateWrite && auth.hasPerm('contact:delete')"
-                link
-                type="danger"
-                size="small"
-                @click="handleContactDelete(contact)"
-              >
-                删除
-              </el-button>
-            </div>
-          </div>
+          <CustomerContactTable
+            v-if="customer"
+            :source-id="customer.id"
+            :readonly="!resourceCanCollaborateWrite"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="协作团队" name="team">
@@ -275,32 +170,6 @@ async function handleTeamRemove(member: TeamMemberVO) {
         </el-tab-pane>
       </el-tabs>
     </div>
-
-    <el-dialog
-      v-model="contactDialogVisible"
-      :title="editingContact ? '编辑联系人' : '添加联系人'"
-      width="420px"
-      append-to-body
-    >
-      <el-form label-width="70px">
-        <el-form-item label="姓名" required>
-          <el-input v-model="contactForm.name" />
-        </el-form-item>
-        <el-form-item label="职位">
-          <el-input v-model="contactForm.position" />
-        </el-form-item>
-        <el-form-item label="电话">
-          <el-input v-model="contactForm.phone" />
-        </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="contactForm.email" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="contactDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleContactSave">保存</el-button>
-      </template>
-    </el-dialog>
 
     <MemberSelectDialog
       v-model="teamDialogVisible"

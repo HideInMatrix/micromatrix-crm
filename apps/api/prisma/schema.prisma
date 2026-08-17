@@ -285,6 +285,7 @@ model Opportunity {
   tenantId        String
   name            String
   customerId      String
+  contactId       String?
   stageId         String
   amount          Decimal?  @db.Decimal(14, 2)
   expectedCloseAt DateTime?
@@ -300,6 +301,7 @@ model Opportunity {
   updatedAt       DateTime  @updatedAt
 
   customer  Customer             @relation(fields: [customerId], references: [id])
+  contact   Contact?             @relation(fields: [contactId], references: [id], onDelete: Restrict)
   stage     OpportunityStage     @relation(fields: [stageId], references: [id])
   stageLogs OpportunityStageLog[]
   items     OpportunityItem[]
@@ -307,6 +309,7 @@ model Opportunity {
   @@index([tenantId, stageId])
   @@index([tenantId, deptId])
   @@index([tenantId, customerId])
+  @@index([tenantId, contactId])
   @@map("opportunities")
 }
 
@@ -905,20 +908,23 @@ model Contact {
   ownerId    String?
   deptId     String?
   name       String
-  position   String?
   phone      String?
-  email      String?
+  enable     Boolean  @default(true)
+  disableReason String?
+  customData Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   owner    User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  opportunities Opportunity[]
 
   @@index([tenantId])
   @@index([customerId])
   @@index([tenantId, ownerId])
   @@index([tenantId, deptId])
+  @@index([tenantId, enable])
   @@map("contacts")
 }
 

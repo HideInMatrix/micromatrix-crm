@@ -114,9 +114,7 @@ export interface CustomerRelatedVO {
   contacts: {
     id: string
     name: string
-    position: string | null
     phone: string | null
-    email: string | null
   }[]
   opportunities: {
     id: string

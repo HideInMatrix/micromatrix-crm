@@ -66,7 +66,7 @@ erDiagram
 | --- | --- |
 | leads | `inPool + poolId` 多线索池；池可按成员/部门 Scope 隔离；status FOLLOWING/CONVERTED/INVALID；collectedAt/poolEnteredAt/lastFollowedAt 支撑领取和回收规则 |
 | customers | `inSea + poolId` 多公海；collectedAt/poolEnteredAt/lastFollowedAt；公海 Scope、领取/回收/库容规则 |
-| contacts | 挂客户，onDelete Cascade；`ownerId/deptId` 为联系人独立负责人/部门，支撑客户协作用户只管理本人联系人 |
+| contacts | 挂客户，onDelete Cascade；Cordys 核心字段 `customerId/ownerId/name/phone/enable/disableReason`，扩展字段走 `customData`；`ownerId/deptId` 支撑联系人独立数据范围与客户协作子域 |
 | customer_team_members | 客户协作关系 `@@unique([customerId, userId])`；`collaborationType=READ_ONLY/COLLABORATION` |
 | customer_relations | 集团/子公司有向关系：source=集团、target=子公司；服务层保证一个子公司只有一个上级集团并阻止循环关系 |
 | follow_up_records | 多态跟进（targetType: lead/customer/opportunity/contract）；写入时回填目标 lastFollowedAt |

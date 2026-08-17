@@ -6,7 +6,7 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   batchDeleteCustomers,
   batchUpdateCustomers,
@@ -27,6 +27,7 @@ import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
 import CustomerDetailDrawer from '@/components/CustomerDetailDrawer.vue'
+import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
 import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
@@ -40,6 +41,7 @@ import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const fieldRefs = useFieldRefs()
 
 const activeTab = ref<'mine' | 'sea' | 'collaboration'>('mine')
@@ -431,12 +433,14 @@ async function openFollow(row: CustomerVO) {
 }
 
 onMounted(async () => {
+  if (route.query.tab === 'sea') activeTab.value = 'sea'
   await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
   loadData()
 })
 </script>
 
 <template>
+  <CustomerModuleNav :active="activeTab === 'sea' ? 'sea' : 'customer'" />
   <el-card shadow="never">
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="我的客户" name="mine" />

@@ -25,7 +25,7 @@
 | --- | --- | --- | --- | --- |
 | 线索 | `clue/*`、`ClueService`、`PoolClueService` | `modules/leads` | 🚧 | 多池/领取限制/库容/回收/SavedView/负责人历史/批量操作/xlsx 导入导出已验收；继续 R4 转化关系 |
 | 客户 | `customer/*`、`CustomerService` | `customers` | 🚧 | 多公海/库容/协作/关系/合并/SavedView/批量操作/xlsx 导入导出已验收；继续 R3 联系人与 R5 360 |
-| 联系人 | `CustomerContactService` | `modules/contacts` | 🚧 | 已补 ownerId/deptId 与客户协作资源权限；继续导入导出、操作日志、SavedView |
+| 联系人 | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue` | `modules/contacts` | ✅ | R3 已对齐独立列表/数据视图、客户内嵌列表、动态字段、启停、商机关联删除保护、批改、xlsx 导入导出与 Cordys 工具条交互；后续随 R4/R5 补跨模块关系与 360 |
 | 商机 | `opportunity/*`、`OpportunityService` | `modules/opportunities` | 🟡 | 补齐关闭规则、阶段高级配置、负责人/跟进联动 |
 | 报价 | `OpportunityQuotation*` | `modules/quotes` | 🟡 | 对齐审批、快照、联系人、用户视图、操作日志 |
 | 产品 | `product/*`、`ProductService` | `modules/products` | 🟡 | 补齐产品价格/价格表、日志、导出 |

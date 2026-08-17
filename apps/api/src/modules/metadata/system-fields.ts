@@ -71,9 +71,10 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
   ],
   contact: [
     { key: 'name', label: '姓名', type: 'text', required: true, span: 12, listWidth: 120, sort: 0 },
-    { key: 'position', label: '职位', type: 'text', span: 12, listWidth: 120, sort: 1 },
+    { key: 'customerId', label: '客户', type: 'text', required: true, span: 12, listWidth: 180, sort: 1 },
     { key: 'phone', label: '电话', type: 'phone', span: 12, listWidth: 150, sort: 2 },
-    { key: 'email', label: '邮箱', type: 'email', span: 12, listWidth: 200, sort: 3 },
+    { key: 'ownerId', label: '负责人', type: 'member', span: 12, listWidth: 110, sort: 3 },
+    { key: 'enable', label: '状态', type: 'switch', span: 12, listWidth: 90, sort: 4 },
   ],
   product: [
     { key: 'name', label: '产品名称', type: 'text', required: true, span: 12, listWidth: 200, sort: 0 },

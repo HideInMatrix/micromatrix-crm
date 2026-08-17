@@ -480,8 +480,9 @@ export class LeadsService {
           collectedAt: new Date(),
         },
       })
+      let contactId: string | null = null
       if ((dto.createContact ?? true) && lead.contactName) {
-        await tx.contact.create({
+        const contact = await tx.contact.create({
           data: {
             tenantId: user.tenantId,
             customerId: customer.id,
@@ -489,9 +490,10 @@ export class LeadsService {
             deptId: owner.deptId,
             name: lead.contactName,
             phone: lead.phone,
-            email: lead.email,
+            enable: true,
           },
         })
+        contactId = contact.id
       }
       let opportunityId: string | null = null
       if (dto.opportunity) {
@@ -505,6 +507,7 @@ export class LeadsService {
             tenantId: user.tenantId,
             name: dto.opportunity.name,
             customerId: customer.id,
+            contactId,
             stageId: firstStage.id,
             amount: dto.opportunity.amount,
             ownerId: owner.id,

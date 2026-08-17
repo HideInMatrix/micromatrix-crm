@@ -39,6 +39,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { code: 'customer:team', label: '团队管理' },
       { code: 'customer:import', label: '导入' },
       { code: 'customer:export', label: '导出' },
+      { code: 'contact:read', label: '查看联系人' },
       { code: 'customerPool:import', label: '客户公海导入' },
       { code: 'customerPool:export', label: '客户公海导出' },
       { code: 'customerPool:update', label: '客户公海编辑' },
@@ -46,6 +47,8 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { code: 'contact:create', label: '新建联系人' },
       { code: 'contact:update', label: '编辑联系人' },
       { code: 'contact:delete', label: '删除联系人' },
+      { code: 'contact:import', label: '导入联系人' },
+      { code: 'contact:export', label: '导出联系人' },
     ],
   },
   {

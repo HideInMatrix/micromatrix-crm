@@ -362,9 +362,7 @@ export class CustomersService {
       contacts: contacts.map((c) => ({
         id: c.id,
         name: c.name,
-        position: c.position,
         phone: c.phone,
-        email: c.email,
       })),
       opportunities: opportunities.map((o) => ({
         id: o.id,

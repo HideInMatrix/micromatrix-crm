@@ -30,6 +30,11 @@ export class CreateOpportunityDto {
   @IsNotEmpty({ message: '请选择客户' })
   customerId!: string
 
+  @ApiPropertyOptional({ description: '关联联系人；必须属于当前客户' })
+  @IsString()
+  @IsOptional()
+  contactId?: string
+
   @ApiPropertyOptional({ description: '阶段（默认第一个阶段）' })
   @IsString()
   @IsOptional()
@@ -81,6 +86,11 @@ export class QueryOpportunitiesDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   customerId?: string
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  contactId?: string
 
   @ApiPropertyOptional({ description: '高级筛选（FilterCondition[] JSON）' })
   @IsString()

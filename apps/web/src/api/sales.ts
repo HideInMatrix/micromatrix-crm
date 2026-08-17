@@ -1,4 +1,5 @@
 import type {
+  ContactVO,
   FollowUpVO,
   LeadVO,
   OpportunityStageVO,
@@ -17,6 +18,8 @@ import {
   type ImportResult,
   type ImportType,
 } from './import-export'
+
+export type { ContactVO } from '@micromatrix/shared'
 
 // ===== 线索 =====
 
@@ -187,23 +190,39 @@ export const opportunityApi = {
 
 // ===== 联系人 =====
 
-export interface ContactVO {
-  id: string
-  customerId: string
-  ownerId: string | null
-  deptId: string | null
-  name: string
-  position: string | null
-  phone: string | null
-  email: string | null
+export interface ContactListParams extends PageQuery {
+  customerId?: string
+  enable?: 'true' | 'false'
+  filters?: string
+  viewId?: string
+  scopeView?: 'SELF' | 'DEPT' | 'ALL'
 }
 
 export const contactApi = {
-  list: (customerId: string) => http.get<ContactVO[]>('/contacts', { params: { customerId } }),
+  list: (customerId: string) => http.get<ContactVO[]>(`/contacts/list/${customerId}`),
+  page: (params: ContactListParams) => http.post<PaginatedResult<ContactVO>>('/contacts/page', params),
+  get: (id: string) => http.get<ContactVO>(`/contacts/get/${id}`),
   create: (data: Partial<ContactVO> & { customerId: string; name: string }) =>
-    http.post<ContactVO>('/contacts', data),
-  update: (id: string, data: Partial<ContactVO>) => http.patch<ContactVO>(`/contacts/${id}`, data),
-  remove: (id: string) => http.delete(`/contacts/${id}`),
+    http.post<ContactVO>('/contacts/add', data),
+  update: (id: string, data: Partial<ContactVO>) => http.post<ContactVO>('/contacts/update', { id, ...data }),
+  remove: (id: string) => http.get(`/contacts/delete/${id}`),
+  enable: (id: string) => http.get<ContactVO>(`/contacts/enable/${id}`),
+  disable: (id: string, reason: string) => http.post<ContactVO>(`/contacts/disable/${id}`, { reason }),
+  checkOpportunity: (id: string) =>
+    http.get<{ linked: boolean; count: number }>(`/contacts/opportunity/check/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/contacts/tab'),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/contacts/batch/update', data),
+  importTemplate: (_importType: ImportType) =>
+    http.get<Blob>('/contacts/template/download', { responseType: 'blob' }),
+  importPrecheck: (file: File, importType: ImportType) =>
+    http.post<ImportResult>('/contacts/import/pre-check', createImportForm(file, importType)),
+  importXlsx: (file: File, importType: ImportType) =>
+    http.post<ImportResult>('/contacts/import', createImportForm(file, importType)),
+  exportAll: (params: ContactListParams, data: ExportCreatePayload) =>
+    http.post('/contacts/export-all', { ...params, ...data }),
+  exportSelected: (params: ContactListParams, data: ExportCreatePayload & { ids: string[] }) =>
+    http.post('/contacts/export-select', { ...params, ...data }),
 }
 
 // ===== 客户公海/团队 =====

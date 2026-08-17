@@ -9,11 +9,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomer, getCustomerRelated } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { contactApi, customerExtraApi, type ContactVO } from '@/api/sales'
+import { customerExtraApi } from '@/api/sales'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
+import CustomerContactTable from '@/components/contacts/CustomerContactTable.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -37,9 +38,6 @@ const canEditRelations = computed(
     (customer.value?.canManageCustomer === true || customer.value?.collaborationType === 'COLLABORATION'),
 )
 
-const contactDialogVisible = ref(false)
-const editingContact = ref<ContactVO | null>(null)
-const contactForm = ref({ name: '', position: '', phone: '', email: '' })
 const teamDialogVisible = ref(false)
 
 const customerId = () => String(route.params.id)
@@ -63,58 +61,6 @@ async function loadAll() {
 function formatAmount(amount: number | null | undefined) {
   if (amount === null || amount === undefined) return '-'
   return `¥${amount.toLocaleString('zh-CN')}`
-}
-
-function openContactCreate() {
-  editingContact.value = null
-  contactForm.value = { name: '', position: '', phone: '', email: '' }
-  contactDialogVisible.value = true
-}
-
-function openContactEdit(contact: ContactVO) {
-  editingContact.value = contact
-  contactForm.value = {
-    name: contact.name,
-    position: contact.position ?? '',
-    phone: contact.phone ?? '',
-    email: contact.email ?? '',
-  }
-  contactDialogVisible.value = true
-}
-
-async function handleContactSave() {
-  if (!contactForm.value.name.trim()) {
-    ElMessage.warning('请输入姓名')
-    return
-  }
-  try {
-    const payload = {
-      name: contactForm.value.name.trim(),
-      position: contactForm.value.position.trim() || undefined,
-      phone: contactForm.value.phone.trim() || undefined,
-      email: contactForm.value.email.trim() || undefined,
-    }
-    if (editingContact.value) {
-      await contactApi.update(editingContact.value.id, payload)
-    } else {
-      await contactApi.create({ ...payload, customerId: customerId() })
-    }
-    ElMessage.success('联系人已保存')
-    contactDialogVisible.value = false
-    loadAll()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleContactDelete(contact: ContactVO) {
-  const confirmed = await ElMessageBox.confirm(`删除联系人「${contact.name}」？`, '确认', {
-    type: 'warning',
-  }).catch(() => false)
-  if (!confirmed) return
-  await contactApi.remove(contact.id)
-  ElMessage.success('已删除')
-  loadAll()
 }
 
 async function handleTeamAdd(userId: string) {
@@ -206,42 +152,10 @@ onMounted(async () => {
           </el-tab-pane>
 
           <el-tab-pane label="联系人" name="contacts">
-            <div class="flex justify-end mb-2">
-              <el-button
-                v-if="canCollaborateWrite && auth.hasPerm('contact:create')"
-                size="small"
-                type="primary"
-                @click="openContactCreate"
-              >
-                添加联系人
-              </el-button>
-            </div>
-            <el-table :data="related?.contacts ?? []" stripe>
-              <el-table-column prop="name" label="姓名" min-width="120" />
-              <el-table-column prop="position" label="职位" width="120" />
-              <el-table-column prop="phone" label="电话" width="140" />
-              <el-table-column prop="email" label="邮箱" min-width="160" />
-              <el-table-column label="操作" width="140">
-                <template #default="{ row }">
-                  <el-button
-                    v-if="canCollaborateWrite && auth.hasPerm('contact:update')"
-                    link
-                    type="primary"
-                    @click="openContactEdit(row as ContactVO)"
-                  >
-                    编辑
-                  </el-button>
-                  <el-button
-                    v-if="canCollaborateWrite && auth.hasPerm('contact:delete')"
-                    link
-                    type="danger"
-                    @click="handleContactDelete(row as ContactVO)"
-                  >
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <CustomerContactTable
+              :source-id="customerId()"
+              :readonly="customer?.canCollaborateWrite !== true"
+            />
           </el-tab-pane>
 
           <el-tab-pane label="商机" name="opportunities">
@@ -359,31 +273,6 @@ onMounted(async () => {
       :target-name="customer?.name"
       @followed="loadAll"
     />
-
-    <el-dialog
-      v-model="contactDialogVisible"
-      :title="editingContact ? '编辑联系人' : '添加联系人'"
-      width="420px"
-    >
-      <el-form label-width="70px">
-        <el-form-item label="姓名" required>
-          <el-input v-model="contactForm.name" />
-        </el-form-item>
-        <el-form-item label="职位">
-          <el-input v-model="contactForm.position" />
-        </el-form-item>
-        <el-form-item label="电话">
-          <el-input v-model="contactForm.phone" />
-        </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="contactForm.email" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="contactDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleContactSave">保存</el-button>
-      </template>
-    </el-dialog>
 
     <MemberSelectDialog
       v-model="teamDialogVisible"

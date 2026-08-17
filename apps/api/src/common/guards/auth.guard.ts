@@ -13,7 +13,7 @@ import type { Request } from 'express'
 import { PrismaService } from '../../prisma/prisma.service'
 import type { AuthUser } from '../auth-user'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
-import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
+import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
 
 /**
  * 全局认证守卫：
@@ -80,6 +80,15 @@ export class AuthGuard implements CanActivate {
       ]) ?? []
     if (required.length > 0) {
       const ok = required.every((code) => hasPermission(authUser.permissions, code))
+      if (!ok) throw new ForbiddenException('没有操作权限')
+    }
+    const requiredAny =
+      this.reflector.getAllAndOverride<string[]>(ANY_PERMISSIONS_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? []
+    if (requiredAny.length > 0) {
+      const ok = requiredAny.some((code) => hasPermission(authUser.permissions, code))
       if (!ok) throw new ForbiddenException('没有操作权限')
     }
     return true

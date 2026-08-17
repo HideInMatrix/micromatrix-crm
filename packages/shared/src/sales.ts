@@ -80,6 +80,8 @@ export interface OpportunityVO {
   name: string
   customerId: string
   customerName?: string
+  contactId?: string | null
+  contactName?: string | null
   stageId: string
   stageName?: string
   stageProbability?: number
@@ -136,6 +138,22 @@ export interface OwnerHistoryVO {
   reasonName: string | null
   collectedAt: string | null
   endedAt: string
+}
+
+export interface ContactVO {
+  id: string
+  customerId: string
+  customerName: string | null
+  ownerId: string | null
+  ownerName: string | null
+  deptId: string | null
+  name: string
+  phone: string | null
+  enable: boolean
+  disableReason: string | null
+  customData: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
 }
 
 // ============ 公海/线索池规则 ============

@@ -107,11 +107,32 @@
 - `canManageCustomer=true` 只表示当前用户通过正常客户数据范围拥有客户主体管理能力；协作关系不会把它提升为 true。
 - `canCollaborateWrite=true` 表示可写联系人/客户跟进子域；普通公海“可见”不会自动获得该能力，必须先领取或通过 `COLLABORATION` 获得协作写能力。
 
-联系人新增 `ownerId / deptId`：
+### 联系人（R3，按 Cordys `/account/contact` 资源边界）
 
-- `POST /api/contacts` 可选传 `ownerId`；不传时默认当前用户。
-- 仅依靠 `COLLABORATION` 访问客户的用户不能把联系人负责人指定给其他人。
-- 历史联系人迁移后 `ownerId` 保持空值；普通客户数据范围用户仍可见，纯协作用户不会继承这些历史联系人。
+```text
+POST /contacts/page                       独立联系人分页
+GET  /contacts/list/{customerId}          客户下联系人列表
+GET  /contacts/get/{id}                   联系人详情
+POST /contacts/add                        新增联系人
+POST /contacts/update                     更新联系人
+GET  /contacts/enable/{id}                启用联系人
+POST /contacts/disable/{id}               停用联系人（reason 必填）
+GET  /contacts/delete/{id}                删除联系人
+GET  /contacts/opportunity/check/{id}     删除前商机关联检查
+GET  /contacts/tab                        ALL/DEPT 数据视图显隐
+POST /contacts/batch/update               批量修改一个字段
+GET  /contacts/template/download          xlsx 导入模板
+POST /contacts/import/pre-check           xlsx 导入预校验
+POST /contacts/import                     xlsx 正式导入
+POST /contacts/export-all                 导出全部任务
+POST /contacts/export-select              导出选中任务
+```
+
+- Contact 核心固定字段按 Cordys 收口为 `customerId / ownerId / name / phone / enable / disableReason`；额外字段走 Metadata `customData`，不再保留早期页面驱动的固定 `position/email`。
+- 新增时 `ownerId` 可省略并默认当前用户；负责人变化同步 `deptId`。
+- 独立联系人页使用 Contact 自己的 owner/dept 数据范围；客户详情内嵌列表继续按客户资源访问语义处理。仅依靠 `COLLABORATION` 访问客户时，只能管理自己负责的联系人；`READ_ONLY` 不获得联系人子域写能力。
+- Opportunity 可通过 `contactId` 绑定当前客户下的联系人；联系人被商机引用时 Service 层拒绝删除。
+- 联系人批量能力与 Cordys 一致，仅提供“导出选中 + 批量编辑”，不新增批量删除。
 
 ## 保存的用户视图 SavedView
 

@@ -28,6 +28,7 @@ const MODULE = 'opportunity'
 
 type OpportunityWithRefs = Opportunity & {
   customer: { name: string }
+  contact: { name: string } | null
   stage: OpportunityStage
   items?: {
     id: string
@@ -41,7 +42,11 @@ type OpportunityWithRefs = Opportunity & {
   }[]
 }
 
-const refInclude = { customer: { select: { name: true } }, stage: true } as const
+const refInclude = {
+  customer: { select: { name: true } },
+  contact: { select: { name: true } },
+  stage: true,
+} as const
 const detailInclude = { ...refInclude, items: { orderBy: { sort: 'asc' as const } } }
 
 const DEFAULT_STAGES = [
@@ -203,7 +208,7 @@ export class OpportunitiesService {
   }
 
   async create(user: AuthUser, dto: CreateOpportunityDto): Promise<OpportunityVO> {
-    const { customData, ownerId, stageId, customerId, expectedCloseAt, items, amount, ...rest } = dto
+    const { customData, ownerId, stageId, customerId, contactId, expectedCloseAt, items, amount, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: true,
     })
@@ -211,6 +216,7 @@ export class OpportunitiesService {
       where: { id: customerId, tenantId: user.tenantId },
     })
     if (!customer) throw new BadRequestException('客户不存在')
+    if (contactId) await this.assertContactBelongsToCustomer(user.tenantId, contactId, customerId)
 
     const stages = await this.listStages(user.tenantId)
     const targetStage = stageId
@@ -226,6 +232,7 @@ export class OpportunitiesService {
         amount: amount ?? normalized?.total ?? null,
         tenantId: user.tenantId,
         customerId,
+        contactId: contactId ?? null,
         stageId: targetStage.id,
         expectedCloseAt: expectedCloseAt ? new Date(expectedCloseAt) : null,
         ownerId: owner.id,
@@ -250,7 +257,7 @@ export class OpportunitiesService {
 
   async update(user: AuthUser, id: string, dto: UpdateOpportunityDto): Promise<OpportunityVO> {
     const existing = await this.ensureInScope(user, id)
-    const { customData, ownerId, stageId: _ignored, customerId, expectedCloseAt, items, amount, ...rest } =
+    const { customData, ownerId, stageId: _ignored, customerId, contactId, expectedCloseAt, items, amount, ...rest } =
       dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
@@ -272,6 +279,17 @@ export class OpportunitiesService {
       })
       if (!customer) throw new BadRequestException('客户不存在')
       data.customer = { connect: { id: customerId } }
+    }
+    const targetCustomerId = customerId ?? existing.customerId
+    if (contactId !== undefined) {
+      if (contactId) {
+        await this.assertContactBelongsToCustomer(user.tenantId, contactId, targetCustomerId)
+        data.contact = { connect: { id: contactId } }
+      } else {
+        data.contact = { disconnect: true }
+      }
+    } else if (customerId && customerId !== existing.customerId && existing.contactId) {
+      await this.assertContactBelongsToCustomer(user.tenantId, existing.contactId, targetCustomerId)
     }
     if (ownerId && ownerId !== existing.ownerId) {
       const owner = await this.resolveOwner(user, ownerId)
@@ -420,6 +438,8 @@ export class OpportunitiesService {
       name: opportunity.name,
       customerId: opportunity.customerId,
       customerName: opportunity.customer.name,
+      contactId: opportunity.contactId,
+      contactName: opportunity.contact?.name ?? null,
       stageId: opportunity.stageId,
       stageName: opportunity.stage.name,
       stageProbability: opportunity.stage.probability,
@@ -452,6 +472,14 @@ export class OpportunitiesService {
       discount: Number(item.discount),
       amount: Number(item.amount),
     }
+  }
+
+  private async assertContactBelongsToCustomer(tenantId: string, contactId: string, customerId: string) {
+    const contact = await this.prisma.contact.findFirst({
+      where: { id: contactId, tenantId, customerId },
+      select: { id: true },
+    })
+    if (!contact) throw new BadRequestException('联系人不存在或不属于当前客户')
   }
 
   private stageToVO(stage: OpportunityStage): OpportunityStageVO {

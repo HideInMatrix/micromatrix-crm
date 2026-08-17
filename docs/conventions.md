@@ -1,6 +1,7 @@
 # CordysCRM 界面复刻约定
 
 - `CordysCRM/` 是只读业务与交互参考源码，不进入 MicroMatrix Git 版本库。
+- CordysCRM 源代码是当前复刻工作的第一事实来源。现有 MicroMatrix 页面、接口和业务规则只在与 Cordys 源码一致时保留；发生冲突时允许直接删除、替换或重构旧实现，不以“兼容旧页面/旧接口”为优先目标。
 - 新增/调整页面时，优先对齐 CordysCRM 的页面结构、字段顺序、操作入口、弹窗/抽屉流程和列表批量交互。
 - 禁止直接复制 CordysCRM 的图标、图片、iconfont 等静态资源。
 - 图标优先选择 Element Plus Icons 或项目已有开源图标中的近似项；无法可靠对应时使用文字按钮/文字标签占位，后续人工替换。
@@ -41,12 +42,12 @@
 1. **Schema**：`schema.prisma` 加模型（必带 `tenantId/ownerId/deptId/customData Json?` + 索引）→ migrate + generate
 2. **共享类型**：`packages/shared/src` 加 `TicketVO`；权限树 `permissions.ts` 加 `menu:ticket` + 动作码；`MODULE_LABELS` 注册
 3. **系统字段模板**：`apps/api/src/modules/metadata/system-fields.ts` 的 `MODULE_SYSTEM_FIELDS` 加 `ticket: [...]`（key 对应实体列；纯扩展字段用 `cf_` 前缀）
-4. **后端模块**：复制既有模块骨架（推荐参照 `modules/leads`），实现 CRUD + 数据范围 + 元数据校验 + 公式 VO；注册进 `app.module.ts`
-5. **前端页面**：复制 `views/LeadsView.vue` 骨架改造（动态列 + DynamicForm + AdvancedFilter）；`api/` 加封装；路由与菜单登记
+4. **后端模块**：先阅读 Cordys 对应模块的 Controller / Service / Domain / DTO / Mapper XML，再按当前 NestJS 技术栈实现相同业务语义；不要先复制现有 MicroMatrix 模块再反推功能。
+5. **前端页面**：先阅读 Cordys 对应页面、子组件、路由与 API 调用，再按当前 Vue 3 + Element Plus 技术栈复刻其结构与交互；现有 MicroMatrix 页面仅作为可复用基础组件来源，不作为产品行为依据。
 6. **可选接入**：
    - 跟进：`FollowUpRecord.targetType` 加枚举值 + `touchTarget` 分支
    - 审批：`APPROVAL_MODULE_LABELS` 注册 + `targetInfo/setBizStatus/effectApproved` 加分支 + 表加 `approvalStatus`
-   - 导入导出：参照 leads 的 `exportCsv/bulkImport`
+   - 导入导出：优先复用 R2 `SpreadsheetService / ExportTasksService / CrmImportDialog / CrmExportDrawer`，行为以 Cordys 源码为准
 7. **收尾**：角色种子加权限码；`scripts/smoke.mjs` 补断言；`docs/cordys-parity.md` 更新状态
 
 ## 标讯范围
@@ -58,7 +59,7 @@
 1. `CordysCRM/` 是功能和业务规则参考目录，不作为 MicroMatrix CRM 的生产运行时依赖。
 2. 新增或重构业务模块前，必须同时阅读对应的 Controller、Service、Domain、DTO、Mapper XML，不能只根据页面或接口名称推断功能。
 3. 迁移对象是业务语义：状态机、校验、事务、权限、数据范围、日志、通知、审批、定时任务和查询行为；不要机械保留 Spring/MyBatis 的类结构。
-4. 现有 NestJS 模块优先做差异重构，禁止为了“对照 Cordys”再建立一套平行实现。
+4. 现有 NestJS 模块仅在与 Cordys 行为一致时复用；如果旧实现为了早期页面演示而简化、命名或接口边界不一致，应直接重构或删除，禁止为了兼容旧实现而偏离 Cordys。
 5. 复杂列表、统计和高级筛选必须检查 Mapper XML，因为很多真实业务条件不在 Java Domain 类里。
 6. 每个模块完成后必须更新 `docs/cordys-parity.md`，并通过 build/typecheck/lint 与对应 smoke/integration test。
 7. Cordys 自身的产品授权与版本区分机制不属于 MicroMatrix CRM 的业务需求。
