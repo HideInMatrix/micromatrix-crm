@@ -16,8 +16,13 @@ const loading = ref(false)
 
 const trendOption = computed(() => ({
   tooltip: { trigger: 'axis' },
-  legend: { data: ['赢单金额', '回款金额'] },
-  grid: { left: 70, right: 30, top: 40, bottom: 30 },
+  legend: {
+    data: ['赢单金额', '回款金额'],
+    top: 0,
+    left: 'center',
+    itemGap: 24,
+  },
+  grid: { left: 24, right: 24, top: 48, bottom: 20, containLabel: true },
   xAxis: { type: 'category', data: trend.value?.months ?? [] },
   yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${v / 10000}万` } },
   series: [
@@ -28,7 +33,7 @@ const trendOption = computed(() => ({
 
 const lostReasonOption = computed(() => ({
   tooltip: { trigger: 'item' },
-  legend: { orient: 'vertical', left: 'left', type: 'scroll' },
+  legend: { orient: 'vertical', left: 0, top: 'middle', type: 'scroll' },
   series: [
     {
       type: 'pie',

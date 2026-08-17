@@ -19,3 +19,32 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* PC 表格操作列统一使用同一条垂直基线。
+ * el-dropdown 默认按文本基线参与 inline 布局，会让“更多”比相邻 link button 略微下沉。
+ */
+html.pc-client .el-table .el-button.is-link {
+  min-height: 24px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  line-height: 20px;
+  vertical-align: middle;
+}
+
+html.pc-client .el-table .el-dropdown {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+html.pc-client .el-table .el-dropdown .el-button.is-link {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
+html.pc-client .el-table .el-dropdown + .el-button.is-link,
+html.pc-client .el-table .el-button.is-link + .el-dropdown {
+  margin-left: 12px;
+}
