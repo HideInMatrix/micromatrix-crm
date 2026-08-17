@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const loading = ref(false)
 const rows = ref<OwnerHistoryVO[]>([])
+const loadError = ref('')
 
 function formatDate(value: string | null) {
   if (!value) return '-'
@@ -20,14 +21,16 @@ function formatDate(value: string | null) {
 async function load() {
   if (!props.resourceId) return
   loading.value = true
+  loadError.value = ''
   try {
     const { data } =
       props.module === 'lead'
         ? await leadApi.ownerHistory(props.resourceId)
         : await customerExtraApi.ownerHistory(props.resourceId)
-    rows.value = data
+    rows.value = Array.isArray(data) ? data : []
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+    rows.value = []
+    loadError.value = extractErrorMessage(error)
   } finally {
     loading.value = false
   }
@@ -42,45 +45,55 @@ onMounted(load)
 </script>
 
 <template>
-  <div v-loading="loading">
-    <el-empty v-if="!loading && rows.length === 0" description="暂无负责人历史" :image-size="70" />
-    <el-timeline v-else>
-      <el-timeline-item
-        v-for="row in rows"
-        :key="row.id"
-        :timestamp="formatDate(row.endedAt)"
-        placement="top"
-      >
-        <el-card shadow="never" class="!border-[var(--el-border-color-lighter)]">
-          <div class="flex-between gap-3">
-            <div>
-              <span class="font-medium">{{ row.ownerName ?? '未知负责人' }}</span>
-              <span v-if="row.departmentName" class="text-sm text-[var(--el-text-color-secondary)] ml-2">
-                {{ row.departmentName }}
-              </span>
-            </div>
-            <el-tag size="small" type="info">负责人结束</el-tag>
-          </div>
-          <div class="grid grid-cols-2 gap-x-5 gap-y-1 mt-3 text-sm">
-            <div>
-              <span class="text-[var(--el-text-color-secondary)]">开始持有：</span>
-              {{ formatDate(row.collectedAt) }}
-            </div>
-            <div>
-              <span class="text-[var(--el-text-color-secondary)]">结束时间：</span>
-              {{ formatDate(row.endedAt) }}
-            </div>
-            <div>
-              <span class="text-[var(--el-text-color-secondary)]">操作人：</span>
-              {{ row.operatorName ?? (row.operatorId ? row.operatorId : '系统') }}
-            </div>
-            <div v-if="row.reasonName || row.reasonId">
-              <span class="text-[var(--el-text-color-secondary)]">退池原因：</span>
-              {{ row.reasonName ?? row.reasonId }}
-            </div>
-          </div>
-        </el-card>
-      </el-timeline-item>
-    </el-timeline>
+  <div v-loading="loading" class="min-h-[180px]">
+    <el-result
+      v-if="!loading && loadError"
+      icon="error"
+      title="负责人记录加载失败"
+      :sub-title="loadError"
+    >
+      <template #extra>
+        <el-button type="primary" @click="load">重新加载</el-button>
+      </template>
+    </el-result>
+
+    <el-empty
+      v-else-if="!loading && rows.length === 0"
+      description="暂无负责人记录"
+      :image-size="76"
+    />
+
+    <el-table v-else-if="rows.length > 0" :data="rows" border stripe class="w-full">
+      <el-table-column label="负责人" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.ownerName ?? row.ownerId ?? '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="部门" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.departmentName ?? '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="归属开始时间" min-width="170">
+        <template #default="{ row }">
+          {{ formatDate(row.collectedAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="归属结束时间" min-width="170">
+        <template #default="{ row }">
+          {{ formatDate(row.endedAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="回收原因" min-width="130" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.reasonName ?? row.reasonId ?? '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作人" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.operatorName ?? row.operatorId ?? '系统' }}
+        </template>
+      </el-table-column>
+    </el-table>
   </div>
 </template>
