@@ -338,9 +338,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <CustomerModuleNav active="contact" />
-
   <el-card shadow="never">
+    <CustomerModuleNav active="contact" />
+
     <div class="flex-between gap-4 mb-4">
       <div class="flex items-center gap-2 flex-wrap">
         <el-button v-if="auth.hasPerm('contact:create')" type="primary" @click="openCreate">
@@ -432,7 +432,7 @@ onMounted(async () => {
       :data="items"
       border
       row-key="id"
-      class="mt-3"
+      class="mt-3 w-full"
       @selection-change="handleSelectionChange"
     >
       <el-table-column type="selection" width="46" />

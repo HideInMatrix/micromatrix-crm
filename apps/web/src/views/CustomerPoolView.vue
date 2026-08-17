@@ -246,8 +246,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <CustomerModuleNav active="sea" />
   <el-card shadow="never">
+    <CustomerModuleNav active="sea" />
+
     <SavedViewBar
       module="customer_pool"
       :fields="fields"
@@ -311,7 +312,14 @@ onMounted(async () => {
       </div>
     </div>
 
-    <el-table v-loading="loading" :data="items" row-key="id" stripe @selection-change="handleSelectionChange">
+    <el-table
+      v-loading="loading"
+      :data="items"
+      row-key="id"
+      stripe
+      class="w-full"
+      @selection-change="handleSelectionChange"
+    >
       <el-table-column
         v-if="auth.hasPerm('customerPool:update') || auth.hasPerm('customerPool:delete') || canExport"
         type="selection"
@@ -321,8 +329,7 @@ onMounted(async () => {
         v-for="column in listColumns"
         :key="column.key"
         :label="column.label"
-        :width="column.listWidth ?? undefined"
-        :min-width="column.listWidth ? undefined : 140"
+        :min-width="column.listWidth ?? 140"
         show-overflow-tooltip
       >
         <template #default="{ row }">

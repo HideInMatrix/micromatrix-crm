@@ -394,8 +394,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <CustomerModuleNav active="customer" />
   <el-card shadow="never">
+    <CustomerModuleNav active="customer" />
+
     <SavedViewBar
       :module="savedViewModule"
       :fields="fields"
@@ -472,6 +473,7 @@ onMounted(async () => {
       :data="items"
       row-key="id"
       stripe
+      class="w-full"
       @selection-change="handleSelectionChange"
     >
       <el-table-column
@@ -489,8 +491,7 @@ onMounted(async () => {
         v-for="column in listColumns"
         :key="column.key"
         :label="column.label"
-        :width="column.listWidth ?? undefined"
-        :min-width="column.listWidth ? undefined : 140"
+        :min-width="column.listWidth ?? 140"
         show-overflow-tooltip
       >
         <template #default="{ row }">

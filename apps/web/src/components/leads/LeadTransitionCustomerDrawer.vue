@@ -130,7 +130,7 @@ watch(visible, (open) => {
         />
       </div>
 
-      <el-table v-loading="loading" :data="rows" border row-key="id" class="flex-1">
+      <el-table v-loading="loading" :data="rows" border row-key="id" class="flex-1 w-full">
         <el-table-column width="56" align="center">
           <template #default="{ row }">
             <el-radio
@@ -149,8 +149,7 @@ watch(visible, (open) => {
           v-for="field in listFields"
           :key="field.id"
           :label="field.label"
-          :width="field.listWidth ?? undefined"
-          :min-width="field.listWidth ? undefined : 140"
+          :min-width="field.listWidth ?? 140"
           show-overflow-tooltip
         >
           <template #default="{ row }">

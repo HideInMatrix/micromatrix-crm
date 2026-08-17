@@ -151,13 +151,12 @@ onMounted(async () => {
       </el-button>
     </div>
 
-    <el-table v-loading="loading" :data="items" stripe>
+    <el-table v-loading="loading" :data="items" stripe class="w-full">
       <el-table-column
         v-for="column in listColumns"
         :key="column.key"
         :label="column.label"
-        :width="column.listWidth ?? undefined"
-        :min-width="column.listWidth ? undefined : 140"
+        :min-width="column.listWidth ?? 140"
         show-overflow-tooltip
       >
         <template #default="{ row }">
