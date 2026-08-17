@@ -7,6 +7,11 @@ export * from './sales'
 export * from './system'
 
 import type { FollowUpVO, TeamMemberVO } from './sales'
+import type {
+  InvoiceStatus,
+  OrderStatus,
+  ReceivablePlanStatus,
+} from './deal'
 
 // ============ 通用分页 ============
 
@@ -135,4 +140,85 @@ export interface CustomerRelatedVO {
   }[]
   followUps: FollowUpVO[]
   team: TeamMemberVO[]
+}
+
+export type Customer360Resource =
+  | 'opportunities'
+  | 'contracts'
+  | 'receivablePlans'
+  | 'receivableRecords'
+  | 'invoices'
+  | 'orders'
+
+export interface Customer360OpportunityVO {
+  id: string
+  name: string
+  amount: number | null
+  stageName: string
+  ownerName: string | null
+  createdAt: string
+}
+
+export interface Customer360ContractVO {
+  id: string
+  code: string
+  name: string
+  amount: number
+  paidAmount: number
+  status: string
+  approvalStatus: string
+  ownerName: string | null
+  createdAt: string
+}
+
+export interface Customer360ReceivablePlanVO {
+  id: string
+  contractId: string
+  contractName: string
+  period: number
+  amount: number
+  paidAmount: number
+  status: ReceivablePlanStatus
+  dueDate: string
+  remark: string | null
+}
+
+export interface Customer360ReceivableRecordVO {
+  id: string
+  contractId: string
+  contractName: string
+  planId: string | null
+  planPeriod: number | null
+  amount: number
+  receivedAt: string
+  method: string | null
+  remark: string | null
+  approvalStatus: string
+  ownerName: string | null
+}
+
+export interface Customer360InvoiceVO {
+  id: string
+  contractId: string
+  contractName: string
+  titleName: string | null
+  amount: number
+  type: string
+  status: InvoiceStatus
+  invoiceNo: string | null
+  issuedAt: string | null
+  remark: string | null
+}
+
+export interface Customer360OrderVO {
+  id: string
+  code: string
+  name: string
+  contractId: string
+  contractName: string
+  amount: number
+  status: OrderStatus
+  approvalStatus: string
+  ownerName: string | null
+  createdAt: string
 }

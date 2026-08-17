@@ -233,6 +233,58 @@ GET /customers?view=COLLABORATION
 - 个人 SavedView 仍使用 `module=customer`；选中个人视图时使用角色默认数据范围，再叠加 SavedView 条件。
 - 客户公海继续使用 `scope=sea + poolId` 和 `module=customer_pool`，但只在独立 `/customers/open-sea` 页面使用。
 
+## 客户 360（R5）
+
+客户详情保留轻量聚合接口：
+
+```text
+GET /customers/{id}/related
+```
+
+该接口用于兼容已有统计/轻量关联读取，但 R5 起会按当前用户模块权限裁剪：
+
+- 联系人需要 `contact:read`，并继续服从客户协作子域规则。
+- 商机需要 `menu:opportunity`。
+- 合同聚合需要 `menu:contract`。
+- 当前访问依赖 `READ_ONLY/COLLABORATION` 协作关系时，不通过该聚合接口泄露完整协作成员列表。
+
+客户 360 的大列表使用独立分页接口：
+
+```text
+GET /customers/{id}/360/opportunities
+GET /customers/{id}/360/contracts
+GET /customers/{id}/360/receivablePlans
+GET /customers/{id}/360/receivableRecords
+GET /customers/{id}/360/invoices
+GET /customers/{id}/360/orders
+```
+
+通用分页参数：`page`、`pageSize`，`pageSize` 最大 100。返回统一 `PaginatedResult`：
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "pageSize": 10
+}
+```
+
+权限边界：
+
+- 所有 360 资源首先经过 `CustomerAccessService.assertRead()`，无客户读取权时不会因关联模块权限而旁路读取。
+- `opportunities` 需要 `menu:opportunity`。
+- `contracts / receivablePlans / receivableRecords / invoices` 需要 `menu:contract`。
+- `orders` 需要 `menu:order`。
+- `resource` 使用服务端白名单，未知值返回 400，不允许落入默认资源分支。
+- 公海客户不开放上述普通客户 360 业务资源；即使用户可读取该公海客户，直接请求 `/360/*` 仍返回 403。公海详情只提供客户信息、跟进记录和负责人记录。
+
+UI 对齐：
+
+- PC 客户列表详情使用 100% 客户概览 Drawer；左侧为 Metadata 客户字段，右侧为 360 Tab，并支持左右/上下布局与 Tab 本地显隐偏好。
+- Mobile `/customers` 按 Cordys 使用 `客户 / 联系人 / 客户公海` 三页签；普通客户详情使用全页 Tab，公海客户详情只显示客户信息 / 跟进记录 / 负责人记录。
+- Cordys 的“跟进计划”依赖 `FollowUpPlan` 业务对象，当前项目尚无该模型，因此 R5 不提供无数据空壳 Tab。
+
 ## 客户集团 / 子公司关系
 
 关系类型：

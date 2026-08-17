@@ -1,11 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import {
+  Customer360Resource,
   CustomerRelatedVO,
   CustomerVO,
   DuplicateHitVO,
   FieldVO,
   ImportResultVO,
   PaginatedResult,
+  ReceivablePlanStatus,
+  hasPermission,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
 import { toCsv } from '../common/csv'
@@ -292,35 +295,48 @@ export class CustomersService {
         ? { ownerId: user.id }
         : {}),
     }
+    const isOpenSea = access.customer.inSea
     const canReadContacts =
-      access.dataScope || access.pool || access.collaborationType === 'COLLABORATION'
+      !isOpenSea &&
+      hasPermission(user.permissions, 'contact:read') &&
+      (access.dataScope || access.pool || access.collaborationType === 'COLLABORATION')
+    const canReadOpportunities =
+      !isOpenSea && hasPermission(user.permissions, 'menu:opportunity')
+    const canReadContracts = !isOpenSea && hasPermission(user.permissions, 'menu:contract')
+    const canReadTeam = !isOpenSea && access.collaborationType === null
     const [contacts, opportunities, contracts, followUps, team] = await Promise.all([
       canReadContacts
         ? this.prisma.contact.findMany({ where: contactWhere, orderBy: { createdAt: 'asc' } })
         : Promise.resolve([]),
-      this.prisma.opportunity.findMany({
-        where: { tenantId: user.tenantId, customerId: id },
-        include: { stage: true },
-        orderBy: { createdAt: 'desc' },
-        take: 50,
-      }),
-      this.prisma.contract.findMany({
-        where: { tenantId: user.tenantId, customerId: id },
-        include: {
-          receivableRecords: { select: { amount: true, approvalStatus: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 50,
-      }),
+      canReadOpportunities
+        ? this.prisma.opportunity.findMany({
+            where: { tenantId: user.tenantId, customerId: id },
+            include: { stage: true },
+            orderBy: { createdAt: 'desc' },
+            take: 50,
+          })
+        : Promise.resolve([]),
+      canReadContracts
+        ? this.prisma.contract.findMany({
+            where: { tenantId: user.tenantId, customerId: id },
+            include: {
+              receivableRecords: { select: { amount: true, approvalStatus: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 50,
+          })
+        : Promise.resolve([]),
       this.prisma.followUpRecord.findMany({
         where: { tenantId: user.tenantId, targetType: 'customer', targetId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      this.prisma.customerTeamMember.findMany({
-        where: { tenantId: user.tenantId, customerId: id },
-        orderBy: { createdAt: 'asc' },
-      }),
+      canReadTeam
+        ? this.prisma.customerTeamMember.findMany({
+            where: { tenantId: user.tenantId, customerId: id },
+            orderBy: { createdAt: 'asc' },
+          })
+        : Promise.resolve([]),
     ])
 
     const [ownerMap, attachMap] = await Promise.all([
@@ -396,6 +412,244 @@ export class CustomersService {
         collaborationType: m.collaborationType as 'READ_ONLY' | 'COLLABORATION',
         createdAt: m.createdAt.toISOString(),
       })),
+    }
+  }
+
+  async relatedResource(
+    user: AuthUser,
+    id: string,
+    resource: Customer360Resource,
+    page = 1,
+    pageSize = 10,
+  ): Promise<PaginatedResult<Record<string, unknown>>> {
+    const access = await this.customerAccess.assertRead(user, id)
+    if (access.customer.inSea) {
+      throw new ForbiddenException('客户公海详情不提供该 360 业务资源')
+    }
+    this.assert360ResourcePermission(user, resource)
+
+    const take = Math.min(Math.max(pageSize, 1), 100)
+    const currentPage = Math.max(page, 1)
+    const skip = (currentPage - 1) * take
+
+    if (resource === 'opportunities') {
+      const where: Prisma.OpportunityWhereInput = { tenantId: user.tenantId, customerId: id }
+      const [rows, total] = await Promise.all([
+        this.prisma.opportunity.findMany({
+          where,
+          include: { stage: true },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.opportunity.count({ where }),
+      ])
+      const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          amount: row.amount === null ? null : Number(row.amount),
+          stageName: row.stage.name,
+          ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+          createdAt: row.createdAt.toISOString(),
+        })),
+        total,
+        page: currentPage,
+        pageSize: take,
+      }
+    }
+
+    if (resource === 'contracts') {
+      const where: Prisma.ContractWhereInput = { tenantId: user.tenantId, customerId: id }
+      const [rows, total] = await Promise.all([
+        this.prisma.contract.findMany({
+          where,
+          include: {
+            receivableRecords: { select: { amount: true, approvalStatus: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.contract.count({ where }),
+      ])
+      const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          code: row.code,
+          name: row.name,
+          amount: Number(row.amount),
+          paidAmount:
+            Math.round(
+              row.receivableRecords
+                .filter((record) => record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED')
+                .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
+            ) / 100,
+          status: row.status,
+          approvalStatus: row.approvalStatus,
+          ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+          createdAt: row.createdAt.toISOString(),
+        })),
+        total,
+        page: currentPage,
+        pageSize: take,
+      }
+    }
+
+    if (resource === 'receivablePlans') {
+      const where: Prisma.ReceivablePlanWhereInput = {
+        tenantId: user.tenantId,
+        contract: { customerId: id },
+      }
+      const [rows, total] = await Promise.all([
+        this.prisma.receivablePlan.findMany({
+          where,
+          include: {
+            contract: { select: { name: true } },
+            records: { select: { amount: true, approvalStatus: true } },
+          },
+          orderBy: [{ dueDate: 'asc' }, { period: 'asc' }],
+          skip,
+          take,
+        }),
+        this.prisma.receivablePlan.count({ where }),
+      ])
+      return {
+        items: rows.map((row) => {
+          const paidAmount =
+            Math.round(
+              row.records
+                .filter((record) => record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED')
+                .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
+            ) / 100
+          const amount = Number(row.amount)
+          return {
+            id: row.id,
+            contractId: row.contractId,
+            contractName: row.contract.name,
+            period: row.period,
+            amount,
+            paidAmount,
+            status: this.receivablePlanStatus(amount, paidAmount, row.dueDate),
+            dueDate: row.dueDate.toISOString().slice(0, 10),
+            remark: row.remark,
+          }
+        }),
+        total,
+        page: currentPage,
+        pageSize: take,
+      }
+    }
+
+    if (resource === 'receivableRecords') {
+      const where: Prisma.ReceivableRecordWhereInput = {
+        tenantId: user.tenantId,
+        contract: { customerId: id },
+      }
+      const [rows, total] = await Promise.all([
+        this.prisma.receivableRecord.findMany({
+          where,
+          include: {
+            contract: { select: { name: true } },
+            plan: { select: { period: true } },
+          },
+          orderBy: { receivedAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.receivableRecord.count({ where }),
+      ])
+      const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          contractId: row.contractId,
+          contractName: row.contract.name,
+          planId: row.planId,
+          planPeriod: row.plan?.period ?? null,
+          amount: Number(row.amount),
+          receivedAt: row.receivedAt.toISOString().slice(0, 10),
+          method: row.method,
+          remark: row.remark,
+          approvalStatus: row.approvalStatus,
+          ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+        })),
+        total,
+        page: currentPage,
+        pageSize: take,
+      }
+    }
+
+    if (resource === 'invoices') {
+      const where: Prisma.InvoiceRecordWhereInput = {
+        tenantId: user.tenantId,
+        contract: { customerId: id },
+      }
+      const [rows, total] = await Promise.all([
+        this.prisma.invoiceRecord.findMany({
+          where,
+          include: {
+            contract: { select: { name: true } },
+            title: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.invoiceRecord.count({ where }),
+      ])
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          contractId: row.contractId,
+          contractName: row.contract.name,
+          titleName: row.title?.name ?? null,
+          amount: Number(row.amount),
+          type: row.type,
+          status: row.status,
+          invoiceNo: row.invoiceNo,
+          issuedAt: row.issuedAt?.toISOString().slice(0, 10) ?? null,
+          remark: row.remark,
+        })),
+        total,
+        page: currentPage,
+        pageSize: take,
+      }
+    }
+
+    const where: Prisma.OrderWhereInput = {
+      tenantId: user.tenantId,
+      contract: { customerId: id },
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: { contract: { select: { name: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.order.count({ where }),
+    ])
+    const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        contractId: row.contractId,
+        contractName: row.contract.name,
+        amount: Number(row.amount),
+        status: row.status,
+        approvalStatus: row.approvalStatus,
+        ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      total,
+      page: currentPage,
+      pageSize: take,
     }
   }
 
@@ -1349,6 +1603,29 @@ export class CustomersService {
       select: { id: true, name: true },
     })
     return new Map(users.map((u) => [u.id, u.name]))
+  }
+
+  private assert360ResourcePermission(user: AuthUser, resource: Customer360Resource) {
+    const permission =
+      resource === 'opportunities'
+        ? 'menu:opportunity'
+        : resource === 'orders'
+          ? 'menu:order'
+          : 'menu:contract'
+    if (!hasPermission(user.permissions, permission)) {
+      throw new ForbiddenException('没有查看该客户关联数据的权限')
+    }
+  }
+
+  private receivablePlanStatus(
+    amount: number,
+    paidAmount: number,
+    dueDate: Date,
+  ): ReceivablePlanStatus {
+    if (paidAmount >= amount && amount > 0) return 'PAID'
+    if (paidAmount > 0) return 'PARTIAL'
+    if (dueDate < new Date()) return 'OVERDUE'
+    return 'PENDING'
   }
 
   private async buildCustomerRelation(

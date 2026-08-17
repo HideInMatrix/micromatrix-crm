@@ -492,6 +492,23 @@ check(
   '客户360关联数据',
   related.stats && Array.isArray(related.contacts) && Array.isArray(related.opportunities),
 )
+const r5OpportunityPage = await get(
+  `/customers/${converted.customerId}/360/opportunities?page=1&pageSize=10`,
+  sales.headers,
+)
+check(
+  'R5 客户360 商机分页接口返回转换商机',
+  Array.isArray(r5OpportunityPage.items) &&
+    r5OpportunityPage.items.some((item) => item.id === converted.opportunityId) &&
+    r5OpportunityPage.page === 1 &&
+    r5OpportunityPage.pageSize === 10,
+)
+const invalidR5Resource = await request(
+  'GET',
+  `/customers/${converted.customerId}/360/not-supported`,
+  sales.headers,
+)
+check('R5 客户360 拒绝非法资源类型', invalidR5Resource.status === 400)
 
 const historyCustomer = await post('/customers', manager.headers, {
   name: `负责人历史客户-${stamp}`,
@@ -920,6 +937,12 @@ const poolCustomerA = await post('/customers', admin.headers, { name: `R1公海�
 const poolCustomerB = await post('/customers', admin.headers, { name: `R1公海批改客户B-${stamp}` })
 await post(`/customers/${poolCustomerA.id}/to-sea`, admin.headers, { poolId: managerCustomerPool.id })
 await post(`/customers/${poolCustomerB.id}/to-sea`, admin.headers, { poolId: managerCustomerPool.id })
+const deniedOpenSea360 = await request(
+  'GET',
+  `/customers/${poolCustomerA.id}/360/contracts?page=1&pageSize=10`,
+  manager.headers,
+)
+check('R5 客户公海详情禁止读取普通客户360业务资源', deniedOpenSea360.status === 403)
 const poolCustomerUpdate = await post('/customers/pool/batch/update', manager.headers, {
   poolId: managerCustomerPool.id,
   ids: [poolCustomerA.id, poolCustomerB.id],
@@ -1616,7 +1639,7 @@ const plan = await post('/contracts/receivable-plans', manager.headers, {
   amount: 30000,
   dueDate: '2026-12-31',
 })
-await post('/contracts/receivable-records', manager.headers, {
+const paymentRecord = await post('/contracts/receivable-records', manager.headers, {
   contractId: contract.id,
   planId: plan.id,
   amount: 30000,
@@ -1630,6 +1653,61 @@ const order = await post('/orders', manager.headers, {
   amount: 30000,
 })
 check('创建订单', Boolean(order.code))
+
+const invoiceTitle = await post('/contracts/invoice-titles', manager.headers, {
+  customerId: converted.customerId,
+  name: `冒烟开票抬头-${stamp}`,
+  taxNo: `TAX${stamp}`,
+})
+const invoice = await post('/contracts/invoices', manager.headers, {
+  contractId: contract.id,
+  titleId: invoiceTitle.id,
+  amount: 30000,
+  type: '增值税普通发票',
+})
+check('R5 客户360 测试发票创建', Boolean(invoice.id))
+
+const [
+  r5OpportunityRows,
+  r5ContractRows,
+  r5PlanRows,
+  r5PaymentRows,
+  r5InvoiceRows,
+  r5OrderRows,
+] = await Promise.all([
+  get(`/customers/${converted.customerId}/360/opportunities?page=1&pageSize=10`, manager.headers),
+  get(`/customers/${converted.customerId}/360/contracts?page=1&pageSize=10`, manager.headers),
+  get(`/customers/${converted.customerId}/360/receivablePlans?page=1&pageSize=10`, manager.headers),
+  get(`/customers/${converted.customerId}/360/receivableRecords?page=1&pageSize=10`, manager.headers),
+  get(`/customers/${converted.customerId}/360/invoices?page=1&pageSize=10`, manager.headers),
+  get(`/customers/${converted.customerId}/360/orders?page=1&pageSize=10`, manager.headers),
+])
+check(
+  'R5 客户360 商机 Tab 数据可分页读取',
+  Array.isArray(r5OpportunityRows.items) &&
+    r5OpportunityRows.items.some((item) => item.id === oppWithItems.id),
+)
+check(
+  'R5 客户360 合同 Tab 数据可分页读取',
+  Array.isArray(r5ContractRows.items) && r5ContractRows.items.some((item) => item.id === contract.id),
+)
+check(
+  'R5 客户360 回款计划 Tab 数据可分页读取',
+  Array.isArray(r5PlanRows.items) && r5PlanRows.items.some((item) => item.id === plan.id),
+)
+check(
+  'R5 客户360 回款记录 Tab 数据可分页读取',
+  Array.isArray(r5PaymentRows.items) &&
+    r5PaymentRows.items.some((item) => item.id === paymentRecord.id),
+)
+check(
+  'R5 客户360 发票 Tab 数据可分页读取',
+  Array.isArray(r5InvoiceRows.items) && r5InvoiceRows.items.some((item) => item.id === invoice.id),
+)
+check(
+  'R5 客户360 订单 Tab 数据可分页读取',
+  Array.isArray(r5OrderRows.items) && r5OrderRows.items.some((item) => item.id === order.id),
+)
 
 const form = new FormData()
 form.append('file', new Blob(['scan-copy'], { type: 'text/plain' }), 'scan.txt')

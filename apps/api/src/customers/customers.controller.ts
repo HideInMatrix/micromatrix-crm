@@ -22,6 +22,7 @@ import type { AuthUser } from '../common/auth-user'
 import { CurrentUser } from '../common/decorators/current-user.decorator'
 import { LogOperation } from '../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator'
+import { PaginationQueryDto } from '../common/dto/pagination.dto'
 import {
   BatchAssignOwnerDto,
   BatchClaimDto,
@@ -54,6 +55,15 @@ type UploadedBufferFile = {
   size: number
   buffer: Buffer
 }
+
+const CUSTOMER_360_RESOURCES = [
+  'opportunities',
+  'contracts',
+  'receivablePlans',
+  'receivableRecords',
+  'invoices',
+  'orders',
+] as const
 
 @ApiTags('客户')
 @ApiBearerAuth()
@@ -325,6 +335,26 @@ export class CustomersController {
   @ApiOperation({ summary: '客户 360 关联数据' })
   related(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.customersService.related(user, id)
+  }
+
+  @Get(':id/360/:resource')
+  @ApiOperation({ summary: '客户 360 业务资源分页列表' })
+  relatedResource(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('resource') resource: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    if (!CUSTOMER_360_RESOURCES.includes(resource as (typeof CUSTOMER_360_RESOURCES)[number])) {
+      throw new BadRequestException('不支持的客户 360 资源类型')
+    }
+    return this.customersService.relatedResource(
+      user,
+      id,
+      resource as (typeof CUSTOMER_360_RESOURCES)[number],
+      query.page ?? 1,
+      query.pageSize ?? 10,
+    )
   }
 
   @Get(':id')

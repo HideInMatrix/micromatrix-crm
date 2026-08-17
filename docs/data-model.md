@@ -96,6 +96,29 @@ erDiagram
 | invoice_titles / invoice_records | 工商抬头（可关联客户或通用）；发票 PENDING/ISSUED/VOID |
 | orders | 关联生效合同；状态机 PENDING→DELIVERING→ACCEPTED→COMPLETED / CANCELED（流转表在 shared ORDER_STATUS_FLOW） |
 
+### 客户 360 投影视图（R5）
+
+客户 360 不新增独立汇总表，以 `customers.id` 为根按现有业务关系读取：
+
+```text
+Customer
+├── Contact
+├── FollowUpRecord(targetType=customer)
+├── ResourceOwnerHistory(module=customer)
+├── CustomerRelation
+├── CustomerTeamMember
+├── Opportunity
+└── Contract
+    ├── ReceivablePlan
+    ├── ReceivableRecord
+    ├── InvoiceRecord
+    └── Order
+```
+
+`GET /customers/:id/related` 仅保留轻量/兼容聚合；商机、合同、回款、发票、订单的大列表由 `/customers/:id/360/:resource` 分页读取。所有读取先经过 `CustomerAccessService`，再叠加对应业务模块权限，避免 Customer 360 成为跨模块数据权限旁路。
+
+Cordys 客户 360 还包含 `FollowUpPlan`；当前 schema 尚无该业务模型，因此 R5 不新增占位表或空 Tab，后续随完整跟进计划能力迁移。
+
 ### 审批引擎
 
 | 表 | 要点 |

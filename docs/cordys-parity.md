@@ -24,8 +24,8 @@
 | CordysCRM 模块 | 关键参考实现 | MicroMatrix CRM | 状态 | 后续动作 |
 | --- | --- | --- | --- | --- |
 | 线索 | `clue/*`、`ClueService`、`PoolClueService` | `modules/leads` | ✅ | R1/R2/R4 已完成多池、领取/回收/库容、SavedView、负责人历史、批量、xlsx 导入导出与三条客户转换路径；FollowUpPlan/显式 FormLinkScenario 属平台后续能力 |
-| 客户 | `customer/*`、`CustomerService` | `customers` | 🚧 | PC 已按 Cordys 拆为“客户 / 联系人 / 客户公海”一级入口；客户系统视图 ALL/SELF/DEPARTMENT/COLLABORATION 与 SavedView 已统一，公海独立 `/customers/open-sea`；继续 R5 360 |
-| 联系人 | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue` | `modules/contacts` | ✅ | R3 已对齐独立列表/数据视图、客户内嵌列表、动态字段、启停、商机关联删除保护、批改、xlsx 导入导出与 Cordys 工具条交互；后续随 R4/R5 补跨模块关系与 360 |
+| 客户 | `customer/*`、`CustomerService`、`customerOverviewDrawer.vue`、Mobile `customer/index.vue/detail.vue` | `customers` | ✅ | R5 已完成 PC 100% 客户概览 Drawer、Metadata 客户信息、360 业务 Tab、分页资源接口、协作/只读语义，以及 Mobile 客户/联系人/公海三页签和普通/公海详情；Cordys FollowUpPlan 因当前项目尚无该业务模型，统一留到跟进计划模块迁移 |
+| 联系人 | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue` | `modules/contacts` | ✅ | R3 已对齐独立列表/数据视图、客户内嵌列表、动态字段、启停、商机关联删除保护、批改、xlsx 导入导出与 Cordys 工具条交互；R5 已接入 PC/Mobile 客户 360 与 Mobile 客户模块联系人页签 |
 | 商机 | `opportunity/*`、`OpportunityService` | `modules/opportunities` | 🟡 | 补齐关闭规则、阶段高级配置、负责人/跟进联动 |
 | 报价 | `OpportunityQuotation*` | `modules/quotes` | 🟡 | 对齐审批、快照、联系人、用户视图、操作日志 |
 | 产品 | `product/*`、`ProductService` | `modules/products` | 🟡 | 补齐产品价格/价格表、日志、导出 |

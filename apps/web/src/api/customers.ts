@@ -1,4 +1,11 @@
 import type {
+  Customer360ContractVO,
+  Customer360InvoiceVO,
+  Customer360OpportunityVO,
+  Customer360OrderVO,
+  Customer360ReceivablePlanVO,
+  Customer360ReceivableRecordVO,
+  Customer360Resource,
   CustomerRelatedVO,
   CustomerVO,
   DuplicateHitVO,
@@ -102,6 +109,25 @@ export function getCustomer(id: string) {
 
 export function getCustomerRelated(id: string) {
   return http.get<CustomerRelatedVO>(`/customers/${id}/related`)
+}
+
+export interface Customer360ResourceMap {
+  opportunities: Customer360OpportunityVO
+  contracts: Customer360ContractVO
+  receivablePlans: Customer360ReceivablePlanVO
+  receivableRecords: Customer360ReceivableRecordVO
+  invoices: Customer360InvoiceVO
+  orders: Customer360OrderVO
+}
+
+export function getCustomer360Resource<T extends Customer360Resource>(
+  id: string,
+  resource: T,
+  params: PageQuery = {},
+) {
+  return http.get<PaginatedResult<Customer360ResourceMap[T]>>(`/customers/${id}/360/${resource}`, {
+    params,
+  })
 }
 
 export function checkDuplicate(params: { name?: string; phone?: string }) {

@@ -6,7 +6,6 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   batchDeleteCustomers,
   batchUpdateCustomers,
@@ -30,6 +29,7 @@ import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -38,7 +38,6 @@ import { useAuthStore } from '@/stores/auth'
 import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
-const router = useRouter()
 const fieldRefs = useFieldRefs()
 
 type CustomerSystemView = 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
@@ -69,6 +68,8 @@ const batchEditVisible = ref(false)
 const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
+const overviewVisible = ref(false)
+const overviewCustomerId = ref<string | null>(null)
 
 const savedViewModule = 'customer'
 const isCollaborationView = computed(() => activeSystemView.value === 'COLLABORATION')
@@ -176,7 +177,9 @@ function openMerge() {
 function handleMerged(targetId: string) {
   selectedRows.value = []
   mergeVisible.value = false
-  router.push(`/customers/${targetId}`)
+  overviewCustomerId.value = targetId
+  overviewVisible.value = true
+  loadData()
 }
 
 async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }) {
@@ -329,7 +332,8 @@ async function handleAssignConfirm(userId: string) {
 }
 
 function openDetail(row: CustomerVO) {
-  router.push(`/customers/${row.id}`)
+  overviewCustomerId.value = row.id
+  overviewVisible.value = true
 }
 
 const importVisible = ref(false)
@@ -629,4 +633,11 @@ onMounted(async () => {
       @confirm="handleBatchEdit"
     />
   </el-card>
+
+  <CustomerOverviewDrawer
+    v-model="overviewVisible"
+    :customer-id="overviewCustomerId"
+    @changed="loadData"
+    @deleted="loadData"
+  />
 </template>

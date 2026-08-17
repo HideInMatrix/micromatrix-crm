@@ -423,10 +423,27 @@ R5 前置 UI 架构整理（2026-08-17）：
 - [x] `/customers` 系统视图改为 `ALL / SELF / DEPARTMENT / COLLABORATION`；`GET /customers/tab` 按 Cordys 数据范围规则控制 ALL/DEPARTMENT 显隐。
 - [x] “协作客户”从旧 `customer_collaboration` SavedView module 收回为 `customer` 模块系统视图；个人 SavedView 与系统视图统一在同一视图栏切换。
 - [x] PC 按 Cordys 独立一级路由完成本次重构；未把 PC `/customers/open-sea` 路由强加给 Mobile。
-- [ ] Cordys Mobile 的“客户 / 联系人 / 公海”三页签目前尚未完整复刻，留在 R5 Mobile 客户模块中继续补齐。
+- [x] Cordys Mobile 客户模块按源码拆为“客户 / 联系人 / 客户公海”三个 `van-tabs` 页签；联系人继续走独立联系人数据范围，客户公海按可访问 ResourcePool 切换。
 - [x] 本次客户导航/系统视图重构通过 build/typecheck/lint，完整 smoke 151/151。
 
-状态：`⏳ PLANNED`
+R5 客户 360 复刻（2026-08-17）：
+
+- [x] PC 客户列表“详情”改为 Cordys 同类 100% 客户概览 Drawer；`/customers/:id` 直接路由继续复用同一套 360 内容。
+- [x] PC 概览支持 Cordys 左右/上下布局切换，并保存本地布局偏好与 Tab 显隐偏好。
+- [x] PC 左侧按客户 Metadata 渲染客户字段；右侧落地跟进记录、联系人、负责人记录、客户关系、商机、协作人、合同、回款计划、回款记录、发票、订单。
+- [x] 商机 / 合同 / 回款 / 发票 / 订单使用独立分页 API，不再把大列表无限塞入 `GET /customers/:id/related`。
+- [x] 商机与合同支持从客户 360 打开已有详情 Drawer；合同详情发生回款/发票变化后刷新当前 360 Tab。
+- [x] 协作人支持 `COLLABORATION / READ_ONLY` 新增与切换；依赖协作关系访问时隐藏协作人 Tab，READ_ONLY 禁止联系人/跟进/关系写入。
+- [x] Mobile 客户详情按 Cordys 全页 Tab 重构：客户信息 / 联系人 / 跟进记录 / 负责人记录 / 客户关系 / 协作人；协作身份隐藏协作人 Tab。
+- [x] Mobile 客户公海详情按 Cordys 收窄为客户信息 / 跟进记录 / 负责人记录，只读展示；领取/分配/删除在客户公海列表执行。
+- [x] Mobile 普通客户详情补编辑 / 转移 / 移入公海 / 删除动作，并继续服从资源级 `canManageCustomer / canCollaborateWrite`。
+- [x] `GET /customers/:id/related` 已按联系人/商机/合同模块权限裁剪，避免旧聚合接口成为权限旁路；协作身份不返回协作成员列表。
+- [x] 新增 `GET /customers/:id/360/:resource` 白名单校验与模块权限校验，非法 resource 返回 400。
+- [x] 公海客户在 PC/Mobile 详情都按 Cordys 收窄；后端直接请求普通客户 `/360/*` 资源返回 403，避免通过手工 API 绕过公海详情边界。
+- [x] R5 专项 smoke 使用真实商机、合同、回款计划、回款记录、发票、订单逐项验证 360 分页数据，完整 smoke 160/160。
+- [ ] `FollowUpPlan`：Cordys 客户详情包含跟进计划 Tab，但 MicroMatrix 当前没有 FollowUpPlan 业务模型；R5 不创建空壳 Tab，后续在跟进计划模块整体迁移时接入。
+
+状态：`✅ COMPLETE / 2026-08-17 已通过 R5 自动验收，FollowUpPlan 为明确平台能力缺口`
 
 ### R6 组织、角色与数据范围收口
 

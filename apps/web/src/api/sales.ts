@@ -273,8 +273,14 @@ export const customerExtraApi = {
   assign: (id: string, ownerId: string) => http.post(`/customers/${id}/assign`, { ownerId }),
   ownerHistory: (id: string) => http.get<OwnerHistoryVO[]>(`/customers/${id}/owner-history`),
   teamList: (id: string) => http.get<TeamMemberVO[]>(`/customers/${id}/team`),
-  teamAdd: (id: string, userId: string, role?: string) =>
-    http.post(`/customers/${id}/team`, { userId, role }),
+  teamAdd: (
+    id: string,
+    userId: string,
+    role?: string,
+    collaborationType?: 'READ_ONLY' | 'COLLABORATION',
+  ) => http.post(`/customers/${id}/team`, { userId, role, collaborationType }),
+  teamUpdate: (id: string, memberId: string, collaborationType: 'READ_ONLY' | 'COLLABORATION') =>
+    http.patch(`/customers/${id}/team/${memberId}`, { collaborationType }),
   teamRemove: (id: string, memberId: string) => http.delete(`/customers/${id}/team/${memberId}`),
 }
 
