@@ -189,8 +189,9 @@ lead
 lead_pool
 customer
 customer_pool
-customer_collaboration
 ```
+
+`customer_collaboration` 不再作为独立 SavedView module 使用。Cordys 的“协作客户”属于客户模块的系统视图，当前统一由 `customer` module + `view=COLLABORATION` 表达；历史数据若存在可保留，但新 Web 不再创建该 module 的个人视图。
 
 视图服务端保存 `name + searchMode + conditions + fixed/enabled/sort`，与 Cordys UserView 语义一致。列表按 `sort desc` 返回；`fixed` 仅决定是否显示为顶部快捷标签，不改变排序。
 
@@ -203,6 +204,34 @@ AND
 ```
 
 列可见性与列顺序不是 SavedView 服务端数据。Web 按 `userId + module + viewId` 保存浏览器本地偏好，避免修改企业级字段配置。
+
+## 客户系统视图与客户公海路由
+
+PC 客户模块按 Cordys 拆为三个一级入口：
+
+```text
+/customers            客户
+/contacts             联系人
+/customers/open-sea   客户公海
+```
+
+`/customers` 不再用页面内 Tab 混入客户公海。普通客户列表使用以下系统视图：
+
+```text
+GET /customers/tab
+GET /customers?view=ALL
+GET /customers?view=SELF
+GET /customers?view=DEPARTMENT
+GET /customers?view=COLLABORATION
+```
+
+- `GET /customers/tab` 返回 `{ all, dept }`，只决定 ALL / DEPARTMENT 系统视图是否显示。
+- `ALL` 表示当前角色数据权限下的全部可见客户，不会绕过角色 DataScope。
+- `SELF` 只看本人负责客户。
+- `DEPARTMENT` 使用当前角色允许的部门范围；无此系统视图权限时直接请求返回 403。
+- `COLLABORATION` 只看当前用户作为客户协作成员的数据。
+- 个人 SavedView 仍使用 `module=customer`；选中个人视图时使用角色默认数据范围，再叠加 SavedView 条件。
+- 客户公海继续使用 `scope=sea + poolId` 和 `module=customer_pool`，但只在独立 `/customers/open-sea` 页面使用。
 
 ## 客户集团 / 子公司关系
 

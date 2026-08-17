@@ -6,7 +6,7 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import {
   batchDeleteCustomers,
   batchUpdateCustomers,
@@ -14,19 +14,17 @@ import {
   createCustomer,
   customerTransferApi,
   getCustomer,
+  getCustomerTabs,
   listCustomers,
-  poolBatchDeleteCustomers,
-  poolBatchUpdateCustomers,
   removeCustomer,
   updateCustomer,
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
-import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
+import { customerExtraApi } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CustomerDetailDrawer from '@/components/CustomerDetailDrawer.vue'
 import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
 import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
@@ -41,12 +39,11 @@ import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
 const router = useRouter()
-const route = useRoute()
 const fieldRefs = useFieldRefs()
 
-const activeTab = ref<'mine' | 'sea' | 'collaboration'>('mine')
-const pools = ref<ResourcePoolVO[]>([])
-const selectedPoolId = ref('')
+type CustomerSystemView = 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
+const systemViews = ref<{ id: CustomerSystemView; label: string }[]>([])
+const activeSystemView = ref<CustomerSystemView | ''>('')
 const fields = ref<FieldVO[]>([])
 const loading = ref(false)
 const items = ref<CustomerVO[]>([])
@@ -62,8 +59,6 @@ const saving = ref(false)
 const dynamicFormRef = ref<InstanceType<typeof DynamicForm>>()
 const formModel = ref<Record<string, unknown>>({})
 
-const detailVisible = ref(false)
-const detailTarget = ref<CustomerVO | null>(null)
 const followVisible = ref(false)
 const followTarget = ref<CustomerVO | null>(null)
 const assignVisible = ref(false)
@@ -75,42 +70,19 @@ const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
 
-const savedViewModule = computed(() =>
-  activeTab.value === 'sea'
-    ? 'customer_pool'
-    : activeTab.value === 'collaboration'
-      ? 'customer_collaboration'
-      : 'customer',
-)
-const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
-const canImport = computed(() => {
-  if (activeTab.value === 'collaboration') return false
-  return activeTab.value === 'sea' ? auth.hasPerm('customerPool:import') : auth.hasPerm('customer:import')
-})
-const canExport = computed(() => {
-  if (activeTab.value === 'collaboration') return false
-  return activeTab.value === 'sea' ? auth.hasPerm('customerPool:export') : auth.hasPerm('customer:export')
-})
+const savedViewModule = 'customer'
+const isCollaborationView = computed(() => activeSystemView.value === 'COLLABORATION')
+const canImport = computed(() => !isCollaborationView.value && auth.hasPerm('customer:import'))
+const canExport = computed(() => !isCollaborationView.value && auth.hasPerm('customer:export'))
 const defaultColumnKeys = computed(() =>
   fields.value.filter((field) => field.showInList && !field.hidden).map((field) => field.key),
 )
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
   const fieldMap = new Map(fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]))
-  const hiddenIds =
-    activeTab.value === 'sea' ? new Set(currentPool.value?.hiddenFieldIds ?? []) : new Set<string>()
-  const ordered = keys
+  return keys
     .map((key) => fieldMap.get(key))
-    .filter((field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)))
-  const nameField = fieldMap.get('name')
-  if (
-    activeTab.value === 'sea' &&
-    nameField &&
-    !ordered.some((field) => field.key === 'name')
-  ) {
-    ordered.unshift(nameField)
-  }
-  return ordered
+    .filter((field): field is FieldVO => !!field)
 })
 
 async function loadFields() {
@@ -118,12 +90,20 @@ async function loadFields() {
   fields.value = data
 }
 
-async function loadPoolOptions() {
+async function loadSystemViews() {
   try {
-    const { data } = await resourcePoolApi.options('customer')
-    pools.value = data
-    if (!selectedPoolId.value || !data.some((pool) => pool.id === selectedPoolId.value)) {
-      selectedPoolId.value = data[0]?.id ?? ''
+    const { data } = await getCustomerTabs()
+    const next: { id: CustomerSystemView; label: string }[] = []
+    if (data.all) next.push({ id: 'ALL', label: '全部客户' })
+    next.push({ id: 'SELF', label: '我的客户' })
+    if (data.dept) next.push({ id: 'DEPARTMENT', label: '部门客户' })
+    next.push({ id: 'COLLABORATION', label: '协作客户' })
+    systemViews.value = next
+    if (
+      !activeSavedViewId.value &&
+      (!activeSystemView.value || !next.some((item) => item.id === activeSystemView.value))
+    ) {
+      activeSystemView.value = next[0]?.id ?? 'SELF'
     }
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -137,8 +117,7 @@ async function loadData() {
       page: query.page,
       pageSize: query.pageSize,
       keyword: query.keyword.trim() || undefined,
-      scope: activeTab.value,
-      poolId: activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined,
+      view: activeSystemView.value || undefined,
       filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
       viewId: activeSavedViewId.value || undefined,
     })
@@ -157,15 +136,20 @@ function handleSearch() {
   loadData()
 }
 
-function handleTabChange() {
+function handleSystemViewChange(viewId?: string) {
+  activeSystemView.value = (viewId as CustomerSystemView | undefined) ?? ''
+  if (!viewId) return
   query.page = 1
   activeSavedViewId.value = ''
   selectedRows.value = []
+  loadData()
 }
 
 function handleSavedViewChange(viewId?: string) {
   activeSavedViewId.value = viewId ?? ''
+  if (viewId) activeSystemView.value = ''
   query.page = 1
+  if (!viewId && activeSystemView.value) return
   loadData()
 }
 
@@ -199,12 +183,7 @@ async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }
   if (selectedRows.value.length === 0) return
   try {
     const ids = selectedRows.value.map((row) => row.id)
-    if (activeTab.value === 'sea') {
-      if (!selectedPoolId.value) throw new Error('请先选择客户公海')
-      await poolBatchUpdateCustomers({ poolId: selectedPoolId.value, ids, ...payload })
-    } else {
-      await batchUpdateCustomers({ ids, ...payload })
-    }
+    await batchUpdateCustomers({ ids, ...payload })
     ElMessage.success(`已修改 ${selectedRows.value.length} 个客户`)
     batchEditVisible.value = false
     await loadData()
@@ -223,12 +202,7 @@ async function handleBatchDelete() {
   if (!confirmed) return
   try {
     const ids = selectedRows.value.map((row) => row.id)
-    if (activeTab.value === 'sea') {
-      if (!selectedPoolId.value) throw new Error('请先选择客户公海')
-      await poolBatchDeleteCustomers(selectedPoolId.value, ids)
-    } else {
-      await batchDeleteCustomers(ids)
-    }
+    await batchDeleteCustomers(ids)
     ElMessage.success('批量删除成功')
     await loadData()
   } catch (error) {
@@ -335,18 +309,8 @@ async function handleToSea(row: CustomerVO) {
   }).catch(() => false)
   if (!confirmed) return
   try {
-    await customerExtraApi.toSea(row.id, selectedPoolId.value || undefined)
+    await customerExtraApi.toSea(row.id)
     ElMessage.success('已退回公海')
-    loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleClaim(row: CustomerVO) {
-  try {
-    await customerExtraApi.claim(row.id)
-    ElMessage.success(`已领取「${row.name}」`)
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -364,11 +328,6 @@ async function handleAssignConfirm(userId: string) {
   }
 }
 
-function openPreview(row: CustomerVO) {
-  detailTarget.value = row
-  detailVisible.value = true
-}
-
 function openDetail(row: CustomerVO) {
   router.push(`/customers/${row.id}`)
 }
@@ -378,8 +337,7 @@ const importVisible = ref(false)
 function transferParams() {
   return {
     keyword: query.keyword.trim() || undefined,
-    scope: activeTab.value,
-    poolId: activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined,
+    view: activeSystemView.value || undefined,
     filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
     viewId: activeSavedViewId.value || undefined,
   }
@@ -397,17 +355,14 @@ function openExport(mode: 'all' | 'selected') {
 async function handleExportConfirm(payload: { fileName: string; headList: string[] }) {
   exportLoading.value = true
   try {
-    const poolId = activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined
-    if (activeTab.value === 'sea' && !poolId) throw new Error('请先选择客户公海')
     if (exportMode.value === 'selected') {
       await customerTransferApi.exportSelected(
         transferParams(),
         { ...payload, ids: selectedRows.value.map((row) => row.id) },
-        poolId,
       )
       selectedRows.value = []
     } else {
-      await customerTransferApi.exportAll(transferParams(), payload, poolId)
+      await customerTransferApi.exportAll(transferParams(), payload)
     }
     exportVisible.value = false
     ElMessage.success('导出任务已创建，可在页面顶部“导出任务”中下载')
@@ -433,21 +388,14 @@ async function openFollow(row: CustomerVO) {
 }
 
 onMounted(async () => {
-  if (route.query.tab === 'sea') activeTab.value = 'sea'
-  await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
+  await Promise.all([loadFields(), fieldRefs.load(), loadSystemViews()])
   loadData()
 })
 </script>
 
 <template>
-  <CustomerModuleNav :active="activeTab === 'sea' ? 'sea' : 'customer'" />
+  <CustomerModuleNav active="customer" />
   <el-card shadow="never">
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-      <el-tab-pane label="我的客户" name="mine" />
-      <el-tab-pane label="客户公海" name="sea" />
-      <el-tab-pane label="协作客户" name="collaboration" />
-    </el-tabs>
-
     <SavedViewBar
       :module="savedViewModule"
       :fields="fields"
@@ -455,22 +403,16 @@ onMounted(async () => {
       :dept-tree="fieldRefs.deptTree.value"
       :current-filters="filters"
       :default-column-keys="defaultColumnKeys"
+      :system-views="systemViews"
+      :system-view="activeSystemView"
       @change="handleSavedViewChange"
+      @system-view-change="handleSystemViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
     />
 
     <div class="flex-between flex-wrap gap-3 mb-4">
       <div class="flex gap-2 items-center">
-        <el-select
-          v-if="activeTab === 'sea'"
-          v-model="selectedPoolId"
-          class="!w-44"
-          placeholder="选择客户公海"
-          @change="handleSearch"
-        >
-          <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
-        </el-select>
         <el-input
           v-model="query.keyword"
           placeholder="搜索名称 / 电话 / 邮箱"
@@ -489,24 +431,18 @@ onMounted(async () => {
         />
       </div>
       <div class="flex gap-2">
-        <template v-if="activeTab !== 'collaboration' && selectedRows.length > 0">
+        <template v-if="!isCollaborationView && selectedRows.length > 0">
           <el-button v-if="canExport" @click="openExport('selected')">
             导出选中（{{ selectedRows.length }}）
           </el-button>
           <el-button
-            v-if="
-              (activeTab === 'mine' && auth.hasPerm('customer:update')) ||
-              (activeTab === 'sea' && auth.hasPerm('customerPool:update'))
-            "
+            v-if="auth.hasPerm('customer:update')"
             @click="batchEditVisible = true"
           >
             批量修改（{{ selectedRows.length }}）
           </el-button>
           <el-button
-            v-if="
-              (activeTab === 'mine' && auth.hasPerm('customer:delete')) ||
-              (activeTab === 'sea' && auth.hasPerm('customerPool:delete'))
-            "
+            v-if="auth.hasPerm('customer:delete')"
             type="danger"
             plain
             @click="handleBatchDelete"
@@ -515,13 +451,13 @@ onMounted(async () => {
           </el-button>
         </template>
         <el-button
-          v-if="activeTab === 'mine' && auth.hasPerm('customer:merge')"
+          v-if="!isCollaborationView && auth.hasPerm('customer:merge')"
           :disabled="selectedRows.length < 2"
           @click="openMerge"
         >
           合并客户<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span>
         </el-button>
-        <el-button v-if="activeTab === 'mine' && auth.hasPerm('customer:create')" type="primary" @click="openCreate">
+        <el-button v-if="!isCollaborationView && auth.hasPerm('customer:create')" type="primary" @click="openCreate">
           新建客户
         </el-button>
         <template v-if="canImport">
@@ -540,13 +476,11 @@ onMounted(async () => {
     >
       <el-table-column
         v-if="
-          (activeTab === 'mine' &&
-            (auth.hasPerm('customer:merge') ||
-              auth.hasPerm('customer:update') ||
-              auth.hasPerm('customer:delete'))) ||
-          (activeTab === 'sea' &&
-            (auth.hasPerm('customerPool:update') || auth.hasPerm('customerPool:delete'))) ||
-          canExport
+          !isCollaborationView &&
+          (auth.hasPerm('customer:merge') ||
+            auth.hasPerm('customer:update') ||
+            auth.hasPerm('customer:delete') ||
+            canExport)
         "
         type="selection"
         width="46"
@@ -570,53 +504,39 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
-          <template v-if="activeTab === 'sea'">
-            <el-button link type="primary" @click="handleClaim(row as CustomerVO)">领取</el-button>
-            <el-button
-              v-if="auth.hasPerm('customer:assign')"
-              link
-              @click="assignTarget = row as CustomerVO, assignVisible = true"
-            >
-              分配
-            </el-button>
-            <el-button link @click="openPreview(row as CustomerVO)">预览</el-button>
-            <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>
-          </template>
-          <template v-else>
-            <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>
-            <el-button link type="primary" @click="openFollow(row as CustomerVO)">跟进</el-button>
-            <el-dropdown trigger="click" class="ml-2">
-              <el-button link type="primary">更多</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('customer:update')"
-                    @click="openEdit(row as CustomerVO)"
-                  >
-                    编辑
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('customer:assign')"
-                    @click="assignTarget = row as CustomerVO, assignVisible = true"
-                  >
-                    分配负责人
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('customer:assign')"
-                    @click="handleToSea(row as CustomerVO)"
-                  >
-                    退回公海
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('customer:delete')"
-                    @click="handleDelete(row as CustomerVO)"
-                  >
-                    删除
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
+          <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>
+          <el-button link type="primary" @click="openFollow(row as CustomerVO)">跟进</el-button>
+          <el-dropdown v-if="!isCollaborationView" trigger="click" class="ml-2">
+            <el-button link type="primary">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-if="auth.hasPerm('customer:update')"
+                  @click="openEdit(row as CustomerVO)"
+                >
+                  编辑
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="auth.hasPerm('customer:assign')"
+                  @click="assignTarget = row as CustomerVO, assignVisible = true"
+                >
+                  分配负责人
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="auth.hasPerm('customer:assign')"
+                  @click="handleToSea(row as CustomerVO)"
+                >
+                  退回公海
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="auth.hasPerm('customer:delete')"
+                  @click="handleDelete(row as CustomerVO)"
+                >
+                  删除
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -652,12 +572,6 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <CustomerDetailDrawer
-      v-model="detailVisible"
-      :customer="detailTarget"
-      :members="fieldRefs.members.value"
-    />
-
     <FollowUpDrawer
       v-model="followVisible"
       target-type="customer"
@@ -675,17 +589,17 @@ onMounted(async () => {
 
     <CrmImportDialog
       v-model="importVisible"
-      :module-label="activeTab === 'sea' ? '客户公海' : '客户'"
-      :download-template="(type) => customerTransferApi.importTemplate(type, activeTab === 'sea' ? selectedPoolId || undefined : undefined)"
-      :precheck="(file, type) => customerTransferApi.importPrecheck(file, type, activeTab === 'sea' ? selectedPoolId || undefined : undefined)"
-      :execute="(file, type) => customerTransferApi.importXlsx(file, type, activeTab === 'sea' ? selectedPoolId || undefined : undefined)"
+      module-label="客户"
+      :download-template="(type) => customerTransferApi.importTemplate(type)"
+      :precheck="(file, type) => customerTransferApi.importPrecheck(file, type)"
+      :execute="(file, type) => customerTransferApi.importXlsx(file, type)"
       @success="loadData"
     />
 
     <CrmExportDrawer
       v-model="exportVisible"
-      :module-label="activeTab === 'sea' ? '客户公海' : '客户'"
-      :cache-key="activeTab === 'sea' ? `customer-pool:${selectedPoolId}` : 'customer'"
+      module-label="客户"
+      cache-key="customer"
       :fields="fields"
       :display-fields="[
         { key: 'lastFollowedAt', label: '最近跟进' },

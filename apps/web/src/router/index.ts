@@ -90,6 +90,12 @@ const router = createRouter({
           meta: { title: '联系人', perm: 'contact:read', client: 'pc' },
         },
         {
+          path: 'customers/open-sea',
+          name: 'customer-open-sea',
+          component: () => import('@/views/CustomerPoolView.vue'),
+          meta: { title: '客户公海', perm: 'menu:customer', client: 'pc' },
+        },
+        {
           path: 'customers/:id',
           name: 'customer-detail',
           component: () => import('@/views/CustomerDetailView.vue'),

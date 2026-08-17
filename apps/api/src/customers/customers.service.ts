@@ -57,16 +57,12 @@ export class CustomersService {
   ) {}
 
   async findAll(user: AuthUser, query: QueryCustomersDto): Promise<PaginatedResult<CustomerVO>> {
-    const { page = 1, pageSize = 10, keyword, scope: viewScope = 'mine' } = query
+    const { page = 1, pageSize = 10, keyword } = query
+    const poolMode = query.scope === 'sea'
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
     const adHocClauses = buildFilterClauses(fieldsMap, parseFilters(query.filters))
-    const viewModule =
-      viewScope === 'sea'
-        ? 'customer_pool'
-        : viewScope === 'collaboration'
-          ? 'customer_collaboration'
-          : 'customer'
+    const viewModule = poolMode ? 'customer_pool' : 'customer'
     const saved = query.viewId
       ? await this.savedViews.resolveFilters(user, query.viewId, viewModule)
       : null
@@ -80,9 +76,9 @@ export class CustomersService {
       ...adHocClauses,
     ]
 
-    // 公海按 Pool scope；协作客户按 CustomerCollaboration；其余按负责人数据范围。
+    // 公海按 Pool scope；普通客户页使用 Cordys 系统视图，并始终受当前角色数据权限约束。
     let scopeClause: Prisma.CustomerWhereInput
-    if (viewScope === 'sea') {
+    if (poolMode) {
       const options = await this.pools.options(user, 'customer')
       const accessiblePoolIds = options.map((pool) => pool.id)
       if (query.poolId && !accessiblePoolIds.includes(query.poolId)) {
@@ -91,12 +87,8 @@ export class CustomersService {
       scopeClause = query.poolId
         ? { inSea: true, poolId: query.poolId }
         : { inSea: true, OR: [{ poolId: { in: accessiblePoolIds } }, { poolId: null }] }
-    } else if (viewScope === 'collaboration') {
-      scopeClause = {
-        teamMembers: { some: { tenantId: user.tenantId, userId: user.id } },
-      }
     } else {
-      scopeClause = { inSea: false, ...(await this.dataScope.scopeFilter(user)) }
+      scopeClause = { inSea: false, ...(await this.resolveListScope(user, query.view)) }
     }
 
     const where: Prisma.CustomerWhereInput = {
@@ -125,6 +117,17 @@ export class CustomersService {
     ])
 
     return { items: items.map((c) => this.toVO(c, fields)), total, page, pageSize }
+  }
+
+  /** Cordys /account/tab：决定“全部客户 / 部门客户”系统视图是否显示。 */
+  tab(user: AuthUser) {
+    return {
+      all: user.dataScope === 'ALL' || user.dataScope === 'CUSTOM',
+      dept:
+        user.dataScope === 'ALL' ||
+        user.dataScope === 'DEPT_AND_CHILD' ||
+        user.dataScope === 'CUSTOM',
+    }
   }
 
   async findOne(user: AuthUser, id: string): Promise<CustomerVO> {
@@ -1692,7 +1695,7 @@ export class CustomersService {
     if (poolMode) await this.pools.assertPoolMember(user, 'customer', input.poolId as string)
     const effectiveQuery: QueryCustomersDto = {
       ...query,
-      scope: poolMode ? 'sea' : 'mine',
+      scope: poolMode ? 'sea' : undefined,
       poolId: poolMode ? input.poolId : undefined,
     }
     const items = await this.collectExportItems(user, effectiveQuery, input.ids)
@@ -1938,6 +1941,38 @@ export class CustomersService {
         })
       }
     }
+  }
+
+  private async resolveListScope(
+    user: AuthUser,
+    view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION',
+  ): Promise<Prisma.CustomerWhereInput> {
+    if (!view) return (await this.dataScope.scopeFilter(user)) as Prisma.CustomerWhereInput
+    if (view === 'SELF') return { ownerId: user.id }
+    if (view === 'COLLABORATION') {
+      return { teamMembers: { some: { tenantId: user.tenantId, userId: user.id } } }
+    }
+    if (view === 'ALL') {
+      if (user.dataScope !== 'ALL' && user.dataScope !== 'CUSTOM') {
+        throw new ForbiddenException('当前角色没有全部客户视图权限')
+      }
+      return (await this.dataScope.scopeFilter(user)) as Prisma.CustomerWhereInput
+    }
+    if (view === 'DEPARTMENT') {
+      if (!['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(user.dataScope)) {
+        throw new ForbiddenException('当前角色没有部门客户视图权限')
+      }
+      const deptIds =
+        user.dataScope === 'CUSTOM'
+          ? user.scopeDeptIds
+          : user.deptId
+            ? await this.dataScope.collectWithDescendants(user.tenantId, user.deptId)
+            : []
+      return deptIds.length > 0
+        ? { OR: [{ ownerId: user.id }, { deptId: { in: deptIds } }] }
+        : { ownerId: user.id }
+    }
+    return (await this.dataScope.scopeFilter(user)) as Prisma.CustomerWhereInput
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {

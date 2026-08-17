@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
 const props = defineProps<{
   active: 'customer' | 'contact' | 'sea'
 }>()
 
-const route = useRoute()
 const router = useRouter()
 
 function navigate(name: 'customer' | 'contact' | 'sea') {
@@ -14,7 +13,11 @@ function navigate(name: 'customer' | 'contact' | 'sea') {
     router.push('/contacts')
     return
   }
-  router.push({ path: '/customers', query: name === 'sea' ? { ...route.query, tab: 'sea' } : {} })
+  if (name === 'sea') {
+    router.push('/customers/open-sea')
+    return
+  }
+  router.push('/customers')
 }
 </script>
 

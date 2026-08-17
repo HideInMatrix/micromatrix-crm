@@ -415,6 +415,17 @@ Mobile 前端来源：
 - 所有 Tab 继续使用 W1.2 `CustomerAccessService`，防止 360 聚合接口成为权限旁路。
 - 大列表使用独立分页接口，不无限塞进详情响应。
 
+R5 前置 UI 架构整理（2026-08-17）：
+
+- [x] PC 客户模块一级导航对齐 Cordys：`客户 / 联系人 / 客户公海`。
+- [x] 删除 `/customers` 内部旧 `我的客户 / 客户公海 / 协作客户` 硬编码 Tab，避免客户公海重复出现。
+- [x] 客户公海拆为独立 `/customers/open-sea` 页面，保留公海选择、隐藏列、领取/分配、批改、xlsx 导入导出与 `customer_pool` SavedView。
+- [x] `/customers` 系统视图改为 `ALL / SELF / DEPARTMENT / COLLABORATION`；`GET /customers/tab` 按 Cordys 数据范围规则控制 ALL/DEPARTMENT 显隐。
+- [x] “协作客户”从旧 `customer_collaboration` SavedView module 收回为 `customer` 模块系统视图；个人 SavedView 与系统视图统一在同一视图栏切换。
+- [x] PC 按 Cordys 独立一级路由完成本次重构；未把 PC `/customers/open-sea` 路由强加给 Mobile。
+- [ ] Cordys Mobile 的“客户 / 联系人 / 公海”三页签目前尚未完整复刻，留在 R5 Mobile 客户模块中继续补齐。
+- [x] 本次客户导航/系统视图重构通过 build/typecheck/lint，完整 smoke 151/151。
+
 状态：`⏳ PLANNED`
 
 ### R6 组织、角色与数据范围收口

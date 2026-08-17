@@ -101,6 +101,28 @@ check(
   `${adminCustomers.total}/${managerCustomers.total}/${salesCustomers.total}`,
 )
 
+// Cordys 客户系统视图：ALL/DEPARTMENT 是否显示由角色数据范围决定。
+const [adminCustomerTabs, managerCustomerTabs, salesCustomerTabs] = await Promise.all([
+  get('/customers/tab', admin.headers),
+  get('/customers/tab', manager.headers),
+  get('/customers/tab', sales.headers),
+])
+check('客户系统视图：admin 显示全部/部门', adminCustomerTabs.all === true && adminCustomerTabs.dept === true)
+check('客户系统视图：部门主管仅显示部门', managerCustomerTabs.all === false && managerCustomerTabs.dept === true)
+check('客户系统视图：SELF 角色不显示全部/部门', salesCustomerTabs.all === false && salesCustomerTabs.dept === false)
+
+const [adminAllCustomers, adminSelfCustomers, managerDeptCustomers, salesSelfCustomers] = await Promise.all([
+  get('/customers?view=ALL&pageSize=100', admin.headers),
+  get('/customers?view=SELF&pageSize=100', admin.headers),
+  get('/customers?view=DEPARTMENT&pageSize=100', manager.headers),
+  get('/customers?view=SELF&pageSize=100', sales.headers),
+])
+check('客户 ALL 视图仍受角色数据权限约束', adminAllCustomers.total >= adminSelfCustomers.total)
+check('客户 DEPARTMENT 视图可用于部门主管', Number.isInteger(managerDeptCustomers.total))
+check('客户 SELF 视图只返回当前负责人数据', Number.isInteger(salesSelfCustomers.total))
+const deniedSalesDeptView = await request('GET', '/customers?view=DEPARTMENT&pageSize=20', sales.headers)
+check('客户 DEPARTMENT 视图禁止 SELF 角色越权调用', deniedSalesDeptView.status === 403)
+
 // 3. 元数据引擎
 const fields = await get('/metadata/customer/fields', admin.headers)
 check('客户系统字段初始化', Array.isArray(fields) && fields.some((f) => f.key === 'name'))
@@ -503,6 +525,11 @@ const team = await get(`/customers/${collabCustomer.id}/team`, manager.headers)
 const salesTeamMember = team.find((item) => item.userId === sales.user.id)
 check('READ_ONLY 协作关系创建', Boolean(salesTeamMember))
 if (!salesTeamMember) throw new Error('未创建 READ_ONLY 协作关系，无法继续协作权限冒烟')
+const collaborationView = await get('/customers?view=COLLABORATION&pageSize=100', sales.headers)
+check(
+  '客户 COLLABORATION 系统视图返回协作客户',
+  Array.isArray(collaborationView.items) && collaborationView.items.some((item) => item.id === collabCustomer.id),
+)
 const readOnlyDetail = await get(`/customers/${collabCustomer.id}`, sales.headers)
 check('READ_ONLY 可读取客户详情', readOnlyDetail.id === collabCustomer.id)
 const readOnlyContacts = await get(`/contacts/list/${collabCustomer.id}`, sales.headers)

@@ -34,12 +34,20 @@ export class QueryCustomersDto {
   viewId?: string
 
   @ApiPropertyOptional({
-    enum: ['mine', 'sea', 'collaboration'],
-    description: 'sea=客户公海；collaboration=我的协作客户',
+    enum: ['sea'],
+    description: '资源模式；sea=客户公海。普通客户页使用 view 切换系统视图',
   })
-  @IsIn(['mine', 'sea', 'collaboration'])
+  @IsIn(['sea'])
   @IsOptional()
-  scope?: 'mine' | 'sea' | 'collaboration'
+  scope?: 'sea'
+
+  @ApiPropertyOptional({
+    enum: ['ALL', 'SELF', 'DEPARTMENT', 'COLLABORATION'],
+    description: 'Cordys 客户系统视图；ALL 仍受当前角色数据范围约束',
+  })
+  @IsIn(['ALL', 'SELF', 'DEPARTMENT', 'COLLABORATION'])
+  @IsOptional()
+  view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
 
   @ApiPropertyOptional({ description: '公海 ID（scope=sea 时生效）' })
   @IsString()

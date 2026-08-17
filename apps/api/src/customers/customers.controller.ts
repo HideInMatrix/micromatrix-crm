@@ -190,7 +190,7 @@ export class CustomersController {
     @Query() query: QueryCustomersDto,
     @Body() dto: ExportCreateDto,
   ) {
-    return this.customersService.exportXlsx(user, { ...query, scope: 'mine' }, dto)
+    return this.customersService.exportXlsx(user, { ...query, scope: undefined }, dto)
   }
 
   @Post('export/select')
@@ -202,7 +202,7 @@ export class CustomersController {
     @Query() query: QueryCustomersDto,
     @Body() dto: ExportSelectDto,
   ) {
-    return this.customersService.exportXlsx(user, { ...query, scope: 'mine' }, dto)
+    return this.customersService.exportXlsx(user, { ...query, scope: undefined }, dto)
   }
 
   @Post('pool/export/all')
@@ -313,6 +313,12 @@ export class CustomersController {
   @ApiOperation({ summary: '客户轻量选项（租户内 id/name，用于客户关系等选择器）' })
   options(@CurrentUser() user: AuthUser, @Query('keyword') keyword?: string) {
     return this.customersService.customerOptions(user, keyword)
+  }
+
+  @Get('tab')
+  @ApiOperation({ summary: '客户系统视图显隐配置' })
+  tab(@CurrentUser() user: AuthUser) {
+    return this.customersService.tab(user)
   }
 
   @Get(':id/related')

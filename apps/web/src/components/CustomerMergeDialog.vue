@@ -88,7 +88,6 @@ async function loadOtherCustomers(keyword?: string) {
     const { data } = await listCustomers({
       page: 1,
       pageSize: 50,
-      scope: 'mine',
       keyword: keyword?.trim() || undefined,
     })
     const selectedIds = new Set(props.selectedRows.map((row) => row.id))

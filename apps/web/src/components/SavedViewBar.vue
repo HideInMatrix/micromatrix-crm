@@ -19,10 +19,13 @@ const props = defineProps<{
   deptTree: DepartmentVO[]
   currentFilters: FilterCondition[]
   defaultColumnKeys: string[]
+  systemViews?: { id: string; label: string }[]
+  systemView?: string
 }>()
 
 const emit = defineEmits<{
   change: [viewId: string | undefined]
+  systemViewChange: [viewId: string | undefined]
   clearFilters: []
   columnsChange: [columnKeys: string[]]
 }>()
@@ -73,7 +76,13 @@ async function loadViews(emitChange = true) {
     const next = data.some((view) => view.id === stored && view.enabled) ? stored : ''
     activeViewId.value = next
     loadColumnPreference()
-    if (emitChange) emit('change', next || undefined)
+    if (emitChange) {
+      emit('change', next || undefined)
+      if (next) emit('systemViewChange', undefined)
+      else if (props.systemViews?.length) {
+        emit('systemViewChange', props.systemView || props.systemViews[0]?.id)
+      }
+    }
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -82,10 +91,24 @@ async function loadViews(emitChange = true) {
 }
 
 function selectView(viewId: string) {
+  if (!viewId && props.systemViews?.length) {
+    selectSystemView(props.systemView || props.systemViews[0]?.id || '')
+    return
+  }
   activeViewId.value = viewId
   localStorage.setItem(userStorageKey('active'), viewId)
   loadColumnPreference()
+  if (viewId) emit('systemViewChange', undefined)
   emit('change', viewId || undefined)
+}
+
+function selectSystemView(viewId: string) {
+  if (!viewId) return
+  activeViewId.value = ''
+  localStorage.removeItem(userStorageKey('active'))
+  loadColumnPreference()
+  emit('change', undefined)
+  emit('systemViewChange', viewId)
 }
 
 function openCreate(useCurrentFilters = true) {
@@ -201,6 +224,7 @@ async function removeView(view: SavedViewVO) {
       activeViewId.value = ''
       localStorage.removeItem(userStorageKey('active'))
       emit('change', undefined)
+      if (props.systemViews?.length) emit('systemViewChange', props.systemViews[0]?.id)
     }
     localStorage.removeItem(userStorageKey('columns', view.id))
     await loadViews(false)
@@ -315,12 +339,23 @@ watch(
   <div v-loading="loading" class="flex-between gap-3 flex-wrap mb-3">
     <div class="flex items-center gap-2 flex-wrap min-w-0">
       <el-button
+        v-if="!systemViews?.length"
         size="small"
         :type="!activeViewId ? 'primary' : 'default'"
         plain
         @click="selectView('')"
       >
         默认视图
+      </el-button>
+      <el-button
+        v-for="view in systemViews ?? []"
+        :key="view.id"
+        size="small"
+        :type="!activeViewId && systemView === view.id ? 'primary' : 'default'"
+        plain
+        @click="selectSystemView(view.id)"
+      >
+        {{ view.label }}
       </el-button>
       <el-button
         v-for="view in fixedViews"

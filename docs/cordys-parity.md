@@ -24,7 +24,7 @@
 | CordysCRM 模块 | 关键参考实现 | MicroMatrix CRM | 状态 | 后续动作 |
 | --- | --- | --- | --- | --- |
 | 线索 | `clue/*`、`ClueService`、`PoolClueService` | `modules/leads` | ✅ | R1/R2/R4 已完成多池、领取/回收/库容、SavedView、负责人历史、批量、xlsx 导入导出与三条客户转换路径；FollowUpPlan/显式 FormLinkScenario 属平台后续能力 |
-| 客户 | `customer/*`、`CustomerService` | `customers` | 🚧 | 多公海/库容/协作/关系/合并/SavedView/批量/xlsx/联系人及 R4 转换关联已验收；继续 R5 360 |
+| 客户 | `customer/*`、`CustomerService` | `customers` | 🚧 | PC 已按 Cordys 拆为“客户 / 联系人 / 客户公海”一级入口；客户系统视图 ALL/SELF/DEPARTMENT/COLLABORATION 与 SavedView 已统一，公海独立 `/customers/open-sea`；继续 R5 360 |
 | 联系人 | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue` | `modules/contacts` | ✅ | R3 已对齐独立列表/数据视图、客户内嵌列表、动态字段、启停、商机关联删除保护、批改、xlsx 导入导出与 Cordys 工具条交互；后续随 R4/R5 补跨模块关系与 360 |
 | 商机 | `opportunity/*`、`OpportunityService` | `modules/opportunities` | 🟡 | 补齐关闭规则、阶段高级配置、负责人/跟进联动 |
 | 报价 | `OpportunityQuotation*` | `modules/quotes` | 🟡 | 对齐审批、快照、联系人、用户视图、操作日志 |

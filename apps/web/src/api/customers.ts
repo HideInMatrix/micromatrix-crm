@@ -16,10 +16,17 @@ import {
 export interface CustomerListParams extends PageQuery {
   /** FilterCondition[] 的 JSON 字符串 */
   filters?: string
-  /** sea=客户公海；collaboration=我的协作客户 */
-  scope?: 'mine' | 'sea' | 'collaboration'
+  /** sea=客户公海；普通客户页使用 view */
+  scope?: 'sea'
+  /** Cordys 客户系统视图；ALL 仍受角色数据权限约束 */
+  view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
   poolId?: string
   viewId?: string
+}
+
+export interface CustomerTabVO {
+  all: boolean
+  dept: boolean
 }
 
 export interface CustomerOptionVO {
@@ -83,6 +90,10 @@ export type CustomerPayload = Record<string, unknown>
 
 export function listCustomers(params: CustomerListParams) {
   return http.get<PaginatedResult<CustomerVO>>('/customers', { params })
+}
+
+export function getCustomerTabs() {
+  return http.get<CustomerTabVO>('/customers/tab')
 }
 
 export function getCustomer(id: string) {
