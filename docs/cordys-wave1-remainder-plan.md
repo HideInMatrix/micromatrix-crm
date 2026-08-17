@@ -20,6 +20,13 @@
 
 `CordysCRM/` 始终只读；商业标讯 API、Cordys 产品授权机制、DataEase、AI/MCP 商业扩展仍明确排除。
 
+前端复刻规则：
+
+- 页面结构、信息层级、按钮位置、弹窗/抽屉流程、筛选与批量操作交互尽量与 `CordysCRM/` 当前源码保持一致。
+- 不复制 CordysCRM 的专有图标、图片、iconfont 或其它静态资源。
+- 图标优先使用项目现有 Element Plus Icons / 开源通用图标中的近似图标；没有合适图标时先使用纯文字按钮或文字标签，后续允许人工逐个替换。
+- 样式实现继续使用 MicroMatrix 当前 Vue 3 + Element Plus + UnoCSS 技术栈，不搬运 Cordys 前端框架实现。
+
 ## 2. 剩余阶段顺序
 
 ### R1 批量字段修改与批量删除
@@ -127,7 +134,7 @@
 
 开始编码前必须继续阅读 Cordys `ImportRequest / ExportSelectRequest / ExportTaskCenterService / ClueExportService / CustomerExportService / Pool* import/export`。
 
-状态：`⏳ PLANNED`
+状态：`🚧 SOURCE REVIEW IN PROGRESS`
 
 ### R3 联系人完整能力
 

@@ -27,3 +27,6 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# CordysCRM 上游参考源码：仅用于业务/交互对照，不纳入 MicroMatrix Git 版本库
+CordysCRM/
