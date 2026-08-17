@@ -39,11 +39,18 @@
    - 跟进：`FollowUpRecord.targetType` 加枚举值 + `touchTarget` 分支
    - 审批：`APPROVAL_MODULE_LABELS` 注册 + `targetInfo/setBizStatus/effectApproved` 加分支 + 表加 `approvalStatus`
    - 导入导出：参照 leads 的 `exportCsv/bulkImport`
-7. **收尾**：角色种子加权限码；`scripts/smoke.mjs` 补断言；`docs/gap-analysis.md` 更新状态
+7. **收尾**：角色种子加权限码；`scripts/smoke.mjs` 补断言；`docs/cordys-parity.md` 更新状态
 
-## 标讯数据源接入清单
+## 标讯范围
 
-1. 在 `apps/api/src/modules/bidding/providers/` 实现 `BiddingProvider` 接口（key/label/requiresCredentials/fetch）
-2. `BiddingService` 构造函数的 providers Map 注册
-3. 凭证结构自定义（存 `BiddingSource.credentials` JSONB），在前端订阅管理抽屉补充凭证录入字段
-4. 用「立即抓取」验证去重入库与转线索
+商业标讯 API（剑鱼/千里马等）**不做、不排期**。现有 `DemoBiddingProvider` + 手动录入 + 转线索即最终范围。不要新增商业 Provider。
+
+## CordysCRM 迁移约定
+
+1. `CordysCRM/` 是功能和业务规则参考目录，不作为 MicroMatrix CRM 的生产运行时依赖。
+2. 新增或重构业务模块前，必须同时阅读对应的 Controller、Service、Domain、DTO、Mapper XML，不能只根据页面或接口名称推断功能。
+3. 迁移对象是业务语义：状态机、校验、事务、权限、数据范围、日志、通知、审批、定时任务和查询行为；不要机械保留 Spring/MyBatis 的类结构。
+4. 现有 NestJS 模块优先做差异重构，禁止为了“对照 Cordys”再建立一套平行实现。
+5. 复杂列表、统计和高级筛选必须检查 Mapper XML，因为很多真实业务条件不在 Java Domain 类里。
+6. 每个模块完成后必须更新 `docs/cordys-parity.md`，并通过 build/typecheck/lint 与对应 smoke/integration test。
+7. Cordys 自身的产品授权与版本区分机制不属于 MicroMatrix CRM 的业务需求。

@@ -103,9 +103,14 @@ async function main() {
     'lead:assign',
     'lead:delete',
     'lead:import',
+    'leadPool:update',
+    'leadPool:delete',
     'customer:assign',
+    'customer:merge',
     'customer:delete',
     'customer:import',
+    'customerPool:update',
+    'customerPool:delete',
     'opportunity:delete',
     'product:create',
     'product:update',
@@ -199,6 +204,63 @@ async function main() {
   })
 
   await prisma.department.update({ where: { id: salesDept.id }, data: { leaderId: manager.id } })
+
+  // ===== 演示审批流 =====
+  // 保证全链路 smoke 在全新数据库上可重复运行；仅首次创建，不覆盖用户后续配置。
+  const contractApprovalFlow = await prisma.approvalFlow.findUnique({
+    where: { tenantId_module: { tenantId: tenant.id, module: 'contract' } },
+  })
+  if (!contractApprovalFlow) {
+    await prisma.approvalFlow.create({
+      data: {
+        tenantId: tenant.id,
+        module: 'contract',
+        name: '大额合同审批',
+        enabled: true,
+        condition: { amountGte: 80000 },
+        nodes: {
+          create: [
+            {
+              sort: 0,
+              name: '直属上级审批',
+              approverType: 'DIRECT_LEADER',
+              approverIds: [],
+              mode: 'ANY',
+            },
+            {
+              sort: 1,
+              name: '管理员终审',
+              approverType: 'USER',
+              approverIds: [admin.id],
+              mode: 'ANY',
+            },
+          ],
+        },
+      },
+    })
+  }
+
+  // ===== 演示标讯配置 =====
+  // 仅启用内置 DemoProvider，保证全新数据库可直接验证抓取/去重/转线索链路。
+  await prisma.biddingSource.upsert({
+    where: { tenantId_provider: { tenantId: tenant.id, provider: 'demo' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      provider: 'demo',
+      name: '演示数据源（模拟数据）',
+      enabled: true,
+    },
+  })
+  await prisma.biddingKeywordSub.upsert({
+    where: { tenantId_keyword: { tenantId: tenant.id, keyword: '软件' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      keyword: '软件',
+      enabled: true,
+    },
+  })
 
   // ===== 示例客户（覆盖不同负责人/部门，验证数据范围） =====
   const customerCount = await prisma.customer.count({ where: { tenantId: tenant.id } })

@@ -18,11 +18,14 @@ export interface LeadVO {
   email: string | null
   status: LeadStatus
   inPool: boolean
+  poolId: string | null
   ownerId: string | null
   ownerName?: string | null
   deptId: string | null
   customData: Record<string, unknown>
   convertedCustomerId: string | null
+  collectedAt: string | null
+  poolEnteredAt: string | null
   lastFollowedAt: string | null
   createdAt: string
   updatedAt: string
@@ -112,7 +115,27 @@ export interface TeamMemberVO {
   userId: string
   userName?: string
   role: string | null
+  collaborationType: 'READ_ONLY' | 'COLLABORATION'
   createdAt: string
+}
+
+// ============ 负责人历史 ============
+
+export interface OwnerHistoryVO {
+  id: string
+  module: 'lead' | 'customer'
+  resourceId: string
+  ownerId: string
+  ownerName: string | null
+  departmentId: string | null
+  departmentName: string | null
+  operatorId: string | null
+  operatorName: string | null
+  poolId: string | null
+  reasonId: string | null
+  reasonName: string | null
+  collectedAt: string | null
+  endedAt: string
 }
 
 // ============ 公海/线索池规则 ============

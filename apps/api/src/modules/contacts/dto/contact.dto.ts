@@ -7,6 +7,11 @@ export class CreateContactDto {
   @IsNotEmpty()
   customerId!: string
 
+  @ApiPropertyOptional({ description: '联系人负责人；不传时默认当前用户' })
+  @IsString()
+  @IsOptional()
+  ownerId?: string
+
   @ApiProperty({ description: '姓名' })
   @IsString()
   @IsNotEmpty({ message: '姓名不能为空' })

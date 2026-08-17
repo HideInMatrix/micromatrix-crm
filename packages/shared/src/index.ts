@@ -65,11 +65,20 @@ export interface CustomerVO {
   phone: string | null
   email: string | null
   remark: string | null
+  inSea: boolean
+  poolId: string | null
   ownerId: string | null
   ownerName?: string | null
   deptId?: string | null
+  /** 仅当当前用户是依靠协作关系访问该客户时返回；正常数据范围访问为 null/undefined。 */
+  collaborationType?: 'READ_ONLY' | 'COLLABORATION' | null
+  /** 详情接口返回的资源级能力；列表场景可省略。 */
+  canManageCustomer?: boolean
+  canCollaborateWrite?: boolean
   /** 自定义字段值（含计算字段的求值结果） */
   customData: Record<string, unknown>
+  collectedAt: string | null
+  poolEnteredAt: string | null
   createdAt: string
   updatedAt: string
 }

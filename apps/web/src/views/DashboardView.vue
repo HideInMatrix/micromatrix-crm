@@ -132,10 +132,6 @@ async function handleDuplicateCheck() {
   }
 }
 
-function sourceLabel(hit: DuplicateHitVO) {
-  return DUPLICATE_SOURCE_LABELS[hit.source]
-}
-
 function openHit(hit: DuplicateHitVO) {
   if (!hit.inScope) {
     ElMessage.info('该记录不在你的数据范围内')

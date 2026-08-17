@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import type { CustomerVO, TeamMemberVO } from '@micromatrix/shared'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { getCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { contactApi, customerExtraApi, followUpApi, type ContactVO } from '@/api/sales'
 import type { FollowUpVO } from '@micromatrix/shared'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
+import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
+import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import type { MemberOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
@@ -21,6 +24,18 @@ const contacts = ref<ContactVO[]>([])
 const team = ref<TeamMemberVO[]>([])
 const followUps = ref<FollowUpVO[]>([])
 const loading = ref(false)
+const collaborationType = ref<CustomerVO['collaborationType']>(null)
+const resourceCanManageCustomer = ref(false)
+const resourceCanCollaborateWrite = ref(false)
+const canCollaborateWrite = computed(
+  () => resourceCanCollaborateWrite.value && auth.hasPerm('customer:update'),
+)
+const canManageCustomer = computed(() => resourceCanManageCustomer.value)
+const canEditRelations = computed(
+  () =>
+    auth.hasPerm('customer:update') &&
+    (resourceCanManageCustomer.value || collaborationType.value === 'COLLABORATION'),
+)
 
 const contactDialogVisible = ref(false)
 const editingContact = ref<ContactVO | null>(null)
@@ -39,11 +54,15 @@ async function loadAll() {
   if (!props.customer) return
   loading.value = true
   try {
-    const [contactRes, teamRes, followRes] = await Promise.all([
+    const [customerRes, contactRes, teamRes, followRes] = await Promise.all([
+      getCustomer(props.customer.id),
       contactApi.list(props.customer.id),
       customerExtraApi.teamList(props.customer.id),
       followUpApi.list('customer', props.customer.id),
     ])
+    collaborationType.value = customerRes.data.collaborationType ?? null
+    resourceCanManageCustomer.value = customerRes.data.canManageCustomer === true
+    resourceCanCollaborateWrite.value = customerRes.data.canCollaborateWrite === true
     contacts.value = contactRes.data
     team.value = teamRes.data
     followUps.value = followRes.data
@@ -144,7 +163,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
         <el-tab-pane label="联系人" name="contacts">
           <div class="flex justify-end mb-2">
             <el-button
-              v-if="auth.hasPerm('contact:create')"
+              v-if="canCollaborateWrite && auth.hasPerm('contact:create')"
               size="small"
               type="primary"
               @click="openContactCreate"
@@ -171,7 +190,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
             </div>
             <div>
               <el-button
-                v-if="auth.hasPerm('contact:update')"
+                v-if="canCollaborateWrite && auth.hasPerm('contact:update')"
                 link
                 type="primary"
                 size="small"
@@ -180,7 +199,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
                 编辑
               </el-button>
               <el-button
-                v-if="auth.hasPerm('contact:delete')"
+                v-if="canCollaborateWrite && auth.hasPerm('contact:delete')"
                 link
                 type="danger"
                 size="small"
@@ -195,7 +214,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
         <el-tab-pane label="协作团队" name="team">
           <div class="flex justify-end mb-2">
             <el-button
-              v-if="auth.hasPerm('customer:team')"
+              v-if="canManageCustomer && auth.hasPerm('customer:team')"
               size="small"
               type="primary"
               @click="teamDialogVisible = true"
@@ -211,7 +230,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
           >
             <span class="text-sm">{{ member.userName }}</span>
             <el-button
-              v-if="auth.hasPerm('customer:team')"
+              v-if="canManageCustomer && auth.hasPerm('customer:team')"
               link
               type="danger"
               size="small"
@@ -237,6 +256,22 @@ async function handleTeamRemove(member: TeamMemberVO) {
               </div>
             </el-timeline-item>
           </el-timeline>
+        </el-tab-pane>
+
+        <el-tab-pane label="客户关系" name="relations">
+          <CustomerRelationsPanel
+            v-if="customer"
+            :customer-id="customer.id"
+            :readonly="!canEditRelations"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="负责人历史" name="owner-history">
+          <OwnerHistoryTimeline
+            v-if="customer"
+            module="customer"
+            :resource-id="customer.id"
+          />
         </el-tab-pane>
       </el-tabs>
     </div>

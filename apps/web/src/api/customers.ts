@@ -10,8 +10,66 @@ import { http } from './http'
 export interface CustomerListParams extends PageQuery {
   /** FilterCondition[] 的 JSON 字符串 */
   filters?: string
-  /** sea=客户公海 */
-  scope?: 'mine' | 'sea'
+  /** sea=客户公海；collaboration=我的协作客户 */
+  scope?: 'mine' | 'sea' | 'collaboration'
+  poolId?: string
+  viewId?: string
+}
+
+export interface CustomerOptionVO {
+  id: string
+  name: string
+}
+
+export interface CustomerRelationVO {
+  id: string
+  relationType: 'GROUP' | 'SUBSIDIARY'
+  customerId: string
+  customerName: string | null
+  createdAt: string
+}
+
+export interface CustomerRelationPayload {
+  relationType: 'GROUP' | 'SUBSIDIARY'
+  customerId: string
+}
+
+export type ContactConflictStrategy = 'KEEP_ALL' | 'SKIP_DUPLICATES'
+
+export interface CustomerMergePayload {
+  mergeIds: string[]
+  toMergeId: string
+  ownerId: string
+  contactConflictStrategy?: ContactConflictStrategy
+}
+
+export interface CustomerMergePreviewVO {
+  targetWasSelected: boolean
+  target: { id: string; name: string; ownerId: string | null; ownerName: string | null }
+  sources: { id: string; name: string; ownerId: string | null; ownerName: string | null }[]
+  finalOwner: { id: string; name: string | null }
+  contactConflictStrategy: ContactConflictStrategy
+  counts: {
+    customersToDelete: number
+    contacts: number
+    contactsWillMove: number
+    contactsWillSkip: number
+    opportunities: number
+    quotes: number
+    contracts: number
+    followUps: number
+    attachments: number
+    collaborations: number
+    relationsToRemove: number
+  }
+  contactConflicts: {
+    sourceContactId: string
+    sourceCustomerId: string
+    name: string
+    phone: string | null
+    matchedBy: ('name' | 'phone')[]
+    targetContactIds: string[]
+  }[]
 }
 
 /** 动态表单载荷：系统字段 + customData（cf_* 键） */
@@ -33,6 +91,28 @@ export function checkDuplicate(params: { name?: string; phone?: string }) {
   return http.get<DuplicateHitVO[]>('/customers/check-duplicate', { params })
 }
 
+export function listCustomerOptions(keyword?: string) {
+  return http.get<CustomerOptionVO[]>('/customers/options', {
+    params: { keyword: keyword?.trim() || undefined },
+  })
+}
+
+export function listCustomerRelations(id: string) {
+  return http.get<CustomerRelationVO[]>(`/customers/${id}/relations`)
+}
+
+export function replaceCustomerRelations(id: string, relations: CustomerRelationPayload[]) {
+  return http.put<CustomerRelationVO[]>(`/customers/${id}/relations`, { relations })
+}
+
+export function previewCustomerMerge(data: CustomerMergePayload) {
+  return http.post<CustomerMergePreviewVO>('/customers/merge/preview', data)
+}
+
+export function mergeCustomers(data: CustomerMergePayload) {
+  return http.post<{ id: string; name: string; merged: number }>('/customers/merge', data)
+}
+
 export function createCustomer(data: CustomerPayload) {
   return http.post<CustomerVO>('/customers', data)
 }
@@ -43,6 +123,30 @@ export function updateCustomer(id: string, data: CustomerPayload) {
 
 export function removeCustomer(id: string) {
   return http.delete<{ id: string }>(`/customers/${id}`)
+}
+
+export function batchUpdateCustomers(data: { ids: string[]; fieldId: string; fieldValue?: unknown }) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/customers/batch/update', data)
+}
+
+export function batchDeleteCustomers(ids: string[]) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/customers/batch/delete', { ids })
+}
+
+export function poolBatchUpdateCustomers(data: {
+  poolId: string
+  ids: string[]
+  fieldId: string
+  fieldValue?: unknown
+}) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/customers/pool/batch/update', data)
+}
+
+export function poolBatchDeleteCustomers(poolId: string, ids: string[]) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/customers/pool/batch/delete', {
+    poolId,
+    ids,
+  })
 }
 
 export interface ImportResult {

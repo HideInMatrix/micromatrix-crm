@@ -43,6 +43,11 @@ export class CreateLeadDto {
   @IsOptional()
   toPool?: boolean
 
+  @ApiPropertyOptional({ description: '直接放入指定线索池（toPool=true 时生效）' })
+  @IsString()
+  @IsOptional()
+  poolId?: string
+
   @ApiPropertyOptional({ description: '负责人（默认当前用户）' })
   @IsString()
   @IsOptional()
@@ -62,6 +67,11 @@ export class QueryLeadsDto extends PaginationQueryDto {
   @IsOptional()
   scope?: 'mine' | 'pool'
 
+  @ApiPropertyOptional({ description: '线索池 ID（scope=pool 时生效）' })
+  @IsString()
+  @IsOptional()
+  poolId?: string
+
   @ApiPropertyOptional({ enum: ['FOLLOWING', 'CONVERTED', 'INVALID'] })
   @IsIn(['FOLLOWING', 'CONVERTED', 'INVALID'])
   @IsOptional()
@@ -71,6 +81,11 @@ export class QueryLeadsDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   filters?: string
+
+  @ApiPropertyOptional({ description: '保存的用户视图 ID' })
+  @IsString()
+  @IsOptional()
+  viewId?: string
 }
 
 export class AssignLeadDto {

@@ -28,10 +28,23 @@ export class QueryCustomersDto {
   @IsOptional()
   filters?: string
 
-  @ApiPropertyOptional({ enum: ['mine', 'sea'], description: 'sea=客户公海' })
-  @IsIn(['mine', 'sea'])
+  @ApiPropertyOptional({ description: '保存的用户视图 ID' })
+  @IsString()
   @IsOptional()
-  scope?: 'mine' | 'sea'
+  viewId?: string
+
+  @ApiPropertyOptional({
+    enum: ['mine', 'sea', 'collaboration'],
+    description: 'sea=客户公海；collaboration=我的协作客户',
+  })
+  @IsIn(['mine', 'sea', 'collaboration'])
+  @IsOptional()
+  scope?: 'mine' | 'sea' | 'collaboration'
+
+  @ApiPropertyOptional({ description: '公海 ID（scope=sea 时生效）' })
+  @IsString()
+  @IsOptional()
+  poolId?: string
 }
 
 export class CheckDuplicateQueryDto {

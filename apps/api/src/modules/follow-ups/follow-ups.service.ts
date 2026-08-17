@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common'
-import { FollowUpVO } from '@micromatrix/shared'
+import { ForbiddenException, Injectable } from '@nestjs/common'
+import { FollowUpVO, hasPermission } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
+import { CustomerAccessService } from '../../customers/customer-access.service'
 import { FollowUpRecord } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AttachmentsService } from '../attachments/attachments.service'
@@ -11,9 +12,16 @@ export class FollowUpsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly attachments: AttachmentsService,
+    private readonly customerAccess: CustomerAccessService,
   ) {}
 
   async list(user: AuthUser, query: QueryFollowUpsDto): Promise<FollowUpVO[]> {
+    if (query.targetType === 'customer') {
+      if (!hasPermission(user.permissions, 'menu:customer')) {
+        throw new ForbiddenException('无客户读取权限')
+      }
+      await this.customerAccess.assertRead(user, query.targetId)
+    }
     const records = await this.prisma.followUpRecord.findMany({
       where: { tenantId: user.tenantId, targetType: query.targetType, targetId: query.targetId },
       orderBy: { createdAt: 'desc' },
@@ -28,6 +36,12 @@ export class FollowUpsService {
   }
 
   async create(user: AuthUser, dto: CreateFollowUpDto): Promise<FollowUpVO> {
+    if (dto.targetType === 'customer') {
+      if (!hasPermission(user.permissions, 'customer:update')) {
+        throw new ForbiddenException('无客户更新权限')
+      }
+      await this.customerAccess.assertCollaborateWrite(user, dto.targetId)
+    }
     const record = await this.prisma.followUpRecord.create({
       data: {
         tenantId: user.tenantId,

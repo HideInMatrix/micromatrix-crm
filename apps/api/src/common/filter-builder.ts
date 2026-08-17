@@ -55,6 +55,10 @@ function columnClause(c: FilterCondition, field: FieldVO): Record<string, unknow
   const key = c.key
   const isDate = field.type === 'date' || field.type === 'datetime'
   const value = isDate ? new Date(String(c.value)) : castValue(field, c.value)
+  const emptyClauses = [
+    ...(!field.required ? [{ [key]: null }] : []),
+    ...(field.type === 'text' ? [{ [key]: '' }] : []),
+  ]
 
   switch (c.op) {
     case 'eq':
@@ -72,9 +76,12 @@ function columnClause(c: FilterCondition, field: FieldVO): Record<string, unknow
     case 'lte':
       return { [key]: { lte: value } }
     case 'isEmpty':
-      return { OR: [{ [key]: null }, ...(field.type === 'text' ? [{ [key]: '' }] : [])] }
+      // Prisma 7 不允许对 NOT NULL 列使用 `{ column: null }`；必填字段只检查其合法空值形态。
+      // 对必填非文本字段没有“空”这一状态，`OR: []` 在 Prisma 中稳定表示不命中。
+      return { OR: emptyClauses }
     case 'notEmpty':
-      return { NOT: { OR: [{ [key]: null }, ...(field.type === 'text' ? [{ [key]: '' }] : [])] } }
+      // 必填非文本字段天然非空，空对象作为 AND 子句等价于不附加限制。
+      return emptyClauses.length > 0 ? { NOT: { OR: emptyClauses } } : {}
     default:
       return null
   }

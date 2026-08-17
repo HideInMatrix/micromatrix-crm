@@ -1,7 +1,7 @@
 # 功能对齐记录
 
 > 对照实例：本地 CordysCRM 社区版（`http://localhost:8081`，账号 `admin` / `CordysCRM`）。
-> 记录原则：先写文档、再改功能。每完成一轮探测，把结论回写 [gap-analysis.md](./gap-analysis.md) 与 [roadmap.md](./roadmap.md)。
+> 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
 ## 0. 探测进度

@@ -5,13 +5,15 @@ import {
   type CustomerVO,
   type TeamMemberVO,
 } from '@micromatrix/shared'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomer, getCustomerRelated } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { contactApi, customerExtraApi, type ContactVO } from '@/api/sales'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
+import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
+import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -25,6 +27,15 @@ const related = ref<CustomerRelatedVO | null>(null)
 const loading = ref(false)
 const activeTab = ref('info')
 const followVisible = ref(false)
+const canCollaborateWrite = computed(
+  () => customer.value?.canCollaborateWrite === true && auth.hasPerm('customer:update'),
+)
+const canManageCustomer = computed(() => customer.value?.canManageCustomer === true)
+const canEditRelations = computed(
+  () =>
+    auth.hasPerm('customer:update') &&
+    (customer.value?.canManageCustomer === true || customer.value?.collaborationType === 'COLLABORATION'),
+)
 
 const contactDialogVisible = ref(false)
 const editingContact = ref<ContactVO | null>(null)
@@ -139,7 +150,9 @@ onMounted(async () => {
         <el-button @click="router.push('/customers')">返回列表</el-button>
         <h2 class="text-lg font-semibold m-0">{{ customer?.name ?? '客户详情' }}</h2>
       </div>
-      <el-button type="primary" @click="followVisible = true">写跟进</el-button>
+      <el-button v-if="canCollaborateWrite" type="primary" @click="followVisible = true">
+        写跟进
+      </el-button>
     </div>
 
     <div v-loading="loading">
@@ -195,7 +208,7 @@ onMounted(async () => {
           <el-tab-pane label="联系人" name="contacts">
             <div class="flex justify-end mb-2">
               <el-button
-                v-if="auth.hasPerm('contact:create')"
+                v-if="canCollaborateWrite && auth.hasPerm('contact:create')"
                 size="small"
                 type="primary"
                 @click="openContactCreate"
@@ -211,7 +224,7 @@ onMounted(async () => {
               <el-table-column label="操作" width="140">
                 <template #default="{ row }">
                   <el-button
-                    v-if="auth.hasPerm('contact:update')"
+                    v-if="canCollaborateWrite && auth.hasPerm('contact:update')"
                     link
                     type="primary"
                     @click="openContactEdit(row as ContactVO)"
@@ -219,7 +232,7 @@ onMounted(async () => {
                     编辑
                   </el-button>
                   <el-button
-                    v-if="auth.hasPerm('contact:delete')"
+                    v-if="canCollaborateWrite && auth.hasPerm('contact:delete')"
                     link
                     type="danger"
                     @click="handleContactDelete(row as ContactVO)"
@@ -288,10 +301,26 @@ onMounted(async () => {
             </el-timeline>
           </el-tab-pane>
 
+          <el-tab-pane label="客户关系" name="relations">
+            <CustomerRelationsPanel
+              v-if="customer"
+              :customer-id="customer.id"
+              :readonly="!canEditRelations"
+            />
+          </el-tab-pane>
+
+          <el-tab-pane label="负责人历史" name="owner-history">
+            <OwnerHistoryTimeline
+              v-if="customer"
+              module="customer"
+              :resource-id="customer.id"
+            />
+          </el-tab-pane>
+
           <el-tab-pane label="团队" name="team">
             <div class="flex justify-end mb-2">
               <el-button
-                v-if="auth.hasPerm('customer:team')"
+                v-if="canManageCustomer && auth.hasPerm('customer:team')"
                 size="small"
                 type="primary"
                 @click="teamDialogVisible = true"
@@ -308,7 +337,7 @@ onMounted(async () => {
               <el-table-column label="操作" width="100">
                 <template #default="{ row }">
                   <el-button
-                    v-if="auth.hasPerm('customer:team')"
+                    v-if="canManageCustomer && auth.hasPerm('customer:team')"
                     link
                     type="danger"
                     @click="handleTeamRemove(row as TeamMemberVO)"

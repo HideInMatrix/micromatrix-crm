@@ -12,6 +12,8 @@ export default tseslint.config(
       '**/*.d.ts',
       '**/*.tsbuildinfo',
       'apps/api/src/generated/**',
+      // CordysCRM/ 是只读上游参考源码，不属于 MicroMatrix 的 lint 范围。
+      'CordysCRM/**',
     ],
   },
   js.configs.recommended,

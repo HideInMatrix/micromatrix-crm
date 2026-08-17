@@ -8,21 +8,29 @@ import {
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  batchDeleteCustomers,
+  batchUpdateCustomers,
   checkDuplicate,
   createCustomer,
   exportCustomersCsv,
+  getCustomer,
   importCustomers,
   listCustomers,
+  poolBatchDeleteCustomers,
+  poolBatchUpdateCustomers,
   removeCustomer,
   updateCustomer,
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
-import { customerExtraApi } from '@/api/sales'
+import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
 import CsvImportDialog from '@/components/CsvImportDialog.vue'
+import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CustomerDetailDrawer from '@/components/CustomerDetailDrawer.vue'
+import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
+import SavedViewBar from '@/components/SavedViewBar.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -34,13 +42,17 @@ const auth = useAuthStore()
 const router = useRouter()
 const fieldRefs = useFieldRefs()
 
-const activeTab = ref<'mine' | 'sea'>('mine')
+const activeTab = ref<'mine' | 'sea' | 'collaboration'>('mine')
+const pools = ref<ResourcePoolVO[]>([])
+const selectedPoolId = ref('')
 const fields = ref<FieldVO[]>([])
 const loading = ref(false)
 const items = ref<CustomerVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '' })
 const filters = ref<FilterCondition[]>([])
+const activeSavedViewId = ref('')
+const visibleColumnKeys = ref<string[]>([])
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -54,12 +66,55 @@ const followVisible = ref(false)
 const followTarget = ref<CustomerVO | null>(null)
 const assignVisible = ref(false)
 const assignTarget = ref<CustomerVO | null>(null)
+const mergeVisible = ref(false)
+const selectedRows = ref<CustomerVO[]>([])
+const batchEditVisible = ref(false)
 
-const listColumns = computed(() => fields.value.filter((f) => f.showInList && !f.hidden))
+const savedViewModule = computed(() =>
+  activeTab.value === 'sea'
+    ? 'customer_pool'
+    : activeTab.value === 'collaboration'
+      ? 'customer_collaboration'
+      : 'customer',
+)
+const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
+const defaultColumnKeys = computed(() =>
+  fields.value.filter((field) => field.showInList && !field.hidden).map((field) => field.key),
+)
+const listColumns = computed(() => {
+  const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
+  const fieldMap = new Map(fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]))
+  const hiddenIds =
+    activeTab.value === 'sea' ? new Set(currentPool.value?.hiddenFieldIds ?? []) : new Set<string>()
+  const ordered = keys
+    .map((key) => fieldMap.get(key))
+    .filter((field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)))
+  const nameField = fieldMap.get('name')
+  if (
+    activeTab.value === 'sea' &&
+    nameField &&
+    !ordered.some((field) => field.key === 'name')
+  ) {
+    ordered.unshift(nameField)
+  }
+  return ordered
+})
 
 async function loadFields() {
   const { data } = await metadataApi.fields('customer')
   fields.value = data
+}
+
+async function loadPoolOptions() {
+  try {
+    const { data } = await resourcePoolApi.options('customer')
+    pools.value = data
+    if (!selectedPoolId.value || !data.some((pool) => pool.id === selectedPoolId.value)) {
+      selectedPoolId.value = data[0]?.id ?? ''
+    }
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 async function loadData() {
@@ -70,10 +125,13 @@ async function loadData() {
       pageSize: query.pageSize,
       keyword: query.keyword.trim() || undefined,
       scope: activeTab.value,
+      poolId: activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined,
       filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+      viewId: activeSavedViewId.value || undefined,
     })
     items.value = data.items
     total.value = data.total
+    selectedRows.value = []
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -84,6 +142,85 @@ async function loadData() {
 function handleSearch() {
   query.page = 1
   loadData()
+}
+
+function handleTabChange() {
+  query.page = 1
+  activeSavedViewId.value = ''
+  selectedRows.value = []
+}
+
+function handleSavedViewChange(viewId?: string) {
+  activeSavedViewId.value = viewId ?? ''
+  query.page = 1
+  loadData()
+}
+
+function handleSavedColumns(keys: string[]) {
+  visibleColumnKeys.value = keys
+}
+
+function clearTemporaryFilters() {
+  filters.value = []
+}
+
+function handleSelectionChange(rows: CustomerVO[]) {
+  selectedRows.value = rows
+}
+
+function openMerge() {
+  if (selectedRows.value.length < 2) {
+    ElMessage.warning('请至少选择 2 个客户')
+    return
+  }
+  mergeVisible.value = true
+}
+
+function handleMerged(targetId: string) {
+  selectedRows.value = []
+  mergeVisible.value = false
+  router.push(`/customers/${targetId}`)
+}
+
+async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }) {
+  if (selectedRows.value.length === 0) return
+  try {
+    const ids = selectedRows.value.map((row) => row.id)
+    if (activeTab.value === 'sea') {
+      if (!selectedPoolId.value) throw new Error('请先选择客户公海')
+      await poolBatchUpdateCustomers({ poolId: selectedPoolId.value, ids, ...payload })
+    } else {
+      await batchUpdateCustomers({ ids, ...payload })
+    }
+    ElMessage.success(`已修改 ${selectedRows.value.length} 个客户`)
+    batchEditVisible.value = false
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBatchDelete() {
+  if (selectedRows.value.length === 0) return
+  const confirmed = await ElMessageBox.confirm(
+    `确定删除已选择的 ${selectedRows.value.length} 个客户？存在联系人、商机或交易数据的客户会阻止整批删除。`,
+    '批量删除客户',
+    { type: 'warning', confirmButtonText: '删除' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    const ids = selectedRows.value.map((row) => row.id)
+    if (activeTab.value === 'sea') {
+      if (!selectedPoolId.value) throw new Error('请先选择客户公海')
+      await poolBatchDeleteCustomers(selectedPoolId.value, ids)
+    } else {
+      await batchDeleteCustomers(ids)
+    }
+    ElMessage.success('批量删除成功')
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 function buildDefaultModel(): Record<string, unknown> {
@@ -185,7 +322,7 @@ async function handleToSea(row: CustomerVO) {
   }).catch(() => false)
   if (!confirmed) return
   try {
-    await customerExtraApi.toSea(row.id)
+    await customerExtraApi.toSea(row.id, selectedPoolId.value || undefined)
     ElMessage.success('已退回公海')
     loadData()
   } catch (error) {
@@ -248,7 +385,9 @@ async function handleExport() {
     const { data } = await exportCustomersCsv({
       keyword: query.keyword.trim() || undefined,
       scope: activeTab.value,
+      poolId: activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined,
       filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+      viewId: activeSavedViewId.value || undefined,
     })
     const url = URL.createObjectURL(data)
     const link = document.createElement('a')
@@ -261,26 +400,57 @@ async function handleExport() {
   }
 }
 
-function openFollow(row: CustomerVO) {
-  followTarget.value = row
-  followVisible.value = true
+async function openFollow(row: CustomerVO) {
+  try {
+    const { data } = await getCustomer(row.id)
+    if (data.canCollaborateWrite !== true) {
+      ElMessage.info('当前客户仅允许查看，不能新增跟进')
+      return
+    }
+    followTarget.value = data
+    followVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 onMounted(async () => {
-  await Promise.all([loadFields(), fieldRefs.load()])
+  await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
   loadData()
 })
 </script>
 
 <template>
   <el-card shadow="never">
-    <el-tabs v-model="activeTab" @tab-change="query.page = 1, loadData()">
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="我的客户" name="mine" />
       <el-tab-pane label="客户公海" name="sea" />
+      <el-tab-pane label="协作客户" name="collaboration" />
     </el-tabs>
+
+    <SavedViewBar
+      :module="savedViewModule"
+      :fields="fields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+      :current-filters="filters"
+      :default-column-keys="defaultColumnKeys"
+      @change="handleSavedViewChange"
+      @clear-filters="clearTemporaryFilters"
+      @columns-change="handleSavedColumns"
+    />
 
     <div class="flex-between flex-wrap gap-3 mb-4">
       <div class="flex gap-2 items-center">
+        <el-select
+          v-if="activeTab === 'sea'"
+          v-model="selectedPoolId"
+          class="!w-44"
+          placeholder="选择客户公海"
+          @change="handleSearch"
+        >
+          <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
+        </el-select>
         <el-input
           v-model="query.keyword"
           placeholder="搜索名称 / 电话 / 邮箱"
@@ -291,6 +461,7 @@ onMounted(async () => {
         />
         <el-button @click="handleSearch">搜索</el-button>
         <AdvancedFilter
+          v-model="filters"
           :fields="fields"
           :members="fieldRefs.members.value"
           :dept-tree="fieldRefs.deptTree.value"
@@ -298,6 +469,35 @@ onMounted(async () => {
         />
       </div>
       <div class="flex gap-2">
+        <template v-if="activeTab !== 'collaboration' && selectedRows.length > 0">
+          <el-button
+            v-if="
+              (activeTab === 'mine' && auth.hasPerm('customer:update')) ||
+              (activeTab === 'sea' && auth.hasPerm('customerPool:update'))
+            "
+            @click="batchEditVisible = true"
+          >
+            批量修改（{{ selectedRows.length }}）
+          </el-button>
+          <el-button
+            v-if="
+              (activeTab === 'mine' && auth.hasPerm('customer:delete')) ||
+              (activeTab === 'sea' && auth.hasPerm('customerPool:delete'))
+            "
+            type="danger"
+            plain
+            @click="handleBatchDelete"
+          >
+            批量删除
+          </el-button>
+        </template>
+        <el-button
+          v-if="activeTab === 'mine' && auth.hasPerm('customer:merge')"
+          :disabled="selectedRows.length < 2"
+          @click="openMerge"
+        >
+          合并客户<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span>
+        </el-button>
         <template v-if="auth.hasPerm('customer:import')">
           <el-button @click="handleExport">导出</el-button>
           <el-button @click="importVisible = true">导入</el-button>
@@ -308,7 +508,25 @@ onMounted(async () => {
       </div>
     </div>
 
-    <el-table v-loading="loading" :data="items" stripe>
+    <el-table
+      v-loading="loading"
+      :data="items"
+      row-key="id"
+      stripe
+      @selection-change="handleSelectionChange"
+    >
+      <el-table-column
+        v-if="
+          (activeTab === 'mine' &&
+            (auth.hasPerm('customer:merge') ||
+              auth.hasPerm('customer:update') ||
+              auth.hasPerm('customer:delete'))) ||
+          (activeTab === 'sea' &&
+            (auth.hasPerm('customerPool:update') || auth.hasPerm('customerPool:delete')))
+        "
+        type="selection"
+        width="46"
+      />
       <el-table-column
         v-for="column in listColumns"
         :key="column.key"
@@ -436,6 +654,22 @@ onMounted(async () => {
       :fields="fields"
       module-label="客户"
       @submit="handleImport"
+    />
+
+    <CustomerMergeDialog
+      v-model="mergeVisible"
+      :selected-rows="selectedRows"
+      @merged="handleMerged"
+    />
+
+    <BatchFieldEditDialog
+      v-model="batchEditVisible"
+      title="批量修改客户"
+      :fields="fields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+      :selected-count="selectedRows.length"
+      @confirm="handleBatchEdit"
     />
   </el-card>
 </template>

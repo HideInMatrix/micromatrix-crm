@@ -5,6 +5,16 @@ import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
+import {
+  BatchAssignOwnerDto,
+  BatchClaimDto,
+  BatchMoveToPoolDto,
+  BatchIdsDto,
+  PoolBatchIdsDto,
+  PoolResourceBatchEditDto,
+  ResourceBatchEditDto,
+} from '../../common/dto/resource-batch.dto'
+import { MoveToResourcePoolDto } from '../pool-rules/dto/resource-pool.dto'
 import { AssignLeadDto, ConvertLeadDto, CreateLeadDto, QueryLeadsDto, UpdateLeadDto } from './dto/lead.dto'
 import { LeadsService } from './leads.service'
 
@@ -43,6 +53,61 @@ export class LeadsController {
     return this.leadsService.bulkImport(user, body.rows ?? [])
   }
 
+  @Post('batch/claim')
+  @LogOperation('lead', 'batchClaim')
+  @ApiOperation({ summary: '批量领取线索' })
+  batchClaim(@CurrentUser() user: AuthUser, @Body() dto: BatchClaimDto) {
+    return this.leadsService.batchClaim(user, dto.ids, dto.poolId)
+  }
+
+  @Post('batch/assign')
+  @RequirePermissions('lead:assign')
+  @LogOperation('lead', 'batchAssign')
+  @ApiOperation({ summary: '批量分配线索负责人' })
+  batchAssign(@CurrentUser() user: AuthUser, @Body() dto: BatchAssignOwnerDto) {
+    return this.leadsService.batchAssign(user, dto.ids, dto.ownerId)
+  }
+
+  @Post('batch/to-pool')
+  @RequirePermissions('lead:assign')
+  @LogOperation('lead', 'batchToPool')
+  @ApiOperation({ summary: '批量退回线索池' })
+  batchMoveToPool(@CurrentUser() user: AuthUser, @Body() dto: BatchMoveToPoolDto) {
+    return this.leadsService.batchMoveToPool(user, dto.ids, dto.poolId, dto.reasonId)
+  }
+
+  @Post('batch/update')
+  @RequirePermissions('lead:update')
+  @LogOperation('lead', 'batchUpdate')
+  @ApiOperation({ summary: '批量修改线索单个字段' })
+  batchUpdate(@CurrentUser() user: AuthUser, @Body() dto: ResourceBatchEditDto) {
+    return this.leadsService.batchUpdate(user, dto)
+  }
+
+  @Post('batch/delete')
+  @RequirePermissions('lead:delete')
+  @LogOperation('lead', 'batchDelete')
+  @ApiOperation({ summary: '批量删除线索' })
+  batchDelete(@CurrentUser() user: AuthUser, @Body() dto: BatchIdsDto) {
+    return this.leadsService.batchDelete(user, dto.ids)
+  }
+
+  @Post('pool/batch/update')
+  @RequirePermissions('leadPool:update')
+  @LogOperation('leadPool', 'batchUpdate')
+  @ApiOperation({ summary: '线索池批量修改字段（独立池权限）' })
+  poolBatchUpdate(@CurrentUser() user: AuthUser, @Body() dto: PoolResourceBatchEditDto) {
+    return this.leadsService.poolBatchUpdate(user, dto)
+  }
+
+  @Post('pool/batch/delete')
+  @RequirePermissions('leadPool:delete')
+  @LogOperation('leadPool', 'batchDelete')
+  @ApiOperation({ summary: '线索池批量删除（独立池权限）' })
+  poolBatchDelete(@CurrentUser() user: AuthUser, @Body() dto: PoolBatchIdsDto) {
+    return this.leadsService.poolBatchDelete(user, dto.poolId, dto.ids)
+  }
+
   @Post()
   @RequirePermissions('lead:create')
   @LogOperation('lead', 'create')
@@ -71,8 +136,12 @@ export class LeadsController {
   @RequirePermissions('lead:assign')
   @LogOperation('lead', 'toPool')
   @ApiOperation({ summary: '退回线索池' })
-  moveToPool(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.leadsService.moveToPool(user, id)
+  moveToPool(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: MoveToResourcePoolDto,
+  ) {
+    return this.leadsService.moveToPool(user, id, dto?.poolId, dto?.reasonId)
   }
 
   @Post(':id/claim')
@@ -88,6 +157,12 @@ export class LeadsController {
   @ApiOperation({ summary: '分配负责人' })
   assign(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AssignLeadDto) {
     return this.leadsService.assign(user, id, dto)
+  }
+
+  @Get(':id/owner-history')
+  @ApiOperation({ summary: '线索负责人历史' })
+  ownerHistory(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.leadsService.ownerHistory(user, id)
   }
 
   @Post(':id/invalid')

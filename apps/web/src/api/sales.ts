@@ -3,6 +3,7 @@ import type {
   LeadVO,
   OpportunityStageVO,
   OpportunityVO,
+  OwnerHistoryVO,
   PageQuery,
   PaginatedResult,
   PoolRuleVO,
@@ -15,8 +16,70 @@ import { http } from './http'
 
 export interface LeadListParams extends PageQuery {
   scope?: 'mine' | 'pool'
+  poolId?: string
   status?: string
   filters?: string
+  viewId?: string
+}
+
+export interface ResourcePoolVO {
+  id: string
+  module: 'lead' | 'customer'
+  name: string
+  scopeIds: string[]
+  managerIds: string[]
+  enabled: boolean
+  autoRecycle: boolean
+  hiddenFieldIds: string[]
+  pickRule?: {
+    limitDailyPick: boolean
+    dailyPickLimit: number | null
+    limitPreviousOwner: boolean
+    previousOwnerCooldownDays: number | null
+    limitNewData: boolean
+    newDataCooldownDays: number | null
+  } | null
+  recycleRule?: {
+    operator: 'AND' | 'OR'
+    conditions: ResourcePoolRecycleCondition[] | null
+  } | null
+}
+
+export interface ResourcePoolRecycleCondition {
+  column: 'storageTime' | 'followUpTime'
+  operator: 'FIXED' | 'DYNAMICS'
+  value: string
+  scope?: ('Created' | 'Picked')[]
+}
+
+export interface ResourceCapacityVO {
+  id: string
+  module: 'lead' | 'customer'
+  scopeIds: string[]
+  capacity: number
+  filters: Record<string, unknown>[] | null
+}
+
+export const resourcePoolApi = {
+  options: (module: 'lead' | 'customer') =>
+    http.get<ResourcePoolVO[]>('/resource-pools/options', { params: { module } }),
+  list: (module: 'lead' | 'customer') =>
+    http.get<ResourcePoolVO[]>('/resource-pools', { params: { module } }),
+  create: (data: Record<string, unknown>) => http.post<ResourcePoolVO>('/resource-pools', data),
+  update: (id: string, data: Record<string, unknown>) =>
+    http.patch<ResourcePoolVO>(`/resource-pools/${id}`, data),
+  toggle: (id: string) => http.post<ResourcePoolVO>(`/resource-pools/${id}/toggle`),
+  remove: (id: string) => http.delete(`/resource-pools/${id}`),
+}
+
+export const resourceCapacityApi = {
+  list: (module: 'lead' | 'customer') =>
+    http.get<ResourceCapacityVO[]>('/resource-capacities', { params: { module } }),
+  create: (data: Record<string, unknown>) =>
+    http.post<ResourceCapacityVO>('/resource-capacities', data),
+  update: (id: string, data: Record<string, unknown>) =>
+    http.patch<ResourceCapacityVO>(`/resource-capacities/${id}`, data),
+  remove: (id: string) => http.delete(`/resource-capacities/${id}`),
 }
 
 export const leadApi = {
@@ -28,9 +91,21 @@ export const leadApi = {
   create: (data: Record<string, unknown>) => http.post<LeadVO>('/leads', data),
   update: (id: string, data: Record<string, unknown>) => http.patch<LeadVO>(`/leads/${id}`, data),
   remove: (id: string) => http.delete(`/leads/${id}`),
-  toPool: (id: string) => http.post(`/leads/${id}/to-pool`),
+  toPool: (id: string, poolId?: string) => http.post(`/leads/${id}/to-pool`, { poolId }),
   claim: (id: string) => http.post(`/leads/${id}/claim`),
   assign: (id: string, ownerId: string) => http.post(`/leads/${id}/assign`, { ownerId }),
+  ownerHistory: (id: string) => http.get<OwnerHistoryVO[]>(`/leads/${id}/owner-history`),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue?: unknown }) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/update', data),
+  batchDelete: (ids: string[]) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/delete', { ids }),
+  poolBatchUpdate: (data: { poolId: string; ids: string[]; fieldId: string; fieldValue?: unknown }) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/pool/batch/update', data),
+  poolBatchDelete: (poolId: string, ids: string[]) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/pool/batch/delete', {
+      poolId,
+      ids,
+    }),
   markInvalid: (id: string) => http.post(`/leads/${id}/invalid`),
   convert: (id: string, data: { createContact?: boolean; opportunity?: { name: string; amount?: number } }) =>
     http.post<{ customerId: string; opportunityId: string | null }>(`/leads/${id}/convert`, data),
@@ -86,6 +161,8 @@ export const opportunityApi = {
 export interface ContactVO {
   id: string
   customerId: string
+  ownerId: string | null
+  deptId: string | null
   name: string
   position: string | null
   phone: string | null
@@ -103,9 +180,10 @@ export const contactApi = {
 // ===== 客户公海/团队 =====
 
 export const customerExtraApi = {
-  toSea: (id: string) => http.post(`/customers/${id}/to-sea`),
+  toSea: (id: string, poolId?: string) => http.post(`/customers/${id}/to-sea`, { poolId }),
   claim: (id: string) => http.post(`/customers/${id}/claim`),
   assign: (id: string, ownerId: string) => http.post(`/customers/${id}/assign`, { ownerId }),
+  ownerHistory: (id: string) => http.get<OwnerHistoryVO[]>(`/customers/${id}/owner-history`),
   teamList: (id: string) => http.get<TeamMemberVO[]>(`/customers/${id}/team`),
   teamAdd: (id: string, userId: string, role?: string) =>
     http.post(`/customers/${id}/team`, { userId, role }),

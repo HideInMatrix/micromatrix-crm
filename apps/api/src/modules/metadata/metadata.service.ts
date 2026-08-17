@@ -33,6 +33,28 @@ export class MetadataService {
     return new Map(fields.map((f) => [f.key, f]))
   }
 
+  /** Cordys batch edit 兼容：fieldId 同时接受真实字段 ID 或业务 key。 */
+  async resolveEditableField(tenantId: string, module: string, fieldIdOrKey: string): Promise<FieldVO> {
+    const fields = await this.listFields(tenantId, module)
+    const field = fields.find((item) => item.id === fieldIdOrKey || item.key === fieldIdOrKey)
+    if (!field) throw new NotFoundException('字段不存在')
+    if (field.hidden) throw new BadRequestException(`「${field.label}」当前不可编辑`)
+    if (field.type === 'formula') throw new BadRequestException('计算字段不支持批量修改')
+    return field
+  }
+
+  validateBatchFieldValue(field: FieldVO, value: unknown): void {
+    const empty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
+    if (field.required && empty) throw new BadRequestException(`「${field.label}」为必填项`)
+
+    // 系统固定列最终会直接写 Prisma 标量列；先阻止明显错误的对象/数组值。
+    if (field.system && !isCustomFieldKey(field.key) && !empty) {
+      if (['text', 'textarea', 'phone', 'email', 'select', 'member'].includes(field.type) && typeof value !== 'string') {
+        throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+      }
+    }
+  }
+
   async createField(tenantId: string, module: string, dto: CreateFieldDto): Promise<FieldVO> {
     if (dto.type === 'formula') this.validateFormula(dto.config?.formula)
     const maxSort = await this.prisma.fieldDefinition.aggregate({

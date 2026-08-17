@@ -63,14 +63,25 @@ erDiagram
 
 | 表 | 要点 |
 | --- | --- |
-| leads | inPool 线索池（池内对全员开放，不走数据范围）；status FOLLOWING/CONVERTED/INVALID；lastFollowedAt 供回收判定 |
-| customers | inSea 公海；lastFollowedAt；查重（roadmap P0）拟基于 name/phone |
-| contacts | 挂客户，onDelete Cascade |
-| customer_team_members | 协作团队 `@@unique([customerId, userId])` |
+| leads | `inPool + poolId` 多线索池；池可按成员/部门 Scope 隔离；status FOLLOWING/CONVERTED/INVALID；collectedAt/poolEnteredAt/lastFollowedAt 支撑领取和回收规则 |
+| customers | `inSea + poolId` 多公海；collectedAt/poolEnteredAt/lastFollowedAt；公海 Scope、领取/回收/库容规则 |
+| contacts | 挂客户，onDelete Cascade；`ownerId/deptId` 为联系人独立负责人/部门，支撑客户协作用户只管理本人联系人 |
+| customer_team_members | 客户协作关系 `@@unique([customerId, userId])`；`collaborationType=READ_ONLY/COLLABORATION` |
+| customer_relations | 集团/子公司有向关系：source=集团、target=子公司；服务层保证一个子公司只有一个上级集团并阻止循环关系 |
 | follow_up_records | 多态跟进（targetType: lead/customer/opportunity/contract）；写入时回填目标 lastFollowedAt |
 | opportunity_stages | 可配置阶段；isWon/isLost 系统结果阶段不可删；probability 赢率 |
 | opportunities | stageId + wonAt/lostAt/lostReason；金额 Decimal(14,2)；`opportunity_items` 产品明细（级联删除） |
-| pool_rules | 每租户每模块一条（lead/customer）；recycleDays/notifyDays 驱动凌晨回收 cron |
+| resource_pools / resource_pool_pick_rules / resource_pool_recycle_rules | 多池、Scope、池管理员、领取限制与 Cordys 时间条件自动回收 |
+| resource_capacities | 线索/客户库容；客户支持过滤条件排除不计入库容的数据 |
+| resource_owner_histories | Lead/Customer 历史负责人、进入池原因与时间 |
+| pool_rules | 旧单规则兼容模型；仅当对应模块没有有效新自动回收条件时作为 recycleDays/notifyDays fallback |
+
+### 用户视图
+
+| 表 | 要点 |
+| --- | --- |
+| saved_views | 用户个人保存视图：module/name/fixed/enabled/sort/searchMode；`@@unique([tenantId, userId, module, name])` |
+| saved_view_conditions | SavedView 条件：field/operator/value/fieldType/multipleValue/containChildIds/sort；删除视图时级联删除 |
 
 ### 交易链路
 
@@ -114,7 +125,7 @@ erDiagram
 
 ## 待新增表（见 roadmap）
 
-- `change_logs`（对象操作历史，字段级 diff）
+- 业务字段 diff 当前复用 `operation_logs.detail.changes`，不再单独规划 `change_logs`，避免维护两套审计事实源
 - `sales_targets`（业绩目标）
 - `tags` / `customer_tags`（客户标签）
 - 软删除：核心对象加 `deletedAt`（回收站）

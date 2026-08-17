@@ -27,6 +27,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module'
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
 import { RolesModule } from './modules/roles/roles.module'
+import { SavedViewsModule } from './modules/saved-views/saved-views.module'
 import { SettingsModule } from './modules/settings/settings.module'
 import { PrismaModule } from './prisma/prisma.module'
 
@@ -56,6 +57,7 @@ import { PrismaModule } from './prisma/prisma.module'
     DepartmentsModule,
     MembersModule,
     RolesModule,
+    SavedViewsModule,
     LogsModule,
     SettingsModule,
   ],

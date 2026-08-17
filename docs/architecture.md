@@ -34,6 +34,42 @@ flowchart LR
 
 monorepo：`apps/api`（NestJS CJS）、`apps/web`、`apps/mobile`（Vite ESM）、`packages/shared`（三端共享类型/权限树/公式求值器）。
 
+## CordysCRM 语义迁移架构
+
+`CordysCRM/` 是项目内的功能参考基准，不作为 MicroMatrix CRM 的运行时依赖。后续开发采用“业务语义迁移”，而不是 Java 源码逐行翻译。
+
+```mermaid
+flowchart LR
+  C1[Cordys Controller] --> A[API 契约分析]
+  C2[Cordys Domain] --> D[数据模型分析]
+  C3[Cordys Service] --> R[业务规则/状态机分析]
+  C4[Mapper XML] --> Q[查询语义分析]
+  C5[Permission/Aspect] --> P[权限与副作用分析]
+
+  A --> N[NestJS Controller]
+  D --> PR[Prisma Model]
+  R --> NS[NestJS Service]
+  Q --> PQ[Prisma / 参数化 SQL]
+  P --> G[Guard / Interceptor / Event]
+
+  N --> MM[MicroMatrix CRM]
+  PR --> MM
+  NS --> MM
+  PQ --> MM
+  G --> MM
+```
+
+迁移边界：
+
+- 保留 MicroMatrix CRM 现有 NestJS + Prisma + PostgreSQL + Redis 技术栈。
+- Cordys 的 Spring、MyBatis、Shiro、缓存与调度框架不进入运行时。
+- API URL 不要求机械保持一致，但业务能力、状态变化、权限语义应有明确对照。
+- 对 Cordys 中可复用的抽象能力，优先在 MicroMatrix 建立 NestJS 原生公共模块，不复制 Java 继承体系。
+- Cordys 自身的产品授权/版本区分机制不属于 MicroMatrix 的业务需求。
+- 对直接复用或翻译的上游代码必须遵守其许可证；若目标是未来独立闭源商业发行，应采用基于功能规格和行为的独立实现方式。
+
+功能状态统一记录在 [cordys-parity.md](./cordys-parity.md)。当前实施顺序以最新的阶段执行计划为准；现阶段为 [cordys-wave1-remainder-plan.md](./cordys-wave1-remainder-plan.md)。
+
 ## 关键设计决策（ADR）
 
 ### ADR-1 多租户：共享库 + tenantId 行级隔离
@@ -69,7 +105,7 @@ monorepo：`apps/api`（NestJS CJS）、`apps/web`、`apps/mobile`（Vite ESM）
 
 - `BiddingProvider` 接口（key/label/requiresCredentials/fetch），`BiddingService` 构造函数注册表
 - 去重指纹 hash = 标题+发布日期，`@@unique([tenantId, hash])` 兜底
-- 内置 DemoProvider 保证无商业账号也能验证全链路；真实数据源为纯增量接入
+- 内置 DemoProvider + 手动录入即最终范围；商业标讯 API（剑鱼/千里马等）明确不做
 
 ### ADR-6 通知：站内信 + SSE
 
@@ -80,6 +116,15 @@ monorepo：`apps/api`（NestJS CJS）、`apps/web`、`apps/mobile`（Vite ESM）
 
 - 内部规模下 cron 足够（公海回收 2:30 / 标讯抓取 8:00 / 回款提醒 9:00），零额外基础设施
 - Redis 已在 compose 就绪，大批量导入导出等重任务时引入 BullMQ
+
+### ADR-8 CordysCRM：功能基准 + 语义迁移
+
+- `CordysCRM/` 用于确认真实业务规则、状态机、接口语义、数据关系和前端交互，不作为生产依赖。
+- 每个模块迁移前必须同时检查 Controller / Service / Domain / DTO / Mapper XML；只看页面或只看 Controller 均不足以定义需求。
+- Java Service 中的事务和副作用需要显式映射到 Prisma transaction、通知、日志、审批和任务机制。
+- MyBatis XML 是高级筛选、统计、权限条件和列表行为的重要事实来源；复杂查询不能只依据 Domain 类推断。
+- 对已有 MicroMatrix 实现优先做差异重构，不重复建立第二套平行模块。
+- 迁移完成标准是业务一致性和自动化测试通过，不是代码行数或文件数量一致。
 
 ## 踩坑记录（环境与版本）
 

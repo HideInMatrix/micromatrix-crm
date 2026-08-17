@@ -32,6 +32,31 @@ export class DataScopeService {
     }
   }
 
+  /**
+   * 对单条已加载资源做数据范围判断。
+   * 用于 ResourceAccessService 组合“权限码 + 数据范围”；列表查询仍优先使用 scopeFilter 下推到数据库。
+   */
+  async matchesResource(user: AuthUser, ownerId: string | null, deptId: string | null): Promise<boolean> {
+    if (ownerId === user.id) return true
+    switch (user.dataScope) {
+      case 'ALL':
+        return true
+      case 'SELF':
+        return false
+      case 'DEPT':
+        return !!user.deptId && deptId === user.deptId
+      case 'DEPT_AND_CHILD': {
+        if (!user.deptId || !deptId) return false
+        const deptIds = await this.collectWithDescendants(user.tenantId, user.deptId)
+        return deptIds.includes(deptId)
+      }
+      case 'CUSTOM':
+        return !!deptId && user.scopeDeptIds.includes(deptId)
+      default:
+        return false
+    }
+  }
+
   /** 指定部门及其全部下级部门的 id 集合（含自身） */
   async collectWithDescendants(tenantId: string, rootId: string): Promise<string[]> {
     const all = await this.prisma.department.findMany({
