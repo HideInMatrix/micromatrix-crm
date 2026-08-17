@@ -1,9 +1,11 @@
 import type {
   ApprovalInstanceVO,
+  ContactVO,
   CustomerVO,
   FieldVO,
   FollowUpVO,
   LeadVO,
+  OpportunityVO,
   PageQuery,
   PaginatedResult,
 } from '@micromatrix/shared'
@@ -17,6 +19,14 @@ export function listCustomers(params: PageQuery & { scope?: string }) {
   return http.get<PaginatedResult<CustomerVO>>('/customers', { params })
 }
 
+export function getCustomer(id: string) {
+  return http.get<CustomerVO>(`/customers/${id}`)
+}
+
+export function listCustomerContacts(customerId: string) {
+  return http.get<ContactVO[]>(`/contacts/list/${customerId}`)
+}
+
 export function createCustomer(data: Record<string, unknown>) {
   return http.post<CustomerVO>('/customers', data)
 }
@@ -25,12 +35,29 @@ export function listLeads(params: PageQuery & { scope?: string; status?: string 
   return http.get<PaginatedResult<LeadVO>>('/leads', { params })
 }
 
+export function getLead(id: string) {
+  return http.get<LeadVO>(`/leads/${id}`)
+}
+
 export function claimLead(id: string) {
   return http.post(`/leads/${id}/claim`)
 }
 
 export function createLead(data: Record<string, unknown>) {
   return http.post<LeadVO>('/leads', data)
+}
+
+export function transformLead(data: { clueId: string; oppCreated?: boolean; oppName?: string }) {
+  return http.post<{
+    clueId: string
+    customerId: string
+    contactId: string | null
+    opportunityId: string | null
+  }>('/leads/transform', data)
+}
+
+export function getOpportunity(id: string) {
+  return http.get<OpportunityVO>(`/opportunities/${id}`)
 }
 
 export function listFollowUps(targetType: string, targetId: string) {

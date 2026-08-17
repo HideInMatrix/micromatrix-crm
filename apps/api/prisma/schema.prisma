@@ -226,7 +226,9 @@ model Lead {
   ownerId    String?
   deptId     String?
   customData Json?
-  convertedCustomerId String?
+  // Cordys 转换关系：当前使用 CUSTOMER，字符串结构便于后续扩展其它目标类型。
+  transitionType String?
+  transitionId   String?
   // 当前负责人开始持有该线索的时间，用于领取冷却/负责人历史
   collectedAt        DateTime?
   poolEnteredAt       DateTime?
@@ -238,6 +240,7 @@ model Lead {
   @@index([tenantId, poolId])
   @@index([tenantId, deptId])
   @@index([tenantId, status])
+  @@index([tenantId, transitionType, transitionId])
   @@map("leads")
 }
 

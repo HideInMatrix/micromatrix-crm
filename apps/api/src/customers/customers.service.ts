@@ -401,6 +401,7 @@ export class CustomersService {
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: true,
     })
+    await this.assertCustomerUniqueRules(user.tenantId, rest)
     const owner = await this.resolveOwner(user, ownerId)
     await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
 
@@ -432,6 +433,7 @@ export class CustomersService {
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
     })
+    await this.assertCustomerUniqueRules(user.tenantId, rest, existing.id)
 
     const data: Prisma.CustomerUpdateInput = {
       ...rest,
@@ -1462,6 +1464,37 @@ export class CustomersService {
     })
   }
 
+  private async assertCustomerUniqueRules(
+    tenantId: string,
+    values: { name?: string; phone?: string; email?: string },
+    excludeId?: string,
+  ) {
+    const fields = await this.metadata.fieldsMap(tenantId, MODULE)
+    const checks = [
+      ['name', values.name],
+      ['phone', values.phone],
+      ['email', values.email],
+    ] as const
+    for (const [key, raw] of checks) {
+      if (!fields.get(key)?.config?.unique || raw === undefined || raw === null || raw === '') continue
+      const value = typeof raw === 'string' ? raw.trim() : raw
+      if (value === '') continue
+      const duplicate = await this.prisma.customer.findFirst({
+        where: {
+          tenantId,
+          ...(excludeId ? { id: { not: excludeId } } : {}),
+          ...(key === 'name'
+            ? { name: { equals: String(value), mode: 'insensitive' } }
+            : key === 'phone'
+              ? { phone: String(value) }
+              : { email: { equals: String(value), mode: 'insensitive' } }),
+        },
+        select: { id: true },
+      })
+      if (duplicate) throw new BadRequestException(`「${fields.get(key)?.label ?? key}」不能重复`)
+    }
+  }
+
   private async inScopeCustomerIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
@@ -1956,6 +1989,7 @@ export class CustomersService {
       customData: { ...customData, ...formulas },
       collectedAt: customer.collectedAt?.toISOString() ?? null,
       poolEnteredAt: customer.poolEnteredAt?.toISOString() ?? null,
+      lastFollowedAt: customer.lastFollowedAt?.toISOString() ?? null,
       createdAt: customer.createdAt.toISOString(),
       updatedAt: customer.updatedAt.toISOString(),
     }

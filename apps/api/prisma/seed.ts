@@ -69,7 +69,6 @@ async function main() {
     'menu:lead',
     'lead:create',
     'lead:update',
-    'lead:convert',
     'menu:customer',
     'customer:create',
     'customer:update',

@@ -7,7 +7,6 @@ import {
   type LeadVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { checkDuplicate } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
@@ -22,8 +21,9 @@ import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
-import { confirmIfDuplicates } from '@/utils/duplicate'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
+import LeadTransformDialog from '@/components/leads/LeadTransformDialog.vue'
+import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCustomerDrawer.vue'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
@@ -59,7 +59,8 @@ const ownerHistoryTarget = ref<LeadVO | null>(null)
 
 const convertVisible = ref(false)
 const convertTarget = ref<LeadVO | null>(null)
-const convertForm = reactive({ createContact: true, withOpportunity: false, oppName: '', oppAmount: undefined as number | undefined })
+const transitionCustomerVisible = ref(false)
+const transitionClueIds = ref<string[]>([])
 
 const savedViewModule = computed(() => (activeTab.value === 'pool' ? 'lead_pool' : 'lead'))
 const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
@@ -362,38 +363,12 @@ function openOwnerHistory(row: LeadVO) {
 
 function openConvert(row: LeadVO) {
   convertTarget.value = row
-  Object.assign(convertForm, {
-    createContact: Boolean(row.contactName),
-    withOpportunity: false,
-    oppName: `${row.name}-商机`,
-    oppAmount: undefined,
-  })
   convertVisible.value = true
 }
 
-async function handleConvert() {
-  if (!convertTarget.value) return
-  try {
-    const { data: hits } = await checkDuplicate({
-      name: convertTarget.value.name,
-      phone: convertTarget.value.phone ?? undefined,
-    })
-    const proceed = await confirmIfDuplicates(hits, '转化')
-    if (!proceed) return
-    const result = await leadApi.convert(convertTarget.value.id, {
-      createContact: convertForm.createContact,
-      opportunity: convertForm.withOpportunity
-        ? { name: convertForm.oppName, amount: convertForm.oppAmount }
-        : undefined,
-    })
-    ElMessage.success(
-      `转化成功：已创建客户${result.data.opportunityId ? '、商机' : ''}`,
-    )
-    convertVisible.value = false
-    loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
+function openTransitionCustomer(ids: string[]) {
+  transitionClueIds.value = ids
+  transitionCustomerVisible.value = true
 }
 
 onMounted(async () => {
@@ -458,6 +433,12 @@ onMounted(async () => {
       </div>
       <div class="flex gap-2">
         <template v-if="selectedRows.length > 0">
+          <el-button
+            v-if="activeTab === 'mine' && auth.hasPerm('lead:update')"
+            @click="openTransitionCustomer(selectedRows.map((row) => row.id))"
+          >
+            关联客户
+          </el-button>
           <el-button v-if="canExport" @click="openExport('selected')">
             导出选中（{{ selectedRows.length }}）
           </el-button>
@@ -561,10 +542,16 @@ onMounted(async () => {
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
-                    v-if="row.status === 'FOLLOWING' && auth.hasPerm('lead:convert')"
+                    v-if="row.status === 'FOLLOWING' && auth.hasPerm('lead:update')"
                     @click="openConvert(row as LeadVO)"
                   >
                     转化为客户
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="auth.hasPerm('lead:update')"
+                    @click="openTransitionCustomer([(row as LeadVO).id])"
+                  >
+                    关联客户
                   </el-dropdown-item>
                   <el-dropdown-item @click="openEdit(row as LeadVO)">编辑</el-dropdown-item>
                   <el-dropdown-item @click="openOwnerHistory(row as LeadVO)">
@@ -634,34 +621,18 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="convertVisible" title="线索转化" width="480px" destroy-on-close>
-      <p class="text-sm text-[var(--el-text-color-secondary)] mb-4">
-        将线索「{{ convertTarget?.name }}」转化为正式客户
-      </p>
-      <el-form label-width="110px">
-        <el-form-item label="创建联系人">
-          <el-switch v-model="convertForm.createContact" :disabled="!convertTarget?.contactName" />
-          <span class="text-xs text-[var(--el-text-color-placeholder)] ml-2">
-            {{ convertTarget?.contactName ? `联系人：${convertTarget.contactName}` : '线索无联系人信息' }}
-          </span>
-        </el-form-item>
-        <el-form-item label="同时创建商机">
-          <el-switch v-model="convertForm.withOpportunity" />
-        </el-form-item>
-        <template v-if="convertForm.withOpportunity">
-          <el-form-item label="商机名称">
-            <el-input v-model="convertForm.oppName" />
-          </el-form-item>
-          <el-form-item label="预计金额">
-            <el-input-number v-model="convertForm.oppAmount" :min="0" :precision="2" controls-position="right" class="!w-full" />
-          </el-form-item>
-        </template>
-      </el-form>
-      <template #footer>
-        <el-button @click="convertVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleConvert">确认转化</el-button>
-      </template>
-    </el-dialog>
+    <LeadTransformDialog
+      v-model="convertVisible"
+      :lead="convertTarget"
+      @success="loadData"
+      @finish="loadData"
+    />
+
+    <LeadTransitionCustomerDrawer
+      v-model="transitionCustomerVisible"
+      :clue-ids="transitionClueIds"
+      @finish="loadData"
+    />
 
     <FollowUpDrawer
       v-model="followVisible"

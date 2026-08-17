@@ -18,7 +18,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { code: 'lead:update', label: '编辑' },
       { code: 'lead:delete', label: '删除' },
       { code: 'lead:assign', label: '分配/领取' },
-      { code: 'lead:convert', label: '转化' },
       { code: 'lead:import', label: '导入' },
       { code: 'lead:export', label: '导出' },
       { code: 'leadPool:import', label: '线索池导入' },

@@ -33,6 +33,12 @@ export class MetadataService {
     return new Map(fields.map((f) => [f.key, f]))
   }
 
+  /** Cordys ModuleField.rules.unique 等价判断。 */
+  async hasUniqueRule(tenantId: string, module: string, key: string): Promise<boolean> {
+    const field = (await this.fieldsMap(tenantId, module)).get(key)
+    return Boolean(field?.config?.unique)
+  }
+
   /** Cordys batch edit 兼容：fieldId 同时接受真实字段 ID 或业务 key。 */
   async resolveEditableField(tenantId: string, module: string, fieldIdOrKey: string): Promise<FieldVO> {
     const fields = await this.listFields(tenantId, module)

@@ -23,8 +23,8 @@
 
 | CordysCRM 模块 | 关键参考实现 | MicroMatrix CRM | 状态 | 后续动作 |
 | --- | --- | --- | --- | --- |
-| 线索 | `clue/*`、`ClueService`、`PoolClueService` | `modules/leads` | 🚧 | 多池/领取限制/库容/回收/SavedView/负责人历史/批量操作/xlsx 导入导出已验收；继续 R4 转化关系 |
-| 客户 | `customer/*`、`CustomerService` | `customers` | 🚧 | 多公海/库容/协作/关系/合并/SavedView/批量操作/xlsx 导入导出已验收；继续 R3 联系人与 R5 360 |
+| 线索 | `clue/*`、`ClueService`、`PoolClueService` | `modules/leads` | ✅ | R1/R2/R4 已完成多池、领取/回收/库容、SavedView、负责人历史、批量、xlsx 导入导出与三条客户转换路径；FollowUpPlan/显式 FormLinkScenario 属平台后续能力 |
+| 客户 | `customer/*`、`CustomerService` | `customers` | 🚧 | 多公海/库容/协作/关系/合并/SavedView/批量/xlsx/联系人及 R4 转换关联已验收；继续 R5 360 |
 | 联系人 | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue` | `modules/contacts` | ✅ | R3 已对齐独立列表/数据视图、客户内嵌列表、动态字段、启停、商机关联删除保护、批改、xlsx 导入导出与 Cordys 工具条交互；后续随 R4/R5 补跨模块关系与 360 |
 | 商机 | `opportunity/*`、`OpportunityService` | `modules/opportunities` | 🟡 | 补齐关闭规则、阶段高级配置、负责人/跟进联动 |
 | 报价 | `OpportunityQuotation*` | `modules/quotes` | 🟡 | 对齐审批、快照、联系人、用户视图、操作日志 |
@@ -61,7 +61,7 @@
 | 操作日志 | `BaseModuleLogService` 等 | `modules/logs` + `BusinessChangeLogService` | 🚧 | 通用递归字段 diff 已接 Lead/Customer 更新与合并；继续扩对象和时间线 UI |
 | 登录日志 | `SysLoginLogService` | `modules/logs` | 🟡 | 对齐筛选与审计能力 |
 | 附件 | `AttachmentService` | `modules/attachments` | ✅ | 后续仅补对象接入覆盖面和存储 Provider |
-| 导入导出 | `excel/*`、`BaseExportService` | `SpreadsheetService` + Lead/Customer/Pool xlsx API | 🟡 | R2 已完成 xlsx ADD/UPDATE、预检、字段选择、全量/选中导出；剩余 `.xls` 兼容与字段 `unique` 规则 |
+| 导入导出 | `excel/*`、`BaseExportService` | `SpreadsheetService` + Lead/Customer/Pool xlsx API | 🟡 | R2 已完成 xlsx ADD/UPDATE、预检、字段选择、全量/选中导出；R4 已补客户/联系人核心系统字段 `unique` 规则，剩余 `.xls` 与更完整字段规则体系 |
 | 异步导出中心 | `ExportTaskCenterService` | `ExportTask` + `ExportTasksService` | 🟡 | R2 已落任务契约、24h 保留与创建者隔离；当前同步生成文件，Wave 6 再切 BullMQ 异步执行 |
 | API Key | `UserKeyService`、`ApiKeyFilter` | API Token | 🟡 | 对齐权限、生命周期和调用审计 |
 | 部门 | `DepartmentService` | `modules/departments` | 🟡 | 对齐部门主管等组织语义 |

@@ -9,13 +9,14 @@ import {
   type OpportunityVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { listCustomers } from '@/api/customers'
 import { opportunityApi } from '@/api/sales'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import LineItemsEditor from '@/components/LineItemsEditor.vue'
+import OpportunityDetailDrawer from '@/components/opportunities/OpportunityDetailDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -23,6 +24,7 @@ import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 const fieldRefs = useFieldRefs()
 
@@ -57,6 +59,8 @@ const followTarget = ref<OpportunityVO | null>(null)
 const stageVisible = ref(false)
 const stageTarget = ref<OpportunityVO | null>(null)
 const stageForm = reactive({ stageId: '', lostReason: '' })
+const detailVisible = ref(false)
+const detailOpportunityId = ref<string | null>(null)
 
 const listColumns = computed(() => fields.value.filter((f) => f.showInList && !f.hidden))
 const selectedStage = computed(() => stages.value.find((s) => s.id === stageForm.stageId))
@@ -222,6 +226,11 @@ function toQuote(row: OpportunityVO) {
   router.push({ path: '/quotes', query: { fromOpportunity: row.id } })
 }
 
+function openDetail(id: string) {
+  detailOpportunityId.value = id
+  detailVisible.value = true
+}
+
 watch(
   lineItems,
   () => {
@@ -234,7 +243,9 @@ watch(
 
 onMounted(async () => {
   await Promise.all([loadMeta(), fieldRefs.load()])
-  loadData()
+  await loadData()
+  const id = typeof route.query.id === 'string' ? route.query.id : ''
+  if (id) openDetail(id)
 })
 </script>
 
@@ -459,6 +470,11 @@ onMounted(async () => {
       :target-id="followTarget?.id ?? null"
       :target-name="followTarget?.name"
       @followed="loadData"
+    />
+
+    <OpportunityDetailDrawer
+      v-model="detailVisible"
+      :opportunity-id="detailOpportunityId"
     />
   </el-card>
 </template>

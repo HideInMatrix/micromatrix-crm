@@ -7,10 +7,13 @@ import {
 } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { claimLead, createLead, fetchFields, listLeads } from '@/mobile/api'
 import { extractErrorMessage } from '@/api/http'
 import FollowUpSheet from '@/mobile/components/FollowUpSheet.vue'
 import MobileDynamicForm from '@/mobile/components/MobileDynamicForm.vue'
+
+const router = useRouter()
 
 const activeTab = ref<'mine' | 'pool'>('mine')
 const items = ref<LeadVO[]>([])
@@ -72,6 +75,10 @@ async function handleClaim(lead: LeadVO) {
 function openFollow(lead: LeadVO) {
   followTarget.value = lead
   followShow.value = true
+}
+
+function openConvert(lead: LeadVO) {
+  router.push(`/leads/${lead.id}/convert`)
 }
 
 async function openCreate() {
@@ -159,15 +166,14 @@ onMounted(() => undefined)
               >
                 领取
               </van-button>
-              <van-button
-                v-else-if="lead.status === 'FOLLOWING'"
-                size="small"
-                plain
-                type="primary"
-                @click="openFollow(lead)"
-              >
-                跟进
-              </van-button>
+              <div v-else-if="lead.status === 'FOLLOWING'" class="flex gap-2">
+                <van-button size="small" plain type="primary" @click="openFollow(lead)">
+                  跟进
+                </van-button>
+                <van-button size="small" type="primary" @click="openConvert(lead)">
+                  转换
+                </van-button>
+              </div>
             </template>
           </van-cell>
         </van-cell-group>

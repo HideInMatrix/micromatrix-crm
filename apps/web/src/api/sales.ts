@@ -139,8 +139,48 @@ export const leadApi = {
       ids,
     }),
   markInvalid: (id: string) => http.post(`/leads/${id}/invalid`),
-  convert: (id: string, data: { createContact?: boolean; opportunity?: { name: string; amount?: number } }) =>
-    http.post<{ customerId: string; opportunityId: string | null }>(`/leads/${id}/convert`, data),
+  transform: (data: { clueId: string; oppCreated?: boolean; oppName?: string }) =>
+    http.post<{
+      clueId: string
+      customerId: string
+      contactId: string | null
+      opportunityId: string | null
+    }>('/leads/transform', data),
+  transitionCustomer: (data: Record<string, unknown> & { clueId: string }) =>
+    http.post<{ clueId: string; customerId: string; contactId: string | null }>(
+      '/leads/transition/account',
+      data,
+    ),
+  retransitionCustomer: (data: { clueIds: string[]; customerId: string }) =>
+    http.post<{ customerId: string; success: number; skippedIds: string[]; contactIds: string[] }>(
+      '/leads/re-transition/account',
+      data,
+    ),
+  transitionCustomerList: (data: { page: number; pageSize: number; keyword?: string; filters?: string }) =>
+    http.post<{
+      items: Array<{
+        id: string
+        name: string
+        industry: string | null
+        phone: string | null
+        email: string | null
+        remark: string | null
+        ownerId: string | null
+        ownerName: string | null
+        deptId: string | null
+        inSea: boolean
+        poolId: string | null
+        lastFollowedAt: string | null
+        customData: Record<string, unknown>
+        createdAt: string
+        updatedAt: string
+        collaborationType: 'READ_ONLY' | 'COLLABORATION' | null
+        selectable: boolean
+      }>
+      total: number
+      page: number
+      pageSize: number
+    }>('/leads/transition/account/page', data),
 }
 
 // ===== 跟进 =====

@@ -12,7 +12,7 @@ erDiagram
     Department ||--o{ User : contains
     Role ||--o{ User : assigned
 
-    Lead }o--|| Customer : "转化为(convertedCustomerId)"
+    Lead }o--|| Customer : "转化为(transitionType/transitionId)"
     Customer ||--o{ Contact : has
     Customer ||--o{ CustomerTeamMember : "协作团队"
     Customer ||--o{ Opportunity : has
@@ -58,20 +58,20 @@ erDiagram
 
 | 表 | 要点 |
 | --- | --- |
-| field_definitions | `@@unique([tenantId, module, key])`；system 字段不可删/类型不可改；options/config JSONB；sort/span 表单布局；showInList/listWidth 列表配置。公式字段 config.formula 由 shared 求值器三端计算 |
+| field_definitions | `@@unique([tenantId, module, key])`；system 字段不可删/类型不可改；options/config JSONB；sort/span 表单布局；showInList/listWidth 列表配置。公式字段 `config.formula` 由 shared 求值器计算；R4 新增 `config.unique`，当前用于客户 name/phone/email 与联系人 name/phone 的 Cordys `rules.unique` 等价语义 |
 
 ### 销售核心
 
 | 表 | 要点 |
 | --- | --- |
-| leads | `inPool + poolId` 多线索池；池可按成员/部门 Scope 隔离；status FOLLOWING/CONVERTED/INVALID；collectedAt/poolEnteredAt/lastFollowedAt 支撑领取和回收规则 |
+| leads | `inPool + poolId` 多线索池；池可按成员/部门 Scope 隔离；status FOLLOWING/CONVERTED/INVALID；`transitionType + transitionId` 保存真实转换目标（客户转换时 CUSTOMER + customerId）；collectedAt/poolEnteredAt/lastFollowedAt 支撑领取和回收规则 |
 | customers | `inSea + poolId` 多公海；collectedAt/poolEnteredAt/lastFollowedAt；公海 Scope、领取/回收/库容规则 |
 | contacts | 挂客户，onDelete Cascade；Cordys 核心字段 `customerId/ownerId/name/phone/enable/disableReason`，扩展字段走 `customData`；`ownerId/deptId` 支撑联系人独立数据范围与客户协作子域 |
 | customer_team_members | 客户协作关系 `@@unique([customerId, userId])`；`collaborationType=READ_ONLY/COLLABORATION` |
 | customer_relations | 集团/子公司有向关系：source=集团、target=子公司；服务层保证一个子公司只有一个上级集团并阻止循环关系 |
 | follow_up_records | 多态跟进（targetType: lead/customer/opportunity/contract）；写入时回填目标 lastFollowedAt |
 | opportunity_stages | 可配置阶段；isWon/isLost 系统结果阶段不可删；probability 赢率 |
-| opportunities | stageId + wonAt/lostAt/lostReason；金额 Decimal(14,2)；`opportunity_items` 产品明细（级联删除） |
+| opportunities | stageId + wonAt/lostAt/lostReason；可空 `contactId` 绑定当前客户联系人；金额 Decimal(14,2)；`opportunity_items` 产品明细（级联删除） |
 | resource_pools / resource_pool_pick_rules / resource_pool_recycle_rules | 多池、Scope、池管理员、领取限制与 Cordys 时间条件自动回收 |
 | resource_capacities | 线索/客户库容；客户支持过滤条件排除不计入库容的数据 |
 | resource_owner_histories | Lead/Customer 历史负责人、进入池原因与时间 |

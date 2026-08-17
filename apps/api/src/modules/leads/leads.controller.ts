@@ -37,7 +37,16 @@ import {
   ImportUploadDto,
   type ImportType,
 } from '../import-export/dto/import-export.dto'
-import { AssignLeadDto, ConvertLeadDto, CreateLeadDto, QueryLeadsDto, UpdateLeadDto } from './dto/lead.dto'
+import {
+  AssignLeadDto,
+  CreateLeadDto,
+  QueryLeadsDto,
+  RetransitionLeadCustomerDto,
+  TransformLeadDto,
+  TransitionCustomerQueryDto,
+  TransitionLeadCustomerDto,
+  UpdateLeadDto,
+} from './dto/lead.dto'
 import { LeadsService } from './leads.service'
 
 type UploadedBufferFile = {
@@ -345,11 +354,47 @@ export class LeadsController {
     return this.leadsService.markInvalid(user, id)
   }
 
-  @Post(':id/convert')
-  @RequirePermissions('lead:convert')
-  @LogOperation('lead', 'convert')
-  @ApiOperation({ summary: '一键转化为客户（+联系人 +商机）' })
-  convert(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ConvertLeadDto) {
-    return this.leadsService.convert(user, id, dto)
+  @Post('transform')
+  @RequirePermissions('lead:update')
+  @LogOperation('lead', 'transform')
+  @ApiOperation({ summary: '自动转换线索：客户+联系人，商机可选' })
+  transform(@CurrentUser() user: AuthUser, @Body() dto: TransformLeadDto) {
+    return this.leadsService.transform(user, dto)
+  }
+
+  @Post('transition/account')
+  @RequirePermissions('customer:create')
+  @LogOperation('lead', 'transitionCustomer')
+  @ApiOperation({ summary: '新建客户并关联线索' })
+  transitionCustomer(@CurrentUser() user: AuthUser, @Body() dto: TransitionLeadCustomerDto) {
+    return this.leadsService.transitionCustomer(user, dto)
+  }
+
+  @Post('re-transition/account')
+  @RequirePermissions('lead:update')
+  @LogOperation('lead', 'retransitionCustomer')
+  @ApiOperation({ summary: '关联/重新关联已有客户' })
+  retransitionCustomer(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RetransitionLeadCustomerDto,
+  ) {
+    return this.leadsService.retransitionCustomer(user, dto)
+  }
+
+  @Post('transition/account/page')
+  @RequirePermissions('menu:lead', 'menu:customer')
+  @ApiOperation({ summary: '可关联客户列表：数据范围+协作+可访问公海' })
+  transitionCustomerList(
+    @CurrentUser() user: AuthUser,
+    @Body() query: TransitionCustomerQueryDto,
+  ) {
+    return this.leadsService.transitionCustomerList(user, query)
+  }
+
+  // 动态 :id GET 必须放在所有静态 GET 路由之后，避免抢占 /export、/import/template 等路径。
+  @Get(':id')
+  @ApiOperation({ summary: '线索详情' })
+  findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.leadsService.findOne(user, id)
   }
 }

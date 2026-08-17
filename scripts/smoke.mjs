@@ -244,11 +244,190 @@ await post('/follow-ups', sales.headers, {
   type: '电话',
   content: '冒烟跟进',
 })
-const converted = await post(`/leads/${lead.id}/convert`, sales.headers, {
-  createContact: true,
-  opportunity: { name: `冒烟商机-${stamp}`, amount: 66000 },
+const converted = await post('/leads/transform', sales.headers, {
+  clueId: lead.id,
+  oppCreated: true,
+  oppName: `冒烟商机-${stamp}`,
 })
 check('线索转化（客户+联系人+商机）', Boolean(converted.customerId && converted.opportunityId))
+const convertedLead = await get(`/leads/${lead.id}`, sales.headers)
+check(
+  'R4 自动转换写 transitionType / transitionId',
+  convertedLead.transitionType === 'CUSTOMER' && convertedLead.transitionId === converted.customerId,
+)
+const convertedLeadFollows = await get(
+  `/follow-ups?targetType=lead&targetId=${lead.id}`,
+  sales.headers,
+)
+const convertedCustomerFollows = await get(
+  `/follow-ups?targetType=customer&targetId=${converted.customerId}`,
+  sales.headers,
+)
+check(
+  'R4 转换复制跟进记录且保留原线索记录',
+  convertedLeadFollows.some((item) => item.content === '冒烟跟进') &&
+    convertedCustomerFollows.some((item) => item.content === '冒烟跟进'),
+)
+const convertedContacts = await get(`/contacts/list/${converted.customerId}`, sales.headers)
+const convertedOpportunity = await get(`/opportunities/${converted.opportunityId}`, sales.headers)
+check(
+  'R4 自动转换联系人并绑定商机',
+  convertedContacts.some((item) => item.id === converted.contactId) &&
+    convertedOpportunity.contactId === converted.contactId,
+)
+const convertedCustomerDetail = await get(`/customers/${converted.customerId}`, sales.headers)
+check('R4 客户最近跟进时间随线索刷新', Boolean(convertedCustomerDetail.lastFollowedAt))
+
+// R4：关联已有客户时补协作人，并复制联系人/跟进记录。
+const r4RelationCustomer = await post('/customers', manager.headers, {
+  name: `R4关联客户-${stamp}`,
+})
+const r4RelationLead = await post('/leads', sales.headers, {
+  name: `R4关联线索-${stamp}`,
+  contactName: `R4关联联系人-${stamp}`,
+  phone: `138${stamp.slice(-8).padStart(8, '0')}`,
+})
+await post('/follow-ups', sales.headers, {
+  targetType: 'lead',
+  targetId: r4RelationLead.id,
+  type: '电话',
+  content: `R4关联跟进-${stamp}`,
+})
+const r4RelationResult = await post('/leads/re-transition/account', manager.headers, {
+  clueIds: [r4RelationLead.id],
+  customerId: r4RelationCustomer.id,
+})
+check('R4 关联已有客户成功', r4RelationResult.success === 1)
+const r4RelationLeadDetail = await get(`/leads/${r4RelationLead.id}`, manager.headers)
+check(
+  'R4 已有客户关联写 transition',
+  r4RelationLeadDetail.transitionType === 'CUSTOMER' &&
+    r4RelationLeadDetail.transitionId === r4RelationCustomer.id,
+)
+const r4RelationTeam = await get(`/customers/${r4RelationCustomer.id}/team`, manager.headers)
+check(
+  'R4 线索负责人自动补为客户协作人',
+  r4RelationTeam.some(
+    (item) => item.userId === sales.user.id && item.collaborationType === 'COLLABORATION',
+  ),
+)
+const r4RelationContacts = await get(`/contacts/list/${r4RelationCustomer.id}`, manager.headers)
+const r4RelationFollows = await get(
+  `/follow-ups?targetType=customer&targetId=${r4RelationCustomer.id}`,
+  manager.headers,
+)
+check(
+  'R4 已有客户关联复制联系人和跟进',
+  r4RelationContacts.some((item) => item.name === `R4关联联系人-${stamp}`) &&
+    r4RelationFollows.some((item) => item.content === `R4关联跟进-${stamp}`),
+)
+
+// R4：READ_ONLY 协作客户出现在候选列表但不可选择，Service 也拒绝绕过 UI 关联。
+const r4ReadOnlyCustomer = await post('/customers', manager.headers, {
+  name: `R4只读客户-${stamp}`,
+})
+await post(`/customers/${r4ReadOnlyCustomer.id}/team`, manager.headers, {
+  userId: sales.user.id,
+  collaborationType: 'READ_ONLY',
+})
+const r4ReadOnlyLead = await post('/leads', sales.headers, {
+  name: `R4只读关联线索-${stamp}`,
+})
+const r4CandidatePage = await post('/leads/transition/account/page', sales.headers, {
+  page: 1,
+  pageSize: 50,
+  keyword: `R4只读客户-${stamp}`,
+})
+check(
+  'R4 客户候选列表禁选 READ_ONLY 协作客户',
+  r4CandidatePage.items?.some(
+    (item) => item.id === r4ReadOnlyCustomer.id && item.selectable === false,
+  ),
+)
+const r4ReadOnlyDenied = await request(
+  'POST',
+  '/leads/re-transition/account',
+  sales.headers,
+  { clueIds: [r4ReadOnlyLead.id], customerId: r4ReadOnlyCustomer.id },
+)
+check('R4 Service 拒绝关联 READ_ONLY 协作客户', r4ReadOnlyDenied.status === 403)
+
+// R4：关联公海客户前先按公海规则领取。
+const r4CustomerPool = await post('/resource-pools', admin.headers, {
+  module: 'customer',
+  name: `R4关联公海-${stamp}`,
+  scopeIds: [`user:${sales.user.id}`],
+})
+const r4SeaCustomer = await post('/customers', admin.headers, {
+  name: `R4公海客户-${stamp}`,
+})
+await post(`/customers/${r4SeaCustomer.id}/to-sea`, admin.headers, { poolId: r4CustomerPool.id })
+const r4SeaLead = await post('/leads', sales.headers, {
+  name: `R4公海关联线索-${stamp}`,
+})
+const r4SeaResult = await post('/leads/re-transition/account', sales.headers, {
+  clueIds: [r4SeaLead.id],
+  customerId: r4SeaCustomer.id,
+})
+const r4ClaimedCustomer = await get(`/customers/${r4SeaCustomer.id}`, sales.headers)
+check(
+  'R4 关联公海客户会先领取',
+  r4SeaResult.success === 1 &&
+    r4ClaimedCustomer.inSea === false &&
+    r4ClaimedCustomer.ownerId === sales.user.id,
+)
+await request('DELETE', `/resource-pools/${r4CustomerPool.id}`, admin.headers)
+
+// R4：Cordys rules.unique —— 客户名称唯一时复用同名客户；联系人唯一时不重复创建。
+const r4ContactFields = await get('/metadata/contact/fields', admin.headers)
+const r4CustomerNameField = fields.find((field) => field.key === 'name')
+const r4ContactNameField = r4ContactFields.find((field) => field.key === 'name')
+if (r4CustomerNameField && r4ContactNameField) {
+  const originalCustomerNameConfig = { ...(r4CustomerNameField.config ?? {}) }
+  const originalContactNameConfig = { ...(r4ContactNameField.config ?? {}) }
+  const r4UniqueCustomer = await post('/customers', sales.headers, {
+    name: `R4唯一复用客户-${stamp}`,
+  })
+  const r4UniqueContact = await post('/contacts/add', sales.headers, {
+    customerId: r4UniqueCustomer.id,
+    name: `R4唯一联系人-${stamp}`,
+    phone: `139${stamp.slice(-8).padStart(8, '0')}`,
+  })
+  try {
+    await request('PATCH', `/metadata/fields/${r4CustomerNameField.id}`, admin.headers, {
+      config: { ...originalCustomerNameConfig, unique: true },
+    })
+    await request('PATCH', `/metadata/fields/${r4ContactNameField.id}`, admin.headers, {
+      config: { ...originalContactNameConfig, unique: true },
+    })
+    const r4UniqueLead = await post('/leads', sales.headers, {
+      name: `R4唯一复用客户-${stamp}`,
+      contactName: `R4唯一联系人-${stamp}`,
+      phone: r4UniqueContact.phone,
+    })
+    const r4UniqueTransform = await post('/leads/transform', sales.headers, {
+      clueId: r4UniqueLead.id,
+      oppCreated: false,
+    })
+    const r4UniqueContacts = await get(`/contacts/list/${r4UniqueCustomer.id}`, sales.headers)
+    check(
+      'R4 客户名称 UNIQUE 时自动转换复用同名客户',
+      r4UniqueTransform.customerId === r4UniqueCustomer.id,
+    )
+    check(
+      'R4 联系人 UNIQUE 时跳过重复联系人',
+      r4UniqueTransform.contactId === null &&
+        r4UniqueContacts.filter((item) => item.name === `R4唯一联系人-${stamp}`).length === 1,
+    )
+  } finally {
+    await request('PATCH', `/metadata/fields/${r4CustomerNameField.id}`, admin.headers, {
+      config: { ...originalCustomerNameConfig, unique: Boolean(originalCustomerNameConfig.unique) },
+    })
+    await request('PATCH', `/metadata/fields/${r4ContactNameField.id}`, admin.headers, {
+      config: { ...originalContactNameConfig, unique: Boolean(originalContactNameConfig.unique) },
+    })
+  }
+}
 
 const savedLeadView = await post('/saved-views/lead', admin.headers, {
   name: `冒烟线索视图-${stamp}`,

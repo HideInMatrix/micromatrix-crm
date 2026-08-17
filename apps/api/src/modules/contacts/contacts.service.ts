@@ -137,6 +137,7 @@ export class ContactsService {
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: true,
     })
+    await this.assertContactUniqueRules(user.tenantId, data)
     const contact = await this.prisma.contact.create({
       data: {
         ...data,
@@ -170,6 +171,7 @@ export class ContactsService {
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
     })
+    await this.assertContactUniqueRules(user.tenantId, rest, existing.id)
     const owner = ownerId ? await this.resolveOwner(user, ownerId) : null
     const data: Prisma.ContactUpdateInput = {
       ...rest,
@@ -572,6 +574,32 @@ export class ContactsService {
 
   private assertIndependentReadPermission(user: AuthUser) {
     if (!hasPermission(user.permissions, 'contact:read')) throw new ForbiddenException('无联系人查看权限')
+  }
+
+  private async assertContactUniqueRules(
+    tenantId: string,
+    values: { name?: string; phone?: string | null },
+    excludeId?: string,
+  ) {
+    const fields = await this.metadata.fieldsMap(tenantId, MODULE)
+    const checks = [
+      ['name', values.name],
+      ['phone', values.phone],
+    ] as const
+    for (const [key, raw] of checks) {
+      if (!fields.get(key)?.config?.unique || raw === undefined || raw === null || raw === '') continue
+      const value = raw.trim()
+      if (!value) continue
+      const duplicate = await this.prisma.contact.findFirst({
+        where: {
+          tenantId,
+          ...(excludeId ? { id: { not: excludeId } } : {}),
+          ...(key === 'name' ? { name: value } : { phone: value }),
+        },
+        select: { id: true },
+      })
+      if (duplicate) throw new BadRequestException(`「${fields.get(key)?.label ?? key}」不能重复`)
+    }
   }
 
   private assertIndependentImportPermission(user: AuthUser) {

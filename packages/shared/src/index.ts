@@ -79,6 +79,7 @@ export interface CustomerVO {
   customData: Record<string, unknown>
   collectedAt: string | null
   poolEnteredAt: string | null
+  lastFollowedAt: string | null
   createdAt: string
   updatedAt: string
 }

@@ -134,6 +134,37 @@ POST /contacts/export-select              导出选中任务
 - Opportunity 可通过 `contactId` 绑定当前客户下的联系人；联系人被商机引用时 Service 层拒绝删除。
 - 联系人批量能力与 Cordys 一致，仅提供“导出选中 + 批量编辑”，不新增批量删除。
 
+### 线索转换（R4，按 Cordys `/lead/*` 转换边界）
+
+```text
+POST /leads/transform                    自动转换：客户+联系人固定，商机可选
+POST /leads/transition/account           使用客户新增表单新建客户并关联线索
+POST /leads/re-transition/account        一条/批量线索关联已有客户
+POST /leads/transition/account/page      关联客户全屏抽屉的候选客户分页
+GET  /leads/{id}                         线索详情（含 transitionType/transitionId）
+```
+
+`POST /leads/transform` 请求示例：
+
+```json
+{
+  "clueId": "lead-id",
+  "oppCreated": true,
+  "oppName": "2026 年升级项目"
+}
+```
+
+转换规则：
+
+- 自动转换固定处理客户和联系人；商机是唯一可选项。商机名称最大 255 字符，不再接受旧实现中的“创建联系人开关/商机金额”。
+- Lead 成功关联客户后写 `transitionType=CUSTOMER / transitionId=customerId`；旧 `convertedCustomerId` 与旧 `POST /leads/{id}/convert` 已移除。
+- 客户 `name` 开启 Metadata `config.unique` 时，自动转换才复用同名客户；多条同名客户优先选择“不在公海且负责人=线索负责人”的记录，否则取第一条。未开启 unique 时同名仍创建新客户。
+- 联系人 `name/phone` 的 `config.unique` 分别决定是否执行姓名/电话唯一校验。按 Cordys 实际 SQL，唯一范围是当前租户而非单个客户；命中重复时跳过本次联系人创建。
+- 关联已有客户的候选范围为：正常客户数据范围 + 当前用户协作客户 + 当前用户可访问公海；`READ_ONLY` 协作客户会返回但 `selectable=false`，直接绕过 UI 调接口也会被 Service 拒绝。
+- 关联公海客户前先执行领取规则；领取失败则不继续转换。
+- 线索负责人不是客户负责人且尚未在团队中时，自动补 `COLLABORATION`；商机绑定本次新建联系人；线索 FollowUpRecord 复制到客户且原记录保留，同时刷新客户 `lastFollowedAt`。
+- MicroMatrix 当前尚无完整 FollowUpPlan 与 Cordys `FormLinkScenario` 跨字段映射配置。R4 不伪造 FollowUpPlan；动态字段仅迁移目标模块存在的同 key `customData`，显式跨字段映射归动态表单平台后续补齐。
+
 ## 保存的用户视图 SavedView
 
 基础路径：`/api/saved-views`。

@@ -329,7 +329,83 @@
 - 补跟进记录/计划迁移或关联语义；FollowUpPlan 对象本身仍在 Wave 2 时，先预留兼容接口，不伪造完整计划功能。
 - 转化后联系人、商机、客户关系不能重复创建或留下孤立引用。
 
-状态：`⏳ PLANNED`
+#### R4 Cordys 源码事实（2026-08-17 已确认）
+
+后端来源：
+
+- `clue/controller/ClueController.java`
+- `clue/service/ClueService.java`
+- `clue/dto/request/ClueTransitionCustomerRequest.java`
+- `customer/dto/request/ClueTransformRequest.java`
+- `customer/dto/request/BatchReTransitionCustomerRequest.java`
+- `clue/mapper/ExtClueMapper.xml`
+- `customer/service/CustomerService.java`
+- `customer/mapper/ExtCustomerMapper.xml`
+
+PC 前端来源：
+
+- `views/clueManagement/clue/components/convertClueModal.vue`
+- `views/clueManagement/clue/components/convertToCustomerDrawer.vue`
+
+Mobile 前端来源：
+
+- `views/clue/clue/convert.vue`
+
+已确认规则：
+
+1. Cordys 同时存在三条转换路径，不能压缩成一个“创建客户”接口：
+   - `/lead/transform`：自动转换，固定创建/关联客户与联系人，可选再创建商机；
+   - `/lead/transition/account`：使用客户新增表单显式创建一个新客户并关联当前线索；
+   - `/lead/re-transition/account`：把一条或多条线索重新关联到一个已有客户。
+2. 线索转换结果通过 `transitionType + transitionId` 持久化；转换客户时 `transitionType=CUSTOMER`、`transitionId=customerId`。列表的“已转客户”系统视图直接依赖该字段，不只是一个状态枚举。
+3. 自动 `/transform` 先检查线索 UPDATE 资源权限；Service 内额外要求 CUSTOMER ADD，勾选商机时还要求 OPPORTUNITY ADD。
+4. 自动转换处理同名客户：只有客户“名称”字段启用了唯一校验且存在同名客户时才复用已有客户；多个同名客户时优先选“不在公海且负责人=线索负责人”的客户，否则取第一条。若未启用客户名称唯一校验，则即使同名也按表单联动新建客户。
+5. 自动新建客户通过“线索 → 客户”表单联动填充；未配置联动的核心字段至少回退到线索 `name / owner / follower / followTime`。
+6. 线索关联已有客户时，客户选择列表不是普通客户列表：可见范围为当前用户正常客户数据范围 + 协作客户 + 当前用户 Scope 命中的公海客户。公海客户被选中后会先尝试领取，领取失败则整体不继续关联。
+7. 关联已有客户时，如果线索负责人不存在则跳过该线索；有效线索会写 `transitionType=CUSTOMER / transitionId=customerId`。
+8. 若线索负责人不是目标客户负责人且尚未成为该客户协作人，转换时自动新增 `COLLABORATION` 协作关系。
+9. 线索联系人通过“线索 → 联系人”表单联动生成；当联系人姓名为空时不创建。联系人姓名/电话是否参与唯一校验由字段 `rules.unique` 决定。`ExtCustomerContactMapper.xml#getUniqueContactCount` 的实际 SQL 按组织范围检查姓名/电话，虽然 Java 方法接收 `customerId`，SQL 并未按客户 ID 收窄，因此 MicroMatrix 也按租户范围执行该唯一规则；默认负责人取线索负责人。
+10. 勾选商机后，通过“线索 → 商机”表单联动创建商机，至少强制设置 `name / customerId / owner / contactId`；`contactId` 优先使用本次新建联系人。
+11. 转换会**复制**线索跟进记录到客户（可选同时关联商机和联系人），不会删除原线索跟进记录；复制后的记录使用新 ID、清空线索关联、评论数归零。FollowUpPlan 也采用相同复制语义，但 MicroMatrix 当前尚无完整 FollowUpPlan 对象，R4 只实现已有 FollowUpRecord 的真实复制，不伪造计划模块。
+12. 线索的 `lastFollowedAt` 晚于客户现有最近跟进时间时，客户最近跟进时间跟随刷新。
+13. PC 自动转换 UI 是约 600px 模态框：联系人、客户两个选项默认勾选且禁用；商机是唯一可切换选项。勾选商机后只显示“商机名称”必填输入，不展示金额字段。
+14. PC 模态框下方有独立“备注”信息块，文案根据是否创建商机切换；有模块设置权限时可进入客户/联系人/商机表单设置。MicroMatrix 没有完全同构的联动表单设置页时先保留文字入口/说明，不复制 Cordys 图标。
+15. 转换成功后 PC 弹出二次成功模态框，5 秒倒计时自动返回线索列表，同时提供“返回线索列表”和“查看客户/商机详情”两个操作。
+16. Mobile 转换是独立全页，不是底部 Sheet：顶部展示“联系人 / 客户 / 商机”三个卡片；联系人、客户固定选中；商机可选。勾选商机后显示名称输入；页面底部固定“取消 / 转换”。成功后弹窗同样有 5 秒倒计时和详情跳转。
+17. “关联已有客户”PC UI 是 100% 宽抽屉，内部使用客户表格 + 高级筛选，**单选**客户；READ_ONLY 协作客户禁选。确认按钮文案是“关联客户”。
+
+#### R4 MicroMatrix 落地决策
+
+- Lead 模型从早期 `convertedCustomerId` 单字段迁移为 Cordys 等价的 `transitionType / transitionId`；历史已转客户数据迁移为 `transitionType=CUSTOMER`，不再继续维护双字段真相。
+- 保留现有 `LeadStatus` 仅承载跟进中/无效等展示状态；“已转客户”判断优先使用 `transitionType`，避免状态与真实关联脱节。
+- 新增三个明确转换 API：自动 transform、创建新客户并关联、关联已有客户，并新增 Cordys `/transition/account/page` 等价候选客户分页；旧 `POST /leads/:id/convert` 已删除，不再保留兼容入口。
+- 自动转换与重新关联统一走同一套内部 `associateLeadToCustomer()`，负责：协作关系、联系人去重/创建、FollowUpRecord 复制、最近跟进时间刷新、transition 字段写入和通知，避免三条入口出现副作用差异。
+- Metadata `FieldConfig` 新增 `unique`，当前先对 Cordys R4 真正使用到的客户 `name/phone/email` 与联系人 `name/phone` 系统字段开放配置；正常 CRUD 与线索转换共用同一规则，避免“转换时唯一、平时不唯一”的半实现。
+- 自动转换已实现客户名称 `unique` 开关：未开启时同名仍新建；开启时复用同名客户，多条命中时优先“不在公海且负责人=线索负责人”，否则取第一条。
+- 当前 MicroMatrix 尚没有 Cordys `FormLinkScenario / LinkScenarioKey` 的显式跨字段联动配置对象；R4 只迁移目标模块中存在的同 key `customData` 并执行目标 Metadata 必填校验。该差异归动态表单平台能力继续补，不在 R4 伪造一套配置系统。
+- R4 不实现不存在的 FollowUpPlan 表；等该对象正式迁移后再按 Cordys 同样复制。
+- PC 和 Mobile 转换界面分别按 Cordys 对应源码复刻，不从旧 MicroMatrix `LeadsView` 的“创建联系人开关 + 商机金额”对话框继续演进；PC 商机详情使用概览抽屉，Mobile 提供转换后真实客户/商机详情入口。
+
+#### R4 验收项
+
+- [x] Lead `transitionType / transitionId` 模型与历史 migration
+- [x] `/leads/transform` 自动转换：客户/联系人固定、商机可选
+- [x] `/leads/transition/account` 新建客户并关联
+- [x] `/leads/re-transition/account` 一条/批量关联已有客户
+- [x] `/leads/transition/account/page` 数据范围 + 协作 + 公海候选客户分页
+- [x] READ_ONLY 候选禁选 + Service 端拒绝绕过 UI
+- [x] 公海客户关联前领取
+- [x] 客户名称 UNIQUE 同名复用选择器
+- [x] 联系人 name/phone UNIQUE 条件去重
+- [x] 线索负责人自动补 `COLLABORATION`
+- [x] Opportunity 绑定本次新建 Contact
+- [x] FollowUpRecord 复制且原记录保留；客户最近跟进时间刷新
+- [x] PC 600px 转换模态框 + 5 秒成功模态框 + 100% 关联客户抽屉
+- [x] Mobile 独立转换页 + 5 秒成功弹窗 + 客户/商机详情跳转
+- [x] R4 专项 smoke 已进入整仓 smoke（143/143）
+- [x] build/typecheck/lint 全绿；Pool Rule 单测 7/7；完整 smoke 143/143
+
+状态：`✅ COMPLETE / 2026-08-17 已通过完整门槛验收`
 
 ### R5 客户 360 完整 Tab
 

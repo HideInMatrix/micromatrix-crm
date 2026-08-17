@@ -23,7 +23,8 @@ export interface LeadVO {
   ownerName?: string | null
   deptId: string | null
   customData: Record<string, unknown>
-  convertedCustomerId: string | null
+  transitionType: string | null
+  transitionId: string | null
   collectedAt: string | null
   poolEnteredAt: string | null
   lastFollowedAt: string | null

@@ -25,6 +25,24 @@ const router = createRouter({
       meta: { public: true, title: '登录', client: 'both' },
     },
     {
+      path: '/leads/:id/convert',
+      name: 'mobile-lead-convert',
+      component: () => import('@/mobile/views/LeadConvertView.vue'),
+      meta: { title: '转换线索', perm: 'lead:update', client: 'mobile' },
+    },
+    {
+      path: '/customers/detail',
+      name: 'mobile-customer-detail',
+      component: () => import('@/mobile/views/CustomerDetailView.vue'),
+      meta: { title: '客户详情', perm: 'menu:customer', client: 'mobile' },
+    },
+    {
+      path: '/opportunities/detail',
+      name: 'mobile-opportunity-detail',
+      component: () => import('@/mobile/views/OpportunityDetailView.vue'),
+      meta: { title: '商机详情', perm: 'menu:opportunity', client: 'mobile' },
+    },
+    {
       path: '/',
       component: () =>
         isMobileClient()

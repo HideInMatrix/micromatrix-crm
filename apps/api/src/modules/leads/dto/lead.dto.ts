@@ -1,18 +1,18 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
-import { Type } from 'class-transformer'
 import {
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsEmail,
   IsIn,
   IsNotEmpty,
-  IsNumber,
   IsObject,
   IsOptional,
   IsString,
   MaxLength,
-  ValidateNested,
 } from 'class-validator'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
+import { CreateCustomerDto } from '../../../customers/dto/create-customer.dto'
 
 export class CreateLeadDto {
   @ApiProperty({ description: '线索名称（公司/项目）' })
@@ -95,27 +95,48 @@ export class AssignLeadDto {
   ownerId!: string
 }
 
-class ConvertOpportunityDto {
-  @ApiProperty()
+export class TransformLeadDto {
+  @ApiProperty({ description: '线索 ID' })
   @IsString()
   @IsNotEmpty()
-  name!: string
+  clueId!: string
 
-  @ApiPropertyOptional()
-  @IsNumber()
-  @IsOptional()
-  amount?: number
-}
-
-export class ConvertLeadDto {
-  @ApiPropertyOptional({ description: '同时创建联系人（默认 true，需线索有联系人姓名）' })
+  @ApiPropertyOptional({ description: '是否同时创建商机' })
   @IsBoolean()
   @IsOptional()
-  createContact?: boolean
+  oppCreated?: boolean
 
-  @ApiPropertyOptional({ description: '同时创建商机' })
-  @Type(() => ConvertOpportunityDto)
-  @ValidateNested()
+  @ApiPropertyOptional({ description: '商机名称；oppCreated=true 时必填' })
+  @IsString()
+  @MaxLength(255)
   @IsOptional()
-  opportunity?: ConvertOpportunityDto
+  oppName?: string
+}
+
+/** Cordys ClueTransitionCustomerRequest：客户新增表单 + clueId。 */
+export class TransitionLeadCustomerDto extends CreateCustomerDto {
+  @ApiProperty({ description: '线索 ID' })
+  @IsString()
+  @IsNotEmpty()
+  clueId!: string
+}
+
+export class RetransitionLeadCustomerDto {
+  @ApiProperty({ description: '线索 ID 集合', type: [String] })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  clueIds!: string[]
+
+  @ApiProperty({ description: '目标客户 ID' })
+  @IsString()
+  @IsNotEmpty()
+  customerId!: string
+}
+
+export class TransitionCustomerQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: '客户高级筛选（FilterCondition[] JSON）' })
+  @IsString()
+  @IsOptional()
+  filters?: string
 }

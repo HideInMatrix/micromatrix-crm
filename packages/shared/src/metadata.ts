@@ -28,6 +28,8 @@ export interface FieldOption {
 export interface FieldConfig {
   placeholder?: string
   defaultValue?: unknown
+  /** Cordys rules.unique 的等价配置。 */
+  unique?: boolean
   /** formula 类型的表达式，变量为同对象字段 key，如 "amount * discount / 100" */
   formula?: string
   precision?: number

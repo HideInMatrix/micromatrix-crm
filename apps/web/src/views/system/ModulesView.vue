@@ -44,6 +44,13 @@ const needOptions = computed(() =>
   ['select', 'multiselect', 'radio', 'checkbox'].includes(form.type),
 )
 const isFormula = computed(() => form.type === 'formula')
+const supportsUnique = computed(() => {
+  const key = editingField.value?.key
+  if (!editingField.value?.system || !key) return false
+  if (activeModule.value === 'customer') return ['name', 'phone', 'email'].includes(key)
+  if (activeModule.value === 'contact') return ['name', 'phone'].includes(key)
+  return false
+})
 
 /** 公式可引用的数字类字段 */
 const numericFieldKeys = computed(() =>
@@ -307,6 +314,12 @@ onMounted(loadFields)
         <div class="grid grid-cols-2 gap-4">
           <el-form-item label="必填">
             <el-switch v-model="form.required" :disabled="form.type === 'formula'" />
+          </el-form-item>
+          <el-form-item label="唯一值">
+            <el-switch
+              v-model="form.config!.unique"
+              :disabled="!supportsUnique"
+            />
           </el-form-item>
           <el-form-item label="隐藏">
             <el-switch v-model="form.hidden" :disabled="Boolean(editingField?.system && editingField.required)" />

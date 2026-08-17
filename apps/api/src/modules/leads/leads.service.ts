@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { FieldVO, ImportResultVO, LeadVO, PaginatedResult } from '@micromatrix/shared'
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { FieldVO, ImportResultVO, LeadVO, PaginatedResult, hasPermission } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { toCsv } from '../../common/csv'
 import type {
@@ -13,6 +13,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { Lead, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CustomersService } from '../../customers/customers.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ExportTasksService } from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
@@ -21,7 +22,16 @@ import { NotificationsService } from '../notifications/notifications.service'
 import { OpportunitiesService } from '../opportunities/opportunities.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import { SavedViewsService } from '../saved-views/saved-views.service'
-import { AssignLeadDto, ConvertLeadDto, CreateLeadDto, QueryLeadsDto, UpdateLeadDto } from './dto/lead.dto'
+import {
+  AssignLeadDto,
+  CreateLeadDto,
+  QueryLeadsDto,
+  RetransitionLeadCustomerDto,
+  TransformLeadDto,
+  TransitionCustomerQueryDto,
+  TransitionLeadCustomerDto,
+  UpdateLeadDto,
+} from './dto/lead.dto'
 
 const MODULE = 'lead'
 
@@ -38,6 +48,7 @@ export class LeadsService {
     private readonly savedViews: SavedViewsService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
+    private readonly customers: CustomersService,
   ) {}
 
   async findAll(user: AuthUser, query: QueryLeadsDto): Promise<PaginatedResult<LeadVO>> {
@@ -104,6 +115,20 @@ export class LeadsService {
 
     const ownerMap = await this.ownerNames(items.map((l) => l.ownerId))
     return { items: items.map((l) => this.toVO(l, fields, ownerMap)), total, page, pageSize }
+  }
+
+  async findOne(user: AuthUser, id: string): Promise<LeadVO> {
+    const lead = await this.prisma.lead.findFirst({ where: { id, tenantId: user.tenantId } })
+    if (!lead) throw new NotFoundException('线索不存在')
+    if (lead.inPool) {
+      const options = await this.pools.options(user, 'lead')
+      if (lead.poolId && !options.some((pool) => pool.id === lead.poolId)) {
+        throw new NotFoundException('线索不存在或无权访问')
+      }
+    } else if (!(await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId))) {
+      throw new NotFoundException('线索不存在或不在你的数据范围内')
+    }
+    return this.toSingleVO(user, lead)
   }
 
   async create(user: AuthUser, dto: CreateLeadDto): Promise<LeadVO> {
@@ -457,79 +482,431 @@ export class LeadsService {
     return { id, name: lead.name }
   }
 
-  /** 一键转化：线索 → 客户（+联系人 +商机） */
-  async convert(user: AuthUser, id: string, dto: ConvertLeadDto) {
-    const lead = await this.ensureInScope(user, id)
-    if (lead.status === 'CONVERTED') throw new BadRequestException('线索已转化')
+  /** Cordys /lead/transform：客户+联系人固定创建，商机可选。 */
+  async transform(user: AuthUser, dto: TransformLeadDto) {
+    this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
+    if (dto.oppCreated) {
+      this.assertFunctionalPermission(user, 'opportunity:create', '无新建商机权限')
+      if (!dto.oppName?.trim()) throw new BadRequestException('请输入商机名称')
+      await this.opportunities.listStages(user.tenantId)
+    }
 
-    const ownerId = lead.ownerId ?? user.id
-    const owner = await this.resolveOwner(user, ownerId)
-    await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
-    // 确保商机阶段已初始化（首次使用时）
-    if (dto.opportunity) await this.opportunities.listStages(user.tenantId)
+    const lead = await this.ensureInScope(user, dto.clueId)
+    if (lead.transitionType === 'CUSTOMER' || lead.status === 'CONVERTED') {
+      throw new BadRequestException('线索已转客户')
+    }
+    if (!lead.ownerId) throw new BadRequestException('线索暂无负责人，无法转换')
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.create({
-        data: {
-          tenantId: user.tenantId,
-          name: lead.name,
-          phone: lead.phone,
-          email: lead.email,
-          ownerId: owner.id,
-          deptId: owner.deptId,
-          collectedAt: new Date(),
-        },
+    const matchedCustomer = await this.selectTransformCustomer(user, lead)
+    let createdCustomerId: string | null = null
+    let customerId = matchedCustomer?.id ?? null
+    if (!customerId) {
+      const customerCustomData = await this.mapLeadCustomData(user.tenantId, 'customer', lead, true)
+      const customer = await this.customers.create(user, {
+        name: lead.name,
+        phone: lead.phone ?? undefined,
+        email: lead.email ?? undefined,
+        ownerId: lead.ownerId,
+        customData: customerCustomData,
       })
-      let contactId: string | null = null
-      if ((dto.createContact ?? true) && lead.contactName) {
-        const contact = await tx.contact.create({
-          data: {
-            tenantId: user.tenantId,
-            customerId: customer.id,
-            ownerId: owner.id,
-            deptId: owner.deptId,
-            name: lead.contactName,
-            phone: lead.phone,
-            enable: true,
-          },
-        })
-        contactId = contact.id
+      customerId = customer.id
+      createdCustomerId = customer.id
+    }
+
+    try {
+      const result = await this.associateLeadsToCustomer(user, [lead], customerId, {
+        opportunityName: dto.oppCreated ? dto.oppName?.trim() : undefined,
+      })
+      return {
+        clueId: lead.id,
+        customerId,
+        contactId: result.contactIds[0] ?? null,
+        opportunityId: result.opportunityId,
       }
-      let opportunityId: string | null = null
-      if (dto.opportunity) {
-        const firstStage = await tx.opportunityStage.findFirst({
+    } catch (error) {
+      // 只有本次专门创建的客户才回收；复用的同名客户必须保留。
+      if (createdCustomerId) {
+        await this.prisma.customer.deleteMany({
+          where: { id: createdCustomerId, tenantId: user.tenantId },
+        })
+      }
+      throw error
+    }
+  }
+
+  /** Cordys /lead/transition/account：客户新增表单 + clueId。 */
+  async transitionCustomer(user: AuthUser, dto: TransitionLeadCustomerDto) {
+    this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
+    const lead = await this.ensureInScope(user, dto.clueId)
+    if (!lead.ownerId) throw new BadRequestException('线索暂无负责人，无法关联客户')
+    const { clueId: _, ...customerPayload } = dto
+    const customer = await this.customers.create(user, customerPayload)
+    try {
+      const result = await this.associateLeadsToCustomer(user, [lead], customer.id)
+      return {
+        clueId: lead.id,
+        customerId: customer.id,
+        contactId: result.contactIds[0] ?? null,
+      }
+    } catch (error) {
+      await this.prisma.customer.deleteMany({
+        where: { id: customer.id, tenantId: user.tenantId },
+      })
+      throw error
+    }
+  }
+
+  /** Cordys /lead/re-transition/account：关联/重新关联已有客户。 */
+  async retransitionCustomer(user: AuthUser, dto: RetransitionLeadCustomerDto) {
+    const customer = await this.assertTransitionCustomerAccessible(user, dto.customerId, true)
+    const leads = await this.prisma.lead.findMany({
+      where: { id: { in: [...new Set(dto.clueIds)] }, tenantId: user.tenantId },
+    })
+    const accessibleIds = new Set<string>()
+    for (const lead of leads) {
+      if (lead.inPool) continue
+      if (await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId)) accessibleIds.add(lead.id)
+    }
+    const denied = dto.clueIds.filter((id) => !accessibleIds.has(id))
+    if (denied.length > 0) throw new ForbiddenException('存在不在当前线索数据范围内的数据')
+
+    const validLeads = leads.filter((lead) => !!lead.ownerId)
+    const skippedIds = leads.filter((lead) => !lead.ownerId).map((lead) => lead.id)
+    const result = await this.associateLeadsToCustomer(user, validLeads, customer.id)
+    return {
+      customerId: customer.id,
+      success: validLeads.length,
+      skippedIds,
+      contactIds: result.contactIds,
+    }
+  }
+
+  /** Cordys 关联客户抽屉：普通数据范围 + 协作 + 可访问公海。 */
+  async transitionCustomerList(user: AuthUser, query: TransitionCustomerQueryDto) {
+    const { page = 1, pageSize = 10, keyword } = query
+    const [scopeFilter, poolOptions, customerFields] = await Promise.all([
+      this.dataScope.scopeFilter(user),
+      this.pools.options(user, 'customer'),
+      this.metadata.listFields(user.tenantId, 'customer'),
+    ])
+    const poolIds = poolOptions.map((pool) => pool.id)
+    const customerFieldsMap = new Map(customerFields.map((field) => [field.key, field]))
+    const filterClauses = buildFilterClauses(customerFieldsMap, parseFilters(query.filters))
+    const where: Prisma.CustomerWhereInput = {
+      tenantId: user.tenantId,
+      AND: [
+        {
+          OR: [
+            { inSea: false, ...scopeFilter },
+            { teamMembers: { some: { tenantId: user.tenantId, userId: user.id } } },
+            {
+              inSea: true,
+              OR: [{ poolId: { in: poolIds } }, { poolId: null }],
+            },
+          ],
+        },
+        ...(keyword
+          ? [{ name: { contains: keyword.trim(), mode: 'insensitive' as const } }]
+          : []),
+        ...(filterClauses as Prisma.CustomerWhereInput[]),
+      ],
+    }
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.customer.findMany({
+        where,
+        include: {
+          owner: { select: { name: true } },
+          teamMembers: {
+            where: { tenantId: user.tenantId, userId: user.id },
+            select: { collaborationType: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.customer.count({ where }),
+    ])
+    const items = await Promise.all(
+      rows.map(async (row) => {
+        const collaborationType = row.teamMembers[0]?.collaborationType ?? null
+        return {
+          id: row.id,
+          name: row.name,
+          industry: row.industry,
+          phone: row.phone,
+          email: row.email,
+          remark: row.remark,
+          ownerId: row.ownerId,
+          ownerName: row.owner?.name ?? null,
+          deptId: row.deptId,
+          inSea: row.inSea,
+          poolId: row.poolId,
+          lastFollowedAt: row.lastFollowedAt?.toISOString() ?? null,
+          customData: (row.customData as Record<string, unknown> | null) ?? {},
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          collaborationType,
+          selectable: collaborationType !== 'READ_ONLY',
+        }
+      }),
+    )
+    return { items, total, page, pageSize }
+  }
+
+  private async assertTransitionCustomerAccessible(
+    user: AuthUser,
+    customerId: string,
+    claimPoolCustomer: boolean,
+  ) {
+    let customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, tenantId: user.tenantId },
+    })
+    if (!customer) throw new NotFoundException('客户不存在')
+
+    if (customer.inSea) {
+      const options = await this.pools.options(user, 'customer')
+      const targetPoolId = customer.poolId
+      const accessible = targetPoolId === null || options.some((pool) => pool.id === targetPoolId)
+      if (!accessible) throw new ForbiddenException('无权访问该公海客户')
+      if (claimPoolCustomer) {
+        const targetCustomerId = customer.id
+        await this.customers.claimFromSea(user, targetCustomerId)
+        customer = await this.prisma.customer.findFirstOrThrow({
+          where: { id: targetCustomerId, tenantId: user.tenantId },
+        })
+      }
+      return customer
+    }
+
+    if (await this.dataScope.matchesResource(user, customer.ownerId, customer.deptId)) return customer
+    const collaboration = await this.prisma.customerTeamMember.findFirst({
+      where: { tenantId: user.tenantId, customerId, userId: user.id },
+    })
+    if (!collaboration) throw new ForbiddenException('客户不在可关联范围内')
+    if (collaboration.collaborationType === 'READ_ONLY') {
+      throw new ForbiddenException('只读协作客户不可关联线索')
+    }
+    return customer
+  }
+
+  private async associateLeadsToCustomer(
+    user: AuthUser,
+    leads: Lead[],
+    customerId: string,
+    options: { opportunityName?: string } = {},
+  ) {
+    if (leads.length === 0) return { contactIds: [] as string[], opportunityId: null as string | null }
+    const [contactNameUnique, contactPhoneUnique] = await Promise.all([
+      this.metadata.hasUniqueRule(user.tenantId, 'contact', 'name'),
+      this.metadata.hasUniqueRule(user.tenantId, 'contact', 'phone'),
+    ])
+    const contactCustomData = new Map<string, Record<string, unknown>>()
+    for (const lead of leads) {
+      if (!lead.contactName?.trim()) continue
+      contactCustomData.set(
+        lead.id,
+        await this.mapLeadCustomData(user.tenantId, 'contact', lead, true),
+      )
+    }
+    const opportunityCustomData =
+      options.opportunityName && leads.length === 1
+        ? await this.mapLeadCustomData(user.tenantId, 'opportunity', leads[0], true)
+        : {}
+    const ownerIds = [...new Set(leads.map((lead) => lead.ownerId).filter((id): id is string => !!id))]
+    const owners = await this.prisma.user.findMany({
+      where: { tenantId: user.tenantId, id: { in: ownerIds }, status: 'ACTIVE' },
+      select: { id: true, deptId: true },
+    })
+    const ownerMap = new Map(owners.map((owner) => [owner.id, owner]))
+    if (ownerMap.size !== ownerIds.length) throw new BadRequestException('线索负责人不存在或已禁用')
+
+    const firstStage = options.opportunityName
+      ? await this.prisma.opportunityStage.findFirst({
           where: { tenantId: user.tenantId, isWon: false, isLost: false },
           orderBy: { sort: 'asc' },
         })
-        if (!firstStage) throw new BadRequestException('请先在商机管理中初始化商机阶段')
-        const opportunity = await tx.opportunity.create({
+      : null
+    if (options.opportunityName && !firstStage) {
+      throw new BadRequestException('请先在商机管理中初始化商机阶段')
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findFirst({
+        where: { id: customerId, tenantId: user.tenantId },
+      })
+      if (!customer) throw new NotFoundException('客户不存在')
+
+      const contactIds: string[] = []
+      let opportunityId: string | null = null
+      let newestFollowedAt = customer.lastFollowedAt
+
+      for (const lead of leads) {
+        if (!lead.ownerId) continue
+        const owner = ownerMap.get(lead.ownerId)
+        if (!owner) continue
+
+        if (customer.ownerId !== lead.ownerId) {
+          const existingTeam = await tx.customerTeamMember.findFirst({
+            where: { tenantId: user.tenantId, customerId, userId: lead.ownerId },
+            select: { id: true },
+          })
+          if (!existingTeam) {
+            await tx.customerTeamMember.create({
+              data: {
+                tenantId: user.tenantId,
+                customerId,
+                userId: lead.ownerId,
+                collaborationType: 'COLLABORATION',
+                createdById: user.id,
+                updatedById: user.id,
+              },
+            })
+          }
+        }
+
+        let contactId: string | null = null
+        if (lead.contactName?.trim()) {
+          const normalizedName = lead.contactName.trim()
+          const uniqueClauses: Prisma.ContactWhereInput[] = []
+          if (contactNameUnique && normalizedName) uniqueClauses.push({ name: normalizedName })
+          if (contactPhoneUnique && lead.phone?.trim()) uniqueClauses.push({ phone: lead.phone.trim() })
+          const duplicate = uniqueClauses.length
+            ? await tx.contact.findFirst({
+                where: { tenantId: user.tenantId, OR: uniqueClauses },
+                select: { id: true },
+              })
+            : null
+          if (!duplicate) {
+            const contact = await tx.contact.create({
+              data: {
+                tenantId: user.tenantId,
+                customerId,
+                ownerId: lead.ownerId,
+                deptId: owner.deptId,
+                name: normalizedName,
+                phone: lead.phone,
+                enable: true,
+                customData: (contactCustomData.get(lead.id) ?? {}) as Prisma.InputJsonValue,
+              },
+            })
+            contactId = contact.id
+            contactIds.push(contact.id)
+          }
+        }
+
+        if (options.opportunityName && firstStage && leads.length === 1) {
+          const opportunity = await tx.opportunity.create({
+            data: {
+              tenantId: user.tenantId,
+              name: options.opportunityName,
+              customerId,
+              contactId,
+              stageId: firstStage.id,
+              ownerId: lead.ownerId,
+              deptId: owner.deptId,
+              customData: opportunityCustomData as Prisma.InputJsonValue,
+            },
+          })
+          opportunityId = opportunity.id
+        }
+
+        const followUps = await tx.followUpRecord.findMany({
+          where: { tenantId: user.tenantId, targetType: 'lead', targetId: lead.id },
+          orderBy: { createdAt: 'asc' },
+        })
+        if (followUps.length > 0) {
+          await tx.followUpRecord.createMany({
+            data: followUps.map((record) => ({
+              tenantId: record.tenantId,
+              targetType: 'customer',
+              targetId: customerId,
+              type: record.type,
+              content: record.content,
+              nextFollowAt: record.nextFollowAt,
+              ownerId: record.ownerId,
+              ownerName: record.ownerName,
+              createdAt: record.createdAt,
+            })),
+          })
+        }
+
+        if (lead.lastFollowedAt && (!newestFollowedAt || lead.lastFollowedAt > newestFollowedAt)) {
+          newestFollowedAt = lead.lastFollowedAt
+        }
+
+        await tx.lead.update({
+          where: { id: lead.id },
           data: {
-            tenantId: user.tenantId,
-            name: dto.opportunity.name,
-            customerId: customer.id,
-            contactId,
-            stageId: firstStage.id,
-            amount: dto.opportunity.amount,
-            ownerId: owner.id,
-            deptId: owner.deptId,
+            status: 'CONVERTED',
+            transitionType: 'CUSTOMER',
+            transitionId: customerId,
+            inPool: false,
+            poolId: null,
+            poolEnteredAt: null,
           },
         })
-        opportunityId = opportunity.id
       }
-      await tx.lead.update({
-        where: { id },
-        data: {
-          status: 'CONVERTED',
-          convertedCustomerId: customer.id,
-          inPool: false,
-          poolId: null,
-          poolEnteredAt: null,
-        },
-      })
-      return { customerId: customer.id, opportunityId }
+
+      if (newestFollowedAt && newestFollowedAt !== customer.lastFollowedAt) {
+        await tx.customer.update({
+          where: { id: customerId },
+          data: { lastFollowedAt: newestFollowedAt },
+        })
+      }
+
+      return { contactIds, opportunityId }
     })
 
-    return { id, name: lead.name, ...result }
+    await Promise.all(
+      leads
+        .filter((lead): lead is Lead & { ownerId: string } => Boolean(lead.ownerId))
+        .map((lead) =>
+          this.notifications
+            .notify(user.tenantId, lead.ownerId, {
+              type: 'system',
+              title: options.opportunityName ? '线索已转换为客户和商机' : '线索已关联客户',
+              content: `线索「${lead.name}」已完成客户关联`,
+              link: '/customers',
+            })
+            .catch(() => undefined),
+        ),
+    )
+
+    return result
+  }
+
+  private async selectTransformCustomer(user: AuthUser, lead: Lead) {
+    const nameUnique = await this.metadata.hasUniqueRule(user.tenantId, 'customer', 'name')
+    if (!nameUnique) return null
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        tenantId: user.tenantId,
+        name: { equals: lead.name, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (customers.length === 0) return null
+    if (customers.length === 1) return customers[0]
+    return customers.find((customer) => !customer.inSea && customer.ownerId === lead.ownerId) ?? customers[0]
+  }
+
+  private async mapLeadCustomData(
+    tenantId: string,
+    module: 'customer' | 'contact' | 'opportunity',
+    lead: Lead,
+    requireAll: boolean,
+  ) {
+    return this.metadata.validateCustomData(
+      tenantId,
+      module,
+      (lead.customData as Record<string, unknown> | null) ?? {},
+      { requireAll },
+    )
+  }
+
+  private assertFunctionalPermission(user: AuthUser, permission: string, message: string) {
+    if (!hasPermission(user.permissions, permission)) throw new ForbiddenException(message)
   }
 
   /** 导出 CSV */
@@ -905,7 +1282,8 @@ export class LeadsService {
       ownerName: lead.ownerId ? (ownerMap.get(lead.ownerId) ?? null) : null,
       deptId: lead.deptId,
       customData: { ...customData, ...formulas },
-      convertedCustomerId: lead.convertedCustomerId,
+      transitionType: lead.transitionType,
+      transitionId: lead.transitionId,
       collectedAt: lead.collectedAt?.toISOString() ?? null,
       poolEnteredAt: lead.poolEnteredAt?.toISOString() ?? null,
       lastFollowedAt: lead.lastFollowedAt?.toISOString() ?? null,

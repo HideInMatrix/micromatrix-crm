@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { CustomersModule } from '../../customers/customers.module'
 import { OpportunitiesModule } from '../opportunities/opportunities.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
 import { SavedViewsModule } from '../saved-views/saved-views.module'
@@ -7,7 +8,7 @@ import { LeadsController } from './leads.controller'
 import { LeadsService } from './leads.service'
 
 @Module({
-  imports: [OpportunitiesModule, PoolRulesModule, SavedViewsModule, ImportExportModule],
+  imports: [CustomersModule, OpportunitiesModule, PoolRulesModule, SavedViewsModule, ImportExportModule],
   controllers: [LeadsController],
   providers: [LeadsService],
 })

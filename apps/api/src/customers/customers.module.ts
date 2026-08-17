@@ -10,6 +10,6 @@ import { CustomersService } from './customers.service'
   imports: [PoolRulesModule, SavedViewsModule, ImportExportModule],
   controllers: [CustomersController],
   providers: [CustomersService, CustomerAccessService],
-  exports: [CustomerAccessService],
+  exports: [CustomerAccessService, CustomersService],
 })
 export class CustomersModule {}
