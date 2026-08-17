@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module'
 import { CommonModule } from './common/common.module'
 import { ApprovalsModule } from './modules/approvals/approvals.module'
 import { AttachmentsModule } from './modules/attachments/attachments.module'
+import { ImportExportModule } from './modules/import-export/import-export.module'
 import { BiddingModule } from './modules/bidding/bidding.module'
 import { AuthGuard } from './common/guards/auth.guard'
 import { OperationLogInterceptor } from './common/interceptors/operation-log.interceptor'
@@ -46,6 +47,7 @@ import { PrismaModule } from './prisma/prisma.module'
     LeadsModule,
     FollowUpsModule,
     AttachmentsModule,
+    ImportExportModule,
     OpportunitiesModule,
     ProductsModule,
     QuotesModule,

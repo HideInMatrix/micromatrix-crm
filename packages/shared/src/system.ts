@@ -67,6 +67,32 @@ export interface LoginLogVO {
 
 export type NotificationBizType = 'assign' | 'approval' | 'receivable' | 'pool' | 'system'
 
+export type ExportTaskStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
+
+export interface ExportTaskVO {
+  id: string
+  module: string
+  fileName: string
+  status: ExportTaskStatus
+  rowCount: number
+  fileSize: number | null
+  errorMessage: string | null
+  createdAt: string
+  completedAt: string | null
+  expiresAt: string
+}
+
+export interface ImportErrorVO {
+  rowNum: number
+  errMsg: string
+}
+
+export interface ImportResultVO {
+  successCount: number
+  failCount: number
+  errorMessages: ImportErrorVO[]
+}
+
 export interface NotificationVO {
   id: string
   type: NotificationBizType

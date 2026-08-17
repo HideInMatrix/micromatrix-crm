@@ -4,6 +4,7 @@ import {
   CustomerVO,
   DuplicateHitVO,
   FieldVO,
+  ImportResultVO,
   PaginatedResult,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
@@ -19,6 +20,9 @@ import { DataScopeService } from '../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../common/services/business-change-log.service'
 import { Prisma } from '../generated/prisma/client'
 import { MetadataService } from '../modules/metadata/metadata.service'
+import { ExportTasksService } from '../modules/import-export/export-tasks.service'
+import type { ImportType } from '../modules/import-export/dto/import-export.dto'
+import { SpreadsheetService } from '../modules/import-export/spreadsheet.service'
 import { NotificationsService } from '../modules/notifications/notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import { SavedViewsService } from '../modules/saved-views/saved-views.service'
@@ -48,6 +52,8 @@ export class CustomersService {
     private readonly changeLog: BusinessChangeLogService,
     private readonly savedViews: SavedViewsService,
     private readonly customerAccess: CustomerAccessService,
+    private readonly spreadsheet: SpreadsheetService,
+    private readonly exportTasks: ExportTasksService,
   ) {}
 
   async findAll(user: AuthUser, query: QueryCustomersDto): Promise<PaginatedResult<CustomerVO>> {
@@ -1547,6 +1553,148 @@ export class CustomersService {
     return { filename: `客户导出_${new Date().toISOString().slice(0, 10)}.csv`, csv: toCsv(headers, rows) }
   }
 
+  async importTemplate(
+    user: AuthUser,
+    importType: ImportType,
+    poolId?: string,
+  ): Promise<{ filename: string; data: Buffer }> {
+    if (poolId) await this.pools.assertPoolMember(user, 'customer', poolId)
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const data = await this.spreadsheet.buildImportTemplate(fields, importType, {
+      excludeKeys: poolId ? ['ownerId'] : [],
+    })
+    return {
+      filename: `${poolId ? '客户公海' : '客户'}${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`,
+      data,
+    }
+  }
+
+  async precheckImportXlsx(
+    user: AuthUser,
+    file: Buffer,
+    importType: ImportType,
+    poolId?: string,
+  ): Promise<ImportResultVO> {
+    if (poolId) await this.pools.assertPoolMember(user, 'customer', poolId)
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const rows = await this.spreadsheet.parseImport(file, fields, importType, {
+      excludeKeys: poolId ? ['ownerId'] : [],
+    })
+    const errorMessages: ImportResultVO['errorMessages'] = []
+    let successCount = 0
+    const seen = new Set<string>()
+    for (const row of rows) {
+      const errors = [...row.errors]
+      if (errors.length === 0) {
+        try {
+          const prepared = await this.prepareImportRow(user, row.values, fields, importType, row.resourceId, poolId)
+          if (importType === 'ADD') {
+            const fingerprint = `${prepared.dto.name?.trim().toLowerCase() ?? ''}|${prepared.dto.phone?.trim() ?? ''}`
+            if (seen.has(fingerprint)) throw new BadRequestException('导入文件内存在重复客户')
+            seen.add(fingerprint)
+          }
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : '数据校验失败')
+        }
+      }
+      if (errors.length > 0) errorMessages.push({ rowNum: row.rowNum, errMsg: errors.join('；') })
+      else successCount++
+    }
+    return { successCount, failCount: errorMessages.length, errorMessages }
+  }
+
+  async importXlsx(
+    user: AuthUser,
+    file: Buffer,
+    importType: ImportType,
+    poolId?: string,
+  ): Promise<ImportResultVO> {
+    if (poolId) await this.pools.assertPoolMember(user, 'customer', poolId)
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const rows = await this.spreadsheet.parseImport(file, fields, importType, {
+      excludeKeys: poolId ? ['ownerId'] : [],
+    })
+    const errorMessages: ImportResultVO['errorMessages'] = []
+    let successCount = 0
+    const seen = new Set<string>()
+    for (const row of rows) {
+      const errors = [...row.errors]
+      if (errors.length === 0) {
+        try {
+          const prepared = await this.prepareImportRow(
+            user,
+            row.values,
+            fields,
+            importType,
+            row.resourceId,
+            poolId,
+          )
+          if (importType === 'ADD') {
+            const fingerprint = `${prepared.dto.name?.trim().toLowerCase() ?? ''}|${prepared.dto.phone?.trim() ?? ''}`
+            if (seen.has(fingerprint)) throw new BadRequestException('导入文件内存在重复客户')
+            seen.add(fingerprint)
+            if (poolId) await this.createInSea(user, prepared.dto, poolId)
+            else await this.create(user, prepared.dto as CreateCustomerDto)
+          } else if (poolId) {
+            if (!prepared.existing) throw new BadRequestException('客户不存在或不属于当前公海')
+            await this.updateExisting(user, prepared.existing, prepared.dto)
+          } else {
+            if (!row.resourceId) throw new BadRequestException('唯一ID不能为空')
+            await this.update(user, row.resourceId, prepared.dto)
+          }
+          successCount++
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : '导入失败')
+        }
+      }
+      if (errors.length > 0) errorMessages.push({ rowNum: row.rowNum, errMsg: errors.join('；') })
+    }
+    return { successCount, failCount: errorMessages.length, errorMessages }
+  }
+
+  async exportXlsx(
+    user: AuthUser,
+    query: QueryCustomersDto,
+    input: { fileName: string; headList: string[]; ids?: string[]; poolId?: string },
+  ) {
+    const poolMode = Boolean(input.poolId)
+    if (poolMode) await this.pools.assertPoolMember(user, 'customer', input.poolId as string)
+    const effectiveQuery: QueryCustomersDto = {
+      ...query,
+      scope: poolMode ? 'sea' : 'mine',
+      poolId: poolMode ? input.poolId : undefined,
+    }
+    const items = await this.collectExportItems(user, effectiveQuery, input.ids)
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const fieldMap = new Map(fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+    const extraColumns = new Map([
+      ['createdAt', '创建时间'],
+      ['updatedAt', '更新时间'],
+      ['lastFollowedAt', '最近跟进'],
+    ])
+    const columns = input.headList.map((key) => {
+      const field = fieldMap.get(key)
+      const extraLabel = extraColumns.get(key)
+      if (!field && !extraLabel) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
+      return { key, label: field?.label ?? (extraLabel as string) }
+    })
+    const rows = items.map((item) => {
+      const source = item as unknown as Record<string, unknown>
+      return Object.fromEntries(
+        columns.map((column) => {
+          const field = fieldMap.get(column.key)
+          return [column.key, field ? formatForExport(field, source) : (source[column.key] ?? '')]
+        }),
+      )
+    })
+    return this.exportTasks.create(user, {
+      module: poolMode ? 'customer_pool' : 'customer',
+      fileName: input.fileName,
+      columns,
+      rows,
+    })
+  }
+
   /** 批量导入（前端解析 CSV 后传结构化行） */
   async bulkImport(user: AuthUser, rows: Record<string, unknown>[]) {
     if (rows.length === 0) throw new BadRequestException('没有可导入的数据')
@@ -1575,6 +1723,127 @@ export class CustomersService {
       }
     }
     return { success, failed: errors.length, errors: errors.slice(0, 20), name: `导入客户 ${success} 条` }
+  }
+
+  private async prepareImportRow(
+    user: AuthUser,
+    values: Record<string, unknown>,
+    fields: FieldVO[],
+    importType: ImportType,
+    resourceId?: string,
+    poolId?: string,
+  ): Promise<{
+    dto: UpdateCustomerDto
+    existing?: Prisma.CustomerGetPayload<Record<string, never>>
+  }> {
+    const fieldMap = new Map(fields.map((field) => [field.key, field]))
+    const dto: UpdateCustomerDto = {}
+    const customData: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(values)) {
+      const field = fieldMap.get(key)
+      if (!field || field.hidden || field.type === 'formula') continue
+      this.metadata.validateBatchFieldValue(field, value)
+      if (poolId && key === 'ownerId') throw new BadRequestException('客户公海导入不允许设置负责人')
+      if (key === 'ownerId') {
+        dto.ownerId = await this.resolveImportOwner(user, String(value))
+      } else if (key.startsWith('cf_')) {
+        customData[key] = value
+      } else {
+        ;(dto as Record<string, unknown>)[key] = value
+      }
+    }
+    if (Object.keys(customData).length > 0) dto.customData = customData
+    await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
+      requireAll: importType === 'ADD',
+    })
+
+    if (importType === 'ADD') {
+      const name = typeof dto.name === 'string' ? dto.name.trim() : ''
+      if (!name) throw new BadRequestException('客户名称不能为空')
+      const duplicate = await this.findExactCustomerDuplicate(user, name, dto.phone)
+      if (duplicate) throw new BadRequestException(`与已有客户「${duplicate.name}」重复`)
+      if (!poolId) await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.ownerId ?? user.id)
+      else await this.pools.resolveTargetPool(user, 'customer', poolId)
+      return { dto }
+    }
+
+    if (!resourceId) throw new BadRequestException('唯一ID不能为空')
+    const existing = poolId
+      ? await this.prisma.customer.findFirst({
+          where: { id: resourceId, tenantId: user.tenantId, inSea: true, poolId },
+        })
+      : await this.ensureInScope(user, resourceId)
+    if (!existing) throw new BadRequestException('客户不存在或不属于当前公海')
+    if (dto.ownerId && dto.ownerId !== existing.ownerId) {
+      await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.ownerId)
+    }
+    return { dto, existing }
+  }
+
+  private async createInSea(user: AuthUser, dto: UpdateCustomerDto, poolId: string) {
+    const pool = await this.pools.resolveTargetPool(user, 'customer', poolId)
+    const { customData, ownerId: _ownerId, ...rest } = dto
+    const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
+      requireAll: true,
+    })
+    const name = typeof rest.name === 'string' ? rest.name.trim() : ''
+    if (!name) throw new BadRequestException('客户名称不能为空')
+    const now = new Date()
+    const customer = await this.prisma.customer.create({
+      data: {
+        ...rest,
+        name,
+        tenantId: user.tenantId,
+        inSea: true,
+        poolId: pool.id,
+        poolEnteredAt: now,
+        ownerId: null,
+        deptId: null,
+        collectedAt: null,
+        customData: validated as Prisma.InputJsonValue,
+      },
+      include: ownerInclude,
+    })
+    return this.toVO(customer, await this.metadata.listFields(user.tenantId, MODULE))
+  }
+
+  private async resolveImportOwner(user: AuthUser, value: string): Promise<string> {
+    const input = value.trim()
+    if (!input) throw new BadRequestException('负责人不能为空')
+    const direct = await this.prisma.user.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
+        OR: [{ id: input }, { email: { equals: input, mode: 'insensitive' } }],
+      },
+      select: { id: true },
+    })
+    if (direct) return direct.id
+    const byName = await this.prisma.user.findMany({
+      where: { tenantId: user.tenantId, status: 'ACTIVE', name: input },
+      select: { id: true },
+      take: 2,
+    })
+    if (byName.length === 0) throw new BadRequestException(`负责人「${input}」不存在或已禁用`)
+    if (byName.length > 1) throw new BadRequestException(`负责人名称「${input}」不唯一，请填写邮箱`)
+    return byName[0].id
+  }
+
+  private async collectExportItems(user: AuthUser, query: QueryCustomersDto, ids?: string[]) {
+    const all: CustomerVO[] = []
+    const pageSize = 500
+    let page = 1
+    while (true) {
+      const result = await this.findAll(user, { ...query, page, pageSize })
+      all.push(...result.items)
+      if (all.length >= result.total || result.items.length === 0) break
+      page++
+    }
+    if (!ids?.length) return all
+    const wanted = new Set(ids)
+    const selected = all.filter((item) => wanted.has(item.id))
+    if (selected.length !== wanted.size) throw new BadRequestException('选中数据包含不存在或无权导出的客户')
+    return selected
   }
 
   /**

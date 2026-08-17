@@ -11,8 +11,12 @@ import {
   Put,
   Query,
   Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { FileInterceptor } from '@nestjs/platform-express'
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { Response } from 'express'
 import type { AuthUser } from '../common/auth-user'
 import { CurrentUser } from '../common/decorators/current-user.decorator'
@@ -28,6 +32,12 @@ import {
   ResourceBatchEditDto,
 } from '../common/dto/resource-batch.dto'
 import { MoveToResourcePoolDto } from '../modules/pool-rules/dto/resource-pool.dto'
+import {
+  ExportCreateDto,
+  ExportSelectDto,
+  ImportUploadDto,
+  type ImportType,
+} from '../modules/import-export/dto/import-export.dto'
 import { CustomersService } from './customers.service'
 import { CreateCustomerDto } from './dto/create-customer.dto'
 import { CustomerMergeDto } from './dto/customer-merge.dto'
@@ -37,6 +47,13 @@ import {
 } from './dto/customer-relation.dto'
 import { CheckDuplicateQueryDto, QueryCustomersDto } from './dto/query-customers.dto'
 import { UpdateCustomerDto } from './dto/update-customer.dto'
+
+type UploadedBufferFile = {
+  originalname: string
+  mimetype: string
+  size: number
+  buffer: Buffer
+}
 
 @ApiTags('客户')
 @ApiBearerAuth()
@@ -65,12 +82,155 @@ export class CustomersController {
     return csv
   }
 
+  @Post('import/rows')
+  @RequirePermissions('customer:import')
+  @LogOperation('customer', 'importRows')
+  @ApiOperation({ summary: '兼容旧结构化行导入' })
+  bulkImport(@CurrentUser() user: AuthUser, @Body() body: { rows: Record<string, unknown>[] }) {
+    return this.customersService.bulkImport(user, body.rows ?? [])
+  }
+
+  @Get('import/template')
+  @RequirePermissions('customer:import')
+  @ApiOperation({ summary: '下载客户 xlsx 导入模板' })
+  async importTemplate(
+    @CurrentUser() user: AuthUser,
+    @Query('importType') importType: ImportType = 'ADD',
+  ) {
+    const result = await this.customersService.importTemplate(user, importType)
+    return new StreamableFile(result.data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+    })
+  }
+
+  @Post('import/pre-check')
+  @RequirePermissions('customer:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { importType: { enum: ['ADD', 'UPDATE'] }, file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: '客户 xlsx 导入预校验' })
+  precheckImport(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    return this.customersService.precheckImportXlsx(user, file.buffer, dto.importType)
+  }
+
   @Post('import')
   @RequirePermissions('customer:import')
   @LogOperation('customer', 'import')
-  @ApiOperation({ summary: '批量导入客户（结构化行）' })
-  bulkImport(@CurrentUser() user: AuthUser, @Body() body: { rows: Record<string, unknown>[] }) {
-    return this.customersService.bulkImport(user, body.rows ?? [])
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '正式导入客户 xlsx（合法行成功、错误行返回原因）' })
+  importXlsx(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    return this.customersService.importXlsx(user, file.buffer, dto.importType)
+  }
+
+  @Get('pool/import/template')
+  @RequirePermissions('customerPool:import')
+  @ApiOperation({ summary: '下载客户公海 xlsx 导入模板' })
+  async poolImportTemplate(
+    @CurrentUser() user: AuthUser,
+    @Query('poolId') poolId: string,
+    @Query('importType') importType: ImportType = 'ADD',
+  ) {
+    if (!poolId) throw new BadRequestException('请选择客户公海')
+    const result = await this.customersService.importTemplate(user, importType, poolId)
+    return new StreamableFile(result.data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+    })
+  }
+
+  @Post('pool/import/pre-check')
+  @RequirePermissions('customerPool:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '客户公海 xlsx 导入预校验' })
+  poolPrecheckImport(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    if (!dto.poolId) throw new BadRequestException('请选择客户公海')
+    return this.customersService.precheckImportXlsx(user, file.buffer, dto.importType, dto.poolId)
+  }
+
+  @Post('pool/import')
+  @RequirePermissions('customerPool:import')
+  @LogOperation('customerPool', 'import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '正式导入客户公海 xlsx' })
+  poolImportXlsx(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    if (!dto.poolId) throw new BadRequestException('请选择客户公海')
+    return this.customersService.importXlsx(user, file.buffer, dto.importType, dto.poolId)
+  }
+
+  @Post('export/all')
+  @RequirePermissions('customer:export')
+  @LogOperation('customer', 'exportAll')
+  @ApiOperation({ summary: '按当前筛选创建全部客户 xlsx 导出任务' })
+  exportAll(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryCustomersDto,
+    @Body() dto: ExportCreateDto,
+  ) {
+    return this.customersService.exportXlsx(user, { ...query, scope: 'mine' }, dto)
+  }
+
+  @Post('export/select')
+  @RequirePermissions('customer:export')
+  @LogOperation('customer', 'exportSelected')
+  @ApiOperation({ summary: '创建选中客户 xlsx 导出任务' })
+  exportSelected(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryCustomersDto,
+    @Body() dto: ExportSelectDto,
+  ) {
+    return this.customersService.exportXlsx(user, { ...query, scope: 'mine' }, dto)
+  }
+
+  @Post('pool/export/all')
+  @RequirePermissions('customerPool:export')
+  @LogOperation('customerPool', 'exportAll')
+  @ApiOperation({ summary: '按当前筛选创建客户公海全部 xlsx 导出任务' })
+  poolExportAll(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryCustomersDto,
+    @Query('poolId') poolId: string,
+    @Body() dto: ExportCreateDto,
+  ) {
+    if (!poolId) throw new BadRequestException('请选择客户公海')
+    return this.customersService.exportXlsx(user, { ...query, scope: 'sea', poolId }, { ...dto, poolId })
+  }
+
+  @Post('pool/export/select')
+  @RequirePermissions('customerPool:export')
+  @LogOperation('customerPool', 'exportSelected')
+  @ApiOperation({ summary: '创建客户公海选中数据 xlsx 导出任务' })
+  poolExportSelected(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryCustomersDto,
+    @Query('poolId') poolId: string,
+    @Body() dto: ExportSelectDto,
+  ) {
+    if (!poolId) throw new BadRequestException('请选择客户公海')
+    return this.customersService.exportXlsx(user, { ...query, scope: 'sea', poolId }, { ...dto, poolId })
   }
 
   @Post('batch/claim')

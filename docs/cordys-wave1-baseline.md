@@ -296,6 +296,9 @@ MicroMatrix 本轮新增：
 - Pool/Sea 独立批量修改/删除权限与成员校验
 - Customer 删除 Contact/Opportunity/Quote/Contract 引用保护
 - Lead/Customer Web 多选批量工具条
+- Lead/Customer/Pool/Sea xlsx ADD/UPDATE 两阶段导入
+- 普通与池/公海导出全部/选中 + 字段顺序选择
+- ExportTask 创建者隔离、下载/清理与 24h 过期契约
 
 ## 10. Wave 1 尚未完成项
 
@@ -310,14 +313,14 @@ MicroMatrix 本轮新增：
 7. ~~CustomerRelation 前端。~~ 整组替换 API + CustomerRelationsPanel + Detail/Drawer 接入已落地并验收。
 8. ~~Customer merge preview + 前端安全向导。~~ 独立权限、impact preview、冲突策略和两步向导已落地并验收。
 9. ~~保存的用户视图前端与列配置。~~ SavedViewBar + Lead/Customer 接入 + per-view 本地列偏好已落地并验收。
-10. xlsx 导入导出与池内导入导出。
+10. ~~xlsx 导入导出与池内导入导出。~~ R2 已落地并验收；当前明确剩余 `.xls` 兼容和 Metadata 字段级 unique 规则。
 11. 线索/客户字段 diff 公共服务已落地；继续扩大到所有写入口并补完整操作历史时间线。
 12. 资源删除引用检查与级联清理语义对齐。
 
 ## 11. 验收状态
 
-当前属于 **Wave 0 公共底座已落地 + W1.1-W1.7 已验收 + R1 批量操作已验收 + 当前执行计划仍有 R2-R6**，不能标记整个 Wave 1 对齐阶段完成。
+当前属于 **Wave 0 公共底座已落地 + W1.1-W1.7 已验收 + R1/R2 已验收 + 当前执行计划仍有 R3-R6**，不能标记整个 Wave 1 对齐阶段完成。
 
-已找到用户真实 Node/pnpm 环境（Node 24.5.0 / pnpm 10.30.3）并实际完成验证。当前 Prisma Client 已重新 generate，14 个 migration 已应用且数据库 schema up to date。
+已找到用户真实 Node/pnpm 环境（Node 24.5.0 / pnpm 10.30.3）并实际完成验证。当前 Prisma Client 已重新 generate，R2 `export_tasks` migration 已应用，数据库共 15 个 migration。
 
-`scripts/smoke.mjs` 当前包含 **90 条实际断言**，新增覆盖固定/自定义/owner 批改、普通与池/公海批删、Pool 功能权限与 Scope 双层校验、Customer Contact/Opportunity 引用保护；`resource-recycle-condition-evaluator.test.ts` 另有 7 条纯规则测试。当前 `pnpm build / typecheck / lint / smoke / test:rules` 均实际通过。
+`scripts/smoke.mjs` 当前包含 **109 条实际断言**，除 R1 覆盖外，R2 新增真实 xlsx 模板/预检/导入新建/唯一ID更新、Pool/Sea owner 排除与归属、字段顺序导出、ExportTask 创建者隔离与池导出权限测试；`resource-recycle-condition-evaluator.test.ts` 另有 7 条纯规则测试。

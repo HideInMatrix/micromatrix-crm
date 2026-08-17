@@ -297,3 +297,75 @@ AND
 ```
 
 因此“池成员”与“有池操作功能权限”是两个独立条件；Pool manager 身份本身不替代角色功能权限。
+
+## xlsx 导入 / 导出任务（R2）
+
+Lead / Customer 导入采用与 Cordys 一致的“两阶段”流程：先上传同一份 `.xlsx` 到 `pre-check`，确认成功/失败行后再调用正式 `import`。当前仅接受 `.xlsx`，单文件上限 100MB；旧 `.xls` 暂不支持。
+
+普通线索：
+
+```text
+GET  /leads/import/template?importType=ADD|UPDATE
+POST /leads/import/pre-check             multipart: importType + file
+POST /leads/import                       multipart: importType + file
+POST /leads/export/all                   query=当前列表筛选，body=fileName+headList
+POST /leads/export/select                body=fileName+headList+ids
+```
+
+线索池：
+
+```text
+GET  /leads/pool/import/template?poolId=...&importType=ADD|UPDATE
+POST /leads/pool/import/pre-check        multipart: poolId + importType + file
+POST /leads/pool/import                  multipart: poolId + importType + file
+POST /leads/pool/export/all?poolId=...
+POST /leads/pool/export/select?poolId=...
+```
+
+客户/公海使用同构路径：
+
+```text
+/customers/import/*
+/customers/export/all
+/customers/export/select
+/customers/pool/import/*
+/customers/pool/export/all
+/customers/pool/export/select
+```
+
+权限拆分：
+
+```text
+lead:import / lead:export
+customer:import / customer:export
+leadPool:import / leadPool:export
+customerPool:import / customerPool:export
+```
+
+Pool/Sea 除功能权限外还必须通过 ResourcePool `scopeIds + managerIds` 成员校验。Pool/Sea 导入模板不包含负责人字段；服务端也会再次拒绝 owner 注入，并强制保持 `inPool/inSea + poolId` 归属。
+
+`UPDATE` 模板首列固定为 `唯一ID`，正式更新只按该 ID 定位资源，不根据名称/电话猜测目标。导入返回：
+
+```json
+{
+  "successCount": 2,
+  "failCount": 1,
+  "errorMessages": [
+    { "rowNum": 4, "errMsg": "客户名称不能为空" }
+  ]
+}
+```
+
+导出 body 中的 `headList` 是字段 key 的有序数组；服务端会重新与 Metadata 白名单核对，未知/隐藏字段不能借由请求直接导出。`export/all` 继承当前 keyword / filters / viewId / data scope；`export/select` 严格限制在 `ids` 且仍执行资源可见性检查。
+
+导出不会直接返回文件，而是创建 `ExportTask`。当前实现同步生成 xlsx 后立即进入 `SUCCESS/FAILED`；以后可把执行器替换为 BullMQ 而不改变接口：
+
+```text
+GET    /export-tasks
+GET    /export-tasks/{id}/download
+DELETE /export-tasks/{id}
+```
+
+任务只对创建者可见、可下载/清理，默认保留 24 小时。Web 顶栏“导出任务”抽屉用于查看和下载。
+
+与 Cordys 仍存在一个明确差异：Cordys 字段配置支持 `rules.unique` 并在导入 ADD/UPDATE 时统一校验；MicroMatrix 当前 Metadata 尚无同构字段级 unique 契约。Customer 继续使用现有业务查重，Lead 不人为把名称设为唯一，后续应在元数据唯一约束能力中一次性覆盖 CRUD + import。

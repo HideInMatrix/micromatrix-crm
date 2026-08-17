@@ -12,9 +12,8 @@ import {
   batchUpdateCustomers,
   checkDuplicate,
   createCustomer,
-  exportCustomersCsv,
+  customerTransferApi,
   getCustomer,
-  importCustomers,
   listCustomers,
   poolBatchDeleteCustomers,
   poolBatchUpdateCustomers,
@@ -24,8 +23,9 @@ import {
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
-import CsvImportDialog from '@/components/CsvImportDialog.vue'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
+import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
+import CrmImportDialog from '@/components/CrmImportDialog.vue'
 import CustomerDetailDrawer from '@/components/CustomerDetailDrawer.vue'
 import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
@@ -69,6 +69,9 @@ const assignTarget = ref<CustomerVO | null>(null)
 const mergeVisible = ref(false)
 const selectedRows = ref<CustomerVO[]>([])
 const batchEditVisible = ref(false)
+const exportVisible = ref(false)
+const exportMode = ref<'all' | 'selected'>('all')
+const exportLoading = ref(false)
 
 const savedViewModule = computed(() =>
   activeTab.value === 'sea'
@@ -78,6 +81,14 @@ const savedViewModule = computed(() =>
       : 'customer',
 )
 const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
+const canImport = computed(() => {
+  if (activeTab.value === 'collaboration') return false
+  return activeTab.value === 'sea' ? auth.hasPerm('customerPool:import') : auth.hasPerm('customer:import')
+})
+const canExport = computed(() => {
+  if (activeTab.value === 'collaboration') return false
+  return activeTab.value === 'sea' ? auth.hasPerm('customerPool:export') : auth.hasPerm('customer:export')
+})
 const defaultColumnKeys = computed(() =>
   fields.value.filter((field) => field.showInList && !field.hidden).map((field) => field.key),
 )
@@ -362,41 +373,46 @@ function openDetail(row: CustomerVO) {
 
 const importVisible = ref(false)
 
-async function handleImport(rows: Record<string, unknown>[]) {
-  try {
-    const { data } = await importCustomers(rows)
-    if (data.failed > 0) {
-      ElMessageBox.alert(
-        `成功 ${data.success} 条，失败 ${data.failed} 条：\n${data.errors.join('\n')}`,
-        '导入结果',
-      )
-    } else {
-      ElMessage.success(`成功导入 ${data.success} 条`)
-    }
-    importVisible.value = false
-    loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+function transferParams() {
+  return {
+    keyword: query.keyword.trim() || undefined,
+    scope: activeTab.value,
+    poolId: activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined,
+    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    viewId: activeSavedViewId.value || undefined,
   }
 }
 
-async function handleExport() {
+function openExport(mode: 'all' | 'selected') {
+  if (mode === 'selected' && selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要导出的客户')
+    return
+  }
+  exportMode.value = mode
+  exportVisible.value = true
+}
+
+async function handleExportConfirm(payload: { fileName: string; headList: string[] }) {
+  exportLoading.value = true
   try {
-    const { data } = await exportCustomersCsv({
-      keyword: query.keyword.trim() || undefined,
-      scope: activeTab.value,
-      poolId: activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined,
-      filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
-      viewId: activeSavedViewId.value || undefined,
-    })
-    const url = URL.createObjectURL(data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `客户导出_${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    const poolId = activeTab.value === 'sea' ? selectedPoolId.value || undefined : undefined
+    if (activeTab.value === 'sea' && !poolId) throw new Error('请先选择客户公海')
+    if (exportMode.value === 'selected') {
+      await customerTransferApi.exportSelected(
+        transferParams(),
+        { ...payload, ids: selectedRows.value.map((row) => row.id) },
+        poolId,
+      )
+      selectedRows.value = []
+    } else {
+      await customerTransferApi.exportAll(transferParams(), payload, poolId)
+    }
+    exportVisible.value = false
+    ElMessage.success('导出任务已创建，可在页面顶部“导出任务”中下载')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
+  } finally {
+    exportLoading.value = false
   }
 }
 
@@ -470,6 +486,9 @@ onMounted(async () => {
       </div>
       <div class="flex gap-2">
         <template v-if="activeTab !== 'collaboration' && selectedRows.length > 0">
+          <el-button v-if="canExport" @click="openExport('selected')">
+            导出选中（{{ selectedRows.length }}）
+          </el-button>
           <el-button
             v-if="
               (activeTab === 'mine' && auth.hasPerm('customer:update')) ||
@@ -498,13 +517,13 @@ onMounted(async () => {
         >
           合并客户<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span>
         </el-button>
-        <template v-if="auth.hasPerm('customer:import')">
-          <el-button @click="handleExport">导出</el-button>
-          <el-button @click="importVisible = true">导入</el-button>
-        </template>
-        <el-button v-if="auth.hasPerm('customer:create')" type="primary" @click="openCreate">
+        <el-button v-if="activeTab === 'mine' && auth.hasPerm('customer:create')" type="primary" @click="openCreate">
           新建客户
         </el-button>
+        <template v-if="canImport">
+          <el-button @click="importVisible = true">导入</el-button>
+        </template>
+        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">导出全部</el-button>
       </div>
     </div>
 
@@ -522,7 +541,8 @@ onMounted(async () => {
               auth.hasPerm('customer:update') ||
               auth.hasPerm('customer:delete'))) ||
           (activeTab === 'sea' &&
-            (auth.hasPerm('customerPool:update') || auth.hasPerm('customerPool:delete')))
+            (auth.hasPerm('customerPool:update') || auth.hasPerm('customerPool:delete'))) ||
+          canExport
         "
         type="selection"
         width="46"
@@ -649,11 +669,29 @@ onMounted(async () => {
       @confirm="handleAssignConfirm"
     />
 
-    <CsvImportDialog
+    <CrmImportDialog
       v-model="importVisible"
+      :module-label="activeTab === 'sea' ? '客户公海' : '客户'"
+      :download-template="(type) => customerTransferApi.importTemplate(type, activeTab === 'sea' ? selectedPoolId || undefined : undefined)"
+      :precheck="(file, type) => customerTransferApi.importPrecheck(file, type, activeTab === 'sea' ? selectedPoolId || undefined : undefined)"
+      :execute="(file, type) => customerTransferApi.importXlsx(file, type, activeTab === 'sea' ? selectedPoolId || undefined : undefined)"
+      @success="loadData"
+    />
+
+    <CrmExportDrawer
+      v-model="exportVisible"
+      :module-label="activeTab === 'sea' ? '客户公海' : '客户'"
+      :cache-key="activeTab === 'sea' ? `customer-pool:${selectedPoolId}` : 'customer'"
       :fields="fields"
-      module-label="客户"
-      @submit="handleImport"
+      :display-fields="[
+        { key: 'lastFollowedAt', label: '最近跟进' },
+        { key: 'createdAt', label: '创建时间' },
+        { key: 'updatedAt', label: '更新时间' },
+      ]"
+      :mode="exportMode"
+      :selected-count="selectedRows.length"
+      :loading="exportLoading"
+      @confirm="handleExportConfirm"
     />
 
     <CustomerMergeDialog

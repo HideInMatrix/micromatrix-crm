@@ -11,7 +11,8 @@ import { checkDuplicate } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
-import CsvImportDialog from '@/components/CsvImportDialog.vue'
+import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
+import CrmImportDialog from '@/components/CrmImportDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
@@ -40,6 +41,9 @@ const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<LeadVO[]>([])
 const batchEditVisible = ref(false)
+const exportVisible = ref(false)
+const exportMode = ref<'all' | 'selected'>('all')
+const exportLoading = ref(false)
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -59,6 +63,12 @@ const convertForm = reactive({ createContact: true, withOpportunity: false, oppN
 
 const savedViewModule = computed(() => (activeTab.value === 'pool' ? 'lead_pool' : 'lead'))
 const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
+const canImport = computed(() =>
+  activeTab.value === 'pool' ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
+)
+const canExport = computed(() =>
+  activeTab.value === 'pool' ? auth.hasPerm('leadPool:export') : auth.hasPerm('lead:export'),
+)
 const defaultColumnKeys = computed(() =>
   fields.value.filter((field) => field.showInList && !field.hidden).map((field) => field.key),
 )
@@ -270,42 +280,47 @@ const assignVisible = ref(false)
 const assignTarget = ref<LeadVO | null>(null)
 const importVisible = ref(false)
 
-async function handleImport(rows: Record<string, unknown>[]) {
-  try {
-    const { data } = await leadApi.import(rows)
-    if (data.failed > 0) {
-      ElMessageBox.alert(
-        `成功 ${data.success} 条，失败 ${data.failed} 条：\n${data.errors.join('\n')}`,
-        '导入结果',
-      )
-    } else {
-      ElMessage.success(`成功导入 ${data.success} 条`)
-    }
-    importVisible.value = false
-    loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+function transferParams() {
+  return {
+    keyword: query.keyword.trim() || undefined,
+    scope: activeTab.value,
+    poolId: activeTab.value === 'pool' ? selectedPoolId.value || undefined : undefined,
+    status: query.status || undefined,
+    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    viewId: activeSavedViewId.value || undefined,
   }
 }
 
-async function handleExport() {
+function openExport(mode: 'all' | 'selected') {
+  if (mode === 'selected' && selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要导出的线索')
+    return
+  }
+  exportMode.value = mode
+  exportVisible.value = true
+}
+
+async function handleExportConfirm(payload: { fileName: string; headList: string[] }) {
+  exportLoading.value = true
   try {
-    const { data } = await leadApi.exportCsv({
-      keyword: query.keyword.trim() || undefined,
-      scope: activeTab.value,
-      poolId: activeTab.value === 'pool' ? selectedPoolId.value || undefined : undefined,
-      status: query.status || undefined,
-      filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
-      viewId: activeSavedViewId.value || undefined,
-    })
-    const url = URL.createObjectURL(data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `线索导出_${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    const poolId = activeTab.value === 'pool' ? selectedPoolId.value || undefined : undefined
+    if (activeTab.value === 'pool' && !poolId) throw new Error('请先选择线索池')
+    if (exportMode.value === 'selected') {
+      await leadApi.exportSelected(
+        transferParams(),
+        { ...payload, ids: selectedRows.value.map((row) => row.id) },
+        poolId,
+      )
+      selectedRows.value = []
+    } else {
+      await leadApi.exportAll(transferParams(), payload, poolId)
+    }
+    exportVisible.value = false
+    ElMessage.success('导出任务已创建，可在页面顶部“导出任务”中下载')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
+  } finally {
+    exportLoading.value = false
   }
 }
 
@@ -443,6 +458,9 @@ onMounted(async () => {
       </div>
       <div class="flex gap-2">
         <template v-if="selectedRows.length > 0">
+          <el-button v-if="canExport" @click="openExport('selected')">
+            导出选中（{{ selectedRows.length }}）
+          </el-button>
           <el-button
             v-if="
               (activeTab === 'mine' && auth.hasPerm('lead:update')) ||
@@ -464,13 +482,13 @@ onMounted(async () => {
             批量删除
           </el-button>
         </template>
-        <template v-if="auth.hasPerm('lead:import')">
-          <el-button @click="handleExport">导出</el-button>
-          <el-button @click="importVisible = true">导入</el-button>
-        </template>
-        <el-button v-if="auth.hasPerm('lead:create')" type="primary" @click="openCreate">
+        <el-button v-if="auth.hasPerm('lead:create') && activeTab === 'mine'" type="primary" @click="openCreate">
           新建线索
         </el-button>
+        <template v-if="canImport">
+          <el-button @click="importVisible = true">导入</el-button>
+        </template>
+        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">导出全部</el-button>
       </div>
     </div>
 
@@ -485,7 +503,8 @@ onMounted(async () => {
         v-if="
           (activeTab === 'mine' && (auth.hasPerm('lead:update') || auth.hasPerm('lead:delete'))) ||
           (activeTab === 'pool' &&
-            (auth.hasPerm('leadPool:update') || auth.hasPerm('leadPool:delete')))
+            (auth.hasPerm('leadPool:update') || auth.hasPerm('leadPool:delete'))) ||
+          canExport
         "
         type="selection"
         width="46"
@@ -659,11 +678,30 @@ onMounted(async () => {
       @confirm="handleAssignConfirm"
     />
 
-    <CsvImportDialog
+    <CrmImportDialog
       v-model="importVisible"
+      :module-label="activeTab === 'pool' ? '线索池' : '线索'"
+      :download-template="(type) => leadApi.importTemplate(type, activeTab === 'pool' ? selectedPoolId || undefined : undefined)"
+      :precheck="(file, type) => leadApi.importPrecheck(file, type, activeTab === 'pool' ? selectedPoolId || undefined : undefined)"
+      :execute="(file, type) => leadApi.importXlsx(file, type, activeTab === 'pool' ? selectedPoolId || undefined : undefined)"
+      @success="loadData"
+    />
+
+    <CrmExportDrawer
+      v-model="exportVisible"
+      :module-label="activeTab === 'pool' ? '线索池' : '线索'"
+      :cache-key="activeTab === 'pool' ? `lead-pool:${selectedPoolId}` : 'lead'"
       :fields="fields"
-      module-label="线索"
-      @submit="handleImport"
+      :display-fields="[
+        { key: 'status', label: '状态' },
+        { key: 'lastFollowedAt', label: '最近跟进' },
+        { key: 'createdAt', label: '创建时间' },
+        { key: 'updatedAt', label: '更新时间' },
+      ]"
+      :mode="exportMode"
+      :selected-count="selectedRows.length"
+      :loading="exportLoading"
+      @confirm="handleExportConfirm"
     />
 
     <BatchFieldEditDialog

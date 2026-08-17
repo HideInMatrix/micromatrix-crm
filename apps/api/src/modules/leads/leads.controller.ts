@@ -1,5 +1,21 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { Response } from 'express'
 import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -15,8 +31,21 @@ import {
   ResourceBatchEditDto,
 } from '../../common/dto/resource-batch.dto'
 import { MoveToResourcePoolDto } from '../pool-rules/dto/resource-pool.dto'
+import {
+  ExportCreateDto,
+  ExportSelectDto,
+  ImportUploadDto,
+  type ImportType,
+} from '../import-export/dto/import-export.dto'
 import { AssignLeadDto, ConvertLeadDto, CreateLeadDto, QueryLeadsDto, UpdateLeadDto } from './dto/lead.dto'
 import { LeadsService } from './leads.service'
+
+type UploadedBufferFile = {
+  originalname: string
+  mimetype: string
+  size: number
+  buffer: Buffer
+}
 
 @ApiTags('线索')
 @ApiBearerAuth()
@@ -45,12 +74,155 @@ export class LeadsController {
     return csv
   }
 
+  @Post('import/rows')
+  @RequirePermissions('lead:import')
+  @LogOperation('lead', 'importRows')
+  @ApiOperation({ summary: '兼容旧结构化行导入' })
+  bulkImport(@CurrentUser() user: AuthUser, @Body() body: { rows: Record<string, unknown>[] }) {
+    return this.leadsService.bulkImport(user, body.rows ?? [])
+  }
+
+  @Get('import/template')
+  @RequirePermissions('lead:import')
+  @ApiOperation({ summary: '下载线索 xlsx 导入模板' })
+  async importTemplate(
+    @CurrentUser() user: AuthUser,
+    @Query('importType') importType: ImportType = 'ADD',
+  ) {
+    const result = await this.leadsService.importTemplate(user, importType)
+    return new StreamableFile(result.data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+    })
+  }
+
+  @Post('import/pre-check')
+  @RequirePermissions('lead:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { importType: { enum: ['ADD', 'UPDATE'] }, file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: '线索 xlsx 导入预校验' })
+  precheckImport(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    return this.leadsService.precheckImportXlsx(user, file.buffer, dto.importType)
+  }
+
   @Post('import')
   @RequirePermissions('lead:import')
   @LogOperation('lead', 'import')
-  @ApiOperation({ summary: '批量导入线索' })
-  bulkImport(@CurrentUser() user: AuthUser, @Body() body: { rows: Record<string, unknown>[] }) {
-    return this.leadsService.bulkImport(user, body.rows ?? [])
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '正式导入线索 xlsx（合法行成功、错误行返回原因）' })
+  importXlsx(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    return this.leadsService.importXlsx(user, file.buffer, dto.importType)
+  }
+
+  @Get('pool/import/template')
+  @RequirePermissions('leadPool:import')
+  @ApiOperation({ summary: '下载线索池 xlsx 导入模板' })
+  async poolImportTemplate(
+    @CurrentUser() user: AuthUser,
+    @Query('poolId') poolId: string,
+    @Query('importType') importType: ImportType = 'ADD',
+  ) {
+    if (!poolId) throw new BadRequestException('请选择线索池')
+    const result = await this.leadsService.importTemplate(user, importType, poolId)
+    return new StreamableFile(result.data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+    })
+  }
+
+  @Post('pool/import/pre-check')
+  @RequirePermissions('leadPool:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '线索池 xlsx 导入预校验' })
+  poolPrecheckImport(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    if (!dto.poolId) throw new BadRequestException('请选择线索池')
+    return this.leadsService.precheckImportXlsx(user, file.buffer, dto.importType, dto.poolId)
+  }
+
+  @Post('pool/import')
+  @RequirePermissions('leadPool:import')
+  @LogOperation('leadPool', 'import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '正式导入线索池 xlsx' })
+  poolImportXlsx(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body() dto: ImportUploadDto,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    if (!dto.poolId) throw new BadRequestException('请选择线索池')
+    return this.leadsService.importXlsx(user, file.buffer, dto.importType, dto.poolId)
+  }
+
+  @Post('export/all')
+  @RequirePermissions('lead:export')
+  @LogOperation('lead', 'exportAll')
+  @ApiOperation({ summary: '按当前筛选创建全部线索 xlsx 导出任务' })
+  exportAll(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryLeadsDto,
+    @Body() dto: ExportCreateDto,
+  ) {
+    return this.leadsService.exportXlsx(user, { ...query, scope: 'mine' }, dto)
+  }
+
+  @Post('export/select')
+  @RequirePermissions('lead:export')
+  @LogOperation('lead', 'exportSelected')
+  @ApiOperation({ summary: '创建选中线索 xlsx 导出任务' })
+  exportSelected(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryLeadsDto,
+    @Body() dto: ExportSelectDto,
+  ) {
+    return this.leadsService.exportXlsx(user, { ...query, scope: 'mine' }, dto)
+  }
+
+  @Post('pool/export/all')
+  @RequirePermissions('leadPool:export')
+  @LogOperation('leadPool', 'exportAll')
+  @ApiOperation({ summary: '按当前筛选创建线索池全部 xlsx 导出任务' })
+  poolExportAll(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryLeadsDto,
+    @Query('poolId') poolId: string,
+    @Body() dto: ExportCreateDto,
+  ) {
+    if (!poolId) throw new BadRequestException('请选择线索池')
+    return this.leadsService.exportXlsx(user, { ...query, scope: 'pool', poolId }, { ...dto, poolId })
+  }
+
+  @Post('pool/export/select')
+  @RequirePermissions('leadPool:export')
+  @LogOperation('leadPool', 'exportSelected')
+  @ApiOperation({ summary: '创建线索池选中数据 xlsx 导出任务' })
+  poolExportSelected(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryLeadsDto,
+    @Query('poolId') poolId: string,
+    @Body() dto: ExportSelectDto,
+  ) {
+    if (!poolId) throw new BadRequestException('请选择线索池')
+    return this.leadsService.exportXlsx(user, { ...query, scope: 'pool', poolId }, { ...dto, poolId })
   }
 
   @Post('batch/claim')

@@ -3,6 +3,10 @@
  * 运行前置：API 已启动（pnpm dev 或 node apps/api/dist/main.js）、已执行种子数据
  * 用法：pnpm smoke
  */
+import { createRequire } from 'node:module'
+
+const requireFromApi = createRequire(new URL('../apps/api/package.json', import.meta.url))
+const ExcelJS = requireFromApi('exceljs')
 const base = process.env.API_BASE ?? 'http://localhost:3000/api'
 
 let passed = 0
@@ -42,6 +46,38 @@ const request = (method, url, h, body) =>
     headers: h,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
+
+async function buildXlsx(headers, rows) {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('导入')
+  sheet.addRow(headers)
+  for (const row of rows) sheet.addRow(row)
+  return Buffer.from(await workbook.xlsx.writeBuffer())
+}
+
+async function postXlsx(url, h, buffer, importType, poolId) {
+  const form = new FormData()
+  form.append('importType', importType)
+  if (poolId) form.append('poolId', poolId)
+  form.append(
+    'file',
+    new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    'smoke.xlsx',
+  )
+  return fetch(`${base}${url}`, {
+    method: 'POST',
+    headers: { Authorization: h.Authorization },
+    body: form,
+  })
+}
+
+async function readXlsx(buffer) {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  return workbook.worksheets[0]
+}
 
 console.log('== 微矩阵 CRM 全链路冒烟 ==')
 
@@ -723,7 +759,361 @@ const deniedCollabCustomerUpdate = await request(
 )
 check('COLLABORATION 仍禁止修改客户主体', [403, 404].includes(deniedCollabCustomerUpdate.status))
 
-const importedDup = await post('/customers/import', admin.headers, {
+// R2 xlsx 导入导出：模板 → 预检 → 正式导入 → 更新 → 导出任务 → 下载隔离
+const leadImportFields = await get('/metadata/lead/fields', manager.headers)
+const leadNameField = leadImportFields.find((field) => field.key === 'name')
+const leadContactNameField = leadImportFields.find((field) => field.key === 'contactName')
+const leadOwnerField = leadImportFields.find((field) => field.key === 'ownerId')
+const customerNameImportField = fields.find((field) => field.key === 'name')
+const customerPhoneImportField = fields.find((field) => field.key === 'phone')
+
+const leadTemplateResponse = await fetch(`${base}/leads/import/template?importType=ADD`, {
+  headers: { Authorization: manager.headers.Authorization },
+})
+const leadTemplateSheet = leadTemplateResponse.ok
+  ? await readXlsx(Buffer.from(await leadTemplateResponse.arrayBuffer()))
+  : null
+const leadTemplateHeaders = leadTemplateSheet
+  ? leadTemplateSheet.getRow(1).values.slice(1).map(String)
+  : []
+check(
+  'R2 Lead xlsx ADD 模板包含元数据表头',
+  leadTemplateResponse.ok && leadTemplateHeaders.includes(leadNameField?.label),
+)
+
+const r2LeadName = `R2导入线索-${stamp}`
+const leadAddXlsx = await buildXlsx(
+  [leadNameField?.label ?? '线索名称', leadContactNameField?.label ?? '联系人'],
+  [[r2LeadName, `R2联系人-${stamp}`]],
+)
+const leadAddPrecheckRes = await postXlsx(
+  '/leads/import/pre-check',
+  manager.headers,
+  leadAddXlsx,
+  'ADD',
+)
+const leadAddPrecheck = await leadAddPrecheckRes.json()
+check(
+  'R2 Lead ADD xlsx 预检',
+  leadAddPrecheckRes.ok && leadAddPrecheck.successCount === 1 && leadAddPrecheck.failCount === 0,
+  JSON.stringify(leadAddPrecheck),
+)
+const leadAddImportRes = await postXlsx('/leads/import', manager.headers, leadAddXlsx, 'ADD')
+const leadAddImport = await leadAddImportRes.json()
+const r2LeadRows = await get(`/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`, manager.headers)
+const r2Lead = r2LeadRows.items?.find((item) => item.name === r2LeadName)
+check(
+  'R2 Lead ADD xlsx 正式导入',
+  leadAddImportRes.ok && leadAddImport.successCount === 1 && Boolean(r2Lead?.id),
+  JSON.stringify(leadAddImport),
+)
+
+const updatedLeadContact = `R2更新联系人-${stamp}`
+const leadUpdateXlsx = await buildXlsx(
+  ['唯一ID', leadContactNameField?.label ?? '联系人'],
+  [[r2Lead?.id, updatedLeadContact]],
+)
+const leadUpdatePrecheckRes = await postXlsx(
+  '/leads/import/pre-check',
+  manager.headers,
+  leadUpdateXlsx,
+  'UPDATE',
+)
+const leadUpdatePrecheck = await leadUpdatePrecheckRes.json()
+const leadUpdateImportRes = await postXlsx('/leads/import', manager.headers, leadUpdateXlsx, 'UPDATE')
+const leadUpdateImport = await leadUpdateImportRes.json()
+const updatedR2LeadRows = await get(
+  `/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`,
+  manager.headers,
+)
+check(
+  'R2 Lead UPDATE 以唯一ID更新',
+  leadUpdatePrecheckRes.ok &&
+    leadUpdatePrecheck.successCount === 1 &&
+    leadUpdateImportRes.ok &&
+    leadUpdateImport.successCount === 1 &&
+    updatedR2LeadRows.items?.some((item) => item.id === r2Lead?.id && item.contactName === updatedLeadContact),
+)
+
+const r2CustomerName = `R2导入客户-${stamp}`
+const customerAddXlsx = await buildXlsx(
+  [customerNameImportField?.label ?? '客户名称', customerPhoneImportField?.label ?? '联系电话'],
+  [[r2CustomerName, `136${stamp.slice(-8).padStart(8, '0')}`]],
+)
+const customerAddPrecheckRes = await postXlsx(
+  '/customers/import/pre-check',
+  manager.headers,
+  customerAddXlsx,
+  'ADD',
+)
+const customerAddPrecheck = await customerAddPrecheckRes.json()
+const customerAddImportRes = await postXlsx('/customers/import', manager.headers, customerAddXlsx, 'ADD')
+const customerAddImport = await customerAddImportRes.json()
+const r2CustomerRows = await get(
+  `/customers?pageSize=20&keyword=${encodeURIComponent(r2CustomerName)}`,
+  manager.headers,
+)
+const r2Customer = r2CustomerRows.items?.find((item) => item.name === r2CustomerName)
+check(
+  'R2 Customer ADD xlsx 预检 + 正式导入',
+  customerAddPrecheckRes.ok &&
+    customerAddPrecheck.successCount === 1 &&
+    customerAddImportRes.ok &&
+    customerAddImport.successCount === 1 &&
+    Boolean(r2Customer?.id),
+)
+
+const updatedCustomerPhone = `135${stamp.slice(-8).padStart(8, '0')}`
+const customerUpdateXlsx = await buildXlsx(
+  ['唯一ID', customerPhoneImportField?.label ?? '联系电话'],
+  [[r2Customer?.id, updatedCustomerPhone]],
+)
+const customerUpdatePrecheckRes = await postXlsx(
+  '/customers/import/pre-check',
+  manager.headers,
+  customerUpdateXlsx,
+  'UPDATE',
+)
+const customerUpdatePrecheck = await customerUpdatePrecheckRes.json()
+const customerUpdateImportRes = await postXlsx(
+  '/customers/import',
+  manager.headers,
+  customerUpdateXlsx,
+  'UPDATE',
+)
+const customerUpdateImport = await customerUpdateImportRes.json()
+const updatedR2Customer = r2Customer?.id ? await get(`/customers/${r2Customer.id}`, manager.headers) : null
+check(
+  'R2 Customer UPDATE 以唯一ID更新',
+  customerUpdatePrecheckRes.ok &&
+    customerUpdatePrecheck.successCount === 1 &&
+    customerUpdateImportRes.ok &&
+    customerUpdateImport.successCount === 1 &&
+    updatedR2Customer?.phone === updatedCustomerPhone,
+)
+
+const r2LeadPool = await post('/resource-pools', admin.headers, {
+  module: 'lead',
+  name: `R2导入线索池-${stamp}`,
+  scopeIds: [`user:${manager.user.id}`],
+})
+const r2CustomerPool = await post('/resource-pools', admin.headers, {
+  module: 'customer',
+  name: `R2导入客户公海-${stamp}`,
+  scopeIds: [`user:${manager.user.id}`],
+})
+
+const poolLeadTemplateResponse = await fetch(
+  `${base}/leads/pool/import/template?importType=ADD&poolId=${r2LeadPool.id}`,
+  { headers: { Authorization: manager.headers.Authorization } },
+)
+const poolLeadTemplateSheet = poolLeadTemplateResponse.ok
+  ? await readXlsx(Buffer.from(await poolLeadTemplateResponse.arrayBuffer()))
+  : null
+const poolLeadHeaders = poolLeadTemplateSheet
+  ? poolLeadTemplateSheet.getRow(1).values.slice(1).map(String)
+  : []
+check(
+  'R2 线索池模板移除负责人字段',
+  poolLeadTemplateResponse.ok && !poolLeadHeaders.includes(leadOwnerField?.label),
+)
+
+const customerOwnerField = fields.find((field) => field.key === 'ownerId')
+const poolCustomerTemplateResponse = await fetch(
+  `${base}/customers/pool/import/template?importType=ADD&poolId=${r2CustomerPool.id}`,
+  { headers: { Authorization: manager.headers.Authorization } },
+)
+const poolCustomerTemplateSheet = poolCustomerTemplateResponse.ok
+  ? await readXlsx(Buffer.from(await poolCustomerTemplateResponse.arrayBuffer()))
+  : null
+const poolCustomerHeaders = poolCustomerTemplateSheet
+  ? poolCustomerTemplateSheet.getRow(1).values.slice(1).map(String)
+  : []
+check(
+  'R2 客户公海模板移除负责人字段',
+  poolCustomerTemplateResponse.ok && !poolCustomerHeaders.includes(customerOwnerField?.label),
+)
+
+const r2PoolLeadName = `R2池导入线索-${stamp}`
+const poolLeadXlsx = await buildXlsx([leadNameField?.label ?? '线索名称'], [[r2PoolLeadName]])
+const poolLeadPrecheckRes = await postXlsx(
+  '/leads/pool/import/pre-check',
+  manager.headers,
+  poolLeadXlsx,
+  'ADD',
+  r2LeadPool.id,
+)
+const poolLeadPrecheck = await poolLeadPrecheckRes.json()
+const poolLeadImportRes = await postXlsx(
+  '/leads/pool/import',
+  manager.headers,
+  poolLeadXlsx,
+  'ADD',
+  r2LeadPool.id,
+)
+const poolLeadImport = await poolLeadImportRes.json()
+const r2PoolLeadRows = await get(
+  `/leads?scope=pool&poolId=${r2LeadPool.id}&pageSize=20&keyword=${encodeURIComponent(r2PoolLeadName)}`,
+  manager.headers,
+)
+const r2PoolLead = r2PoolLeadRows.items?.find((item) => item.name === r2PoolLeadName)
+check(
+  'R2 线索池 xlsx 导入强制保持池归属且无负责人',
+  poolLeadPrecheck.successCount === 1 &&
+    poolLeadImport.successCount === 1 &&
+    r2PoolLead?.inPool === true &&
+    r2PoolLead?.poolId === r2LeadPool.id &&
+    r2PoolLead?.ownerId === null,
+)
+
+const r2PoolCustomerName = `R2公海导入客户-${stamp}`
+const poolCustomerXlsx = await buildXlsx(
+  [customerNameImportField?.label ?? '客户名称'],
+  [[r2PoolCustomerName]],
+)
+const poolCustomerImportRes = await postXlsx(
+  '/customers/pool/import',
+  manager.headers,
+  poolCustomerXlsx,
+  'ADD',
+  r2CustomerPool.id,
+)
+const poolCustomerImport = await poolCustomerImportRes.json()
+const r2PoolCustomerRows = await get(
+  `/customers?scope=sea&poolId=${r2CustomerPool.id}&pageSize=20&keyword=${encodeURIComponent(r2PoolCustomerName)}`,
+  manager.headers,
+)
+const r2PoolCustomer = r2PoolCustomerRows.items?.find((item) => item.name === r2PoolCustomerName)
+check(
+  'R2 客户公海 xlsx 导入直接写入公海且无负责人',
+  poolCustomerImport.successCount === 1 &&
+    r2PoolCustomer?.inSea === true &&
+    r2PoolCustomer?.poolId === r2CustomerPool.id &&
+    r2PoolCustomer?.ownerId === null,
+)
+
+const deniedPoolImport = await postXlsx(
+  '/leads/pool/import/pre-check',
+  sales.headers,
+  poolLeadXlsx,
+  'ADD',
+  r2LeadPool.id,
+)
+check('R2 池导入要求独立功能权限', deniedPoolImport.status === 403)
+
+const leadExportAllRes = await request(
+  'POST',
+  `/leads/export/all?keyword=${encodeURIComponent(r2LeadName)}`,
+  manager.headers,
+  { fileName: `R2线索导出-${stamp}`, headList: ['name', 'contactName', 'status'] },
+)
+const leadExportTask = await leadExportAllRes.json()
+check(
+  'R2 Lead 导出全部创建任务并继承当前筛选',
+  leadExportAllRes.ok && leadExportTask.status === 'SUCCESS' && leadExportTask.rowCount === 1,
+  JSON.stringify(leadExportTask),
+)
+const managerTasks = await get('/export-tasks', manager.headers)
+const salesTasks = await get('/export-tasks', sales.headers)
+check(
+  'R2 ExportTask 仅创建者列表可见',
+  managerTasks.some((task) => task.id === leadExportTask.id) &&
+    !salesTasks.some((task) => task.id === leadExportTask.id),
+)
+const crossUserDownload = await fetch(`${base}/export-tasks/${leadExportTask.id}/download`, {
+  headers: { Authorization: sales.headers.Authorization },
+})
+check('R2 ExportTask 跨用户下载被拒绝', crossUserDownload.status === 404)
+const leadExportDownload = await fetch(`${base}/export-tasks/${leadExportTask.id}/download`, {
+  headers: { Authorization: manager.headers.Authorization },
+})
+const leadExportSheet = leadExportDownload.ok
+  ? await readXlsx(Buffer.from(await leadExportDownload.arrayBuffer()))
+  : null
+const exportedLeadHeaders = leadExportSheet
+  ? leadExportSheet.getRow(1).values.slice(1).map(String)
+  : []
+check(
+  'R2 导出 xlsx 字段顺序与内容一致',
+  leadExportDownload.ok &&
+    exportedLeadHeaders.join('|') === '线索名称|联系人|状态' &&
+    String(leadExportSheet?.getRow(2).getCell(1).value ?? '') === r2LeadName,
+)
+
+const poolLeadExportRes = await request(
+  'POST',
+  `/leads/pool/export/select?poolId=${r2LeadPool.id}`,
+  manager.headers,
+  {
+    fileName: `R2池线索导出-${stamp}`,
+    headList: ['name', 'createdAt'],
+    ids: [r2PoolLead.id],
+  },
+)
+const poolLeadExportTask = await poolLeadExportRes.json()
+check(
+  'R2 线索池导出选中使用独立权限 + PoolMember',
+  poolLeadExportRes.ok && poolLeadExportTask.status === 'SUCCESS' && poolLeadExportTask.rowCount === 1,
+)
+const customerExportRes = await request(
+  'POST',
+  `/customers/export/select`,
+  manager.headers,
+  {
+    fileName: `R2客户导出-${stamp}`,
+    headList: ['name', 'phone'],
+    ids: [r2Customer.id],
+  },
+)
+const customerExportTask = await customerExportRes.json()
+check(
+  'R2 Customer 导出选中严格按 ids',
+  customerExportRes.ok && customerExportTask.status === 'SUCCESS' && customerExportTask.rowCount === 1,
+)
+const poolCustomerExportRes = await request(
+  'POST',
+  `/customers/pool/export/select?poolId=${r2CustomerPool.id}`,
+  manager.headers,
+  {
+    fileName: `R2公海客户导出-${stamp}`,
+    headList: ['name', 'createdAt'],
+    ids: [r2PoolCustomer.id],
+  },
+)
+const poolCustomerExportTask = await poolCustomerExportRes.json()
+check(
+  'R2 客户公海导出选中使用独立权限 + PoolMember',
+  poolCustomerExportRes.ok &&
+    poolCustomerExportTask.status === 'SUCCESS' &&
+    poolCustomerExportTask.rowCount === 1,
+)
+const deniedPoolExport = await request(
+  'POST',
+  `/leads/pool/export/all?poolId=${r2LeadPool.id}`,
+  sales.headers,
+  { fileName: `R2禁止导出-${stamp}`, headList: ['name'] },
+)
+check('R2 池导出要求独立功能权限', deniedPoolExport.status === 403)
+
+await request('DELETE', `/export-tasks/${leadExportTask.id}`, manager.headers)
+await request('DELETE', `/export-tasks/${poolLeadExportTask.id}`, manager.headers)
+await request('DELETE', `/export-tasks/${customerExportTask.id}`, manager.headers)
+await request('DELETE', `/export-tasks/${poolCustomerExportTask.id}`, manager.headers)
+if (r2Lead?.id) await request('DELETE', `/leads/${r2Lead.id}`, manager.headers)
+if (r2Customer?.id) await request('DELETE', `/customers/${r2Customer.id}`, manager.headers)
+if (r2PoolLead?.id) {
+  await post('/leads/pool/batch/delete', manager.headers, { poolId: r2LeadPool.id, ids: [r2PoolLead.id] })
+}
+if (r2PoolCustomer?.id) {
+  await post('/customers/pool/batch/delete', manager.headers, {
+    poolId: r2CustomerPool.id,
+    ids: [r2PoolCustomer.id],
+  })
+}
+await request('DELETE', `/resource-pools/${r2LeadPool.id}`, admin.headers)
+await request('DELETE', `/resource-pools/${r2CustomerPool.id}`, admin.headers)
+
+const importedDup = await post('/customers/import/rows', admin.headers, {
   rows: [{ name: `冒烟线索-${stamp}` }],
 })
 check('导入重复行拦截', importedDup.failed >= 1)

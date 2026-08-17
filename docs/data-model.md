@@ -51,7 +51,8 @@ erDiagram
 | operation_logs / login_logs | 审计；操作日志由拦截器按 @LogOperation 元数据写入 |
 | notifications | 站内信；readAt 未读判定；type+link 驱动前端跳转 |
 | system_settings | 租户级 KV（企业名称/公告等） |
-| attachments | 附件挂载（targetType+targetId）；本地磁盘上传已落地（roadmap P0） |
+| attachments | 附件挂载（targetType+targetId）；本地磁盘上传已落地 |
+| export_tasks | R2 导出任务中心；记录创建者、业务模块、状态、文件路径、行数、大小与 24h 过期时间 |
 
 ### 元数据引擎
 

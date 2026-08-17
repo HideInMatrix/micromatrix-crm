@@ -3,6 +3,7 @@ import { useDark } from '@vueuse/core'
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import NotificationBell from '@/components/NotificationBell.vue'
+import ExportTaskButton from '@/components/ExportTaskButton.vue'
 import { MENUS, type MenuItem } from '@/router/menu'
 import { useAuthStore } from '@/stores/auth'
 
@@ -57,6 +58,7 @@ function handleLogout() {
       <el-header class="flex-between border-b border-[var(--el-border-color)]">
         <span class="text-sm text-[var(--el-text-color-secondary)]">{{ route.meta.title }}</span>
         <div class="flex items-center gap-5">
+          <ExportTaskButton />
           <NotificationBell />
           <el-switch v-model="isDark" inline-prompt active-text="暗" inactive-text="亮" />
           <el-dropdown @command="handleLogout">

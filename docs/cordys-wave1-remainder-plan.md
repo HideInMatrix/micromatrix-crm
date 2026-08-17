@@ -134,7 +134,98 @@
 
 开始编码前必须继续阅读 Cordys `ImportRequest / ExportSelectRequest / ExportTaskCenterService / ClueExportService / CustomerExportService / Pool* import/export`。
 
-状态：`🚧 SOURCE REVIEW IN PROGRESS`
+#### R2 Cordys 源码事实（2026-08-17 已确认）
+
+后端来源：
+
+- `clue/controller/ClueController.java`
+- `clue/controller/PoolClueController.java`
+- `customer/controller/CustomerController.java`
+- `customer/controller/PoolCustomerController.java`
+- `system/dto/request/ImportRequest.java`
+- `clue/dto/request/CluePoolImportRequest.java`
+- `customer/dto/request/CustomerPoolImportRequest.java`
+- `common/dto/ExportSelectRequest.java`
+- `system/dto/response/ImportResponse.java`
+- `system/excel/listener/CustomFieldCheckEventListener.java`
+- `system/excel/listener/CustomFieldImportEventListener.java`
+- `common/service/BaseExportService.java`
+- `system/service/ExportTaskCenterService.java`
+
+前端来源：
+
+- `components/business/crm-import-button/**`
+- `components/business/crm-table-export-modal/index.vue`
+- `views/clueManagement/clue/components/clueTable.vue`
+- `views/clueManagement/cluePool/components/cluePoolTable.vue`
+- `views/customer/components/customerTable.vue`
+- `views/customer/components/openSeaTable.vue`
+
+已确认规则：
+
+1. 导入是两阶段接口，不是前端直接解析后提交 JSON：
+   - 下载 Excel 模板；
+   - `import/pre-check` 上传文件做完整校验；
+   - 用户查看成功/失败条数和错误详情；
+   - `import` 再上传同一文件执行正式导入。
+2. 导入类型只有 `ADD / UPDATE`：
+   - `ADD` = 导入新建；唯一字段命中已有数据时该行失败；
+   - `UPDATE` = 导入更新；Excel 必须包含 `唯一ID` 列，且每条被更新数据必须提供有效资源 ID；不可编辑字段不会被更新。
+3. Cordys 导入结果统一返回：`successCount / failCount / errorMessages[]`；错误项包含 `rowNum / errMsg`，前端可查看错误详情，也允许“忽略错误继续导入”，正式导入仅处理合法行。
+4. 前端上传框只接受 Excel，提示仅支持 `xls/xlsx`，源码默认最大文件 100MB。
+5. 普通线索/客户导入分别使用普通 IMPORT 权限；池/公海使用独立 POOL IMPORT 权限，并在功能权限之后继续执行 `checkPoolMember()`。
+6. 池/公海导入请求在 `importType` 外增加 `poolId`。
+7. 池/公海导入模板和校验会移除负责人字段；正式导入会强制写入 `inPool/inSea=true + poolId`，不允许通过 Excel 给池内记录指定负责人。
+8. 导出分“导出全部”和“导出选中”：
+   - 全部导出请求携带当前查询条件/保存视图/数据范围及 `headList`；
+   - 选中导出请求至少包含 `fileName + headList + ids`，普通列表还需做批量资源权限校验；
+   - 池/公海导出使用独立 POOL EXPORT 权限并校验池成员。
+9. `headList` 不是固定后端列：用户可选择导出字段并调整顺序，系统字段、自定义字段、展示字段分组显示。
+10. Cordys 导出前端使用约 800px 抽屉：顶部文件名输入框并固定 `.xlsx` 后缀；左侧字段分组勾选，右侧展示“已选字段（数量）”，支持清空和拖拽排序。
+11. 导出全部按钮位于列表顶部动作区；“导出选中”位于勾选数据后的批量操作区。导入按钮同样位于列表顶部，与新增按钮并列。
+12. Cordys 导出 API 返回导出任务 ID，不直接同步返回文件。`ExportTaskCenterService` 只允许创建者查看/取消/下载自己的任务，并以 1 天作为列表/清理边界。
+13. MicroMatrix R2 采用同一 UI/接口语义，但第一阶段不引入 BullMQ：先建立 `ExportTask` 持久化任务契约，任务在 API 进程内立即生成 xlsx 并进入 SUCCESS/FAILED；Wave 6 再把执行器替换为 BullMQ，不改变前端任务 API。
+
+#### R2 MicroMatrix 落地决策
+
+- 引入公共 `SpreadsheetService + ExportTasksService`，Lead/Customer/Pool 只提供资源查询、行转换与业务写入 adapter，不重复写 xlsx 解析器。
+- xlsx 模板使用“字段 label 作为表头”；更新模板首列增加 `唯一ID`。系统字段和 `cf_*` 自定义字段都来自 Metadata。
+- 导入预校验与正式导入复用同一解析/校验函数，正式导入只执行预校验后仍合法的行；响应保持 `successCount/failCount/errorMessages`。
+- ADD 复用现有 `create()`，UPDATE 复用现有 `update()`；池/公海 ADD/UPDATE 使用池专用写入路径，强制保持池归属并禁止 owner 字段。
+- 新增普通列表和池/公海“导出全部 / 导出选中”，headList 只允许当前 Metadata 中可导出的字段，服务端再次净化，不能由前端注入任意属性。
+- 新增 `ExportTask` 模型与 `/export-tasks` 列表/下载/删除（取消）契约；文件存储先使用现有本地 uploads 根目录下的 export 子目录。
+- Web 新建公共 `CrmImportDialog` / `CrmExportDrawer` 风格组件；结构和交互对齐 Cordys，图标仅使用 Element Plus 近似图标或文字。
+- Lead/Customer 页面顶部按钮顺序、池选择器、批量导出入口按 Cordys 布局调整，但继续保留 MicroMatrix 已有 SavedView/高级筛选能力。
+- 普通导入/导出权限按 Cordys 拆分为 `lead:import / lead:export`、`customer:import / customer:export`；池/公海使用 `leadPool:* / customerPool:*` 独立权限。
+- 当前 xlsx 解析基于 ExcelJS，因此 R2 只接受 `.xlsx`，不兼容 Cordys 仍支持的旧 `.xls` 格式。
+- Cordys 的 ADD 导入“唯一字段”来自字段规则 `rules.unique`；MicroMatrix 当前 Metadata 尚无同构 unique 规则。Customer 继续执行现有名称/电话业务查重；Lead 不擅自把名称设为唯一。字段级 unique 规则需在后续元数据能力对齐时统一覆盖 CRUD + import，不能只在导入链临时实现。
+
+验收：
+
+- [x] Lead ADD/UPDATE xlsx 模板、预检、正式导入
+- [x] Customer ADD/UPDATE xlsx 模板、预检、正式导入
+- [x] LeadPool/CustomerPool xlsx 导入且强制池归属、禁止 owner
+- [x] 普通列表导出全部继承当前筛选/view/data scope
+- [x] 普通列表导出选中严格按 ids
+- [x] 池/公海导出全部与选中使用独立权限 + PoolMember 校验
+- [x] 导出字段选择、顺序、文件名与 xlsx 内容一致
+- [x] ExportTask 仅创建者可下载/取消
+- [x] Web 导入两阶段交互与 Cordys 结构一致
+- [x] Web 导出字段抽屉与 Cordys 结构一致
+- [x] build/typecheck/lint/smoke 全绿
+- [x] R2 独立本地 Git 提交
+
+2026-08-17 R2 验收结果：
+
+- 新增 `ExportTask` Prisma 模型与 `20260817133000_r2_export_tasks` migration，已实际应用，当前数据库共 15 个 migration。
+- 新增公共 `SpreadsheetService`，统一负责 xlsx 模板、解析、字段类型转换和导出工作簿生成。
+- 新增 `ExportTasksService / ExportTasksController`；任务仅创建者可见、下载、清理，24 小时自动过期；当前 API 进程同步生成文件，保留后续 BullMQ 执行器替换契约。
+- Lead/Customer 普通列表与 Pool/Sea 均实现模板、预检、正式导入、导出全部、导出选中。
+- Web 使用 `CrmImportDialog / CrmExportDrawer / ExportTaskButton`；导入采用 Cordys 两阶段流程，导出采用约 800px 双栏字段选择抽屉，未复制 Cordys 图标资源。
+- `scripts/smoke.mjs` 使用真实 xlsx 文件验证 ADD/UPDATE、唯一ID、池归属、owner 排除、筛选导出、字段顺序、任务隔离与池权限；当前 **109/109 通过**。
+- 最终门槛：`pnpm build` 通过；`pnpm typecheck` 通过；`pnpm lint` 通过；`pnpm --filter @micromatrix/api test:rules` **7/7**；`pnpm smoke` **109/109**。
+
+状态：`✅ COMPLETE / 2026-08-17 已通过完整门槛验收`
 
 ### R3 联系人完整能力
 

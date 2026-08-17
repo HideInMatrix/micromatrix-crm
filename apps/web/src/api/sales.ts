@@ -11,6 +11,12 @@ import type {
   TeamMemberVO,
 } from '@micromatrix/shared'
 import { http } from './http'
+import {
+  createImportForm,
+  type ExportCreatePayload,
+  type ImportResult,
+  type ImportType,
+} from './import-export'
 
 // ===== 线索 =====
 
@@ -84,10 +90,33 @@ export const resourceCapacityApi = {
 
 export const leadApi = {
   list: (params: LeadListParams) => http.get<PaginatedResult<LeadVO>>('/leads', { params }),
-  import: (rows: Record<string, unknown>[]) =>
-    http.post<{ success: number; failed: number; errors: string[] }>('/leads/import', { rows }),
+  importRows: (rows: Record<string, unknown>[]) =>
+    http.post<{ success: number; failed: number; errors: string[] }>('/leads/import/rows', { rows }),
+  importTemplate: (importType: ImportType, poolId?: string) =>
+    http.get<Blob>(poolId ? '/leads/pool/import/template' : '/leads/import/template', {
+      params: { importType, poolId },
+      responseType: 'blob',
+    }),
+  importPrecheck: (file: File, importType: ImportType, poolId?: string) =>
+    http.post<ImportResult>(
+      poolId ? '/leads/pool/import/pre-check' : '/leads/import/pre-check',
+      createImportForm(file, importType, poolId),
+    ),
+  importXlsx: (file: File, importType: ImportType, poolId?: string) =>
+    http.post<ImportResult>(
+      poolId ? '/leads/pool/import' : '/leads/import',
+      createImportForm(file, importType, poolId),
+    ),
   exportCsv: (params: LeadListParams) =>
     http.get<Blob>('/leads/export', { params, responseType: 'blob' }),
+  exportAll: (params: LeadListParams, data: ExportCreatePayload, poolId?: string) =>
+    http.post(poolId ? '/leads/pool/export/all' : '/leads/export/all', data, {
+      params: { ...params, poolId },
+    }),
+  exportSelected: (params: LeadListParams, data: ExportCreatePayload & { ids: string[] }, poolId?: string) =>
+    http.post(poolId ? '/leads/pool/export/select' : '/leads/export/select', data, {
+      params: { ...params, poolId },
+    }),
   create: (data: Record<string, unknown>) => http.post<LeadVO>('/leads', data),
   update: (id: string, data: Record<string, unknown>) => http.patch<LeadVO>(`/leads/${id}`, data),
   remove: (id: string) => http.delete(`/leads/${id}`),

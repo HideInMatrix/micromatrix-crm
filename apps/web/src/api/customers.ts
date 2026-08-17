@@ -6,6 +6,12 @@ import type {
   PaginatedResult,
 } from '@micromatrix/shared'
 import { http } from './http'
+import {
+  createImportForm,
+  type ExportCreatePayload,
+  type ImportResult as XlsxImportResult,
+  type ImportType,
+} from './import-export'
 
 export interface CustomerListParams extends PageQuery {
   /** FilterCondition[] 的 JSON 字符串 */
@@ -156,9 +162,39 @@ export interface ImportResult {
 }
 
 export function importCustomers(rows: Record<string, unknown>[]) {
-  return http.post<ImportResult>('/customers/import', { rows })
+  return http.post<ImportResult>('/customers/import/rows', { rows })
 }
 
 export function exportCustomersCsv(params: CustomerListParams) {
   return http.get<Blob>('/customers/export', { params, responseType: 'blob' })
+}
+
+export const customerTransferApi = {
+  importTemplate: (importType: ImportType, poolId?: string) =>
+    http.get<Blob>(poolId ? '/customers/pool/import/template' : '/customers/import/template', {
+      params: { importType, poolId },
+      responseType: 'blob',
+    }),
+  importPrecheck: (file: File, importType: ImportType, poolId?: string) =>
+    http.post<XlsxImportResult>(
+      poolId ? '/customers/pool/import/pre-check' : '/customers/import/pre-check',
+      createImportForm(file, importType, poolId),
+    ),
+  importXlsx: (file: File, importType: ImportType, poolId?: string) =>
+    http.post<XlsxImportResult>(
+      poolId ? '/customers/pool/import' : '/customers/import',
+      createImportForm(file, importType, poolId),
+    ),
+  exportAll: (params: CustomerListParams, data: ExportCreatePayload, poolId?: string) =>
+    http.post(poolId ? '/customers/pool/export/all' : '/customers/export/all', data, {
+      params: { ...params, poolId },
+    }),
+  exportSelected: (
+    params: CustomerListParams,
+    data: ExportCreatePayload & { ids: string[] },
+    poolId?: string,
+  ) =>
+    http.post(poolId ? '/customers/pool/export/select' : '/customers/export/select', data, {
+      params: { ...params, poolId },
+    }),
 }

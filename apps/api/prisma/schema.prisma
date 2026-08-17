@@ -1115,3 +1115,25 @@ model Attachment {
   @@index([tenantId, targetType, targetId])
   @@map("attachments")
 }
+
+// ============ 导出任务中心（R2：先同步生成文件，Wave 6 可替换为 BullMQ 执行器） ============
+
+model ExportTask {
+  id           String   @id @default(cuid())
+  tenantId     String
+  userId       String
+  module       String
+  fileName     String
+  filePath     String?
+  status       String   @default("PENDING")
+  rowCount     Int      @default(0)
+  fileSize     Int?
+  errorMessage String?
+  completedAt  DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, userId, createdAt])
+  @@index([expiresAt])
+  @@map("export_tasks")
+}
