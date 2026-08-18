@@ -282,7 +282,7 @@ onMounted(loadData)
         <el-switch :model-value="source.enabled" @change="toggleSource(source)" />
       </div>
       <el-alert
-        title="接入商业数据源（剑鱼/千里马等）需提供 API 账号，适配器框架已预留。"
+        title="当前仅内置演示数据源，可手动录入标讯并转线索。不接入商业标讯 API。"
         type="info"
         :closable="false"
         class="my-3"

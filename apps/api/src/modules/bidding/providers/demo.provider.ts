@@ -6,8 +6,7 @@ const BUYERS = ['市政务服务中心', '教育局', '人民医院', '高新区
 const TYPES = ['招标公告', '中标公告', '更正公告']
 
 /**
- * 演示数据源：本地生成模拟标讯，用于在没有商业数据源账号时验证
- * 订阅-抓取-去重-转线索全链路。接入真实数据源后可停用。
+ * 演示数据源：本地生成模拟标讯，用于验证订阅、抓取去重与转线索。
  */
 @Injectable()
 export class DemoBiddingProvider implements BiddingProvider {

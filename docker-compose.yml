@@ -4,16 +4,16 @@ services:
     container_name: mmx-crm-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: crm
-      POSTGRES_PASSWORD: crm
-      POSTGRES_DB: micromatrix_crm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: default
     ports:
-      - '5432:5432'
+      - '0.0.0.0:5432:5432'
     volumes:
       # postgres:18+ 镜像要求挂载到 /var/lib/postgresql（数据放在版本号子目录，便于 pg_upgrade）
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U crm -d micromatrix_crm']
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d default']
       interval: 5s
       timeout: 3s
       retries: 10

@@ -13,8 +13,7 @@ export interface BiddingItem {
 
 /**
  * 标讯数据源适配器接口。
- * 接入真实数据源（剑鱼/千里马等商业 API）时实现本接口并在 registry 注册即可，
- * 凭证由 BiddingSource.credentials 提供。
+ * 现网只注册 DemoProvider；商业标讯 API 不接入。
  */
 export interface BiddingProvider {
   /** 适配器标识（存储在 BiddingSource.provider） */
