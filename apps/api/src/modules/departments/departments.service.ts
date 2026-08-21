@@ -47,30 +47,55 @@ export class DepartmentsService {
   }
 
   async create(tenantId: string, dto: CreateDepartmentDto) {
-    if (dto.parentId) await this.ensureExists(tenantId, dto.parentId)
+    const name = dto.name.trim()
+    const parentId = dto.parentId || null
+    if (parentId) await this.ensureExists(tenantId, parentId)
+    await this.ensureNameFree(tenantId, name, parentId)
+    if (dto.leaderId) {
+      throw new BadRequestException('请先创建部门并将成员加入该部门，再设置部门主管')
+    }
     return this.prisma.department.create({
-      data: { tenantId, ...dto },
+      data: { tenantId, name, parentId, sort: dto.sort ?? 0 },
     })
   }
 
   async update(tenantId: string, id: string, dto: UpdateDepartmentDto) {
-    await this.ensureExists(tenantId, id)
-    if (dto.parentId) {
-      if (dto.parentId === id) throw new BadRequestException('不能将自身设为上级部门')
-      await this.ensureExists(tenantId, dto.parentId)
-      await this.ensureNotDescendant(tenantId, id, dto.parentId)
+    const current = await this.ensureExists(tenantId, id)
+    const parentId = dto.parentId === undefined ? current.parentId : dto.parentId || null
+    if (parentId) {
+      if (parentId === id) throw new BadRequestException('不能将自身设为上级部门')
+      await this.ensureExists(tenantId, parentId)
+      await this.ensureNotDescendant(tenantId, id, parentId)
     }
-    return this.prisma.department.update({ where: { id }, data: dto })
+    const name = dto.name?.trim() ?? current.name
+    if (name !== current.name || parentId !== current.parentId) {
+      await this.ensureNameFree(tenantId, name, parentId, id)
+    }
+    if (dto.leaderId) {
+      await this.ensureLeaderCandidate(tenantId, id, dto.leaderId)
+    }
+    return this.prisma.department.update({
+      where: { id },
+      data: {
+        ...(dto.name === undefined ? {} : { name }),
+        ...(dto.parentId === undefined ? {} : { parentId }),
+        ...(dto.leaderId === undefined ? {} : { leaderId: dto.leaderId || null }),
+        ...(dto.sort === undefined ? {} : { sort: dto.sort }),
+      },
+    })
   }
 
   async remove(tenantId: string, id: string) {
     const dept = await this.ensureExists(tenantId, id)
-    const [childCount, userCount] = await Promise.all([
+    if (!dept.parentId) throw new BadRequestException('组织根部门不可删除')
+    const [childCount, userCount, scopedRoleCount] = await Promise.all([
       this.prisma.department.count({ where: { tenantId, parentId: id } }),
       this.prisma.user.count({ where: { tenantId, deptId: id } }),
+      this.prisma.role.count({ where: { tenantId, scopeDeptIds: { has: id } } }),
     ])
     if (childCount > 0) throw new BadRequestException('请先删除下级部门')
     if (userCount > 0) throw new BadRequestException('部门下存在成员，无法删除')
+    if (scopedRoleCount > 0) throw new BadRequestException('部门仍被角色自定义数据范围使用，无法删除')
     await this.prisma.department.delete({ where: { id } })
     return { id, name: dept.name }
   }
@@ -79,6 +104,35 @@ export class DepartmentsService {
     const dept = await this.prisma.department.findFirst({ where: { id, tenantId } })
     if (!dept) throw new NotFoundException('部门不存在')
     return dept
+  }
+
+  private async ensureNameFree(
+    tenantId: string,
+    name: string,
+    parentId: string | null,
+    excludeId?: string,
+  ) {
+    const duplicate = await this.prisma.department.findFirst({
+      where: {
+        tenantId,
+        parentId,
+        name: { equals: name, mode: 'insensitive' },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    })
+    if (duplicate) throw new BadRequestException('同一上级部门下已存在同名部门')
+  }
+
+  private async ensureLeaderCandidate(tenantId: string, departmentId: string, leaderId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: leaderId, tenantId, status: 'ACTIVE' },
+      select: { deptId: true },
+    })
+    if (!user) throw new BadRequestException('部门主管不存在或已停用')
+    if (user.deptId !== departmentId) {
+      throw new BadRequestException('部门主管必须是当前部门的直属成员')
+    }
   }
 
   /** 防止把部门挂到自己的子孙节点下形成环 */

@@ -86,8 +86,11 @@ flowchart LR
 ### ADR-2 数据范围：ownerId + deptId 双列 + 统一注入
 
 - 五级范围：全部 / 本部门及下级 / 本部门 / 仅本人 / 自定义部门；任何范围下本人负责的数据始终可见
+- 自定义部门保存所选部门根 ID，查询和单资源鉴权均展开为“所选部门 + 全部下级部门”，不得只匹配直接部门
 - 业务表约定 `ownerId`（负责人）与 `deptId`（负责人当时部门，负责人变更时同步），`DataScopeService.scopeFilter(user)` 返回 where 片段由各服务合并
 - 池/公海（inPool/inSea）内数据对全员开放，不走数据范围
+- 角色保存时只接受 shared canonical 权限树中的权限码；动作权限自动补齐菜单/READ 祖先，非超级管理员不得授予超过自身的功能或数据范围
+- 当前 `User.roleId` 仍为单角色；Cordys 多角色权限/范围合并必须通过独立 schema + auth migration 实现，不在业务 Service 内临时模拟
 
 ### ADR-3 元数据引擎：固定核心列 + customData JSONB
 

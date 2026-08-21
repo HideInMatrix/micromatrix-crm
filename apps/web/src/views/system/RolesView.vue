@@ -2,13 +2,18 @@
 import {
   DATA_SCOPE_OPTIONS,
   PERMISSION_TREE,
+  permissionAncestorMap,
   type DepartmentVO,
+  type PermissionNode,
   type RoleVO,
 } from '@micromatrix/shared'
 import type { ElTree, FormInstance, FormRules } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { deptApi, roleApi, type RoleForm } from '@/api/system'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
 
 const loading = ref(false)
 const roles = ref<RoleVO[]>([])
@@ -29,6 +34,25 @@ const form = reactive<RoleForm>({
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
+}
+
+const permissionAncestors = permissionAncestorMap()
+
+function descendantCodes(node: PermissionNode): string[] {
+  return (node.children ?? []).flatMap((child) => [child.code, ...descendantCodes(child)])
+}
+
+function handlePermissionCheck(
+  node: PermissionNode,
+  state: { checkedKeys: Array<string | number> },
+) {
+  const checked = new Set(state.checkedKeys.map(String))
+  if (checked.has(node.code)) {
+    permissionAncestors.get(node.code)?.forEach((code) => checked.add(code))
+  } else {
+    descendantCodes(node).forEach((code) => checked.delete(code))
+  }
+  permTreeRef.value?.setCheckedKeys([...checked])
 }
 
 async function loadData() {
@@ -65,6 +89,10 @@ function openEdit(row: RoleVO) {
 async function handleSave() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  if (form.dataScope === 'CUSTOM' && (!form.scopeDeptIds || form.scopeDeptIds.length === 0)) {
+    ElMessage.warning('自定义数据范围至少选择一个部门')
+    return
+  }
 
   // 勾选的叶子 + 半选的父节点（保证父级菜单可见）
   const checked = (permTreeRef.value?.getCheckedKeys() ?? []) as string[]
@@ -117,7 +145,9 @@ onMounted(loadData)
       <span class="text-sm text-[var(--el-text-color-secondary)]">
         角色决定成员的菜单/操作权限与数据可见范围
       </span>
-      <el-button type="primary" @click="openCreate">新建角色</el-button>
+      <el-button v-if="auth.hasPerm('system:role:create')" type="primary" @click="openCreate">
+        新建角色
+      </el-button>
     </div>
 
     <el-table v-loading="loading" :data="roles" stripe>
@@ -136,10 +166,17 @@ onMounted(loadData)
       </el-table-column>
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" :disabled="row.isSystem" @click="openEdit(row as RoleVO)">
+          <el-button
+            v-if="auth.hasPerm('system:role:update')"
+            link
+            type="primary"
+            :disabled="row.isSystem"
+            @click="openEdit(row as RoleVO)"
+          >
             编辑
           </el-button>
           <el-button
+            v-if="auth.hasPerm('system:role:delete')"
             link
             type="danger"
             :disabled="row.isSystem"
@@ -182,6 +219,9 @@ onMounted(loadData)
             check-strictly
             class="w-full"
           />
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            所选部门及其全部下级部门的数据均可见；本人负责的数据始终可见。
+          </div>
         </el-form-item>
         <el-form-item label="功能权限">
           <div
@@ -193,8 +233,10 @@ onMounted(loadData)
               :props="{ label: 'label', children: 'children' }"
               node-key="code"
               show-checkbox
+              check-strictly
               default-expand-all
               :default-checked-keys="form.permissions"
+              @check="handlePermissionCheck"
             />
           </div>
         </el-form-item>

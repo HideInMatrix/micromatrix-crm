@@ -455,7 +455,80 @@ R5 客户 360 复刻（2026-08-17）：
 - 资源级权限剩余扩展点。
 - 字段/对象级特殊权限只建立可扩展契约；完整字段脱敏仍归 Wave 5。
 
-状态：`⏳ PLANNED`
+#### R6 Cordys 源码事实（2026-08-21 已确认）
+
+后端来源：
+
+- `system/controller/DepartmentController.java`
+- `system/service/DepartmentService.java`
+- `system/controller/OrganizationUserController.java`
+- `system/service/OrganizationUserService.java`
+- `system/controller/RoleController.java`
+- `system/service/RoleService.java`
+- `common/service/DataScopeService.java`
+- `system/domain/Department* / Role* / UserRole`
+- `system/mapper/ExtDepartmentMapper.xml / ExtOrganizationUserMapper.xml / ExtRoleMapper.xml`
+
+PC 前端来源：
+
+- `views/system/org/index.vue`
+- `views/system/org/components/moduleTree.vue / orgTable.vue / setDepHead.vue`
+- `views/system/role/index.vue`
+- `views/system/role/components/permissionTab.vue / memberTab.vue`
+
+已确认规则：
+
+1. 部门在同一父节点下名称唯一；组织根节点不可删除。部门支持新增子部门、重命名、设置主管、删除校验与拖拽排序/换父级。
+2. 部门主管是独立的一对一部门配置。Cordys 设置主管时的成员选择器只允许选择**当前部门直属成员**；部门主管用于审批 `DEPT_LEADER` 解析，不等同于成员的直属上级 `supervisorId`。
+3. 删除部门前 Cordys 先拒绝组织根节点，再检查所选部门是否仍有成员；移动部门时仍需重新执行目标父节点下的同名校验。
+4. Cordys 角色数据范围为 `ALL / DEPT_AND_CHILD / SELF / DEPT_CUSTOM`。其中 `DEPT_CUSTOM` 选择的是部门根节点，查询时会展开为**所选部门及其全部下级部门**，不是只匹配所选部门本身。
+5. Cordys 的权限配置来自服务端 canonical permission definition；角色只保存已启用的权限 ID。前端勾选任一写操作时会自动带上对应 READ 权限，取消 READ 时会取消同一资源的其它操作权限。
+6. 内置角色不可删除；组织管理员权限配置只读。普通角色名称在同一组织内唯一。
+7. Cordys 成员创建/更新会校验邮箱、电话、部门和角色关系；成员详情支持部门、直属上级和多个角色。停用成员会退出会话并刷新其待办审批任务。
+8. Cordys 支持一个成员关联多个角色，数据范围按“当前业务权限 + 具备该权限的角色范围”合并：任一角色为 ALL 即全部；否则合并 DEPT_AND_CHILD 与 DEPT_CUSTOM；只有 SELF 时仅本人。
+9. MicroMatrix 当前架构是 `User.roleId` 单角色，`AuthUser` 携带一组权限和一个数据范围。本 R6 不在没有迁移/回滚方案的情况下临时引入多角色表；先完整收口单角色引用、权限树和数据范围。多角色叠加若后续纳入，应作为独立 schema/auth migration，不在业务 Service 中模拟。
+
+#### R6 MicroMatrix 需求与设计
+
+需求使用可验收口径：
+
+- 当创建或移动部门时，系统必须拒绝同一父部门下的重名，并阻止自身/子孙循环。
+- 当设置部门主管时，系统必须只接受当前租户、启用状态且直属于该部门的成员；成员移出部门或被停用时，系统必须清理其原主管关系。
+- 当角色选择 `CUSTOM` 时，系统必须要求至少一个有效租户内部门，并在所有列表查询与单资源权限判断中包含所选部门的全部下级部门。
+- 当角色保存权限时，系统必须拒绝未知权限码，去重权限，并为动作权限补齐其祖先菜单权限；非 `CUSTOM` 角色不得遗留 `scopeDeptIds`。
+- 当非 `*` 用户创建或修改角色时，系统不得允许其授予自己不具备的权限或比自身更宽的数据范围。
+- 当访问成员/角色管理 API 时，系统必须分别执行 READ 与动作权限；登录可用的成员/角色轻量 options 接口不得返回权限和数据范围详情。
+- 当成员创建或更新部门、角色、直属上级时，系统必须验证所有引用属于当前租户，并阻止直属上级循环。
+- 当 PC 页面渲染组织、成员、角色操作时，按钮显隐必须与后端动作权限一致；CUSTOM 选择器必须明确提示“包含下级部门”。
+
+权限码保持现有菜单兼容，同时增加动作码：
+
+```text
+system:dept                       组织架构读取/菜单
+system:dept:create|update|delete
+system:member                     成员读取/菜单
+system:member:create|update|status|resetPassword|delete
+system:role                       角色读取/菜单
+system:role:create|update|delete
+```
+
+`menu:system` 继续作为系统管理一级菜单；`system:dept/member/role` 继续作为子页面入口和 READ 权限，避免破坏既有路由。
+
+#### R6 验收项
+
+- [x] 部门同级重名、循环移动、跨租户父部门均由 Service 拒绝；组织根部门显式不可删除
+- [x] 部门主管只能选择当前部门启用成员，成员移出/停用时自动清理
+- [x] Member role/dept/leader 引用租户隔离与直属上级循环保护
+- [x] Role permissions canonical 校验、祖先菜单补齐与越权授予保护
+- [x] CUSTOM 部门必选、租户校验、下级部门展开同时覆盖 list filter 与单资源判断
+- [x] 成员/角色管理 READ 与 create/update/delete/status/resetPassword 动作权限拆分
+- [x] 角色轻量 options 供审批、成员表单等业务页面使用，不暴露完整权限配置
+- [x] PC Departments/Members/Roles 按动作权限渲染，CUSTOM 文案与校验对齐
+- [x] R6 smoke 覆盖根部门、未知权限、CUSTOM 下级可见、引用隔离与 options 越权边界
+- [x] Prisma/build/typecheck/lint/smoke 与浏览器手工流程全绿：7/7 规则测试、180/180 smoke
+- [x] parity/baseline/api/README/当前计划同步并创建 R6 独立本地提交
+
+状态：`✅ COMPLETE / 2026-08-21 已通过自动化、全链路与 PC 浏览器验收`
 
 ## 3. Wave 1 最终完成门槛
 
@@ -472,3 +545,5 @@ R1 - R6 功能与 UI 完成
 + api / parity / baseline / 当前执行计划文档同步
 + 本地 Git 阶段提交完成
 ```
+
+结论：`2026-08-21 已满足全部门槛，Wave 1 R1-R6 正式收口。`

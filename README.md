@@ -69,7 +69,8 @@ pnpm dev
 ```
 
 - Web 管理端 http://localhost:5173 · 移动端 http://localhost:5174 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（需 API 已启动）
+- 全链路冒烟：`pnpm smoke`（当前 **180 条断言**，需 API 已启动）
+- 回收规则单测：`pnpm --filter @micromatrix/api test:rules`（当前 **7 条**）
 
 ### 演示账号
 
@@ -95,5 +96,7 @@ pnpm dev
 - 功能一致性总表：[`docs/cordys-parity.md`](./docs/cordys-parity.md)
 - 当前分阶段执行计划：[`docs/cordys-wave1-remainder-plan.md`](./docs/cordys-wave1-remainder-plan.md)
 - 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
+
+Wave 1 的 R1-R6 已于 2026-08-21 完成并通过 build/typecheck/lint、7 条规则单测、180 条全链路 smoke 与 PC 页面验收。成员多角色叠加仍作为后续独立 schema/auth migration，不在 R6 中模拟。
 
 明确不迁移：Cordys 自身的产品授权/版本区分机制、DataEase、AI/MCP 商业扩展、商业标讯 API。

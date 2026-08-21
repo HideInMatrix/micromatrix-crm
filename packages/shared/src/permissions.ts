@@ -118,9 +118,35 @@ export const PERMISSION_TREE: PermissionNode[] = [
     code: 'menu:system',
     label: '系统管理',
     children: [
-      { code: 'system:dept', label: '组织架构' },
-      { code: 'system:member', label: '成员管理' },
-      { code: 'system:role', label: '角色权限' },
+      {
+        code: 'system:dept',
+        label: '组织架构',
+        children: [
+          { code: 'system:dept:create', label: '新建部门' },
+          { code: 'system:dept:update', label: '编辑/排序/设置主管' },
+          { code: 'system:dept:delete', label: '删除部门' },
+        ],
+      },
+      {
+        code: 'system:member',
+        label: '成员管理',
+        children: [
+          { code: 'system:member:create', label: '新建成员' },
+          { code: 'system:member:update', label: '编辑成员' },
+          { code: 'system:member:status', label: '启用/禁用' },
+          { code: 'system:member:resetPassword', label: '重置密码' },
+          { code: 'system:member:delete', label: '删除成员' },
+        ],
+      },
+      {
+        code: 'system:role',
+        label: '角色权限',
+        children: [
+          { code: 'system:role:create', label: '新建角色' },
+          { code: 'system:role:update', label: '编辑角色' },
+          { code: 'system:role:delete', label: '删除角色' },
+        ],
+      },
       { code: 'system:module', label: '模块设置' },
       { code: 'system:pool', label: '公海/线索池设置' },
       { code: 'system:log', label: '系统日志' },
@@ -132,6 +158,20 @@ export const PERMISSION_TREE: PermissionNode[] = [
 /** 展平权限树得到全部权限码 */
 export function flattenPermissionCodes(nodes: PermissionNode[] = PERMISSION_TREE): string[] {
   return nodes.flatMap((n) => [n.code, ...flattenPermissionCodes(n.children ?? [])])
+}
+
+/** 返回权限树中每个权限码的祖先码，用于动作权限自动补齐菜单/读取权限。 */
+export function permissionAncestorMap(
+  nodes: PermissionNode[] = PERMISSION_TREE,
+  ancestors: string[] = [],
+): Map<string, string[]> {
+  const result = new Map<string, string[]>()
+  for (const node of nodes) {
+    result.set(node.code, ancestors)
+    const children = permissionAncestorMap(node.children ?? [], [...ancestors, node.code])
+    children.forEach((value, key) => result.set(key, value))
+  }
+  return result
 }
 
 /** 权限判断：'*' 拥有全部权限 */

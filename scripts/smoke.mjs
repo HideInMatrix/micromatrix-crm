@@ -88,6 +88,7 @@ const admin = await login('admin@demo.com', 'admin123')
 const manager = await login('zhangwei@demo.com', 'demo123')
 const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
+const stamp = Date.now().toString(36)
 
 // 2. 数据范围
 const [adminCustomers, managerCustomers, salesCustomers] = await Promise.all([
@@ -123,12 +124,134 @@ check('客户 SELF 视图只返回当前负责人数据', Number.isInteger(sales
 const deniedSalesDeptView = await request('GET', '/customers?view=DEPARTMENT&pageSize=20', sales.headers)
 check('客户 DEPARTMENT 视图禁止 SELF 角色越权调用', deniedSalesDeptView.status === 403)
 
+// R6 组织、角色与自定义数据范围收口
+const departmentTree = await get('/departments/tree', admin.headers)
+const flattenDepartments = (nodes) =>
+  nodes.flatMap((node) => [node, ...flattenDepartments(node.children ?? [])])
+const departments = flattenDepartments(departmentTree)
+const salesDepartment = departments.find((department) => department.name === '销售部')
+check('R6 部门树包含销售部', Boolean(salesDepartment))
+const rootDepartment = departments.find((department) => !department.parentId)
+const rootDeleteRejected = await request(
+  'DELETE',
+  `/departments/${rootDepartment.id}`,
+  admin.headers,
+)
+check('R6 组织根部门不可删除', rootDeleteRejected.status === 400)
+
+const tempDepartment = await post('/departments', admin.headers, {
+  name: `R6临时部门-${stamp}`,
+  parentId: salesDepartment.id,
+})
+check('R6 可在销售部下创建临时部门', Boolean(tempDepartment.id))
+const duplicateDepartment = await request('POST', '/departments', admin.headers, {
+  name: tempDepartment.name,
+  parentId: salesDepartment.id,
+})
+check('R6 同一父部门下禁止重名', duplicateDepartment.status === 400)
+
+const unknownPermissionRole = await request('POST', '/roles', admin.headers, {
+  name: `R6未知权限-${stamp}`,
+  permissions: ['unknown:permission'],
+  dataScope: 'SELF',
+})
+check('R6 角色拒绝未知权限码', unknownPermissionRole.status === 400)
+
+const customRole = await post('/roles', admin.headers, {
+  name: `R6自定义范围-${stamp}`,
+  permissions: ['customer:update'],
+  dataScope: 'CUSTOM',
+  scopeDeptIds: [salesDepartment.id],
+  remark: 'smoke temporary role',
+})
+check(
+  'R6 动作权限自动补齐祖先菜单权限',
+  customRole.permissions.includes('customer:update') && customRole.permissions.includes('menu:customer'),
+)
+
+const invalidMemberDepartment = await request('POST', '/members', admin.headers, {
+  email: `invalid-${stamp}@smoke.local`,
+  name: 'R6 无效部门成员',
+  password: 'smoke123',
+  deptId: `missing-${stamp}`,
+  roleId: customRole.id,
+})
+check('R6 成员拒绝无效部门引用', invalidMemberDepartment.status === 400)
+
+const tempMember = await post('/members', admin.headers, {
+  email: `r6-${stamp}@smoke.local`,
+  name: `R6成员-${stamp}`,
+  password: 'smoke123',
+  deptId: tempDepartment.id,
+  roleId: customRole.id,
+})
+check('R6 成员引用有效租户内部门与角色', Boolean(tempMember.id))
+
+const invalidLeader = await request('PATCH', `/departments/${tempDepartment.id}`, admin.headers, {
+  leaderId: manager.user.id,
+})
+check('R6 部门主管必须是当前部门直属成员', invalidLeader.status === 400)
+const validLeaderResponse = await request(
+  'PATCH',
+  `/departments/${tempDepartment.id}`,
+  admin.headers,
+  { leaderId: tempMember.id },
+)
+const validLeader = await validLeaderResponse.json()
+check('R6 当前部门启用成员可设为主管', validLeader.leaderId === tempMember.id)
+
+const selfLeader = await request('PATCH', `/members/${tempMember.id}`, admin.headers, {
+  leaderId: tempMember.id,
+})
+check('R6 成员直属上级不能是自己', selfLeader.status === 400)
+
+const customUser = await login(`r6-${stamp}@smoke.local`, 'smoke123')
+const deniedRoleDetails = await request('GET', '/roles', customUser.headers)
+const roleOptions = await get('/roles/options', customUser.headers)
+check('R6 完整角色配置需要角色读取权限', deniedRoleDetails.status === 403)
+check(
+  'R6 轻量角色 options 不暴露权限配置',
+  Array.isArray(roleOptions) &&
+    roleOptions.some((role) => role.id === customRole.id && !('permissions' in role)),
+)
+
+const customScopeCustomer = await post('/customers', admin.headers, {
+  name: `R6下级范围客户-${stamp}`,
+  ownerId: sales.user.id,
+})
+const customScopeCustomers = await get('/customers?pageSize=100', customUser.headers)
+const customScopeCustomerDetail = await get(`/customers/${customScopeCustomer.id}`, customUser.headers)
+check(
+  'R6 CUSTOM 所选部门包含全部下级部门（列表）',
+  customScopeCustomers.items.some((customer) => customer.id === customScopeCustomer.id),
+)
+check(
+  'R6 CUSTOM 所选部门包含全部下级部门（单资源）',
+  customScopeCustomerDetail.id === customScopeCustomer.id,
+)
+
+await request('DELETE', `/customers/${customScopeCustomer.id}`, admin.headers)
+const deletedTempMember = await request('DELETE', `/members/${tempMember.id}`, admin.headers)
+check('R6 无业务引用成员可安全删除', deletedTempMember.ok)
+const refreshedDepartments = flattenDepartments(await get('/departments/tree', admin.headers))
+check(
+  'R6 删除/停用主管成员会清理部门主管关系',
+  refreshedDepartments.find((department) => department.id === tempDepartment.id)?.leaderId === null,
+)
+const deletedTempDepartment = await request(
+  'DELETE',
+  `/departments/${tempDepartment.id}`,
+  admin.headers,
+)
+check('R6 临时部门可清理', deletedTempDepartment.ok)
+const deletedCustomRole = await request('DELETE', `/roles/${customRole.id}`, admin.headers)
+check('R6 临时角色可清理', deletedCustomRole.ok)
+
 // 3. 元数据引擎
 const fields = await get('/metadata/customer/fields', admin.headers)
 check('客户系统字段初始化', Array.isArray(fields) && fields.some((f) => f.key === 'name'))
 
 // 4. 线索全链路
-const stamp = Date.now().toString(36)
 const nameField = fields.find((field) => field.key === 'name')
 const hideableField = fields.find((field) => field.key !== 'name' && !field.hidden)
 if (nameField && hideableField) {

@@ -26,7 +26,10 @@ export class DataScopeService {
         return this.ownerOrDepts(user, deptIds)
       }
       case 'CUSTOM':
-        return this.ownerOrDepts(user, user.scopeDeptIds)
+        return this.ownerOrDepts(
+          user,
+          await this.collectManyWithDescendants(user.tenantId, user.scopeDeptIds),
+        )
       default:
         return { ownerId: user.id }
     }
@@ -51,7 +54,10 @@ export class DataScopeService {
         return deptIds.includes(deptId)
       }
       case 'CUSTOM':
-        return !!deptId && user.scopeDeptIds.includes(deptId)
+        if (!deptId) return false
+        return (
+          await this.collectManyWithDescendants(user.tenantId, user.scopeDeptIds)
+        ).includes(deptId)
       default:
         return false
     }
@@ -59,6 +65,12 @@ export class DataScopeService {
 
   /** 指定部门及其全部下级部门的 id 集合（含自身） */
   async collectWithDescendants(tenantId: string, rootId: string): Promise<string[]> {
+    return this.collectManyWithDescendants(tenantId, [rootId])
+  }
+
+  /** Cordys DEPT_CUSTOM 语义：每个已选部门都包含其全部下级部门。 */
+  async collectManyWithDescendants(tenantId: string, rootIds: string[]): Promise<string[]> {
+    if (rootIds.length === 0) return []
     const all = await this.prisma.department.findMany({
       where: { tenantId },
       select: { id: true, parentId: true },
@@ -69,14 +81,16 @@ export class DataScopeService {
       list.push(dept.id)
       childrenMap.set(dept.parentId, list)
     }
-    const result: string[] = []
-    const queue = [rootId]
+    const validIds = new Set(all.map((department) => department.id))
+    const result = new Set<string>()
+    const queue = [...new Set(rootIds.filter((id) => validIds.has(id)))]
     while (queue.length > 0) {
       const current = queue.shift()!
-      result.push(current)
+      if (result.has(current)) continue
+      result.add(current)
       queue.push(...(childrenMap.get(current) ?? []))
     }
-    return result
+    return [...result]
   }
 
   private ownerOrDepts(user: AuthUser, deptIds: string[]): Record<string, unknown> {

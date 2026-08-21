@@ -300,7 +300,7 @@ MicroMatrix 本轮新增：
 - 普通与池/公海导出全部/选中 + 字段顺序选择
 - ExportTask 创建者隔离、下载/清理与 24h 过期契约
 
-## 10. Wave 1 尚未完成项
+## 10. Wave 1 收口后的平台级差距
 
 按优先级继续：
 
@@ -319,8 +319,10 @@ MicroMatrix 本轮新增：
 
 ## 11. 验收状态
 
-当前属于 **Wave 0 公共底座已落地 + W1.1-W1.7 已验收 + R1/R2 已验收 + 当前执行计划仍有 R3-R6**，不能标记整个 Wave 1 对齐阶段完成。
+2026-08-21，**Wave 0 公共底座 + W1.1-W1.7 + R1-R6 已全部验收**，Wave 1 对齐阶段正式收口。R3 完成独立联系人，R4 完成线索转换三路径，R5 完成 PC/Mobile 客户 360，R6 完成部门主管、成员引用安全、canonical 权限树和 CUSTOM 下级部门数据范围。
 
-已找到用户真实 Node/pnpm 环境（Node 24.5.0 / pnpm 10.30.3）并实际完成验证。当前 Prisma Client 已重新 generate，R2 `export_tasks` migration 已应用，数据库共 15 个 migration。
+真实验收环境为 Node 24.5.0 / pnpm 10.30.3。Prisma Client 已与 schema 同步，仓库当前共 18 个 migration。
 
-`scripts/smoke.mjs` 当前包含 **109 条实际断言**，除 R1 覆盖外，R2 新增真实 xlsx 模板/预检/导入新建/唯一ID更新、Pool/Sea owner 排除与归属、字段顺序导出、ExportTask 创建者隔离与池导出权限测试；`resource-recycle-condition-evaluator.test.ts` 另有 7 条纯规则测试。
+最终门槛：`build`、`typecheck`、`lint` 全绿；`resource-recycle-condition-evaluator.test.ts` **7/7**；`scripts/smoke.mjs` **180/180**。R6 另使用真实 Vue3 页面登录验收 Departments/Members/Roles，确认根部门保护、当前账号操作边界、动作按钮、CUSTOM 提示与控制台无错误。
+
+已知差异：MicroMatrix 当前仍是 `User.roleId` 单角色；Cordys 多角色权限/数据范围叠加必须作为后续独立 schema/auth migration，不影响 R6 已约定的单角色验收范围。

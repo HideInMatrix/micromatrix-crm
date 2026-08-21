@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import type { DepartmentVO, MemberVO, RoleVO } from '@micromatrix/shared'
+import type { DepartmentVO, MemberVO } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
-import { deptApi, memberApi, roleApi, type MemberForm, type MemberOption } from '@/api/system'
+import {
+  deptApi,
+  memberApi,
+  roleApi,
+  type MemberForm,
+  type MemberOption,
+  type RoleOption,
+} from '@/api/system'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
 
 const loading = ref(false)
 const items = ref<MemberVO[]>([])
 const total = ref(0)
-const query = reactive({ page: 1, pageSize: 10, keyword: '', deptId: '' })
+const query = reactive({ page: 1, pageSize: 10, keyword: '', deptId: '', status: '' })
 
 const deptTree = ref<DepartmentVO[]>([])
-const roles = ref<RoleVO[]>([])
+const roles = ref<RoleOption[]>([])
 const memberOptions = ref<MemberOption[]>([])
 
 const dialogVisible = ref(false)
@@ -22,9 +32,9 @@ const form = reactive<MemberForm>({
   email: '',
   name: '',
   password: '',
-  roleId: undefined,
-  deptId: undefined,
-  leaderId: undefined,
+  roleId: null,
+  deptId: null,
+  leaderId: null,
   position: '',
   phone: '',
 })
@@ -36,6 +46,7 @@ const rules: FormRules = {
   ],
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   password: [{ required: true, min: 6, message: '密码至少 6 位', trigger: 'blur' }],
+  deptId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
 }
 
 async function loadData() {
@@ -46,6 +57,7 @@ async function loadData() {
       pageSize: query.pageSize,
       keyword: query.keyword.trim() || undefined,
       deptId: query.deptId || undefined,
+      status: query.status || undefined,
     })
     items.value = data.items
     total.value = data.total
@@ -59,7 +71,7 @@ async function loadData() {
 async function loadRefs() {
   const [{ data: tree }, { data: roleList }, { data: options }] = await Promise.all([
     deptApi.tree(),
-    roleApi.list(),
+    roleApi.options(),
     memberApi.options(),
   ])
   deptTree.value = tree
@@ -79,9 +91,9 @@ function openCreate() {
     email: '',
     name: '',
     password: '',
-    roleId: undefined,
-    deptId: query.deptId || undefined,
-    leaderId: undefined,
+    roleId: null,
+    deptId: query.deptId || null,
+    leaderId: null,
     position: '',
     phone: '',
   })
@@ -94,9 +106,9 @@ function openEdit(row: MemberVO) {
     email: row.email,
     name: row.name,
     password: undefined,
-    roleId: row.roleId ?? undefined,
-    deptId: row.deptId ?? undefined,
-    leaderId: row.leaderId ?? undefined,
+    roleId: row.roleId,
+    deptId: row.deptId,
+    leaderId: row.leaderId,
     position: row.position ?? '',
     phone: row.phone ?? '',
   })
@@ -163,6 +175,23 @@ async function handleToggleStatus(row: MemberVO) {
   }
 }
 
+async function handleDelete(row: MemberVO) {
+  const confirmed = await ElMessageBox.confirm(
+    `确定删除成员「${row.name}」吗？仅无业务引用的成员可以删除。`,
+    '删除确认',
+    { type: 'warning' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    await memberApi.remove(row.id)
+    ElMessage.success('成员已删除')
+    loadData()
+    loadRefs()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
 onMounted(() => {
   loadData()
   loadRefs()
@@ -188,15 +217,29 @@ onMounted(() => {
 
     <el-card shadow="never" class="flex-1 min-w-0">
       <div class="flex-between flex-wrap gap-3 mb-4">
-        <el-input
-          v-model="query.keyword"
-          placeholder="搜索姓名 / 邮箱 / 电话"
-          clearable
-          class="!w-64"
-          @keyup.enter="query.page = 1; loadData()"
-          @clear="query.page = 1; loadData()"
-        />
-        <el-button type="primary" @click="openCreate">新建成员</el-button>
+        <div class="flex gap-2">
+          <el-input
+            v-model="query.keyword"
+            placeholder="搜索姓名 / 邮箱 / 电话"
+            clearable
+            class="!w-64"
+            @keyup.enter="query.page = 1; loadData()"
+            @clear="query.page = 1; loadData()"
+          />
+          <el-select
+            v-model="query.status"
+            clearable
+            placeholder="全部状态"
+            class="!w-32"
+            @change="query.page = 1; loadData()"
+          >
+            <el-option label="启用" value="ACTIVE" />
+            <el-option label="禁用" value="DISABLED" />
+          </el-select>
+        </div>
+        <el-button v-if="auth.hasPerm('system:member:create')" type="primary" @click="openCreate">
+          新建成员
+        </el-button>
       </div>
 
       <el-table v-loading="loading" :data="items" stripe>
@@ -221,16 +264,38 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row as MemberVO)">编辑</el-button>
-            <el-button link @click="handleResetPassword(row as MemberVO)">重置密码</el-button>
             <el-button
+              v-if="auth.hasPerm('system:member:update')"
+              link
+              type="primary"
+              @click="openEdit(row as MemberVO)"
+            >
+              编辑
+            </el-button>
+            <el-button
+              v-if="auth.hasPerm('system:member:resetPassword')"
+              link
+              @click="handleResetPassword(row as MemberVO)"
+            >
+              重置密码
+            </el-button>
+            <el-button
+              v-if="row.id !== auth.user?.id && auth.hasPerm('system:member:status')"
               link
               :type="row.status === 'ACTIVE' ? 'danger' : 'success'"
               @click="handleToggleStatus(row as MemberVO)"
             >
               {{ row.status === 'ACTIVE' ? '禁用' : '启用' }}
+            </el-button>
+            <el-button
+              v-if="row.id !== auth.user?.id && auth.hasPerm('system:member:delete')"
+              link
+              type="danger"
+              @click="handleDelete(row as MemberVO)"
+            >
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -263,7 +328,7 @@ onMounted(() => {
         <el-form-item v-if="!editingId" label="初始密码" prop="password">
           <el-input v-model="form.password" type="password" show-password />
         </el-form-item>
-        <el-form-item label="部门">
+        <el-form-item label="部门" prop="deptId">
           <el-tree-select
             v-model="form.deptId"
             :data="deptTree"

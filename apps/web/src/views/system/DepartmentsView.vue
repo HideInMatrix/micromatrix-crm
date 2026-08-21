@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { DepartmentVO } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { deptApi, memberApi, type DepartmentForm, type MemberOption } from '@/api/system'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
 
 const loading = ref(false)
 const tree = ref<DepartmentVO[]>([])
@@ -13,7 +16,13 @@ const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
-const form = reactive<DepartmentForm>({ name: '', parentId: undefined, leaderId: undefined, sort: 0 })
+const form = reactive<DepartmentForm>({ name: '', parentId: null, leaderId: null, sort: 0 })
+
+const leaderOptions = computed(() =>
+  editingId.value
+    ? memberOptions.value.filter((member) => member.deptId === editingId.value)
+    : [],
+)
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
@@ -37,7 +46,7 @@ async function loadData() {
 
 function openCreate(parentId?: string) {
   editingId.value = null
-  Object.assign(form, { name: '', parentId, leaderId: undefined, sort: 0 })
+  Object.assign(form, { name: '', parentId: parentId ?? null, leaderId: null, sort: 0 })
   dialogVisible.value = true
 }
 
@@ -45,8 +54,8 @@ function openEdit(row: DepartmentVO) {
   editingId.value = row.id
   Object.assign(form, {
     name: row.name,
-    parentId: row.parentId ?? undefined,
-    leaderId: row.leaderId ?? undefined,
+    parentId: row.parentId,
+    leaderId: row.leaderId,
     sort: row.sort,
   })
   dialogVisible.value = true
@@ -96,7 +105,9 @@ onMounted(loadData)
       <span class="text-sm text-[var(--el-text-color-secondary)]">
         组织架构树，支持多级部门
       </span>
-      <el-button type="primary" @click="openCreate()">新建部门</el-button>
+      <el-button v-if="auth.hasPerm('system:dept:create')" type="primary" @click="openCreate()">
+        新建部门
+      </el-button>
     </div>
 
     <el-table
@@ -114,9 +125,30 @@ onMounted(loadData)
       <el-table-column prop="sort" label="排序" width="80" />
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openCreate(row.id)">添加下级</el-button>
-          <el-button link type="primary" @click="openEdit(row as DepartmentVO)">编辑</el-button>
-          <el-button link type="danger" @click="handleDelete(row as DepartmentVO)">删除</el-button>
+          <el-button
+            v-if="auth.hasPerm('system:dept:create')"
+            link
+            type="primary"
+            @click="openCreate(row.id)"
+          >
+            添加下级
+          </el-button>
+          <el-button
+            v-if="auth.hasPerm('system:dept:update')"
+            link
+            type="primary"
+            @click="openEdit(row as DepartmentVO)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            v-if="row.parentId && auth.hasPerm('system:dept:delete')"
+            link
+            type="danger"
+            @click="handleDelete(row as DepartmentVO)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -143,10 +175,19 @@ onMounted(loadData)
             class="w-full"
           />
         </el-form-item>
-        <el-form-item label="部门主管">
-          <el-select v-model="form.leaderId" clearable filterable placeholder="选择主管" class="w-full">
-            <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
+        <el-form-item v-if="editingId" label="部门主管">
+          <el-select
+            v-model="form.leaderId"
+            clearable
+            filterable
+            placeholder="仅可选择当前部门直属成员"
+            class="w-full"
+          >
+            <el-option v-for="m in leaderOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            主管用于部门主管审批；成员移出本部门或被停用后会自动清除。
+          </div>
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="form.sort" :min="0" />

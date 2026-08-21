@@ -6,19 +6,18 @@ import {
   type ApprovalFlowVO,
   type ApprovalModule,
   type ApprovalNodeConfig,
-  type RoleVO,
 } from '@micromatrix/shared'
 import { onMounted, reactive, ref } from 'vue'
 import { approvalApi } from '@/api/approvals'
 import { extractErrorMessage } from '@/api/http'
-import { memberApi, roleApi, type MemberOption } from '@/api/system'
+import { memberApi, roleApi, type MemberOption, type RoleOption } from '@/api/system'
 
 const MODULES = Object.keys(APPROVAL_MODULE_LABELS) as ApprovalModule[]
 
 const activeModule = ref<ApprovalModule>('contract')
 const flows = ref<ApprovalFlowVO[]>([])
 const members = ref<MemberOption[]>([])
-const roles = ref<RoleVO[]>([])
+const roles = ref<RoleOption[]>([])
 const loading = ref(false)
 const saving = ref(false)
 
@@ -48,7 +47,7 @@ async function loadData() {
     const [{ data: flowList }, { data: memberList }, { data: roleList }] = await Promise.all([
       approvalApi.flows(),
       memberApi.options(),
-      roleApi.list(),
+      roleApi.options(),
     ])
     flows.value = flowList
     members.value = memberList

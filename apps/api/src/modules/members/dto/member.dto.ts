@@ -29,17 +29,17 @@ export class CreateMemberDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  roleId?: string
+  roleId?: string | null
 
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  deptId?: string
+  deptId?: string | null
 
   @ApiPropertyOptional({ description: '直属上级' })
   @IsString()
   @IsOptional()
-  leaderId?: string
+  leaderId?: string | null
 
   @ApiPropertyOptional()
   @IsString()

@@ -11,12 +11,12 @@ export class CreateDepartmentDto {
   @ApiPropertyOptional({ description: '上级部门 id' })
   @IsString()
   @IsOptional()
-  parentId?: string
+  parentId?: string | null
 
   @ApiPropertyOptional({ description: '部门主管用户 id' })
   @IsString()
   @IsOptional()
-  leaderId?: string
+  leaderId?: string | null
 
   @ApiPropertyOptional({ default: 0 })
   @IsInt()

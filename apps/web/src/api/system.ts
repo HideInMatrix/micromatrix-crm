@@ -1,4 +1,5 @@
 import type {
+  DataScope,
   DepartmentVO,
   LoginLogVO,
   MemberVO,
@@ -14,8 +15,8 @@ import { http } from './http'
 
 export interface DepartmentForm {
   name: string
-  parentId?: string
-  leaderId?: string
+  parentId?: string | null
+  leaderId?: string | null
   sort?: number
 }
 
@@ -33,9 +34,9 @@ export interface MemberForm {
   email?: string
   name: string
   password?: string
-  roleId?: string
-  deptId?: string
-  leaderId?: string
+  roleId?: string | null
+  deptId?: string | null
+  leaderId?: string | null
   position?: string
   phone?: string
 }
@@ -44,6 +45,11 @@ export interface MemberOption {
   id: string
   name: string
   deptId: string | null
+}
+
+export interface RoleOption {
+  id: string
+  name: string
 }
 
 export const memberApi = {
@@ -55,6 +61,7 @@ export const memberApi = {
   resetPassword: (id: string, password: string) =>
     http.post(`/members/${id}/reset-password`, { password }),
   toggleStatus: (id: string) => http.post(`/members/${id}/toggle-status`),
+  remove: (id: string) => http.delete(`/members/${id}`),
 }
 
 // ===== 角色 =====
@@ -62,13 +69,14 @@ export const memberApi = {
 export interface RoleForm {
   name: string
   permissions: string[]
-  dataScope: string
+  dataScope: DataScope
   scopeDeptIds?: string[]
   remark?: string
 }
 
 export const roleApi = {
   list: () => http.get<RoleVO[]>('/roles'),
+  options: () => http.get<RoleOption[]>('/roles/options'),
   create: (data: RoleForm) => http.post<RoleVO>('/roles', data),
   update: (id: string, data: Partial<RoleForm>) => http.patch<RoleVO>(`/roles/${id}`, data),
   remove: (id: string) => http.delete(`/roles/${id}`),

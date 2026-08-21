@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -14,6 +14,7 @@ export class MembersController {
   constructor(private readonly membersService: MembersService) {}
 
   @Get()
+  @RequirePermissions('system:member')
   @ApiOperation({ summary: '成员分页列表' })
   findAll(@CurrentUser() user: AuthUser, @Query() query: QueryMembersDto) {
     return this.membersService.findAll(user.tenantId, query)
@@ -26,7 +27,7 @@ export class MembersController {
   }
 
   @Post()
-  @RequirePermissions('system:member')
+  @RequirePermissions('system:member:create')
   @LogOperation('member', 'create')
   @ApiOperation({ summary: '新建成员' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateMemberDto) {
@@ -34,7 +35,7 @@ export class MembersController {
   }
 
   @Patch(':id')
-  @RequirePermissions('system:member')
+  @RequirePermissions('system:member:update')
   @LogOperation('member', 'update')
   @ApiOperation({ summary: '更新成员' })
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateMemberDto) {
@@ -42,7 +43,7 @@ export class MembersController {
   }
 
   @Post(':id/reset-password')
-  @RequirePermissions('system:member')
+  @RequirePermissions('system:member:resetPassword')
   @LogOperation('member', 'resetPassword')
   @ApiOperation({ summary: '重置密码' })
   resetPassword(
@@ -54,10 +55,18 @@ export class MembersController {
   }
 
   @Post(':id/toggle-status')
-  @RequirePermissions('system:member')
+  @RequirePermissions('system:member:status')
   @LogOperation('member', 'toggleStatus')
   @ApiOperation({ summary: '启用/禁用成员' })
   toggleStatus(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.membersService.toggleStatus(user.tenantId, user.id, id)
+  }
+
+  @Delete(':id')
+  @RequirePermissions('system:member:delete')
+  @LogOperation('member', 'delete')
+  @ApiOperation({ summary: '删除无业务引用的成员' })
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.membersService.remove(user.tenantId, user.id, id)
   }
 }

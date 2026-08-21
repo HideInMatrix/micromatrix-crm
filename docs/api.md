@@ -45,6 +45,46 @@
 - 响应体 Schema 未逐接口建模（VO 为 TS interface，无运行时元数据）：响应结构以 `packages/shared/src` 中的 `*VO` 类型为准；后续如需完整响应 Schema，可将 VO 改为带 `@ApiProperty` 的 class 或引入 nest CLI swagger 插件（需恢复 nest build 链路）
 - SSE 接口（`GET /api/notifications/stream?token=`）无法在 Swagger UI 中调试，请用浏览器 EventSource 或 curl 验证
 
+## 组织、成员与角色（R6）
+
+```text
+GET    /departments/tree
+POST   /departments
+PATCH  /departments/{id}
+DELETE /departments/{id}
+
+GET    /members
+GET    /members/options
+POST   /members
+PATCH  /members/{id}
+POST   /members/{id}/reset-password
+POST   /members/{id}/toggle-status
+DELETE /members/{id}
+
+GET    /roles
+GET    /roles/options
+POST   /roles
+PATCH  /roles/{id}
+DELETE /roles/{id}
+```
+
+- 部门名称在同一父部门下不区分大小写唯一；根部门不可删除，移动时禁止自身/子孙循环。
+- 部门主管只能是当前租户、启用状态且直属该部门的成员；成员移出或停用后自动清理主管关系。
+- 删除部门会检查下级部门、成员和角色 `scopeDeptIds` 引用；删除成员会检查业务资源、审批、协作和团队引用，且不允许操作自己。
+- `GET /members/options` 与 `GET /roles/options` 为已登录业务选择器接口；角色 options 只返回 `id/name`，不暴露 permissions/dataScope/scopeDeptIds。
+- 角色 `dataScope=CUSTOM` 时 `scopeDeptIds` 必填且必须属于当前租户；列表和单资源鉴权均包含所选部门的全部下级部门。
+- 角色权限必须来自 shared canonical permission tree；动作码会自动补齐祖先菜单/READ，未知权限和超出操作人权限/数据范围的授权返回 `400`。
+
+管理端动作权限码：
+
+```text
+system:dept:create / update / delete
+system:member:create / update / status / resetPassword / delete
+system:role:create / update / delete
+```
+
+`system:dept` / `system:member` / `system:role` 仍是页面菜单与 READ 权限。
+
 ## 多公海 / 多线索池自动回收规则
 
 `POST /api/resource-pools` 与 `PATCH /api/resource-pools/{id}` 的 `recycleRule` 使用 CordysCRM 时间规则语义：

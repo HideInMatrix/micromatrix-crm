@@ -20,7 +20,7 @@ export class DepartmentsController {
   }
 
   @Post()
-  @RequirePermissions('system:dept')
+  @RequirePermissions('system:dept:create')
   @LogOperation('department', 'create')
   @ApiOperation({ summary: '新建部门' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateDepartmentDto) {
@@ -28,7 +28,7 @@ export class DepartmentsController {
   }
 
   @Patch(':id')
-  @RequirePermissions('system:dept')
+  @RequirePermissions('system:dept:update')
   @LogOperation('department', 'update')
   @ApiOperation({ summary: '更新部门' })
   update(
@@ -40,7 +40,7 @@ export class DepartmentsController {
   }
 
   @Delete(':id')
-  @RequirePermissions('system:dept')
+  @RequirePermissions('system:dept:delete')
   @LogOperation('department', 'delete')
   @ApiOperation({ summary: '删除部门' })
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
