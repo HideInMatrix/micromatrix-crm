@@ -179,7 +179,7 @@ const router = createRouter({
         },
         {
           path: 'system/departments',
-          component: () => import('@/views/system/DepartmentsView.vue'),
+          component: () => import('@/views/system/MembersView.vue'),
           meta: { title: '组织架构', perm: 'system:dept', client: 'pc' },
         },
         {
@@ -194,8 +194,18 @@ const router = createRouter({
         },
         {
           path: 'system/modules',
-          component: () => import('@/views/system/ModulesView.vue'),
+          component: () => import('@/views/system/NavigationModulesView.vue'),
           meta: { title: '模块设置', perm: 'system:module', client: 'pc' },
+        },
+        {
+          path: 'system/modules/fields',
+          component: () => import('@/views/system/ModulesView.vue'),
+          meta: {
+            title: '表单设置',
+            perm: 'system:module',
+            client: 'pc',
+            activeMenu: '/system/modules',
+          },
         },
         {
           path: 'system/sales-settings',

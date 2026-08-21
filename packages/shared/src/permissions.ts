@@ -147,7 +147,11 @@ export const PERMISSION_TREE: PermissionNode[] = [
           { code: 'system:role:delete', label: '删除角色' },
         ],
       },
-      { code: 'system:module', label: '模块设置' },
+      {
+        code: 'system:module',
+        label: '模块设置',
+        children: [{ code: 'system:module:update', label: '编辑' }],
+      },
       { code: 'system:pool', label: '公海/线索池设置' },
       { code: 'system:log', label: '系统日志' },
       { code: 'system:setting', label: '企业设置' },

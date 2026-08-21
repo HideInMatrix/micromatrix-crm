@@ -3,7 +3,10 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
-import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
+import {
+  RequireAnyPermissions,
+  RequirePermissions,
+} from '../../common/decorators/require-permissions.decorator'
 import { CreateMemberDto, QueryMembersDto, ResetPasswordDto, UpdateMemberDto } from './dto/member.dto'
 import { MembersService } from './members.service'
 
@@ -14,7 +17,7 @@ export class MembersController {
   constructor(private readonly membersService: MembersService) {}
 
   @Get()
-  @RequirePermissions('system:member')
+  @RequireAnyPermissions('system:dept', 'system:member')
   @ApiOperation({ summary: '成员分页列表' })
   findAll(@CurrentUser() user: AuthUser, @Query() query: QueryMembersDto) {
     return this.membersService.findAll(user.tenantId, query)

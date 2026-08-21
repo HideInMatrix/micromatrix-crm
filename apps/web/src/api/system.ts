@@ -3,6 +3,8 @@ import type {
   DepartmentVO,
   LoginLogVO,
   MemberVO,
+  ModuleConfigVO,
+  NavigationModuleKey,
   NotificationVO,
   OperationLogVO,
   PageQuery,
@@ -86,6 +88,16 @@ export const roleApi = {
     http.post(`/roles/${id}/members`, { userIds }),
   removeMember: (id: string, userId: string) =>
     http.delete(`/roles/${id}/members/${userId}`),
+}
+
+// ===== 模块配置 =====
+
+export const moduleConfigApi = {
+  list: () => http.get<ModuleConfigVO[]>('/module-configs'),
+  update: (moduleKey: NavigationModuleKey, enabled: boolean) =>
+    http.patch<ModuleConfigVO>(`/module-configs/${moduleKey}`, { enabled }),
+  reorder: (moduleKeys: NavigationModuleKey[]) =>
+    http.post<ModuleConfigVO[]>('/module-configs/reorder', { moduleKeys }),
 }
 
 // ===== 日志 =====

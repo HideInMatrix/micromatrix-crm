@@ -6,10 +6,12 @@ import NotificationBell from '@/components/NotificationBell.vue'
 import ExportTaskButton from '@/components/ExportTaskButton.vue'
 import { MENUS, type MenuItem } from '@/router/menu'
 import { useAuthStore } from '@/stores/auth'
+import { useModuleConfigStore } from '@/stores/module-config'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const moduleConfig = useModuleConfigStore()
 
 const isDark = useDark()
 const activeMenu = computed(() => route.meta.activeMenu ?? route.path)
@@ -21,11 +23,19 @@ const visibleMenus = computed<MenuItem[]>(() =>
   MENUS.map((m) => ({
     ...m,
     children: m.children?.filter(canAccessMenu),
-  })).filter((m) => canAccessMenu(m) && (!m.children || m.children.length > 0)),
+  }))
+    .filter(
+      (m) =>
+        moduleConfig.isEnabled(m.moduleKey) &&
+        canAccessMenu(m) &&
+        (!m.children || m.children.length > 0),
+    )
+    .sort((a, b) => moduleConfig.orderOf(a.moduleKey) - moduleConfig.orderOf(b.moduleKey)),
 )
 
 onMounted(() => {
   auth.fetchMe().catch(() => undefined)
+  moduleConfig.load().catch(() => undefined)
 })
 
 function handleLogout() {

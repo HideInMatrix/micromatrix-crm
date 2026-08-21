@@ -24,6 +24,7 @@ import { QuotesModule } from './modules/quotes/quotes.module'
 import { LogsModule } from './modules/logs/logs.module'
 import { MembersModule } from './modules/members/members.module'
 import { MetadataModule } from './modules/metadata/metadata.module'
+import { ModuleConfigsModule } from './modules/module-configs/module-configs.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module'
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
@@ -41,6 +42,7 @@ import { PrismaModule } from './prisma/prisma.module'
     AuthModule,
     NotificationsModule,
     MetadataModule,
+    ModuleConfigsModule,
     ApprovalsModule,
     CustomersModule,
     ContactsModule,

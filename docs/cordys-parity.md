@@ -10,7 +10,7 @@
 4. **商业能力单独判断**：DataEase、AI、MCP、第三方商业数据等不因 CordysCRM 存在就自动纳入。
 5. **不实现 Cordys 授权体系**：MicroMatrix CRM 不设计 Cordys 的 License/CE/EE 机制。
 6. **许可证边界**：若直接复用、翻译或形成 CordysCRM 源码的衍生实现，需要继续遵守其许可证及附加条款；若未来需要独立闭源商业发行，应以功能规格/行为为依据重新实现，避免直接复制源码表达。
-7. **页面驱动探测**：先查看 Cordys 真实页面及其实际请求，再沿接口阅读 Controller、Service、Domain、DTO 和 Mapper XML，禁止从静态菜单或路由清单反推功能。
+7. **源码驱动探测**：先从 Cordys 页面源码与 API 封装定位能力，再沿接口阅读 Controller、Service、Domain、DTO 和 Mapper XML；运行页面仅用于确认实例状态与最终验证，禁止从静态菜单、路由或截图反推功能。
 8. **公共底座优先**：跨页面的组织、角色权限、模块配置、元数据、流程和消息能力先独立对齐并验收，业务模块在其依赖就绪后逐页闭环。
 
 ## 状态定义
@@ -66,9 +66,10 @@
 | 导入导出 | `excel/*`、`BaseExportService` | `SpreadsheetService` + Lead/Customer/Pool xlsx API | 🟡 | R2 已完成 xlsx ADD/UPDATE、预检、字段选择、全量/选中导出；R4 已补客户/联系人核心系统字段 `unique` 规则，剩余 `.xls` 与更完整字段规则体系 |
 | 异步导出中心 | `ExportTaskCenterService` | `ExportTask` + `ExportTasksService` | 🟡 | R2 已落任务契约、24h 保留与创建者隔离；当前同步生成文件，Wave 6 再切 BullMQ 异步执行 |
 | API Key | `UserKeyService`、`ApiKeyFilter` | API Token | 🟡 | 对齐权限、生命周期和调用审计 |
-| 部门 | `DepartmentService` | `modules/departments` | ✅ | R6 已对齐根节点保护、同级唯一、循环保护、部门主管与删除引用校验 |
-| 成员 | `OrganizationUserService` | `modules/members` | 🟡 | R7 已完成 UserRole 多对多、成员角色多选与角色侧成员关联/移除；扩展资料、会话失效和组织同步仍待迁移 |
-| 角色 | `RoleService` | `modules/roles` | ✅ | R7 已对齐 canonical 权限树、祖先权限、按权限数据范围授权上限、内置角色保护、CUSTOM 下级语义与角色成员页签 |
+| 部门 | `DepartmentService`、`views/system/org` | `modules/departments` | ✅ | 已对齐根节点保护、同级唯一、循环保护、部门主管、空子树整体删除与部门树/成员同页入口 |
+| 成员 | `OrganizationUserService`、`views/system/org/components/orgTable.vue` | `modules/members` | 🟡 | 已完成组织架构同页成员 CRUD、多角色与角色侧成员关系；性别、工作城市、入职日期、会话失效和组织同步仍待迁移 |
+| 角色 | `RoleService`、`views/system/role` | `modules/roles` | ✅ | 已对齐 canonical 权限树、授权上限、内置角色保护、CUSTOM 下级语义，以及角色列表 + 权限/成员页签 |
+| 模块配置 | `SystemModuleService`、`views/system/module` | `modules/module-configs` + Pinia | 🟡 | 租户级模块启停、主导航排序、固定模块校验、动态菜单与模块内设置入口已完成浏览器往返验收；顶部导航启停/排序仍待接入 |
 | 系统设置 | `OrganizationConfigService` | `modules/settings` | 🟡 | 按实际功能逐项迁移 |
 | 公告 | `AnnouncementService` | - | ❌ | 后续判断是否纳入 |
 | 数据字典 | `DictService` | - | ❌ | 后续迁移 |

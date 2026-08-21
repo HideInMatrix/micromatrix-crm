@@ -1,30 +1,86 @@
-/** 菜单配置：对齐当前 CordysCRM 实例经模块开关过滤后的左侧导航。 */
+import type { NavigationModuleKey } from '@micromatrix/shared'
+
+/**
+ * CordysCRM 主导航目录。
+ * 是否显示与排序由模块配置接口决定，权限只做第二层过滤。
+ */
 export interface MenuItem {
   path: string
   title: string
+  moduleKey: NavigationModuleKey
   perm?: string
   children?: MenuItem[]
 }
 
 export const MENUS: MenuItem[] = [
-  { path: '/dashboard', title: '首页', perm: 'menu:dashboard' },
-  { path: '/leads', title: '线索', perm: 'menu:lead' },
-  { path: '/customers', title: '客户', perm: 'menu:customer' },
-  { path: '/reports', title: '仪表板', perm: 'menu:dashboard' },
-  { path: '/custom-forms', title: '自定义表单', perm: 'menu:system' },
-  { path: '/orders', title: '订单', perm: 'menu:order' },
+  { path: '/dashboard', title: '首页', moduleKey: 'home', perm: 'menu:dashboard' },
+  { path: '/leads', title: '线索', moduleKey: 'lead', perm: 'menu:lead' },
+  { path: '/customers', title: '客户', moduleKey: 'customer', perm: 'menu:customer' },
+  {
+    path: '/opportunities',
+    title: '商机',
+    moduleKey: 'opportunity',
+    perm: 'menu:opportunity',
+  },
+  { path: '/products', title: '产品', moduleKey: 'product', perm: 'menu:product' },
+  { path: '/reports', title: '仪表板', moduleKey: 'dashboard', perm: 'menu:dashboard' },
+  { path: '/contracts', title: '合同', moduleKey: 'contract', perm: 'menu:contract' },
+  {
+    path: '/custom-forms',
+    title: '自定义表单',
+    moduleKey: 'customForm',
+    perm: 'menu:system',
+  },
+  { path: '/bidding', title: '标讯', moduleKey: 'bidding', perm: 'menu:bidding' },
+  { path: '/orders', title: '订单', moduleKey: 'order', perm: 'menu:order' },
   {
     path: '/system',
     title: '系统',
+    moduleKey: 'system',
     perm: 'menu:system',
     children: [
-      { path: '/system/departments', title: '组织架构', perm: 'system:dept' },
-      { path: '/system/roles', title: '角色权限', perm: 'system:role' },
-      { path: '/system/modules', title: '模块配置', perm: 'system:module' },
-      { path: '/system/messages', title: '消息设置', perm: 'system:setting' },
-      { path: '/system/approval-flows', title: '流程设置', perm: 'approval:flowManage' },
-      { path: '/system/settings', title: '企业设置', perm: 'system:setting' },
-      { path: '/system/logs', title: '系统日志', perm: 'system:log' },
+      {
+        path: '/system/departments',
+        title: '组织架构',
+        moduleKey: 'system',
+        perm: 'system:dept',
+      },
+      {
+        path: '/system/roles',
+        title: '角色权限',
+        moduleKey: 'system',
+        perm: 'system:role',
+      },
+      {
+        path: '/system/modules',
+        title: '模块配置',
+        moduleKey: 'system',
+        perm: 'system:module',
+      },
+      {
+        path: '/system/messages',
+        title: '消息设置',
+        moduleKey: 'system',
+        perm: 'system:setting',
+      },
+      {
+        path: '/system/approval-flows',
+        title: '流程设置',
+        moduleKey: 'system',
+        perm: 'approval:flowManage',
+      },
+      {
+        path: '/system/settings',
+        title: '企业设置',
+        moduleKey: 'system',
+        perm: 'system:setting',
+      },
+      {
+        path: '/system/logs',
+        title: '系统日志',
+        moduleKey: 'system',
+        perm: 'system:log',
+      },
     ],
   },
 ]

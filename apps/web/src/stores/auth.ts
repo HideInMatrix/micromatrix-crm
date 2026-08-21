@@ -2,6 +2,7 @@ import { hasPermission, type CurrentUser } from '@micromatrix/shared'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as authApi from '@/api/auth'
+import { useModuleConfigStore } from '@/stores/module-config'
 import { clearTokens, getAccessToken, setTokens } from '@/utils/token-storage'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -12,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(payload: authApi.LoginPayload) {
     const { data } = await authApi.login(payload)
+    useModuleConfigStore().reset()
     setTokens(data.accessToken, data.refreshToken)
     hasToken.value = true
     user.value = data.user
@@ -31,6 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     clearTokens()
+    useModuleConfigStore().reset()
     hasToken.value = false
     user.value = null
   }

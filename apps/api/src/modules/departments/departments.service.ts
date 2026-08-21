@@ -88,16 +88,34 @@ export class DepartmentsService {
   async remove(tenantId: string, id: string) {
     const dept = await this.ensureExists(tenantId, id)
     if (!dept.parentId) throw new BadRequestException('组织根部门不可删除')
-    const [childCount, userCount, scopedRoleCount] = await Promise.all([
-      this.prisma.department.count({ where: { tenantId, parentId: id } }),
-      this.prisma.user.count({ where: { tenantId, deptId: id } }),
-      this.prisma.role.count({ where: { tenantId, scopeDeptIds: { has: id } } }),
+    const departments = await this.prisma.department.findMany({
+      where: { tenantId },
+      select: { id: true, parentId: true },
+    })
+    const childrenMap = new Map<string, string[]>()
+    departments.forEach((item) => {
+      if (!item.parentId) return
+      const children = childrenMap.get(item.parentId) ?? []
+      children.push(item.id)
+      childrenMap.set(item.parentId, children)
+    })
+    const subtreeIds: string[] = []
+    const collectSubtree = (departmentId: string) => {
+      subtreeIds.push(departmentId)
+      childrenMap.get(departmentId)?.forEach(collectSubtree)
+    }
+    collectSubtree(id)
+
+    const [userCount, scopedRoleCount] = await Promise.all([
+      this.prisma.user.count({ where: { tenantId, deptId: { in: subtreeIds } } }),
+      this.prisma.role.count({ where: { tenantId, scopeDeptIds: { hasSome: subtreeIds } } }),
     ])
-    if (childCount > 0) throw new BadRequestException('请先删除下级部门')
-    if (userCount > 0) throw new BadRequestException('部门下存在成员，无法删除')
-    if (scopedRoleCount > 0) throw new BadRequestException('部门仍被角色自定义数据范围使用，无法删除')
-    await this.prisma.department.delete({ where: { id } })
-    return { id, name: dept.name }
+    if (userCount > 0) throw new BadRequestException('当前部门或下级部门存在成员，无法删除')
+    if (scopedRoleCount > 0) {
+      throw new BadRequestException('当前部门或下级部门仍被角色数据范围使用，无法删除')
+    }
+    await this.prisma.department.deleteMany({ where: { tenantId, id: { in: subtreeIds } } })
+    return { id, name: dept.name, deletedCount: subtreeIds.length }
   }
 
   private async ensureExists(tenantId: string, id: string) {

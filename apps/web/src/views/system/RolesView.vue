@@ -9,7 +9,7 @@ import {
   type RoleVO,
 } from '@micromatrix/shared'
 import type { ElTree, FormInstance, FormRules } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { deptApi, memberApi, roleApi, type MemberOption, type RoleForm } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
@@ -33,7 +33,7 @@ const form = reactive<RoleForm>({
   remark: '',
 })
 
-const memberDrawerVisible = ref(false)
+const activeTab = ref('permission')
 const memberLoading = ref(false)
 const memberSaving = ref(false)
 const selectedRole = ref<RoleVO | null>(null)
@@ -42,6 +42,7 @@ const memberTotal = ref(0)
 const memberQuery = reactive({ page: 1, pageSize: 10, keyword: '' })
 const memberOptions = ref<MemberOption[]>([])
 const addingUserIds = ref<string[]>([])
+const activeRole = computed(() => selectedRole.value)
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
@@ -72,6 +73,8 @@ async function loadData() {
     const [{ data: roleList }, { data: tree }] = await Promise.all([roleApi.list(), deptApi.tree()])
     roles.value = roleList
     deptTree.value = tree
+    const currentId = selectedRole.value?.id
+    selectedRole.value = roles.value.find((role) => role.id === currentId) ?? roles.value[0] ?? null
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -161,14 +164,24 @@ async function loadRoleMembers() {
   }
 }
 
-async function openMembers(row: RoleVO) {
-  selectedRole.value = row
+function selectRole(role: RoleVO) {
+  selectedRole.value = role
+  activeTab.value = 'permission'
+  roleMembers.value = []
+  memberTotal.value = 0
+}
+
+async function handleTabChange(tabName: string | number) {
+  if (tabName !== 'members' || !selectedRole.value) return
   memberQuery.page = 1
   memberQuery.keyword = ''
   addingUserIds.value = []
-  memberDrawerVisible.value = true
-  const [{ data: options }] = await Promise.all([memberApi.options(), loadRoleMembers()])
-  memberOptions.value = options
+  try {
+    const [{ data: options }] = await Promise.all([memberApi.options(), loadRoleMembers()])
+    memberOptions.value = options
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 async function handleAddMembers() {
@@ -216,189 +229,247 @@ onMounted(loadData)
 </script>
 
 <template>
-  <el-card shadow="never">
-    <div class="flex-between mb-4">
-      <span class="text-sm text-[var(--el-text-color-secondary)]">
-        角色决定成员的菜单/操作权限与数据可见范围
-      </span>
-      <el-button v-if="auth.hasPerm('system:role:create')" type="primary" @click="openCreate">
-        新建角色
-      </el-button>
-    </div>
+  <div v-loading="loading" class="grid min-h-[620px] grid-cols-[280px_minmax(0,1fr)] gap-4">
+    <el-card shadow="never" body-class="!p-0">
+      <div class="flex-between border-b border-[var(--el-border-color-lighter)] px-4 py-4">
+        <div>
+          <div class="font-medium">角色</div>
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">按角色配置权限和成员</div>
+        </div>
+        <el-button v-if="auth.hasPerm('system:role:create')" type="primary" @click="openCreate">
+          新建
+        </el-button>
+      </div>
+      <button
+        v-for="role in roles"
+        :key="role.id"
+        type="button"
+        class="flex w-full items-center gap-2 border-b border-[var(--el-border-color-lighter)] px-4 py-3 text-left text-sm hover:bg-[var(--el-fill-color-light)]"
+        :class="activeRole?.id === role.id ? 'bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]' : ''"
+        @click="selectRole(role)"
+      >
+        <span class="min-w-0 flex-1 truncate">{{ role.name }}</span>
+        <el-tag v-if="role.isSystem" size="small" type="info">内置</el-tag>
+        <span class="text-xs text-[var(--el-text-color-placeholder)]">{{ role.userCount ?? 0 }}</span>
+        <el-dropdown v-if="!role.isSystem" trigger="click" @click.stop>
+          <span class="px-1">···</span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-if="auth.hasPerm('system:role:update')"
+                @click="openEdit(role)"
+              >
+                编辑
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-if="auth.hasPerm('system:role:delete')"
+                divided
+                @click="handleDelete(role)"
+              >
+                删除
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </button>
+    </el-card>
 
-    <el-table v-loading="loading" :data="roles" stripe>
-      <el-table-column label="角色名称" width="180">
-        <template #default="{ row }">
-          {{ row.name }}
-          <el-tag v-if="row.isSystem" size="small" class="ml-1">内置</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="数据范围" width="170">
-        <template #default="{ row }">{{ scopeLabel(row.dataScope) }}</template>
-      </el-table-column>
-      <el-table-column prop="userCount" label="成员数" width="90" />
-      <el-table-column label="备注" min-width="200" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.remark || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="210" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openMembers(row as RoleVO)">成员</el-button>
-          <el-button
-            v-if="auth.hasPerm('system:role:update')"
-            link
-            type="primary"
-            :disabled="row.isSystem"
-            @click="openEdit(row as RoleVO)"
-          >
-            编辑
-          </el-button>
-          <el-button
-            v-if="auth.hasPerm('system:role:delete')"
-            link
-            type="danger"
-            :disabled="row.isSystem"
-            @click="handleDelete(row as RoleVO)"
-          >
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <el-drawer
-      v-model="drawerVisible"
-      :title="editingId ? '编辑角色' : '新建角色'"
-      size="480px"
-      destroy-on-close
-    >
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="角色名称" prop="name">
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="数据范围">
-          <el-select v-model="form.dataScope" class="w-full">
-            <el-option
-              v-for="opt in DATA_SCOPE_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.dataScope === 'CUSTOM'" label="可见部门">
-          <el-tree-select
-            v-model="form.scopeDeptIds"
-            :data="deptTree"
-            :props="{ label: 'name', children: 'children' }"
-            node-key="id"
-            multiple
-            show-checkbox
-            check-strictly
-            class="w-full"
-          />
+    <el-card v-if="activeRole" shadow="never" body-class="!p-0">
+      <div class="flex-between border-b border-[var(--el-border-color-lighter)] px-6 py-4">
+        <div>
+          <div class="flex items-center gap-2 font-medium">
+            {{ activeRole.name }}
+            <el-tag v-if="activeRole.isSystem" size="small" type="info">系统内置</el-tag>
+          </div>
           <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-            所选部门及其全部下级部门的数据均可见；本人负责的数据始终可见。
+            {{ activeRole.remark || '暂无备注' }}
           </div>
-        </el-form-item>
-        <el-form-item label="功能权限">
-          <div
-            class="border border-[var(--el-border-color)] rounded w-full p-2 max-h-96 overflow-auto"
-          >
-            <el-tree
-              ref="permTreeRef"
-              :data="PERMISSION_TREE"
-              :props="{ label: 'label', children: 'children' }"
-              node-key="code"
-              show-checkbox
-              check-strictly
-              default-expand-all
-              :default-checked-keys="form.permissions"
-              @check="handlePermissionCheck"
+        </div>
+        <el-button
+          v-if="!activeRole.isSystem && auth.hasPerm('system:role:update')"
+          type="primary"
+          plain
+          @click="openEdit(activeRole)"
+        >
+          编辑角色
+        </el-button>
+      </div>
+
+      <el-tabs v-model="activeTab" class="role-tabs px-6" @tab-change="handleTabChange">
+        <el-tab-pane label="权限" name="permission">
+          <div class="pb-6 pt-2">
+            <div class="mb-5 rounded bg-[var(--el-fill-color-lighter)] px-4 py-3 text-sm">
+              <span class="text-[var(--el-text-color-secondary)]">数据范围：</span>
+              <span class="font-medium">{{ scopeLabel(activeRole.dataScope) }}</span>
+              <span
+                v-if="activeRole.dataScope === 'CUSTOM'"
+                class="ml-2 text-xs text-[var(--el-text-color-secondary)]"
+              >
+                已指定 {{ activeRole.scopeDeptIds.length }} 个部门
+              </span>
+            </div>
+            <el-alert
+              v-if="activeRole.permissions.includes('*')"
+              title="该角色拥有全部功能权限"
+              type="success"
+              :closable="false"
+              class="mb-4"
             />
+            <div class="mb-2 text-sm font-medium">功能权限</div>
+            <div class="max-h-[450px] overflow-auto rounded border border-[var(--el-border-color)] p-3">
+              <el-tree
+                :key="activeRole.id"
+                :data="PERMISSION_TREE"
+                :props="{ label: 'label', children: 'children', disabled: () => true }"
+                node-key="code"
+                show-checkbox
+                check-strictly
+                default-expand-all
+                :default-checked-keys="activeRole.permissions"
+              />
+            </div>
           </div>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" type="textarea" :rows="2" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="drawerVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-      </template>
-    </el-drawer>
-  </el-card>
+        </el-tab-pane>
+
+        <el-tab-pane label="成员" name="members">
+          <div class="pb-6 pt-2">
+            <div class="mb-4 flex flex-wrap gap-2">
+              <el-select
+                v-if="auth.hasPerm('system:role:update')"
+                v-model="addingUserIds"
+                multiple
+                filterable
+                collapse-tags
+                placeholder="选择要添加的成员"
+                class="min-w-72 flex-1"
+              >
+                <el-option
+                  v-for="member in availableMemberOptions()"
+                  :key="member.id"
+                  :label="member.name"
+                  :value="member.id"
+                />
+              </el-select>
+              <el-button
+                v-if="auth.hasPerm('system:role:update')"
+                type="primary"
+                :disabled="addingUserIds.length === 0"
+                :loading="memberSaving"
+                @click="handleAddMembers"
+              >
+                添加成员
+              </el-button>
+              <el-input
+                v-model="memberQuery.keyword"
+                placeholder="搜索姓名 / 邮箱"
+                clearable
+                class="!w-60"
+                @keyup.enter="memberQuery.page = 1; loadRoleMembers()"
+                @clear="memberQuery.page = 1; loadRoleMembers()"
+              />
+            </div>
+            <el-table v-loading="memberLoading" :data="roleMembers" stripe>
+              <el-table-column prop="name" label="姓名" width="110" />
+              <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
+              <el-table-column prop="deptName" label="部门" width="130" />
+              <el-table-column label="全部角色" min-width="180">
+                <template #default="{ row }">
+                  <el-tag
+                    v-for="role in row.roles"
+                    :key="role.id"
+                    size="small"
+                    effect="plain"
+                    class="mr-1"
+                  >
+                    {{ role.name }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="auth.hasPerm('system:role:update')" label="操作" width="70">
+                <template #default="{ row }">
+                  <el-button
+                    link
+                    type="danger"
+                    :disabled="activeRole?.isSystem"
+                    @click="handleRemoveMember(row as MemberVO)"
+                  >
+                    移除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="mt-4 flex justify-end">
+              <el-pagination
+                v-model:current-page="memberQuery.page"
+                :page-size="memberQuery.pageSize"
+                :total="memberTotal"
+                layout="total, prev, pager, next"
+                @current-change="loadRoleMembers"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+  </div>
 
   <el-drawer
-    v-model="memberDrawerVisible"
-    :title="`${selectedRole?.name ?? ''} · 成员`"
-    size="640px"
+    v-model="drawerVisible"
+    :title="editingId ? '编辑角色' : '新建角色'"
+    size="500px"
     destroy-on-close
   >
-    <div v-if="auth.hasPerm('system:role:update')" class="flex gap-2 mb-4">
-      <el-select
-        v-model="addingUserIds"
-        multiple
-        filterable
-        collapse-tags
-        placeholder="选择要添加的成员"
-        class="flex-1"
-      >
-        <el-option
-          v-for="member in availableMemberOptions()"
-          :key="member.id"
-          :label="member.name"
-          :value="member.id"
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+      <el-form-item label="角色名称" prop="name">
+        <el-input v-model="form.name" />
+      </el-form-item>
+      <el-form-item label="数据范围">
+        <el-select v-model="form.dataScope" class="w-full">
+          <el-option
+            v-for="opt in DATA_SCOPE_OPTIONS"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="form.dataScope === 'CUSTOM'" label="可见部门">
+        <el-tree-select
+          v-model="form.scopeDeptIds"
+          :data="deptTree"
+          :props="{ label: 'name', children: 'children' }"
+          node-key="id"
+          multiple
+          show-checkbox
+          check-strictly
+          class="w-full"
         />
-      </el-select>
-      <el-button
-        type="primary"
-        :disabled="addingUserIds.length === 0"
-        :loading="memberSaving"
-        @click="handleAddMembers"
-      >
-        添加成员
-      </el-button>
-    </div>
-    <el-input
-      v-model="memberQuery.keyword"
-      placeholder="搜索姓名 / 邮箱"
-      clearable
-      class="mb-3"
-      @keyup.enter="memberQuery.page = 1; loadRoleMembers()"
-      @clear="memberQuery.page = 1; loadRoleMembers()"
-    />
-    <el-table v-loading="memberLoading" :data="roleMembers" stripe>
-      <el-table-column prop="name" label="姓名" width="110" />
-      <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
-      <el-table-column prop="deptName" label="部门" width="120" />
-      <el-table-column label="全部角色" min-width="160">
-        <template #default="{ row }">
-          <el-tag v-for="role in row.roles" :key="role.id" size="small" effect="plain" class="mr-1">
-            {{ role.name }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column v-if="auth.hasPerm('system:role:update')" label="操作" width="70">
-        <template #default="{ row }">
-          <el-button
-            link
-            type="danger"
-            :disabled="selectedRole?.isSystem"
-            @click="handleRemoveMember(row as MemberVO)"
-          >
-            移除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-    <div class="flex justify-end mt-4">
-      <el-pagination
-        v-model:current-page="memberQuery.page"
-        :page-size="memberQuery.pageSize"
-        :total="memberTotal"
-        layout="total, prev, pager, next"
-        @current-change="loadRoleMembers"
-      />
-    </div>
+        <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+          所选部门及其全部下级部门的数据均可见；本人负责的数据始终可见。
+        </div>
+      </el-form-item>
+      <el-form-item label="功能权限">
+        <div class="max-h-96 w-full overflow-auto rounded border border-[var(--el-border-color)] p-2">
+          <el-tree
+            ref="permTreeRef"
+            :data="PERMISSION_TREE"
+            :props="{ label: 'label', children: 'children' }"
+            node-key="code"
+            show-checkbox
+            check-strictly
+            default-expand-all
+            :default-checked-keys="form.permissions"
+            @check="handlePermissionCheck"
+          />
+        </div>
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input v-model="form.remark" type="textarea" :rows="2" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="drawerVisible = false">取消</el-button>
+      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+    </template>
   </el-drawer>
 </template>

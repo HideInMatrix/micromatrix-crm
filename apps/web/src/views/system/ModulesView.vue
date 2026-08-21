@@ -8,15 +8,29 @@ import {
   type ModuleKey,
 } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import draggable from 'vuedraggable'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi, type FieldForm } from '@/api/metadata'
 
-/** 当前已接入元数据引擎的模块 */
-const AVAILABLE_MODULES: ModuleKey[] = ['customer', 'contact']
+const AVAILABLE_MODULES: ModuleKey[] = [
+  'lead',
+  'customer',
+  'contact',
+  'opportunity',
+  'product',
+  'quote',
+  'contract',
+  'order',
+]
 
-const activeModule = ref<ModuleKey>('customer')
+const route = useRoute()
+const routeModule = () =>
+  AVAILABLE_MODULES.includes(route.query.module as ModuleKey)
+    ? (route.query.module as ModuleKey)
+    : 'customer'
+const activeModule = ref<ModuleKey>(routeModule())
 const loading = ref(false)
 const fields = ref<FieldVO[]>([])
 
@@ -180,6 +194,13 @@ function addOption() {
 }
 
 onMounted(loadFields)
+watch(
+  () => route.query.module,
+  () => {
+    activeModule.value = routeModule()
+    loadFields()
+  },
+)
 </script>
 
 <template>

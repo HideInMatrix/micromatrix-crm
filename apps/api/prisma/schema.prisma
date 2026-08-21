@@ -54,6 +54,7 @@ model Tenant {
   contacts      Contact[]
   subscriptions Subscription[]
   departments   Department[]
+  moduleConfigs ModuleConfig[]
 
   @@map("tenants")
 }
@@ -1124,6 +1125,20 @@ model SystemSetting {
 
   @@unique([tenantId, key])
   @@map("system_settings")
+}
+
+model ModuleConfig {
+  id       String  @id @default(cuid())
+  tenantId String
+  key      String
+  enabled  Boolean @default(true)
+  sort     Int
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, sort])
+  @@map("module_configs")
 }
 
 model Attachment {

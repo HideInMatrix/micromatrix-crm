@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { DepartmentVO, MemberVO } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import {
   deptApi,
   memberApi,
   roleApi,
+  type DepartmentForm,
   type MemberForm,
   type MemberOption,
   type RoleOption,
@@ -39,7 +40,7 @@ const form = reactive<MemberForm>({
   phone: '',
 })
 
-const rules: FormRules = {
+const memberRules: FormRules = {
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
@@ -49,6 +50,25 @@ const rules: FormRules = {
   deptId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
   roleIds: [{ required: true, type: 'array', min: 1, message: '至少选择一个角色', trigger: 'change' }],
 }
+
+const deptDialogVisible = ref(false)
+const deptEditingId = ref<string | null>(null)
+const deptSaving = ref(false)
+const deptFormRef = ref<FormInstance>()
+const deptForm = reactive<DepartmentForm>({
+  name: '',
+  parentId: null,
+  leaderId: null,
+  sort: 0,
+})
+const deptRules: FormRules = {
+  name: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
+}
+const deptLeaderOptions = computed(() =>
+  deptEditingId.value
+    ? memberOptions.value.filter((member) => member.deptId === deptEditingId.value)
+    : [],
+)
 
 async function loadData() {
   loading.value = true
@@ -84,6 +104,72 @@ function handleDeptSelect(dept: DepartmentVO | null) {
   query.deptId = dept?.id ?? ''
   query.page = 1
   loadData()
+}
+
+function openDeptCreate(parentId?: string) {
+  deptEditingId.value = null
+  Object.assign(deptForm, {
+    name: '',
+    parentId: parentId ?? null,
+    leaderId: null,
+    sort: 0,
+  })
+  deptDialogVisible.value = true
+}
+
+function openDeptEdit(dept: DepartmentVO) {
+  deptEditingId.value = dept.id
+  Object.assign(deptForm, {
+    name: dept.name,
+    parentId: dept.parentId,
+    leaderId: dept.leaderId,
+    sort: dept.sort,
+  })
+  deptDialogVisible.value = true
+}
+
+async function handleDeptSave() {
+  const valid = await deptFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  deptSaving.value = true
+  try {
+    if (deptEditingId.value) {
+      await deptApi.update(deptEditingId.value, deptForm)
+      ElMessage.success('部门已更新')
+    } else {
+      await deptApi.create(deptForm)
+      ElMessage.success('部门已创建')
+    }
+    deptDialogVisible.value = false
+    await Promise.all([loadRefs(), loadData()])
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    deptSaving.value = false
+  }
+}
+
+async function handleDeptDelete(dept: DepartmentVO) {
+  const confirmed = await ElMessageBox.confirm(
+    `确定删除部门「${dept.name}」及其空的下级部门吗？部门下存在成员时不可删除。`,
+    '删除部门',
+    { type: 'warning' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    await deptApi.remove(dept.id)
+    if (query.deptId === dept.id) query.deptId = ''
+    ElMessage.success('部门已删除')
+    await Promise.all([loadRefs(), loadData()])
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function handleDeptCommand(command: string, dept: DepartmentVO) {
+  if (command === 'add') openDeptCreate(dept.id)
+  if (command === 'edit') openDeptEdit(dept)
+  if (command === 'delete') void handleDeptDelete(dept)
 }
 
 function openCreate() {
@@ -202,7 +288,17 @@ onMounted(() => {
 <template>
   <div class="flex gap-4 h-full">
     <el-card shadow="never" class="w-60 shrink-0">
-      <div class="text-sm font-medium mb-3">部门</div>
+      <div class="flex-between mb-3">
+        <div class="text-sm font-medium">部门</div>
+        <el-button
+          v-if="auth.hasPerm('system:dept:create')"
+          link
+          type="primary"
+          @click="openDeptCreate()"
+        >
+          新建
+        </el-button>
+      </div>
       <el-tree
         :data="deptTree"
         :props="{ label: 'name', children: 'children' }"
@@ -210,7 +306,43 @@ onMounted(() => {
         default-expand-all
         highlight-current
         @current-change="handleDeptSelect"
-      />
+      >
+        <template #default="{ data }">
+          <div class="flex min-w-0 flex-1 items-center gap-1">
+            <span class="min-w-0 flex-1 truncate">{{ data.name }}</span>
+            <el-dropdown
+              v-if="auth.hasPerm('system:dept:create') || auth.hasPerm('system:dept:update')"
+              trigger="click"
+              @command="handleDeptCommand($event, data as DepartmentVO)"
+            >
+              <el-button link size="small" @click.stop>···</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-if="auth.hasPerm('system:dept:create')"
+                    command="add"
+                  >
+                    添加下级
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="auth.hasPerm('system:dept:update')"
+                    command="edit"
+                  >
+                    编辑部门
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="data.parentId && auth.hasPerm('system:dept:delete')"
+                    command="delete"
+                    divided
+                  >
+                    删除部门
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </template>
+      </el-tree>
       <el-button link size="small" class="mt-2" @click="handleDeptSelect(null)">
         清除部门筛选
       </el-button>
@@ -326,7 +458,7 @@ onMounted(() => {
       width="520px"
       destroy-on-close
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+      <el-form ref="formRef" :model="form" :rules="memberRules" label-width="90px">
         <el-form-item v-if="!editingId" label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="登录账号" />
         </el-form-item>
@@ -372,6 +504,59 @@ onMounted(() => {
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="deptDialogVisible"
+      :title="deptEditingId ? '编辑部门' : '新建部门'"
+      width="460px"
+      destroy-on-close
+    >
+      <el-form
+        ref="deptFormRef"
+        :model="deptForm"
+        :rules="deptRules"
+        label-width="90px"
+      >
+        <el-form-item label="部门名称" prop="name">
+          <el-input v-model="deptForm.name" placeholder="请输入部门名称" />
+        </el-form-item>
+        <el-form-item label="上级部门">
+          <el-tree-select
+            v-model="deptForm.parentId"
+            :data="deptTree"
+            :props="{ label: 'name', children: 'children' }"
+            node-key="id"
+            check-strictly
+            clearable
+            placeholder="不选则为顶级部门"
+            class="w-full"
+          />
+        </el-form-item>
+        <el-form-item v-if="deptEditingId" label="部门主管">
+          <el-select
+            v-model="deptForm.leaderId"
+            clearable
+            filterable
+            placeholder="仅可选择当前部门直属成员"
+            class="w-full"
+          >
+            <el-option
+              v-for="member in deptLeaderOptions"
+              :key="member.id"
+              :label="member.name"
+              :value="member.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="deptForm.sort" :min="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="deptDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="deptSaving" @click="handleDeptSave">保存</el-button>
       </template>
     </el-dialog>
   </div>

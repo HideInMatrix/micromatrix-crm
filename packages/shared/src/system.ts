@@ -125,3 +125,50 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   contract: '合同',
   order: '订单',
 }
+
+// ============ 主导航模块配置 ============
+
+export type NavigationModuleKey =
+  | 'home'
+  | 'lead'
+  | 'customer'
+  | 'opportunity'
+  | 'product'
+  | 'dashboard'
+  | 'agent'
+  | 'contract'
+  | 'customForm'
+  | 'bidding'
+  | 'order'
+  | 'system'
+
+export interface NavigationModuleDefinition {
+  key: NavigationModuleKey
+  label: string
+  defaultEnabled: boolean
+  configurable: boolean
+}
+
+/** 顺序与当前 Cordys 实例的主导航配置一致。 */
+export const NAVIGATION_MODULES: NavigationModuleDefinition[] = [
+  { key: 'home', label: '首页', defaultEnabled: true, configurable: true },
+  { key: 'lead', label: '线索', defaultEnabled: true, configurable: true },
+  { key: 'customer', label: '客户', defaultEnabled: true, configurable: true },
+  { key: 'opportunity', label: '商机', defaultEnabled: false, configurable: true },
+  { key: 'product', label: '产品', defaultEnabled: false, configurable: true },
+  { key: 'dashboard', label: '仪表板', defaultEnabled: true, configurable: true },
+  { key: 'agent', label: '智能体', defaultEnabled: false, configurable: false },
+  { key: 'contract', label: '合同', defaultEnabled: false, configurable: true },
+  { key: 'customForm', label: '自定义表单', defaultEnabled: true, configurable: true },
+  { key: 'bidding', label: '标讯', defaultEnabled: false, configurable: true },
+  { key: 'order', label: '订单', defaultEnabled: true, configurable: true },
+  { key: 'system', label: '系统', defaultEnabled: true, configurable: false },
+]
+
+export interface ModuleConfigVO {
+  id: string
+  moduleKey: NavigationModuleKey
+  enabled: boolean
+  sort: number
+  configurable: boolean
+}
