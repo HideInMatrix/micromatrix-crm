@@ -6,7 +6,8 @@ import {
   type FilterCondition,
   type LeadVO,
 } from '@micromatrix/shared'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
@@ -27,8 +28,10 @@ import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCusto
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const route = useRoute()
+const router = useRouter()
 
-const activeTab = ref<'mine' | 'pool'>('mine')
+const activeTab = ref<'mine' | 'pool'>(route.path.endsWith('/pool') ? 'pool' : 'mine')
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
 const fields = ref<FieldVO[]>([])
@@ -141,7 +144,22 @@ function handleTabChange() {
   query.page = 1
   activeSavedViewId.value = ''
   selectedRows.value = []
+  void router.replace(activeTab.value === 'pool' ? '/leads/pool' : '/leads')
+  loadData()
 }
+
+watch(
+  () => route.path,
+  (path) => {
+    const nextTab = path.endsWith('/pool') ? 'pool' : 'mine'
+    if (nextTab === activeTab.value) return
+    activeTab.value = nextTab
+    query.page = 1
+    activeSavedViewId.value = ''
+    selectedRows.value = []
+    loadData()
+  },
+)
 
 function handleSelectionChange(rows: LeadVO[]) {
   selectedRows.value = rows

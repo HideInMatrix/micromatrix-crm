@@ -12,16 +12,16 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const isDark = useDark()
-const activeMenu = computed(() =>
-  route.path.startsWith('/customers') ? '/customers' : route.path,
-)
+const activeMenu = computed(() => route.meta.activeMenu ?? route.path)
+
+const canAccessMenu = (menu: MenuItem) => !menu.perm || auth.hasPerm(menu.perm)
 
 /** 按当前用户权限过滤菜单 */
 const visibleMenus = computed<MenuItem[]>(() =>
   MENUS.map((m) => ({
     ...m,
-    children: m.children?.filter((c) => auth.hasPerm(c.perm)),
-  })).filter((m) => auth.hasPerm(m.perm) && (!m.children || m.children.length > 0)),
+    children: m.children?.filter(canAccessMenu),
+  })).filter((m) => canAccessMenu(m) && (!m.children || m.children.length > 0)),
 )
 
 onMounted(() => {
@@ -36,12 +36,12 @@ function handleLogout() {
 
 <template>
   <el-container class="h-full">
-    <el-aside width="220px" class="border-r border-[var(--el-border-color)]">
-      <div class="h-14 flex-center gap-1 text-lg font-bold">
+    <el-aside width="220px" class="flex flex-col border-r border-[var(--el-border-color)]">
+      <div class="h-14 shrink-0 flex-center gap-1 text-lg font-bold">
         <span class="text-[var(--el-color-primary)]">微矩阵</span>
         <span>CRM</span>
       </div>
-      <el-menu :default-active="activeMenu" router class="!border-r-0">
+      <el-menu :default-active="activeMenu" router class="flex-1 overflow-y-auto !border-r-0">
         <template v-for="menu in visibleMenus" :key="menu.path">
           <el-sub-menu v-if="menu.children?.length" :index="menu.path">
             <template #title>{{ menu.title }}</template>

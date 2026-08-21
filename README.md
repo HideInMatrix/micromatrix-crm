@@ -97,6 +97,6 @@ pnpm dev
 - 当前分阶段执行计划：[`docs/cordys-wave1-remainder-plan.md`](./docs/cordys-wave1-remainder-plan.md)
 - 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
 
-Wave 1 的 R1-R6 已于 2026-08-21 完成并通过 build/typecheck/lint、7 条规则单测、180 条全链路 smoke 与 PC 页面验收。成员多角色叠加仍作为后续独立 schema/auth migration，不在 R6 中模拟。
+Wave 1 的 R1-R6 与 R7 多角色/按权限数据范围已于 2026-08-21 完成。后续严格按“真实页面 → 页面接口 → Cordys 后端实现”探测能力：先收口组织架构、角色权限、模块配置等跨页面公共底座，再逐个对齐业务模块页面；左侧菜单仅呈现当前实例启用且当前角色可见的能力。
 
 明确不迁移：Cordys 自身的产品授权/版本区分机制、DataEase、AI/MCP 商业扩展、商业标讯 API。

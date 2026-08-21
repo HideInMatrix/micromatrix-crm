@@ -9,6 +9,10 @@ declare module 'vue-router' {
     title?: string
     /** 访问所需权限码 */
     perm?: string
+    /** 左侧菜单高亮路径，用于详情页或共享页面。 */
+    activeMenu?: string
+    /** Cordys 已有、当前项目待实现的页面说明。 */
+    plannedFeature?: string
     /** 页面只属于某一端；both/未声明表示两端共用 */
     client?: ClientMode | 'both'
   }
@@ -75,6 +79,17 @@ const router = createRouter({
           meta: { title: '线索管理', perm: 'menu:lead', client: 'both' },
         },
         {
+          path: 'leads/pool',
+          name: 'lead-pool',
+          component: () => import('@/views/LeadsView.vue'),
+          meta: {
+            title: '线索池',
+            perm: 'menu:lead',
+            client: 'pc',
+            activeMenu: '/leads',
+          },
+        },
+        {
           path: 'customers',
           name: 'customers',
           component: () =>
@@ -99,7 +114,12 @@ const router = createRouter({
           path: 'customers/:id',
           name: 'customer-detail',
           component: () => import('@/views/CustomerDetailView.vue'),
-          meta: { title: '客户详情', perm: 'menu:customer', client: 'pc' },
+          meta: {
+            title: '客户详情',
+            perm: 'menu:customer',
+            client: 'pc',
+            activeMenu: '/customers',
+          },
         },
         {
           path: 'opportunities',
@@ -148,6 +168,16 @@ const router = createRouter({
           meta: { title: '标讯', perm: 'menu:bidding', client: 'pc' },
         },
         {
+          path: 'custom-forms',
+          component: () => import('@/views/PlannedFeatureView.vue'),
+          meta: {
+            title: '自定义表单',
+            perm: 'menu:system',
+            client: 'pc',
+            plannedFeature: '任意自定义业务表单、数据权限与数据列表',
+          },
+        },
+        {
           path: 'system/departments',
           component: () => import('@/views/system/DepartmentsView.vue'),
           meta: { title: '组织架构', perm: 'system:dept', client: 'pc' },
@@ -176,6 +206,16 @@ const router = createRouter({
           path: 'system/approval-flows',
           component: () => import('@/views/system/ApprovalFlowsView.vue'),
           meta: { title: '审批流配置', perm: 'approval:flowManage', client: 'pc' },
+        },
+        {
+          path: 'system/messages',
+          component: () => import('@/views/PlannedFeatureView.vue'),
+          meta: {
+            title: '消息设置',
+            perm: 'system:setting',
+            client: 'pc',
+            plannedFeature: '按业务事件配置站内信开关、提前提醒天数和消息模板',
+          },
         },
         {
           path: 'system/logs',

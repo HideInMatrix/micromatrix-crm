@@ -1,4 +1,4 @@
-/** 菜单配置：驱动侧边栏渲染与路由权限（perm 为空表示登录即可见） */
+/** 菜单配置：对齐当前 CordysCRM 实例经模块开关过滤后的左侧导航。 */
 export interface MenuItem {
   path: string
   title: string
@@ -7,30 +7,24 @@ export interface MenuItem {
 }
 
 export const MENUS: MenuItem[] = [
-  { path: '/dashboard', title: '工作台', perm: 'menu:dashboard' },
-  { path: '/reports', title: '销售报表', perm: 'menu:dashboard' },
-  { path: '/leads', title: '线索管理', perm: 'menu:lead' },
-  { path: '/customers', title: '客户管理', perm: 'menu:customer' },
-  { path: '/opportunities', title: '商机管理', perm: 'menu:opportunity' },
-  { path: '/products', title: '产品管理', perm: 'menu:product' },
-  { path: '/quotes', title: '报价管理', perm: 'menu:quote' },
-  { path: '/contracts', title: '合同管理', perm: 'menu:contract' },
-  { path: '/orders', title: '订单管理', perm: 'menu:order' },
-  { path: '/bidding', title: '标讯', perm: 'menu:bidding' },
-  { path: '/approvals', title: '审批中心', perm: 'menu:approval' },
+  { path: '/dashboard', title: '首页', perm: 'menu:dashboard' },
+  { path: '/leads', title: '线索', perm: 'menu:lead' },
+  { path: '/customers', title: '客户', perm: 'menu:customer' },
+  { path: '/reports', title: '仪表板', perm: 'menu:dashboard' },
+  { path: '/custom-forms', title: '自定义表单', perm: 'menu:system' },
+  { path: '/orders', title: '订单', perm: 'menu:order' },
   {
     path: '/system',
-    title: '系统管理',
+    title: '系统',
     perm: 'menu:system',
     children: [
       { path: '/system/departments', title: '组织架构', perm: 'system:dept' },
-      { path: '/system/members', title: '成员管理', perm: 'system:member' },
       { path: '/system/roles', title: '角色权限', perm: 'system:role' },
-      { path: '/system/modules', title: '模块设置', perm: 'system:module' },
-      { path: '/system/sales-settings', title: '销售设置', perm: 'system:module' },
-      { path: '/system/approval-flows', title: '审批流配置', perm: 'approval:flowManage' },
-      { path: '/system/logs', title: '系统日志', perm: 'system:log' },
+      { path: '/system/modules', title: '模块配置', perm: 'system:module' },
+      { path: '/system/messages', title: '消息设置', perm: 'system:setting' },
+      { path: '/system/approval-flows', title: '流程设置', perm: 'approval:flowManage' },
       { path: '/system/settings', title: '企业设置', perm: 'system:setting' },
+      { path: '/system/logs', title: '系统日志', perm: 'system:log' },
     ],
   },
 ]
