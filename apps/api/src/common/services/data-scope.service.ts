@@ -1,74 +1,62 @@
 import { Injectable } from '@nestjs/common'
+import { hasPermission } from '@micromatrix/shared'
 import { PrismaService } from '../../prisma/prisma.service'
 import type { AuthUser } from '../auth-user'
 
 /**
- * 数据范围过滤：业务表约定包含 ownerId（负责人）与 deptId（归属部门）两列，
- * 各业务模块查询时合并本服务返回的 where 片段实现数据边界。
- * 任何范围下本人负责的数据始终可见。
+ * 按业务权限码计算多角色数据范围。
+ * 只有包含目标权限（或 `*`）的角色参与合并，避免无关角色泄漏更宽的数据范围。
  */
 @Injectable()
 export class DataScopeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async scopeFilter(user: AuthUser): Promise<Record<string, unknown>> {
-    switch (user.dataScope) {
-      case 'ALL':
-        return {}
-      case 'SELF':
-        return { ownerId: user.id }
-      case 'DEPT':
-        return this.ownerOrDepts(user, user.deptId ? [user.deptId] : [])
-      case 'DEPT_AND_CHILD': {
-        const deptIds = user.deptId
-          ? await this.collectWithDescendants(user.tenantId, user.deptId)
-          : []
-        return this.ownerOrDepts(user, deptIds)
-      }
-      case 'CUSTOM':
-        return this.ownerOrDepts(
-          user,
-          await this.collectManyWithDescendants(user.tenantId, user.scopeDeptIds),
-        )
-      default:
-        return { ownerId: user.id }
-    }
+  async scopeFilter(user: AuthUser, permission: string): Promise<Record<string, unknown>> {
+    const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return { ownerId: '__permission_scope_denied__' }
+    if (scope.all) return {}
+    return this.ownerOrDepts(user, scope.deptIds)
   }
 
-  /**
-   * 对单条已加载资源做数据范围判断。
-   * 用于 ResourceAccessService 组合“权限码 + 数据范围”；列表查询仍优先使用 scopeFilter 下推到数据库。
-   */
-  async matchesResource(user: AuthUser, ownerId: string | null, deptId: string | null): Promise<boolean> {
-    if (ownerId === user.id) return true
-    switch (user.dataScope) {
-      case 'ALL':
-        return true
-      case 'SELF':
-        return false
-      case 'DEPT':
-        return !!user.deptId && deptId === user.deptId
-      case 'DEPT_AND_CHILD': {
-        if (!user.deptId || !deptId) return false
-        const deptIds = await this.collectWithDescendants(user.tenantId, user.deptId)
-        return deptIds.includes(deptId)
-      }
-      case 'CUSTOM':
-        if (!deptId) return false
-        return (
-          await this.collectManyWithDescendants(user.tenantId, user.scopeDeptIds)
-        ).includes(deptId)
-      default:
-        return false
-    }
+  async matchesResource(
+    user: AuthUser,
+    ownerId: string | null,
+    deptId: string | null,
+    permission: string,
+  ): Promise<boolean> {
+    const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return false
+    if (ownerId === user.id || scope.all) return true
+    return !!deptId && scope.deptIds.includes(deptId)
   }
 
-  /** 指定部门及其全部下级部门的 id 集合（含自身） */
+  /** Cordys 语义：筛出拥有当前权限的角色，再对这些角色的数据范围取并集。 */
+  async resolveScope(user: AuthUser, permission: string) {
+    const roles = user.roles.filter((role) => hasPermission(role.permissions, permission))
+    if (roles.length === 0) return { hasPermission: false, all: false, deptIds: [] as string[] }
+    if (roles.some((role) => role.dataScope === 'ALL')) {
+      return { hasPermission: true, all: true, deptIds: [] as string[] }
+    }
+
+    const deptIds = new Set<string>()
+    const descendantRoots = new Set<string>()
+    for (const role of roles) {
+      if (role.dataScope === 'DEPT' && user.deptId) deptIds.add(user.deptId)
+      if (role.dataScope === 'DEPT_AND_CHILD' && user.deptId) descendantRoots.add(user.deptId)
+      if (role.dataScope === 'CUSTOM') {
+        role.scopeDeptIds.forEach((id) => descendantRoots.add(id))
+      }
+    }
+    const expanded = await this.collectManyWithDescendants(user.tenantId, [...descendantRoots])
+    expanded.forEach((id) => deptIds.add(id))
+    return { hasPermission: true, all: false, deptIds: [...deptIds] }
+  }
+
   async collectWithDescendants(tenantId: string, rootId: string): Promise<string[]> {
     return this.collectManyWithDescendants(tenantId, [rootId])
   }
 
-  /** Cordys DEPT_CUSTOM 语义：每个已选部门都包含其全部下级部门。 */
+  /** Cordys CUSTOM 语义：每个已选部门都包含其全部下级部门。 */
   async collectManyWithDescendants(tenantId: string, rootIds: string[]): Promise<string[]> {
     if (rootIds.length === 0) return []
     const all = await this.prisma.department.findMany({

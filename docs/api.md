@@ -30,7 +30,7 @@
 - **高级筛选 filters**：JSON 字符串数组，`[{"key":"name","op":"contains","value":"科技"},{"key":"cf_xxx","op":"gt","value":100}]`
 - **自定义字段**：写操作把 `cf_*` 键放进 `customData` 对象；字段定义通过 `GET /api/metadata/{module}/fields` 获取
 - **错误结构**：`{ statusCode, message, error? }`，`message` 为中文提示，校验错误时可能为数组
-- **数据范围**：同一接口不同角色返回的数据集合不同（按角色数据范围自动过滤），联调时注意用对应测试账号
+- **数据范围**：成员可拥有多个角色；功能权限取并集，数据范围按当前接口权限码筛选角色后再合并，联调时需同时关注“权限码属于哪个角色”和该角色的数据范围
 
 ## 测试账号
 
@@ -45,7 +45,7 @@
 - 响应体 Schema 未逐接口建模（VO 为 TS interface，无运行时元数据）：响应结构以 `packages/shared/src` 中的 `*VO` 类型为准；后续如需完整响应 Schema，可将 VO 改为带 `@ApiProperty` 的 class 或引入 nest CLI swagger 插件（需恢复 nest build 链路）
 - SSE 接口（`GET /api/notifications/stream?token=`）无法在 Swagger UI 中调试，请用浏览器 EventSource 或 curl 验证
 
-## 组织、成员与角色（R6）
+## 组织、成员与角色（R6 / R7 多角色）
 
 ```text
 GET    /departments/tree
@@ -63,6 +63,9 @@ DELETE /members/{id}
 
 GET    /roles
 GET    /roles/options
+GET    /roles/{id}/members
+POST   /roles/{id}/members              body: { userIds: string[] }
+DELETE /roles/{id}/members/{userId}
 POST   /roles
 PATCH  /roles/{id}
 DELETE /roles/{id}
@@ -72,8 +75,10 @@ DELETE /roles/{id}
 - 部门主管只能是当前租户、启用状态且直属该部门的成员；成员移出或停用后自动清理主管关系。
 - 删除部门会检查下级部门、成员和角色 `scopeDeptIds` 引用；删除成员会检查业务资源、审批、协作和团队引用，且不允许操作自己。
 - `GET /members/options` 与 `GET /roles/options` 为已登录业务选择器接口；角色 options 只返回 `id/name`，不暴露 permissions/dataScope/scopeDeptIds。
+- 成员创建/更新使用 `roleIds: string[]` 且至少一个角色；成员列表返回 `roles + roleIds`。角色成员接口支持 Cordys 风格的角色侧批量关联与单人移除。
 - 角色 `dataScope=CUSTOM` 时 `scopeDeptIds` 必填且必须属于当前租户；列表和单资源鉴权均包含所选部门的全部下级部门。
-- 角色权限必须来自 shared canonical permission tree；动作码会自动补齐祖先菜单/READ，未知权限和超出操作人权限/数据范围的授权返回 `400`。
+- 角色权限必须来自 shared canonical permission tree；动作码会自动补齐祖先菜单/READ，未知权限返回 `400`，超出操作人权限/数据范围的授权返回 `403`。
+- 多角色功能权限为并集；数据范围不做全局“最大范围”压平。每次读取/动作只合并拥有该权限码（或 `*`）的角色：任一 `ALL` 胜出，否则合并部门范围并始终包含本人负责数据。无关角色的 `ALL/CUSTOM` 不会扩大当前动作权限的数据范围。
 
 管理端动作权限码：
 

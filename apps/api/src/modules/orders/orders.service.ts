@@ -36,7 +36,7 @@ export class OrdersService {
   async findAll(user: AuthUser, query: QueryOrdersDto): Promise<PaginatedResult<OrderVO>> {
     const { page = 1, pageSize = 10, keyword, status, contractId } = query
     const [scope, fields] = await Promise.all([
-      this.dataScope.scopeFilter(user),
+      this.dataScope.scopeFilter(user, 'menu:order'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
@@ -85,7 +85,7 @@ export class OrdersService {
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: true,
     })
-    const contract = await this.contracts.ensureInScope(user, dto.contractId)
+    const contract = await this.contracts.ensureInScope(user, dto.contractId, 'order:create')
     if (contract.status === 'DRAFT') {
       throw new BadRequestException('合同尚未生效（草稿状态），不能创建订单')
     }
@@ -106,7 +106,7 @@ export class OrdersService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateOrderDto): Promise<OrderVO> {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'order:update')
     const { customData, ownerId, contractId: _ignored, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
@@ -129,7 +129,7 @@ export class OrdersService {
 
   /** 状态流转：待交付→交付中→已验收→已完成；取消 */
   async changeStatus(user: AuthUser, id: string, status: OrderStatus) {
-    const order = await this.ensureInScope(user, id)
+    const order = await this.ensureInScope(user, id, 'order:update')
     const allowed = ORDER_STATUS_FLOW[order.status]
     if (!allowed.includes(status)) {
       throw new BadRequestException(`当前状态不允许流转到该状态`)
@@ -146,7 +146,7 @@ export class OrdersService {
   }
 
   async remove(user: AuthUser, id: string) {
-    const order = await this.ensureInScope(user, id)
+    const order = await this.ensureInScope(user, id, 'order:delete')
     if (order.status !== 'PENDING' && order.status !== 'CANCELED') {
       throw new BadRequestException('仅待交付或已取消的订单可删除')
     }
@@ -154,8 +154,8 @@ export class OrdersService {
     return { id, name: order.name }
   }
 
-  private async ensureInScope(user: AuthUser, id: string) {
-    const scope = await this.dataScope.scopeFilter(user)
+  private async ensureInScope(user: AuthUser, id: string, permission: string) {
+    const scope = await this.dataScope.scopeFilter(user, permission)
     const order = await this.prisma.order.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope as Prisma.OrderWhereInput] },
     })

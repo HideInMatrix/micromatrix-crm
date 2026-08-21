@@ -32,7 +32,7 @@ const form = reactive<MemberForm>({
   email: '',
   name: '',
   password: '',
-  roleId: null,
+  roleIds: [],
   deptId: null,
   leaderId: null,
   position: '',
@@ -47,6 +47,7 @@ const rules: FormRules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   password: [{ required: true, min: 6, message: '密码至少 6 位', trigger: 'blur' }],
   deptId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
+  roleIds: [{ required: true, type: 'array', min: 1, message: '至少选择一个角色', trigger: 'change' }],
 }
 
 async function loadData() {
@@ -91,7 +92,7 @@ function openCreate() {
     email: '',
     name: '',
     password: '',
-    roleId: null,
+    roleIds: [],
     deptId: query.deptId || null,
     leaderId: null,
     position: '',
@@ -106,7 +107,7 @@ function openEdit(row: MemberVO) {
     email: row.email,
     name: row.name,
     password: undefined,
-    roleId: row.roleId,
+    roleIds: [...row.roleIds],
     deptId: row.deptId,
     leaderId: row.leaderId,
     position: row.position ?? '',
@@ -122,7 +123,7 @@ async function handleSave() {
   try {
     const payload: MemberForm = {
       name: form.name.trim(),
-      roleId: form.roleId,
+      roleIds: [...form.roleIds],
       deptId: form.deptId,
       leaderId: form.leaderId,
       position: form.position?.trim() || undefined,
@@ -248,8 +249,15 @@ onMounted(() => {
         <el-table-column label="部门" width="130">
           <template #default="{ row }">{{ row.deptName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="角色" width="110">
-          <template #default="{ row }">{{ row.roleName || '-' }}</template>
+        <el-table-column label="角色" min-width="180">
+          <template #default="{ row }">
+            <div class="flex flex-wrap gap-1">
+              <el-tag v-for="role in row.roles" :key="role.id" size="small" effect="plain">
+                {{ role.name }}
+              </el-tag>
+              <span v-if="row.roles.length === 0">-</span>
+            </div>
+          </template>
         </el-table-column>
         <el-table-column label="职位" width="120">
           <template #default="{ row }">{{ row.position || '-' }}</template>
@@ -339,8 +347,8 @@ onMounted(() => {
             class="w-full"
           />
         </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="form.roleId" clearable class="w-full">
+        <el-form-item label="角色" prop="roleIds">
+          <el-select v-model="form.roleIds" multiple filterable class="w-full">
             <el-option v-for="r in roles" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>

@@ -15,10 +15,14 @@ import { RegisterDto } from './dto/register.dto'
 import type { JwtPayload } from './jwt-payload.interface'
 
 type UserWithRelations = Prisma.UserGetPayload<{
-  include: { role: true; tenant: true; dept: true }
+  include: { userRoles: { include: { role: true } }; tenant: true; dept: true }
 }>
 
-const userInclude = { role: true, tenant: true, dept: true } as const
+const userInclude = {
+  userRoles: { include: { role: true } },
+  tenant: true,
+  dept: true,
+} as const
 
 export interface LoginContext {
   ip?: string
@@ -61,8 +65,10 @@ export class AuthService {
           email: dto.email,
           passwordHash,
           name: dto.name,
-          roleId: adminRole.id,
           deptId: rootDept.id,
+          userRoles: {
+            create: { tenantId: tenant.id, roleId: adminRole.id },
+          },
         },
         include: userInclude,
       })
@@ -203,8 +209,8 @@ export class AuthService {
       tenantName: user.tenant.name,
       email: user.email,
       name: user.name,
-      roleName: user.role?.name ?? null,
-      permissions: user.role?.permissions ?? [],
+      roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),
+      permissions: [...new Set(user.userRoles.flatMap(({ role }) => role.permissions))],
       deptId: user.deptId,
       deptName: user.dept?.name ?? null,
     }

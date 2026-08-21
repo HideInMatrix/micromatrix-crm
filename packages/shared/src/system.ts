@@ -18,8 +18,8 @@ export interface MemberVO {
   email: string
   name: string
   status: 'ACTIVE' | 'DISABLED'
-  roleId: string | null
-  roleName?: string | null
+  roles: Array<{ id: string; name: string }>
+  roleIds: string[]
   deptId: string | null
   deptName?: string | null
   leaderId: string | null

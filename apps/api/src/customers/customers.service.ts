@@ -124,12 +124,12 @@ export class CustomersService {
 
   /** Cordys /account/tab：决定“全部客户 / 部门客户”系统视图是否显示。 */
   tab(user: AuthUser) {
+    const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
     return {
-      all: user.dataScope === 'ALL' || user.dataScope === 'CUSTOM',
-      dept:
-        user.dataScope === 'ALL' ||
-        user.dataScope === 'DEPT_AND_CHILD' ||
-        user.dataScope === 'CUSTOM',
+      all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
+      dept: roles.some((role) =>
+        ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope),
+      ),
     }
   }
 
@@ -677,7 +677,7 @@ export class CustomersService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateCustomerDto): Promise<CustomerVO> {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'customer:update')
     return this.updateExisting(user, existing, dto)
   }
 
@@ -739,7 +739,7 @@ export class CustomersService {
   }
 
   async remove(user: AuthUser, id: string): Promise<{ id: string; name: string }> {
-    const customer = await this.ensureInScope(user, id)
+    const customer = await this.ensureInScope(user, id, 'customer:delete')
     await this.assertCustomersDeletable(user.tenantId, [id])
     await this.deleteCustomerResources(user, [customer])
     return { id, name: customer.name }
@@ -747,7 +747,7 @@ export class CustomersService {
 
   /** 退回公海 */
   async moveToSea(user: AuthUser, id: string, poolId?: string, reasonId?: string) {
-    const customer = await this.ensureInScope(user, id)
+    const customer = await this.ensureInScope(user, id, 'customer:assign')
     const pool = await this.pools.resolveMoveTargetPool(
       user.tenantId,
       'customer',
@@ -931,7 +931,9 @@ export class CustomersService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto): Promise<BatchAffectResult> {
     const field = await this.metadata.resolveEditableField(user.tenantId, MODULE, dto.fieldId)
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
-    const customers = await Promise.all(dto.ids.map((id) => this.ensureInScope(user, id)))
+    const customers = await Promise.all(
+      dto.ids.map((id) => this.ensureInScope(user, id, 'customer:update')),
+    )
 
     if (field.key === 'ownerId') {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
@@ -957,7 +959,9 @@ export class CustomersService {
   }
 
   async batchDelete(user: AuthUser, ids: string[]): Promise<BatchAffectResult> {
-    const customers = await Promise.all(ids.map((id) => this.ensureInScope(user, id)))
+    const customers = await Promise.all(
+      ids.map((id) => this.ensureInScope(user, id, 'customer:delete')),
+    )
     await this.assertCustomersDeletable(user.tenantId, ids)
     await this.deleteCustomerResources(user, customers)
     return { success: ids.length, fail: 0, failedIds: [] }
@@ -1198,7 +1202,7 @@ export class CustomersService {
     relatedCustomerId: string,
     relationType: 'GROUP' | 'SUBSIDIARY',
   ) {
-    await this.ensureInScope(user, customerId)
+    await this.ensureInScope(user, customerId, 'customer:update')
     const relation = await this.buildCustomerRelation(
       user,
       customerId,
@@ -1216,7 +1220,7 @@ export class CustomersService {
     relatedCustomerId: string,
     relationType: 'GROUP' | 'SUBSIDIARY',
   ) {
-    await this.ensureInScope(user, customerId)
+    await this.ensureInScope(user, customerId, 'customer:update')
     const existing = await this.prisma.customerRelation.findFirst({
       where: {
         id: relationId,
@@ -1247,7 +1251,7 @@ export class CustomersService {
   }
 
   async relationRemove(user: AuthUser, customerId: string, relationId: string) {
-    await this.ensureInScope(user, customerId)
+    await this.ensureInScope(user, customerId, 'customer:update')
     const result = await this.prisma.customerRelation.deleteMany({
       where: {
         id: relationId,
@@ -1494,9 +1498,11 @@ export class CustomersService {
     const sourceIds = requestedIds.filter((id) => id !== dto.toMergeId)
     if (sourceIds.length === 0) throw new BadRequestException('没有可合并的客户')
 
-    const target = await this.ensureInScope(user, dto.toMergeId)
+    const target = await this.ensureInScope(user, dto.toMergeId, 'customer:merge')
     const sources: (typeof target)[] = []
-    for (const sourceId of sourceIds) sources.push(await this.ensureInScope(user, sourceId))
+    for (const sourceId of sourceIds) {
+      sources.push(await this.ensureInScope(user, sourceId, 'customer:merge'))
+    }
     const newOwner = await this.resolveOwner(user, dto.ownerId)
 
     if (targetWasSelected) {
@@ -1778,7 +1784,7 @@ export class CustomersService {
   private async inScopeCustomerIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
-    const scope = await this.dataScope.scopeFilter(user)
+    const scope = await this.dataScope.scopeFilter(user, 'menu:customer')
     const poolIds = (await this.pools.options(user, 'customer')).map((pool) => pool.id)
     const rows = await this.prisma.customer.findMany({
       where: {
@@ -1798,7 +1804,7 @@ export class CustomersService {
   private async inScopeLeadIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
-    const scope = await this.dataScope.scopeFilter(user)
+    const scope = await this.dataScope.scopeFilter(user, 'menu:lead')
     const rows = await this.prisma.lead.findMany({
       where: {
         id: { in: unique },
@@ -1813,7 +1819,7 @@ export class CustomersService {
   private async inScopeOpportunityIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
-    const scope = await this.dataScope.scopeFilter(user)
+    const scope = await this.dataScope.scopeFilter(user, 'menu:opportunity')
     const rows = await this.prisma.opportunity.findMany({
       where: {
         id: { in: unique },
@@ -2083,7 +2089,7 @@ export class CustomersService {
       ? await this.prisma.customer.findFirst({
           where: { id: resourceId, tenantId: user.tenantId, inSea: true, poolId },
         })
-      : await this.ensureInScope(user, resourceId)
+      : await this.ensureInScope(user, resourceId, 'customer:import')
     if (!existing) throw new BadRequestException('客户不存在或不属于当前公海')
     if (dto.ownerId && dto.ownerId !== existing.ownerId) {
       await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.ownerId)
@@ -2224,32 +2230,31 @@ export class CustomersService {
     user: AuthUser,
     view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION',
   ): Promise<Prisma.CustomerWhereInput> {
-    if (!view) return (await this.dataScope.scopeFilter(user)) as Prisma.CustomerWhereInput
+    if (!view) return (await this.dataScope.scopeFilter(user, 'menu:customer')) as Prisma.CustomerWhereInput
     if (view === 'SELF') return { ownerId: user.id }
     if (view === 'COLLABORATION') {
       return { teamMembers: { some: { tenantId: user.tenantId, userId: user.id } } }
     }
     if (view === 'ALL') {
-      if (user.dataScope !== 'ALL' && user.dataScope !== 'CUSTOM') {
+      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
+      if (!roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM')) {
         throw new ForbiddenException('当前角色没有全部客户视图权限')
       }
-      return (await this.dataScope.scopeFilter(user)) as Prisma.CustomerWhereInput
+      return (await this.dataScope.scopeFilter(user, 'menu:customer')) as Prisma.CustomerWhereInput
     }
     if (view === 'DEPARTMENT') {
-      if (!['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(user.dataScope)) {
+      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
+      if (!roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope))) {
         throw new ForbiddenException('当前角色没有部门客户视图权限')
       }
-      const deptIds =
-        user.dataScope === 'CUSTOM'
-          ? user.scopeDeptIds
-          : user.deptId
-            ? await this.dataScope.collectWithDescendants(user.tenantId, user.deptId)
-            : []
+      const effective = await this.dataScope.resolveScope(user, 'menu:customer')
+      if (effective.all) return {}
+      const deptIds = effective.deptIds
       return deptIds.length > 0
         ? { OR: [{ ownerId: user.id }, { deptId: { in: deptIds } }] }
         : { ownerId: user.id }
     }
-    return (await this.dataScope.scopeFilter(user)) as Prisma.CustomerWhereInput
+    return (await this.dataScope.scopeFilter(user, 'menu:customer')) as Prisma.CustomerWhereInput
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
@@ -2262,14 +2267,18 @@ export class CustomersService {
     return owner
   }
 
-  private async scopedWhere(user: AuthUser, id: string): Promise<Prisma.CustomerWhereInput> {
-    const scope = await this.dataScope.scopeFilter(user)
+  private async scopedWhere(
+    user: AuthUser,
+    id: string,
+    permission: string,
+  ): Promise<Prisma.CustomerWhereInput> {
+    const scope = await this.dataScope.scopeFilter(user, permission)
     return { id, tenantId: user.tenantId, AND: [scope] }
   }
 
-  private async ensureInScope(user: AuthUser, id: string) {
+  private async ensureInScope(user: AuthUser, id: string, permission: string) {
     const found = await this.prisma.customer.findFirst({
-      where: await this.scopedWhere(user, id),
+      where: await this.scopedWhere(user, id, permission),
     })
     if (!found) throw new NotFoundException('客户不存在或不在你的数据范围内')
     return found

@@ -18,7 +18,7 @@ export class DashboardService {
 
   /** 销售简报 + 待办（按数据范围统计） */
   async summary(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user)) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
     const since = monthStart()
     const tenantId = user.tenantId
 
@@ -92,7 +92,7 @@ export class DashboardService {
 
   /** 商机漏斗（按阶段） */
   async funnel(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user)) as Prisma.OpportunityWhereInput
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Prisma.OpportunityWhereInput
     const stages = await this.prisma.opportunityStage.findMany({
       where: { tenantId: user.tenantId },
       orderBy: [{ isWon: 'asc' }, { isLost: 'asc' }, { sort: 'asc' }],
@@ -117,7 +117,7 @@ export class DashboardService {
 
   /** 本月业绩排行（赢单金额 / 回款金额 TOP10） */
   async ranking(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user)) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
     const since = monthStart()
 
     const [wonGroups, receivedGroups] = await Promise.all([
@@ -180,7 +180,7 @@ export class DashboardService {
 
   /** 近 6 个月趋势：赢单金额 / 回款金额 */
   async trend(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user)) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
     const since = monthStart(-5)
 
     const [wonList, receivedList] = await Promise.all([
@@ -229,7 +229,7 @@ export class DashboardService {
 
   /** 线索转化与输单原因 */
   async conversion(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user)) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
     const since = monthStart(-5)
 
     const [totalLeads, convertedLeads, lostGroups] = await Promise.all([

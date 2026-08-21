@@ -56,7 +56,7 @@
 | 用户视图 | `UserViewService` + `CrmViewSelect` | `modules/saved-views` + `SavedViewBar` | 🟡 | Lead/Customer/池/协作的 CRUD/固定/启停/排序、active view 与 per-view 列偏好已验收；其它业务模块后续扩展 |
 | 高级搜索 | `search/*` | 部分列表筛选 | 🟡 | 对齐组合条件、数据范围、字段掩码 |
 | 全局搜索 | `GlobalSearchController` | - | ❌ | 迁移全局跨模块搜索 |
-| 数据权限 | `DataScopeService`、`permission/*` | `DataScopeService` + `ScopeResolverService` + `ResourceAccessService` | 🟡 | R6 已完成 canonical 动作权限、授权上限与 CUSTOM 部门及全部下级语义；多角色范围合并与审批待办特例仍待独立迁移 |
+| 数据权限 | `DataScopeService`、`permission/*` | `DataScopeService` + `ScopeResolverService` + `ResourceAccessService` | ✅ | R7 已完成多角色功能权限并集、按权限码筛选角色后的数据范围合并、无关角色范围隔离和权限维度授权上限；后续审批待办特例随审批重构处理 |
 | 字段脱敏 | `UserDesensitizationInterceptor` | - | ❌ | 后续迁移 |
 | 操作日志 | `BaseModuleLogService` 等 | `modules/logs` + `BusinessChangeLogService` | 🚧 | 通用递归字段 diff 已接 Lead/Customer 更新与合并；继续扩对象和时间线 UI |
 | 登录日志 | `SysLoginLogService` | `modules/logs` | 🟡 | 对齐筛选与审计能力 |
@@ -65,8 +65,8 @@
 | 异步导出中心 | `ExportTaskCenterService` | `ExportTask` + `ExportTasksService` | 🟡 | R2 已落任务契约、24h 保留与创建者隔离；当前同步生成文件，Wave 6 再切 BullMQ 异步执行 |
 | API Key | `UserKeyService`、`ApiKeyFilter` | API Token | 🟡 | 对齐权限、生命周期和调用审计 |
 | 部门 | `DepartmentService` | `modules/departments` | ✅ | R6 已对齐根节点保护、同级唯一、循环保护、部门主管与删除引用校验 |
-| 成员 | `OrganizationUserService` | `modules/members` | 🟡 | R6 已完成租户引用、上级循环、状态/安全删除与主管清理；扩展资料、多角色、会话失效和组织同步仍待迁移 |
-| 角色 | `RoleService` | `modules/roles` | ✅ | R6 已对齐 canonical 权限树、祖先权限、授权上限、内置角色保护与 CUSTOM 部门范围 |
+| 成员 | `OrganizationUserService` | `modules/members` | 🟡 | R7 已完成 UserRole 多对多、成员角色多选与角色侧成员关联/移除；扩展资料、会话失效和组织同步仍待迁移 |
+| 角色 | `RoleService` | `modules/roles` | ✅ | R7 已对齐 canonical 权限树、祖先权限、按权限数据范围授权上限、内置角色保护、CUSTOM 下级语义与角色成员页签 |
 | 系统设置 | `OrganizationConfigService` | `modules/settings` | 🟡 | 按实际功能逐项迁移 |
 | 公告 | `AnnouncementService` | - | ❌ | 后续判断是否纳入 |
 | 数据字典 | `DictService` | - | ❌ | 后续迁移 |

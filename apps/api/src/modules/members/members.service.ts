@@ -3,15 +3,20 @@ import { MemberVO, PaginatedResult } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import type { AuthUser } from '../../common/auth-user'
+import { RolesService } from '../roles/roles.service'
 import { CreateMemberDto, QueryMembersDto, UpdateMemberDto } from './dto/member.dto'
 
 type MemberWithRelations = Prisma.UserGetPayload<{
-  include: { role: true; dept: true }
+  include: { userRoles: { include: { role: true } }; dept: true }
 }>
 
 @Injectable()
 export class MembersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rolesService: RolesService,
+  ) {}
 
   async findAll(tenantId: string, query: QueryMembersDto): Promise<PaginatedResult<MemberVO>> {
     const { page = 1, pageSize = 10, keyword, deptId, status } = query
@@ -33,7 +38,7 @@ export class MembersService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,
-        include: { role: true, dept: true },
+        include: { userRoles: { include: { role: true } }, dept: true },
         orderBy: { createdAt: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -66,34 +71,53 @@ export class MembersService {
     })
   }
 
-  async create(tenantId: string, dto: CreateMemberDto): Promise<MemberVO> {
+  async create(actor: AuthUser, dto: CreateMemberDto): Promise<MemberVO> {
+    const tenantId = actor.tenantId
+    const roleIds = [...new Set(dto.roleIds)]
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
     if (exists) throw new ConflictException('该邮箱已被使用')
 
     if (!dto.deptId) throw new BadRequestException('请选择成员所属部门')
+    await this.rolesService.assertRolesAssignable(actor, roleIds)
     await this.validateReferences(tenantId, dto)
     await this.ensurePhoneFree(tenantId, dto.phone)
 
-    const { password, ...rest } = dto
+    const { password, roleIds: _roleIds, ...rest } = dto
     const user = await this.prisma.user.create({
       data: {
         tenantId,
         ...rest,
         name: dto.name.trim(),
         passwordHash: await bcrypt.hash(password, 10),
+        userRoles: {
+          create: roleIds.map((roleId) => ({ tenantId, roleId })),
+        },
       },
-      include: { role: true, dept: true },
+      include: { userRoles: { include: { role: true } }, dept: true },
     })
     return this.toVO(user, await this.getLeaderMap(tenantId, [user.leaderId]))
   }
 
-  async update(tenantId: string, id: string, dto: UpdateMemberDto): Promise<MemberVO> {
+  async update(actor: AuthUser, id: string, dto: UpdateMemberDto): Promise<MemberVO> {
+    const tenantId = actor.tenantId
     const current = await this.ensureExists(tenantId, id)
+    if (dto.roleIds !== undefined) {
+      const currentRoleIds = await this.prisma.userRole.findMany({
+        where: { tenantId, userId: id },
+        select: { roleId: true },
+      })
+      await this.rolesService.assertRolesAssignable(
+        actor,
+        currentRoleIds.map(({ roleId }) => roleId),
+      )
+      await this.rolesService.assertRolesAssignable(actor, dto.roleIds)
+    }
     if (dto.leaderId === id) throw new BadRequestException('直属上级不能是自己')
     await this.validateReferences(tenantId, dto, id)
     await this.ensurePhoneFree(tenantId, dto.phone, id)
 
     const nextDeptId = dto.deptId === undefined ? current.deptId : dto.deptId
+    const { roleIds, ...userData } = dto
     const user = await this.prisma.$transaction(async (tx) => {
       if (dto.deptId !== undefined && nextDeptId !== current.deptId) {
         await tx.department.updateMany({
@@ -101,13 +125,20 @@ export class MembersService {
           data: { leaderId: null },
         })
       }
+      if (roleIds !== undefined) {
+        await tx.userRole.deleteMany({ where: { tenantId, userId: id } })
+        await tx.userRole.createMany({
+          data: roleIds.map((roleId) => ({ tenantId, userId: id, roleId })),
+          skipDuplicates: true,
+        })
+      }
       return tx.user.update({
         where: { id },
         data: {
-          ...dto,
+          ...userData,
           ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
         },
-        include: { role: true, dept: true },
+        include: { userRoles: { include: { role: true } }, dept: true },
       })
     })
     return this.toVO(user, await this.getLeaderMap(tenantId, [user.leaderId]))
@@ -179,13 +210,20 @@ export class MembersService {
 
   private async validateReferences(
     tenantId: string,
-    dto: Pick<UpdateMemberDto, 'roleId' | 'deptId' | 'leaderId'>,
+    dto: Pick<UpdateMemberDto, 'roleIds' | 'deptId' | 'leaderId'>,
     currentId?: string,
   ) {
-    const [role, department, leader] = await Promise.all([
-      dto.roleId
-        ? this.prisma.role.findFirst({ where: { id: dto.roleId, tenantId }, select: { id: true } })
-        : null,
+    if (dto.roleIds !== undefined && dto.roleIds.length === 0) {
+      throw new BadRequestException('至少选择一个角色')
+    }
+    const uniqueRoleIds = [...new Set(dto.roleIds ?? [])]
+    const [roles, department, leader] = await Promise.all([
+      uniqueRoleIds.length > 0
+        ? this.prisma.role.findMany({
+            where: { id: { in: uniqueRoleIds }, tenantId },
+            select: { id: true },
+          })
+        : [],
       dto.deptId
         ? this.prisma.department.findFirst({
             where: { id: dto.deptId, tenantId },
@@ -199,7 +237,9 @@ export class MembersService {
           })
         : null,
     ])
-    if (dto.roleId && !role) throw new BadRequestException('角色不存在或不属于当前租户')
+    if (roles.length !== uniqueRoleIds.length) {
+      throw new BadRequestException('角色不存在或不属于当前租户')
+    }
     if (dto.deptId && !department) throw new BadRequestException('部门不存在或不属于当前租户')
     if (dto.leaderId && !leader) throw new BadRequestException('直属上级不存在或已停用')
     if (currentId && dto.leaderId) await this.ensureNoLeaderCycle(tenantId, currentId, dto.leaderId)
@@ -246,8 +286,8 @@ export class MembersService {
       email: user.email,
       name: user.name,
       status: user.status,
-      roleId: user.roleId,
-      roleName: user.role?.name ?? null,
+      roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),
+      roleIds: user.userRoles.map(({ roleId }) => roleId),
       deptId: user.deptId,
       deptName: user.dept?.name ?? null,
       leaderId: user.leaderId,

@@ -157,7 +157,7 @@ function openHit(hit: DuplicateHitVO) {
 
     <h2 class="text-lg font-semibold mb-1">你好，{{ auth.user?.name ?? '朋友' }}</h2>
     <p class="text-sm text-[var(--el-text-color-secondary)] mb-4">
-      {{ auth.user?.deptName ?? '' }} · {{ auth.user?.roleName ?? '' }}，以下是你数据范围内的销售概况
+      {{ auth.user?.deptName ?? '' }} · {{ auth.user?.roles.map((role) => role.name).join(' / ') ?? '' }}，以下是你数据范围内的销售概况
     </p>
 
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">

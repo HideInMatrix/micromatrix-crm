@@ -39,7 +39,7 @@ export class ContractsService {
   async findAll(user: AuthUser, query: QueryContractsDto): Promise<PaginatedResult<ContractVO>> {
     const { page = 1, pageSize = 10, keyword, status, customerId } = query
     const [scope, fields] = await Promise.all([
-      this.dataScope.scopeFilter(user),
+      this.dataScope.scopeFilter(user, 'menu:contract'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
@@ -135,7 +135,7 @@ export class ContractsService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateContractDto): Promise<ContractVO> {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'contract:update')
     if (existing.status !== 'DRAFT') throw new BadRequestException('仅草稿状态的合同可编辑')
     const { customData, items, ownerId, fromQuoteId: _ignored, signedAt, startAt, endAt, customerId, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
@@ -174,7 +174,7 @@ export class ContractsService {
   }
 
   async changeStatus(user: AuthUser, id: string, dto: ChangeContractStatusDto) {
-    const contract = await this.ensureInScope(user, id)
+    const contract = await this.ensureInScope(user, id, 'contract:update')
     // 配置了审批流的合同必须审批通过后自动生效
     if (
       dto.status === 'EXECUTING' &&
@@ -188,7 +188,7 @@ export class ContractsService {
   }
 
   async remove(user: AuthUser, id: string) {
-    const contract = await this.ensureInScope(user, id)
+    const contract = await this.ensureInScope(user, id, 'contract:delete')
     if (contract.status !== 'DRAFT') throw new BadRequestException('仅草稿状态的合同可删除')
     await this.prisma.contract.delete({ where: { id } })
     return { id, name: contract.name }
@@ -229,8 +229,8 @@ export class ContractsService {
     return owner
   }
 
-  async ensureInScope(user: AuthUser, id: string) {
-    const scope = await this.dataScope.scopeFilter(user)
+  async ensureInScope(user: AuthUser, id: string, permission = 'menu:contract') {
+    const scope = await this.dataScope.scopeFilter(user, permission)
     const contract = await this.prisma.contract.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope as Prisma.ContractWhereInput] },
     })

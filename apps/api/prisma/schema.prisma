@@ -49,6 +49,7 @@ model Tenant {
 
   users         User[]
   roles         Role[]
+  userRoles     UserRole[]
   customers     Customer[]
   contacts      Contact[]
   subscriptions Subscription[]
@@ -84,7 +85,6 @@ model User {
   passwordHash String
   name         String
   status       UserStatus @default(ACTIVE)
-  roleId       String?
   deptId       String?
   // 直属上级（逐级审批的汇报线）
   leaderId     String?
@@ -94,8 +94,8 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   tenant         Tenant      @relation(fields: [tenantId], references: [id])
-  role           Role?       @relation(fields: [roleId], references: [id])
   dept           Department? @relation(fields: [deptId], references: [id])
+  userRoles      UserRole[]
   ownedCustomers Customer[]
   ownedContacts  Contact[]
 
@@ -120,11 +120,29 @@ model Role {
   updatedAt   DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
-  users  User[]
+  userRoles UserRole[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("roles")
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([tenantId, roleId])
+  @@index([tenantId, userId])
+  @@map("user_roles")
 }
 
 model Customer {

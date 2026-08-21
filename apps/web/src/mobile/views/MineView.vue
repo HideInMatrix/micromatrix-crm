@@ -29,7 +29,8 @@ async function handleLogout() {
       <div>
         <div class="font-medium">{{ auth.user?.name ?? '-' }}</div>
         <div class="text-xs text-gray-500 mt-1">
-          {{ auth.user?.deptName ?? '未分配部门' }} · {{ auth.user?.roleName ?? '无角色' }}
+          {{ auth.user?.deptName ?? '未分配部门' }} ·
+          {{ auth.user?.roles.map((role) => role.name).join(' / ') || '无角色' }}
         </div>
       </div>
     </div>

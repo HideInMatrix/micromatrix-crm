@@ -11,7 +11,7 @@ import { JwtService } from '@nestjs/jwt'
 import { hasPermission } from '@micromatrix/shared'
 import type { Request } from 'express'
 import { PrismaService } from '../../prisma/prisma.service'
-import type { AuthUser } from '../auth-user'
+import { toAuthUser } from '../auth-user'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
 
@@ -53,24 +53,13 @@ export class AuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: { role: true },
+      include: { userRoles: { include: { role: true } } },
     })
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('用户不存在或已被禁用')
     }
 
-    const authUser: AuthUser = {
-      id: user.id,
-      tenantId: user.tenantId,
-      email: user.email,
-      name: user.name,
-      deptId: user.deptId,
-      leaderId: user.leaderId,
-      roleId: user.roleId,
-      permissions: user.role?.permissions ?? [],
-      dataScope: user.role?.dataScope ?? 'SELF',
-      scopeDeptIds: user.role?.scopeDeptIds ?? [],
-    }
+    const authUser = toAuthUser(user)
     request.user = authUser
 
     const required =

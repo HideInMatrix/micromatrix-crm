@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FilterCondition } from '@micromatrix/shared'
-import type { AuthUser } from '../../common/auth-user'
+import { toAuthUser, type AuthUser } from '../../common/auth-user'
 import { buildFilterClauses } from '../../common/filter-builder'
 import { ScopeResolverService } from '../../common/services/scope-resolver.service'
 import { Prisma } from '../../generated/prisma/client'
@@ -608,21 +608,10 @@ export class ResourcePoolsService {
   private async loadAuthUser(tenantId: string, userId: string): Promise<AuthUser | null> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, tenantId, status: 'ACTIVE' },
-      include: { role: true },
+      include: { userRoles: { include: { role: true } } },
     })
     if (!user) return null
-    return {
-      id: user.id,
-      tenantId: user.tenantId,
-      email: user.email,
-      name: user.name,
-      deptId: user.deptId,
-      leaderId: user.leaderId,
-      roleId: user.roleId,
-      permissions: user.role?.permissions ?? [],
-      dataScope: user.role?.dataScope ?? 'SELF',
-      scopeDeptIds: user.role?.scopeDeptIds ?? [],
-    }
+    return toAuthUser(user)
   }
 
   private validateRulePairs(dto: CreateResourcePoolDto | UpdateResourcePoolDto) {

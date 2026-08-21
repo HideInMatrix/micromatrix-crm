@@ -4,6 +4,14 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-08-21：R7 多角色与按权限数据范围
+
+- 对照 `UserRole`、`PermissionCache`、`DataScopeService`、组织成员 `roleIds` 多选和角色 `memberTab`，将 `User.roleId` 完整替换为 `user_roles` 多对多关联。
+- 登录与 Guard 的功能权限改为全部角色权限并集；JWT 仍只保存用户 ID，因此角色变更下一请求即时生效。
+- 数据范围改为 `scopeFilter(user, permission)` / `matchesResource(..., permission)`：仅目标权限所属角色参与合并；`ALL` 胜出，否则合并 DEPT/DEPT_AND_CHILD/CUSTOM 并保留本人数据。
+- 成员管理支持多个角色标签和多选表单；角色管理新增成员 Drawer、分页列表、批量关联和移除。
+- 验收：Prisma migrate + seed、11 条单元测试、API/Web build/typecheck、ESLint、186 条全链路 smoke、浏览器成员多选/角色成员 Drawer/控制台无错误。
+
 ## 0. 探测进度
 
 | 轮次 | 日期 | 范围 | 结论落点 |

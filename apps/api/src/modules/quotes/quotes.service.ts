@@ -30,7 +30,7 @@ export class QuotesService {
   async findAll(user: AuthUser, query: QueryQuotesDto): Promise<PaginatedResult<QuoteVO>> {
     const { page = 1, pageSize = 10, keyword, status, customerId } = query
     const [scope, fields] = await Promise.all([
-      this.dataScope.scopeFilter(user),
+      this.dataScope.scopeFilter(user, 'menu:quote'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
@@ -102,7 +102,7 @@ export class QuotesService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateQuoteDto): Promise<QuoteVO> {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'quote:update')
     if (existing.status !== 'DRAFT') throw new BadRequestException('仅草稿状态的报价可编辑')
     const { customData, items, ownerId, validUntil, customerId, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
@@ -140,7 +140,7 @@ export class QuotesService {
 
   /** 确认 / 作废 */
   async changeStatus(user: AuthUser, id: string, status: 'CONFIRMED' | 'VOID') {
-    const quote = await this.ensureInScope(user, id)
+    const quote = await this.ensureInScope(user, id, 'quote:update')
     if (quote.status !== 'DRAFT') throw new BadRequestException('仅草稿状态可变更')
     // 配置了审批流的报价必须走审批通过后自动确认
     if (
@@ -155,7 +155,7 @@ export class QuotesService {
   }
 
   async remove(user: AuthUser, id: string) {
-    const quote = await this.ensureInScope(user, id)
+    const quote = await this.ensureInScope(user, id, 'quote:delete')
     await this.prisma.quote.delete({ where: { id } })
     return { id, name: quote.name }
   }
@@ -202,8 +202,8 @@ export class QuotesService {
     return owner
   }
 
-  private async ensureInScope(user: AuthUser, id: string) {
-    const scope = await this.dataScope.scopeFilter(user)
+  private async ensureInScope(user: AuthUser, id: string, permission: string) {
+    const scope = await this.dataScope.scopeFilter(user, permission)
     const quote = await this.prisma.quote.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope as Prisma.QuoteWhereInput] },
     })

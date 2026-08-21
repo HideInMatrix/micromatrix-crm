@@ -4,13 +4,14 @@ import {
   PERMISSION_TREE,
   permissionAncestorMap,
   type DepartmentVO,
+  type MemberVO,
   type PermissionNode,
   type RoleVO,
 } from '@micromatrix/shared'
 import type { ElTree, FormInstance, FormRules } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
-import { deptApi, roleApi, type RoleForm } from '@/api/system'
+import { deptApi, memberApi, roleApi, type MemberOption, type RoleForm } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -31,6 +32,16 @@ const form = reactive<RoleForm>({
   scopeDeptIds: [],
   remark: '',
 })
+
+const memberDrawerVisible = ref(false)
+const memberLoading = ref(false)
+const memberSaving = ref(false)
+const selectedRole = ref<RoleVO | null>(null)
+const roleMembers = ref<MemberVO[]>([])
+const memberTotal = ref(0)
+const memberQuery = reactive({ page: 1, pageSize: 10, keyword: '' })
+const memberOptions = ref<MemberOption[]>([])
+const addingUserIds = ref<string[]>([])
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
@@ -132,6 +143,71 @@ async function handleDelete(row: RoleVO) {
   }
 }
 
+async function loadRoleMembers() {
+  if (!selectedRole.value) return
+  memberLoading.value = true
+  try {
+    const { data } = await roleApi.members(selectedRole.value.id, {
+      page: memberQuery.page,
+      pageSize: memberQuery.pageSize,
+      keyword: memberQuery.keyword.trim() || undefined,
+    })
+    roleMembers.value = data.items
+    memberTotal.value = data.total
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    memberLoading.value = false
+  }
+}
+
+async function openMembers(row: RoleVO) {
+  selectedRole.value = row
+  memberQuery.page = 1
+  memberQuery.keyword = ''
+  addingUserIds.value = []
+  memberDrawerVisible.value = true
+  const [{ data: options }] = await Promise.all([memberApi.options(), loadRoleMembers()])
+  memberOptions.value = options
+}
+
+async function handleAddMembers() {
+  if (!selectedRole.value || addingUserIds.value.length === 0) return
+  memberSaving.value = true
+  try {
+    await roleApi.addMembers(selectedRole.value.id, addingUserIds.value)
+    ElMessage.success('角色成员已添加')
+    addingUserIds.value = []
+    await Promise.all([loadRoleMembers(), loadData()])
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    memberSaving.value = false
+  }
+}
+
+async function handleRemoveMember(member: MemberVO) {
+  if (!selectedRole.value) return
+  const confirmed = await ElMessageBox.confirm(
+    `确定从「${selectedRole.value.name}」移除成员「${member.name}」吗？`,
+    '移除确认',
+    { type: 'warning' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    await roleApi.removeMember(selectedRole.value.id, member.id)
+    ElMessage.success('角色成员已移除')
+    await Promise.all([loadRoleMembers(), loadData()])
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function availableMemberOptions() {
+  const related = new Set(roleMembers.value.map((member) => member.id))
+  return memberOptions.value.filter((member) => !related.has(member.id))
+}
+
 function scopeLabel(scope: string) {
   return DATA_SCOPE_OPTIONS.find((o) => o.value === scope)?.label ?? scope
 }
@@ -164,8 +240,9 @@ onMounted(loadData)
       <el-table-column label="备注" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="210" fixed="right">
         <template #default="{ row }">
+          <el-button link type="primary" @click="openMembers(row as RoleVO)">成员</el-button>
           <el-button
             v-if="auth.hasPerm('system:role:update')"
             link
@@ -250,4 +327,78 @@ onMounted(loadData)
       </template>
     </el-drawer>
   </el-card>
+
+  <el-drawer
+    v-model="memberDrawerVisible"
+    :title="`${selectedRole?.name ?? ''} · 成员`"
+    size="640px"
+    destroy-on-close
+  >
+    <div v-if="auth.hasPerm('system:role:update')" class="flex gap-2 mb-4">
+      <el-select
+        v-model="addingUserIds"
+        multiple
+        filterable
+        collapse-tags
+        placeholder="选择要添加的成员"
+        class="flex-1"
+      >
+        <el-option
+          v-for="member in availableMemberOptions()"
+          :key="member.id"
+          :label="member.name"
+          :value="member.id"
+        />
+      </el-select>
+      <el-button
+        type="primary"
+        :disabled="addingUserIds.length === 0"
+        :loading="memberSaving"
+        @click="handleAddMembers"
+      >
+        添加成员
+      </el-button>
+    </div>
+    <el-input
+      v-model="memberQuery.keyword"
+      placeholder="搜索姓名 / 邮箱"
+      clearable
+      class="mb-3"
+      @keyup.enter="memberQuery.page = 1; loadRoleMembers()"
+      @clear="memberQuery.page = 1; loadRoleMembers()"
+    />
+    <el-table v-loading="memberLoading" :data="roleMembers" stripe>
+      <el-table-column prop="name" label="姓名" width="110" />
+      <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
+      <el-table-column prop="deptName" label="部门" width="120" />
+      <el-table-column label="全部角色" min-width="160">
+        <template #default="{ row }">
+          <el-tag v-for="role in row.roles" :key="role.id" size="small" effect="plain" class="mr-1">
+            {{ role.name }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column v-if="auth.hasPerm('system:role:update')" label="操作" width="70">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="danger"
+            :disabled="selectedRole?.isSystem"
+            @click="handleRemoveMember(row as MemberVO)"
+          >
+            移除
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="flex justify-end mt-4">
+      <el-pagination
+        v-model:current-page="memberQuery.page"
+        :page-size="memberQuery.pageSize"
+        :total="memberTotal"
+        layout="total, prev, pager, next"
+        @current-change="loadRoleMembers"
+      />
+    </div>
+  </el-drawer>
 </template>

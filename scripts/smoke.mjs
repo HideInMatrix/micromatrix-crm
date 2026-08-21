@@ -159,22 +159,25 @@ check('R6 角色拒绝未知权限码', unknownPermissionRole.status === 400)
 
 const customRole = await post('/roles', admin.headers, {
   name: `R6自定义范围-${stamp}`,
-  permissions: ['customer:update'],
+  permissions: ['menu:customer'],
   dataScope: 'CUSTOM',
   scopeDeptIds: [salesDepartment.id],
   remark: 'smoke temporary role',
 })
-check(
-  'R6 动作权限自动补齐祖先菜单权限',
-  customRole.permissions.includes('customer:update') && customRole.permissions.includes('menu:customer'),
-)
+const selfEditRole = await post('/roles', admin.headers, {
+  name: `R7本人编辑-${stamp}`,
+  permissions: ['customer:update'],
+  dataScope: 'SELF',
+  remark: 'smoke permission-specific scope role',
+})
+check('R7 动作权限自动补齐祖先菜单权限', selfEditRole.permissions.includes('menu:customer'))
 
 const invalidMemberDepartment = await request('POST', '/members', admin.headers, {
   email: `invalid-${stamp}@smoke.local`,
   name: 'R6 无效部门成员',
   password: 'smoke123',
   deptId: `missing-${stamp}`,
-  roleId: customRole.id,
+  roleIds: [customRole.id],
 })
 check('R6 成员拒绝无效部门引用', invalidMemberDepartment.status === 400)
 
@@ -183,9 +186,24 @@ const tempMember = await post('/members', admin.headers, {
   name: `R6成员-${stamp}`,
   password: 'smoke123',
   deptId: tempDepartment.id,
-  roleId: customRole.id,
+  roleIds: [selfEditRole.id],
 })
 check('R6 成员引用有效租户内部门与角色', Boolean(tempMember.id))
+
+const relatedRoleMember = await request(
+  'POST',
+  `/roles/${customRole.id}/members`,
+  admin.headers,
+  { userIds: [tempMember.id] },
+)
+check('R7 可从角色侧批量关联成员', relatedRoleMember.ok)
+const customRoleMembers = await get(`/roles/${customRole.id}/members?pageSize=20`, admin.headers)
+check(
+  'R7 角色成员列表包含新关联成员及全部角色',
+  customRoleMembers.items.some(
+    (member) => member.id === tempMember.id && member.roleIds.length === 2,
+  ),
+)
 
 const invalidLeader = await request('PATCH', `/departments/${tempDepartment.id}`, admin.headers, {
   leaderId: manager.user.id,
@@ -206,6 +224,10 @@ const selfLeader = await request('PATCH', `/members/${tempMember.id}`, admin.hea
 check('R6 成员直属上级不能是自己', selfLeader.status === 400)
 
 const customUser = await login(`r6-${stamp}@smoke.local`, 'smoke123')
+check(
+  'R7 登录返回多角色与功能权限并集',
+  customUser.user.roles.length === 2 && customUser.user.permissions.includes('customer:update'),
+)
 const deniedRoleDetails = await request('GET', '/roles', customUser.headers)
 const roleOptions = await get('/roles/options', customUser.headers)
 check('R6 完整角色配置需要角色读取权限', deniedRoleDetails.status === 403)
@@ -222,13 +244,35 @@ const customScopeCustomer = await post('/customers', admin.headers, {
 const customScopeCustomers = await get('/customers?pageSize=100', customUser.headers)
 const customScopeCustomerDetail = await get(`/customers/${customScopeCustomer.id}`, customUser.headers)
 check(
-  'R6 CUSTOM 所选部门包含全部下级部门（列表）',
+  'R7 menu:customer 仅合并拥有读取权限角色的 CUSTOM 范围（列表）',
   customScopeCustomers.items.some((customer) => customer.id === customScopeCustomer.id),
 )
 check(
-  'R6 CUSTOM 所选部门包含全部下级部门（单资源）',
+  'R7 menu:customer 的 CUSTOM 所选部门包含全部下级部门（单资源）',
   customScopeCustomerDetail.id === customScopeCustomer.id,
 )
+
+const deniedScopedUpdate = await request(
+  'PATCH',
+  `/customers/${customScopeCustomer.id}`,
+  customUser.headers,
+  { remark: 'should-not-update' },
+)
+check(
+  'R7 无关角色的 CUSTOM 范围不会泄漏给 customer:update SELF 角色',
+  deniedScopedUpdate.status === 403 || deniedScopedUpdate.status === 404,
+)
+
+await request('PATCH', `/roles/${customRole.id}`, admin.headers, {
+  permissions: ['customer:update'],
+})
+const allowedScopedUpdate = await request(
+  'PATCH',
+  `/customers/${customScopeCustomer.id}`,
+  customUser.headers,
+  { remark: 'permission-specific-scope-ok' },
+)
+check('R7 同权限角色加入 CUSTOM 后编辑范围按并集合并', allowedScopedUpdate.ok)
 
 await request('DELETE', `/customers/${customScopeCustomer.id}`, admin.headers)
 const deletedTempMember = await request('DELETE', `/members/${tempMember.id}`, admin.headers)
@@ -246,6 +290,8 @@ const deletedTempDepartment = await request(
 check('R6 临时部门可清理', deletedTempDepartment.ok)
 const deletedCustomRole = await request('DELETE', `/roles/${customRole.id}`, admin.headers)
 check('R6 临时角色可清理', deletedCustomRole.ok)
+const deletedSelfEditRole = await request('DELETE', `/roles/${selfEditRole.id}`, admin.headers)
+check('R7 第二临时角色可清理', deletedSelfEditRole.ok)
 
 // 3. 元数据引擎
 const fields = await get('/metadata/customer/fields', admin.headers)

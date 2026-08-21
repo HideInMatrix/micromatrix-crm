@@ -370,7 +370,11 @@ export class ApprovalsService {
         break
       case 'ROLE': {
         const users = await this.prisma.user.findMany({
-          where: { tenantId, roleId: { in: node.approverIds }, status: 'ACTIVE' },
+          where: {
+            tenantId,
+            status: 'ACTIVE',
+            userRoles: { some: { roleId: { in: node.approverIds } } },
+          },
           select: { id: true },
         })
         ids = users.map((u) => u.id)

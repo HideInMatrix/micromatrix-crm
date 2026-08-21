@@ -40,7 +40,7 @@ export class FollowUpsService {
       if (!hasPermission(user.permissions, 'customer:update')) {
         throw new ForbiddenException('无客户更新权限')
       }
-      await this.customerAccess.assertCollaborateWrite(user, dto.targetId)
+      await this.customerAccess.assertCollaborateWrite(user, dto.targetId, 'customer:update')
     }
     const record = await this.prisma.followUpRecord.create({
       data: {

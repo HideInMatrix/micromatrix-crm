@@ -9,12 +9,20 @@ import {
   flattenPermissionCodes,
   permissionAncestorMap,
   RoleVO,
+  type MemberVO,
+  type PaginatedResult,
 } from '@micromatrix/shared'
 import { DataScope, Prisma, Role } from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { PrismaService } from '../../prisma/prisma.service'
-import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto'
+import {
+  CreateRoleDto,
+  QueryRoleMembersDto,
+  UpdateRoleDto,
+} from './dto/role.dto'
+
+type RoleWithCount = Role & { _count?: { userRoles: number } }
 
 @Injectable()
 export class RolesService {
@@ -26,10 +34,10 @@ export class RolesService {
   async findAll(tenantId: string): Promise<RoleVO[]> {
     const roles = await this.prisma.role.findMany({
       where: { tenantId },
-      include: { _count: { select: { users: true } } },
+      include: { _count: { select: { userRoles: true } } },
       orderBy: { createdAt: 'asc' },
     })
-    return roles.map((r) => ({ ...this.toVO(r), userCount: r._count.users }))
+    return roles.map((r) => ({ ...this.toVO(r), userCount: r._count.userRoles }))
   }
 
   async options(tenantId: string) {
@@ -90,8 +98,18 @@ export class RolesService {
   async remove(tenantId: string, id: string) {
     const role = await this.ensureExists(tenantId, id)
     if (role.isSystem) throw new BadRequestException('系统内置角色不可删除')
-    const userCount = await this.prisma.user.count({ where: { tenantId, roleId: id } })
-    if (userCount > 0) throw new BadRequestException('角色下存在成员，无法删除')
+    const soleRoleMemberCount = await this.prisma.user.count({
+      where: {
+        tenantId,
+        userRoles: {
+          some: { roleId: id },
+          none: { roleId: { not: id } },
+        },
+      },
+    })
+    if (soleRoleMemberCount > 0) {
+      throw new BadRequestException('该角色仍是部分成员的唯一角色，请先为其分配其他角色')
+    }
     await this.prisma.role.delete({ where: { id } })
     return { id, name: role.name }
   }
@@ -113,7 +131,109 @@ export class RolesService {
     return role
   }
 
-  private toVO(role: Role | (Role & { _count?: Prisma.RoleCountOutputType })): RoleVO {
+  async members(
+    tenantId: string,
+    roleId: string,
+    query: QueryRoleMembersDto,
+  ): Promise<PaginatedResult<MemberVO>> {
+    await this.ensureExists(tenantId, roleId)
+    const { page = 1, pageSize = 10, keyword } = query
+    const where: Prisma.UserWhereInput = {
+      tenantId,
+      userRoles: { some: { roleId } },
+      ...(keyword
+        ? {
+            OR: [
+              { name: { contains: keyword, mode: 'insensitive' } },
+              { email: { contains: keyword, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    }
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        include: { userRoles: { include: { role: true } }, dept: true },
+        orderBy: { createdAt: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.user.count({ where }),
+    ])
+    const leaderIds = users.map((user) => user.leaderId).filter((id): id is string => !!id)
+    const leaders = leaderIds.length
+      ? await this.prisma.user.findMany({
+          where: { tenantId, id: { in: leaderIds } },
+          select: { id: true, name: true },
+        })
+      : []
+    const leaderMap = new Map(leaders.map((leader) => [leader.id, leader.name]))
+    return {
+      items: users.map((user) => ({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        status: user.status,
+        roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),
+        roleIds: user.userRoles.map(({ roleId: id }) => id),
+        deptId: user.deptId,
+        deptName: user.dept?.name ?? null,
+        leaderId: user.leaderId,
+        leaderName: user.leaderId ? (leaderMap.get(user.leaderId) ?? null) : null,
+        position: user.position,
+        phone: user.phone,
+        createdAt: user.createdAt.toISOString(),
+      })),
+      total,
+      page,
+      pageSize,
+    }
+  }
+
+  async addMembers(actor: AuthUser, roleId: string, userIds: string[]) {
+    const tenantId = actor.tenantId
+    await this.assertRolesAssignable(actor, [roleId])
+    const ids = [...new Set(userIds)]
+    const count = await this.prisma.user.count({ where: { tenantId, id: { in: ids } } })
+    if (count !== ids.length) throw new BadRequestException('成员不存在或不属于当前租户')
+    await this.prisma.userRole.createMany({
+      data: ids.map((userId) => ({ tenantId, roleId, userId })),
+      skipDuplicates: true,
+    })
+    return { roleId, userIds: ids }
+  }
+
+  async removeMember(actor: AuthUser, roleId: string, userId: string) {
+    const tenantId = actor.tenantId
+    const [role] = await this.assertRolesAssignable(actor, [roleId])
+    if (role.isSystem) throw new BadRequestException('不能从系统内置角色移除成员')
+    const relation = await this.prisma.userRole.findFirst({ where: { tenantId, roleId, userId } })
+    if (!relation) throw new NotFoundException('该成员未关联此角色')
+    const roleCount = await this.prisma.userRole.count({ where: { tenantId, userId } })
+    if (roleCount <= 1) throw new BadRequestException('成员至少需要保留一个角色')
+    await this.prisma.userRole.delete({ where: { id: relation.id } })
+    return { roleId, userId }
+  }
+
+  async assertRolesAssignable(actor: AuthUser, roleIds: string[]) {
+    const ids = [...new Set(roleIds)]
+    const roles = await this.prisma.role.findMany({
+      where: { tenantId: actor.tenantId, id: { in: ids } },
+    })
+    if (roles.length !== ids.length) throw new BadRequestException('角色不存在或不属于当前租户')
+    if (actor.permissions.includes('*')) return roles
+    for (const role of roles) {
+      if (role.isSystem) throw new ForbiddenException('不能分配系统内置角色')
+      const unauthorized = role.permissions.filter((code) => !actor.permissions.includes(code))
+      if (unauthorized.length > 0) throw new ForbiddenException('不能分配权限高于自己的角色')
+      for (const permission of role.permissions) {
+        await this.assertScopeGrant(actor, permission, role.dataScope, role.scopeDeptIds)
+      }
+    }
+    return roles
+  }
+
+  private toVO(role: RoleWithCount): RoleVO {
     return {
       id: role.id,
       name: role.name,
@@ -150,7 +270,9 @@ export class RolesService {
     if (!actor.permissions.includes('*')) {
       const unauthorized = permissions.filter((code) => !actor.permissions.includes(code))
       if (unauthorized.length > 0) throw new ForbiddenException('不能授予自己不具备的功能权限')
-      await this.assertScopeGrant(actor, dataScope, scopeDeptIds)
+      for (const permission of permissions) {
+        await this.assertScopeGrant(actor, permission, dataScope, scopeDeptIds)
+      }
     }
     return { permissions, dataScope, scopeDeptIds }
   }
@@ -167,48 +289,22 @@ export class RolesService {
     return [...normalized]
   }
 
-  private async assertScopeGrant(actor: AuthUser, target: DataScope, targetDeptIds: string[]) {
-    if (actor.dataScope === 'ALL') return
-    if (actor.dataScope === 'SELF') {
-      if (target !== 'SELF') throw new ForbiddenException('不能授予比自身更宽的数据范围')
-      return
+  private async assertScopeGrant(
+    actor: AuthUser,
+    permission: string,
+    target: DataScope,
+    targetDeptIds: string[],
+  ) {
+    if (target === 'SELF') return
+    const effective = await this.dataScope.resolveScope(actor, permission)
+    if (effective.all) return
+    if (target !== 'CUSTOM') {
+      throw new ForbiddenException('动态部门范围仅允许由拥有全部数据权限的用户授予')
     }
-    if (actor.dataScope === 'DEPT') {
-      if (!['SELF', 'DEPT'].includes(target)) {
-        throw new ForbiddenException('不能授予比自身更宽的数据范围')
-      }
-      return
-    }
-    if (actor.dataScope === 'DEPT_AND_CHILD') {
-      if (['SELF', 'DEPT', 'DEPT_AND_CHILD'].includes(target)) return
-      if (target !== 'CUSTOM' || !actor.deptId) {
-        throw new ForbiddenException('不能授予比自身更宽的数据范围')
-      }
-      const actorDeptIds = new Set(
-        await this.dataScope.collectWithDescendants(actor.tenantId, actor.deptId),
-      )
-      const targetDeptIdsExpanded = await this.dataScope.collectManyWithDescendants(
-        actor.tenantId,
-        targetDeptIds,
-      )
-      if (targetDeptIdsExpanded.some((id) => !actorDeptIds.has(id))) {
-        throw new ForbiddenException('自定义部门超出当前用户的数据范围')
-      }
-      return
-    }
-    if (actor.dataScope === 'CUSTOM') {
-      if (target === 'SELF') return
-      if (target !== 'CUSTOM') throw new ForbiddenException('不能授予比自身更宽的数据范围')
-      const actorDeptIds = new Set(
-        await this.dataScope.collectManyWithDescendants(actor.tenantId, actor.scopeDeptIds),
-      )
-      const targetDeptIdsExpanded = await this.dataScope.collectManyWithDescendants(
-        actor.tenantId,
-        targetDeptIds,
-      )
-      if (targetDeptIdsExpanded.some((id) => !actorDeptIds.has(id))) {
-        throw new ForbiddenException('自定义部门超出当前用户的数据范围')
-      }
+    const allowed = new Set(effective.deptIds)
+    const expanded = await this.dataScope.collectManyWithDescendants(actor.tenantId, targetDeptIds)
+    if (expanded.some((id) => !allowed.has(id))) {
+      throw new ForbiddenException('自定义部门超出当前用户在该权限下的数据范围')
     }
   }
 }

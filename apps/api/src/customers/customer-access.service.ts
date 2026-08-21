@@ -32,7 +32,11 @@ export class CustomerAccessService {
     private readonly resourcePools: ResourcePoolsService,
   ) {}
 
-  async resolve(user: AuthUser, customerId: string): Promise<CustomerAccessContext> {
+  async resolve(
+    user: AuthUser,
+    customerId: string,
+    permission = 'menu:customer',
+  ): Promise<CustomerAccessContext> {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, tenantId: user.tenantId },
     })
@@ -42,6 +46,7 @@ export class CustomerAccessService {
       user,
       customer.ownerId,
       customer.deptId,
+      permission,
     )
 
     let pool = false
@@ -85,19 +90,19 @@ export class CustomerAccessService {
   }
 
   async assertRead(user: AuthUser, customerId: string) {
-    const context = await this.resolve(user, customerId)
+    const context = await this.resolve(user, customerId, 'menu:customer')
     if (!context.canRead) throw new NotFoundException('客户不存在或无权访问')
     return context
   }
 
   async assertManageCustomer(user: AuthUser, customerId: string) {
-    const context = await this.resolve(user, customerId)
+    const context = await this.resolve(user, customerId, 'customer:update')
     if (!context.canManageCustomer) throw new ForbiddenException('无权修改该客户')
     return context
   }
 
-  async assertCollaborateWrite(user: AuthUser, customerId: string) {
-    const context = await this.resolve(user, customerId)
+  async assertCollaborateWrite(user: AuthUser, customerId: string, permission: string) {
+    const context = await this.resolve(user, customerId, permission)
     if (!context.canCollaborateWrite) throw new ForbiddenException('当前协作关系仅允许查看')
     return context
   }

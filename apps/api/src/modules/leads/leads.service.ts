@@ -85,7 +85,7 @@ export class LeadsService {
             OR: [{ poolId: { in: accessiblePoolIds } }, { poolId: null }],
           }
     } else {
-      scopeClause = { inPool: false, ...(await this.dataScope.scopeFilter(user)) }
+      scopeClause = { inPool: false, ...(await this.dataScope.scopeFilter(user, 'menu:lead')) }
     }
 
     const where: Prisma.LeadWhereInput = {
@@ -125,7 +125,9 @@ export class LeadsService {
       if (lead.poolId && !options.some((pool) => pool.id === lead.poolId)) {
         throw new NotFoundException('线索不存在或无权访问')
       }
-    } else if (!(await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId))) {
+    } else if (
+      !(await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId, 'menu:lead'))
+    ) {
       throw new NotFoundException('线索不存在或不在你的数据范围内')
     }
     return this.toSingleVO(user, lead)
@@ -161,7 +163,7 @@ export class LeadsService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateLeadDto): Promise<LeadVO> {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'lead:update')
     return this.updateExisting(user, existing, dto)
   }
 
@@ -214,14 +216,14 @@ export class LeadsService {
   }
 
   async remove(user: AuthUser, id: string) {
-    const lead = await this.ensureInScope(user, id)
+    const lead = await this.ensureInScope(user, id, 'lead:delete')
     await this.deleteLeadResources(user, [lead])
     return { id, name: lead.name }
   }
 
   /** 退回线索池 */
   async moveToPool(user: AuthUser, id: string, poolId?: string, reasonId?: string) {
-    const lead = await this.ensureInScope(user, id)
+    const lead = await this.ensureInScope(user, id, 'lead:assign')
     if (lead.status !== 'FOLLOWING') throw new BadRequestException('已转化/无效线索不能退回线索池')
     const pool = await this.pools.resolveMoveTargetPool(user.tenantId, 'lead', lead.ownerId, poolId)
     const now = new Date()
@@ -379,7 +381,7 @@ export class LeadsService {
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
 
     // CsBatchPermission 语义：任何一条不在当前数据范围，都在写入前整体失败。
-    const leads = await Promise.all(dto.ids.map((id) => this.ensureInScope(user, id)))
+    const leads = await Promise.all(dto.ids.map((id) => this.ensureInScope(user, id, 'lead:update')))
 
     if (field.key === 'ownerId') {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
@@ -404,7 +406,7 @@ export class LeadsService {
   }
 
   async batchDelete(user: AuthUser, ids: string[]): Promise<BatchAffectResult> {
-    const leads = await Promise.all(ids.map((id) => this.ensureInScope(user, id)))
+    const leads = await Promise.all(ids.map((id) => this.ensureInScope(user, id, 'lead:delete')))
     await this.deleteLeadResources(user, leads)
     return { success: ids.length, fail: 0, failedIds: [] }
   }
@@ -471,13 +473,13 @@ export class LeadsService {
       const options = await this.pools.options(user, 'lead')
       if (!options.some((pool) => pool.id === lead.poolId)) throw new NotFoundException('线索不存在或无权访问')
     } else if (!lead.inPool) {
-      await this.ensureInScope(user, id)
+      await this.ensureInScope(user, id, 'menu:lead')
     }
     return this.pools.ownerHistory(user, 'lead', id)
   }
 
   async markInvalid(user: AuthUser, id: string) {
-    const lead = await this.ensureInScope(user, id)
+    const lead = await this.ensureInScope(user, id, 'lead:update')
     await this.prisma.lead.update({ where: { id }, data: { status: 'INVALID' } })
     return { id, name: lead.name }
   }
@@ -491,7 +493,7 @@ export class LeadsService {
       await this.opportunities.listStages(user.tenantId)
     }
 
-    const lead = await this.ensureInScope(user, dto.clueId)
+    const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
     if (lead.transitionType === 'CUSTOMER' || lead.status === 'CONVERTED') {
       throw new BadRequestException('线索已转客户')
     }
@@ -537,7 +539,7 @@ export class LeadsService {
   /** Cordys /lead/transition/account：客户新增表单 + clueId。 */
   async transitionCustomer(user: AuthUser, dto: TransitionLeadCustomerDto) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
-    const lead = await this.ensureInScope(user, dto.clueId)
+    const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
     if (!lead.ownerId) throw new BadRequestException('线索暂无负责人，无法关联客户')
     const { clueId: _, ...customerPayload } = dto
     const customer = await this.customers.create(user, customerPayload)
@@ -565,7 +567,9 @@ export class LeadsService {
     const accessibleIds = new Set<string>()
     for (const lead of leads) {
       if (lead.inPool) continue
-      if (await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId)) accessibleIds.add(lead.id)
+      if (await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId, 'lead:update')) {
+        accessibleIds.add(lead.id)
+      }
     }
     const denied = dto.clueIds.filter((id) => !accessibleIds.has(id))
     if (denied.length > 0) throw new ForbiddenException('存在不在当前线索数据范围内的数据')
@@ -585,7 +589,7 @@ export class LeadsService {
   async transitionCustomerList(user: AuthUser, query: TransitionCustomerQueryDto) {
     const { page = 1, pageSize = 10, keyword } = query
     const [scopeFilter, poolOptions, customerFields] = await Promise.all([
-      this.dataScope.scopeFilter(user),
+      this.dataScope.scopeFilter(user, 'menu:customer'),
       this.pools.options(user, 'customer'),
       this.metadata.listFields(user.tenantId, 'customer'),
     ])
@@ -679,7 +683,9 @@ export class LeadsService {
       return customer
     }
 
-    if (await this.dataScope.matchesResource(user, customer.ownerId, customer.deptId)) return customer
+    if (await this.dataScope.matchesResource(user, customer.ownerId, customer.deptId, 'menu:customer')) {
+      return customer
+    }
     const collaboration = await this.prisma.customerTeamMember.findFirst({
       where: { tenantId: user.tenantId, customerId, userId: user.id },
     })
@@ -1134,7 +1140,7 @@ export class LeadsService {
       ? await this.prisma.lead.findFirst({
           where: { id: resourceId, tenantId: user.tenantId, inPool: true, poolId },
         })
-      : await this.ensureInScope(user, resourceId)
+      : await this.ensureInScope(user, resourceId, 'lead:import')
     if (!existing) throw new BadRequestException('线索不存在或不属于当前线索池')
     if (dto.ownerId && dto.ownerId !== existing.ownerId) {
       await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId)
@@ -1235,8 +1241,8 @@ export class LeadsService {
     return owner
   }
 
-  private async ensureInScope(user: AuthUser, id: string) {
-    const scope = await this.dataScope.scopeFilter(user)
+  private async ensureInScope(user: AuthUser, id: string, permission: string) {
+    const scope = await this.dataScope.scopeFilter(user, permission)
     const lead = await this.prisma.lead.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope as Prisma.LeadWhereInput] },
     })

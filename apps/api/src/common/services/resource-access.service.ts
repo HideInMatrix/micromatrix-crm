@@ -25,7 +25,7 @@ export class ResourceAccessService {
   ): Promise<boolean> {
     if (!hasPermission(user.permissions, permission)) return false
     if (!context?.ownerId) return true
-    return this.dataScope.matchesResource(user, context.ownerId, context.deptId)
+    return this.dataScope.matchesResource(user, context.ownerId, context.deptId, permission)
   }
 
   async assertAccess(

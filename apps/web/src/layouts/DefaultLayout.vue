@@ -64,8 +64,8 @@ function handleLogout() {
           <el-dropdown @command="handleLogout">
             <span class="cursor-pointer text-sm outline-none">
               {{ auth.user?.name ?? '账号' }}
-              <span v-if="auth.user?.roleName" class="text-[var(--el-text-color-secondary)]">
-                · {{ auth.user.roleName }}
+              <span v-if="auth.user?.roles.length" class="text-[var(--el-text-color-secondary)]">
+                · {{ auth.user.roles.map((role) => role.name).join(' / ') }}
               </span>
             </span>
             <template #dropdown>

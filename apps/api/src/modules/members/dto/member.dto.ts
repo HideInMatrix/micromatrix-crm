@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger'
 import {
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -26,10 +29,12 @@ export class CreateMemberDto {
   @MinLength(6, { message: '密码至少 6 位' })
   password!: string
 
-  @ApiPropertyOptional()
-  @IsString()
-  @IsOptional()
-  roleId?: string | null
+  @ApiProperty({ description: '角色 id 集合', type: [String] })
+  @IsArray()
+  @ArrayNotEmpty({ message: '至少选择一个角色' })
+  @ArrayUnique({ message: '角色不能重复' })
+  @IsString({ each: true })
+  roleIds!: string[]
 
   @ApiPropertyOptional()
   @IsString()

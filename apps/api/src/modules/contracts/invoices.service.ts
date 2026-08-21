@@ -78,7 +78,7 @@ export class InvoicesService {
   }
 
   async createInvoice(user: AuthUser, dto: CreateInvoiceDto) {
-    await this.contracts.ensureInScope(user, dto.contractId)
+    await this.contracts.ensureInScope(user, dto.contractId, 'invoice:manage')
     if (dto.titleId) await this.ensureTitle(user, dto.titleId)
     const invoice = await this.prisma.invoiceRecord.create({
       data: { ...dto, tenantId: user.tenantId, ownerId: user.id },

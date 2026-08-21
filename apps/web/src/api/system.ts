@@ -34,7 +34,7 @@ export interface MemberForm {
   email?: string
   name: string
   password?: string
-  roleId?: string | null
+  roleIds: string[]
   deptId?: string | null
   leaderId?: string | null
   position?: string
@@ -80,6 +80,12 @@ export const roleApi = {
   create: (data: RoleForm) => http.post<RoleVO>('/roles', data),
   update: (id: string, data: Partial<RoleForm>) => http.patch<RoleVO>(`/roles/${id}`, data),
   remove: (id: string) => http.delete(`/roles/${id}`),
+  members: (id: string, params?: PageQuery) =>
+    http.get<PaginatedResult<MemberVO>>(`/roles/${id}/members`, { params }),
+  addMembers: (id: string, userIds: string[]) =>
+    http.post(`/roles/${id}/members`, { userIds }),
+  removeMember: (id: string, userId: string) =>
+    http.delete(`/roles/${id}/members/${userId}`),
 }
 
 // ===== 日志 =====

@@ -90,7 +90,7 @@ flowchart LR
 - 业务表约定 `ownerId`（负责人）与 `deptId`（负责人当时部门，负责人变更时同步），`DataScopeService.scopeFilter(user)` 返回 where 片段由各服务合并
 - 池/公海（inPool/inSea）内数据对全员开放，不走数据范围
 - 角色保存时只接受 shared canonical 权限树中的权限码；动作权限自动补齐菜单/READ 祖先，非超级管理员不得授予超过自身的功能或数据范围
-- 当前 `User.roleId` 仍为单角色；Cordys 多角色权限/范围合并必须通过独立 schema + auth migration 实现，不在业务 Service 内临时模拟
+- `UserRole` 多对多承载成员角色；Guard 每次请求加载全部角色，功能权限取并集。`DataScopeService` 接收明确业务权限码，仅合并拥有该权限的角色范围，防止无关角色扩大动作数据边界
 
 ### ADR-3 元数据引擎：固定核心列 + customData JSONB
 

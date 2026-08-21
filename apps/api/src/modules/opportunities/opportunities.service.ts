@@ -137,7 +137,7 @@ export class OpportunitiesService {
   async findAll(user: AuthUser, query: QueryOpportunitiesDto): Promise<PaginatedResult<OpportunityVO>> {
     const { page = 1, pageSize = 10, keyword, stageId, customerId } = query
     const [scope, fields] = await Promise.all([
-      this.dataScope.scopeFilter(user),
+      this.dataScope.scopeFilter(user, 'menu:opportunity'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
@@ -167,7 +167,7 @@ export class OpportunitiesService {
   }
 
   async findOne(user: AuthUser, id: string): Promise<OpportunityVO> {
-    const scope = await this.dataScope.scopeFilter(user)
+    const scope = await this.dataScope.scopeFilter(user, 'menu:opportunity')
     const opportunity = await this.prisma.opportunity.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope as Prisma.OpportunityWhereInput] },
       include: detailInclude,
@@ -183,7 +183,7 @@ export class OpportunitiesService {
   }> {
     const stages = await this.listStages(user.tenantId)
     const [scope, fields] = await Promise.all([
-      this.dataScope.scopeFilter(user),
+      this.dataScope.scopeFilter(user, 'menu:opportunity'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
     const opportunities = await this.prisma.opportunity.findMany({
@@ -256,7 +256,7 @@ export class OpportunitiesService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateOpportunityDto): Promise<OpportunityVO> {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'opportunity:update')
     const { customData, ownerId, stageId: _ignored, customerId, contactId, expectedCloseAt, items, amount, ...rest } =
       dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
@@ -313,7 +313,7 @@ export class OpportunitiesService {
 
   /** 推进/变更阶段（赢单/输单在此发生） */
   async changeStage(user: AuthUser, id: string, dto: ChangeStageDto) {
-    const existing = await this.ensureInScope(user, id)
+    const existing = await this.ensureInScope(user, id, 'opportunity:stage')
     const stage = await this.ensureStage(user.tenantId, dto.stageId)
     if (stage.isLost && !dto.lostReason?.trim()) {
       throw new BadRequestException('请填写输单原因')
@@ -346,7 +346,7 @@ export class OpportunitiesService {
   }
 
   async stageLogs(user: AuthUser, id: string): Promise<StageLogVO[]> {
-    await this.ensureInScope(user, id)
+    await this.ensureInScope(user, id, 'menu:opportunity')
     const logs = await this.prisma.opportunityStageLog.findMany({
       where: { opportunityId: id },
       orderBy: { createdAt: 'desc' },
@@ -361,7 +361,7 @@ export class OpportunitiesService {
   }
 
   async remove(user: AuthUser, id: string) {
-    const opportunity = await this.ensureInScope(user, id)
+    const opportunity = await this.ensureInScope(user, id, 'opportunity:delete')
     await this.prisma.opportunity.delete({ where: { id } })
     return { id, name: opportunity.name }
   }
@@ -388,8 +388,8 @@ export class OpportunitiesService {
     return stage
   }
 
-  private async ensureInScope(user: AuthUser, id: string) {
-    const scope = await this.dataScope.scopeFilter(user)
+  private async ensureInScope(user: AuthUser, id: string, permission: string) {
+    const scope = await this.dataScope.scopeFilter(user, permission)
     const opportunity = await this.prisma.opportunity.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope as Prisma.OpportunityWhereInput] },
     })

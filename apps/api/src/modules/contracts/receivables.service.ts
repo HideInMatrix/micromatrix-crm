@@ -33,7 +33,7 @@ export class ReceivablesService {
   }
 
   async createPlan(user: AuthUser, dto: CreatePlanDto): Promise<ReceivablePlanVO> {
-    await this.contracts.ensureInScope(user, dto.contractId)
+    await this.contracts.ensureInScope(user, dto.contractId, 'receivable:manage')
     const maxPeriod = await this.prisma.receivablePlan.aggregate({
       where: { tenantId: user.tenantId, contractId: dto.contractId },
       _max: { period: true },
@@ -109,7 +109,7 @@ export class ReceivablesService {
   }
 
   async createRecord(user: AuthUser, dto: CreateRecordDto): Promise<{ id: string; name: string }> {
-    await this.contracts.ensureInScope(user, dto.contractId)
+    await this.contracts.ensureInScope(user, dto.contractId, 'receivable:manage')
     if (dto.planId) {
       const plan = await this.prisma.receivablePlan.findFirst({
         where: { id: dto.planId, tenantId: user.tenantId, contractId: dto.contractId },

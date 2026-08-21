@@ -31,7 +31,7 @@ export class MembersController {
   @LogOperation('member', 'create')
   @ApiOperation({ summary: '新建成员' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateMemberDto) {
-    return this.membersService.create(user.tenantId, dto)
+    return this.membersService.create(user, dto)
   }
 
   @Patch(':id')
@@ -39,7 +39,7 @@ export class MembersController {
   @LogOperation('member', 'update')
   @ApiOperation({ summary: '更新成员' })
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateMemberDto) {
-    return this.membersService.update(user.tenantId, id, dto)
+    return this.membersService.update(user, id, dto)
   }
 
   @Post(':id/reset-password')

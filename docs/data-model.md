@@ -10,7 +10,8 @@ erDiagram
     Tenant ||--o{ User : has
     Tenant ||--o{ Role : has
     Department ||--o{ User : contains
-    Role ||--o{ User : assigned
+    User ||--o{ UserRole : assigned
+    Role ||--o{ UserRole : contains
 
     Lead }o--|| Customer : "转化为(transitionType/transitionId)"
     Customer ||--o{ Contact : has
@@ -46,8 +47,9 @@ erDiagram
 | --- | --- |
 | tenants | 租户；status 控停用 |
 | departments | 树形（parentId 自关联）+ leaderId 部门主管（审批"部门主管"策略依据） |
-| users | email 全局唯一登录；roleId/deptId/leaderId（直属上级，逐级审批依据）；DISABLED 停用 |
+| users | email 全局唯一登录；deptId/leaderId（直属上级，逐级审批依据）；DISABLED 停用；不再存单角色外键 |
 | roles | permissions 权限码数组（'*' 全权）；dataScope 五级 + scopeDeptIds；isSystem 内置不可改删 |
+| user_roles | 用户—角色多对多关联；`@@unique([userId, roleId])`；角色删除仅级联删除关联，不删除成员 |
 | operation_logs / login_logs | 审计；操作日志由拦截器按 @LogOperation 元数据写入 |
 | notifications | 站内信；readAt 未读判定；type+link 驱动前端跳转 |
 | system_settings | 租户级 KV（企业名称/公告等） |

@@ -41,7 +41,7 @@ export interface CurrentUser {
   tenantName: string
   email: string
   name: string
-  roleName: string | null
+  roles: Array<{ id: string; name: string }>
   permissions: string[]
   deptId: string | null
   deptName: string | null

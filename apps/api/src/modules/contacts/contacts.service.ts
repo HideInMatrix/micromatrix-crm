@@ -93,12 +93,12 @@ export class ContactsService {
   }
 
   tab(user: AuthUser) {
+    const roles = user.roles.filter((role) => hasPermission(role.permissions, 'contact:read'))
     return {
-      all: user.dataScope === 'ALL' || user.dataScope === 'CUSTOM',
-      dept:
-        user.dataScope === 'ALL' ||
-        user.dataScope === 'DEPT_AND_CHILD' ||
-        user.dataScope === 'CUSTOM',
+      all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
+      dept: roles.some((role) =>
+        ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope),
+      ),
     }
   }
 
@@ -128,7 +128,11 @@ export class ContactsService {
   }
 
   async create(user: AuthUser, dto: CreateContactDto): Promise<ContactVO> {
-    const access = await this.customerAccess.assertCollaborateWrite(user, dto.customerId)
+    const access = await this.customerAccess.assertCollaborateWrite(
+      user,
+      dto.customerId,
+      this.pickPermission(user, 'contact:create', 'customer:create'),
+    )
     if (!access.dataScope && dto.ownerId && dto.ownerId !== user.id) {
       throw new ForbiddenException('协作用户只能将联系人负责人设为自己')
     }
@@ -163,9 +167,10 @@ export class ContactsService {
 
   async update(user: AuthUser, id: string, dto: UpdateContactDto): Promise<ContactVO> {
     const existing = await this.ensureExists(user, id)
-    await this.assertWrite(user, existing)
+    const permission = this.pickPermission(user, 'contact:update', 'customer:update')
+    await this.assertWrite(user, existing, permission)
     if (dto.customerId && dto.customerId !== existing.customerId) {
-      await this.customerAccess.assertCollaborateWrite(user, dto.customerId)
+      await this.customerAccess.assertCollaborateWrite(user, dto.customerId, permission)
     }
     const { customerId, ownerId, customData, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
@@ -188,7 +193,7 @@ export class ContactsService {
 
   async enable(user: AuthUser, id: string): Promise<ContactVO> {
     const existing = await this.ensureExists(user, id)
-    await this.assertWrite(user, existing)
+    await this.assertWrite(user, existing, this.pickPermission(user, 'contact:update', 'customer:update'))
     const contact = await this.prisma.contact.update({
       where: { id },
       data: { enable: true, disableReason: null },
@@ -199,7 +204,7 @@ export class ContactsService {
 
   async disable(user: AuthUser, id: string, reason: string): Promise<ContactVO> {
     const existing = await this.ensureExists(user, id)
-    await this.assertWrite(user, existing)
+    await this.assertWrite(user, existing, this.pickPermission(user, 'contact:update', 'customer:update'))
     const normalized = reason.trim()
     if (!normalized) throw new BadRequestException('请填写停用原因')
     const contact = await this.prisma.contact.update({
@@ -220,7 +225,7 @@ export class ContactsService {
 
   async remove(user: AuthUser, id: string) {
     const contact = await this.ensureExists(user, id)
-    await this.assertWrite(user, contact)
+    await this.assertWrite(user, contact, this.pickPermission(user, 'contact:delete', 'customer:delete'))
     const linked = await this.prisma.opportunity.count({
       where: { tenantId: user.tenantId, contactId: id },
     })
@@ -237,7 +242,7 @@ export class ContactsService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto): Promise<BatchAffectResult> {
     const field = await this.metadata.resolveEditableField(user.tenantId, MODULE, dto.fieldId)
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
-    const scope = (await this.dataScope.scopeFilter(user)) as Prisma.ContactWhereInput
+    const scope = (await this.dataScope.scopeFilter(user, 'contact:read')) as Prisma.ContactWhereInput
     const contacts = await this.prisma.contact.findMany({
       where: { tenantId: user.tenantId, id: { in: dto.ids }, AND: [scope] },
     })
@@ -256,7 +261,7 @@ export class ContactsService {
     }
     if (field.key === 'customerId') {
       if (typeof dto.fieldValue !== 'string') throw new BadRequestException('客户值无效')
-      await this.customerAccess.assertCollaborateWrite(user, dto.fieldValue)
+      await this.customerAccess.assertCollaborateWrite(user, dto.fieldValue, 'contact:update')
       await this.prisma.contact.updateMany({
         where: { tenantId: user.tenantId, id: { in: dto.ids } },
         data: { customerId: dto.fieldValue },
@@ -437,13 +442,13 @@ export class ContactsService {
     if (importType === 'ADD') {
       if (!dto.customerId) throw new BadRequestException('客户不能为空')
       if (!dto.name?.trim()) throw new BadRequestException('联系人姓名不能为空')
-      await this.customerAccess.assertCollaborateWrite(user, dto.customerId)
+      await this.customerAccess.assertCollaborateWrite(user, dto.customerId, 'contact:import')
     } else {
       if (!resourceId) throw new BadRequestException('唯一ID不能为空')
       const existing = await this.ensureIndependentInScope(user, resourceId)
       if (!existing) throw new BadRequestException('联系人不存在或不在你的数据范围内')
       if (dto.customerId && dto.customerId !== existing.customerId) {
-        await this.customerAccess.assertCollaborateWrite(user, dto.customerId)
+        await this.customerAccess.assertCollaborateWrite(user, dto.customerId, 'contact:import')
       }
     }
     return dto
@@ -474,7 +479,7 @@ export class ContactsService {
     if (!contact) throw new NotFoundException('联系人不存在')
     if (
       hasPermission(user.permissions, 'contact:read') &&
-      (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId))
+      (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId, 'contact:read'))
     ) {
       return contact
     }
@@ -484,8 +489,8 @@ export class ContactsService {
     throw new NotFoundException('联系人不存在或无权访问')
   }
 
-  private async assertWrite(user: AuthUser, contact: Contact) {
-    if (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId)) return
+  private async assertWrite(user: AuthUser, contact: Contact, permission: string) {
+    if (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId, permission)) return
     const access = await this.customerAccess.assertRead(user, contact.customerId)
     if (access.dataScope) return
     if (access.collaborationType === 'COLLABORATION' && contact.ownerId === user.id) return
@@ -493,7 +498,7 @@ export class ContactsService {
   }
 
   private async ensureIndependentInScope(user: AuthUser, id: string) {
-    const scope = (await this.dataScope.scopeFilter(user)) as Prisma.ContactWhereInput
+    const scope = (await this.dataScope.scopeFilter(user, 'contact:import')) as Prisma.ContactWhereInput
     return this.prisma.contact.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope] },
     })
@@ -504,25 +509,29 @@ export class ContactsService {
     builtInView?: string,
   ): Promise<Prisma.ContactWhereInput> {
     if (!builtInView) {
-      return (await this.dataScope.scopeFilter(user)) as Prisma.ContactWhereInput
+      return (await this.dataScope.scopeFilter(user, 'contact:read')) as Prisma.ContactWhereInput
     }
     if (builtInView === 'SELF') return { ownerId: user.id }
     if (builtInView === 'ALL') {
-      if (user.dataScope !== 'ALL') throw new ForbiddenException('当前角色没有全部联系人数据权限')
+      const effective = await this.dataScope.resolveScope(user, 'contact:read')
+      if (!effective.all) throw new ForbiddenException('当前角色没有全部联系人数据权限')
       return {}
     }
     if (builtInView === 'DEPT') {
-      if (user.dataScope === 'SELF') throw new ForbiddenException('当前角色没有部门联系人数据权限')
-      let deptIds: string[] = []
-      if (user.dataScope === 'CUSTOM') {
-        deptIds = user.scopeDeptIds
-      } else if (user.deptId) {
-        deptIds = await this.dataScope.collectWithDescendants(user.tenantId, user.deptId)
+      const effective = await this.dataScope.resolveScope(user, 'contact:read')
+      if (!effective.all && effective.deptIds.length === 0) {
+        throw new ForbiddenException('当前角色没有部门联系人数据权限')
       }
+      if (effective.all) return {}
+      const deptIds = effective.deptIds
       if (deptIds.length === 0) return { ownerId: user.id }
       return { OR: [{ ownerId: user.id }, { deptId: { in: deptIds } }] }
     }
-    return (await this.dataScope.scopeFilter(user)) as Prisma.ContactWhereInput
+    return (await this.dataScope.scopeFilter(user, 'contact:read')) as Prisma.ContactWhereInput
+  }
+
+  private pickPermission(user: AuthUser, preferred: string, fallback: string) {
+    return hasPermission(user.permissions, preferred) ? preferred : fallback
   }
 
   private async ensureExists(user: AuthUser, id: string) {

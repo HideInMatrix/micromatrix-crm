@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
-import { IsArray, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator'
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator'
 import type { DataScope } from '../../../generated/prisma/client'
+import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
 const DATA_SCOPES = ['ALL', 'DEPT_AND_CHILD', 'DEPT', 'SELF', 'CUSTOM'] as const
 
@@ -34,3 +43,13 @@ export class CreateRoleDto {
 }
 
 export class UpdateRoleDto extends PartialType(CreateRoleDto) {}
+
+export class AddRoleMembersDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayNotEmpty({ message: '请选择至少一个成员' })
+  @IsString({ each: true })
+  userIds!: string[]
+}
+
+export class QueryRoleMembersDto extends PaginationQueryDto {}

@@ -157,39 +157,46 @@ async function main() {
   const upsertUser = async (input: {
     email: string
     name: string
-    roleId: string
+    roleIds: string[]
     deptId: string
     leaderId?: string
     position?: string
   }) => {
     const passwordHash = await bcrypt.hash(input.email === 'admin@demo.com' ? 'admin123' : 'demo123', 10)
-    return prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { email: input.email },
-      update: { roleId: input.roleId, deptId: input.deptId, leaderId: input.leaderId },
+      update: { deptId: input.deptId, leaderId: input.leaderId },
       create: {
         tenantId: tenant.id,
         email: input.email,
         passwordHash,
         name: input.name,
-        roleId: input.roleId,
         deptId: input.deptId,
         leaderId: input.leaderId,
         position: input.position,
       },
     })
+    await prisma.$transaction([
+      prisma.userRole.deleteMany({ where: { tenantId: tenant.id, userId: user.id } }),
+      prisma.userRole.createMany({
+        data: input.roleIds.map((roleId) => ({ tenantId: tenant.id, userId: user.id, roleId })),
+        skipDuplicates: true,
+      }),
+    ])
+    return user
   }
 
   const admin = await upsertUser({
     email: 'admin@demo.com',
     name: '系统管理员',
-    roleId: adminRole.id,
+    roleIds: [adminRole.id],
     deptId: rootDept.id,
     position: 'CEO',
   })
   const manager = await upsertUser({
     email: 'zhangwei@demo.com',
     name: '张伟',
-    roleId: managerRole.id,
+    roleIds: [managerRole.id],
     deptId: salesDept.id,
     leaderId: admin.id,
     position: '销售总监',
@@ -197,7 +204,7 @@ async function main() {
   const sales1 = await upsertUser({
     email: 'lina@demo.com',
     name: '李娜',
-    roleId: salesRole.id,
+    roleIds: [salesRole.id],
     deptId: salesTeam1.id,
     leaderId: manager.id,
     position: '销售专员',
@@ -205,7 +212,7 @@ async function main() {
   const sales2 = await upsertUser({
     email: 'wangqiang@demo.com',
     name: '王强',
-    roleId: salesRole.id,
+    roleIds: [salesRole.id],
     deptId: salesTeam2.id,
     leaderId: manager.id,
     position: '销售专员',
