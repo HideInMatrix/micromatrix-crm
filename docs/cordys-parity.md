@@ -69,7 +69,7 @@
 | 部门 | `DepartmentService`、`views/system/org` | `modules/departments` | ✅ | 已对齐根节点保护、同级唯一、循环保护、部门主管、空子树整体删除与部门树/成员同页入口 |
 | 成员 | `OrganizationUserService`、`views/system/org/components/orgTable.vue` | `modules/members` | 🟡 | 已完成组织架构同页成员 CRUD、多角色与角色侧成员关系；性别、工作城市、入职日期、会话失效和组织同步仍待迁移 |
 | 角色 | `RoleService`、`views/system/role` | `modules/roles` | ✅ | 已对齐 canonical 权限树、授权上限、内置角色保护、CUSTOM 下级语义，以及角色列表 + 权限/成员页签 |
-| 模块配置 | `SystemModuleService`、`views/system/module` | `modules/module-configs` + Pinia | 🟡 | 租户级模块启停、主导航排序、固定模块校验、动态菜单与模块内设置入口已完成浏览器往返验收；顶部导航启停/排序仍待接入 |
+| 模块配置 | `SystemModuleService`、`views/system/module` | `modules/module-configs` + Pinia | 🟡 | 租户级模块启停、主导航排序、固定模块校验与动态菜单已完成；W2.1 已对齐 Cordys 当前顶部导航“列表+排序”边界并驱动 Header，源码虽有 `enable` 字段但无开关 UI/API；各业务模块专属设置仍需逐项迁移 |
 | 系统设置 | `OrganizationConfigService` | `modules/settings` | 🟡 | 按实际功能逐项迁移 |
 | 公告 | `AnnouncementService` | - | ❌ | 后续判断是否纳入 |
 | 数据字典 | `DictService` | - | ❌ | 后续迁移 |

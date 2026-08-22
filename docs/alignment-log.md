@@ -367,7 +367,7 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 
 **模块开关** `POST /module/list`（12 项）：home / clue / customer / business / product / dashboard / agent / contract / customForm / tender / order / setting。本实例关掉了商机、产品、合同、标讯、智能体（不影响 API 探测）。
 
-**顶栏导航** `GET /navigation/list`：search / task / event(记录与计划) / agent / notify / about / language / help，可启用排序。
+**顶栏导航** `GET /navigation/list`：search / task / event(记录与计划) / agent / notify / about / language / help。数据表有 `enable` 字段，但当前 Controller/UI 只提供列表与排序，没有开关能力。
 
 **个人中心**：个人信息（性别/手机/邮箱/工号/职位/员工类型/工作城市/入职日期）、**修改密码**（当前密码 + 复杂度：数字+字母、≤64）、**API Keys**（最多 5 个，可永久或自定义到期、启停、删除）、**我的计划**、**我的导出**。
 
@@ -412,3 +412,25 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 角色权限改为“左侧角色列表 + 右侧权限/成员页签”，保留 canonical 权限树、多角色权限并集、数据范围合并、授权上限和内置角色保护。
 - 新增租户级 `ModuleConfig`：模块启停和主导航排序持久化；左侧菜单由模块配置与角色权限共同生成；字段配置降为模块卡片下的表单设置子页面。
 - 浏览器已验证当前默认菜单仍为：首页、线索、客户、仪表板、自定义表单、订单、系统；模块开启后入口立即出现，关闭后立即隐藏，控制台无 error/warn。
+
+---
+
+## 8. 顶部导航配置闭环（2026-08-21）
+
+### 8.1 源码事实与范围修正
+
+- 读取 `views/system/module/index.vue`、`layout-header.vue`、`config/system.ts`、App Store、Navigation API/Controller/Service/Domain/Mapper 与 `1.2.1 / 1.2.3 / 1.7.1` 迁移。
+- 最终顺序确认是 `search / task / event / agent / notify / about / language / help`。
+- Cordys 当前只实现 `GET /navigation/list` 与 `POST /navigation/sort`。因此 W2.1 只对齐排序，不凭表字段臆造启停功能。
+
+### 8.2 MicroMatrix 落地
+
+- 新增租户级 `top_navigation_configs`，旧租户首次读取自动幂等补种八项；完整排序拒绝缺项、重复和未知 key。
+- 新增 `GET /module-configs/top-navigation` 与 `POST /module-configs/top-navigation/reorder`；写接口要求 `system:module:update` 并记录操作日志。
+- 系统模块页提供真实拖拽排序和“可用/待迁移/已排除”状态。Header 复用审批待办、实时通知、关于和帮助；搜索、记录/计划、语言仍待迁移，Agent 继续排除，不创建空壳页面。
+
+### 8.3 验证证据
+
+- Prisma generate、shared/API/Web typecheck、ESLint、API/Web build 全绿。
+- 规则与公共底座单测 `14/14`；全链路 smoke `190/190`，覆盖默认补种、管理员排序、非管理员 `403` 与刷新持久化。
+- 浏览器验证配置页八项顺序/状态、服务端排序后的配置页刷新与 Header 同步；恢复默认后 Header 顺序为 `task / notify / about / help`，最终刷新未产生新的控制台错误。

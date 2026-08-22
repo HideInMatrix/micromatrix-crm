@@ -94,6 +94,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SavedViewBar: typeof import('./../components/SavedViewBar.vue')['default']
+    TopNavigationActions: typeof import('./../components/TopNavigationActions.vue')['default']
     VanActionSheet: typeof import('vant/es')['ActionSheet']
     VanButton: typeof import('vant/es')['Button']
     VanCell: typeof import('vant/es')['Cell']

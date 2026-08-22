@@ -4,7 +4,7 @@
 - CordysCRM 源代码是当前复刻工作的第一事实来源。现有 MicroMatrix 页面、接口和业务规则只在与 Cordys 源码一致时保留；发生冲突时允许直接删除、替换或重构旧实现，不以“兼容旧页面/旧接口”为优先目标。
 - 新增/调整页面时，必须分别阅读 CordysCRM 对应 PC / Mobile 前端源码；页面结构、布局、字段顺序、操作入口、按钮位置、弹窗/抽屉流程、批量交互与功能显隐以 Cordys 源码为准，不再以旧 MicroMatrix 页面作为视觉基准。
 - 禁止直接复制 CordysCRM 的图标、图片、iconfont 等静态资源。
-- 图标优先选择 Element Plus Icons 或项目已有开源图标中的近似项；无法可靠对应时使用文字按钮/文字标签占位，后续人工替换。
+- Web 图标统一使用 `lucide-vue-next`，按需导入组件；禁止新增 emoji、Unicode 符号、Element Plus Icons、Vant 内置图标或复制 Cordys 图标资源。无法可靠对应时使用文字按钮/文字标签。
 - 不复制 Cordys 的前端框架或后端技术结构，只迁移业务行为与视觉/交互语义。
 - 每个任务完成时，回复中必须给出“当前可手工测试内容”，至少包含访问入口、操作步骤、预期结果；不得只汇报自动化测试。
 - PC 与 Mobile 统一维护在 `apps/web` 一个 Vite/Vue 工程内：PC 页面在 `src/views`，Mobile 页面在 `src/mobile`；根路由依据当前 viewport 自动选择 PC/Mobile 页面树，不提供 query 参数强制切端。
@@ -50,6 +50,7 @@
 - PC 页面放 `apps/web/src/views/`；Mobile 页面放 `apps/web/src/mobile/views/`；共用 API 优先放 `src/api/<域>.ts`，仅移动端组合接口可放 `src/mobile/api/`。
 - 根路由通过 `src/utils/client-mode.ts` 判断 viewport；桌面进入 PC layout，移动 viewport 进入 Mobile layout。Chrome DevTools 切换设备模式后刷新页面即可验证移动端。
 - PC 使用 Element Plus，Mobile 使用 Vant；同一业务模块的两端交互分别以 Cordys 对应端源码为准，不允许为了“组件复用”牺牲布局和功能一致性。
+- PC 与 Mobile 的业务图标统一从 `lucide-vue-next` 按需导入，默认使用 `size=20`、`stroke-width=1.8`；仅组件库自身的状态反馈图标可保留。
 - 动态能力直接复用 `components/form-engine/`：`DynamicForm`（表单）、`formatFieldValue`（列表列）、`AdvancedFilter`（筛选）
 - 权限渲染：`auth.hasPerm('code')` 控制按钮；路由 `meta.perm` + 菜单 `router/menu.ts` 同步维护
 - 表单模型与载荷转换模式：扁平 model → `modelToPayload`（cf_* 收进 customData）；行→model 用 `rowToModel`

@@ -90,6 +90,54 @@ const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
 const stamp = Date.now().toString(36)
 
+// 1.1 顶部导航配置：租户默认、排序、权限与刷新持久化
+const expectedTopNavigation = [
+  'search',
+  'task',
+  'event',
+  'agent',
+  'notify',
+  'about',
+  'language',
+  'help',
+]
+const initialTopNavigation = await get('/module-configs/top-navigation', admin.headers)
+check(
+  '顶部导航默认补种与 Cordys 顺序一致',
+  JSON.stringify(initialTopNavigation.map((item) => item.navigationKey)) ===
+    JSON.stringify(expectedTopNavigation),
+)
+const reorderedTopNavigation = [...expectedTopNavigation.slice(1), expectedTopNavigation[0]]
+const reorderTopNavigationRes = await request(
+  'POST',
+  '/module-configs/top-navigation/reorder',
+  admin.headers,
+  { navigationKeys: reorderedTopNavigation },
+)
+const reorderedTopNavigationBody = await reorderTopNavigationRes.json()
+check(
+  '管理员可持久化顶部导航完整排序',
+  reorderTopNavigationRes.ok &&
+    JSON.stringify(reorderedTopNavigationBody.map((item) => item.navigationKey)) ===
+      JSON.stringify(reorderedTopNavigation),
+)
+const forbiddenTopNavigationRes = await request(
+  'POST',
+  '/module-configs/top-navigation/reorder',
+  sales.headers,
+  { navigationKeys: expectedTopNavigation },
+)
+check('非管理员不能修改顶部导航排序', forbiddenTopNavigationRes.status === 403)
+await request('POST', '/module-configs/top-navigation/reorder', admin.headers, {
+  navigationKeys: expectedTopNavigation,
+})
+const restoredTopNavigation = await get('/module-configs/top-navigation', manager.headers)
+check(
+  '顶部导航顺序刷新后保持且登录用户可读',
+  JSON.stringify(restoredTopNavigation.map((item) => item.navigationKey)) ===
+    JSON.stringify(expectedTopNavigation),
+)
+
 // 2. 数据范围
 const [adminCustomers, managerCustomers, salesCustomers] = await Promise.all([
   get('/customers?pageSize=100', admin.headers),

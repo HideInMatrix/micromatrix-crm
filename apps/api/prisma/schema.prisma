@@ -55,6 +55,7 @@ model Tenant {
   subscriptions Subscription[]
   departments   Department[]
   moduleConfigs ModuleConfig[]
+  topNavigationConfigs TopNavigationConfig[]
 
   @@map("tenants")
 }
@@ -1139,6 +1140,20 @@ model ModuleConfig {
   @@unique([tenantId, key])
   @@index([tenantId, sort])
   @@map("module_configs")
+}
+
+model TopNavigationConfig {
+  id       String  @id @default(cuid())
+  tenantId String
+  key      String
+  enabled  Boolean @default(true)
+  sort     Int
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, sort])
+  @@map("top_navigation_configs")
 }
 
 model Attachment {

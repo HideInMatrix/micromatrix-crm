@@ -69,8 +69,8 @@ pnpm dev
 ```
 
 - Web 管理端 http://localhost:5173 · 移动端 http://localhost:5174 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（当前 **180 条断言**，需 API 已启动）
-- 回收规则单测：`pnpm --filter @micromatrix/api test:rules`（当前 **7 条**）
+- 全链路冒烟：`pnpm smoke`（当前 **190 条断言**，需 API 已启动）
+- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **14 条**）
 
 ### 演示账号
 
@@ -94,9 +94,9 @@ pnpm dev
 开发计划已经切换为 **CordysCRM 功能语义迁移路线**，不再以零散功能清单作为主计划。
 
 - 功能一致性总表：[`docs/cordys-parity.md`](./docs/cordys-parity.md)
-- 当前分阶段执行计划：[`docs/cordys-wave1-remainder-plan.md`](./docs/cordys-wave1-remainder-plan.md)
+- 当前分阶段执行计划：[`docs/cordys-wave2-execution-plan.md`](./docs/cordys-wave2-execution-plan.md)
 - 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
 
-Wave 1 的 R1-R6 与 R7 多角色/按权限数据范围已于 2026-08-21 完成。后续严格按“真实页面 → 页面接口 → Cordys 后端实现”探测能力：先收口组织架构、角色权限、模块配置等跨页面公共底座，再逐个对齐业务模块页面；左侧菜单仅呈现当前实例启用且当前角色可见的能力。
+Wave 1 的 R1-R7 与公共底座首轮已完成；Wave 2 的 W2.1 顶部导航配置闭环已于 2026-08-21 验收。下一步进入 W2.2 跟进计划，继续严格按“真实页面 → 页面接口 → Cordys 后端实现”探测并迁移能力。
 
 明确不迁移：Cordys 自身的产品授权/版本区分机制、DataEase、AI/MCP 商业扩展、商业标讯 API。

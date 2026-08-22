@@ -10,6 +10,8 @@ import type {
   PageQuery,
   PaginatedResult,
   RoleVO,
+  TopNavigationConfigVO,
+  TopNavigationKey,
 } from '@micromatrix/shared'
 import { http } from './http'
 
@@ -98,6 +100,11 @@ export const moduleConfigApi = {
     http.patch<ModuleConfigVO>(`/module-configs/${moduleKey}`, { enabled }),
   reorder: (moduleKeys: NavigationModuleKey[]) =>
     http.post<ModuleConfigVO[]>('/module-configs/reorder', { moduleKeys }),
+  listTopNavigation: () => http.get<TopNavigationConfigVO[]>('/module-configs/top-navigation'),
+  reorderTopNavigation: (navigationKeys: TopNavigationKey[]) =>
+    http.post<TopNavigationConfigVO[]>('/module-configs/top-navigation/reorder', {
+      navigationKeys,
+    }),
 }
 
 // ===== 日志 =====

@@ -4,7 +4,11 @@ import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
-import { ReorderModuleConfigsDto, UpdateModuleConfigDto } from './dto/module-config.dto'
+import {
+  ReorderModuleConfigsDto,
+  ReorderTopNavigationConfigsDto,
+  UpdateModuleConfigDto,
+} from './dto/module-config.dto'
 import { ModuleConfigsService } from './module-configs.service'
 
 @ApiTags('模块配置')
@@ -17,6 +21,20 @@ export class ModuleConfigsController {
   @ApiOperation({ summary: '当前租户模块开关与主导航顺序（登录即可读）' })
   list(@CurrentUser() user: AuthUser) {
     return this.moduleConfigsService.list(user.tenantId)
+  }
+
+  @Get('top-navigation')
+  @ApiOperation({ summary: '当前租户顶部导航顺序（登录即可读）' })
+  listTopNavigation(@CurrentUser() user: AuthUser) {
+    return this.moduleConfigsService.listTopNavigation(user.tenantId)
+  }
+
+  @Post('top-navigation/reorder')
+  @RequirePermissions('system:module:update')
+  @LogOperation('module', 'sortTopNavigation')
+  @ApiOperation({ summary: '保存顶部导航顺序' })
+  reorderTopNavigation(@CurrentUser() user: AuthUser, @Body() dto: ReorderTopNavigationConfigsDto) {
+    return this.moduleConfigsService.reorderTopNavigation(user.tenantId, dto.navigationKeys)
   }
 
   @Patch(':moduleKey')

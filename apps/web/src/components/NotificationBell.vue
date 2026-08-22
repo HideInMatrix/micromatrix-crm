@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NotificationVO } from '@micromatrix/shared'
+import { Bell } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { notificationApi } from '@/api/system'
@@ -63,7 +64,7 @@ onBeforeUnmount(() => {
   <el-popover placement="bottom-end" width="340" trigger="click">
     <template #reference>
       <el-badge :value="unread" :hidden="unread === 0" :max="99" class="cursor-pointer">
-        <span class="text-lg leading-none select-none">🔔</span>
+        <Bell :size="20" :stroke-width="1.8" aria-hidden="true" />
       </el-badge>
     </template>
 

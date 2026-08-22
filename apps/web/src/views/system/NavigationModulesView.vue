@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import {
   NAVIGATION_MODULES,
+  TOP_NAVIGATION_DEFINITIONS,
   type ModuleConfigVO,
   type ModuleKey,
   type NavigationModuleKey,
+  type TopNavigationConfigVO,
+  type TopNavigationKey,
 } from '@micromatrix/shared'
+import { GripVertical } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import draggable from 'vuedraggable'
@@ -38,17 +42,20 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleAction[]>> = {
   order: [{ label: '订单表单设置', path: '/system/modules/fields', module: 'order' }],
 }
 
-const topNavigation = ['搜索', '待办', '记录/计划', '智能体', '消息通知', '关于', '语言', '帮助中心']
-
 const router = useRouter()
 const auth = useAuthStore()
 const moduleConfig = useModuleConfigStore()
 const loading = ref(false)
 const savingOrder = ref(false)
+const savingTopNavigationOrder = ref(false)
 const orderedConfigs = ref<ModuleConfigVO[]>([])
+const orderedTopNavigationConfigs = ref<TopNavigationConfigVO[]>([])
 
 const canUpdate = computed(() => auth.hasPerm('system:module:update'))
 const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item]))
+const topNavigationDefinitionMap = new Map(
+  TOP_NAVIGATION_DEFINITIONS.map((item) => [item.key, item]),
+)
 const cardConfigs = computed(() =>
   orderedConfigs.value.filter((item) => item.moduleKey !== 'system'),
 )
@@ -62,6 +69,9 @@ async function load() {
   try {
     await moduleConfig.load(true)
     orderedConfigs.value = moduleConfig.configs
+      .map((item) => ({ ...item }))
+      .sort((a, b) => a.sort - b.sort)
+    orderedTopNavigationConfigs.value = moduleConfig.topNavigationConfigs
       .map((item) => ({ ...item }))
       .sort((a, b) => a.sort - b.sort)
   } catch (error) {
@@ -114,6 +124,46 @@ async function handleDragEnd() {
   }
 }
 
+async function handleTopNavigationDragEnd() {
+  if (!canUpdate.value) {
+    await load()
+    return
+  }
+  savingTopNavigationOrder.value = true
+  try {
+    await moduleConfig.reorderTopNavigation(
+      orderedTopNavigationConfigs.value.map((item) => item.navigationKey),
+    )
+    orderedTopNavigationConfigs.value = moduleConfig.topNavigationConfigs
+      .map((item) => ({ ...item }))
+      .sort((a, b) => a.sort - b.sort)
+    ElMessage.success('顶部导航顺序已保存')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await load()
+  } finally {
+    savingTopNavigationOrder.value = false
+  }
+}
+
+function topNavigationLabel(key: TopNavigationKey) {
+  return topNavigationDefinitionMap.get(key)?.label ?? key
+}
+
+function topNavigationStatus(key: TopNavigationKey) {
+  return topNavigationDefinitionMap.get(key)?.status ?? 'planned'
+}
+
+function topNavigationStatusLabel(key: TopNavigationKey) {
+  const status = topNavigationStatus(key)
+  return status === 'available' ? '可用' : status === 'excluded' ? '已排除' : '待迁移'
+}
+
+function topNavigationStatusType(key: TopNavigationKey) {
+  const status = topNavigationStatus(key)
+  return status === 'available' ? 'success' : status === 'excluded' ? 'info' : 'warning'
+}
+
 function openAction(action: ModuleAction) {
   router.push({ path: action.path, query: action.module ? { module: action.module } : undefined })
 }
@@ -142,10 +192,12 @@ onMounted(load)
           <div
             class="flex items-center gap-3 border-b border-[var(--el-border-color-lighter)] px-5 py-3 text-sm"
           >
-            <span
+            <GripVertical
               class="module-drag-handle select-none text-lg text-[var(--el-text-color-placeholder)]"
               :class="canUpdate ? 'cursor-move' : 'cursor-not-allowed'"
-            >⠿</span>
+              :size="18"
+              aria-hidden="true"
+            />
             <span class="flex-1">{{ labelOf(item.moduleKey) }}</span>
             <el-tag v-if="!item.enabled" size="small" type="info">已关闭</el-tag>
             <el-tag v-if="!item.configurable" size="small" type="info">固定</el-tag>
@@ -153,19 +205,41 @@ onMounted(load)
         </template>
       </draggable>
 
-      <div class="border-y border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-lighter)] px-5 py-4">
+      <div
+        class="border-y border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-lighter)] px-5 py-4"
+      >
         <div class="font-medium">顶部导航配置</div>
         <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-          Cordys 固定公共入口，后续按各入口源码逐项实现
+          拖拽调整顶部入口顺序；未迁移能力不会在实际导航中显示
         </div>
       </div>
-      <div
-        v-for="item in topNavigation"
-        :key="item"
-        class="border-b border-[var(--el-border-color-lighter)] px-5 py-3 text-sm"
+      <draggable
+        v-model="orderedTopNavigationConfigs"
+        item-key="navigationKey"
+        handle=".top-navigation-drag-handle"
+        :disabled="!canUpdate || savingTopNavigationOrder"
+        @end="handleTopNavigationDragEnd"
       >
-        {{ item }}
-      </div>
+        <template #item="{ element: item }">
+          <div
+            class="flex items-center gap-3 border-b border-[var(--el-border-color-lighter)] px-5 py-3 text-sm"
+            :data-top-navigation-key="item.navigationKey"
+          >
+            <GripVertical
+              class="top-navigation-drag-handle select-none text-lg text-[var(--el-text-color-placeholder)]"
+              :class="canUpdate ? 'cursor-move' : 'cursor-not-allowed'"
+              :size="18"
+              aria-hidden="true"
+            />
+            <span class="min-w-0 flex-1 truncate">
+              {{ topNavigationLabel(item.navigationKey) }}
+            </span>
+            <el-tag size="small" :type="topNavigationStatusType(item.navigationKey)">
+              {{ topNavigationStatusLabel(item.navigationKey) }}
+            </el-tag>
+          </div>
+        </template>
+      </draggable>
     </el-card>
 
     <el-card shadow="never" body-class="!p-0">

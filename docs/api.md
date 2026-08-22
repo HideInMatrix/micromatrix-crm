@@ -90,6 +90,22 @@ system:role:create / update / delete
 
 `system:dept` / `system:member` / `system:role` 仍是页面菜单与 READ 权限。
 
+## 模块与顶部导航配置（W2.1）
+
+```text
+GET   /module-configs
+PATCH /module-configs/{moduleKey}                  body: { enabled: boolean }
+POST  /module-configs/reorder                      body: { moduleKeys: NavigationModuleKey[] }
+
+GET   /module-configs/top-navigation
+POST  /module-configs/top-navigation/reorder       body: { navigationKeys: TopNavigationKey[] }
+```
+
+- 顶部导航读取接口对所有登录用户开放；排序接口要求 `system:module:update`。
+- `navigationKeys` 必须一次提交且仅提交八个完整 key：`search / task / event / agent / notify / about / language / help`；缺项、重复或未知 key 返回 `400`。
+- 旧租户首次读取时自动幂等补种默认顺序。Header 使用同一顺序，但只渲染 MicroMatrix 已具备的真实能力；`task` 还要求 `menu:approval`。
+- Cordys 当前源码只有顶部导航列表与排序 API。虽然数据模型保留 `enabled`，W2.1 不开放启停接口。
+
 ## 多公海 / 多线索池自动回收规则
 
 `POST /api/resource-pools` 与 `PATCH /api/resource-pools/{id}` 的 `recycleRule` 使用 CordysCRM 时间规则语义：

@@ -172,3 +172,46 @@ export interface ModuleConfigVO {
   sort: number
   configurable: boolean
 }
+
+// ============ 顶部导航配置 ============
+
+export type TopNavigationKey =
+  'search' | 'task' | 'event' | 'agent' | 'notify' | 'about' | 'language' | 'help'
+
+export type TopNavigationCapabilityStatus = 'available' | 'planned' | 'excluded'
+
+export interface TopNavigationDefinition {
+  key: TopNavigationKey
+  label: string
+  defaultEnabled: boolean
+  status: TopNavigationCapabilityStatus
+  requiredPermission?: string
+}
+
+/**
+ * 顺序来自 Cordys sys_navigation 的 1.2.1、1.2.3、1.7.1 迁移叠加结果。
+ * status 描述 MicroMatrix 当前迁移状态，不改变 Cordys 的持久化 key。
+ */
+export const TOP_NAVIGATION_DEFINITIONS: TopNavigationDefinition[] = [
+  { key: 'search', label: '搜索', defaultEnabled: true, status: 'planned' },
+  {
+    key: 'task',
+    label: '待办',
+    defaultEnabled: true,
+    status: 'available',
+    requiredPermission: 'menu:approval',
+  },
+  { key: 'event', label: '记录/计划', defaultEnabled: true, status: 'planned' },
+  { key: 'agent', label: '智能体', defaultEnabled: true, status: 'excluded' },
+  { key: 'notify', label: '消息通知', defaultEnabled: true, status: 'available' },
+  { key: 'about', label: '关于', defaultEnabled: true, status: 'available' },
+  { key: 'language', label: '语言', defaultEnabled: true, status: 'planned' },
+  { key: 'help', label: '帮助中心', defaultEnabled: true, status: 'available' },
+]
+
+export interface TopNavigationConfigVO {
+  id: string
+  navigationKey: TopNavigationKey
+  enabled: boolean
+  sort: number
+}
