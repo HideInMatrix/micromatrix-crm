@@ -62,6 +62,41 @@ export interface FollowUpVO {
   attachments?: AttachmentVO[]
 }
 
+// ============ 跟进计划 ============
+
+export type FollowUpPlanTargetType = 'lead' | 'customer' | 'opportunity'
+export type FollowUpPlanStatus = 'PREPARED' | 'UNDERWAY' | 'COMPLETED' | 'CANCELLED'
+
+export const FOLLOW_UP_PLAN_STATUS_LABELS: Record<FollowUpPlanStatus, string> = {
+  PREPARED: '未开始',
+  UNDERWAY: '进行中',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消',
+}
+
+export interface FollowUpPlanVO {
+  id: string
+  targetType: FollowUpPlanTargetType
+  targetId: string
+  targetName: string
+  customerId: string | null
+  contactId: string | null
+  contactName: string | null
+  content: string
+  method: string | null
+  estimatedAt: string | null
+  status: FollowUpPlanStatus
+  converted: boolean
+  convertedRecordId: string | null
+  ownerId: string
+  ownerName: string
+  createdById: string
+  customData: Record<string, unknown>
+  canManage: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 // ============ 商机 ============
 
 export interface OpportunityStageVO {

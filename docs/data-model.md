@@ -73,6 +73,7 @@ erDiagram
 | customer_team_members | 客户协作关系 `@@unique([customerId, userId])`；`collaborationType=READ_ONLY/COLLABORATION` |
 | customer_relations | 集团/子公司有向关系：source=集团、target=子公司；服务层保证一个子公司只有一个上级集团并阻止循环关系 |
 | follow_up_records | 多态跟进（targetType: lead/customer/opportunity/contract）；写入时回填目标 lastFollowedAt |
+| follow_up_plans | 多态计划（lead/customer/opportunity）；四态状态机；`convertedRecordId` 保证转记录可追溯，`dueNotifiedAt` 按日期去重提醒；负责人/部门快照参与数据范围 |
 | opportunity_stages | 可配置阶段；isWon/isLost 系统结果阶段不可删；probability 赢率 |
 | opportunities | stageId + wonAt/lostAt/lostReason；可空 `contactId` 绑定当前客户联系人；金额 Decimal(14,2)；`opportunity_items` 产品明细（级联删除） |
 | resource_pools / resource_pool_pick_rules / resource_pool_recycle_rules | 多池、Scope、池管理员、领取限制与 Cordys 时间条件自动回收 |
@@ -107,6 +108,7 @@ erDiagram
 Customer
 ├── Contact
 ├── FollowUpRecord(targetType=customer)
+├── FollowUpPlan(targetType=customer)
 ├── ResourceOwnerHistory(module=customer)
 ├── CustomerRelation
 ├── CustomerTeamMember
@@ -120,7 +122,7 @@ Customer
 
 `GET /customers/:id/related` 仅保留轻量/兼容聚合；商机、合同、回款、发票、订单的大列表由 `/customers/:id/360/:resource` 分页读取。所有读取先经过 `CustomerAccessService`，再叠加对应业务模块权限，避免 Customer 360 成为跨模块数据权限旁路。
 
-Cordys 客户 360 还包含 `FollowUpPlan`；当前 schema 尚无该业务模型，因此 R5 不新增占位表或空 Tab，后续随完整跟进计划能力迁移。
+W2.2 已把 `FollowUpPlan` 接入 PC/Mobile 客户 360。指定客户读取仍先经过 `CustomerAccessService`；只读协作人只能看到自己创建的计划，协作写关系可新建计划。
 
 ### 审批引擎
 

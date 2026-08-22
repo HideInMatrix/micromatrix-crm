@@ -24,6 +24,7 @@ import { customerExtraApi } from '@/api/sales'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import FollowUpSheet from '@/mobile/components/FollowUpSheet.vue'
+import FollowUpPlanList from '@/mobile/components/FollowUpPlanList.vue'
 import MobileDynamicForm from '@/mobile/components/MobileDynamicForm.vue'
 import {
   fetchFields,
@@ -33,7 +34,7 @@ import {
 } from '@/mobile/api'
 import { useAuthStore } from '@/stores/auth'
 
-type DetailTab = 'info' | 'contact' | 'record' | 'header' | 'relation' | 'collaborator'
+type DetailTab = 'info' | 'contact' | 'record' | 'plan' | 'header' | 'relation' | 'collaborator'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +89,7 @@ const detailTabs = computed<{ name: DetailTab; title: string }[]>(() => {
     return [
       { name: 'info', title: '客户信息' },
       { name: 'record', title: '跟进记录' },
+      { name: 'plan', title: '跟进计划' },
       { name: 'header', title: '负责人记录' },
     ]
   }
@@ -95,6 +97,7 @@ const detailTabs = computed<{ name: DetailTab; title: string }[]>(() => {
     { name: 'info', title: '客户信息' },
     ...(auth.hasPerm('contact:read') ? [{ name: 'contact' as const, title: '联系人' }] : []),
     { name: 'record', title: '跟进记录' },
+    { name: 'plan', title: '跟进计划' },
     { name: 'header', title: '负责人记录' },
     { name: 'relation', title: '客户关系' },
     ...(!customer.value?.collaborationType
@@ -409,6 +412,14 @@ onMounted(load)
                 </van-cell>
               </van-cell-group>
             </template>
+
+            <FollowUpPlanList
+              v-else-if="tab.name === 'plan'"
+              target-type="customer"
+              :target-id="customerId"
+              :target-name="customer.name"
+              :can-write="canWrite"
+            />
 
             <template v-else-if="tab.name === 'header'">
               <van-empty v-if="ownerHistory.length === 0" description="暂无负责人记录" />

@@ -5,9 +5,9 @@
 ## 1. 当前基线
 
 - 主导航模块配置、左侧菜单排序/启停、组织架构、角色权限和多角色数据范围已完成。
-- `NavigationModulesView` 已展示顶部导航名称，但尚未持久化排序，也未驱动实际 Header。
+- `NavigationModulesView` 的顶部导航排序与 Header 驱动已在 W2.1 完成。
 - MicroMatrix 已有可复用的审批中心、通知铃铛、导出任务中心、主题切换与账号菜单。
-- 全局搜索、跟进计划、国际化和 Agent 尚未纳入或尚未实现，不得用空壳入口伪造完成。
+- 跟进计划已在 W2.2 完成；全局搜索、国际化和 Agent 仍未纳入或未实现，不得用空壳入口伪造完成。
 
 ## 2. W2.1 顶部导航配置闭环
 
@@ -73,4 +73,42 @@ pnpm smoke
 
 ## 3. W2.2 跟进计划
 
-W2.1 验收后启动。该阶段将完整读取 Cordys FollowUpPlan 的页面、API、Controller、Service、Domain、Mapper、提醒任务和转跟进记录语义，并同时补齐顶部 `event` 入口与客户 360 的跟进计划 Tab。具体设计在 W2.1 完成后单独建立 spec，不在本阶段预写实现结论。
+状态：`✅ COMPLETE（2026-08-22）`
+
+### 已完成源码核对
+
+- 已读取 Cordys FollowUpPlan 的 Web、Mobile、API、Controller、Service、Domain、Mapper、migration、提醒任务和转跟进记录交互。
+- 已确认四种状态、新建默认值、线索/客户/商机目标表达、负责人写权限、客户协作权限、列表排序与“我的计划”语义。
+- 已确认 Cordys 当前转记录采用两次前端请求，提醒查询还附带 `owner = create_user` 限制；MicroMatrix 分别采用事务式转换和支持代建计划提醒的加固设计。
+- 已建立 `specs/follow-up-plan-parity/` 下的 requirements、design、tasks。
+
+### 本阶段落地范围
+
+- 跟进计划 Prisma 模型、迁移、共享契约和完整 API。
+- CRUD、状态流转、租户/数据范围、客户协作权限、原子转跟进记录和到期提醒。
+- PC 与移动端计划页面、顶部 `event` 真实入口、客户 360 跟进计划 Tab。
+- 规则测试、全链路 smoke、浏览器往返和文档同步。
+
+评论/评论计数、动态表单设计器不在本阶段范围内。
+
+### 验收结果
+
+- 新增 `follow_up_plans`、四态状态机、完整 CRUD、全局/指定目标/我的计划列表和租户隔离。
+- 线索/客户/商机读取与写入复用现有数据范围、资源池和客户协作裁决；编辑、删除、状态和转换限制为负责人或管理员。
+- 转跟进记录改为单事务抢占、建记录、刷新最近跟进时间、回写记录 ID；重复转换和已转换状态变更均返回 `409`。
+- 每天 09:00 扫描当天到期计划，通知负责人；支持他人代建计划并以 `dueNotifiedAt` 去重。
+- PC、Mobile、客户 360 与顶部 `event` 已接入真实页面，新增图标统一使用 `lucide-vue-next`。
+- Prisma generate、typecheck、ESLint、API/Web build 全绿；规则与公共底座单测 `17/17`；全链路 smoke `199/199`。
+- 浏览器验证 PC 列表/表单、Header `event`、客户 360 Tab 和 390×844 Mobile 列表/表单；修复了 Mobile 可选 Boolean prop 缺省为 false 导致全局新建按钮隐藏的问题，最终复验通过。
+
+### 复验命令
+
+```bash
+pnpm prisma:generate
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm --filter @micromatrix/api test:rules
+pnpm db:migrate
+pnpm smoke
+```

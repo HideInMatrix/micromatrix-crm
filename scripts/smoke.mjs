@@ -517,6 +517,85 @@ check(
 const convertedCustomerDetail = await get(`/customers/${converted.customerId}`, sales.headers)
 check('R4 客户最近跟进时间随线索刷新', Boolean(convertedCustomerDetail.lastFollowedAt))
 
+// W2.2：跟进计划 CRUD、负责人状态锁与原子转跟进记录。
+const followPlan = await post('/follow-up-plans', sales.headers, {
+  targetType: 'customer',
+  targetId: converted.customerId,
+  contactId: converted.contactId,
+  method: '电话',
+  estimatedAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+  content: `W2.2 跟进计划-${stamp}`,
+})
+check(
+  'W2.2 创建客户跟进计划',
+  Boolean(followPlan.id) && followPlan.status === 'PREPARED' && followPlan.converted === false,
+)
+const followPlanPage = await get(
+  `/follow-up-plans?targetType=customer&targetId=${converted.customerId}&pageSize=100`,
+  sales.headers,
+)
+check(
+  'W2.2 客户 360 可分页读取跟进计划',
+  followPlanPage.items?.some((item) => item.id === followPlan.id && item.canManage === true),
+)
+const updatedFollowPlan = await request(
+  'PATCH',
+  `/follow-up-plans/${followPlan.id}`,
+  sales.headers,
+  { content: `W2.2 已更新计划-${stamp}`, method: '拜访' },
+).then((response) => response.json())
+check(
+  'W2.2 负责人可编辑跟进计划',
+  updatedFollowPlan.content === `W2.2 已更新计划-${stamp}` && updatedFollowPlan.method === '拜访',
+)
+const completedFollowPlan = await post(
+  `/follow-up-plans/${followPlan.id}/status`,
+  sales.headers,
+  { status: 'COMPLETED' },
+)
+check('W2.2 跟进计划状态流转', completedFollowPlan.status === 'COMPLETED')
+const convertedFollowPlan = await post(
+  `/follow-up-plans/${followPlan.id}/convert`,
+  sales.headers,
+)
+check(
+  'W2.2 原子转跟进记录并回写记录 ID',
+  convertedFollowPlan.converted === true && Boolean(convertedFollowPlan.convertedRecordId),
+)
+const convertedPlanRecords = await get(
+  `/follow-ups?targetType=customer&targetId=${converted.customerId}`,
+  sales.headers,
+)
+check(
+  'W2.2 转换记录继承计划内容与方式',
+  convertedPlanRecords.some(
+    (item) =>
+      item.id === convertedFollowPlan.convertedRecordId &&
+      item.content === `W2.2 已更新计划-${stamp}` &&
+      item.type === '拜访',
+  ),
+)
+const duplicateConvert = await request(
+  'POST',
+  `/follow-up-plans/${followPlan.id}/convert`,
+  sales.headers,
+  {},
+)
+check('W2.2 重复转换被拒绝', duplicateConvert.status === 409)
+const lockedStatus = await request(
+  'POST',
+  `/follow-up-plans/${followPlan.id}/status`,
+  sales.headers,
+  { status: 'CANCELLED' },
+)
+check('W2.2 已转记录计划状态锁定', lockedStatus.status === 409)
+const removedFollowPlan = await request(
+  'DELETE',
+  `/follow-up-plans/${followPlan.id}`,
+  sales.headers,
+)
+check('W2.2 负责人可删除跟进计划', removedFollowPlan.ok)
+
 // R4：关联已有客户时补协作人，并复制联系人/跟进记录。
 const r4RelationCustomer = await post('/customers', manager.headers, {
   name: `R4关联客户-${stamp}`,

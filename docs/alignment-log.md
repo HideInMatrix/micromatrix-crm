@@ -434,3 +434,29 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - Prisma generate、shared/API/Web typecheck、ESLint、API/Web build 全绿。
 - 规则与公共底座单测 `14/14`；全链路 smoke `190/190`，覆盖默认补种、管理员排序、非管理员 `403` 与刷新持久化。
 - 浏览器验证配置页八项顺序/状态、服务端排序后的配置页刷新与 Header 同步；恢复默认后 Header 顺序为 `task / notify / about / help`，最终刷新未产生新的控制台错误。
+
+---
+
+## 9. 跟进计划源码迁移与验收（2026-08-22）
+
+### 9.1 源码事实
+
+- 完整读取 Cordys Web/Mobile 计划列表与详情组件、API URL、全局/线索/客户/商机 Controller、`FollowUpPlanService`、Domain/DTO/Mapper、migration 和 `FollowUpPlanRemindListener`。
+- 状态确认为 `PREPARED / UNDERWAY / COMPLETED / CANCELLED`；新建默认未开始且未转记录。
+- Cordys 商机计划使用 `type=CUSTOMER + opportunityId + customerId`；MicroMatrix 延续现有跟进记录的 `targetType + targetId` 多态表达。
+- Cordys Web 转记录是“先建记录、再回写 converted”的两次请求；MicroMatrix 改为原子事务并保存 `convertedRecordId`。
+- Cordys 提醒 Mapper 当前额外限制 `owner = create_user`；MicroMatrix 按业务语义通知所有负责人，并通过 `dueNotifiedAt` 显式去重。
+
+### 9.2 MicroMatrix 落地
+
+- 新增 `FollowUpPlan` Prisma 模型、迁移、shared VO/status、NestJS 模块和 `/follow-up-plans` 完整接口。
+- 全局列表按三类资源权限合并，指定目标列表先校验资源；客户复用 READ_ONLY/COLLABORATION，写操作限制负责人或管理员。
+- 新增 PC 表格页、Mobile 卡片页、PC/Mobile 新建编辑表单、客户 360 Tab 和顶部 `event` 的 `CalendarClock` 入口。
+- 跟进评论、评论计数和动态表单设计器明确留到后续阶段，不伪造完成。
+
+### 9.3 验证证据
+
+- Prisma generate、shared/API/Web typecheck、ESLint、API/Web build 全绿。
+- 单元测试 `17/17`，新增覆盖已转换状态锁、事务式转记录、代建计划提醒和同日去重。
+- smoke `199/199`，新增 9 条断言覆盖创建、客户 360 列表、编辑、状态、转换、记录继承、重复转换、状态锁和删除。
+- 浏览器验证 PC `/follow-plans`、新建表单、Header `event`、客户 360 跟进计划 Tab，以及 390×844 Mobile 列表和新建表单；最终刷新未发现本轮新增控制台错误。

@@ -157,6 +157,15 @@ const router = createRouter({
           meta: { title: '审批中心', perm: 'menu:approval', client: 'both' },
         },
         {
+          path: 'follow-plans',
+          name: 'follow-plans',
+          component: () =>
+            isMobileClient()
+              ? import('@/mobile/views/FollowUpPlansView.vue')
+              : import('@/views/FollowUpPlansView.vue'),
+          meta: { title: '跟进计划', client: 'both' },
+        },
+        {
           path: 'mine',
           name: 'mobile-mine',
           component: () => import('@/mobile/views/MineView.vue'),

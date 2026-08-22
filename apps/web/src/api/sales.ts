@@ -1,5 +1,8 @@
 import type {
   ContactVO,
+  FollowUpPlanStatus,
+  FollowUpPlanTargetType,
+  FollowUpPlanVO,
   FollowUpVO,
   LeadVO,
   OpportunityStageVO,
@@ -195,6 +198,37 @@ export const followUpApi = {
     content: string
     nextFollowAt?: string
   }) => http.post<FollowUpVO>('/follow-ups', data),
+}
+
+export interface FollowUpPlanListParams extends PageQuery {
+  targetType?: FollowUpPlanTargetType
+  targetId?: string
+  status?: FollowUpPlanStatus
+  mine?: boolean
+}
+
+export interface FollowUpPlanPayload {
+  targetType: FollowUpPlanTargetType
+  targetId: string
+  contactId?: string
+  content: string
+  method?: string
+  estimatedAt?: string
+  ownerId?: string
+  customData?: Record<string, unknown>
+}
+
+export const followUpPlanApi = {
+  list: (params: FollowUpPlanListParams) =>
+    http.get<PaginatedResult<FollowUpPlanVO>>('/follow-up-plans', { params }),
+  get: (id: string) => http.get<FollowUpPlanVO>(`/follow-up-plans/${id}`),
+  create: (data: FollowUpPlanPayload) => http.post<FollowUpPlanVO>('/follow-up-plans', data),
+  update: (id: string, data: Partial<FollowUpPlanPayload>) =>
+    http.patch<FollowUpPlanVO>(`/follow-up-plans/${id}`, data),
+  updateStatus: (id: string, status: FollowUpPlanStatus) =>
+    http.post<FollowUpPlanVO>(`/follow-up-plans/${id}/status`, { status }),
+  convert: (id: string) => http.post<FollowUpPlanVO>(`/follow-up-plans/${id}/convert`),
+  remove: (id: string) => http.delete(`/follow-up-plans/${id}`),
 }
 
 // ===== 商机 =====

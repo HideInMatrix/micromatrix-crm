@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TOP_NAVIGATION_DEFINITIONS } from '@micromatrix/shared'
-import { CircleHelp, Info, ListTodo } from 'lucide-vue-next'
+import { CalendarClock, CircleHelp, Info, ListTodo } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
@@ -61,6 +61,18 @@ onMounted(() => {
       >
         <NotificationBell />
       </span>
+
+      <el-tooltip v-else-if="action.key === 'event'" content="跟进计划" placement="bottom">
+        <button
+          type="button"
+          class="border-0 bg-transparent p-0 leading-none cursor-pointer"
+          data-top-navigation-key="event"
+          aria-label="跟进计划"
+          @click="router.push('/follow-plans')"
+        >
+          <CalendarClock :size="20" :stroke-width="1.8" aria-hidden="true" />
+        </button>
+      </el-tooltip>
 
       <el-popover
         v-else-if="action.key === 'about'"

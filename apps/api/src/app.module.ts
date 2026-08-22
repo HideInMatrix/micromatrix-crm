@@ -17,6 +17,7 @@ import { ContractsModule } from './modules/contracts/contracts.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { DepartmentsModule } from './modules/departments/departments.module'
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module'
+import { FollowUpPlansModule } from './modules/follow-up-plans/follow-up-plans.module'
 import { LeadsModule } from './modules/leads/leads.module'
 import { OrdersModule } from './modules/orders/orders.module'
 import { ProductsModule } from './modules/products/products.module'
@@ -48,6 +49,7 @@ import { PrismaModule } from './prisma/prisma.module'
     ContactsModule,
     LeadsModule,
     FollowUpsModule,
+    FollowUpPlansModule,
     AttachmentsModule,
     ImportExportModule,
     OpportunitiesModule,

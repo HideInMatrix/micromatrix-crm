@@ -106,6 +106,26 @@ POST  /module-configs/top-navigation/reorder       body: { navigationKeys: TopNa
 - 旧租户首次读取时自动幂等补种默认顺序。Header 使用同一顺序，但只渲染 MicroMatrix 已具备的真实能力；`task` 还要求 `menu:approval`。
 - Cordys 当前源码只有顶部导航列表与排序 API。虽然数据模型保留 `enabled`，W2.1 不开放启停接口。
 
+## 跟进计划（W2.2）
+
+```text
+GET    /follow-up-plans
+GET    /follow-up-plans/{id}
+POST   /follow-up-plans
+PATCH  /follow-up-plans/{id}
+POST   /follow-up-plans/{id}/status       body: { status }
+POST   /follow-up-plans/{id}/convert
+DELETE /follow-up-plans/{id}
+```
+
+- 列表支持 `page / pageSize / keyword / status / mine / targetType / targetId`；指定 `targetId` 时必须同时指定类型。
+- 目标类型为 `lead / customer / opportunity`，状态为 `PREPARED / UNDERWAY / COMPLETED / CANCELLED`。
+- 新建与目标读取复用对应模块权限和数据范围；客户额外复用 READ_ONLY/COLLABORATION 协作语义。
+- 编辑、删除、状态变更和转换仅限负责人或管理员。`COMPLETED + converted=true` 后拒绝再次变更状态或转换。
+- `/convert` 在单一事务中创建 `FollowUpRecord`、刷新目标最近跟进时间并回写 `convertedRecordId`；重复转换返回 `409`。
+- 每天 09:00 扫描当天到期的未结束计划，发送 `follow_plan` 站内通知；`dueNotifiedAt` 保证同一天只提醒一次，修改计划时间会重置提醒标记。
+- 顶部 `event` 已进入 `/follow-plans`；PC/Mobile 和客户 360 使用同一 API。
+
 ## 多公海 / 多线索池自动回收规则
 
 `POST /api/resource-pools` 与 `PATCH /api/resource-pools/{id}` 的 `recycleRule` 使用 CordysCRM 时间规则语义：
@@ -344,7 +364,7 @@ UI 对齐：
 
 - PC 客户列表详情使用 100% 客户概览 Drawer；左侧为 Metadata 客户字段，右侧为 360 Tab，并支持左右/上下布局与 Tab 本地显隐偏好。
 - Mobile `/customers` 按 Cordys 使用 `客户 / 联系人 / 客户公海` 三页签；普通客户详情使用全页 Tab，公海客户详情只显示客户信息 / 跟进记录 / 负责人记录。
-- Cordys 的“跟进计划”依赖 `FollowUpPlan` 业务对象，当前项目尚无该模型，因此 R5 不提供无数据空壳 Tab。
+- W2.2 已在 PC/Mobile 客户详情加入真实跟进计划 Tab，支持列表、新建、编辑、状态、转记录和删除；公海/协作权限继续由 `CustomerAccessService` 裁决。
 
 ## 客户集团 / 子公司关系
 

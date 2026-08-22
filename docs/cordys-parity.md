@@ -26,7 +26,7 @@
 | CordysCRM 模块 | 关键参考实现 | MicroMatrix CRM | 状态 | 后续动作 |
 | --- | --- | --- | --- | --- |
 | 线索 | `clue/*`、`ClueService`、`PoolClueService` | `modules/leads` | ✅ | R1/R2/R4 已完成多池、领取/回收/库容、SavedView、负责人历史、批量、xlsx 导入导出与三条客户转换路径；FollowUpPlan/显式 FormLinkScenario 属平台后续能力 |
-| 客户 | `customer/*`、`CustomerService`、`customerOverviewDrawer.vue`、Mobile `customer/index.vue/detail.vue` | `customers` | ✅ | R5 已完成 PC 100% 客户概览 Drawer、Metadata 客户信息、360 业务 Tab、分页资源接口、协作/只读语义，以及 Mobile 客户/联系人/公海三页签和普通/公海详情；Cordys FollowUpPlan 因当前项目尚无该业务模型，统一留到跟进计划模块迁移 |
+| 客户 | `customer/*`、`CustomerService`、`customerOverviewDrawer.vue`、Mobile `customer/index.vue/detail.vue` | `customers` | ✅ | R5 已完成客户概览和 Mobile 详情；W2.2 已继续补齐 PC/Mobile 跟进计划 Tab，并复用协作/只读语义 |
 | 联系人 | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue` | `modules/contacts` | ✅ | R3 已对齐独立列表/数据视图、客户内嵌列表、动态字段、启停、商机关联删除保护、批改、xlsx 导入导出与 Cordys 工具条交互；R5 已接入 PC/Mobile 客户 360 与 Mobile 客户模块联系人页签 |
 | 商机 | `opportunity/*`、`OpportunityService` | `modules/opportunities` | 🟡 | 补齐关闭规则、阶段高级配置、负责人/跟进联动 |
 | 报价 | `OpportunityQuotation*` | `modules/quotes` | 🟡 | 对齐审批、快照、联系人、用户视图、操作日志 |
@@ -43,7 +43,7 @@
 | CordysCRM 模块 | 关键参考实现 | MicroMatrix CRM | 状态 | 后续动作 |
 | --- | --- | --- | --- | --- |
 | 跟进记录 | `FollowUpRecordService` | `modules/follow-ups` | 🟡 | 对齐评论、@成员、附件、字段、日志、视图 |
-| 跟进计划 | `FollowUpPlanService` | - | ❌ | 完整迁移计划、提醒、评论、转记录、我的计划 |
+| 跟进计划 | `FollowUpPlanService`、`FollowUpPlanRemindListener` | `modules/follow-up-plans` | 🟡 | W2.2 已完成 CRUD、四态、数据范围、客户协作、原子转记录、到期提醒、我的计划、PC/Mobile、顶部 event 和客户 360；评论/评论计数与动态表单配置后续独立迁移 |
 | 审批流 | `approval/*` | `modules/approvals` | 🟡 | 重点重构：节点、条件、会签/或签、加签、退回、抄送、任务、快照、Webhook |
 | 站内通知 | `NotificationService`、`notice/*` | `modules/notifications` | 🟡 | 对齐消息任务、模板、事件开关、SSE |
 | 定时任务 | `schedule/*`、`job/*` | Nest Schedule | 🟡 | 统一任务注册、回收、提醒、清理策略 |

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CalendarClock } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { dashboardSummary, type MobileSummary } from '@/mobile/api'
@@ -58,6 +59,9 @@ onMounted(load)
 
     <div class="mx-3 mt-3">
       <van-cell-group inset>
+        <van-cell title="我的跟进计划" is-link @click="router.push('/follow-plans')">
+          <template #icon><CalendarClock :size="19" class="mr-2" aria-hidden="true" /></template>
+        </van-cell>
         <van-cell
           title="待我审批"
           is-link

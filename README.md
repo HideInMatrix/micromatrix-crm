@@ -69,8 +69,8 @@ pnpm dev
 ```
 
 - Web 管理端 http://localhost:5173 · 移动端 http://localhost:5174 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（当前 **190 条断言**，需 API 已启动）
-- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **14 条**）
+- 全链路冒烟：`pnpm smoke`（当前 **199 条断言**，需 API 已启动）
+- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **17 条**）
 
 ### 演示账号
 
@@ -97,6 +97,6 @@ pnpm dev
 - 当前分阶段执行计划：[`docs/cordys-wave2-execution-plan.md`](./docs/cordys-wave2-execution-plan.md)
 - 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
 
-Wave 1 的 R1-R7 与公共底座首轮已完成；Wave 2 的 W2.1 顶部导航配置闭环已于 2026-08-21 验收。下一步进入 W2.2 跟进计划，继续严格按“真实页面 → 页面接口 → Cordys 后端实现”探测并迁移能力。
+Wave 1 的 R1-R7、Wave 2 的 W2.1 顶部导航和 W2.2 跟进计划均已完成验收。跟进计划已覆盖 PC/Mobile、客户 360、顶部 `event`、权限、原子转记录和到期提醒；后续模块继续按“真实页面 → 页面接口 → Cordys 后端实现”逐项探测和迁移。
 
 明确不迁移：Cordys 自身的产品授权/版本区分机制、DataEase、AI/MCP 商业扩展、商业标讯 API。

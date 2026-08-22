@@ -29,6 +29,7 @@ import { metadataApi } from '@/api/metadata'
 import { customerExtraApi, followUpApi } from '@/api/sales'
 import ContractDetailDrawer from '@/components/ContractDetailDrawer.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
+import FollowUpPlanPanel from '@/components/follow-plans/FollowUpPlanPanel.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
@@ -41,6 +42,7 @@ import { useAuthStore } from '@/stores/auth'
 
 type TabName =
   | 'followRecord'
+  | 'followPlan'
   | 'contact'
   | 'headRecord'
   | 'relation'
@@ -151,6 +153,7 @@ const canEditRelations = computed(
 
 const allTabs = computed<{ name: TabName; label: string; visible: boolean }[]>(() => [
   { name: 'followRecord', label: '跟进记录', visible: true },
+  { name: 'followPlan', label: '跟进计划', visible: true },
   {
     name: 'contact',
     label: '联系人',
@@ -623,6 +626,14 @@ onMounted(async () => {
                     </el-timeline>
                   </div>
                 </template>
+
+                <FollowUpPlanPanel
+                  v-else-if="tab.name === 'followPlan'"
+                  target-type="customer"
+                  :target-id="customerId"
+                  :target-name="customer.name"
+                  :can-write="canWrite"
+                />
 
                 <CustomerContactTable
                   v-else-if="tab.name === 'contact'"

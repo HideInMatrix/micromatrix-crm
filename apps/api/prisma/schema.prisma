@@ -282,6 +282,41 @@ model FollowUpRecord {
   @@map("follow_up_records")
 }
 
+enum FollowUpPlanStatus {
+  PREPARED
+  UNDERWAY
+  COMPLETED
+  CANCELLED
+}
+
+// ============ 跟进计划（多态：线索/客户/商机） ============
+
+model FollowUpPlan {
+  id                String             @id @default(cuid())
+  tenantId          String
+  targetType        String
+  targetId          String
+  contactId         String?
+  content           String
+  method            String?
+  estimatedAt       DateTime?
+  status            FollowUpPlanStatus @default(PREPARED)
+  converted         Boolean            @default(false)
+  convertedRecordId String?
+  ownerId           String
+  deptId            String?
+  createdById       String
+  dueNotifiedAt     DateTime?
+  customData        Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([tenantId, targetType, targetId])
+  @@index([tenantId, ownerId, status])
+  @@index([tenantId, estimatedAt, status])
+  @@map("follow_up_plans")
+}
+
 // ============ 商机（可配置阶段） ============
 
 model OpportunityStage {
@@ -1105,7 +1140,7 @@ model Notification {
   id        String    @id @default(cuid())
   tenantId  String
   userId    String
-  // 业务类型：assign / approval / receivable / pool / system
+  // 业务类型：assign / approval / receivable / pool / follow_plan / system
   type      String
   title     String
   content   String?

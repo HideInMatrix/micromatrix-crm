@@ -65,7 +65,13 @@ export interface LoginLogVO {
 
 // ============ 通知 ============
 
-export type NotificationBizType = 'assign' | 'approval' | 'receivable' | 'pool' | 'system'
+export type NotificationBizType =
+  | 'assign'
+  | 'approval'
+  | 'receivable'
+  | 'pool'
+  | 'follow_plan'
+  | 'system'
 
 export type ExportTaskStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
 
@@ -201,7 +207,7 @@ export const TOP_NAVIGATION_DEFINITIONS: TopNavigationDefinition[] = [
     status: 'available',
     requiredPermission: 'menu:approval',
   },
-  { key: 'event', label: '记录/计划', defaultEnabled: true, status: 'planned' },
+  { key: 'event', label: '记录/计划', defaultEnabled: true, status: 'available' },
   { key: 'agent', label: '智能体', defaultEnabled: true, status: 'excluded' },
   { key: 'notify', label: '消息通知', defaultEnabled: true, status: 'available' },
   { key: 'about', label: '关于', defaultEnabled: true, status: 'available' },
