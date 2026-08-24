@@ -30,15 +30,16 @@
 
 - 当具有更新权限的管理员保存企业 ID、应用 ID和应用 Secret 时，系统 shall 校验必填项和长度后持久化。
 - 应用 Secret shall 使用服务端密钥以 AES-256-GCM 加密，不得以明文或可逆无密钥编码写入数据库。
-- GET 响应、操作日志、错误信息和前端状态 shall 不返回应用 Secret、access token、密文、IV 或认证标签。
-- 编辑已有配置时，应用 Secret 留空 shall 保留旧密钥；替换密钥 shall 产生新的 IV 和认证标签。
-- 企业 ID、应用 ID 或应用 Secret 发生变化时，系统 shall 清除原连接验证成功状态，并保持组织同步关闭。
+- 常规配置 GET 响应、操作日志、错误信息和前端卡片状态 shall 不返回应用 Secret、access token、密文、IV 或认证标签；受控 Secret 查看接口是唯一例外。
+- 首次配置应用 Secret shall 必填；已有配置再次打开时 shall 允许配置管理员按需查看并复用已保存 Secret，不要求重复填写。
+- 应用 Secret 替换时 shall 重新加密并产生新的 IV 和认证标签；企业 ID、应用 ID 或 Secret 变化时 shall 清除原连接验证成功状态，并保持组织同步关闭。
+- 常规配置读取 shall 只返回 `secretConfigured`；查看 Secret shall 使用独立受控接口，并强制校验 `system:setting:update`，避免只读用户获得秘密。
 
 ### R3 连接测试
 
 - 当管理员提交连接测试时，系统 shall 使用企业 ID 和应用 Secret获取企微 access token，再使用应用 ID查询应用信息。
 - 连接测试 shall 同时验证 token 和应用可用性，任一步失败均 shall 返回可理解的失败结果。
-- 测试请求 shall 支持新配置和已保存配置；已保存配置未提交新 Secret 时 shall 使用解密后的现有 Secret。
+- 测试请求 shall 支持新配置和已保存配置；卡片上的测试按钮 shall 直接使用服务端已保存 Secret，不要求重新打开配置或填写 Secret。
 - 对齐 Cordys 行为，连接测试 shall 保存当前配置和最后测试状态；失败配置也 shall 可继续编辑和重新测试。
 - 外部请求 shall 设置超时，不得把 access token、Secret 或完整第三方响应写入日志和业务响应。
 
@@ -54,7 +55,9 @@
 - `/system/settings` shall 清晰区分企业基础信息、企业集成和开放 API，不把企微配置混入通用键值输入框。
 - 企业集成区 shall 展示企微的未配置、待验证、连接正常或验证失败状态，以及企业 ID、应用 ID和最后测试时间。
 - 具有更新权限的用户 shall 能打开配置抽屉、保存配置并执行连接测试；只读用户不得看到可写操作。
-- 已有 Secret shall 只显示“已配置”状态；编辑框留空表示保留，不得使用掩码字符串冒充真实 Secret回传。
+- 已有 Secret 在卡片中 shall 只显示“已配置”状态；配置管理员打开抽屉时 shall 安全加载真实值到密码输入框，并使用输入框眼睛按钮控制明文可见性。
+- Secret 表单字段 shall 保持必填；已有配置由已加载值满足校验，无需管理员重复输入。
+- Secret 输入区 shall 说明获取方式：企业微信管理后台 → 应用管理 → 自建应用 → 对应应用详情，并链接 Cordys 源码引用的企业微信 Secret 官方说明；同时提示应用需要启用。
 - 组织同步 shall 明确标记为 W3.2 待接入，本阶段不得提供会产生同步效果的开关。
 
 ### R6 公共底座边界
@@ -65,7 +68,7 @@
 
 ### R7 验证与文档
 
-- 本阶段 shall 覆盖加密往返、密钥不回显、租户隔离、更新保留/替换 Secret、状态失效、连接测试成功/失败和权限目录的自动化测试。
+- 本阶段 shall 覆盖加密往返、常规读取不回显、受控查看、租户隔离、首次 Secret 必填、留空保留/替换、状态失效、已保存配置直接测试、连接测试成功/失败和权限目录的自动化测试。
 - 本阶段 shall 通过 Prisma validate/generate/迁移、typecheck、lint、build、规则测试、Smoke 和浏览器验收。
 - 本阶段 shall 更新 API、数据模型、parity、菜单状态、alignment log、计划、规格索引和暂缓台账。
 

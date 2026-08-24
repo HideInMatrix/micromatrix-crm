@@ -88,6 +88,10 @@ export interface SaveWeComIntegrationInput {
   appSecret?: string
 }
 
+export interface WeComIntegrationSecretVO {
+  appSecret: string
+}
+
 export interface WeComConnectionTestVO {
   success: boolean
   message: string

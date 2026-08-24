@@ -19,6 +19,7 @@ import type {
   TopNavigationKey,
   UpdateMessageTaskSettingInput,
   SaveWeComIntegrationInput,
+  WeComIntegrationSecretVO,
   WeComConnectionTestVO,
 } from '@micromatrix/shared'
 import { http } from './http'
@@ -152,6 +153,7 @@ export const settingApi = {
 
 export const enterpriseIntegrationApi = {
   getWeCom: () => http.get<EnterpriseIntegrationVO>('/enterprise-integrations/wecom'),
+  getWeComSecret: () => http.get<WeComIntegrationSecretVO>('/enterprise-integrations/wecom/secret'),
   saveWeCom: (data: SaveWeComIntegrationInput) =>
     http.put<EnterpriseIntegrationVO>('/enterprise-integrations/wecom', data),
   testWeCom: (data: SaveWeComIntegrationInput) =>

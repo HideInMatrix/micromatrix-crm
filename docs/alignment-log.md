@@ -528,13 +528,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 ### 12.2 MicroMatrix 落地
 
 - 新增租户/provider 唯一的 `enterprise_integrations`，Secret 采用 AES-256-GCM 随机 IV 加密，保存密钥版本和认证标签；读取接口只返回是否已配置。
-- 新增 `/enterprise-integrations/wecom` 读取、保存和测试接口，以及 `system:setting:update` 写权限和操作日志。留空保留 Secret，替换凭据会使旧测试状态失效。
+- 新增 `/enterprise-integrations/wecom` 读取、保存和测试接口，以及 `system:setting:update` 写权限和操作日志。首次 Secret 必填，已有配置可留空保留；配置管理员可通过独立受控接口加载 Secret 并用眼睛按钮查看。
+- 对齐 Cordys 卡片操作：已有配置点击“测试连接”直接使用服务端保存的 Secret，不再先打开配置抽屉。
 - 企业设置重组为“企业信息 / 企业集成 / 开放 API”三个页签；企微卡片显示配置、测试和 W3.2 同步边界，配置抽屉支持保存与测试。
 - 组织同步、统一登录和第三方消息的数据模型缺口分别登记为 DB-013、DB-014、DB-006，W3.1 不伪造这些能力。
 
 ### 12.3 验证证据
 
-- Prisma validate/generate/migrate、shared/API/Web typecheck、ESLint、API/Web build 全绿；规则与公共底座单测 `41/41`，全链路 smoke `223/223`。
-- 单测覆盖 AES-GCM 随机 IV、篡改/错密钥拒绝、租户隔离、Secret 保留/替换、连接成功/失败持久化和 token/agent 两阶段客户端。
-- 浏览器验证管理员进入企业设置、切换企业集成、打开配置抽屉、保存配置后状态变为“待验证”；页面与重新打开的抽屉均不回显 Secret 明文，最终无 console error/warn。
-- 未使用真实企微凭据，因此外部平台成功响应由客户端单测验证；生产接入时仍需用实际自建应用完成一次环境验收。
+- Prisma validate/generate/migrate、shared/API/Web typecheck、ESLint、API/Web build 全绿；规则与公共底座单测 `41/41`，全链路 smoke `225/225`。
+- 单测覆盖 AES-GCM 随机 IV、篡改/错密钥拒绝、租户隔离、Secret 首次必填/留空保留/受控查看/替换、连接成功/失败持久化和 token/agent 两阶段客户端。
+- 浏览器验证管理员进入企业设置、切换企业集成、打开配置抽屉、保存配置后状态变为“待验证”；重新打开抽屉会加载已保存 Secret，默认以密码显示并可用眼睛按钮查看，卡片测试无需重新填写，最终无 console error/warn。
+- 浏览器使用本地已保存自建应用配置完成真实 token + agent 连接测试，结果为“企业微信连接成功”。

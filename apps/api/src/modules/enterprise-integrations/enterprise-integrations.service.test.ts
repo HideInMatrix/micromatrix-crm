@@ -108,6 +108,7 @@ test('首次保存必须提供 Secret，响应不回显秘密材料', async () =
   assert.equal(value.secretConfigured, true)
   assert.equal('secretCiphertext' in value, false)
   assert.notEqual(rows[0]?.secretCiphertext, 'plain-secret')
+  assert.deepEqual(await service.getWeComSecret('tenant-a'), { appSecret: 'plain-secret' })
   assert.equal((await service.getWeCom('tenant-b')).configured, false)
 })
 
@@ -148,6 +149,12 @@ test('连接测试持久化成功或失败状态，企业 ID 变化要求重新�
   assert.equal(response.success, false)
   assert.equal(response.integration.lastTestSucceeded, false)
   assert.equal(response.integration.lastTestMessage, '企业微信连接失败（40013）')
+
+  const retried = await failed.service.testWeCom(user, {
+    corpId: 'ww-a',
+    agentId: '1000001',
+  })
+  assert.equal(retried.success, false)
 
   await assert.rejects(
     () => failed.service.testWeCom(user, { corpId: 'ww-b', agentId: '1000001' }),

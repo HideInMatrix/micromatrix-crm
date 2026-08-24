@@ -12,6 +12,7 @@ const canUpdate = computed(() => auth.hasPerm('system:setting:update'))
 const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
+const secretLoading = ref(false)
 const drawerVisible = ref(false)
 const formRef = ref<FormInstance>()
 
@@ -42,6 +43,7 @@ const rules: FormRules<SaveWeComIntegrationInput> = {
     { required: true, message: '请输入应用 ID', trigger: 'blur' },
     { pattern: /^\d+$/, message: '应用 ID 必须为数字', trigger: 'blur' },
   ],
+  appSecret: [{ required: true, message: '请输入应用 Secret', trigger: 'blur' }],
 }
 
 const status = computed(() => {
@@ -77,31 +79,26 @@ async function loadData() {
   }
 }
 
-function openDrawer() {
+async function openDrawer() {
   form.corpId = integration.value.corpId
   form.agentId = integration.value.agentId
   form.appSecret = ''
   drawerVisible.value = true
+  if (!integration.value.secretConfigured) return
+  secretLoading.value = true
+  try {
+    const { data } = await enterpriseIntegrationApi.getWeComSecret()
+    form.appSecret = data.appSecret
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    secretLoading.value = false
+  }
 }
 
-async function validateForm(requireSecretForCorpChange = false) {
+async function validateForm() {
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return false
-  const secret = form.appSecret?.trim()
-  if (!integration.value.secretConfigured && !secret) {
-    ElMessage.warning('首次配置必须填写应用 Secret')
-    return false
-  }
-  if (
-    requireSecretForCorpChange &&
-    integration.value.configured &&
-    form.corpId !== integration.value.corpId &&
-    !secret
-  ) {
-    ElMessage.warning('企业 ID 变化时必须重新填写应用 Secret')
-    return false
-  }
-  return true
+  return Boolean(valid)
 }
 
 function payload(): SaveWeComIntegrationInput {
@@ -129,12 +126,11 @@ async function save() {
 }
 
 async function testDraft() {
-  if (!(await validateForm(true))) return
+  if (!(await validateForm())) return
   testing.value = true
   try {
     const { data } = await enterpriseIntegrationApi.testWeCom(payload())
     integration.value = data.integration
-    form.appSecret = ''
     if (data.success) ElMessage.success(data.message)
     else ElMessage.error(data.message)
   } catch (error) {
@@ -227,13 +223,19 @@ onMounted(loadData)
 
   <el-drawer v-model="drawerVisible" title="配置企业微信" size="520px" destroy-on-close>
     <el-alert
-      title="连接测试会按 Cordys 规则保存当前配置和测试结果；应用 Secret 只在服务端加密保存，不会再次回显。"
+      title="连接测试会按 Cordys 规则保存当前配置和测试结果；应用 Secret 在服务端加密保存，仅配置管理员可以查看。"
       type="info"
       :closable="false"
       show-icon
       class="mb-5"
     />
-    <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+    <el-form
+      ref="formRef"
+      v-loading="secretLoading"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+    >
       <el-form-item label="企业 ID" prop="corpId">
         <el-input v-model="form.corpId" placeholder="例如：wwxxxxxxxxxxxxxxxx" />
       </el-form-item>
@@ -246,16 +248,21 @@ onMounted(loadData)
           type="password"
           show-password
           autocomplete="new-password"
-          :placeholder="
-            integration.secretConfigured ? '留空则保留当前 Secret' : '请输入应用 Secret'
-          "
+          placeholder="请输入应用 Secret"
         />
         <div class="secret-tip">
-          {{
-            integration.secretConfigured
-              ? '当前 Secret 已配置；只有输入新值时才会替换。'
-              : '首次配置必须填写。'
-          }}
+          <span>
+            获取方式：登录企业微信管理后台 → 应用管理 → 自建应用 → 选择对应应用，在应用详情中查看
+            Secret。应用需处于启用状态；已有配置会安全加载到此处，点击输入框右侧眼睛按钮即可查看，无需重复填写。
+          </span>
+          <el-link
+            href="https://developer.work.weixin.qq.com/document/path/90665#secret"
+            target="_blank"
+            type="primary"
+            underline="never"
+          >
+            查看企业微信官方说明
+          </el-link>
         </div>
       </el-form-item>
     </el-form>
@@ -331,6 +338,10 @@ onMounted(loadData)
 }
 .secret-tip {
   margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 .drawer-actions {
   justify-content: flex-end;

@@ -103,7 +103,7 @@ const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
 const stamp = Date.now().toString(36)
 
-// W3.1 企业微信集成底座：权限、首次密钥、脱敏响应和持久化。
+// W3.1 企业微信集成底座：权限、首次密钥、受控查看、脱敏响应和持久化。
 const managerWeComConfig = await request('GET', '/enterprise-integrations/wecom', manager.headers)
 check('W3.1 无企业设置权限的角色不可读取企微配置', managerWeComConfig.status === 403)
 const integrationAdmin = await register(
@@ -143,6 +143,21 @@ check(
     persistedWeCom.secretConfigured === true &&
     !('appSecret' in persistedWeCom),
 )
+const revealedWeComSecret = await get(
+  '/enterprise-integrations/wecom/secret',
+  integrationAdmin.headers,
+)
+check(
+  'W3.1 配置管理员可按需查看已保存 Secret',
+  revealedWeComSecret.appSecret === `smoke-secret-${stamp}`,
+)
+const savedSecretTest = await request(
+  'POST',
+  '/enterprise-integrations/wecom/test',
+  integrationAdmin.headers,
+  { corpId: `ww-${stamp}`, agentId: '1000001' },
+)
+check('W3.1 卡片测试可直接复用已保存 Secret', savedSecretTest.status !== 400)
 
 // W2.5 流程设置底座：权限、配置生命周期、不可用类型和不可变版本。
 const managerFlowList = await request('GET', '/approvals/flows?pageSize=10', manager.headers)

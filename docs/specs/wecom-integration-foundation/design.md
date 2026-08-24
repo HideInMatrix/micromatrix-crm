@@ -8,7 +8,7 @@ W3.1 将企微凭据从通用 `system_settings` 中分离，建立可扩展、�
 
 ### Purpose Statement
 
-企业设置面向系统管理员，用于维护企业基础信息和第三方平台连接。企微区域应优先表达是否配置、是否验证以及最后测试结果，并让 Secret 的保留/替换语义明确可见。
+企业设置面向系统管理员，用于维护企业基础信息和第三方平台连接。企微区域应优先表达是否配置、是否验证以及最后测试结果，并让 Secret 的获取方式、密码查看和保留语义明确可见。
 
 ### Aesthetic Direction
 
@@ -29,7 +29,8 @@ W3.1 将企微凭据从通用 `system_settings` 中分离，建立可扩展、�
 
 - 使用页签分隔“企业信息 / 企业集成 / 开放 API”。
 - 企微使用横向状态卡：左侧平台与状态，中部配置摘要，右侧配置/测试动作。
-- 配置使用右侧抽屉；Secret 输入与“已配置、留空保留”说明相邻。
+- 配置使用右侧抽屉；已有 Secret 通过受控接口加载到密码输入框，使用眼睛按钮查看；输入区相邻展示管理后台获取路径和官方说明链接。
+- 卡片“测试连接”与 Cordys 一致：已配置时直接测试，不要求再次进入抽屉或填写 Secret。
 - 图标统一使用项目已有 `lucide-vue-next`。
 
 ## 3. 模块关系
@@ -68,19 +69,20 @@ flowchart LR
 - 每次写入生成 12-byte 随机 IV；认证标签单独保存。
 - 加密 key 从 `INTEGRATION_CREDENTIALS_KEY` 派生；生产环境必须显式配置。
 - 开发环境若未配置，使用带上下文前缀的 JWT access secret 派生，仅用于保持现有本地环境可启动；文档和 `.env.example` 明确要求独立密钥。
-- Secret 仅在 Service 内部短暂解密并传给 `WeComClient`。
+- Secret 仅在 Service 内部解密；只传给 `WeComClient` 或返回给通过更新权限校验的受控查看接口。
 
 ## 5. API
 
-| 方法 | 路径                                  | 权限                    | 说明                |
-| ---- | ------------------------------------- | ----------------------- | ------------------- |
-| GET  | `/enterprise-integrations/wecom`      | `system:setting`        | 返回脱敏配置状态    |
-| PUT  | `/enterprise-integrations/wecom`      | `system:setting:update` | 新增或更新配置      |
-| POST | `/enterprise-integrations/wecom/test` | `system:setting:update` | 测试并保存配置/结果 |
+| 方法 | 路径                                    | 权限                    | 说明                |
+| ---- | --------------------------------------- | ----------------------- | ------------------- |
+| GET  | `/enterprise-integrations/wecom`        | `system:setting`        | 返回脱敏配置状态    |
+| GET  | `/enterprise-integrations/wecom/secret` | `system:setting:update` | 按需查看 Secret     |
+| PUT  | `/enterprise-integrations/wecom`        | `system:setting:update` | 新增或更新配置      |
+| POST | `/enterprise-integrations/wecom/test`   | `system:setting:update` | 测试并保存配置/结果 |
 
-响应只包含 `configured`、`secretConfigured`、`corpId`、`agentId`、`syncEnabled`、测试状态和审计时间，不包含任何密文材料。
+常规配置响应只包含 `configured`、`secretConfigured`、`corpId`、`agentId`、`syncEnabled`、测试状态和审计时间，不包含任何秘密或密文材料。
 
-PUT 中 `appSecret` 可选：首次配置必填，已有配置留空保留。POST test 同样允许复用已保存 Secret。企业 ID、应用 ID或 Secret 变化时清除成功状态；测试随后用本次结果覆盖。
+首次 PUT 与首次 POST test 必须提供 `appSecret`；已有配置可复用服务端密钥。普通 GET 不返回 Secret，配置管理员打开抽屉时再调用受控查看接口并填入密码框。卡片测试只提交已保存的企业 ID、应用 ID，由服务端解密 Secret 执行；替换凭据时清除旧测试状态。
 
 ## 6. 企微连接规则
 
@@ -99,10 +101,10 @@ PUT 中 `appSecret` 可选：首次配置必填，已有配置留空保留。POS
 ## 8. 测试
 
 - `CredentialCipherService`：随机 IV、加密往返、错误 key/篡改失败。
-- `EnterpriseIntegrationsService`：空状态、租户隔离、首次 Secret 必填、留空保留、替换后状态失效、响应不含秘密。
+- `EnterpriseIntegrationsService`：空状态、租户隔离、首次 Secret 必填、留空保留/替换、受控查看、替换后状态失效、普通响应不含秘密。
 - `WeComClient` 使用注入替身覆盖成功、token 失败、agent 失败；自动化测试不调用真实企微。
 - Smoke 覆盖真实 API 的读取、权限拒绝、配置保存和脱敏响应；不使用伪造企微成功结果。
-- 浏览器覆盖页签、配置抽屉、必填校验、保存、已配置状态和失败测试提示；没有真实企微凭据时明确记录成功分支未做外部验收。
+- 浏览器覆盖页签、配置抽屉、Secret 加载/密码查看说明、无需重填保存、卡片直接测试和控制台；使用本地已保存自建应用配置验证真实成功分支。
 
 ## 9. 后续数据缺口
 

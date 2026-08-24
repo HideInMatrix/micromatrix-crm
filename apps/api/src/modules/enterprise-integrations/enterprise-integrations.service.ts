@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
-import type { EnterpriseIntegrationVO, WeComConnectionTestVO } from '@micromatrix/shared'
+import type {
+  EnterpriseIntegrationVO,
+  WeComConnectionTestVO,
+  WeComIntegrationSecretVO,
+} from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { EnterpriseIntegration } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -20,6 +24,19 @@ export class EnterpriseIntegrationsService {
   async getWeCom(tenantId: string): Promise<EnterpriseIntegrationVO> {
     const row = await this.findWeCom(tenantId)
     return this.toVO(row)
+  }
+
+  async getWeComSecret(tenantId: string): Promise<WeComIntegrationSecretVO> {
+    const row = await this.findWeCom(tenantId)
+    if (!row) throw new BadRequestException('请先配置企业微信')
+    return {
+      appSecret: this.cipher.decrypt({
+        ciphertext: row.secretCiphertext,
+        iv: row.secretIv,
+        authTag: row.secretAuthTag,
+        keyVersion: row.secretKeyVersion,
+      }),
+    }
   }
 
   async saveWeCom(
