@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { DepartmentVO, MemberVO } from '@micromatrix/shared'
+import type { DepartmentVO, MemberVO, OrganizationSyncGateVO } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import {
   deptApi,
   memberApi,
+  organizationSyncApi,
   roleApi,
   type DepartmentForm,
   type MemberForm,
@@ -13,6 +14,7 @@ import {
   type RoleOption,
 } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
+import OrganizationSyncDrawer from './OrganizationSyncDrawer.vue'
 
 const auth = useAuthStore()
 
@@ -24,6 +26,10 @@ const query = reactive({ page: 1, pageSize: 10, keyword: '', deptId: '', status:
 const deptTree = ref<DepartmentVO[]>([])
 const roles = ref<RoleOption[]>([])
 const memberOptions = ref<MemberOption[]>([])
+const syncDrawerVisible = ref(false)
+const syncGateLoading = ref(false)
+const syncGate = ref<OrganizationSyncGateVO | null>(null)
+const canSync = computed(() => auth.hasPerm('system:dept:sync'))
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -48,7 +54,9 @@ const memberRules: FormRules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   password: [{ required: true, min: 6, message: '密码至少 6 位', trigger: 'blur' }],
   deptId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
-  roleIds: [{ required: true, type: 'array', min: 1, message: '至少选择一个角色', trigger: 'change' }],
+  roleIds: [
+    { required: true, type: 'array', min: 1, message: '至少选择一个角色', trigger: 'change' },
+  ],
 }
 
 const deptDialogVisible = ref(false)
@@ -89,6 +97,11 @@ async function loadData() {
   }
 }
 
+function handleFilterChange() {
+  query.page = 1
+  void loadData()
+}
+
 async function loadRefs() {
   const [{ data: tree }, { data: roleList }, { data: options }] = await Promise.all([
     deptApi.tree(),
@@ -98,6 +111,23 @@ async function loadRefs() {
   deptTree.value = tree
   roles.value = roleList
   memberOptions.value = options
+}
+
+async function loadSyncGate() {
+  if (!canSync.value) return
+  syncGateLoading.value = true
+  try {
+    const { data } = await organizationSyncApi.status()
+    syncGate.value = data
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    syncGateLoading.value = false
+  }
+}
+
+async function handleSyncCompleted() {
+  await Promise.all([loadRefs(), loadData(), loadSyncGate()])
 }
 
 function handleDeptSelect(dept: DepartmentVO | null) {
@@ -249,9 +279,13 @@ async function handleResetPassword(row: MemberVO) {
 
 async function handleToggleStatus(row: MemberVO) {
   const action = row.status === 'ACTIVE' ? '禁用' : '启用'
-  const confirmed = await ElMessageBox.confirm(`确定${action}「${row.name}」吗？`, `${action}确认`, {
-    type: 'warning',
-  }).catch(() => false)
+  const confirmed = await ElMessageBox.confirm(
+    `确定${action}「${row.name}」吗？`,
+    `${action}确认`,
+    {
+      type: 'warning',
+    },
+  ).catch(() => false)
   if (!confirmed) return
   try {
     await memberApi.toggleStatus(row.id)
@@ -282,6 +316,7 @@ async function handleDelete(row: MemberVO) {
 onMounted(() => {
   loadData()
   loadRefs()
+  loadSyncGate()
 })
 </script>
 
@@ -318,16 +353,10 @@ onMounted(() => {
               <el-button link size="small" @click.stop>···</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('system:dept:create')"
-                    command="add"
-                  >
+                  <el-dropdown-item v-if="auth.hasPerm('system:dept:create')" command="add">
                     添加下级
                   </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('system:dept:update')"
-                    command="edit"
-                  >
+                  <el-dropdown-item v-if="auth.hasPerm('system:dept:update')" command="edit">
                     编辑部门
                   </el-dropdown-item>
                   <el-dropdown-item
@@ -356,23 +385,41 @@ onMounted(() => {
             placeholder="搜索姓名 / 邮箱 / 电话"
             clearable
             class="!w-64"
-            @keyup.enter="query.page = 1; loadData()"
-            @clear="query.page = 1; loadData()"
+            @keyup.enter="handleFilterChange"
+            @clear="handleFilterChange"
           />
           <el-select
             v-model="query.status"
             clearable
             placeholder="全部状态"
             class="!w-32"
-            @change="query.page = 1; loadData()"
+            @change="handleFilterChange"
           >
             <el-option label="启用" value="ACTIVE" />
             <el-option label="禁用" value="DISABLED" />
           </el-select>
         </div>
-        <el-button v-if="auth.hasPerm('system:member:create')" type="primary" @click="openCreate">
-          新建成员
-        </el-button>
+        <div class="flex gap-2">
+          <el-tooltip
+            v-if="canSync"
+            :disabled="!syncGate?.disabledReason"
+            :content="syncGate?.disabledReason || ''"
+            placement="top"
+          >
+            <span>
+              <el-button
+                :disabled="Boolean(syncGate?.disabledReason)"
+                :loading="syncGateLoading"
+                @click="syncDrawerVisible = true"
+              >
+                企业微信同步
+              </el-button>
+            </span>
+          </el-tooltip>
+          <el-button v-if="auth.hasPerm('system:member:create')" type="primary" @click="openCreate">
+            新建成员
+          </el-button>
+        </div>
       </div>
 
       <el-table v-loading="loading" :data="items" stripe>
@@ -513,12 +560,7 @@ onMounted(() => {
       width="460px"
       destroy-on-close
     >
-      <el-form
-        ref="deptFormRef"
-        :model="deptForm"
-        :rules="deptRules"
-        label-width="90px"
-      >
+      <el-form ref="deptFormRef" :model="deptForm" :rules="deptRules" label-width="90px">
         <el-form-item label="部门名称" prop="name">
           <el-input v-model="deptForm.name" placeholder="请输入部门名称" />
         </el-form-item>
@@ -560,4 +602,10 @@ onMounted(() => {
       </template>
     </el-dialog>
   </div>
+
+  <OrganizationSyncDrawer
+    v-if="canSync"
+    v-model="syncDrawerVisible"
+    @synced="handleSyncCompleted"
+  />
 </template>

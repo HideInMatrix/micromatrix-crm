@@ -4,7 +4,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { MessagesSquare, Settings2, ShieldCheck } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
-import { enterpriseIntegrationApi } from '@/api/system'
+import { enterpriseIntegrationApi, roleApi, type RoleOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -13,6 +13,10 @@ const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const secretLoading = ref(false)
+const syncSaving = ref(false)
+const syncDialogVisible = ref(false)
+const selectedDefaultRoleId = ref('')
+const roles = ref<RoleOption[]>([])
 const drawerVisible = ref(false)
 const formRef = ref<FormInstance>()
 
@@ -23,10 +27,15 @@ const emptyIntegration = (): EnterpriseIntegrationVO => ({
   corpId: '',
   agentId: '',
   secretConfigured: false,
+  credentialVersion: 0,
   syncEnabled: false,
+  syncDefaultRoleId: null,
   lastTestSucceeded: null,
   lastTestMessage: null,
   lastTestedAt: null,
+  lastSyncStatus: null,
+  lastSyncMessage: null,
+  lastSyncedAt: null,
   createdAt: null,
   updatedAt: null,
 })
@@ -70,8 +79,13 @@ function formatTime(value: string | null) {
 async function loadData() {
   loading.value = true
   try {
-    const { data } = await enterpriseIntegrationApi.getWeCom()
+    const [{ data }, roleResponse] = await Promise.all([
+      enterpriseIntegrationApi.getWeCom(),
+      canUpdate.value ? roleApi.options() : Promise.resolve({ data: [] as RoleOption[] }),
+    ])
     integration.value = data
+    roles.value = roleResponse.data
+    selectedDefaultRoleId.value = data.syncDefaultRoleId ?? ''
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -157,6 +171,55 @@ async function testSaved() {
   }
 }
 
+function requestSyncChange(enabled: boolean) {
+  if (enabled) {
+    selectedDefaultRoleId.value = integration.value.syncDefaultRoleId ?? ''
+    syncDialogVisible.value = true
+    return
+  }
+  void disableSync()
+}
+
+async function disableSync() {
+  const confirmed = await ElMessageBox.confirm(
+    '关闭后组织架构页面将不能从企业微信生成新的同步预览，已有部门和成员不会被删除。',
+    '关闭同步组织架构',
+    { type: 'warning' },
+  ).catch(() => false)
+  if (!confirmed) return
+  syncSaving.value = true
+  try {
+    const { data } = await enterpriseIntegrationApi.updateWeComSync({ enabled: false })
+    integration.value = data
+    ElMessage.success('已关闭同步组织架构')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    syncSaving.value = false
+  }
+}
+
+async function enableSync() {
+  if (!selectedDefaultRoleId.value) {
+    ElMessage.warning('请选择新成员默认角色')
+    return
+  }
+  syncSaving.value = true
+  try {
+    const { data } = await enterpriseIntegrationApi.updateWeComSync({
+      enabled: true,
+      defaultRoleId: selectedDefaultRoleId.value,
+    })
+    integration.value = data
+    syncDialogVisible.value = false
+    ElMessage.success('已开启同步组织架构')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    syncSaving.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
@@ -215,10 +278,35 @@ onMounted(loadData)
     <div class="sync-boundary">
       <div>
         <strong>同步组织架构</strong>
-        <span>将在 W3.2 接入部门、成员映射、冲突处理和同步记录。</span>
+        <span>
+          {{
+            integration.syncEnabled
+              ? '已开启，可在组织架构页面生成差异预览后应用。'
+              : '开启后可从企业微信预览并同步部门和成员。'
+          }}
+        </span>
       </div>
-      <el-switch :model-value="integration.syncEnabled" disabled />
+      <el-tooltip
+        :disabled="integration.lastTestSucceeded === true"
+        content="请先保存配置并完成连接测试"
+        placement="top"
+      >
+        <el-switch
+          :model-value="integration.syncEnabled"
+          :disabled="!canUpdate || integration.lastTestSucceeded !== true"
+          :loading="syncSaving"
+          @change="requestSyncChange(Boolean($event))"
+        />
+      </el-tooltip>
     </div>
+    <el-descriptions v-if="integration.syncEnabled" :column="2" border class="mt-3">
+      <el-descriptions-item label="新成员默认角色">
+        {{ roles.find((role) => role.id === integration.syncDefaultRoleId)?.name || '未选择' }}
+      </el-descriptions-item>
+      <el-descriptions-item label="最近同步">
+        {{ integration.lastSyncMessage || '尚未执行组织同步' }}
+      </el-descriptions-item>
+    </el-descriptions>
   </el-card>
 
   <el-drawer v-model="drawerVisible" title="配置企业微信" size="520px" destroy-on-close>
@@ -274,6 +362,32 @@ onMounted(loadData)
       </div>
     </template>
   </el-drawer>
+
+  <el-dialog v-model="syncDialogVisible" title="开启同步组织架构" width="480px">
+    <el-alert
+      title="默认角色只分配给首次从企业微信创建的新成员；已存在成员的角色不会被覆盖。"
+      type="info"
+      :closable="false"
+      show-icon
+      class="mb-4"
+    />
+    <el-form label-position="top">
+      <el-form-item label="新成员默认角色" required>
+        <el-select
+          v-model="selectedDefaultRoleId"
+          class="w-full"
+          placeholder="请选择角色"
+          filterable
+        >
+          <el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id" />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="syncDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="syncSaving" @click="enableSync">确认开启</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>

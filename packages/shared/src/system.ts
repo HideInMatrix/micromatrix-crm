@@ -66,6 +66,8 @@ export interface LoginLogVO {
 // ============ 企业集成 ============
 
 export type EnterpriseIntegrationProvider = 'WECOM' | 'DINGTALK' | 'LARK'
+export type OrganizationSyncStatus =
+  'FETCHING' | 'PREVIEW_READY' | 'APPLYING' | 'SUCCEEDED' | 'FAILED' | 'INVALIDATED'
 
 export interface EnterpriseIntegrationVO {
   id: string | null
@@ -74,10 +76,15 @@ export interface EnterpriseIntegrationVO {
   corpId: string
   agentId: string
   secretConfigured: boolean
+  credentialVersion: number
   syncEnabled: boolean
+  syncDefaultRoleId: string | null
   lastTestSucceeded: boolean | null
   lastTestMessage: string | null
   lastTestedAt: string | null
+  lastSyncStatus: OrganizationSyncStatus | null
+  lastSyncMessage: string | null
+  lastSyncedAt: string | null
   createdAt: string | null
   updatedAt: string | null
 }
@@ -99,15 +106,87 @@ export interface WeComConnectionTestVO {
   integration: EnterpriseIntegrationVO
 }
 
+export interface UpdateWeComSyncInput {
+  enabled: boolean
+  defaultRoleId?: string
+}
+
+// ============ 企业微信组织同步 ============
+
+export type OrganizationSyncResourceType = 'DEPARTMENT' | 'USER'
+export type OrganizationSyncAction =
+  'CREATE' | 'UPDATE' | 'DISABLE' | 'UNCHANGED' | 'CONFLICT' | 'SKIP'
+export type OrganizationSyncItemResult = 'PENDING' | 'RESOLVED' | 'APPLIED' | 'SKIPPED' | 'FAILED'
+export type OrganizationSyncResolution = 'BIND' | 'SKIP'
+
+export interface OrganizationSyncCounts {
+  create: number
+  update: number
+  disable: number
+  unchanged: number
+  conflict: number
+  skip: number
+  failed: number
+}
+
+export interface OrganizationSyncBatchVO {
+  id: string
+  provider: EnterpriseIntegrationProvider
+  status: OrganizationSyncStatus
+  credentialVersion: number
+  counts: OrganizationSyncCounts
+  errorCode: string | null
+  errorMessage: string | null
+  createdById: string
+  appliedById: string | null
+  fetchStartedAt: string | null
+  previewedAt: string | null
+  applyStartedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OrganizationSyncItemVO {
+  id: string
+  resourceType: OrganizationSyncResourceType
+  externalId: string
+  action: OrganizationSyncAction
+  result: OrganizationSyncItemResult
+  localId: string | null
+  sourceData: Record<string, unknown>
+  changes: Record<string, { before: unknown; after: unknown }> | null
+  conflictType: string | null
+  conflictMessage: string | null
+  resolution: OrganizationSyncResolution | null
+  resolvedLocalId: string | null
+  errorMessage: string | null
+}
+
+export interface OrganizationSyncGateVO {
+  configured: boolean
+  verified: boolean
+  enabled: boolean
+  defaultRoleId: string | null
+  disabledReason: string | null
+  activeBatch: OrganizationSyncBatchVO | null
+  latestBatch: OrganizationSyncBatchVO | null
+}
+
+export interface ResolveOrganizationSyncItemInput {
+  itemId: string
+  resolution: OrganizationSyncResolution
+  localId?: string
+}
+
+export interface ResolveOrganizationSyncInput {
+  items: ResolveOrganizationSyncItemInput[]
+}
+
 // ============ 通知 ============
 
 export type NotificationBizType =
-  | 'assign'
-  | 'approval'
-  | 'receivable'
-  | 'pool'
-  | 'follow_plan'
-  | 'system'
+  'assign' | 'approval' | 'receivable' | 'pool' | 'follow_plan' | 'system'
 
 export type ExportTaskStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
 
@@ -148,14 +227,7 @@ export interface NotificationVO {
 // ============ 模块（业务对象）标识 ============
 
 export type ModuleKey =
-  | 'lead'
-  | 'customer'
-  | 'contact'
-  | 'opportunity'
-  | 'product'
-  | 'quote'
-  | 'contract'
-  | 'order'
+  'lead' | 'customer' | 'contact' | 'opportunity' | 'product' | 'quote' | 'contract' | 'order'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   lead: '线索',

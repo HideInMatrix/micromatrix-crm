@@ -170,6 +170,7 @@ GET  /enterprise-integrations/wecom
 GET  /enterprise-integrations/wecom/secret
 PUT  /enterprise-integrations/wecom         body: { corpId, agentId, appSecret? }
 POST /enterprise-integrations/wecom/test    body: { corpId, agentId, appSecret? }
+PUT  /enterprise-integrations/wecom/sync    body: { enabled, defaultRoleId? }
 ```
 
 - 读取要求 `system:setting`，保存和测试要求 `system:setting:update`；写操作记录企业集成操作日志。
@@ -178,7 +179,27 @@ POST /enterprise-integrations/wecom/test    body: { corpId, agentId, appSecret? 
 - Secret 获取路径：企业微信管理后台 → 应用管理 → 自建应用 → 选择对应应用 → 应用详情。应用需处于启用状态；可查看[企业微信官方 Secret 说明](https://developer.work.weixin.qq.com/document/path/90665#secret)。
 - Secret 使用 AES-256-GCM 加密后落库。常规配置 API 只返回 `secretConfigured`，不会返回明文、密文、IV、AuthTag 或访问令牌；受控查看接口只返回明文 Secret 且要求更新权限。生产环境必须配置 `INTEGRATION_CREDENTIALS_KEY`。
 - 连接测试按 Cordys 顺序请求企微 access token，再读取应用信息；成功或失败都会保存当前配置和脱敏测试结果。超时、网络异常和企微错误码统一映射为安全提示。
-- 本阶段不提供组织同步开关的真实执行能力。部门/成员同步与映射进入 W3.2；统一登录和第三方消息发送进入 W3.3，见 DB-006、DB-013、DB-014。
+- 同步开关要求配置已保存、最近连接测试成功，并在开启时选择当前租户的新成员默认角色。corpId、agentId 或 Secret 真正变化会关闭同步、递增凭据版本并使待应用预览失效；重复提交相同 Secret 不会误关同步。
+
+## 企业微信组织同步（W3.2）
+
+```text
+GET  /organization-sync/wecom/status
+POST /organization-sync/wecom/previews
+GET  /organization-sync/wecom/batches
+GET  /organization-sync/wecom/batches/{batchId}
+GET  /organization-sync/wecom/batches/{batchId}/items
+PUT  /organization-sync/wecom/batches/{batchId}/resolutions
+POST /organization-sync/wecom/batches/{batchId}/apply
+```
+
+- 全部接口要求独立权限 `system:dept:sync` 并限定当前租户；跨租户批次统一返回 404。入口位于组织架构页面工具栏，不增加左侧菜单。
+- 预览从企微获取 token、部门和按部门成员列表，规范化后保存白名单快照与 `CREATE / UPDATE / DISABLE / UNCHANGED / CONFLICT / SKIP` 差异；应用阶段不重新拉取外部数据。
+- `GET .../items` 支持 `resourceType / action / keyword / page / pageSize`。冲突只能提交 `BIND` 或 `SKIP` resolution；绑定目标必须属于当前租户、资源类型正确且未被其他企微外部 ID 占用。
+- 应用前重新校验同步开关、默认角色、凭据版本、批次状态和未解决冲突；单一数据库事务与租户/provider advisory lock 保证整批原子性和并发串行。
+- 首次同步新成员获得默认角色、随机不可用密码且 `passwordLoginEnabled=false`；映射成员更新资料但保留现有角色。后续企微缺失的已映射成员会禁用，本地手工成员不受影响；缺失部门只失活映射，不删除本地部门。
+- 成功批次重复应用幂等返回；应用完成更新最近同步摘要、写操作日志并发送站内通知。快照、错误、日志和响应均不含 Secret 或 token。
+- 企微统一登录、自动/定时同步、成员多部门关系、钉钉/飞书 provider 和第三方消息发送仍未完成，分别继续由 DB-014、DB-006 及缺口台账跟踪。
 
 ## 多公海 / 多线索池自动回收规则
 

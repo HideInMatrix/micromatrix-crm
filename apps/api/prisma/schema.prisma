@@ -36,6 +36,42 @@ enum EnterpriseIntegrationProvider {
   LARK
 }
 
+enum OrganizationSyncStatus {
+  FETCHING
+  PREVIEW_READY
+  APPLYING
+  SUCCEEDED
+  FAILED
+  INVALIDATED
+}
+
+enum OrganizationSyncResourceType {
+  DEPARTMENT
+  USER
+}
+
+enum OrganizationSyncAction {
+  CREATE
+  UPDATE
+  DISABLE
+  UNCHANGED
+  CONFLICT
+  SKIP
+}
+
+enum OrganizationSyncItemResult {
+  PENDING
+  RESOLVED
+  APPLIED
+  SKIPPED
+  FAILED
+}
+
+enum OrganizationSyncResolution {
+  BIND
+  SKIP
+}
+
 // 数据范围（角色的数据可见边界）
 enum DataScope {
   ALL // 全部数据
@@ -53,17 +89,20 @@ model Tenant {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  users                  User[]
-  roles                  Role[]
-  userRoles              UserRole[]
-  customers              Customer[]
-  contacts               Contact[]
-  subscriptions          Subscription[]
-  departments            Department[]
-  moduleConfigs          ModuleConfig[]
-  topNavigationConfigs   TopNavigationConfig[]
-  messageTaskSettings    MessageTaskSetting[]
-  enterpriseIntegrations EnterpriseIntegration[]
+  users                      User[]
+  roles                      Role[]
+  userRoles                  UserRole[]
+  customers                  Customer[]
+  contacts                   Contact[]
+  subscriptions              Subscription[]
+  departments                Department[]
+  moduleConfigs              ModuleConfig[]
+  topNavigationConfigs       TopNavigationConfig[]
+  messageTaskSettings        MessageTaskSetting[]
+  enterpriseIntegrations     EnterpriseIntegration[]
+  externalDepartmentMappings ExternalDepartmentMapping[]
+  externalUserMappings       ExternalUserMapping[]
+  organizationSyncBatches    OrganizationSyncBatch[]
 
   @@map("tenants")
 }
@@ -78,10 +117,11 @@ model Department {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant       @relation(fields: [tenantId], references: [id])
-  parent   Department?  @relation("DeptTree", fields: [parentId], references: [id])
-  children Department[] @relation("DeptTree")
-  users    User[]
+  tenant           Tenant                      @relation(fields: [tenantId], references: [id])
+  parent           Department?                 @relation("DeptTree", fields: [parentId], references: [id])
+  children         Department[]                @relation("DeptTree")
+  users            User[]
+  externalMappings ExternalDepartmentMapping[]
 
   @@index([tenantId])
   @@index([tenantId, parentId])
@@ -89,25 +129,28 @@ model Department {
 }
 
 model User {
-  id           String     @id @default(cuid())
-  tenantId     String
-  email        String     @unique
-  passwordHash String
-  name         String
-  status       UserStatus @default(ACTIVE)
-  deptId       String?
+  id                   String     @id @default(cuid())
+  tenantId             String
+  email                String     @unique
+  passwordHash         String
+  name                 String
+  status               UserStatus @default(ACTIVE)
+  deptId               String?
   // 直属上级（逐级审批的汇报线）
-  leaderId     String?
-  position     String?
-  phone        String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  leaderId             String?
+  position             String?
+  phone                String?
+  // 企业微信等外部来源成员在建立统一登录前禁止使用普通密码登录
+  passwordLoginEnabled Boolean    @default(true)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
 
-  tenant         Tenant      @relation(fields: [tenantId], references: [id])
-  dept           Department? @relation(fields: [deptId], references: [id])
-  userRoles      UserRole[]
-  ownedCustomers Customer[]
-  ownedContacts  Contact[]
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
+  dept             Department?           @relation(fields: [deptId], references: [id])
+  userRoles        UserRole[]
+  ownedCustomers   Customer[]
+  ownedContacts    Contact[]
+  externalMappings ExternalUserMapping[]
 
   @@index([tenantId])
   @@index([tenantId, deptId])
@@ -129,8 +172,9 @@ model Role {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  userRoles UserRole[]
+  tenant                           Tenant                  @relation(fields: [tenantId], references: [id])
+  userRoles                        UserRole[]
+  defaultForEnterpriseIntegrations EnterpriseIntegration[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -1317,20 +1361,133 @@ model EnterpriseIntegration {
   secretIv          String
   secretAuthTag     String
   secretKeyVersion  Int                           @default(1)
+  credentialVersion Int                           @default(1)
   syncEnabled       Boolean                       @default(false)
+  syncDefaultRoleId String?
   lastTestSucceeded Boolean?
   lastTestMessage   String?
   lastTestedAt      DateTime?
+  lastSyncStatus    OrganizationSyncStatus?
+  lastSyncMessage   String?
+  lastSyncedAt      DateTime?
   createdById       String
   updatedById       String
   createdAt         DateTime                      @default(now())
   updatedAt         DateTime                      @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  syncDefaultRole Role?                   @relation(fields: [syncDefaultRoleId], references: [id], onDelete: SetNull)
+  syncBatches     OrganizationSyncBatch[]
 
   @@unique([tenantId, provider])
   @@index([tenantId])
+  @@index([syncDefaultRoleId])
   @@map("enterprise_integrations")
+}
+
+model ExternalDepartmentMapping {
+  id              String                        @id @default(cuid())
+  tenantId        String
+  provider        EnterpriseIntegrationProvider
+  externalId      String
+  externalKey     String
+  departmentId    String
+  active          Boolean                       @default(true)
+  lastSeenBatchId String?
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department    Department             @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  lastSeenBatch OrganizationSyncBatch? @relation("DepartmentMappingLastSeen", fields: [lastSeenBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, provider, externalKey])
+  @@unique([tenantId, provider, departmentId])
+  @@index([tenantId, provider, active])
+  @@index([lastSeenBatchId])
+  @@map("external_department_mappings")
+}
+
+model ExternalUserMapping {
+  id              String                        @id @default(cuid())
+  tenantId        String
+  provider        EnterpriseIntegrationProvider
+  externalId      String
+  externalKey     String
+  userId          String
+  active          Boolean                       @default(true)
+  lastSeenBatchId String?
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastSeenBatch OrganizationSyncBatch? @relation("UserMappingLastSeen", fields: [lastSeenBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, provider, externalKey])
+  @@unique([tenantId, provider, userId])
+  @@index([tenantId, provider, active])
+  @@index([lastSeenBatchId])
+  @@map("external_user_mappings")
+}
+
+model OrganizationSyncBatch {
+  id                String                        @id @default(cuid())
+  tenantId          String
+  integrationId     String
+  provider          EnterpriseIntegrationProvider
+  status            OrganizationSyncStatus
+  credentialVersion Int
+  counts            Json
+  errorCode         String?
+  errorMessage      String?
+  createdById       String
+  appliedById       String?
+  fetchStartedAt    DateTime?
+  previewedAt       DateTime?
+  applyStartedAt    DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  tenant                 Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration            EnterpriseIntegration       @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  items                  OrganizationSyncItem[]
+  seenDepartmentMappings ExternalDepartmentMapping[] @relation("DepartmentMappingLastSeen")
+  seenUserMappings       ExternalUserMapping[]       @relation("UserMappingLastSeen")
+
+  @@index([tenantId, provider, createdAt])
+  @@index([integrationId, status])
+  @@map("organization_sync_batches")
+}
+
+model OrganizationSyncItem {
+  id                String                       @id @default(cuid())
+  tenantId          String
+  batchId           String
+  resourceType      OrganizationSyncResourceType
+  externalId        String
+  externalKey       String
+  action            OrganizationSyncAction
+  result            OrganizationSyncItemResult   @default(PENDING)
+  localId           String?
+  parentExternalKey String?
+  sourceData        Json
+  changes           Json?
+  conflictType      String?
+  conflictMessage   String?
+  resolution        OrganizationSyncResolution?
+  resolvedLocalId   String?
+  errorMessage      String?
+  sort              Int                          @default(0)
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  batch OrganizationSyncBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, resourceType, externalKey])
+  @@index([tenantId, batchId, resourceType, action])
+  @@map("organization_sync_items")
 }
 
 model ModuleConfig {

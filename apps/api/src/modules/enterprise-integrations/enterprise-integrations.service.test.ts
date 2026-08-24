@@ -44,7 +44,22 @@ function createService(
           row.provider === where.tenantId_provider.provider,
       )
       if (existing) {
-        Object.assign(existing, update, { updatedAt: new Date() })
+        for (const [key, value] of Object.entries(update)) {
+          if (
+            value &&
+            typeof value === 'object' &&
+            'increment' in value &&
+            typeof value.increment === 'number'
+          ) {
+            const current = existing[key as keyof EnterpriseIntegration]
+            Object.assign(existing, {
+              [key]: (typeof current === 'number' ? current : 0) + value.increment,
+            })
+          } else {
+            Object.assign(existing, { [key]: value })
+          }
+        }
+        Object.assign(existing, { updatedAt: new Date() })
         return existing
       }
       const now = new Date()
@@ -52,6 +67,10 @@ function createService(
         lastTestSucceeded: null,
         lastTestMessage: null,
         lastTestedAt: null,
+        lastSyncStatus: null,
+        lastSyncMessage: null,
+        lastSyncedAt: null,
+        syncDefaultRoleId: null,
         ...create,
         id: `integration-${rows.length + 1}`,
         createdAt: now,
@@ -60,8 +79,23 @@ function createService(
       rows.push(row)
       return row
     },
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const existing = rows.find((row) => row.id === where.id)
+      if (!existing) throw new Error('not found')
+      Object.assign(existing, data, { updatedAt: new Date() })
+      return existing
+    },
   }
-  const prisma = { enterpriseIntegration } as unknown as PrismaService
+  const prismaMock = {
+    enterpriseIntegration,
+    organizationSyncBatch: { updateMany: async () => ({ count: 0 }) },
+    role: {
+      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
+        where.id === 'role-a' && where.tenantId === 'tenant-a' ? { id: 'role-a' } : null,
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(prismaMock),
+  }
+  const prisma = prismaMock as unknown as PrismaService
   const cipher = new CredentialCipherService(
     new ConfigService({
       INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',
@@ -84,10 +118,15 @@ test('未配置时返回稳定空状态且租户隔离', async () => {
     corpId: '',
     agentId: '',
     secretConfigured: false,
+    credentialVersion: 0,
     syncEnabled: false,
+    syncDefaultRoleId: null,
     lastTestSucceeded: null,
     lastTestMessage: null,
     lastTestedAt: null,
+    lastSyncStatus: null,
+    lastSyncMessage: null,
+    lastSyncedAt: null,
     createdAt: null,
     updatedAt: null,
   })
@@ -160,4 +199,27 @@ test('连接测试持久化成功或失败状态，企业 ID 变化要求重新�
     () => failed.service.testWeCom(user, { corpId: 'ww-b', agentId: '1000001' }),
     BadRequestException,
   )
+})
+
+test('开启同步后直接测试或提交相同 Secret 不会关闭同步', async () => {
+  const { service, rows } = createService()
+  await service.testWeCom(user, {
+    corpId: 'ww-a',
+    agentId: '1000001',
+    appSecret: 'same-secret',
+  })
+  await service.updateWeComSync(user, { enabled: true, defaultRoleId: 'role-a' })
+  const version = rows[0]?.credentialVersion
+
+  const direct = await service.testWeCom(user, { corpId: 'ww-a', agentId: '1000001' })
+  assert.equal(direct.integration.syncEnabled, true)
+  assert.equal(direct.integration.credentialVersion, version)
+
+  const drawer = await service.testWeCom(user, {
+    corpId: 'ww-a',
+    agentId: '1000001',
+    appSecret: 'same-secret',
+  })
+  assert.equal(drawer.integration.syncEnabled, true)
+  assert.equal(drawer.integration.credentialVersion, version)
 })

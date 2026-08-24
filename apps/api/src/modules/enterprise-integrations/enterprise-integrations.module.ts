@@ -7,6 +7,6 @@ import { WeComClient } from './wecom.client'
 @Module({
   controllers: [EnterpriseIntegrationsController],
   providers: [CredentialCipherService, EnterpriseIntegrationsService, WeComClient],
-  exports: [EnterpriseIntegrationsService],
+  exports: [EnterpriseIntegrationsService, WeComClient],
 })
 export class EnterpriseIntegrationsModule {}

@@ -12,6 +12,9 @@ import type {
   NavigationModuleKey,
   NotificationVO,
   OperationLogVO,
+  OrganizationSyncBatchVO,
+  OrganizationSyncGateVO,
+  OrganizationSyncItemVO,
   PageQuery,
   PaginatedResult,
   RoleVO,
@@ -21,6 +24,8 @@ import type {
   SaveWeComIntegrationInput,
   WeComIntegrationSecretVO,
   WeComConnectionTestVO,
+  UpdateWeComSyncInput,
+  ResolveOrganizationSyncInput,
 } from '@micromatrix/shared'
 import { http } from './http'
 
@@ -158,4 +163,29 @@ export const enterpriseIntegrationApi = {
     http.put<EnterpriseIntegrationVO>('/enterprise-integrations/wecom', data),
   testWeCom: (data: SaveWeComIntegrationInput) =>
     http.post<WeComConnectionTestVO>('/enterprise-integrations/wecom/test', data),
+  updateWeComSync: (data: UpdateWeComSyncInput) =>
+    http.put<EnterpriseIntegrationVO>('/enterprise-integrations/wecom/sync', data),
+}
+
+export const organizationSyncApi = {
+  status: () => http.get<OrganizationSyncGateVO>('/organization-sync/wecom/status'),
+  preview: () => http.post<OrganizationSyncBatchVO>('/organization-sync/wecom/previews'),
+  batches: (params?: PageQuery & { status?: string }) =>
+    http.get<PaginatedResult<OrganizationSyncBatchVO>>('/organization-sync/wecom/batches', {
+      params,
+    }),
+  batch: (id: string) =>
+    http.get<OrganizationSyncBatchVO>(`/organization-sync/wecom/batches/${id}`),
+  items: (
+    id: string,
+    params?: PageQuery & { resourceType?: string; action?: string; keyword?: string },
+  ) =>
+    http.get<PaginatedResult<OrganizationSyncItemVO>>(
+      `/organization-sync/wecom/batches/${id}/items`,
+      { params },
+    ),
+  resolve: (id: string, data: ResolveOrganizationSyncInput) =>
+    http.put<OrganizationSyncBatchVO>(`/organization-sync/wecom/batches/${id}/resolutions`, data),
+  apply: (id: string) =>
+    http.post<OrganizationSyncBatchVO>(`/organization-sync/wecom/batches/${id}/apply`),
 }

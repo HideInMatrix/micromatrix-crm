@@ -102,7 +102,11 @@ export class AuthService {
       throw exception
     }
 
-    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+    if (
+      !user ||
+      !user.passwordLoginEnabled ||
+      !(await bcrypt.compare(dto.password, user.passwordHash))
+    ) {
       return fail('邮箱或密码错误', new UnauthorizedException('邮箱或密码错误'))
     }
     if (user.status !== 'ACTIVE') {

@@ -4,7 +4,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
-import { SaveWeComIntegrationDto } from './dto/wecom-integration.dto'
+import { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 
 @ApiTags('企业集成')
@@ -43,5 +43,13 @@ export class EnterpriseIntegrationsController {
   @ApiOperation({ summary: '测试并保存企业微信配置状态' })
   testWeCom(@CurrentUser() user: AuthUser, @Body() dto: SaveWeComIntegrationDto) {
     return this.integrations.testWeCom(user, dto)
+  }
+
+  @Put('wecom/sync')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'updateWeComSync')
+  @ApiOperation({ summary: '启停企业微信组织同步并设置新成员默认角色' })
+  updateWeComSync(@CurrentUser() user: AuthUser, @Body() dto: UpdateWeComSyncDto) {
+    return this.integrations.updateWeComSync(user, dto)
   }
 }

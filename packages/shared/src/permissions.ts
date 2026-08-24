@@ -124,6 +124,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
           { code: 'system:dept:create', label: '新建部门' },
           { code: 'system:dept:update', label: '编辑/排序/设置主管' },
           { code: 'system:dept:delete', label: '删除部门' },
+          { code: 'system:dept:sync', label: '同步组织架构' },
         ],
       },
       {

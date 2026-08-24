@@ -30,6 +30,7 @@ import { MetadataModule } from './modules/metadata/metadata.module'
 import { ModuleConfigsModule } from './modules/module-configs/module-configs.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module'
+import { OrganizationSyncModule } from './modules/organization-sync/organization-sync.module'
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
 import { RolesModule } from './modules/roles/roles.module'
 import { SavedViewsModule } from './modules/saved-views/saved-views.module'
@@ -52,6 +53,7 @@ import { PrismaModule } from './prisma/prisma.module'
     LeadsModule,
     FollowUpsModule,
     EnterpriseIntegrationsModule,
+    OrganizationSyncModule,
     FollowUpPlansModule,
     AttachmentsModule,
     ImportExportModule,
