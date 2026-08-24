@@ -14,6 +14,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { Opportunity, OpportunityStage, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { MetadataService } from '../metadata/metadata.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import {
   ChangeStageDto,
   CreateOpportunityDto,
@@ -62,6 +63,7 @@ export class OpportunitiesService {
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
+    private readonly notifications: BusinessNotificationsService,
   ) {}
 
   // ===== 阶段配置 =====
@@ -134,7 +136,10 @@ export class OpportunitiesService {
 
   // ===== 商机 =====
 
-  async findAll(user: AuthUser, query: QueryOpportunitiesDto): Promise<PaginatedResult<OpportunityVO>> {
+  async findAll(
+    user: AuthUser,
+    query: QueryOpportunitiesDto,
+  ): Promise<PaginatedResult<OpportunityVO>> {
     const { page = 1, pageSize = 10, keyword, stageId, customerId } = query
     const [scope, fields] = await Promise.all([
       this.dataScope.scopeFilter(user, 'menu:opportunity'),
@@ -145,7 +150,10 @@ export class OpportunitiesService {
 
     const where: Prisma.OpportunityWhereInput = {
       tenantId: user.tenantId,
-      AND: [scope as Prisma.OpportunityWhereInput, ...(filterClauses as Prisma.OpportunityWhereInput[])],
+      AND: [
+        scope as Prisma.OpportunityWhereInput,
+        ...(filterClauses as Prisma.OpportunityWhereInput[]),
+      ],
       ...(stageId ? { stageId } : {}),
       ...(customerId ? { customerId } : {}),
       ...(keyword ? { name: { contains: keyword, mode: 'insensitive' } } : {}),
@@ -208,7 +216,17 @@ export class OpportunitiesService {
   }
 
   async create(user: AuthUser, dto: CreateOpportunityDto): Promise<OpportunityVO> {
-    const { customData, ownerId, stageId, customerId, contactId, expectedCloseAt, items, amount, ...rest } = dto
+    const {
+      customData,
+      ownerId,
+      stageId,
+      customerId,
+      contactId,
+      expectedCloseAt,
+      items,
+      amount,
+      ...rest
+    } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: true,
     })
@@ -252,13 +270,33 @@ export class OpportunitiesService {
         userName: user.name,
       },
     })
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'BUSINESS_ADD',
+      operatorId: user.id,
+      recipientIds: [owner.id],
+      excludeSelf: true,
+      type: 'system',
+      title: '新建商机',
+      content: `${user.name} 新建了商机「${opportunity.name}」并将你设为负责人`,
+      link: `/opportunities/${opportunity.id}`,
+    })
     return this.toSingleVO(user, opportunity)
   }
 
   async update(user: AuthUser, id: string, dto: UpdateOpportunityDto): Promise<OpportunityVO> {
     const existing = await this.ensureInScope(user, id, 'opportunity:update')
-    const { customData, ownerId, stageId: _ignored, customerId, contactId, expectedCloseAt, items, amount, ...rest } =
-      dto
+    const {
+      customData,
+      ownerId,
+      stageId: _ignored,
+      customerId,
+      contactId,
+      expectedCloseAt,
+      items,
+      amount,
+      ...rest
+    } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
     })
@@ -308,6 +346,19 @@ export class OpportunitiesService {
       data,
       include: detailInclude,
     })
+    if (ownerId && ownerId !== existing.ownerId) {
+      await this.notifications.send({
+        tenantId: user.tenantId,
+        event: 'BUSINESS_TRANSFER',
+        operatorId: user.id,
+        recipientIds: [ownerId],
+        excludeSelf: true,
+        type: 'assign',
+        title: '商机已转移给你',
+        content: `${user.name} 将商机「${opportunity.name}」转移给你`,
+        link: `/opportunities/${opportunity.id}`,
+      })
+    }
     return this.toSingleVO(user, opportunity)
   }
 
@@ -363,6 +414,17 @@ export class OpportunitiesService {
   async remove(user: AuthUser, id: string) {
     const opportunity = await this.ensureInScope(user, id, 'opportunity:delete')
     await this.prisma.opportunity.delete({ where: { id } })
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'BUSINESS_DELETED',
+      operatorId: user.id,
+      recipientIds: [opportunity.ownerId],
+      excludeSelf: true,
+      type: 'system',
+      title: '商机已删除',
+      content: `${user.name} 删除了商机「${opportunity.name}」`,
+      link: '/opportunities',
+    })
     return { id, name: opportunity.name }
   }
 
@@ -417,7 +479,10 @@ export class OpportunitiesService {
     return new Map(users.map((u) => [u.id, u.name]))
   }
 
-  private async toSingleVO(user: AuthUser, opportunity: OpportunityWithRefs): Promise<OpportunityVO> {
+  private async toSingleVO(
+    user: AuthUser,
+    opportunity: OpportunityWithRefs,
+  ): Promise<OpportunityVO> {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const ownerMap = await this.ownerNames([opportunity.ownerId])
     return this.toVO(opportunity, fields, ownerMap)
@@ -474,7 +539,11 @@ export class OpportunitiesService {
     }
   }
 
-  private async assertContactBelongsToCustomer(tenantId: string, contactId: string, customerId: string) {
+  private async assertContactBelongsToCustomer(
+    tenantId: string,
+    contactId: string,
+    customerId: string,
+  ) {
     const contact = await this.prisma.contact.findFirst({
       where: { id: contactId, tenantId, customerId },
       select: { id: true },

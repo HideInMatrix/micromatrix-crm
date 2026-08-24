@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { Customer, Lead } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { ResourcePoolsService } from './resource-pools.service'
 import { ResourceRecycleConditionEvaluator } from './resource-recycle-condition-evaluator.service'
@@ -18,6 +19,7 @@ export class PoolRecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly businessNotifications: BusinessNotificationsService,
     private readonly resourcePools: ResourcePoolsService,
     private readonly recycleEvaluator: ResourceRecycleConditionEvaluator,
   ) {}
@@ -39,7 +41,9 @@ export class PoolRecycleService {
     }
   }
 
-  async recycleTenant(tenantId: string): Promise<{ recycledLeads: number; recycledCustomers: number }> {
+  async recycleTenant(
+    tenantId: string,
+  ): Promise<{ recycledLeads: number; recycledCustomers: number }> {
     const [newLeadResult, newCustomerResult] = await Promise.all([
       this.recycleLeadByPoolRules(tenantId),
       this.recycleCustomerByPoolRules(tenantId),
@@ -51,7 +55,12 @@ export class PoolRecycleService {
 
     if (!newLeadResult.configured) {
       const legacy = legacyRules.find((rule) => rule.module === 'lead')
-      if (legacy) recycledLeads += await this.recycleLegacyLead(tenantId, legacy.recycleDays, legacy.notifyDays)
+      if (legacy)
+        recycledLeads += await this.recycleLegacyLead(
+          tenantId,
+          legacy.recycleDays,
+          legacy.notifyDays,
+        )
     }
     if (!newCustomerResult.configured) {
       const legacy = legacyRules.find((rule) => rule.module === 'customer')
@@ -90,11 +99,7 @@ export class PoolRecycleService {
       const pool = await this.resourcePools.resolveAutoRecyclePool(tenantId, 'lead', lead.ownerId)
       if (!pool?.recycleRule) continue
       if (
-        !this.recycleEvaluator.matches(
-          pool.recycleRule.operator,
-          pool.recycleRule.conditions,
-          lead,
-        )
+        !this.recycleEvaluator.matches(pool.recycleRule.operator, pool.recycleRule.conditions, lead)
       ) {
         continue
       }
@@ -210,12 +215,7 @@ export class PoolRecycleService {
     }
   }
 
-  private async recycleLeadRecord(
-    tenantId: string,
-    lead: Lead,
-    poolId: string,
-    reason: string,
-  ) {
+  private async recycleLeadRecord(tenantId: string, lead: Lead, poolId: string, reason: string) {
     if (!lead.ownerId) return
     const ownerId = lead.ownerId
     const now = new Date()
@@ -244,7 +244,10 @@ export class PoolRecycleService {
         },
       })
     })
-    await this.notifications.notify(tenantId, ownerId, {
+    await this.businessNotifications.send({
+      tenantId,
+      event: 'CLUE_AUTOMATIC_MOVE_POOL',
+      recipientIds: [ownerId],
       type: 'pool',
       title: '线索已被回收进线索池',
       content: `线索「${lead.name}」${reason}`,
@@ -286,7 +289,10 @@ export class PoolRecycleService {
         },
       })
     })
-    await this.notifications.notify(tenantId, ownerId, {
+    await this.businessNotifications.send({
+      tenantId,
+      event: 'CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS',
+      recipientIds: [ownerId],
       type: 'pool',
       title: '客户已被回收进公海',
       content: `客户「${customer.name}」${reason}`,

@@ -44,6 +44,70 @@ export class MessageSettingsService {
     return this.configFrom(row?.config, definition.event)
   }
 
+  async getEffectiveSetting(tenantId: string, event: string): Promise<MessageTaskSettingVO> {
+    const definition = this.definition(event)
+    const row = await this.prisma.messageTaskSetting.findFirst({
+      where: { tenantId, module: definition.module, event: definition.event },
+    })
+    return this.toVO(definition, row ?? undefined)
+  }
+
+  async resolveRecipients(
+    tenantId: string,
+    event: string,
+    context: { ownerId?: string | null; createUserId?: string | null },
+  ): Promise<string[]> {
+    const setting = await this.getEffectiveSetting(tenantId, event)
+    if (!setting.configurable || !setting.config) {
+      throw new BadRequestException('该事件不支持通知范围配置')
+    }
+
+    const config = setting.config
+    const recipientIds = new Set<string>()
+    for (const userId of config.userIds) {
+      if (userId === 'OWNER') {
+        if (context.ownerId) recipientIds.add(context.ownerId)
+      } else if (userId === 'CREATE_USER') {
+        if (context.createUserId) recipientIds.add(context.createUserId)
+      } else {
+        recipientIds.add(userId)
+      }
+    }
+
+    if (config.roleEnable && config.roleIds.length > 0) {
+      const roleMembers = await this.prisma.userRole.findMany({
+        where: { tenantId, roleId: { in: config.roleIds } },
+        select: { userId: true },
+      })
+      for (const member of roleMembers) recipientIds.add(member.userId)
+    }
+
+    if (config.ownerEnable && context.ownerId) {
+      const owner = await this.prisma.user.findFirst({
+        where: { id: context.ownerId, tenantId, status: 'ACTIVE' },
+        select: { deptId: true },
+      })
+      let departmentId = owner?.deptId ?? null
+      const levelCount = Math.max(1, config.ownerLevel)
+      for (let level = 0; departmentId && level < levelCount; level++) {
+        const department = await this.prisma.department.findFirst({
+          where: { id: departmentId, tenantId },
+          select: { leaderId: true, parentId: true },
+        })
+        if (!department) break
+        if (department.leaderId) recipientIds.add(department.leaderId)
+        departmentId = department.parentId
+      }
+    }
+
+    if (recipientIds.size === 0) return []
+    const activeUsers = await this.prisma.user.findMany({
+      where: { tenantId, status: 'ACTIVE', id: { in: [...recipientIds] } },
+      select: { id: true },
+    })
+    return activeUsers.map((user) => user.id)
+  }
+
   async update(
     tenantId: string,
     event: string,

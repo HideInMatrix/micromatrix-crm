@@ -10,6 +10,7 @@ import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { MetadataService } from '../metadata/metadata.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { CreateQuoteDto, QueryQuotesDto, UpdateQuoteDto } from './dto/quote.dto'
 
 const MODULE = 'quote'
@@ -25,6 +26,7 @@ export class QuotesService {
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly approvals: ApprovalsService,
+    private readonly notifications: BusinessNotificationsService,
   ) {}
 
   async findAll(user: AuthUser, query: QueryQuotesDto): Promise<PaginatedResult<QuoteVO>> {
@@ -157,6 +159,17 @@ export class QuotesService {
   async remove(user: AuthUser, id: string) {
     const quote = await this.ensureInScope(user, id, 'quote:delete')
     await this.prisma.quote.delete({ where: { id } })
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'BUSINESS_QUOTATION_DELETED',
+      operatorId: user.id,
+      recipientIds: [quote.ownerId],
+      excludeSelf: true,
+      type: 'system',
+      title: '报价已删除',
+      content: `${user.name} 删除了报价「${quote.name}」`,
+      link: '/quotes',
+    })
     return { id, name: quote.name }
   }
 
@@ -174,7 +187,8 @@ export class QuotesService {
     })
     if (!opportunity) throw new BadRequestException('关联商机不存在')
     if (opportunity.customerId !== customerId) throw new BadRequestException('商机与客户不匹配')
-    if (opportunity.items.length === 0) throw new BadRequestException('该商机没有产品明细，请手动添加')
+    if (opportunity.items.length === 0)
+      throw new BadRequestException('该商机没有产品明细，请手动添加')
     return opportunity.items.map((item) => ({
       productId: item.productId ?? undefined,
       productName: item.productName,

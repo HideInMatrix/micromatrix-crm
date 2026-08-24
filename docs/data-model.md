@@ -43,20 +43,22 @@ erDiagram
 
 ### 平台底座
 
-| 表                                      | 要点                                                                                                                                                        |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| tenants                                 | 租户；status 控停用                                                                                                                                         |
-| departments                             | 树形（parentId 自关联）+ leaderId 部门主管（审批"部门主管"策略依据）                                                                                        |
-| users                                   | email 全局唯一登录；deptId/leaderId（直属上级，逐级审批依据）；DISABLED 停用；不再存单角色外键                                                              |
-| roles                                   | permissions 权限码数组（'*' 全权）；dataScope 五级 + scopeDeptIds；isSystem 内置不可改删                                                                    |
-| user_roles                              | 用户—角色多对多关联；`@@unique([userId, roleId])`；角色删除仅级联删除关联，不删除成员                                                                       |
-| operation_logs / login_logs             | 审计；操作日志由拦截器按 @LogOperation 元数据写入                                                                                                           |
-| notifications                           | 站内信；readAt 未读判定；type+link 驱动前端跳转                                                                                                             |
-| message_task_settings                   | W2.3 租户级消息事件覆盖：`@@unique([tenantId, module, event])`；系统/邮件开关与时间、成员、角色、负责人上级范围 JSONB；未落库事件合并 shared 固定目录默认值 |
-| system_settings                         | 租户级 KV（企业名称/公告等）                                                                                                                                |
-| module_configs / top_navigation_configs | 租户级左侧业务模块启停/排序与顶部公共入口排序；顶部表保留 Cordys `enabled` 兼容字段，但当前产品边界只开放列表和完整排序                                     |
-| attachments                             | 附件挂载（targetType+targetId）；本地磁盘上传已落地                                                                                                         |
-| export_tasks                            | R2 导出任务中心；记录创建者、业务模块、状态、文件路径、行数、大小与 24h 过期时间                                                                            |
+| 表                                      | 要点                                                                                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| tenants                                 | 租户；status 控停用                                                                                                                                              |
+| departments                             | 树形（parentId 自关联）+ leaderId 部门主管（审批"部门主管"策略依据）                                                                                             |
+| users                                   | email 全局唯一登录；deptId/leaderId（直属上级，逐级审批依据）；DISABLED 停用；不再存单角色外键                                                                   |
+| roles                                   | permissions 权限码数组（'*' 全权）；dataScope 五级 + scopeDeptIds；isSystem 内置不可改删                                                                         |
+| user_roles                              | 用户—角色多对多关联；`@@unique([userId, roleId])`；角色删除仅级联删除关联，不删除成员                                                                            |
+| operation_logs / login_logs             | 审计；操作日志由拦截器按 @LogOperation 元数据写入                                                                                                                |
+| notifications                           | 站内信；readAt 未读判定；type+link 驱动前端跳转；W2.4 事件编码用于发送门控但暂不冗余落库                                                                         |
+| message_task_settings                   | W2.3/W2.4 租户级消息事件覆盖：`@@unique([tenantId, module, event])`；系统/邮件开关与时间、成员、角色、负责人上级范围 JSONB；未落库事件合并 shared 固定目录默认值 |
+| system_settings                         | 租户级 KV（企业名称/公告等）                                                                                                                                     |
+| module_configs / top_navigation_configs | 租户级左侧业务模块启停/排序与顶部公共入口排序；顶部表保留 Cordys `enabled` 兼容字段，但当前产品边界只开放列表和完整排序                                          |
+| attachments                             | 附件挂载（targetType+targetId）；本地磁盘上传已落地                                                                                                              |
+| export_tasks                            | R2 导出任务中心；记录创建者、业务模块、状态、文件路径、行数、大小与 24h 过期时间                                                                                 |
+
+W2.4 不新增迁移。当前已确认但尚未实施的合同作废/归档、发票审批、创建人审计、回款计划独立负责人和消息渠道模型缺口，必须以 [Cordys 暂缓能力与数据模型缺口台账](./cordys-deferred-backlog.md) 为完成前检查清单，不能因本阶段复用现有字段而视为不存在。
 
 ### 元数据引擎
 

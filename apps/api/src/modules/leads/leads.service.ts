@@ -1,5 +1,17 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
-import { FieldVO, ImportResultVO, LeadVO, PaginatedResult, hasPermission } from '@micromatrix/shared'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
+import {
+  FieldVO,
+  ImportResultVO,
+  LeadVO,
+  type MessageTaskEvent,
+  PaginatedResult,
+  hasPermission,
+} from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { toCsv } from '../../common/csv'
 import type {
@@ -18,7 +30,7 @@ import { MetadataService } from '../metadata/metadata.service'
 import { ExportTasksService } from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
-import { NotificationsService } from '../notifications/notifications.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { OpportunitiesService } from '../opportunities/opportunities.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import { SavedViewsService } from '../saved-views/saved-views.service'
@@ -41,7 +53,7 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: BusinessNotificationsService,
     private readonly opportunities: OpportunitiesService,
     private readonly pools: ResourcePoolsService,
     private readonly changeLog: BusinessChangeLogService,
@@ -157,7 +169,7 @@ export class LeadsService {
       },
     })
     if (owner && owner.id !== user.id) {
-      await this.notifyAssign(user, lead.id, lead.name, owner.id)
+      await this.notifyAssign(user, lead.id, lead.name, owner.id, 'CLUE_ADD')
     }
     return this.toSingleVO(user, lead)
   }
@@ -167,7 +179,11 @@ export class LeadsService {
     return this.updateExisting(user, existing, dto)
   }
 
-  private async updateExisting(user: AuthUser, existing: Lead, dto: UpdateLeadDto): Promise<LeadVO> {
+  private async updateExisting(
+    user: AuthUser,
+    existing: Lead,
+    dto: UpdateLeadDto,
+  ): Promise<LeadVO> {
     const { customData, ownerId, toPool: _toPool, poolId: _poolId, ...rest } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
@@ -180,6 +196,7 @@ export class LeadsService {
         ...validated,
       } as Prisma.InputJsonValue,
     }
+    let transferredOwnerId: string | null = null
     if (ownerId && ownerId !== existing.ownerId) {
       const owner = await this.resolveOwner(user, ownerId)
       await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
@@ -200,10 +217,13 @@ export class LeadsService {
           },
         })
       }
-      await this.notifyAssign(user, existing.id, existing.name, owner.id)
+      transferredOwnerId = owner.id
     }
 
     const lead = await this.prisma.lead.update({ where: { id: existing.id }, data })
+    if (transferredOwnerId) {
+      await this.notifyAssign(user, existing.id, lead.name, transferredOwnerId, 'TRANSFER_CLUE')
+    }
     await this.changeLog.record(user, {
       module: 'lead',
       action: 'update',
@@ -254,6 +274,17 @@ export class LeadsService {
           collectedAt: null,
         },
       })
+    })
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'CLUE_MOVED_POOL',
+      operatorId: user.id,
+      recipientIds: [lead.ownerId],
+      excludeSelf: true,
+      type: 'pool',
+      title: '线索已移入线索池',
+      content: `${user.name} 将线索「${lead.name}」移入线索池`,
+      link: '/leads',
     })
     return { id, name: lead.name, poolId: pool.id }
   }
@@ -338,7 +369,13 @@ export class LeadsService {
         },
       })
     })
-    await this.notifyAssign(user, lead.id, lead.name, owner.id)
+    await this.notifyAssign(
+      user,
+      lead.id,
+      lead.name,
+      owner.id,
+      lead.inPool ? 'CLUE_DISTRIBUTED' : 'TRANSFER_CLUE',
+    )
     return { id, name: lead.name }
   }
 
@@ -381,7 +418,9 @@ export class LeadsService {
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
 
     // CsBatchPermission 语义：任何一条不在当前数据范围，都在写入前整体失败。
-    const leads = await Promise.all(dto.ids.map((id) => this.ensureInScope(user, id, 'lead:update')))
+    const leads = await Promise.all(
+      dto.ids.map((id) => this.ensureInScope(user, id, 'lead:update')),
+    )
 
     if (field.key === 'ownerId') {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
@@ -392,7 +431,8 @@ export class LeadsService {
         await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.fieldValue, processCount)
       }
       for (const lead of leads) {
-        if (lead.ownerId !== dto.fieldValue) await this.assign(user, lead.id, { ownerId: dto.fieldValue })
+        if (lead.ownerId !== dto.fieldValue)
+          await this.assign(user, lead.id, { ownerId: dto.fieldValue })
       }
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
@@ -411,10 +451,7 @@ export class LeadsService {
     return { success: ids.length, fail: 0, failedIds: [] }
   }
 
-  async poolBatchUpdate(
-    user: AuthUser,
-    dto: PoolResourceBatchEditDto,
-  ): Promise<BatchAffectResult> {
+  async poolBatchUpdate(user: AuthUser, dto: PoolResourceBatchEditDto): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'lead', dto.poolId)
     const leads = await this.prisma.lead.findMany({
       where: {
@@ -434,12 +471,7 @@ export class LeadsService {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
         throw new BadRequestException('负责人不能为空')
       }
-      await this.pools.assertCapacityForOwner(
-        user.tenantId,
-        'lead',
-        dto.fieldValue,
-        leads.length,
-      )
+      await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.fieldValue, leads.length)
       for (const lead of leads) await this.assign(user, lead.id, { ownerId: dto.fieldValue })
       return { success: leads.length, fail: 0, failedIds: [] }
     }
@@ -471,7 +503,8 @@ export class LeadsService {
     if (!lead) throw new NotFoundException('线索不存在')
     if (lead.inPool && lead.poolId) {
       const options = await this.pools.options(user, 'lead')
-      if (!options.some((pool) => pool.id === lead.poolId)) throw new NotFoundException('线索不存在或无权访问')
+      if (!options.some((pool) => pool.id === lead.poolId))
+        throw new NotFoundException('线索不存在或无权访问')
     } else if (!lead.inPool) {
       await this.ensureInScope(user, id, 'menu:lead')
     }
@@ -609,9 +642,7 @@ export class LeadsService {
             },
           ],
         },
-        ...(keyword
-          ? [{ name: { contains: keyword.trim(), mode: 'insensitive' as const } }]
-          : []),
+        ...(keyword ? [{ name: { contains: keyword.trim(), mode: 'insensitive' as const } }] : []),
         ...(filterClauses as Prisma.CustomerWhereInput[]),
       ],
     }
@@ -683,7 +714,9 @@ export class LeadsService {
       return customer
     }
 
-    if (await this.dataScope.matchesResource(user, customer.ownerId, customer.deptId, 'menu:customer')) {
+    if (
+      await this.dataScope.matchesResource(user, customer.ownerId, customer.deptId, 'menu:customer')
+    ) {
       return customer
     }
     const collaboration = await this.prisma.customerTeamMember.findFirst({
@@ -702,7 +735,8 @@ export class LeadsService {
     customerId: string,
     options: { opportunityName?: string } = {},
   ) {
-    if (leads.length === 0) return { contactIds: [] as string[], opportunityId: null as string | null }
+    if (leads.length === 0)
+      return { contactIds: [] as string[], opportunityId: null as string | null }
     const [contactNameUnique, contactPhoneUnique] = await Promise.all([
       this.metadata.hasUniqueRule(user.tenantId, 'contact', 'name'),
       this.metadata.hasUniqueRule(user.tenantId, 'contact', 'phone'),
@@ -719,7 +753,9 @@ export class LeadsService {
       options.opportunityName && leads.length === 1
         ? await this.mapLeadCustomData(user.tenantId, 'opportunity', leads[0], true)
         : {}
-    const ownerIds = [...new Set(leads.map((lead) => lead.ownerId).filter((id): id is string => !!id))]
+    const ownerIds = [
+      ...new Set(leads.map((lead) => lead.ownerId).filter((id): id is string => !!id)),
+    ]
     const owners = await this.prisma.user.findMany({
       where: { tenantId: user.tenantId, id: { in: ownerIds }, status: 'ACTIVE' },
       select: { id: true, deptId: true },
@@ -776,7 +812,8 @@ export class LeadsService {
           const normalizedName = lead.contactName.trim()
           const uniqueClauses: Prisma.ContactWhereInput[] = []
           if (contactNameUnique && normalizedName) uniqueClauses.push({ name: normalizedName })
-          if (contactPhoneUnique && lead.phone?.trim()) uniqueClauses.push({ phone: lead.phone.trim() })
+          if (contactPhoneUnique && lead.phone?.trim())
+            uniqueClauses.push({ phone: lead.phone.trim() })
           const duplicate = uniqueClauses.length
             ? await tx.contact.findFirst({
                 where: { tenantId: user.tenantId, OR: uniqueClauses },
@@ -864,20 +901,33 @@ export class LeadsService {
       return { contactIds, opportunityId }
     })
 
-    await Promise.all(
-      leads
-        .filter((lead): lead is Lead & { ownerId: string } => Boolean(lead.ownerId))
-        .map((lead) =>
-          this.notifications
-            .notify(user.tenantId, lead.ownerId, {
-              type: 'system',
-              title: options.opportunityName ? '线索已转换为客户和商机' : '线索已关联客户',
-              content: `线索「${lead.name}」已完成客户关联`,
-              link: '/customers',
-            })
-            .catch(() => undefined),
-        ),
-    )
+    for (const lead of leads) {
+      if (!lead.ownerId) continue
+      await this.notifications.send({
+        tenantId: user.tenantId,
+        event: 'CLUE_CONVERT_CUSTOMER',
+        operatorId: user.id,
+        recipientIds: [lead.ownerId],
+        excludeSelf: true,
+        type: 'system',
+        title: '线索已转换为客户',
+        content: `线索「${lead.name}」已完成客户关联`,
+        link: `/customers/${customerId}`,
+      })
+      if (options.opportunityName && result.opportunityId) {
+        await this.notifications.send({
+          tenantId: user.tenantId,
+          event: 'CLUE_CONVERT_BUSINESS',
+          operatorId: user.id,
+          recipientIds: [lead.ownerId],
+          excludeSelf: true,
+          type: 'system',
+          title: '线索已转换为商机',
+          content: `线索「${lead.name}」已创建商机「${options.opportunityName}」`,
+          link: `/opportunities/${result.opportunityId}`,
+        })
+      }
+    }
 
     return result
   }
@@ -894,7 +944,10 @@ export class LeadsService {
     })
     if (customers.length === 0) return null
     if (customers.length === 1) return customers[0]
-    return customers.find((customer) => !customer.inSea && customer.ownerId === lead.ownerId) ?? customers[0]
+    return (
+      customers.find((customer) => !customer.inSea && customer.ownerId === lead.ownerId) ??
+      customers[0]
+    )
   }
 
   private async mapLeadCustomData(
@@ -916,19 +969,29 @@ export class LeadsService {
   }
 
   /** 导出 CSV */
-  async exportCsv(user: AuthUser, query: QueryLeadsDto): Promise<{ filename: string; csv: string }> {
+  async exportCsv(
+    user: AuthUser,
+    query: QueryLeadsDto,
+  ): Promise<{ filename: string; csv: string }> {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const columns = fields.filter((f) => f.showInList && !f.hidden)
     const result = await this.findAll(user, { ...query, page: 1, pageSize: 5000 })
 
     const headers = [...columns.map((c) => c.label), '状态', '创建时间']
-    const statusLabels: Record<string, string> = { FOLLOWING: '跟进中', CONVERTED: '已转化', INVALID: '无效' }
+    const statusLabels: Record<string, string> = {
+      FOLLOWING: '跟进中',
+      CONVERTED: '已转化',
+      INVALID: '无效',
+    }
     const rows = result.items.map((item) => [
       ...columns.map((c) => formatForExport(c, item as unknown as Record<string, unknown>)),
       statusLabels[item.status] ?? item.status,
       item.createdAt.slice(0, 10),
     ])
-    return { filename: `线索导出_${new Date().toISOString().slice(0, 10)}.csv`, csv: toCsv(headers, rows) }
+    return {
+      filename: `线索导出_${new Date().toISOString().slice(0, 10)}.csv`,
+      csv: toCsv(headers, rows),
+    }
   }
 
   async importTemplate(
@@ -1036,7 +1099,9 @@ export class LeadsService {
     }
     const items = await this.collectExportItems(user, effectiveQuery, input.ids)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const fieldMap = new Map(fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+    const fieldMap = new Map(
+      fields.filter((field) => !field.hidden).map((field) => [field.key, field]),
+    )
     const extraColumns = new Map([
       ['status', '状态'],
       ['createdAt', '创建时间'],
@@ -1081,7 +1146,10 @@ export class LeadsService {
     const errors: string[] = []
     for (const [index, row] of rows.entries()) {
       try {
-        const { customData, ...rest } = row as { customData?: Record<string, unknown> } & Record<string, unknown>
+        const { customData, ...rest } = row as { customData?: Record<string, unknown> } & Record<
+          string,
+          unknown
+        >
         await this.create(user, {
           name: String(rest.name ?? ''),
           contactName: rest.contactName ? String(rest.contactName) : undefined,
@@ -1095,7 +1163,12 @@ export class LeadsService {
         errors.push(`第 ${index + 2} 行: ${e instanceof Error ? e.message : '导入失败'}`)
       }
     }
-    return { success, failed: errors.length, errors: errors.slice(0, 20), name: `导入线索 ${success} 条` }
+    return {
+      success,
+      failed: errors.length,
+      errors: errors.slice(0, 20),
+      name: `导入线索 ${success} 条`,
+    }
   }
 
   private async prepareImportRow(
@@ -1130,7 +1203,8 @@ export class LeadsService {
     if (importType === 'ADD') {
       const name = typeof dto.name === 'string' ? dto.name.trim() : ''
       if (!name) throw new BadRequestException('线索名称不能为空')
-      if (!poolId) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId ?? user.id)
+      if (!poolId)
+        await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId ?? user.id)
       else await this.pools.resolveTargetPool(user, 'lead', poolId)
       return { dto }
     }
@@ -1183,7 +1257,8 @@ export class LeadsService {
     if (!ids?.length) return all
     const wanted = new Set(ids)
     const selected = all.filter((item) => wanted.has(item.id))
-    if (selected.length !== wanted.size) throw new BadRequestException('选中数据包含不存在或无权导出的线索')
+    if (selected.length !== wanted.size)
+      throw new BadRequestException('选中数据包含不存在或无权导出的线索')
     return selected
   }
 
@@ -1210,24 +1285,37 @@ export class LeadsService {
         before: lead,
         after: null,
       })
-      if (lead.ownerId && lead.ownerId !== user.id) {
-        await this.notifications.notify(user.tenantId, lead.ownerId, {
-          type: 'system',
-          title: '线索已删除',
-          content: `${user.name} 删除了线索「${lead.name}」`,
-          link: '/leads',
-        })
-      }
+      await this.notifications.send({
+        tenantId: user.tenantId,
+        event: 'CLUE_DELETED',
+        operatorId: user.id,
+        recipientIds: [lead.ownerId],
+        excludeSelf: true,
+        type: 'system',
+        title: '线索已删除',
+        content: `${user.name} 删除了线索「${lead.name}」`,
+        link: '/leads',
+      })
     }
   }
 
-  private async notifyAssign(user: AuthUser, leadId: string, leadName: string, ownerId: string) {
-    if (ownerId === user.id) return
-    await this.notifications.notify(user.tenantId, ownerId, {
+  private async notifyAssign(
+    user: AuthUser,
+    leadId: string,
+    leadName: string,
+    ownerId: string,
+    event: MessageTaskEvent,
+  ) {
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event,
+      operatorId: user.id,
+      recipientIds: [ownerId],
+      excludeSelf: true,
       type: 'assign',
-      title: '新线索分配给你',
+      title: event === 'CLUE_ADD' ? '新建线索' : '线索已分配给你',
       content: `${user.name} 将线索「${leadName}」分配给你`,
-      link: '/leads',
+      link: `/leads?id=${leadId}`,
     })
   }
 

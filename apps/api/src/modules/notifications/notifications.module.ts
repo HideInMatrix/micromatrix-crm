@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common'
 import { MessageSettingsModule } from '../message-settings/message-settings.module'
+import { BusinessNotificationsService } from './business-notifications.service'
+import { MessageExpiryService } from './message-expiry.service'
 import { NotificationsController } from './notifications.controller'
 import { NotificationsService } from './notifications.service'
 
@@ -8,7 +10,7 @@ import { NotificationsService } from './notifications.service'
 @Module({
   imports: [MessageSettingsModule],
   controllers: [NotificationsController],
-  providers: [NotificationsService],
-  exports: [NotificationsService],
+  providers: [NotificationsService, BusinessNotificationsService, MessageExpiryService],
+  exports: [NotificationsService, BusinessNotificationsService],
 })
 export class NotificationsModule {}

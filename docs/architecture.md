@@ -43,7 +43,7 @@ monorepo：`apps/api`（NestJS CJS）、`apps/web`（单一 Vite ESM 前端，�
 
 `CordysCRM/` 是项目内的功能参考基准，不作为 MicroMatrix CRM 的运行时依赖。后续开发采用“业务语义迁移”，而不是 Java 源码逐行翻译。
 
-当前执行记录见 [CordysCRM Wave 2 执行计划](./cordys-wave2-execution-plan.md)：W2.1 顶部导航、W2.2 跟进计划与 W2.3 消息设置底座均已按源码优先流程完成验收。
+当前执行记录见 [CordysCRM Wave 2 执行计划](./cordys-wave2-execution-plan.md)：W2.1 顶部导航、W2.2 跟进计划、W2.3 消息设置底座与 W2.4 业务消息触发链路均已按源码优先流程完成验收。跨阶段暂缓能力及其数据模型前置条件统一维护在 [Cordys 暂缓能力与数据模型缺口台账](./cordys-deferred-backlog.md)。
 
 ```mermaid
 flowchart LR

@@ -124,3 +124,43 @@ test('到期配置校验模块、时间重复和固定负责人', async () => {
     BadRequestException,
   )
 })
+
+test('配置接收范围合并负责人、成员、角色和部门负责人层级', async () => {
+  const config: MessageTaskConfig = {
+    timeList: [{ timeValue: 3, timeUnit: 'DAY' }],
+    userIds: ['OWNER', 'member-a'],
+    roleIds: ['role-a'],
+    ownerEnable: true,
+    ownerLevel: 2,
+    roleEnable: true,
+  }
+  const activeIds = new Set(['owner-a', 'member-a', 'role-member', 'leader-a', 'leader-root'])
+  const prisma = {
+    messageTaskSetting: {
+      findFirst: async () => ({
+        systemEnabled: true,
+        emailEnabled: false,
+        config,
+      }),
+    },
+    userRole: { findMany: async () => [{ userId: 'role-member' }] },
+    user: {
+      findFirst: async () => ({ deptId: 'dept-a' }),
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        where.id.in.filter((id) => activeIds.has(id)).map((id) => ({ id })),
+    },
+    department: {
+      findFirst: async ({ where }: { where: { id: string } }) =>
+        where.id === 'dept-a'
+          ? { leaderId: 'leader-a', parentId: 'dept-root' }
+          : { leaderId: 'leader-root', parentId: null },
+    },
+  } as unknown as PrismaService
+  const service = new MessageSettingsService(prisma)
+
+  const recipients = await service.resolveRecipients('tenant-a', 'CONTRACT_EXPIRING', {
+    ownerId: 'owner-a',
+  })
+
+  assert.deepEqual(new Set(recipients), activeIds)
+})

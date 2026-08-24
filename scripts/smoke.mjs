@@ -158,6 +158,42 @@ check(
     .flatMap((group) => group.items)
     .find((item) => item.event === 'CUSTOMER_ADD')?.systemEnabled === false,
 )
+const salesNotificationsBeforeDisabledCustomer = await get(
+  '/notifications?page=1&pageSize=100',
+  sales.headers,
+)
+const disabledEventCustomer = await post('/customers', admin.headers, {
+  name: `W2.4关闭事件客户-${stamp}`,
+  ownerId: sales.user.id,
+})
+const salesNotificationsAfterDisabledCustomer = await get(
+  '/notifications?page=1&pageSize=100',
+  sales.headers,
+)
+check(
+  'W2.4 关闭 CUSTOMER_ADD 后真实新建动作不落通知',
+  salesNotificationsAfterDisabledCustomer.total === salesNotificationsBeforeDisabledCustomer.total,
+)
+await request('PATCH', '/message-settings/CUSTOMER_ADD', admin.headers, {
+  module: 'CUSTOMER',
+  systemEnabled: true,
+})
+const enabledEventCustomer = await post('/customers', admin.headers, {
+  name: `W2.4恢复事件客户-${stamp}`,
+  ownerId: sales.user.id,
+})
+const salesNotificationsAfterEnabledCustomer = await get(
+  '/notifications?page=1&pageSize=100',
+  sales.headers,
+)
+check(
+  'W2.4 恢复 CUSTOMER_ADD 后真实新建动作重新发送',
+  salesNotificationsAfterEnabledCustomer.items?.some(
+    (item) => item.title === '新建客户' && item.content?.includes(`W2.4恢复事件客户-${stamp}`),
+  ),
+)
+await request('DELETE', `/customers/${disabledEventCustomer.id}`, admin.headers)
+await request('DELETE', `/customers/${enabledEventCustomer.id}`, admin.headers)
 const forbiddenMessageSetting = await request(
   'PATCH',
   '/message-settings/CUSTOMER_ADD',
@@ -566,6 +602,13 @@ const claimed = await post(`/leads/${lead.id}/claim`, sales.headers)
 check('专员领取线索', Boolean(claimed.name))
 const movedBack = await post(`/leads/${lead.id}/to-pool`, manager.headers, {})
 check('主管将线索退回匹配线索池', Boolean(movedBack.poolId))
+const movedLeadNotifications = await get('/notifications?page=1&pageSize=100', sales.headers)
+check(
+  'W2.4 人工移池使用 CLUE_MOVED_POOL 通知原负责人',
+  movedLeadNotifications.items?.some(
+    (item) => item.title === '线索已移入线索池' && item.content?.includes(`冒烟线索-${stamp}`),
+  ),
+)
 const ownerHistory = await get(`/leads/${lead.id}/owner-history`, manager.headers)
 check(
   '线索负责人历史',
@@ -585,12 +628,22 @@ await post('/follow-ups', sales.headers, {
   type: '电话',
   content: '冒烟跟进',
 })
-const converted = await post('/leads/transform', sales.headers, {
+const converted = await post('/leads/transform', manager.headers, {
   clueId: lead.id,
   oppCreated: true,
   oppName: `冒烟商机-${stamp}`,
 })
 check('线索转化（客户+联系人+商机）', Boolean(converted.customerId && converted.opportunityId))
+const convertedLeadNotifications = await get('/notifications?page=1&pageSize=100', sales.headers)
+check(
+  'W2.4 线索带商机转换拆分客户与商机两条事件',
+  convertedLeadNotifications.items?.some(
+    (item) => item.title === '线索已转换为客户' && item.content?.includes(`冒烟线索-${stamp}`),
+  ) &&
+    convertedLeadNotifications.items?.some(
+      (item) => item.title === '线索已转换为商机' && item.content?.includes(`冒烟商机-${stamp}`),
+    ),
+)
 const convertedLead = await get(`/leads/${lead.id}`, sales.headers)
 check(
   'R4 自动转换写 transitionType / transitionId',
@@ -774,8 +827,16 @@ const r4CustomerPool = await post('/resource-pools', admin.headers, {
 })
 const r4SeaCustomer = await post('/customers', admin.headers, {
   name: `R4公海客户-${stamp}`,
+  ownerId: sales.user.id,
 })
 await post(`/customers/${r4SeaCustomer.id}/to-sea`, admin.headers, { poolId: r4CustomerPool.id })
+const movedCustomerNotifications = await get('/notifications?page=1&pageSize=100', sales.headers)
+check(
+  'W2.4 客户人工移入公海通知原负责人',
+  movedCustomerNotifications.items?.some(
+    (item) => item.title === '客户已移入公海' && item.content?.includes(`R4公海客户-${stamp}`),
+  ),
+)
 const r4SeaLead = await post('/leads', sales.headers, {
   name: `R4公海关联线索-${stamp}`,
 })
@@ -2074,6 +2135,19 @@ const oppWithItems = await post('/opportunities', manager.headers, {
   items: [{ productName: '冒烟产品', quantity: 2, unitPrice: 15000, discount: 100 }],
 })
 check('商机明细汇总金额', oppWithItems.amount === 30000 && oppWithItems.items?.length === 1)
+await request('PATCH', `/opportunities/${oppWithItems.id}`, manager.headers, {
+  ownerId: sales.user.id,
+})
+const transferredOpportunityNotifications = await get(
+  '/notifications?page=1&pageSize=100',
+  sales.headers,
+)
+check(
+  'W2.4 商机负责人变更发送 BUSINESS_TRANSFER',
+  transferredOpportunityNotifications.items?.some(
+    (item) => item.title === '商机已转移给你' && item.content?.includes(`冒烟明细商机-${stamp}`),
+  ),
+)
 const quoteFromOpp = await post('/quotes', manager.headers, {
   name: `冒烟带入报价-${stamp}`,
   customerId: converted.customerId,
@@ -2227,6 +2301,13 @@ const approvedContract = await get(`/contracts/${bigContract.id}`, sales.headers
 check(
   '审批通过后合同自动生效',
   approvedContract.status === 'EXECUTING' && approvedContract.approvalStatus === 'APPROVED',
+)
+const contractApprovalNotifications = await get('/notifications?page=1&pageSize=100', sales.headers)
+check(
+  'W2.4 合同审批结束发送 CONTRACT_APPROVAL 给提交人',
+  contractApprovalNotifications.items?.some(
+    (item) => item.title === '审批已通过' && item.content?.includes(`冒烟审批合同-${stamp}`),
+  ),
 )
 
 // 8. 标讯

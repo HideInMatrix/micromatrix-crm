@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import {
   Customer360Resource,
   CustomerRelatedVO,
@@ -26,7 +31,7 @@ import { MetadataService } from '../modules/metadata/metadata.service'
 import { ExportTasksService } from '../modules/import-export/export-tasks.service'
 import type { ImportType } from '../modules/import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../modules/import-export/spreadsheet.service'
-import { NotificationsService } from '../modules/notifications/notifications.service'
+import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import { SavedViewsService } from '../modules/saved-views/saved-views.service'
 import { PrismaService } from '../prisma/prisma.service'
@@ -50,7 +55,7 @@ export class CustomersService {
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: BusinessNotificationsService,
     private readonly pools: ResourcePoolsService,
     private readonly changeLog: BusinessChangeLogService,
     private readonly savedViews: SavedViewsService,
@@ -96,7 +101,10 @@ export class CustomersService {
 
     const where: Prisma.CustomerWhereInput = {
       tenantId: user.tenantId,
-      AND: [scopeClause as Prisma.CustomerWhereInput, ...(filterClauses as Prisma.CustomerWhereInput[])],
+      AND: [
+        scopeClause as Prisma.CustomerWhereInput,
+        ...(filterClauses as Prisma.CustomerWhereInput[]),
+      ],
       ...(keyword
         ? {
             OR: [
@@ -127,9 +135,7 @@ export class CustomersService {
     const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
     return {
       all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
-      dept: roles.some((role) =>
-        ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope),
-      ),
+      dept: roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
     }
   }
 
@@ -145,8 +151,7 @@ export class CustomersService {
     if (!customer) throw new NotFoundException('客户不存在或不在你的数据范围内')
     return {
       ...this.toVO(customer, fields),
-      collaborationType:
-        !access.dataScope && !access.pool ? access.collaborationType : null,
+      collaborationType: !access.dataScope && !access.pool ? access.collaborationType : null,
       canManageCustomer: access.canManageCustomer,
       canCollaborateWrite: access.canCollaborateWrite,
     }
@@ -218,14 +223,17 @@ export class CustomersService {
         : Promise.resolve([]),
     ])
 
-    const customerIds = [
-      ...customers.map((c) => c.id),
-      ...contacts.map((c) => c.customerId),
-    ]
+    const customerIds = [...customers.map((c) => c.id), ...contacts.map((c) => c.customerId)]
     const [inScopeCustomers, inScopeLeads, inScopeOpps, ownerMap] = await Promise.all([
       this.inScopeCustomerIds(user, customerIds),
-      this.inScopeLeadIds(user, leads.map((l) => l.id)),
-      this.inScopeOpportunityIds(user, opportunities.map((o) => o.id)),
+      this.inScopeLeadIds(
+        user,
+        leads.map((l) => l.id),
+      ),
+      this.inScopeOpportunityIds(
+        user,
+        opportunities.map((o) => o.id),
+      ),
       this.userNames([
         ...customers.map((c) => c.ownerId),
         ...contacts.map((c) => c.customer.ownerId),
@@ -300,8 +308,7 @@ export class CustomersService {
       !isOpenSea &&
       hasPermission(user.permissions, 'contact:read') &&
       (access.dataScope || access.pool || access.collaborationType === 'COLLABORATION')
-    const canReadOpportunities =
-      !isOpenSea && hasPermission(user.permissions, 'menu:opportunity')
+    const canReadOpportunities = !isOpenSea && hasPermission(user.permissions, 'menu:opportunity')
     const canReadContracts = !isOpenSea && hasPermission(user.permissions, 'menu:contract')
     const canReadTeam = !isOpenSea && access.collaborationType === null
     const [contacts, opportunities, contracts, followUps, team] = await Promise.all([
@@ -340,10 +347,7 @@ export class CustomersService {
     ])
 
     const [ownerMap, attachMap] = await Promise.all([
-      this.userNames([
-        ...opportunities.map((o) => o.ownerId),
-        ...team.map((m) => m.userId),
-      ]),
+      this.userNames([...opportunities.map((o) => o.ownerId), ...team.map((m) => m.userId)]),
       this.attachmentMap(
         user.tenantId,
         'follow-up',
@@ -374,8 +378,7 @@ export class CustomersService {
         opportunityAmount:
           Math.round(opportunities.reduce((sum, o) => sum + Number(o.amount ?? 0), 0) * 100) / 100,
         contractCount: contracts.length,
-        contractAmount:
-          Math.round(contractRows.reduce((sum, c) => sum + c.amount, 0) * 100) / 100,
+        contractAmount: Math.round(contractRows.reduce((sum, c) => sum + c.amount, 0) * 100) / 100,
         paidAmount: Math.round(contractRows.reduce((sum, c) => sum + c.paidAmount, 0) * 100) / 100,
       },
       contacts: contacts.map((c) => ({
@@ -484,7 +487,10 @@ export class CustomersService {
           paidAmount:
             Math.round(
               row.receivableRecords
-                .filter((record) => record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED')
+                .filter(
+                  (record) =>
+                    record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED',
+                )
                 .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
             ) / 100,
           status: row.status,
@@ -521,7 +527,10 @@ export class CustomersService {
           const paidAmount =
             Math.round(
               row.records
-                .filter((record) => record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED')
+                .filter(
+                  (record) =>
+                    record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED',
+                )
                 .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
             ) / 100
           const amount = Number(row.amount)
@@ -673,6 +682,17 @@ export class CustomersService {
       },
       include: ownerInclude,
     })
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'CUSTOMER_ADD',
+      operatorId: user.id,
+      recipientIds: [owner.id],
+      excludeSelf: true,
+      type: 'system',
+      title: '新建客户',
+      content: `${user.name} 新建了客户「${customer.name}」并将你设为负责人`,
+      link: `/customers/${customer.id}`,
+    })
     return this.toVO(customer, await this.metadata.listFields(user.tenantId, MODULE))
   }
 
@@ -727,6 +747,19 @@ export class CustomersService {
       data,
       include: ownerInclude,
     })
+    if (ownerId && ownerId !== existing.ownerId) {
+      await this.notifications.send({
+        tenantId: user.tenantId,
+        event: 'CUSTOMER_TRANSFERRED_CUSTOMER',
+        operatorId: user.id,
+        recipientIds: [ownerId],
+        excludeSelf: true,
+        type: 'assign',
+        title: '客户已转移给你',
+        content: `${user.name} 将客户「${customer.name}」转移给你`,
+        link: `/customers/${customer.id}`,
+      })
+    }
     await this.changeLog.record(user, {
       module: 'customer',
       action: 'update',
@@ -783,6 +816,17 @@ export class CustomersService {
         },
       })
     })
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'CUSTOMER_MOVED_HIGH_SEAS',
+      operatorId: user.id,
+      recipientIds: [customer.ownerId],
+      excludeSelf: true,
+      type: 'pool',
+      title: '客户已移入公海',
+      content: `${user.name} 将客户「${customer.name}」移入公海`,
+      link: '/customers',
+    })
     return { id, name: customer.name, poolId: pool.id }
   }
 
@@ -792,7 +836,13 @@ export class CustomersService {
       where: { id, tenantId: user.tenantId, inSea: true },
     })
     if (!current) throw new BadRequestException('客户不存在或已被他人领取')
-    await this.pools.assertCanClaim(user, 'customer', current.poolId, current.id, current.poolEnteredAt)
+    await this.pools.assertCanClaim(
+      user,
+      'customer',
+      current.poolId,
+      current.id,
+      current.poolEnteredAt,
+    )
     const now = new Date()
     const result = await this.prisma.customer.updateMany({
       where: { id, tenantId: user.tenantId, inSea: true, poolId: current.poolId },
@@ -824,7 +874,8 @@ export class CustomersService {
             where: { id, tenantId: user.tenantId, inSea: true },
             select: { poolId: true },
           })
-          if (!customer || customer.poolId !== poolId) throw new BadRequestException('客户不属于指定公海')
+          if (!customer || customer.poolId !== poolId)
+            throw new BadRequestException('客户不属于指定公海')
         }
         await this.claimFromSea(user, id)
         success++
@@ -879,14 +930,17 @@ export class CustomersService {
         },
       })
     })
-    if (owner.id !== user.id) {
-      await this.notifications.notify(user.tenantId, owner.id, {
-        type: 'assign',
-        title: '新客户分配给你',
-        content: `${user.name} 将客户「${customer.name}」分配给你`,
-        link: '/customers',
-      })
-    }
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: customer.inSea ? 'HIGH_SEAS_CUSTOMER_DISTRIBUTED' : 'CUSTOMER_TRANSFERRED_CUSTOMER',
+      operatorId: user.id,
+      recipientIds: [owner.id],
+      excludeSelf: true,
+      type: 'assign',
+      title: customer.inSea ? '公海客户已分配给你' : '客户已转移给你',
+      content: `${user.name} 将客户「${customer.name}」分配给你`,
+      link: `/customers/${customer.id}`,
+    })
     return { id: customer.id, name: customer.name }
   }
 
@@ -939,9 +993,16 @@ export class CustomersService {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
         throw new BadRequestException('负责人不能为空')
       }
-      const processCount = customers.filter((customer) => customer.ownerId !== dto.fieldValue).length
+      const processCount = customers.filter(
+        (customer) => customer.ownerId !== dto.fieldValue,
+      ).length
       if (processCount > 0) {
-        await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.fieldValue, processCount)
+        await this.pools.assertCapacityForOwner(
+          user.tenantId,
+          'customer',
+          dto.fieldValue,
+          processCount,
+        )
       }
       for (const customer of customers) {
         if (customer.ownerId !== dto.fieldValue) {
@@ -967,10 +1028,7 @@ export class CustomersService {
     return { success: ids.length, fail: 0, failedIds: [] }
   }
 
-  async poolBatchUpdate(
-    user: AuthUser,
-    dto: PoolResourceBatchEditDto,
-  ): Promise<BatchAffectResult> {
+  async poolBatchUpdate(user: AuthUser, dto: PoolResourceBatchEditDto): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'customer', dto.poolId)
     const customers = await this.prisma.customer.findMany({
       where: {
@@ -1051,7 +1109,7 @@ export class CustomersService {
     const customer = (await this.customerAccess.assertManageCustomer(user, customerId)).customer
     const member = await this.prisma.user.findFirst({
       where: { id: userId, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true },
+      select: { id: true, name: true },
     })
     if (!member) throw new BadRequestException('协作成员不存在或已禁用')
     const exists = await this.prisma.customerTeamMember.findFirst({
@@ -1069,14 +1127,17 @@ export class CustomersService {
         updatedById: user.id,
       },
     })
-    if (userId !== user.id) {
-      await this.notifications.notify(user.tenantId, userId, {
-        type: 'assign',
-        title: '你被加入客户协作团队',
-        content: `${user.name} 邀请你协作跟进客户「${customer.name}」`,
-        link: '/customers',
-      })
-    }
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'CUSTOMER_COLLABORATION_ADD',
+      operatorId: user.id,
+      recipientIds: [customer.ownerId],
+      excludeSelf: true,
+      type: 'system',
+      title: '客户新增协作人',
+      content: `${user.name} 为客户「${customer.name}」添加协作成员「${member.name}」`,
+      link: `/customers/${customerId}`,
+    })
     return { id: customerId, name: customer.name }
   }
 
@@ -1209,7 +1270,11 @@ export class CustomersService {
       relatedCustomerId,
       relationType,
     )
-    await this.assertCustomerRelationValid(user.tenantId, relation.sourceCustomerId, relation.targetCustomerId)
+    await this.assertCustomerRelationValid(
+      user.tenantId,
+      relation.sourceCustomerId,
+      relation.targetCustomerId,
+    )
     return this.prisma.customerRelation.create({ data: relation })
   }
 
@@ -1265,45 +1330,57 @@ export class CustomersService {
 
   async mergePreview(user: AuthUser, dto: CustomerMergeDto) {
     const context = await this.prepareMergeContext(user, dto)
-    const [ownerMap, opportunityCount, quoteCount, contractCount, followUpCount, attachmentCount, collaborationCount, relationCount] =
-      await Promise.all([
-        this.userNames([context.target.ownerId, ...context.sources.map((item) => item.ownerId), context.newOwner.id]),
-        this.prisma.opportunity.count({
-          where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
-        }),
-        this.prisma.quote.count({
-          where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
-        }),
-        this.prisma.contract.count({
-          where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
-        }),
-        this.prisma.followUpRecord.count({
-          where: {
-            tenantId: user.tenantId,
-            targetType: 'customer',
-            targetId: { in: context.sourceIds },
-          },
-        }),
-        this.prisma.attachment.count({
-          where: {
-            tenantId: user.tenantId,
-            targetType: 'customer',
-            targetId: { in: context.sourceIds },
-          },
-        }),
-        this.prisma.customerTeamMember.count({
-          where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
-        }),
-        this.prisma.customerRelation.count({
-          where: {
-            tenantId: user.tenantId,
-            OR: [
-              { sourceCustomerId: { in: context.sourceIds } },
-              { targetCustomerId: { in: context.sourceIds } },
-            ],
-          },
-        }),
-      ])
+    const [
+      ownerMap,
+      opportunityCount,
+      quoteCount,
+      contractCount,
+      followUpCount,
+      attachmentCount,
+      collaborationCount,
+      relationCount,
+    ] = await Promise.all([
+      this.userNames([
+        context.target.ownerId,
+        ...context.sources.map((item) => item.ownerId),
+        context.newOwner.id,
+      ]),
+      this.prisma.opportunity.count({
+        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+      }),
+      this.prisma.quote.count({
+        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+      }),
+      this.prisma.contract.count({
+        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+      }),
+      this.prisma.followUpRecord.count({
+        where: {
+          tenantId: user.tenantId,
+          targetType: 'customer',
+          targetId: { in: context.sourceIds },
+        },
+      }),
+      this.prisma.attachment.count({
+        where: {
+          tenantId: user.tenantId,
+          targetType: 'customer',
+          targetId: { in: context.sourceIds },
+        },
+      }),
+      this.prisma.customerTeamMember.count({
+        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+      }),
+      this.prisma.customerRelation.count({
+        where: {
+          tenantId: user.tenantId,
+          OR: [
+            { sourceCustomerId: { in: context.sourceIds } },
+            { targetCustomerId: { in: context.sourceIds } },
+          ],
+        },
+      }),
+    ])
 
     return {
       targetWasSelected: context.targetWasSelected,
@@ -1311,13 +1388,13 @@ export class CustomersService {
         id: context.target.id,
         name: context.target.name,
         ownerId: context.target.ownerId,
-        ownerName: context.target.ownerId ? ownerMap.get(context.target.ownerId) ?? null : null,
+        ownerName: context.target.ownerId ? (ownerMap.get(context.target.ownerId) ?? null) : null,
       },
       sources: context.sources.map((source) => ({
         id: source.id,
         name: source.name,
         ownerId: source.ownerId,
-        ownerName: source.ownerId ? ownerMap.get(source.ownerId) ?? null : null,
+        ownerName: source.ownerId ? (ownerMap.get(source.ownerId) ?? null) : null,
       })),
       finalOwner: {
         id: context.newOwner.id,
@@ -1468,10 +1545,15 @@ export class CustomersService {
       return mergedTarget
     })
 
-    if (target.ownerId !== newOwner.id && newOwner.id !== user.id) {
-      await this.notifications.notify(user.tenantId, newOwner.id, {
+    if (target.ownerId !== newOwner.id) {
+      await this.notifications.send({
+        tenantId: user.tenantId,
+        event: 'CUSTOMER_TRANSFERRED_CUSTOMER',
+        operatorId: user.id,
+        recipientIds: [newOwner.id],
+        excludeSelf: true,
         type: 'assign',
-        title: '客户合并后负责人变更',
+        title: '客户已转移给你',
         content: `${user.name} 将合并后的客户「${target.name}」分配给你`,
         link: `/customers/${target.id}`,
       })
@@ -1582,7 +1664,7 @@ export class CustomersService {
         nameMatches.forEach((id) => targetContactIds.add(id))
       }
       const phone = normalizePhone(contact.phone)
-      const phoneMatches = phone ? targetPhones.get(phone) ?? [] : []
+      const phoneMatches = phone ? (targetPhones.get(phone) ?? []) : []
       if (phoneMatches.length > 0) {
         matchedBy.push('phone')
         phoneMatches.forEach((id) => targetContactIds.add(id))
@@ -1640,15 +1722,24 @@ export class CustomersService {
     relatedCustomerId: string,
     relationType: 'GROUP' | 'SUBSIDIARY',
   ) {
-    if (customerId === relatedCustomerId) throw new BadRequestException('客户不能与自己建立集团关系')
+    if (customerId === relatedCustomerId)
+      throw new BadRequestException('客户不能与自己建立集团关系')
     const related = await this.prisma.customer.findFirst({
       where: { id: relatedCustomerId, tenantId: user.tenantId },
       select: { id: true },
     })
     if (!related) throw new NotFoundException('关联客户不存在')
     return relationType === 'GROUP'
-      ? { tenantId: user.tenantId, sourceCustomerId: relatedCustomerId, targetCustomerId: customerId }
-      : { tenantId: user.tenantId, sourceCustomerId: customerId, targetCustomerId: relatedCustomerId }
+      ? {
+          tenantId: user.tenantId,
+          sourceCustomerId: relatedCustomerId,
+          targetCustomerId: customerId,
+        }
+      : {
+          tenantId: user.tenantId,
+          sourceCustomerId: customerId,
+          targetCustomerId: relatedCustomerId,
+        }
   }
 
   private async assertCustomerRelationValid(
@@ -1682,12 +1773,12 @@ export class CustomersService {
       visited.add(current)
       const parent: { sourceCustomerId: string } | null =
         await this.prisma.customerRelation.findFirst({
-        where: {
-          tenantId,
-          targetCustomerId: current,
-          ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
-        },
-        select: { sourceCustomerId: true },
+          where: {
+            tenantId,
+            targetCustomerId: current,
+            ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
+          },
+          select: { sourceCustomerId: true },
         })
       current = parent?.sourceCustomerId ?? null
     }
@@ -1741,10 +1832,7 @@ export class CustomersService {
     return this.prisma.customer.findFirst({
       where: {
         tenantId: user.tenantId,
-        OR: [
-          { name: { equals: name, mode: 'insensitive' } },
-          ...(phone ? [{ phone }] : []),
-        ],
+        OR: [{ name: { equals: name, mode: 'insensitive' } }, ...(phone ? [{ phone }] : [])],
       },
       select: { id: true, name: true },
     })
@@ -1762,7 +1850,8 @@ export class CustomersService {
       ['email', values.email],
     ] as const
     for (const [key, raw] of checks) {
-      if (!fields.get(key)?.config?.unique || raw === undefined || raw === null || raw === '') continue
+      if (!fields.get(key)?.config?.unique || raw === undefined || raw === null || raw === '')
+        continue
       const value = typeof raw === 'string' ? raw.trim() : raw
       if (value === '') continue
       const duplicate = await this.prisma.customer.findFirst({
@@ -1832,7 +1921,19 @@ export class CustomersService {
   }
 
   private async attachmentMap(tenantId: string, targetType: string, targetIds: string[]) {
-    const map = new Map<string, { id: string; name: string; size: number; mime: string | null; targetType: string | null; targetId: string | null; uploaderId: string | null; createdAt: string }[]>()
+    const map = new Map<
+      string,
+      {
+        id: string
+        name: string
+        size: number
+        mime: string | null
+        targetType: string | null
+        targetId: string | null
+        uploaderId: string | null
+        createdAt: string
+      }[]
+    >()
     if (targetIds.length === 0) return map
     const rows = await this.prisma.attachment.findMany({
       where: { tenantId, targetType, targetId: { in: targetIds } },
@@ -1857,7 +1958,10 @@ export class CustomersService {
   }
 
   /** 导出 CSV（按字段配置的列表列） */
-  async exportCsv(user: AuthUser, query: QueryCustomersDto): Promise<{ filename: string; csv: string }> {
+  async exportCsv(
+    user: AuthUser,
+    query: QueryCustomersDto,
+  ): Promise<{ filename: string; csv: string }> {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const columns = fields.filter((f) => f.showInList && !f.hidden)
     const result = await this.findAll(user, { ...query, page: 1, pageSize: 5000 })
@@ -1867,7 +1971,10 @@ export class CustomersService {
       ...columns.map((c) => formatForExport(c, item as unknown as Record<string, unknown>)),
       item.createdAt.slice(0, 10),
     ])
-    return { filename: `客户导出_${new Date().toISOString().slice(0, 10)}.csv`, csv: toCsv(headers, rows) }
+    return {
+      filename: `客户导出_${new Date().toISOString().slice(0, 10)}.csv`,
+      csv: toCsv(headers, rows),
+    }
   }
 
   async importTemplate(
@@ -1904,7 +2011,14 @@ export class CustomersService {
       const errors = [...row.errors]
       if (errors.length === 0) {
         try {
-          const prepared = await this.prepareImportRow(user, row.values, fields, importType, row.resourceId, poolId)
+          const prepared = await this.prepareImportRow(
+            user,
+            row.values,
+            fields,
+            importType,
+            row.resourceId,
+            poolId,
+          )
           if (importType === 'ADD') {
             const fingerprint = `${prepared.dto.name?.trim().toLowerCase() ?? ''}|${prepared.dto.phone?.trim() ?? ''}`
             if (seen.has(fingerprint)) throw new BadRequestException('导入文件内存在重复客户')
@@ -1983,7 +2097,9 @@ export class CustomersService {
     }
     const items = await this.collectExportItems(user, effectiveQuery, input.ids)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const fieldMap = new Map(fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+    const fieldMap = new Map(
+      fields.filter((field) => !field.hidden).map((field) => [field.key, field]),
+    )
     const extraColumns = new Map([
       ['createdAt', '创建时间'],
       ['updatedAt', '更新时间'],
@@ -2020,7 +2136,10 @@ export class CustomersService {
     const errors: string[] = []
     for (const [index, row] of rows.entries()) {
       try {
-        const { customData, ...rest } = row as { customData?: Record<string, unknown> } & Record<string, unknown>
+        const { customData, ...rest } = row as { customData?: Record<string, unknown> } & Record<
+          string,
+          unknown
+        >
         const name = String(rest.name ?? '').trim()
         const phone = rest.phone ? String(rest.phone).trim() : undefined
         if (!name) throw new BadRequestException('名称为空')
@@ -2039,7 +2158,12 @@ export class CustomersService {
         errors.push(`第 ${index + 2} 行: ${e instanceof Error ? e.message : '导入失败'}`)
       }
     }
-    return { success, failed: errors.length, errors: errors.slice(0, 20), name: `导入客户 ${success} 条` }
+    return {
+      success,
+      failed: errors.length,
+      errors: errors.slice(0, 20),
+      name: `导入客户 ${success} 条`,
+    }
   }
 
   private async prepareImportRow(
@@ -2079,7 +2203,8 @@ export class CustomersService {
       if (!name) throw new BadRequestException('客户名称不能为空')
       const duplicate = await this.findExactCustomerDuplicate(user, name, dto.phone)
       if (duplicate) throw new BadRequestException(`与已有客户「${duplicate.name}」重复`)
-      if (!poolId) await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.ownerId ?? user.id)
+      if (!poolId)
+        await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.ownerId ?? user.id)
       else await this.pools.resolveTargetPool(user, 'customer', poolId)
       return { dto }
     }
@@ -2159,7 +2284,8 @@ export class CustomersService {
     if (!ids?.length) return all
     const wanted = new Set(ids)
     const selected = all.filter((item) => wanted.has(item.id))
-    if (selected.length !== wanted.size) throw new BadRequestException('选中数据包含不存在或无权导出的客户')
+    if (selected.length !== wanted.size)
+      throw new BadRequestException('选中数据包含不存在或无权导出的客户')
     return selected
   }
 
@@ -2215,14 +2341,17 @@ export class CustomersService {
         before: customer,
         after: null,
       })
-      if (customer.ownerId && customer.ownerId !== user.id) {
-        await this.notifications.notify(user.tenantId, customer.ownerId, {
-          type: 'system',
-          title: '客户已删除',
-          content: `${user.name} 删除了客户「${customer.name}」`,
-          link: '/customers',
-        })
-      }
+      await this.notifications.send({
+        tenantId: user.tenantId,
+        event: 'CUSTOMER_DELETED',
+        operatorId: user.id,
+        recipientIds: [customer.ownerId],
+        excludeSelf: true,
+        type: 'system',
+        title: '客户已删除',
+        content: `${user.name} 删除了客户「${customer.name}」`,
+        link: '/customers',
+      })
     }
   }
 
@@ -2230,7 +2359,8 @@ export class CustomersService {
     user: AuthUser,
     view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION',
   ): Promise<Prisma.CustomerWhereInput> {
-    if (!view) return (await this.dataScope.scopeFilter(user, 'menu:customer')) as Prisma.CustomerWhereInput
+    if (!view)
+      return (await this.dataScope.scopeFilter(user, 'menu:customer')) as Prisma.CustomerWhereInput
     if (view === 'SELF') return { ownerId: user.id }
     if (view === 'COLLABORATION') {
       return { teamMembers: { some: { tenantId: user.tenantId, userId: user.id } } }

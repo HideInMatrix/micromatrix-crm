@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import {
   type ContactVO,
   type FieldVO,
@@ -18,7 +23,7 @@ import { ExportTasksService } from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
-import { NotificationsService } from '../notifications/notifications.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { SavedViewsService } from '../saved-views/saved-views.service'
 import { CreateContactDto, QueryContactsDto, UpdateContactDto } from './dto/contact.dto'
 
@@ -40,7 +45,7 @@ export class ContactsService {
     private readonly savedViews: SavedViewsService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: BusinessNotificationsService,
   ) {}
 
   /** Cordys 独立联系人页：按联系人 owner/dept 数据范围分页。 */
@@ -96,9 +101,7 @@ export class ContactsService {
     const roles = user.roles.filter((role) => hasPermission(role.permissions, 'contact:read'))
     return {
       all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
-      dept: roles.some((role) =>
-        ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope),
-      ),
+      dept: roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
     }
   }
 
@@ -154,14 +157,17 @@ export class ContactsService {
       },
       include: contactInclude,
     })
-    if (contact.customer.ownerId && contact.customer.ownerId !== user.id) {
-      await this.notifications.notify(user.tenantId, contact.customer.ownerId, {
-        type: 'system',
-        title: '客户新增联系人',
-        content: `${user.name} 为客户「${contact.customer.name}」新增联系人「${contact.name}」`,
-        link: '/contacts',
-      })
-    }
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'CUSTOMER_CONCAT_ADD',
+      operatorId: user.id,
+      recipientIds: [contact.customer.ownerId],
+      excludeSelf: true,
+      type: 'system',
+      title: '客户新增联系人',
+      content: `${user.name} 为客户「${contact.customer.name}」新增联系人「${contact.name}」`,
+      link: '/contacts',
+    })
     return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
   }
 
@@ -187,13 +193,21 @@ export class ContactsService {
         ...validated,
       } as Prisma.InputJsonValue,
     }
-    const contact = await this.prisma.contact.update({ where: { id }, data, include: contactInclude })
+    const contact = await this.prisma.contact.update({
+      where: { id },
+      data,
+      include: contactInclude,
+    })
     return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
   }
 
   async enable(user: AuthUser, id: string): Promise<ContactVO> {
     const existing = await this.ensureExists(user, id)
-    await this.assertWrite(user, existing, this.pickPermission(user, 'contact:update', 'customer:update'))
+    await this.assertWrite(
+      user,
+      existing,
+      this.pickPermission(user, 'contact:update', 'customer:update'),
+    )
     const contact = await this.prisma.contact.update({
       where: { id },
       data: { enable: true, disableReason: null },
@@ -204,7 +218,11 @@ export class ContactsService {
 
   async disable(user: AuthUser, id: string, reason: string): Promise<ContactVO> {
     const existing = await this.ensureExists(user, id)
-    await this.assertWrite(user, existing, this.pickPermission(user, 'contact:update', 'customer:update'))
+    await this.assertWrite(
+      user,
+      existing,
+      this.pickPermission(user, 'contact:update', 'customer:update'),
+    )
     const normalized = reason.trim()
     if (!normalized) throw new BadRequestException('请填写停用原因')
     const contact = await this.prisma.contact.update({
@@ -225,7 +243,11 @@ export class ContactsService {
 
   async remove(user: AuthUser, id: string) {
     const contact = await this.ensureExists(user, id)
-    await this.assertWrite(user, contact, this.pickPermission(user, 'contact:delete', 'customer:delete'))
+    await this.assertWrite(
+      user,
+      contact,
+      this.pickPermission(user, 'contact:delete', 'customer:delete'),
+    )
     const linked = await this.prisma.opportunity.count({
       where: { tenantId: user.tenantId, contactId: id },
     })
@@ -242,7 +264,10 @@ export class ContactsService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto): Promise<BatchAffectResult> {
     const field = await this.metadata.resolveEditableField(user.tenantId, MODULE, dto.fieldId)
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
-    const scope = (await this.dataScope.scopeFilter(user, 'contact:read')) as Prisma.ContactWhereInput
+    const scope = (await this.dataScope.scopeFilter(
+      user,
+      'contact:read',
+    )) as Prisma.ContactWhereInput
     const contacts = await this.prisma.contact.findMany({
       where: { tenantId: user.tenantId, id: { in: dto.ids }, AND: [scope] },
     })
@@ -350,7 +375,13 @@ export class ContactsService {
       const rowErrors = [...row.errors]
       if (rowErrors.length === 0) {
         try {
-          const prepared = await this.prepareImportRow(user, row.values, fields, importType, row.resourceId)
+          const prepared = await this.prepareImportRow(
+            user,
+            row.values,
+            fields,
+            importType,
+            row.resourceId,
+          )
           if (importType === 'ADD') {
             await this.create(user, prepared as CreateContactDto)
           } else {
@@ -376,10 +407,13 @@ export class ContactsService {
     query: QueryContactsDto,
     input: { fileName: string; headList: string[]; ids?: string[] },
   ) {
-    if (!hasPermission(user.permissions, 'contact:export')) throw new ForbiddenException('无联系人导出权限')
+    if (!hasPermission(user.permissions, 'contact:export'))
+      throw new ForbiddenException('无联系人导出权限')
     const items = await this.collectExportItems(user, query, input.ids)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const fieldMap = new Map(fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+    const fieldMap = new Map(
+      fields.filter((field) => !field.hidden).map((field) => [field.key, field]),
+    )
     const extra = new Map([
       ['disableReason', '停用原因'],
       ['createdAt', '创建时间'],
@@ -467,7 +501,8 @@ export class ContactsService {
     if (!ids?.length) return all
     const wanted = new Set(ids)
     const selected = all.filter((item) => wanted.has(item.id))
-    if (selected.length !== wanted.size) throw new ForbiddenException('选中数据包含不存在或无权导出的联系人')
+    if (selected.length !== wanted.size)
+      throw new ForbiddenException('选中数据包含不存在或无权导出的联系人')
     return selected
   }
 
@@ -490,7 +525,8 @@ export class ContactsService {
   }
 
   private async assertWrite(user: AuthUser, contact: Contact, permission: string) {
-    if (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId, permission)) return
+    if (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId, permission))
+      return
     const access = await this.customerAccess.assertRead(user, contact.customerId)
     if (access.dataScope) return
     if (access.collaborationType === 'COLLABORATION' && contact.ownerId === user.id) return
@@ -498,7 +534,10 @@ export class ContactsService {
   }
 
   private async ensureIndependentInScope(user: AuthUser, id: string) {
-    const scope = (await this.dataScope.scopeFilter(user, 'contact:import')) as Prisma.ContactWhereInput
+    const scope = (await this.dataScope.scopeFilter(
+      user,
+      'contact:import',
+    )) as Prisma.ContactWhereInput
     return this.prisma.contact.findFirst({
       where: { id, tenantId: user.tenantId, AND: [scope] },
     })
@@ -577,12 +616,14 @@ export class ContactsService {
       take: 2,
     })
     if (matches.length === 0) throw new BadRequestException(`客户「${input}」不存在`)
-    if (matches.length > 1) throw new BadRequestException(`客户名称「${input}」不唯一，请填写客户 ID`)
+    if (matches.length > 1)
+      throw new BadRequestException(`客户名称「${input}」不唯一，请填写客户 ID`)
     return matches[0].id
   }
 
   private assertIndependentReadPermission(user: AuthUser) {
-    if (!hasPermission(user.permissions, 'contact:read')) throw new ForbiddenException('无联系人查看权限')
+    if (!hasPermission(user.permissions, 'contact:read'))
+      throw new ForbiddenException('无联系人查看权限')
   }
 
   private async assertContactUniqueRules(
@@ -596,7 +637,8 @@ export class ContactsService {
       ['phone', values.phone],
     ] as const
     for (const [key, raw] of checks) {
-      if (!fields.get(key)?.config?.unique || raw === undefined || raw === null || raw === '') continue
+      if (!fields.get(key)?.config?.unique || raw === undefined || raw === null || raw === '')
+        continue
       const value = raw.trim()
       if (!value) continue
       const duplicate = await this.prisma.contact.findFirst({
@@ -612,7 +654,8 @@ export class ContactsService {
   }
 
   private assertIndependentImportPermission(user: AuthUser) {
-    if (!hasPermission(user.permissions, 'contact:import')) throw new ForbiddenException('无联系人导入权限')
+    if (!hasPermission(user.permissions, 'contact:import'))
+      throw new ForbiddenException('无联系人导入权限')
   }
 
   private toVO(contact: ContactWithRelations, fields: FieldVO[]): ContactVO {

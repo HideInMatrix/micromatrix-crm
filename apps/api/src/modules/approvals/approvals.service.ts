@@ -4,15 +4,13 @@ import {
   ApprovalInstanceVO,
   ApprovalModule,
   ApprovalNodeConfig,
+  type MessageTaskEvent,
   PaginatedResult,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import {
-  ApprovalInstance,
-  ApprovalTask,
-  Prisma,
-} from '../../generated/prisma/client'
+import { ApprovalInstance, ApprovalTask, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { SaveFlowDto } from './dto/approval.dto'
 
@@ -29,6 +27,7 @@ export class ApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly businessNotifications: BusinessNotificationsService,
   ) {}
 
   // ===== 流程配置 =====
@@ -129,7 +128,7 @@ export class ApprovalsService {
     })
 
     await this.setBizStatus(module, targetId, 'PENDING')
-    await this.advance(instance.id)
+    await this.advance(instance.id, user.id)
     return { id: instance.id, name: target.name }
   }
 
@@ -154,9 +153,9 @@ export class ApprovalsService {
         where: { instanceId: instance.id, nodeIndex: task.nodeIndex, status: 'PENDING' },
         data: { status: 'SKIPPED' },
       })
-      await this.advance(instance.id)
+      await this.advance(instance.id, user.id)
     } else if (siblings.length === 0) {
-      await this.advance(instance.id)
+      await this.advance(instance.id, user.id)
     }
     return { id: taskId, name: instance.targetName }
   }
@@ -183,11 +182,9 @@ export class ApprovalsService {
       }),
     ])
     await this.setBizStatus(instance.module, instance.targetId, 'REJECTED')
-    await this.notifications.notify(instance.tenantId, instance.submitterId, {
-      type: 'approval',
+    await this.sendApprovalResult(instance, user.id, {
       title: '审批被驳回',
       content: `「${instance.targetName}」被 ${user.name} 驳回：${comment}`,
-      link: '/approvals',
     })
     return { id: taskId, name: instance.targetName }
   }
@@ -216,7 +213,11 @@ export class ApprovalsService {
 
   // ===== 查询 =====
 
-  async myPending(user: AuthUser, page: number, pageSize: number): Promise<PaginatedResult<ApprovalInstanceVO>> {
+  async myPending(
+    user: AuthUser,
+    page: number,
+    pageSize: number,
+  ): Promise<PaginatedResult<ApprovalInstanceVO>> {
     const where: Prisma.ApprovalTaskWhereInput = {
       tenantId: user.tenantId,
       approverId: user.id,
@@ -238,7 +239,11 @@ export class ApprovalsService {
     return { items, total, page, pageSize }
   }
 
-  async myApplications(user: AuthUser, page: number, pageSize: number): Promise<PaginatedResult<ApprovalInstanceVO>> {
+  async myApplications(
+    user: AuthUser,
+    page: number,
+    pageSize: number,
+  ): Promise<PaginatedResult<ApprovalInstanceVO>> {
     const where: Prisma.ApprovalInstanceWhereInput = {
       tenantId: user.tenantId,
       submitterId: user.id,
@@ -258,7 +263,11 @@ export class ApprovalsService {
   }
 
   /** 已办：我处理过的 */
-  async myHandled(user: AuthUser, page: number, pageSize: number): Promise<PaginatedResult<ApprovalInstanceVO>> {
+  async myHandled(
+    user: AuthUser,
+    page: number,
+    pageSize: number,
+  ): Promise<PaginatedResult<ApprovalInstanceVO>> {
     const where: Prisma.ApprovalTaskWhereInput = {
       tenantId: user.tenantId,
       approverId: user.id,
@@ -281,7 +290,11 @@ export class ApprovalsService {
   }
 
   /** 某业务对象的最新审批实例（详情时间线） */
-  async instanceForTarget(user: AuthUser, module: string, targetId: string): Promise<ApprovalInstanceVO | null> {
+  async instanceForTarget(
+    user: AuthUser,
+    module: string,
+    targetId: string,
+  ): Promise<ApprovalInstanceVO | null> {
     const instance = await this.prisma.approvalInstance.findFirst({
       where: { tenantId: user.tenantId, module, targetId },
       include: { tasks: true },
@@ -294,7 +307,7 @@ export class ApprovalsService {
   // ===== 引擎内部 =====
 
   /** 推进到下一个有审批人的节点；全部走完则通过 */
-  private async advance(instanceId: string) {
+  private async advance(instanceId: string, operatorId?: string) {
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
       where: { id: instanceId },
     })
@@ -306,7 +319,7 @@ export class ApprovalsService {
     for (;;) {
       nodeIndex += 1
       if (nodeIndex >= snapshot.length) {
-        await this.finalizeApproved(instance)
+        await this.finalizeApproved(instance, operatorId)
         return
       }
       const approvers = await this.resolveApprovers(
@@ -342,17 +355,48 @@ export class ApprovalsService {
     }
   }
 
-  private async finalizeApproved(instance: ApprovalInstance) {
+  private async finalizeApproved(instance: ApprovalInstance, operatorId?: string) {
     await this.prisma.approvalInstance.update({
       where: { id: instance.id },
       data: { status: 'APPROVED', finishedAt: new Date() },
     })
     await this.setBizStatus(instance.module, instance.targetId, 'APPROVED')
     await this.effectApproved(instance.module, instance.targetId)
-    await this.notifications.notify(instance.tenantId, instance.submitterId, {
-      type: 'approval',
+    await this.sendApprovalResult(instance, operatorId, {
       title: '审批已通过',
       content: `「${instance.targetName}」已审批通过`,
+    })
+  }
+
+  private approvalResultEvent(module: string): MessageTaskEvent | undefined {
+    if (module === 'quote') return 'BUSINESS_QUOTATION_APPROVAL'
+    if (module === 'contract') return 'CONTRACT_APPROVAL'
+    if (module === 'order') return 'ORDER_APPROVAL'
+    return undefined
+  }
+
+  private async sendApprovalResult(
+    instance: ApprovalInstance,
+    operatorId: string | undefined,
+    message: { title: string; content: string },
+  ) {
+    const event = this.approvalResultEvent(instance.module)
+    if (event) {
+      await this.businessNotifications.send({
+        tenantId: instance.tenantId,
+        event,
+        operatorId,
+        recipientIds: [instance.submitterId],
+        excludeSelf: true,
+        type: 'approval',
+        ...message,
+        link: '/approvals',
+      })
+      return
+    }
+    await this.notifications.notify(instance.tenantId, instance.submitterId, {
+      type: 'approval',
+      ...message,
       link: '/approvals',
     })
   }
@@ -405,27 +449,49 @@ export class ApprovalsService {
     })
   }
 
-  private async targetInfo(tenantId: string, module: ApprovalModule, targetId: string): Promise<TargetInfo> {
+  private async targetInfo(
+    tenantId: string,
+    module: ApprovalModule,
+    targetId: string,
+  ): Promise<TargetInfo> {
     switch (module) {
       case 'quote': {
         const quote = await this.prisma.quote.findFirst({ where: { id: targetId, tenantId } })
         if (!quote) throw new NotFoundException('报价不存在')
-        return { name: `报价 ${quote.name}`, amount: Number(quote.totalAmount), approvalStatus: quote.approvalStatus }
+        return {
+          name: `报价 ${quote.name}`,
+          amount: Number(quote.totalAmount),
+          approvalStatus: quote.approvalStatus,
+        }
       }
       case 'contract': {
         const contract = await this.prisma.contract.findFirst({ where: { id: targetId, tenantId } })
         if (!contract) throw new NotFoundException('合同不存在')
-        return { name: `合同 ${contract.name}`, amount: Number(contract.amount), approvalStatus: contract.approvalStatus }
+        return {
+          name: `合同 ${contract.name}`,
+          amount: Number(contract.amount),
+          approvalStatus: contract.approvalStatus,
+        }
       }
       case 'order': {
         const order = await this.prisma.order.findFirst({ where: { id: targetId, tenantId } })
         if (!order) throw new NotFoundException('订单不存在')
-        return { name: `订单 ${order.name}`, amount: Number(order.amount), approvalStatus: order.approvalStatus }
+        return {
+          name: `订单 ${order.name}`,
+          amount: Number(order.amount),
+          approvalStatus: order.approvalStatus,
+        }
       }
       case 'receivableRecord': {
-        const record = await this.prisma.receivableRecord.findFirst({ where: { id: targetId, tenantId } })
+        const record = await this.prisma.receivableRecord.findFirst({
+          where: { id: targetId, tenantId },
+        })
         if (!record) throw new NotFoundException('回款记录不存在')
-        return { name: `回款 ¥${Number(record.amount)}`, amount: Number(record.amount), approvalStatus: record.approvalStatus }
+        return {
+          name: `回款 ¥${Number(record.amount)}`,
+          amount: Number(record.amount),
+          approvalStatus: record.approvalStatus,
+        }
       }
     }
   }
@@ -455,7 +521,10 @@ export class ApprovalsService {
         await this.prisma.quote.update({ where: { id: targetId }, data: { status: 'CONFIRMED' } })
         break
       case 'contract':
-        await this.prisma.contract.update({ where: { id: targetId }, data: { status: 'EXECUTING' } })
+        await this.prisma.contract.update({
+          where: { id: targetId },
+          data: { status: 'EXECUTING' },
+        })
         break
       default:
         break

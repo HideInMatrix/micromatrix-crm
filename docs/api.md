@@ -126,7 +126,7 @@ DELETE /follow-up-plans/{id}
 - 每天 09:00 扫描当天到期的未结束计划，发送 `follow_plan` 站内通知；`dueNotifiedAt` 保证同一天只提醒一次，修改计划时间会重置提醒标记。
 - 顶部 `event` 已进入 `/follow-plans`；PC/Mobile 和客户 360 使用同一 API。
 
-## 消息设置（W2.3）
+## 消息设置与业务触发（W2.3-W2.4）
 
 ```text
 GET   /message-settings
@@ -139,7 +139,9 @@ POST  /message-settings/batch             body: { systemEnabled?, emailEnabled? 
 - 列表固定返回 Cordys 五组 35 个事件，数据库只保存租户覆盖值；默认 `systemEnabled=true / emailEnabled=false`。
 - `config` 包含 `timeList / userIds / roleIds / ownerEnable / ownerLevel / roleEnable`。负责人 `OWNER` 必须保留；成员和角色必须属于当前租户。
 - 仅 8 个报价/合同事件接受范围配置，仅 `BUSINESS_QUOTATION_EXPIRING / CONTRACT_EXPIRING / CONTRACT_PAYMENT_EXPIRING` 接受 1 至 10 条不重复的提前天数。
-- `NotificationsService` 的业务发送输入可带事件编码；系统消息关闭时不落库且不触发 SSE。W2.3 已先接入三类跟进计划到期事件。
+- `NotificationsService` 的业务发送输入可带事件编码；系统消息关闭时不落库且不触发 SSE。`BusinessNotificationsService` 统一处理业务接收人去重、排除操作者、租户/成员状态过滤和发送异常隔离。
+- W2.4 已接入当前模型可准确表达的 29 个业务事件；连同 W2.3 三类跟进计划事件共 32/35。合同归档、合同作废和发票审批没有等价领域动作，禁止使用其他动作冒充。
+- 报价、合同和回款计划的即将到期/当天到期由每天 08:00 的内部任务执行；任务读取同一设置接口保存的开关、`timeList` 和接收范围，不新增公开的手工触发 API。
 - 当前邮件发送器未接入，Web 明确禁用邮件开关；公告和第三方平台通知不属于本阶段。
 
 ## 多公海 / 多线索池自动回收规则
