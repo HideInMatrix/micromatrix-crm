@@ -80,7 +80,7 @@ pnpm smoke
 - 已读取 Cordys FollowUpPlan 的 Web、Mobile、API、Controller、Service、Domain、Mapper、migration、提醒任务和转跟进记录交互。
 - 已确认四种状态、新建默认值、线索/客户/商机目标表达、负责人写权限、客户协作权限、列表排序与“我的计划”语义。
 - 已确认 Cordys 当前转记录采用两次前端请求，提醒查询还附带 `owner = create_user` 限制；MicroMatrix 分别采用事务式转换和支持代建计划提醒的加固设计。
-- 已建立 `specs/follow-up-plan-parity/` 下的 requirements、design、tasks。
+- 已建立 `docs/specs/follow-up-plan-parity/` 下的 requirements、design、tasks。
 
 ### 本阶段落地范围
 

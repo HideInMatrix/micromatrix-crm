@@ -14,6 +14,7 @@
 | [conventions.md](./conventions.md)                                 | 开发约定：新增业务对象的标准接入手册                                            |
 | [data-model.md](./data-model.md)                                   | 数据模型说明与实体关系                                                          |
 | [api.md](./api.md)                                                 | 接口文档（Swagger）使用指南与导入方式                                           |
+| [specs/README.md](./specs/README.md)                               | 需求、技术设计与实施任务规格索引                                                |
 
 ## 快速上下文
 
@@ -22,3 +23,4 @@
 - 当前主线：[cordys-wave2-execution-plan.md](./cordys-wave2-execution-plan.md)；W2.1 顶部导航、W2.2 跟进计划与 W2.3 消息设置底座闭环已完成
 - 全链路回归：`pnpm smoke`（当前 **207 条实际断言**）+ `pnpm --filter @micromatrix/api test:rules`（21 条规则与公共底座单测）；W2.3 已使用本地 PostgreSQL / Redis 真实链路执行验收
 - 启动方式与演示账号见根目录 [README.md](../README.md)
+- 文档归档约定：根目录只保留项目入口 `README.md`；其余项目文档统一放在 `docs/`，上游 `CordysCRM/` 自带文档保持原位
