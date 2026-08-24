@@ -43,7 +43,7 @@ monorepo：`apps/api`（NestJS CJS）、`apps/web`（单一 Vite ESM 前端，�
 
 `CordysCRM/` 是项目内的功能参考基准，不作为 MicroMatrix CRM 的运行时依赖。后续开发采用“业务语义迁移”，而不是 Java 源码逐行翻译。
 
-当前执行记录见 [CordysCRM Wave 2 执行计划](./cordys-wave2-execution-plan.md)：W2.1 顶部导航与 W2.2 跟进计划均已按源码优先流程完成验收。
+当前执行记录见 [CordysCRM Wave 2 执行计划](./cordys-wave2-execution-plan.md)：W2.1 顶部导航、W2.2 跟进计划与 W2.3 消息设置底座均已按源码优先流程完成验收。
 
 ```mermaid
 flowchart LR
@@ -138,16 +138,16 @@ flowchart LR
 
 ## 踩坑记录（环境与版本）
 
-| 问题 | 结论 |
-| --- | --- |
-| postgres:18 镜像启动崩溃 | 18+ 数据卷挂载点从 `/var/lib/postgresql/data` 改为 `/var/lib/postgresql`（官方为支持 pg_upgrade 的破坏性变更） |
-| Prisma 7 大版本变化 | 连接串移至 `prisma.config.ts`；生成器 `prisma-client` 输出 TS 源码到 `src/generated`；运行时必须驱动适配器（`@prisma/adapter-pg`）；`migrate dev` 不再自动 generate |
-| Prisma 生成代码被 Node 误判 ESM | CJS 工程必须在生成器声明 `moduleFormat = "cjs"`，否则生成代码含 `import.meta` 触发 Node 语法检测崩溃 |
-| TypeScript 版本 | npm latest 已是 TS7（原生编译器），typescript-eslint 等生态支持上限 <6.1，全仓固定 `~6.0.x`；TS6 移除 `baseUrl`、`moduleResolution: node10`，需用 NodeNext/Bundler |
-| nest build 静默失败 | 与 TS6 组合下出现清空 dist 却不发射的情况，api 构建改为原生 `tsc -p tsconfig.build.json`，dev 用 `tsc -w` + `node --watch` |
-| 共享包 CJS 在 Vite dev 白屏 | dev 模式对 workspace 软链包不做 CJS 预构建，浏览器按 ESM 解析命名导出失败；解法：`apps/web` 的 Vite alias 直接指向 `packages/shared/src/index.ts`（源码引用，附带热更新），API 继续用 CJS 产物 |
-| PC/Mobile 单工程 | `apps/web` 同时注册 Element Plus Resolver 与 Vant Resolver；移动 viewport 启动时再加载 `@vant/touch-emulator`，避免桌面 PC 页面无意义地启用触摸模拟 |
-| npm 网络 | 项目级 `.npmrc` 指向 npmmirror 镜像源 |
+| 问题                            | 结论                                                                                                                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| postgres:18 镜像启动崩溃        | 18+ 数据卷挂载点从 `/var/lib/postgresql/data` 改为 `/var/lib/postgresql`（官方为支持 pg_upgrade 的破坏性变更）                                                                                 |
+| Prisma 7 大版本变化             | 连接串移至 `prisma.config.ts`；生成器 `prisma-client` 输出 TS 源码到 `src/generated`；运行时必须驱动适配器（`@prisma/adapter-pg`）；`migrate dev` 不再自动 generate                            |
+| Prisma 生成代码被 Node 误判 ESM | CJS 工程必须在生成器声明 `moduleFormat = "cjs"`，否则生成代码含 `import.meta` 触发 Node 语法检测崩溃                                                                                           |
+| TypeScript 版本                 | npm latest 已是 TS7（原生编译器），typescript-eslint 等生态支持上限 <6.1，全仓固定 `~6.0.x`；TS6 移除 `baseUrl`、`moduleResolution: node10`，需用 NodeNext/Bundler                             |
+| nest build 静默失败             | 与 TS6 组合下出现清空 dist 却不发射的情况，api 构建改为原生 `tsc -p tsconfig.build.json`，dev 用 `tsc -w` + `node --watch`                                                                     |
+| 共享包 CJS 在 Vite dev 白屏     | dev 模式对 workspace 软链包不做 CJS 预构建，浏览器按 ESM 解析命名导出失败；解法：`apps/web` 的 Vite alias 直接指向 `packages/shared/src/index.ts`（源码引用，附带热更新），API 继续用 CJS 产物 |
+| PC/Mobile 单工程                | `apps/web` 同时注册 Element Plus Resolver 与 Vant Resolver；移动 viewport 启动时再加载 `@vant/touch-emulator`，避免桌面 PC 页面无意义地启用触摸模拟                                            |
+| npm 网络                        | 项目级 `.npmrc` 指向 npmmirror 镜像源                                                                                                                                                          |
 
 ## 安全基线
 

@@ -4,27 +4,27 @@
 
 ## 当前实例菜单
 
-| Cordys 菜单 | MicroMatrix 路由 | 说明 |
-| --- | --- | --- |
-| 首页 | `/dashboard` | 已实现 |
-| 线索 | `/leads` | 已实现；线索池作为页内页签 |
-| 客户 | `/customers` | 已实现；联系人和客户公海后续按 Cordys 页内导航收口 |
-| 仪表板 | `/reports` | 已实现（ECharts） |
-| 自定义表单 | `/custom-forms` | 菜单与路由已就位，内容待建设 |
-| 订单 | `/orders` | 已实现 |
-| 系统 | `/system/*` | 二级菜单见下表 |
+| Cordys 菜单 | MicroMatrix 路由 | 说明                                               |
+| ----------- | ---------------- | -------------------------------------------------- |
+| 首页        | `/dashboard`     | 已实现                                             |
+| 线索        | `/leads`         | 已实现；线索池作为页内页签                         |
+| 客户        | `/customers`     | 已实现；联系人和客户公海后续按 Cordys 页内导航收口 |
+| 仪表板      | `/reports`       | 已实现（ECharts）                                  |
+| 自定义表单  | `/custom-forms`  | 菜单与路由已就位，内容待建设                       |
+| 订单        | `/orders`        | 已实现                                             |
+| 系统        | `/system/*`      | 二级菜单见下表                                     |
 
 ### 系统二级菜单
 
-| Cordys 菜单 | MicroMatrix 路由 | 说明 |
-| --- | --- | --- |
-| 组织架构 | `/system/departments` | 部门已实现；后续将独立成员页收入该模块 |
-| 角色权限 | `/system/roles` | 已实现 |
-| 模块配置 | `/system/modules` | 部分实现，下一对齐主线 |
-| 消息设置 | `/system/messages` | 菜单与路由已就位，内容待建设 |
-| 流程设置 | `/system/approval-flows` | 基础审批流已实现 |
-| 企业设置 | `/system/settings` | 部分实现 |
-| 系统日志 | `/system/logs` | 部分实现 |
+| Cordys 菜单 | MicroMatrix 路由         | 说明                                                              |
+| ----------- | ------------------------ | ----------------------------------------------------------------- |
+| 组织架构    | `/system/departments`    | 部门已实现；后续将独立成员页收入该模块                            |
+| 角色权限    | `/system/roles`          | 已实现                                                            |
+| 模块配置    | `/system/modules`        | 部分实现，下一对齐主线                                            |
+| 消息设置    | `/system/messages`       | W2.3 已实现五组 35 事件、系统消息开关、邮件通道状态与到期范围配置 |
+| 流程设置    | `/system/approval-flows` | 基础审批流已实现                                                  |
+| 企业设置    | `/system/settings`       | 部分实现                                                          |
+| 系统日志    | `/system/logs`           | 部分实现                                                          |
 
 ## 隐藏但不删除的已有模块
 

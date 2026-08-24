@@ -138,6 +138,90 @@ check(
     JSON.stringify(expectedTopNavigation),
 )
 
+// 1.2 W2.3 消息设置：固定事件目录、租户开关、范围配置与权限
+const initialMessageSettings = await get('/message-settings', admin.headers)
+const initialMessageItems = initialMessageSettings.flatMap((group) => group.items)
+check(
+  'W2.3 消息目录与 Cordys 五组 35 事件一致',
+  initialMessageSettings.length === 5 && initialMessageItems.length === 35,
+)
+const customerAddSetting = initialMessageItems.find((item) => item.event === 'CUSTOMER_ADD')
+const disableCustomerAdd = await request('PATCH', '/message-settings/CUSTOMER_ADD', admin.headers, {
+  module: 'CUSTOMER',
+  systemEnabled: false,
+})
+check('W2.3 管理员可关闭单个系统消息事件', disableCustomerAdd.ok)
+const persistedMessageSettings = await get('/message-settings', admin.headers)
+check(
+  'W2.3 单项开关刷新后持久化',
+  persistedMessageSettings
+    .flatMap((group) => group.items)
+    .find((item) => item.event === 'CUSTOMER_ADD')?.systemEnabled === false,
+)
+const forbiddenMessageSetting = await request(
+  'PATCH',
+  '/message-settings/CUSTOMER_ADD',
+  sales.headers,
+  { module: 'CUSTOMER', systemEnabled: true },
+)
+check('W2.3 无更新权限成员不能修改消息设置', forbiddenMessageSetting.status === 403)
+const contractExpiringConfig = await get(
+  '/message-settings/CONTRACT_EXPIRING/config',
+  admin.headers,
+)
+check(
+  'W2.3 合同即将到期默认提前 3 天并通知负责人',
+  contractExpiringConfig.timeList?.[0]?.timeValue === 3 &&
+    contractExpiringConfig.userIds?.includes('OWNER'),
+)
+const updateMessageConfig = await request(
+  'PATCH',
+  '/message-settings/CONTRACT_EXPIRING',
+  admin.headers,
+  {
+    module: 'CONTRACT',
+    config: {
+      timeList: [
+        { timeValue: 3, timeUnit: 'DAY' },
+        { timeValue: 7, timeUnit: 'DAY' },
+      ],
+      userIds: ['OWNER'],
+      roleIds: [],
+      ownerEnable: true,
+      ownerLevel: 0,
+      roleEnable: false,
+    },
+  },
+)
+check('W2.3 到期时间与通知范围可保存', updateMessageConfig.ok)
+const disableAllMessages = await request('POST', '/message-settings/batch', admin.headers, {
+  systemEnabled: false,
+})
+const disabledAllMessageBody = await disableAllMessages.json()
+check(
+  'W2.3 系统消息总开关批量生效',
+  disableAllMessages.ok &&
+    disabledAllMessageBody.flatMap((group) => group.items).every((item) => !item.systemEnabled),
+)
+await request('POST', '/message-settings/batch', admin.headers, { systemEnabled: true })
+await request('PATCH', '/message-settings/CONTRACT_EXPIRING', admin.headers, {
+  module: 'CONTRACT',
+  config: {
+    timeList: [{ timeValue: 3, timeUnit: 'DAY' }],
+    userIds: ['OWNER'],
+    roleIds: [],
+    ownerEnable: false,
+    ownerLevel: 0,
+    roleEnable: false,
+  },
+})
+const restoredMessageSettings = await get('/message-settings', admin.headers)
+check(
+  'W2.3 消息设置 smoke 已恢复默认开关',
+  Boolean(customerAddSetting) &&
+    restoredMessageSettings.flatMap((group) => group.items).every((item) => item.systemEnabled),
+)
+
 // 2. 数据范围
 const [adminCustomers, managerCustomers, salesCustomers] = await Promise.all([
   get('/customers?pageSize=100', admin.headers),
@@ -156,20 +240,34 @@ const [adminCustomerTabs, managerCustomerTabs, salesCustomerTabs] = await Promis
   get('/customers/tab', manager.headers),
   get('/customers/tab', sales.headers),
 ])
-check('客户系统视图：admin 显示全部/部门', adminCustomerTabs.all === true && adminCustomerTabs.dept === true)
-check('客户系统视图：部门主管仅显示部门', managerCustomerTabs.all === false && managerCustomerTabs.dept === true)
-check('客户系统视图：SELF 角色不显示全部/部门', salesCustomerTabs.all === false && salesCustomerTabs.dept === false)
+check(
+  '客户系统视图：admin 显示全部/部门',
+  adminCustomerTabs.all === true && adminCustomerTabs.dept === true,
+)
+check(
+  '客户系统视图：部门主管仅显示部门',
+  managerCustomerTabs.all === false && managerCustomerTabs.dept === true,
+)
+check(
+  '客户系统视图：SELF 角色不显示全部/部门',
+  salesCustomerTabs.all === false && salesCustomerTabs.dept === false,
+)
 
-const [adminAllCustomers, adminSelfCustomers, managerDeptCustomers, salesSelfCustomers] = await Promise.all([
-  get('/customers?view=ALL&pageSize=100', admin.headers),
-  get('/customers?view=SELF&pageSize=100', admin.headers),
-  get('/customers?view=DEPARTMENT&pageSize=100', manager.headers),
-  get('/customers?view=SELF&pageSize=100', sales.headers),
-])
+const [adminAllCustomers, adminSelfCustomers, managerDeptCustomers, salesSelfCustomers] =
+  await Promise.all([
+    get('/customers?view=ALL&pageSize=100', admin.headers),
+    get('/customers?view=SELF&pageSize=100', admin.headers),
+    get('/customers?view=DEPARTMENT&pageSize=100', manager.headers),
+    get('/customers?view=SELF&pageSize=100', sales.headers),
+  ])
 check('客户 ALL 视图仍受角色数据权限约束', adminAllCustomers.total >= adminSelfCustomers.total)
 check('客户 DEPARTMENT 视图可用于部门主管', Number.isInteger(managerDeptCustomers.total))
 check('客户 SELF 视图只返回当前负责人数据', Number.isInteger(salesSelfCustomers.total))
-const deniedSalesDeptView = await request('GET', '/customers?view=DEPARTMENT&pageSize=20', sales.headers)
+const deniedSalesDeptView = await request(
+  'GET',
+  '/customers?view=DEPARTMENT&pageSize=20',
+  sales.headers,
+)
 check('客户 DEPARTMENT 视图禁止 SELF 角色越权调用', deniedSalesDeptView.status === 403)
 
 // R6 组织、角色与自定义数据范围收口
@@ -238,12 +336,9 @@ const tempMember = await post('/members', admin.headers, {
 })
 check('R6 成员引用有效租户内部门与角色', Boolean(tempMember.id))
 
-const relatedRoleMember = await request(
-  'POST',
-  `/roles/${customRole.id}/members`,
-  admin.headers,
-  { userIds: [tempMember.id] },
-)
+const relatedRoleMember = await request('POST', `/roles/${customRole.id}/members`, admin.headers, {
+  userIds: [tempMember.id],
+})
 check('R7 可从角色侧批量关联成员', relatedRoleMember.ok)
 const customRoleMembers = await get(`/roles/${customRole.id}/members?pageSize=20`, admin.headers)
 check(
@@ -290,7 +385,10 @@ const customScopeCustomer = await post('/customers', admin.headers, {
   ownerId: sales.user.id,
 })
 const customScopeCustomers = await get('/customers?pageSize=100', customUser.headers)
-const customScopeCustomerDetail = await get(`/customers/${customScopeCustomer.id}`, customUser.headers)
+const customScopeCustomerDetail = await get(
+  `/customers/${customScopeCustomer.id}`,
+  customUser.headers,
+)
 check(
   'R7 menu:customer 仅合并拥有读取权限角色的 CUSTOM 范围（列表）',
   customScopeCustomers.items.some((customer) => customer.id === customScopeCustomer.id),
@@ -383,7 +481,8 @@ check(
 )
 check(
   '多池 Scope：未命中成员不可见专属线索池',
-  Array.isArray(managerPoolOptions) && !managerPoolOptions.some((pool) => pool.id === scopedLeadPool.id),
+  Array.isArray(managerPoolOptions) &&
+    !managerPoolOptions.some((pool) => pool.id === scopedLeadPool.id),
 )
 const batchLead = await post('/leads', admin.headers, {
   name: `批量领取线索-${stamp}`,
@@ -437,13 +536,16 @@ const recycledPoolRows = await get(
 )
 check(
   'FIXED 自动回收条件只命中临时线索并进入目标池',
-  Array.isArray(recycledPoolRows.items) && recycledPoolRows.items.some((item) => item.id === recycleLead.id),
+  Array.isArray(recycledPoolRows.items) &&
+    recycledPoolRows.items.some((item) => item.id === recycleLead.id),
 )
 const recycledHistory = await get(`/leads/${recycleLead.id}/owner-history`, sales.headers)
 check(
   '自动回收写入负责人历史',
   Array.isArray(recycledHistory) &&
-    recycledHistory.some((item) => item.ownerId === sales.user.id && item.poolId === autoRecyclePool.id),
+    recycledHistory.some(
+      (item) => item.ownerId === sales.user.id && item.poolId === autoRecyclePool.id,
+    ),
 )
 const deletedRecycleLead = await request('DELETE', `/leads/${recycleLead.id}`, admin.headers)
 check('自动回收临时线索可清理', deletedRecycleLead.ok)
@@ -492,7 +594,8 @@ check('线索转化（客户+联系人+商机）', Boolean(converted.customerId 
 const convertedLead = await get(`/leads/${lead.id}`, sales.headers)
 check(
   'R4 自动转换写 transitionType / transitionId',
-  convertedLead.transitionType === 'CUSTOMER' && convertedLead.transitionId === converted.customerId,
+  convertedLead.transitionType === 'CUSTOMER' &&
+    convertedLead.transitionId === converted.customerId,
 )
 const convertedLeadFollows = await get(
   `/follow-ups?targetType=lead&targetId=${lead.id}`,
@@ -548,16 +651,11 @@ check(
   'W2.2 负责人可编辑跟进计划',
   updatedFollowPlan.content === `W2.2 已更新计划-${stamp}` && updatedFollowPlan.method === '拜访',
 )
-const completedFollowPlan = await post(
-  `/follow-up-plans/${followPlan.id}/status`,
-  sales.headers,
-  { status: 'COMPLETED' },
-)
+const completedFollowPlan = await post(`/follow-up-plans/${followPlan.id}/status`, sales.headers, {
+  status: 'COMPLETED',
+})
 check('W2.2 跟进计划状态流转', completedFollowPlan.status === 'COMPLETED')
-const convertedFollowPlan = await post(
-  `/follow-up-plans/${followPlan.id}/convert`,
-  sales.headers,
-)
+const convertedFollowPlan = await post(`/follow-up-plans/${followPlan.id}/convert`, sales.headers)
 check(
   'W2.2 原子转跟进记录并回写记录 ID',
   convertedFollowPlan.converted === true && Boolean(convertedFollowPlan.convertedRecordId),
@@ -662,12 +760,10 @@ check(
     (item) => item.id === r4ReadOnlyCustomer.id && item.selectable === false,
   ),
 )
-const r4ReadOnlyDenied = await request(
-  'POST',
-  '/leads/re-transition/account',
-  sales.headers,
-  { clueIds: [r4ReadOnlyLead.id], customerId: r4ReadOnlyCustomer.id },
-)
+const r4ReadOnlyDenied = await request('POST', '/leads/re-transition/account', sales.headers, {
+  clueIds: [r4ReadOnlyLead.id],
+  customerId: r4ReadOnlyCustomer.id,
+})
 check('R4 Service 拒绝关联 READ_ONLY 协作客户', r4ReadOnlyDenied.status === 403)
 
 // R4：关联公海客户前先按公海规则领取。
@@ -841,12 +937,16 @@ if (!salesTeamMember) throw new Error('未创建 READ_ONLY 协作关系，无法
 const collaborationView = await get('/customers?view=COLLABORATION&pageSize=100', sales.headers)
 check(
   '客户 COLLABORATION 系统视图返回协作客户',
-  Array.isArray(collaborationView.items) && collaborationView.items.some((item) => item.id === collabCustomer.id),
+  Array.isArray(collaborationView.items) &&
+    collaborationView.items.some((item) => item.id === collabCustomer.id),
 )
 const readOnlyDetail = await get(`/customers/${collabCustomer.id}`, sales.headers)
 check('READ_ONLY 可读取客户详情', readOnlyDetail.id === collabCustomer.id)
 const readOnlyContacts = await get(`/contacts/list/${collabCustomer.id}`, sales.headers)
-check('READ_ONLY 不额外获得联系人列表', Array.isArray(readOnlyContacts) && readOnlyContacts.length === 0)
+check(
+  'READ_ONLY 不额外获得联系人列表',
+  Array.isArray(readOnlyContacts) && readOnlyContacts.length === 0,
+)
 const readOnlyFollow = await get(
   `/follow-ups?targetType=customer&targetId=${collabCustomer.id}`,
   sales.headers,
@@ -931,7 +1031,9 @@ const relationRows = await get(`/customers/${collabCustomer.id}/relations`, sale
 check(
   '客户关系列表返回集团与子公司',
   Array.isArray(relationRows) &&
-    relationRows.some((item) => item.relationType === 'GROUP' && item.customerId === relationGroup.id) &&
+    relationRows.some(
+      (item) => item.relationType === 'GROUP' && item.customerId === relationGroup.id,
+    ) &&
     relationRows.some(
       (item) => item.relationType === 'SUBSIDIARY' && item.customerId === relationSubsidiary.id,
     ),
@@ -1001,8 +1103,16 @@ check(
   '客户库容过滤：命中过滤条件的数据不计入容量',
   Boolean(capacityCustomerA.id && capacityCustomerB.id),
 )
-const deletedCapacityA = await request('DELETE', `/customers/${capacityCustomerA.id}`, manager.headers)
-const deletedCapacityB = await request('DELETE', `/customers/${capacityCustomerB.id}`, manager.headers)
+const deletedCapacityA = await request(
+  'DELETE',
+  `/customers/${capacityCustomerA.id}`,
+  manager.headers,
+)
+const deletedCapacityB = await request(
+  'DELETE',
+  `/customers/${capacityCustomerB.id}`,
+  manager.headers,
+)
 check('库容过滤临时客户可清理', deletedCapacityA.ok && deletedCapacityB.ok)
 const deletedFilteredCapacity = await request(
   'DELETE',
@@ -1029,11 +1139,16 @@ const leadBatchFieldResult = await post('/leads/batch/update', admin.headers, {
   fieldId: leadContactField?.id,
   fieldValue: leadBatchContactName,
 })
-const leadBatchRows = await get(`/leads?pageSize=20&keyword=${encodeURIComponent('批量编辑线索')}`, admin.headers)
+const leadBatchRows = await get(
+  `/leads?pageSize=20&keyword=${encodeURIComponent('批量编辑线索')}`,
+  admin.headers,
+)
 check(
   'Lead 批量字段修改支持字段 ID',
   leadBatchFieldResult.success === 2 &&
-    leadBatchRows.items?.filter((item) => leadBatchIds.includes(item.id)).every((item) => item.contactName === leadBatchContactName),
+    leadBatchRows.items
+      ?.filter((item) => leadBatchIds.includes(item.id))
+      .every((item) => item.contactName === leadBatchContactName),
 )
 const leadBatchOwnerResult = await post('/leads/batch/update', admin.headers, {
   ids: leadBatchIds,
@@ -1100,7 +1215,10 @@ const customerBatchOwnerResult = await post('/customers/batch/update', admin.hea
   fieldId: 'ownerId',
   fieldValue: manager.user.id,
 })
-const customerBatchHistory = await get(`/customers/${customerBatchA.id}/owner-history`, admin.headers)
+const customerBatchHistory = await get(
+  `/customers/${customerBatchA.id}/owner-history`,
+  admin.headers,
+)
 check(
   'Customer owner 批改支持字段 key 且写负责人历史',
   customerBatchOwnerResult.success === 2 &&
@@ -1121,7 +1239,8 @@ const customerCustomBatchDetail = await get(`/customers/${customerBatchA.id}`, a
 check(
   'Customer 自定义字段支持批量修改',
   customerCustomBatchResult.success === 2 &&
-    customerCustomBatchDetail.customData?.[customerBatchCustomField.key] === customerBatchCustomValue,
+    customerCustomBatchDetail.customData?.[customerBatchCustomField.key] ===
+      customerBatchCustomValue,
 )
 const protectedContact = await post('/contacts/add', admin.headers, {
   customerId: customerBatchA.id,
@@ -1143,7 +1262,9 @@ const opportunityProtectedDelete = await request('POST', '/customers/batch/delet
 })
 check('Customer 批量删除存在 Opportunity 引用时整批拒绝', opportunityProtectedDelete.status === 400)
 await request('DELETE', `/opportunities/${protectedOpportunity.id}`, admin.headers)
-const customerBatchDelete = await post('/customers/batch/delete', admin.headers, { ids: customerBatchIds })
+const customerBatchDelete = await post('/customers/batch/delete', admin.headers, {
+  ids: customerBatchIds,
+})
 check('Customer 无引用后允许整批删除', customerBatchDelete.success === 2)
 await request('DELETE', `/metadata/fields/${customerBatchCustomField.id}`, admin.headers)
 
@@ -1214,7 +1335,8 @@ const assignedPoolLeadRows = await get(
 )
 check(
   '线索池：owner 批改复用分配并离开池',
-  poolLeadAssignByUpdate.success === 1 && assignedPoolLeadRows.items?.some((item) => item.id === poolLeadOwner.id),
+  poolLeadAssignByUpdate.success === 1 &&
+    assignedPoolLeadRows.items?.some((item) => item.id === poolLeadOwner.id),
 )
 const poolLeadDelete = await post('/leads/pool/batch/delete', manager.headers, {
   poolId: managerLeadPool.id,
@@ -1231,8 +1353,12 @@ const managerCustomerPool = await post('/resource-pools', admin.headers, {
 })
 const poolCustomerA = await post('/customers', admin.headers, { name: `R1公海批改客户A-${stamp}` })
 const poolCustomerB = await post('/customers', admin.headers, { name: `R1公海批改客户B-${stamp}` })
-await post(`/customers/${poolCustomerA.id}/to-sea`, admin.headers, { poolId: managerCustomerPool.id })
-await post(`/customers/${poolCustomerB.id}/to-sea`, admin.headers, { poolId: managerCustomerPool.id })
+await post(`/customers/${poolCustomerA.id}/to-sea`, admin.headers, {
+  poolId: managerCustomerPool.id,
+})
+await post(`/customers/${poolCustomerB.id}/to-sea`, admin.headers, {
+  poolId: managerCustomerPool.id,
+})
 const deniedOpenSea360 = await request(
   'GET',
   `/customers/${poolCustomerA.id}/360/contracts?page=1&pageSize=10`,
@@ -1246,8 +1372,12 @@ const poolCustomerUpdate = await post('/customers/pool/batch/update', manager.he
   fieldValue: `137${stamp.slice(-8).padStart(8, '0')}`,
 })
 check('客户公海：独立权限 + Scope 命中时可批量修改', poolCustomerUpdate.success === 2)
-const poolCustomerOwner = await post('/customers', admin.headers, { name: `R1公海负责人批改-${stamp}` })
-await post(`/customers/${poolCustomerOwner.id}/to-sea`, admin.headers, { poolId: managerCustomerPool.id })
+const poolCustomerOwner = await post('/customers', admin.headers, {
+  name: `R1公海负责人批改-${stamp}`,
+})
+await post(`/customers/${poolCustomerOwner.id}/to-sea`, admin.headers, {
+  poolId: managerCustomerPool.id,
+})
 const poolCustomerAssignByUpdate = await post('/customers/pool/batch/update', manager.headers, {
   poolId: managerCustomerPool.id,
   ids: [poolCustomerOwner.id],
@@ -1325,7 +1455,10 @@ check(
 )
 const leadAddImportRes = await postXlsx('/leads/import', manager.headers, leadAddXlsx, 'ADD')
 const leadAddImport = await leadAddImportRes.json()
-const r2LeadRows = await get(`/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`, manager.headers)
+const r2LeadRows = await get(
+  `/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`,
+  manager.headers,
+)
 const r2Lead = r2LeadRows.items?.find((item) => item.name === r2LeadName)
 check(
   'R2 Lead ADD xlsx 正式导入',
@@ -1345,7 +1478,12 @@ const leadUpdatePrecheckRes = await postXlsx(
   'UPDATE',
 )
 const leadUpdatePrecheck = await leadUpdatePrecheckRes.json()
-const leadUpdateImportRes = await postXlsx('/leads/import', manager.headers, leadUpdateXlsx, 'UPDATE')
+const leadUpdateImportRes = await postXlsx(
+  '/leads/import',
+  manager.headers,
+  leadUpdateXlsx,
+  'UPDATE',
+)
 const leadUpdateImport = await leadUpdateImportRes.json()
 const updatedR2LeadRows = await get(
   `/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`,
@@ -1357,7 +1495,9 @@ check(
     leadUpdatePrecheck.successCount === 1 &&
     leadUpdateImportRes.ok &&
     leadUpdateImport.successCount === 1 &&
-    updatedR2LeadRows.items?.some((item) => item.id === r2Lead?.id && item.contactName === updatedLeadContact),
+    updatedR2LeadRows.items?.some(
+      (item) => item.id === r2Lead?.id && item.contactName === updatedLeadContact,
+    ),
 )
 
 const r2CustomerName = `R2导入客户-${stamp}`
@@ -1372,7 +1512,12 @@ const customerAddPrecheckRes = await postXlsx(
   'ADD',
 )
 const customerAddPrecheck = await customerAddPrecheckRes.json()
-const customerAddImportRes = await postXlsx('/customers/import', manager.headers, customerAddXlsx, 'ADD')
+const customerAddImportRes = await postXlsx(
+  '/customers/import',
+  manager.headers,
+  customerAddXlsx,
+  'ADD',
+)
 const customerAddImport = await customerAddImportRes.json()
 const r2CustomerRows = await get(
   `/customers?pageSize=20&keyword=${encodeURIComponent(r2CustomerName)}`,
@@ -1407,7 +1552,9 @@ const customerUpdateImportRes = await postXlsx(
   'UPDATE',
 )
 const customerUpdateImport = await customerUpdateImportRes.json()
-const updatedR2Customer = r2Customer?.id ? await get(`/customers/${r2Customer.id}`, manager.headers) : null
+const updatedR2Customer = r2Customer?.id
+  ? await get(`/customers/${r2Customer.id}`, manager.headers)
+  : null
 check(
   'R2 Customer UPDATE 以唯一ID更新',
   customerUpdatePrecheckRes.ok &&
@@ -1578,22 +1725,21 @@ const poolLeadExportRes = await request(
 const poolLeadExportTask = await poolLeadExportRes.json()
 check(
   'R2 线索池导出选中使用独立权限 + PoolMember',
-  poolLeadExportRes.ok && poolLeadExportTask.status === 'SUCCESS' && poolLeadExportTask.rowCount === 1,
+  poolLeadExportRes.ok &&
+    poolLeadExportTask.status === 'SUCCESS' &&
+    poolLeadExportTask.rowCount === 1,
 )
-const customerExportRes = await request(
-  'POST',
-  `/customers/export/select`,
-  manager.headers,
-  {
-    fileName: `R2客户导出-${stamp}`,
-    headList: ['name', 'phone'],
-    ids: [r2Customer.id],
-  },
-)
+const customerExportRes = await request('POST', `/customers/export/select`, manager.headers, {
+  fileName: `R2客户导出-${stamp}`,
+  headList: ['name', 'phone'],
+  ids: [r2Customer.id],
+})
 const customerExportTask = await customerExportRes.json()
 check(
   'R2 Customer 导出选中严格按 ids',
-  customerExportRes.ok && customerExportTask.status === 'SUCCESS' && customerExportTask.rowCount === 1,
+  customerExportRes.ok &&
+    customerExportTask.status === 'SUCCESS' &&
+    customerExportTask.rowCount === 1,
 )
 const poolCustomerExportRes = await request(
   'POST',
@@ -1627,7 +1773,10 @@ await request('DELETE', `/export-tasks/${poolCustomerExportTask.id}`, manager.he
 if (r2Lead?.id) await request('DELETE', `/leads/${r2Lead.id}`, manager.headers)
 if (r2Customer?.id) await request('DELETE', `/customers/${r2Customer.id}`, manager.headers)
 if (r2PoolLead?.id) {
-  await post('/leads/pool/batch/delete', manager.headers, { poolId: r2LeadPool.id, ids: [r2PoolLead.id] })
+  await post('/leads/pool/batch/delete', manager.headers, {
+    poolId: r2LeadPool.id,
+    ids: [r2PoolLead.id],
+  })
 }
 if (r2PoolCustomer?.id) {
   await post('/customers/pool/batch/delete', manager.headers, {
@@ -1644,7 +1793,10 @@ const contactTabsManager = await get('/contacts/tab', manager.headers)
 const contactTabsSales = await get('/contacts/tab', sales.headers)
 check('R3 Contact tab：ALL 角色显示全部和部门视图', contactTabsAdmin.all && contactTabsAdmin.dept)
 check('R3 Contact tab：部门角色只显示部门视图', !contactTabsManager.all && contactTabsManager.dept)
-check('R3 Contact tab：SELF 角色不显示全部/部门视图', !contactTabsSales.all && !contactTabsSales.dept)
+check(
+  'R3 Contact tab：SELF 角色不显示全部/部门视图',
+  !contactTabsSales.all && !contactTabsSales.dept,
+)
 
 const r3ContactField = await post('/metadata/contact/fields', admin.headers, {
   label: `R3联系人字段-${stamp}`,
@@ -1704,7 +1856,9 @@ const blankDisable = await request(
   { reason: '' },
 )
 check('R3 联系人停用原因必填', blankDisable.status === 400)
-await post(`/contacts/disable/${r3ManagerContact.id}`, manager.headers, { reason: `R3停用-${stamp}` })
+await post(`/contacts/disable/${r3ManagerContact.id}`, manager.headers, {
+  reason: `R3停用-${stamp}`,
+})
 const disabledContact = await get(`/contacts/get/${r3ManagerContact.id}`, manager.headers)
 check(
   'R3 联系人停用保存原因',
@@ -1712,7 +1866,10 @@ check(
 )
 await get(`/contacts/enable/${r3ManagerContact.id}`, manager.headers)
 const enabledContact = await get(`/contacts/get/${r3ManagerContact.id}`, manager.headers)
-check('R3 联系人重新启用会清空停用原因', enabledContact.enable === true && enabledContact.disableReason === null)
+check(
+  'R3 联系人重新启用会清空停用原因',
+  enabledContact.enable === true && enabledContact.disableReason === null,
+)
 
 const r3BatchValue = `R3批改-${stamp}`
 const r3BatchResult = await post('/contacts/batch/update', manager.headers, {
@@ -1740,7 +1897,10 @@ const r3Opportunity = await post('/opportunities', manager.headers, {
   contactId: r3ManagerContact.id,
 })
 check('R3 Opportunity 可绑定联系人', r3Opportunity.contactId === r3ManagerContact.id)
-const r3OpportunityCheck = await get(`/contacts/opportunity/check/${r3ManagerContact.id}`, manager.headers)
+const r3OpportunityCheck = await get(
+  `/contacts/opportunity/check/${r3ManagerContact.id}`,
+  manager.headers,
+)
 check('R3 删除前可检查商机关联', r3OpportunityCheck.linked && r3OpportunityCheck.count >= 1)
 const deniedLinkedContactDelete = await request(
   'GET',
@@ -1780,7 +1940,11 @@ check(
 
 const r3ImportedContactName = `R3导入联系人-${stamp}`
 const r3ContactAddXlsx = await buildXlsx(
-  [contactCustomerField?.label ?? '客户', contactNameField?.label ?? '姓名', contactPhoneField?.label ?? '电话'],
+  [
+    contactCustomerField?.label ?? '客户',
+    contactNameField?.label ?? '姓名',
+    contactPhoneField?.label ?? '电话',
+  ],
   [[r3Customer.name, r3ImportedContactName, `133${stamp.slice(-8).padStart(8, '0')}`]],
 )
 const r3ContactPrecheckRes = await postXlsx(
@@ -1790,7 +1954,12 @@ const r3ContactPrecheckRes = await postXlsx(
   'ADD',
 )
 const r3ContactPrecheck = await r3ContactPrecheckRes.json()
-const r3ContactImportRes = await postXlsx('/contacts/import', manager.headers, r3ContactAddXlsx, 'ADD')
+const r3ContactImportRes = await postXlsx(
+  '/contacts/import',
+  manager.headers,
+  r3ContactAddXlsx,
+  'ADD',
+)
 const r3ContactImport = await r3ContactImportRes.json()
 const r3ImportedPage = await post('/contacts/page', manager.headers, {
   page: 1,
@@ -1809,14 +1978,21 @@ check(
 )
 
 if (r3ImportedContact?.id) {
-  await post(`/contacts/disable/${r3ImportedContact.id}`, manager.headers, { reason: '验证导入更新重新启用' })
+  await post(`/contacts/disable/${r3ImportedContact.id}`, manager.headers, {
+    reason: '验证导入更新重新启用',
+  })
 }
 const r3UpdatedPhone = `132${stamp.slice(-8).padStart(8, '0')}`
 const r3ContactUpdateXlsx = await buildXlsx(
   ['唯一ID', contactPhoneField?.label ?? '电话'],
   [[r3ImportedContact?.id, r3UpdatedPhone]],
 )
-const r3ContactUpdateRes = await postXlsx('/contacts/import', manager.headers, r3ContactUpdateXlsx, 'UPDATE')
+const r3ContactUpdateRes = await postXlsx(
+  '/contacts/import',
+  manager.headers,
+  r3ContactUpdateXlsx,
+  'UPDATE',
+)
 const r3ContactUpdate = await r3ContactUpdateRes.json()
 const r3UpdatedContact = r3ImportedContact?.id
   ? await get(`/contacts/get/${r3ImportedContact.id}`, manager.headers)
@@ -1848,7 +2024,9 @@ const r3ContactExportRes = await request('POST', '/contacts/export-all', manager
 const r3ContactExportTask = await r3ContactExportRes.json()
 check(
   'R3 联系人导出全部创建 ExportTask',
-  r3ContactExportRes.ok && r3ContactExportTask.status === 'SUCCESS' && r3ContactExportTask.rowCount >= 3,
+  r3ContactExportRes.ok &&
+    r3ContactExportTask.status === 'SUCCESS' &&
+    r3ContactExportTask.rowCount >= 3,
 )
 const r3ContactSelectExportRes = await request('POST', '/contacts/export-select', manager.headers, {
   page: 1,
@@ -1895,26 +2073,23 @@ const oppWithItems = await post('/opportunities', manager.headers, {
   customerId: converted.customerId,
   items: [{ productName: '冒烟产品', quantity: 2, unitPrice: 15000, discount: 100 }],
 })
-check(
-  '商机明细汇总金额',
-  oppWithItems.amount === 30000 && oppWithItems.items?.length === 1,
-)
+check('商机明细汇总金额', oppWithItems.amount === 30000 && oppWithItems.items?.length === 1)
 const quoteFromOpp = await post('/quotes', manager.headers, {
   name: `冒烟带入报价-${stamp}`,
   customerId: converted.customerId,
   opportunityId: oppWithItems.id,
 })
-check(
-  '报价从商机带入明细',
-  quoteFromOpp.totalAmount === 30000 && quoteFromOpp.items?.length === 1,
-)
+check('报价从商机带入明细', quoteFromOpp.totalAmount === 30000 && quoteFromOpp.items?.length === 1)
 
 // 5. 商机推进赢单
 const stages = await get('/opportunities/stages', sales.headers)
 const won = stages.find((s) => s.isWon)
 await post(`/opportunities/${converted.opportunityId}/stage`, sales.headers, { stageId: won.id })
 const kanban = await get('/opportunities/kanban', sales.headers)
-check('商机赢单与看板', kanban.stages.some((s) => s.isWon && s.count >= 1))
+check(
+  '商机赢单与看板',
+  kanban.stages.some((s) => s.isWon && s.count >= 1),
+)
 
 // 6. 交易链：报价→合同→回款→发票→订单
 const quote = await post('/quotes', manager.headers, {
@@ -1963,21 +2138,21 @@ const invoice = await post('/contracts/invoices', manager.headers, {
 })
 check('R5 客户360 测试发票创建', Boolean(invoice.id))
 
-const [
-  r5OpportunityRows,
-  r5ContractRows,
-  r5PlanRows,
-  r5PaymentRows,
-  r5InvoiceRows,
-  r5OrderRows,
-] = await Promise.all([
-  get(`/customers/${converted.customerId}/360/opportunities?page=1&pageSize=10`, manager.headers),
-  get(`/customers/${converted.customerId}/360/contracts?page=1&pageSize=10`, manager.headers),
-  get(`/customers/${converted.customerId}/360/receivablePlans?page=1&pageSize=10`, manager.headers),
-  get(`/customers/${converted.customerId}/360/receivableRecords?page=1&pageSize=10`, manager.headers),
-  get(`/customers/${converted.customerId}/360/invoices?page=1&pageSize=10`, manager.headers),
-  get(`/customers/${converted.customerId}/360/orders?page=1&pageSize=10`, manager.headers),
-])
+const [r5OpportunityRows, r5ContractRows, r5PlanRows, r5PaymentRows, r5InvoiceRows, r5OrderRows] =
+  await Promise.all([
+    get(`/customers/${converted.customerId}/360/opportunities?page=1&pageSize=10`, manager.headers),
+    get(`/customers/${converted.customerId}/360/contracts?page=1&pageSize=10`, manager.headers),
+    get(
+      `/customers/${converted.customerId}/360/receivablePlans?page=1&pageSize=10`,
+      manager.headers,
+    ),
+    get(
+      `/customers/${converted.customerId}/360/receivableRecords?page=1&pageSize=10`,
+      manager.headers,
+    ),
+    get(`/customers/${converted.customerId}/360/invoices?page=1&pageSize=10`, manager.headers),
+    get(`/customers/${converted.customerId}/360/orders?page=1&pageSize=10`, manager.headers),
+  ])
 check(
   'R5 客户360 商机 Tab 数据可分页读取',
   Array.isArray(r5OpportunityRows.items) &&
@@ -1985,7 +2160,8 @@ check(
 )
 check(
   'R5 客户360 合同 Tab 数据可分页读取',
-  Array.isArray(r5ContractRows.items) && r5ContractRows.items.some((item) => item.id === contract.id),
+  Array.isArray(r5ContractRows.items) &&
+    r5ContractRows.items.some((item) => item.id === contract.id),
 )
 check(
   'R5 客户360 回款计划 Tab 数据可分页读取',
@@ -2015,7 +2191,10 @@ const uploaded = await fetch(`${base}/attachments/upload`, {
   body: form,
 }).then((r) => r.json())
 check('上传附件', Boolean(uploaded.id) && uploaded.name === 'scan.txt')
-const listed = await get(`/attachments?targetType=contract&targetId=${contract.id}`, manager.headers)
+const listed = await get(
+  `/attachments?targetType=contract&targetId=${contract.id}`,
+  manager.headers,
+)
 check('列出附件', Array.isArray(listed) && listed.some((a) => a.id === uploaded.id))
 const downloaded = await fetch(`${base}/attachments/${uploaded.id}/download`, {
   headers: { Authorization: manager.headers.Authorization },
@@ -2038,7 +2217,9 @@ await post('/approvals/submit', sales.headers, { module: 'contract', targetId: b
 const managerPending = await get('/approvals/my-pending?pageSize=5', manager.headers)
 const task1 = managerPending.items.find((i) => i.targetId === bigContract.id)
 check('直属上级收到审批待办', Boolean(task1?.myPendingTaskId))
-await post(`/approvals/tasks/${task1.myPendingTaskId}/approve`, manager.headers, { comment: '同意' })
+await post(`/approvals/tasks/${task1.myPendingTaskId}/approve`, manager.headers, {
+  comment: '同意',
+})
 const adminPending = await get('/approvals/my-pending?pageSize=5', admin.headers)
 const task2 = adminPending.items.find((i) => i.targetId === bigContract.id)
 await post(`/approvals/tasks/${task2.myPendingTaskId}/approve`, admin.headers, { comment: '批准' })

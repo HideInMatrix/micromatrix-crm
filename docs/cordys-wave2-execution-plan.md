@@ -7,7 +7,7 @@
 - 主导航模块配置、左侧菜单排序/启停、组织架构、角色权限和多角色数据范围已完成。
 - `NavigationModulesView` 的顶部导航排序与 Header 驱动已在 W2.1 完成。
 - MicroMatrix 已有可复用的审批中心、通知铃铛、导出任务中心、主题切换与账号菜单。
-- 跟进计划已在 W2.2 完成；全局搜索、国际化和 Agent 仍未纳入或未实现，不得用空壳入口伪造完成。
+- 跟进计划已在 W2.2 完成，消息设置底座已在 W2.3 完成；全局搜索、国际化和 Agent 仍未纳入或未实现，不得用空壳入口伪造完成。
 
 ## 2. W2.1 顶部导航配置闭环
 
@@ -112,3 +112,32 @@ pnpm --filter @micromatrix/api test:rules
 pnpm db:migrate
 pnpm smoke
 ```
+
+## 4. W2.3 消息设置底座
+
+状态：`✅ COMPLETE（2026-08-24）`
+
+### 已完成源码核对
+
+- 已读取 Cordys `views/system/message` 页面、shared API/Model、`MessageTaskController`、`MessageNotificationService`、Domain/DTO/Mapper、DDL/DML、`message_task.json`、模板工具和通知发送链路。
+- 已确认页面固定展示客户、线索、商机、订单、合同五组 35 个事件；默认邮件关闭、系统消息开启。
+- 已确认仅 8 个报价/合同事件带范围配置，且只有 3 个 `EXPIRING` 事件带提前时间；模板由后端资源提供，页面不编辑模板。
+- 公告、SMTP 与企微/钉钉/飞书是独立能力，不并入 W2.3。
+
+### 本阶段落地范围
+
+- 新增 shared 固定事件目录、`message_task_settings` 租户覆盖表、完整读取、单项保存、批量开关和范围配置 API。
+- 新增 `system:message / system:message:update` 独立权限与操作日志；页面不再借用企业设置权限。
+- `NotificationsService` 支持可选事件编码并在落库/SSE 前读取系统消息开关；跟进计划到期提醒已绑定客户/线索/商机三个 Cordys 事件。
+- PC 页面使用五组合并表格、系统消息总开关、禁用邮件说明和到期配置抽屉；未接邮件发送器前不开放假开关。
+
+### 验收结果
+
+- Prisma generate、迁移、shared/API/Web typecheck、ESLint、API/Web build 全绿。
+- 规则与公共底座单测 `21/21`；全链路 smoke `207/207`。
+- 浏览器从登录页进入 `/system/messages`，验证五组 35 事件、邮件禁用说明、关闭确认与恢复、3/7 天配置保存后重开持久化并恢复 3 天默认；刷新及相邻 `/system/modules` 均无 console error/warn。
+
+### 后续边界
+
+- 下一步业务模块对齐时逐个把现有通知触发点绑定到准确事件；W2.3 不臆造尚未存在的触发点。
+- 邮件、第三方平台发送器和公告分别独立排期；模板编辑器不属于当前 Cordys 页面能力。

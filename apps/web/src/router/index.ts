@@ -75,7 +75,9 @@ const router = createRouter({
           path: 'leads',
           name: 'leads',
           component: () =>
-            isMobileClient() ? import('@/mobile/views/LeadsView.vue') : import('@/views/LeadsView.vue'),
+            isMobileClient()
+              ? import('@/mobile/views/LeadsView.vue')
+              : import('@/views/LeadsView.vue'),
           meta: { title: '线索管理', perm: 'menu:lead', client: 'both' },
         },
         {
@@ -228,12 +230,11 @@ const router = createRouter({
         },
         {
           path: 'system/messages',
-          component: () => import('@/views/PlannedFeatureView.vue'),
+          component: () => import('@/views/system/MessageSettingsView.vue'),
           meta: {
             title: '消息设置',
-            perm: 'system:setting',
+            perm: 'system:message',
             client: 'pc',
-            plannedFeature: '按业务事件配置站内信开关、提前提醒天数和消息模板',
           },
         },
         {

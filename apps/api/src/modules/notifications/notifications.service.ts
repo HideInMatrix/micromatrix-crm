@@ -1,14 +1,16 @@
 import { Injectable, type MessageEvent } from '@nestjs/common'
-import { NotificationBizType, NotificationVO } from '@micromatrix/shared'
+import { type MessageTaskEvent, NotificationBizType, NotificationVO } from '@micromatrix/shared'
 import { finalize, Observable, Subject } from 'rxjs'
 import { Notification } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { MessageSettingsService } from '../message-settings/message-settings.service'
 
 export interface NotifyInput {
   type: NotificationBizType
   title: string
   content?: string
   link?: string
+  event?: MessageTaskEvent
 }
 
 @Injectable()
@@ -16,7 +18,10 @@ export class NotificationsService {
   /** 每个在线用户一组 SSE 流（同一用户可能开多个页签） */
   private readonly streams = new Map<string, Set<Subject<MessageEvent>>>()
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messageSettings: MessageSettingsService,
+  ) {}
 
   subscribe(userId: string): Observable<MessageEvent> {
     const subject = new Subject<MessageEvent>()
@@ -34,19 +39,36 @@ export class NotificationsService {
 
   /** 发送单人通知（落库 + 在线推送） */
   async notify(tenantId: string, userId: string, input: NotifyInput): Promise<void> {
+    if (input.event && !(await this.messageSettings.isSystemEnabled(tenantId, input.event))) return
+    await this.notifyUnchecked(tenantId, userId, input)
+  }
+
+  private async notifyUnchecked(
+    tenantId: string,
+    userId: string,
+    input: NotifyInput,
+  ): Promise<void> {
+    const { event: _event, ...data } = input
     const notification = await this.prisma.notification.create({
-      data: { tenantId, userId, ...input },
+      data: { tenantId, userId, ...data },
     })
     this.push(userId, notification)
   }
 
   /** 批量通知多个用户 */
   async notifyMany(tenantId: string, userIds: string[], input: NotifyInput): Promise<void> {
+    if (input.event && !(await this.messageSettings.isSystemEnabled(tenantId, input.event))) return
     const unique = [...new Set(userIds)]
-    await Promise.all(unique.map((userId) => this.notify(tenantId, userId, input)))
+    await Promise.all(unique.map((userId) => this.notifyUnchecked(tenantId, userId, input)))
   }
 
-  async list(tenantId: string, userId: string, page: number, pageSize: number, unreadOnly: boolean) {
+  async list(
+    tenantId: string,
+    userId: string,
+    page: number,
+    pageSize: number,
+    unreadOnly: boolean,
+  ) {
     const where = {
       tenantId,
       userId,

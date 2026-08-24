@@ -32,11 +32,11 @@ enum SubscriptionStatus {
 
 // 数据范围（角色的数据可见边界）
 enum DataScope {
-  ALL            // 全部数据
+  ALL // 全部数据
   DEPT_AND_CHILD // 本部门及下级部门
-  DEPT           // 本部门
-  SELF           // 仅本人
-  CUSTOM         // 自定义部门
+  DEPT // 本部门
+  SELF // 仅本人
+  CUSTOM // 自定义部门
 }
 
 model Tenant {
@@ -47,15 +47,16 @@ model Tenant {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  users         User[]
-  roles         Role[]
-  userRoles     UserRole[]
-  customers     Customer[]
-  contacts      Contact[]
-  subscriptions Subscription[]
-  departments   Department[]
-  moduleConfigs ModuleConfig[]
+  users                User[]
+  roles                Role[]
+  userRoles            UserRole[]
+  customers            Customer[]
+  contacts             Contact[]
+  subscriptions        Subscription[]
+  departments          Department[]
+  moduleConfigs        ModuleConfig[]
   topNavigationConfigs TopNavigationConfig[]
+  messageTaskSettings  MessageTaskSetting[]
 
   @@map("tenants")
 }
@@ -107,21 +108,21 @@ model User {
 }
 
 model Role {
-  id          String    @id @default(cuid())
-  tenantId    String
-  name        String
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
   // 权限码列表（menu:* 为菜单权限，资源:操作 为动作权限），'*' 表示全部权限
-  permissions String[]  @default([])
+  permissions  String[]  @default([])
   // 数据范围与自定义部门（dataScope=CUSTOM 时生效）
-  dataScope   DataScope @default(SELF)
-  scopeDeptIds String[] @default([])
+  dataScope    DataScope @default(SELF)
+  scopeDeptIds String[]  @default([])
   // 系统内置角色（管理员）不可删除/降权
-  isSystem    Boolean   @default(false)
-  remark      String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isSystem     Boolean   @default(false)
+  remark       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
   userRoles UserRole[]
 
   @@unique([tenantId, name])
@@ -148,18 +149,18 @@ model UserRole {
 }
 
 model Customer {
-  id       String  @id @default(cuid())
-  tenantId String
-  name     String
-  industry String?
-  phone    String?
-  email    String?
-  remark   String?
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  industry       String?
+  phone          String?
+  email          String?
+  remark         String?
   // 自定义字段值（cf_* 键），由元数据引擎驱动
-  customData Json?
-  ownerId    String?
+  customData     Json?
+  ownerId        String?
   // 归属部门（负责人变更时同步），数据范围过滤依据
-  deptId       String?
+  deptId         String?
   // 公海：无负责人，可被领取
   inSea          Boolean   @default(false)
   // 当前所在公海池；兼容旧数据时可为空
@@ -168,8 +169,8 @@ model Customer {
   collectedAt    DateTime?
   poolEnteredAt  DateTime?
   lastFollowedAt DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenant        Tenant               @relation(fields: [tenantId], references: [id])
   owner         User?                @relation(fields: [ownerId], references: [id])
@@ -228,33 +229,33 @@ model CustomerRelation {
 enum LeadStatus {
   FOLLOWING // 跟进中
   CONVERTED // 已转化
-  INVALID   // 无效
+  INVALID // 无效
 }
 
 model Lead {
-  id          String     @id @default(cuid())
-  tenantId    String
-  name        String
-  contactName String?
-  phone       String?
-  email       String?
-  status      LeadStatus @default(FOLLOWING)
+  id             String     @id @default(cuid())
+  tenantId       String
+  name           String
+  contactName    String?
+  phone          String?
+  email          String?
+  status         LeadStatus @default(FOLLOWING)
   // 线索池：无负责人，可被领取
-  inPool     Boolean   @default(false)
+  inPool         Boolean    @default(false)
   // 当前所在的线索池；兼容旧数据时可为空
-  poolId     String?
-  ownerId    String?
-  deptId     String?
-  customData Json?
+  poolId         String?
+  ownerId        String?
+  deptId         String?
+  customData     Json?
   // Cordys 转换关系：当前使用 CUSTOMER，字符串结构便于后续扩展其它目标类型。
   transitionType String?
   transitionId   String?
   // 当前负责人开始持有该线索的时间，用于领取冷却/负责人历史
-  collectedAt        DateTime?
-  poolEnteredAt       DateTime?
-  lastFollowedAt      DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  collectedAt    DateTime?
+  poolEnteredAt  DateTime?
+  lastFollowedAt DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   @@index([tenantId, inPool])
   @@index([tenantId, poolId])
@@ -267,12 +268,12 @@ model Lead {
 // ============ 跟进记录（多态：线索/客户/商机/合同） ============
 
 model FollowUpRecord {
-  id         String    @id @default(cuid())
-  tenantId   String
-  targetType String
-  targetId   String
-  type       String
-  content    String
+  id           String    @id @default(cuid())
+  tenantId     String
+  targetType   String
+  targetId     String
+  type         String
+  content      String
   nextFollowAt DateTime?
   ownerId      String
   ownerName    String
@@ -327,9 +328,9 @@ model OpportunityStage {
   probability Int     @default(0)
   sort        Int     @default(0)
   // 结果阶段：赢单/输单（系统内置，不可删除）
-  isWon  Boolean @default(false)
-  isLost Boolean @default(false)
-  system Boolean @default(false)
+  isWon       Boolean @default(false)
+  isLost      Boolean @default(false)
+  system      Boolean @default(false)
 
   opportunities Opportunity[]
 
@@ -358,9 +359,9 @@ model Opportunity {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  customer  Customer             @relation(fields: [customerId], references: [id])
-  contact   Contact?             @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  stage     OpportunityStage     @relation(fields: [stageId], references: [id])
+  customer  Customer              @relation(fields: [customerId], references: [id])
+  contact   Contact?              @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  stage     OpportunityStage      @relation(fields: [stageId], references: [id])
   stageLogs OpportunityStageLog[]
   items     OpportunityItem[]
 
@@ -407,7 +408,7 @@ model OpportunityItem {
 // ============ 产品 ============
 
 enum ProductStatus {
-  ON  // 上架
+  ON // 上架
   OFF // 下架
 }
 
@@ -435,29 +436,29 @@ model Product {
 // ============ 报价 ============
 
 enum QuoteStatus {
-  DRAFT     // 草稿
+  DRAFT // 草稿
   CONFIRMED // 已确认
-  VOID      // 已作废
+  VOID // 已作废
 }
 
 model Quote {
-  id            String      @id @default(cuid())
-  tenantId      String
-  code          String
-  name          String
-  customerId    String
-  opportunityId String?
-  totalAmount   Decimal     @default(0) @db.Decimal(14, 2)
-  status        QuoteStatus @default(DRAFT)
+  id             String      @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  customerId     String
+  opportunityId  String?
+  totalAmount    Decimal     @default(0) @db.Decimal(14, 2)
+  status         QuoteStatus @default(DRAFT)
   // 审批状态：NONE=无需/未提交, PENDING/APPROVED/REJECTED
-  approvalStatus String     @default("NONE")
-  validUntil    DateTime?
-  remark        String?
-  ownerId       String?
-  deptId        String?
-  customData    Json?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  approvalStatus String      @default("NONE")
+  validUntil     DateTime?
+  remark         String?
+  ownerId        String?
+  deptId         String?
+  customData     Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   customer Customer    @relation(fields: [customerId], references: [id])
   items    QuoteItem[]
@@ -477,9 +478,9 @@ model QuoteItem {
   quantity    Decimal @default(1) @db.Decimal(14, 2)
   unitPrice   Decimal @default(0) @db.Decimal(14, 2)
   // 折扣百分比（100 = 不打折）
-  discount Decimal @default(100) @db.Decimal(5, 2)
-  amount   Decimal @default(0) @db.Decimal(14, 2)
-  sort     Int     @default(0)
+  discount    Decimal @default(100) @db.Decimal(5, 2)
+  amount      Decimal @default(0) @db.Decimal(14, 2)
+  sort        Int     @default(0)
 
   quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
@@ -490,32 +491,32 @@ model QuoteItem {
 // ============ 合同与回款 ============
 
 enum ContractStatus {
-  DRAFT      // 草稿
-  EXECUTING  // 履约中
-  COMPLETED  // 已完成
+  DRAFT // 草稿
+  EXECUTING // 履约中
+  COMPLETED // 已完成
   TERMINATED // 已终止
 }
 
 model Contract {
-  id            String         @id @default(cuid())
-  tenantId      String
-  code          String
-  name          String
-  customerId    String
-  opportunityId String?
-  quoteId       String?
-  amount        Decimal        @default(0) @db.Decimal(14, 2)
-  status        ContractStatus @default(DRAFT)
-  approvalStatus String        @default("NONE")
-  signedAt      DateTime?
-  startAt       DateTime?
-  endAt         DateTime?
-  remark        String?
-  ownerId       String?
-  deptId        String?
-  customData    Json?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  customerId     String
+  opportunityId  String?
+  quoteId        String?
+  amount         Decimal        @default(0) @db.Decimal(14, 2)
+  status         ContractStatus @default(DRAFT)
+  approvalStatus String         @default("NONE")
+  signedAt       DateTime?
+  startAt        DateTime?
+  endAt          DateTime?
+  remark         String?
+  ownerId        String?
+  deptId         String?
+  customData     Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   customer          Customer           @relation(fields: [customerId], references: [id])
   items             ContractItem[]
@@ -549,15 +550,15 @@ model ContractItem {
 }
 
 model ReceivablePlan {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   tenantId   String
   contractId String
   period     Int
-  amount     Decimal   @default(0) @db.Decimal(14, 2)
+  amount     Decimal  @default(0) @db.Decimal(14, 2)
   dueDate    DateTime
   remark     String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   contract Contract           @relation(fields: [contractId], references: [id], onDelete: Cascade)
   records  ReceivableRecord[]
@@ -568,18 +569,18 @@ model ReceivablePlan {
 }
 
 model ReceivableRecord {
-  id         String   @id @default(cuid())
-  tenantId   String
-  contractId String
-  planId     String?
-  amount     Decimal  @default(0) @db.Decimal(14, 2)
-  receivedAt DateTime
-  method     String?
-  remark     String?
-  approvalStatus String @default("NONE")
-  ownerId    String?
-  deptId     String?
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  tenantId       String
+  contractId     String
+  planId         String?
+  amount         Decimal  @default(0) @db.Decimal(14, 2)
+  receivedAt     DateTime
+  method         String?
+  remark         String?
+  approvalStatus String   @default("NONE")
+  ownerId        String?
+  deptId         String?
+  createdAt      DateTime @default(now())
 
   contract Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
   plan     ReceivablePlan? @relation(fields: [planId], references: [id])
@@ -611,8 +612,8 @@ model InvoiceTitle {
 
 enum InvoiceStatus {
   PENDING // 待开票
-  ISSUED  // 已开票
-  VOID    // 已作废
+  ISSUED // 已开票
+  VOID // 已作废
 }
 
 model InvoiceRecord {
@@ -640,30 +641,30 @@ model InvoiceRecord {
 // ============ 订单（合同履约执行） ============
 
 enum OrderStatus {
-  PENDING    // 待交付
+  PENDING // 待交付
   DELIVERING // 交付中
-  ACCEPTED   // 已验收
-  COMPLETED  // 已完成
-  CANCELED   // 已取消
+  ACCEPTED // 已验收
+  COMPLETED // 已完成
+  CANCELED // 已取消
 }
 
 model Order {
-  id          String      @id @default(cuid())
-  tenantId    String
-  code        String
-  name        String
-  contractId  String
-  amount      Decimal     @default(0) @db.Decimal(14, 2)
-  status      OrderStatus @default(PENDING)
-  approvalStatus String   @default("NONE")
-  deliveredAt DateTime?
-  acceptedAt  DateTime?
-  remark      String?
-  ownerId     String?
-  deptId      String?
-  customData  Json?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id             String      @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  contractId     String
+  amount         Decimal     @default(0) @db.Decimal(14, 2)
+  status         OrderStatus @default(PENDING)
+  approvalStatus String      @default("NONE")
+  deliveredAt    DateTime?
+  acceptedAt     DateTime?
+  remark         String?
+  ownerId        String?
+  deptId         String?
+  customData     Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
@@ -677,9 +678,9 @@ model Order {
 
 // 审批人策略
 enum ApproverType {
-  USER          // 指定成员
-  ROLE          // 指定角色（该角色全部成员）
-  DEPT_LEADER   // 发起人部门主管
+  USER // 指定成员
+  ROLE // 指定角色（该角色全部成员）
+  DEPT_LEADER // 发起人部门主管
   DIRECT_LEADER // 发起人直属上级
 }
 
@@ -704,12 +705,12 @@ enum ApprovalTaskStatus {
 }
 
 model ApprovalFlow {
-  id       String  @id @default(cuid())
-  tenantId String
+  id        String   @id @default(cuid())
+  tenantId  String
   // 绑定业务对象：quote / contract / order / receivableRecord
-  module   String
-  name     String
-  enabled  Boolean @default(true)
+  module    String
+  name      String
+  enabled   Boolean  @default(true)
   // 触发条件：{ amountGte?: number }，不满足条件则无需审批
   condition Json?
   createdAt DateTime @default(now())
@@ -728,8 +729,8 @@ model ApprovalNode {
   name         String
   approverType ApproverType
   // USER=用户ID集合；ROLE=角色ID集合
-  approverIds String[]     @default([])
-  mode        ApprovalMode @default(ANY)
+  approverIds  String[]     @default([])
+  mode         ApprovalMode @default(ANY)
 
   flow ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
 
@@ -738,22 +739,22 @@ model ApprovalNode {
 }
 
 model ApprovalInstance {
-  id            String                 @id @default(cuid())
-  tenantId      String
-  module        String
-  targetId      String
-  targetName    String
+  id               String                 @id @default(cuid())
+  tenantId         String
+  module           String
+  targetId         String
+  targetName       String
   // 摘要（金额等，用于列表展示）
-  summary       String?
-  status        ApprovalInstanceStatus @default(PENDING)
-  currentNodeIndex Int                 @default(0)
+  summary          String?
+  status           ApprovalInstanceStatus @default(PENDING)
+  currentNodeIndex Int                    @default(0)
   // 节点快照（提交时冻结流程配置）：[{ name, approverType, mode, approverIds }]
-  nodesSnapshot Json
-  submitterId   String
-  submitterName String
-  finishedAt    DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  nodesSnapshot    Json
+  submitterId      String
+  submitterName    String
+  finishedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   tasks ApprovalTask[]
 
@@ -785,17 +786,17 @@ model ApprovalTask {
 // ============ 标讯（招投标信息） ============
 
 model BiddingSource {
-  id       String  @id @default(cuid())
-  tenantId String
+  id          String    @id @default(cuid())
+  tenantId    String
   // 适配器标识：demo / jianyu / qianlima ...
-  provider String
-  name     String
+  provider    String
+  name        String
   // 数据源凭证（API Key 等）
   credentials Json?
-  enabled     Boolean  @default(false)
+  enabled     Boolean   @default(false)
   lastFetchAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([tenantId, provider])
   @@map("bidding_sources")
@@ -813,25 +814,25 @@ model BiddingKeywordSub {
 }
 
 model BiddingInfo {
-  id       String  @id @default(cuid())
-  tenantId String
-  title    String
+  id              String    @id @default(cuid())
+  tenantId        String
+  title           String
   // 公告类型：招标公告/中标公告/更正公告等
-  type      String?
-  region    String?
-  buyer     String?
-  budget    Decimal?  @db.Decimal(16, 2)
-  publishedAt DateTime?
-  deadline    DateTime?
-  sourceUrl   String?
-  content     String?
+  type            String?
+  region          String?
+  buyer           String?
+  budget          Decimal?  @db.Decimal(16, 2)
+  publishedAt     DateTime?
+  deadline        DateTime?
+  sourceUrl       String?
+  content         String?
   // 来源：demo/manual/...
-  source  String?
-  keyword String?
+  source          String?
+  keyword         String?
   // 去重指纹（标题+发布日期）
   hash            String
   convertedLeadId String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   @@unique([tenantId, hash])
   @@index([tenantId, publishedAt])
@@ -841,23 +842,23 @@ model BiddingInfo {
 // ============ 公海/线索池（Cordys 语义迁移后的通用抽象） ============
 
 model ResourcePool {
-  id       String @id @default(cuid())
-  tenantId String
+  id             String   @id @default(cuid())
+  tenantId       String
   // lead / customer
-  module   String
-  name     String
+  module         String
+  name           String
   // 可使用此池的成员/部门范围 ID。当前先存 scope token，后续统一 ScopeResolver 解析。
-  scopeIds String[] @default([])
+  scopeIds       String[] @default([])
   // 池管理员范围 ID
-  managerIds String[] @default([])
-  enabled     Boolean @default(true)
-  autoRecycle Boolean @default(false)
+  managerIds     String[] @default([])
+  enabled        Boolean  @default(true)
+  autoRecycle    Boolean  @default(false)
   // 池列表中隐藏的元数据字段 ID
   hiddenFieldIds String[] @default([])
-  createdById String?
-  updatedById String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   pickRule    ResourcePoolPickRule?
   recycleRule ResourcePoolRecycleRule?
@@ -868,17 +869,17 @@ model ResourcePool {
 }
 
 model ResourcePoolPickRule {
-  id       String @id @default(cuid())
-  tenantId String
-  poolId   String @unique
-  limitDailyPick Boolean @default(false)
-  dailyPickLimit Int?
-  limitPreviousOwner Boolean @default(false)
+  id                        String   @id @default(cuid())
+  tenantId                  String
+  poolId                    String   @unique
+  limitDailyPick            Boolean  @default(false)
+  dailyPickLimit            Int?
+  limitPreviousOwner        Boolean  @default(false)
   previousOwnerCooldownDays Int?
-  limitNewData Boolean @default(false)
-  newDataCooldownDays Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  limitNewData              Boolean  @default(false)
+  newDataCooldownDays       Int?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   pool ResourcePool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 
@@ -887,15 +888,15 @@ model ResourcePoolPickRule {
 }
 
 model ResourcePoolRecycleRule {
-  id       String @id @default(cuid())
-  tenantId String
-  poolId   String @unique
+  id         String   @id @default(cuid())
+  tenantId   String
+  poolId     String   @unique
   // AND / OR
-  operator String @default("AND")
+  operator   String   @default("AND")
   // 通用规则条件数组，后续由 RuleConditionEvaluator 解释
   conditions Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   pool ResourcePool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 
@@ -904,37 +905,37 @@ model ResourcePoolRecycleRule {
 }
 
 model ResourceCapacity {
-  id       String @id @default(cuid())
-  tenantId String
+  id          String   @id @default(cuid())
+  tenantId    String
   // lead / customer
-  module   String
+  module      String
   // 一个 scope token 只能属于一条同模块库容规则，由服务层保证不重叠
-  scopeIds String[] @default([])
-  capacity Int
+  scopeIds    String[] @default([])
+  capacity    Int
   // Cordys 客户库容支持额外过滤条件；线索可为空
-  filters  Json?
+  filters     Json?
   createdById String?
   updatedById String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([tenantId, module])
   @@map("resource_capacities")
 }
 
 model ResourceOwnerHistory {
-  id         String @id @default(cuid())
-  tenantId   String
+  id          String    @id @default(cuid())
+  tenantId    String
   // lead / customer
-  module     String
-  resourceId String
-  ownerId    String
-  operatorId String?
-  poolId     String?
-  reasonId   String?
+  module      String
+  resourceId  String
+  ownerId     String
+  operatorId  String?
+  poolId      String?
+  reasonId    String?
   collectedAt DateTime?
-  endedAt     DateTime @default(now())
-  createdAt   DateTime @default(now())
+  endedAt     DateTime  @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([tenantId, module, resourceId, endedAt])
   @@index([tenantId, ownerId, endedAt])
@@ -944,38 +945,38 @@ model ResourceOwnerHistory {
 // ============ 公海/线索池回收规则 ============
 
 model PoolRule {
-  id       String  @id @default(cuid())
-  tenantId String
+  id          String  @id @default(cuid())
+  tenantId    String
   // lead / customer
-  module   String
-  enabled  Boolean @default(false)
+  module      String
+  enabled     Boolean @default(false)
   // 超过 N 天未跟进自动回收
-  recycleDays Int @default(30)
+  recycleDays Int     @default(30)
   // 回收前 N 天提醒负责人
-  notifyDays Int @default(3)
+  notifyDays  Int     @default(3)
 
   @@unique([tenantId, module])
   @@map("pool_rules")
 }
 
 model Contact {
-  id         String   @id @default(cuid())
-  tenantId   String
-  customerId String
+  id            String   @id @default(cuid())
+  tenantId      String
+  customerId    String
   // Cordys 联系人具有独立负责人；协作用户只能看到/维护自己负责的联系人。
-  ownerId    String?
-  deptId     String?
-  name       String
-  phone      String?
-  enable     Boolean  @default(true)
+  ownerId       String?
+  deptId        String?
+  name          String
+  phone         String?
+  enable        Boolean  @default(true)
   disableReason String?
-  customData Json?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  customData    Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  owner    User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   opportunities Opportunity[]
 
   @@index([tenantId])
@@ -1023,29 +1024,29 @@ model Subscription {
 // ============ 元数据引擎：字段定义（驱动动态表单/列表/筛选） ============
 
 model FieldDefinition {
-  id       String  @id @default(cuid())
-  tenantId String
+  id         String   @id @default(cuid())
+  tenantId   String
   // 业务对象：lead / customer / contact / opportunity / product / quote / contract / order
-  module   String
+  module     String
   // 字段键：系统字段=实体列名；自定义字段=cf_ 前缀，值存业务表的 customData JSONB
-  key      String
-  label    String
+  key        String
+  label      String
   // text/textarea/number/currency/percent/date/datetime/select/multiselect/radio
   // /checkbox/switch/member/dept/phone/email/formula
-  type     String
-  required Boolean @default(false)
+  type       String
+  required   Boolean  @default(false)
   // 系统字段：不可删除、key/type 不可修改
-  system   Boolean @default(false)
-  hidden   Boolean @default(false)
+  system     Boolean  @default(false)
+  hidden     Boolean  @default(false)
   // 选项集（select/multiselect/radio/checkbox）：[{ label, value, color? }]
-  options  Json?
+  options    Json?
   // 扩展配置：placeholder/默认值/公式表达式/小数位等
-  config   Json?
+  config     Json?
   // 表单布局：排序与栅格宽度（24 栅格制）
-  sort     Int     @default(0)
-  span     Int     @default(12)
+  sort       Int      @default(0)
+  span       Int      @default(12)
   // 列表配置
-  showInList Boolean @default(true)
+  showInList Boolean  @default(true)
   listWidth  Int?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -1153,6 +1154,24 @@ model Notification {
   @@map("notifications")
 }
 
+model MessageTaskSetting {
+  id            String   @id @default(cuid())
+  tenantId      String
+  module        String
+  event         String
+  systemEnabled Boolean  @default(true)
+  emailEnabled  Boolean  @default(false)
+  config        Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, module, event])
+  @@index([tenantId, module])
+  @@map("message_task_settings")
+}
+
 model SystemSetting {
   id       String @id @default(cuid())
   tenantId String
@@ -1211,19 +1230,19 @@ model Attachment {
 // ============ 导出任务中心（R2：先同步生成文件，Wave 6 可替换为 BullMQ 执行器） ============
 
 model ExportTask {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
   userId       String
   module       String
   fileName     String
   filePath     String?
-  status       String   @default("PENDING")
-  rowCount     Int      @default(0)
+  status       String    @default("PENDING")
+  rowCount     Int       @default(0)
   fileSize     Int?
   errorMessage String?
   completedAt  DateTime?
   expiresAt    DateTime
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([tenantId, userId, createdAt])
   @@index([expiresAt])

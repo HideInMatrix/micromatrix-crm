@@ -61,7 +61,7 @@ export const MENUS: MenuItem[] = [
         path: '/system/messages',
         title: '消息设置',
         moduleKey: 'system',
-        perm: 'system:setting',
+        perm: 'system:message',
       },
       {
         path: '/system/approval-flows',

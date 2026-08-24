@@ -1,6 +1,6 @@
 # 微矩阵 CRM（MicroMatrix CRM）
 
-以项目内 `CordysCRM/` 作为功能、业务规则和交互行为的参考基准，使用 NestJS + Prisma + Vue 技术栈进行独立实现。当前定位公司内部使用，架构按多租户 SaaS 设计；功能状态见 [`docs/cordys-parity.md`](./docs/cordys-parity.md)，当前执行计划见 [`docs/cordys-wave1-remainder-plan.md`](./docs/cordys-wave1-remainder-plan.md)。
+以项目内 `CordysCRM/` 作为功能、业务规则和交互行为的参考基准，使用 NestJS + Prisma + Vue 技术栈进行独立实现。当前定位公司内部使用，架构按多租户 SaaS 设计；功能状态见 [`docs/cordys-parity.md`](./docs/cordys-parity.md)，当前执行计划见 [`docs/cordys-wave2-execution-plan.md`](./docs/cordys-wave2-execution-plan.md)。
 
 ## 功能清单
 
@@ -9,7 +9,7 @@
 - **可配置审批流**：按对象配置多级节点（指定成员/角色/部门主管/直属上级，会签/或签）、金额触发条件、审批中心（待办/已办/我发起）、通过自动生效业务、挂接报价/合同/订单/回款
 - **标讯**：内置演示源、关键词订阅、每日定时抓取去重、一键转线索、手动录入；不接入商业标讯 API
 - **组织与权限**：部门树、成员管理、角色（菜单/操作权限 + 5 级数据范围）、操作/登录日志
-- **协同**：跟进记录（贯穿线索/客户/商机/合同）、站内通知（SSE 实时推送）、公海/线索池自动回收（超期未跟进回收+提前提醒）、回款到期提醒
+- **协同**：跟进记录（贯穿线索/客户/商机/合同）、站内通知（SSE 实时推送 + 35 个业务事件开关与到期范围配置）、公海/线索池自动回收（超期未跟进回收+提前提醒）、回款到期提醒
 - **工作台与报表**：销售简报、待办、商机漏斗、业绩排行、趋势/转化率/输单原因（ECharts 自建，替代 DataEase 企业版嵌入）
 - **移动端 H5**：工作台简报、线索（领取/跟进/新建）、客户（跟进/新建）、移动审批（Vant + 移动版动态表单）
 - **其他**：客户/线索/池 xlsx 两阶段导入（新建/更新）+ 字段可选导出任务中心、开放 API（Swagger 文档 + 365 天 API 令牌）
@@ -18,13 +18,13 @@
 
 ## 技术栈
 
-| 层 | 选型 |
-| --- | --- |
+| 层         | 选型                                                                      |
+| ---------- | ------------------------------------------------------------------------- |
 | Web 管理端 | Vue 3 + TypeScript + Vite + Element Plus + UnoCSS（presetWind4）+ ECharts |
-| 移动端 H5 | Vue 3 + Vant 4 + UnoCSS |
-| 后端 API | NestJS 11 + Prisma 7（驱动适配器）+ PostgreSQL 18 + Redis |
-| 认证 | JWT（access + refresh）+ RBAC + 数据范围 |
-| 工程 | pnpm workspace monorepo + TypeScript 6 + ESLint 9 |
+| 移动端 H5  | Vue 3 + Vant 4 + UnoCSS                                                   |
+| 后端 API   | NestJS 11 + Prisma 7（驱动适配器）+ PostgreSQL 18 + Redis                 |
+| 认证       | JWT（access + refresh）+ RBAC + 数据范围                                  |
+| 工程       | pnpm workspace monorepo + TypeScript 6 + ESLint 9                         |
 
 > UnoCSS 使用 `presetWind4`（Tailwind v4 兼容语法），无需也不应同时安装 `tailwindcss`。
 
@@ -69,17 +69,17 @@ pnpm dev
 ```
 
 - Web 管理端 http://localhost:5173 · 移动端 http://localhost:5174 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（当前 **199 条断言**，需 API 已启动）
-- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **17 条**）
+- 全链路冒烟：`pnpm smoke`（当前 **207 条断言**，需 API 已启动）
+- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **21 条**）
 
 ### 演示账号
 
-| 账号 | 密码 | 角色 | 数据范围 |
-| --- | --- | --- | --- |
-| admin@demo.com | admin123 | 管理员 | 全部数据 |
-| zhangwei@demo.com | demo123 | 销售主管 | 本部门及下级 |
-| lina@demo.com | demo123 | 销售专员 | 仅本人 |
-| wangqiang@demo.com | demo123 | 销售专员 | 仅本人 |
+| 账号               | 密码     | 角色     | 数据范围     |
+| ------------------ | -------- | -------- | ------------ |
+| admin@demo.com     | admin123 | 管理员   | 全部数据     |
+| zhangwei@demo.com  | demo123  | 销售主管 | 本部门及下级 |
+| lina@demo.com      | demo123  | 销售专员 | 仅本人       |
+| wangqiang@demo.com | demo123  | 销售专员 | 仅本人       |
 
 ## 架构约定
 
@@ -97,6 +97,6 @@ pnpm dev
 - 当前分阶段执行计划：[`docs/cordys-wave2-execution-plan.md`](./docs/cordys-wave2-execution-plan.md)
 - 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
 
-Wave 1 的 R1-R7、Wave 2 的 W2.1 顶部导航和 W2.2 跟进计划均已完成验收。跟进计划已覆盖 PC/Mobile、客户 360、顶部 `event`、权限、原子转记录和到期提醒；后续模块继续按“真实页面 → 页面接口 → Cordys 后端实现”逐项探测和迁移。
+Wave 1 的 R1-R7、Wave 2 的 W2.1 顶部导航、W2.2 跟进计划和 W2.3 消息设置底座均已完成验收。消息设置已覆盖 35 个事件、租户开关、到期范围、独立权限和站内通知门控；后续模块继续按“真实页面 → 页面接口 → Cordys 后端实现”逐项探测和迁移。
 
 明确不迁移：Cordys 自身的产品授权/版本区分机制、DataEase、AI/MCP 商业扩展、商业标讯 API。

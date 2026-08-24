@@ -43,8 +43,11 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
 
 function dependencies(
   prisma: Record<string, unknown>,
-  notify: (tenantId: string, userId: string, input: { type: string }) => Promise<void> = async () =>
-    undefined,
+  notify: (
+    tenantId: string,
+    userId: string,
+    input: { type: string; event?: string },
+  ) => Promise<void> = async () => undefined,
 ) {
   return new FollowUpPlansService(
     prisma as unknown as PrismaService,
@@ -117,10 +120,10 @@ test('转跟进记录在同一事务内抢占、创建记录并回写记录 ID',
   assert.equal(result.targetName, '测试客户')
 })
 
-test('到期提醒覆盖他人代建计划并按日期抢占去重', async () => {
+test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去重', async () => {
   const row = plan({ status: 'PREPARED', converted: false })
   let claimed = false
-  const notices: Array<{ tenantId: string; userId: string; type: string }> = []
+  const notices: Array<{ tenantId: string; userId: string; type: string; event?: string }> = []
   const prisma = {
     followUpPlan: {
       findMany: async () => (claimed ? [] : [row]),
@@ -134,15 +137,25 @@ test('到期提醒覆盖他人代建计划并按日期抢占去重', async () =>
     lead: { findMany: async () => [] },
     opportunity: { findMany: async () => [] },
   }
-  const service = dependencies(prisma, async (tenantId, userId, input) => {
-    notices.push({ tenantId, userId, type: input.type })
-  })
+  const service = dependencies(
+    prisma,
+    async (tenantId, userId, input: { type: string; event?: string }) => {
+      notices.push({ tenantId, userId, type: input.type, event: input.event })
+    },
+  )
 
   const first = await service.runDueReminders(new Date('2026-08-22T03:00:00.000Z'))
   const second = await service.runDueReminders(new Date('2026-08-22T03:05:00.000Z'))
 
   assert.equal(first, 1)
   assert.equal(second, 0)
-  assert.deepEqual(notices, [{ tenantId: 'tenant-1', userId: 'owner-1', type: 'follow_plan' }])
+  assert.deepEqual(notices, [
+    {
+      tenantId: 'tenant-1',
+      userId: 'owner-1',
+      type: 'follow_plan',
+      event: 'CUSTOMER_FOLLOW_UP_PLAN_DUE',
+    },
+  ])
   assert.notEqual(row.ownerId, row.createdById)
 })

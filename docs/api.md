@@ -2,9 +2,9 @@
 
 ## 访问入口
 
-| 地址 | 用途 |
-| --- | --- |
-| http://localhost:3000/api/docs | Swagger UI 在线文档与调试 |
+| 地址                                | 用途                           |
+| ----------------------------------- | ------------------------------ |
+| http://localhost:3000/api/docs      | Swagger UI 在线文档与调试      |
 | http://localhost:3000/api/docs-json | OpenAPI 3.0 JSON（供工具导入） |
 
 文档默认常开（内部系统）；如需关闭，环境变量 `SWAGGER_ENABLED=false`。
@@ -34,11 +34,11 @@
 
 ## 测试账号
 
-| 账号 | 密码 | 数据范围 |
-| --- | --- | --- |
-| admin@demo.com | admin123 | 全部 |
-| zhangwei@demo.com | demo123 | 本部门及下级 |
-| lina@demo.com | demo123 | 仅本人 |
+| 账号              | 密码     | 数据范围     |
+| ----------------- | -------- | ------------ |
+| admin@demo.com    | admin123 | 全部         |
+| zhangwei@demo.com | demo123  | 本部门及下级 |
+| lina@demo.com     | demo123  | 仅本人       |
 
 ## 已知限制
 
@@ -125,6 +125,22 @@ DELETE /follow-up-plans/{id}
 - `/convert` 在单一事务中创建 `FollowUpRecord`、刷新目标最近跟进时间并回写 `convertedRecordId`；重复转换返回 `409`。
 - 每天 09:00 扫描当天到期的未结束计划，发送 `follow_plan` 站内通知；`dueNotifiedAt` 保证同一天只提醒一次，修改计划时间会重置提醒标记。
 - 顶部 `event` 已进入 `/follow-plans`；PC/Mobile 和客户 360 使用同一 API。
+
+## 消息设置（W2.3）
+
+```text
+GET   /message-settings
+GET   /message-settings/{event}/config
+PATCH /message-settings/{event}           body: { module, systemEnabled?, emailEnabled?, config? }
+POST  /message-settings/batch             body: { systemEnabled?, emailEnabled? }
+```
+
+- 读取要求 `system:message`，写入要求 `system:message:update`；动作权限自动补齐系统菜单与读取祖先权限。
+- 列表固定返回 Cordys 五组 35 个事件，数据库只保存租户覆盖值；默认 `systemEnabled=true / emailEnabled=false`。
+- `config` 包含 `timeList / userIds / roleIds / ownerEnable / ownerLevel / roleEnable`。负责人 `OWNER` 必须保留；成员和角色必须属于当前租户。
+- 仅 8 个报价/合同事件接受范围配置，仅 `BUSINESS_QUOTATION_EXPIRING / CONTRACT_EXPIRING / CONTRACT_PAYMENT_EXPIRING` 接受 1 至 10 条不重复的提前天数。
+- `NotificationsService` 的业务发送输入可带事件编码；系统消息关闭时不落库且不触发 SSE。W2.3 已先接入三类跟进计划到期事件。
+- 当前邮件发送器未接入，Web 明确禁用邮件开关；公告和第三方平台通知不属于本阶段。
 
 ## 多公海 / 多线索池自动回收规则
 
@@ -564,9 +580,7 @@ Pool/Sea 除功能权限外还必须通过 ResourcePool `scopeIds + managerIds` 
 {
   "successCount": 2,
   "failCount": 1,
-  "errorMessages": [
-    { "rowNum": 4, "errMsg": "客户名称不能为空" }
-  ]
+  "errorMessages": [{ "rowNum": 4, "errMsg": "客户名称不能为空" }]
 }
 ```
 

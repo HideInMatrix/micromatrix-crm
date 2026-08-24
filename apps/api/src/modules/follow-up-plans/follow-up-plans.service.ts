@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
+  type MessageTaskEvent,
   FollowUpPlanStatus as SharedFollowUpPlanStatus,
   FollowUpPlanVO,
   PaginatedResult,
@@ -15,11 +16,7 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import {
-  FollowUpPlan,
-  FollowUpPlanStatus,
-  Prisma,
-} from '../../generated/prisma/client'
+import { FollowUpPlan, FollowUpPlanStatus, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
@@ -262,6 +259,7 @@ export class FollowUpPlansService {
       try {
         await this.notifications.notify(plan.tenantId, plan.ownerId, {
           type: 'follow_plan',
+          event: this.followPlanReminderEvent(plan.targetType as TargetType),
           title: '跟进计划到期提醒',
           content: `${names.get(`${plan.targetType}:${plan.targetId}`) ?? '业务对象'}：${plan.content}`,
           link: `/follow-plans?id=${plan.id}`,
@@ -276,6 +274,12 @@ export class FollowUpPlansService {
       }
     }
     return notified
+  }
+
+  private followPlanReminderEvent(targetType: TargetType): MessageTaskEvent {
+    if (targetType === 'lead') return 'CLUE_FOLLOW_UP_PLAN_DUE'
+    if (targetType === 'opportunity') return 'BUSINESS_FOLLOW_UP_PLAN_DUE'
+    return 'CUSTOMER_FOLLOW_UP_PLAN_DUE'
   }
 
   private async ensurePlan(user: AuthUser, id: string): Promise<FollowUpPlan> {
@@ -319,8 +323,11 @@ export class FollowUpPlansService {
       if (!lead) throw new NotFoundException('线索不存在')
       if (lead.inPool) {
         const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
-        if (lead.poolId && !poolIds.includes(lead.poolId)) throw new NotFoundException('线索不存在或无权访问')
-      } else if (!(await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId, permission))) {
+        if (lead.poolId && !poolIds.includes(lead.poolId))
+          throw new NotFoundException('线索不存在或无权访问')
+      } else if (
+        !(await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId, permission))
+      ) {
         throw new NotFoundException('线索不存在或不在你的数据范围内')
       }
       return { name: lead.name, customerId: null, collaboratorOnly: false }
@@ -332,7 +339,12 @@ export class FollowUpPlansService {
     })
     if (
       !opportunity ||
-      !(await this.dataScope.matchesResource(user, opportunity.ownerId, opportunity.deptId, permission))
+      !(await this.dataScope.matchesResource(
+        user,
+        opportunity.ownerId,
+        opportunity.deptId,
+        permission,
+      ))
     ) {
       throw new NotFoundException('商机不存在或不在你的数据范围内')
     }
@@ -348,12 +360,13 @@ export class FollowUpPlansService {
     if (!contactId) return
     let customerId: string | null = type === 'customer' ? targetId : null
     if (type === 'opportunity') {
-      customerId = (
-        await this.prisma.opportunity.findFirst({
-          where: { id: targetId, tenantId },
-          select: { customerId: true },
-        })
-      )?.customerId ?? null
+      customerId =
+        (
+          await this.prisma.opportunity.findFirst({
+            where: { id: targetId, tenantId },
+            select: { customerId: true },
+          })
+        )?.customerId ?? null
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
     const contact = await this.prisma.contact.findFirst({
@@ -396,12 +409,18 @@ export class FollowUpPlansService {
     }
   }
 
-  private async keywordWhere(tenantId: string, keyword: string): Promise<Prisma.FollowUpPlanWhereInput> {
+  private async keywordWhere(
+    tenantId: string,
+    keyword: string,
+  ): Promise<Prisma.FollowUpPlanWhereInput> {
     const contains = { contains: keyword, mode: 'insensitive' as const }
     const [leads, customers, opportunities] = await Promise.all([
       this.prisma.lead.findMany({ where: { tenantId, name: contains }, select: { id: true } }),
       this.prisma.customer.findMany({ where: { tenantId, name: contains }, select: { id: true } }),
-      this.prisma.opportunity.findMany({ where: { tenantId, name: contains }, select: { id: true } }),
+      this.prisma.opportunity.findMany({
+        where: { tenantId, name: contains },
+        select: { id: true },
+      }),
     ])
     return {
       OR: [
@@ -433,7 +452,10 @@ export class FollowUpPlansService {
       opportunity: plans.filter((p) => p.targetType === 'opportunity').map((p) => p.targetId),
     }
     const [leads, customers, opportunities] = await Promise.all([
-      this.prisma.lead.findMany({ where: { id: { in: groups.lead } }, select: { id: true, name: true } }),
+      this.prisma.lead.findMany({
+        where: { id: { in: groups.lead } },
+        select: { id: true, name: true },
+      }),
       this.prisma.customer.findMany({
         where: { id: { in: groups.customer } },
         select: { id: true, name: true },
@@ -473,9 +495,7 @@ export class FollowUpPlansService {
     ])
     const ownerMap = new Map(owners.map((item) => [item.id, item.name]))
     const contactMap = new Map(contacts.map((item) => [item.id, item.name]))
-    const opportunityCustomerMap = new Map(
-      opportunities.map((item) => [item.id, item.customerId]),
-    )
+    const opportunityCustomerMap = new Map(opportunities.map((item) => [item.id, item.customerId]))
     const admin = hasPermission(user.permissions, '*')
     return plans.map((plan) => ({
       id: plan.id,

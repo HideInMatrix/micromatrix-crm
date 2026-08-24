@@ -1,8 +1,12 @@
 import type {
+  BatchUpdateMessageTaskSettingInput,
   DataScope,
   DepartmentVO,
   LoginLogVO,
   MemberVO,
+  MessageTaskConfig,
+  MessageTaskGroupVO,
+  MessageTaskSettingVO,
   ModuleConfigVO,
   NavigationModuleKey,
   NotificationVO,
@@ -12,6 +16,7 @@ import type {
   RoleVO,
   TopNavigationConfigVO,
   TopNavigationKey,
+  UpdateMessageTaskSettingInput,
 } from '@micromatrix/shared'
 import { http } from './http'
 
@@ -86,10 +91,8 @@ export const roleApi = {
   remove: (id: string) => http.delete(`/roles/${id}`),
   members: (id: string, params?: PageQuery) =>
     http.get<PaginatedResult<MemberVO>>(`/roles/${id}/members`, { params }),
-  addMembers: (id: string, userIds: string[]) =>
-    http.post(`/roles/${id}/members`, { userIds }),
-  removeMember: (id: string, userId: string) =>
-    http.delete(`/roles/${id}/members/${userId}`),
+  addMembers: (id: string, userIds: string[]) => http.post(`/roles/${id}/members`, { userIds }),
+  removeMember: (id: string, userId: string) => http.delete(`/roles/${id}/members/${userId}`),
 }
 
 // ===== 模块配置 =====
@@ -123,6 +126,18 @@ export const notificationApi = {
   unreadCount: () => http.get<{ count: number }>('/notifications/unread-count'),
   markRead: (id: string) => http.post(`/notifications/${id}/read`),
   markAllRead: () => http.post('/notifications/read-all'),
+}
+
+// ===== 消息设置 =====
+
+export const messageSettingApi = {
+  list: () => http.get<MessageTaskGroupVO[]>('/message-settings'),
+  update: (event: string, data: UpdateMessageTaskSettingInput) =>
+    http.patch<MessageTaskSettingVO>(`/message-settings/${event}`, data),
+  batchUpdate: (data: BatchUpdateMessageTaskSettingInput) =>
+    http.post<MessageTaskGroupVO[]>('/message-settings/batch', data),
+  getConfig: (event: string) =>
+    http.get<MessageTaskConfig | null>(`/message-settings/${event}/config`),
 }
 
 // ===== 企业设置 =====

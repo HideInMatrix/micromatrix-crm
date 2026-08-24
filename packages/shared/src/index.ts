@@ -2,16 +2,13 @@ export * from './approval'
 export * from './bidding'
 export * from './deal'
 export * from './metadata'
+export * from './message-settings'
 export * from './permissions'
 export * from './sales'
 export * from './system'
 
 import type { FollowUpVO, TeamMemberVO } from './sales'
-import type {
-  InvoiceStatus,
-  OrderStatus,
-  ReceivablePlanStatus,
-} from './deal'
+import type { InvoiceStatus, OrderStatus, ReceivablePlanStatus } from './deal'
 
 // ============ 通用分页 ============
 
@@ -143,12 +140,7 @@ export interface CustomerRelatedVO {
 }
 
 export type Customer360Resource =
-  | 'opportunities'
-  | 'contracts'
-  | 'receivablePlans'
-  | 'receivableRecords'
-  | 'invoices'
-  | 'orders'
+  'opportunities' | 'contracts' | 'receivablePlans' | 'receivableRecords' | 'invoices' | 'orders'
 
 export interface Customer360OpportunityVO {
   id: string
