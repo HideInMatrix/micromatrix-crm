@@ -43,13 +43,109 @@ export interface ApprovalNodeConfig {
   mode: ApprovalMode
 }
 
-export interface ApprovalFlowVO {
-  id: string
-  module: ApprovalModule
+// ============ 流程设置 ============
+
+export type ApprovalFormType = 'quotation' | 'contract' | 'invoice' | 'order'
+export type ApprovalExecuteTiming = 'CREATE' | 'UPDATE' | 'DELETE'
+export type ApprovalNodeType = 'START' | 'APPROVER' | 'CONDITION' | 'DEFAULT' | 'END'
+export type DuplicateApproverRule = 'FIRST_ONLY' | 'SEQUENTIAL_ALL' | 'EACH'
+
+export const APPROVAL_FORM_TYPE_LABELS: Record<ApprovalFormType, string> = {
+  quotation: '报价',
+  contract: '合同',
+  invoice: '发票',
+  order: '订单',
+}
+
+export const APPROVAL_FORM_TYPE_PREFIXES: Record<ApprovalFormType, string> = {
+  quotation: 'QTE-APV',
+  contract: 'CTR-APV',
+  invoice: 'INV-APV',
+  order: 'ORD-APV',
+}
+
+export const APPROVAL_EXECUTE_TIMING_LABELS: Record<ApprovalExecuteTiming, string> = {
+  CREATE: '新建时执行',
+  UPDATE: '编辑时执行',
+  DELETE: '删除时执行',
+}
+
+export const DUPLICATE_APPROVER_RULE_LABELS: Record<DuplicateApproverRule, string> = {
+  FIRST_ONLY: '仅首个节点审批',
+  SEQUENTIAL_ALL: '按顺序全部审批',
+  EACH: '每个节点均需审批',
+}
+
+export interface ApprovalFlowSettings {
+  submitterCanRevoke: boolean
+  allowBatchProcess: boolean
+  allowWithdraw: boolean
+  allowAddSign: boolean
+  duplicateApproverRule: DuplicateApproverRule
+  requireComment: boolean
+}
+
+export interface ApprovalFlowNodeInput extends ApprovalNodeConfig {
+  /** 前端编辑期稳定键；后端不会将其作为数据库主键。 */
+  clientId?: string
+}
+
+export interface ApprovalFlowWriteInput extends ApprovalFlowSettings {
   name: string
+  formType: ApprovalFormType
+  description?: string | null
   enabled: boolean
+  createExecute: boolean
+  updateExecute: boolean
+  deleteExecute: boolean
+  condition?: { amountGte?: number } | null
+  createNodes: ApprovalFlowNodeInput[]
+}
+
+export interface ApprovalFlowListItem extends ApprovalFlowSettings {
+  id: string
+  number: string
+  formType: ApprovalFormType
+  name: string
+  description: string | null
+  enabled: boolean
+  createExecute: boolean
+  updateExecute: boolean
+  deleteExecute: boolean
+  currentVersion: number
+  runtimeReady: boolean
+  createdById: string | null
+  createdByName: string | null
+  updatedById: string | null
+  updatedByName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApprovalFlowNodeDetail {
+  id: string
+  number: string
+  nodeType: ApprovalNodeType
+  executeTiming: ApprovalExecuteTiming
+  sort: number
+  name: string
+  approverType?: ApproverType
+  approverIds?: string[]
+  mode?: ApprovalMode
+}
+
+export interface ApprovalFlowLinkDetail {
+  id: string
+  fromNodeId: string
+  toNodeId: string
+  sort: number
+}
+
+export interface ApprovalFlowDetail extends ApprovalFlowListItem {
+  currentVersionId: string
   condition: { amountGte?: number } | null
-  nodes: (ApprovalNodeConfig & { id: string; sort: number })[]
+  createNodes: ApprovalFlowNodeDetail[]
+  createLinks: ApprovalFlowLinkDetail[]
 }
 
 export interface ApprovalTaskVO {

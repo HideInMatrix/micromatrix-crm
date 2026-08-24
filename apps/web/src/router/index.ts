@@ -226,7 +226,7 @@ const router = createRouter({
         {
           path: 'system/approval-flows',
           component: () => import('@/views/system/ApprovalFlowsView.vue'),
-          meta: { title: '审批流配置', perm: 'approval:flowManage', client: 'pc' },
+          meta: { title: '流程设置', perm: 'system:process', client: 'pc' },
         },
         {
           path: 'system/messages',

@@ -28,6 +28,14 @@
 - 成员管理支持多个角色标签和多选表单；角色管理新增成员 Drawer、分页列表、批量关联和移除。
 - 验收：Prisma migrate + seed、11 条单元测试、API/Web build/typecheck、ESLint、186 条全链路 smoke、浏览器成员多选/角色成员 Drawer/控制台无错误。
 
+## 2026-08-24：W2.5 流程设置管理底座
+
+- 按 Cordys 流程页面、前端 API 及 `ApprovalFlowController/Service`、Domain、Mapper 和 1.7.x 迁移建立流程主记录、不可变版本、基础节点图和实例版本引用，不以页面外观反推实现。
+- `/system/approval-flows` 已替换为分页列表与新建/编辑/详情抽屉，接入 `system:process / add / update / delete` 四类权限；Vue Flow 仅开放可执行的线性开始/审批/结束图。
+- 报价、合同、订单继续使用 `CREATE` 当前版本并冻结 `nodesSnapshot`；发票仅能保存停用配置，回款记录不再允许新提交，历史实例仍保留。
+- DB-009 已验证；发票业务对象、编辑/删除暂存回放、高级任务和条件/抄送/字段权限/Webhook 分别保留在 DB-003、DB-010、DB-011、DB-012。
+- 验收：迁移、规则与公共底座单测 `27/27`、API/Web 类型检查和构建通过，全链路 Smoke `219/219`，浏览器往返无新增 error/warn。
+
 ## 0. 探测进度
 
 | 轮次 | 日期       | 范围                                               | 结论落点                                   |

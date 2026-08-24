@@ -690,6 +690,35 @@ enum ApprovalMode {
   ANY // 或签（任一通过）
 }
 
+enum ApprovalFormType {
+  QUOTATION
+  CONTRACT
+  INVOICE
+  ORDER
+  // 仅用于保留 W2.5 前历史回款审批配置，不对配置 API 暴露。
+  RECEIVABLE_RECORD_LEGACY
+}
+
+enum ApprovalExecuteTiming {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum ApprovalNodeType {
+  START
+  APPROVER
+  CONDITION
+  DEFAULT
+  END
+}
+
+enum DuplicateApproverRule {
+  FIRST_ONLY
+  SEQUENTIAL_ALL
+  EACH
+}
+
 enum ApprovalInstanceStatus {
   PENDING
   APPROVED
@@ -705,42 +734,127 @@ enum ApprovalTaskStatus {
 }
 
 model ApprovalFlow {
-  id        String   @id @default(cuid())
-  tenantId  String
-  // 绑定业务对象：quote / contract / order / receivableRecord
-  module    String
-  name      String
-  enabled   Boolean  @default(true)
+  id                    String                @id @default(cuid())
+  tenantId              String
+  number                String
+  formType              ApprovalFormType
+  currentVersionId      String?
+  name                  String
+  createExecute         Boolean               @default(true)
+  updateExecute         Boolean               @default(false)
+  deleteExecute         Boolean               @default(false)
+  submitterCanRevoke    Boolean               @default(true)
+  allowBatchProcess     Boolean               @default(false)
+  allowWithdraw         Boolean               @default(false)
+  allowAddSign          Boolean               @default(false)
+  duplicateApproverRule DuplicateApproverRule @default(FIRST_ONLY)
+  requireComment        Boolean               @default(false)
+  enabled               Boolean               @default(false)
+  description           String?               @db.VarChar(1000)
   // 触发条件：{ amountGte?: number }，不满足条件则无需审批
-  condition Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  condition             Json?
+  deletedAt             DateTime?
+  createdById           String?
+  updatedById           String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
-  nodes ApprovalNode[]
+  currentVersion ApprovalFlowVersion?  @relation("CurrentFlowVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions       ApprovalFlowVersion[] @relation("FlowVersions")
+  instances      ApprovalInstance[]
 
-  @@unique([tenantId, module])
+  @@unique([tenantId, number])
+  @@index([tenantId, formType, deletedAt])
+  @@index([tenantId, enabled, deletedAt])
   @@map("approval_flows")
 }
 
+model ApprovalFlowNumberCounter {
+  id        String           @id @default(cuid())
+  tenantId  String
+  formType  ApprovalFormType
+  nextValue Int              @default(1)
+  updatedAt DateTime         @updatedAt
+
+  @@unique([tenantId, formType])
+  @@map("approval_flow_number_counters")
+}
+
+model ApprovalFlowVersion {
+  id          String   @id @default(cuid())
+  flowId      String
+  tenantId    String
+  version     Int
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  flow            ApprovalFlow       @relation("FlowVersions", fields: [flowId], references: [id], onDelete: Restrict)
+  currentForFlows ApprovalFlow[]     @relation("CurrentFlowVersion")
+  nodes           ApprovalNode[]
+  links           ApprovalNodeLink[]
+  instances       ApprovalInstance[]
+
+  @@unique([flowId, version])
+  @@index([tenantId, flowId])
+  @@map("approval_flow_versions")
+}
+
 model ApprovalNode {
+  id            String                @id @default(cuid())
+  flowVersionId String
+  number        String
+  name          String
+  nodeType      ApprovalNodeType
+  executeTiming ApprovalExecuteTiming @default(CREATE)
+  sort          Int                   @default(0)
+
+  flowVersion   ApprovalFlowVersion   @relation(fields: [flowVersionId], references: [id], onDelete: Restrict)
+  approver      ApprovalNodeApprover?
+  outgoingLinks ApprovalNodeLink[]    @relation("ApprovalNodeOutgoing")
+  incomingLinks ApprovalNodeLink[]    @relation("ApprovalNodeIncoming")
+
+  @@unique([flowVersionId, number])
+  @@index([flowVersionId, executeTiming, sort])
+  @@map("approval_nodes")
+}
+
+model ApprovalNodeApprover {
   id           String       @id @default(cuid())
-  flowId       String
-  sort         Int          @default(0)
-  name         String
+  nodeId       String       @unique
   approverType ApproverType
   // USER=用户ID集合；ROLE=角色ID集合
   approverIds  String[]     @default([])
   mode         ApprovalMode @default(ANY)
 
-  flow ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  node ApprovalNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
 
-  @@index([flowId])
-  @@map("approval_nodes")
+  @@map("approval_node_approvers")
+}
+
+model ApprovalNodeLink {
+  id            String @id @default(cuid())
+  flowVersionId String
+  fromNodeId    String
+  toNodeId      String
+  sort          Int    @default(0)
+
+  flowVersion ApprovalFlowVersion @relation(fields: [flowVersionId], references: [id], onDelete: Restrict)
+  fromNode    ApprovalNode        @relation("ApprovalNodeOutgoing", fields: [fromNodeId], references: [id], onDelete: Restrict)
+  toNode      ApprovalNode        @relation("ApprovalNodeIncoming", fields: [toNodeId], references: [id], onDelete: Restrict)
+
+  @@unique([flowVersionId, fromNodeId, toNodeId])
+  @@index([flowVersionId, sort])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@map("approval_node_links")
 }
 
 model ApprovalInstance {
   id               String                 @id @default(cuid())
   tenantId         String
+  flowId           String?
+  flowVersionId    String?
+  executeTiming    ApprovalExecuteTiming  @default(CREATE)
   module           String
   targetId         String
   targetName       String
@@ -756,11 +870,15 @@ model ApprovalInstance {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  tasks ApprovalTask[]
+  flow        ApprovalFlow?        @relation(fields: [flowId], references: [id], onDelete: SetNull)
+  flowVersion ApprovalFlowVersion? @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
+  tasks       ApprovalTask[]
 
   @@index([tenantId, status])
   @@index([tenantId, module, targetId])
   @@index([tenantId, submitterId])
+  @@index([flowId, status])
+  @@index([flowVersionId])
   @@map("approval_instances")
 }
 

@@ -33,7 +33,12 @@ erDiagram
     InvoiceTitle ||--o{ InvoiceRecord : "抬头"
     Contract ||--o{ Order : "履约订单"
 
-    ApprovalFlow ||--o{ ApprovalNode : nodes
+    ApprovalFlow ||--o{ ApprovalFlowVersion : versions
+    ApprovalFlowVersion ||--o{ ApprovalNode : nodes
+    ApprovalFlowVersion ||--o{ ApprovalNodeLink : links
+    ApprovalNode ||--o| ApprovalNodeApprover : approver
+    ApprovalFlow ||--o{ ApprovalInstance : instances
+    ApprovalFlowVersion ||--o{ ApprovalInstance : freezes
     ApprovalInstance ||--o{ ApprovalTask : tasks
 
     BiddingInfo }o--|| Lead : "转线索(convertedLeadId)"
@@ -58,7 +63,7 @@ erDiagram
 | attachments                             | 附件挂载（targetType+targetId）；本地磁盘上传已落地                                                                                                              |
 | export_tasks                            | R2 导出任务中心；记录创建者、业务模块、状态、文件路径、行数、大小与 24h 过期时间                                                                                 |
 
-W2.4 不新增迁移。当前已确认但尚未实施的合同作废/归档、发票审批、创建人审计、回款计划独立负责人和消息渠道模型缺口，必须以 [Cordys 暂缓能力与数据模型缺口台账](./cordys-deferred-backlog.md) 为完成前检查清单，不能因本阶段复用现有字段而视为不存在。
+W2.5 新增审批流版本与基础图结构迁移。当前已确认但尚未实施的合同作废/归档、发票审批、创建人审计、回款计划独立负责人、消息渠道、编辑/删除审批暂存和高级审批模型缺口，必须以 [Cordys 暂缓能力与数据模型缺口台账](./cordys-deferred-backlog.md) 为完成前检查清单，不能因本阶段复用现有字段而视为不存在。
 
 ### 元数据引擎
 
@@ -129,12 +134,18 @@ W2.2 已把 `FollowUpPlan` 接入 PC/Mobile 客户 360。指定客户读取仍�
 
 ### 审批引擎
 
-| 表                 | 要点                                                                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| approval_flows     | `@@unique([tenantId, module])` 每对象一条流程；condition.amountGte 触发条件                     |
-| approval_nodes     | 审批人策略 USER/ROLE/DEPT_LEADER/DIRECT_LEADER；mode ALL 会签 / ANY 或签                        |
-| approval_instances | nodesSnapshot 提交时冻结配置；currentNodeIndex 游标；业务对象冗余 approvalStatus 供列表快速展示 |
-| approval_tasks     | 按节点批量生成；`@@index([tenantId, approverId, status])` 支撑待办查询                          |
+| 表                            | 要点                                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| approval_flows                | 主记录：租户内可读编号、`quotation/contract/invoice/order` 表单类型、当前版本、三种执行时机、更多设置、金额入口条件、启停、软删除和创建/更新审计；未删除表单类型部分唯一 |
+| approval_flow_number_counters | 按租户和表单类型原子分配编号序号，前缀为 `QTE/CTR/INV/ORD-APV`                                                                                                           |
+| approval_flow_versions        | 不可变版本；`@@unique([flowId, version])`，流程主表通过 `currentVersionId` 指向当前版本                                                                                  |
+| approval_nodes                | 版本内基础节点：编号、名称、START/APPROVER/END（预留 CONDITION/DEFAULT）、CREATE/UPDATE/DELETE 执行时机与顺序                                                            |
+| approval_node_approvers       | 审批节点一对一扩展；策略 USER/ROLE/DEPT_LEADER/DIRECT_LEADER，`approverIds` 与 ALL 会签 / ANY 或签                                                                       |
+| approval_node_links           | 版本内有向连接；保存起点、终点和顺序。W2.5 页面和服务只生成唯一合法的线性图                                                                                              |
+| approval_instances            | 绑定 `flowId/flowVersionId/executeTiming`，并保留 `nodesSnapshot` 冻结提交时配置；`currentNodeIndex` 为运行游标                                                          |
+| approval_tasks                | 按快照节点批量生成；`@@index([tenantId, approverId, status])` 支撑待办查询                                                                                               |
+
+旧报价/合同/订单配置迁移为版本 1 并补开始/结束节点及连接；旧实例快照不改写。原回款记录流程被停用并软删除，新提交入口关闭，历史实例与任务继续可读。条件节点、高级审批任务、字段权限和 Webhook 模型分别由 DB-010～DB-012 跟踪。
 
 ### 标讯
 

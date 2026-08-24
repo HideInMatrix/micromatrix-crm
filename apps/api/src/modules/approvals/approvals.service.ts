@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import {
-  ApprovalFlowVO,
   ApprovalInstanceVO,
   ApprovalModule,
   ApprovalNodeConfig,
@@ -12,9 +11,7 @@ import { ApprovalInstance, ApprovalTask, Prisma } from '../../generated/prisma/c
 import { PrismaService } from '../../prisma/prisma.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { NotificationsService } from '../notifications/notifications.service'
-import { SaveFlowDto } from './dto/approval.dto'
-
-const APPROVAL_MODULES: ApprovalModule[] = ['quote', 'contract', 'order', 'receivableRecord']
+import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 
 interface TargetInfo {
   name: string
@@ -30,65 +27,10 @@ export class ApprovalsService {
     private readonly businessNotifications: BusinessNotificationsService,
   ) {}
 
-  // ===== 流程配置 =====
-
-  async listFlows(tenantId: string): Promise<ApprovalFlowVO[]> {
-    const flows = await this.prisma.approvalFlow.findMany({
-      where: { tenantId },
-      include: { nodes: { orderBy: { sort: 'asc' } } },
-    })
-    return flows.map((flow) => ({
-      id: flow.id,
-      module: flow.module as ApprovalModule,
-      name: flow.name,
-      enabled: flow.enabled,
-      condition: flow.condition as { amountGte?: number } | null,
-      nodes: flow.nodes.map((n) => ({
-        id: n.id,
-        sort: n.sort,
-        name: n.name,
-        approverType: n.approverType,
-        approverIds: n.approverIds,
-        mode: n.mode,
-      })),
-    }))
-  }
-
-  async saveFlow(user: AuthUser, dto: SaveFlowDto) {
-    if (!APPROVAL_MODULES.includes(dto.module as ApprovalModule)) {
-      throw new BadRequestException('不支持的业务对象')
-    }
-    if (dto.enabled && dto.nodes.length === 0) {
-      throw new BadRequestException('启用的流程至少需要一个审批节点')
-    }
-    const data = {
-      name: dto.name,
-      enabled: dto.enabled,
-      condition: (dto.condition ?? undefined) as Prisma.InputJsonValue | undefined,
-    }
-    const flow = await this.prisma.approvalFlow.upsert({
-      where: { tenantId_module: { tenantId: user.tenantId, module: dto.module } },
-      update: data,
-      create: { tenantId: user.tenantId, module: dto.module, ...data },
-    })
-    await this.prisma.approvalNode.deleteMany({ where: { flowId: flow.id } })
-    await this.prisma.approvalNode.createMany({
-      data: dto.nodes.map((node, index) => ({
-        flowId: flow.id,
-        sort: index,
-        name: node.name,
-        approverType: node.approverType,
-        approverIds: node.approverIds ?? [],
-        mode: node.mode,
-      })),
-    })
-    return { id: flow.id, name: `${dto.module} 审批流` }
-  }
-
   /** 该模块在指定金额下是否需要审批 */
   async flowRequired(tenantId: string, module: string, amount: number): Promise<boolean> {
     const flow = await this.enabledFlow(tenantId, module)
-    if (!flow) return false
+    if (!flow?.currentVersion) return false
     const amountGte = (flow.condition as { amountGte?: number } | null)?.amountGte
     return amountGte === undefined || amountGte === null || amount >= amountGte
   }
@@ -96,26 +38,34 @@ export class ApprovalsService {
   // ===== 提交与审批 =====
 
   async submit(user: AuthUser, module: ApprovalModule, targetId: string) {
+    if (module === 'receivableRecord') {
+      throw new BadRequestException('回款记录审批已退出流程设置，请使用 Cordys 发票审批链路')
+    }
     const target = await this.targetInfo(user.tenantId, module, targetId)
     if (target.approvalStatus === 'PENDING') throw new BadRequestException('该单据已在审批中')
     if (target.approvalStatus === 'APPROVED') throw new BadRequestException('该单据已审批通过')
 
     const flow = await this.enabledFlow(user.tenantId, module)
-    if (!flow) throw new BadRequestException('该业务对象未配置启用的审批流')
+    if (!flow?.currentVersion) throw new BadRequestException('该业务对象未配置启用的审批流')
     if (!(await this.flowRequired(user.tenantId, module, target.amount))) {
       throw new BadRequestException('该单据金额未达到审批条件，无需审批')
     }
 
-    const snapshot: ApprovalNodeConfig[] = flow.nodes.map((n) => ({
-      name: n.name,
-      approverType: n.approverType,
-      approverIds: n.approverIds,
-      mode: n.mode,
-    }))
+    const snapshot: ApprovalNodeConfig[] = flow.currentVersion.nodes
+      .filter((node) => node.nodeType === 'APPROVER' && node.approver)
+      .map((node) => ({
+        name: node.name,
+        approverType: node.approver!.approverType,
+        approverIds: node.approver!.approverIds,
+        mode: node.approver!.mode,
+      }))
 
     const instance = await this.prisma.approvalInstance.create({
       data: {
         tenantId: user.tenantId,
+        flowId: flow.id,
+        flowVersionId: flow.currentVersion.id,
+        executeTiming: 'CREATE',
         module,
         targetId,
         targetName: target.name,
@@ -443,9 +393,27 @@ export class ApprovalsService {
   }
 
   private async enabledFlow(tenantId: string, module: string) {
+    const formType = MODULE_TO_FORM_TYPE[module as ApprovalModule]
+    if (!formType) return null
     return this.prisma.approvalFlow.findFirst({
-      where: { tenantId, module, enabled: true },
-      include: { nodes: { orderBy: { sort: 'asc' } } },
+      where: {
+        tenantId,
+        formType: toDbFormType(formType),
+        enabled: true,
+        deletedAt: null,
+        createExecute: true,
+      },
+      include: {
+        currentVersion: {
+          include: {
+            nodes: {
+              where: { executeTiming: 'CREATE' },
+              include: { approver: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        },
+      },
     })
   }
 

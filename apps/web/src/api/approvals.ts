@@ -1,21 +1,32 @@
 import type {
-  ApprovalFlowVO,
+  ApprovalFlowDetail,
+  ApprovalFlowListItem,
+  ApprovalFlowWriteInput,
+  ApprovalFormType,
   ApprovalInstanceVO,
-  ApprovalNodeConfig,
   PageQuery,
   PaginatedResult,
 } from '@micromatrix/shared'
 import { http } from './http'
 
+export interface ApprovalFlowQuery extends PageQuery {
+  formType?: ApprovalFormType
+  enabled?: 'true' | 'false'
+  sortBy?: 'number' | 'name' | 'formType' | 'enabled' | 'createdAt' | 'updatedAt'
+  sortOrder?: 'asc' | 'desc'
+}
+
 export const approvalApi = {
-  flows: () => http.get<ApprovalFlowVO[]>('/approvals/flows'),
-  saveFlow: (data: {
-    module: string
-    name: string
-    enabled: boolean
-    condition?: { amountGte?: number }
-    nodes: ApprovalNodeConfig[]
-  }) => http.put('/approvals/flows', data),
+  flows: (params: ApprovalFlowQuery) =>
+    http.get<PaginatedResult<ApprovalFlowListItem>>('/approvals/flows', { params }),
+  flowDetail: (id: string) => http.get<ApprovalFlowDetail>(`/approvals/flows/${id}`),
+  createFlow: (data: ApprovalFlowWriteInput) =>
+    http.post<ApprovalFlowDetail>('/approvals/flows', data),
+  updateFlow: (id: string, data: Omit<ApprovalFlowWriteInput, 'formType'>) =>
+    http.put<ApprovalFlowDetail>(`/approvals/flows/${id}`, data),
+  updateFlowEnabled: (id: string, enabled: boolean) =>
+    http.patch<{ id: string; name: string }>(`/approvals/flows/${id}/enabled`, { enabled }),
+  removeFlow: (id: string) => http.delete<{ id: string; name: string }>(`/approvals/flows/${id}`),
 
   submit: (module: string, targetId: string) =>
     http.post('/approvals/submit', { module, targetId }),

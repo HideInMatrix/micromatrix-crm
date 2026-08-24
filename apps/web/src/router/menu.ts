@@ -67,7 +67,7 @@ export const MENUS: MenuItem[] = [
         path: '/system/approval-flows',
         title: '流程设置',
         moduleKey: 'system',
-        perm: 'approval:flowManage',
+        perm: 'system:process',
       },
       {
         path: '/system/settings',

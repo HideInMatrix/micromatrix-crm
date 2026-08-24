@@ -22,6 +22,6 @@
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/冒烟脚本）
 - 当前主线：[cordys-wave2-execution-plan.md](./cordys-wave2-execution-plan.md)；W2.1-W2.4 均已闭环，35 个目录事件中 32 个已有真实触发链路
-- 全链路回归：`pnpm smoke`（当前 **214 条实际断言**）+ `pnpm --filter @micromatrix/api test:rules`（27 条规则与公共底座单测）；W2.4 已使用本地 PostgreSQL 真实链路执行验收
+- 全链路回归：`pnpm smoke`（当前 **219 条实际断言**）+ `pnpm --filter @micromatrix/api test:rules`（27 条规则与公共底座单测）；W2.5 已使用本地 PostgreSQL 和隔离租户真实链路执行验收
 - 启动方式与演示账号见根目录 [README.md](../README.md)
 - 文档归档约定：根目录只保留项目入口 `README.md`；其余项目文档统一放在 `docs/`，上游 `CordysCRM/` 自带文档保持原位

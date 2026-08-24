@@ -1,13 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import {
-  ReceivablePlanStatus,
-  ReceivablePlanVO,
-  ReceivableRecordVO,
-} from '@micromatrix/shared'
+import { ReceivablePlanStatus, ReceivablePlanVO, ReceivableRecordVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma, ReceivablePlan } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
-import { ApprovalsService } from '../approvals/approvals.service'
 import { ContractsService } from './contracts.service'
 import { CreatePlanDto, CreateRecordDto, UpdatePlanDto } from './dto/receivable.dto'
 
@@ -20,7 +15,6 @@ export class ReceivablesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly contracts: ContractsService,
-    private readonly approvals: ApprovalsService,
   ) {}
 
   async listPlans(user: AuthUser, contractId: string): Promise<ReceivablePlanVO[]> {
@@ -129,10 +123,6 @@ export class ReceivablesService {
         deptId: user.deptId,
       },
     })
-    // 配置了回款审批流则自动提交审批（通过前不计入已回款）
-    if (await this.approvals.flowRequired(user.tenantId, 'receivableRecord', dto.amount)) {
-      await this.approvals.submit(user, 'receivableRecord', record.id)
-    }
     return { id: record.id, name: `回款 ¥${dto.amount}` }
   }
 

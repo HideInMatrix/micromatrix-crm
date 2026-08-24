@@ -12,6 +12,9 @@
   "dependencies": {
     "@micromatrix/shared": "workspace:*",
     "@vant/touch-emulator": "^1.5.0",
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
     "@vueuse/core": "^14.4.0",
     "axios": "^1.19.0",
     "echarts": "^6.1.0",

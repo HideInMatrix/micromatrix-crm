@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import * as bcrypt from 'bcryptjs'
+import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '../src/generated/prisma/client'
 
 const adapter = new PrismaPg({ connectionString: process.env['DATABASE_URL']! })
@@ -162,7 +163,10 @@ async function main() {
     leaderId?: string
     position?: string
   }) => {
-    const passwordHash = await bcrypt.hash(input.email === 'admin@demo.com' ? 'admin123' : 'demo123', 10)
+    const passwordHash = await bcrypt.hash(
+      input.email === 'admin@demo.com' ? 'admin123' : 'demo123',
+      10,
+    )
     const user = await prisma.user.upsert({
       where: { email: input.email },
       update: { deptId: input.deptId, leaderId: input.leaderId },
@@ -222,36 +226,108 @@ async function main() {
 
   // ===== 演示审批流 =====
   // 保证全链路 smoke 在全新数据库上可重复运行；仅首次创建，不覆盖用户后续配置。
-  const contractApprovalFlow = await prisma.approvalFlow.findUnique({
-    where: { tenantId_module: { tenantId: tenant.id, module: 'contract' } },
+  const contractApprovalFlow = await prisma.approvalFlow.findFirst({
+    where: { tenantId: tenant.id, formType: 'CONTRACT', deletedAt: null },
   })
   if (!contractApprovalFlow) {
-    await prisma.approvalFlow.create({
-      data: {
-        tenantId: tenant.id,
-        module: 'contract',
-        name: '大额合同审批',
-        enabled: true,
-        condition: { amountGte: 80000 },
-        nodes: {
-          create: [
-            {
-              sort: 0,
-              name: '直属上级审批',
+    await prisma.$transaction(async (tx) => {
+      const counter = await tx.approvalFlowNumberCounter.upsert({
+        where: { tenantId_formType: { tenantId: tenant.id, formType: 'CONTRACT' } },
+        update: { nextValue: { increment: 1 } },
+        create: { tenantId: tenant.id, formType: 'CONTRACT', nextValue: 2 },
+      })
+      const flow = await tx.approvalFlow.create({
+        data: {
+          tenantId: tenant.id,
+          number: `CTR-APV-${String(counter.nextValue - 1).padStart(5, '0')}`,
+          formType: 'CONTRACT',
+          name: '大额合同审批',
+          enabled: true,
+          condition: { amountGte: 80000 },
+          createdById: admin.id,
+          updatedById: admin.id,
+        },
+      })
+      const version = await tx.approvalFlowVersion.create({
+        data: {
+          flowId: flow.id,
+          tenantId: tenant.id,
+          version: 1,
+          createdById: admin.id,
+        },
+      })
+      const startId = randomUUID()
+      const leaderNodeId = randomUUID()
+      const adminNodeId = randomUUID()
+      const endId = randomUUID()
+      await tx.approvalNode.create({
+        data: {
+          id: startId,
+          flowVersionId: version.id,
+          number: 'PN001',
+          name: '开始',
+          nodeType: 'START',
+          sort: 0,
+        },
+      })
+      await tx.approvalNode.create({
+        data: {
+          id: leaderNodeId,
+          flowVersionId: version.id,
+          number: 'PN002',
+          name: '直属上级审批',
+          nodeType: 'APPROVER',
+          sort: 1,
+          approver: {
+            create: {
               approverType: 'DIRECT_LEADER',
               approverIds: [],
               mode: 'ANY',
             },
-            {
-              sort: 1,
-              name: '管理员终审',
+          },
+        },
+      })
+      await tx.approvalNode.create({
+        data: {
+          id: adminNodeId,
+          flowVersionId: version.id,
+          number: 'PN003',
+          name: '管理员终审',
+          nodeType: 'APPROVER',
+          sort: 2,
+          approver: {
+            create: {
               approverType: 'USER',
               approverIds: [admin.id],
               mode: 'ANY',
             },
-          ],
+          },
         },
-      },
+      })
+      await tx.approvalNode.create({
+        data: {
+          id: endId,
+          flowVersionId: version.id,
+          number: 'PN004',
+          name: '结束',
+          nodeType: 'END',
+          sort: 3,
+        },
+      })
+      const orderedIds = [startId, leaderNodeId, adminNodeId, endId]
+      await tx.approvalNodeLink.createMany({
+        data: orderedIds.slice(1).map((toNodeId, index) => ({
+          id: randomUUID(),
+          flowVersionId: version.id,
+          fromNodeId: orderedIds[index],
+          toNodeId,
+          sort: index,
+        })),
+      })
+      await tx.approvalFlow.update({
+        where: { id: flow.id },
+        data: { currentVersionId: version.id },
+      })
     })
   }
 

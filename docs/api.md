@@ -144,6 +144,25 @@ POST  /message-settings/batch             body: { systemEnabled?, emailEnabled? 
 - 报价、合同和回款计划的即将到期/当天到期由每天 08:00 的内部任务执行；任务读取同一设置接口保存的开关、`timeList` 和接收范围，不新增公开的手工触发 API。
 - 当前邮件发送器未接入，Web 明确禁用邮件开关；公告和第三方平台通知不属于本阶段。
 
+## 流程设置管理底座（W2.5）
+
+```text
+GET    /approvals/flows
+GET    /approvals/flows/{id}
+POST   /approvals/flows
+PUT    /approvals/flows/{id}
+PATCH  /approvals/flows/{id}/enabled      body: { enabled: boolean }
+DELETE /approvals/flows/{id}
+```
+
+- 列表支持 `page / pageSize / keyword / formType / enabled / sortBy / sortOrder`，只返回当前租户未软删除的报价、合同、发票、订单流程。
+- 权限分别为 `system:process / system:process:add / system:process:update / system:process:delete`；菜单、按钮和后端 Guard 使用同一语义。
+- 新建会在事务中生成类型前缀编号、版本 1、开始/审批/结束节点和线性连接；同租户同一表单类型只允许一条未删除流程。
+- 更新锁定表单类型。仅节点定义发生规范化差异时创建新版本；改名、描述或状态不会制造空版本。
+- 启用要求 `createExecute=true` 且至少有一个有效审批节点。发票运行时在 DB-003 完成前返回 `409`；`updateExecute/deleteExecute=true` 和未接入的高级设置返回 `422`。
+- 仅停用流程可软删除；删除会取消该流程仍在处理中的实例、跳过待办并恢复对应业务对象审批状态，已完成实例和历史版本不物理删除。
+- 运行时 `POST /approvals/submit` 只接受 `quote / contract / order`。新实例绑定 `flowId + flowVersionId + CREATE`，同时保留 `nodesSnapshot`；`receivableRecord` 只保留历史读取兼容。
+
 ## 多公海 / 多线索池自动回收规则
 
 `POST /api/resource-pools` 与 `PATCH /api/resource-pools/{id}` 的 `recycleRule` 使用 CordysCRM 时间规则语义：

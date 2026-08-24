@@ -35,6 +35,19 @@ async function login(email, password) {
   }
 }
 
+async function register(tenantName, name, email, password) {
+  const res = await fetch(`${base}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenantName, name, email, password }),
+  }).then((r) => r.json())
+  if (!res.accessToken) throw new Error(`注册失败: ${email} ${JSON.stringify(res)}`)
+  return {
+    user: res.user,
+    headers: { Authorization: `Bearer ${res.accessToken}`, 'Content-Type': 'application/json' },
+  }
+}
+
 const get = (url, h) => fetch(`${base}${url}`, { headers: h }).then((r) => r.json())
 const post = (url, h, body) =>
   fetch(`${base}${url}`, { method: 'POST', headers: h, body: JSON.stringify(body ?? {}) }).then(
@@ -89,6 +102,93 @@ const manager = await login('zhangwei@demo.com', 'demo123')
 const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
 const stamp = Date.now().toString(36)
+
+// W2.5 流程设置底座：权限、配置生命周期、不可用类型和不可变版本。
+const managerFlowList = await request('GET', '/approvals/flows?pageSize=10', manager.headers)
+check('W2.5 无流程设置权限的角色不可读取配置', managerFlowList.status === 403)
+const processAdmin = await register(
+  `W2.5隔离租户-${stamp}`,
+  'W2.5 流程管理员',
+  `w25-${stamp}@smoke.local`,
+  'smoke123',
+)
+const invoiceFlowPayload = {
+  formType: 'invoice',
+  name: `冒烟发票审批-${stamp}`,
+  description: 'W2.5 临时配置',
+  enabled: false,
+  createExecute: true,
+  updateExecute: false,
+  deleteExecute: false,
+  submitterCanRevoke: true,
+  allowBatchProcess: false,
+  allowWithdraw: false,
+  allowAddSign: false,
+  duplicateApproverRule: 'FIRST_ONLY',
+  requireComment: false,
+  condition: null,
+  createNodes: [
+    {
+      name: '直属上级审批',
+      approverType: 'DIRECT_LEADER',
+      approverIds: [],
+      mode: 'ANY',
+    },
+  ],
+}
+const invoiceFlowResponse = await request(
+  'POST',
+  '/approvals/flows',
+  processAdmin.headers,
+  invoiceFlowPayload,
+)
+const invoiceFlow = await invoiceFlowResponse.json()
+check(
+  'W2.5 发票可建立停用配置底座并生成编号与 V1',
+  invoiceFlowResponse.ok &&
+    invoiceFlow.number?.startsWith('INV-APV-') &&
+    invoiceFlow.currentVersion === 1 &&
+    invoiceFlow.runtimeReady === false,
+)
+const enableInvoiceFlow = await request(
+  'PATCH',
+  `/approvals/flows/${invoiceFlow.id}/enabled`,
+  processAdmin.headers,
+  { enabled: true },
+)
+check('W2.5 未接入发票运行时的流程不能启用', enableInvoiceFlow.status === 409)
+
+const { formType: _invoiceFormType, ...invoiceUpdatePayload } = invoiceFlowPayload
+invoiceUpdatePayload.name = `${invoiceFlowPayload.name}-V2`
+invoiceUpdatePayload.createNodes = [
+  ...invoiceFlowPayload.createNodes,
+  {
+    name: '财务审批',
+    approverType: 'ROLE',
+    approverIds: [processAdmin.user.roles[0].id],
+    mode: 'ALL',
+  },
+]
+const updatedInvoiceResponse = await request(
+  'PUT',
+  `/approvals/flows/${invoiceFlow.id}`,
+  processAdmin.headers,
+  invoiceUpdatePayload,
+)
+const updatedInvoiceFlow = await updatedInvoiceResponse.json()
+check(
+  'W2.5 节点定义变化生成不可变 V2 并保留完整线性图',
+  updatedInvoiceResponse.ok &&
+    updatedInvoiceFlow.currentVersion === 2 &&
+    updatedInvoiceFlow.createNodes?.filter((node) => node.nodeType === 'APPROVER').length === 2 &&
+    updatedInvoiceFlow.createLinks?.length === 3,
+)
+const deletedInvoiceFlow = await request(
+  'DELETE',
+  `/approvals/flows/${invoiceFlow.id}`,
+  processAdmin.headers,
+)
+check('W2.5 停用流程可软删除', deletedInvoiceFlow.ok)
 
 // 1.1 顶部导航配置：租户默认、排序、权限与刷新持久化
 const expectedTopNavigation = [

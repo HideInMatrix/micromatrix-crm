@@ -5,22 +5,32 @@ import {
   IsBoolean,
   IsIn,
   IsNotEmpty,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator'
+import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
-const APPROVER_TYPES = ['USER', 'ROLE', 'DEPT_LEADER', 'DIRECT_LEADER'] as const
-const MODES = ['ALL', 'ANY'] as const
-const MODULES = ['quote', 'contract', 'order', 'receivableRecord'] as const
+export const APPROVER_TYPES = ['USER', 'ROLE', 'DEPT_LEADER', 'DIRECT_LEADER'] as const
+export const APPROVAL_MODES = ['ALL', 'ANY'] as const
+export const APPROVAL_FORM_TYPES = ['quotation', 'contract', 'invoice', 'order'] as const
+export const APPROVAL_MODULES = ['quote', 'contract', 'order'] as const
+export const DUPLICATE_APPROVER_RULES = ['FIRST_ONLY', 'SEQUENTIAL_ALL', 'EACH'] as const
 
 export class FlowNodeDto {
+  @ApiPropertyOptional({ description: '前端编辑期稳定键' })
+  @IsString()
+  @IsOptional()
+  clientId?: string
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty({ message: '节点名称不能为空' })
-  @MaxLength(30)
+  @MaxLength(255)
   name!: string
 
   @ApiProperty({ enum: APPROVER_TYPES })
@@ -33,42 +43,191 @@ export class FlowNodeDto {
   @IsOptional()
   approverIds?: string[]
 
-  @ApiProperty({ enum: MODES })
-  @IsIn(MODES)
-  mode!: (typeof MODES)[number]
+  @ApiProperty({ enum: APPROVAL_MODES })
+  @IsIn(APPROVAL_MODES)
+  mode!: (typeof APPROVAL_MODES)[number]
 }
 
-export class SaveFlowDto {
-  @ApiProperty({ enum: MODULES })
-  @IsIn(MODULES)
-  module!: (typeof MODULES)[number]
+export class FlowConditionDto {
+  @ApiPropertyOptional({ description: '金额达到该值时进入审批' })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  amountGte?: number
+}
+
+export class CreateApprovalFlowDto {
+  @ApiProperty({ enum: APPROVAL_FORM_TYPES })
+  @IsIn(APPROVAL_FORM_TYPES)
+  formType!: (typeof APPROVAL_FORM_TYPES)[number]
 
   @ApiProperty()
   @IsString()
   @IsNotEmpty({ message: '流程名称不能为空' })
-  @MaxLength(50)
+  @MaxLength(255)
   name!: string
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(1000)
+  @IsOptional()
+  description?: string | null
 
   @ApiProperty()
   @IsBoolean()
   enabled!: boolean
 
-  @ApiPropertyOptional({ description: '触发条件 { amountGte }' })
+  @ApiProperty()
+  @IsBoolean()
+  createExecute!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  updateExecute!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  deleteExecute!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  submitterCanRevoke!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  allowBatchProcess!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  allowWithdraw!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  allowAddSign!: boolean
+
+  @ApiProperty({ enum: DUPLICATE_APPROVER_RULES })
+  @IsIn(DUPLICATE_APPROVER_RULES)
+  duplicateApproverRule!: (typeof DUPLICATE_APPROVER_RULES)[number]
+
+  @ApiProperty()
+  @IsBoolean()
+  requireComment!: boolean
+
+  @ApiPropertyOptional({ type: FlowConditionDto })
   @IsObject()
+  @ValidateNested()
+  @Type(() => FlowConditionDto)
   @IsOptional()
-  condition?: { amountGte?: number }
+  condition?: FlowConditionDto | null
 
   @ApiProperty({ type: [FlowNodeDto] })
   @IsArray()
   @Type(() => FlowNodeDto)
   @ValidateNested({ each: true })
-  nodes!: FlowNodeDto[]
+  createNodes!: FlowNodeDto[]
+}
+
+export class UpdateApprovalFlowDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty({ message: '流程名称不能为空' })
+  @MaxLength(255)
+  name!: string
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(1000)
+  @IsOptional()
+  description?: string | null
+
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  createExecute!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  updateExecute!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  deleteExecute!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  submitterCanRevoke!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  allowBatchProcess!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  allowWithdraw!: boolean
+
+  @ApiProperty()
+  @IsBoolean()
+  allowAddSign!: boolean
+
+  @ApiProperty({ enum: DUPLICATE_APPROVER_RULES })
+  @IsIn(DUPLICATE_APPROVER_RULES)
+  duplicateApproverRule!: (typeof DUPLICATE_APPROVER_RULES)[number]
+
+  @ApiProperty()
+  @IsBoolean()
+  requireComment!: boolean
+
+  @ApiPropertyOptional({ type: FlowConditionDto })
+  @IsObject()
+  @ValidateNested()
+  @Type(() => FlowConditionDto)
+  @IsOptional()
+  condition?: FlowConditionDto | null
+
+  @ApiProperty({ type: [FlowNodeDto] })
+  @IsArray()
+  @Type(() => FlowNodeDto)
+  @ValidateNested({ each: true })
+  createNodes!: FlowNodeDto[]
+}
+
+export class ApprovalFlowPageQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ enum: APPROVAL_FORM_TYPES })
+  @IsIn(APPROVAL_FORM_TYPES)
+  @IsOptional()
+  formType?: (typeof APPROVAL_FORM_TYPES)[number]
+
+  @ApiPropertyOptional({ enum: ['true', 'false'] })
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  enabled?: 'true' | 'false'
+
+  @ApiPropertyOptional({
+    enum: ['number', 'name', 'formType', 'enabled', 'createdAt', 'updatedAt'],
+  })
+  @IsIn(['number', 'name', 'formType', 'enabled', 'createdAt', 'updatedAt'])
+  @IsOptional()
+  sortBy?: 'number' | 'name' | 'formType' | 'enabled' | 'createdAt' | 'updatedAt'
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
+  @IsIn(['asc', 'desc'])
+  @IsOptional()
+  sortOrder?: 'asc' | 'desc'
+}
+
+export class UpdateApprovalFlowEnabledDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean
 }
 
 export class SubmitApprovalDto {
-  @ApiProperty({ enum: MODULES })
-  @IsIn(MODULES)
-  module!: (typeof MODULES)[number]
+  @ApiProperty({ enum: APPROVAL_MODULES })
+  @IsIn(APPROVAL_MODULES)
+  module!: (typeof APPROVAL_MODULES)[number]
 
   @ApiProperty()
   @IsString()
