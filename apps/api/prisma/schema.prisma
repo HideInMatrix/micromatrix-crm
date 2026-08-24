@@ -30,6 +30,12 @@ enum SubscriptionStatus {
   CANCELED
 }
 
+enum EnterpriseIntegrationProvider {
+  WECOM
+  DINGTALK
+  LARK
+}
+
 // 数据范围（角色的数据可见边界）
 enum DataScope {
   ALL // 全部数据
@@ -47,16 +53,17 @@ model Tenant {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  users                User[]
-  roles                Role[]
-  userRoles            UserRole[]
-  customers            Customer[]
-  contacts             Contact[]
-  subscriptions        Subscription[]
-  departments          Department[]
-  moduleConfigs        ModuleConfig[]
-  topNavigationConfigs TopNavigationConfig[]
-  messageTaskSettings  MessageTaskSetting[]
+  users                  User[]
+  roles                  Role[]
+  userRoles              UserRole[]
+  customers              Customer[]
+  contacts               Contact[]
+  subscriptions          Subscription[]
+  departments            Department[]
+  moduleConfigs          ModuleConfig[]
+  topNavigationConfigs   TopNavigationConfig[]
+  messageTaskSettings    MessageTaskSetting[]
+  enterpriseIntegrations EnterpriseIntegration[]
 
   @@map("tenants")
 }
@@ -1298,6 +1305,32 @@ model SystemSetting {
 
   @@unique([tenantId, key])
   @@map("system_settings")
+}
+
+model EnterpriseIntegration {
+  id                String                        @id @default(cuid())
+  tenantId          String
+  provider          EnterpriseIntegrationProvider
+  corpId            String
+  agentId           String
+  secretCiphertext  String
+  secretIv          String
+  secretAuthTag     String
+  secretKeyVersion  Int                           @default(1)
+  syncEnabled       Boolean                       @default(false)
+  lastTestSucceeded Boolean?
+  lastTestMessage   String?
+  lastTestedAt      DateTime?
+  createdById       String
+  updatedById       String
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@map("enterprise_integrations")
 }
 
 model ModuleConfig {

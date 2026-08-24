@@ -12,6 +12,8 @@ import { useAuthStore } from '@/stores/auth'
 import ApprovalFlowDrawer from './approval-flows/ApprovalFlowDrawer.vue'
 
 type DrawerMode = 'create' | 'edit' | 'detail'
+type SortField = 'number' | 'name' | 'formType' | 'enabled' | 'createdAt' | 'updatedAt'
+const SORT_FIELDS: SortField[] = ['number', 'name', 'formType', 'enabled', 'createdAt', 'updatedAt']
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -27,7 +29,7 @@ const query = reactive<{
   keyword: string
   formType?: ApprovalFormType
   enabled?: 'true' | 'false'
-  sortBy: 'number' | 'name' | 'formType' | 'enabled' | 'createdAt' | 'updatedAt'
+  sortBy: SortField
   sortOrder: 'asc' | 'desc'
 }>({
   page: 1,
@@ -83,13 +85,17 @@ function handleSort({
   prop,
   order,
 }: {
-  prop: typeof query.sortBy | null
+  prop: string | null
   order: 'ascending' | 'descending' | null
 }) {
-  query.sortBy = prop ?? 'updatedAt'
+  query.sortBy = prop && SORT_FIELDS.includes(prop as SortField) ? (prop as SortField) : 'updatedAt'
   query.sortOrder = order === 'ascending' ? 'asc' : 'desc'
   query.page = 1
   load()
+}
+
+function asFlowRow(row: unknown): ApprovalFlowListItem {
+  return row as ApprovalFlowListItem
 }
 
 function openDrawer(mode: DrawerMode, id?: string) {
@@ -256,7 +262,7 @@ onMounted(load)
             :disabled="!canUpdate || !row.runtimeReady"
             :loading="switchingId === row.id"
             :data-flow-enabled="row.id"
-            @change="(value: boolean | string | number) => toggleEnabled(row, value)"
+            @change="(value: boolean | string | number) => toggleEnabled(asFlowRow(row), value)"
           />
         </template>
       </el-table-column>
@@ -296,7 +302,7 @@ onMounted(load)
             type="danger"
             :icon="Trash2"
             :disabled="row.enabled"
-            @click="remove(row)"
+            @click="remove(asFlowRow(row))"
           >
             删除
           </el-button>

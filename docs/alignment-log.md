@@ -514,3 +514,27 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - Smoke 真实验证事件关闭不落库、恢复后重新发送，以及客户人工移入公海、线索人工移池/双事件转换、商机转移和合同审批结果；消息设置最终恢复默认。
 - 固定时钟测试验证到期 3/7 天、当天、关闭/空配置、仅执行中合同和足额回款过滤。定时任务保持内部执行，不为测试新增 Cordys 不存在的公开 API。
 - 浏览器刷新复验 `/system/messages`：五组 35 事件仍完整显示，系统消息总开关及各事件均恢复开启，邮件列保持禁用；刷新后没有新增 console error/warn。
+
+---
+
+## 12. 企业微信集成底座源码迁移与验收（2026-08-24）
+
+### 12.1 源码事实
+
+- 从 `views/system/business/index.vue`、`integrationList.vue`、`editIntegrationModal.vue` 和 shared API 继续追到 `OrganizationSettingsController`、`IntegrationConfigService`、`TokenService`、企微请求 DTO、配置 Domain/Mapper。
+- Cordys 企微自建应用配置由 `corpId / agentId / appSecret / startEnable` 构成；连接测试先获取 access token，再读取应用信息，并保存配置与测试结果。
+- 组织同步、扫码登录和消息发送是配置底座的下游能力，不能因为配置页存在就视为已完成。
+
+### 12.2 MicroMatrix 落地
+
+- 新增租户/provider 唯一的 `enterprise_integrations`，Secret 采用 AES-256-GCM 随机 IV 加密，保存密钥版本和认证标签；读取接口只返回是否已配置。
+- 新增 `/enterprise-integrations/wecom` 读取、保存和测试接口，以及 `system:setting:update` 写权限和操作日志。留空保留 Secret，替换凭据会使旧测试状态失效。
+- 企业设置重组为“企业信息 / 企业集成 / 开放 API”三个页签；企微卡片显示配置、测试和 W3.2 同步边界，配置抽屉支持保存与测试。
+- 组织同步、统一登录和第三方消息的数据模型缺口分别登记为 DB-013、DB-014、DB-006，W3.1 不伪造这些能力。
+
+### 12.3 验证证据
+
+- Prisma validate/generate/migrate、shared/API/Web typecheck、ESLint、API/Web build 全绿；规则与公共底座单测 `41/41`，全链路 smoke `223/223`。
+- 单测覆盖 AES-GCM 随机 IV、篡改/错密钥拒绝、租户隔离、Secret 保留/替换、连接成功/失败持久化和 token/agent 两阶段客户端。
+- 浏览器验证管理员进入企业设置、切换企业集成、打开配置抽屉、保存配置后状态变为“待验证”；页面与重新打开的抽屉均不回显 Secret 明文，最终无 console error/warn。
+- 未使用真实企微凭据，因此外部平台成功响应由客户端单测验证；生产接入时仍需用实际自建应用完成一次环境验收。

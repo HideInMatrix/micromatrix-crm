@@ -2,6 +2,7 @@ import type {
   BatchUpdateMessageTaskSettingInput,
   DataScope,
   DepartmentVO,
+  EnterpriseIntegrationVO,
   LoginLogVO,
   MemberVO,
   MessageTaskConfig,
@@ -17,6 +18,8 @@ import type {
   TopNavigationConfigVO,
   TopNavigationKey,
   UpdateMessageTaskSettingInput,
+  SaveWeComIntegrationInput,
+  WeComConnectionTestVO,
 } from '@micromatrix/shared'
 import { http } from './http'
 
@@ -145,4 +148,12 @@ export const messageSettingApi = {
 export const settingApi = {
   get: () => http.get<Record<string, unknown>>('/settings'),
   update: (entries: Record<string, unknown>) => http.put('/settings', entries),
+}
+
+export const enterpriseIntegrationApi = {
+  getWeCom: () => http.get<EnterpriseIntegrationVO>('/enterprise-integrations/wecom'),
+  saveWeCom: (data: SaveWeComIntegrationInput) =>
+    http.put<EnterpriseIntegrationVO>('/enterprise-integrations/wecom', data),
+  testWeCom: (data: SaveWeComIntegrationInput) =>
+    http.post<WeComConnectionTestVO>('/enterprise-integrations/wecom/test', data),
 }

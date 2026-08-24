@@ -63,6 +63,38 @@ export interface LoginLogVO {
   createdAt: string
 }
 
+// ============ 企业集成 ============
+
+export type EnterpriseIntegrationProvider = 'WECOM' | 'DINGTALK' | 'LARK'
+
+export interface EnterpriseIntegrationVO {
+  id: string | null
+  provider: EnterpriseIntegrationProvider
+  configured: boolean
+  corpId: string
+  agentId: string
+  secretConfigured: boolean
+  syncEnabled: boolean
+  lastTestSucceeded: boolean | null
+  lastTestMessage: string | null
+  lastTestedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface SaveWeComIntegrationInput {
+  corpId: string
+  agentId: string
+  appSecret?: string
+}
+
+export interface WeComConnectionTestVO {
+  success: boolean
+  message: string
+  providerCode: number | null
+  integration: EnterpriseIntegrationVO
+}
+
 // ============ 通知 ============
 
 export type NotificationBizType =

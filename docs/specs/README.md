@@ -11,3 +11,4 @@
 | 消息设置底座          | [requirements](./message-settings-parity/requirements.md)         | [design](./message-settings-parity/design.md)         | [tasks](./message-settings-parity/tasks.md)         |
 | W2.4 业务消息触发链路 | [requirements](./business-message-trigger-parity/requirements.md) | [design](./business-message-trigger-parity/design.md) | [tasks](./business-message-trigger-parity/tasks.md) |
 | W2.5 流程设置管理底座 | [requirements](./process-settings-parity/requirements.md)         | [design](./process-settings-parity/design.md)         | [tasks](./process-settings-parity/tasks.md)         |
+| W3.1 企业微信集成底座 | [requirements](./wecom-integration-foundation/requirements.md)    | [design](./wecom-integration-foundation/design.md)    | [tasks](./wecom-integration-foundation/tasks.md)    |

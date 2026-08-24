@@ -163,6 +163,20 @@ DELETE /approvals/flows/{id}
 - 仅停用流程可软删除；删除会取消该流程仍在处理中的实例、跳过待办并恢复对应业务对象审批状态，已完成实例和历史版本不物理删除。
 - 运行时 `POST /approvals/submit` 只接受 `quote / contract / order`。新实例绑定 `flowId + flowVersionId + CREATE`，同时保留 `nodesSnapshot`；`receivableRecord` 只保留历史读取兼容。
 
+## 企业微信集成底座（W3.1）
+
+```text
+GET  /enterprise-integrations/wecom
+PUT  /enterprise-integrations/wecom         body: { corpId, agentId, appSecret? }
+POST /enterprise-integrations/wecom/test    body: { corpId, agentId, appSecret? }
+```
+
+- 读取要求 `system:setting`，保存和测试要求 `system:setting:update`；写操作记录企业集成操作日志。
+- 首次保存必须提交 Secret；已有配置再次保存时留空表示保留，输入新值会替换并清空旧测试结果。企业 ID 变化时，连接测试必须同时提交新 Secret。
+- Secret 使用 AES-256-GCM 加密后落库，API 只返回 `secretConfigured`，不会返回明文、密文、IV、AuthTag 或访问令牌。生产环境必须配置 `INTEGRATION_CREDENTIALS_KEY`。
+- 连接测试按 Cordys 顺序请求企微 access token，再读取应用信息；成功或失败都会保存当前配置和脱敏测试结果。超时、网络异常和企微错误码统一映射为安全提示。
+- 本阶段不提供组织同步开关的真实执行能力。部门/成员同步与映射进入 W3.2；统一登录和第三方消息发送进入 W3.3，见 DB-006、DB-013、DB-014。
+
 ## 多公海 / 多线索池自动回收规则
 
 `POST /api/resource-pools` 与 `PATCH /api/resource-pools/{id}` 的 `recycleRule` 使用 CordysCRM 时间规则语义：

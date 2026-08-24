@@ -103,6 +103,47 @@ const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
 const stamp = Date.now().toString(36)
 
+// W3.1 企业微信集成底座：权限、首次密钥、脱敏响应和持久化。
+const managerWeComConfig = await request('GET', '/enterprise-integrations/wecom', manager.headers)
+check('W3.1 无企业设置权限的角色不可读取企微配置', managerWeComConfig.status === 403)
+const integrationAdmin = await register(
+  `W3.1隔离租户-${stamp}`,
+  'W3.1 集成管理员',
+  `w31-${stamp}@smoke.local`,
+  'smoke123',
+)
+const missingSecretTest = await request(
+  'POST',
+  '/enterprise-integrations/wecom/test',
+  integrationAdmin.headers,
+  { corpId: 'ww-smoke', agentId: '1000001' },
+)
+check('W3.1 首次连接测试必须提供应用 Secret', missingSecretTest.status === 400)
+const savedWeComResponse = await request(
+  'PUT',
+  '/enterprise-integrations/wecom',
+  integrationAdmin.headers,
+  { corpId: `ww-${stamp}`, agentId: '1000001', appSecret: `smoke-secret-${stamp}` },
+)
+const savedWeCom = await savedWeComResponse.json()
+check(
+  'W3.1 企微配置保存后只返回脱敏状态',
+  savedWeComResponse.ok &&
+    savedWeCom.configured === true &&
+    savedWeCom.secretConfigured === true &&
+    savedWeCom.lastTestSucceeded === null &&
+    !('appSecret' in savedWeCom) &&
+    !('secretCiphertext' in savedWeCom),
+)
+const persistedWeCom = await get('/enterprise-integrations/wecom', integrationAdmin.headers)
+check(
+  'W3.1 企微配置按租户持久化且不回显 Secret',
+  persistedWeCom.corpId === `ww-${stamp}` &&
+    persistedWeCom.agentId === '1000001' &&
+    persistedWeCom.secretConfigured === true &&
+    !('appSecret' in persistedWeCom),
+)
+
 // W2.5 流程设置底座：权限、配置生命周期、不可用类型和不可变版本。
 const managerFlowList = await request('GET', '/approvals/flows?pageSize=10', manager.headers)
 check('W2.5 无流程设置权限的角色不可读取配置', managerFlowList.status === 403)
