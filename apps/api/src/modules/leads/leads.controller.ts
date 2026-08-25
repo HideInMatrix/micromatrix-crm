@@ -30,7 +30,7 @@ import {
   PoolResourceBatchEditDto,
   ResourceBatchEditDto,
 } from '../../common/dto/resource-batch.dto'
-import { MoveToResourcePoolDto } from '../pool-rules/dto/resource-pool.dto'
+import { MoveToResourcePoolDto } from '../../common/dto/move-to-resource-pool.dto'
 import {
   ExportCreateDto,
   ExportSelectDto,
@@ -109,7 +109,15 @@ export class LeadsController {
   @RequirePermissions('lead:import')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { importType: { enum: ['ADD', 'UPDATE'] }, file: { type: 'string', format: 'binary' } } } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        importType: { enum: ['ADD', 'UPDATE'] },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @ApiOperation({ summary: '线索 xlsx 导入预校验' })
   precheckImport(
     @CurrentUser() user: AuthUser,
@@ -217,7 +225,11 @@ export class LeadsController {
     @Body() dto: ExportCreateDto,
   ) {
     if (!poolId) throw new BadRequestException('请选择线索池')
-    return this.leadsService.exportXlsx(user, { ...query, scope: 'pool', poolId }, { ...dto, poolId })
+    return this.leadsService.exportXlsx(
+      user,
+      { ...query, scope: 'pool', poolId },
+      { ...dto, poolId },
+    )
   }
 
   @Post('pool/export/select')
@@ -231,7 +243,11 @@ export class LeadsController {
     @Body() dto: ExportSelectDto,
   ) {
     if (!poolId) throw new BadRequestException('请选择线索池')
-    return this.leadsService.exportXlsx(user, { ...query, scope: 'pool', poolId }, { ...dto, poolId })
+    return this.leadsService.exportXlsx(
+      user,
+      { ...query, scope: 'pool', poolId },
+      { ...dto, poolId },
+    )
   }
 
   @Post('batch/claim')
@@ -374,20 +390,14 @@ export class LeadsController {
   @RequirePermissions('lead:update')
   @LogOperation('lead', 'retransitionCustomer')
   @ApiOperation({ summary: '关联/重新关联已有客户' })
-  retransitionCustomer(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: RetransitionLeadCustomerDto,
-  ) {
+  retransitionCustomer(@CurrentUser() user: AuthUser, @Body() dto: RetransitionLeadCustomerDto) {
     return this.leadsService.retransitionCustomer(user, dto)
   }
 
   @Post('transition/account/page')
   @RequirePermissions('menu:lead', 'menu:customer')
   @ApiOperation({ summary: '可关联客户列表：数据范围+协作+可访问公海' })
-  transitionCustomerList(
-    @CurrentUser() user: AuthUser,
-    @Body() query: TransitionCustomerQueryDto,
-  ) {
+  transitionCustomerList(@CurrentUser() user: AuthUser, @Body() query: TransitionCustomerQueryDto) {
     return this.leadsService.transitionCustomerList(user, query)
   }
 

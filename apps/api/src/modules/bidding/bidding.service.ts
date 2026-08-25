@@ -9,6 +9,7 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { BiddingInfo, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { BiddingItem, BiddingProvider } from './providers/bidding-provider.interface'
 import { DemoBiddingProvider } from './providers/demo.provider'
 import { ImportBiddingDto, QueryBiddingDto } from './dto/bidding.dto'
@@ -21,6 +22,7 @@ export class BiddingService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly fieldValues: ResourceFieldValueService,
     demoProvider: DemoBiddingProvider,
   ) {
     this.providers = new Map([[demoProvider.key, demoProvider]])
@@ -221,14 +223,33 @@ export class BiddingService {
     if (!bidding) throw new NotFoundException('标讯不存在')
     if (bidding.convertedLeadId) throw new BadRequestException('该标讯已转为线索')
 
-    const lead = await this.prisma.lead.create({
-      data: {
-        tenantId: user.tenantId,
-        name: bidding.buyer ? `${bidding.buyer}（${bidding.title.slice(0, 40)}）` : bidding.title.slice(0, 80),
-        ownerId: user.id,
-        deptId: user.deptId,
-        customData: { cf_source: '标讯' },
-      },
+    const now = BigInt(Date.now())
+    const lead = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.clue.create({
+        data: {
+          organizationId: user.tenantId,
+          name: bidding.buyer
+            ? `${bidding.buyer}（${bidding.title.slice(0, 40)}）`
+            : bidding.title.slice(0, 80),
+          owner: user.id,
+          stage: 'FOLLOWING',
+          inSharedPool: false,
+          collectionTime: now,
+          createTime: now,
+          updateTime: now,
+          createUser: user.id,
+          updateUser: user.id,
+        },
+      })
+      await this.fieldValues.save(
+        user.tenantId,
+        'clue',
+        created.id,
+        { cf_source: '标讯' },
+        'create',
+        tx,
+      )
+      return created
     })
     await this.prisma.biddingInfo.update({
       where: { id },

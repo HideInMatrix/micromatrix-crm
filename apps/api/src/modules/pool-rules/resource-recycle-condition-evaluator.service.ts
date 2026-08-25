@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import type { ResourcePoolRecycleConditionDto } from './dto/resource-pool.dto'
+import type { ResourcePoolRecycleCondition } from './pool-domain.types'
 
 export interface RecycleTimeResource {
   createdAt: Date
@@ -17,7 +17,7 @@ type SearchMode = 'AND' | 'OR'
  */
 @Injectable()
 export class ResourceRecycleConditionEvaluator {
-  hasValidConditions(value: unknown): value is ResourcePoolRecycleConditionDto[] {
+  hasValidConditions(value: unknown): value is ResourcePoolRecycleCondition[] {
     return Array.isArray(value) && value.some((condition) => this.isValidCondition(condition))
   }
 
@@ -28,8 +28,8 @@ export class ResourceRecycleConditionEvaluator {
     now = new Date(),
   ): boolean {
     if (!Array.isArray(rawConditions)) return false
-    const conditions = rawConditions.filter((condition): condition is ResourcePoolRecycleConditionDto =>
-      this.isValidCondition(condition),
+    const conditions = rawConditions.filter(
+      (condition): condition is ResourcePoolRecycleCondition => this.isValidCondition(condition),
     )
     // 安全边界：Cordys UI 自动回收至少配置一个条件。空 AND 不允许退化成“回收全部”。
     if (conditions.length === 0) return false
@@ -40,7 +40,7 @@ export class ResourceRecycleConditionEvaluator {
   }
 
   private matchesCondition(
-    condition: ResourcePoolRecycleConditionDto,
+    condition: ResourcePoolRecycleCondition,
     resource: RecycleTimeResource,
     now: Date,
   ) {
@@ -58,7 +58,7 @@ export class ResourceRecycleConditionEvaluator {
     return this.matchesTime(condition, resource.lastFollowedAt, now)
   }
 
-  private matchesTime(condition: ResourcePoolRecycleConditionDto, time: Date | null, now: Date) {
+  private matchesTime(condition: ResourcePoolRecycleCondition, time: Date | null, now: Date) {
     // 与 Cordys RecycleConditionUtils.matchTime 保持兼容：空时间也满足回收条件。
     if (!time) return true
 
@@ -191,9 +191,9 @@ export class ResourceRecycleConditionEvaluator {
     return Number.isNaN(parsed) ? null : parsed
   }
 
-  private isValidCondition(value: unknown): value is ResourcePoolRecycleConditionDto {
+  private isValidCondition(value: unknown): value is ResourcePoolRecycleCondition {
     if (!value || typeof value !== 'object') return false
-    const condition = value as Partial<ResourcePoolRecycleConditionDto>
+    const condition = value as Partial<ResourcePoolRecycleCondition>
     return (
       (condition.column === 'storageTime' || condition.column === 'followUpTime') &&
       (condition.operator === 'FIXED' || condition.operator === 'DYNAMICS') &&

@@ -178,9 +178,9 @@ export class MembersService {
     if (operatorId === id) throw new BadRequestException('不能删除自己的账号')
     const user = await this.ensureExists(tenantId, id)
     const referenceCounts = await Promise.all([
-      this.prisma.customer.count({ where: { tenantId, ownerId: id } }),
-      this.prisma.contact.count({ where: { tenantId, ownerId: id } }),
-      this.prisma.lead.count({ where: { tenantId, ownerId: id } }),
+      this.prisma.customer.count({ where: { organizationId: tenantId, owner: id } }),
+      this.prisma.customerContact.count({ where: { organizationId: tenantId, owner: id } }),
+      this.prisma.clue.count({ where: { organizationId: tenantId, owner: id } }),
       this.prisma.opportunity.count({ where: { tenantId, ownerId: id } }),
       this.prisma.product.count({ where: { tenantId, ownerId: id } }),
       this.prisma.quote.count({ where: { tenantId, ownerId: id } }),
@@ -189,7 +189,9 @@ export class MembersService {
       this.prisma.invoiceRecord.count({ where: { tenantId, ownerId: id } }),
       this.prisma.order.count({ where: { tenantId, ownerId: id } }),
       this.prisma.followUpRecord.count({ where: { tenantId, ownerId: id } }),
-      this.prisma.customerTeamMember.count({ where: { tenantId, userId: id } }),
+      this.prisma.customerCollaboration.count({
+        where: { userId: id, customer: { organizationId: tenantId } },
+      }),
       this.prisma.approvalInstance.count({ where: { tenantId, submitterId: id } }),
       this.prisma.approvalTask.count({ where: { tenantId, approverId: id } }),
     ])

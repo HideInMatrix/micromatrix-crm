@@ -38,33 +38,26 @@ export class CustomerAccessService {
     permission = 'menu:customer',
   ): Promise<CustomerAccessContext> {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, tenantId: user.tenantId },
+      where: { id: customerId, organizationId: user.tenantId },
     })
     if (!customer) throw new NotFoundException('客户不存在或无权访问')
 
-    const dataScope = await this.dataScopeService.matchesResource(
+    const dataScope = await this.dataScopeService.matchesDirectOwner(
       user,
-      customer.ownerId,
-      customer.deptId,
+      customer.owner,
       permission,
     )
 
     let pool = false
     let poolManager = false
-    if (customer.inSea) {
-      // poolId=null 是多池上线前的兼容数据，沿用既有“公海可见”语义。
-      if (!customer.poolId) {
-        pool = true
-      } else {
-        const poolIds = (await this.resourcePools.options(user, 'customer')).map((item) => item.id)
-        pool = poolIds.includes(customer.poolId)
-      }
+    if (customer.inSharedPool && customer.poolId) {
+      const poolIds = (await this.resourcePools.options(user, 'customer')).map((item) => item.id)
+      pool = poolIds.includes(customer.poolId)
       poolManager = await this.resourcePools.isPoolManager(user, 'customer', customer.poolId)
     }
 
-    const collaboration = await this.prisma.customerTeamMember.findFirst({
+    const collaboration = await this.prisma.customerCollaboration.findFirst({
       where: {
-        tenantId: user.tenantId,
         customerId,
         userId: user.id,
       },
@@ -107,7 +100,9 @@ export class CustomerAccessService {
     return context
   }
 
-  private normalizeCollaborationType(value: string | null | undefined): CustomerCollaborationAccess {
+  private normalizeCollaborationType(
+    value: string | null | undefined,
+  ): CustomerCollaborationAccess {
     if (value === 'READ_ONLY') return 'READ_ONLY'
     if (value === 'COLLABORATION') return 'COLLABORATION'
     return null

@@ -32,7 +32,7 @@ import {
   PoolResourceBatchEditDto,
   ResourceBatchEditDto,
 } from '../common/dto/resource-batch.dto'
-import { MoveToResourcePoolDto } from '../modules/pool-rules/dto/resource-pool.dto'
+import { MoveToResourcePoolDto } from '../common/dto/move-to-resource-pool.dto'
 import {
   ExportCreateDto,
   ExportSelectDto,
@@ -42,10 +42,7 @@ import {
 import { CustomersService } from './customers.service'
 import { CreateCustomerDto } from './dto/create-customer.dto'
 import { CustomerMergeDto } from './dto/customer-merge.dto'
-import {
-  ReplaceCustomerRelationsDto,
-  SaveCustomerRelationDto,
-} from './dto/customer-relation.dto'
+import { ReplaceCustomerRelationsDto, SaveCustomerRelationDto } from './dto/customer-relation.dto'
 import { CheckDuplicateQueryDto, QueryCustomersDto } from './dto/query-customers.dto'
 import { UpdateCustomerDto } from './dto/update-customer.dto'
 
@@ -118,7 +115,15 @@ export class CustomersController {
   @RequirePermissions('customer:import')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { importType: { enum: ['ADD', 'UPDATE'] }, file: { type: 'string', format: 'binary' } } } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        importType: { enum: ['ADD', 'UPDATE'] },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @ApiOperation({ summary: '客户 xlsx 导入预校验' })
   precheckImport(
     @CurrentUser() user: AuthUser,
@@ -226,7 +231,11 @@ export class CustomersController {
     @Body() dto: ExportCreateDto,
   ) {
     if (!poolId) throw new BadRequestException('请选择客户公海')
-    return this.customersService.exportXlsx(user, { ...query, scope: 'sea', poolId }, { ...dto, poolId })
+    return this.customersService.exportXlsx(
+      user,
+      { ...query, scope: 'sea', poolId },
+      { ...dto, poolId },
+    )
   }
 
   @Post('pool/export/select')
@@ -240,7 +249,11 @@ export class CustomersController {
     @Body() dto: ExportSelectDto,
   ) {
     if (!poolId) throw new BadRequestException('请选择客户公海')
-    return this.customersService.exportXlsx(user, { ...query, scope: 'sea', poolId }, { ...dto, poolId })
+    return this.customersService.exportXlsx(
+      user,
+      { ...query, scope: 'sea', poolId },
+      { ...dto, poolId },
+    )
   }
 
   @Post('batch/claim')

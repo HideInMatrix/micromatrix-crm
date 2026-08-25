@@ -42,6 +42,7 @@
 7. 任务 1.4 的 [模块表单与动态字段公共底座](./specs/business-module-page-parity/field-foundation-audit.md) 已实现并通过 `77/77` 规则测试及真实 PostgreSQL 12 项 Smoke；目标业务列表/详情/导入导出仍待 1.7 接入，因此 1.4 暂不整体关闭。
 8. 任务 1.5 的 [用户视图直接模型](./specs/business-module-page-parity/user-view-foundation-audit.md) 已完成：五类资源切换到 Cordys View API、条件文本序列化和三重隔离，旧 SavedView 数据库访问已删除；全量规则测试 `84/84` 和真实 PostgreSQL 12 项 Smoke 通过。
 9. 任务 1.6 的 [分域池、容量与负责人历史 Repository](./specs/business-module-page-parity/pool-repository-foundation-audit.md) 已完成：Clue/Customer 独立 Repository、共享无状态规则计算器、Owner 生命周期和 PostgreSQL 并发锁已落地；全量规则测试 `95/95`，隔离空库 30 migration 与 9 项真实库 Smoke 通过。下一独立执行单元为 1.7 业务调用方迁移和旧代码删除；在 1.7～1.8 完成前 API 仍不可启动。
+10. 任务 1.7 的 [业务调用方直接模型迁移](./specs/business-module-page-parity/business-caller-migration-audit.md) 已完成：线索、客户、联系人、360、协作、关系、合并、跟进、商机联系人、通知、统计和自动回收已切换到 Cordys 直接模型，旧通用池 Controller/Service/DTO 已删除；生产 API 构建和 `95/95` 规则测试通过。全量类型检查只剩 Seed 的 6 个旧 Customer 字段错误，下一独立执行单元为 1.8 Seed 与空库启动验收。
 
 ## 长期完成约束
 

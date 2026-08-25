@@ -94,7 +94,7 @@ test('转跟进记录在同一事务内抢占、创建记录并回写记录 ID',
       },
     },
     customer: { updateMany: async () => calls.push('touch') },
-    lead: { updateMany: async () => undefined },
+    clue: { updateMany: async () => undefined },
     opportunity: { updateMany: async () => undefined },
   }
   const prisma = {
@@ -106,9 +106,9 @@ test('转跟进记录在同一事务内抢占、创建记录并回写记录 ID',
     customer: {
       findMany: async () => [{ id: 'customer-1', name: '测试客户' }],
     },
-    lead: { findMany: async () => [] },
+    clue: { findMany: async () => [] },
     opportunity: { findMany: async () => [] },
-    contact: { findMany: async () => [] },
+    customerContact: { findMany: async () => [] },
     $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
   }
   const service = dependencies(prisma)
@@ -134,7 +134,7 @@ test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去�
       },
     },
     customer: { findMany: async () => [{ id: 'customer-1', name: '测试客户' }] },
-    lead: { findMany: async () => [] },
+    clue: { findMany: async () => [] },
     opportunity: { findMany: async () => [] },
   }
   const service = dependencies(

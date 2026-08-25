@@ -319,15 +319,15 @@ export class FollowUpPlansService {
     if (type === 'lead') {
       const permission = write ? 'lead:update' : 'menu:lead'
       if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无线索权限')
-      const lead = await this.prisma.lead.findFirst({ where: { id, tenantId: user.tenantId } })
+      const lead = await this.prisma.clue.findFirst({
+        where: { id, organizationId: user.tenantId },
+      })
       if (!lead) throw new NotFoundException('线索不存在')
-      if (lead.inPool) {
+      if (lead.inSharedPool) {
         const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
         if (lead.poolId && !poolIds.includes(lead.poolId))
           throw new NotFoundException('线索不存在或无权访问')
-      } else if (
-        !(await this.dataScope.matchesResource(user, lead.ownerId, lead.deptId, permission))
-      ) {
+      } else if (!(await this.dataScope.matchesDirectOwner(user, lead.owner, permission))) {
         throw new NotFoundException('线索不存在或不在你的数据范围内')
       }
       return { name: lead.name, customerId: null, collaboratorOnly: false }
@@ -369,8 +369,8 @@ export class FollowUpPlansService {
         )?.customerId ?? null
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma.contact.findFirst({
-      where: { id: contactId, tenantId, customerId },
+    const contact = await this.prisma.customerContact.findFirst({
+      where: { id: contactId, organizationId: tenantId, customerId },
     })
     if (!contact) throw new BadRequestException('联系人不属于当前客户')
   }
@@ -390,8 +390,8 @@ export class FollowUpPlansService {
       this.dataScope.scopeFilter(user, 'menu:lead'),
       this.dataScope.scopeFilter(user, 'menu:customer'),
       this.dataScope.scopeFilter(user, 'menu:opportunity'),
-      this.prisma.customerTeamMember.findMany({
-        where: { tenantId: user.tenantId, userId: user.id },
+      this.prisma.customerCollaboration.findMany({
+        where: { userId: user.id, customer: { organizationId: user.tenantId } },
         select: { customerId: true },
       }),
     ])
@@ -415,8 +415,14 @@ export class FollowUpPlansService {
   ): Promise<Prisma.FollowUpPlanWhereInput> {
     const contains = { contains: keyword, mode: 'insensitive' as const }
     const [leads, customers, opportunities] = await Promise.all([
-      this.prisma.lead.findMany({ where: { tenantId, name: contains }, select: { id: true } }),
-      this.prisma.customer.findMany({ where: { tenantId, name: contains }, select: { id: true } }),
+      this.prisma.clue.findMany({
+        where: { organizationId: tenantId, name: contains },
+        select: { id: true },
+      }),
+      this.prisma.customer.findMany({
+        where: { organizationId: tenantId, name: contains },
+        select: { id: true },
+      }),
       this.prisma.opportunity.findMany({
         where: { tenantId, name: contains },
         select: { id: true },
@@ -438,11 +444,22 @@ export class FollowUpPlansService {
     targetType: string,
     targetId: string,
   ): Promise<void> {
-    const where = { id: targetId, tenantId }
-    const data = { lastFollowedAt: new Date() }
-    if (targetType === 'lead') await tx.lead.updateMany({ where, data })
-    if (targetType === 'customer') await tx.customer.updateMany({ where, data })
-    if (targetType === 'opportunity') await tx.opportunity.updateMany({ where, data })
+    const now = BigInt(Date.now())
+    if (targetType === 'lead')
+      await tx.clue.updateMany({
+        where: { id: targetId, organizationId: tenantId },
+        data: { followTime: now, updateTime: now },
+      })
+    if (targetType === 'customer')
+      await tx.customer.updateMany({
+        where: { id: targetId, organizationId: tenantId },
+        data: { followTime: now, updateTime: now },
+      })
+    if (targetType === 'opportunity')
+      await tx.opportunity.updateMany({
+        where: { id: targetId, tenantId },
+        data: { lastFollowedAt: new Date() },
+      })
   }
 
   private async targetNames(plans: FollowUpPlan[]): Promise<Map<string, string>> {
@@ -452,7 +469,7 @@ export class FollowUpPlansService {
       opportunity: plans.filter((p) => p.targetType === 'opportunity').map((p) => p.targetId),
     }
     const [leads, customers, opportunities] = await Promise.all([
-      this.prisma.lead.findMany({
+      this.prisma.clue.findMany({
         where: { id: { in: groups.lead } },
         select: { id: true, name: true },
       }),
@@ -480,7 +497,7 @@ export class FollowUpPlansService {
         where: { id: { in: [...new Set(plans.map((p) => p.ownerId))] } },
         select: { id: true, name: true },
       }),
-      this.prisma.contact.findMany({
+      this.prisma.customerContact.findMany({
         where: { id: { in: plans.flatMap((p) => (p.contactId ? [p.contactId] : [])) } },
         select: { id: true, name: true },
       }),

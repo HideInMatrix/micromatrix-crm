@@ -61,16 +61,25 @@ export class FollowUpsService {
   /** 更新目标对象的最近跟进时间 */
   private async touchTarget(tenantId: string, targetType: string, targetId: string) {
     const now = new Date()
-    const where = { id: targetId, tenantId }
+    const directNow = BigInt(now.getTime())
     switch (targetType) {
       case 'lead':
-        await this.prisma.lead.updateMany({ where, data: { lastFollowedAt: now } })
+        await this.prisma.clue.updateMany({
+          where: { id: targetId, organizationId: tenantId },
+          data: { followTime: directNow, updateTime: directNow },
+        })
         break
       case 'customer':
-        await this.prisma.customer.updateMany({ where, data: { lastFollowedAt: now } })
+        await this.prisma.customer.updateMany({
+          where: { id: targetId, organizationId: tenantId },
+          data: { followTime: directNow, updateTime: directNow },
+        })
         break
       case 'opportunity':
-        await this.prisma.opportunity.updateMany({ where, data: { lastFollowedAt: now } })
+        await this.prisma.opportunity.updateMany({
+          where: { id: targetId, tenantId },
+          data: { lastFollowedAt: now },
+        })
         break
       default:
         break

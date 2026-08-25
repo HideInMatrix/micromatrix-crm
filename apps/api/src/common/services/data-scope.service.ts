@@ -30,6 +30,41 @@ export class DataScopeService {
     return !!deptId && scope.deptIds.includes(deptId)
   }
 
+  /** Cordys 直接业务表只保存 owner；部门范围通过负责人所属部门展开为 owner 集合。 */
+  async directOwnerFilter(
+    user: AuthUser,
+    permission: string,
+  ): Promise<{ owner?: string | { in: string[] } }> {
+    const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return { owner: '__permission_scope_denied__' }
+    if (scope.all) return {}
+    const ownerIds = new Set([user.id])
+    if (scope.deptIds.length) {
+      const users = await this.prisma.user.findMany({
+        where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: scope.deptIds } },
+        select: { id: true },
+      })
+      users.forEach((item) => ownerIds.add(item.id))
+    }
+    return ownerIds.size === 1 ? { owner: user.id } : { owner: { in: [...ownerIds] } }
+  }
+
+  async matchesDirectOwner(user: AuthUser, ownerId: string | null, permission: string) {
+    const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return false
+    if (scope.all || ownerId === user.id) return true
+    if (!ownerId || !scope.deptIds.length) return false
+    return !!(await this.prisma.user.findFirst({
+      where: {
+        id: ownerId,
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
+        deptId: { in: scope.deptIds },
+      },
+      select: { id: true },
+    }))
+  }
+
   /** Cordys 语义：筛出拥有当前权限的角色，再对这些角色的数据范围取并集。 */
   async resolveScope(user: AuthUser, permission: string) {
     const roles = user.roles.filter((role) => hasPermission(role.permissions, permission))

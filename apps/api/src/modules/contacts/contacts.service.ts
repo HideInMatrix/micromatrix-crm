@@ -7,6 +7,7 @@ import {
 import {
   type ContactVO,
   type FieldVO,
+  type FilterCondition,
   type ImportResultVO,
   type PaginatedResult,
   hasPermission,
@@ -17,12 +18,13 @@ import { formatForExport } from '../../common/export-format'
 import { buildFilterClauses, parseFilters } from '../../common/filter-builder'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import { Prisma, type Contact } from '../../generated/prisma/client'
+import { Prisma, type CustomerContact } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ExportTasksService } from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
+import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
@@ -30,11 +32,10 @@ import { CreateContactDto, QueryContactsDto, UpdateContactDto } from './dto/cont
 
 const MODULE = 'contact'
 const contactInclude = {
-  customer: { select: { name: true, ownerId: true } },
-  owner: { select: { name: true } },
+  customer: { select: { name: true, owner: true } },
 } as const
 
-type ContactWithRelations = Prisma.ContactGetPayload<{ include: typeof contactInclude }>
+type ContactWithRelations = Prisma.CustomerContactGetPayload<{ include: typeof contactInclude }>
 
 @Injectable()
 export class ContactsService {
@@ -43,6 +44,7 @@ export class ContactsService {
     private readonly customerAccess: CustomerAccessService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
+    private readonly fieldValues: ResourceFieldValueService,
     private readonly userViews: UserViewsService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
@@ -54,25 +56,23 @@ export class ContactsService {
     this.assertIndependentReadPermission(user)
     const { page = 1, pageSize = 10, keyword } = query
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const fieldMap = new Map(fields.map((field) => [field.key, field]))
-    const adHoc = buildFilterClauses(fieldMap, parseFilters(query.filters))
+    const adHoc = parseFilters(query.filters)
     const builtInView = query.scopeView
     const saved = query.viewId
       ? await this.userViews.resolveFilters(user, query.viewId, USER_VIEW_RESOURCE_TYPES.contact)
       : null
-    const savedClauses = saved ? buildFilterClauses(fieldMap, saved.conditions) : []
-    const filterClauses = [
-      ...(savedClauses.length === 0
-        ? []
-        : saved?.searchMode === 'OR'
-          ? [{ OR: savedClauses }]
-          : savedClauses),
-      ...adHoc,
-    ]
+    const [savedIds, adHocIds] = await Promise.all([
+      saved?.conditions.length
+        ? this.filterIds(user.tenantId, saved.conditions, saved.searchMode)
+        : null,
+      adHoc.length ? this.filterIds(user.tenantId, adHoc, 'AND') : null,
+    ])
+    const filteredIds = this.intersectIds(savedIds, adHocIds)
     const scope = await this.resolveListScope(user, builtInView)
-    const where: Prisma.ContactWhereInput = {
-      tenantId: user.tenantId,
-      AND: [scope, ...(filterClauses as Prisma.ContactWhereInput[])],
+    const where: Prisma.CustomerContactWhereInput = {
+      organizationId: user.tenantId,
+      AND: [scope],
+      ...(filteredIds ? { id: { in: filteredIds } } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.enable !== undefined ? { enable: query.enable === 'true' } : {}),
       ...(keyword
@@ -86,16 +86,31 @@ export class ContactsService {
     }
 
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.contact.findMany({
+      this.prisma.customerContact.findMany({
         where,
         include: contactInclude,
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        orderBy: [{ createTime: 'desc' }, { id: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.contact.count({ where }),
+      this.prisma.customerContact.count({ where }),
     ])
-    return { items: items.map((item) => this.toVO(item, fields)), total, page, pageSize }
+    const [values, ownerNames] = await Promise.all([
+      this.fieldValues.load(
+        user.tenantId,
+        'customerContact',
+        items.map((item) => item.id),
+      ),
+      this.userNames(items.map((item) => item.owner)),
+    ])
+    return {
+      items: items.map((item) =>
+        this.toVO(item, fields, values.get(item.id) ?? {}, ownerNames.get(item.owner) ?? null),
+      ),
+      total,
+      page,
+      pageSize,
+    }
   }
 
   tab(user: AuthUser) {
@@ -111,24 +126,34 @@ export class ContactsService {
     if (!customerId) throw new BadRequestException('缺少 customerId')
     const access = await this.customerAccess.assertRead(user, customerId)
     if (!access.dataScope && !access.pool && access.collaborationType === 'READ_ONLY') return []
-    const rows = await this.prisma.contact.findMany({
+    const rows = await this.prisma.customerContact.findMany({
       where: {
-        tenantId: user.tenantId,
+        organizationId: user.tenantId,
         customerId,
         ...(!access.dataScope && !access.pool && access.collaborationType === 'COLLABORATION'
-          ? { ownerId: user.id }
+          ? { owner: user.id }
           : {}),
       },
       include: contactInclude,
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createTime: 'asc' },
     })
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    return rows.map((item) => this.toVO(item, fields))
+    const [values, ownerNames] = await Promise.all([
+      this.fieldValues.load(
+        user.tenantId,
+        'customerContact',
+        rows.map((item) => item.id),
+      ),
+      this.userNames(rows.map((item) => item.owner)),
+    ])
+    return rows.map((item) =>
+      this.toVO(item, fields, values.get(item.id) ?? {}, ownerNames.get(item.owner) ?? null),
+    )
   }
 
   async findOne(user: AuthUser, id: string): Promise<ContactVO> {
     const contact = await this.ensureReadable(user, id)
-    return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
+    return this.toSingleVO(user, contact)
   }
 
   async create(user: AuthUser, dto: CreateContactDto): Promise<ContactVO> {
@@ -142,34 +167,50 @@ export class ContactsService {
     }
     const owner = await this.resolveOwner(user, dto.ownerId)
     const { ownerId: _ownerId, customData, ...data } = dto
-    const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
-      requireAll: true,
+    await this.fieldValues.validate(user.tenantId, 'customerContact', customData ?? {}, {
+      mode: 'create',
     })
     await this.assertContactUniqueRules(user.tenantId, data)
-    const contact = await this.prisma.contact.create({
-      data: {
-        ...data,
-        tenantId: user.tenantId,
-        ownerId: owner.id,
-        deptId: owner.deptId,
-        enable: true,
-        disableReason: null,
-        customData: validated as Prisma.InputJsonValue,
-      },
-      include: contactInclude,
+    const now = BigInt(Date.now())
+    const contact = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.customerContact.create({
+        data: {
+          customerId: data.customerId,
+          name: data.name,
+          phone: data.phone ?? null,
+          owner: owner.id,
+          enable: true,
+          disableReason: null,
+          organizationId: user.tenantId,
+          createTime: now,
+          updateTime: now,
+          createUser: user.id,
+          updateUser: user.id,
+        },
+        include: contactInclude,
+      })
+      await this.fieldValues.save(
+        user.tenantId,
+        'customerContact',
+        created.id,
+        customData ?? {},
+        'create',
+        tx,
+      )
+      return created
     })
     await this.notifications.send({
       tenantId: user.tenantId,
       event: 'CUSTOMER_CONCAT_ADD',
       operatorId: user.id,
-      recipientIds: [contact.customer.ownerId],
+      recipientIds: [contact.customer?.owner],
       excludeSelf: true,
       type: 'system',
       title: '客户新增联系人',
-      content: `${user.name} 为客户「${contact.customer.name}」新增联系人「${contact.name}」`,
+      content: `${user.name} 为客户「${contact.customer?.name ?? ''}」新增联系人「${contact.name}」`,
       link: '/contacts',
     })
-    return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
+    return this.toSingleVO(user, contact)
   }
 
   async update(user: AuthUser, id: string, dto: UpdateContactDto): Promise<ContactVO> {
@@ -180,26 +221,31 @@ export class ContactsService {
       await this.customerAccess.assertCollaborateWrite(user, dto.customerId, permission)
     }
     const { customerId, ownerId, customData, ...rest } = dto
-    const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
-      requireAll: false,
+    await this.fieldValues.validate(user.tenantId, 'customerContact', customData ?? {}, {
+      mode: 'update',
+      resourceId: id,
     })
     await this.assertContactUniqueRules(user.tenantId, rest, existing.id)
     const owner = ownerId ? await this.resolveOwner(user, ownerId) : null
-    const data: Prisma.ContactUpdateInput = {
-      ...rest,
-      ...(customerId ? { customer: { connect: { id: customerId } } } : {}),
-      ...(owner ? { owner: { connect: { id: owner.id } }, deptId: owner.deptId } : {}),
-      customData: {
-        ...((existing.customData as Record<string, unknown> | null) ?? {}),
-        ...validated,
-      } as Prisma.InputJsonValue,
-    }
-    const contact = await this.prisma.contact.update({
-      where: { id },
-      data,
-      include: contactInclude,
+    const contact = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.customerContact.update({
+        where: { id },
+        data: {
+          ...(rest.name !== undefined ? { name: rest.name } : {}),
+          ...(rest.phone !== undefined ? { phone: rest.phone } : {}),
+          ...(customerId ? { customerId } : {}),
+          ...(owner ? { owner: owner.id } : {}),
+          updateTime: BigInt(Date.now()),
+          updateUser: user.id,
+        },
+        include: contactInclude,
+      })
+      if (customData) {
+        await this.fieldValues.save(user.tenantId, 'customerContact', id, customData, 'update', tx)
+      }
+      return updated
     })
-    return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
+    return this.toSingleVO(user, contact)
   }
 
   async enable(user: AuthUser, id: string): Promise<ContactVO> {
@@ -209,12 +255,17 @@ export class ContactsService {
       existing,
       this.pickPermission(user, 'contact:update', 'customer:update'),
     )
-    const contact = await this.prisma.contact.update({
+    const contact = await this.prisma.customerContact.update({
       where: { id },
-      data: { enable: true, disableReason: null },
+      data: {
+        enable: true,
+        disableReason: null,
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
+      },
       include: contactInclude,
     })
-    return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
+    return this.toSingleVO(user, contact)
   }
 
   async disable(user: AuthUser, id: string, reason: string): Promise<ContactVO> {
@@ -226,12 +277,17 @@ export class ContactsService {
     )
     const normalized = reason.trim()
     if (!normalized) throw new BadRequestException('请填写停用原因')
-    const contact = await this.prisma.contact.update({
+    const contact = await this.prisma.customerContact.update({
       where: { id },
-      data: { enable: false, disableReason: normalized },
+      data: {
+        enable: false,
+        disableReason: normalized,
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
+      },
       include: contactInclude,
     })
-    return this.toVO(contact, await this.metadata.listFields(user.tenantId, MODULE))
+    return this.toSingleVO(user, contact)
   }
 
   async checkOpportunity(user: AuthUser, id: string): Promise<{ linked: boolean; count: number }> {
@@ -257,7 +313,7 @@ export class ContactsService {
       this.prisma.attachment.deleteMany({
         where: { tenantId: user.tenantId, targetType: 'contact', targetId: id },
       }),
-      this.prisma.contact.delete({ where: { id } }),
+      this.prisma.customerContact.delete({ where: { id } }),
     ])
     return { id, name: contact.name }
   }
@@ -265,61 +321,71 @@ export class ContactsService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto): Promise<BatchAffectResult> {
     const field = await this.metadata.resolveEditableField(user.tenantId, MODULE, dto.fieldId)
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
-    const scope = (await this.dataScope.scopeFilter(
+    const scope = (await this.dataScope.directOwnerFilter(
       user,
       'contact:read',
-    )) as Prisma.ContactWhereInput
-    const contacts = await this.prisma.contact.findMany({
-      where: { tenantId: user.tenantId, id: { in: dto.ids }, AND: [scope] },
+    )) as Prisma.CustomerContactWhereInput
+    const contacts = await this.prisma.customerContact.findMany({
+      where: { organizationId: user.tenantId, id: { in: dto.ids }, AND: [scope] },
     })
     if (contacts.length !== dto.ids.length) {
       throw new ForbiddenException('选中联系人包含不存在或不在你数据范围内的数据')
     }
 
-    if (field.key === 'ownerId') {
+    if (field.key === 'owner' || field.key === 'ownerId') {
       if (typeof dto.fieldValue !== 'string') throw new BadRequestException('负责人值无效')
       const owner = await this.resolveOwner(user, dto.fieldValue)
-      await this.prisma.contact.updateMany({
-        where: { tenantId: user.tenantId, id: { in: dto.ids } },
-        data: { ownerId: owner.id, deptId: owner.deptId },
+      await this.prisma.customerContact.updateMany({
+        where: { organizationId: user.tenantId, id: { in: dto.ids } },
+        data: { owner: owner.id, updateTime: BigInt(Date.now()), updateUser: user.id },
       })
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
     if (field.key === 'customerId') {
       if (typeof dto.fieldValue !== 'string') throw new BadRequestException('客户值无效')
       await this.customerAccess.assertCollaborateWrite(user, dto.fieldValue, 'contact:update')
-      await this.prisma.contact.updateMany({
-        where: { tenantId: user.tenantId, id: { in: dto.ids } },
-        data: { customerId: dto.fieldValue },
+      await this.prisma.customerContact.updateMany({
+        where: { organizationId: user.tenantId, id: { in: dto.ids } },
+        data: { customerId: dto.fieldValue, updateTime: BigInt(Date.now()), updateUser: user.id },
       })
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
     if (field.key === 'enable') {
       const enable = Boolean(dto.fieldValue)
-      await this.prisma.contact.updateMany({
-        where: { tenantId: user.tenantId, id: { in: dto.ids } },
-        data: { enable, ...(enable ? { disableReason: null } : {}) },
+      await this.prisma.customerContact.updateMany({
+        where: { organizationId: user.tenantId, id: { in: dto.ids } },
+        data: {
+          enable,
+          ...(enable ? { disableReason: null } : {}),
+          updateTime: BigInt(Date.now()),
+          updateUser: user.id,
+        },
       })
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
 
-    for (const contact of contacts) {
-      if (field.key.startsWith('cf_')) {
-        await this.prisma.contact.update({
-          where: { id: contact.id },
-          data: {
-            customData: {
-              ...((contact.customData as Record<string, unknown> | null) ?? {}),
-              [field.key]: dto.fieldValue,
-            } as Prisma.InputJsonValue,
-          },
-        })
-      } else {
-        await this.prisma.contact.update({
-          where: { id: contact.id },
-          data: { [field.key]: dto.fieldValue } as Prisma.ContactUpdateInput,
-        })
-      }
+    if (!field.system) {
+      await this.prisma.$transaction((tx) =>
+        this.fieldValues.saveBatch(
+          user.tenantId,
+          'customerContact',
+          contacts.map((contact) => contact.id),
+          field.id,
+          dto.fieldValue,
+          tx,
+        ),
+      )
+    } else if (field.key === 'name' || field.key === 'phone') {
+      await this.prisma.customerContact.updateMany({
+        where: { organizationId: user.tenantId, id: { in: dto.ids } },
+        data: {
+          [field.key]: dto.fieldValue,
+          updateTime: BigInt(Date.now()),
+          updateUser: user.id,
+        },
+      })
+    } else {
+      throw new BadRequestException('该系统字段不支持批量修改')
     }
     return { success: dto.ids.length, fail: 0, failedIds: [] }
   }
@@ -388,9 +454,14 @@ export class ContactsService {
           } else {
             if (!row.resourceId) throw new BadRequestException('唯一ID不能为空')
             await this.update(user, row.resourceId, prepared)
-            await this.prisma.contact.update({
+            await this.prisma.customerContact.update({
               where: { id: row.resourceId },
-              data: { enable: true, disableReason: null },
+              data: {
+                enable: true,
+                disableReason: null,
+                updateTime: BigInt(Date.now()),
+                updateUser: user.id,
+              },
             })
           }
           successCount++
@@ -462,7 +533,7 @@ export class ContactsService {
       this.metadata.validateBatchFieldValue(field, value)
       if (key === 'customerId') {
         dto.customerId = await this.resolveImportCustomer(user, String(value))
-      } else if (key === 'ownerId') {
+      } else if (key === 'owner' || key === 'ownerId') {
         dto.ownerId = (await this.resolveOwner(user, String(value))).id
       } else if (key.startsWith('cf_')) {
         customData[key] = value
@@ -471,8 +542,9 @@ export class ContactsService {
       }
     }
     if (Object.keys(customData).length > 0) dto.customData = customData
-    await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
-      requireAll: importType === 'ADD',
+    await this.fieldValues.validate(user.tenantId, 'customerContact', customData, {
+      mode: importType === 'ADD' ? 'create' : 'update',
+      resourceId: importType === 'UPDATE' ? resourceId : undefined,
     })
     if (importType === 'ADD') {
       if (!dto.customerId) throw new BadRequestException('客户不能为空')
@@ -508,50 +580,54 @@ export class ContactsService {
   }
 
   private async ensureReadable(user: AuthUser, id: string): Promise<ContactWithRelations> {
-    const contact = await this.prisma.contact.findFirst({
-      where: { id, tenantId: user.tenantId },
+    const contact = await this.prisma.customerContact.findFirst({
+      where: { id, organizationId: user.tenantId },
       include: contactInclude,
     })
     if (!contact) throw new NotFoundException('联系人不存在')
     if (
       hasPermission(user.permissions, 'contact:read') &&
-      (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId, 'contact:read'))
+      (await this.dataScope.matchesDirectOwner(user, contact.owner, 'contact:read'))
     ) {
       return contact
     }
+    if (!contact.customerId) throw new NotFoundException('联系人尚未关联客户')
     const access = await this.customerAccess.assertRead(user, contact.customerId)
     if (access.dataScope || access.pool) return contact
-    if (access.collaborationType === 'COLLABORATION' && contact.ownerId === user.id) return contact
+    if (access.collaborationType === 'COLLABORATION' && contact.owner === user.id) return contact
     throw new NotFoundException('联系人不存在或无权访问')
   }
 
-  private async assertWrite(user: AuthUser, contact: Contact, permission: string) {
-    if (await this.dataScope.matchesResource(user, contact.ownerId, contact.deptId, permission))
-      return
+  private async assertWrite(user: AuthUser, contact: CustomerContact, permission: string) {
+    if (await this.dataScope.matchesDirectOwner(user, contact.owner, permission)) return
+    if (!contact.customerId) throw new ForbiddenException('联系人尚未关联客户')
     const access = await this.customerAccess.assertRead(user, contact.customerId)
     if (access.dataScope) return
-    if (access.collaborationType === 'COLLABORATION' && contact.ownerId === user.id) return
+    if (access.collaborationType === 'COLLABORATION' && contact.owner === user.id) return
     throw new ForbiddenException('无权维护该联系人')
   }
 
   private async ensureIndependentInScope(user: AuthUser, id: string) {
-    const scope = (await this.dataScope.scopeFilter(
+    const scope = (await this.dataScope.directOwnerFilter(
       user,
       'contact:import',
-    )) as Prisma.ContactWhereInput
-    return this.prisma.contact.findFirst({
-      where: { id, tenantId: user.tenantId, AND: [scope] },
+    )) as Prisma.CustomerContactWhereInput
+    return this.prisma.customerContact.findFirst({
+      where: { id, organizationId: user.tenantId, AND: [scope] },
     })
   }
 
   private async resolveListScope(
     user: AuthUser,
     builtInView?: string,
-  ): Promise<Prisma.ContactWhereInput> {
+  ): Promise<Prisma.CustomerContactWhereInput> {
     if (!builtInView) {
-      return (await this.dataScope.scopeFilter(user, 'contact:read')) as Prisma.ContactWhereInput
+      return (await this.dataScope.directOwnerFilter(
+        user,
+        'contact:read',
+      )) as Prisma.CustomerContactWhereInput
     }
-    if (builtInView === 'SELF') return { ownerId: user.id }
+    if (builtInView === 'SELF') return { owner: user.id }
     if (builtInView === 'ALL') {
       const effective = await this.dataScope.resolveScope(user, 'contact:read')
       if (!effective.all) throw new ForbiddenException('当前角色没有全部联系人数据权限')
@@ -564,10 +640,17 @@ export class ContactsService {
       }
       if (effective.all) return {}
       const deptIds = effective.deptIds
-      if (deptIds.length === 0) return { ownerId: user.id }
-      return { OR: [{ ownerId: user.id }, { deptId: { in: deptIds } }] }
+      if (deptIds.length === 0) return { owner: user.id }
+      const owners = await this.prisma.user.findMany({
+        where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: deptIds } },
+        select: { id: true },
+      })
+      return { owner: { in: [...new Set([user.id, ...owners.map((item) => item.id)])] } }
     }
-    return (await this.dataScope.scopeFilter(user, 'contact:read')) as Prisma.ContactWhereInput
+    return (await this.dataScope.directOwnerFilter(
+      user,
+      'contact:read',
+    )) as Prisma.CustomerContactWhereInput
   }
 
   private pickPermission(user: AuthUser, preferred: string, fallback: string) {
@@ -575,8 +658,8 @@ export class ContactsService {
   }
 
   private async ensureExists(user: AuthUser, id: string) {
-    const contact = await this.prisma.contact.findFirst({
-      where: { id, tenantId: user.tenantId },
+    const contact = await this.prisma.customerContact.findFirst({
+      where: { id, organizationId: user.tenantId },
     })
     if (!contact) throw new NotFoundException('联系人不存在')
     return contact
@@ -607,12 +690,12 @@ export class ContactsService {
     const input = value.trim()
     if (!input) throw new BadRequestException('客户不能为空')
     const direct = await this.prisma.customer.findFirst({
-      where: { tenantId: user.tenantId, id: input },
+      where: { organizationId: user.tenantId, id: input },
       select: { id: true },
     })
     if (direct) return direct.id
     const matches = await this.prisma.customer.findMany({
-      where: { tenantId: user.tenantId, name: input },
+      where: { organizationId: user.tenantId, name: input },
       select: { id: true },
       take: 2,
     })
@@ -642,9 +725,9 @@ export class ContactsService {
         continue
       const value = raw.trim()
       if (!value) continue
-      const duplicate = await this.prisma.contact.findFirst({
+      const duplicate = await this.prisma.customerContact.findFirst({
         where: {
-          tenantId,
+          organizationId: tenantId,
           ...(excludeId ? { id: { not: excludeId } } : {}),
           ...(key === 'name' ? { name: value } : { phone: value }),
         },
@@ -659,11 +742,88 @@ export class ContactsService {
       throw new ForbiddenException('无联系人导入权限')
   }
 
-  private toVO(contact: ContactWithRelations, fields: FieldVO[]): ContactVO {
-    const customData = (contact.customData as Record<string, unknown> | null) ?? {}
+  private async filterIds(
+    organizationId: string,
+    conditions: FilterCondition[],
+    mode: 'AND' | 'OR',
+  ): Promise<string[]> {
+    const fields = await this.metadata.listFields(organizationId, MODULE)
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.key, field],
+        ...(field.key === 'owner' ? ([['ownerId', field]] as [string, FieldVO][]) : []),
+      ]),
+    )
+    const sets = await Promise.all(
+      conditions.map(async (condition) => {
+        if (condition.key.startsWith('cf_')) {
+          return new Set(
+            await this.fieldValues.filterResourceIds(organizationId, 'customerContact', [
+              condition,
+            ]),
+          )
+        }
+        const normalized = condition.key === 'ownerId' ? { ...condition, key: 'owner' } : condition
+        const clauses = buildFilterClauses(fieldMap, [normalized])
+        const rows = await this.prisma.customerContact.findMany({
+          where: { organizationId, AND: clauses as Prisma.CustomerContactWhereInput[] },
+          select: { id: true },
+        })
+        return new Set(rows.map((row) => row.id))
+      }),
+    )
+    if (mode === 'OR') return [...new Set(sets.flatMap((set) => [...set]))]
+    return [
+      ...sets
+        .slice(1)
+        .reduce(
+          (result, set) => new Set([...result].filter((id) => set.has(id))),
+          sets[0] ?? new Set<string>(),
+        ),
+    ]
+  }
+
+  private intersectIds(left: string[] | null, right: string[] | null): string[] | null {
+    if (left === null) return right
+    if (right === null) return left
+    const rightSet = new Set(right)
+    return left.filter((id) => rightSet.has(id))
+  }
+
+  private async userNames(ids: Array<string | null>): Promise<Map<string | null, string>> {
+    const userIds = [...new Set(ids.filter((id): id is string => Boolean(id)))]
+    const users = userIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true },
+        })
+      : []
+    return new Map(users.map((user) => [user.id, user.name]))
+  }
+
+  private async toSingleVO(user: AuthUser, contact: ContactWithRelations): Promise<ContactVO> {
+    const [fields, values, names] = await Promise.all([
+      this.metadata.listFields(user.tenantId, MODULE),
+      this.fieldValues.load(user.tenantId, 'customerContact', [contact.id]),
+      this.userNames([contact.owner]),
+    ])
+    return this.toVO(
+      contact,
+      fields,
+      values.get(contact.id) ?? {},
+      names.get(contact.owner) ?? null,
+    )
+  }
+
+  private toVO(
+    contact: ContactWithRelations,
+    fields: FieldVO[],
+    customData: Record<string, unknown>,
+    ownerName: string | null,
+  ): ContactVO {
     const record: Record<string, unknown> = {
       customerId: contact.customerId,
-      ownerId: contact.ownerId,
+      ownerId: contact.owner,
       name: contact.name,
       phone: contact.phone,
       enable: contact.enable,
@@ -671,18 +831,18 @@ export class ContactsService {
     const formulas = this.metadata.computeFormulas(fields, record, customData)
     return {
       id: contact.id,
-      customerId: contact.customerId,
-      customerName: contact.customer.name,
-      ownerId: contact.ownerId,
-      ownerName: contact.owner?.name ?? null,
-      deptId: contact.deptId,
+      customerId: contact.customerId ?? '',
+      customerName: contact.customer?.name ?? null,
+      ownerId: contact.owner,
+      ownerName,
+      deptId: null,
       name: contact.name,
       phone: contact.phone,
       enable: contact.enable,
       disableReason: contact.disableReason,
       customData: { ...customData, ...formulas },
-      createdAt: contact.createdAt.toISOString(),
-      updatedAt: contact.updatedAt.toISOString(),
+      createdAt: new Date(Number(contact.createTime)).toISOString(),
+      updatedAt: new Date(Number(contact.updateTime)).toISOString(),
     }
   }
 }

@@ -1,354 +1,169 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import type { Customer, Lead } from '../../generated/prisma/client'
+import type { Clue, Customer } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
-import { NotificationsService } from '../notifications/notifications.service'
-import { ResourcePoolsService } from './resource-pools.service'
+import { CluePoolRepository } from './clue-pool.repository'
+import { CustomerPoolRepository } from './customer-pool.repository'
+import { loadUserScopeTokens, scopeMatches } from './pool-repository.helpers'
 import { ResourceRecycleConditionEvaluator } from './resource-recycle-condition-evaluator.service'
 
-/**
- * 公海/线索池自动回收：
- * 超过 recycleDays 未跟进 → 回收进池并通知原负责人；
- * 距回收还剩 notifyDays 内 → 提前提醒负责人。
- */
+/** Cordys 分域自动回收：只读取 clue_pool/customer_pool 及其直接规则。 */
 @Injectable()
 export class PoolRecycleService {
   private readonly logger = new Logger(PoolRecycleService.name)
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService,
-    private readonly businessNotifications: BusinessNotificationsService,
-    private readonly resourcePools: ResourcePoolsService,
-    private readonly recycleEvaluator: ResourceRecycleConditionEvaluator,
+    private readonly notifications: BusinessNotificationsService,
+    private readonly cluePools: CluePoolRepository,
+    private readonly customerPools: CustomerPoolRepository,
+    private readonly evaluator: ResourceRecycleConditionEvaluator,
   ) {}
 
   @Cron('0 30 2 * * *')
   async recycleAll() {
-    const [rules, autoPools] = await Promise.all([
-      this.prisma.poolRule.findMany({ where: { enabled: true }, select: { tenantId: true } }),
-      this.prisma.resourcePool.findMany({
-        where: { enabled: true, autoRecycle: true },
-        select: { tenantId: true },
+    const [clueOrganizations, customerOrganizations] = await Promise.all([
+      this.prisma.cluePool.findMany({
+        where: { enable: true, auto: true },
+        select: { organizationId: true },
+        distinct: ['organizationId'],
+      }),
+      this.prisma.customerPool.findMany({
+        where: { enable: true, auto: true },
+        select: { organizationId: true },
+        distinct: ['organizationId'],
       }),
     ])
-    const tenantIds = [...new Set([...rules, ...autoPools].map((row) => row.tenantId))]
-    for (const tenantId of tenantIds) {
-      await this.recycleTenant(tenantId).catch((e) =>
-        this.logger.error(`租户 ${tenantId} 回收失败: ${e.message}`),
+    const organizationIds = [
+      ...new Set([...clueOrganizations, ...customerOrganizations].map((row) => row.organizationId)),
+    ]
+    for (const organizationId of organizationIds) {
+      await this.recycleTenant(organizationId).catch((error: unknown) =>
+        this.logger.error(
+          `组织 ${organizationId} 回收失败: ${error instanceof Error ? error.message : String(error)}`,
+        ),
       )
     }
   }
 
   async recycleTenant(
-    tenantId: string,
+    organizationId: string,
   ): Promise<{ recycledLeads: number; recycledCustomers: number }> {
-    const [newLeadResult, newCustomerResult] = await Promise.all([
-      this.recycleLeadByPoolRules(tenantId),
-      this.recycleCustomerByPoolRules(tenantId),
+    const [recycledLeads, recycledCustomers] = await Promise.all([
+      this.recycleClues(organizationId),
+      this.recycleCustomers(organizationId),
     ])
-
-    const legacyRules = await this.prisma.poolRule.findMany({ where: { tenantId, enabled: true } })
-    let recycledLeads = newLeadResult.count
-    let recycledCustomers = newCustomerResult.count
-
-    if (!newLeadResult.configured) {
-      const legacy = legacyRules.find((rule) => rule.module === 'lead')
-      if (legacy)
-        recycledLeads += await this.recycleLegacyLead(
-          tenantId,
-          legacy.recycleDays,
-          legacy.notifyDays,
-        )
-    }
-    if (!newCustomerResult.configured) {
-      const legacy = legacyRules.find((rule) => rule.module === 'customer')
-      if (legacy) {
-        recycledCustomers += await this.recycleLegacyCustomer(
-          tenantId,
-          legacy.recycleDays,
-          legacy.notifyDays,
-        )
-      }
-    }
-
     return { recycledLeads, recycledCustomers }
   }
 
-  private async recycleLeadByPoolRules(tenantId: string) {
-    const pools = await this.prisma.resourcePool.findMany({
-      where: { tenantId, module: 'lead', enabled: true, autoRecycle: true },
-      include: { recycleRule: true },
-    })
-    const configured = pools.some((pool) =>
-      this.recycleEvaluator.hasValidConditions(pool.recycleRule?.conditions),
-    )
-    if (!configured) return { configured: false, count: 0 }
-
-    const candidates = await this.prisma.lead.findMany({
-      where: {
-        tenantId,
-        inPool: false,
-        status: 'FOLLOWING',
-        ownerId: { not: null },
-      },
-    })
+  private async recycleClues(organizationId: string): Promise<number> {
+    const [pools, clues] = await Promise.all([
+      this.prisma.cluePool.findMany({
+        where: { organizationId, enable: true, auto: true },
+        include: { recycleRule: true },
+        orderBy: { createTime: 'desc' },
+      }),
+      this.prisma.clue.findMany({
+        where: {
+          organizationId,
+          inSharedPool: false,
+          stage: 'FOLLOWING',
+          owner: { not: null },
+        },
+      }),
+    ])
     let count = 0
-    for (const lead of candidates) {
-      const pool = await this.resourcePools.resolveAutoRecyclePool(tenantId, 'lead', lead.ownerId)
+    for (const clue of clues) {
+      const pool = await this.resolvePool(organizationId, clue.owner, pools)
       if (!pool?.recycleRule) continue
-      if (
-        !this.recycleEvaluator.matches(pool.recycleRule.operator, pool.recycleRule.conditions, lead)
-      ) {
-        continue
-      }
-      await this.recycleLeadRecord(tenantId, lead, pool.id, '符合自动回收规则，已自动回收')
+      if (!this.matches(pool.recycleRule.operator, pool.recycleRule.condition, clue)) continue
+      const ownerId = clue.owner!
+      await this.cluePools.recycle({
+        organizationId,
+        clueId: clue.id,
+        poolId: pool.id,
+        operatorId: 'system',
+      })
+      await this.notifications.send({
+        tenantId: organizationId,
+        event: 'CLUE_AUTOMATIC_MOVE_POOL',
+        recipientIds: [ownerId],
+        type: 'pool',
+        title: '线索已被回收进线索池',
+        content: `线索「${clue.name}」符合自动回收规则，已自动回收`,
+        link: '/leads',
+      })
       count++
     }
-    return { configured: true, count }
-  }
-
-  private async recycleCustomerByPoolRules(tenantId: string) {
-    const pools = await this.prisma.resourcePool.findMany({
-      where: { tenantId, module: 'customer', enabled: true, autoRecycle: true },
-      include: { recycleRule: true },
-    })
-    const configured = pools.some((pool) =>
-      this.recycleEvaluator.hasValidConditions(pool.recycleRule?.conditions),
-    )
-    if (!configured) return { configured: false, count: 0 }
-
-    const candidates = await this.prisma.customer.findMany({
-      where: { tenantId, inSea: false, ownerId: { not: null } },
-    })
-    let count = 0
-    for (const customer of candidates) {
-      const pool = await this.resourcePools.resolveAutoRecyclePool(
-        tenantId,
-        'customer',
-        customer.ownerId,
-      )
-      if (!pool?.recycleRule) continue
-      if (
-        !this.recycleEvaluator.matches(
-          pool.recycleRule.operator,
-          pool.recycleRule.conditions,
-          customer,
-        )
-      ) {
-        continue
-      }
-      await this.recycleCustomerRecord(tenantId, customer, pool.id, '符合自动回收规则，已自动回收')
-      count++
-    }
-    return { configured: true, count }
-  }
-
-  private async recycleLegacyLead(tenantId: string, recycleDays: number, notifyDays: number) {
-    const { deadline, warnDeadline } = this.legacyDeadlines(recycleDays, notifyDays)
-    const stale = await this.prisma.lead.findMany({
-      where: {
-        tenantId,
-        inPool: false,
-        status: 'FOLLOWING',
-        ownerId: { not: null },
-        OR: [
-          { lastFollowedAt: { lt: deadline } },
-          { lastFollowedAt: null, createdAt: { lt: deadline } },
-        ],
-      },
-    })
-    let count = 0
-    for (const lead of stale) {
-      const pool = await this.resourcePools.resolveRecyclePool(tenantId, 'lead', lead.ownerId)
-      if (!pool) continue
-      await this.recycleLeadRecord(
-        tenantId,
-        lead,
-        pool.id,
-        `超过 ${recycleDays} 天未跟进，已自动回收`,
-      )
-      count++
-    }
-    await this.warnUpcoming(tenantId, 'lead', warnDeadline, deadline, recycleDays)
     return count
   }
 
-  private async recycleLegacyCustomer(tenantId: string, recycleDays: number, notifyDays: number) {
-    const { deadline, warnDeadline } = this.legacyDeadlines(recycleDays, notifyDays)
-    const stale = await this.prisma.customer.findMany({
-      where: {
-        tenantId,
-        inSea: false,
-        ownerId: { not: null },
-        OR: [
-          { lastFollowedAt: { lt: deadline } },
-          { lastFollowedAt: null, createdAt: { lt: deadline } },
-        ],
-      },
-    })
+  private async recycleCustomers(organizationId: string): Promise<number> {
+    const [pools, customers] = await Promise.all([
+      this.prisma.customerPool.findMany({
+        where: { organizationId, enable: true, auto: true },
+        include: { recycleRule: true },
+        orderBy: { createTime: 'desc' },
+      }),
+      this.prisma.customer.findMany({
+        where: { organizationId, inSharedPool: false, owner: { not: null } },
+      }),
+    ])
     let count = 0
-    for (const customer of stale) {
-      const pool = await this.resourcePools.resolveRecyclePool(
-        tenantId,
-        'customer',
-        customer.ownerId,
-      )
-      if (!pool) continue
-      await this.recycleCustomerRecord(
-        tenantId,
-        customer,
-        pool.id,
-        `超过 ${recycleDays} 天未跟进，已自动回收`,
-      )
+    for (const customer of customers) {
+      const pool = await this.resolvePool(organizationId, customer.owner, pools)
+      if (!pool?.recycleRule) continue
+      if (!this.matches(pool.recycleRule.operator, pool.recycleRule.condition, customer)) continue
+      const ownerId = customer.owner!
+      await this.customerPools.recycle({
+        organizationId,
+        customerId: customer.id,
+        poolId: pool.id,
+        operatorId: 'system',
+      })
+      await this.notifications.send({
+        tenantId: organizationId,
+        event: 'CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS',
+        recipientIds: [ownerId],
+        type: 'pool',
+        title: '客户已被回收进公海',
+        content: `客户「${customer.name}」符合自动回收规则，已自动回收`,
+        link: '/customers',
+      })
       count++
     }
-    await this.warnUpcoming(tenantId, 'customer', warnDeadline, deadline, recycleDays)
     return count
   }
 
-  private legacyDeadlines(recycleDays: number, notifyDays: number) {
-    return {
-      deadline: new Date(Date.now() - recycleDays * 24 * 3600 * 1000),
-      warnDeadline: new Date(Date.now() - (recycleDays - notifyDays) * 24 * 3600 * 1000),
+  private matches(
+    operator: string | null,
+    rawCondition: string | null,
+    resource: Clue | Customer,
+  ): boolean {
+    let conditions: unknown
+    try {
+      conditions = rawCondition ? JSON.parse(rawCondition) : []
+    } catch {
+      return false
     }
-  }
-
-  private async recycleLeadRecord(tenantId: string, lead: Lead, poolId: string, reason: string) {
-    if (!lead.ownerId) return
-    const ownerId = lead.ownerId
-    const now = new Date()
-    await this.prisma.$transaction(async (tx) => {
-      await tx.resourceOwnerHistory.create({
-        data: {
-          tenantId,
-          module: 'lead',
-          resourceId: lead.id,
-          ownerId,
-          poolId,
-          reasonId: 'system',
-          collectedAt: lead.collectedAt,
-          endedAt: now,
-        },
-      })
-      await tx.lead.update({
-        where: { id: lead.id },
-        data: {
-          inPool: true,
-          poolId,
-          poolEnteredAt: now,
-          ownerId: null,
-          deptId: null,
-          collectedAt: null,
-        },
-      })
-    })
-    await this.businessNotifications.send({
-      tenantId,
-      event: 'CLUE_AUTOMATIC_MOVE_POOL',
-      recipientIds: [ownerId],
-      type: 'pool',
-      title: '线索已被回收进线索池',
-      content: `线索「${lead.name}」${reason}`,
-      link: '/leads',
+    return this.evaluator.matches(operator, conditions, {
+      createdAt: new Date(Number(resource.createTime)),
+      collectedAt:
+        resource.collectionTime === null ? null : new Date(Number(resource.collectionTime)),
+      lastFollowedAt: resource.followTime === null ? null : new Date(Number(resource.followTime)),
     })
   }
 
-  private async recycleCustomerRecord(
-    tenantId: string,
-    customer: Customer,
-    poolId: string,
-    reason: string,
-  ) {
-    if (!customer.ownerId) return
-    const ownerId = customer.ownerId
-    const now = new Date()
-    await this.prisma.$transaction(async (tx) => {
-      await tx.resourceOwnerHistory.create({
-        data: {
-          tenantId,
-          module: 'customer',
-          resourceId: customer.id,
-          ownerId,
-          poolId,
-          reasonId: 'system',
-          collectedAt: customer.collectedAt,
-          endedAt: now,
-        },
-      })
-      await tx.customer.update({
-        where: { id: customer.id },
-        data: {
-          inSea: true,
-          poolId,
-          poolEnteredAt: now,
-          ownerId: null,
-          deptId: null,
-          collectedAt: null,
-        },
-      })
-    })
-    await this.businessNotifications.send({
-      tenantId,
-      event: 'CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS',
-      recipientIds: [ownerId],
-      type: 'pool',
-      title: '客户已被回收进公海',
-      content: `客户「${customer.name}」${reason}`,
-      link: '/customers',
-    })
-  }
-
-  /** 即将被回收的提前提醒 */
-  private async warnUpcoming(
-    tenantId: string,
-    module: 'lead' | 'customer',
-    warnDeadline: Date,
-    deadline: Date,
-    recycleDays: number,
-  ) {
-    if (module === 'lead') {
-      const upcoming = await this.prisma.lead.findMany({
-        where: {
-          tenantId,
-          inPool: false,
-          status: 'FOLLOWING',
-          ownerId: { not: null },
-          OR: [
-            { lastFollowedAt: { lt: warnDeadline, gte: deadline } },
-            { lastFollowedAt: null, createdAt: { lt: warnDeadline, gte: deadline } },
-          ],
-        },
-      })
-      for (const lead of upcoming) {
-        await this.notifications.notify(tenantId, lead.ownerId!, {
-          type: 'pool',
-          title: '线索即将被回收',
-          content: `线索「${lead.name}」临近 ${recycleDays} 天未跟进回收线，请尽快跟进`,
-          link: '/leads',
-        })
-      }
-    } else {
-      const upcoming = await this.prisma.customer.findMany({
-        where: {
-          tenantId,
-          inSea: false,
-          ownerId: { not: null },
-          OR: [
-            { lastFollowedAt: { lt: warnDeadline, gte: deadline } },
-            { lastFollowedAt: null, createdAt: { lt: warnDeadline, gte: deadline } },
-          ],
-        },
-      })
-      for (const customer of upcoming) {
-        await this.notifications.notify(tenantId, customer.ownerId!, {
-          type: 'pool',
-          title: '客户即将被回收',
-          content: `客户「${customer.name}」临近 ${recycleDays} 天未跟进回收线，请尽快跟进`,
-          link: '/customers',
-        })
-      }
-    }
+  private async resolvePool<T extends { scopeId: string }>(
+    organizationId: string,
+    ownerId: string | null,
+    pools: T[],
+  ): Promise<T | null> {
+    if (!ownerId) return null
+    const tokens = await this.prisma.$transaction((tx) =>
+      loadUserScopeTokens(tx, organizationId, ownerId),
+    )
+    return pools.find((pool) => scopeMatches(pool.scopeId, tokens)) ?? null
   }
 }

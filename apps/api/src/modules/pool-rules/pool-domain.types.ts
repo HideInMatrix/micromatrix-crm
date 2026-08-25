@@ -1,3 +1,12 @@
+export type PoolModule = 'lead' | 'customer'
+
+export interface ResourcePoolRecycleCondition {
+  column: 'storageTime' | 'followUpTime'
+  operator: 'FIXED' | 'DYNAMICS'
+  value: string
+  scope?: ('Created' | 'Picked')[]
+}
+
 export interface DirectPoolPickRule {
   limitOnNumber: boolean
   pickNumber: number | null

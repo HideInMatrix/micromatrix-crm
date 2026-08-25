@@ -544,7 +544,7 @@ export class OpportunitiesService {
     contactId: string,
     customerId: string,
   ) {
-    const contact = await this.prisma.contact.findFirst({
+    const contact = await this.prisma.customerContact.findFirst({
       where: { id: contactId, tenantId, customerId },
       select: { id: true },
     })

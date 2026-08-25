@@ -698,3 +698,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - PostgreSQL transaction advisory lock 同时覆盖资源和目标负责人，容量配置另用组织级锁；真实库并发 Smoke 证明两个同时领取只有一个成功，等价 Scope 重复容量配置被拒绝。
 - 专项测试 18 条、全量规则测试 `95/95`、新增文件 TypeScript 定向审计和 ESLint 通过。隔离空库应用 30 个 migration 后 9 项真实库 Smoke 通过，临时库已删除。
 - 任务 1.6 标记完成；旧 ResourcePool/PoolRule/PoolRecycle 及业务调用方仍属于 1.7，Seed 属于 1.8，因此 API 当前仍不可启动。下一独立执行单元为 1.7。
+
+---
+
+## 23. W3.4.0 任务 1.7 业务调用方直接模型迁移（2026-08-25）
+
+- 线索、客户、联系人列表/详情/筛选/批改/导入导出已接入分域 Field/Blob；主记录和动态字段使用同一事务，不再读取或写入目标域 `customData`。
+- 线索转换、客户 360、协作、关系、合并、商机联系人、跟进、跟进计划、标讯转线索、通知收件人、旧首页统计与自动回收已改用 `Clue/Customer/CustomerContact` 及分域 Pool/Owner 模型。
+- 删除旧通用池 CRUD Controller、PoolRulesService 和旧资源池 DTO；ResourcePoolsService 仅保留对 Clue/Customer Repository 的业务编排，不建立兼容 Controller、数据库别名或双写。
+- 代码搜索确认生产 API 中被删除 Prisma delegate、旧 DTO 和旧 Controller 引用均为 0；Prisma validate/generate、API 生产构建、shared/Web typecheck、本批 ESLint、`95/95` 规则测试和 diff 检查通过。
+- API 全量 typecheck 只剩 Seed 中 6 个旧 Customer 字段错误，明确归任务 1.8；Web 旧通用池配置调用将在 W3.4.2/W3.4.3 按 Cordys 直接页面 API 替换，不以临时兼容接口恢复。
+- DB-016、DB-017、DB-020 更新为“调用方已完成、Seed/页面待验收”，DB-021 继续保留图外模块动态字段缺口。任务 1.4 与 1.7 标记完成，下一独立执行单元为 1.8 Seed 与空库启动验收。

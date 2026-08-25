@@ -18,20 +18,37 @@ export class DashboardService {
 
   /** 销售简报 + 待办（按数据范围统计） */
   async summary(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
+      string,
+      unknown
+    >
+    const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const since = monthStart()
     const tenantId = user.tenantId
 
     const [newLeads, newCustomers, newOpportunities, wonAgg, receivedAgg] =
       await this.prisma.$transaction([
-        this.prisma.lead.count({
-          where: { tenantId, AND: [scope as Prisma.LeadWhereInput], createdAt: { gte: since } },
+        this.prisma.clue.count({
+          where: {
+            organizationId: tenantId,
+            AND: [directScope as Prisma.ClueWhereInput],
+            createTime: { gte: BigInt(since.getTime()) },
+          },
         }),
         this.prisma.customer.count({
-          where: { tenantId, AND: [scope as Prisma.CustomerWhereInput], createdAt: { gte: since }, inSea: false },
+          where: {
+            organizationId: tenantId,
+            AND: [directScope as Prisma.CustomerWhereInput],
+            createTime: { gte: BigInt(since.getTime()) },
+            inSharedPool: false,
+          },
         }),
         this.prisma.opportunity.count({
-          where: { tenantId, AND: [scope as Prisma.OpportunityWhereInput], createdAt: { gte: since } },
+          where: {
+            tenantId,
+            AND: [scope as Prisma.OpportunityWhereInput],
+            createdAt: { gte: since },
+          },
         }),
         this.prisma.opportunity.aggregate({
           where: { tenantId, AND: [scope as Prisma.OpportunityWhereInput], wonAt: { gte: since } },
@@ -57,7 +74,10 @@ export class DashboardService {
         where: {
           tenantId,
           ownerId: user.id,
-          nextFollowAt: { gte: new Date(Date.now() - 24 * 3600 * 1000), lte: new Date(Date.now() + 3 * 24 * 3600 * 1000) },
+          nextFollowAt: {
+            gte: new Date(Date.now() - 24 * 3600 * 1000),
+            lte: new Date(Date.now() + 3 * 24 * 3600 * 1000),
+          },
         },
       }),
     ])
@@ -92,7 +112,10 @@ export class DashboardService {
 
   /** 商机漏斗（按阶段） */
   async funnel(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Prisma.OpportunityWhereInput
+    const scope = (await this.dataScope.scopeFilter(
+      user,
+      'menu:dashboard',
+    )) as Prisma.OpportunityWhereInput
     const stages = await this.prisma.opportunityStage.findMany({
       where: { tenantId: user.tenantId },
       orderBy: [{ isWon: 'asc' }, { isLost: 'asc' }, { sort: 'asc' }],
@@ -117,7 +140,10 @@ export class DashboardService {
 
   /** 本月业绩排行（赢单金额 / 回款金额 TOP10） */
   async ranking(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
+      string,
+      unknown
+    >
     const since = monthStart()
 
     const [wonGroups, receivedGroups] = await Promise.all([
@@ -146,10 +172,7 @@ export class DashboardService {
     ])
 
     const ownerIds = [
-      ...new Set([
-        ...wonGroups.map((g) => g.ownerId),
-        ...receivedGroups.map((g) => g.ownerId),
-      ]),
+      ...new Set([...wonGroups.map((g) => g.ownerId), ...receivedGroups.map((g) => g.ownerId)]),
     ].filter((v): v is string => !!v)
     const users = ownerIds.length
       ? await this.prisma.user.findMany({
@@ -180,7 +203,10 @@ export class DashboardService {
 
   /** 近 6 个月趋势：赢单金额 / 回款金额 */
   async trend(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
+      string,
+      unknown
+    >
     const since = monthStart(-5)
 
     const [wonList, receivedList] = await Promise.all([
@@ -217,7 +243,8 @@ export class DashboardService {
     }
     for (const r of receivedList) {
       const key = `${r.receivedAt.getFullYear()}-${String(r.receivedAt.getMonth() + 1).padStart(2, '0')}`
-      if (receivedByMonth.has(key)) receivedByMonth.set(key, receivedByMonth.get(key)! + Number(r.amount))
+      if (receivedByMonth.has(key))
+        receivedByMonth.set(key, receivedByMonth.get(key)! + Number(r.amount))
     }
 
     return {
@@ -229,19 +256,27 @@ export class DashboardService {
 
   /** 线索转化与输单原因 */
   async conversion(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<string, unknown>
+    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
+      string,
+      unknown
+    >
+    const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const since = monthStart(-5)
 
     const [totalLeads, convertedLeads, lostGroups] = await Promise.all([
-      this.prisma.lead.count({
-        where: { tenantId: user.tenantId, AND: [scope as Prisma.LeadWhereInput], createdAt: { gte: since } },
-      }),
-      this.prisma.lead.count({
+      this.prisma.clue.count({
         where: {
-          tenantId: user.tenantId,
-          AND: [scope as Prisma.LeadWhereInput],
-          createdAt: { gte: since },
-          status: 'CONVERTED',
+          organizationId: user.tenantId,
+          AND: [directScope as Prisma.ClueWhereInput],
+          createTime: { gte: BigInt(since.getTime()) },
+        },
+      }),
+      this.prisma.clue.count({
+        where: {
+          organizationId: user.tenantId,
+          AND: [directScope as Prisma.ClueWhereInput],
+          createTime: { gte: BigInt(since.getTime()) },
+          stage: 'CONVERTED',
         },
       }),
       this.prisma.opportunity.groupBy({
