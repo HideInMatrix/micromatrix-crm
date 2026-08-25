@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { type MessageTaskEvent, type NotificationBizType } from '@micromatrix/shared'
 import { PrismaService } from '../../prisma/prisma.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
+import { MessageDeliveryService } from './message-delivery.service'
 
 export interface BusinessNotificationInput {
   tenantId: string
@@ -32,6 +33,7 @@ export class BusinessNotificationsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly messageSettings: MessageSettingsService,
+    @Optional() private readonly deliveries?: MessageDeliveryService,
   ) {}
 
   async send(input: BusinessNotificationInput): Promise<number> {
@@ -61,6 +63,24 @@ export class BusinessNotificationsService {
         content: input.content,
         link: input.link,
       })
+      if (input.event && this.deliveries) {
+        await this.deliveries
+          .enqueue({
+            tenantId: input.tenantId,
+            event: input.event,
+            recipientIds: userIds,
+            title: input.title,
+            content: input.content,
+            link: input.link,
+          })
+          .catch((error) =>
+            this.logger.warn(
+              `企业微信消息入队失败 event=${input.event}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ),
+          )
+      }
       return userIds.length
     } catch (error) {
       this.logger.warn(

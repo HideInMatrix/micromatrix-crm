@@ -18,6 +18,8 @@ export interface WeComSyncContext {
   credentials: { corpId: string; agentId: string; appSecret: string }
 }
 
+export type WeComRuntimeContext = WeComSyncContext
+
 @Injectable()
 export class EnterpriseIntegrationsService {
   constructor(
@@ -272,13 +274,20 @@ export class EnterpriseIntegrationsService {
   }
 
   async getWeComSyncContext(tenantId: string): Promise<WeComSyncContext> {
+    const context = await this.getWeComRuntimeContext(tenantId)
+    if (!context.integration.syncDefaultRoleId) {
+      throw new BadRequestException('请选择新成员默认角色')
+    }
+    return context
+  }
+
+  async getWeComRuntimeContext(tenantId: string): Promise<WeComRuntimeContext> {
     const integration = await this.findWeCom(tenantId)
     if (!integration) throw new BadRequestException('请先配置企业微信')
     if (integration.lastTestSucceeded !== true) {
       throw new BadRequestException('请先完成企业微信连接测试')
     }
     if (!integration.syncEnabled) throw new BadRequestException('请先开启同步组织架构')
-    if (!integration.syncDefaultRoleId) throw new BadRequestException('请选择新成员默认角色')
     return {
       integration,
       credentials: {

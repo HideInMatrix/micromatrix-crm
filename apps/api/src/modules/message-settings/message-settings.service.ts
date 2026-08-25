@@ -7,6 +7,7 @@ import {
   type MessageTaskDefinition,
   type MessageTaskEvent,
   type MessageTaskGroupVO,
+  type MessageChannelGateVO,
   type MessageTaskModule,
   type MessageTaskSettingVO,
   type UpdateMessageTaskSettingInput,
@@ -118,6 +119,7 @@ export class MessageSettingsService {
     if (
       input.systemEnabled === undefined &&
       input.emailEnabled === undefined &&
+      input.weComEnabled === undefined &&
       input.config === undefined
     ) {
       throw new BadRequestException('至少提供一项要更新的消息设置')
@@ -126,6 +128,7 @@ export class MessageSettingsService {
       if (!definition.configurable) throw new BadRequestException('该事件不支持范围配置')
       await this.validateConfig(tenantId, definition, input.config)
     }
+    if (input.weComEnabled === true) await this.assertWeComAvailable(tenantId)
 
     const row = await this.prisma.messageTaskSetting.upsert({
       where: {
@@ -138,6 +141,7 @@ export class MessageSettingsService {
       update: {
         ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
         ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
+        ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
         ...(input.config === undefined
           ? {}
           : { config: input.config as unknown as Prisma.InputJsonValue }),
@@ -148,6 +152,7 @@ export class MessageSettingsService {
         event: definition.event,
         systemEnabled: input.systemEnabled ?? definition.defaultSystemEnabled,
         emailEnabled: input.emailEnabled ?? definition.defaultEmailEnabled,
+        weComEnabled: input.weComEnabled ?? false,
         config:
           input.config === undefined
             ? undefined
@@ -161,9 +166,14 @@ export class MessageSettingsService {
     tenantId: string,
     input: BatchUpdateMessageTaskSettingInput,
   ): Promise<MessageTaskGroupVO[]> {
-    if (input.systemEnabled === undefined && input.emailEnabled === undefined) {
+    if (
+      input.systemEnabled === undefined &&
+      input.emailEnabled === undefined &&
+      input.weComEnabled === undefined
+    ) {
       throw new BadRequestException('至少提供一个渠道开关')
     }
+    if (input.weComEnabled === true) await this.assertWeComAvailable(tenantId)
     await this.prisma.$transaction(
       MESSAGE_TASK_DEFINITIONS.map((definition) =>
         this.prisma.messageTaskSetting.upsert({
@@ -177,6 +187,7 @@ export class MessageSettingsService {
           update: {
             ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
             ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
+            ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
           },
           create: {
             tenantId,
@@ -184,6 +195,7 @@ export class MessageSettingsService {
             event: definition.event,
             systemEnabled: input.systemEnabled ?? definition.defaultSystemEnabled,
             emailEnabled: input.emailEnabled ?? definition.defaultEmailEnabled,
+            weComEnabled: input.weComEnabled ?? false,
           },
         }),
       ),
@@ -198,6 +210,36 @@ export class MessageSettingsService {
       select: { systemEnabled: true },
     })
     return row?.systemEnabled ?? definition.defaultSystemEnabled
+  }
+
+  async isWeComEnabled(tenantId: string, event: MessageTaskEvent): Promise<boolean> {
+    const definition = this.definition(event)
+    const row = await this.prisma.messageTaskSetting.findFirst({
+      where: { tenantId, module: definition.module, event: definition.event },
+      select: { weComEnabled: true },
+    })
+    return row?.weComEnabled ?? false
+  }
+
+  async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
+    const integration = await this.prisma.enterpriseIntegration.findUnique({
+      where: { tenantId_provider: { tenantId, provider: 'WECOM' } },
+    })
+    const reason = !integration
+      ? '请先配置企业微信'
+      : integration.lastTestSucceeded !== true
+        ? '请先完成企业微信连接测试'
+        : !integration.syncEnabled
+          ? '请先开启企业微信组织同步'
+          : null
+    return {
+      channel: 'WECOM',
+      configured: Boolean(integration),
+      verified: integration?.lastTestSucceeded === true,
+      enabled: integration?.syncEnabled === true,
+      available: reason === null,
+      reason,
+    }
   }
 
   private definition(event: string): MessageTaskDefinition {
@@ -240,12 +282,13 @@ export class MessageSettingsService {
 
   private toVO(
     definition: MessageTaskDefinition,
-    row?: Pick<MessageTaskSetting, 'systemEnabled' | 'emailEnabled' | 'config'>,
+    row?: Pick<MessageTaskSetting, 'systemEnabled' | 'emailEnabled' | 'weComEnabled' | 'config'>,
   ): MessageTaskSettingVO {
     return {
       ...definition,
       systemEnabled: row?.systemEnabled ?? definition.defaultSystemEnabled,
       emailEnabled: row?.emailEnabled ?? definition.defaultEmailEnabled,
+      weComEnabled: row?.weComEnabled ?? false,
       config: this.configFrom(row?.config, definition.event),
     }
   }
@@ -258,5 +301,10 @@ export class MessageSettingsService {
       return defaultMessageTaskConfig(event)
     }
     return value as unknown as MessageTaskConfig
+  }
+
+  private async assertWeComAvailable(tenantId: string): Promise<void> {
+    const gate = await this.getWeComChannelGate(tenantId)
+    if (!gate.available) throw new BadRequestException(gate.reason ?? '企业微信消息渠道不可用')
   }
 }

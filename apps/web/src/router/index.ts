@@ -29,6 +29,12 @@ const router = createRouter({
       meta: { public: true, title: '登录', client: 'both' },
     },
     {
+      path: '/login/wecom/callback',
+      name: 'wecom-login-callback',
+      component: () => import('@/views/WeComCallbackView.vue'),
+      meta: { public: true, title: '企业微信登录', client: 'both' },
+    },
+    {
       path: '/leads/:id/convert',
       name: 'mobile-lead-convert',
       component: () => import('@/mobile/views/LeadConvertView.vue'),

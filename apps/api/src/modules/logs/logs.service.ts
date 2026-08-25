@@ -77,6 +77,8 @@ export class LogsService {
       items: items.map((log) => ({
         id: log.id,
         email: log.email,
+        authType: log.authType as 'PASSWORD' | 'WECOM',
+        externalSubject: log.externalSubject,
         ip: log.ip,
         userAgent: log.userAgent,
         success: log.success,

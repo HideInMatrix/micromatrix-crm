@@ -3,9 +3,13 @@ import type {
   DataScope,
   DepartmentVO,
   EnterpriseIntegrationVO,
+  ExternalIdentityVO,
   LoginLogVO,
   MemberVO,
   MessageTaskConfig,
+  MessageChannelGateVO,
+  MessageDeliveryStatus,
+  MessageDeliveryVO,
   MessageTaskGroupVO,
   MessageTaskSettingVO,
   ModuleConfigVO,
@@ -82,6 +86,15 @@ export const memberApi = {
   remove: (id: string) => http.delete(`/members/${id}`),
 }
 
+export const externalIdentityApi = {
+  getWeCom: (userId: string) =>
+    http.get<ExternalIdentityVO>(`/external-identities/wecom/users/${userId}`),
+  bindWeCom: (userId: string) =>
+    http.post<ExternalIdentityVO>(`/external-identities/wecom/users/${userId}/bind`),
+  unbindWeCom: (userId: string) =>
+    http.post<ExternalIdentityVO>(`/external-identities/wecom/users/${userId}/unbind`),
+}
+
 // ===== 角色 =====
 
 export interface RoleForm {
@@ -141,12 +154,23 @@ export const notificationApi = {
 
 export const messageSettingApi = {
   list: () => http.get<MessageTaskGroupVO[]>('/message-settings'),
+  weComStatus: () => http.get<MessageChannelGateVO>('/message-settings/channels/wecom/status'),
   update: (event: string, data: UpdateMessageTaskSettingInput) =>
     http.patch<MessageTaskSettingVO>(`/message-settings/${event}`, data),
   batchUpdate: (data: BatchUpdateMessageTaskSettingInput) =>
     http.post<MessageTaskGroupVO[]>('/message-settings/batch', data),
   getConfig: (event: string) =>
     http.get<MessageTaskConfig | null>(`/message-settings/${event}/config`),
+}
+
+export const messageDeliveryApi = {
+  list: (
+    params: PageQuery & {
+      status?: MessageDeliveryStatus
+      event?: string
+    },
+  ) => http.get<PaginatedResult<MessageDeliveryVO>>('/message-deliveries', { params }),
+  retry: (id: string) => http.post<MessageDeliveryVO>(`/message-deliveries/${id}/retry`),
 }
 
 // ===== 企业设置 =====

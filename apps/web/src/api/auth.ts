@@ -1,4 +1,11 @@
-import type { CurrentUser, LoginResult } from '@micromatrix/shared'
+import type {
+  CurrentUser,
+  LoginResult,
+  WeComLoginCallbackInput,
+  WeComLoginDiscoveryVO,
+  WeComLoginStartInput,
+  WeComLoginStartVO,
+} from '@micromatrix/shared'
 import { http } from './http'
 
 export interface LoginPayload {
@@ -12,4 +19,18 @@ export function login(payload: LoginPayload) {
 
 export function fetchMe() {
   return http.get<CurrentUser>('/auth/me')
+}
+
+export function discoverWeCom(tenantSlug: string) {
+  return http.get<WeComLoginDiscoveryVO>('/auth/wecom/discovery', {
+    params: { tenant: tenantSlug },
+  })
+}
+
+export function startWeComLogin(payload: WeComLoginStartInput) {
+  return http.post<WeComLoginStartVO>('/auth/wecom/start', payload)
+}
+
+export function callbackWeCom(payload: WeComLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>('/auth/wecom/callback', payload)
 }

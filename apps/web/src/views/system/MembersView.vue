@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import type { DepartmentVO, MemberVO, OrganizationSyncGateVO } from '@micromatrix/shared'
+import type {
+  DepartmentVO,
+  ExternalIdentityVO,
+  MemberVO,
+  OrganizationSyncGateVO,
+} from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import {
   deptApi,
+  externalIdentityApi,
   memberApi,
   organizationSyncApi,
   roleApi,
@@ -30,6 +36,12 @@ const syncDrawerVisible = ref(false)
 const syncGateLoading = ref(false)
 const syncGate = ref<OrganizationSyncGateVO | null>(null)
 const canSync = computed(() => auth.hasPerm('system:dept:sync'))
+
+const identityDialogVisible = ref(false)
+const identityLoading = ref(false)
+const identitySaving = ref(false)
+const identityMember = ref<MemberVO | null>(null)
+const externalIdentity = ref<ExternalIdentityVO | null>(null)
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -313,6 +325,60 @@ async function handleDelete(row: MemberVO) {
   }
 }
 
+async function openIdentity(row: MemberVO) {
+  identityMember.value = row
+  externalIdentity.value = null
+  identityDialogVisible.value = true
+  identityLoading.value = true
+  try {
+    const { data } = await externalIdentityApi.getWeCom(row.id)
+    externalIdentity.value = data
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    identityDialogVisible.value = false
+  } finally {
+    identityLoading.value = false
+  }
+}
+
+async function bindIdentity() {
+  if (!identityMember.value) return
+  identitySaving.value = true
+  try {
+    const { data } = await externalIdentityApi.bindWeCom(identityMember.value.id)
+    externalIdentity.value = data
+    ElMessage.success(data.status === 'ACTIVE' ? '企业微信登录身份已绑定' : '操作已完成')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    identitySaving.value = false
+  }
+}
+
+async function unbindIdentity() {
+  if (!identityMember.value) return
+  const confirmed = await ElMessageBox.confirm(
+    `解绑后，「${identityMember.value.name}」将不能再使用企业微信扫码登录。确定继续？`,
+    '解绑企业微信身份',
+    { type: 'warning' },
+  ).catch(() => false)
+  if (!confirmed) return
+  identitySaving.value = true
+  try {
+    const { data } = await externalIdentityApi.unbindWeCom(identityMember.value.id)
+    externalIdentity.value = data
+    ElMessage.success('企业微信登录身份已解绑')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    identitySaving.value = false
+  }
+}
+
+function formatDate(value: string | null) {
+  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+}
+
 onMounted(() => {
   loadData()
   loadRefs()
@@ -451,8 +517,15 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="auth.hasPerm('system:member')"
+              link
+              @click="openIdentity(row as MemberVO)"
+            >
+              登录身份
+            </el-button>
             <el-button
               v-if="auth.hasPerm('system:member:update')"
               link
@@ -551,6 +624,72 @@ onMounted(() => {
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="identityDialogVisible"
+      title="企业微信登录身份"
+      width="520px"
+      destroy-on-close
+    >
+      <div v-loading="identityLoading" class="min-h-44">
+        <el-alert type="info" :closable="false" show-icon class="mb-4">
+          <template #title>
+            身份来自企业微信组织同步。绑定后，成员可在登录页使用企业微信扫码登录。
+          </template>
+        </el-alert>
+        <el-descriptions v-if="externalIdentity && identityMember" :column="1" border>
+          <el-descriptions-item label="本地成员">{{ identityMember.name }}</el-descriptions-item>
+          <el-descriptions-item label="企业微信 UserID">
+            {{ externalIdentity.externalSubject || '尚未发现成员映射' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="登录状态">
+            <el-tag
+              v-if="externalIdentity.status"
+              :type="externalIdentity.status === 'ACTIVE' ? 'success' : 'info'"
+            >
+              {{ externalIdentity.status === 'ACTIVE' ? '已绑定' : '已解绑' }}
+            </el-tag>
+            <span v-else>未绑定</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="绑定时间">
+            {{ formatDate(externalIdentity.boundAt) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="最近登录">
+            {{ formatDate(externalIdentity.lastLoginAt) }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+      <template #footer>
+        <el-button @click="identityDialogVisible = false">关闭</el-button>
+        <el-tooltip
+          v-if="externalIdentity?.status === 'ACTIVE' && !identityMember?.passwordLoginEnabled"
+          content="该成员未启用密码登录，不能解绑其唯一登录方式"
+        >
+          <span>
+            <el-button disabled>解绑</el-button>
+          </span>
+        </el-tooltip>
+        <el-button
+          v-else-if="externalIdentity?.status === 'ACTIVE'"
+          type="danger"
+          plain
+          :loading="identitySaving"
+          :disabled="!auth.hasPerm('system:member:update')"
+          @click="unbindIdentity"
+        >
+          解绑
+        </el-button>
+        <el-button
+          v-else
+          type="primary"
+          :loading="identitySaving"
+          :disabled="!externalIdentity?.mapped || !auth.hasPerm('system:member:update')"
+          @click="bindIdentity"
+        >
+          {{ externalIdentity?.status === 'REVOKED' ? '重新绑定' : '绑定身份' }}
+        </el-button>
       </template>
     </el-dialog>
 

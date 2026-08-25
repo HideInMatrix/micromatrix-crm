@@ -11,6 +11,7 @@ export interface WeComConnectionResult {
   success: boolean
   message: string
   providerCode: number | null
+  transient?: boolean
 }
 
 export interface WeComDepartmentSnapshot {
@@ -38,6 +39,24 @@ export interface WeComUserSnapshot {
 export interface WeComOrganizationSnapshot {
   departments: WeComDepartmentSnapshot[]
   users: WeComUserSnapshot[]
+}
+
+export interface WeComLoginIdentity {
+  userId: string
+  externalKey: string
+}
+
+export interface WeComMessageInput extends WeComConnectionInput {
+  toUser: string
+  content: string
+}
+
+export interface WeComMessageResult {
+  success: boolean
+  transient: boolean
+  providerCode: number | null
+  providerMessageId: string | null
+  message: string
 }
 
 interface WeComResponse {
@@ -125,6 +144,89 @@ export class WeComClient {
     }
   }
 
+  async exchangeLoginCode(input: WeComConnectionInput, code: string): Promise<WeComLoginIdentity> {
+    const tokenPayload = await this.requestData(this.tokenUrl(input), 'TOKEN_REQUEST_FAILED')
+    const accessToken = this.stringValue(tokenPayload['access_token'], 2_048)
+    if (!accessToken) throw new WeComSnapshotError('TOKEN_MISSING', '企业微信未返回 access token')
+
+    const identityUrl = this.apiUrl('/cgi-bin/auth/getuserinfo')
+    identityUrl.searchParams.set('access_token', accessToken)
+    identityUrl.searchParams.set('code', code)
+    const identityPayload = await this.requestData(identityUrl, 'LOGIN_IDENTITY_REQUEST_FAILED')
+    const userId = this.stringValue(identityPayload['UserId'], 128)
+    if (!userId) {
+      throw new WeComSnapshotError('LOGIN_IDENTITY_MISSING', '未获取到企业微信成员身份')
+    }
+    return { userId, externalKey: userId.toLowerCase() }
+  }
+
+  async sendTextMessage(input: WeComMessageInput): Promise<WeComMessageResult> {
+    const tokenResponse = await this.request(this.tokenUrl(input))
+    if (!tokenResponse.ok) {
+      return this.messageFailure(
+        tokenResponse.result.providerCode,
+        tokenResponse.result.message,
+        tokenResponse.result.transient ?? false,
+      )
+    }
+    const accessToken = tokenResponse.data.accessToken
+    if (!accessToken) return this.messageFailure(null, '企业微信未返回 access token', false)
+
+    const url = this.apiUrl('/cgi-bin/message/send')
+    url.searchParams.set('access_token', accessToken)
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          touser: input.toUser,
+          agentid: Number(input.agentId),
+          msgtype: 'text',
+          text: { content: input.content.slice(0, 2_048) },
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+      if (!response.ok) {
+        return this.messageFailure(
+          null,
+          `企业微信服务响应异常（HTTP ${response.status}）`,
+          response.status === 429 || response.status >= 500,
+        )
+      }
+      const raw: unknown = await response.json()
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return this.messageFailure(null, '企业微信返回了无效数据', false)
+      }
+      const data = raw as Record<string, unknown>
+      const providerCode = typeof data['errcode'] === 'number' ? data['errcode'] : null
+      const providerMessageId = this.stringValue(data['msgid'], 256)
+      if (providerCode === 0) {
+        return {
+          success: true,
+          transient: false,
+          providerCode,
+          providerMessageId,
+          message: '企业微信消息发送成功',
+        }
+      }
+      const detail = this.stringValue(data['errmsg'], 160)
+      return this.messageFailure(
+        providerCode,
+        `企业微信消息发送失败（${providerCode ?? '未知错误'}）${detail ? `：${detail}` : ''}`,
+        providerCode === -1 || providerCode === 45009,
+      )
+    } catch (error) {
+      const name = error instanceof Error ? error.name : ''
+      return this.messageFailure(
+        null,
+        name === 'TimeoutError' || name === 'AbortError'
+          ? '企业微信消息发送超时'
+          : '企业微信消息服务暂时不可用',
+        true,
+      )
+    }
+  }
+
   private tokenUrl(input: WeComConnectionInput): URL {
     const url = this.apiUrl('/cgi-bin/gettoken')
     url.searchParams.set('corpid', input.corpId)
@@ -152,6 +254,7 @@ export class WeComClient {
             success: false,
             message: `企业微信服务响应异常（HTTP ${response.status}）`,
             providerCode: null,
+            transient: response.status === 429 || response.status >= 500,
           },
         }
       }
@@ -165,6 +268,7 @@ export class WeComClient {
             success: false,
             message: `企业微信连接失败（${data.errcode ?? '未知错误'}）${detail}`,
             providerCode: data.errcode,
+            transient: data.errcode === -1 || data.errcode === 45009,
           },
         }
       }
@@ -180,19 +284,24 @@ export class WeComClient {
               ? '企业微信连接超时'
               : '企业微信服务暂时不可用',
           providerCode: null,
+          transient: true,
         },
       }
     }
   }
 
-  private async requestData(url: URL, errorCode: string): Promise<Record<string, unknown>> {
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  private async requestData(
+    url: URL,
+    errorCode: string,
+    maxRetries = MAX_RETRIES,
+  ): Promise<Record<string, unknown>> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const response = await fetch(url, {
           headers: { Accept: 'application/json' },
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
-        if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
+        if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
           await this.backoff(attempt)
           continue
         }
@@ -205,7 +314,7 @@ export class WeComClient {
         }
         const data = value as Record<string, unknown>
         const errcode = typeof data['errcode'] === 'number' ? data['errcode'] : null
-        if ((errcode === 45009 || errcode === -1) && attempt < MAX_RETRIES) {
+        if ((errcode === 45009 || errcode === -1) && attempt < maxRetries) {
           await this.backoff(attempt)
           continue
         }
@@ -220,7 +329,7 @@ export class WeComClient {
       } catch (error) {
         if (error instanceof WeComSnapshotError) throw error
         const name = error instanceof Error ? error.name : ''
-        if (attempt < MAX_RETRIES) {
+        if (attempt < maxRetries) {
           await this.backoff(attempt)
           continue
         }
@@ -370,6 +479,20 @@ export class WeComClient {
       errcode: typeof data['errcode'] === 'number' ? data['errcode'] : null,
       errmsg: typeof data['errmsg'] === 'string' ? data['errmsg'] : null,
       accessToken: typeof data['access_token'] === 'string' ? data['access_token'] : null,
+    }
+  }
+
+  private messageFailure(
+    providerCode: number | null,
+    message: string,
+    transient: boolean,
+  ): WeComMessageResult {
+    return {
+      success: false,
+      transient,
+      providerCode,
+      providerMessageId: null,
+      message: message.slice(0, 500),
     }
   }
 

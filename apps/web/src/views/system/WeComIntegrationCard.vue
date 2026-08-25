@@ -63,6 +63,17 @@ const status = computed(() => {
     return { label: '验证失败', type: 'danger' as const }
   return { label: '待验证', type: 'warning' as const }
 })
+const loginUrl = computed(() =>
+  auth.user?.tenantSlug
+    ? `${window.location.origin}/login?tenant=${encodeURIComponent(auth.user.tenantSlug)}`
+    : '',
+)
+
+async function copyLoginUrl() {
+  if (!loginUrl.value) return
+  await navigator.clipboard.writeText(loginUrl.value)
+  ElMessage.success('企业微信登录地址已复制')
+}
 
 function formatTime(value: string | null) {
   if (!value) return '尚未测试'
@@ -307,6 +318,30 @@ onMounted(loadData)
         {{ integration.lastSyncMessage || '尚未执行组织同步' }}
       </el-descriptions-item>
     </el-descriptions>
+    <el-descriptions :column="2" border class="mt-3">
+      <el-descriptions-item label="统一登录">
+        <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">
+          {{ integration.syncEnabled ? '可用' : '不可用' }}
+        </el-tag>
+        <span class="capability-note">
+          {{
+            integration.syncEnabled ? '已同步成员可使用企微扫码登录' : '需先验证配置并开启组织同步'
+          }}
+        </span>
+      </el-descriptions-item>
+      <el-descriptions-item label="企业微信消息">
+        <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">
+          {{ integration.syncEnabled ? '可配置' : '不可配置' }}
+        </el-tag>
+        <span class="capability-note">在消息设置中按事件开启</span>
+      </el-descriptions-item>
+      <el-descriptions-item label="企业登录地址" :span="2">
+        <div class="login-url-row">
+          <span>{{ loginUrl || '登录地址暂不可生成' }}</span>
+          <el-button v-if="loginUrl" link type="primary" @click="copyLoginUrl">复制</el-button>
+        </div>
+      </el-descriptions-item>
+    </el-descriptions>
   </el-card>
 
   <el-drawer v-model="drawerVisible" title="配置企业微信" size="520px" destroy-on-close>
@@ -402,6 +437,24 @@ onMounted(loadData)
 .drawer-actions {
   display: flex;
   align-items: center;
+}
+.capability-note {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.login-url-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.login-url-row span {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .integration-header,
 .sync-boundary {

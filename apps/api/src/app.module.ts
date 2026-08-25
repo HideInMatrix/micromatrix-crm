@@ -35,6 +35,7 @@ import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
 import { RolesModule } from './modules/roles/roles.module'
 import { SavedViewsModule } from './modules/saved-views/saved-views.module'
 import { SettingsModule } from './modules/settings/settings.module'
+import { WeComSsoModule } from './modules/wecom-sso/wecom-sso.module'
 import { PrismaModule } from './prisma/prisma.module'
 
 @Module({
@@ -53,6 +54,7 @@ import { PrismaModule } from './prisma/prisma.module'
     LeadsModule,
     FollowUpsModule,
     EnterpriseIntegrationsModule,
+    WeComSsoModule,
     OrganizationSyncModule,
     FollowUpPlansModule,
     AttachmentsModule,

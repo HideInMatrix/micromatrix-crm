@@ -219,3 +219,110 @@ test('企微组织快照会重试临时错误并拒绝不完整部门树', async
     globalThis.fetch = originalFetch
   }
 })
+
+test('企微登录 code 只解析已认证成员 UserId', async (t) => {
+  const originalFetch = globalThis.fetch
+  try {
+    await t.test('返回标准成员身份', async () => {
+      globalThis.fetch = async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input).includes('/gettoken')
+              ? { errcode: 0, access_token: 'temporary-token' }
+              : { errcode: 0, UserId: 'ZhangSan' },
+          ),
+        )
+      const identity = await new WeComClient().exchangeLoginCode(
+        { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
+        'single-use-code',
+      )
+      assert.deepEqual(identity, { userId: 'ZhangSan', externalKey: 'zhangsan' })
+    })
+
+    await t.test('拒绝访客或缺失 UserId 的响应', async () => {
+      globalThis.fetch = async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input).includes('/gettoken')
+              ? { errcode: 0, access_token: 'temporary-token' }
+              : { errcode: 0, OpenId: 'visitor-open-id' },
+          ),
+        )
+      await assert.rejects(
+        () =>
+          new WeComClient().exchangeLoginCode(
+            { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
+            'visitor-code',
+          ),
+        (error: unknown) =>
+          error instanceof Error && 'code' in error && error.code === 'LOGIN_IDENTITY_MISSING',
+      )
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('企微应用消息区分成功、临时失败和永久失败', async (t) => {
+  const originalFetch = globalThis.fetch
+  try {
+    for (const fixture of [
+      {
+        name: '成功',
+        response: { errcode: 0, errmsg: 'ok', msgid: 'message-1' },
+        success: true,
+        transient: false,
+      },
+      {
+        name: '频率受限可重试',
+        response: { errcode: 45009, errmsg: 'api freq out of limit' },
+        success: false,
+        transient: true,
+      },
+      {
+        name: '收件人无效不可重试',
+        response: { errcode: 81013, errmsg: 'user not in app' },
+        success: false,
+        transient: false,
+      },
+    ]) {
+      await t.test(fixture.name, async () => {
+        let sentBody: Record<string, unknown> | undefined
+        globalThis.fetch = async (input, init) => {
+          if (String(input).includes('/gettoken')) {
+            return new Response(JSON.stringify({ errcode: 0, access_token: 'temporary-token' }))
+          }
+          sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+          return new Response(JSON.stringify(fixture.response))
+        }
+        const result = await new WeComClient().sendTextMessage({
+          corpId: 'ww-a',
+          agentId: '1000001',
+          appSecret: 'secret',
+          toUser: 'zhangsan',
+          content: '客户已分配',
+        })
+        assert.equal(result.success, fixture.success)
+        assert.equal(result.transient, fixture.transient)
+        assert.equal(sentBody?.['touser'], 'zhangsan')
+      })
+    }
+
+    await t.test('无效凭据为永久失败，不进入通道重试', async () => {
+      globalThis.fetch = async () =>
+        new Response(JSON.stringify({ errcode: 40013, errmsg: 'invalid corpid' }))
+      const result = await new WeComClient().sendTextMessage({
+        corpId: 'ww-bad',
+        agentId: '1000001',
+        appSecret: 'bad-secret',
+        toUser: 'zhangsan',
+        content: '客户已分配',
+      })
+      assert.equal(result.success, false)
+      assert.equal(result.providerCode, 40013)
+      assert.equal(result.transient, false)
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

@@ -37,6 +37,7 @@ function createService() {
         event: create.event,
         systemEnabled: create.systemEnabled ?? true,
         emailEnabled: create.emailEnabled ?? false,
+        weComEnabled: create.weComEnabled ?? false,
         config: create.config ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -47,6 +48,9 @@ function createService() {
   }
   const prisma = {
     messageTaskSetting,
+    enterpriseIntegration: {
+      findUnique: async () => ({ lastTestSucceeded: true, syncEnabled: true }),
+    },
     user: { count: async () => 0 },
     role: { count: async () => 0 },
     $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
@@ -63,6 +67,7 @@ test('完整返回 Cordys 五组 35 个事件并合并默认开关', async () =>
   assert.equal(groups.flatMap((group) => group.items).length, 35)
   assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
   assert.ok(groups.flatMap((group) => group.items).every((item) => !item.emailEnabled))
+  assert.ok(groups.flatMap((group) => group.items).every((item) => !item.weComEnabled))
 })
 
 test('单项与批量开关按租户持久化', async () => {
@@ -75,8 +80,30 @@ test('单项与批量开关按租户持久化', async () => {
   assert.equal(await service.isSystemEnabled('tenant-a', 'CUSTOMER_ADD'), false)
   assert.equal(await service.isSystemEnabled('tenant-b', 'CUSTOMER_ADD'), true)
 
+  await service.update('tenant-a', 'CUSTOMER_ADD', {
+    module: 'CUSTOMER',
+    weComEnabled: true,
+  })
+  assert.equal(await service.isWeComEnabled('tenant-a', 'CUSTOMER_ADD'), true)
+
   const groups = await service.batchUpdate('tenant-a', { systemEnabled: true })
   assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
+})
+
+test('企业微信开关由配置、连接测试和同步开关共同控制', async () => {
+  let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = null
+  const prisma = {
+    enterpriseIntegration: { findUnique: async () => integration },
+  } as unknown as PrismaService
+  const service = new MessageSettingsService(prisma)
+
+  assert.equal((await service.getWeComChannelGate('tenant-a')).reason, '请先配置企业微信')
+  integration = { lastTestSucceeded: false, syncEnabled: false }
+  assert.equal((await service.getWeComChannelGate('tenant-a')).available, false)
+  integration = { lastTestSucceeded: true, syncEnabled: false }
+  assert.equal((await service.getWeComChannelGate('tenant-a')).reason, '请先开启企业微信组织同步')
+  integration = { lastTestSucceeded: true, syncEnabled: true }
+  assert.equal((await service.getWeComChannelGate('tenant-a')).available, true)
 })
 
 test('到期配置校验模块、时间重复和固定负责人', async () => {
@@ -140,6 +167,7 @@ test('配置接收范围合并负责人、成员、角色和部门负责人层�
       findFirst: async () => ({
         systemEnabled: true,
         emailEnabled: false,
+        weComEnabled: false,
         config,
       }),
     },

@@ -112,6 +112,13 @@ onMounted(loadOperations)
         </div>
         <el-table v-loading="loginLoading" :data="loginItems" stripe>
           <el-table-column prop="email" label="账号" min-width="200" />
+          <el-table-column label="登录方式" width="120">
+            <template #default="{ row }">
+              <el-tag :type="row.authType === 'WECOM' ? 'primary' : 'info'" effect="plain">
+                {{ row.authType === 'WECOM' ? '企业微信' : '密码' }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="结果" width="100">
             <template #default="{ row }">
               <el-tag :type="row.success ? 'success' : 'danger'" size="small">

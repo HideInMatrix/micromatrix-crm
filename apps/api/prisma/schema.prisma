@@ -36,6 +36,30 @@ enum EnterpriseIntegrationProvider {
   LARK
 }
 
+enum ExternalIdentityStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum ExternalOAuthFlow {
+  QR_WECOM
+}
+
+enum MessageDeliveryChannel {
+  WECOM
+  DINGTALK
+  LARK
+  EMAIL
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENDING
+  SUCCEEDED
+  FAILED
+  DEAD
+}
+
 enum OrganizationSyncStatus {
   FETCHING
   PREVIEW_READY
@@ -102,6 +126,9 @@ model Tenant {
   enterpriseIntegrations     EnterpriseIntegration[]
   externalDepartmentMappings ExternalDepartmentMapping[]
   externalUserMappings       ExternalUserMapping[]
+  externalIdentities         ExternalIdentity[]
+  externalOAuthStates        ExternalOAuthState[]
+  messageDeliveries          MessageDelivery[]
   organizationSyncBatches    OrganizationSyncBatch[]
 
   @@map("tenants")
@@ -145,12 +172,14 @@ model User {
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 
-  tenant           Tenant                @relation(fields: [tenantId], references: [id])
-  dept             Department?           @relation(fields: [deptId], references: [id])
-  userRoles        UserRole[]
-  ownedCustomers   Customer[]
-  ownedContacts    Contact[]
-  externalMappings ExternalUserMapping[]
+  tenant             Tenant                @relation(fields: [tenantId], references: [id])
+  dept               Department?           @relation(fields: [deptId], references: [id])
+  userRoles          UserRole[]
+  ownedCustomers     Customer[]
+  ownedContacts      Contact[]
+  externalMappings   ExternalUserMapping[]
+  externalIdentities ExternalIdentity[]
+  messageDeliveries  MessageDelivery[]
 
   @@index([tenantId])
   @@index([tenantId, deptId])
@@ -1292,17 +1321,21 @@ model OperationLog {
 }
 
 model LoginLog {
-  id        String   @id @default(cuid())
-  tenantId  String?
-  userId    String?
-  email     String
-  ip        String?
-  userAgent String?
-  success   Boolean
-  message   String?
-  createdAt DateTime @default(now())
+  id                 String   @id @default(cuid())
+  tenantId           String?
+  userId             String?
+  email              String
+  authType           String   @default("PASSWORD")
+  externalSubject    String?
+  externalIdentityId String?
+  ip                 String?
+  userAgent          String?
+  success            Boolean
+  message            String?
+  createdAt          DateTime @default(now())
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, authType, createdAt])
   @@map("login_logs")
 }
 
@@ -1330,6 +1363,7 @@ model MessageTaskSetting {
   event         String
   systemEnabled Boolean  @default(true)
   emailEnabled  Boolean  @default(false)
+  weComEnabled  Boolean  @default(false)
   config        Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -1375,9 +1409,12 @@ model EnterpriseIntegration {
   createdAt         DateTime                      @default(now())
   updatedAt         DateTime                      @updatedAt
 
-  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  syncDefaultRole Role?                   @relation(fields: [syncDefaultRoleId], references: [id], onDelete: SetNull)
-  syncBatches     OrganizationSyncBatch[]
+  tenant             Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  syncDefaultRole    Role?                   @relation(fields: [syncDefaultRoleId], references: [id], onDelete: SetNull)
+  syncBatches        OrganizationSyncBatch[]
+  externalIdentities ExternalIdentity[]
+  oauthStates        ExternalOAuthState[]
+  messageDeliveries  MessageDelivery[]
 
   @@unique([tenantId, provider])
   @@index([tenantId])
@@ -1420,15 +1457,98 @@ model ExternalUserMapping {
   createdAt       DateTime                      @default(now())
   updatedAt       DateTime                      @updatedAt
 
-  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lastSeenBatch OrganizationSyncBatch? @relation("UserMappingLastSeen", fields: [lastSeenBatchId], references: [id], onDelete: SetNull)
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastSeenBatch    OrganizationSyncBatch? @relation("UserMappingLastSeen", fields: [lastSeenBatchId], references: [id], onDelete: SetNull)
+  externalIdentity ExternalIdentity?
 
   @@unique([tenantId, provider, externalKey])
   @@unique([tenantId, provider, userId])
   @@index([tenantId, provider, active])
   @@index([lastSeenBatchId])
   @@map("external_user_mappings")
+}
+
+model ExternalIdentity {
+  id              String                        @id @default(cuid())
+  tenantId        String
+  integrationId   String
+  mappingId       String                        @unique
+  provider        EnterpriseIntegrationProvider
+  externalSubject String
+  userId          String
+  status          ExternalIdentityStatus        @default(ACTIVE)
+  bindingSource   String                        @default("LOGIN")
+  boundById       String?
+  boundAt         DateTime                      @default(now())
+  revokedById     String?
+  revokedAt       DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration EnterpriseIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  mapping     ExternalUserMapping   @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider, externalSubject])
+  @@unique([tenantId, provider, userId])
+  @@index([tenantId, provider, status])
+  @@index([integrationId])
+  @@map("external_identities")
+}
+
+model ExternalOAuthState {
+  id               String            @id @default(cuid())
+  tenantId         String
+  integrationId    String
+  flow             ExternalOAuthFlow
+  stateHash        String            @unique
+  browserNonceHash String
+  returnPath       String
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime          @default(now())
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration EnterpriseIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, flow, expiresAt])
+  @@index([expiresAt, consumedAt])
+  @@map("external_oauth_states")
+}
+
+model MessageDelivery {
+  id                String                 @id @default(cuid())
+  tenantId          String
+  integrationId     String?
+  channel           MessageDeliveryChannel
+  event             String
+  userId            String?
+  externalSubject   String?
+  title             String
+  content           String?
+  link              String?
+  status            MessageDeliveryStatus  @default(PENDING)
+  attempts          Int                    @default(0)
+  maxAttempts       Int                    @default(3)
+  nextAttemptAt     DateTime?
+  providerMessageId String?
+  errorCode         String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration EnterpriseIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  user        User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, nextAttemptAt])
+  @@index([tenantId, event, createdAt])
+  @@index([tenantId, userId, createdAt])
+  @@map("message_deliveries")
 }
 
 model OrganizationSyncBatch {

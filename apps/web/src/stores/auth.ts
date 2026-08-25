@@ -1,4 +1,4 @@
-import { hasPermission, type CurrentUser } from '@micromatrix/shared'
+import { hasPermission, type CurrentUser, type LoginResult } from '@micromatrix/shared'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as authApi from '@/api/auth'
@@ -13,6 +13,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(payload: authApi.LoginPayload) {
     const { data } = await authApi.login(payload)
+    acceptLoginResult(data)
+  }
+
+  function acceptLoginResult(data: LoginResult) {
     useModuleConfigStore().reset()
     setTokens(data.accessToken, data.refreshToken)
     hasToken.value = true
@@ -38,5 +42,5 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  return { user, isAuthenticated, login, fetchMe, hasPerm, logout }
+  return { user, isAuthenticated, login, acceptLoginResult, fetchMe, hasPerm, logout }
 })

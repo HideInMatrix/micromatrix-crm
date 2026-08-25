@@ -31,6 +31,13 @@ export class MessageSettingsController {
     return this.messageSettings.batchUpdate(user.tenantId, dto)
   }
 
+  @Get('channels/wecom/status')
+  @RequirePermissions('system:message')
+  @ApiOperation({ summary: '获取企业微信消息渠道门槛状态' })
+  weComStatus(@CurrentUser() user: AuthUser) {
+    return this.messageSettings.getWeComChannelGate(user.tenantId)
+  }
+
   @Get(':event/config')
   @RequirePermissions('system:message')
   @ApiOperation({ summary: '获取事件范围配置' })

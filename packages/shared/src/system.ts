@@ -26,6 +26,7 @@ export interface MemberVO {
   leaderName?: string | null
   position: string | null
   phone: string | null
+  passwordLoginEnabled: boolean
   createdAt: string
 }
 
@@ -56,6 +57,8 @@ export interface OperationLogVO {
 export interface LoginLogVO {
   id: string
   email: string
+  authType: 'PASSWORD' | 'WECOM'
+  externalSubject: string | null
   ip: string | null
   userAgent: string | null
   success: boolean
@@ -109,6 +112,49 @@ export interface WeComConnectionTestVO {
 export interface UpdateWeComSyncInput {
   enabled: boolean
   defaultRoleId?: string
+}
+
+// ============ 企业微信统一登录 / 外部身份 ============
+
+export interface WeComLoginDiscoveryVO {
+  tenantSlug: string
+  tenantName: string
+  available: boolean
+  reason: string | null
+  corpId: string | null
+  agentId: string | null
+  loginPath: string
+}
+
+export interface WeComLoginStartInput {
+  tenantSlug: string
+  returnPath?: string
+}
+
+export interface WeComLoginStartVO {
+  authorizationUrl: string
+  corpId: string
+  agentId: string
+  redirectUri: string
+  state: string
+  expiresAt: string
+}
+
+export interface WeComLoginCallbackInput {
+  code: string
+  state: string
+}
+
+export type ExternalIdentityStatus = 'ACTIVE' | 'REVOKED'
+
+export interface ExternalIdentityVO {
+  provider: 'WECOM'
+  mapped: boolean
+  externalSubject: string | null
+  status: ExternalIdentityStatus | null
+  boundAt: string | null
+  revokedAt: string | null
+  lastLoginAt: string | null
 }
 
 // ============ 企业微信组织同步 ============

@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { MemberVO, PaginatedResult } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { Prisma } from '../../generated/prisma/client'
@@ -193,7 +198,10 @@ export class MembersService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.department.updateMany({ where: { tenantId, leaderId: id }, data: { leaderId: null } })
+      await tx.department.updateMany({
+        where: { tenantId, leaderId: id },
+        data: { leaderId: null },
+      })
       await tx.user.updateMany({ where: { tenantId, leaderId: id }, data: { leaderId: null } })
       await tx.savedView.deleteMany({ where: { tenantId, userId: id } })
       await tx.notification.deleteMany({ where: { tenantId, userId: id } })
@@ -294,6 +302,7 @@ export class MembersService {
       leaderName: user.leaderId ? (leaderMap.get(user.leaderId) ?? null) : null,
       position: user.position,
       phone: user.phone,
+      passwordLoginEnabled: user.passwordLoginEnabled,
       createdAt: user.createdAt.toISOString(),
     }
   }

@@ -566,3 +566,28 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 浏览器验证企业设置连接门槛、默认角色选择和启用摘要；组织架构入口在关闭时准确禁用、开启后可进入五阶段抽屉。隔离租户中可回看首次“已绑定本地资源”的同步明细与后续更新/禁用批次，成员和部门结果与 Smoke 一致。
 - 新开浏览器页面复验组织架构、同步抽屉和历史批次，没有 console error/warn。现有真实企微凭据未在浏览器验收中再次发送；外部拉取与应用由可控夹具链路验证。
 - DB-013 标记为 `VERIFIED`。DB-006、DB-014、成员多部门、增量游标、自动/定时同步及钉钉/飞书 provider 保持未完成并继续进入后续阶段。
+
+---
+
+## 14. 企业微信统一登录与消息渠道源码迁移与验收（2026-08-24）
+
+### 14.1 源码事实
+
+- 读取 Cordys `views/base/login`、二维码组件、登录 shared API，以及 `SSOController/Service`、`OAuthStateService`、`OAuthUserService`、`TokenService`；登录只接受企微返回的已同步 userid，不按邮箱或姓名自动注册。
+- 读取消息设置页面、`MessageTaskController`、`MessageNotificationService`、`NoticeSendService`、`CommonNoticeSendService`、`WeComNoticeSender` 和事件资源。Cordys 按事件保存企微开关并向同步 userId 发送文本消息，但不保存持久化重试明细。
+- MicroMatrix 保留 Cordys 入口、门槛、身份识别和 best-effort 语义；按 W3.3 完成标准增加多租户企业标识、浏览器绑定 state、外部身份状态和可审计 outbox，不复制默认组织假设。
+
+### 14.2 MicroMatrix 落地
+
+- 新增 `ExternalIdentity`、`ExternalOAuthState`、`MessageDelivery` 及对应枚举/索引/唯一约束；扩展登录日志认证字段和 35 个事件的 `weComEnabled`，前进迁移已应用。
+- 公共登录新增 discovery/start/callback：state 与 nonce 均为 32 字节随机值且数据库只存 SHA-256，nonce 使用 HttpOnly cookie，10 分钟 TTL 并原子一次消费；可定位租户的重放/nonce/过期失败也写登录审计。
+- 回调使用 W3.2 ACTIVE 成员映射识别账号，复用现有 JWT，禁止未知/禁用/解绑身份登录。成员页支持查看、绑定、恢复和安全解绑；禁用密码登录的成员不能移除最后登录方式。
+- 消息设置仅在企微已配置时展示企微列，后端 gate 强制要求连接测试和同步开启。业务通知创建逐接收人 outbox，缺映射保留 DEAD；worker 条件认领、最多 3 次退避、超时恢复、Cron 补偿，页面提供分页筛选和手工重试。
+- 登录页使用官方 `@wecom/jssdk` 二维码面板并保留移动端跳转回调；企业设置显示统一登录/消息能力和企业登录 URL，未增加左侧菜单项。
+
+### 14.3 验证证据
+
+- Prisma validate/generate/migrate、API/Web typecheck 和生产构建通过；规则与公共底座单测 `65/65`，覆盖企微 code 解析、消息错误分类、渠道 gate、outbox 条件认领/退避及 OAuth state 一次消费/重放审计。
+- 独立 `smoke:wecom-sso-message` 使用本地企微夹具和隔离租户完成 16 条断言，实际走通组织冲突绑定、登录发现、HttpOnly cookie/state、JWT、重放拒绝、身份审计、业务消息临时失败、手工重试成功及解绑/恢复。
+- 浏览器验证登录页企业标识门槛、企业设置统一登录/消息摘要和 URL、消息设置企微列、投递记录抽屉、成员身份弹窗；console 无 error/warn。
+- DB-006、DB-014 标记为 `VERIFIED`。钉钉/飞书 provider、企微增量/定时同步、多部门、unionid/open_userid 迁移、邮件、公告、模板和富媒体消息继续保留在台账，不因 W3.3 完成而被遗漏。

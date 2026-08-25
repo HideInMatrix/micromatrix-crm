@@ -64,6 +64,10 @@ export class UpdateMessageTaskSettingDto {
   emailEnabled?: boolean
 
   @IsOptional()
+  @IsBoolean()
+  weComEnabled?: boolean
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => MessageTaskConfigDto)
   config?: MessageTaskConfigDto
@@ -77,4 +81,8 @@ export class BatchUpdateMessageTaskSettingDto {
   @IsOptional()
   @IsBoolean()
   emailEnabled?: boolean
+
+  @IsOptional()
+  @IsBoolean()
+  weComEnabled?: boolean
 }

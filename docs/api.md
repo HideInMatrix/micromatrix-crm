@@ -199,7 +199,32 @@ POST /organization-sync/wecom/batches/{batchId}/apply
 - 应用前重新校验同步开关、默认角色、凭据版本、批次状态和未解决冲突；单一数据库事务与租户/provider advisory lock 保证整批原子性和并发串行。
 - 首次同步新成员获得默认角色、随机不可用密码且 `passwordLoginEnabled=false`；映射成员更新资料但保留现有角色。后续企微缺失的已映射成员会禁用，本地手工成员不受影响；缺失部门只失活映射，不删除本地部门。
 - 成功批次重复应用幂等返回；应用完成更新最近同步摘要、写操作日志并发送站内通知。快照、错误、日志和响应均不含 Secret 或 token。
-- 企微统一登录、自动/定时同步、成员多部门关系、钉钉/飞书 provider 和第三方消息发送仍未完成，分别继续由 DB-014、DB-006 及缺口台账跟踪。
+- 企微统一登录和企微文本消息已在 W3.3 完成。自动/定时同步、成员多部门关系及钉钉/飞书 provider 仍由缺口台账跟踪。
+
+## 企业微信统一登录与消息渠道（W3.3）
+
+```text
+GET  /auth/wecom/discovery?tenant={tenantSlug}
+POST /auth/wecom/start                         body: { tenantSlug, returnPath? }
+POST /auth/wecom/callback                      body: { code, state }
+
+GET  /external-identities/wecom/users/{userId}
+POST /external-identities/wecom/users/{userId}/bind
+POST /external-identities/wecom/users/{userId}/unbind
+
+GET   /message-settings/channels/wecom/status
+PATCH /message-settings/{event}                body: { module, weComEnabled }
+POST  /message-settings/batch                  body: { weComEnabled }
+GET   /message-deliveries
+POST  /message-deliveries/{id}/retry
+```
+
+- `discovery/start/callback` 为公共登录接口。start 生成 256 位随机 state，只持久化 SHA-256，并设置 10 分钟 HttpOnly/SameSite=Lax 浏览器 nonce cookie；callback 原子消费，过期、浏览器不匹配和重放均拒绝。
+- 企微 `userid` 只按当前租户的 ACTIVE `ExternalUserMapping` 识别本地成员，未知成员不自动注册。成功后复用现有 access/refresh JWT；成功、身份失败和可定位租户的 state 重放均写 WECOM 登录日志。
+- 外部身份查询要求 `system:member`，绑定/恢复/解绑要求 `system:member:update`。禁用密码登录的同步成员不能解绑其最后登录方式。
+- 企微消息 gate 同时要求已配置、最近连接测试成功和组织同步开启。逐事件与批量开关默认关闭，后端再次执行门槛校验。
+- 业务通知为每个接收人创建 outbox；缺失映射直接记录 DEAD。worker 条件认领，临时错误最多尝试 3 次并按 1/5/15 分钟退避，Cron 恢复超时 SENDING；失败不回滚业务或站内消息。
+- 投递列表支持 `page/pageSize/keyword/status/event`，手工重试只接受当前租户 FAILED/DEAD 任务并写操作日志。
 
 ## 多公海 / 多线索池自动回收规则
 

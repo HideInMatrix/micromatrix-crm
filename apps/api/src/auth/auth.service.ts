@@ -29,6 +29,15 @@ export interface LoginContext {
   userAgent?: string
 }
 
+export interface ExternalLoginAudit {
+  tenantId?: string
+  userId?: string
+  email: string
+  authType: 'WECOM'
+  externalSubject?: string
+  externalIdentityId?: string
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -98,7 +107,9 @@ export class AuthService {
     })
 
     const fail = async (message: string, exception: Error) => {
-      await this.recordLoginLog(dto.email, false, message, context, user)
+      await this.recordLoginLog(dto.email, false, message, context, user, {
+        authType: 'PASSWORD',
+      })
       throw exception
     }
 
@@ -116,8 +127,52 @@ export class AuthService {
       return fail('企业账户已被停用', new ForbiddenException('企业账户已被停用'))
     }
 
-    await this.recordLoginLog(dto.email, true, null, context, user)
+    await this.recordLoginLog(dto.email, true, null, context, user, {
+      authType: 'PASSWORD',
+    })
     return this.buildLoginResult(user)
+  }
+
+  async loginExternal(
+    userId: string,
+    audit: Omit<ExternalLoginAudit, 'userId' | 'tenantId' | 'email'>,
+    context: LoginContext = {},
+  ): Promise<LoginResult> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: userInclude })
+    if (!user) throw new UnauthorizedException('企业微信成员未绑定本地账号')
+    if (user.status !== 'ACTIVE') {
+      await this.recordLoginLog(user.email, false, '账号已被禁用', context, user, audit)
+      throw new ForbiddenException('账号已被禁用')
+    }
+    if (user.tenant.status !== 'ACTIVE') {
+      await this.recordLoginLog(user.email, false, '企业账户已被停用', context, user, audit)
+      throw new ForbiddenException('企业账户已被停用')
+    }
+    await this.recordLoginLog(user.email, true, null, context, user, audit)
+    return this.buildLoginResult(user)
+  }
+
+  async recordExternalLoginFailure(
+    audit: ExternalLoginAudit,
+    message: string,
+    context: LoginContext = {},
+  ): Promise<void> {
+    await this.prisma.loginLog
+      .create({
+        data: {
+          tenantId: audit.tenantId,
+          userId: audit.userId,
+          email: audit.email,
+          authType: audit.authType,
+          externalSubject: audit.externalSubject,
+          externalIdentityId: audit.externalIdentityId,
+          success: false,
+          message: message.slice(0, 500),
+          ip: context.ip,
+          userAgent: context.userAgent,
+        },
+      })
+      .catch(() => undefined)
   }
 
   async refresh(refreshToken: string): Promise<LoginResult> {
@@ -167,6 +222,11 @@ export class AuthService {
     message: string | null,
     context: LoginContext,
     user?: UserWithRelations | null,
+    audit: {
+      authType: 'PASSWORD' | 'WECOM'
+      externalSubject?: string
+      externalIdentityId?: string
+    } = { authType: 'PASSWORD' },
   ): Promise<void> {
     await this.prisma.loginLog
       .create({
@@ -174,6 +234,9 @@ export class AuthService {
           tenantId: user?.tenantId,
           userId: user?.id,
           email,
+          authType: audit.authType,
+          externalSubject: audit.externalSubject,
+          externalIdentityId: audit.externalIdentityId,
           success,
           message,
           ip: context.ip,
@@ -211,6 +274,7 @@ export class AuthService {
       id: user.id,
       tenantId: user.tenantId,
       tenantName: user.tenant.name,
+      tenantSlug: user.tenant.slug,
       email: user.email,
       name: user.name,
       roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),

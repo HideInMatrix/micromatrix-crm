@@ -36,6 +36,7 @@ export interface CurrentUser {
   id: string
   tenantId: string
   tenantName: string
+  tenantSlug: string
   email: string
   name: string
   roles: Array<{ id: string; name: string }>

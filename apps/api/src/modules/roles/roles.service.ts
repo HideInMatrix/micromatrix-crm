@@ -16,11 +16,7 @@ import { DataScope, Prisma, Role } from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { PrismaService } from '../../prisma/prisma.service'
-import {
-  CreateRoleDto,
-  QueryRoleMembersDto,
-  UpdateRoleDto,
-} from './dto/role.dto'
+import { CreateRoleDto, QueryRoleMembersDto, UpdateRoleDto } from './dto/role.dto'
 
 type RoleWithCount = Role & { _count?: { userRoles: number } }
 
@@ -182,6 +178,7 @@ export class RolesService {
         leaderName: user.leaderId ? (leaderMap.get(user.leaderId) ?? null) : null,
         position: user.position,
         phone: user.phone,
+        passwordLoginEnabled: user.passwordLoginEnabled,
         createdAt: user.createdAt.toISOString(),
       })),
       total,

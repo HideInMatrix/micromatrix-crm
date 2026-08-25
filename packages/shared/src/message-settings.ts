@@ -67,6 +67,7 @@ export interface MessageTaskDefinition {
 export interface MessageTaskSettingVO extends MessageTaskDefinition {
   systemEnabled: boolean
   emailEnabled: boolean
+  weComEnabled: boolean
   config: MessageTaskConfig | null
 }
 
@@ -80,12 +81,48 @@ export interface UpdateMessageTaskSettingInput {
   module: MessageTaskModule
   systemEnabled?: boolean
   emailEnabled?: boolean
+  weComEnabled?: boolean
   config?: MessageTaskConfig
 }
 
 export interface BatchUpdateMessageTaskSettingInput {
   systemEnabled?: boolean
   emailEnabled?: boolean
+  weComEnabled?: boolean
+}
+
+export interface MessageChannelGateVO {
+  channel: 'WECOM'
+  configured: boolean
+  verified: boolean
+  enabled: boolean
+  available: boolean
+  reason: string | null
+}
+
+export type MessageDeliveryStatus = 'PENDING' | 'SENDING' | 'SUCCEEDED' | 'FAILED' | 'DEAD'
+
+export interface MessageDeliveryVO {
+  id: string
+  channel: 'WECOM'
+  event: string
+  eventName: string
+  userId: string | null
+  userName: string | null
+  externalSubject: string | null
+  title: string
+  content: string | null
+  link: string | null
+  status: MessageDeliveryStatus
+  attempts: number
+  maxAttempts: number
+  nextAttemptAt: string | null
+  providerMessageId: string | null
+  errorCode: string | null
+  errorMessage: string | null
+  sentAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 const MODULE_NAMES: Record<MessageTaskModule, string> = {

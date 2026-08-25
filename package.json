@@ -16,7 +16,8 @@
     "db:migrate": "pnpm --filter @micromatrix/api exec prisma migrate deploy",
     "db:migrate:dev": "pnpm --filter @micromatrix/api exec prisma migrate dev",
     "smoke": "node scripts/smoke.mjs",
-    "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs"
+    "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
+    "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
