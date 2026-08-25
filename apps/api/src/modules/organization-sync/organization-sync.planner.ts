@@ -58,6 +58,7 @@ export interface OrganizationSyncPlan {
 
 export interface OrganizationSyncPlannerInput {
   tenantId: string
+  targetDepartmentId: string
   snapshot: WeComOrganizationSnapshot
   departments: PlannerDepartment[]
   users: PlannerUser[]
@@ -81,6 +82,8 @@ export class OrganizationSyncPlanner {
     )
     const root = input.departments.filter((department) => department.parentId === null)
     if (root.length !== 1) throw new Error('当前企业必须且只能有一个组织根部门')
+    const target = localById.get(input.targetDepartmentId)
+    if (!target) throw new Error('同步目标部门不存在')
 
     const ordered = this.sortDepartments(input.snapshot.departments)
     const resolvedLocalIds = new Map<string, string>()
@@ -90,9 +93,9 @@ export class OrganizationSyncPlanner {
       const mapping = mappingByKey.get(source.externalKey)
       const mappedLocal = mapping ? localById.get(mapping.departmentId) : undefined
       const parentLocalId = source.isRoot
-        ? null
+        ? target.id
         : (resolvedLocalIds.get(source.parentExternalKey) ?? null)
-      let local = source.isRoot ? root[0] : mappedLocal
+      let local = mappedLocal
       let conflictType: string | null = null
       let conflictMessage: string | null = null
 

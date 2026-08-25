@@ -6,6 +6,7 @@ test('组织同步规划器优先使用映射并只禁用缺失的已映射成�
   const planner = new OrganizationSyncPlanner()
   const plan = planner.plan({
     tenantId: 'tenant-a',
+    targetDepartmentId: 'root',
     snapshot: {
       departments: [
         {
@@ -97,6 +98,7 @@ test('无映射成员发生租户内邮箱碰撞时生成冲突，缺失邮箱�
   const planner = new OrganizationSyncPlanner()
   const base = {
     tenantId: 'tenant-a',
+    targetDepartmentId: 'root',
     departments: [{ id: 'root', name: '示例企业', parentId: null, sort: 100 }],
     departmentMappings: [{ externalId: '1', externalKey: '1', departmentId: 'root', active: true }],
     userMappings: [],
@@ -147,4 +149,39 @@ test('无映射成员发生租户内邮箱碰撞时生成冲突，缺失邮箱�
   const item = withoutEmail.items.find((candidate) => candidate.resourceType === 'USER')
   assert.equal(item?.action, 'CREATE')
   assert.equal(item?.sourceData['proposedEmail'], null)
+})
+
+test('企微可见根新增到选中部门之下且不修改选中部门本身', () => {
+  const planner = new OrganizationSyncPlanner()
+  const plan = planner.plan({
+    tenantId: 'tenant-a',
+    targetDepartmentId: 'support',
+    snapshot: {
+      departments: [
+        {
+          id: '13',
+          externalKey: '13',
+          name: '技术支持',
+          parentId: '1',
+          parentExternalKey: '1',
+          order: 99_991_000,
+          isRoot: true,
+        },
+      ],
+      users: [],
+    },
+    departments: [
+      { id: 'root', name: '微矩阵科技', parentId: null, sort: 0 },
+      { id: 'support', name: '技术支持', parentId: 'root', sort: 99_991_000 },
+    ],
+    users: [],
+    departmentMappings: [],
+    userMappings: [],
+  })
+
+  const rootItem = plan.items.find((item) => item.externalKey === '13')
+  assert.equal(rootItem?.localId, null)
+  assert.equal(rootItem?.parentExternalKey, null)
+  assert.equal(rootItem?.action, 'CREATE')
+  assert.equal(rootItem?.changes, null)
 })

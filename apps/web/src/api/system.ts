@@ -17,6 +17,7 @@ import type {
   NotificationVO,
   OperationLogVO,
   OrganizationSyncBatchVO,
+  CreateOrganizationSyncPreviewInput,
   OrganizationSyncGateVO,
   OrganizationSyncItemVO,
   PageQuery,
@@ -193,7 +194,8 @@ export const enterpriseIntegrationApi = {
 
 export const organizationSyncApi = {
   status: () => http.get<OrganizationSyncGateVO>('/organization-sync/wecom/status'),
-  preview: () => http.post<OrganizationSyncBatchVO>('/organization-sync/wecom/previews'),
+  preview: (data: CreateOrganizationSyncPreviewInput) =>
+    http.post<OrganizationSyncBatchVO>('/organization-sync/wecom/previews', data),
   batches: (params?: PageQuery & { status?: string }) =>
     http.get<PaginatedResult<OrganizationSyncBatchVO>>('/organization-sync/wecom/batches', {
       params,

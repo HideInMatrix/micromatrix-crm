@@ -72,6 +72,7 @@ export class OrganizationSyncApplyService {
             tx,
             user.tenantId,
             batchId,
+            batch.targetDepartmentId,
             departmentItems,
           )
           await this.applyUsers(tx, user.tenantId, batchId, role.id, userItems, departmentIds)
@@ -153,6 +154,7 @@ export class OrganizationSyncApplyService {
     tx: Prisma.TransactionClient,
     tenantId: string,
     batchId: string,
+    targetDepartmentId: string,
     items: OrganizationSyncItem[],
   ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>()
@@ -177,7 +179,9 @@ export class OrganizationSyncApplyService {
       }
 
       const source = this.source(item)
-      const parentId = item.parentExternalKey ? resolved.get(item.parentExternalKey) : null
+      const parentId = item.parentExternalKey
+        ? resolved.get(item.parentExternalKey)
+        : targetDepartmentId
       if (item.parentExternalKey && !parentId) {
         throw new Error(`同步部门的上级映射不存在：${item.externalId}`)
       }

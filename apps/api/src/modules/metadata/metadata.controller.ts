@@ -28,7 +28,7 @@ export class MetadataController {
     @Param('module') module: string,
     @Body() dto: CreateFieldDto,
   ) {
-    return this.metadataService.createField(user.tenantId, module, dto)
+    return this.metadataService.createField(user.tenantId, module, dto, user.id)
   }
 
   @Patch('fields/:id')
@@ -36,7 +36,7 @@ export class MetadataController {
   @LogOperation('metadata', 'updateField')
   @ApiOperation({ summary: '更新字段' })
   updateField(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateFieldDto) {
-    return this.metadataService.updateField(user.tenantId, id, dto)
+    return this.metadataService.updateField(user.tenantId, id, dto, user.id)
   }
 
   @Delete('fields/:id')
@@ -56,6 +56,6 @@ export class MetadataController {
     @Param('module') module: string,
     @Body() dto: ReorderFieldsDto,
   ) {
-    return this.metadataService.reorder(user.tenantId, module, dto.orderedIds)
+    return this.metadataService.reorder(user.tenantId, module, dto.orderedIds, user.id)
   }
 }

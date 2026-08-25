@@ -115,8 +115,9 @@ export class WeComClient {
     const departmentUrl = this.apiUrl('/cgi-bin/department/list')
     departmentUrl.searchParams.set('access_token', accessToken)
     const departmentPayload = await this.requestData(departmentUrl, 'DEPARTMENT_REQUEST_FAILED')
-    const departments = this.parseDepartments(departmentPayload['department'])
-    this.validateDepartmentTree(departments)
+    const departments = this.normalizeDepartmentTree(
+      this.parseDepartments(departmentPayload['department']),
+    )
 
     const usersByKey = new Map<string, WeComUserSnapshot>()
     let cursor = 0
@@ -462,13 +463,26 @@ export class WeComClient {
     return users
   }
 
-  private validateDepartmentTree(departments: WeComDepartmentSnapshot[]): void {
-    const roots = departments.filter((department) => department.isRoot)
-    if (roots.length !== 1) {
-      throw new WeComSnapshotError('INVALID_ROOT_DEPARTMENT', '企业微信组织必须且只能有一个根部门')
-    }
+  private normalizeDepartmentTree(
+    departments: WeComDepartmentSnapshot[],
+  ): WeComDepartmentSnapshot[] {
     const keys = new Set(departments.map((department) => department.externalKey))
-    for (const department of departments) {
+    const roots = departments.filter(
+      (department) =>
+        department.parentExternalKey === '0' || !keys.has(department.parentExternalKey),
+    )
+    if (roots.length !== 1) {
+      throw new WeComSnapshotError(
+        'INVALID_ROOT_DEPARTMENT',
+        '企业微信应用的可见范围必须且只能包含一棵部门树',
+      )
+    }
+    const rootKey = roots[0]!.externalKey
+    const normalized = departments.map((department) => ({
+      ...department,
+      isRoot: department.externalKey === rootKey,
+    }))
+    for (const department of normalized) {
       if (!department.isRoot && !keys.has(department.parentExternalKey)) {
         throw new WeComSnapshotError(
           'MISSING_PARENT_DEPARTMENT',
@@ -477,12 +491,12 @@ export class WeComClient {
       }
     }
     const parentMap = new Map(
-      departments.map((department) => [department.externalKey, department.parentExternalKey]),
+      normalized.map((department) => [department.externalKey, department.parentExternalKey]),
     )
-    for (const department of departments) {
+    for (const department of normalized) {
       const visited = new Set<string>()
       let cursor: string | undefined = department.externalKey
-      while (cursor && cursor !== '0') {
+      while (cursor && cursor !== rootKey) {
         if (visited.has(cursor)) {
           throw new WeComSnapshotError('DEPARTMENT_CYCLE', '企业微信部门树存在循环关系')
         }
@@ -490,6 +504,7 @@ export class WeComClient {
         cursor = parentMap.get(cursor)
       }
     }
+    return normalized
   }
 
   private objectValue(value: unknown, code: string): Record<string, unknown> {

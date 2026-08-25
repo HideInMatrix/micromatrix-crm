@@ -59,10 +59,12 @@ const needOptions = computed(() =>
 )
 const isFormula = computed(() => form.type === 'formula')
 const supportsUnique = computed(() => {
+  if (!['lead', 'customer', 'contact'].includes(activeModule.value)) return false
+  if (!['text', 'phone', 'email'].includes(form.type)) return false
   const key = editingField.value?.key
-  if (!editingField.value?.system || !key) return false
-  if (activeModule.value === 'customer') return ['name', 'phone', 'email'].includes(key)
-  if (activeModule.value === 'contact') return ['name', 'phone'].includes(key)
+  if (!editingField.value?.system) return true
+  if (activeModule.value === 'customer') return key === 'name'
+  if (activeModule.value === 'contact') return ['name', 'phone'].includes(key ?? '')
   return false
 })
 
@@ -163,7 +165,7 @@ async function handleSave() {
 
 async function handleDelete(field: FieldVO) {
   const confirmed = await ElMessageBox.confirm(
-    `删除字段「${field.label}」后，已存储的数据仍保留在 customData 中但不再展示。确定删除？`,
+    `删除字段「${field.label}」会同时删除该字段已经保存的业务值，且无法恢复。确定删除？`,
     '删除确认',
     { type: 'warning' },
   ).catch(() => false)

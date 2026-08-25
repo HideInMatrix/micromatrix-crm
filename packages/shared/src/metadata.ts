@@ -74,7 +74,7 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
   { value: 'formula', label: '计算字段' },
 ]
 
-/** 自定义字段键前缀（值存业务表 customData JSONB） */
+/** 自定义字段键前缀；目标业务域的值存对应 *_field / *_field_blob 直接表。 */
 export function isCustomFieldKey(key: string): boolean {
   return key.startsWith('cf_')
 }

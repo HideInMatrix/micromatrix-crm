@@ -11,7 +11,11 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { deptApi, memberApi, organizationSyncApi, type MemberOption } from '@/api/system'
 
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{
+  modelValue: boolean
+  targetDepartmentId: string
+  targetDepartmentName: string
+}>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   synced: []
@@ -60,11 +64,21 @@ const stage = computed(() => {
 })
 
 const canPreview = computed(
-  () => !gate.value?.disabledReason && !generating.value && !applying.value,
+  () =>
+    Boolean(props.targetDepartmentId) &&
+    !gate.value?.disabledReason &&
+    !generating.value &&
+    !applying.value,
+)
+const previewTargetMatches = computed(
+  () =>
+    !currentBatch.value ||
+    currentBatch.value.targetDepartmentId === props.targetDepartmentId,
 )
 const canApply = computed(
   () =>
     currentBatch.value?.status === 'PREVIEW_READY' &&
+    previewTargetMatches.value &&
     currentBatch.value.counts.conflict === 0 &&
     !applying.value,
 )
@@ -150,6 +164,10 @@ function formatTime(value: string | null) {
   }).format(new Date(value))
 }
 
+function departmentName(id: string) {
+  return flatDepartments.value.find((department) => department.id === id)?.name ?? '未知部门'
+}
+
 async function loadBase() {
   loading.value = true
   try {
@@ -214,7 +232,13 @@ function applyItemKeyword() {
 async function createPreview() {
   generating.value = true
   try {
-    const { data } = await organizationSyncApi.preview()
+    if (!props.targetDepartmentId) {
+      ElMessage.warning('请先在左侧部门树选择同步目标部门')
+      return
+    }
+    const { data } = await organizationSyncApi.preview({
+      targetDepartmentId: props.targetDepartmentId,
+    })
     currentBatch.value = data
     ElMessage.success(data.status === 'PREVIEW_READY' ? '同步预览已生成' : '同步预览状态已更新')
     await loadBase()
@@ -341,6 +365,26 @@ onBeforeUnmount(stopPolling)
         class="mb-4"
       />
 
+      <el-alert
+        v-else
+        :title="`同步到：${targetDepartmentName || '未选择部门'}`"
+        description="企业微信可见范围的顶层部门将在该部门下新增或更新，其下级组织按原层级同步；选中部门本身不会被改名、移动或修改排序。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="mb-4"
+      />
+
+      <el-alert
+        v-if="currentBatch && !previewTargetMatches"
+        :title="`当前预览属于“${departmentName(currentBatch.targetDepartmentId)}”`"
+        description="当前预览与左侧选中的同步目标不一致，不能直接应用。请为当前目标重新生成预览。"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="mb-4"
+      />
+
       <div class="sync-toolbar">
         <div>
           <div class="text-sm font-medium">同步批次</div>
@@ -359,7 +403,7 @@ onBeforeUnmount(stopPolling)
             <el-option
               v-for="batchItem in batches"
               :key="batchItem.id"
-              :label="`${formatTime(batchItem.createdAt)} · ${batchItem.status}`"
+              :label="`${formatTime(batchItem.createdAt)} · ${departmentName(batchItem.targetDepartmentId)} · ${batchItem.status}`"
               :value="batchItem.id"
             />
           </el-select>

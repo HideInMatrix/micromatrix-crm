@@ -142,6 +142,43 @@ test('企微组织快照按主部门去重并正确解析负责人平行数组',
   }
 })
 
+test('企微组织快照把唯一可见子树顶点规范化为同步根部门', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = async (input) => {
+      const url = String(input)
+      if (url.includes('/gettoken')) {
+        return new Response(JSON.stringify({ errcode: 0, access_token: 'temporary-token' }))
+      }
+      if (url.includes('/department/list')) {
+        return new Response(
+          JSON.stringify({
+            errcode: 0,
+            department: [
+              { id: 42, name: '技术支持', parentid: 1, order: 100 },
+              { id: 43, name: '一线支持', parentid: 42, order: 80 },
+            ],
+          }),
+        )
+      }
+      return new Response(JSON.stringify({ errcode: 0, userlist: [] }))
+    }
+
+    const snapshot = await new WeComClient().getOrganizationSnapshot({
+      corpId: 'ww-a',
+      agentId: '1000034',
+      appSecret: 'secret',
+    })
+    const visibleRoot = snapshot.departments.find((department) => department.id === '42')
+    const child = snapshot.departments.find((department) => department.id === '43')
+    assert.equal(visibleRoot?.parentId, '1')
+    assert.equal(visibleRoot?.isRoot, true)
+    assert.equal(child?.isRoot, false)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('企微组织快照会重试临时错误并拒绝不完整部门树', async (t) => {
   const originalFetch = globalThis.fetch
   try {
@@ -183,6 +220,14 @@ test('企微组织快照会重试临时错误并拒绝不完整部门树', async
           { id: 1, name: '重复企业', parentid: 0 },
         ],
         code: 'DUPLICATE_DEPARTMENT_ID',
+      },
+      {
+        name: '多个互不相连的可见部门树',
+        department: [
+          { id: 42, name: '技术支持', parentid: 1 },
+          { id: 77, name: '销售部', parentid: 1 },
+        ],
+        code: 'INVALID_ROOT_DEPARTMENT',
       },
       {
         name: '循环部门树',

@@ -22,6 +22,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import { WeComClient, WeComSnapshotError } from '../enterprise-integrations/wecom.client'
 import type {
+  CreateOrganizationSyncPreviewDto,
   QueryOrganizationSyncBatchesDto,
   QueryOrganizationSyncItemsDto,
   ResolveOrganizationSyncDto,
@@ -84,9 +85,17 @@ export class OrganizationSyncService {
     }
   }
 
-  async createPreview(user: AuthUser): Promise<OrganizationSyncBatchVO> {
+  async createPreview(
+    user: AuthUser,
+    dto: CreateOrganizationSyncPreviewDto,
+  ): Promise<OrganizationSyncBatchVO> {
     const { integration, credentials } = await this.integrations.getWeComSyncContext(user.tenantId)
     await this.assertDefaultRole(user.tenantId, integration.syncDefaultRoleId)
+    const targetDepartment = await this.prisma.department.findFirst({
+      where: { id: dto.targetDepartmentId, tenantId: user.tenantId },
+      select: { id: true },
+    })
+    if (!targetDepartment) throw new BadRequestException('同步目标部门不存在或不属于当前企业')
     const staleBefore = new Date(Date.now() - 30 * 60_000)
     await this.prisma.organizationSyncBatch.updateMany({
       where: {
@@ -120,6 +129,7 @@ export class OrganizationSyncService {
           integrationId: integration.id,
           provider: PROVIDER,
           status: 'FETCHING',
+          targetDepartmentId: targetDepartment.id,
           credentialVersion: integration.credentialVersion,
           counts: EMPTY_COUNTS as unknown as Prisma.InputJsonValue,
           createdById: user.id,
@@ -145,8 +155,16 @@ export class OrganizationSyncService {
           where: { tenantId: user.tenantId, provider: PROVIDER },
         }),
       ])
+      const snapshotRoot = snapshot.departments.find((department) => department.isRoot)!
+      this.assertTargetOutsideMappedTree(
+        targetDepartment.id,
+        snapshotRoot.externalKey,
+        departments,
+        departmentMappings,
+      )
       const plan = this.planner.plan({
         tenantId: user.tenantId,
+        targetDepartmentId: targetDepartment.id,
         snapshot,
         departments,
         users,
@@ -406,6 +424,29 @@ export class OrganizationSyncService {
     if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
   }
 
+  private assertTargetOutsideMappedTree(
+    targetDepartmentId: string,
+    rootExternalKey: string,
+    departments: Array<{ id: string; parentId: string | null }>,
+    mappings: Array<{ externalKey: string; departmentId: string }>,
+  ): void {
+    const mappedRootId = mappings.find(
+      (mapping) => mapping.externalKey === rootExternalKey,
+    )?.departmentId
+    if (!mappedRootId) return
+    const parentById = new Map(departments.map((department) => [department.id, department.parentId]))
+    let cursor: string | null | undefined = targetDepartmentId
+    while (cursor) {
+      if (cursor === mappedRootId) {
+        throw new WeComSnapshotError(
+          'INVALID_TARGET_DEPARTMENT',
+          '同步目标不能选择已同步企微根部门或其下级部门',
+        )
+      }
+      cursor = parentById.get(cursor)
+    }
+  }
+
   private async ensureBatch(tenantId: string, id: string): Promise<OrganizationSyncBatch> {
     const row = await this.prisma.organizationSyncBatch.findFirst({
       where: { id, tenantId, provider: PROVIDER },
@@ -447,6 +488,7 @@ export class OrganizationSyncService {
       id: row.id,
       provider: row.provider,
       status: row.status,
+      targetDepartmentId: row.targetDepartmentId,
       credentialVersion: row.credentialVersion,
       counts: this.parseCounts(row.counts),
       errorCode: row.errorCode,

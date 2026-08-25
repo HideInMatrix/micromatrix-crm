@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import {
+  CreateOrganizationSyncPreviewDto,
   QueryOrganizationSyncBatchesDto,
   QueryOrganizationSyncItemsDto,
   ResolveOrganizationSyncDto,
@@ -31,8 +32,8 @@ export class OrganizationSyncController {
   @Post('previews')
   @LogOperation('organizationSync', 'previewWeCom')
   @ApiOperation({ summary: '生成企业微信组织同步预览' })
-  preview(@CurrentUser() user: AuthUser) {
-    return this.sync.createPreview(user)
+  preview(@CurrentUser() user: AuthUser, @Body() dto: CreateOrganizationSyncPreviewDto) {
+    return this.sync.createPreview(user, dto)
   }
 
   @Get('batches')

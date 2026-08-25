@@ -179,6 +179,7 @@ export interface OrganizationSyncBatchVO {
   id: string
   provider: EnterpriseIntegrationProvider
   status: OrganizationSyncStatus
+  targetDepartmentId: string
   credentialVersion: number
   counts: OrganizationSyncCounts
   errorCode: string | null
@@ -191,6 +192,10 @@ export interface OrganizationSyncBatchVO {
   finishedAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface CreateOrganizationSyncPreviewInput {
+  targetDepartmentId: string
 }
 
 export interface OrganizationSyncItemVO {

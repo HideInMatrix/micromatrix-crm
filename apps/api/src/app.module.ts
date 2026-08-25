@@ -26,7 +26,7 @@ import { QuotesModule } from './modules/quotes/quotes.module'
 import { LogsModule } from './modules/logs/logs.module'
 import { MembersModule } from './modules/members/members.module'
 import { MessageSettingsModule } from './modules/message-settings/message-settings.module'
-import { MetadataModule } from './modules/metadata/metadata.module'
+import { ModuleFormsModule } from './modules/metadata/module-forms.module'
 import { ModuleConfigsModule } from './modules/module-configs/module-configs.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module'
@@ -46,7 +46,7 @@ import { PrismaModule } from './prisma/prisma.module'
     CommonModule,
     AuthModule,
     NotificationsModule,
-    MetadataModule,
+    ModuleFormsModule,
     ModuleConfigsModule,
     ApprovalsModule,
     CustomersModule,

@@ -36,6 +36,8 @@ const syncDrawerVisible = ref(false)
 const syncGateLoading = ref(false)
 const syncGate = ref<OrganizationSyncGateVO | null>(null)
 const canSync = computed(() => auth.hasPerm('system:dept:sync'))
+const selectedDepartment = ref<DepartmentVO | null>(null)
+const syncTargetDepartment = computed(() => selectedDepartment.value ?? deptTree.value[0] ?? null)
 
 const identityDialogVisible = ref(false)
 const identityLoading = ref(false)
@@ -143,6 +145,7 @@ async function handleSyncCompleted() {
 }
 
 function handleDeptSelect(dept: DepartmentVO | null) {
+  selectedDepartment.value = dept
   query.deptId = dept?.id ?? ''
   query.page = 1
   loadData()
@@ -745,6 +748,8 @@ onMounted(() => {
   <OrganizationSyncDrawer
     v-if="canSync"
     v-model="syncDrawerVisible"
+    :target-department-id="syncTargetDepartment?.id ?? ''"
+    :target-department-name="syncTargetDepartment?.name ?? ''"
     @synced="handleSyncCompleted"
   />
 </template>

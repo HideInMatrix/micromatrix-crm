@@ -618,3 +618,58 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 浏览器已验证工作台缺配置错误态、重试/密码回退与公共回调错误态，均无 console error/warn；真实企微 iframe 在 localhost 明确返回回调域名不匹配，部署时必须把正式回调域名加入企微信任域名。
 - 新模型规则测试 `66/66`、API/Web typecheck 与 Lint 通过；旧模型下的 19 条专项 Smoke 证据不冒充新模型迁移证据。
 - 当前未发布项目已按确认清空本地开发库并从零应用全部迁移，Seed 成功；规则测试 `66/66`、19 条专项 Smoke、API/Web 类型检查、Lint、生产构建和 diff 检查均通过。W3.3 与 DB-014 恢复 `VERIFIED`，W3.4 进入 `READY`。
+
+---
+
+## 16. 企业微信单一可见子树同步修正（2026-08-25）
+
+- 企业微信 `/department/list` 只返回 token 对应应用可见范围内的部门。应用仅勾选一个子部门时，响应会保留该部门真实 `parentId`，但可能不返回企业全局根部门。
+- Cordys `WeComDepartmentService` 按固定企业根部门 `id=1` 标记根节点，原实现默认应用可见企业根部门；MicroMatrix 先前按 `parentId=0` 校验唯一根，同样错误拒绝了单一可见子树。
+- 快照规范化现将 `parentId=0` 或父节点不在响应集合内的唯一部门视为本次同步根；子树内部父子关系、循环和重复 ID 校验保持不变。
+- 多个互不相连的可见子树仍拒绝应用，避免在本地单根组织中静默生成错误层级；后续若要支持多授权根，必须先明确虚拟根与映射语义。
+- 新增单一可见子树与多棵可见树规则用例后，规则测试 `68/68`、shared/API/Web 类型检查、改动文件 Lint 和生产构建全部通过。
+- 首轮修正使用本地已保存的真实企微配置创建预览成功：HTTP `201`、批次进入 `PREVIEW_READY`，返回新增 7、更新 1、冲突 0；部门明细确认“技术支持”（外部 ID `13`）为 `isRoot=true`。本次未应用该批次，未修改组织架构。
+- 后续页面复核发现同步入口未传递左侧树选中部门，预览仍把企微可见根固定绑定本地组织根，错误显示“微矩阵科技 → 技术支持”。现已新增批次级 `targetDepartmentId`：同步抽屉默认使用左侧当前选中部门，未选择时才使用本地根；企微可见根在目标部门下新增或更新，选中目标本身不会接收企微名称、排序或上级变更。
+- 使用本地已保存的真实企微配置再次预览：目标部门为“微矩阵科技”，批次进入 `PREVIEW_READY`，企微可见根“技术支持”为 `CREATE`、`localId=null`、`changes=null`，确认不会改名或重排目标部门。本次仍只生成预览，未应用同步。
+- 最终回归规则测试 `70/70`，shared/API/Web 类型检查、改动文件 Lint 和生产构建全部通过；29 个迁移状态一致，批次目标部门迁移已约束为非空并应用到本地开发库。
+- 浏览器复验组织架构：选择“微矩阵科技”后同步抽屉显示“同步到：微矩阵科技”，部门明细将“技术支持”标为“新增”且字段变化为 `-`；切换左侧部门后目标提示同步变化，页面明确说明选中部门本身不会被改名、移动或修改排序。若当前查看的预览属于另一目标部门，页面显示目标不一致警告、历史批次标注其目标部门并禁用“应用同步”，必须重新生成匹配当前目标的预览。
+
+---
+
+## 17. W3.4 技术设计确认与任务拆分（2026-08-25）
+
+- 用户已确认 W3.4 技术设计；设计状态从待确认更新为已确认，范围继续保持首页、线索/线索池、客户/联系人/公海和仪表板逐页源码闭环。
+- 新增 `business-module-page-parity/tasks.md`，按 W3.4.0～W3.4.5 拆分公共直接模型、首页、线索域、客户域、仪表板和全图验收，并逐项关联 R1～R12。
+- W3.4 当前状态更新为 `TASK_REVIEW`。任务清单确认前不实施业务代码；确认后的首个执行单元是 1.1 调用方影响审计，先交付逐表差异、删除模型调用方和一次性替换顺序，再进入破坏性 Schema 修改。
+- DB-016～DB-020 保持 `PLANNED`，执行入口已改为任务编号，确保暂未实施的数据模型缺口不会在后续阶段遗漏。
+
+## 18. W3.4.0 任务 1.1 直接模型与调用方审计（2026-08-25）
+
+- 用户已确认 W3.4 任务清单并授权开始实施；W3.4 状态从 `TASK_REVIEW` 更新为 `IN_PROGRESS`。
+- 新增 `business-module-page-parity/model-impact-audit.md`，以 Cordys 最终 DDL、Domain、Mapper 和 Service 交叉核对 32 张直接表；首版 DDL 后的 ALTER 已合并，重点纠正 Dashboard `resourceUrl`、根目录 `parentId='NONE'`、联系人 `customerId` nullable、BigInt 时间和文本 Scope/Condition。
+- 已列出 Lead/Contact/CustomerTeamMember/FieldDefinition/SavedView/ResourcePool/PoolRule/ResourceOwnerHistory 的 Prisma relation、至少 15 个后端直接调用 Service、Web/shared、Seed/Smoke，以及旧 Dashboard 五个统计接口和固定 `/reports` 页面入口。
+- 已固化一次性替换顺序和禁止兼容路径；任务 1.1 标记完成。任务 1.2～1.3 才开始修改 Prisma 与破坏性迁移，不建立兼容视图、旧模型别名、双写或数据回填。
+- DB-016～DB-020 随 W3.4.0 进入 `IN_PROGRESS`，但均未标记实现或验收完成；只有对应迁移、Service、页面与自动化全部闭环后才能进入 `VERIFIED`。
+- 新发现图外 Opportunity/Product/Quote/Contract/Order/FollowUpPlan 仍共享旧 FieldDefinition/customData 的直接模型缺口，已登记 DB-021，确保删除旧字段定义时不破坏现有模块且后续完整复刻不遗漏。
+
+---
+
+## 19. W3.4.0 任务 1.2～1.3 直接模型与破坏性迁移（2026-08-25）
+
+- 按已确认的 32 表审计一次性替换 Prisma Schema：新增模块表单/字段、用户视图、线索、客户/联系人、公海和仪表板直接模型，删除 Lead/Contact、旧 SavedView、FieldDefinition、通用池/规则/容量/负责人历史及 `LeadStatus`。
+- 数据库列使用 Cordys snake_case 映射；目标业务表只保留 `organizationId`。关键差异 `resource_url VARCHAR(500)`、`parent_id='NONE'`、nullable 联系人客户、`BIGINT` 时间和 TEXT Scope/Condition 均已落地。
+- 新增 `20260825180000_w34_cordys_direct_models` 破坏性迁移：删除 14 张旧表，创建 32 张目标表，不包含回填、兼容视图、旧字段别名或双写。
+- 隔离临时库从零应用全部 30 个 migration 成功；查询确认目标表 32、旧表 0，关键类型/长度/默认值通过。主开发库尚未应用本次破坏性迁移。
+- Prisma format/validate/generate 通过。类型检查的 411 个错误集中在任务 1.1 已审计的 16 个调用文件，属于 1.4～1.8 尚未迁移的明确中间断点；不得用兼容模型掩盖。
+- 任务 1.2、1.3 标记完成，W3.4.0 保持 `IN_PROGRESS`；下一执行单元为 1.4 模块表单与动态字段底座。
+
+---
+
+## 20. W3.4.0 任务 1.4 模块表单与动态字段公共底座（2026-08-25）
+
+- 按 Cordys `ModuleFormService/ModuleFieldService/BaseResourceFieldService/BaseField` 源码实现 `ModuleFormsModule`，不从页面或旧 FieldDefinition 反推数据结构。
+- Metadata 字段定义真相已切到 `sys_module_form(_blob)` 与 `sys_module_field(_blob)`；Web 继续获得稳定 FieldVO，旧 `FieldDefinition` delegate 的 14 个编译错误全部消除。
+- 新增 ResourceFieldValueService，覆盖三目标资源的必填/类型/选项/唯一校验、普通/Blob 路由、组织隔离、事务锁、批改、批量装配和参数化筛选；写操作强制接收调用方同一 TransactionClient。
+- 新增 7 条规则测试，全量公共规则测试 `77/77` 通过；隔离 PostgreSQL 从零执行全部 30 个 migration 后完成 12 项动态字段 Smoke，验证唯一冲突与主动异常整笔回滚，随后删除临时库。
+- shared/Web typecheck 和改动文件 ESLint 通过。API 预期编译断点从 411/16 降至 397/15；剩余错误属于目标业务模型、池、用户视图、Dashboard 与 Seed 后续任务。
+- 任务 1.4 的公共服务和测试已完成，但列表/详情/导入导出调用方仍待 1.7 切换，因此 1.4 保持部分完成，不通过兼容 DTO 或双写提前勾选。下一独立单元为 1.5 用户视图直接模型。

@@ -22,6 +22,12 @@ const BATCH_STATUSES = [
 const RESOURCE_TYPES = ['DEPARTMENT', 'USER'] as const
 const ACTIONS = ['CREATE', 'UPDATE', 'DISABLE', 'UNCHANGED', 'CONFLICT', 'SKIP'] as const
 
+export class CreateOrganizationSyncPreviewDto {
+  @IsString()
+  @MaxLength(64)
+  targetDepartmentId!: string
+}
+
 export class QueryOrganizationSyncBatchesDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(BATCH_STATUSES)

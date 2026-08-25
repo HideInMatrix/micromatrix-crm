@@ -1,47 +1,36 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import {
-  evaluateFormula,
-  formulaVariables,
-  isCustomFieldKey,
-  type FieldConfig,
-  type FieldOption,
-  type FieldType,
-  type FieldVO,
-} from '@micromatrix/shared'
-import { FieldDefinition, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { evaluateFormula, isCustomFieldKey, type FieldVO } from '@micromatrix/shared'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
-import { MODULE_SYSTEM_FIELDS } from './system-fields'
+import { ModuleFormsService } from './module-forms.service'
 
+/**
+ * 现有 Web/业务模块的稳定 FieldVO 适配器。
+ * 数据真相已经切换为 sys_module_form/sys_module_field 及其 Blob 表。
+ */
 @Injectable()
 export class MetadataService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly moduleForms: ModuleFormsService) {}
 
-  /** 获取模块字段（首次访问自动初始化系统字段） */
-  async listFields(tenantId: string, module: string): Promise<FieldVO[]> {
-    await this.ensureSystemFields(tenantId, module)
-    const fields = await this.prisma.fieldDefinition.findMany({
-      where: { tenantId, module },
-      orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
-    })
-    return fields.map((f) => this.toVO(f))
+  listFields(organizationId: string, module: string): Promise<FieldVO[]> {
+    return this.moduleForms.listFields(organizationId, module)
   }
 
-  /** 字段 Map（key → FieldVO），供筛选与校验使用 */
-  async fieldsMap(tenantId: string, module: string): Promise<Map<string, FieldVO>> {
-    const fields = await this.listFields(tenantId, module)
-    return new Map(fields.map((f) => [f.key, f]))
+  async fieldsMap(organizationId: string, module: string): Promise<Map<string, FieldVO>> {
+    const fields = await this.listFields(organizationId, module)
+    return new Map(fields.map((field) => [field.key, field]))
   }
 
-  /** Cordys ModuleField.rules.unique 等价判断。 */
-  async hasUniqueRule(tenantId: string, module: string, key: string): Promise<boolean> {
-    const field = (await this.fieldsMap(tenantId, module)).get(key)
+  async hasUniqueRule(organizationId: string, module: string, key: string): Promise<boolean> {
+    const field = (await this.fieldsMap(organizationId, module)).get(key)
     return Boolean(field?.config?.unique)
   }
 
-  /** Cordys batch edit 兼容：fieldId 同时接受真实字段 ID 或业务 key。 */
-  async resolveEditableField(tenantId: string, module: string, fieldIdOrKey: string): Promise<FieldVO> {
-    const fields = await this.listFields(tenantId, module)
+  async resolveEditableField(
+    organizationId: string,
+    module: string,
+    fieldIdOrKey: string,
+  ): Promise<FieldVO> {
+    const fields = await this.listFields(organizationId, module)
     const field = fields.find((item) => item.id === fieldIdOrKey || item.key === fieldIdOrKey)
     if (!field) throw new NotFoundException('字段不存在')
     if (field.hidden) throw new BadRequestException(`「${field.label}」当前不可编辑`)
@@ -50,187 +39,105 @@ export class MetadataService {
   }
 
   validateBatchFieldValue(field: FieldVO, value: unknown): void {
-    const empty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
+    const empty =
+      value === undefined ||
+      value === null ||
+      value === '' ||
+      (Array.isArray(value) && value.length === 0)
     if (field.required && empty) throw new BadRequestException(`「${field.label}」为必填项`)
-
-    // 系统固定列最终会直接写 Prisma 标量列；先阻止明显错误的对象/数组值。
-    if (field.system && !isCustomFieldKey(field.key) && !empty) {
-      if (['text', 'textarea', 'phone', 'email', 'select', 'member'].includes(field.type) && typeof value !== 'string') {
-        throw new BadRequestException(`「${field.label}」字段值格式不正确`)
-      }
+    if (empty) return
+    if (
+      ['text', 'textarea', 'phone', 'email', 'select', 'radio', 'member', 'dept'].includes(
+        field.type,
+      ) &&
+      typeof value !== 'string'
+    ) {
+      throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+    }
+    if (['multiselect', 'checkbox'].includes(field.type) && !Array.isArray(value)) {
+      throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+    }
+    if (['number', 'currency', 'percent'].includes(field.type) && !Number.isFinite(Number(value))) {
+      throw new BadRequestException(`「${field.label}」必须是有效数字`)
+    }
+    if (field.type === 'switch' && typeof value !== 'boolean') {
+      throw new BadRequestException(`「${field.label}」必须是布尔值`)
     }
   }
 
-  async createField(tenantId: string, module: string, dto: CreateFieldDto): Promise<FieldVO> {
-    if (dto.type === 'formula') this.validateFormula(dto.config?.formula)
-    const maxSort = await this.prisma.fieldDefinition.aggregate({
-      where: { tenantId, module },
-      _max: { sort: true },
-    })
-    const field = await this.prisma.fieldDefinition.create({
-      data: {
-        tenantId,
-        module,
-        key: `cf_${Math.random().toString(36).slice(2, 10)}`,
-        label: dto.label,
-        type: dto.type,
-        required: dto.required ?? false,
-        options: (dto.options ?? undefined) as Prisma.InputJsonValue | undefined,
-        config: (dto.config ?? undefined) as Prisma.InputJsonValue | undefined,
-        span: dto.span ?? 12,
-        showInList: dto.showInList ?? true,
-        listWidth: dto.listWidth,
-        sort: (maxSort._max.sort ?? 0) + 1,
-      },
-    })
-    return this.toVO(field)
+  createField(
+    organizationId: string,
+    module: string,
+    dto: CreateFieldDto,
+    actorId?: string,
+  ): Promise<FieldVO> {
+    return this.moduleForms.createField(organizationId, module, dto, actorId)
   }
 
-  async updateField(tenantId: string, id: string, dto: UpdateFieldDto): Promise<FieldVO> {
-    const field = await this.ensureExists(tenantId, id)
-    if (dto.config?.formula) this.validateFormula(dto.config.formula)
-
-    const data: Prisma.FieldDefinitionUpdateInput = {
-      label: dto.label,
-      required: dto.required,
-      hidden: dto.hidden,
-      options: (dto.options ?? undefined) as Prisma.InputJsonValue | undefined,
-      config: (dto.config ?? undefined) as Prisma.InputJsonValue | undefined,
-      span: dto.span,
-      showInList: dto.showInList,
-      listWidth: dto.listWidth,
-    }
-    // 系统字段不允许修改类型
-    if (!field.system && dto.type) data.type = dto.type
-
-    const updated = await this.prisma.fieldDefinition.update({ where: { id }, data })
-    return this.toVO(updated)
+  updateField(
+    organizationId: string,
+    id: string,
+    dto: UpdateFieldDto,
+    actorId?: string,
+  ): Promise<FieldVO> {
+    return this.moduleForms.updateField(organizationId, id, dto, actorId)
   }
 
-  async deleteField(tenantId: string, id: string) {
-    const field = await this.ensureExists(tenantId, id)
-    if (field.system) throw new BadRequestException('系统字段不可删除')
-    await this.prisma.fieldDefinition.delete({ where: { id } })
-    return { id, name: field.label }
+  deleteField(organizationId: string, id: string) {
+    return this.moduleForms.deleteField(organizationId, id)
   }
 
-  async reorder(tenantId: string, module: string, orderedIds: string[]) {
-    const fields = await this.prisma.fieldDefinition.findMany({ where: { tenantId, module } })
-    const idSet = new Set(fields.map((f) => f.id))
-    const updates = orderedIds
-      .filter((id) => idSet.has(id))
-      .map((id, index) =>
-        this.prisma.fieldDefinition.update({ where: { id }, data: { sort: index } }),
-      )
-    await this.prisma.$transaction(updates)
-    return { count: updates.length }
+  reorder(organizationId: string, module: string, orderedIds: string[], actorId?: string) {
+    return this.moduleForms.reorder(organizationId, module, orderedIds, actorId)
   }
 
   /**
-   * 校验并清洗自定义字段数据：仅保留已定义的 cf_ 字段；
-   * requireAll=true（新建）时校验全部必填自定义字段。
+   * 图外模块仍使用 customData 时的过渡校验器；字段定义已经来自直接 ModuleForm 表。
+   * Clue/Customer/CustomerContact 必须改用 ResourceFieldValueService，不能调用本方法落库。
    */
   async validateCustomData(
-    tenantId: string,
+    organizationId: string,
     module: string,
     input: Record<string, unknown> | undefined,
     options: { requireAll: boolean },
   ): Promise<Record<string, unknown>> {
-    const fields = await this.fieldsMap(tenantId, module)
+    const fields = await this.fieldsMap(organizationId, module)
     const result: Record<string, unknown> = {}
-
     for (const [key, value] of Object.entries(input ?? {})) {
       const field = fields.get(key)
       if (!field || !isCustomFieldKey(key) || field.type === 'formula') continue
+      this.validateBatchFieldValue(field, value)
       result[key] = value
     }
-
-    for (const field of fields.values()) {
-      if (!isCustomFieldKey(field.key) || !field.required || field.hidden) continue
-      const value = options.requireAll
-        ? result[field.key]
-        : field.key in result
-          ? result[field.key]
-          : '__SKIP__'
-      if (value === '__SKIP__') continue
-      if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
-        throw new BadRequestException(`「${field.label}」为必填项`)
+    if (options.requireAll) {
+      for (const field of fields.values()) {
+        if (!isCustomFieldKey(field.key) || field.system || !field.required || field.hidden)
+          continue
+        const value = result[field.key]
+        if (
+          value === undefined ||
+          value === null ||
+          value === '' ||
+          (Array.isArray(value) && value.length === 0)
+        ) {
+          throw new BadRequestException(`「${field.label}」为必填项`)
+        }
       }
     }
     return result
   }
 
-  /** 计算对象上全部公式字段的值（列表/详情响应时调用） */
   computeFormulas(
     fields: FieldVO[],
     record: Record<string, unknown>,
-    customData: Record<string, unknown>,
+    fieldValues: Record<string, unknown>,
   ): Record<string, number | null> {
-    const vars: Record<string, unknown> = { ...record, ...customData }
+    const vars: Record<string, unknown> = { ...record, ...fieldValues }
     const output: Record<string, number | null> = {}
     for (const field of fields) {
       if (field.type !== 'formula' || !field.config?.formula) continue
       output[field.key] = evaluateFormula(field.config.formula, vars)
     }
     return output
-  }
-
-  private validateFormula(formula?: string) {
-    if (!formula?.trim()) throw new BadRequestException('计算字段必须配置公式')
-    const vars = formulaVariables(formula)
-    if (evaluateFormula(formula, Object.fromEntries(vars.map((v) => [v, 1]))) === null) {
-      throw new BadRequestException('公式语法错误')
-    }
-  }
-
-  private async ensureSystemFields(tenantId: string, module: string): Promise<void> {
-    const template = MODULE_SYSTEM_FIELDS[module]
-    if (!template) return
-    const count = await this.prisma.fieldDefinition.count({
-      where: { tenantId, module, system: true },
-    })
-    if (count > 0) return
-    await this.prisma.fieldDefinition.createMany({
-      data: template.map((t) => ({
-        tenantId,
-        module,
-        key: t.key,
-        label: t.label,
-        type: t.type,
-        required: t.required ?? false,
-        system: true,
-        options: (t.options ?? undefined) as Prisma.InputJsonValue | undefined,
-        span: t.span ?? 12,
-        showInList: t.showInList ?? true,
-        listWidth: t.listWidth,
-        sort: t.sort,
-      })),
-      skipDuplicates: true,
-    })
-  }
-
-  private async ensureExists(tenantId: string, id: string) {
-    const field = await this.prisma.fieldDefinition.findFirst({ where: { id, tenantId } })
-    if (!field) throw new NotFoundException('字段不存在')
-    return field
-  }
-
-  private toVO(field: FieldDefinition): FieldVO {
-    return {
-      id: field.id,
-      module: field.module,
-      key: field.key,
-      label: field.label,
-      type: field.type as FieldType,
-      required: field.required,
-      system: field.system,
-      hidden: field.hidden,
-      options: (field.options as FieldOption[] | null) ?? null,
-      config: (field.config as FieldConfig | null) ?? null,
-      sort: field.sort,
-      span: field.span,
-      showInList: field.showInList,
-      listWidth: field.listWidth,
-    }
   }
 }

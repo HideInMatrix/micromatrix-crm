@@ -189,6 +189,8 @@ erDiagram
 - `errorMessage?`, `sort`, `createdAt`, `updatedAt`
 - 唯一：`[batchId, resourceType, externalKey]`
 
+同步批次额外保存必填 `targetDepartmentId`，记录生成预览时选定的本地承载部门。历史批次读取和应用均使用批次保存值，不跟随页面后来切换的部门。
+
 ### 5.3 白名单快照
 
 部门只保存：`id/name/parentId/order/isRoot`。成员只保存：`userId/name/email/mobile/position/mainDepartmentId/isLeader`。不保存 Secret、access token、原始响应、头像二进制或企业微信未使用字段。
@@ -199,11 +201,11 @@ erDiagram
 
 ### 6.1 预览生成
 
-1. 校验 `system:dept:sync`、已配置、最近测试成功、`syncEnabled=true`、默认角色存在且可分配。
+1. 校验 `system:dept:sync`、已配置、最近测试成功、`syncEnabled=true`、默认角色存在且可分配，并确认 `targetDepartmentId` 属于当前租户且未绑定其它企微部门。
 2. 创建 `FETCHING` 批次并记录当前 `credentialVersion`。
 3. 解密 Secret，在内存中获取 token；拉取全部可见部门，再按部门拉取直属成员。
 4. 规范化外部 ID；部门按 ID 去重，成员按 userId 去重并以 `main_department` 决定唯一归属部门。
-5. 校验只有一个根部门、父节点完整、部门树无环；空部门列表或重复外部 ID 直接使批次失败。
+5. 以 `parentId=0` 或父节点不在可见响应中的唯一部门作为同步根，校验可见范围只有一棵部门树、其余父节点完整且部门树无环；空部门列表、重复外部 ID 或多个互不相连的可见子树直接使批次失败。
 6. 批量读取当前租户部门、成员和映射，调用纯函数规划差异。
 7. 保存白名单差异项与统计，批次转为 `PREVIEW_READY`。
 
@@ -214,7 +216,7 @@ erDiagram
 部门：
 
 1. 外部部门映射；
-2. 企微根部门固定绑定本地唯一根部门；
+2. 企微全局根部门或唯一可见子树顶点新增或更新到批次目标部门之下；目标部门只是本地承载父级，不参与企微字段更新；
 3. 同一已解析父部门下的本地同名部门只生成冲突，不自动绑定；
 4. 否则 `CREATE`。
 
