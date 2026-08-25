@@ -6,15 +6,15 @@ W3.3 复用 W3.1 唯一加密配置和 W3.2 唯一成员映射，不复制 Cordy
 
 ## 2. Cordys 对照
 
-| 能力        | Cordys 源码                                          | MicroMatrix 实现                                               |
-| ----------- | ---------------------------------------------------- | -------------------------------------------------------------- |
-| 登录入口    | `login-form.vue`、`tabQrCode.vue`、`weComQrCode.vue` | 登录页其他登录方式 + 企业标识/URL参数 + 企微授权跳转           |
-| state       | `OAuthStateService`                                  | `ExternalOAuthState`：摘要、10分钟 TTL、浏览器 nonce、一次消费 |
-| 回调        | `SSOController/SSOService`                           | `WeComSsoController/Service` + 现有 `AuthService` JWT 签发     |
-| 用户识别    | 企微 userid → 已同步用户 resourceId                  | userid → `ExternalUserMapping` → `ExternalIdentity` → `User`   |
-| 渠道开关    | `MessageTask.weComEnable`                            | `MessageTaskSetting.weComEnabled`                              |
-| 企微 sender | `WeComNoticeSender`                                  | `MessageDeliveryService` + `WeComClient.sendTextMessage`       |
-| 异常        | 记录服务日志后吞掉                                   | 持久化 PENDING/SENDING/SUCCEEDED/FAILED/DEAD 并有限重试        |
+| 能力        | Cordys 源码                                     | MicroMatrix 实现                                               |
+| ----------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| 登录入口    | PC `weComQrCode.vue` + H5 `useLogin.ts/App.vue` | PC 官方 SDK 扫码 + `wxwork` 工作台网页 OAuth 双入口            |
+| state       | `OAuthStateService`                             | `ExternalOAuthState`：摘要、10分钟 TTL、浏览器 nonce、一次消费 |
+| 回调        | `SSOController/SSOService`                      | `WeComSsoController/Service` + 现有 `AuthService` JWT 签发     |
+| 用户识别    | 企微 userid → 已同步用户 resourceId             | userid → `ExternalUserMapping` → `ExternalIdentity` → `User`   |
+| 渠道开关    | `MessageTask.weComEnable`                       | `MessageTaskSetting.weComEnabled`                              |
+| 企微 sender | `WeComNoticeSender`                             | `MessageDeliveryService` + `WeComClient.sendTextMessage`       |
+| 异常        | 记录服务日志后吞掉                              | 持久化 PENDING/SENDING/SUCCEEDED/FAILED/DEAD 并有限重试        |
 
 ## 3. 数据模型
 
@@ -33,7 +33,7 @@ W3.3 复用 W3.1 唯一加密配置和 W3.2 唯一成员映射，不复制 Cordy
 
 ### 3.3 `LoginLog` 扩展
 
-- 新增 `authType`，存 `PASSWORD` 或 `WECOM`。
+- 新增 `authType`，存 `PASSWORD`、PC 扫码 `WECOM` 或工作台 OAuth `WECOM_OAUTH2`。
 - 新增 `externalSubject`，只保存已规范化企微 userid，不保存 code/token/state。
 
 ### 3.4 `MessageTaskSetting` 扩展
@@ -52,9 +52,11 @@ W3.3 复用 W3.1 唯一加密配置和 W3.2 唯一成员映射，不复制 Cordy
 
 ### 4.1 公共统一登录
 
-- `GET /auth/wecom/discovery?tenant=<slug>`：返回是否可用、企业显示名、corpId、agentId 和登录 URL 提示，不返回 Secret。
-- `POST /auth/wecom/start`：接收 tenantSlug 和受限 returnPath，签发 state、设置 HttpOnly nonce cookie，返回企业微信授权 URL。
+- `GET /auth/wecom/discovery?tenant=<slug?>`：tenant 可选；缺失时使用 `WECOM_DEFAULT_TENANT_SLUG`，再回退到唯一可用企业。返回是否可用、企业显示名、corpId、agentId 和登录 URL 提示，不返回 Secret。
+- `POST /auth/wecom/start`：接收可选 tenantSlug 和受限 returnPath，签发 state、设置 HttpOnly nonce cookie，返回企业微信授权 URL。
 - `POST /auth/wecom/callback`：接收 code/state，校验 nonce cookie并消费 state，交换 userid、识别身份、签发现有 JWT。
+- `POST /auth/wecom/workbench/start`：为 `wxwork` 工作台签发独立 `wecom` state 和 nonce cookie，返回 `snsapi_privateinfo` 网页 OAuth URL。
+- `POST /auth/wecom/workbench/callback`：只消费 Cordys `WECOM` flow 的 state；使用 `user_ticket` 获取授权资料并在安全边界内补全成员信息后签发 JWT。
 
 授权回调默认使用 `${origin}/login/wecom/callback`；生产环境可用 `WECOM_OAUTH_REDIRECT_URI` 固定覆盖。returnPath 只允许以 `/` 开头且不能是 `//` 的站内路径。
 
@@ -75,7 +77,8 @@ W3.3 复用 W3.1 唯一加密配置和 W3.2 唯一成员映射，不复制 Cordy
 
 ## 5. 企微客户端
 
-- `exchangeLoginCode`：获取 access token 后调用 `/auth/getuserinfo`，白名单读取 userid，拒绝外部联系人 openid 和空主体。
+- `exchangeLoginCode`：PC 扫码获取 access token 后调用 `/auth/getuserinfo`，白名单读取 userid，拒绝外部联系人 openid 和空主体。
+- `exchangeOAuthLoginCode`：工作台先调用 `/auth/getuserinfo`，存在 `user_ticket` 时再调用 `/auth/getuserdetail`，否则回退 `/user/get`；只返回白名单中的 userid、邮箱、手机号、Cordys Boolean 性别和头像。头像写入一对一 `user_extensions`，不写入用户主表。
 - `sendTextMessage`：获取 access token 后调用 `/message/send`，请求体为 touser、agentid、text.content、msgtype=text；白名单读取 errcode/errmsg/msgid/invaliduser。
 - 超时 8 秒；token、Secret、code 不进入错误文本。客户端返回结构化 transient 标识供投递服务判断重试。
 
@@ -89,7 +92,8 @@ W3.3 复用 W3.1 唯一加密配置和 W3.2 唯一成员映射，不复制 Cordy
 
 ## 7. 页面设计
 
-- 登录页保留现有卡片和密码表单；下方增加“其他登录方式”分隔线与企微图标按钮。存在 `tenant` 查询参数时直接使用，缺失时弹出企业标识对话框。
+- 登录页保留现有卡片和密码表单；下方增加“其他登录方式”分隔线与企微图标按钮。点击后直接打开企微登录组件：优先使用 URL 的 `tenant`，其次使用部署默认企业，最后回退到唯一可用企微企业；不向普通用户展示企业标识输入框。
+- 路由守卫检测 `wxwork` 后把未登录的 `/login` 自动导向 `/login/wecom/workbench`；工作台页面直接启动网页 OAuth，并提供重试和显式返回密码登录，避免错误回跳循环。
 - 新增 `/login/wecom/callback` 公共路由，显示“正在验证企业微信身份”、失败原因和返回密码登录按钮；成功后写入 token 并跳转受限 returnPath。
 - 企业微信卡片增加“统一登录/企业微信消息”能力摘要和可复制的企业登录 URL；其可用性跟随已验证且已开启的组织同步配置。
 - 消息设置在邮件列后增加企微列，保持 Cordys 的表头批量开关和逐行开关；右上角增加投递记录入口，抽屉展示状态、事件、接收人、尝试次数和错误。
@@ -98,8 +102,8 @@ W3.3 复用 W3.1 唯一加密配置和 W3.2 唯一成员映射，不复制 Cordy
 
 - state 和浏览器 nonce 使用 `randomBytes(32)`；数据库只存 SHA-256，cookie 为 HttpOnly、SameSite=Lax、10分钟 Max-Age，生产 HTTPS 时 Secure。
 - 外部 code、token、Secret 不写日志；provider 错误只保留 errcode 和裁剪 errmsg。
-- 测试覆盖 state 过期/重放/浏览器不匹配、未知/禁用/解绑成员、身份冲突、消息开关门槛、缺映射审计、临时/永久错误、重试耗尽、并发认领和租户隔离。
-- 专项 Smoke 使用本地企微夹具，实际走 state cookie、callback、JWT、消息设置、业务通知、投递发送、失败重试和审计查询。
+- 测试覆盖 PC/工作台 flow 交叉拒绝、state 过期/重放/浏览器不匹配、未知/禁用/解绑成员、工作台资料补全、身份冲突、消息开关门槛、缺映射审计、临时/永久错误、重试耗尽、并发认领和租户隔离。
+- 专项 Smoke 使用本地企微夹具，实际走两套 state cookie/callback、工作台 `user_ticket`、JWT、消息设置、业务通知、投递发送、失败重试和审计查询。
 
 ## 9. 保留缺口
 

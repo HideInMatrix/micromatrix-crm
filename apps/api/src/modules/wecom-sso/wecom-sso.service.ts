@@ -15,14 +15,26 @@ import type {
 } from '@micromatrix/shared'
 import { createHash, randomBytes } from 'node:crypto'
 import { AuthService, type LoginContext } from '../../auth/auth.service'
-import type { ExternalIdentity, ExternalUserMapping, User } from '../../generated/prisma/client'
+import type {
+  ExternalIdentity,
+  ExternalOAuthFlow,
+  ExternalUserMapping,
+  User,
+} from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
-import { WeComClient } from '../enterprise-integrations/wecom.client'
+import {
+  WeComClient,
+  type WeComLoginIdentity,
+  type WeComOAuthLoginIdentity,
+} from '../enterprise-integrations/wecom.client'
 import type { StartWeComLoginDto, WeComLoginCallbackDto } from './dto/wecom-sso.dto'
 
 const PROVIDER = 'WECOM' as const
-const FLOW = 'QR_WECOM' as const
+const QR_FLOW = 'QR_WECOM' as const
+const WORKBENCH_FLOW = 'WECOM' as const
+const QR_STATE_PREFIX = 'qr-wecom'
+const WORKBENCH_STATE_PREFIX = 'wecom'
 const STATE_TTL_MS = 10 * 60 * 1_000
 
 type MappingWithUser = ExternalUserMapping & { user: User }
@@ -37,9 +49,8 @@ export class WeComSsoService {
     private readonly auth: AuthService,
   ) {}
 
-  async discovery(tenantSlug: string): Promise<WeComLoginDiscoveryVO> {
-    const tenant = await this.prisma.tenant.findUnique({ where: { slug: tenantSlug } })
-    if (!tenant) throw new NotFoundException('企业标识不存在')
+  async discovery(tenantSlug?: string): Promise<WeComLoginDiscoveryVO> {
+    const tenant = await this.resolveLoginTenant(tenantSlug)
     const integration = await this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId: tenant.id, provider: PROVIDER } },
     })
@@ -68,12 +79,56 @@ export class WeComSsoService {
     input: StartWeComLoginDto,
     requestOrigin?: string,
   ): Promise<{ value: WeComLoginStartVO; browserNonce: string; secureCookie: boolean }> {
+    const login = await this.createLoginState(input, requestOrigin, QR_FLOW, QR_STATE_PREFIX)
+    const authorizationUrl = new URL(
+      this.config.get<string>('WECOM_LOGIN_BASE_URL') ??
+        'https://login.work.weixin.qq.com/wwlogin/sso/login',
+    )
+    authorizationUrl.searchParams.set('login_type', 'CorpApp')
+    authorizationUrl.searchParams.set('appid', login.corpId)
+    authorizationUrl.searchParams.set('agentid', login.agentId)
+    authorizationUrl.searchParams.set('redirect_uri', login.redirectUri)
+    authorizationUrl.searchParams.set('state', login.state)
+    return this.loginStartResult(login, authorizationUrl.toString())
+  }
+
+  async startWorkbench(
+    input: StartWeComLoginDto,
+    requestOrigin?: string,
+  ): Promise<{ value: WeComLoginStartVO; browserNonce: string; secureCookie: boolean }> {
+    const login = await this.createLoginState(
+      input,
+      requestOrigin,
+      WORKBENCH_FLOW,
+      WORKBENCH_STATE_PREFIX,
+    )
+    const authorizationUrl = new URL(
+      this.config.get<string>('WECOM_WORKBENCH_LOGIN_BASE_URL') ??
+        'https://open.weixin.qq.com/connect/oauth2/authorize',
+    )
+    authorizationUrl.searchParams.set('appid', login.corpId)
+    authorizationUrl.searchParams.set('response_type', 'code')
+    authorizationUrl.searchParams.set('redirect_uri', login.redirectUri)
+    authorizationUrl.searchParams.set('scope', 'snsapi_privateinfo')
+    authorizationUrl.searchParams.set('agentid', login.agentId)
+    authorizationUrl.searchParams.set('state', login.state)
+    return this.loginStartResult(login, `${authorizationUrl.toString()}#wechat_redirect`)
+  }
+
+  private async createLoginState(
+    input: StartWeComLoginDto,
+    requestOrigin: string | undefined,
+    flow: ExternalOAuthFlow,
+    statePrefix: string,
+  ) {
     const discovery = await this.discovery(input.tenantSlug)
     if (!discovery.available)
       throw new BadRequestException(discovery.reason ?? '企业微信登录不可用')
-    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { slug: input.tenantSlug } })
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { slug: discovery.tenantSlug },
+    })
     const context = await this.integrations.getWeComRuntimeContext(tenant.id)
-    const state = `qr-wecom.${randomBytes(32).toString('base64url')}`
+    const state = `${statePrefix}.${randomBytes(32).toString('base64url')}`
     const browserNonce = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + STATE_TTL_MS)
     const returnPath = this.safeReturnPath(input.returnPath)
@@ -88,7 +143,7 @@ export class WeComSsoService {
         data: {
           tenantId: tenant.id,
           integrationId: context.integration.id,
-          flow: FLOW,
+          flow,
           stateHash: this.hash(state),
           browserNonceHash: this.hash(browserNonce),
           returnPath,
@@ -98,28 +153,64 @@ export class WeComSsoService {
     ])
 
     const redirectUri = this.callbackUrl(requestOrigin)
-    const authorizationUrl = new URL(
-      this.config.get<string>('WECOM_LOGIN_BASE_URL') ??
-        'https://login.work.weixin.qq.com/wwlogin/sso/login',
-    )
-    authorizationUrl.searchParams.set('login_type', 'CorpApp')
-    authorizationUrl.searchParams.set('appid', context.credentials.corpId)
-    authorizationUrl.searchParams.set('agentid', context.credentials.agentId)
-    authorizationUrl.searchParams.set('redirect_uri', redirectUri)
-    authorizationUrl.searchParams.set('state', state)
-
     return {
-      value: {
-        authorizationUrl: authorizationUrl.toString(),
-        corpId: context.credentials.corpId,
-        agentId: context.credentials.agentId,
-        redirectUri,
-        state,
-        expiresAt: expiresAt.toISOString(),
-      },
+      corpId: context.credentials.corpId,
+      agentId: context.credentials.agentId,
+      redirectUri,
+      state,
+      expiresAt: expiresAt.toISOString(),
       browserNonce,
       secureCookie: new URL(redirectUri).protocol === 'https:',
     }
+  }
+
+  private loginStartResult(
+    login: Awaited<ReturnType<WeComSsoService['createLoginState']>>,
+    authorizationUrl: string,
+  ): { value: WeComLoginStartVO; browserNonce: string; secureCookie: boolean } {
+    return {
+      value: {
+        authorizationUrl,
+        corpId: login.corpId,
+        agentId: login.agentId,
+        redirectUri: login.redirectUri,
+        state: login.state,
+        expiresAt: login.expiresAt,
+      },
+      browserNonce: login.browserNonce,
+      secureCookie: login.secureCookie,
+    }
+  }
+
+  private async resolveLoginTenant(tenantSlug?: string) {
+    // Cordys 是单企业部署；多租户版本通过部署配置保留同样的“一键扫码”入口。
+    const configuredDefault = this.config.get<string>('WECOM_DEFAULT_TENANT_SLUG')?.trim()
+    const requestedSlug = tenantSlug?.trim() || configuredDefault
+    if (requestedSlug) {
+      const tenant = await this.prisma.tenant.findUnique({ where: { slug: requestedSlug } })
+      if (!tenant) throw new NotFoundException('企业标识不存在')
+      return tenant
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        status: 'ACTIVE',
+        enterpriseIntegrations: {
+          some: {
+            provider: PROVIDER,
+            lastTestSucceeded: true,
+            syncEnabled: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 2,
+    })
+    if (tenants.length === 0) throw new NotFoundException('企业微信统一登录尚未配置')
+    if (tenants.length > 1) {
+      throw new BadRequestException('存在多个可用企业，请使用企业专属登录地址')
+    }
+    return tenants[0]!
   }
 
   async callback(
@@ -127,7 +218,31 @@ export class WeComSsoService {
     browserNonce: string | undefined,
     context: LoginContext,
   ): Promise<LoginResult & { returnPath: string }> {
-    const state = await this.consumeState(input.state, browserNonce, context)
+    return this.callbackForFlow(input, browserNonce, context, QR_FLOW, QR_STATE_PREFIX)
+  }
+
+  async callbackWorkbench(
+    input: WeComLoginCallbackDto,
+    browserNonce: string | undefined,
+    context: LoginContext,
+  ): Promise<LoginResult & { returnPath: string }> {
+    return this.callbackForFlow(
+      input,
+      browserNonce,
+      context,
+      WORKBENCH_FLOW,
+      WORKBENCH_STATE_PREFIX,
+    )
+  }
+
+  private async callbackForFlow(
+    input: WeComLoginCallbackDto,
+    browserNonce: string | undefined,
+    context: LoginContext,
+    flow: ExternalOAuthFlow,
+    statePrefix: string,
+  ): Promise<LoginResult & { returnPath: string }> {
+    const state = await this.consumeState(input.state, browserNonce, context, flow, statePrefix)
     let externalSubject: string | undefined
     let mapping: MappingWithUser | null = null
     let identity: ExternalIdentity | null = null
@@ -136,7 +251,14 @@ export class WeComSsoService {
       if (runtime.integration.id !== state.integrationId) {
         throw new UnauthorizedException('企业微信登录状态已失效')
       }
-      const external = await this.weComClient.exchangeLoginCode(runtime.credentials, input.code)
+      let external: WeComLoginIdentity
+      let profile: WeComOAuthLoginIdentity | null = null
+      if (flow === WORKBENCH_FLOW) {
+        profile = await this.weComClient.exchangeOAuthLoginCode(runtime.credentials, input.code)
+        external = profile
+      } else {
+        external = await this.weComClient.exchangeLoginCode(runtime.credentials, input.code)
+      }
       externalSubject = external.userId
       mapping = await this.prisma.externalUserMapping.findUnique({
         where: {
@@ -151,6 +273,8 @@ export class WeComSsoService {
       if (!mapping?.active) throw new UnauthorizedException('企业微信成员未同步或映射已失效')
       if (mapping.user.status !== 'ACTIVE') throw new ForbiddenException('账号已被禁用')
 
+      if (profile) await this.updateWorkbenchProfile(mapping.user, profile)
+
       identity = await this.ensureLoginIdentity(state.integrationId, mapping, external.userId)
       if (identity.status !== 'ACTIVE') {
         throw new ForbiddenException('企业微信身份已解绑，请联系管理员恢复')
@@ -158,7 +282,7 @@ export class WeComSsoService {
       const result = await this.auth.loginExternal(
         mapping.userId,
         {
-          authType: 'WECOM',
+          authType: flow === WORKBENCH_FLOW ? 'WECOM_OAUTH2' : 'WECOM',
           externalSubject: external.userId,
           externalIdentityId: identity.id,
         },
@@ -175,7 +299,7 @@ export class WeComSsoService {
           tenantId: state.tenantId,
           userId: mapping?.userId,
           email: mapping?.user.email ?? `WECOM:${externalSubject ?? 'unknown'}`,
-          authType: 'WECOM',
+          authType: flow === WORKBENCH_FLOW ? 'WECOM_OAUTH2' : 'WECOM',
           externalSubject,
           externalIdentityId: identity?.id,
         },
@@ -290,8 +414,10 @@ export class WeComSsoService {
     state: string,
     browserNonce: string | undefined,
     context: LoginContext,
+    flow: ExternalOAuthFlow,
+    statePrefix: string,
   ) {
-    if (!state.startsWith('qr-wecom.')) {
+    if (!state.startsWith(`${statePrefix}.`)) {
       throw new UnauthorizedException('企业微信登录状态无效或已过期')
     }
     const result = await this.prisma.$transaction(async (tx) => {
@@ -309,7 +435,7 @@ export class WeComSsoService {
     if (
       !row ||
       !result.consumed ||
-      row.flow !== FLOW ||
+      row.flow !== flow ||
       row.expiresAt.getTime() < Date.now() ||
       !browserNonce ||
       row.browserNonceHash !== this.hash(browserNonce)
@@ -319,7 +445,7 @@ export class WeComSsoService {
           {
             tenantId: row.tenantId,
             email: 'WECOM:unknown',
-            authType: 'WECOM',
+            authType: flow === WORKBENCH_FLOW ? 'WECOM_OAUTH2' : 'WECOM',
           },
           '企业微信登录状态无效、已过期或已被使用',
           context,
@@ -328,6 +454,33 @@ export class WeComSsoService {
       throw new UnauthorizedException('企业微信登录状态无效或已过期')
     }
     return row
+  }
+
+  private async updateWorkbenchProfile(
+    user: User,
+    profile: WeComOAuthLoginIdentity,
+  ): Promise<void> {
+    const data: {
+      email?: string
+      phone?: string
+      gender?: boolean
+    } = {}
+    if (profile.phone) data.phone = profile.phone
+    if (profile.gender !== null) data.gender = profile.gender
+    if (profile.email && !user.email) {
+      const owner = await this.prisma.user.findFirst({ where: { email: profile.email } })
+      if (!owner || owner.id === user.id) data.email = profile.email
+    }
+    if (Object.keys(data).length > 0) {
+      await this.prisma.user.update({ where: { id: user.id }, data })
+    }
+    if (profile.avatarUrl) {
+      await this.prisma.userExtension.upsert({
+        where: { id: user.id },
+        create: { id: user.id, avatar: profile.avatarUrl },
+        update: { avatar: profile.avatarUrl },
+      })
+    }
   }
 
   private async ensureLoginIdentity(

@@ -48,7 +48,7 @@
   - _Requirements: R6-R7_
 
 - [x] 9. 对齐登录页和企业设置
-  - 登录页增加 Cordys 风格的其他登录方式、企业标识门槛和企微入口。
+  - 登录页增加 Cordys 风格的其他登录方式；PC 直接打开官方企微扫码组件，工作台 WebView 自动进入网页 OAuth，不向普通用户展示企业标识输入框。
   - 新增公共回调页面，完成 loading/success/error 和原返回路径跳转。
   - 企业微信卡片展示统一登录/消息能力摘要与可复制企业登录 URL。
   - _Requirements: R1-R4, R8_
@@ -69,3 +69,16 @@
   - 仅在全部验收通过后把 DB-006、DB-014 和 W3.3 标记 VERIFIED，并明确其余保留缺口。
   - 核对工作区范围并创建 W3.3 本地 Git 提交。
   - _Requirements: R5-R8_
+
+- [x] 13. 修正 Cordys 企业微信双登录流程
+  - [x] PC 点击企业微信图标后直接打开 `@wecom/jssdk` 登录组件；后端依次解析 URL 指定企业、部署默认企业或唯一可用企业，不再弹出企业标识输入框。
+  - [x] 企业微信工作台 WebView 检测 `wxwork` 后走独立网页 OAuth 链路，并与 PC `QR_WECOM` state/回调严格区分。
+  - [x] 已补充两条登录链路的专项测试、浏览器验收和文档证据；最终阶段状态由第 14 项数据库复验决定。
+  - _Requirements: R1-R4, R8_
+
+- [x] 14. 按 Cordys 直接重建 W3.3 用户/OAuth 模型并复验
+  - [x] OAuth flow 改为 Cordys `QR_WECOM/WECOM`，不保留 `WECOM_OAUTH2` 数据库 flow 兼容值；后者仅作为登录认证来源审计。
+  - [x] 用户邮箱改为可空、性别改为 Boolean，头像迁入独立 `user_extensions`；组织同步移除占位邮箱。
+  - [x] 规则测试 `66/66`、API/Web 类型检查与 Lint 通过。
+  - [x] 已重建本地数据库并重新执行迁移、Seed、生产构建、19 条专项 Smoke 和最终 diff 检查，W3.3/DB-014 恢复 `VERIFIED`。
+  - _Requirements: R2-R4, R8_

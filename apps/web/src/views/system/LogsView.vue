@@ -114,8 +114,14 @@ onMounted(loadOperations)
           <el-table-column prop="email" label="账号" min-width="200" />
           <el-table-column label="登录方式" width="120">
             <template #default="{ row }">
-              <el-tag :type="row.authType === 'WECOM' ? 'primary' : 'info'" effect="plain">
-                {{ row.authType === 'WECOM' ? '企业微信' : '密码' }}
+              <el-tag :type="row.authType.startsWith('WECOM') ? 'primary' : 'info'" effect="plain">
+                {{
+                  row.authType === 'WECOM_OAUTH2'
+                    ? '企业微信工作台'
+                    : row.authType === 'WECOM'
+                      ? '企业微信扫码'
+                      : '密码'
+                }}
               </el-tag>
             </template>
           </el-table-column>

@@ -43,6 +43,7 @@ enum ExternalIdentityStatus {
 
 enum ExternalOAuthFlow {
   QR_WECOM
+  WECOM
 }
 
 enum MessageDeliveryChannel {
@@ -158,7 +159,7 @@ model Department {
 model User {
   id                   String     @id @default(cuid())
   tenantId             String
-  email                String     @unique
+  email                String?
   passwordHash         String
   name                 String
   status               UserStatus @default(ACTIVE)
@@ -167,6 +168,8 @@ model User {
   leaderId             String?
   position             String?
   phone                String?
+  // Cordys sys_user.gender：false=男，true=女。
+  gender               Boolean    @default(false)
   // 企业微信等外部来源成员在建立统一登录前禁止使用普通密码登录
   passwordLoginEnabled Boolean    @default(true)
   createdAt            DateTime   @default(now())
@@ -180,10 +183,23 @@ model User {
   externalMappings   ExternalUserMapping[]
   externalIdentities ExternalIdentity[]
   messageDeliveries  MessageDelivery[]
+  extension          UserExtension?
 
   @@index([tenantId])
   @@index([tenantId, deptId])
+  @@index([email])
   @@map("users")
+}
+
+// 对齐 Cordys sys_user_extend：头像和第三方平台扩展数据不进入用户主表。
+model UserExtension {
+  id           String @id
+  avatar       String?
+  platformInfo Bytes?
+
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("user_extensions")
 }
 
 model Role {

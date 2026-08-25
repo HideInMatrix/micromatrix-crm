@@ -12,7 +12,7 @@ import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{
-  tenantSlug: string
+  tenantSlug?: string
   returnPath?: string
 }>()
 

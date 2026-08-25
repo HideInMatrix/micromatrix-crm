@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
 import type { OrganizationSyncCounts } from '@micromatrix/shared'
 import type {
@@ -16,7 +15,7 @@ export interface PlannerDepartment {
 
 export interface PlannerUser {
   id: string
-  email: string
+  email: string | null
   name: string
   status: 'ACTIVE' | 'DISABLED'
   deptId: string | null
@@ -64,7 +63,6 @@ export interface OrganizationSyncPlannerInput {
   users: PlannerUser[]
   departmentMappings: PlannerDepartmentMapping[]
   userMappings: PlannerUserMapping[]
-  globallyReservedEmails: Set<string>
 }
 
 @Injectable()
@@ -74,15 +72,6 @@ export class OrganizationSyncPlanner {
     const userItems = this.planUsers(input, departmentItems)
     const items = [...departmentItems, ...userItems]
     return { items, counts: this.count(items) }
-  }
-
-  stablePlaceholderEmail(tenantId: string, externalKey: string): string {
-    const tenantHash = createHash('sha256').update(tenantId).digest('hex').slice(0, 12)
-    const userHash = createHash('sha256')
-      .update(`${tenantId}:${externalKey}`)
-      .digest('hex')
-      .slice(0, 20)
-    return `wecom+${tenantHash}+${userHash}@local.invalid`
   }
 
   private planDepartments(input: OrganizationSyncPlannerInput): OrganizationSyncPlanItem[] {
@@ -174,7 +163,11 @@ export class OrganizationSyncPlanner {
     const mappingByKey = new Map(
       input.userMappings.map((mapping) => [mapping.externalKey, mapping]),
     )
-    const localEmailMap = new Map(input.users.map((user) => [user.email.toLowerCase(), user]))
+    const localEmailMap = new Map(
+      input.users
+        .filter((user): user is PlannerUser & { email: string } => Boolean(user.email))
+        .map((user) => [user.email.toLowerCase(), user]),
+    )
     const localPhoneMap = new Map(
       input.users.filter((user) => user.phone).map((user) => [user.phone!, user]),
     )
@@ -196,11 +189,7 @@ export class OrganizationSyncPlanner {
       const conflictingTargets =
         emailCollision && phoneCollision && emailCollision.id !== phoneCollision.id
       const targetDepartmentId = departmentLocalIds.get(source.mainDepartmentExternalKey) ?? null
-      const globallyReserved = emailKey ? input.globallyReservedEmails.has(emailKey) : false
-      const proposedEmail =
-        source.email && !globallyReserved
-          ? source.email
-          : this.stablePlaceholderEmail(input.tenantId, source.externalKey)
+      const proposedEmail = source.email
       const changes = mappedLocal ? this.userChanges(mappedLocal, source, targetDepartmentId) : null
       const conflictType = collision
         ? conflictingTargets

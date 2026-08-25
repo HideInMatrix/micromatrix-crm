@@ -15,7 +15,7 @@
 | W3.1 | 企业设置 → 企微配置底座 | 配置、AES-GCM 安全存储、连接测试、权限、审计、页面和自动化验收                         | `VERIFIED` |
 | W3.2 | 企微组织同步            | 部门/成员差异预览、外部 ID 映射、冲突策略、同步执行与记录、失败重试和页面闭环          | `VERIFIED` |
 | W3.3 | 企微统一登录与消息渠道  | 外部身份/OAuth state、绑定与解绑、登录审计；消息渠道开关、发送器、重试与投递审计       | `VERIFIED` |
-| W3.4 | 图中业务模块逐页复查    | 首页、线索/池、客户/联系人/公海、仪表板逐页完成源码→API→Service→数据模型→页面→测试闭环 | `NEXT`     |
+| W3.4 | 图中业务模块逐页复查    | 首页、线索/池、客户/联系人/公海、仪表板逐页完成源码→API→Service→数据模型→页面→测试闭环 | `READY`    |
 
 ## W3.2 验收结论
 
@@ -27,9 +27,9 @@
 ## W3.3 验收结论
 
 1. 已按 Cordys 登录页、OAuth state、SSO、MessageTask、NoticeSendService 和 WeComNoticeSender 源码固化行为边界；W3.2 成员映射是唯一账号识别来源，未知成员不会自动注册。
-2. 已落地一次性 OAuth state、HttpOnly 浏览器 nonce、外部身份状态、企微登录审计、事件企微开关和持久化投递 outbox；DB-006、DB-014 标记为 `VERIFIED`。
-3. 专项 Smoke 实际走通组织映射、回调 JWT、重放拒绝、发送失败、手工重试和身份解绑/恢复；规则测试 `65/65`，API/Web 类型检查与构建通过。
-4. 浏览器已验证登录入口、企业能力摘要、消息设置企微列、投递抽屉和成员身份弹窗，无 console error/warn。W3.4 可以开始。
+2. 已落地一次性 OAuth state、HttpOnly 浏览器 nonce、外部身份状态、企微登录审计、事件企微开关和持久化投递 outbox；DB-006、DB-014 均为 `VERIFIED`。
+3. PC 点击企微图标后直接使用 `@wecom/jssdk` 官方扫码组件；工作台 WebView 由 `wxwork` 环境判断进入独立 `snsapi_privateinfo` 网页 OAuth，两个流程使用不同 state 前缀、数据库 flow、nonce cookie、回调接口和登录审计类型。
+4. 用户/OAuth 模型已直接改为 Cordys 语义，本地开发库从零应用全部迁移并 Seed 成功；规则测试 `66/66`、19 条专项 Smoke、API/Web 类型检查、Lint 与生产构建全部通过。浏览器已验证 PC 直接扫码入口、工作台失败/回退页及回调错误页均无 console error/warn；真实企微扫码回调仍要求部署域名加入企微信任域名。
 
 ## 长期完成约束
 

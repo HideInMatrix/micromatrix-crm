@@ -13,9 +13,10 @@ const auth = useAuthStore()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
-const tenantDialogVisible = ref(false)
 const qrDialogVisible = ref(false)
-const tenantSlug = ref(typeof route.query.tenant === 'string' ? route.query.tenant : '')
+const tenantSlug = computed(() =>
+  typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
+)
 const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
 const returnPath = computed(() =>
   typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
@@ -35,20 +36,6 @@ const rules: FormRules = {
 }
 
 function openWeComLogin() {
-  if (!tenantSlug.value.trim()) {
-    tenantDialogVisible.value = true
-    return
-  }
-  qrDialogVisible.value = true
-}
-
-function confirmTenant() {
-  if (!tenantSlug.value.trim()) {
-    ElMessage.warning('请输入企业标识')
-    return
-  }
-  tenantSlug.value = tenantSlug.value.trim()
-  tenantDialogVisible.value = false
   qrDialogVisible.value = true
 }
 
@@ -124,26 +111,6 @@ async function handleSubmit() {
         演示账号：admin@demo.com / admin123（需先执行种子数据）
       </p>
     </el-card>
-
-    <el-dialog v-model="tenantDialogVisible" title="企业微信登录" width="420px">
-      <el-form label-position="top" @submit.prevent="confirmTenant">
-        <el-form-item label="企业标识" required>
-          <el-input
-            v-model="tenantSlug"
-            maxlength="128"
-            placeholder="请输入管理员提供的企业标识"
-            @keyup.enter="confirmTenant"
-          />
-          <div class="mt-2 text-xs text-[var(--el-text-color-secondary)]">
-            企业专属登录地址中的 tenant 参数即为企业标识。
-          </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="tenantDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmTenant">下一步</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog
       v-model="qrDialogVisible"

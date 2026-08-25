@@ -13,7 +13,9 @@ import {
 } from './dto/wecom-sso.dto'
 import { WeComSsoService } from './wecom-sso.service'
 
-const NONCE_COOKIE = 'mm_wecom_oauth_nonce'
+const QR_NONCE_COOKIE = 'mm_wecom_qr_oauth_nonce'
+const WORKBENCH_NONCE_COOKIE = 'mm_wecom_workbench_oauth_nonce'
+const OAUTH_COOKIE_PATH = '/api/auth/wecom'
 
 @ApiTags('企业微信统一登录')
 @Controller('auth/wecom')
@@ -36,14 +38,35 @@ export class WeComSsoController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.service.start(dto, origin)
-    response.cookie(NONCE_COOKIE, result.browserNonce, {
+    this.writeNonceCookie(response, QR_NONCE_COOKIE, result)
+    return result.value
+  }
+
+  @Public()
+  @Post('workbench/start')
+  @ApiOperation({ summary: '签发企业微信工作台 H5 OAuth state 和授权地址' })
+  async startWorkbench(
+    @Body() dto: StartWeComLoginDto,
+    @Headers('origin') origin: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.service.startWorkbench(dto, origin)
+    this.writeNonceCookie(response, WORKBENCH_NONCE_COOKIE, result)
+    return result.value
+  }
+
+  private writeNonceCookie(
+    response: Response,
+    name: string,
+    result: { browserNonce: string; secureCookie: boolean },
+  ): void {
+    response.cookie(name, result.browserNonce, {
       httpOnly: true,
       sameSite: 'lax',
       secure: result.secureCookie,
       maxAge: 10 * 60 * 1_000,
-      path: '/api/auth/wecom',
+      path: OAUTH_COOKIE_PATH,
     })
-    return result.value
   }
 
   @Public()
@@ -55,9 +78,26 @@ export class WeComSsoController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const browserNonce = this.readCookie(request.headers.cookie, NONCE_COOKIE)
-    response.clearCookie(NONCE_COOKIE, { path: '/api/auth/wecom' })
+    const browserNonce = this.readCookie(request.headers.cookie, QR_NONCE_COOKIE)
+    response.clearCookie(QR_NONCE_COOKIE, { path: OAUTH_COOKIE_PATH })
     return this.service.callback(dto, browserNonce, {
+      ip,
+      userAgent: request.headers['user-agent'],
+    })
+  }
+
+  @Public()
+  @Post('workbench/callback')
+  @ApiOperation({ summary: '消费企业微信工作台 OAuth code 并签发本地 JWT' })
+  async callbackWorkbench(
+    @Body() dto: WeComLoginCallbackDto,
+    @Ip() ip: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const browserNonce = this.readCookie(request.headers.cookie, WORKBENCH_NONCE_COOKIE)
+    response.clearCookie(WORKBENCH_NONCE_COOKIE, { path: OAUTH_COOKIE_PATH })
+    return this.service.callbackWorkbench(dto, browserNonce, {
       ip,
       userAgent: request.headers['user-agent'],
     })

@@ -64,8 +64,25 @@ const fixture = createServer(async (request, response) => {
       JSON.stringify(
         code === 'unknown-code'
           ? { errcode: 0, UserId: 'unknown-member' }
-          : { errcode: 0, UserId: 'w33-member' },
+          : code === 'workbench-code'
+            ? { errcode: 0, UserId: 'w33-member', user_ticket: 'workbench-ticket' }
+            : { errcode: 0, UserId: 'w33-member' },
       ),
+    )
+    return
+  }
+  if (url.pathname === '/cgi-bin/auth/getuserdetail') {
+    for await (const _chunk of request) {
+      // 消费请求体，模拟 user_ticket 换取工作台授权资料。
+    }
+    response.end(
+      JSON.stringify({
+        errcode: 0,
+        userid: 'w33-member',
+        mobile: '13800000034',
+        avatar: 'https://fixture.local/w33-avatar.png',
+        gender: 2,
+      }),
     )
     return
   }
@@ -259,6 +276,40 @@ try {
     body: { code: 'valid-code', state: started.body.state },
   })
   assert(replay.response.status === 401, '已消费 state 无法重放')
+
+  const workbenchStarted = await request('/auth/wecom/workbench/start', {
+    method: 'POST',
+    body: { tenantSlug, returnPath: '/home' },
+  })
+  const workbenchCookie = workbenchStarted.response.headers.get('set-cookie')?.split(';')[0]
+  const workbenchUrl = new URL(
+    workbenchStarted.body.authorizationUrl.replace('#wechat_redirect', ''),
+  )
+  assert(
+    workbenchStarted.body.state.startsWith('wecom.') &&
+      workbenchUrl.pathname === '/connect/oauth2/authorize' &&
+      workbenchUrl.searchParams.get('scope') === 'snsapi_privateinfo' &&
+      workbenchCookie,
+    '工作台 H5 使用独立 wecom state、nonce 和 privateinfo OAuth 地址',
+  )
+  const crossFlow = await request('/auth/wecom/callback', {
+    method: 'POST',
+    headers: { Cookie: workbenchCookie },
+    body: { code: 'workbench-code', state: workbenchStarted.body.state },
+  })
+  assert(crossFlow.response.status === 401, '工作台 state 不能进入 PC 扫码回调')
+  const workbenchCallback = await request('/auth/wecom/workbench/callback', {
+    method: 'POST',
+    headers: { Cookie: workbenchCookie },
+    body: { code: 'workbench-code', state: workbenchStarted.body.state },
+  })
+  assert(
+    workbenchCallback.response.ok &&
+      workbenchCallback.body.returnPath === '/home' &&
+      workbenchCallback.body.user.gender === true &&
+      workbenchCallback.body.user.avatarUrl === 'https://fixture.local/w33-avatar.png',
+    '工作台回调签发本地 JWT 并补充授权成员资料',
+  )
 
   const identity = await request(`/external-identities/wecom/users/${localMember.body.id}`, {
     headers: adminHeaders,

@@ -79,7 +79,7 @@ export class MembersService {
   async create(actor: AuthUser, dto: CreateMemberDto): Promise<MemberVO> {
     const tenantId = actor.tenantId
     const roleIds = [...new Set(dto.roleIds)]
-    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    const exists = await this.prisma.user.findFirst({ where: { email: dto.email } })
     if (exists) throw new ConflictException('该邮箱已被使用')
 
     if (!dto.deptId) throw new BadRequestException('请选择成员所属部门')

@@ -2,7 +2,7 @@
 import { CircleAlert, LoaderCircle } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { callbackWeCom } from '@/api/auth'
+import { callbackWeCom, callbackWeComWorkbench } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 
@@ -21,7 +21,13 @@ onMounted(async () => {
     return
   }
   try {
-    const { data } = await callbackWeCom({ code, state })
+    const callback = state.startsWith('wecom.')
+      ? callbackWeComWorkbench
+      : state.startsWith('qr-wecom.')
+        ? callbackWeCom
+        : null
+    if (!callback) throw new Error('企业微信登录状态类型无效')
+    const { data } = await callback({ code, state })
     auth.acceptLoginResult(data)
     await router.replace(data.returnPath || '/')
   } catch (error) {

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getClientMode, isMobileClient, type ClientMode } from '@/utils/client-mode'
+import { isWeComWorkbenchBrowser } from '@/utils/wecom'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -33,6 +34,12 @@ const router = createRouter({
       name: 'wecom-login-callback',
       component: () => import('@/views/WeComCallbackView.vue'),
       meta: { public: true, title: '企业微信登录', client: 'both' },
+    },
+    {
+      path: '/login/wecom/workbench',
+      name: 'wecom-workbench-login',
+      component: () => import('@/views/WeComWorkbenchLoginView.vue'),
+      meta: { public: true, title: '企业微信工作台登录', client: 'both' },
     },
     {
       path: '/leads/:id/convert',
@@ -271,6 +278,20 @@ router.beforeEach(async (to) => {
   }
 
   const auth = useAuthStore()
+  if (
+    to.name === 'login' &&
+    !auth.isAuthenticated &&
+    isWeComWorkbenchBrowser() &&
+    to.query.manual !== '1'
+  ) {
+    return {
+      name: 'wecom-workbench-login',
+      query: {
+        ...(typeof to.query.redirect === 'string' ? { redirect: to.query.redirect } : {}),
+        ...(typeof to.query.tenant === 'string' ? { tenant: to.query.tenant } : {}),
+      },
+    }
+  }
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }

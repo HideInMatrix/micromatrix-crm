@@ -138,7 +138,7 @@ erDiagram
 
 #### `User`
 
-新增 `passwordLoginEnabled Boolean @default(true)`。企微同步创建的成员设为 `false`，在 W3.3 建立外部身份登录前，即使管理员误重置占位账号密码也不能通过普通密码登录。只有密码登录入口检查该字段，refresh token 不检查，避免 W3.3 外部身份登录获得的会话被错误阻断；现有本地成员保持 `true`。
+新增 `passwordLoginEnabled Boolean @default(true)`。企微同步创建的成员设为 `false`，在 W3.3 建立外部身份登录前，即使管理员误重置同步账号密码也不能通过普通密码登录。只有密码登录入口检查该字段，refresh token 不检查，避免 W3.3 外部身份登录获得的会话被错误阻断；现有本地成员保持 `true`。
 
 ### 5.2 新增模型
 
@@ -193,7 +193,7 @@ erDiagram
 
 部门只保存：`id/name/parentId/order/isRoot`。成员只保存：`userId/name/email/mobile/position/mainDepartmentId/isLeader`。不保存 Secret、access token、原始响应、头像二进制或企业微信未使用字段。
 
-缺失邮箱使用稳定占位：`wecom+<tenantHash>+<userHash>@local.invalid`。散列输入包含 tenantId 和外部 userId，不暴露原始 userId，并在重复预览中保持一致。当前项目的邮箱在全库唯一；若企微邮箱已被其他租户占用，它同样视为不可用于当前租户，并静默改用占位邮箱，不能把跨租户记录暴露为可绑定冲突。密码使用密码学安全随机值生成后只保存 bcrypt hash。
+按 Cordys `sys_user.email` 语义，企微缺失邮箱时直接保存 `NULL`，不生成占位邮箱；租户内已有同邮箱或手机号仍作为人工绑定冲突处理。密码使用密码学安全随机值生成后只保存 bcrypt hash，且同步成员默认关闭密码登录。
 
 ## 6. 差异与应用算法
 
@@ -281,7 +281,7 @@ erDiagram
 - WeCom 响应解析：部门树、主部门去重、负责人平行数组、超时、限流、重复 ID、空部门。
 - 规划器：映射优先、根部门绑定、同级同名、邮箱/手机号冲突、CREATE/UPDATE/DISABLE/UNCHANGED。
 - 解决方案：跨租户绑定、重复绑定、错误资源类型、跳过、全部冲突已解决判断。
-- 应用服务：父子顺序、默认角色、占位邮箱稳定性、角色保留、主管更新、缺失成员禁用、部门映射失效、事务回滚和幂等。
+- 应用服务：父子顺序、默认角色、空邮箱、角色保留、主管更新、缺失成员禁用、部门映射失效、事务回滚和幂等。
 - 安全：普通密码登录关闭、Secret/token 不出现在响应和日志、所有查询限定 tenantId。
 
 ### 10.2 集成与页面验收
@@ -294,7 +294,7 @@ erDiagram
 
 ## 11. 已知后续缺口
 
-- **DB-014 / W3.3（已完成）**：已实现企微 userid 外部身份登录、绑定/恢复、安全解绑和登录审计；unionid/open_userid 迁移策略仍由后续 provider 演进处理。
+- **DB-014 / W3.3（已完成）**：已实现企微 userid 外部身份登录、绑定/恢复、安全解绑和登录审计，并按 Cordys 直改用户/OAuth 模型；数据库重建与专项 Smoke 已通过。unionid/open_userid 迁移策略仍由后续 provider 演进处理。
 - **DB-006 / W3.3（已完成）**：已实现企业微信文本消息发送、渠道启停、失败重试和投递结果审计。
 - **组织模型增强**：当前成员只支持一个主部门。企微多部门成员在 W3.2 按 `main_department` 同步；若完整复刻副部门关系，需要后续增加 `UserDepartment` 多对多模型。
 - **自动同步**：定时任务、失败自动重试和增量回调不在 W3.2；本阶段只支持管理员手工同步。

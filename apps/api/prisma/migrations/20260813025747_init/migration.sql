@@ -23,15 +23,25 @@ CREATE TABLE "tenants" (
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
+    "email" TEXT,
     "passwordHash" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
+    "gender" BOOLEAN NOT NULL DEFAULT false,
     "roleId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "user_extensions" (
+    "id" TEXT NOT NULL,
+    "avatar" TEXT,
+    "platformInfo" BYTEA,
+
+    CONSTRAINT "user_extensions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -110,7 +120,7 @@ CREATE TABLE "subscriptions" (
 CREATE UNIQUE INDEX "tenants_slug_key" ON "tenants"("slug");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+CREATE INDEX "users_email_idx" ON "users"("email");
 
 -- CreateIndex
 CREATE INDEX "users_tenantId_idx" ON "users"("tenantId");
@@ -141,6 +151,9 @@ CREATE INDEX "subscriptions_tenantId_idx" ON "subscriptions"("tenantId");
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "user_extensions" ADD CONSTRAINT "user_extensions_id_fkey" FOREIGN KEY ("id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "roles"("id") ON DELETE SET NULL ON UPDATE CASCADE;

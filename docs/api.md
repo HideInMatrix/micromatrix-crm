@@ -199,14 +199,16 @@ POST /organization-sync/wecom/batches/{batchId}/apply
 - 应用前重新校验同步开关、默认角色、凭据版本、批次状态和未解决冲突；单一数据库事务与租户/provider advisory lock 保证整批原子性和并发串行。
 - 首次同步新成员获得默认角色、随机不可用密码且 `passwordLoginEnabled=false`；映射成员更新资料但保留现有角色。后续企微缺失的已映射成员会禁用，本地手工成员不受影响；缺失部门只失活映射，不删除本地部门。
 - 成功批次重复应用幂等返回；应用完成更新最近同步摘要、写操作日志并发送站内通知。快照、错误、日志和响应均不含 Secret 或 token。
-- 企微统一登录和企微文本消息已在 W3.3 完成。自动/定时同步、成员多部门关系及钉钉/飞书 provider 仍由缺口台账跟踪。
+- 企微统一登录、企微文本消息和 Cordys 用户/OAuth 模型已在 W3.3 完成迁移与专项 Smoke。自动/定时同步、成员多部门关系及钉钉/飞书 provider 仍由缺口台账跟踪。
 
 ## 企业微信统一登录与消息渠道（W3.3）
 
 ```text
-GET  /auth/wecom/discovery?tenant={tenantSlug}
-POST /auth/wecom/start                         body: { tenantSlug, returnPath? }
+GET  /auth/wecom/discovery?tenant={tenantSlug?}
+POST /auth/wecom/start                         body: { tenantSlug?, returnPath? }
 POST /auth/wecom/callback                      body: { code, state }
+POST /auth/wecom/workbench/start               body: { tenantSlug?, returnPath? }
+POST /auth/wecom/workbench/callback            body: { code, state }
 
 GET  /external-identities/wecom/users/{userId}
 POST /external-identities/wecom/users/{userId}/bind
@@ -219,8 +221,11 @@ GET   /message-deliveries
 POST  /message-deliveries/{id}/retry
 ```
 
-- `discovery/start/callback` 为公共登录接口。start 生成 256 位随机 state，只持久化 SHA-256，并设置 10 分钟 HttpOnly/SameSite=Lax 浏览器 nonce cookie；callback 原子消费，过期、浏览器不匹配和重放均拒绝。
-- 企微 `userid` 只按当前租户的 ACTIVE `ExternalUserMapping` 识别本地成员，未知成员不自动注册。成功后复用现有 access/refresh JWT；成功、身份失败和可定位租户的 state 重放均写 WECOM 登录日志。
+PC 通用登录入口通过 API 服务的 `WECOM_DEFAULT_TENANT_SLUG` 指定默认企业；企业专属地址仍可用 `/login?tenant={slug}` 覆盖。多租户部署必须显式配置默认值，避免把企业选择暴露给普通用户。
+
+- `discovery/start/callback` 为 PC 官方 SDK 扫码公共接口，使用 Cordys `QR_WECOM` flow、`qr-wecom` state 和独立 nonce cookie；`workbench/start/callback` 为 `wxwork` 网页 OAuth 接口，使用 Cordys `WECOM` flow、`wecom` state、`snsapi_privateinfo` 和另一枚 nonce cookie。两套 callback 不能交叉消费 state。
+- 两套 start 均生成 256 位随机 state，只持久化 SHA-256，并设置 10 分钟 HttpOnly/SameSite=Lax 浏览器 nonce cookie；callback 原子消费，过期、浏览器不匹配和重放均拒绝。
+- 企微 `userid` 只按当前租户的 ACTIVE `ExternalUserMapping` 识别本地成员，未知成员不自动注册。成功后复用现有 access/refresh JWT；PC 扫码写 `WECOM` 登录日志，工作台写 `WECOM_OAUTH2`。工作台可用 `user_ticket` 在邮箱为空时补全邮箱，并更新手机号、Boolean 性别和独立用户扩展表中的头像，但不覆盖已有邮箱或密码。
 - 外部身份查询要求 `system:member`，绑定/恢复/解绑要求 `system:member:update`。禁用密码登录的同步成员不能解绑其最后登录方式。
 - 企微消息 gate 同时要求已配置、最近连接测试成功和组织同步开启。逐事件与批量开关默认关闭，后端再次执行门槛校验。
 - 业务通知为每个接收人创建 outbox；缺失映射直接记录 DEAD。worker 条件认领，临时错误最多尝试 3 次并按 1/5/15 分钟退避，Cron 恢复超时 SENDING；失败不回滚业务或站内消息。

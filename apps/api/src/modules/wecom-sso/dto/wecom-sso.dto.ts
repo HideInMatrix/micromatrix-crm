@@ -2,19 +2,19 @@ import { ApiProperty } from '@nestjs/swagger'
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator'
 
 export class WeComDiscoveryQueryDto {
-  @ApiProperty({ example: 'demo' })
+  @ApiProperty({ required: false, example: 'demo' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(128)
-  tenant!: string
+  tenant?: string
 }
 
 export class StartWeComLoginDto {
-  @ApiProperty({ example: 'demo' })
+  @ApiProperty({ required: false, example: 'demo' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(128)
-  tenantSlug!: string
+  tenantSlug?: string
 
   @ApiProperty({ required: false, example: '/dashboard' })
   @IsOptional()

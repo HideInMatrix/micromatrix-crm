@@ -83,7 +83,6 @@ test('组织同步规划器优先使用映射并只禁用缺失的已映射成�
         active: true,
       },
     ],
-    globallyReservedEmails: new Set(),
   })
 
   const mapped = plan.items.find((item) => item.externalKey === 'zhangsan')
@@ -94,7 +93,7 @@ test('组织同步规划器优先使用映射并只禁用缺失的已映射成�
   assert.equal(plan.counts.disable, 1)
 })
 
-test('无映射成员发生租户内邮箱碰撞时生成冲突，跨租户占用时使用稳定占位邮箱', () => {
+test('无映射成员发生租户内邮箱碰撞时生成冲突，缺失邮箱时保持为空', () => {
   const planner = new OrganizationSyncPlanner()
   const base = {
     tenantId: 'tenant-a',
@@ -137,19 +136,15 @@ test('无映射成员发生租户内邮箱碰撞时生成冲突，跨租户占�
         phone: null,
       },
     ],
-    globallyReservedEmails: new Set(),
   })
   assert.equal(conflict.items.find((item) => item.resourceType === 'USER')?.action, 'CONFLICT')
 
-  const reserved = planner.plan({
+  const withoutEmail = planner.plan({
     ...base,
-    snapshot: { departments: [department], users: [user] },
+    snapshot: { departments: [department], users: [{ ...user, email: null }] },
     users: [],
-    globallyReservedEmails: new Set(['same@example.com']),
   })
-  const item = reserved.items.find((candidate) => candidate.resourceType === 'USER')
+  const item = withoutEmail.items.find((candidate) => candidate.resourceType === 'USER')
   assert.equal(item?.action, 'CREATE')
-  const firstEmail = item?.sourceData['proposedEmail']
-  assert.match(String(firstEmail), /^wecom\+[a-f0-9]+\+[a-f0-9]+@local\.invalid$/)
-  assert.equal(firstEmail, planner.stablePlaceholderEmail('tenant-a', 'new-user'))
+  assert.equal(item?.sourceData['proposedEmail'], null)
 })

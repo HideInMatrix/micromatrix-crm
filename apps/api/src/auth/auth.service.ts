@@ -15,13 +15,19 @@ import { RegisterDto } from './dto/register.dto'
 import type { JwtPayload } from './jwt-payload.interface'
 
 type UserWithRelations = Prisma.UserGetPayload<{
-  include: { userRoles: { include: { role: true } }; tenant: true; dept: true }
+  include: {
+    userRoles: { include: { role: true } }
+    tenant: true
+    dept: true
+    extension: true
+  }
 }>
 
 const userInclude = {
   userRoles: { include: { role: true } },
   tenant: true,
   dept: true,
+  extension: true,
 } as const
 
 export interface LoginContext {
@@ -33,7 +39,7 @@ export interface ExternalLoginAudit {
   tenantId?: string
   userId?: string
   email: string
-  authType: 'WECOM'
+  authType: 'WECOM' | 'WECOM_OAUTH2'
   externalSubject?: string
   externalIdentityId?: string
 }
@@ -48,7 +54,7 @@ export class AuthService {
 
   /** 注册 = 创建租户 + 根部门 + 管理员角色 + 管理员账号 */
   async register(dto: RegisterDto): Promise<LoginResult> {
-    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    const exists = await this.prisma.user.findFirst({ where: { email: dto.email } })
     if (exists) throw new ConflictException('该邮箱已被注册')
 
     const passwordHash = await bcrypt.hash(dto.password, 10)
@@ -101,8 +107,8 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, context: LoginContext = {}): Promise<LoginResult> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: dto.email, mode: 'insensitive' } },
       include: userInclude,
     })
 
@@ -141,14 +147,35 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, include: userInclude })
     if (!user) throw new UnauthorizedException('企业微信成员未绑定本地账号')
     if (user.status !== 'ACTIVE') {
-      await this.recordLoginLog(user.email, false, '账号已被禁用', context, user, audit)
+      await this.recordLoginLog(
+        user.email ?? `WECOM:${audit.externalSubject ?? 'unknown'}`,
+        false,
+        '账号已被禁用',
+        context,
+        user,
+        audit,
+      )
       throw new ForbiddenException('账号已被禁用')
     }
     if (user.tenant.status !== 'ACTIVE') {
-      await this.recordLoginLog(user.email, false, '企业账户已被停用', context, user, audit)
+      await this.recordLoginLog(
+        user.email ?? `WECOM:${audit.externalSubject ?? 'unknown'}`,
+        false,
+        '企业账户已被停用',
+        context,
+        user,
+        audit,
+      )
       throw new ForbiddenException('企业账户已被停用')
     }
-    await this.recordLoginLog(user.email, true, null, context, user, audit)
+    await this.recordLoginLog(
+      user.email ?? `WECOM:${audit.externalSubject ?? 'unknown'}`,
+      true,
+      null,
+      context,
+      user,
+      audit,
+    )
     return this.buildLoginResult(user)
   }
 
@@ -223,7 +250,7 @@ export class AuthService {
     context: LoginContext,
     user?: UserWithRelations | null,
     audit: {
-      authType: 'PASSWORD' | 'WECOM'
+      authType: 'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2'
       externalSubject?: string
       externalIdentityId?: string
     } = { authType: 'PASSWORD' },
@@ -277,6 +304,8 @@ export class AuthService {
       tenantSlug: user.tenant.slug,
       email: user.email,
       name: user.name,
+      gender: user.gender,
+      avatarUrl: user.extension?.avatar ?? null,
       roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),
       permissions: [...new Set(user.userRoles.flatMap(({ role }) => role.permissions))],
       deptId: user.deptId,

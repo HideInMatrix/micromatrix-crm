@@ -167,19 +167,25 @@ async function main() {
       input.email === 'admin@demo.com' ? 'admin123' : 'demo123',
       10,
     )
-    const user = await prisma.user.upsert({
-      where: { email: input.email },
-      update: { deptId: input.deptId, leaderId: input.leaderId },
-      create: {
-        tenantId: tenant.id,
-        email: input.email,
-        passwordHash,
-        name: input.name,
-        deptId: input.deptId,
-        leaderId: input.leaderId,
-        position: input.position,
-      },
+    const existing = await prisma.user.findFirst({
+      where: { tenantId: tenant.id, email: input.email },
     })
+    const user = existing
+      ? await prisma.user.update({
+          where: { id: existing.id },
+          data: { deptId: input.deptId, leaderId: input.leaderId },
+        })
+      : await prisma.user.create({
+          data: {
+            tenantId: tenant.id,
+            email: input.email,
+            passwordHash,
+            name: input.name,
+            deptId: input.deptId,
+            leaderId: input.leaderId,
+            position: input.position,
+          },
+        })
     await prisma.$transaction([
       prisma.userRole.deleteMany({ where: { tenantId: tenant.id, userId: user.id } }),
       prisma.userRole.createMany({

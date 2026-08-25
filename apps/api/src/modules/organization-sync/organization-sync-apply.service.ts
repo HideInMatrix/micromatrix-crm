@@ -286,7 +286,7 @@ export class OrganizationSyncApplyService {
         const created = await tx.user.create({
           data: {
             tenantId,
-            email: this.requiredString(source, 'proposedEmail'),
+            email: this.nullableString(source, 'proposedEmail'),
             passwordHash,
             passwordLoginEnabled: false,
             name: this.requiredString(source, 'name'),

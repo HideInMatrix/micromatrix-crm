@@ -135,29 +135,16 @@ export class OrganizationSyncService {
 
     try {
       const snapshot = await this.weComClient.getOrganizationSnapshot(credentials)
-      const emails = snapshot.users
-        .map((item) => item.email?.toLowerCase())
-        .filter((email): email is string => Boolean(email))
-      const [departments, users, departmentMappings, userMappings, reservedUsers] =
-        await Promise.all([
-          this.prisma.department.findMany({ where: { tenantId: user.tenantId } }),
-          this.prisma.user.findMany({ where: { tenantId: user.tenantId } }),
-          this.prisma.externalDepartmentMapping.findMany({
-            where: { tenantId: user.tenantId, provider: PROVIDER },
-          }),
-          this.prisma.externalUserMapping.findMany({
-            where: { tenantId: user.tenantId, provider: PROVIDER },
-          }),
-          emails.length
-            ? this.prisma.user.findMany({
-                where: {
-                  tenantId: { not: user.tenantId },
-                  email: { in: emails, mode: 'insensitive' },
-                },
-                select: { email: true },
-              })
-            : Promise.resolve([]),
-        ])
+      const [departments, users, departmentMappings, userMappings] = await Promise.all([
+        this.prisma.department.findMany({ where: { tenantId: user.tenantId } }),
+        this.prisma.user.findMany({ where: { tenantId: user.tenantId } }),
+        this.prisma.externalDepartmentMapping.findMany({
+          where: { tenantId: user.tenantId, provider: PROVIDER },
+        }),
+        this.prisma.externalUserMapping.findMany({
+          where: { tenantId: user.tenantId, provider: PROVIDER },
+        }),
+      ])
       const plan = this.planner.plan({
         tenantId: user.tenantId,
         snapshot,
@@ -165,7 +152,6 @@ export class OrganizationSyncService {
         users,
         departmentMappings,
         userMappings,
-        globallyReservedEmails: new Set(reservedUsers.map(({ email }) => email.toLowerCase())),
       })
 
       const current = await this.prisma.enterpriseIntegration.findFirst({

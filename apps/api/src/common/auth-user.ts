@@ -12,7 +12,7 @@ export interface AuthRole {
 export interface AuthUser {
   id: string
   tenantId: string
-  email: string
+  email: string | null
   name: string
   deptId: string | null
   leaderId: string | null
@@ -23,7 +23,7 @@ export interface AuthUser {
 interface UserWithRoleLinks {
   id: string
   tenantId: string
-  email: string
+  email: string | null
   name: string
   deptId: string | null
   leaderId: string | null

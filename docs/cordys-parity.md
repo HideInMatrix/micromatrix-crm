@@ -67,11 +67,11 @@
 | 异步导出中心   | `ExportTaskCenterService`                                             | `ExportTask` + `ExportTasksService`                                   | 🟡   | R2 已落任务契约、24h 保留与创建者隔离；当前同步生成文件，Wave 6 再切 BullMQ 异步执行                                                                                                         |
 | API Key        | `UserKeyService`、`ApiKeyFilter`                                      | API Token                                                             | 🟡   | 对齐权限、生命周期和调用审计                                                                                                                                                                 |
 | 部门           | `DepartmentService`、`views/system/org`                               | `modules/departments`                                                 | ✅   | 已对齐根节点保护、同级唯一、循环保护、部门主管、空子树整体删除与部门树/成员同页入口                                                                                                          |
-| 成员           | `OrganizationUserService`、`views/system/org/components/orgTable.vue` | `modules/members` + `modules/organization-sync` + `modules/wecom-sso` | 🟡   | 已完成同页成员 CRUD、多角色、企微组织同步及 W3.3 统一登录/身份管理；性别、工作城市、入职日期、会话失效和多部门仍待迁移                                                                       |
+| 成员           | `OrganizationUserService`、`views/system/org/components/orgTable.vue` | `modules/members` + `modules/organization-sync` + `modules/wecom-sso` | 🟡   | 已完成同页成员 CRUD、多角色、企微组织同步及 W3.3 统一登录/身份管理，工作台 OAuth 可补全性别/头像；工作城市、入职日期、会话失效和多部门仍待迁移                                               |
 | 角色           | `RoleService`、`views/system/role`                                    | `modules/roles`                                                       | ✅   | 已对齐 canonical 权限树、授权上限、内置角色保护、CUSTOM 下级语义，以及角色列表 + 权限/成员页签                                                                                               |
 | 模块配置       | `SystemModuleService`、`views/system/module`                          | `modules/module-configs` + Pinia                                      | 🟡   | 租户级模块启停、主导航排序、固定模块校验与动态菜单已完成；W2.1 已对齐 Cordys 当前顶部导航“列表+排序”边界并驱动 Header，源码虽有 `enable` 字段但无开关 UI/API；各业务模块专属设置仍需逐项迁移 |
 | 消息设置       | `views/system/message`、`MessageTaskController/Service`               | `modules/message-settings` + `modules/notifications`                  | 🟡   | W2.3/W2.4 设置与触发已完成，W3.3 已接企微文本消息、重试和投递审计；公告、邮件、钉钉/飞书及暂缓台账中的 3 个领域事件后续独立对齐                                                              |
-| 系统设置       | `OrganizationConfigService`、`IntegrationConfigService`               | `modules/settings` + `modules/enterprise-integrations`                | 🟡   | W3.1-W3.3 已完成企业信息/集成/API 分区、企微配置、加密凭据、连接测试、组织同步、统一登录和企微消息；其他企业平台仍待独立迁移                                                                 |
+| 系统设置       | `OrganizationConfigService`、`IntegrationConfigService`               | `modules/settings` + `modules/enterprise-integrations`                | 🟡   | W3.1-W3.3 已完成企业信息/集成/API 分区、企微配置、组织同步、统一登录、企微消息和 Cordys 用户/OAuth 模型；其他企业平台仍待独立迁移                                                            |
 | 公告           | `AnnouncementService`                                                 | -                                                                     | ❌   | 后续判断是否纳入                                                                                                                                                                             |
 | 数据字典       | `DictService`                                                         | -                                                                     | ❌   | 后续迁移                                                                                                                                                                                     |
 
@@ -84,7 +84,7 @@
 | SQLBot / MaxKB / WorkBuddy 等 AI 能力 | ⛔   | 不属于当前 CRM 核心复刻范围                                                  |
 | Cordys MCP / Skills                   | ⛔   | 当前不纳入                                                                   |
 | 商业标讯 API                          | ⛔   | 仅保留演示源 + 手动录入 + 转线索                                             |
-| 企微 / 钉钉 / 飞书                    | 🟡   | W3.3 已完成企微配置、同步、统一登录和文本消息；钉钉/飞书仍待迁移             |
+| 企微 / 钉钉 / 飞书                    | 🟡   | 企微配置、同步、统一登录、文本消息和相关数据模型已验收；钉钉/飞书仍待迁移    |
 | SSO / 用户同步                        | 🟡   | 企微同步、统一登录、身份管理和登录审计已完成；其他 provider 与多部门仍待迁移 |
 
 ## 每个模块的迁移验收模板

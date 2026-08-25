@@ -21,9 +21,9 @@ export function fetchMe() {
   return http.get<CurrentUser>('/auth/me')
 }
 
-export function discoverWeCom(tenantSlug: string) {
+export function discoverWeCom(tenantSlug?: string) {
   return http.get<WeComLoginDiscoveryVO>('/auth/wecom/discovery', {
-    params: { tenant: tenantSlug },
+    params: tenantSlug ? { tenant: tenantSlug } : undefined,
   })
 }
 
@@ -31,6 +31,14 @@ export function startWeComLogin(payload: WeComLoginStartInput) {
   return http.post<WeComLoginStartVO>('/auth/wecom/start', payload)
 }
 
+export function startWeComWorkbenchLogin(payload: WeComLoginStartInput) {
+  return http.post<WeComLoginStartVO>('/auth/wecom/workbench/start', payload)
+}
+
 export function callbackWeCom(payload: WeComLoginCallbackInput) {
   return http.post<LoginResult & { returnPath: string }>('/auth/wecom/callback', payload)
+}
+
+export function callbackWeComWorkbench(payload: WeComLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>('/auth/wecom/workbench/callback', payload)
 }

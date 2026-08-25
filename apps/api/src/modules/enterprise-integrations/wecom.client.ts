@@ -46,6 +46,14 @@ export interface WeComLoginIdentity {
   externalKey: string
 }
 
+export interface WeComOAuthLoginIdentity extends WeComLoginIdentity {
+  email: string | null
+  phone: string | null
+  avatarUrl: string | null
+  /** 对齐 Cordys sys_user.gender：false=男，true=女。 */
+  gender: boolean | null
+}
+
 export interface WeComMessageInput extends WeComConnectionInput {
   toUser: string
   content: string
@@ -158,6 +166,56 @@ export class WeComClient {
       throw new WeComSnapshotError('LOGIN_IDENTITY_MISSING', '未获取到企业微信成员身份')
     }
     return { userId, externalKey: userId.toLowerCase() }
+  }
+
+  async exchangeOAuthLoginCode(
+    input: WeComConnectionInput,
+    code: string,
+  ): Promise<WeComOAuthLoginIdentity> {
+    const tokenPayload = await this.requestData(this.tokenUrl(input), 'TOKEN_REQUEST_FAILED')
+    const accessToken = this.stringValue(tokenPayload['access_token'], 2_048)
+    if (!accessToken) throw new WeComSnapshotError('TOKEN_MISSING', '企业微信未返回 access token')
+
+    const identityUrl = this.apiUrl('/cgi-bin/auth/getuserinfo')
+    identityUrl.searchParams.set('access_token', accessToken)
+    identityUrl.searchParams.set('code', code)
+    const identityPayload = await this.requestData(identityUrl, 'LOGIN_IDENTITY_REQUEST_FAILED')
+    const userId = this.stringValue(identityPayload['UserId'], 128)
+    if (!userId) {
+      throw new WeComSnapshotError('LOGIN_IDENTITY_MISSING', '未获取到企业微信成员身份')
+    }
+
+    const userTicket = this.stringValue(identityPayload['user_ticket'], 512)
+    let profilePayload: Record<string, unknown>
+    if (userTicket) {
+      const detailUrl = this.apiUrl('/cgi-bin/auth/getuserdetail')
+      detailUrl.searchParams.set('access_token', accessToken)
+      profilePayload = await this.requestData(detailUrl, 'LOGIN_PROFILE_REQUEST_FAILED', {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_ticket: userTicket }),
+      })
+    } else {
+      const profileUrl = this.apiUrl('/cgi-bin/user/get')
+      profileUrl.searchParams.set('access_token', accessToken)
+      profileUrl.searchParams.set('userid', userId)
+      profilePayload = await this.requestData(profileUrl, 'LOGIN_PROFILE_REQUEST_FAILED')
+    }
+
+    const genderValue =
+      typeof profilePayload['gender'] === 'number'
+        ? profilePayload['gender']
+        : Number(profilePayload['gender'])
+    return {
+      userId,
+      externalKey: userId.toLowerCase(),
+      email:
+        this.stringValue(profilePayload['biz_mail'], 256) ??
+        this.stringValue(profilePayload['email'], 256),
+      phone: this.stringValue(profilePayload['mobile'], 32),
+      avatarUrl: this.stringValue(profilePayload['avatar'], 2_048),
+      gender: genderValue === 1 ? false : genderValue === 2 ? true : null,
+    }
   }
 
   async sendTextMessage(input: WeComMessageInput): Promise<WeComMessageResult> {
@@ -293,12 +351,14 @@ export class WeComClient {
   private async requestData(
     url: URL,
     errorCode: string,
+    init: RequestInit = {},
     maxRetries = MAX_RETRIES,
   ): Promise<Record<string, unknown>> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const response = await fetch(url, {
-          headers: { Accept: 'application/json' },
+          ...init,
+          headers: { Accept: 'application/json', ...init.headers },
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
         if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {

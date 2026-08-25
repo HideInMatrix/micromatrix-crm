@@ -258,6 +258,48 @@ test('企微登录 code 只解析已认证成员 UserId', async (t) => {
           error instanceof Error && 'code' in error && error.code === 'LOGIN_IDENTITY_MISSING',
       )
     })
+
+    await t.test('工作台 OAuth 使用 user_ticket 获取成员授权资料', async () => {
+      let detailBody = ''
+      globalThis.fetch = async (input, init) => {
+        const url = String(input)
+        if (url.includes('/gettoken')) {
+          return new Response(JSON.stringify({ errcode: 0, access_token: 'temporary-token' }))
+        }
+        if (url.includes('/auth/getuserinfo')) {
+          return new Response(
+            JSON.stringify({ errcode: 0, UserId: 'ZhangSan', user_ticket: 'user-ticket' }),
+          )
+        }
+        if (url.includes('/auth/getuserdetail')) {
+          detailBody = String(init?.body ?? '')
+          return new Response(
+            JSON.stringify({
+              errcode: 0,
+              userid: 'ZhangSan',
+              biz_mail: 'zhangsan@example.com',
+              mobile: '13800000000',
+              avatar: 'https://example.com/avatar.png',
+              gender: 1,
+            }),
+          )
+        }
+        return new Response(JSON.stringify({ errcode: 404, errmsg: 'not found' }))
+      }
+      const identity = await new WeComClient().exchangeOAuthLoginCode(
+        { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
+        'workbench-code',
+      )
+      assert.deepEqual(identity, {
+        userId: 'ZhangSan',
+        externalKey: 'zhangsan',
+        email: 'zhangsan@example.com',
+        phone: '13800000000',
+        avatarUrl: 'https://example.com/avatar.png',
+        gender: false,
+      })
+      assert.deepEqual(JSON.parse(detailBody), { user_ticket: 'user-ticket' })
+    })
   } finally {
     globalThis.fetch = originalFetch
   }

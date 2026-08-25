@@ -2,6 +2,7 @@
 
 - `CordysCRM/` 是只读业务与交互参考源码，不进入 MicroMatrix Git 版本库。
 - CordysCRM 源代码是当前复刻工作的第一事实来源。现有 MicroMatrix 页面、接口和业务规则只在与 Cordys 源码一致时保留；发生冲突时允许直接删除、替换或重构旧实现，不以“兼容旧页面/旧接口”为优先目标。
+- 数据库表与 Prisma 模型必须先读取 Cordys Domain、DDL、Mapper 后设计；字段、枚举、关系、可空性、默认值和约束以 Cordys 为准。当前项目未发布，发现旧模型偏差时直接修改模型与既有迁移并重建开发库，不新增为旧结构保留的兼容字段、占位数据或双写逻辑；仅允许 PostgreSQL/Prisma 所需的技术性命名适配。
 - 新增/调整页面时，必须分别阅读 CordysCRM 对应 PC / Mobile 前端源码；页面结构、布局、字段顺序、操作入口、按钮位置、弹窗/抽屉流程、批量交互与功能显隐以 Cordys 源码为准，不再以旧 MicroMatrix 页面作为视觉基准。
 - 禁止直接复制 CordysCRM 的图标、图片、iconfont 等静态资源。
 - Web 图标统一使用 `lucide-vue-next`，按需导入组件；禁止新增 emoji、Unicode 符号、Element Plus Icons、Vant 内置图标或复制 Cordys 图标资源。无法可靠对应时使用文字按钮/文字标签。
@@ -30,7 +31,7 @@
 - **TypeScript**：全仓固定 `~6.0.x`（typescript-eslint 生态上限 <6.1）；API 为 CJS（module NodeNext），前端为 ESM（moduleResolution Bundler）
 - **共享代码**：跨端类型/常量/纯函数一律放 `packages/shared/src`；`apps/web` 通过 Vite alias 引用源码，API 引用 CJS 产物（改动后需 `pnpm --filter @micromatrix/shared build` 供 API 使用）
 - **提交前自检**：`pnpm build && pnpm typecheck && pnpm lint`；功能回归 `pnpm smoke`（API 需运行）
-- **数据库变更**：只改 `schema.prisma` → `prisma migrate dev --name <名称>` → **必须手动** `prisma generate`（Prisma 7 不自动生成）→ 提交 migration 目录
+- **数据库变更**：先对照 Cordys Domain/DDL/Mapper，再改 `schema.prisma` 与迁移；未发布阶段允许直接修正既有迁移并重建开发库，不为错误旧模型增加兼容迁移。完成后必须手动 `prisma generate`（Prisma 7 不自动生成）并提交 migration 目录
 - **代码风格**：Prettier（无分号/单引号/100 列）；未使用变量以 `_` 前缀豁免；注释只写"为什么"
 
 ## 后端约定（NestJS）

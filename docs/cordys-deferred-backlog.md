@@ -2,7 +2,7 @@
 
 本台账记录源码对齐过程中已经确认、但当前阶段尚未实施的能力。目的不是描述模糊的“以后再做”，而是保证整体复刻结束时每个已发现缺口都有明确去向。
 
-最近复查：2026-08-24（W3.3 实施完成）。企微配置、组织同步、统一登录和企微文本消息投递闭环已落库；DB-006、DB-013、DB-014 保留为已验证证据，钉钉/飞书等非本阶段 provider 由 DB-015 继续跟踪。
+最近复查：2026-08-25（W3.3 已验收）。PC 官方扫码、企业微信工作台 WebView OAuth、外部身份、Cordys 用户/OAuth 模型和文本消息投递均已通过迁移与专项 Smoke；DB-006、DB-013、DB-014 保持 `VERIFIED`，钉钉/飞书等非本阶段 provider 由 DB-015 继续跟踪。
 
 ## 管理规则
 
@@ -29,7 +29,7 @@
 | DB-011 | 高级审批任务、记录与附件         | `ApprovalAddSignTask`、`ApprovalReturnBackRecord`、`ApprovalRecord`、`ApprovalInstanceAttachment`、任务 `type/action/nodeRound` | 当前任务只支持普通通过/驳回，缺加签、退回、撤回记录、抄送任务类型、节点轮次与附件                              | 缺加签关系、退回记录、独立审批记录和实例附件表；`ApprovalTask` 缺 `nodeRound/type/action`                                                       | 完成高级审批动作与审批中心页面源码对齐后实施                    | `DISCOVERED` |
 | DB-012 | 高级审批节点配置                 | `ApprovalNodeApprover`、`ApprovalNodeCondition` 及流程设计器配置                                                                | 缺自动通过/拒绝、连续上级/部门负责人、空审批人兜底、同提交人策略、抄送、条件分支、后置动作、字段权限和 Webhook | 审批节点缺 approver/cc 方向与列表、fallback、sameSubmitter、条件 JSON、通过/驳回配置、字段权限；缺 Webhook 配置/执行审计                        | W2.5 完成基础图结构后分阶段接入设计器与运行时                   | `DISCOVERED` |
 | DB-013 | 企微组织同步与资源映射           | `ThirdDepartmentService`、`WeComDepartmentService`、`UserSyncController`、`DataHandleUtils`、组织同步 DTO/Domain/Mapper         | 已完成配置门槛、部门/成员全量快照、差异预览、冲突绑定/跳过、原子应用、幂等、缺失成员禁用、页面、日志和通知     | 已落地部门/成员映射、同步批次/差异、凭据版本、结果与最近同步状态；增量游标、多部门关系、unionId/openUserId、定时同步及其他 provider 另行跟踪    | W3.1 配置底座；W3.2 规格、迁移、API、页面与自动化验收全部完成   | `VERIFIED`   |
-| DB-014 | 企微统一登录与外部身份           | `SSOController/Service`、企微 OAuth/扫码登录、state/token 处理及组织成员绑定                                                    | 已完成企业标识发现、企微入口、一次性回调、JWT、身份绑定/恢复/安全解绑以及成功/失败登录审计                     | 已新增 `external_identities`、`external_oauth_states` 和登录日志认证字段；原始 state/nonce/code/token/Secret 均不落库                           | W3.2 可靠成员映射与 W3.3 迁移/API/页面/自动化全部通过           | `VERIFIED`   |
+| DB-014 | 企微统一登录与外部身份           | `SSOController/Service`、`OAuthStateFlow.QR_WECOM/WECOM`、`sys_user/sys_user_extend` 及组织成员绑定                             | 已完成 PC 官方扫码与工作台 WebView OAuth 双流程、一次性回调、JWT、身份管理、资料补全和分类型登录审计           | flow 使用 `QR_WECOM/WECOM`；邮箱可空、性别为 Boolean、头像进入独立 `user_extensions`；原始安全材料不落库，全部迁移已从零验证                    | 数据库重建、Seed、生产构建、19 条专项 Smoke 与最终检查均通过    | `VERIFIED`   |
 | DB-015 | 钉钉/飞书登录与消息 provider     | `MessageTask.dingTalkEnable/larkEnable`、对应 OAuth、同步与 NoticeSender                                                        | W3.3 仅实现企业微信；钉钉/飞书的配置、成员映射、统一登录和消息 sender 尚未实现                                 | 现有 provider/channel 枚举已预留；仍缺对应安全配置、外部资源映射、登录协议适配与 sender                                                         | 分别读取 Cordys 对应前后端全链路后独立立项                      | `DISCOVERED` |
 
 ## W2.4 关闭条件

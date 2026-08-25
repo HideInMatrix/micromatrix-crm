@@ -37,8 +37,11 @@ export interface CurrentUser {
   tenantId: string
   tenantName: string
   tenantSlug: string
-  email: string
+  email: string | null
   name: string
+  /** Cordys sys_user.gender：false=男，true=女。 */
+  gender: boolean
+  avatarUrl: string | null
   roles: Array<{ id: string; name: string }>
   permissions: string[]
   deptId: string | null

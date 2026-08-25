@@ -15,7 +15,7 @@ export interface DepartmentVO {
 
 export interface MemberVO {
   id: string
-  email: string
+  email: string | null
   name: string
   status: 'ACTIVE' | 'DISABLED'
   roles: Array<{ id: string; name: string }>
@@ -57,7 +57,7 @@ export interface OperationLogVO {
 export interface LoginLogVO {
   id: string
   email: string
-  authType: 'PASSWORD' | 'WECOM'
+  authType: 'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2'
   externalSubject: string | null
   ip: string | null
   userAgent: string | null
@@ -127,7 +127,7 @@ export interface WeComLoginDiscoveryVO {
 }
 
 export interface WeComLoginStartInput {
-  tenantSlug: string
+  tenantSlug?: string
   returnPath?: string
 }
 

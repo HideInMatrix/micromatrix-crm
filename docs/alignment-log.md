@@ -555,7 +555,7 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 新增 `system:dept:sync` 独立权限、同步配置开关和新成员默认角色；真实凭据变化递增 `credentialVersion`、关闭同步并失效待应用预览，相同 Secret 或直接测试不误关同步。
 - 新增部门/成员外部映射、同步批次和差异项模型，以及同租户/provider 活动批次 partial unique index；新企微成员关闭普通密码登录，已映射成员保留原角色。
 - 企微客户端新增部门/成员全量快照，最大并发 5、8 秒超时、临时错误两次退避重试、白名单解析、主部门去重、负责人平行数组配对和空/重复/缺父/循环树拒绝。
-- 差异规划器按映射、根部门、同级名称、租户内邮箱/手机号匹配，生成确定性 `CREATE / UPDATE / DISABLE / UNCHANGED / CONFLICT / SKIP`；跨租户或无邮箱使用稳定占位邮箱，不泄露其他租户数据。
+- 差异规划器按映射、根部门、同级名称、租户内邮箱/手机号匹配，生成确定性 `CREATE / UPDATE / DISABLE / UNCHANGED / CONFLICT / SKIP`；后续 Cordys 模型复查已把无邮箱改为 `NULL`，不再生成占位邮箱。
 - 应用在单一 Prisma interactive transaction 和 advisory lock 内完成部门拓扑写入、成员/角色/主管更新、映射 upsert、离职禁用、日志与通知；成功批次重复应用幂等，失败整批回滚。
 - 企业设置接入真实同步开关和默认角色；组织架构工具栏接入 760px 响应式五阶段抽屉、历史批次、统计、筛选、字段变化、绑定/跳过冲突和最终风险确认，不新增左侧菜单项。
 
@@ -591,3 +591,30 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 独立 `smoke:wecom-sso-message` 使用本地企微夹具和隔离租户完成 16 条断言，实际走通组织冲突绑定、登录发现、HttpOnly cookie/state、JWT、重放拒绝、身份审计、业务消息临时失败、手工重试成功及解绑/恢复。
 - 浏览器验证登录页企业标识门槛、企业设置统一登录/消息摘要和 URL、消息设置企微列、投递记录抽屉、成员身份弹窗；console 无 error/warn。
 - DB-006、DB-014 标记为 `VERIFIED`。钉钉/飞书 provider、企微增量/定时同步、多部门、unionid/open_userid 迁移、邮件、公告、模板和富媒体消息继续保留在台账，不因 W3.3 完成而被遗漏。
+
+> 2026-08-25 复查说明：本节的 PC“企业标识门槛”与 W3.3 完成结论已被后续源码复查推翻，最新状态以第 15 节为准。
+
+---
+
+## 15. 企业微信双登录流程与 Cordys 数据模型复查（2026-08-25）
+
+### 15.1 Cordys 源码复查
+
+- PC 登录页点击企业微信入口后直接创建官方 `@wecom/jssdk` 登录面板，不要求普通用户输入 tenant，也不使用 `easyqrcodejs` 自绘二维码。
+- 企业微信工作台内的 H5/WebView 通过 `wxwork` 环境判断进入独立网页 OAuth 链路，不能把 PC 扫码流程视为两端共用实现。
+
+### 15.2 已完成修正
+
+- PC 登录入口已移除“企业标识”弹窗，点击后直接挂载官方扫码组件。
+- 多租户适配改为依次解析 URL `tenant`、部署变量 `WECOM_DEFAULT_TENANT_SLUG`、唯一可用企微企业；本地开发默认企业为 `demo`。多企业部署不得依赖创建时间猜测企业。
+- discovery/start 的 tenant 参数改为可选；OAuth state、HttpOnly nonce、成员映射和登录审计安全边界保持不变。
+- 工作台路由检测 `wxwork` 后自动进入 `snsapi_privateinfo` 网页 OAuth；PC 与工作台分别使用 `qr-wecom`/`wecom` state、独立 nonce cookie 和独立回调，交叉消费会被拒绝。
+- 工作台按 Cordys 读取 `user_ticket` 并调用 `/auth/getuserdetail`，否则回退 `/user/get`；只在邮箱为空时补全邮箱，并更新手机号、Boolean 性别与独立用户扩展表头像。
+- 数据库 flow 直接使用 Cordys `QR_WECOM/WECOM`，不保留 `WECOM_OAUTH2` flow 兼容值；`WECOM_OAUTH2` 仅保留为工作台登录审计来源。用户邮箱改为可空，组织同步移除 `@local.invalid` 占位邮箱。
+
+### 15.3 当前验证状态
+
+- 页面实测确认 PC 点击后“企业标识”元素数量为 0，直接出现“企业微信扫码登录”对话框；默认企业接口返回可用配置，start 接口 `201` 且完整生成 authorization URL、corpId、agentId、redirect URI、state 和 nonce cookie。
+- 浏览器已验证工作台缺配置错误态、重试/密码回退与公共回调错误态，均无 console error/warn；真实企微 iframe 在 localhost 明确返回回调域名不匹配，部署时必须把正式回调域名加入企微信任域名。
+- 新模型规则测试 `66/66`、API/Web typecheck 与 Lint 通过；旧模型下的 19 条专项 Smoke 证据不冒充新模型迁移证据。
+- 当前未发布项目已按确认清空本地开发库并从零应用全部迁移，Seed 成功；规则测试 `66/66`、19 条专项 Smoke、API/Web 类型检查、Lint、生产构建和 diff 检查均通过。W3.3 与 DB-014 恢复 `VERIFIED`，W3.4 进入 `READY`。
