@@ -60,10 +60,11 @@
   - 实施证据：[W3.4.0 用户视图直接模型实施记录](./user-view-foundation-audit.md)。
   - _需求：R2、R5～R9_
 
-- [ ] 1.6 拆分线索池、客户公海和负责人历史 Repository
-  - Clue 与 Customer 使用独立 Pool/Rule/Capacity/Owner 表与 Repository。
-  - 共用无状态规则计算器，不共用数据库模型；领取、分配、转移、退池、回收均写分域历史。
-  - 完成每日领取上限、前负责人冷却、新数据保护、库容、排除条件和并发锁规则测试。
+- [x] 1.6 拆分线索池、客户公海和负责人历史 Repository
+  - [x] Clue 与 Customer 使用独立 Pool/Rule/Capacity/Owner 表与 Repository。
+  - [x] 共用无状态规则计算器，不共用数据库模型；领取/分配建立当前负责人周期，转移、退池和回收结束周期并写分域历史。
+  - [x] 完成每日领取上限、前负责人冷却、新数据保护、库容、排除条件和并发锁规则测试。
+  - 实施证据：[W3.4.0 分域池、容量与负责人历史 Repository 实施记录](./pool-repository-foundation-audit.md)。
   - _需求：R5～R9、R11_
 
 - [ ] 1.7 迁移既有业务调用方并删除旧代码

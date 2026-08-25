@@ -13,7 +13,9 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "smoke:w34-fields": "tsx scripts/w34-module-fields-smoke.ts",
-    "smoke:w34-user-views": "tsx scripts/w34-user-views-smoke.ts"
+    "smoke:w34-user-views": "tsx scripts/w34-user-views-smoke.ts",
+    "smoke:w34-pools": "tsx scripts/w34-pool-repositories-smoke.ts",
+    "smoke:w34-pools:isolated": "node scripts/run-w34-pool-smoke-isolated.mjs"
   },
   "dependencies": {
     "@micromatrix/shared": "workspace:*",

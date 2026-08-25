@@ -686,3 +686,15 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 专项规则测试 `7/7`、全量公共规则测试 `84/84`、Web typecheck 和改动文件 ESLint 通过。API 直接模型中间断点从 `397/15` 降至 `382/15`，用户视图相关为 0。
 - 专用临时 PostgreSQL 从空库复放全部 30 个 migration，12 项用户视图 Smoke 通过，随后删除临时库；主开发库继续等待 W3.4.0 全部调用方迁移完成后统一重建。
 - 任务 1.5 标记完成，DB-019 标记 `VERIFIED`。下一独立执行单元为 1.6 分域池、规则、容量和负责人历史 Repository。
+
+---
+
+## 22. W3.4.0 任务 1.6 分域池、容量与负责人历史 Repository（2026-08-25）
+
+- 读取 Cordys Clue/Customer Pool、Capacity、Owner History、领取/分配、手工退池和自动回收源码，确认 Scope/Condition 文本、最新容量规则、Owner 周期及客户商机阶段排除语义。
+- 新增 `CluePoolRepository` 与 `CustomerPoolRepository`，分别只访问自己的 Pool/Rule/Capacity/Owner/HiddenField 与主记录；池配置、容量配置、领取、分配、转移、退池、回收全部使用直接模型。
+- 新增共享无状态 `PoolRuleCalculator`，覆盖每日领取、新数据、前负责人冷却和有效库容。明确保留 Cordys 源码差异：线索池管理员仍受前负责人冷却，客户公海管理员跳过该限制；两者都受库容。
+- 负责人历史按 Cordys 的“已结束负责周期”表意实现：领取/分配建立当前周期，转移/退池/回收结束旧周期并写 `clue_owner/customer_owner`；自动回收 `system` 原因不进入历史原因字段。
+- PostgreSQL transaction advisory lock 同时覆盖资源和目标负责人，容量配置另用组织级锁；真实库并发 Smoke 证明两个同时领取只有一个成功，等价 Scope 重复容量配置被拒绝。
+- 专项测试 18 条、全量规则测试 `95/95`、新增文件 TypeScript 定向审计和 ESLint 通过。隔离空库应用 30 个 migration 后 9 项真实库 Smoke 通过，临时库已删除。
+- 任务 1.6 标记完成；旧 ResourcePool/PoolRule/PoolRecycle 及业务调用方仍属于 1.7，Seed 属于 1.8，因此 API 当前仍不可启动。下一独立执行单元为 1.7。

@@ -40,7 +40,8 @@
 5. W3.4 需求、技术设计和任务清单均已确认，阶段进入 `IN_PROGRESS`。任务 1.1 已完成 [直接模型与调用方影响审计](./specs/business-module-page-parity/model-impact-audit.md)，锁定 32 张 Cordys 直接表、旧模型调用方、禁止兼容路径和一次性替换顺序。
 6. 任务 1.2～1.3 已完成 [直接模型与破坏性迁移审计](./specs/business-module-page-parity/schema-migration-audit.md)：Prisma 已建立 32 张目标表并删除旧模型，破坏性迁移已通过隔离空库全部 30 个 migration 复放；主开发库尚未应用，下一步执行 1.4 模块表单与动态字段底座。
 7. 任务 1.4 的 [模块表单与动态字段公共底座](./specs/business-module-page-parity/field-foundation-audit.md) 已实现并通过 `77/77` 规则测试及真实 PostgreSQL 12 项 Smoke；目标业务列表/详情/导入导出仍待 1.7 接入，因此 1.4 暂不整体关闭。
-8. 任务 1.5 的 [用户视图直接模型](./specs/business-module-page-parity/user-view-foundation-audit.md) 已完成：五类资源切换到 Cordys View API、条件文本序列化和三重隔离，旧 SavedView 数据库访问已删除；全量规则测试 `84/84` 和真实 PostgreSQL 12 项 Smoke 通过。下一独立执行单元为 1.6 分域池、规则、容量和负责人历史 Repository。
+8. 任务 1.5 的 [用户视图直接模型](./specs/business-module-page-parity/user-view-foundation-audit.md) 已完成：五类资源切换到 Cordys View API、条件文本序列化和三重隔离，旧 SavedView 数据库访问已删除；全量规则测试 `84/84` 和真实 PostgreSQL 12 项 Smoke 通过。
+9. 任务 1.6 的 [分域池、容量与负责人历史 Repository](./specs/business-module-page-parity/pool-repository-foundation-audit.md) 已完成：Clue/Customer 独立 Repository、共享无状态规则计算器、Owner 生命周期和 PostgreSQL 并发锁已落地；全量规则测试 `95/95`，隔离空库 30 migration 与 9 项真实库 Smoke 通过。下一独立执行单元为 1.7 业务调用方迁移和旧代码删除；在 1.7～1.8 完成前 API 仍不可启动。
 
 ## 长期完成约束
 
