@@ -33,7 +33,8 @@ import type { ImportType } from '../modules/import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../modules/import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
-import { SavedViewsService } from '../modules/saved-views/saved-views.service'
+import { USER_VIEW_RESOURCE_TYPES } from '../modules/user-views/user-views.constants'
+import { UserViewsService } from '../modules/user-views/user-views.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { CustomerAccessService } from './customer-access.service'
 import { CreateCustomerDto } from './dto/create-customer.dto'
@@ -58,7 +59,7 @@ export class CustomersService {
     private readonly notifications: BusinessNotificationsService,
     private readonly pools: ResourcePoolsService,
     private readonly changeLog: BusinessChangeLogService,
-    private readonly savedViews: SavedViewsService,
+    private readonly userViews: UserViewsService,
     private readonly customerAccess: CustomerAccessService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
@@ -70,9 +71,11 @@ export class CustomersService {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
     const adHocClauses = buildFilterClauses(fieldsMap, parseFilters(query.filters))
-    const viewModule = poolMode ? 'customer_pool' : 'customer'
+    const viewResourceType = poolMode
+      ? USER_VIEW_RESOURCE_TYPES.customer_pool
+      : USER_VIEW_RESOURCE_TYPES.customer
     const saved = query.viewId
-      ? await this.savedViews.resolveFilters(user, query.viewId, viewModule)
+      ? await this.userViews.resolveFilters(user, query.viewId, viewResourceType)
       : null
     const savedClauses = saved ? buildFilterClauses(fieldsMap, saved.conditions) : []
     const filterClauses = [

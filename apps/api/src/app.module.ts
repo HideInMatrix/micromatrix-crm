@@ -33,7 +33,7 @@ import { OpportunitiesModule } from './modules/opportunities/opportunities.modul
 import { OrganizationSyncModule } from './modules/organization-sync/organization-sync.module'
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
 import { RolesModule } from './modules/roles/roles.module'
-import { SavedViewsModule } from './modules/saved-views/saved-views.module'
+import { UserViewsModule } from './modules/user-views/user-views.module'
 import { SettingsModule } from './modules/settings/settings.module'
 import { WeComSsoModule } from './modules/wecom-sso/wecom-sso.module'
 import { PrismaModule } from './prisma/prisma.module'
@@ -71,7 +71,7 @@ import { PrismaModule } from './prisma/prisma.module'
     MembersModule,
     MessageSettingsModule,
     RolesModule,
-    SavedViewsModule,
+    UserViewsModule,
     LogsModule,
     SettingsModule,
   ],

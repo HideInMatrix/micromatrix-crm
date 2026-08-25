@@ -673,3 +673,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 新增 7 条规则测试，全量公共规则测试 `77/77` 通过；隔离 PostgreSQL 从零执行全部 30 个 migration 后完成 12 项动态字段 Smoke，验证唯一冲突与主动异常整笔回滚，随后删除临时库。
 - shared/Web typecheck 和改动文件 ESLint 通过。API 预期编译断点从 411/16 降至 397/15；剩余错误属于目标业务模型、池、用户视图、Dashboard 与 Seed 后续任务。
 - 任务 1.4 的公共服务和测试已完成，但列表/详情/导入导出调用方仍待 1.7 切换，因此 1.4 保持部分完成，不通过兼容 DTO 或双写提前勾选。下一独立单元为 1.5 用户视图直接模型。
+
+---
+
+## 21. W3.4.0 任务 1.5 用户视图直接模型与公共 Service（2026-08-25）
+
+- 读取 Cordys `UserViewService`、Domain/DTO/Mapper、五类资源 Controller、前端 view store 与 API map，确认个人视图的资源路径、`resourceType`、`pos desc`、条件文本类型和系统视图边界。
+- 新增 UserViewsModule/Service 与线索、线索池、客户、联系人、客户公海五组 Cordys View API；旧 SavedViews Service、DTO、Controller、Module 和数据库 delegate 已删除。
+- 新增、编辑、删除、固定、启停、拖拽排序全部按认证组织、当前用户和路由 resourceType 隔离；联系人额外校验 `contact:read`，系统视图继续只由前端代码和本地偏好管理。
+- 条件值按 `ARRAY/STRING/INT/FLOAT/BOOLEAN` 文本契约保存，树节点写 `children_value`；对象值直接拒绝，避免非 Cordys JSON 契约重新进入数据库。
+- 线索、客户、联系人和两类池的 `viewId` 已切换到 UserViewsService；成员删除同步清理 `sys_user_view`，Web API 改用各资源 `/view/*` 路径。
+- 专项规则测试 `7/7`、全量公共规则测试 `84/84`、Web typecheck 和改动文件 ESLint 通过。API 直接模型中间断点从 `397/15` 降至 `382/15`，用户视图相关为 0。
+- 专用临时 PostgreSQL 从空库复放全部 30 个 migration，12 项用户视图 Smoke 通过，随后删除临时库；主开发库继续等待 W3.4.0 全部调用方迁移完成后统一重建。
+- 任务 1.5 标记完成，DB-019 标记 `VERIFIED`。下一独立执行单元为 1.6 分域池、规则、容量和负责人历史 Repository。

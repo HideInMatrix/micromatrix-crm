@@ -33,7 +33,8 @@ import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { OpportunitiesService } from '../opportunities/opportunities.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
-import { SavedViewsService } from '../saved-views/saved-views.service'
+import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
+import { UserViewsService } from '../user-views/user-views.service'
 import {
   AssignLeadDto,
   CreateLeadDto,
@@ -57,7 +58,7 @@ export class LeadsService {
     private readonly opportunities: OpportunitiesService,
     private readonly pools: ResourcePoolsService,
     private readonly changeLog: BusinessChangeLogService,
-    private readonly savedViews: SavedViewsService,
+    private readonly userViews: UserViewsService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
     private readonly customers: CustomersService,
@@ -68,9 +69,10 @@ export class LeadsService {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
     const adHocClauses = buildFilterClauses(fieldsMap, parseFilters(query.filters))
-    const viewModule = scope === 'pool' ? 'lead_pool' : 'lead'
+    const viewResourceType =
+      scope === 'pool' ? USER_VIEW_RESOURCE_TYPES.lead_pool : USER_VIEW_RESOURCE_TYPES.lead
     const saved = query.viewId
-      ? await this.savedViews.resolveFilters(user, query.viewId, viewModule)
+      ? await this.userViews.resolveFilters(user, query.viewId, viewResourceType)
       : null
     const savedClauses = saved ? buildFilterClauses(fieldsMap, saved.conditions) : []
     const filterClauses = [

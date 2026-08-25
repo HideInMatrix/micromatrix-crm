@@ -24,7 +24,8 @@ import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
-import { SavedViewsService } from '../saved-views/saved-views.service'
+import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
+import { UserViewsService } from '../user-views/user-views.service'
 import { CreateContactDto, QueryContactsDto, UpdateContactDto } from './dto/contact.dto'
 
 const MODULE = 'contact'
@@ -42,7 +43,7 @@ export class ContactsService {
     private readonly customerAccess: CustomerAccessService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
-    private readonly savedViews: SavedViewsService,
+    private readonly userViews: UserViewsService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
     private readonly notifications: BusinessNotificationsService,
@@ -57,7 +58,7 @@ export class ContactsService {
     const adHoc = buildFilterClauses(fieldMap, parseFilters(query.filters))
     const builtInView = query.scopeView
     const saved = query.viewId
-      ? await this.savedViews.resolveFilters(user, query.viewId, MODULE)
+      ? await this.userViews.resolveFilters(user, query.viewId, USER_VIEW_RESOURCE_TYPES.contact)
       : null
     const savedClauses = saved ? buildFilterClauses(fieldMap, saved.conditions) : []
     const filterClauses = [

@@ -7,12 +7,13 @@
     "build": "prisma generate && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",
-    "test:rules": "prisma generate && node --import tsx --test src/common/services/*.test.ts src/modules/pool-rules/*.test.ts src/modules/module-configs/*.test.ts src/modules/metadata/*.test.ts src/modules/follow-up-plans/*.test.ts src/modules/message-settings/*.test.ts src/modules/notifications/*.test.ts src/modules/approvals/*.test.ts src/modules/enterprise-integrations/*.test.ts src/modules/organization-sync/*.test.ts src/modules/wecom-sso/*.test.ts",
+    "test:rules": "prisma generate && node --import tsx --test src/common/services/*.test.ts src/modules/pool-rules/*.test.ts src/modules/module-configs/*.test.ts src/modules/metadata/*.test.ts src/modules/user-views/*.test.ts src/modules/follow-up-plans/*.test.ts src/modules/message-settings/*.test.ts src/modules/notifications/*.test.ts src/modules/approvals/*.test.ts src/modules/enterprise-integrations/*.test.ts src/modules/organization-sync/*.test.ts src/modules/wecom-sso/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "smoke:w34-fields": "tsx scripts/w34-module-fields-smoke.ts"
+    "smoke:w34-fields": "tsx scripts/w34-module-fields-smoke.ts",
+    "smoke:w34-user-views": "tsx scripts/w34-user-views-smoke.ts"
   },
   "dependencies": {
     "@micromatrix/shared": "workspace:*",

@@ -203,7 +203,7 @@ export class MembersService {
         data: { leaderId: null },
       })
       await tx.user.updateMany({ where: { tenantId, leaderId: id }, data: { leaderId: null } })
-      await tx.savedView.deleteMany({ where: { tenantId, userId: id } })
+      await tx.sysUserView.deleteMany({ where: { organizationId: tenantId, userId: id } })
       await tx.notification.deleteMany({ where: { tenantId, userId: id } })
       await tx.user.delete({ where: { id } })
     })
