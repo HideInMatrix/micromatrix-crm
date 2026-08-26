@@ -4,6 +4,7 @@ export type ApproverType = 'USER' | 'ROLE' | 'DEPT_LEADER' | 'DIRECT_LEADER'
 export type ApprovalMode = 'ALL' | 'ANY'
 export type ApprovalInstanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED'
 export type ApprovalTaskStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED'
+export type ApprovalTaskType = 'APPROVAL' | 'CC'
 /** 业务对象上的审批状态 */
 export type BizApprovalStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
 
@@ -40,6 +41,8 @@ export interface ApprovalNodeConfig {
   name: string
   approverType: ApproverType
   approverIds: string[]
+  /** Cordys approver node 的抄送成员；进入该节点时生成 CC task。 */
+  ccUserIds?: string[]
   mode: ApprovalMode
 }
 
@@ -131,6 +134,7 @@ export interface ApprovalFlowNodeDetail {
   name: string
   approverType?: ApproverType
   approverIds?: string[]
+  ccUserIds?: string[]
   mode?: ApprovalMode
 }
 
@@ -155,6 +159,7 @@ export interface ApprovalTaskVO {
   nodeName: string
   approverId: string
   approverName?: string
+  taskType: ApprovalTaskType
   status: ApprovalTaskStatus
   comment: string | null
   handledAt: string | null

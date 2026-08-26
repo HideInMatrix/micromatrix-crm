@@ -136,6 +136,12 @@ export class ApprovalsController {
     return this.approvalsService.myApplications(user, query.page ?? 1, query.pageSize ?? 10)
   }
 
+  @Get('my-copied')
+  @ApiOperation({ summary: '抄送我的' })
+  myCopied(@CurrentUser() user: AuthUser, @Query() query: PaginationQueryDto) {
+    return this.approvalsService.myCopied(user, query.page ?? 1, query.pageSize ?? 10)
+  }
+
   @Get('instance')
   @ApiOperation({ summary: '业务对象的最新审批实例' })
   instanceForTarget(

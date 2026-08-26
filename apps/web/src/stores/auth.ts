@@ -24,8 +24,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** 刷新页面后恢复用户信息（令牌还在但内存状态丢失时） */
-  async function fetchMe() {
-    if (!hasToken.value || user.value) return
+  async function fetchMe(force = false) {
+    if (!hasToken.value || (user.value && !force)) return
     const { data } = await authApi.fetchMe()
     user.value = data
   }

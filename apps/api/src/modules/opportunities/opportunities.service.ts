@@ -13,6 +13,7 @@ import { normalizeLineItems } from '../../common/line-items'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { Opportunity, OpportunityStage, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { HomeFilterService } from '../home/home-filter.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import {
@@ -64,6 +65,7 @@ export class OpportunitiesService {
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly notifications: BusinessNotificationsService,
+    private readonly homeFilters: HomeFilterService,
   ) {}
 
   // ===== 阶段配置 =====
@@ -147,11 +149,14 @@ export class OpportunitiesService {
     ])
     const fieldsMap = new Map(fields.map((f) => [f.key, f]))
     const filterClauses = buildFilterClauses(fieldsMap, parseFilters(query.filters))
+    const homeFilter = this.homeFilters.parse(query.homeFilter, 'opportunity')
+    const homeClause = homeFilter ? await this.homeFilters.opportunityWhere(user, homeFilter) : null
 
     const where: Prisma.OpportunityWhereInput = {
       tenantId: user.tenantId,
       AND: [
         scope as Prisma.OpportunityWhereInput,
+        ...(homeClause ? [homeClause] : []),
         ...(filterClauses as Prisma.OpportunityWhereInput[]),
       ],
       ...(stageId ? { stageId } : {}),

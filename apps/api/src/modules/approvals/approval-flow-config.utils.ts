@@ -25,8 +25,9 @@ export const MODULE_TO_FORM_TYPE: Partial<Record<ApprovalModule, SharedApprovalF
   order: 'order',
 }
 
-export type NormalizableFlowNode = Omit<ApprovalFlowNodeInput, 'approverIds'> & {
+export type NormalizableFlowNode = Omit<ApprovalFlowNodeInput, 'approverIds' | 'ccUserIds'> & {
   approverIds?: string[]
+  ccUserIds?: string[]
 }
 
 export function toDbFormType(formType: SharedApprovalFormType): ApprovalFormType {
@@ -57,6 +58,7 @@ export function normalizeFlowNodes(nodes: NormalizableFlowNode[]): ApprovalNodeC
       node.approverType === 'USER' || node.approverType === 'ROLE'
         ? [...new Set(node.approverIds ?? [])].sort()
         : [],
+    ccUserIds: [...new Set(node.ccUserIds ?? [])].sort(),
     mode: node.mode,
   }))
 }

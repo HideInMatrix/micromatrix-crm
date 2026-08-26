@@ -32,6 +32,7 @@ export interface LeadListParams extends PageQuery {
   status?: string
   filters?: string
   viewId?: string
+  homeFilter?: string
 }
 
 export interface ResourcePoolVO {
@@ -97,7 +98,9 @@ export const resourceCapacityApi = {
 export const leadApi = {
   list: (params: LeadListParams) => http.get<PaginatedResult<LeadVO>>('/leads', { params }),
   importRows: (rows: Record<string, unknown>[]) =>
-    http.post<{ success: number; failed: number; errors: string[] }>('/leads/import/rows', { rows }),
+    http.post<{ success: number; failed: number; errors: string[] }>('/leads/import/rows', {
+      rows,
+    }),
   importTemplate: (importType: ImportType, poolId?: string) =>
     http.get<Blob>(poolId ? '/leads/pool/import/template' : '/leads/import/template', {
       params: { importType, poolId },
@@ -119,7 +122,11 @@ export const leadApi = {
     http.post(poolId ? '/leads/pool/export/all' : '/leads/export/all', data, {
       params: { ...params, poolId },
     }),
-  exportSelected: (params: LeadListParams, data: ExportCreatePayload & { ids: string[] }, poolId?: string) =>
+  exportSelected: (
+    params: LeadListParams,
+    data: ExportCreatePayload & { ids: string[] },
+    poolId?: string,
+  ) =>
     http.post(poolId ? '/leads/pool/export/select' : '/leads/export/select', data, {
       params: { ...params, poolId },
     }),
@@ -133,9 +140,19 @@ export const leadApi = {
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue?: unknown }) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/update', data),
   batchDelete: (ids: string[]) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/delete', { ids }),
-  poolBatchUpdate: (data: { poolId: string; ids: string[]; fieldId: string; fieldValue?: unknown }) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/pool/batch/update', data),
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/delete', {
+      ids,
+    }),
+  poolBatchUpdate: (data: {
+    poolId: string
+    ids: string[]
+    fieldId: string
+    fieldValue?: unknown
+  }) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>(
+      '/leads/pool/batch/update',
+      data,
+    ),
   poolBatchDelete: (poolId: string, ids: string[]) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/pool/batch/delete', {
       poolId,
@@ -159,7 +176,12 @@ export const leadApi = {
       '/leads/re-transition/account',
       data,
     ),
-  transitionCustomerList: (data: { page: number; pageSize: number; keyword?: string; filters?: string }) =>
+  transitionCustomerList: (data: {
+    page: number
+    pageSize: number
+    keyword?: string
+    filters?: string
+  }) =>
     http.post<{
       items: Array<{
         id: string
@@ -237,6 +259,7 @@ export interface OpportunityListParams extends PageQuery {
   stageId?: string
   customerId?: string
   filters?: string
+  homeFilter?: string
 }
 
 export const opportunityApi = {
@@ -274,19 +297,25 @@ export interface ContactListParams extends PageQuery {
 
 export const contactApi = {
   list: (customerId: string) => http.get<ContactVO[]>(`/contacts/list/${customerId}`),
-  page: (params: ContactListParams) => http.post<PaginatedResult<ContactVO>>('/contacts/page', params),
+  page: (params: ContactListParams) =>
+    http.post<PaginatedResult<ContactVO>>('/contacts/page', params),
   get: (id: string) => http.get<ContactVO>(`/contacts/get/${id}`),
   create: (data: Partial<ContactVO> & { customerId: string; name: string }) =>
     http.post<ContactVO>('/contacts/add', data),
-  update: (id: string, data: Partial<ContactVO>) => http.post<ContactVO>('/contacts/update', { id, ...data }),
+  update: (id: string, data: Partial<ContactVO>) =>
+    http.post<ContactVO>('/contacts/update', { id, ...data }),
   remove: (id: string) => http.get(`/contacts/delete/${id}`),
   enable: (id: string) => http.get<ContactVO>(`/contacts/enable/${id}`),
-  disable: (id: string, reason: string) => http.post<ContactVO>(`/contacts/disable/${id}`, { reason }),
+  disable: (id: string, reason: string) =>
+    http.post<ContactVO>(`/contacts/disable/${id}`, { reason }),
   checkOpportunity: (id: string) =>
     http.get<{ linked: boolean; count: number }>(`/contacts/opportunity/check/${id}`),
   tab: () => http.get<{ all: boolean; dept: boolean }>('/contacts/tab'),
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>('/contacts/batch/update', data),
+    http.post<{ success: number; fail: number; failedIds: string[] }>(
+      '/contacts/batch/update',
+      data,
+    ),
   importTemplate: (_importType: ImportType) =>
     http.get<Blob>('/contacts/template/download', { responseType: 'blob' }),
   importPrecheck: (file: File, importType: ImportType) =>

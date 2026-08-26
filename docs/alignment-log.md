@@ -739,3 +739,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - W3.4 专项结果：字段 12 项、UserView 12 项、Pool Repository 9 项均通过；Seed 增强审计确认 32 张目标表、14 张旧表零残留、23 个关键索引；隔离数据库从零复放全部 30 个 migration 后 Pool Repository 9 项再次通过。
 - Prisma validate/generate、`97/97` 规则测试、Shared/API/Web typecheck、全仓 Lint、Shared/API/Web production build 全部通过。W3.2/W3.3 Smoke 同步到当前 `targetDepartmentId` 契约后分别 `23/23`、`19/19` 通过。
 - DB-019 保持 `VERIFIED`；DB-016、DB-017、DB-018、DB-020 的数据/公共服务底座已通过 1.9，但仍等待 W3.4.2～W3.4.4 对应页面/API 闭环，因此继续 `IN_PROGRESS`。下一执行单元为 W3.4.1 首页。
+
+---
+
+## 27. W3.4.1 首页最终专项验收（2026-08-26）
+
+- 首页按 Cordys 普通工作台源码重建：独立 Home 统计、自然周期与环比、SELF/DEPARTMENT/ALL Scope、一次性跨页筛选、数据概览设置、真实快捷入口、我的计划、四类审批待办和消息通知全部接真实 API/数据源。
+- 默认密码提醒改为后端 `users.default_pwd` 事实；成员创建/重置密码重新标记，用户修改密码后清除。审批“抄送我的”落在与审批相同的 `approval_task`，使用 `APPROVAL / CC` 类型区分，不再以通知数据替代审批抄送。
+- 两条 W3.4.1 migration 已应用，本地开发库 migration 总数为 32；Prisma validate、Shared/API/Web typecheck、全仓 ESLint `0 error / 0 warning`、三端 production build 通过。
+- 规则测试扩展到 `108/108`；首页真实 PostgreSQL/API Smoke `17/17`，根关键链路 `219/219`，W3.2 `23/23`，W3.3 `19/19` 全绿。
+- 新增零第三方依赖的 Chrome DevTools Browser Smoke；固定桌面视口并清理浏览器 origin 状态后最终 `12/12` 通过，验证真实登录、首页五区、统计设置、快捷入口新增表单、审批/计划/消息跳转及无未捕获 Runtime 异常。
+- W3.4.1 正式关闭；DB-016/017/018/020 不因首页完成而提前关闭。下一执行单元为 W3.4.2 线索与线索池。

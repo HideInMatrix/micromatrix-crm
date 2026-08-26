@@ -14,10 +14,12 @@ import { metadataApi } from '@/api/metadata'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const homeQuickCreate = useHomeQuickCreate()
 
 const fields = ref<FieldVO[]>([])
 const loading = ref(false)
@@ -105,6 +107,7 @@ async function handleSave() {
   }
   const valid = await dynamicFormRef.value?.validate()
   if (!valid) return
+  const isCreate = !editingId.value
   saving.value = true
   try {
     const payload: Record<string, unknown> = {
@@ -124,6 +127,7 @@ async function handleSave() {
       ElMessage.success('订单已创建')
     }
     dialogVisible.value = false
+    if (isCreate && (await homeQuickCreate.completeCreated())) return
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -165,6 +169,7 @@ async function handleDelete(row: OrderVO) {
 onMounted(async () => {
   const [{ data }] = await Promise.all([metadataApi.fields('order'), fieldRefs.load()])
   fields.value = data
+  await homeQuickCreate.consume(openCreate)
   loadData()
 })
 </script>
@@ -252,15 +257,14 @@ onMounted(async () => {
           >
             {{ statusActions[next].label }}
           </el-button>
-          <el-button
-            v-if="auth.hasPerm('order:update')"
-            link
-            @click="openEdit(row as OrderVO)"
-          >
+          <el-button v-if="auth.hasPerm('order:update')" link @click="openEdit(row as OrderVO)">
             编辑
           </el-button>
           <el-button
-            v-if="auth.hasPerm('order:delete') && (row.status === 'PENDING' || row.status === 'CANCELED')"
+            v-if="
+              auth.hasPerm('order:delete') &&
+              (row.status === 'PENDING' || row.status === 'CANCELED')
+            "
             link
             type="danger"
             @click="handleDelete(row as OrderVO)"

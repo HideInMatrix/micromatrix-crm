@@ -148,6 +148,7 @@ function addNode() {
       name: `审批节点 ${model.value.length + 1}`,
       approverType: 'DIRECT_LEADER',
       approverIds: [],
+      ccUserIds: [],
       mode: 'ANY',
     },
   ]
@@ -313,6 +314,25 @@ function removeSelected() {
                   :key="value"
                   :label="label"
                   :value="value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="抄送成员">
+              <el-select
+                :model-value="selectedNode.ccUserIds ?? []"
+                :disabled="readonly"
+                multiple
+                filterable
+                clearable
+                class="w-full"
+                placeholder="可选；进入该节点时抄送"
+                @update:model-value="(value: string[]) => updateSelected({ ccUserIds: value })"
+              >
+                <el-option
+                  v-for="item in members"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
                 />
               </el-select>
             </el-form-item>

@@ -21,6 +21,10 @@ export function fetchMe() {
   return http.get<CurrentUser>('/auth/me')
 }
 
+export function changePassword(payload: { oldPassword: string; newPassword: string }) {
+  return http.post<{ success: boolean }>('/auth/change-password', payload)
+}
+
 export function discoverWeCom(tenantSlug?: string) {
   return http.get<WeComLoginDiscoveryVO>('/auth/wecom/discovery', {
     params: tenantSlug ? { tenant: tenantSlug } : undefined,

@@ -6,11 +6,13 @@ import {
 } from '@micromatrix/shared'
 import { CalendarClock, CheckCheck, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi } from '@/api/sales'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
 
 const loading = ref(false)
+const route = useRoute()
 const items = ref<FollowUpPlanVO[]>([])
 const total = ref(0)
 const query = reactive({
@@ -119,7 +121,10 @@ async function remove(plan: FollowUpPlanVO) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  query.mine = route.query.mine === '1'
+  load()
+})
 </script>
 
 <template>
@@ -136,20 +141,35 @@ onMounted(load)
         >
           <template #prefix><Search :size="16" aria-hidden="true" /></template>
         </el-input>
-        <el-select v-model="query.status" clearable placeholder="全部状态" class="!w-32" @change="search">
-          <el-option v-for="(label, key) in FOLLOW_UP_PLAN_STATUS_LABELS" :key="key" :label="label" :value="key" />
+        <el-select
+          v-model="query.status"
+          clearable
+          placeholder="全部状态"
+          class="!w-32"
+          @change="search"
+        >
+          <el-option
+            v-for="(label, key) in FOLLOW_UP_PLAN_STATUS_LABELS"
+            :key="key"
+            :label="label"
+            :value="key"
+          />
         </el-select>
         <el-checkbox v-model="query.mine" @change="search">我的计划</el-checkbox>
         <el-button @click="load"><RefreshCw :size="16" aria-hidden="true" />刷新</el-button>
       </div>
-      <el-button type="primary" @click="create"><Plus :size="16" aria-hidden="true" />新建计划</el-button>
+      <el-button type="primary" @click="create"
+        ><Plus :size="16" aria-hidden="true" />新建计划</el-button
+      >
     </div>
 
     <el-table v-loading="loading" :data="items" stripe>
       <el-table-column label="计划对象" min-width="180">
         <template #default="{ row }">
           <div class="font-medium">{{ row.targetName }}</div>
-          <div class="text-xs text-[var(--el-text-color-secondary)]">{{ targetLabel(row.targetType) }}</div>
+          <div class="text-xs text-[var(--el-text-color-secondary)]">
+            {{ targetLabel(row.targetType) }}
+          </div>
         </template>
       </el-table-column>
       <el-table-column prop="content" label="计划内容" min-width="260" show-overflow-tooltip />
@@ -166,7 +186,9 @@ onMounted(load)
       <el-table-column label="状态" width="120">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
-          <div v-if="row.converted" class="text-xs text-[var(--el-color-success)] mt-1">已转记录</div>
+          <div v-if="row.converted" class="text-xs text-[var(--el-color-success)] mt-1">
+            已转记录
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="260" fixed="right">
@@ -179,17 +201,30 @@ onMounted(load)
               <el-button link type="primary">状态</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-for="(label, key) in FOLLOW_UP_PLAN_STATUS_LABELS" :key="key" :command="key">
+                  <el-dropdown-item
+                    v-for="(label, key) in FOLLOW_UP_PLAN_STATUS_LABELS"
+                    :key="key"
+                    :command="key"
+                  >
                     {{ label }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button v-if="row.status === 'COMPLETED' && !row.converted" link type="success" @click="convert(asPlan(row))">
+            <el-button
+              v-if="row.status === 'COMPLETED' && !row.converted"
+              link
+              type="success"
+              @click="convert(asPlan(row))"
+            >
               <CheckCheck :size="15" aria-hidden="true" />转记录
             </el-button>
-            <el-button link type="primary" @click="edit(asPlan(row))"><Pencil :size="15" aria-hidden="true" />编辑</el-button>
-            <el-button link type="danger" @click="remove(asPlan(row))"><Trash2 :size="15" aria-hidden="true" />删除</el-button>
+            <el-button link type="primary" @click="edit(asPlan(row))"
+              ><Pencil :size="15" aria-hidden="true" />编辑</el-button
+            >
+            <el-button link type="danger" @click="remove(asPlan(row))"
+              ><Trash2 :size="15" aria-hidden="true" />删除</el-button
+            >
           </template>
           <span v-else class="text-xs text-[var(--el-text-color-secondary)]">只读</span>
         </template>

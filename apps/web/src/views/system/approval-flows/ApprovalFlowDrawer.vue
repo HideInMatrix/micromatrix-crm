@@ -59,6 +59,7 @@ function replaceForm(value: ApprovalFlowWriteInput) {
   form.createNodes = value.createNodes.map((node) => ({
     ...node,
     approverIds: [...node.approverIds],
+    ccUserIds: [...(node.ccUserIds ?? [])],
   }))
 }
 
@@ -71,6 +72,7 @@ function serializeForm() {
       ...node,
       name: node.name.trim(),
       approverIds: [...node.approverIds].sort(),
+      ccUserIds: [...(node.ccUserIds ?? [])].sort(),
     })),
   })
 }
@@ -98,6 +100,7 @@ function toWriteInput(source: ApprovalFlowDetail): ApprovalFlowWriteInput {
       name: node.name,
       approverType: node.approverType!,
       approverIds: [...(node.approverIds ?? [])],
+      ccUserIds: [...(node.ccUserIds ?? [])],
       mode: node.mode!,
     }))
   return {

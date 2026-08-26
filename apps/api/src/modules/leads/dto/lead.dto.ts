@@ -86,6 +86,11 @@ export class QueryLeadsDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   viewId?: string
+
+  @ApiPropertyOptional({ description: '首页一次性统计跳转筛选（HomeFilterPayload JSON）' })
+  @IsString()
+  @IsOptional()
+  homeFilter?: string
 }
 
 export class AssignLeadDto {

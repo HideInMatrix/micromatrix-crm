@@ -94,6 +94,7 @@ export class MembersService {
         ...rest,
         name: dto.name.trim(),
         passwordHash: await bcrypt.hash(password, 10),
+        defaultPwd: true,
         userRoles: {
           create: roleIds.map((roleId) => ({ tenantId, roleId })),
         },
@@ -153,7 +154,7 @@ export class MembersService {
     const user = await this.ensureExists(tenantId, id)
     await this.prisma.user.update({
       where: { id },
-      data: { passwordHash: await bcrypt.hash(password, 10) },
+      data: { passwordHash: await bcrypt.hash(password, 10), defaultPwd: true },
     })
     return { id, name: user.name }
   }

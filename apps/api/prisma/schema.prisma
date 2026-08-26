@@ -169,6 +169,8 @@ model User {
   gender               Boolean    @default(false)
   // 企业微信等外部来源成员在建立统一登录前禁止使用普通密码登录
   passwordLoginEnabled Boolean    @default(true)
+  // Cordys 首页默认密码提醒；用户完成密码修改后置 false。
+  defaultPwd           Boolean    @default(false) @map("default_pwd")
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 
@@ -1111,6 +1113,11 @@ enum ApprovalTaskStatus {
   SKIPPED
 }
 
+enum ApprovalTaskType {
+  APPROVAL
+  CC
+}
+
 model ApprovalFlow {
   id                    String                @id @default(cuid())
   tenantId              String
@@ -1202,6 +1209,7 @@ model ApprovalNodeApprover {
   approverType ApproverType
   // USER=用户ID集合；ROLE=角色ID集合
   approverIds  String[]     @default([])
+  ccUserIds    String[]     @default([]) @map("cc_user_ids")
   mode         ApprovalMode @default(ANY)
 
   node ApprovalNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
@@ -1267,6 +1275,7 @@ model ApprovalTask {
   nodeIndex  Int
   nodeName   String
   approverId String
+  taskType   ApprovalTaskType   @default(APPROVAL) @map("task_type")
   status     ApprovalTaskStatus @default(PENDING)
   comment    String?
   handledAt  DateTime?
@@ -1275,6 +1284,7 @@ model ApprovalTask {
   instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, approverId, status])
+  @@index([tenantId, approverId, taskType, status])
   @@index([instanceId])
   @@map("approval_tasks")
 }

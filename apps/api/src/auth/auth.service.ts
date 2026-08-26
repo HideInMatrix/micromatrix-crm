@@ -231,6 +231,24 @@ export class AuthService {
     return this.toCurrentUser(user)
   }
 
+  async changePassword(userId: string, oldPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } })
+    if (!user) throw new UnauthorizedException('用户不存在')
+    if (!user.passwordLoginEnabled) throw new ForbiddenException('当前账号未启用密码登录')
+    if (!(await bcrypt.compare(oldPassword, user.passwordHash))) {
+      throw new UnauthorizedException('原密码不正确')
+    }
+    if (await bcrypt.compare(newPassword, user.passwordHash)) {
+      throw new ConflictException('新密码不能与原密码相同')
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, defaultPwd: false },
+    })
+    return { success: true }
+  }
+
   /** 长效 API 令牌（开放 API 集成用） */
   async issueApiToken(userId: string): Promise<{ token: string; expiresIn: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } })
@@ -306,6 +324,7 @@ export class AuthService {
       name: user.name,
       gender: user.gender,
       avatarUrl: user.extension?.avatar ?? null,
+      defaultPwd: user.defaultPwd,
       roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),
       permissions: [...new Set(user.userRoles.flatMap(({ role }) => role.permissions))],
       deptId: user.deptId,

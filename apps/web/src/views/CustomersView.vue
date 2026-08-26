@@ -34,11 +34,13 @@ import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const homeQuickCreate = useHomeQuickCreate()
 
 type CustomerSystemView = 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
 const systemViews = ref<{ id: CustomerSystemView; label: string }[]>([])
@@ -80,10 +82,10 @@ const defaultColumnKeys = computed(() =>
 )
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
-  const fieldMap = new Map(fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]))
-  return keys
-    .map((key) => fieldMap.get(key))
-    .filter((field): field is FieldVO => !!field)
+  const fieldMap = new Map(
+    fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]),
+  )
+  return keys.map((key) => fieldMap.get(key)).filter((field): field is FieldVO => !!field)
 })
 
 async function loadFields() {
@@ -261,6 +263,7 @@ function openEdit(row: CustomerVO) {
 async function handleSave() {
   const valid = await dynamicFormRef.value?.validate()
   if (!valid) return
+  const isCreate = !editingId.value
   saving.value = true
   try {
     const payload = modelToPayload(formModel.value)
@@ -283,6 +286,7 @@ async function handleSave() {
       ElMessage.success('客户已创建')
     }
     dialogVisible.value = false
+    if (isCreate && (await homeQuickCreate.completeCreated())) return
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -360,10 +364,10 @@ async function handleExportConfirm(payload: { fileName: string; headList: string
   exportLoading.value = true
   try {
     if (exportMode.value === 'selected') {
-      await customerTransferApi.exportSelected(
-        transferParams(),
-        { ...payload, ids: selectedRows.value.map((row) => row.id) },
-      )
+      await customerTransferApi.exportSelected(transferParams(), {
+        ...payload,
+        ids: selectedRows.value.map((row) => row.id),
+      })
       selectedRows.value = []
     } else {
       await customerTransferApi.exportAll(transferParams(), payload)
@@ -393,6 +397,7 @@ async function openFollow(row: CustomerVO) {
 
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadSystemViews()])
+  await homeQuickCreate.consume(openCreate)
   loadData()
 })
 </script>
@@ -440,10 +445,7 @@ onMounted(async () => {
           <el-button v-if="canExport" @click="openExport('selected')">
             导出选中（{{ selectedRows.length }}）
           </el-button>
-          <el-button
-            v-if="auth.hasPerm('customer:update')"
-            @click="batchEditVisible = true"
-          >
+          <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true">
             批量修改（{{ selectedRows.length }}）
           </el-button>
           <el-button
@@ -462,13 +464,19 @@ onMounted(async () => {
         >
           合并客户<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span>
         </el-button>
-        <el-button v-if="!isCollaborationView && auth.hasPerm('customer:create')" type="primary" @click="openCreate">
+        <el-button
+          v-if="!isCollaborationView && auth.hasPerm('customer:create')"
+          type="primary"
+          @click="openCreate"
+        >
           新建客户
         </el-button>
         <template v-if="canImport">
           <el-button @click="importVisible = true">导入</el-button>
         </template>
-        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">导出全部</el-button>
+        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')"
+          >导出全部</el-button
+        >
       </div>
     </div>
 
@@ -523,7 +531,7 @@ onMounted(async () => {
                 </el-dropdown-item>
                 <el-dropdown-item
                   v-if="auth.hasPerm('customer:assign')"
-                  @click="assignTarget = row as CustomerVO, assignVisible = true"
+                  @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
                 >
                   分配负责人
                 </el-dropdown-item>

@@ -23,6 +23,7 @@ test('节点规范化会裁剪名称、去重并稳定排序指定对象', () =>
         name: '  财务审批  ',
         approverType: 'USER',
         approverIds: ['user-b', 'user-a', 'user-b'],
+        ccUserIds: ['cc-b', 'cc-a', 'cc-b'],
         mode: 'ALL',
       },
       {
@@ -37,12 +38,14 @@ test('节点规范化会裁剪名称、去重并稳定排序指定对象', () =>
         name: '财务审批',
         approverType: 'USER',
         approverIds: ['user-a', 'user-b'],
+        ccUserIds: ['cc-a', 'cc-b'],
         mode: 'ALL',
       },
       {
         name: '主管审批',
         approverType: 'DIRECT_LEADER',
         approverIds: [],
+        ccUserIds: [],
         mode: 'ANY',
       },
     ],
@@ -58,6 +61,7 @@ test('仅编辑 clientId 或指定对象顺序不会生成新流程版本', () =
           name: '会计审批',
           approverType: 'ROLE',
           approverIds: ['role-b', 'role-a'],
+          ccUserIds: ['cc-b', 'cc-a'],
           mode: 'ANY',
         },
       ],
@@ -67,6 +71,7 @@ test('仅编辑 clientId 或指定对象顺序不会生成新流程版本', () =
           name: ' 会计审批 ',
           approverType: 'ROLE',
           approverIds: ['role-a', 'role-b'],
+          ccUserIds: ['cc-a', 'cc-b'],
           mode: 'ANY',
         },
       ],
@@ -90,4 +95,5 @@ test('节点定义或顺序变化会识别为新版本内容', () => {
   }
   assert.equal(flowNodesEqual([leader, finance], [finance, leader]), false)
   assert.equal(flowNodesEqual([leader], [{ ...leader, mode: 'ALL' }]), false)
+  assert.equal(flowNodesEqual([leader], [{ ...leader, ccUserIds: ['user-x'] }]), false)
 })

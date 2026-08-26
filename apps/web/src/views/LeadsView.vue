@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  type HomeFilterPayload,
   LEAD_STATUS_LABELS,
   isCustomFieldKey,
   type FieldVO,
@@ -21,13 +22,16 @@ import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import LeadTransformDialog from '@/components/leads/LeadTransformDialog.vue'
 import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCustomerDrawer.vue'
+import { consumeHomeFilter } from '@/utils/home-filter'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const homeQuickCreate = useHomeQuickCreate()
 const route = useRoute()
 const router = useRouter()
 
@@ -40,6 +44,7 @@ const items = ref<LeadVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' })
 const filters = ref<FilterCondition[]>([])
+const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<LeadVO[]>([])
@@ -66,7 +71,9 @@ const transitionCustomerVisible = ref(false)
 const transitionClueIds = ref<string[]>([])
 
 const savedViewModule = computed(() => (activeTab.value === 'pool' ? 'lead_pool' : 'lead'))
-const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
+const currentPool = computed(
+  () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
+)
 const canImport = computed(() =>
   activeTab.value === 'pool' ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
 )
@@ -78,18 +85,20 @@ const defaultColumnKeys = computed(() =>
 )
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
-  const fieldMap = new Map(fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]))
+  const fieldMap = new Map(
+    fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]),
+  )
   const hiddenIds =
-    activeTab.value === 'pool' ? new Set(currentPool.value?.hiddenFieldIds ?? []) : new Set<string>()
+    activeTab.value === 'pool'
+      ? new Set(currentPool.value?.hiddenFieldIds ?? [])
+      : new Set<string>()
   const ordered = keys
     .map((key) => fieldMap.get(key))
-    .filter((field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)))
+    .filter(
+      (field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)),
+    )
   const nameField = fieldMap.get('name')
-  if (
-    activeTab.value === 'pool' &&
-    nameField &&
-    !ordered.some((field) => field.key === 'name')
-  ) {
+  if (activeTab.value === 'pool' && nameField && !ordered.some((field) => field.key === 'name')) {
     ordered.unshift(nameField)
   }
   return ordered
@@ -124,6 +133,7 @@ async function loadData() {
       status: query.status || undefined,
       filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
       viewId: activeSavedViewId.value || undefined,
+      homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
     })
     items.value = data.items
     total.value = data.total
@@ -142,6 +152,7 @@ function handleSearch() {
 
 function handleTabChange() {
   query.page = 1
+  activeHomeFilter.value = null
   activeSavedViewId.value = ''
   selectedRows.value = []
   void router.replace(activeTab.value === 'pool' ? '/leads/pool' : '/leads')
@@ -245,6 +256,7 @@ function openEdit(row: LeadVO) {
 async function handleSave() {
   const valid = await dynamicFormRef.value?.validate()
   if (!valid) return
+  const isCreate = !editingId.value
   saving.value = true
   try {
     const payload: Record<string, unknown> = { customData: {} }
@@ -263,6 +275,7 @@ async function handleSave() {
       ElMessage.success('线索已创建')
     }
     dialogVisible.value = false
+    if (isCreate && (await homeQuickCreate.completeCreated())) return
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -389,8 +402,49 @@ function openTransitionCustomer(ids: string[]) {
   transitionCustomerVisible.value = true
 }
 
+const homeFilterSummary = computed(() => {
+  if (!activeHomeFilter.value) return ''
+  const periodLabel = {
+    TODAY: '今天',
+    THIS_WEEK: '本周',
+    THIS_MONTH: '本月',
+    THIS_YEAR: '本年',
+  }[activeHomeFilter.value.period]
+  const scopeLabel =
+    activeHomeFilter.value.searchType === 'SELF'
+      ? '本人'
+      : activeHomeFilter.value.searchType === 'ALL'
+        ? '全部有权数据'
+        : '指定部门'
+  return `来自首页：${periodLabel} · ${scopeLabel}`
+})
+
+function clearHomeFilter() {
+  activeHomeFilter.value = null
+  query.page = 1
+  loadData()
+}
+
+async function consumeRouteHomeFilter() {
+  const token = route.query.homeFilter
+  if (!token) return
+  const payload = consumeHomeFilter(token, 'lead')
+  const nextQuery = { ...route.query }
+  delete nextQuery.homeFilter
+  await router.replace({ path: route.path, query: nextQuery })
+  if (!payload) {
+    ElMessage.warning('首页筛选已失效或格式不正确')
+    return
+  }
+  activeTab.value = 'mine'
+  activeHomeFilter.value = payload
+  query.page = 1
+}
+
 onMounted(async () => {
+  await consumeRouteHomeFilter()
   await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
+  await homeQuickCreate.consume(openCreate)
   loadData()
 })
 </script>
@@ -401,6 +455,15 @@ onMounted(async () => {
       <el-tab-pane label="我的线索" name="mine" />
       <el-tab-pane label="线索池" name="pool" />
     </el-tabs>
+
+    <el-alert
+      v-if="activeHomeFilter"
+      :title="homeFilterSummary"
+      type="info"
+      show-icon
+      class="mb-4"
+      @close="clearHomeFilter"
+    />
 
     <SavedViewBar
       :module="savedViewModule"
@@ -433,7 +496,13 @@ onMounted(async () => {
           @keyup.enter="handleSearch"
           @clear="handleSearch"
         />
-        <el-select v-model="query.status" clearable placeholder="状态" class="!w-28" @change="handleSearch">
+        <el-select
+          v-model="query.status"
+          clearable
+          placeholder="状态"
+          class="!w-28"
+          @change="handleSearch"
+        >
           <el-option
             v-for="(label, value) in LEAD_STATUS_LABELS"
             :key="value"
@@ -481,13 +550,19 @@ onMounted(async () => {
             批量删除
           </el-button>
         </template>
-        <el-button v-if="auth.hasPerm('lead:create') && activeTab === 'mine'" type="primary" @click="openCreate">
+        <el-button
+          v-if="auth.hasPerm('lead:create') && activeTab === 'mine'"
+          type="primary"
+          @click="openCreate"
+        >
           新建线索
         </el-button>
         <template v-if="canImport">
           <el-button @click="importVisible = true">导入</el-button>
         </template>
-        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">导出全部</el-button>
+        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')"
+          >导出全部</el-button
+        >
       </div>
     </div>
 
@@ -528,7 +603,9 @@ onMounted(async () => {
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag
-            :type="row.status === 'CONVERTED' ? 'success' : row.status === 'INVALID' ? 'info' : 'primary'"
+            :type="
+              row.status === 'CONVERTED' ? 'success' : row.status === 'INVALID' ? 'info' : 'primary'
+            "
             size="small"
           >
             {{ LEAD_STATUS_LABELS[row.status as keyof typeof LEAD_STATUS_LABELS] }}
@@ -544,11 +621,7 @@ onMounted(async () => {
         <template #default="{ row }">
           <template v-if="activeTab === 'pool'">
             <el-button link type="primary" @click="handleClaim(row as LeadVO)">领取</el-button>
-            <el-button
-              v-if="auth.hasPerm('lead:assign')"
-              link
-              @click="handleAssign(row as LeadVO)"
-            >
+            <el-button v-if="auth.hasPerm('lead:assign')" link @click="handleAssign(row as LeadVO)">
               分配
             </el-button>
             <el-button link @click="openOwnerHistory(row as LeadVO)">负责人历史</el-button>
@@ -670,9 +743,29 @@ onMounted(async () => {
     <CrmImportDialog
       v-model="importVisible"
       :module-label="activeTab === 'pool' ? '线索池' : '线索'"
-      :download-template="(type) => leadApi.importTemplate(type, activeTab === 'pool' ? selectedPoolId || undefined : undefined)"
-      :precheck="(file, type) => leadApi.importPrecheck(file, type, activeTab === 'pool' ? selectedPoolId || undefined : undefined)"
-      :execute="(file, type) => leadApi.importXlsx(file, type, activeTab === 'pool' ? selectedPoolId || undefined : undefined)"
+      :download-template="
+        (type) =>
+          leadApi.importTemplate(
+            type,
+            activeTab === 'pool' ? selectedPoolId || undefined : undefined,
+          )
+      "
+      :precheck="
+        (file, type) =>
+          leadApi.importPrecheck(
+            file,
+            type,
+            activeTab === 'pool' ? selectedPoolId || undefined : undefined,
+          )
+      "
+      :execute="
+        (file, type) =>
+          leadApi.importXlsx(
+            file,
+            type,
+            activeTab === 'pool' ? selectedPoolId || undefined : undefined,
+          )
+      "
       @success="loadData"
     />
 

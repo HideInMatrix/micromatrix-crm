@@ -96,6 +96,11 @@ export class QueryOpportunitiesDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   filters?: string
+
+  @ApiPropertyOptional({ description: '首页一次性统计跳转筛选（HomeFilterPayload JSON）' })
+  @IsString()
+  @IsOptional()
+  homeFilter?: string
 }
 
 export class ChangeStageDto {

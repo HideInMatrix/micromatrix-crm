@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  type HomeFilterPayload,
   isCustomFieldKey,
   lineAmount,
   type FieldVO,
@@ -21,12 +22,15 @@ import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
+import { consumeHomeFilter } from '@/utils/home-filter'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const fieldRefs = useFieldRefs()
+const homeQuickCreate = useHomeQuickCreate()
 
 const viewMode = ref<'list' | 'kanban'>('list')
 const fields = ref<FieldVO[]>([])
@@ -38,6 +42,7 @@ const items = ref<OpportunityVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '', stageId: '' })
 const filters = ref<FilterCondition[]>([])
+const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 
 // 看板态
 const kanbanItems = ref<Record<string, OpportunityVO[]>>({})
@@ -88,6 +93,7 @@ async function loadData() {
         keyword: query.keyword.trim() || undefined,
         stageId: query.stageId || undefined,
         filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+        homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
       })
       items.value = data.items
       total.value = data.total
@@ -144,6 +150,7 @@ async function handleSave() {
   }
   const valid = await dynamicFormRef.value?.validate()
   if (!valid) return
+  const isCreate = !editingId.value
   saving.value = true
   try {
     const payload: Record<string, unknown> = {
@@ -164,6 +171,7 @@ async function handleSave() {
       ElMessage.success('商机已创建')
     }
     dialogVisible.value = false
+    if (isCreate && (await homeQuickCreate.completeCreated())) return
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -236,13 +244,61 @@ watch(
   () => {
     const named = lineItems.value.filter((i) => i.productName)
     if (named.length === 0) return
-    formModel.value.amount = Math.round(named.reduce((sum, i) => sum + lineAmount(i), 0) * 100) / 100
+    formModel.value.amount =
+      Math.round(named.reduce((sum, i) => sum + lineAmount(i), 0) * 100) / 100
   },
   { deep: true },
 )
 
+const homeFilterSummary = computed(() => {
+  if (!activeHomeFilter.value) return ''
+  const periodLabel = {
+    TODAY: '今天',
+    THIS_WEEK: '本周',
+    THIS_MONTH: '本月',
+    THIS_YEAR: '本年',
+  }[activeHomeFilter.value.period]
+  const scopeLabel =
+    activeHomeFilter.value.searchType === 'SELF'
+      ? '本人'
+      : activeHomeFilter.value.searchType === 'ALL'
+        ? '全部有权数据'
+        : '指定部门'
+  const statusLabel =
+    activeHomeFilter.value.status === 'SUCCESS'
+      ? ' · 赢单'
+      : activeHomeFilter.value.status === 'AFOOT'
+        ? ' · 进行中'
+        : ''
+  return `来自首页：${periodLabel} · ${scopeLabel}${statusLabel}`
+})
+
+function clearHomeFilter() {
+  activeHomeFilter.value = null
+  query.page = 1
+  loadData()
+}
+
+async function consumeRouteHomeFilter() {
+  const token = route.query.homeFilter
+  if (!token) return
+  const payload = consumeHomeFilter(token, 'opportunity')
+  const nextQuery = { ...route.query }
+  delete nextQuery.homeFilter
+  await router.replace({ path: route.path, query: nextQuery })
+  if (!payload) {
+    ElMessage.warning('首页筛选已失效或格式不正确')
+    return
+  }
+  activeHomeFilter.value = payload
+  viewMode.value = 'list'
+  query.page = 1
+}
+
 onMounted(async () => {
+  await consumeRouteHomeFilter()
   await Promise.all([loadMeta(), fieldRefs.load()])
+  await homeQuickCreate.consume(openCreate)
   await loadData()
   const id = typeof route.query.id === 'string' ? route.query.id : ''
   if (id) openDetail(id)
@@ -251,6 +307,15 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never">
+    <el-alert
+      v-if="activeHomeFilter"
+      :title="homeFilterSummary"
+      type="info"
+      show-icon
+      class="mb-4"
+      @close="clearHomeFilter"
+    />
+
     <div class="flex-between flex-wrap gap-3 mb-4">
       <div class="flex gap-2 items-center">
         <el-radio-group v-model="viewMode" @change="loadData">
@@ -263,15 +328,15 @@ onMounted(async () => {
             placeholder="搜索商机名称"
             clearable
             class="!w-52"
-            @keyup.enter="query.page = 1, loadData()"
-            @clear="query.page = 1, loadData()"
+            @keyup.enter="((query.page = 1), loadData())"
+            @clear="((query.page = 1), loadData())"
           />
           <el-select
             v-model="query.stageId"
             clearable
             placeholder="阶段"
             class="!w-32"
-            @change="query.page = 1, loadData()"
+            @change="((query.page = 1), loadData())"
           >
             <el-option v-for="s in stages" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
@@ -312,17 +377,16 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="阶段" width="130">
           <template #default="{ row }">
-            <el-tag
-              :type="row.isWon ? 'success' : row.isLost ? 'danger' : 'primary'"
-              size="small"
-            >
+            <el-tag :type="row.isWon ? 'success' : row.isLost ? 'danger' : 'primary'" size="small">
               {{ row.stageName }} {{ row.isWon || row.isLost ? '' : `${row.stageProbability}%` }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openFollow(row as OpportunityVO)">跟进</el-button>
+            <el-button link type="primary" @click="openFollow(row as OpportunityVO)"
+              >跟进</el-button
+            >
             <el-button
               v-if="auth.hasPerm('opportunity:stage') && !row.isWon && !row.isLost"
               link
@@ -359,7 +423,7 @@ onMounted(async () => {
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next"
           @current-change="loadData"
-          @size-change="query.page = 1, loadData()"
+          @size-change="((query.page = 1), loadData())"
         />
       </div>
     </template>
@@ -441,7 +505,11 @@ onMounted(async () => {
     </el-dialog>
 
     <!-- 阶段推进 -->
-    <el-dialog v-model="stageVisible" :title="`推进阶段 · ${stageTarget?.name ?? ''}`" width="440px">
+    <el-dialog
+      v-model="stageVisible"
+      :title="`推进阶段 · ${stageTarget?.name ?? ''}`"
+      width="440px"
+    >
       <el-form label-width="90px">
         <el-form-item label="目标阶段">
           <el-select v-model="stageForm.stageId" class="w-full">
@@ -471,9 +539,6 @@ onMounted(async () => {
       @followed="loadData"
     />
 
-    <OpportunityDetailDrawer
-      v-model="detailVisible"
-      :opportunity-id="detailOpportunityId"
-    />
+    <OpportunityDetailDrawer v-model="detailVisible" :opportunity-id="detailOpportunityId" />
   </el-card>
 </template>

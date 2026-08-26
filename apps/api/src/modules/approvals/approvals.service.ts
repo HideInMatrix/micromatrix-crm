@@ -57,6 +57,7 @@ export class ApprovalsService {
         name: node.name,
         approverType: node.approver!.approverType,
         approverIds: node.approver!.approverIds,
+        ccUserIds: node.approver!.ccUserIds,
         mode: node.approver!.mode,
       }))
 
@@ -171,6 +172,7 @@ export class ApprovalsService {
     const where: Prisma.ApprovalTaskWhereInput = {
       tenantId: user.tenantId,
       approverId: user.id,
+      taskType: 'APPROVAL',
       status: 'PENDING',
     }
     const [tasks, total] = await this.prisma.$transaction([
@@ -221,6 +223,7 @@ export class ApprovalsService {
     const where: Prisma.ApprovalTaskWhereInput = {
       tenantId: user.tenantId,
       approverId: user.id,
+      taskType: 'APPROVAL',
       status: { in: ['APPROVED', 'REJECTED'] },
     }
     const [tasks, total] = await this.prisma.$transaction([
@@ -235,6 +238,33 @@ export class ApprovalsService {
     ])
     const items = await Promise.all(
       tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user.id)),
+    )
+    return { items, total, page, pageSize }
+  }
+
+  /** Cordys approval_task.type=cc：抄送记录与审批待办共用 approval_task 数据源。 */
+  async myCopied(
+    user: AuthUser,
+    page: number,
+    pageSize: number,
+  ): Promise<PaginatedResult<ApprovalInstanceVO>> {
+    const where: Prisma.ApprovalTaskWhereInput = {
+      tenantId: user.tenantId,
+      approverId: user.id,
+      taskType: 'CC',
+    }
+    const [tasks, total] = await this.prisma.$transaction([
+      this.prisma.approvalTask.findMany({
+        where,
+        include: { instance: { include: { tasks: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.approvalTask.count({ where }),
+    ])
+    const items = await Promise.all(
+      tasks.map((task) => this.toInstanceVO(task.instance, task.instance.tasks, user.id)),
     )
     return { items, total, page, pageSize }
   }
@@ -279,6 +309,9 @@ export class ApprovalsService {
         submitter?.leaderId ?? null,
       )
       if (approvers.length === 0) continue
+      const ccUserIds = [...new Set(snapshot[nodeIndex].ccUserIds ?? [])].filter(
+        (userId) => userId !== instance.submitterId,
+      )
 
       await this.prisma.$transaction([
         this.prisma.approvalInstance.update({
@@ -292,8 +325,23 @@ export class ApprovalsService {
             nodeIndex,
             nodeName: snapshot[nodeIndex].name,
             approverId,
+            taskType: 'APPROVAL',
           })),
         }),
+        ...(ccUserIds.length
+          ? [
+              this.prisma.approvalTask.createMany({
+                data: ccUserIds.map((approverId) => ({
+                  tenantId: instance.tenantId,
+                  instanceId,
+                  nodeIndex,
+                  nodeName: snapshot[nodeIndex].name,
+                  approverId,
+                  taskType: 'CC' as const,
+                })),
+              }),
+            ]
+          : []),
       ])
       await this.notifications.notifyMany(instance.tenantId, approvers, {
         type: 'approval',
@@ -301,6 +349,14 @@ export class ApprovalsService {
         content: `${instance.submitterName} 提交的「${instance.targetName}」等待你审批`,
         link: '/approvals',
       })
+      if (ccUserIds.length) {
+        await this.notifications.notifyMany(instance.tenantId, ccUserIds, {
+          type: 'approval',
+          title: '有新的审批抄送给你',
+          content: `${instance.submitterName} 提交的「${instance.targetName}」已抄送给你`,
+          link: '/approvals?tab=copied',
+        })
+      }
       return
     }
   }
@@ -501,7 +557,13 @@ export class ApprovalsService {
 
   private async ensurePendingTask(user: AuthUser, taskId: string): Promise<ApprovalTask> {
     const task = await this.prisma.approvalTask.findFirst({
-      where: { id: taskId, tenantId: user.tenantId, approverId: user.id, status: 'PENDING' },
+      where: {
+        id: taskId,
+        tenantId: user.tenantId,
+        approverId: user.id,
+        taskType: 'APPROVAL',
+        status: 'PENDING',
+      },
     })
     if (!task) throw new NotFoundException('待办任务不存在或已处理')
     return task
@@ -520,7 +582,10 @@ export class ApprovalsService {
         })
       : []
     const nameMap = new Map(users.map((u) => [u.id, u.name]))
-    const myPending = tasks.find((t) => t.approverId === currentUserId && t.status === 'PENDING')
+    const approvalTasks = tasks.filter((task) => task.taskType === 'APPROVAL')
+    const myPending = approvalTasks.find(
+      (task) => task.approverId === currentUserId && task.status === 'PENDING',
+    )
 
     return {
       id: instance.id,
@@ -535,7 +600,7 @@ export class ApprovalsService {
       submitterName: instance.submitterName,
       finishedAt: instance.finishedAt?.toISOString() ?? null,
       createdAt: instance.createdAt.toISOString(),
-      tasks: tasks
+      tasks: approvalTasks
         .sort((a, b) => a.nodeIndex - b.nodeIndex || a.createdAt.getTime() - b.createdAt.getTime())
         .map((t) => ({
           id: t.id,
@@ -544,6 +609,7 @@ export class ApprovalsService {
           nodeName: t.nodeName,
           approverId: t.approverId,
           approverName: nameMap.get(t.approverId),
+          taskType: t.taskType,
           status: t.status,
           comment: t.comment,
           handledAt: t.handledAt?.toISOString() ?? null,

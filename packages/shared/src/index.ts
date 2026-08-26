@@ -1,6 +1,7 @@
 export * from './approval'
 export * from './bidding'
 export * from './deal'
+export * from './home'
 export * from './metadata'
 export * from './message-settings'
 export * from './permissions'
@@ -42,6 +43,8 @@ export interface CurrentUser {
   /** Cordys sys_user.gender：false=男，true=女。 */
   gender: boolean
   avatarUrl: string | null
+  /** Cordys 默认密码提醒标记；修改密码成功后由服务端清除。 */
+  defaultPwd: boolean
   roles: Array<{ id: string; name: string }>
   permissions: string[]
   deptId: string | null

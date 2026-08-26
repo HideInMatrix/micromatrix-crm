@@ -17,10 +17,12 @@ import LineItemsEditor from '@/components/LineItemsEditor.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const homeQuickCreate = useHomeQuickCreate()
 
 const fields = ref<FieldVO[]>([])
 const loading = ref(false)
@@ -73,7 +75,10 @@ async function loadQuotes(customerId?: string) {
     return
   }
   const { data } = await quoteApi.list({ page: 1, pageSize: 50, customerId, status: 'CONFIRMED' })
-  quoteOptions.value = data.items.map((q) => ({ id: q.id, name: `${q.code} ${q.name}（¥${q.totalAmount}）` }))
+  quoteOptions.value = data.items.map((q) => ({
+    id: q.id,
+    name: `${q.code} ${q.name}（¥${q.totalAmount}）`,
+  }))
 }
 
 function openCreate() {
@@ -116,6 +121,7 @@ async function handleSave() {
   }
   const valid = await dynamicFormRef.value?.validate()
   if (!valid) return
+  const isCreate = !editingId.value
   saving.value = true
   try {
     const payload: Record<string, unknown> = {
@@ -138,6 +144,7 @@ async function handleSave() {
       ElMessage.success('合同已创建')
     }
     dialogVisible.value = false
+    if (isCreate && (await homeQuickCreate.completeCreated())) return
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -162,9 +169,10 @@ async function handleSubmitApproval(row: ContractVO) {
 }
 
 async function handleChangeStatus(row: ContractVO, status: string, label: string) {
-  const confirmed = await ElMessageBox.confirm(`将合同「${row.name}」变更为「${label}」？`, '确认').catch(
-    () => false,
-  )
+  const confirmed = await ElMessageBox.confirm(
+    `将合同「${row.name}」变更为「${label}」？`,
+    '确认',
+  ).catch(() => false)
   if (!confirmed) return
   try {
     await contractApi.changeStatus(row.id, status)
@@ -197,6 +205,7 @@ function openDetail(row: ContractVO) {
 onMounted(async () => {
   const [{ data }] = await Promise.all([metadataApi.fields('contract'), fieldRefs.load()])
   fields.value = data
+  await homeQuickCreate.consume(openCreate)
   loadData()
 })
 </script>
@@ -260,7 +269,9 @@ onMounted(async () => {
       <el-table-column label="回款进度" width="140">
         <template #default="{ row }">
           <el-progress
-            :percentage="row.amount > 0 ? Math.min(100, Math.round((row.paidAmount / row.amount) * 100)) : 0"
+            :percentage="
+              row.amount > 0 ? Math.min(100, Math.round((row.paidAmount / row.amount) * 100)) : 0
+            "
             :stroke-width="8"
           />
         </template>

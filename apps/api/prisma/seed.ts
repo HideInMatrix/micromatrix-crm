@@ -185,6 +185,7 @@ async function main() {
             deptId: input.deptId,
             leaderId: input.leaderId,
             position: input.position,
+            defaultPwd: true,
           },
         })
     await prisma.$transaction([

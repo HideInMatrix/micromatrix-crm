@@ -42,6 +42,8 @@ export const approvalApi = {
     http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-handled', { params }),
   myApplications: (params: PageQuery) =>
     http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-applications', { params }),
+  myCopied: (params: PageQuery) =>
+    http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-copied', { params }),
   instanceForTarget: (module: string, targetId: string) =>
     http.get<ApprovalInstanceVO | null>('/approvals/instance', { params: { module, targetId } }),
 }

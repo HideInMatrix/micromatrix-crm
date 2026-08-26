@@ -27,6 +27,7 @@ import { BusinessChangeLogService } from '../../common/services/business-change-
 import { Clue as Lead, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CustomersService } from '../../customers/customers.service'
+import { HomeFilterService } from '../home/home-filter.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { ExportTasksService } from '../import-export/export-tasks.service'
@@ -67,12 +68,14 @@ export class LeadsService {
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
     private readonly customers: CustomersService,
+    private readonly homeFilters: HomeFilterService,
   ) {}
 
   async findAll(user: AuthUser, query: QueryLeadsDto): Promise<PaginatedResult<LeadVO>> {
     const { page = 1, pageSize = 10, keyword, scope = 'mine', status } = query
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const adHocConditions = parseFilters(query.filters)
+    const homeFilter = this.homeFilters.parse(query.homeFilter, 'lead')
     const viewResourceType =
       scope === 'pool' ? USER_VIEW_RESOURCE_TYPES.lead_pool : USER_VIEW_RESOURCE_TYPES.lead
     const saved = query.viewId
@@ -89,6 +92,7 @@ export class LeadsService {
     // 线索池对全员开放；非池数据按数据范围过滤
     let scopeClause: Prisma.ClueWhereInput
     if (scope === 'pool') {
+      if (homeFilter) throw new BadRequestException('首页统计筛选不能用于线索池')
       const options = await this.pools.options(user, 'lead')
       const accessiblePoolIds = options.map((pool) => pool.id)
       if (query.poolId && !accessiblePoolIds.includes(query.poolId)) {
@@ -101,10 +105,12 @@ export class LeadsService {
             poolId: { in: accessiblePoolIds },
           }
     } else {
-      scopeClause = {
-        inSharedPool: false,
-        ...(await this.dataScope.directOwnerFilter(user, 'menu:lead')),
-      }
+      scopeClause = homeFilter
+        ? await this.homeFilters.clueWhere(user, homeFilter)
+        : {
+            inSharedPool: false,
+            ...(await this.dataScope.directOwnerFilter(user, 'menu:lead')),
+          }
     }
 
     const where: Prisma.ClueWhereInput = {

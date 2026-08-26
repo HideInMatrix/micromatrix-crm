@@ -5,6 +5,7 @@ import type { AuthUser } from '../common/auth-user'
 import { CurrentUser } from '../common/decorators/current-user.decorator'
 import { Public } from '../common/decorators/public.decorator'
 import { AuthService } from './auth.service'
+import { ChangePasswordDto } from './dto/change-password.dto'
 import { LoginDto } from './dto/login.dto'
 import { RefreshTokenDto } from './dto/refresh-token.dto'
 import { RegisterDto } from './dto/register.dto'
@@ -42,6 +43,14 @@ export class AuthController {
   @ApiOperation({ summary: '获取当前用户信息' })
   me(@CurrentUser() user: AuthUser) {
     return this.authService.me(user.id)
+  }
+
+  @Post('change-password')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '修改当前用户密码并清除默认密码提醒' })
+  changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.id, dto.oldPassword, dto.newPassword)
   }
 
   @Post('api-token')

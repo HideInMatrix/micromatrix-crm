@@ -20,11 +20,13 @@ import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
 const fieldRefs = useFieldRefs()
+const homeQuickCreate = useHomeQuickCreate()
 
 const fields = ref<FieldVO[]>([])
 const customerOptions = ref<CustomerOptionVO[]>([])
@@ -58,7 +60,10 @@ const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
 
 const uiFields = computed<FieldVO[]>(() => {
-  const customerFieldOptions = customerOptions.value.map((item) => ({ label: item.name, value: item.id }))
+  const customerFieldOptions = customerOptions.value.map((item) => ({
+    label: item.name,
+    value: item.id,
+  }))
   return fields.value.map((field) => {
     if (field.key === 'customerId') {
       return { ...field, type: 'select', options: customerFieldOptions }
@@ -76,7 +81,9 @@ const defaultColumnKeys = computed(() => {
 })
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
-  const map = new Map(uiFields.value.filter((field) => !field.hidden).map((field) => [field.key, field]))
+  const map = new Map(
+    uiFields.value.filter((field) => !field.hidden).map((field) => [field.key, field]),
+  )
   return keys.map((key) => map.get(key)).filter((field): field is FieldVO => !!field)
 })
 
@@ -187,6 +194,7 @@ function openEdit(row: ContactVO) {
 
 async function saveContact() {
   if (!(await dynamicFormRef.value?.validate())) return
+  const isCreate = !editingId.value
   formSaving.value = true
   try {
     const payload = modelToPayload(formModel.value)
@@ -196,6 +204,7 @@ async function saveContact() {
     }
     ElMessage.success(editingId.value ? '联系人已更新' : '联系人已新增')
     formVisible.value = false
+    if (isCreate && (await homeQuickCreate.completeCreated())) return
     await loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -333,6 +342,7 @@ function displayValue(field: FieldVO, row: ContactVO) {
 
 onMounted(async () => {
   await Promise.all([loadReferenceData(), fieldRefs.load()])
+  await homeQuickCreate.consume(openCreate)
   await loadData()
 })
 </script>
@@ -346,7 +356,9 @@ onMounted(async () => {
         <el-button v-if="auth.hasPerm('contact:create')" type="primary" @click="openCreate">
           新增联系人
         </el-button>
-        <el-button v-if="auth.hasPerm('contact:import')" @click="importVisible = true">导入</el-button>
+        <el-button v-if="auth.hasPerm('contact:import')" @click="importVisible = true"
+          >导入</el-button
+        >
         <el-button
           v-if="auth.hasPerm('contact:export')"
           :disabled="items.length === 0"
@@ -456,10 +468,20 @@ onMounted(async () => {
       </template>
       <el-table-column label="操作" width="130" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="auth.hasPerm('contact:update')" link type="primary" @click="openEdit(row as ContactVO)">
+          <el-button
+            v-if="auth.hasPerm('contact:update')"
+            link
+            type="primary"
+            @click="openEdit(row as ContactVO)"
+          >
             编辑
           </el-button>
-          <el-button v-if="auth.hasPerm('contact:delete')" link type="danger" @click="handleDelete(row as ContactVO)">
+          <el-button
+            v-if="auth.hasPerm('contact:delete')"
+            link
+            type="danger"
+            @click="handleDelete(row as ContactVO)"
+          >
             删除
           </el-button>
         </template>
@@ -518,7 +540,9 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="deactivateVisible = false">取消</el-button>
-      <el-button type="primary" :loading="deactivateSaving" @click="confirmDeactivate">停用</el-button>
+      <el-button type="primary" :loading="deactivateSaving" @click="confirmDeactivate"
+        >停用</el-button
+      >
     </template>
   </el-dialog>
 

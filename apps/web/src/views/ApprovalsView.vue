@@ -5,10 +5,15 @@ import {
   type ApprovalInstanceVO,
 } from '@micromatrix/shared'
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { extractErrorMessage } from '@/api/http'
 
-const activeTab = ref<'pending' | 'handled' | 'mine'>('pending')
+type ApprovalTab = 'pending' | 'handled' | 'mine' | 'copied'
+
+const route = useRoute()
+const router = useRouter()
+const activeTab = ref<ApprovalTab>('pending')
 const loading = ref(false)
 const items = ref<ApprovalInstanceVO[]>([])
 const total = ref(0)
@@ -26,7 +31,9 @@ async function loadData() {
         ? approvalApi.myPending
         : activeTab.value === 'handled'
           ? approvalApi.myHandled
-          : approvalApi.myApplications
+          : activeTab.value === 'mine'
+            ? approvalApi.myApplications
+            : approvalApi.myCopied
     const { data } = await api({ page: query.page, pageSize: query.pageSize })
     items.value = data.items
     total.value = data.total
@@ -105,15 +112,26 @@ function taskStatusLabel(status: string) {
         : '待处理'
 }
 
-onMounted(loadData)
+function handleTabChange() {
+  query.page = 1
+  void router.replace({ path: route.path, query: { ...route.query, tab: activeTab.value } })
+  loadData()
+}
+
+onMounted(() => {
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  if (['pending', 'handled', 'mine', 'copied'].includes(tab)) activeTab.value = tab as ApprovalTab
+  loadData()
+})
 </script>
 
 <template>
   <el-card shadow="never">
-    <el-tabs v-model="activeTab" @tab-change="((query.page = 1), loadData())">
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="待我审批" name="pending" />
       <el-tab-pane label="我已处理" name="handled" />
       <el-tab-pane label="我发起的" name="mine" />
+      <el-tab-pane label="抄送我的" name="copied" />
     </el-tabs>
 
     <el-table v-loading="loading" :data="items" stripe>
@@ -132,7 +150,11 @@ onMounted(loadData)
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag :type="statusTagType(row.status)" size="small">
-            {{ APPROVAL_INSTANCE_STATUS_LABELS[row.status as keyof typeof APPROVAL_INSTANCE_STATUS_LABELS] }}
+            {{
+              APPROVAL_INSTANCE_STATUS_LABELS[
+                row.status as keyof typeof APPROVAL_INSTANCE_STATUS_LABELS
+              ]
+            }}
           </el-tag>
         </template>
       </el-table-column>
@@ -190,7 +212,13 @@ onMounted(loadData)
           <el-timeline-item
             v-for="task in current.tasks"
             :key="task.id"
-            :type="task.status === 'APPROVED' ? 'success' : task.status === 'REJECTED' ? 'danger' : 'info'"
+            :type="
+              task.status === 'APPROVED'
+                ? 'success'
+                : task.status === 'REJECTED'
+                  ? 'danger'
+                  : 'info'
+            "
             :timestamp="task.handledAt ? new Date(task.handledAt).toLocaleString() : '待处理'"
             placement="top"
           >

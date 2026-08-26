@@ -43,6 +43,12 @@ export class FlowNodeDto {
   @IsOptional()
   approverIds?: string[]
 
+  @ApiPropertyOptional({ type: [String], description: '进入该节点时抄送的成员 ID' })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  ccUserIds?: string[]
+
   @ApiProperty({ enum: APPROVAL_MODES })
   @IsIn(APPROVAL_MODES)
   mode!: (typeof APPROVAL_MODES)[number]

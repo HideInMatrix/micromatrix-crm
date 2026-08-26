@@ -303,9 +303,10 @@ export class ApprovalFlowConfigService {
   private async validateReferences(tenantId: string, nodes: FlowNodeDto[]) {
     const userIds = [
       ...new Set(
-        nodes
-          .filter((node) => node.approverType === 'USER')
-          .flatMap((node) => node.approverIds ?? []),
+        nodes.flatMap((node) => [
+          ...(node.approverType === 'USER' ? (node.approverIds ?? []) : []),
+          ...(node.ccUserIds ?? []),
+        ]),
       ),
     ]
     const roleIds = [
@@ -396,6 +397,7 @@ export class ApprovalFlowConfigService {
             create: {
               approverType: node.approverType,
               approverIds: node.approverIds,
+              ccUserIds: node.ccUserIds ?? [],
               mode: node.mode,
             },
           },
@@ -433,6 +435,7 @@ export class ApprovalFlowConfigService {
         name: node.name,
         approverType: node.approver!.approverType,
         approverIds: node.approver!.approverIds,
+        ccUserIds: node.approver!.ccUserIds,
         mode: node.approver!.mode,
       }))
   }
@@ -498,6 +501,7 @@ export class ApprovalFlowConfigService {
         sort: node.sort,
         approverType: node.approver?.approverType,
         approverIds: node.approver?.approverIds,
+        ccUserIds: node.approver?.ccUserIds,
         mode: node.approver?.mode,
       })),
       createLinks: flow.currentVersion.links.map((link) => ({
