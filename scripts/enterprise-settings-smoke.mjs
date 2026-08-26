@@ -122,6 +122,14 @@ try {
     uiSaved.response.ok && uiSaved.data?.customTheme === '#123456',
     JSON.stringify(uiSaved.data),
   )
+  const publicBranding = await get(
+    `/enterprise-settings/branding/${encodeURIComponent(primary.user.tenantSlug)}`,
+  )
+  check(
+    '公开品牌配置无需登录即可读取最新平台标题',
+    publicBranding.response.ok && publicBranding.data?.title === `Smoke CRM ${suffix}`,
+    JSON.stringify(publicBranding.data),
+  )
   const isolatedUi = await get('/enterprise-settings/ui', isolated.headers)
   check(
     '界面设置租户隔离',

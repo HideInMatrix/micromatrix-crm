@@ -9,6 +9,7 @@ import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
 import { EnterpriseGlobalTasksService } from './enterprise-global-tasks.service'
 import { EnterpriseMailSettingsService } from './enterprise-mail-settings.service'
 import { EnterpriseTermsService } from './enterprise-terms.service'
+import { EnterpriseUiSettingsService } from './enterprise-ui-settings.service'
 import type { SmtpProbeService } from './smtp-probe.service'
 
 const user: AuthUser = {
@@ -30,6 +31,50 @@ const cipher = {
     return value.ciphertext.replace(/^enc:/, '')
   },
 } as unknown as CredentialCipherService
+
+test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', async () => {
+  const now = new Date()
+  const prisma = {
+    tenant: {
+      findUnique: async ({ where }: any) =>
+        where.slug === 'demo' ? { id: 'tenant-a', slug: 'demo' } : null,
+    },
+    enterpriseUiSetting: {
+      findUnique: async ({ where }: any) =>
+        where.tenantId === 'tenant-a'
+          ? {
+              id: 'ui-a',
+              tenantId: 'tenant-a',
+              theme: 'custom',
+              customTheme: '#123456',
+              style: 'follow',
+              customStyle: '#f1f2f3',
+              title: '一草一木 CRM',
+              slogan: '连接每一位客户',
+              helpDoc: 'https://example.com/help',
+              iconAttachmentId: 'icon-a',
+              loginLogoAttachmentId: null,
+              loginImageAttachmentId: 'image-a',
+              platformLogoAttachmentId: 'logo-a',
+              createdAt: now,
+              updatedAt: now,
+            }
+          : null,
+    },
+  } as unknown as PrismaService
+  const attachments = {} as any
+  const service = new EnterpriseUiSettingsService(prisma, attachments)
+
+  const branding = await service.getBranding('demo')
+  assert.equal(branding.title, '一草一木 CRM')
+  assert.equal(branding.tenantSlug, 'demo')
+  assert.equal(branding.iconConfigured, true)
+  assert.equal(branding.loginLogoConfigured, false)
+  assert.equal(branding.loginImageConfigured, true)
+  assert.equal(branding.platformLogoConfigured, true)
+  assert.equal('iconAttachmentId' in branding, false)
+  assert.equal('platformLogoAttachmentId' in branding, false)
+})
 
 test('SMTP 密码加密保存、留空保留且响应不回显秘密材料', async () => {
   let row: any = null

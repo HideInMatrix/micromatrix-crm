@@ -5,11 +5,13 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 import WeComLoginPanel from '@/components/WeComLoginPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const enterpriseUi = useEnterpriseUiStore()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
@@ -22,6 +24,15 @@ const returnPath = computed(() =>
   typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
     ? route.query.redirect
     : '/',
+)
+const loginPageStyle = computed(() =>
+  enterpriseUi.loginImageUrl
+    ? {
+        backgroundImage: `url(${enterpriseUi.loginImageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : {},
 )
 
 const rules: FormRules = {
@@ -63,11 +74,19 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="h-full flex-center bg-[var(--el-bg-color-page)]">
+  <div class="login-page h-full flex-center bg-[var(--el-bg-color-page)]" :style="loginPageStyle">
     <el-card class="w-96" shadow="hover">
       <div class="text-center mb-6">
-        <h1 class="text-xl font-bold">微矩阵 CRM</h1>
-        <p class="text-sm text-[var(--el-text-color-secondary)] mt-1">客户关系管理系统</p>
+        <img
+          v-if="enterpriseUi.loginLogoUrl"
+          :src="enterpriseUi.loginLogoUrl"
+          :alt="enterpriseUi.branding.title"
+          class="login-logo"
+        />
+        <h1 v-else class="text-xl font-bold">{{ enterpriseUi.branding.title }}</h1>
+        <p class="text-sm text-[var(--el-text-color-secondary)] mt-1">
+          {{ enterpriseUi.branding.slogan }}
+        </p>
       </div>
 
       <el-form
@@ -128,3 +147,20 @@ async function handleSubmit() {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.login-page {
+  background-repeat: no-repeat;
+}
+
+.login-logo {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 72px;
+  margin: 0 auto;
+  object-fit: contain;
+  object-position: center;
+}
+</style>

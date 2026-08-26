@@ -1,16 +1,27 @@
 <script setup lang="ts">
 import { showSuccessToast, showFailToast } from 'vant'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const enterpriseUi = useEnterpriseUiStore()
 
 const loading = ref(false)
 const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
+const loginPageStyle = computed(() =>
+  enterpriseUi.loginImageUrl
+    ? {
+        backgroundImage: `url(${enterpriseUi.loginImageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : {},
+)
 
 async function handleSubmit() {
   loading.value = true
@@ -27,10 +38,19 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="min-h-full flex flex-col justify-center px-6 pb-24">
+  <div
+    class="min-h-full flex flex-col justify-center px-6 pb-24 bg-[var(--el-bg-color-page)]"
+    :style="loginPageStyle"
+  >
     <div class="text-center mb-10">
-      <h1 class="text-2xl font-bold">微矩阵 CRM</h1>
-      <p class="text-sm text-gray-500 mt-2">移动端 · 客户关系管理</p>
+      <img
+        v-if="enterpriseUi.loginLogoUrl"
+        :src="enterpriseUi.loginLogoUrl"
+        :alt="enterpriseUi.branding.title"
+        class="mx-auto max-h-20 max-w-full object-contain"
+      />
+      <h1 v-else class="text-2xl font-bold">{{ enterpriseUi.branding.title }}</h1>
+      <p class="text-sm text-gray-500 mt-2">{{ enterpriseUi.branding.slogan }}</p>
     </div>
 
     <van-form @submit="handleSubmit">

@@ -10,6 +10,7 @@ import type {
   EnterpriseTermDiscoveryVO,
   EnterpriseTermVO,
   EnterpriseUiAssetSlot,
+  EnterpriseUiBrandingVO,
   EnterpriseUiSettingVO,
   SaveEnterpriseAiModelInput,
   SaveEnterpriseGlobalTaskInput,
@@ -20,6 +21,18 @@ import type {
 import { http } from './http'
 
 export const enterpriseUiSettingApi = {
+  branding: (tenantSlug: string) =>
+    http.get<EnterpriseUiBrandingVO>(
+      `/enterprise-settings/branding/${encodeURIComponent(tenantSlug)}`,
+    ),
+  brandingAssetUrl: (
+    tenantSlug: string,
+    slot: EnterpriseUiAssetSlot,
+    updatedAt?: string | null,
+  ) => {
+    const version = updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ''
+    return `/api/enterprise-settings/branding/${encodeURIComponent(tenantSlug)}/assets/${slot}${version}`
+  },
   get: () => http.get<EnterpriseUiSettingVO>('/enterprise-settings/ui'),
   update: (data: UpdateEnterpriseUiSettingInput) =>
     http.put<EnterpriseUiSettingVO>('/enterprise-settings/ui', data),

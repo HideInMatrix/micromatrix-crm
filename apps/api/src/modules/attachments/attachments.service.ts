@@ -33,8 +33,7 @@ export class AttachmentsService {
     private readonly prisma: PrismaService,
     config: ConfigService,
   ) {
-    const root =
-      config.get<string>('UPLOAD_DIR') ?? path.resolve(__dirname, '../../../uploads')
+    const root = config.get<string>('UPLOAD_DIR') ?? path.resolve(__dirname, '../../../uploads')
     this.storage = new LocalDiskStorage(root)
   }
 
@@ -126,6 +125,18 @@ export class AttachmentsService {
     await this.storage.remove(row.path)
     await this.prisma.attachment.delete({ where: { id } })
     return true
+  }
+
+  async viewFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {
+    const row = await this.prisma.attachment.findFirst({
+      where: { id, tenantId, targetType, targetId },
+    })
+    if (!row) throw new NotFoundException('附件不存在')
+    const abs = this.storage.resolveAbsolute(row.path)
+    return new StreamableFile(createReadStream(abs), {
+      type: row.mime || 'application/octet-stream',
+      disposition: `inline; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+    })
   }
 
   private async ensureOwned(user: AuthUser, id: string) {

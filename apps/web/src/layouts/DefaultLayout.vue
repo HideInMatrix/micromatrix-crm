@@ -7,11 +7,13 @@ import TopNavigationActions from '@/components/TopNavigationActions.vue'
 import { MENUS, type MenuItem } from '@/router/menu'
 import { moduleIconOf } from '@/router/navigation-icons'
 import { useAuthStore } from '@/stores/auth'
+import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 import { useModuleConfigStore } from '@/stores/module-config'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const enterpriseUi = useEnterpriseUiStore()
 const moduleConfig = useModuleConfigStore()
 
 const isDark = useDark()
@@ -40,17 +42,23 @@ onMounted(() => {
 })
 
 function handleLogout() {
+  const tenant = auth.user?.tenantSlug
   auth.logout()
-  router.push('/login')
+  router.push({ name: 'login', query: tenant ? { tenant } : undefined })
 }
 </script>
 
 <template>
   <el-container class="h-full">
     <el-aside width="220px" class="flex flex-col border-r border-[var(--el-border-color)]">
-      <div class="h-14 shrink-0 flex-center gap-1 text-lg font-bold">
-        <span class="text-[var(--el-color-primary)]">微矩阵</span>
-        <span>CRM</span>
+      <div class="h-14 shrink-0 flex items-center justify-center gap-2 px-4 text-lg font-bold">
+        <img
+          v-if="enterpriseUi.platformLogoUrl"
+          :src="enterpriseUi.platformLogoUrl"
+          :alt="enterpriseUi.branding.title"
+          class="max-h-8 max-w-24 shrink-0 object-contain"
+        />
+        <span class="truncate">{{ enterpriseUi.branding.title }}</span>
       </div>
       <el-menu :default-active="activeMenu" router class="flex-1 overflow-y-auto !border-r-0">
         <template v-for="menu in visibleMenus" :key="menu.path">

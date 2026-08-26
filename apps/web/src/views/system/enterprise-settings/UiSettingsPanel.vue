@@ -5,13 +5,16 @@ import type {
   UpdateEnterpriseUiSettingInput,
 } from '@micromatrix/shared'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { attachmentApi } from '@/api/attachments'
 import { enterpriseUiSettingApi } from '@/api/enterprise-settings'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
-import { applyEnterpriseUiTheme } from '@/utils/enterprise-ui-theme'
+import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 
 const auth = useAuthStore()
+const enterpriseUi = useEnterpriseUiStore()
+const route = useRoute()
 const canUpdate = computed(() => auth.hasPerm('system:setting:update'))
 const loading = ref(false)
 const saving = ref(false)
@@ -90,7 +93,10 @@ async function refreshPreviews(data: EnterpriseUiSettingVO) {
 async function acceptSetting(data: EnterpriseUiSettingVO) {
   setting.value = data
   copyToForm(data)
-  applyEnterpriseUiTheme(data)
+  if (auth.user?.tenantSlug) {
+    enterpriseUi.acceptSetting(data, auth.user.tenantSlug)
+    enterpriseUi.setDocumentTitle(route.meta.title)
+  }
   await refreshPreviews(data)
 }
 
@@ -167,12 +173,7 @@ onBeforeUnmount(revokePreviews)
     <el-card shadow="never" class="settings-section">
       <template #header>
         <div class="section-header">
-          <div>
-            <strong>平台风格</strong>
-            <div class="section-tip">
-              对齐 Cordys 的主题色与平台背景设置，保存后立即应用到当前页面。
-            </div>
-          </div>
+          <strong>平台风格</strong>
           <el-button v-if="canUpdate" text type="primary" @click="restoreTextAndTheme"
             >恢复默认</el-button
           >
@@ -209,14 +210,7 @@ onBeforeUnmount(revokePreviews)
     </el-card>
 
     <el-card shadow="never" class="settings-section">
-      <template #header>
-        <div>
-          <strong>登录页配置</strong>
-          <div class="section-tip">
-            标题、Slogan 与登录页品牌资源独立保存，不再写入通用 SystemSetting。
-          </div>
-        </div>
-      </template>
+      <template #header><strong>登录页配置</strong></template>
       <div class="preview-form-grid">
         <div class="login-preview">
           <div class="preview-window-head">
@@ -408,20 +402,24 @@ onBeforeUnmount(revokePreviews)
   border-radius: 6px;
 }
 .asset-preview {
-  height: 90px;
+  height: 132px;
   margin-bottom: 12px;
   display: grid;
   place-items: center;
   overflow: hidden;
+  padding: 10px;
   border-radius: 4px;
   background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .asset-preview img {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+  object-position: center;
 }
 .asset-name {
   min-height: 32px;

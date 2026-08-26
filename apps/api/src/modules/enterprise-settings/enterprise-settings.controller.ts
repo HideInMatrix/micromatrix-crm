@@ -15,6 +15,7 @@ import type { EnterpriseUiAssetSlot } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
+import { Public } from '../../common/decorators/public.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import { SaveEnterpriseMailSettingDto, TestEnterpriseMailSettingDto } from './dto/mail-setting.dto'
 import { UpdateEnterpriseUiSettingDto } from './dto/ui-setting.dto'
@@ -36,6 +37,23 @@ export class EnterpriseSettingsController {
     private readonly ui: EnterpriseUiSettingsService,
     private readonly mail: EnterpriseMailSettingsService,
   ) {}
+
+  @Get('branding/:tenantSlug')
+  @Public()
+  @ApiOperation({ summary: '获取登录页和平台公开品牌配置' })
+  getBranding(@Param('tenantSlug') tenantSlug: string) {
+    return this.ui.getBranding(tenantSlug)
+  }
+
+  @Get('branding/:tenantSlug/assets/:slot')
+  @Public()
+  @ApiOperation({ summary: '读取公开品牌图片资源' })
+  getBrandingAsset(
+    @Param('tenantSlug') tenantSlug: string,
+    @Param('slot') slot: EnterpriseUiAssetSlot,
+  ) {
+    return this.ui.viewBrandingAsset(tenantSlug, slot)
+  }
 
   @Get('ui')
   @RequirePermissions('system:setting')

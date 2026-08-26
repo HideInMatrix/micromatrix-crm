@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type {
   EnterpriseUiAssetSlot,
   EnterpriseUiAssetVO,
+  EnterpriseUiBrandingVO,
   EnterpriseUiSettingVO,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
@@ -43,6 +44,30 @@ export class EnterpriseUiSettingsService {
   async get(user: AuthUser): Promise<EnterpriseUiSettingVO> {
     const row = await this.ensureRow(user.tenantId)
     return this.toVO(user.tenantId, row)
+  }
+
+  async getBranding(tenantSlug: string): Promise<EnterpriseUiBrandingVO> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: { id: true, slug: true },
+    })
+    if (!tenant) throw new NotFoundException('企业不存在')
+    const row = await this.prisma.enterpriseUiSetting.findUnique({ where: { tenantId: tenant.id } })
+    return this.toBranding(tenant.slug, row)
+  }
+
+  async viewBrandingAsset(tenantSlug: string, slot: EnterpriseUiAssetSlot) {
+    if (!Object.hasOwn(SLOT_FIELD, slot)) throw new BadRequestException('不支持的界面资源类型')
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: { id: true },
+    })
+    if (!tenant) throw new NotFoundException('企业不存在')
+    const row = await this.prisma.enterpriseUiSetting.findUnique({ where: { tenantId: tenant.id } })
+    if (!row) throw new NotFoundException('品牌资源不存在')
+    const attachmentId = row[SLOT_FIELD[slot]]
+    if (!attachmentId) throw new NotFoundException('品牌资源不存在')
+    return this.attachments.viewFromTarget(tenant.id, attachmentId, TARGET_TYPE, row.id)
   }
 
   async update(
@@ -106,6 +131,27 @@ export class EnterpriseUiSettingsService {
       update: {},
       create: { tenantId, ...DEFAULT_UI_SETTING },
     })
+  }
+
+  private toBranding(
+    tenantSlug: string,
+    row: Awaited<ReturnType<EnterpriseUiSettingsService['ensureRow']>> | null,
+  ): EnterpriseUiBrandingVO {
+    return {
+      tenantSlug,
+      theme: (row?.theme ?? DEFAULT_UI_SETTING.theme) as EnterpriseUiBrandingVO['theme'],
+      customTheme: row?.customTheme ?? DEFAULT_UI_SETTING.customTheme,
+      style: (row?.style ?? DEFAULT_UI_SETTING.style) as EnterpriseUiBrandingVO['style'],
+      customStyle: row?.customStyle ?? DEFAULT_UI_SETTING.customStyle,
+      title: row?.title ?? DEFAULT_UI_SETTING.title,
+      slogan: row?.slogan ?? DEFAULT_UI_SETTING.slogan,
+      helpDoc: row?.helpDoc ?? DEFAULT_UI_SETTING.helpDoc,
+      iconConfigured: Boolean(row?.iconAttachmentId),
+      loginLogoConfigured: Boolean(row?.loginLogoAttachmentId),
+      loginImageConfigured: Boolean(row?.loginImageAttachmentId),
+      platformLogoConfigured: Boolean(row?.platformLogoAttachmentId),
+      updatedAt: row?.updatedAt.toISOString() ?? null,
+    }
   }
 
   private async toVO(

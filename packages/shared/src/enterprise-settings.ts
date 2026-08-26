@@ -25,6 +25,22 @@ export interface EnterpriseUiSettingVO {
   updatedAt: string
 }
 
+export interface EnterpriseUiBrandingVO {
+  tenantSlug: string
+  theme: EnterpriseUiTheme
+  customTheme: string
+  style: EnterpriseUiStyle
+  customStyle: string
+  title: string
+  slogan: string
+  helpDoc: string
+  iconConfigured: boolean
+  loginLogoConfigured: boolean
+  loginImageConfigured: boolean
+  platformLogoConfigured: boolean
+  updatedAt: string | null
+}
+
 export interface UpdateEnterpriseUiSettingInput {
   theme: EnterpriseUiTheme
   customTheme: string

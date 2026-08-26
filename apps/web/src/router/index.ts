@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 import { getClientMode, isMobileClient, type ClientMode } from '@/utils/client-mode'
 import { isWeComWorkbenchBrowser } from '@/utils/wecom'
 
@@ -278,6 +279,11 @@ router.beforeEach(async (to) => {
   }
 
   const auth = useAuthStore()
+  const enterpriseUi = useEnterpriseUiStore()
+  const requestedTenant = typeof to.query.tenant === 'string' ? to.query.tenant.trim() : ''
+  if (!auth.isAuthenticated && requestedTenant) {
+    await enterpriseUi.load(requestedTenant).catch(() => undefined)
+  }
   if (
     to.name === 'login' &&
     !auth.isAuthenticated &&
@@ -303,13 +309,16 @@ router.beforeEach(async (to) => {
     await auth.fetchMe().catch(() => auth.logout())
     if (!auth.user) return { name: 'login' }
   }
+  if (auth.user?.tenantSlug) {
+    await enterpriseUi.load(auth.user.tenantSlug).catch(() => undefined)
+  }
   if (to.meta.perm && !auth.hasPerm(to.meta.perm)) {
     return { path: '/' }
   }
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · 微矩阵 CRM` : '微矩阵 CRM'
+  useEnterpriseUiStore().setDocumentTitle(to.meta.title)
 })
 
 export default router

@@ -1,4 +1,11 @@
-import type { EnterpriseUiSettingVO } from '@micromatrix/shared'
+import type { EnterpriseUiStyle, EnterpriseUiTheme } from '@micromatrix/shared'
+
+interface EnterpriseUiThemeSetting {
+  theme: EnterpriseUiTheme
+  customTheme: string
+  style: EnterpriseUiStyle
+  customStyle: string
+}
 
 const PRIMARY_VARS = [
   '--el-color-primary',
@@ -11,7 +18,8 @@ const PRIMARY_VARS = [
 ] as const
 
 function mix(hex: string, target: '#ffffff' | '#000000', weight: number) {
-  const parse = (value: string) => [1, 3, 5].map((start) => Number.parseInt(value.slice(start, start + 2), 16))
+  const parse = (value: string) =>
+    [1, 3, 5].map((start) => Number.parseInt(value.slice(start, start + 2), 16))
   const [r, g, b] = parse(hex)
   const [tr, tg, tb] = parse(target)
   const channel = (from: number, to: number) => Math.round(from + (to - from) * weight)
@@ -20,7 +28,7 @@ function mix(hex: string, target: '#ffffff' | '#000000', weight: number) {
     .join('')}`
 }
 
-export function applyEnterpriseUiTheme(setting: EnterpriseUiSettingVO) {
+export function applyEnterpriseUiTheme(setting: EnterpriseUiThemeSetting) {
   const root = document.documentElement
   const primary = setting.theme === 'custom' ? setting.customTheme : ''
   if (!primary) {
