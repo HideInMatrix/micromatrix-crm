@@ -74,14 +74,14 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="login-page h-full flex-center bg-[var(--el-bg-color-page)]" :style="loginPageStyle">
+  <div class="h-full flex-center bg-[var(--el-bg-color-page)] bg-no-repeat" :style="loginPageStyle">
     <el-card class="w-96" shadow="hover">
       <div class="text-center mb-6">
         <img
           v-if="enterpriseUi.loginLogoUrl"
           :src="enterpriseUi.loginLogoUrl"
           :alt="enterpriseUi.branding.title"
-          class="login-logo"
+          class="mx-auto block h-auto max-h-18 w-auto max-w-full object-contain object-center"
         />
         <h1 v-else class="text-xl font-bold">{{ enterpriseUi.branding.title }}</h1>
         <p class="text-sm text-[var(--el-text-color-secondary)] mt-1">
@@ -147,20 +147,3 @@ async function handleSubmit() {
     </el-dialog>
   </div>
 </template>
-
-<style scoped>
-.login-page {
-  background-repeat: no-repeat;
-}
-
-.login-logo {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 72px;
-  margin: 0 auto;
-  object-fit: contain;
-  object-position: center;
-}
-</style>

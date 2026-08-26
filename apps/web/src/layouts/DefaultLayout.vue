@@ -18,6 +18,7 @@ const moduleConfig = useModuleConfigStore()
 
 const isDark = useDark()
 const activeMenu = computed(() => route.meta.activeMenu ?? route.path)
+const isEnterpriseSettings = computed(() => route.path === '/system/settings')
 
 const canAccessMenu = (menu: MenuItem) => !menu.perm || auth.hasPerm(menu.perm)
 
@@ -102,7 +103,12 @@ function handleLogout() {
         </div>
       </el-header>
 
-      <el-main class="bg-[var(--el-bg-color-page)]">
+      <el-main
+        class="bg-[var(--el-bg-color-page)] !pb-0 !overflow-x-hidden"
+        :class="{
+          '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden': isEnterpriseSettings,
+        }"
+      >
         <router-view />
       </el-main>
     </el-container>

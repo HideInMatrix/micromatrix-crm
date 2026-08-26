@@ -35,23 +35,27 @@ async function copyToken() {
 </script>
 
 <template>
-  <div class="third-party-panel">
+  <div class="flex flex-col gap-4">
     <WeComIntegrationCard />
 
-    <el-card shadow="never" class="api-card">
+    <el-card shadow="never" class="rounded-1.5">
       <template #header>
         <div>
           <strong>开放 API</strong>
-          <div class="tip">用于脚本或第三方系统调用 MicroMatrix CRM 开放接口。</div>
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            用于脚本或第三方系统调用 MicroMatrix CRM 开放接口。
+          </div>
         </div>
       </template>
-      <div class="api-token-row">
+      <div class="flex items-center">
         <el-button v-if="canUpdate" type="primary" plain :loading="issuing" @click="issueApiToken">
           生成 365 天令牌
         </el-button>
-        <span v-else class="tip">当前账号没有企业设置修改权限。</span>
+        <span v-else class="mt-1 text-xs text-[var(--el-text-color-secondary)]"
+          >当前账号没有企业设置修改权限。</span
+        >
       </div>
-      <div v-if="apiToken" class="token-result">
+      <div v-if="apiToken" class="mt-4 max-w-190 flex flex-col gap-3">
         <el-alert
           title="该令牌只会显示这一次，请妥善保存。"
           type="warning"
@@ -59,48 +63,12 @@ async function copyToken() {
           show-icon
         />
         <el-input :model-value="apiToken" type="textarea" :rows="4" readonly />
-        <el-button @click="copyToken">复制令牌</el-button>
+        <el-button class="self-start" @click="copyToken">复制令牌</el-button>
       </div>
-      <div class="tip api-doc-tip">
+      <div class="mt-4 text-xs text-[var(--el-text-color-secondary)]">
         调用时使用请求头 <code>Authorization: Bearer &lt;token&gt;</code>，接口文档见
-        <a href="/api/docs" target="_blank">/api/docs</a>。
+        <a class="text-[var(--el-color-primary)]" href="/api/docs" target="_blank">/api/docs</a>。
       </div>
     </el-card>
   </div>
 </template>
-
-<style scoped>
-.third-party-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.api-card {
-  border-radius: 6px;
-}
-.tip {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.api-token-row {
-  display: flex;
-  align-items: center;
-}
-.token-result {
-  max-width: 760px;
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.token-result .el-button {
-  align-self: flex-start;
-}
-.api-doc-tip {
-  margin-top: 16px;
-}
-.api-doc-tip a {
-  color: var(--el-color-primary);
-}
-</style>

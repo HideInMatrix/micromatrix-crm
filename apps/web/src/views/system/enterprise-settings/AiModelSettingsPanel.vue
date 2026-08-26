@@ -227,9 +227,9 @@ onMounted(loadModels)
 </script>
 
 <template>
-  <el-card shadow="never" class="model-panel">
-    <div class="toolbar">
-      <div class="toolbar-left">
+  <el-card shadow="never" class="rounded-1.5">
+    <div class="mb-4 flex items-center justify-between gap-4">
+      <div class="flex gap-2">
         <el-button v-if="canUpdate" type="primary" @click="openCreate">新增模型</el-button>
         <el-button
           v-if="canUpdate"
@@ -242,7 +242,7 @@ onMounted(loadModels)
         v-model="keyword"
         clearable
         placeholder="按模型名称、ID 或供应商搜索"
-        class="search"
+        class="w-90"
         @keyup.enter="loadModels"
       >
         <template #append><el-button @click="loadModels">搜索</el-button></template>
@@ -293,7 +293,7 @@ onMounted(loadModels)
       destroy-on-close
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <div class="form-grid">
+        <div class="grid grid-cols-2 gap-x-4.5">
           <el-form-item label="显示名称" prop="displayName"
             ><el-input v-model="form.displayName" maxlength="128"
           /></el-form-item>
@@ -301,7 +301,7 @@ onMounted(loadModels)
             ><el-input v-model="form.modelName" maxlength="255"
           /></el-form-item>
           <el-form-item label="供应商" prop="provider">
-            <el-select v-model="form.provider" class="full"
+            <el-select v-model="form.provider" class="w-full"
               ><el-option v-for="item in providers" :key="item" :label="item" :value="item"
             /></el-select>
           </el-form-item>
@@ -319,9 +319,11 @@ onMounted(loadModels)
             show-password
             autocomplete="new-password"
           />
-          <div v-if="editingId" class="tip">留空表示保留当前 API Key。</div>
+          <div v-if="editingId" class="text-xs text-[var(--el-text-color-secondary)]">
+            留空表示保留当前 API Key。
+          </div>
         </el-form-item>
-        <div class="form-grid three">
+        <div class="grid grid-cols-3 gap-x-4.5">
           <el-form-item label="Temperature"
             ><el-input-number v-model="form.temperature" :min="0" :max="1" :step="0.1"
           /></el-form-item>
@@ -347,12 +349,14 @@ onMounted(loadModels)
 
     <el-dialog v-model="routeVisible" title="模型路由策略" width="620px" destroy-on-close>
       <div v-loading="routeLoading">
-        <div class="tip route-tip">按顺序尝试可用模型。仅启用状态的模型可以加入路由。</div>
+        <div class="mb-2.5 text-xs text-[var(--el-text-color-secondary)]">
+          按顺序尝试可用模型。仅启用状态的模型可以加入路由。
+        </div>
         <el-select
           v-model="routeIds"
           multiple
           filterable
-          class="full"
+          class="w-full"
           placeholder="选择参与路由的模型"
         >
           <el-option
@@ -362,12 +366,18 @@ onMounted(loadModels)
             :value="item.id"
           />
         </el-select>
-        <div class="route-list">
-          <div v-for="(row, index) in selectedRouteRows" :key="row.id" class="route-row">
-            <span class="route-index">{{ index + 1 }}</span>
-            <div class="route-name">
+        <div class="mt-3.5 flex flex-col gap-2">
+          <div
+            v-for="(row, index) in selectedRouteRows"
+            :key="row.id"
+            class="min-h-12 flex items-center gap-2 rounded border border-[var(--el-border-color-lighter)] px-2.5 py-1.5"
+          >
+            <span class="w-6 font-mono text-[var(--el-text-color-secondary)]">{{ index + 1 }}</span>
+            <div class="min-w-0 flex flex-1 flex-col">
               <strong>{{ row.displayName }}</strong
-              ><span>{{ row.modelName }}</span>
+              ><span class="text-xs text-[var(--el-text-color-secondary)]">{{
+                row.modelName
+              }}</span>
             </div>
             <el-button text :disabled="index === 0" @click="moveRoute(index, -1)">上移</el-button>
             <el-button
@@ -386,71 +396,3 @@ onMounted(loadModels)
     </el-dialog>
   </el-card>
 </template>
-
-<style scoped>
-.model-panel {
-  border-radius: 6px;
-}
-.toolbar {
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-}
-.search {
-  width: 360px;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 18px;
-}
-.form-grid.three {
-  grid-template-columns: repeat(3, 1fr);
-}
-.full {
-  width: 100%;
-}
-.tip {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.route-tip {
-  margin-bottom: 10px;
-}
-.route-list {
-  margin-top: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.route-row {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 5px;
-}
-.route-index {
-  width: 24px;
-  color: var(--el-text-color-secondary);
-  font-family: monospace;
-}
-.route-name {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-.route-name span {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-</style>

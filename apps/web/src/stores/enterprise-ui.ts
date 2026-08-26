@@ -24,8 +24,33 @@ const DEFAULT_BRANDING: EnterpriseUiBrandingVO = {
   updatedAt: null,
 }
 
+const CURRENT_BRANDING_KEY = 'mmx-enterprise-branding-current'
+const brandingCacheKey = (tenantSlug: string) => `mmx-enterprise-branding:${tenantSlug}`
+
+function readCachedBranding(): EnterpriseUiBrandingVO | null {
+  try {
+    const currentTenant = localStorage.getItem(CURRENT_BRANDING_KEY)?.trim()
+    if (!currentTenant) return null
+    const raw = localStorage.getItem(brandingCacheKey(currentTenant))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as EnterpriseUiBrandingVO
+    return parsed?.tenantSlug === currentTenant ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function cacheBranding(value: EnterpriseUiBrandingVO) {
+  try {
+    localStorage.setItem(brandingCacheKey(value.tenantSlug), JSON.stringify(value))
+    localStorage.setItem(CURRENT_BRANDING_KEY, value.tenantSlug)
+  } catch {
+    // 浏览器禁用存储时仍允许正常使用，只失去刷新首帧品牌缓存。
+  }
+}
+
 export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
-  const branding = ref<EnterpriseUiBrandingVO>({ ...DEFAULT_BRANDING })
+  const branding = ref<EnterpriseUiBrandingVO>(readCachedBranding() ?? { ...DEFAULT_BRANDING })
   const loadedTenantSlug = ref('')
 
   function configured(slot: EnterpriseUiAssetSlot) {
@@ -69,6 +94,7 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
   function accept(value: EnterpriseUiBrandingVO) {
     branding.value = value
     loadedTenantSlug.value = value.tenantSlug
+    cacheBranding(value)
     apply()
   }
 

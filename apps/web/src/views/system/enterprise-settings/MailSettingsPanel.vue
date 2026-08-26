@@ -118,14 +118,16 @@ onMounted(loadData)
 </script>
 
 <template>
-  <el-card v-loading="loading" shadow="never" class="mail-panel">
+  <el-card v-loading="loading" shadow="never" class="rounded-1.5">
     <template #header>
-      <div class="header-row">
+      <div class="flex items-center justify-between gap-2">
         <div>
           <strong>邮件设置</strong>
-          <div class="tip">SMTP 密码使用 AES-256-GCM 加密保存，读取接口不会返回明文密码。</div>
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            SMTP 密码使用 AES-256-GCM 加密保存，读取接口不会返回明文密码。
+          </div>
         </div>
-        <div class="header-actions">
+        <div class="flex items-center gap-2">
           <el-button
             :loading="testing"
             :disabled="!setting?.configured"
@@ -182,14 +184,16 @@ onMounted(loadData)
             show-password
             autocomplete="new-password"
           />
-          <div class="tip">编辑时留空表示保留当前密码。</div>
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            编辑时留空表示保留当前密码。
+          </div>
         </el-form-item>
         <el-form-item label="From" prop="from"><el-input v-model="form.from" /></el-form-item>
         <el-form-item label="Recipient" prop="recipient"
           ><el-input v-model="form.recipient"
         /></el-form-item>
         <el-form-item label="传输安全">
-          <div class="switch-list">
+          <div class="flex gap-7">
             <el-switch v-model="form.ssl" active-text="SSL" @change="normalizeTransport('ssl')" />
             <el-switch
               v-model="form.tls"
@@ -200,7 +204,7 @@ onMounted(loadData)
         </el-form-item>
       </el-form>
       <template #footer>
-        <div class="drawer-footer">
+        <div class="flex items-center justify-end gap-2">
           <el-button :loading="testing" @click="testConnection(true)">测试连接</el-button>
           <el-button @click="drawerVisible = false">取消</el-button>
           <el-button type="primary" :loading="saving" @click="save">更新</el-button>
@@ -209,29 +213,3 @@ onMounted(loadData)
     </el-drawer>
   </el-card>
 </template>
-
-<style scoped>
-.mail-panel {
-  border-radius: 6px;
-}
-.header-row,
-.header-actions,
-.drawer-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.tip {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.switch-list {
-  display: flex;
-  gap: 28px;
-}
-.drawer-footer {
-  justify-content: flex-end;
-}
-</style>

@@ -11,9 +11,15 @@ const activeTab = ref('pageSettings')
 </script>
 
 <template>
-  <div class="enterprise-settings-page">
-    <el-card shadow="never" class="tabs-card">
-      <el-tabs v-model="activeTab" class="settings-tabs">
+  <div class="min-h-full flex flex-col gap-4 overflow-x-hidden">
+    <el-card
+      shadow="never"
+      class="overflow-hidden rounded-1.5 [&_.el-card__body]:!px-5 [&_.el-card__body]:!py-0"
+    >
+      <el-tabs
+        v-model="activeTab"
+        class="[&_.el-tabs__header]:!m-0 [&_.el-tabs__content]:hidden [&_.el-tabs__nav-wrap]:!overflow-hidden [&_.el-tabs__nav-scroll]:!overflow-hidden [&_.el-tabs__nav-wrap::after]:!h-0"
+      >
         <el-tab-pane label="界面设置" name="pageSettings" />
         <el-tab-pane label="第三方" name="syncOrganization" />
         <el-tab-pane label="邮件设置" name="mailSettings" />
@@ -31,32 +37,3 @@ const activeTab = ref('pageSettings')
     <GlobalTaskSettingsPanel v-else-if="activeTab === 'globalTask'" />
   </div>
 </template>
-
-<style scoped>
-.enterprise-settings-page {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.tabs-card {
-  border-radius: 6px;
-}
-
-.tabs-card :deep(.el-card__body) {
-  padding: 0 20px;
-}
-
-.settings-tabs :deep(.el-tabs__header) {
-  margin: 0;
-}
-
-.settings-tabs :deep(.el-tabs__content) {
-  display: none;
-}
-
-.settings-tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 0;
-}
-</style>

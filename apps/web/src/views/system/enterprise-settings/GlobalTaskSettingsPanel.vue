@@ -247,15 +247,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" class="task-panel">
-    <el-tabs v-model="activeTab" class="inner-tabs">
+  <el-card shadow="never" class="rounded-1.5">
+    <el-tabs v-model="activeTab" class="[&_.el-tabs__header]:!mb-4.5">
       <el-tab-pane label="任务列表" name="tasks">
-        <div class="toolbar">
+        <div class="mb-4 flex items-center justify-between gap-4">
           <el-button v-if="canUpdate" type="primary" @click="openCreate">新增任务</el-button>
           <el-input
             v-model="keyword"
             clearable
-            class="search"
+            class="w-90"
             placeholder="按任务名称搜索"
             @keyup.enter="loadTasks"
           >
@@ -310,7 +310,7 @@ onMounted(async () => {
       </el-tab-pane>
 
       <el-tab-pane label="执行记录" name="executions">
-        <div class="record-title-row">
+        <div class="mb-4 flex items-center justify-between gap-4">
           <strong>执行记录列表</strong><el-button @click="loadExecutions">刷新</el-button>
         </div>
         <el-table v-loading="executionLoading" :data="executions" border>
@@ -361,9 +361,9 @@ onMounted(async () => {
         <el-form-item label="任务名称" prop="name"
           ><el-input v-model="form.name" maxlength="128"
         /></el-form-item>
-        <div class="form-grid">
+        <div class="grid grid-cols-2 gap-4.5">
           <el-form-item label="触发类型" prop="triggerType"
-            ><el-select v-model="form.triggerType" class="full"
+            ><el-select v-model="form.triggerType" class="w-full"
               ><el-option
                 v-for="item in triggerOptions"
                 :key="item.value"
@@ -371,7 +371,7 @@ onMounted(async () => {
                 :value="item.value" /></el-select
           ></el-form-item>
           <el-form-item label="确认级别" prop="confirmationLevel"
-            ><el-select v-model="form.confirmationLevel" class="full"
+            ><el-select v-model="form.confirmationLevel" class="w-full"
               ><el-option
                 v-for="item in confirmationOptions"
                 :key="item.value"
@@ -401,7 +401,7 @@ onMounted(async () => {
             placeholder="描述任务需要分析或执行的动作"
         /></el-form-item>
         <el-form-item label="适用 AI 模型"
-          ><el-select v-model="form.applicableModelId" clearable class="full" placeholder="不指定"
+          ><el-select v-model="form.applicableModelId" clearable class="w-full" placeholder="不指定"
             ><el-option
               v-for="item in modelOptions"
               :key="item.id"
@@ -419,31 +419,3 @@ onMounted(async () => {
     </el-drawer>
   </el-card>
 </template>
-
-<style scoped>
-.task-panel {
-  border-radius: 6px;
-}
-.toolbar,
-.record-title-row {
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.search {
-  width: 360px;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
-}
-.full {
-  width: 100%;
-}
-.inner-tabs :deep(.el-tabs__header) {
-  margin-bottom: 18px;
-}
-</style>

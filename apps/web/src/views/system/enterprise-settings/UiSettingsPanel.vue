@@ -169,10 +169,10 @@ onBeforeUnmount(revokePreviews)
 </script>
 
 <template>
-  <div v-loading="loading" class="ui-settings-panel">
-    <el-card shadow="never" class="settings-section">
+  <div v-loading="loading" class="flex flex-col gap-4">
+    <el-card shadow="never" class="rounded-1.5">
       <template #header>
-        <div class="section-header">
+        <div class="flex items-center justify-between">
           <strong>平台风格</strong>
           <el-button v-if="canUpdate" text type="primary" @click="restoreTextAndTheme"
             >恢复默认</el-button
@@ -180,9 +180,9 @@ onBeforeUnmount(revokePreviews)
         </div>
       </template>
 
-      <div class="style-grid">
-        <div class="style-row">
-          <span class="style-label">主题色</span>
+      <div class="flex flex-col gap-4.5">
+        <div class="min-h-8 flex items-center gap-4">
+          <span class="w-18 font-medium">主题色</span>
           <el-radio-group v-model="form.theme" :disabled="!canUpdate">
             <el-radio-button value="default">默认</el-radio-button>
             <el-radio-button value="custom">自定义</el-radio-button>
@@ -193,8 +193,8 @@ onBeforeUnmount(revokePreviews)
             :disabled="!canUpdate"
           />
         </div>
-        <div class="style-row">
-          <span class="style-label">平台背景</span>
+        <div class="min-h-8 flex items-center gap-4">
+          <span class="w-18 font-medium">平台背景</span>
           <el-radio-group v-model="form.style" :disabled="!canUpdate">
             <el-radio-button value="default">默认</el-radio-button>
             <el-radio-button value="follow">跟随主题</el-radio-button>
@@ -209,31 +209,59 @@ onBeforeUnmount(revokePreviews)
       </div>
     </el-card>
 
-    <el-card shadow="never" class="settings-section">
+    <el-card shadow="never" class="rounded-1.5">
       <template #header><strong>登录页配置</strong></template>
-      <div class="preview-form-grid">
-        <div class="login-preview">
-          <div class="preview-window-head">
-            <img v-if="previewUrls.icon" :src="previewUrls.icon" alt="icon" />
+      <div
+        class="grid grid-cols-[minmax(420px,1.3fr)_minmax(300px,0.7fr)] gap-7 max-[1100px]:grid-cols-1"
+      >
+        <div
+          class="overflow-hidden rounded-1.5 border border-[var(--el-border-color)] bg-[var(--el-bg-color)]"
+        >
+          <div
+            class="h-9 flex items-center gap-1.5 border-b border-[var(--el-border-color-lighter)] px-3 text-[11px]"
+          >
+            <img
+              v-if="previewUrls.icon"
+              :src="previewUrls.icon"
+              alt="icon"
+              class="size-4.5 object-contain"
+            />
             <span>{{ form.title || 'MicroMatrix CRM' }}</span>
           </div>
           <div
-            class="preview-login-body"
+            class="min-h-75 grid place-items-center bg-[var(--el-fill-color-extra-light)] bg-cover bg-center"
             :style="
               previewUrls.loginImage ? { backgroundImage: `url(${previewUrls.loginImage})` } : {}
             "
           >
-            <div class="preview-login-card">
-              <img v-if="previewUrls.loginLogo" :src="previewUrls.loginLogo" alt="login logo" />
-              <div v-else class="preview-brand">MicroMatrix</div>
+            <div
+              class="w-55 flex flex-col gap-3 rounded-2 bg-[var(--el-bg-color)] p-5.5 shadow-[var(--el-box-shadow-light)]"
+            >
+              <img
+                v-if="previewUrls.loginLogo"
+                :src="previewUrls.loginLogo"
+                alt="login logo"
+                class="h-auto max-h-11 w-auto max-w-35 object-contain object-left"
+              />
+              <div v-else class="text-5 font-bold text-[var(--el-color-primary)]">
+                {{ form.title }}
+              </div>
               <strong>{{ form.slogan || '欢迎登录' }}</strong>
-              <div class="preview-input"></div>
-              <div class="preview-input"></div>
-              <div class="preview-button">登录</div>
+              <div
+                class="h-7 rounded border border-[var(--el-border-color)] bg-[var(--el-bg-color)]"
+              ></div>
+              <div
+                class="h-7 rounded border border-[var(--el-border-color)] bg-[var(--el-bg-color)]"
+              ></div>
+              <div
+                class="h-7.5 grid place-items-center rounded bg-[var(--el-color-primary)] text-xs text-white"
+              >
+                登录
+              </div>
             </div>
           </div>
         </div>
-        <el-form label-position="top" class="brand-form">
+        <el-form label-position="top">
           <el-form-item label="平台标题">
             <el-input v-model="form.title" maxlength="255" :disabled="!canUpdate" />
           </el-form-item>
@@ -247,19 +275,34 @@ onBeforeUnmount(revokePreviews)
       </div>
     </el-card>
 
-    <el-card shadow="never" class="settings-section">
+    <el-card shadow="never" class="rounded-1.5">
       <template #header><strong>品牌图片资源</strong></template>
-      <div class="asset-grid">
-        <div v-for="asset in assetCards" :key="asset.slot" class="asset-card">
-          <div class="asset-preview">
-            <img v-if="previewUrls[asset.slot]" :src="previewUrls[asset.slot]" :alt="asset.title" />
+      <div class="grid grid-cols-4 gap-4 max-[1100px]:grid-cols-2 max-[700px]:grid-cols-1">
+        <div
+          v-for="asset in assetCards"
+          :key="asset.slot"
+          class="min-w-0 rounded-1.5 border border-[var(--el-border-color-lighter)] p-3.5"
+        >
+          <div
+            class="mx-auto mb-3 aspect-square w-full max-w-64 shrink-0 grid place-items-center overflow-hidden rounded bg-[var(--el-fill-color-light)] p-2.5 text-xs text-[var(--el-text-color-secondary)]"
+          >
+            <img
+              v-if="previewUrls[asset.slot]"
+              :src="previewUrls[asset.slot]"
+              :alt="asset.title"
+              class="block h-auto max-h-full w-auto max-w-full object-contain object-center"
+            />
             <span v-else>默认资源</span>
           </div>
           <strong>{{ asset.title }}</strong>
-          <div class="asset-name">{{ setting?.[asset.property]?.name || asset.tip }}</div>
-          <div v-if="canUpdate" class="asset-actions">
+          <div
+            class="mt-1 min-h-8 overflow-hidden text-ellipsis text-xs text-[var(--el-text-color-secondary)]"
+          >
+            {{ setting?.[asset.property]?.name || asset.tip }}
+          </div>
+          <div v-if="canUpdate" class="mt-2.5 flex items-center gap-1">
             <label
-              class="el-button el-button--primary is-plain"
+              class="el-button el-button--primary is-plain m-0 cursor-pointer"
               :class="{ 'is-disabled': uploadingSlot === asset.slot }"
             >
               {{ uploadingSlot === asset.slot ? '上传中...' : '上传替换' }}
@@ -279,178 +322,11 @@ onBeforeUnmount(revokePreviews)
       </div>
     </el-card>
 
-    <div v-if="canUpdate" class="save-bar">
+    <div
+      v-if="canUpdate"
+      class="sticky bottom-0 z-5 flex justify-end bg-[var(--el-bg-color-page)] py-3"
+    >
       <el-button type="primary" :loading="saving" @click="save">保存并应用</el-button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.ui-settings-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-bottom: 72px;
-}
-.settings-section {
-  border-radius: 6px;
-}
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.section-tip,
-.asset-name {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.style-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.style-row {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 16px;
-}
-.style-label {
-  width: 72px;
-  font-weight: 500;
-}
-.preview-form-grid {
-  display: grid;
-  grid-template-columns: minmax(420px, 1.3fr) minmax(300px, 0.7fr);
-  gap: 28px;
-}
-.login-preview {
-  overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  background: var(--el-bg-color);
-}
-.preview-window-head {
-  height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  font-size: 11px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.preview-window-head img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-}
-.preview-login-body {
-  min-height: 300px;
-  display: grid;
-  place-items: center;
-  background: var(--el-fill-color-extra-light);
-  background-size: cover;
-  background-position: center;
-}
-.preview-login-card {
-  width: 220px;
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: color-mix(in srgb, var(--el-bg-color) 94%, transparent);
-  border-radius: 8px;
-  box-shadow: var(--el-box-shadow-light);
-}
-.preview-login-card img {
-  max-width: 140px;
-  max-height: 44px;
-  object-fit: contain;
-  object-position: left center;
-}
-.preview-brand {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--el-color-primary);
-}
-.preview-input {
-  height: 28px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  background: var(--el-bg-color);
-}
-.preview-button {
-  height: 30px;
-  display: grid;
-  place-items: center;
-  color: white;
-  font-size: 12px;
-  border-radius: 4px;
-  background: var(--el-color-primary);
-}
-.asset-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-.asset-card {
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-}
-.asset-preview {
-  height: 132px;
-  margin-bottom: 12px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  padding: 10px;
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.asset-preview img {
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  object-position: center;
-}
-.asset-name {
-  min-height: 32px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.asset-actions {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.asset-actions label.el-button {
-  margin: 0;
-  cursor: pointer;
-}
-.save-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 0;
-  background: var(--el-bg-color-page);
-}
-@media (max-width: 1100px) {
-  .asset-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .preview-form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

@@ -265,23 +265,32 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" class="term-panel">
-    <div class="term-layout">
-      <aside v-loading="categoryLoading" class="category-pane">
-        <div class="category-header">
+  <el-card shadow="never" class="rounded-1.5">
+    <div class="min-h-140 grid grid-cols-[220px_minmax(0,1fr)]">
+      <aside
+        v-loading="categoryLoading"
+        class="border-r border-[var(--el-border-color-lighter)] pr-4"
+      >
+        <div class="h-10 flex items-center justify-between">
           <strong>术语分类</strong>
           <el-button v-if="canUpdate" link type="primary" @click="createCategory">新增</el-button>
         </div>
-        <div v-if="categories.length" class="category-list">
+        <div v-if="categories.length" class="flex flex-col gap-0.75">
           <div
             v-for="item in categories"
             :key="item.id"
-            class="category-item"
-            :class="{ active: selectedCategoryId === item.id }"
+            class="min-h-9.5 flex cursor-pointer items-center gap-1.5 rounded px-2 pr-2 pl-2.5 hover:bg-[var(--el-fill-color-light)]"
+            :class="{ 'bg-[var(--el-fill-color-light)]': selectedCategoryId === item.id }"
             @click="selectedCategoryId = item.id"
           >
-            <span class="category-name">{{ item.name }}</span>
-            <span class="category-count">{{ item.termCount }}</span>
+            <span
+              class="min-w-0 flex-1 truncate"
+              :class="{
+                'font-semibold text-[var(--el-color-primary)]': selectedCategoryId === item.id,
+              }"
+              >{{ item.name }}</span
+            >
+            <span class="text-xs text-[var(--el-text-color-secondary)]">{{ item.termCount }}</span>
             <el-dropdown
               v-if="canUpdate"
               trigger="click"
@@ -302,9 +311,9 @@ onMounted(async () => {
         <el-empty v-else description="暂无分类" :image-size="64" />
       </aside>
 
-      <section class="term-main">
-        <div class="toolbar">
-          <div class="toolbar-left">
+      <section class="min-w-0 pl-5">
+        <div class="mb-4 flex items-center justify-between gap-4">
+          <div class="flex gap-2">
             <el-button
               v-if="canUpdate"
               type="primary"
@@ -319,7 +328,7 @@ onMounted(async () => {
           <el-input
             v-model="keyword"
             clearable
-            class="search"
+            class="w-90"
             placeholder="搜索标准术语、同义词或禁用词"
             @keyup.enter="loadTerms"
           >
@@ -369,7 +378,7 @@ onMounted(async () => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="术语分类" prop="categoryId"
-          ><el-select v-model="form.categoryId" class="full"
+          ><el-select v-model="form.categoryId" class="w-full"
             ><el-option
               v-for="item in categories"
               :key="item.id"
@@ -425,78 +434,3 @@ onMounted(async () => {
     </el-drawer>
   </el-card>
 </template>
-
-<style scoped>
-.term-panel {
-  border-radius: 6px;
-}
-.term-layout {
-  min-height: 560px;
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-}
-.category-pane {
-  padding-right: 16px;
-  border-right: 1px solid var(--el-border-color-lighter);
-}
-.category-header,
-.toolbar,
-.category-item {
-  display: flex;
-  align-items: center;
-}
-.category-header {
-  height: 40px;
-  justify-content: space-between;
-}
-.category-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.category-item {
-  min-height: 38px;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.category-item:hover,
-.category-item.active {
-  background: var(--el-fill-color-light);
-}
-.category-item.active .category-name {
-  color: var(--el-color-primary);
-  font-weight: 600;
-}
-.category-name {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.category-count {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.term-main {
-  min-width: 0;
-  padding-left: 20px;
-}
-.toolbar {
-  margin-bottom: 16px;
-  justify-content: space-between;
-  gap: 16px;
-}
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-}
-.search {
-  width: 360px;
-}
-.full {
-  width: 100%;
-}
-</style>

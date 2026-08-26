@@ -238,21 +238,32 @@ onMounted(loadData)
   <el-card
     v-loading="loading"
     shadow="never"
-    class="integration-card"
+    class="max-w-270"
     data-testid="wecom-integration-card"
   >
-    <div class="integration-header">
-      <div class="platform-summary">
-        <div class="platform-icon"><MessagesSquare :size="24" /></div>
+    <div
+      class="flex items-center justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start"
+    >
+      <div class="flex items-center gap-3.5">
+        <div
+          class="size-11 grid place-items-center rounded-2 bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+        >
+          <MessagesSquare :size="24" />
+        </div>
         <div>
-          <div class="platform-title">
+          <div class="flex items-center gap-2.5 text-base font-semibold">
             <span>企业微信</span>
             <el-tag :type="status.type" size="small">{{ status.label }}</el-tag>
           </div>
-          <p>连接企业微信自建应用，为组织同步、统一登录和消息通知提供公共配置。</p>
+          <p class="mt-1.5 text-[13px] text-[var(--el-text-color-secondary)]">
+            连接企业微信自建应用，为组织同步、统一登录和消息通知提供公共配置。
+          </p>
         </div>
       </div>
-      <div v-if="canUpdate" class="platform-actions">
+      <div
+        v-if="canUpdate"
+        class="flex items-center gap-2.5 max-[900px]:self-stretch max-[900px]:justify-end"
+      >
         <el-button :icon="Settings2" @click="openDrawer">配置</el-button>
         <el-button
           type="primary"
@@ -286,10 +297,12 @@ onMounted(loadData)
       }}</el-descriptions-item>
     </el-descriptions>
 
-    <div class="sync-boundary">
-      <div>
+    <div
+      class="mt-4.5 flex items-center justify-between gap-6 rounded-1.5 border border-dashed border-[var(--el-border-color)] bg-[var(--el-fill-color-lighter)] px-4 py-3.5"
+    >
+      <div class="flex flex-col gap-1">
         <strong>同步组织架构</strong>
-        <span>
+        <span class="text-[13px] text-[var(--el-text-color-secondary)]">
           {{
             integration.syncEnabled
               ? '已开启，可在组织架构页面生成差异预览后应用。'
@@ -323,7 +336,7 @@ onMounted(loadData)
         <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">
           {{ integration.syncEnabled ? '可用' : '不可用' }}
         </el-tag>
-        <span class="capability-note">
+        <span class="ml-2 text-xs text-[var(--el-text-color-secondary)]">
           {{
             integration.syncEnabled ? '已同步成员可使用企微扫码登录' : '需先验证配置并开启组织同步'
           }}
@@ -333,11 +346,15 @@ onMounted(loadData)
         <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">
           {{ integration.syncEnabled ? '可配置' : '不可配置' }}
         </el-tag>
-        <span class="capability-note">在消息设置中按事件开启</span>
+        <span class="ml-2 text-xs text-[var(--el-text-color-secondary)]"
+          >在消息设置中按事件开启</span
+        >
       </el-descriptions-item>
       <el-descriptions-item label="企业登录地址" :span="2">
-        <div class="login-url-row">
-          <span>{{ loginUrl || '登录地址暂不可生成' }}</span>
+        <div class="min-w-0 flex items-center justify-between gap-3">
+          <span class="truncate text-[var(--el-text-color-secondary)]">{{
+            loginUrl || '登录地址暂不可生成'
+          }}</span>
           <el-button v-if="loginUrl" link type="primary" @click="copyLoginUrl">复制</el-button>
         </div>
       </el-descriptions-item>
@@ -373,7 +390,9 @@ onMounted(loadData)
           autocomplete="new-password"
           placeholder="请输入应用 Secret"
         />
-        <div class="secret-tip">
+        <div
+          class="mt-1.5 flex flex-col items-start gap-1 text-[13px] text-[var(--el-text-color-secondary)]"
+        >
           <span>
             获取方式：登录企业微信管理后台 → 应用管理 → 自建应用 → 选择对应应用，在应用详情中查看
             Secret。应用需处于启用状态；已有配置会安全加载到此处，点击输入框右侧眼睛按钮即可查看，无需重复填写。
@@ -390,7 +409,7 @@ onMounted(loadData)
       </el-form-item>
     </el-form>
     <template #footer>
-      <div class="drawer-actions">
+      <div class="flex items-center justify-end gap-2.5">
         <el-button @click="drawerVisible = false">取消</el-button>
         <el-button plain :loading="testing" @click="testDraft">测试连接</el-button>
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
@@ -424,103 +443,3 @@ onMounted(loadData)
     </template>
   </el-dialog>
 </template>
-
-<style scoped>
-.integration-card {
-  max-width: 1080px;
-}
-.integration-header,
-.platform-summary,
-.platform-title,
-.platform-actions,
-.sync-boundary,
-.drawer-actions {
-  display: flex;
-  align-items: center;
-}
-.capability-note {
-  margin-left: 8px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.login-url-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.login-url-row span {
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.integration-header,
-.sync-boundary {
-  justify-content: space-between;
-  gap: 24px;
-}
-.platform-summary {
-  gap: 14px;
-}
-.platform-icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-.platform-title {
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 600;
-}
-.platform-summary p,
-.sync-boundary span,
-.secret-tip {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.platform-summary p {
-  margin: 6px 0 0;
-}
-.platform-actions,
-.drawer-actions {
-  gap: 10px;
-}
-.sync-boundary {
-  margin-top: 18px;
-  padding: 14px 16px;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
-  background: var(--el-fill-color-lighter);
-}
-.sync-boundary div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.secret-tip {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-.drawer-actions {
-  justify-content: flex-end;
-}
-@media (max-width: 900px) {
-  .integration-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .platform-actions {
-    align-self: stretch;
-    justify-content: flex-end;
-  }
-}
-</style>
