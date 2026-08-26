@@ -1,6 +1,7 @@
 export * from './approval'
 export * from './bidding'
 export * from './deal'
+export * from './enterprise-settings'
 export * from './home'
 export * from './metadata'
 export * from './message-settings'

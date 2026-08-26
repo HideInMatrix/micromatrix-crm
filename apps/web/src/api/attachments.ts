@@ -26,5 +26,13 @@ export const attachmentApi = {
     URL.revokeObjectURL(url)
   },
 
+  objectUrl: async (id: string) => {
+    const { data } = await http.get<Blob>(`/attachments/${id}/download`, {
+      responseType: 'blob',
+      timeout: 60_000,
+    })
+    return URL.createObjectURL(data)
+  },
+
   remove: (id: string) => http.delete(`/attachments/${id}`),
 }

@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
 import type { EnterpriseIntegration } from '../../generated/prisma/client'
 import type { PrismaService } from '../../prisma/prisma.service'
-import { CredentialCipherService } from './credential-cipher.service'
+import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 import type { WeComClient, WeComConnectionResult } from './wecom.client'
 

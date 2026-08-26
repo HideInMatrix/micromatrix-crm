@@ -9,6 +9,12 @@ export interface EncryptedCredential {
   keyVersion: number
 }
 
+/**
+ * 通用凭证加密基础设施。
+ *
+ * 企业微信、SMTP、AI Model API Key 等业务域只依赖该公共服务，
+ * 不允许业务模块之间为了复用密钥逻辑产生反向依赖。
+ */
 @Injectable()
 export class CredentialCipherService {
   private readonly key: Buffer
@@ -41,7 +47,7 @@ export class CredentialCipherService {
   }
 
   decrypt(input: EncryptedCredential): string {
-    if (input.keyVersion !== 1) throw new Error(`不支持的企业集成密钥版本：${input.keyVersion}`)
+    if (input.keyVersion !== 1) throw new Error(`不支持的凭证密钥版本：${input.keyVersion}`)
     const decipher = createDecipheriv('aes-256-gcm', this.key, Buffer.from(input.iv, 'base64'))
     decipher.setAuthTag(Buffer.from(input.authTag, 'base64'))
     return Buffer.concat([

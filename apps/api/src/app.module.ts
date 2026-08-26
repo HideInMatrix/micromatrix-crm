@@ -18,6 +18,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { DepartmentsModule } from './modules/departments/departments.module'
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module'
 import { EnterpriseIntegrationsModule } from './modules/enterprise-integrations/enterprise-integrations.module'
+import { EnterpriseSettingsModule } from './modules/enterprise-settings/enterprise-settings.module'
 import { FollowUpPlansModule } from './modules/follow-up-plans/follow-up-plans.module'
 import { HomeModule } from './modules/home/home.module'
 import { LeadsModule } from './modules/leads/leads.module'
@@ -35,7 +36,6 @@ import { OrganizationSyncModule } from './modules/organization-sync/organization
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
 import { RolesModule } from './modules/roles/roles.module'
 import { UserViewsModule } from './modules/user-views/user-views.module'
-import { SettingsModule } from './modules/settings/settings.module'
 import { WeComSsoModule } from './modules/wecom-sso/wecom-sso.module'
 import { PrismaModule } from './prisma/prisma.module'
 
@@ -55,6 +55,7 @@ import { PrismaModule } from './prisma/prisma.module'
     LeadsModule,
     FollowUpsModule,
     EnterpriseIntegrationsModule,
+    EnterpriseSettingsModule,
     WeComSsoModule,
     OrganizationSyncModule,
     FollowUpPlansModule,
@@ -75,7 +76,6 @@ import { PrismaModule } from './prisma/prisma.module'
     RolesModule,
     UserViewsModule,
     LogsModule,
-    SettingsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -121,6 +121,15 @@ model Tenant {
   moduleConfigs              ModuleConfig[]
   topNavigationConfigs       TopNavigationConfig[]
   messageTaskSettings        MessageTaskSetting[]
+  enterpriseUiSettings       EnterpriseUiSetting[]
+  enterpriseMailSettings     EnterpriseMailSetting[]
+  enterpriseAiModels         EnterpriseAiModel[]
+  enterpriseAiRoutes         EnterpriseAiModelRoute[]
+  enterpriseTermCategories   EnterpriseTermCategory[]
+  enterpriseTerms            EnterpriseTerm[]
+  enterpriseTermDiscoveries  EnterpriseTermDiscovery[]
+  enterpriseGlobalTasks      EnterpriseGlobalTask[]
+  enterpriseTaskExecutions   EnterpriseGlobalTaskExecution[]
   enterpriseIntegrations     EnterpriseIntegration[]
   externalDepartmentMappings ExternalDepartmentMapping[]
   externalUserMappings       ExternalUserMapping[]
@@ -1621,14 +1630,200 @@ model MessageTaskSetting {
   @@map("message_task_settings")
 }
 
-model SystemSetting {
-  id       String @id @default(cuid())
-  tenantId String
-  key      String
-  value    Json
+model EnterpriseUiSetting {
+  id                       String   @id @default(cuid())
+  tenantId                 String   @unique
+  theme                    String   @default("default")
+  customTheme              String   @default("#008d91")
+  style                    String   @default("default")
+  customStyle              String   @default("#f9fbfb")
+  title                    String   @default("MicroMatrix CRM")
+  slogan                   String   @default("让客户关系更清晰，让销售协作更高效")
+  helpDoc                   String   @default("")
+  iconAttachmentId         String?
+  loginLogoAttachmentId    String?
+  loginImageAttachmentId   String?
+  platformLogoAttachmentId String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
-  @@unique([tenantId, key])
-  @@map("system_settings")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("enterprise_ui_settings")
+}
+
+model EnterpriseMailSetting {
+  id                 String    @id @default(cuid())
+  tenantId           String    @unique
+  host               String
+  port               Int
+  account            String
+  passwordCiphertext String?
+  passwordIv         String?
+  passwordAuthTag    String?
+  passwordKeyVersion Int?
+  fromAddress        String    @default("")
+  recipient          String    @default("")
+  ssl                Boolean   @default(false)
+  tls                Boolean   @default(false)
+  lastTestSucceeded  Boolean?
+  lastTestMessage    String?
+  lastTestedAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("enterprise_mail_settings")
+}
+
+model EnterpriseAiModel {
+  id               String   @id @default(cuid())
+  tenantId         String
+  displayName      String
+  modelName        String
+  provider         String
+  apiUrl           String
+  apiKeyCiphertext String?
+  apiKeyIv         String?
+  apiKeyAuthTag    String?
+  apiKeyKeyVersion Int?
+  enable           Boolean  @default(false)
+  temperature      Float    @default(0.7)
+  maxTokens        Int      @default(2048)
+  topP             Float    @default(0.9)
+  globalDailyLimit Int?
+  userDailyLimit   Int?
+  createdById      String
+  updatedById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  taskBindings EnterpriseGlobalTask[]
+
+  @@unique([tenantId, displayName])
+  @@index([tenantId, enable])
+  @@map("enterprise_ai_models")
+}
+
+model EnterpriseAiModelRoute {
+  id        String   @id @default(cuid())
+  tenantId  String
+  modelId   String
+  sort      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, modelId])
+  @@unique([tenantId, sort])
+  @@index([tenantId])
+  @@map("enterprise_ai_model_routes")
+}
+
+model EnterpriseTermCategory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terms  EnterpriseTerm[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, sort])
+  @@map("enterprise_term_categories")
+}
+
+model EnterpriseTerm {
+  id              String   @id @default(cuid())
+  tenantId        String
+  categoryId      String
+  standardTerm    String
+  alsoCalled      String   @default("")
+  avoidThese      String   @default("")
+  useCase         String   @default("")
+  systemReference String   @default("")
+  enable          Boolean  @default(true)
+  createdById     String
+  updatedById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category EnterpriseTermCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, categoryId, standardTerm])
+  @@index([tenantId, enable])
+  @@index([categoryId])
+  @@map("enterprise_terms")
+}
+
+model EnterpriseTermDiscovery {
+  id          String   @id @default(cuid())
+  tenantId    String
+  discovered  String
+  source      String   @default("")
+  context     String   @default("")
+  status      String   @default("PENDING")
+  adoptedTermId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("enterprise_term_discoveries")
+}
+
+model EnterpriseGlobalTask {
+  id                String   @id @default(cuid())
+  tenantId          String
+  name              String
+  triggerType       String   @default("manual")
+  executionCondition String  @default("")
+  executionAction   String   @default("")
+  confirmationLevel String   @default("ask")
+  applicableModelId String?
+  enable            Boolean  @default(true)
+  createdById       String
+  updatedById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant          Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  applicableModel EnterpriseAiModel?              @relation(fields: [applicableModelId], references: [id], onDelete: SetNull)
+  executions      EnterpriseGlobalTaskExecution[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, enable])
+  @@index([applicableModelId])
+  @@map("enterprise_global_tasks")
+}
+
+model EnterpriseGlobalTaskExecution {
+  id           String   @id @default(cuid())
+  tenantId     String
+  taskId       String
+  status       String   @default("PENDING")
+  input        Json?
+  output       Json?
+  errorMessage String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  task   EnterpriseGlobalTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([taskId, createdAt])
+  @@map("enterprise_global_task_executions")
 }
 
 model EnterpriseIntegration {

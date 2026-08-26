@@ -750,3 +750,15 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 规则测试扩展到 `108/108`；首页真实 PostgreSQL/API Smoke `17/17`，根关键链路 `219/219`，W3.2 `23/23`，W3.3 `19/19` 全绿。
 - 新增零第三方依赖的 Chrome DevTools Browser Smoke；固定桌面视口并清理浏览器 origin 状态后最终 `12/12` 通过，验证真实登录、首页五区、统计设置、快捷入口新增表单、审批/计划/消息跳转及无未捕获 Runtime 异常。
 - W3.4.1 正式关闭；DB-016/017/018/020 不因首页完成而提前关闭。下一执行单元为 W3.4.2 线索与线索池。
+
+---
+
+## 28. W3.4-S 企业设置六页签领域化对齐（2026-08-26）
+
+- 对照 Cordys 企业设置结构，将 `/system/settings` 从旧“企业信息 / 企业集成 / 开放 API”内容替换为“界面设置 / 第三方 / 邮件设置 / 模型设置 / 术语设置 / 全局任务”六页签；第三方页签继续聚合既有企微专用域和开放 API 能力，不把集成数据写入企业设置表。
+- 新增 `EnterpriseSettingsModule` 及 UI、SMTP、AI 模型/有序路由、术语分类/术语/AI 发现、全局任务/执行记录直接模型。SMTP 密码与 AI API Key 复用下沉到 `common` 的 AES-256-GCM `CredentialCipherService`，读取响应只暴露 `*Configured` 状态；空密钥编辑保留既有密文。
+- 界面图片资源复用 Attachment 存储，但由企业设置服务以租户 + 目标对象绑定；术语发现只暴露 `PENDING`，忽略进入 `IGNORED`，采纳在同一事务创建术语并回写 `ADOPTED`；全局任务执行记录只允许等待/执行态停止，终态才允许删除。
+- 新六页签接管后彻底删除前端 `settingApi`、后端 `/settings`、`SettingsModule`/`SettingsService` 和 Prisma `SystemSetting`。独立 migration `20260826193000_remove_legacy_system_settings` 删除 `system_settings`，历史 migration 不修改；全仓当前运行时代码无旧 KV 消费者，`/system/settings` 前端菜单路由继续保留。
+- 本地现有库顺序应用 `20260826173000_enterprise_settings_domain` 与 `20260826193000_remove_legacy_system_settings` 成功，migration 总数为 34。Prisma validate/generate、Shared/API/Web typecheck、全仓 ESLint、三 workspace production build 均通过。
+- `test:rules` 已把企业设置专项测试纳入主规则集，最终 `112/112`；新增真实 API/数据库企业设置 Smoke `21/21`，覆盖旧 `/settings` 404、UI 租户隔离、企微独立域、SMTP/AI 密钥加密、模型路由、术语发现采纳、全局任务执行停止/删除；根关键链路 Smoke 继续 `219/219`。
+- DB 台账复核未发现需要新增编号的企业设置数据模型缺口；钉钉/飞书仍由既有 DB-015 跟踪，不通过恢复通用 `SystemSetting` 规避。企业设置 W3.4-S 完成后，业务主线继续 W3.4.2。

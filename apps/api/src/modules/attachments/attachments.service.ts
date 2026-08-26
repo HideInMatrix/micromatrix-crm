@@ -114,6 +114,20 @@ export class AttachmentsService {
     return { id, name: row.name }
   }
 
+  /**
+   * 供拥有目标对象写权限的领域服务清理被替换的附件。
+   * 这里不使用 uploaderId 作为授权依据，调用方必须先验证目标对象归属。
+   */
+  async removeFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {
+    const row = await this.prisma.attachment.findFirst({
+      where: { id, tenantId, targetType, targetId },
+    })
+    if (!row) return false
+    await this.storage.remove(row.path)
+    await this.prisma.attachment.delete({ where: { id } })
+    return true
+  }
+
   private async ensureOwned(user: AuthUser, id: string) {
     const row = await this.prisma.attachment.findFirst({
       where: { id, tenantId: user.tenantId },

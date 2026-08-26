@@ -7,7 +7,7 @@ import type {
 import type { AuthUser } from '../../common/auth-user'
 import type { EnterpriseIntegration } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
-import { CredentialCipherService } from './credential-cipher.service'
+import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import type { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
 import { WeComClient } from './wecom.client'
 

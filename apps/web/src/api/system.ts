@@ -174,13 +174,6 @@ export const messageDeliveryApi = {
   retry: (id: string) => http.post<MessageDeliveryVO>(`/message-deliveries/${id}/retry`),
 }
 
-// ===== 企业设置 =====
-
-export const settingApi = {
-  get: () => http.get<Record<string, unknown>>('/settings'),
-  update: (entries: Record<string, unknown>) => http.put('/settings', entries),
-}
-
 export const enterpriseIntegrationApi = {
   getWeCom: () => http.get<EnterpriseIntegrationVO>('/enterprise-integrations/wecom'),
   getWeComSecret: () => http.get<WeComIntegrationSecretVO>('/enterprise-integrations/wecom/secret'),

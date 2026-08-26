@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ConfigService } from '@nestjs/config'
-import { CredentialCipherService } from './credential-cipher.service'
+import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 
 function createCipher(key = 'test_integration_credentials_key_more_than_32_chars') {
   return new CredentialCipherService(
