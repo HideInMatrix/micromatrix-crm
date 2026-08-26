@@ -24,15 +24,15 @@
 
 ## 3. 关键字段核验
 
-| 表.字段 | 迁移后实际结构 | 结果 |
-| --- | --- | --- |
-| `dashboard.resource_url` | `VARCHAR(500) NOT NULL` | 通过 |
-| `dashboard_module.parent_id` | `VARCHAR(32) NOT NULL DEFAULT 'NONE'` | 通过 |
-| `customer_contact.customer_id` | `VARCHAR(32) NULL` | 通过 |
-| `clue.phone` | `VARCHAR(255) NULL` | 通过 |
-| `sys_module_form.form_key` | `VARCHAR(50) NOT NULL` | 通过 |
-| `sys_module_field_blob.prop` | `TEXT NULL` | 通过 |
-| `clue_pool_hidden_field.field_id` | `VARCHAR(255) NOT NULL` | 通过 |
+| 表.字段                           | 迁移后实际结构                        | 结果 |
+| --------------------------------- | ------------------------------------- | ---- |
+| `dashboard.resource_url`          | `VARCHAR(500) NOT NULL`               | 通过 |
+| `dashboard_module.parent_id`      | `VARCHAR(32) NOT NULL DEFAULT 'NONE'` | 通过 |
+| `customer_contact.customer_id`    | `VARCHAR(32) NULL`                    | 通过 |
+| `clue.phone`                      | `VARCHAR(255) NULL`                   | 通过 |
+| `sys_module_form.form_key`        | `VARCHAR(50) NOT NULL`                | 通过 |
+| `sys_module_field_blob.prop`      | `TEXT NULL`                           | 通过 |
+| `clue_pool_hidden_field.field_id` | `VARCHAR(255) NOT NULL`               | 通过 |
 
 Cordys 的审计时间、业务时间和排序使用 `BIGINT`；Scope、Condition、Filter、Prop、Value、ChildrenValue 按源码契约使用文本列，不擅自改为 PostgreSQL array/JSONB 真相。
 
@@ -48,13 +48,13 @@ Cordys 的审计时间、业务时间和排序使用 `BIGINT`；Scope、Conditio
 
 直接 Schema 替换后，API 类型检查最初出现 411 个错误、分布在 16 个已审计调用文件中。这是任务 1.4～1.8 尚未执行的预期中间状态，不能通过兼容模型或 `as any` 掩盖。任务 1.4 公共底座完成后，Metadata 的 14 个错误已经消除，当前断点为 397 个/15 个文件：
 
-| 调用区域 | 文件数/主要文件 | 后续任务 |
-| --- | --- | --- |
-| 客户、线索、联系人 | `customers.service.ts`、`leads.service.ts`、`contacts.service.ts` | 1.4、1.6、1.7 |
-| 池、回收、规则 | `resource-pools.service.ts`、`pool-recycle.service.ts`、`pool-rules.service.ts` | 1.6、1.7 |
-| 元数据、用户视图 | `metadata.service.ts`、`saved-views.service.ts` | 1.4、1.5 |
-| 下游业务 | follow-up、members、opportunities、bidding、dashboard | 1.7 |
-| 数据初始化 | `prisma/seed.ts` | 1.8 |
+| 调用区域           | 文件数/主要文件                                                                 | 后续任务      |
+| ------------------ | ------------------------------------------------------------------------------- | ------------- |
+| 客户、线索、联系人 | `customers.service.ts`、`leads.service.ts`、`contacts.service.ts`               | 1.4、1.6、1.7 |
+| 池、回收、规则     | `resource-pools.service.ts`、`pool-recycle.service.ts`、`pool-rules.service.ts` | 1.6、1.7      |
+| 元数据、用户视图   | `metadata.service.ts`、`saved-views.service.ts`                                 | 1.4、1.5      |
+| 下游业务           | follow-up、members、opportunities、bidding、dashboard                           | 1.7           |
+| 数据初始化         | `prisma/seed.ts`                                                                | 1.8           |
 
 完整错误分布与调用方范围和 `model-impact-audit.md` 一致，说明破坏点已被任务 1.1 覆盖，没有发现审计外的生产调用区域。
 
@@ -62,4 +62,4 @@ Cordys 的审计时间、业务时间和排序使用 `BIGINT`；Scope、Conditio
 
 - 任务 1.2：完成。32 张直接 Prisma 模型已建立，旧模型已从 Schema 删除。
 - 任务 1.3：完成。破坏性迁移已生成、人工审计并通过空库完整迁移复放。
-- W3.4.0：仍为 `IN_PROGRESS`。下一执行单元是 1.4 模块表单与动态字段底座；在 1.4～1.8 完成前，API 类型检查失败属于已记录的明确断点，主开发库也不得应用本次迁移。
+- 本文记录的是任务 1.2～1.3 完成时的阶段快照：当时 W3.4.0 仍为 `IN_PROGRESS`，API 类型检查失败和主开发库未应用迁移均属于明确中间断点。后续 1.4～1.9 已完成并关闭 W3.4.0，最终结果见 [foundation-validation-audit.md](./foundation-validation-audit.md)。

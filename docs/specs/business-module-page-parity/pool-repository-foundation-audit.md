@@ -67,4 +67,4 @@ Cordys 的 `clue_owner/customer_owner` 是“已经结束的负责人周期”�
 - 主业务写操作还需接入联系人负责人、通知、操作日志、字段值事务等外围副作用；
 - Seed 在 1.8 重写前，API 全量 typecheck、build 和启动仍会失败。
 
-因此本单元可标记任务 1.6 完成，但不能标记 W3.4.0 完成或声称当前版本已可启动。下一独立执行单元是任务 1.7。
+因此在该历史节点可标记任务 1.6 完成，但尚不能标记 W3.4.0 完成或声称版本已可启动。后续任务 1.7～1.9 已完成，W3.4.0 最终结果见 [foundation-validation-audit.md](./foundation-validation-audit.md)。

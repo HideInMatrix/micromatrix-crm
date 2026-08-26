@@ -4,7 +4,7 @@
 >
 > 对应任务：1.4
 >
-> 当前结论：公共服务、规则测试和真实 PostgreSQL Smoke 已完成；目标业务 Service 的列表/详情/导出接入仍由 1.7 完成，因此任务 1.4 暂不整体勾选。
+> 阶段结论：公共服务、规则测试和真实 PostgreSQL Smoke 在任务 1.4 完成；当时目标业务 Service 的列表/详情/导出尚待 1.7 接入。后续 1.7～1.9 已完成并关闭 W3.4.0，最终结果见 [foundation-validation-audit.md](./foundation-validation-audit.md)。
 
 ## 1. Cordys 源码依据
 

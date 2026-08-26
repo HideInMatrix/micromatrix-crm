@@ -7,7 +7,7 @@
 
 对用户实现进行复核后，原 Seed 的基础表单、视图、池、业务样例和仪表板骨架可以运行，但未完整覆盖任务 1.1 审计锁定的 Cordys 直接模型关系；原专项审计主要检查数量和“每表至少一个索引”，会把不完整 Seed 误判为完成。
 
-现已补齐 Seed 和专项审计。经用户明确授权，`localhost:5432/default` 本地开发数据库已使用最终修正版执行 `prisma migrate reset --force`，全部 30 个 migration 从零复放成功；随后连续执行两次最终 Seed，增强专项审计、全量规则测试、类型检查、Lint、生产构建和最终空库启动探测全部通过。任务 1.8 可以关闭，下一独立执行单元为 1.9。
+现已补齐 Seed 和专项审计。经用户明确授权，`localhost:5432/default` 本地开发数据库已使用最终修正版执行 `prisma migrate reset --force`，全部 30 个 migration 从零复放成功；随后连续执行两次最终 Seed，增强专项审计、全量规则测试、类型检查、Lint、生产构建和最终空库启动探测全部通过。任务 1.8 在该阶段关闭；后续 1.9 已完成，最终结果见 [foundation-validation-audit.md](./foundation-validation-audit.md)。
 
 ## 2. 最终 Seed 覆盖范围
 

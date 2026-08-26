@@ -317,7 +317,7 @@ START -> APPROVER_1 -> APPROVER_2 -> ... -> END
 实施完成时同步：
 
 - `docs/api.md`
-- `docs/data-model.md`
+- `apps/api/prisma/schema.prisma`（数据模型唯一真相）
 - `docs/cordys-parity.md`
 - `docs/cordys-menu-parity.md`
 - `docs/alignment-log.md`

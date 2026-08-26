@@ -2,7 +2,7 @@
 
 ## 背景
 
-当前 MicroMatrix CRM 的 `User.roleId` 只能给成员分配一个角色，与 CordysCRM 的 `UserRole` 多对多模型不一致。更关键的是，单角色实现把功能权限和数据范围预先压缩在当前用户上，无法表达“角色 A 拥有客户查看的部门范围、角色 B 只拥有客户编辑的本人范围”这类差异。
+本规格立项时，MicroMatrix CRM 的 `User.roleId` 只能给成员分配一个角色，与 CordysCRM 的 `UserRole` 多对多模型不一致；该差异现已按本规格完成迁移。当前实现使用 `UserRole` 多对多关联，并按权限码合并对应角色的数据范围，完成状态以 [tasks.md](./tasks.md) 为准。
 
 ## 目标
 

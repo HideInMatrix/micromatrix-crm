@@ -56,70 +56,70 @@ Mapper 证明 `scope_id` 是 JSON/范围 token 文本而不是 PostgreSQL 数组
 
 ### 3.1 模块表单与用户视图（6 张）
 
-| Cordys 表 | 最终核心结构 | 当前实现 | W3.4.0 动作 |
-| --- | --- | --- | --- |
-| `sys_module_form` | `formKey VARCHAR(50)/organizationId/audit` | `FieldDefinition` 直接按 tenant/module 存全部字段 | 新建 `SysModuleForm`，组织字段只用 `organizationId` |
-| `sys_module_form_blob` | 与 form 同 ID 的 `prop TEXT` | FieldDefinition 的 `options/config/layout` 分散列 | 新建 `SysModuleFormBlob`；表单属性保留 Cordys 文本契约 |
-| `sys_module_field` | `formId/internalKey/name/type/mobile/pos/audit` | `FieldDefinition.key/label/type/system/hidden/sort` | 新建 `SysModuleField`；索引保留 `formId+internalKey`、`mobile` |
-| `sys_module_field_blob` | 与 field 同 ID 的 `prop LONGTEXT` | `options/config/required/span/showInList/listWidth` | 新建 `SysModuleFieldBlob`，由适配器生成现有稳定 FieldVO |
-| `sys_user_view` | `userId/name/fixed/resourceType/organizationId/pos/enable/searchMode/audit` | `SavedView.tenantId/module/sort/enabled` | 新建 `SysUserView`，删除旧表与旧 Prisma 模型 |
-| `sys_user_view_condition` | `sysUserViewId/name/value/valueType/type/multipleValue/operator/childrenValue/audit`，值均为文本契约 | `SavedViewCondition.field/value JSON/fieldType/containChildIds[]/sort` | 新建直接模型；条件树显式序列化，不能继续依赖 Prisma JSON/数组 |
+| Cordys 表                 | 最终核心结构                                                                                         | 当前实现                                                               | W3.4.0 动作                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `sys_module_form`         | `formKey VARCHAR(50)/organizationId/audit`                                                           | `FieldDefinition` 直接按 tenant/module 存全部字段                      | 新建 `SysModuleForm`，组织字段只用 `organizationId`            |
+| `sys_module_form_blob`    | 与 form 同 ID 的 `prop TEXT`                                                                         | FieldDefinition 的 `options/config/layout` 分散列                      | 新建 `SysModuleFormBlob`；表单属性保留 Cordys 文本契约         |
+| `sys_module_field`        | `formId/internalKey/name/type/mobile/pos/audit`                                                      | `FieldDefinition.key/label/type/system/hidden/sort`                    | 新建 `SysModuleField`；索引保留 `formId+internalKey`、`mobile` |
+| `sys_module_field_blob`   | 与 field 同 ID 的 `prop LONGTEXT`                                                                    | `options/config/required/span/showInList/listWidth`                    | 新建 `SysModuleFieldBlob`，由适配器生成现有稳定 FieldVO        |
+| `sys_user_view`           | `userId/name/fixed/resourceType/organizationId/pos/enable/searchMode/audit`                          | `SavedView.tenantId/module/sort/enabled`                               | 新建 `SysUserView`，删除旧表与旧 Prisma 模型                   |
+| `sys_user_view_condition` | `sysUserViewId/name/value/valueType/type/multipleValue/operator/childrenValue/audit`，值均为文本契约 | `SavedViewCondition.field/value JSON/fieldType/containChildIds[]/sort` | 新建直接模型；条件树显式序列化，不能继续依赖 Prisma JSON/数组  |
 
 ### 3.2 线索域（9 张）
 
-| Cordys 表 | 最终核心结构 | 当前实现 | W3.4.0 动作 |
-| --- | --- | --- | --- |
-| `clue` | `name/owner/stage/lastStage/contact/phone/products/organizationId/collectionTime/inSharedPool/transitionType/transitionId/follower/followTime/poolId/reasonId/audit` | `Lead` 使用 `tenantId/contactName/email/status/inPool/ownerId/deptId/customData/DateTime` | 用 `Clue` 完整替换 `Lead`；删除 `LeadStatus`，阶段与转换事实按 Cordys 表达 |
-| `clue_field` | `id/resourceId/fieldId/fieldValue VARCHAR(255)` | `Lead.customData JSONB` | 普通动态值进入直接表；保留复合查询索引 |
-| `clue_field_blob` | `id/resourceId/fieldId/fieldValue TEXT` | `Lead.customData JSONB` | 大文本/序列化值进入 Blob 表 |
-| `clue_owner` | `clueId/owner/collectionTime/endTime/operator/reasonId` | `ResourceOwnerHistory(module=lead)` | 独立负责人历史；写入时必须显式提供 epoch ms |
-| `clue_pool` | `name/scopeId TEXT/organizationId/ownerId TEXT/enable/auto/audit` | `ResourcePool(module=lead)`，scope/manager/hidden 为数组 | 独立线索池；范围文本按 Cordys 解析，隐藏字段拆表 |
-| `clue_pool_hidden_field` | 复合主键 `poolId+fieldId`，fieldId 最终 255 | `ResourcePool.hiddenFieldIds[]` | 新建关联表，删除数组字段 |
-| `clue_pool_pick_rule` | `poolId/limitOnNumber/pickNumber/limitPreOwner/pickIntervalDays/limitNew/newPickInterval/audit` | 通用 PickRule 的 daily/cooldown 字段 | 按 Cordys 命名和 nullable/default 建独立规则 |
-| `clue_pool_recycle_rule` | `poolId/operator/condition TEXT/audit` | 通用 RecycleRule `conditions JSON` 与旧 `PoolRule` 天数抽象 | 保存 Cordys 条件文本；删除两个旧规则真相 |
-| `clue_capacity` | `organizationId/scopeId TEXT/capacity/audit` | `ResourceCapacity(module=lead)`，scope 数组 | 独立库容表；同 scope 冲突由 Service/事务保证 |
+| Cordys 表                | 最终核心结构                                                                                                                                                         | 当前实现                                                                                  | W3.4.0 动作                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `clue`                   | `name/owner/stage/lastStage/contact/phone/products/organizationId/collectionTime/inSharedPool/transitionType/transitionId/follower/followTime/poolId/reasonId/audit` | `Lead` 使用 `tenantId/contactName/email/status/inPool/ownerId/deptId/customData/DateTime` | 用 `Clue` 完整替换 `Lead`；删除 `LeadStatus`，阶段与转换事实按 Cordys 表达 |
+| `clue_field`             | `id/resourceId/fieldId/fieldValue VARCHAR(255)`                                                                                                                      | `Lead.customData JSONB`                                                                   | 普通动态值进入直接表；保留复合查询索引                                     |
+| `clue_field_blob`        | `id/resourceId/fieldId/fieldValue TEXT`                                                                                                                              | `Lead.customData JSONB`                                                                   | 大文本/序列化值进入 Blob 表                                                |
+| `clue_owner`             | `clueId/owner/collectionTime/endTime/operator/reasonId`                                                                                                              | `ResourceOwnerHistory(module=lead)`                                                       | 独立负责人历史；写入时必须显式提供 epoch ms                                |
+| `clue_pool`              | `name/scopeId TEXT/organizationId/ownerId TEXT/enable/auto/audit`                                                                                                    | `ResourcePool(module=lead)`，scope/manager/hidden 为数组                                  | 独立线索池；范围文本按 Cordys 解析，隐藏字段拆表                           |
+| `clue_pool_hidden_field` | 复合主键 `poolId+fieldId`，fieldId 最终 255                                                                                                                          | `ResourcePool.hiddenFieldIds[]`                                                           | 新建关联表，删除数组字段                                                   |
+| `clue_pool_pick_rule`    | `poolId/limitOnNumber/pickNumber/limitPreOwner/pickIntervalDays/limitNew/newPickInterval/audit`                                                                      | 通用 PickRule 的 daily/cooldown 字段                                                      | 按 Cordys 命名和 nullable/default 建独立规则                               |
+| `clue_pool_recycle_rule` | `poolId/operator/condition TEXT/audit`                                                                                                                               | 通用 RecycleRule `conditions JSON` 与旧 `PoolRule` 天数抽象                               | 保存 Cordys 条件文本；删除两个旧规则真相                                   |
+| `clue_capacity`          | `organizationId/scopeId TEXT/capacity/audit`                                                                                                                         | `ResourceCapacity(module=lead)`，scope 数组                                               | 独立库容表；同 scope 冲突由 Service/事务保证                               |
 
 ### 3.3 客户域（14 张）
 
-| Cordys 表 | 最终核心结构 | 当前实现 | W3.4.0 动作 |
-| --- | --- | --- | --- |
-| `customer` | `name/owner/collectionTime/poolId/inSharedPool/organizationId/follower/followTime/reasonId/audit` | plural `customers` 还含 industry/phone/email/remark/customData/deptId/DateTime | 改为直接 `Customer`；非 Cordys 主列业务字段进入动态字段值表 |
-| `customer_field` | `id/resourceId/fieldId/fieldValue VARCHAR(255)` | `Customer.customData` | 普通动态值直接表 |
-| `customer_field_blob` | `id/resourceId/fieldId/fieldValue TEXT` | `Customer.customData` | 大文本动态值直接表 |
-| `customer_owner` | `customerId/owner/collectionTime/endTime/operator/reasonId` | `ResourceOwnerHistory(module=customer)` | 独立负责人历史 |
-| `customer_contact` | `customerId? /owner/name/phone/enable/disableReason/organizationId/audit` | `Contact` 强制 customerId，含 tenantId/deptId/customData/DateTime | 改名为 `CustomerContact`；最终 `customerId` 必须 nullable，Opportunity 联系人关系一并切换 |
-| `customer_contact_field` | `id/resourceId/fieldId/fieldValue VARCHAR(255)` | `Contact.customData` | 普通动态值直接表 |
-| `customer_contact_field_blob` | `id/resourceId/fieldId/fieldValue TEXT` | `Contact.customData` | 大文本动态值直接表；不创建无 DDL 的 `customer_contact_blob` |
-| `customer_collaboration` | `userId/customerId/collaborationType/audit` | `CustomerTeamMember` 含 tenantId/role/createdById 等兼容字段 | 新建直接模型；保留 `COLLABORATION/READ_ONLY` Service 语义，删除 role 兼容字段 |
-| `customer_relation` | `sourceCustomerId/targetCustomerId/createTime` | plural 表额外 tenantId 和 DB unique | 映射单数表；组织隔离从客户记录校验，集团/子公司约束由 CustomerRelationService 执行 |
-| `customer_pool` | 与 CluePool 同构 | `ResourcePool(module=customer)` | 独立客户公海模型 |
-| `customer_pool_hidden_field` | 复合主键 `poolId+fieldId` | `hiddenFieldIds[]` | 新建关联表 |
-| `customer_pool_pick_rule` | 与 Clue PickRule 同构 | 通用 PickRule | 新建分域规则 |
-| `customer_pool_recycle_rule` | `condition TEXT` | 通用 JSON RecycleRule + PoolRule | 新建分域规则，删除旧规则模型 |
-| `customer_capacity` | `organizationId/scopeId TEXT/capacity/filter TEXT/audit` | 通用 Capacity 的 `filters JSON` | 新建直接模型；filter 保持 Cordys 文本契约 |
+| Cordys 表                     | 最终核心结构                                                                                      | 当前实现                                                                       | W3.4.0 动作                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `customer`                    | `name/owner/collectionTime/poolId/inSharedPool/organizationId/follower/followTime/reasonId/audit` | plural `customers` 还含 industry/phone/email/remark/customData/deptId/DateTime | 改为直接 `Customer`；非 Cordys 主列业务字段进入动态字段值表                               |
+| `customer_field`              | `id/resourceId/fieldId/fieldValue VARCHAR(255)`                                                   | `Customer.customData`                                                          | 普通动态值直接表                                                                          |
+| `customer_field_blob`         | `id/resourceId/fieldId/fieldValue TEXT`                                                           | `Customer.customData`                                                          | 大文本动态值直接表                                                                        |
+| `customer_owner`              | `customerId/owner/collectionTime/endTime/operator/reasonId`                                       | `ResourceOwnerHistory(module=customer)`                                        | 独立负责人历史                                                                            |
+| `customer_contact`            | `customerId? /owner/name/phone/enable/disableReason/organizationId/audit`                         | `Contact` 强制 customerId，含 tenantId/deptId/customData/DateTime              | 改名为 `CustomerContact`；最终 `customerId` 必须 nullable，Opportunity 联系人关系一并切换 |
+| `customer_contact_field`      | `id/resourceId/fieldId/fieldValue VARCHAR(255)`                                                   | `Contact.customData`                                                           | 普通动态值直接表                                                                          |
+| `customer_contact_field_blob` | `id/resourceId/fieldId/fieldValue TEXT`                                                           | `Contact.customData`                                                           | 大文本动态值直接表；不创建无 DDL 的 `customer_contact_blob`                               |
+| `customer_collaboration`      | `userId/customerId/collaborationType/audit`                                                       | `CustomerTeamMember` 含 tenantId/role/createdById 等兼容字段                   | 新建直接模型；保留 `COLLABORATION/READ_ONLY` Service 语义，删除 role 兼容字段             |
+| `customer_relation`           | `sourceCustomerId/targetCustomerId/createTime`                                                    | plural 表额外 tenantId 和 DB unique                                            | 映射单数表；组织隔离从客户记录校验，集团/子公司约束由 CustomerRelationService 执行        |
+| `customer_pool`               | 与 CluePool 同构                                                                                  | `ResourcePool(module=customer)`                                                | 独立客户公海模型                                                                          |
+| `customer_pool_hidden_field`  | 复合主键 `poolId+fieldId`                                                                         | `hiddenFieldIds[]`                                                             | 新建关联表                                                                                |
+| `customer_pool_pick_rule`     | 与 Clue PickRule 同构                                                                             | 通用 PickRule                                                                  | 新建分域规则                                                                              |
+| `customer_pool_recycle_rule`  | `condition TEXT`                                                                                  | 通用 JSON RecycleRule + PoolRule                                               | 新建分域规则，删除旧规则模型                                                              |
+| `customer_capacity`           | `organizationId/scopeId TEXT/capacity/filter TEXT/audit`                                          | 通用 Capacity 的 `filters JSON`                                                | 新建直接模型；filter 保持 Cordys 文本契约                                                 |
 
 ### 3.4 仪表板（3 张）
 
-| Cordys 表 | 最终核心结构 | 当前实现 | W3.4.0 动作 |
-| --- | --- | --- | --- |
-| `dashboard_module` | `organizationId/name/parentId='NONE'/pos BIGINT/audit` | 无数据库模型；`/reports` 是固定 Vue 报表 | 新建目录树直接模型；根节点保持 `NONE` |
-| `dashboard` | `name/resourceUrl VARCHAR(500)/dashboardModuleId/organizationId/pos/scopeId TEXT/description/audit` | 无数据库模型；当前同名 Nest 模块是销售统计 | 新建资源模型；释放 `/api/dashboard` 路径给 Cordys 资源 API |
-| `dashboard_collection` | `userId/dashboardId/audit` | 无数据库模型 | 新建收藏模型；Cordys Service 先查重，PostgreSQL 可用组合唯一约束封住并发重复 |
+| Cordys 表              | 最终核心结构                                                                                        | 当前实现                                   | W3.4.0 动作                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------- |
+| `dashboard_module`     | `organizationId/name/parentId='NONE'/pos BIGINT/audit`                                              | 无数据库模型；`/reports` 是固定 Vue 报表   | 新建目录树直接模型；根节点保持 `NONE`                                        |
+| `dashboard`            | `name/resourceUrl VARCHAR(500)/dashboardModuleId/organizationId/pos/scopeId TEXT/description/audit` | 无数据库模型；当前同名 Nest 模块是销售统计 | 新建资源模型；释放 `/api/dashboard` 路径给 Cordys 资源 API                   |
+| `dashboard_collection` | `userId/dashboardId/audit`                                                                          | 无数据库模型                               | 新建收藏模型；Cordys Service 先查重，PostgreSQL 可用组合唯一约束封住并发重复 |
 
 ## 4. Prisma relation 与下游编译断点
 
 ### 4.1 Schema relation
 
-| 当前 relation | 直接替换后的要求 |
-| --- | --- |
+| 当前 relation                                              | 直接替换后的要求                                                                                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Tenant.customers Customer[]`、`Tenant.contacts Contact[]` | 目标表不保留 `tenantId`；删除旧 relation，业务查询统一用 `organizationId`。若保留 Prisma relation，只能关联同一 ID 的组织实体，不得双字段并存 |
-| `User.ownedCustomers`、`User.ownedContacts` | `owner` 在 Cordys 是字符串用户 ID；可建立关系但字段名和 onDelete 行为不得改变业务记录 |
-| `Customer.contacts Contact[]` | 改为 `CustomerContact[]`，且 Contact 的 `customerId` 最终允许空，删除客户时不能用当前 Cascade 抹掉所有独立联系人 |
-| `Customer.teamMembers CustomerTeamMember[]` | 改为 `CustomerCollaboration[]` |
-| `Customer.opportunities/quotes/contracts` | 继续关联目标 `Customer`；所有生成类型和 include/select 会重编译 |
-| `Opportunity.contact Contact?` | 改为 `CustomerContact?`；联系人删除仍需业务层拒绝被商机引用的数据 |
-| `ResourcePool.pickRule/recycleRule` | 删除通用 relation，分别建立 CluePool 与 CustomerPool 规则关系 |
-| `SavedView.conditions` | 改为 `SysUserView.conditions`，条件字段与序列化格式全部变化 |
+| `User.ownedCustomers`、`User.ownedContacts`                | `owner` 在 Cordys 是字符串用户 ID；可建立关系但字段名和 onDelete 行为不得改变业务记录                                                         |
+| `Customer.contacts Contact[]`                              | 改为 `CustomerContact[]`，且 Contact 的 `customerId` 最终允许空，删除客户时不能用当前 Cascade 抹掉所有独立联系人                              |
+| `Customer.teamMembers CustomerTeamMember[]`                | 改为 `CustomerCollaboration[]`                                                                                                                |
+| `Customer.opportunities/quotes/contracts`                  | 继续关联目标 `Customer`；所有生成类型和 include/select 会重编译                                                                               |
+| `Opportunity.contact Contact?`                             | 改为 `CustomerContact?`；联系人删除仍需业务层拒绝被商机引用的数据                                                                             |
+| `ResourcePool.pickRule/recycleRule`                        | 删除通用 relation，分别建立 CluePool 与 CustomerPool 规则关系                                                                                 |
+| `SavedView.conditions`                                     | 改为 `SysUserView.conditions`，条件字段与序列化格式全部变化                                                                                   |
 
 ### 4.2 关键类型差异
 
@@ -199,22 +199,22 @@ Mapper 证明 `scope_id` 是 JSON/范围 token 文本而不是 PostgreSQL 数组
 
 ## 6. 旧 Dashboard 与 `/reports` 入口
 
-| 入口 | 当前文件 | 处理 |
-| --- | --- | --- |
-| Nest 模块装配 | `apps/api/src/app.module.ts`、`modules/dashboard/dashboard.module.ts` | 当前统计模块迁移/拆分到 Home；`DashboardsModule` 重新承担 Cordys 仪表板资源 |
-| 5 个统计接口 | `dashboard.controller.ts` 的 `summary/funnel/ranking/trend/conversion` | W3.4.1 首页统计改用 `/api/home/statistic/*`；旧路径删除 |
-| 统计 Service | `dashboard.service.ts` | 线索统计切换 Clue；首页需要的逻辑按 Cordys Home Service 重建，不能整体保留成 Dashboard API |
-| Web API | `apps/web/src/api/dashboard.ts` | 首页与仪表板分别建立 API，不保留旧 5 接口 |
-| 首页 | `apps/web/src/views/DashboardView.vue` | W3.4.1 重建 Cordys 普通工作台 |
-| 固定报表 | `apps/web/src/views/ReportsView.vue` | W3.4.4 替换为目录、资源、收藏、排序、嵌入/跳转页面 |
-| 路由/菜单 | `apps/web/src/router/index.ts`、动态菜单配置 | `/dashboard` 仍是首页；`/reports` 仍是仪表板菜单入口，但组件和业务含义直接替换 |
-| Smoke/Mobile API | `scripts/smoke.mjs`、`apps/web/src/mobile/api/index.ts` | 删除旧统计断言；Mobile 不新增仪表板，但既有首页 API 引用必须回归 |
+| 入口             | 当前文件                                                               | 处理                                                                                       |
+| ---------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Nest 模块装配    | `apps/api/src/app.module.ts`、`modules/dashboard/dashboard.module.ts`  | 当前统计模块迁移/拆分到 Home；`DashboardsModule` 重新承担 Cordys 仪表板资源                |
+| 5 个统计接口     | `dashboard.controller.ts` 的 `summary/funnel/ranking/trend/conversion` | W3.4.1 首页统计改用 `/api/home/statistic/*`；旧路径删除                                    |
+| 统计 Service     | `dashboard.service.ts`                                                 | 线索统计切换 Clue；首页需要的逻辑按 Cordys Home Service 重建，不能整体保留成 Dashboard API |
+| Web API          | `apps/web/src/api/dashboard.ts`                                        | 首页与仪表板分别建立 API，不保留旧 5 接口                                                  |
+| 首页             | `apps/web/src/views/DashboardView.vue`                                 | W3.4.1 重建 Cordys 普通工作台                                                              |
+| 固定报表         | `apps/web/src/views/ReportsView.vue`                                   | W3.4.4 替换为目录、资源、收藏、排序、嵌入/跳转页面                                         |
+| 路由/菜单        | `apps/web/src/router/index.ts`、动态菜单配置                           | `/dashboard` 仍是首页；`/reports` 仍是仪表板菜单入口，但组件和业务含义直接替换             |
+| Smoke/Mobile API | `scripts/smoke.mjs`、`apps/web/src/mobile/api/index.ts`                | 删除旧统计断言；Mobile 不新增仪表板，但既有首页 API 引用必须回归                           |
 
 ## 7. Seed、测试与公共调用方影响
 
 ### 7.1 Seed
 
-`apps/api/prisma/seed.ts` 当前只创建旧 `Customer` 样例，仍写 `tenantId/industry/phone/email/ownerId/deptId`，没有 Field/Form、Clue、Contact、UserView、Pool、Capacity、Owner History 或 Dashboard 样例。任务 1.8 必须改为直接模型 Seed，并至少形成：
+以下内容是任务 1.1 审计时的 Seed 快照：当时 `apps/api/prisma/seed.ts` 只创建旧 `Customer` 样例，仍写 `tenantId/industry/phone/email/ownerId/deptId`，没有 Field/Form、Clue、Contact、UserView、Pool、Capacity、Owner History 或 Dashboard 样例。该缺口已由任务 1.8 完成，最终结果见 [seed-empty-db-audit.md](./seed-empty-db-audit.md)。当时要求直接模型 Seed 至少形成：
 
 - 组织、角色、用户及审计用户；
 - Clue/Customer/CustomerContact 表单与普通/Blob 字段值；
@@ -282,4 +282,4 @@ Mapper 证明 `scope_id` 是 JSON/范围 token 文本而不是 PostgreSQL 数组
 - [x] 删除清单、替换清单、禁止兼容路径和一次性替换顺序已固化。
 - [x] 新发现的非目标模块动态字段数据库缺口已转入 DB-021。
 
-任务 1.2～1.3 已按本文第 8、9 节完成，结果见 [W3.4.0 直接模型与破坏性迁移审计](./schema-migration-audit.md)。下一执行单元为任务 1.4：模块表单与动态字段底座。
+任务 1.2～1.3 已按本文第 8、9 节完成，结果见 [W3.4.0 直接模型与破坏性迁移审计](./schema-migration-audit.md)。后续任务 1.4～1.9 已全部完成，W3.4.0 最终验收见 [foundation-validation-audit.md](./foundation-validation-audit.md)。

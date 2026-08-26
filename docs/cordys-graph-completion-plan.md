@@ -6,7 +6,7 @@
 
 - 基础公共能力：组织架构、角色权限、租户隔离、数据权限、操作日志、模块菜单底座已具备。
 - 图中销售模块：已有可运行页面和 API，但“存在”不等于与 Cordys 完整一致，仍需按模块逐页读取源码后复查字段、操作、权限、状态与关联数据。
-- 企业设置：W3.1 配置、W3.2 组织同步和 W3.3 统一登录/企微消息渠道均已完成；下一步进入图中业务模块逐页复查。
+- 企业设置：W3.1 配置、W3.2 组织同步和 W3.3 统一登录/企微消息渠道均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页已关闭，当前进入 W3.4.2 线索与线索池。
 
 ## 执行顺序
 
@@ -22,7 +22,7 @@
 1. 已读取 Cordys 组织同步入口及 `ThirdDepartmentService`、`WeComDepartmentService`、`UserSyncController`、`DataHandleUtils` 全链路源码。
 2. 已落地部门/成员外部映射、同步批次、差异项、冲突 resolution、凭据版本和活动批次并发约束，DB-013 标记为 `VERIFIED`。
 3. 同步复用 W3.1 加密凭据，浏览器、批次快照、日志和错误响应均不保存或回显 Secret/token。
-4. 隔离租户已验证新增、更新、禁用、重复应用、邮箱冲突绑定、默认角色、部门主管、权限拒绝、日志和通知；W3.3 可以开始。
+4. 隔离租户已验证新增、更新、禁用、重复应用、邮箱冲突绑定、默认角色、部门主管、权限拒绝、日志和通知；该验收随后进入 W3.3。
 
 ## W3.3 验收结论
 
@@ -38,13 +38,13 @@
 3. 现有 `/reports` 是 MicroMatrix ECharts 报表，与 Cordys 仪表板目录/外部资源管理不一致；W3.4 将直接替换，不保留旧页面兼容入口。
 4. 线索、客户、联系人主链路虽已多轮验收，W3.4 仍先执行直接数据模型和公共列表底座复查；新发现的数据模型差异已登记为 DB-016～DB-020。
 5. W3.4 需求、技术设计和任务清单均已确认，阶段进入 `IN_PROGRESS`。任务 1.1 已完成 [直接模型与调用方影响审计](./specs/business-module-page-parity/model-impact-audit.md)，锁定 32 张 Cordys 直接表、旧模型调用方、禁止兼容路径和一次性替换顺序。
-6. 任务 1.2～1.3 已完成 [直接模型与破坏性迁移审计](./specs/business-module-page-parity/schema-migration-audit.md)：Prisma 已建立 32 张目标表并删除旧模型，破坏性迁移已通过隔离空库全部 30 个 migration 复放；主开发库尚未应用，下一步执行 1.4 模块表单与动态字段底座。
+6. 任务 1.2～1.3 已完成 [直接模型与破坏性迁移审计](./specs/business-module-page-parity/schema-migration-audit.md)：Prisma 已建立 32 张目标表并删除旧模型，破坏性迁移已通过隔离空库全部 30 个 migration 复放；该历史节点随后进入 1.4 模块表单与动态字段底座。
 7. 任务 1.4 的 [模块表单与动态字段公共底座](./specs/business-module-page-parity/field-foundation-audit.md) 已实现并通过 `77/77` 规则测试及真实 PostgreSQL 12 项 Smoke；目标业务列表/详情/导入导出仍待 1.7 接入，因此 1.4 暂不整体关闭。
 8. 任务 1.5 的 [用户视图直接模型](./specs/business-module-page-parity/user-view-foundation-audit.md) 已完成：五类资源切换到 Cordys View API、条件文本序列化和三重隔离，旧 SavedView 数据库访问已删除；全量规则测试 `84/84` 和真实 PostgreSQL 12 项 Smoke 通过。
-9. 任务 1.6 的 [分域池、容量与负责人历史 Repository](./specs/business-module-page-parity/pool-repository-foundation-audit.md) 已完成：Clue/Customer 独立 Repository、共享无状态规则计算器、Owner 生命周期和 PostgreSQL 并发锁已落地；全量规则测试 `95/95`，隔离空库 30 migration 与 9 项真实库 Smoke 通过。下一独立执行单元为 1.7 业务调用方迁移和旧代码删除；在 1.7～1.8 完成前 API 仍不可启动。
-10. 任务 1.7 的 [业务调用方直接模型迁移](./specs/business-module-page-parity/business-caller-migration-audit.md) 已完成：线索、客户、联系人、360、协作、关系、合并、跟进、商机联系人、通知、统计和自动回收已切换到 Cordys 直接模型，旧通用池 Controller/Service/DTO 已删除；生产 API 构建和 `95/95` 规则测试通过。全量类型检查只剩 Seed 的 6 个旧 Customer 字段错误，下一独立执行单元为 1.8 Seed 与空库启动验收。
-11. 任务 1.8 的 [Seed 与空库启动验收](./specs/business-module-page-parity/seed-empty-db-audit.md) 经复核并修正完成：补齐 HiddenField、Owner History、协作、关系、转化关系及联系人/线索 Blob 值，审计加强为 23 个关键索引和完整直接关系断言；本地开发库已用最终修正版从零复放全部 30 个 migration，双次 Seed、增强审计、`95/95` 规则测试、类型检查、Lint、构建、API/Web 启动与 HTTP 200 均通过。下一独立执行单元为 1.9。
-12. 任务 1.9 的 [公共底座最终专项验收](./specs/business-module-page-parity/foundation-validation-audit.md) 已完成：Prisma、`97/97` 规则测试、三类 W3.4 真实库 Smoke、隔离库 30 migration、Shared/API/Web 类型与构建、全仓 Lint 均通过；根关键链路 `219/219`、W3.2 `23/23`、W3.3 `19/19` 全绿。验收同时收口 Pool Options 只读 facade、负责人历史序列化、直接字段别名、关联客户候选范围、关键词 contains 语义和交易链 Customer `organizationId` 遗漏。W3.4.0 正式关闭，下一独立执行单元为 W3.4.1 首页。
+9. 任务 1.6 的 [分域池、容量与负责人历史 Repository](./specs/business-module-page-parity/pool-repository-foundation-audit.md) 已完成：Clue/Customer 独立 Repository、共享无状态规则计算器、Owner 生命周期和 PostgreSQL 并发锁已落地；全量规则测试 `95/95`，隔离空库 30 migration 与 9 项真实库 Smoke 通过。该历史节点随后进入 1.7 业务调用方迁移和旧代码删除。
+10. 任务 1.7 的 [业务调用方直接模型迁移](./specs/business-module-page-parity/business-caller-migration-audit.md) 已完成：线索、客户、联系人、360、协作、关系、合并、跟进、商机联系人、通知、统计和自动回收已切换到 Cordys 直接模型，旧通用池 Controller/Service/DTO 已删除；生产 API 构建和 `95/95` 规则测试通过。该历史节点随后进入 1.8 Seed 与空库启动验收。
+11. 任务 1.8 的 [Seed 与空库启动验收](./specs/business-module-page-parity/seed-empty-db-audit.md) 经复核并修正完成：补齐 HiddenField、Owner History、协作、关系、转化关系及联系人/线索 Blob 值，审计加强为 23 个关键索引和完整直接关系断言；本地开发库已用最终修正版从零复放全部 30 个 migration，双次 Seed、增强审计、`95/95` 规则测试、类型检查、Lint、构建、API/Web 启动与 HTTP 200 均通过；随后进入 1.9。
+12. 任务 1.9 的 [公共底座最终专项验收](./specs/business-module-page-parity/foundation-validation-audit.md) 已完成：Prisma、`97/97` 规则测试、三类 W3.4 真实库 Smoke、隔离库 30 migration、Shared/API/Web 类型与构建、全仓 Lint 均通过；根关键链路 `219/219`、W3.2 `23/23`、W3.3 `19/19` 全绿。验收同时收口 Pool Options 只读 facade、负责人历史序列化、直接字段别名、关联客户候选范围、关键词 contains 语义和交易链 Customer `organizationId` 遗漏。W3.4.0 正式关闭，随后进入 W3.4.1 首页。
 13. W3.4.1 的 [首页最终专项验收](./specs/business-module-page-parity/home-validation-audit.md) 已完成：独立 Home 统计与跨页筛选、Cordys 普通工作台、真实快捷入口、默认密码状态和审批 CC 数据源全部闭环；`108/108` 规则测试、首页 API/数据库 Smoke `17/17`、Chrome Browser Smoke `12/12`、根 Smoke `219/219`、W3.2 `23/23`、W3.3 `19/19` 全绿，Shared/API/Web typecheck、Lint 和三端 production build 通过。W3.4.1 正式关闭，下一独立执行单元为 W3.4.2 线索与线索池。
 
 ## 长期完成约束

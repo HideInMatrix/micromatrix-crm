@@ -136,7 +136,8 @@
 
 - [ ] 3.3 对齐三条线索转换链路
   - 保持自动转换、新建客户并关联、关联已有客户三条路径独立。
-  - 以 `transitionType + transitionId` 维护已转客户事实，并在事务内完成联系人、协作、跟进和商机副作用。
+  - 以 `transitionType + transitionId` 维护已转客户事实，并在事务内完成联系人、协作、跟进记录、跟进计划和商机副作用。
+  - 按 Cordys `ClueService.batchCopyCluePlanAndRecord` 同时复制 FollowUpRecord 与 FollowUpPlan（含字段值），保留原线索侧记录/计划，不得继续沿用 R4 只复制记录的历史缺口。
   - 回归已验收的通知、计划和权限规则。
   - _需求：R5、R11_
 

@@ -349,47 +349,44 @@ GET  /leads/{id}                         线索详情（含 transitionType/trans
 - 关联已有客户的候选范围为：正常客户数据范围 + 当前用户协作客户 + 当前用户可访问公海；`READ_ONLY` 协作客户会返回但 `selectable=false`，直接绕过 UI 调接口也会被 Service 拒绝。
 - 关联公海客户前先执行领取规则；领取失败则不继续转换。
 - 线索负责人不是客户负责人且尚未在团队中时，自动补 `COLLABORATION`；商机绑定本次新建联系人；线索 FollowUpRecord 复制到客户且原记录保留，同时刷新客户 `lastFollowedAt`。
-- MicroMatrix 当前尚无完整 FollowUpPlan 与 Cordys `FormLinkScenario` 跨字段映射配置。R4 不伪造 FollowUpPlan；动态字段仅迁移目标模块存在的同 key `customData`，显式跨字段映射归动态表单平台后续补齐。
+- MicroMatrix 已具备 FollowUpPlan 的 CRUD、状态流转、我的计划和提醒能力，但当前线索转换服务仍只复制 FollowUpRecord，尚未按 Cordys `ClueService.batchCopyCluePlanAndRecord` 同步复制 FollowUpPlan 及其字段值；该缺口必须在 W3.4.2 task 3.3 的转换链路对齐中关闭。Cordys `FormLinkScenario` 显式跨字段映射配置仍未实现，动态字段迁移不得用静态映射冒充。
 
-## 保存的用户视图 SavedView
+## Cordys 用户视图 UserView
 
-基础路径：`/api/saved-views`。
-
-主要接口：
+旧 `/api/saved-views` 契约已删除。当前按 Cordys 资源路径分别提供个人 UserView：
 
 ```text
-GET    /saved-views/{module}
-GET    /saved-views/detail/{id}
-POST   /saved-views/{module}
-PATCH  /saved-views/detail/{id}
-DELETE /saved-views/detail/{id}
-POST   /saved-views/detail/{id}/fixed
-POST   /saved-views/detail/{id}/enabled
-POST   /saved-views/{module}/reorder
+/api/lead/view                 线索
+/api/pool/lead/view            线索池
+/api/account/view              客户
+/api/account/contact/view      联系人
+/api/pool/account/view         客户公海
 ```
 
-当前销售核心 module：
+每个资源路径统一提供：
 
 ```text
-lead
-lead_pool
-customer
-customer_pool
+POST /add
+POST /update
+GET  /delete/{id}
+GET  /detail/{id}
+GET  /list
+GET  /fixed/{id}
+POST /edit/pos
+GET  /enable/{id}
 ```
 
-`customer_collaboration` 不再作为独立 SavedView module 使用。Cordys 的“协作客户”属于客户模块的系统视图，当前统一由 `customer` module + `view=COLLABORATION` 表达；历史数据若存在可保留，但新 Web 不再创建该 module 的个人视图。
-
-视图服务端保存 `name + searchMode + conditions + fixed/enabled/sort`，与 Cordys UserView 语义一致。列表按 `sort desc` 返回；`fixed` 仅决定是否显示为顶部快捷标签，不改变排序。
+UserView 直接写入 `sys_user_view / sys_user_view_condition`，按 `organizationId + userId + resourceType` 三重隔离。条件值按 Cordys `ARRAY/STRING/INT/FLOAT/BOOLEAN` 文本契约保存；固定、启停和 BEFORE/AFTER 拖拽排序都执行所有权与资源类型校验。
 
 Lead / Customer 列表可附加 `viewId`。如果同时传临时 `filters`：
 
 ```text
-(SavedView 条件，内部按 AND/OR)
+(UserView 条件，内部按 AND/OR)
 AND
 (临时 filters，当前高级筛选按 AND)
 ```
 
-列可见性与列顺序不是 SavedView 服务端数据。Web 按 `userId + module + viewId` 保存浏览器本地偏好，避免修改企业级字段配置。
+系统视图（如客户 ALL/SELF/DEPARTMENT/COLLABORATION）仍是代码与权限事实，不写入个人 UserView 表；个人视图只叠加筛选条件，不扩大角色 DataScope。
 
 ## 客户系统视图与客户公海路由
 
@@ -416,8 +413,8 @@ GET /customers?view=COLLABORATION
 - `SELF` 只看本人负责客户。
 - `DEPARTMENT` 使用当前角色允许的部门范围；无此系统视图权限时直接请求返回 403。
 - `COLLABORATION` 只看当前用户作为客户协作成员的数据。
-- 个人 SavedView 仍使用 `module=customer`；选中个人视图时使用角色默认数据范围，再叠加 SavedView 条件。
-- 客户公海继续使用 `scope=sea + poolId` 和 `module=customer_pool`，但只在独立 `/customers/open-sea` 页面使用。
+- 个人 UserView 使用 `/api/account/view/*`；选中个人视图时先执行角色默认数据范围，再叠加 UserView 条件。
+- 客户公海个人视图使用 `/api/pool/account/view/*`，业务页面仍只在独立 `/customers/open-sea` 页面使用。
 
 ## 客户 360（R5）
 
@@ -558,7 +555,7 @@ contactConflicts[]
 - `name` 字段始终显示，服务端会自动剔除其字段 ID。
 - 未知字段、全局 hidden 字段不会写入配置。
 - Lead/Customer API 行对象仍保持完整数据；Web 只在当前线索池/客户公海表格列层面应用隐藏配置。
-- SavedView 本地列偏好会先计算，再叠加当前 Pool 的隐藏字段。
+- UserView 对应的本地列偏好会先计算，再叠加当前 Pool 的隐藏字段。
 
 负责人历史接口：
 

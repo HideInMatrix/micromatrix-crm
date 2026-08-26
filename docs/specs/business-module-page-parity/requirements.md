@@ -168,4 +168,4 @@ W3.4 按以下顺序实施，每段通过自身迁移、API、权限、页面和
 3. `/dashboard` 继续代表首页；`/reports` 改为 Cordys 仪表板资源管理。
 4. 仪表板实现 Cordys 管理、范围、收藏和嵌入能力，但不实现 Cordys License，也不内置 DataEase 服务端。
 
-需求确认后，下一步编写 `design.md`，给出逐表迁移、NestJS 模块边界、API 映射、Vue 页面结构、删除清单和分阶段回滚/验证方案；在设计再次确认前不开始代码实施。
+需求已经确认，配套 `design.md` 与 `tasks.md` 已建立并进入实施。当前执行状态与唯一下一步以 [tasks.md](./tasks.md) 为准，本需求文档不再承担阶段进度指引。

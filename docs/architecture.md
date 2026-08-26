@@ -75,7 +75,7 @@ flowchart LR
 - Cordys 自身的产品授权/版本区分机制不属于 MicroMatrix 的业务需求。
 - 对直接复用或翻译的上游代码必须遵守其许可证；若目标是未来独立闭源商业发行，应采用基于功能规格和行为的独立实现方式。
 
-功能状态统一记录在 [cordys-parity.md](./cordys-parity.md)。当前实施顺序以最新的阶段执行计划为准；现阶段为 [cordys-wave1-remainder-plan.md](./cordys-wave1-remainder-plan.md)。
+功能状态统一记录在 [cordys-parity.md](./cordys-parity.md)。当前实施顺序只以 [cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md) 与对应 `docs/specs/**/tasks.md` 为准；已完成阶段的过程文档不再承担当前计划职责。
 
 ## 关键设计决策（ADR）
 
