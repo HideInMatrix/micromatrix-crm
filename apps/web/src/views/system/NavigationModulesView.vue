@@ -3,7 +3,6 @@ import {
   NAVIGATION_MODULES,
   TOP_NAVIGATION_DEFINITIONS,
   type ModuleConfigVO,
-  type ModuleKey,
   type NavigationModuleKey,
   type TopNavigationConfigVO,
   type TopNavigationKey,
@@ -13,33 +12,66 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import draggable from 'vuedraggable'
 import { extractErrorMessage } from '@/api/http'
+import { moduleIconOf, topNavigationIconOf } from '@/router/navigation-icons'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
 
 interface ModuleAction {
   label: string
-  path: string
-  module?: ModuleKey
+  path?: string
+  query?: Record<string, string>
 }
 
-const moduleActions: Partial<Record<NavigationModuleKey, ModuleAction[]>> = {
-  lead: [
-    { label: '线索表单设置', path: '/system/modules/fields', module: 'lead' },
-    { label: '线索池设置', path: '/system/sales-settings', module: 'lead' },
-    { label: '线索库容设置', path: '/system/sales-settings', module: 'lead' },
-  ],
-  customer: [
-    { label: '客户表单设置', path: '/system/modules/fields', module: 'customer' },
-    { label: '联系人表单设置', path: '/system/modules/fields', module: 'contact' },
-    { label: '公海设置', path: '/system/sales-settings', module: 'customer' },
-  ],
-  opportunity: [
-    { label: '商机表单设置', path: '/system/modules/fields', module: 'opportunity' },
-    { label: '报价表单设置', path: '/system/modules/fields', module: 'quote' },
-  ],
-  product: [{ label: '产品表单设置', path: '/system/modules/fields', module: 'product' }],
-  contract: [{ label: '合同表单设置', path: '/system/modules/fields', module: 'contract' }],
-  order: [{ label: '订单表单设置', path: '/system/modules/fields', module: 'order' }],
+interface ModuleActionGroup {
+  primary: ModuleAction[]
+  more?: ModuleAction[]
+}
+
+const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
+  lead: {
+    primary: [
+      { label: '线索表单设置', path: '/system/modules/fields', query: { module: 'lead' } },
+      { label: '线索池设置' },
+      { label: '线索库容设置' },
+    ],
+    more: [{ label: '移入线索池原因设置' }],
+  },
+  customer: {
+    primary: [
+      { label: '客户表单设置', path: '/system/modules/fields', query: { module: 'customer' } },
+      { label: '联系人表单设置', path: '/system/modules/fields', query: { module: 'contact' } },
+      { label: '公海设置' },
+    ],
+    more: [{ label: '客户库容设置' }, { label: '移入公海原因设置' }],
+  },
+  contract: {
+    primary: [
+      { label: '合同表单设置', path: '/system/modules/fields', query: { module: 'contract' } },
+      { label: '回款计划表单设置' },
+      { label: '回款记录表单设置' },
+    ],
+    more: [{ label: '工商抬头表单必填设置' }, { label: '发票表单设置' }, { label: '合同阶段设置' }],
+  },
+  opportunity: {
+    primary: [
+      { label: '商机表单设置', path: '/system/modules/fields', query: { module: 'opportunity' } },
+      { label: '报价表单设置', path: '/system/modules/fields', query: { module: 'quote' } },
+      { label: '商机阶段设置' },
+    ],
+    more: [{ label: '商机关闭规则' }, { label: '商机失败原因设置' }],
+  },
+  order: {
+    primary: [
+      { label: '订单表单设置', path: '/system/modules/fields', query: { module: 'order' } },
+      { label: '订单状态流设置' },
+    ],
+  },
+  product: {
+    primary: [
+      { label: '产品表单设置', path: '/system/modules/fields', query: { module: 'product' } },
+      { label: '价格表表单设置' },
+    ],
+  },
 }
 
 const router = useRouter()
@@ -56,12 +88,24 @@ const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item])
 const topNavigationDefinitionMap = new Map(
   TOP_NAVIGATION_DEFINITIONS.map((item) => [item.key, item]),
 )
-const cardConfigs = computed(() =>
+const moduleCardConfigs = computed(() =>
   orderedConfigs.value.filter((item) => item.moduleKey !== 'system'),
 )
 
 function labelOf(moduleKey: NavigationModuleKey) {
   return definitionMap.get(moduleKey)?.label ?? moduleKey
+}
+
+function topNavigationLabel(key: TopNavigationKey) {
+  return topNavigationDefinitionMap.get(key)?.label ?? key
+}
+
+function actionsOf(moduleKey: NavigationModuleKey) {
+  return moduleActions[moduleKey] ?? { primary: [] }
+}
+
+function unavailableActionTip(action: ModuleAction) {
+  return `「${action.label}」将在对应 Cordys 业务模块执行单元中继续对齐`
 }
 
 async function load() {
@@ -84,22 +128,24 @@ async function load() {
 async function handleToggle(config: ModuleConfigVO, enabled: boolean) {
   const label = labelOf(config.moduleKey)
   const confirmed = await ElMessageBox.confirm(
-    `${enabled ? '开启' : '关闭'}「${label}」模块后，左侧导航将立即${enabled ? '显示' : '隐藏'}该模块。确定继续？`,
-    `${enabled ? '开启' : '关闭'}模块`,
-    { type: 'warning' },
-  ).catch(() => false)
+    enabled ? '模块开启后，模块出现在主导航菜单' : '关闭后，成员在主导航找不到该模块，请谨慎操作！',
+    `确认${enabled ? '开启' : '关闭'}${label}模块吗`,
+    {
+      type: enabled ? 'info' : 'warning',
+      confirmButtonText: enabled ? '确认开启' : '确认关闭',
+      cancelButtonText: '取消',
+    },
+  )
+    .then(() => true)
+    .catch(() => false)
 
-  if (!confirmed) {
-    config.enabled = !enabled
-    return
-  }
+  if (!confirmed) return
 
   try {
     const updated = await moduleConfig.update(config.moduleKey, enabled)
     Object.assign(config, updated)
-    ElMessage.success(`${label}模块已${enabled ? '开启' : '关闭'}`)
+    ElMessage.success(enabled ? '已开启' : '已关闭')
   } catch (error) {
-    config.enabled = !enabled
     ElMessage.error(extractErrorMessage(error))
   }
 }
@@ -115,7 +161,7 @@ async function handleDragEnd() {
     orderedConfigs.value = moduleConfig.configs
       .map((item) => ({ ...item }))
       .sort((a, b) => a.sort - b.sort)
-    ElMessage.success('主导航顺序已保存')
+    ElMessage.success('操作成功')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
     await load()
@@ -137,7 +183,7 @@ async function handleTopNavigationDragEnd() {
     orderedTopNavigationConfigs.value = moduleConfig.topNavigationConfigs
       .map((item) => ({ ...item }))
       .sort((a, b) => a.sort - b.sort)
-    ElMessage.success('顶部导航顺序已保存')
+    ElMessage.success('操作成功')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
     await load()
@@ -146,147 +192,204 @@ async function handleTopNavigationDragEnd() {
   }
 }
 
-function topNavigationLabel(key: TopNavigationKey) {
-  return topNavigationDefinitionMap.get(key)?.label ?? key
-}
-
-function topNavigationStatus(key: TopNavigationKey) {
-  return topNavigationDefinitionMap.get(key)?.status ?? 'planned'
-}
-
-function topNavigationStatusLabel(key: TopNavigationKey) {
-  const status = topNavigationStatus(key)
-  return status === 'available' ? '可用' : status === 'excluded' ? '已排除' : '待迁移'
-}
-
-function topNavigationStatusType(key: TopNavigationKey) {
-  const status = topNavigationStatus(key)
-  return status === 'available' ? 'success' : status === 'excluded' ? 'info' : 'warning'
-}
-
 function openAction(action: ModuleAction) {
-  router.push({ path: action.path, query: action.module ? { module: action.module } : undefined })
+  if (!action.path) return
+  router.push({ path: action.path, query: action.query })
 }
 
 onMounted(load)
 </script>
 
 <template>
-  <div v-loading="loading" class="grid min-h-[620px] grid-cols-[300px_minmax(0,1fr)] gap-4">
-    <el-card shadow="never" body-class="!p-0">
-      <div class="border-b border-[var(--el-border-color-lighter)] px-5 py-4">
-        <div class="font-medium">主导航配置</div>
-        <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-          拖拽调整左侧导航顺序
-        </div>
-      </div>
-
-      <draggable
-        v-model="orderedConfigs"
-        item-key="moduleKey"
-        handle=".module-drag-handle"
-        :disabled="!canUpdate || savingOrder"
-        @end="handleDragEnd"
-      >
-        <template #item="{ element: item }">
-          <div
-            class="flex items-center gap-3 border-b border-[var(--el-border-color-lighter)] px-5 py-3 text-sm"
-          >
-            <GripVertical
-              class="module-drag-handle select-none text-lg text-[var(--el-text-color-placeholder)]"
-              :class="canUpdate ? 'cursor-move' : 'cursor-not-allowed'"
-              :size="18"
-              aria-hidden="true"
-            />
-            <span class="flex-1">{{ labelOf(item.moduleKey) }}</span>
-            <el-tag v-if="!item.enabled" size="small" type="info">已关闭</el-tag>
-            <el-tag v-if="!item.configurable" size="small" type="info">固定</el-tag>
-          </div>
-        </template>
-      </draggable>
-
-      <div
-        class="border-y border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-lighter)] px-5 py-4"
-      >
-        <div class="font-medium">顶部导航配置</div>
-        <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-          拖拽调整顶部入口顺序；未迁移能力不会在实际导航中显示
-        </div>
-      </div>
-      <draggable
-        v-model="orderedTopNavigationConfigs"
-        item-key="navigationKey"
-        handle=".top-navigation-drag-handle"
-        :disabled="!canUpdate || savingTopNavigationOrder"
-        @end="handleTopNavigationDragEnd"
-      >
-        <template #item="{ element: item }">
-          <div
-            class="flex items-center gap-3 border-b border-[var(--el-border-color-lighter)] px-5 py-3 text-sm"
-            :data-top-navigation-key="item.navigationKey"
-          >
-            <GripVertical
-              class="top-navigation-drag-handle select-none text-lg text-[var(--el-text-color-placeholder)]"
-              :class="canUpdate ? 'cursor-move' : 'cursor-not-allowed'"
-              :size="18"
-              aria-hidden="true"
-            />
-            <span class="min-w-0 flex-1 truncate">
-              {{ topNavigationLabel(item.navigationKey) }}
-            </span>
-            <el-tag size="small" :type="topNavigationStatusType(item.navigationKey)">
-              {{ topNavigationStatusLabel(item.navigationKey) }}
-            </el-tag>
-          </div>
-        </template>
-      </draggable>
-    </el-card>
-
-    <el-card shadow="never" body-class="!p-0">
-      <div class="border-b border-[var(--el-border-color-lighter)] px-6 py-4">
-        <div class="font-medium">模块配置</div>
-        <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-          模块开关决定主导航是否展示；模块设置入口进入对应业务配置
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-4 p-5 xl:grid-cols-3">
-        <div
-          v-for="item in cardConfigs"
-          :key="item.moduleKey"
-          class="min-h-[150px] rounded border border-[var(--el-border-color)] p-4"
+  <div v-loading="loading" class="overflow-x-auto">
+    <div
+      class="grid min-h-[calc(100vh-104px)] min-w-[980px] grid-cols-[minmax(280px,24%)_minmax(620px,1fr)] gap-4"
+      data-testid="module-settings-layout"
+    >
+      <el-card shadow="never" body-class="!p-6" class="h-fit">
+        <div class="mb-4 font-medium text-[var(--el-text-color-primary)]">主导航配置</div>
+        <draggable
+          v-model="orderedConfigs"
+          item-key="moduleKey"
+          handle=".module-drag-handle"
+          ghost-class="module-drag-ghost"
+          :disabled="!canUpdate || savingOrder"
+          data-testid="main-navigation-list"
+          @end="handleDragEnd"
         >
-          <div class="flex-between">
-            <div class="font-medium">{{ labelOf(item.moduleKey) }}</div>
-            <el-switch
-              v-model="item.enabled"
+          <template #item="{ element: item }">
+            <div
+              class="module-nav-item module-drag-handle"
+              :class="canUpdate ? 'cursor-move' : 'cursor-not-allowed'"
               :data-module-key="item.moduleKey"
-              :data-module-enabled="String(item.enabled)"
-              :disabled="!item.configurable || !canUpdate"
-              @change="handleToggle(item, $event as boolean)"
-            />
-          </div>
-          <div class="mt-3 min-h-8 text-xs leading-5 text-[var(--el-text-color-secondary)]">
-            <template v-if="item.moduleKey === 'agent'">
-              智能体属于 Cordys 固定扩展模块，当前迁移阶段不可配置。
-            </template>
-            <template v-else>
-              {{ item.enabled ? '模块已启用，可从左侧导航访问。' : '模块已关闭，左侧导航不显示。' }}
-            </template>
-          </div>
-          <div class="mt-4 flex flex-wrap gap-x-3 gap-y-1">
-            <el-button
-              v-for="action in moduleActions[item.moduleKey] ?? []"
-              :key="action.label"
-              link
-              type="primary"
-              @click="openAction(action)"
             >
-              {{ action.label }}
-            </el-button>
+              <GripVertical :size="16" class="shrink-0 text-[var(--el-text-color-placeholder)]" />
+              <component
+                :is="moduleIconOf(item.moduleKey)"
+                :size="18"
+                class="shrink-0 text-[var(--el-text-color-primary)]"
+              />
+              <span class="min-w-0 flex-1 truncate">{{ labelOf(item.moduleKey) }}</span>
+            </div>
+          </template>
+        </draggable>
+
+        <el-divider />
+
+        <div class="mb-4 font-medium text-[var(--el-text-color-primary)]">顶部导航配置</div>
+        <draggable
+          v-model="orderedTopNavigationConfigs"
+          item-key="navigationKey"
+          handle=".top-navigation-drag-handle"
+          ghost-class="module-drag-ghost"
+          :disabled="!canUpdate || savingTopNavigationOrder"
+          data-testid="top-navigation-list"
+          @end="handleTopNavigationDragEnd"
+        >
+          <template #item="{ element: item }">
+            <div
+              class="module-nav-item top-navigation-drag-handle"
+              :class="canUpdate ? 'cursor-move' : 'cursor-not-allowed'"
+              :data-top-navigation-key="item.navigationKey"
+            >
+              <GripVertical :size="16" class="shrink-0 text-[var(--el-text-color-placeholder)]" />
+              <component
+                :is="topNavigationIconOf(item.navigationKey)"
+                :size="18"
+                class="shrink-0 text-[var(--el-text-color-primary)]"
+              />
+              <span class="min-w-0 flex-1 truncate">
+                {{ topNavigationLabel(item.navigationKey) }}
+              </span>
+            </div>
+          </template>
+        </draggable>
+      </el-card>
+
+      <el-card shadow="never" body-class="!p-6" class="h-fit">
+        <div class="space-y-4" data-testid="module-config-list">
+          <div
+            v-for="item in moduleCardConfigs"
+            :key="item.moduleKey"
+            class="module-config-row"
+            :data-module-config-key="item.moduleKey"
+          >
+            <div class="flex min-w-0 items-center gap-2 font-medium">
+              <span class="module-config-icon">
+                <component :is="moduleIconOf(item.moduleKey)" :size="20" />
+              </span>
+              <span class="truncate">{{ labelOf(item.moduleKey) }}</span>
+            </div>
+
+            <div class="flex min-w-0 items-center justify-end gap-2">
+              <div class="flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1">
+                <el-tooltip
+                  v-for="action in actionsOf(item.moduleKey).primary"
+                  :key="action.label"
+                  :disabled="Boolean(action.path)"
+                  :content="unavailableActionTip(action)"
+                  placement="top"
+                >
+                  <span>
+                    <el-button
+                      link
+                      type="primary"
+                      :disabled="!action.path || !canUpdate"
+                      @click="openAction(action)"
+                    >
+                      {{ action.label }}
+                    </el-button>
+                  </span>
+                </el-tooltip>
+
+                <el-dropdown
+                  v-if="actionsOf(item.moduleKey).more?.length"
+                  trigger="hover"
+                  @command="openAction"
+                >
+                  <el-button link type="primary" :disabled="!canUpdate">更多</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="action in actionsOf(item.moduleKey).more"
+                        :key="action.label"
+                        :command="action"
+                        :disabled="!action.path"
+                      >
+                        {{ action.label }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+
+              <el-divider
+                v-if="actionsOf(item.moduleKey).primary.length"
+                direction="vertical"
+                class="!mx-1"
+              />
+
+              <el-switch
+                :model-value="item.enabled"
+                :data-module-key="item.moduleKey"
+                :data-module-enabled="String(item.enabled)"
+                :disabled="!item.configurable || !canUpdate"
+                @change="handleToggle(item, $event as boolean)"
+              />
+            </div>
           </div>
         </div>
-      </div>
-    </el-card>
+      </el-card>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.module-nav-item {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.module-nav-item:hover {
+  border-color: var(--el-color-primary);
+}
+
+.module-drag-ghost {
+  opacity: 0.55;
+  border-color: var(--el-color-primary);
+}
+
+.module-config-row {
+  display: flex;
+  min-height: 80px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-primary);
+}
+
+.module-config-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: white;
+}
+</style>

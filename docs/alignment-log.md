@@ -722,6 +722,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 
 ---
 
+## 25. 模块配置页面 Cordys 源码对齐（2026-08-26）
+
+- 对照 `CordysCRM/frontend/packages/web/src/views/system/module/index.vue`、`components/configCard.vue` 和 zh-CN 资源，不以截图反推：页面改为 24%/76% 双栏，左侧分别承载主导航与顶部导航拖拽列表，右侧使用 80px 配置行、圆形主色图标、模块动作、分隔线与开关。
+- 删除旧页面自创的说明文案、固定/关闭标签和顶部导航迁移状态标签；模块排序、顶部导航排序、权限门槛和固定模块规则继续复用既有 Store/API。
+- 模块启停确认标题、正文和确认按钮已按 Cordys 分别对齐开启/关闭语义；取消不会提前修改本地开关值。
+- 表单设置动作接入已存在的模块表单直接页面。Cordys 已展示但当前尚无直接 API/Page 的池、库容、原因、阶段、状态流、价格表及回款/发票类入口保持可见禁用，不连接 W3.4.0 已删除的旧通用池 Controller；完整缺口登记为 DB-022。
+- 浏览器复验 `/system/modules`：双栏布局、动作状态和商机开启确认均符合源码语义，页面无 console error/warn；Web Vue 类型检查、改动文件 ESLint、生产构建和 diff 检查通过。
+
+---
+
 ## 26. W3.4.0 task 1.9 公共底座最终专项验收（2026-08-26）
 
 - 1.9 以完整回归而不是“编译通过”作为关闭门槛，最终收口 `/resource-pools/options` 只读直接模型 facade、Clue/Customer Owner History BigInt 序列化与成员信息、Lead/Contact 直接字段 alias、关联客户候选 Scope、动态字段 `contains` 关键词语义，以及 Opportunity/Quote/Contract 对直接 Customer `organizationId` 的遗留调用。

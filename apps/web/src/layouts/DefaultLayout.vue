@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ExportTaskButton from '@/components/ExportTaskButton.vue'
 import TopNavigationActions from '@/components/TopNavigationActions.vue'
 import { MENUS, type MenuItem } from '@/router/menu'
+import { moduleIconOf } from '@/router/navigation-icons'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
 
@@ -54,12 +55,18 @@ function handleLogout() {
       <el-menu :default-active="activeMenu" router class="flex-1 overflow-y-auto !border-r-0">
         <template v-for="menu in visibleMenus" :key="menu.path">
           <el-sub-menu v-if="menu.children?.length" :index="menu.path">
-            <template #title>{{ menu.title }}</template>
+            <template #title>
+              <component :is="moduleIconOf(menu.moduleKey)" :size="18" class="mr-2 shrink-0" />
+              <span>{{ menu.title }}</span>
+            </template>
             <el-menu-item v-for="child in menu.children" :key="child.path" :index="child.path">
               {{ child.title }}
             </el-menu-item>
           </el-sub-menu>
-          <el-menu-item v-else :index="menu.path">{{ menu.title }}</el-menu-item>
+          <el-menu-item v-else :index="menu.path">
+            <component :is="moduleIconOf(menu.moduleKey)" :size="18" class="mr-2 shrink-0" />
+            <span>{{ menu.title }}</span>
+          </el-menu-item>
         </template>
       </el-menu>
     </el-aside>
