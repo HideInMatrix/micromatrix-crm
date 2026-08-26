@@ -709,3 +709,23 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 代码搜索确认生产 API 中被删除 Prisma delegate、旧 DTO 和旧 Controller 引用均为 0；Prisma validate/generate、API 生产构建、shared/Web typecheck、本批 ESLint、`95/95` 规则测试和 diff 检查通过。
 - API 全量 typecheck 只剩 Seed 中 6 个旧 Customer 字段错误，明确归任务 1.8；Web 旧通用池配置调用将在 W3.4.2/W3.4.3 按 Cordys 直接页面 API 替换，不以临时兼容接口恢复。
 - DB-016、DB-017、DB-020 更新为“调用方已完成、Seed/页面待验收”，DB-021 继续保留图外模块动态字段缺口。任务 1.4 与 1.7 标记完成，下一独立执行单元为 1.8 Seed 与空库启动验收。
+
+---
+
+## 24. W3.4.0 任务 1.8 Seed 实现复核与修正（2026-08-26）
+
+- 用户实现的首版 Seed 已能创建表单、视图、池、容量、基础业务数据和仪表板，但对照任务 1.1 的直接模型审计后，确认缺少 Pool HiddenField、Clue/Customer Owner History、Customer Collaboration/Relation、Clue Conversion 以及 Contact/Clue Blob 字段样例。
+- 首版专项审计仅检查基础数量和“每张表存在任意索引”，可能把关系数据缺失或关键索引缺失误判为完成；现已改为检查 23 个关键命名索引、固定 Form Key/View Type、非空 Scope/Owner、有效转化目标及全部直接关系样例。
+- Seed 已补到 3 个表单、20 个字段、五类用户视图、两套分域池/规则/容量/隐藏字段、三域普通与 Blob 字段值、负责人历史、协作、关系、转化和 Cordys 默认仪表板目录语义；连续执行两次保持幂等。
+- 现有开发库增强审计通过：目标表 `32/32`、旧表残留 `0/14`、关键索引 `23/23`，全部直接关系断言为 true；`95/95` 规则测试、Shared/API/Web typecheck、全仓 Lint、API/Web 生产构建、生产启动和 HTTP 200 探测均通过。
+- 经用户明确授权，`localhost:5432/default` 已用最终修正版执行破坏性重建，全部 30 个 migration 从零复放成功；双次 Seed 后最终计数稳定，仪表板目录/资源/收藏均从旧库残留的 `2/2/2` 收敛为 `1/1/1`。最终增强审计和 API/Web HTTP 200 探测通过，任务 1.8 正式关闭，下一独立执行单元为 1.9。
+
+---
+
+## 26. W3.4.0 task 1.9 公共底座最终专项验收（2026-08-26）
+
+- 1.9 以完整回归而不是“编译通过”作为关闭门槛，最终收口 `/resource-pools/options` 只读直接模型 facade、Clue/Customer Owner History BigInt 序列化与成员信息、Lead/Contact 直接字段 alias、关联客户候选 Scope、动态字段 `contains` 关键词语义，以及 Opportunity/Quote/Contract 对直接 Customer `organizationId` 的遗留调用。
+- 根 Smoke 删除已失效的旧通用池/库容写接口夹具，改为直接 CluePool/CustomerPool 测试数据；SavedView 回归迁移到 Cordys UserView API。最终根关键链路 `219/219` 通过。
+- W3.4 专项结果：字段 12 项、UserView 12 项、Pool Repository 9 项均通过；Seed 增强审计确认 32 张目标表、14 张旧表零残留、23 个关键索引；隔离数据库从零复放全部 30 个 migration 后 Pool Repository 9 项再次通过。
+- Prisma validate/generate、`97/97` 规则测试、Shared/API/Web typecheck、全仓 Lint、Shared/API/Web production build 全部通过。W3.2/W3.3 Smoke 同步到当前 `targetDepartmentId` 契约后分别 `23/23`、`19/19` 通过。
+- DB-019 保持 `VERIFIED`；DB-016、DB-017、DB-018、DB-020 的数据/公共服务底座已通过 1.9，但仍等待 W3.4.2～W3.4.4 对应页面/API 闭环，因此继续 `IN_PROGRESS`。下一执行单元为 W3.4.1 首页。

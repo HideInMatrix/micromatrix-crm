@@ -41,7 +41,7 @@ PoolRulesController
 ResourcePoolsController
 ```
 
-Web 中旧 `/resource-pools`、`/pool-rules` 配置调用没有被伪装成可用接口：后端兼容 Controller 已删除，它们将在 W3.4.2/W3.4.3 读取 Cordys 对应页面和直接 Controller 后整体替换。现有 `/leads`、`/customers`、`/contacts` 是当前业务入口，不属于本次删除的通用池兼容 API。
+任务 1.7 删除了旧通用池 CRUD Controller。任务 1.9 全链路验收发现现有池页面仍需要“当前用户可访问池选项”，因此仅恢复 `GET /resource-pools/options` 只读兼容 facade，并将直接 `CluePool/CustomerPool` 映射为稳定 Web VO；旧 `/resource-pools` 写 CRUD、`/resource-capacities`、`/pool-rules` 仍保持删除。W3.4.2/W3.4.3 读取 Cordys 对应页面并建立分域配置 Controller/Page 后再移除该 facade。
 
 ## 5. 验证证据
 
@@ -50,7 +50,7 @@ Web 中旧 `/resource-pools`、`/pool-rules` 配置调用没有被伪装成可�
 - shared typecheck、Web vue-tsc：通过。
 - 本批 API 文件 ESLint：通过。
 - 公共规则测试：`95/95` 通过。
-- `git diff --check`：通过。
+- task 1.9 最终验收另见 [W3.4.0 公共底座最终专项验收记录](./foundation-validation-audit.md)。
 - API 全量 typecheck 只剩 Seed 中 6 个旧 Customer 字段错误；生产源码错误为 0，断点归任务 1.8。
 
 ## 6. 明确保留的后续项

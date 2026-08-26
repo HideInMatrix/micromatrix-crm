@@ -201,7 +201,7 @@ export class QuotesService {
 
   private async ensureCustomer(user: AuthUser, customerId: string) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, tenantId: user.tenantId },
+      where: { id: customerId, organizationId: user.tenantId },
     })
     if (!customer) throw new BadRequestException('客户不存在')
   }

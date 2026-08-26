@@ -81,6 +81,15 @@ function assert(condition, message) {
   console.log(`  ✓ ${message}`)
 }
 
+function findDepartmentByName(nodes, name) {
+  for (const node of nodes ?? []) {
+    if (node.name === name) return node
+    const child = findDepartmentByName(node.children, name)
+    if (child) return child
+  }
+  return null
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
@@ -203,6 +212,7 @@ try {
   const firstPreview = await request('/organization-sync/wecom/previews', {
     method: 'POST',
     headers: adminHeaders,
+    body: { targetDepartmentId: rootDepartment.id },
   })
   assert(
     firstPreview.response.ok &&
@@ -265,15 +275,14 @@ try {
   assert(generatedPasswordLogin.response.status === 401, '企微新成员不能使用普通密码登录')
 
   const firstTree = await request('/departments/tree', { headers: adminHeaders })
-  const salesDepartment = firstTree.body[0].children.find(
-    (department) => department.name === '企微销售部',
-  )
+  const salesDepartment = findDepartmentByName(firstTree.body, '企微销售部')
   assert(salesDepartment?.leaderId === localMember.id, '企微部门负责人同步成功')
 
   phase = 2
   const secondPreview = await request('/organization-sync/wecom/previews', {
     method: 'POST',
     headers: adminHeaders,
+    body: { targetDepartmentId: rootDepartment.id },
   })
   assert(
     secondPreview.response.ok && secondPreview.body.counts.disable === 1,

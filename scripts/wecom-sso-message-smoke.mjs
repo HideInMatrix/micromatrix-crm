@@ -232,6 +232,7 @@ try {
   const preview = await request('/organization-sync/wecom/previews', {
     method: 'POST',
     headers: adminHeaders,
+    body: { targetDepartmentId: departments.body[0].id },
   })
   const conflicts = await request(
     `/organization-sync/wecom/batches/${preview.body.id}/items?action=CONFLICT&pageSize=20`,

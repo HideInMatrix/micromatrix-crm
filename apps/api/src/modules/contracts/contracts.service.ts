@@ -9,7 +9,12 @@ import { Contract, ContractItem, InvoiceStatus, Prisma } from '../../generated/p
 import { PrismaService } from '../../prisma/prisma.service'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { MetadataService } from '../metadata/metadata.service'
-import { ChangeContractStatusDto, CreateContractDto, QueryContractsDto, UpdateContractDto } from './dto/contract.dto'
+import {
+  ChangeContractStatusDto,
+  CreateContractDto,
+  QueryContractsDto,
+  UpdateContractDto,
+} from './dto/contract.dto'
 
 const MODULE = 'contract'
 
@@ -137,7 +142,17 @@ export class ContractsService {
   async update(user: AuthUser, id: string, dto: UpdateContractDto): Promise<ContractVO> {
     const existing = await this.ensureInScope(user, id, 'contract:update')
     if (existing.status !== 'DRAFT') throw new BadRequestException('仅草稿状态的合同可编辑')
-    const { customData, items, ownerId, fromQuoteId: _ignored, signedAt, startAt, endAt, customerId, ...rest } = dto
+    const {
+      customData,
+      items,
+      ownerId,
+      fromQuoteId: _ignored,
+      signedAt,
+      startAt,
+      endAt,
+      customerId,
+      ...rest
+    } = dto
     const validated = await this.metadata.validateCustomData(user.tenantId, MODULE, customData, {
       requireAll: false,
     })
@@ -214,7 +229,7 @@ export class ContractsService {
 
   private async ensureCustomer(user: AuthUser, customerId: string) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, tenantId: user.tenantId },
+      where: { id: customerId, organizationId: user.tenantId },
     })
     if (!customer) throw new BadRequestException('客户不存在')
   }

@@ -142,6 +142,99 @@ export class CustomersService {
     }
   }
 
+  /** Cordys 线索关联客户抽屉：普通数据范围、协作客户与当前用户可访问公海取并集。 */
+  async findTransitionCandidates(
+    user: AuthUser,
+    query: Pick<QueryCustomersDto, 'page' | 'pageSize' | 'keyword' | 'filters'>,
+  ) {
+    const { page = 1, pageSize = 10, keyword } = query
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const adHocConditions = parseFilters(query.filters)
+    const [adHocIds, keywordIds, collaborations, poolOptions, directScope] = await Promise.all([
+      adHocConditions.length ? this.filterCustomerIds(user.tenantId, adHocConditions, 'AND') : null,
+      keyword ? this.keywordCustomerIds(user.tenantId, keyword) : null,
+      this.prisma.customerCollaboration.findMany({
+        where: { userId: user.id, customer: { organizationId: user.tenantId } },
+        select: { customerId: true, collaborationType: true },
+      }),
+      this.pools.options(user, 'customer'),
+      this.dataScope.directOwnerFilter(user, 'menu:customer'),
+    ])
+    const accessiblePoolIds = poolOptions.map((pool) => pool.id)
+    const collaborationIds = collaborations.map((item) => item.customerId)
+    const where: Prisma.CustomerWhereInput = {
+      organizationId: user.tenantId,
+      AND: [
+        {
+          OR: [
+            { inSharedPool: false, ...directScope },
+            { inSharedPool: false, id: { in: collaborationIds } },
+            { inSharedPool: true, poolId: { in: accessiblePoolIds } },
+          ],
+        },
+      ],
+      ...(adHocIds ? { id: { in: adHocIds } } : {}),
+      ...(keywordIds || keyword
+        ? {
+            OR: [
+              ...(keyword ? [{ name: { contains: keyword, mode: 'insensitive' as const } }] : []),
+              ...(keywordIds ? [{ id: { in: keywordIds } }] : []),
+            ],
+          }
+        : {}),
+    }
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.customer.findMany({
+        where,
+        orderBy: { createTime: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.customer.count({ where }),
+    ])
+    const [values, ownerMap, directlyAccessible] = await Promise.all([
+      this.fieldValues.load(
+        user.tenantId,
+        'customer',
+        items.map((item) => item.id),
+      ),
+      this.userNames(items.map((item) => item.owner)),
+      items.length
+        ? this.prisma.customer.findMany({
+            where: {
+              id: { in: items.map((item) => item.id) },
+              organizationId: user.tenantId,
+              OR: [
+                { inSharedPool: false, ...directScope },
+                { inSharedPool: true, poolId: { in: accessiblePoolIds } },
+              ],
+            },
+            select: { id: true },
+          })
+        : [],
+    ])
+    const directlyAccessibleIds = new Set(directlyAccessible.map((item) => item.id))
+    const collaborationMap = new Map(
+      collaborations.map((item) => [item.customerId, item.collaborationType]),
+    )
+    return {
+      items: items.map((customer) => ({
+        ...this.toVO(
+          customer,
+          fields,
+          values.get(customer.id) ?? {},
+          ownerMap.get(customer.owner ?? '') ?? null,
+        ),
+        collaborationType: directlyAccessibleIds.has(customer.id)
+          ? null
+          : (collaborationMap.get(customer.id) ?? null),
+      })),
+      total,
+      page,
+      pageSize,
+    }
+  }
+
   /** Cordys /account/tab：决定“全部客户 / 部门客户”系统视图是否显示。 */
   tab(user: AuthUser) {
     const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))

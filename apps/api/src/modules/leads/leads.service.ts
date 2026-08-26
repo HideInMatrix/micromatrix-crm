@@ -431,7 +431,9 @@ export class LeadsService {
 
     const updateDto: UpdateLeadDto = field.key.startsWith('cf_')
       ? { customData: { [field.key]: dto.fieldValue } }
-      : ({ [field.key]: dto.fieldValue } as UpdateLeadDto)
+      : field.key === 'contact'
+        ? ({ contactName: dto.fieldValue } as UpdateLeadDto)
+        : ({ [field.key]: dto.fieldValue } as UpdateLeadDto)
 
     for (const lead of leads) await this.update(user, lead.id, updateDto)
     return { success: dto.ids.length, fail: 0, failedIds: [] }
@@ -470,7 +472,9 @@ export class LeadsService {
 
     const updateDto: UpdateLeadDto = field.key.startsWith('cf_')
       ? { customData: { [field.key]: dto.fieldValue } }
-      : ({ [field.key]: dto.fieldValue } as UpdateLeadDto)
+      : field.key === 'contact'
+        ? ({ contactName: dto.fieldValue } as UpdateLeadDto)
+        : ({ [field.key]: dto.fieldValue } as UpdateLeadDto)
     for (const lead of leads) await this.updateExisting(user, lead, updateDto)
     return { success: leads.length, fail: 0, failedIds: [] }
   }
@@ -614,7 +618,7 @@ export class LeadsService {
 
   /** Cordys 关联客户抽屉：普通数据范围 + 协作 + 可访问公海。 */
   async transitionCustomerList(user: AuthUser, query: TransitionCustomerQueryDto) {
-    const result = await this.customers.findAll(user, {
+    const result = await this.customers.findTransitionCandidates(user, {
       page: query.page,
       pageSize: query.pageSize,
       keyword: query.keyword,
@@ -1145,6 +1149,8 @@ export class LeadsService {
         dto.ownerId = await this.resolveImportOwner(user, String(value))
       } else if (key.startsWith('cf_')) {
         customData[key] = value
+      } else if (key === 'contact') {
+        dto.contactName = value === null || value === undefined ? undefined : String(value)
       } else {
         ;(dto as Record<string, unknown>)[key] = value
       }

@@ -74,15 +74,18 @@
   - 实施证据：[W3.4.0 业务调用方直接模型迁移审计](./business-caller-migration-audit.md)。
   - _需求：R1、R5～R9、R11_
 
-- [ ] 1.8 重写 Seed 并执行空库迁移验收
-  - Seed 直接创建组织、角色、表单字段、用户视图、多线索池、多客户公海、业务样例和仪表板样例。
-  - 清空本地开发数据库，从零应用全部 migration 后执行 Seed。
-  - 验证旧表不存在、目标表及索引存在、API/Web 可启动。
+- [x] 1.8 重写 Seed 并执行空库迁移验收
+  - [x] Seed 直接创建组织、角色、表单字段、用户视图、多线索池、多客户公海、业务样例和仪表板样例。
+  - [x] 使用审计修正后的最终代码清空本地开发数据库，从零应用全部 30 个 migration 后执行最终 Seed。
+  - [x] 验证 14 张旧表不存在、32 张目标表及索引存在；API/Web 生产构建、启动与 HTTP 200 探测通过。
+  - 实施证据：[W3.4.0 Seed 与空库启动验收记录](./seed-empty-db-audit.md)。
   - _需求：R1、R12_
 
-- [ ] 1.9 完成 W3.4.0 公共底座专项验收并本地提交
-  - 通过 Prisma validate/generate、规则测试、数据库 Smoke、shared/API/Web typecheck、Lint、生产构建和现有关键链路回归。
-  - 更新 DB-016～DB-020、parity、alignment log、总计划和规格索引。
+- [x] 1.9 完成 W3.4.0 公共底座专项验收并本地提交
+  - [x] Prisma validate/generate、`97/97` 规则测试、W3.4 数据库 Smoke、shared/API/Web typecheck、Lint 和生产构建通过。
+  - [x] 根关键链路 Smoke `219/219`、W3.2 `23/23`、W3.3 `19/19` 通过；回归中发现的直接模型契约遗漏已收口。
+  - [x] DB-016～DB-020、parity、alignment log、总计划和规格索引已更新；DB-016/017/018/020 仍等待对应页面闭环，未提前标记 VERIFIED。
+  - 实施证据：[W3.4.0 公共底座最终专项验收记录](./foundation-validation-audit.md)。
   - _需求：R12_
 
 ## 2. W3.4.1 首页

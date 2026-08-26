@@ -563,7 +563,10 @@ export class ResourceFieldValueService {
       return exists(blobTable, match)
     }
 
-    const serialized = this.serialize(field, condition.value)
+    const serialized =
+      condition.op === 'contains'
+        ? this.serializeContainsValue(field, condition.value)
+        : this.serialize(field, condition.value)
     if (serialized === null) throw new BadRequestException('筛选值不能为空')
     const storage = this.storageFor(field.type, serialized)
     const table = storage === 'blob' ? blobTable : normalTable
@@ -580,6 +583,16 @@ export class ResourceFieldValueService {
     }
     const matched = exists(table, match)
     return condition.op === 'ne' ? Prisma.sql`NOT (${matched})` : matched
+  }
+
+  private serializeContainsValue(field: FieldVO, value: unknown): string | null {
+    if (this.isEmpty(value)) return null
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`「${field.label}」筛选值格式不正确`)
+    }
+    // “包含”是子串搜索，不应套用录入时的完整邮箱/电话格式校验。
+    // 例如客户关键字会同时搜索名称、联系电话和邮箱，普通名称关键字必须能安全落到这些字段上。
+    return field.type === 'phone' ? value.replace(/\s+/g, '') : value
   }
 
   private isEmpty(value: unknown): boolean {

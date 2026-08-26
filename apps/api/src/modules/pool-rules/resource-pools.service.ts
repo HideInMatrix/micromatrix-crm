@@ -124,10 +124,42 @@ export class ResourcePoolsService {
       throw new BadRequestException('负责人持有数量将超过库容上限')
   }
 
-  ownerHistory(user: AuthUser, module: PoolModule, resourceId: string) {
-    return module === 'lead'
-      ? this.cluePools.listOwnerHistory(user.tenantId, resourceId)
-      : this.customerPools.listOwnerHistory(user.tenantId, resourceId)
+  async ownerHistory(user: AuthUser, module: PoolModule, resourceId: string) {
+    const history =
+      module === 'lead'
+        ? await this.cluePools.listOwnerHistory(user.tenantId, resourceId)
+        : await this.customerPools.listOwnerHistory(user.tenantId, resourceId)
+    const userIds = [
+      ...new Set(history.flatMap((item) => [item.owner, item.operator]).filter(Boolean)),
+    ]
+    const users = userIds.length
+      ? await this.prisma.user.findMany({
+          where: { tenantId: user.tenantId, id: { in: userIds } },
+          select: { id: true, name: true, dept: { select: { id: true, name: true } } },
+        })
+      : []
+    const userMap = new Map(users.map((item) => [item.id, item]))
+
+    return history.map((item) => {
+      const owner = userMap.get(item.owner)
+      const operator = userMap.get(item.operator)
+      return {
+        id: item.id,
+        module,
+        resourceId,
+        ownerId: item.owner,
+        ownerName: owner?.name ?? null,
+        departmentId: owner?.dept?.id ?? null,
+        departmentName: owner?.dept?.name ?? null,
+        operatorId: item.operator || null,
+        operatorName: operator?.name ?? null,
+        poolId: null,
+        reasonId: item.reasonId,
+        reasonName: null,
+        collectedAt: new Date(Number(item.collectionTime)).toISOString(),
+        endedAt: new Date(Number(item.endTime)).toISOString(),
+      }
+    })
   }
 
   private assertModule(module: PoolModule): void {

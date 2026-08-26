@@ -492,7 +492,7 @@ export class ContactsService {
       ['updatedAt', '更新时间'],
     ])
     const columns = input.headList.map((key) => {
-      const field = fieldMap.get(key)
+      const field = fieldMap.get(key) ?? (key === 'ownerId' ? fieldMap.get('owner') : undefined)
       const extraLabel = extra.get(key)
       if (!field && !extraLabel) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
       return { key, label: field?.label ?? (extraLabel as string) }

@@ -231,7 +231,7 @@ export class OpportunitiesService {
       requireAll: true,
     })
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, tenantId: user.tenantId },
+      where: { id: customerId, organizationId: user.tenantId },
     })
     if (!customer) throw new BadRequestException('客户不存在')
     if (contactId) await this.assertContactBelongsToCustomer(user.tenantId, contactId, customerId)
@@ -313,7 +313,7 @@ export class OpportunitiesService {
     }
     if (customerId && customerId !== existing.customerId) {
       const customer = await this.prisma.customer.findFirst({
-        where: { id: customerId, tenantId: user.tenantId },
+        where: { id: customerId, organizationId: user.tenantId },
       })
       if (!customer) throw new BadRequestException('客户不存在')
       data.customer = { connect: { id: customerId } }
@@ -545,7 +545,7 @@ export class OpportunitiesService {
     customerId: string,
   ) {
     const contact = await this.prisma.customerContact.findFirst({
-      where: { id: contactId, tenantId, customerId },
+      where: { id: contactId, organizationId: tenantId, customerId },
       select: { id: true },
     })
     if (!contact) throw new BadRequestException('联系人不存在或不属于当前客户')

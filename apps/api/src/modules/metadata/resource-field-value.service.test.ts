@@ -112,6 +112,22 @@ const fields: FieldVO[] = [
     showInList: true,
     listWidth: null,
   },
+  {
+    id: 'field-phone',
+    module: 'customer',
+    key: 'cf_phone',
+    label: '联系电话',
+    type: 'phone',
+    required: false,
+    system: false,
+    hidden: false,
+    options: null,
+    config: null,
+    sort: 6,
+    span: 12,
+    showInList: true,
+    listWidth: null,
+  },
 ]
 
 function createHarness() {
@@ -343,6 +359,14 @@ test('高级筛选编译为组织隔离的参数化普通值/Blob SQL', async ()
   assert.match(sql, /customer_field_blob/)
   assert.match(sql, /organization_id/)
   assert.equal(query.values.includes('tenant-a'), true)
+})
+
+test('电话字段 contains 允许普通关键字子串而不执行完整电话格式校验', async () => {
+  const { service } = createHarness()
+  const query = await service.buildFilter('tenant-a', 'customer', [
+    { key: 'cf_phone', op: 'contains', value: '客户名称关键字' },
+  ])
+  assert.equal(query.values.includes('%客户名称关键字%'), true)
 })
 
 test('字段值写入失败时由调用方同一事务整体回滚', async () => {
