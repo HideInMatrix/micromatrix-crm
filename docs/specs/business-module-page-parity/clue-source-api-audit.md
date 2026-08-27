@@ -681,6 +681,81 @@ API production build              PASS
 
 因此 task 3.3 可以关闭，执行指针进入 **3.4 重建多线索池 API 与规则执行**。
 
+## 27. task 3.4 实施回写（2026-08-27）
+
+多线索池 API 与规则执行已经按第 4～8 节和 26 节实施前清单完成分域收口。实现不再通过通用 `resource-pools` 写接口或普通线索 `assign()` 间接模拟池行为。
+
+### 27.1 三组直接 API 已完成
+
+- `/pool/lead`：`options/page/get/pick/batch-pick/assign/batch-assign/batch-update/delete/batch-delete/export-all/export-select/chart/template/download/import/pre-check/import` 已走线索池直接模型和独立权限。
+- `/lead-pool`：实现 `page/add/update/quick-update/no-pick/delete/switch`；Pool、PickRule、RecycleRule、HiddenFields 同事务写入，删除前检查未领取数据。
+- `/lead-capacity`：实现 `get/add/update/delete`；库容按组织 + Scope 命中，新增/修改拒绝与既有规则命中相同有效成员的重复 Scope。
+
+`/pool/lead/options` 现在按当前用户 Scope/管理员 Scope 返回启用池，并附带：
+
+```text
+editable
+fieldConfigs[] = fieldId + fieldName + enable + editable
+pickRule
+recycleRule
+```
+
+池 Hidden Field 直接来自 `clue_pool_hidden_field`；线索名称保持不可在池设置中改为 editable。Web 线索池调用已经切到 `/pool/lead/options`、`/lead-pool`、`/lead-capacity`，客户公海仍保留自己的兼容调用，避免在 W3.4.2 越界改客户域。
+
+### 27.2 Pool Scope 与批量写边界
+
+Pool list/detail/write 在权限码之外继续执行成员/管理员 Scope 检查。对于 Cordys 原实现只根据第一条资源反查池的批量接口，MicroMatrix 按 3.1 审计结论执行更严格的同池校验：
+
+- batch-pick / batch-assign / batch-update / batch-delete 的全部 IDs 必须位于同一个已授权池；
+- export-select 的全部 IDs 必须位于请求池；
+- `/pool/lead/assign` 只接受 `inSharedPool=true` 的池线索，普通线索 ID 会被拒绝，不允许退化为 `/lead/batch/transfer`；
+- pool chart 使用 `scope=pool + poolId` 聚合，不再误统计普通 `/lead` 数据。
+
+### 27.3 PICK、ASSIGN、库容与冷却
+
+领取仍由 `CluePoolRepository.pick()` 统一执行事务锁和规则计算：
+
+1. 用户库容；
+2. 每日领取上限；
+3. 新数据保护；
+4. 前负责人冷却；
+5. 条件更新确保并发下只能领取一次。
+
+Pool 管理员仅跳过 Cordys 源码明确跳过的每日领取与新数据保护，仍执行库容与线索池特有的前负责人冷却差异。`ASSIGN` 不执行 PickRule，但仍执行目标负责人库容；成功后清空 pool、设置 `FOLLOWING`、Owner/collectionTime 并发送 `CLUE_DISTRIBUTED` 通知。
+
+### 27.4 自动回收修正
+
+实施前审计发现旧 MicroMatrix `PoolRecycleService.recycleClues()` 人为增加了 `stage=FOLLOWING`，会漏掉 Cordys 可回收的 `NEW/INTERESTED/...` 未转换线索。现已改为与 Cordys `CluePoolRecycleListener` 一致的事实范围：
+
+```text
+organizationId = 当前组织
+inSharedPool = false
+owner != null
+transitionId = null
+```
+
+随后按启用且 `auto=true` 的最佳 Scope 池和 RecycleRule 判断。命中后继续通过 `CluePoolRepository.recycle()` 原子结束负责人历史并写：`poolId / inSharedPool / owner=null / collectionTime=null / reasonId=system`。通知在成功回收后发送；重复执行因资源已入池而保持幂等，已转换线索不会进入候选集。
+
+### 27.5 运行与回归证据
+
+```text
+pnpm smoke:w342-clue-pool         32/32
+pnpm smoke:w342-clue-api          18/18
+pnpm smoke:w342-clue-transition   21/21
+pnpm smoke:w341-home              17/17
+pnpm --filter @micromatrix/api test:rules   114/114
+API typecheck                     PASS
+Web typecheck                     PASS
+API production build              PASS
+Web production build              PASS
+本批 ESLint                       PASS
+git diff --check                  PASS
+```
+
+`smoke:w342-clue-pool` 使用真实数据库和当前 API `dist` 覆盖：三直接模型池创建/读取、Pool Scope 隔离、editable/Hidden Field、普通成员设置权限拒绝、quick-update 管理员权限、池分页/详情、成功与跨池批量编辑、pool-only assign、跨池批量拒绝、pool chart、export all/select、跨池 export 拒绝、真实 xlsx 模板与导入 pre-check/import、批量删除/领取/分配、每日领取、新数据保护、管理员冷却、ASSIGN/PICK 差异、库容 CRUD/重复 Scope、非空池删除保护、switch/空池删除，以及真实 `PoolRecycleService.recycleTenant()` 下的 NEW 线索自动回收、转换线索排除和重复执行幂等。
+
+因此 task 3.4 可以关闭，执行指针进入 **3.5 重建线索与线索池 Vue 页面**。
+
 ## 26. task 3.4 实施前多线索池清单（2026-08-27）
 
 再次逐段读取 Cordys `PoolClueController / PoolClueService / CluePoolController / CluePoolService / ClueCapacityController / ClueCapacityService / CluePoolRecycleListener`，并与当前 MicroMatrix `PoolClueController / LeadsService / CluePoolRepository / ResourcePoolsService / PoolRecycleService` 对照后，3.4 按以下边界实施。

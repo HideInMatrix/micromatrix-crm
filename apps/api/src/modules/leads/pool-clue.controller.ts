@@ -21,15 +21,14 @@ import {
   PoolResourceBatchEditDto,
 } from '../../common/dto/resource-batch.dto'
 import type { ImportType } from '../import-export/dto/import-export.dto'
-import { toResourcePoolOption } from '../pool-rules/pool-options.controller'
-import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
+import { CluePoolConfigService } from './clue-pool-config.service'
 import {
-  ClueChartDto,
-  ClueExportDto,
-  ClueExportSelectDto,
   PoolClueAssignDto,
   PoolClueBatchAssignDto,
   PoolClueBatchDto,
+  PoolClueChartDto,
+  PoolClueExportDto,
+  PoolClueExportSelectDto,
   PoolCluePageDto,
   PoolCluePickDto,
 } from './dto/clue.dto'
@@ -43,15 +42,14 @@ type UploadedBufferFile = { buffer: Buffer }
 export class PoolClueController {
   constructor(
     private readonly service: LeadsService,
-    private readonly pools: ResourcePoolsService,
+    private readonly poolConfig: CluePoolConfigService,
   ) {}
 
   @Get('options')
   @RequirePermissions('leadPool:read')
   @ApiOperation({ summary: '当前用户可访问的线索池选项' })
-  async options(@CurrentUser() user: AuthUser) {
-    const pools = await this.pools.options(user, 'lead')
-    return pools.map((pool) => toResourcePoolOption('lead', pool))
+  options(@CurrentUser() user: AuthUser) {
+    return this.poolConfig.options(user)
   }
 
   @Post('page')
@@ -65,10 +63,8 @@ export class PoolClueController {
   @RequirePermissions('leadPool:pick')
   @LogOperation('leadPool', 'pick')
   @ApiOperation({ summary: '领取线索' })
-  async pick(@CurrentUser() user: AuthUser, @Body() dto: PoolCluePickDto) {
-    const result = await this.service.batchClaim(user, [dto.clueId], dto.poolId)
-    if (result.fail) throw new BadRequestException('线索领取失败')
-    return { id: dto.clueId }
+  pick(@CurrentUser() user: AuthUser, @Body() dto: PoolCluePickDto) {
+    return this.service.poolClaim(user, dto.clueId, dto.poolId)
   }
 
   @Post('assign')
@@ -76,7 +72,7 @@ export class PoolClueController {
   @LogOperation('leadPool', 'assign')
   @ApiOperation({ summary: '分配线索' })
   assign(@CurrentUser() user: AuthUser, @Body() dto: PoolClueAssignDto) {
-    return this.service.assign(user, dto.clueId, { ownerId: dto.assignUserId })
+    return this.service.poolAssign(user, dto.clueId, dto.assignUserId)
   }
 
   @Get('delete/:id')
@@ -101,7 +97,7 @@ export class PoolClueController {
   @ApiOperation({ summary: '批量领取线索' })
   batchPick(@CurrentUser() user: AuthUser, @Body() dto: PoolClueBatchDto) {
     if (!dto.poolId) throw new BadRequestException('请选择线索池')
-    return this.service.batchClaim(user, dto.batchIds, dto.poolId)
+    return this.service.poolBatchClaim(user, dto.batchIds, dto.poolId)
   }
 
   @Post('batch-assign')
@@ -109,7 +105,7 @@ export class PoolClueController {
   @LogOperation('leadPool', 'batchAssign')
   @ApiOperation({ summary: '批量分配线索' })
   batchAssign(@CurrentUser() user: AuthUser, @Body() dto: PoolClueBatchAssignDto) {
-    return this.service.batchAssign(user, dto.batchIds, dto.assignUserId)
+    return this.service.poolBatchAssign(user, dto.batchIds, dto.assignUserId, dto.poolId)
   }
 
   @Post('batch-update')
@@ -132,8 +128,7 @@ export class PoolClueController {
   @RequirePermissions('leadPool:export')
   @LogOperation('leadPool', 'exportAll')
   @ApiOperation({ summary: '导出全部线索池线索' })
-  exportAll(@CurrentUser() user: AuthUser, @Body() dto: ClueExportDto, @Query('poolId') poolId: string) {
-    if (!poolId) throw new BadRequestException('请选择线索池')
+  exportAll(@CurrentUser() user: AuthUser, @Body() dto: PoolClueExportDto) {
     return this.service.exportXlsx(
       user,
       {
@@ -144,9 +139,9 @@ export class PoolClueController {
         viewId: dto.viewId,
         sort: dto.sort,
         scope: 'pool',
-        poolId,
+        poolId: dto.poolId,
       },
-      { fileName: dto.fileName, headList: dto.headList, poolId },
+      { fileName: dto.fileName, headList: dto.headList, poolId: dto.poolId },
     )
   }
 
@@ -156,24 +151,20 @@ export class PoolClueController {
   @ApiOperation({ summary: '导出选中线索池线索' })
   exportSelected(
     @CurrentUser() user: AuthUser,
-    @Body() dto: ClueExportSelectDto,
-    @Query('poolId') poolId: string,
+    @Body() dto: PoolClueExportSelectDto,
   ) {
-    if (!poolId) throw new BadRequestException('请选择线索池')
     return this.service.exportXlsx(
       user,
-      { scope: 'pool', poolId },
-      { fileName: dto.fileName, headList: dto.headList, ids: dto.ids, poolId },
+      { scope: 'pool', poolId: dto.poolId },
+      { fileName: dto.fileName, headList: dto.headList, ids: dto.ids, poolId: dto.poolId },
     )
   }
 
   @Post('chart')
   @RequirePermissions('leadPool:read')
   @ApiOperation({ summary: '线索池图表生成' })
-  async chart(@CurrentUser() user: AuthUser, @Body() dto: ClueChartDto, @Query('poolId') poolId: string) {
-    if (!poolId) throw new BadRequestException('请选择线索池')
-    await this.pools.assertPoolMember(user, 'lead', poolId)
-    return this.service.chart(user, dto)
+  chart(@CurrentUser() user: AuthUser, @Body() dto: PoolClueChartDto) {
+    return this.service.chart(user, dto, dto.poolId)
   }
 
   @Get('template/download')
@@ -181,11 +172,9 @@ export class PoolClueController {
   @ApiOperation({ summary: '下载线索池导入模板' })
   async template(
     @CurrentUser() user: AuthUser,
-    @Query('poolId') poolId: string,
     @Query('importType') importType: ImportType = 'ADD',
   ) {
-    if (!poolId) throw new BadRequestException('请选择线索池')
-    const result = await this.service.importTemplate(user, importType, poolId)
+    const result = await this.service.poolImportTemplate(user, importType)
     return new StreamableFile(result.data, {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,

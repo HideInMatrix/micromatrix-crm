@@ -379,7 +379,7 @@ async function deletePool(pool: ResourcePoolVO) {
   }).catch(() => false)
   if (!confirmed) return
   try {
-    await resourcePoolApi.remove(pool.id)
+    await resourcePoolApi.remove(pool.id, poolModule.value)
     ElMessage.success('已删除')
     loadPoolConfig()
   } catch (error) {
@@ -437,7 +437,7 @@ async function deleteCapacity(capacity: ResourceCapacityVO) {
   }).catch(() => false)
   if (!confirmed) return
   try {
-    await resourceCapacityApi.remove(capacity.id)
+    await resourceCapacityApi.remove(capacity.id, poolModule.value)
     loadPoolConfig()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))

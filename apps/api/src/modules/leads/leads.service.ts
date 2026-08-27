@@ -140,6 +140,7 @@ export class LeadsService {
   }
 
   async poolPage(user: AuthUser, poolId: string, dto: CluePageDto) {
+    await this.pools.assertPoolMember(user, 'lead', poolId)
     const result = await this.findAll(user, {
       page: dto.current,
       pageSize: dto.pageSize,
@@ -218,7 +219,7 @@ export class LeadsService {
     }
   }
 
-  async chart(user: AuthUser, dto: ClueChartDto) {
+  async chart(user: AuthUser, dto: ClueChartDto, poolId?: string) {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const resolveField = (fieldId?: string) =>
       fieldId ? fields.find((field) => field.id === fieldId || field.key === fieldId) : undefined
@@ -241,7 +242,8 @@ export class LeadsService {
       const result = await this.findAll(user, {
         page,
         pageSize,
-        scope: 'mine',
+        scope: poolId ? 'pool' : 'mine',
+        poolId,
         viewId: dto.viewId,
         filters: dto.filters,
       })
@@ -367,21 +369,20 @@ export class LeadsService {
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
 
-    // 线索池对全员开放；非池数据按数据范围过滤
+    // 线索池按 Pool Scope/管理员范围开放；非池数据按普通线索 DataScope 过滤。
     let scopeClause: Prisma.ClueWhereInput
     if (scope === 'pool') {
       if (homeFilter) throw new BadRequestException('首页统计筛选不能用于线索池')
-      const options = await this.pools.options(user, 'lead')
-      const accessiblePoolIds = options.map((pool) => pool.id)
-      if (query.poolId && !accessiblePoolIds.includes(query.poolId)) {
-        throw new BadRequestException('你无权访问该线索池')
+      if (query.poolId) {
+        await this.pools.assertPoolMember(user, 'lead', query.poolId)
+        scopeClause = { inSharedPool: true, poolId: query.poolId }
+      } else {
+        const options = await this.pools.options(user, 'lead')
+        scopeClause = {
+          inSharedPool: true,
+          poolId: { in: options.map((pool) => pool.id) },
+        }
       }
-      scopeClause = query.poolId
-        ? { inSharedPool: true, poolId: query.poolId }
-        : {
-            inSharedPool: true,
-            poolId: { in: accessiblePoolIds },
-          }
     } else {
       scopeClause = homeFilter
         ? await this.homeFilters.clueWhere(user, homeFilter)
@@ -724,6 +725,38 @@ export class LeadsService {
     return { success, fail: failedIds.length, failedIds }
   }
 
+  /** Cordys /pool/lead/pick：资源必须仍属于请求中的同一个池。 */
+  async poolClaim(user: AuthUser, clueId: string, poolId: string) {
+    await this.pools.assertPoolMember(user, 'lead', poolId)
+    const lead = await this.prisma.clue.findFirst({
+      where: {
+        id: clueId,
+        organizationId: user.tenantId,
+        inSharedPool: true,
+        poolId,
+      },
+    })
+    if (!lead) throw new BadRequestException('线索不存在、已被领取或不属于指定线索池')
+    const claimed = await this.cluePools.pick({
+      organizationId: user.tenantId,
+      clueId,
+      ownerId: user.id,
+      operatorId: user.id,
+      poolAdmin: await this.pools.isPoolManager(user, 'lead', poolId),
+    })
+    return { id: claimed.id, name: claimed.name }
+  }
+
+  async poolBatchClaim(
+    user: AuthUser,
+    ids: string[],
+    poolId: string,
+  ): Promise<BatchAffectResult> {
+    const leads = await this.assertPoolBatchResources(user, ids, poolId)
+    for (const lead of leads) await this.poolClaim(user, lead.id, poolId)
+    return { success: leads.length, fail: 0, failedIds: [] }
+  }
+
   /** 分配负责人（主管操作） */
   async assign(user: AuthUser, id: string, dto: AssignLeadInput) {
     const lead = await this.prisma.clue.findFirst({
@@ -771,6 +804,41 @@ export class LeadsService {
       }
     }
     return { success, fail: failedIds.length, failedIds }
+  }
+
+  /** Cordys /pool/lead/assign：只允许分配池内线索，不得退化成普通线索转移。 */
+  async poolAssign(user: AuthUser, clueId: string, ownerId: string, expectedPoolId?: string) {
+    const lead = await this.prisma.clue.findFirst({
+      where: { id: clueId, organizationId: user.tenantId, inSharedPool: true },
+    })
+    if (!lead?.poolId) throw new NotFoundException('线索池线索不存在')
+    if (expectedPoolId && lead.poolId !== expectedPoolId) {
+      throw new BadRequestException('线索不属于指定线索池')
+    }
+    await this.pools.assertPoolMember(user, 'lead', lead.poolId)
+    const owner = await this.resolveOwner(user, ownerId)
+    await this.cluePools.assign({
+      organizationId: user.tenantId,
+      clueId: lead.id,
+      ownerId: owner.id,
+      operatorId: user.id,
+      poolAdmin: await this.pools.isPoolManager(user, 'lead', lead.poolId),
+    })
+    await this.notifyAssign(user, lead.id, lead.name, owner.id, 'CLUE_DISTRIBUTED')
+    return { id: lead.id, name: lead.name }
+  }
+
+  async poolBatchAssign(
+    user: AuthUser,
+    ids: string[],
+    ownerId: string,
+    expectedPoolId?: string,
+  ): Promise<BatchAffectResult> {
+    const leads = await this.assertPoolBatchResources(user, ids, expectedPoolId)
+    const poolId = leads[0]?.poolId
+    if (!poolId) throw new BadRequestException('请选择线索池线索')
+    for (const lead of leads) await this.poolAssign(user, lead.id, ownerId, poolId)
+    return { success: leads.length, fail: 0, failedIds: [] }
   }
 
   /** Cordys /lead/batch/transfer：普通线索批量转移，全部资源先鉴权后单事务写入。 */
@@ -882,9 +950,7 @@ export class LeadsService {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
         throw new BadRequestException('负责人不能为空')
       }
-      await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.fieldValue, leads.length)
-      for (const lead of leads) await this.assign(user, lead.id, { ownerId: dto.fieldValue })
-      return { success: leads.length, fail: 0, failedIds: [] }
+      return this.poolBatchAssign(user, dto.ids, dto.fieldValue, dto.poolId)
     }
 
     const updateDto: LeadUpdateInput = field.key.startsWith('cf_')
@@ -906,6 +972,32 @@ export class LeadsService {
     }
     await this.deleteLeadResources(user, leads)
     return { success: ids.length, fail: 0, failedIds: [] }
+  }
+
+  private async assertPoolBatchResources(user: AuthUser, ids: string[], expectedPoolId?: string) {
+    const uniqueIds = [...new Set(ids)]
+    if (!uniqueIds.length) throw new BadRequestException('请选择线索')
+    const leads = await this.prisma.clue.findMany({
+      where: {
+        organizationId: user.tenantId,
+        id: { in: uniqueIds },
+        inSharedPool: true,
+      },
+    })
+    if (leads.length !== uniqueIds.length) {
+      throw new BadRequestException('存在不存在或已被领取的线索')
+    }
+    const poolIds = [
+      ...new Set(leads.map((lead) => lead.poolId).filter((id): id is string => Boolean(id))),
+    ]
+    if (poolIds.length !== 1) throw new BadRequestException('所选线索必须全部属于同一个线索池')
+    const poolId = poolIds[0]
+    if (expectedPoolId && poolId !== expectedPoolId) {
+      throw new BadRequestException('所选线索不属于指定线索池')
+    }
+    await this.pools.assertPoolMember(user, 'lead', poolId)
+    const byId = new Map(leads.map((lead) => [lead.id, lead]))
+    return uniqueIds.map((id) => byId.get(id) as Lead)
   }
 
   async ownerHistory(user: AuthUser, id: string) {
@@ -1567,6 +1659,21 @@ export class LeadsService {
     }
   }
 
+  /** Cordys /pool/lead/template/download：池模板固定排除负责人，不依赖具体 poolId。 */
+  async poolImportTemplate(
+    user: AuthUser,
+    importType: ImportType,
+  ): Promise<{ filename: string; data: Buffer }> {
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const data = await this.spreadsheet.buildImportTemplate(fields, importType, {
+      excludeKeys: ['owner', 'ownerId'],
+    })
+    return {
+      filename: `线索池${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`,
+      data,
+    }
+  }
+
   async precheckImportXlsx(
     user: AuthUser,
     file: Buffer,
@@ -1648,7 +1755,11 @@ export class LeadsService {
     input: { fileName: string; headList: string[]; ids?: string[]; poolId?: string },
   ) {
     const poolMode = Boolean(input.poolId)
-    if (poolMode) await this.pools.assertPoolMember(user, 'lead', input.poolId as string)
+    if (poolMode) {
+      const poolId = input.poolId as string
+      await this.pools.assertPoolMember(user, 'lead', poolId)
+      if (input.ids?.length) await this.assertPoolBatchResources(user, input.ids, poolId)
+    }
     const effectiveQuery: LeadQueryInput = {
       ...query,
       scope: poolMode ? 'pool' : 'mine',

@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)、普通线索 API 与三条转换链路对齐，当前执行指针进入：**3.4 重建多线索池 API 与规则执行**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
+> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)、普通线索 API、三条转换链路以及多线索池 API / 规则执行对齐，当前执行指针进入：**3.5 重建线索与线索池 Vue 页面**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -147,9 +147,12 @@
   - [x] 验证：三条转换 Smoke `21/21`、普通线索 API 回归 `18/18`、W3.4.1 首页回归 `17/17`、规则测试 `114/114`、API typecheck/production build 通过。
   - _需求：R5、R11_
 
-- [ ] 3.4 重建多线索池 API 与规则执行
-  - 完成池选项、池分页、详情、领取/批量领取、分配/批量分配、编辑/批改、删除/批删、导入导出和图表。
-  - 执行池 Scope、隐藏字段、独立权限、领取上限、冷却、库容、回收幂等、通知与审计。
+- [x] 3.4 重建多线索池 API 与规则执行
+  - [x] 完成 `/pool/lead` 池选项、分页、详情、领取/批量领取、分配/批量分配、批改、删除/批删、导入导出和图表；所有批量写/选中导出在后端强制同一授权池，Pool assign 不再退化为普通线索 transfer。
+  - [x] 新增 `/lead-pool` 设置与 `/lead-capacity` 库容 Controller/Service；Pool + PickRule + RecycleRule + HiddenFields 使用直接模型事务写入，`quick-update` 仅池管理员可用，模块设置 CRUD 使用 `system:module:update`。
+  - [x] `/pool/lead/options` 返回当前用户可访问启用池的 `editable + fieldConfigs`，按 Scope/ownerId 隔离并应用 Hidden Field；Web 线索调用迁移到分域 API，客户公海兼容分支不在本阶段改动。
+  - [x] 对齐领取上限、新数据保护、前负责人冷却、库容以及 PICK/ASSIGN 差异；自动回收按 Cordys 扫描 `inSharedPool=false + transitionId=null`，不再伪限 `FOLLOWING`，并保持 Owner History、system reason、通知和重复执行幂等。
+  - [x] 验证：多线索池专项 Smoke `32/32`、普通线索 API `18/18`、三条转换 `21/21`、首页 `17/17`、规则测试 `114/114`；API/Web typecheck、API/Web production build、本批 ESLint、`git diff --check` 全通过。
   - _需求：R2、R6、R11_
 
 - [ ] 3.5 重建线索与线索池 Vue 页面

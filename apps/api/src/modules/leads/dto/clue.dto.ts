@@ -356,8 +356,28 @@ export class ClueChartDto {
   chartConfig!: ClueChartConfigDto
 }
 
-/** 仅供当前 pool Web 调用迁移使用；task 3.4 会按 Cordys Pool DTO 继续收口。 */
 export class PoolCluePageDto extends CluePageDto {
+  @ApiProperty({ description: '线索池 ID' })
+  @IsString()
+  @IsNotEmpty()
+  poolId!: string
+}
+
+export class PoolClueExportDto extends ClueExportDto {
+  @ApiProperty({ description: '线索池 ID' })
+  @IsString()
+  @IsNotEmpty()
+  poolId!: string
+}
+
+export class PoolClueExportSelectDto extends ClueExportSelectDto {
+  @ApiProperty({ description: '线索池 ID' })
+  @IsString()
+  @IsNotEmpty()
+  poolId!: string
+}
+
+export class PoolClueChartDto extends ClueChartDto {
   @ApiProperty({ description: '线索池 ID' })
   @IsString()
   @IsNotEmpty()

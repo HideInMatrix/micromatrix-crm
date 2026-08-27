@@ -118,38 +118,163 @@ export interface ResourceCapacityVO {
   id: string
   module: 'lead' | 'customer'
   scopeIds: string[]
-  capacity: number
+  capacity: number | null
   filters: Record<string, unknown>[] | null
 }
 
+interface CluePoolApiVO {
+  id: string
+  name: string
+  scopeIds: string[]
+  ownerIds: string[]
+  enable: boolean
+  auto: boolean
+  hiddenFieldIds: string[]
+  pickRule?: {
+    limitOnNumber: boolean
+    pickNumber: number | null
+    limitPreOwner: boolean
+    pickIntervalDays: number | null
+    limitNew: boolean
+    newPickInterval: number | null
+  } | null
+  recycleRule?: {
+    operator: 'AND' | 'OR'
+    conditions: ResourcePoolRecycleCondition[] | null
+  } | null
+}
+
+interface ClueCapacityApiVO {
+  id: string
+  scopeIds: string[]
+  capacity: number | null
+}
+
+function normalizeCluePool(pool: CluePoolApiVO): ResourcePoolVO {
+  return {
+    id: pool.id,
+    module: 'lead',
+    name: pool.name,
+    scopeIds: pool.scopeIds,
+    managerIds: pool.ownerIds,
+    enabled: pool.enable,
+    autoRecycle: pool.auto,
+    hiddenFieldIds: pool.hiddenFieldIds,
+    pickRule: pool.pickRule
+      ? {
+          limitDailyPick: pool.pickRule.limitOnNumber,
+          dailyPickLimit: pool.pickRule.pickNumber,
+          limitPreviousOwner: pool.pickRule.limitPreOwner,
+          previousOwnerCooldownDays: pool.pickRule.pickIntervalDays,
+          limitNewData: pool.pickRule.limitNew,
+          newDataCooldownDays: pool.pickRule.newPickInterval,
+        }
+      : null,
+    recycleRule: pool.recycleRule ?? null,
+  }
+}
+
+function cluePoolPayload(data: Record<string, unknown>) {
+  const input = data as Partial<ResourcePoolVO>
+  return {
+    name: input.name ?? '',
+    scopeIds: input.scopeIds ?? [],
+    ownerIds: input.managerIds ?? [],
+    enable: input.enabled ?? true,
+    auto: input.autoRecycle ?? false,
+    hiddenFieldIds: input.hiddenFieldIds ?? [],
+    pickRule: {
+      limitOnNumber: input.pickRule?.limitDailyPick ?? false,
+      pickNumber: input.pickRule?.limitDailyPick ? (input.pickRule.dailyPickLimit ?? null) : null,
+      limitPreOwner: input.pickRule?.limitPreviousOwner ?? false,
+      pickIntervalDays: input.pickRule?.limitPreviousOwner
+        ? (input.pickRule.previousOwnerCooldownDays ?? null)
+        : null,
+      limitNew: input.pickRule?.limitNewData ?? false,
+      newPickInterval: input.pickRule?.limitNewData
+        ? (input.pickRule.newDataCooldownDays ?? null)
+        : null,
+    },
+    recycleRule: {
+      operator: input.recycleRule?.operator ?? 'AND',
+      conditions: input.recycleRule?.conditions ?? [],
+    },
+  }
+}
+
 export const resourcePoolApi = {
-  options: (module: 'lead' | 'customer') =>
-    http.get<ResourcePoolVO[]>('/resource-pools/options', { params: { module } }),
-  list: (module: 'lead' | 'customer') =>
-    http.get<ResourcePoolVO[]>('/resource-pools', { params: { module } }),
-  create: (data: Record<string, unknown>) => http.post<ResourcePoolVO>('/resource-pools', data),
-  update: (id: string, data: Record<string, unknown>) =>
-    http.patch<ResourcePoolVO>(`/resource-pools/${id}`, data),
-  toggle: (id: string) => http.post<ResourcePoolVO>(`/resource-pools/${id}/toggle`),
-  remove: (id: string) => http.delete(`/resource-pools/${id}`),
+  options: async (module: 'lead' | 'customer') => {
+    if (module !== 'lead') {
+      return http.get<ResourcePoolVO[]>('/resource-pools/options', { params: { module } })
+    }
+    const response = await http.get<CluePoolApiVO[]>('/pool/lead/options')
+    return { ...response, data: response.data.map(normalizeCluePool) }
+  },
+  list: async (module: 'lead' | 'customer') => {
+    if (module !== 'lead') return http.get<ResourcePoolVO[]>('/resource-pools', { params: { module } })
+    const response = await http.post<CordysPager<CluePoolApiVO>>('/lead-pool/page', {
+      current: 1,
+      pageSize: 200,
+    })
+    return { ...response, data: response.data.list.map(normalizeCluePool) }
+  },
+  create: (data: Record<string, unknown>) => {
+    if (data.module === 'lead') return http.post('/lead-pool/add', cluePoolPayload(data))
+    return http.post<ResourcePoolVO>('/resource-pools', data)
+  },
+  update: (id: string, data: Record<string, unknown>) => {
+    if (data.module === 'lead') {
+      return http.post('/lead-pool/update', { id, ...cluePoolPayload(data) })
+    }
+    return http.patch<ResourcePoolVO>(`/resource-pools/${id}`, data)
+  },
+  toggle: (id: string, module: 'lead' | 'customer') =>
+    module === 'lead'
+      ? http.get(`/lead-pool/switch/${id}`)
+      : http.post<ResourcePoolVO>(`/resource-pools/${id}/toggle`),
+  remove: (id: string, module: 'lead' | 'customer') =>
+    module === 'lead' ? http.get(`/lead-pool/delete/${id}`) : http.delete(`/resource-pools/${id}`),
 }
 
 export const resourceCapacityApi = {
-  list: (module: 'lead' | 'customer') =>
-    http.get<ResourceCapacityVO[]>('/resource-capacities', { params: { module } }),
-  create: (data: Record<string, unknown>) =>
-    http.post<ResourceCapacityVO>('/resource-capacities', data),
-  update: (id: string, data: Record<string, unknown>) =>
-    http.patch<ResourceCapacityVO>(`/resource-capacities/${id}`, data),
-  remove: (id: string) => http.delete(`/resource-capacities/${id}`),
+  list: async (module: 'lead' | 'customer') => {
+    if (module !== 'lead') {
+      return http.get<ResourceCapacityVO[]>('/resource-capacities', { params: { module } })
+    }
+    const response = await http.get<ClueCapacityApiVO[]>('/lead-capacity/get')
+    return {
+      ...response,
+      data: response.data.map((item) => ({ ...item, module: 'lead' as const, filters: null })),
+    }
+  },
+  create: (data: Record<string, unknown>) => {
+    if (data.module === 'lead') {
+      return http.post('/lead-capacity/add', { scopeIds: data.scopeIds, capacity: data.capacity })
+    }
+    return http.post<ResourceCapacityVO>('/resource-capacities', data)
+  },
+  update: (id: string, data: Record<string, unknown>) => {
+    if (data.module === 'lead') {
+      return http.post('/lead-capacity/update', {
+        id,
+        scopeIds: data.scopeIds,
+        capacity: data.capacity,
+      })
+    }
+    return http.patch<ResourceCapacityVO>(`/resource-capacities/${id}`, data)
+  },
+  remove: (id: string, module: 'lead' | 'customer') =>
+    module === 'lead'
+      ? http.get(`/lead-capacity/delete/${id}`)
+      : http.delete(`/resource-capacities/${id}`),
 }
 
 export const leadApi = {
   list: (params: LeadListParams) => clueListRequest(params),
-  poolOptions: () => http.get<ResourcePoolVO[]>('/pool/lead/options'),
+  poolOptions: () => resourcePoolApi.options('lead'),
   importTemplate: (importType: ImportType, poolId?: string) =>
     http.get<Blob>(poolId ? '/pool/lead/template/download' : '/lead/template/download', {
-      params: { importType, poolId },
+      params: { importType },
       responseType: 'blob',
     }),
   importPrecheck: (file: File, importType: ImportType, poolId?: string) =>
@@ -165,16 +290,16 @@ export const leadApi = {
   exportAll: (params: LeadListParams, data: ExportCreatePayload, poolId?: string) =>
     http.post(
       poolId ? '/pool/lead/export-all' : '/lead/export',
-      { ...cluePageBody(params), ...data },
-      { params: poolId ? { poolId } : undefined },
+      { ...cluePageBody(params), ...data, ...(poolId ? { poolId } : {}) },
     ),
   exportSelected: (
     _params: LeadListParams,
     data: ExportCreatePayload & { ids: string[] },
     poolId?: string,
   ) =>
-    http.post(poolId ? '/pool/lead/export-select' : '/lead/export-select', data, {
-      params: poolId ? { poolId } : undefined,
+    http.post(poolId ? '/pool/lead/export-select' : '/lead/export-select', {
+      ...data,
+      ...(poolId ? { poolId } : {}),
     }),
   create: (data: Record<string, unknown>) => http.post<LeadVO>('/lead/add', data),
   update: (id: string, data: Record<string, unknown>) =>

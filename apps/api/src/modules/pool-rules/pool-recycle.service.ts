@@ -68,8 +68,8 @@ export class PoolRecycleService {
         where: {
           organizationId,
           inSharedPool: false,
-          stage: 'FOLLOWING',
           owner: { not: null },
+          transitionId: null,
         },
       }),
     ])
