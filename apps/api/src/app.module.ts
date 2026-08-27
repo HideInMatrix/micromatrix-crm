@@ -16,6 +16,7 @@ import { ContactsModule } from './modules/contacts/contacts.module'
 import { ContractsModule } from './modules/contracts/contracts.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { DepartmentsModule } from './modules/departments/departments.module'
+import { DictionariesModule } from './modules/dictionaries/dictionaries.module'
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module'
 import { EnterpriseIntegrationsModule } from './modules/enterprise-integrations/enterprise-integrations.module'
 import { EnterpriseSettingsModule } from './modules/enterprise-settings/enterprise-settings.module'
@@ -71,6 +72,7 @@ import { PrismaModule } from './prisma/prisma.module'
     DashboardModule,
     PoolRulesModule,
     DepartmentsModule,
+    DictionariesModule,
     MembersModule,
     MessageSettingsModule,
     RolesModule,

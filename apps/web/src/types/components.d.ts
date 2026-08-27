@@ -89,6 +89,7 @@ declare module 'vue' {
     FollowUpPlanDialog: typeof import('./../components/follow-plans/FollowUpPlanDialog.vue')['default']
     FollowUpPlanPanel: typeof import('./../components/follow-plans/FollowUpPlanPanel.vue')['default']
     LeadModuleNav: typeof import('./../components/leads/LeadModuleNav.vue')['default']
+    LeadMoveToPoolDialog: typeof import('./../components/leads/LeadMoveToPoolDialog.vue')['default']
     LeadOverviewDrawer: typeof import('./../components/leads/LeadOverviewDrawer.vue')['default']
     LeadPoolQuickSettingDrawer: typeof import('./../components/leads/LeadPoolQuickSettingDrawer.vue')['default']
     LeadTransformDialog: typeof import('./../components/leads/LeadTransformDialog.vue')['default']

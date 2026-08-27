@@ -24,11 +24,15 @@ export async function loadUserScopeTokens(
 ): Promise<Set<string>> {
   const user = await tx.user.findFirst({
     where: { id: userId, tenantId: organizationId, status: 'ACTIVE' },
-    select: { id: true, deptId: true },
+    select: { id: true, deptId: true, userRoles: { select: { roleId: true } } },
   })
   if (!user) return new Set()
 
   const tokens = new Set([user.id, `user:${user.id}`])
+  for (const { roleId } of user.userRoles) {
+    tokens.add(roleId)
+    tokens.add(`role:${roleId}`)
+  }
   if (!user.deptId) return tokens
   const departments = await tx.department.findMany({
     where: { tenantId: organizationId },
@@ -56,7 +60,7 @@ export async function resolveScopeUserIds(
 ): Promise<Set<string>> {
   const users = await tx.user.findMany({
     where: { tenantId: organizationId, status: 'ACTIVE' },
-    select: { id: true, deptId: true },
+    select: { id: true, deptId: true, userRoles: { select: { roleId: true } } },
   })
   if (scopeIds.includes('*')) return new Set(users.map((user) => user.id))
   const departments = await tx.department.findMany({
@@ -86,11 +90,23 @@ export async function resolveScopeUserIds(
   const explicitUsers = new Set(
     scopeIds.map((scopeId) => (scopeId.startsWith('user:') ? scopeId.slice(5) : scopeId)),
   )
+  const roles = await tx.role.findMany({
+    where: { tenantId: organizationId },
+    select: { id: true },
+  })
+  const roleIds = new Set(roles.map((role) => role.id))
+  const selectedRoles = new Set(
+    scopeIds
+      .map((scopeId) => (scopeId.startsWith('role:') ? scopeId.slice(5) : scopeId))
+      .filter((scopeId) => roleIds.has(scopeId)),
+  )
   return new Set(
     users
       .filter(
         (user) =>
-          explicitUsers.has(user.id) || (!!user.deptId && selectedDepartments.has(user.deptId)),
+          explicitUsers.has(user.id) ||
+          (!!user.deptId && selectedDepartments.has(user.deptId)) ||
+          user.userRoles.some(({ roleId }) => selectedRoles.has(roleId)),
       )
       .map((user) => user.id),
   )

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { DictionariesModule } from '../dictionaries/dictionaries.module'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
 import { PoolRecycleService } from './pool-recycle.service'
@@ -8,6 +9,7 @@ import { ResourcePoolsService } from './resource-pools.service'
 import { ResourceRecycleConditionEvaluator } from './resource-recycle-condition-evaluator.service'
 
 @Module({
+  imports: [DictionariesModule],
   controllers: [PoolOptionsController],
   providers: [
     PoolRecycleService,

@@ -27,6 +27,7 @@ import { BusinessChangeLogService } from '../../common/services/business-change-
 import { Clue as Lead, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CustomersService } from '../../customers/customers.service'
+import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -113,6 +114,7 @@ export class LeadsService {
     private readonly exportTasks: ExportTasksService,
     private readonly customers: CustomersService,
     private readonly homeFilters: HomeFilterService,
+    private readonly dictionaries: DictionariesService,
   ) {}
 
   getModuleForm(user: AuthUser) {
@@ -664,6 +666,7 @@ export class LeadsService {
   async moveToPool(user: AuthUser, id: string, poolId?: string, reasonId?: string) {
     const lead = await this.ensureInScope(user, id, 'lead:recycle')
     if (lead.transitionId) throw new BadRequestException('已转换线索不能移入线索池')
+    await this.dictionaries.validateReason(user.tenantId, 'CLUE_POOL_RS', reasonId)
     const pool = await this.pools.resolveMoveTargetPool(user.tenantId, 'lead', lead.owner, poolId)
     await this.cluePools.moveToPool({
       organizationId: user.tenantId,

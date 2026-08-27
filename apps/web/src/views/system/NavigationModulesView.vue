@@ -15,11 +15,15 @@ import { extractErrorMessage } from '@/api/http'
 import { moduleIconOf, topNavigationIconOf } from '@/router/navigation-icons'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
+import LeadCapacitySettingsDrawer from './components/LeadCapacitySettingsDrawer.vue'
+import LeadPoolReasonSettingsDrawer from './components/LeadPoolReasonSettingsDrawer.vue'
+import LeadPoolSettingsDrawer from './components/LeadPoolSettingsDrawer.vue'
 
 interface ModuleAction {
   label: string
   path?: string
   query?: Record<string, string>
+  drawer?: 'lead-pool' | 'lead-capacity' | 'lead-reason'
 }
 
 interface ModuleActionGroup {
@@ -31,10 +35,10 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   lead: {
     primary: [
       { label: '线索表单设置', path: '/system/modules/fields', query: { module: 'lead' } },
-      { label: '线索池设置' },
-      { label: '线索库容设置' },
+      { label: '线索池设置', drawer: 'lead-pool' },
+      { label: '线索库容设置', drawer: 'lead-capacity' },
     ],
-    more: [{ label: '移入线索池原因设置' }],
+    more: [{ label: '移入线索池原因设置', drawer: 'lead-reason' }],
   },
   customer: {
     primary: [
@@ -82,6 +86,9 @@ const savingOrder = ref(false)
 const savingTopNavigationOrder = ref(false)
 const orderedConfigs = ref<ModuleConfigVO[]>([])
 const orderedTopNavigationConfigs = ref<TopNavigationConfigVO[]>([])
+const leadPoolVisible = ref(false)
+const leadCapacityVisible = ref(false)
+const leadReasonVisible = ref(false)
 
 const canUpdate = computed(() => auth.hasPerm('system:module:update'))
 const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item]))
@@ -193,8 +200,13 @@ async function handleTopNavigationDragEnd() {
 }
 
 function openAction(action: ModuleAction) {
-  if (!action.path) return
-  router.push({ path: action.path, query: action.query })
+  if (action.path) {
+    router.push({ path: action.path, query: action.query })
+    return
+  }
+  if (action.drawer === 'lead-pool') leadPoolVisible.value = true
+  if (action.drawer === 'lead-capacity') leadCapacityVisible.value = true
+  if (action.drawer === 'lead-reason') leadReasonVisible.value = true
 }
 
 onMounted(load)
@@ -286,7 +298,7 @@ onMounted(load)
                 <el-tooltip
                   v-for="action in actionsOf(item.moduleKey).primary"
                   :key="action.label"
-                  :disabled="Boolean(action.path)"
+                  :disabled="Boolean(action.path || action.drawer)"
                   :content="unavailableActionTip(action)"
                   placement="top"
                 >
@@ -294,7 +306,7 @@ onMounted(load)
                     <el-button
                       link
                       type="primary"
-                      :disabled="!action.path || !canUpdate"
+                      :disabled="(!action.path && !action.drawer) || !canUpdate"
                       @click="openAction(action)"
                     >
                       {{ action.label }}
@@ -314,7 +326,7 @@ onMounted(load)
                         v-for="action in actionsOf(item.moduleKey).more"
                         :key="action.label"
                         :command="action"
-                        :disabled="!action.path"
+                        :disabled="!action.path && !action.drawer"
                       >
                         {{ action.label }}
                       </el-dropdown-item>
@@ -341,6 +353,10 @@ onMounted(load)
         </div>
       </el-card>
     </div>
+
+    <LeadPoolSettingsDrawer v-model="leadPoolVisible" />
+    <LeadCapacitySettingsDrawer v-model="leadCapacityVisible" />
+    <LeadPoolReasonSettingsDrawer v-model="leadReasonVisible" />
   </div>
 </template>
 

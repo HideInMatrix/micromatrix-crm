@@ -40,6 +40,10 @@ const scopeOptions = computed(() => [
     label: `部门：${name}`,
     value: `dept:${id}`,
   })),
+  ...fieldRefs.roles.value.map((role) => ({
+    label: `角色：${role.name}`,
+    value: `role:${role.id}`,
+  })),
 ])
 
 const hiddenFieldOptions = computed(() =>
@@ -49,9 +53,16 @@ const hiddenFieldOptions = computed(() =>
 )
 
 function canonicalScope(token: string) {
-  if (token === '*' || token.startsWith('user:') || token.startsWith('dept:')) return token
+  if (
+    token === '*' ||
+    token.startsWith('user:') ||
+    token.startsWith('dept:') ||
+    token.startsWith('role:')
+  )
+    return token
   if (fieldRefs.memberMap.value.has(token)) return `user:${token}`
   if (fieldRefs.deptMap.value.has(token)) return `dept:${token}`
+  if (fieldRefs.roleMap.value.has(token)) return `role:${token}`
   return token
 }
 

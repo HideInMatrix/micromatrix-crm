@@ -106,6 +106,10 @@ export interface ResourcePoolVO {
     operator: 'AND' | 'OR'
     conditions: ResourcePoolRecycleCondition[] | null
   } | null
+  createTime?: number
+  updateTime?: number
+  createUserName?: string | null
+  updateUserName?: string | null
 }
 
 export interface ResourcePoolRecycleCondition {
@@ -123,7 +127,7 @@ export interface ResourceCapacityVO {
   filters: Record<string, unknown>[] | null
 }
 
-interface CluePoolApiVO {
+export interface CluePoolApiVO {
   id: string
   name: string
   editable?: boolean
@@ -144,6 +148,10 @@ interface CluePoolApiVO {
     operator: 'AND' | 'OR'
     conditions: ResourcePoolRecycleCondition[] | null
   } | null
+  createTime?: number
+  updateTime?: number
+  createUserName?: string | null
+  updateUserName?: string | null
 }
 
 interface ClueCapacityApiVO {
@@ -174,6 +182,10 @@ function normalizeCluePool(pool: CluePoolApiVO): ResourcePoolVO {
         }
       : null,
     recycleRule: pool.recycleRule ?? null,
+    createTime: pool.createTime,
+    updateTime: pool.updateTime,
+    createUserName: pool.createUserName,
+    updateUserName: pool.updateUserName,
   }
 }
 
@@ -221,6 +233,17 @@ export const resourcePoolApi = {
     })
     return { ...response, data: response.data.list.map(normalizeCluePool) }
   },
+  leadSettingsPage: async (params?: { current?: number; pageSize?: number; keyword?: string }) => {
+    const response = await http.post<CordysPager<CluePoolApiVO>>('/lead-pool/page', {
+      current: params?.current ?? 1,
+      pageSize: params?.pageSize ?? 20,
+      keyword: params?.keyword,
+    })
+    return {
+      ...response,
+      data: { ...response.data, list: response.data.list.map(normalizeCluePool) },
+    }
+  },
   create: (data: Record<string, unknown>) => {
     if (data.module === 'lead') return http.post('/lead-pool/add', cluePoolPayload(data))
     return http.post<ResourcePoolVO>('/resource-pools', data)
@@ -242,6 +265,7 @@ export const resourcePoolApi = {
       : http.post<ResourcePoolVO>(`/resource-pools/${id}/toggle`),
   remove: (id: string, module: 'lead' | 'customer') =>
     module === 'lead' ? http.get(`/lead-pool/delete/${id}`) : http.delete(`/resource-pools/${id}`),
+  noPickLead: (id: string) => http.get<boolean>(`/lead-pool/no-pick/${id}`),
 }
 
 export const resourceCapacityApi = {

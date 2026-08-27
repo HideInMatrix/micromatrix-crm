@@ -654,6 +654,34 @@ model ClueCapacity {
   @@map("clue_capacity")
 }
 
+// ============ Cordys 系统字典：移池原因 / 失败原因等模块配置 ============
+
+model SysDict {
+  id             String @id @default(cuid()) @db.VarChar(32)
+  name           String @db.VarChar(255)
+  module         String @db.VarChar(20)
+  type           String @default("TEXT") @db.VarChar(10)
+  pos            BigInt
+  organizationId String @map("organization_id") @db.VarChar(32)
+  createTime     BigInt @map("create_time")
+  updateTime     BigInt @map("update_time")
+  createUser     String @map("create_user") @db.VarChar(32)
+  updateUser     String @map("update_user") @db.VarChar(32)
+
+  @@index([organizationId, module, pos])
+  @@index([organizationId, name])
+  @@map("sys_dict")
+}
+
+model SysDictConfig {
+  module         String  @db.VarChar(20)
+  organizationId String  @map("organization_id") @db.VarChar(32)
+  enabled        Boolean @default(false)
+
+  @@id([module, organizationId])
+  @@map("sys_dict_config")
+}
+
 // ============ 跟进记录（多态：线索/客户/商机/合同） ============
 
 model FollowUpRecord {

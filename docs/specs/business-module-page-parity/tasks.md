@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 W3.4.2 task 3.1～3.6 已全部完成：源码证据、普通线索 API、三条转换链路、多线索池 API/规则、PC 页面与最终专项验收均已闭环。W3.4.2 正式关闭，当前执行指针进入 **W3.4.3 task 4.1 固化客户域源码证据矩阵**。
+> 2026-08-27 在进入 W3.4.3 前复核发现模块设置中的“线索池设置 / 线索库容设置 / 移入线索池原因设置”仍为占位，因此曾暂停 W3.4.3 并重新打开补漏 task **3.7**。3.7 现已完成并通过专项/全量验收，W3.4.2 再次关闭；当前执行指针恢复到 **W3.4.3 task 4.1**。源码、实施和最终验收基线见 [线索模块设置补漏源码与实施审计](./clue-module-settings-audit.md)。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -174,6 +174,16 @@
   - [x] 最终结果：连续生命周期 `17/17`、普通 API `18/18`、三条转换 `21/21`、多 Pool `32/32`、Browser `20/20`、首页 `17/17`、根 Smoke `219/219`、规则测试 `114/114`。
   - [x] Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate、`git diff --check` 全通过；根 Smoke 已同步到 `/lead/*`、`/pool/lead/*` 当前契约，不恢复旧 `/api/leads`。
   - _需求：R5、R6、R11、R12_
+
+- [x] 3.7 补齐模块设置中的线索池、库容与移池原因
+  - [x] 3.7.0 读取 Cordys 模块设置 `configCard.vue`、`cluePoolDrawer.vue`、`addOrEditPoolDrawer.vue`、`capacitySetDrawer.vue`、Reason Drawer，以及对应 Controller/Service/DDL，形成 [源码与实施审计](./clue-module-settings-audit.md)。
+  - [x] 3.7.1 建立 `sys_dict/sys_dict_config` 直接模型与 `/dict/*` 原因配置 API，并接入线索退池原因强校验和 Owner History 原因名；自动回收 `system` 只保留在当前资源，原因配置关闭时历史按 Cordys 隐藏原因。
+  - [x] 3.7.2 在模块设置线索卡片内直接实现线索池设置 Drawer：列表、新增、编辑、启停、删除前 no-pick 与池内数据保护；Scope 同时支持用户、部门和角色。
+  - [x] 3.7.3 实现线索库容 Drawer：新增、编辑、删除、角色/部门/成员 Scope 实际成员重叠校验，并保持 `null=不限制、0=真实零库容`。
+  - [x] 3.7.4 实现移入线索池原因 Drawer：开关、最多 50 条、增删改、拖拽排序、最后一条删除保护；普通/批量退池同时接入真实原因选择。
+  - [x] 3.7.5 新增模块设置 API Smoke `22/22`（含原因改名）与真实入口 Browser Smoke `17/17`；复跑连续生命周期 `17/17`、普通 API `18/18`、三条转换 `21/21`、多 Pool `32/32`、线索 Browser `20/20`、首页 `17/17`、rules `114/114`、根 Smoke `219/219` 全绿。Browser 验收额外发现并修复 Pool Drawer 异步引用数据加载完成后整表 `reset()` 覆盖用户输入的真实 race。
+  - [x] 3.7.6 Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate、`git diff --check` 全通过；新增 migration 后本地 migration 总数为 35。最终回归同时修复 demo Seed 已存在用户未恢复默认密码的幂等缺口，使 Seed 输出与 `admin123 / demo123` 真实状态一致；回写 DB-022 / 对齐总表并恢复 W3.4.3 task 4.1 执行指针。
+  - _需求：R2、R6、R11、R12_
 
 ## 4. W3.4.3 客户、联系人和客户公海
 

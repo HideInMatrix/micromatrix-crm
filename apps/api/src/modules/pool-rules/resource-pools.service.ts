@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
+import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
 import type { PoolModule } from './pool-domain.types'
@@ -18,6 +19,7 @@ export class ResourcePoolsService {
     private readonly prisma: PrismaService,
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
+    private readonly dictionaries: DictionariesService,
   ) {}
 
   list(user: AuthUser, module: PoolModule) {
@@ -139,6 +141,14 @@ export class ResourcePoolsService {
         })
       : []
     const userMap = new Map(users.map((item) => [item.id, item]))
+    const reasonModule = module === 'lead' ? 'CLUE_POOL_RS' : 'CUSTOMER_POOL_RS'
+    const showReason = await this.dictionaries.isEnabled(user.tenantId, reasonModule)
+    const reasonMap = showReason
+      ? await this.dictionaries.reasonNames(
+          user.tenantId,
+          history.map((item) => item.reasonId).filter((id): id is string => Boolean(id)),
+        )
+      : new Map<string, string>()
 
     return history.map((item) => {
       const owner = userMap.get(item.owner)
@@ -154,8 +164,8 @@ export class ResourcePoolsService {
         operatorId: item.operator || null,
         operatorName: operator?.name ?? null,
         poolId: null,
-        reasonId: item.reasonId,
-        reasonName: null,
+        reasonId: showReason ? item.reasonId : null,
+        reasonName: showReason && item.reasonId ? (reasonMap.get(item.reasonId) ?? null) : null,
         collectedAt: new Date(Number(item.collectionTime)).toISOString(),
         endedAt: new Date(Number(item.endTime)).toISOString(),
       }

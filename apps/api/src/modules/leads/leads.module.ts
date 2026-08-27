@@ -5,6 +5,7 @@ import { OpportunitiesModule } from '../opportunities/opportunities.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
 import { UserViewsModule } from '../user-views/user-views.module'
 import { ImportExportModule } from '../import-export/import-export.module'
+import { DictionariesModule } from '../dictionaries/dictionaries.module'
 import { ClueCapacityController } from './clue-capacity.controller'
 import { ClueController } from './clue.controller'
 import { ClueOwnerHistoryController } from './clue-owner-history.controller'
@@ -21,6 +22,7 @@ import { LeadsService } from './leads.service'
     PoolRulesModule,
     UserViewsModule,
     ImportExportModule,
+    DictionariesModule,
   ],
   controllers: [
     ClueController,

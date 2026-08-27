@@ -27,6 +27,7 @@ import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import LeadModuleNav from '@/components/leads/LeadModuleNav.vue'
 import LeadOverviewDrawer from '@/components/leads/LeadOverviewDrawer.vue'
 import LeadPoolQuickSettingDrawer from '@/components/leads/LeadPoolQuickSettingDrawer.vue'
+import LeadMoveToPoolDialog from '@/components/leads/LeadMoveToPoolDialog.vue'
 import LeadTransformDialog from '@/components/leads/LeadTransformDialog.vue'
 import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCustomerDrawer.vue'
 import { consumeHomeFilter } from '@/utils/home-filter'
@@ -54,6 +55,9 @@ const batchEditVisible = ref(false)
 const batchTransferVisible = ref(false)
 const batchPoolAssignVisible = ref(false)
 const poolSettingVisible = ref(false)
+const moveToPoolVisible = ref(false)
+const moveToPoolTarget = ref<LeadVO | null>(null)
+const moveToPoolBatch = ref(false)
 const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
@@ -291,18 +295,32 @@ async function handleBatchTransferConfirm(userId: string) {
   }
 }
 
-async function handleBatchToPool() {
+function handleBatchToPool() {
   if (selectedRows.value.length === 0) return
-  const confirmed = await ElMessageBox.confirm(
-    `确定将已选择的 ${selectedRows.value.length} 条线索移入匹配的线索池？`,
-    '移入线索池',
-    { type: 'warning', confirmButtonText: '移入' },
-  ).catch(() => false)
-  if (!confirmed) return
+  moveToPoolTarget.value = null
+  moveToPoolBatch.value = true
+  moveToPoolVisible.value = true
+}
+
+async function confirmMoveToPool(reasonId?: string) {
   try {
-    const { data } = await leadApi.batchToPool(selectedRows.value.map((row) => row.id))
-    if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
-    else ElMessage.success(`已将 ${data.success} 条线索移入线索池`)
+    if (moveToPoolBatch.value) {
+      const { data } = await leadApi.batchToPool(
+        selectedRows.value.map((row) => row.id),
+        undefined,
+        reasonId,
+      )
+      if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
+      else ElMessage.success(`已将 ${data.success} 条线索移入线索池`)
+    } else if (moveToPoolTarget.value) {
+      await leadApi.toPool(
+        moveToPoolTarget.value.id,
+        selectedPoolId.value || undefined,
+        reasonId,
+      )
+      ElMessage.success('已退回线索池')
+    }
+    moveToPoolVisible.value = false
     await loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -442,18 +460,10 @@ async function handleClaim(row: LeadVO) {
   }
 }
 
-async function handleToPool(row: LeadVO) {
-  const confirmed = await ElMessageBox.confirm(`将「${row.name}」退回线索池？`, '确认', {
-    type: 'warning',
-  }).catch(() => false)
-  if (!confirmed) return
-  try {
-    await leadApi.toPool(row.id, selectedPoolId.value || undefined)
-    ElMessage.success('已退回线索池')
-    loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
+function handleToPool(row: LeadVO) {
+  moveToPoolTarget.value = row
+  moveToPoolBatch.value = false
+  moveToPoolVisible.value = true
 }
 
 async function handleDelete(row: LeadVO) {
@@ -1054,6 +1064,17 @@ onMounted(async () => {
       :pool="currentPool"
       :fields="fields"
       @saved="handlePoolSettingSaved"
+    />
+
+    <LeadMoveToPoolDialog
+      v-model="moveToPoolVisible"
+      :title="moveToPoolBatch ? '批量移入线索池' : '移入线索池'"
+      :description="
+        moveToPoolBatch
+          ? `确定将已选择的 ${selectedRows.length} 条线索移入匹配的线索池？`
+          : `将「${moveToPoolTarget?.name ?? ''}」退回线索池？`
+      "
+      @confirm="confirmMoveToPool"
     />
 
     <CrmImportDialog

@@ -133,6 +133,42 @@ export const moduleConfigApi = {
     }),
 }
 
+// ===== Cordys 模块字典（移池原因等） =====
+
+export type DictionaryModule = 'CLUE_POOL_RS' | 'CUSTOMER_POOL_RS' | 'OPPORTUNITY_FAIL_RS'
+
+export interface DictionaryItemVO {
+  id: string
+  name: string
+  module: DictionaryModule
+  type: string
+  pos: number
+  organizationId: string
+  createTime: number
+  updateTime: number
+  createUser: string
+  updateUser: string
+}
+
+export interface DictionaryConfigVO {
+  dictList: DictionaryItemVO[]
+  enable: boolean
+}
+
+export const dictionaryApi = {
+  list: (module: DictionaryModule) => http.get<DictionaryItemVO[]>(`/dict/get/${module}`),
+  config: (module: DictionaryModule) =>
+    http.get<DictionaryConfigVO>(`/dict/config/${module}`),
+  add: (module: DictionaryModule, name: string) =>
+    http.post<DictionaryItemVO>('/dict/add', { module, name }),
+  update: (id: string, name: string) => http.post<DictionaryItemVO>('/dict/update', { id, name }),
+  remove: (id: string) => http.get(`/dict/delete/${id}`),
+  toggle: (module: DictionaryModule, enable: boolean) =>
+    http.post('/dict/switch', { module, enable }),
+  sort: (start: number, end: number, dragDictId: string) =>
+    http.post<DictionaryItemVO[]>('/dict/sort', { start, end, dragDictId }),
+}
+
 // ===== 日志 =====
 
 export const logApi = {

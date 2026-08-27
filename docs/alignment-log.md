@@ -788,3 +788,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 最终根 `pnpm smoke` 首次复跑暴露历史脚本仍使用旧 `/leads`、旧 Pool 导入导出与旧批量领取语义；按 3.1 固化的 Cordys 契约更新验收脚本后恢复 `219/219`。该修复只更新测试契约，没有恢复旧生产 API。
 - API rules `114/114`、首页 `17/17`、Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate 与 `git diff --check` 全部通过；本阶段无 schema/migration 变更。DB-016 因源码、数据模型、API、页面、权限和测试已完整闭环，更新为 `VERIFIED`。
 - W3.4.2 正式关闭；下一执行指针为 **W3.4.3 客户、联系人和客户公海 task 4.1：固化客户域源码证据矩阵**。
+
+---
+
+## 31. W3.4.2 task 3.7 模块设置补漏最终验收（2026-08-27）
+
+- 在进入 W3.4.3 前复核 Cordys `views/system/module/components/configCard.vue` 发现线索卡片的“线索池设置 / 线索库容设置 / 更多 → 移入线索池原因设置”在 MicroMatrix 仍是禁用占位，因此重新打开 W3.4.2 task 3.7；源码证据继续读取 `cluePoolDrawer.vue`、`addOrEditPoolDrawer.vue`、`capacitySetDrawer.vue`、Reason Drawer、`CluePool/ClueCapacity/Dict` Controller/Service、`UserExtendService` 与 `sys_dict/sys_dict_config` DDL。
+- 新增 `sys_dict/sys_dict_config` Prisma 直接模型和 `20260827173000_w342_clue_module_settings` migration，本地 migration 总数变为 **35**；新增 `/dict/*` 并将 `CLUE_POOL_RS` 真正接入人工退池原因必填、跨组织/模块校验、Owner History 原因名与关闭时隐藏语义。自动回收 `system` 不写用户原因历史。
+- Pool/Capacity Scope 补齐角色 Token 与角色成员展开，和用户/部门一起按最终实际成员执行 Pool 访问与 Capacity 重叠校验；模块设置线索卡片直接打开 Pool、Capacity、Move Reason 三个真实 Drawer，Pool 删除前执行 `no-pick` 且后端继续保留池内数据删除保护。
+- Browser Smoke 首轮稳定复现 `LeadPoolConfigDrawer` 的真实初始化 race：引用数据异步加载结束后第二次整表 `reset()` 会覆盖用户已经输入的名称/规则。现改为先初始化表单、引用数据加载完成后只规范化 Scope，并以 CDP 真实文本输入、精确下拉 `aria-controls` 与单次 `/api/lead-pool/add` 网络断言完成验收。
+- 新增模块设置 API Smoke **22/22** 与模块设置 Browser Smoke **17/17**；原 W3.4.2 连续生命周期 **17/17**、普通 API **18/18**、三条转换 **21/21**、多 Pool **32/32**、线索 Browser **20/20**、首页 **17/17**、rules **114/114**、根 Smoke **219/219** 全部复跑通过，`/api/pool/lead/page` 单状态变化单请求硬断言继续全绿。
+- 根 Smoke 复跑同时暴露 demo Seed existing-user 分支未更新 `passwordHash/defaultPwd`，导致 Seed 输出“其余 demo123”与真实库可能漂移；修正后重复 Seed 会恢复默认密码和默认密码状态，已实际验证张伟/李娜使用 `demo123` 登录并恢复 `219/219`。
+- Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate 与 `git diff --check` 均通过；build 仅保留既有 `ReportsView` 约 565.90 kB chunk warning。DB-016 继续保持 `VERIFIED`，DB-022 更新为线索 Pool/Capacity/Move Reason 已完成，客户与其它模块专属设置继续后续执行单元。
+- W3.4.2 再次正式关闭；下一执行指针为 **W3.4.3 客户、联系人和客户公海 task 4.1：固化客户域源码证据矩阵**。

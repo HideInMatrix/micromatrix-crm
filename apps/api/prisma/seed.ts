@@ -178,7 +178,12 @@ async function main() {
     const user = existing
       ? await prisma.user.update({
           where: { id: existing.id },
-          data: { deptId: input.deptId, leaderId: input.leaderId },
+          data: {
+            deptId: input.deptId,
+            leaderId: input.leaderId,
+            passwordHash,
+            defaultPwd: true,
+          },
         })
       : await prisma.user.create({
           data: {

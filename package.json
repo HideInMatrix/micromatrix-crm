@@ -25,6 +25,8 @@
     "smoke:w342-clue-pool": "node scripts/w342-clue-pool-smoke.mjs",
     "smoke:w342-clue-page-browser": "node scripts/w342-clue-page-browser-smoke.mjs",
     "smoke:w342-clue-domain": "node scripts/w342-clue-domain-smoke.mjs",
+    "smoke:w342-clue-module-settings": "node scripts/w342-clue-module-settings-smoke.mjs",
+    "smoke:w342-clue-module-settings-browser": "node scripts/w342-clue-module-settings-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },
