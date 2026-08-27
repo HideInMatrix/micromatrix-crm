@@ -123,11 +123,12 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。当前执行指针（2026-08-27）恢复为：**3.1 固化线索与线索池源码证据矩阵**。先按 Cordys 页面 → API 封装 → Controller → Service → Domain/Mapper/DDL 建立事实矩阵，并与当前 MicroMatrix API/Prisma/Vue 一一对照；3.1 未完成前不直接进入 3.2 API 重写，避免基于现有实现反推 Cordys 行为。
+> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)，当前执行指针进入：**3.2 重建普通线索 API**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从当前 `/api/leads` 兼容实现反推行为。
 
-- [ ] 3.1 固化线索与线索池源码证据矩阵
+- [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
   - 对每个按钮记录权限、DTO、事务副作用和字段可见规则。
+  - 审计记录：[W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)。
   - _需求：R1、R5、R6_
 
 - [ ] 3.2 重建普通线索 API
