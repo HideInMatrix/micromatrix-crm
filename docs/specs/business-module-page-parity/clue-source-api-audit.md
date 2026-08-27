@@ -680,3 +680,110 @@ API production build              PASS
 `smoke:w342-clue-transition` 实际覆盖：自动转换 Customer/Contact/Opportunity、`transitionType + transitionId`、Customer follower/followTime、Opportunity lastFollowedAt、Follow Record/Plan 与 convertedRecordId 映射、原 Follow 保留、提交后通知；显式开启唯一规则后的同名客户 selector；新建客户并关联路径“不复制 Follow/不建协作”；Contact 写失败后的完整事务回滚；已有客户协作与 Follow 复制、失效负责人跳过、重复关联不重复 Contact/Collaboration；公海客户先领取再关联。
 
 因此 task 3.3 可以关闭，执行指针进入 **3.4 重建多线索池 API 与规则执行**。
+
+## 26. task 3.4 实施前多线索池清单（2026-08-27）
+
+再次逐段读取 Cordys `PoolClueController / PoolClueService / CluePoolController / CluePoolService / ClueCapacityController / ClueCapacityService / CluePoolRecycleListener`，并与当前 MicroMatrix `PoolClueController / LeadsService / CluePoolRepository / ResourcePoolsService / PoolRecycleService` 对照后，3.4 按以下边界实施。
+
+### 26.1 API 分域必须完整存在
+
+本阶段结束时必须形成三组独立 API：
+
+```text
+/pool/lead/*       线索池业务数据
+/lead-pool/*       线索池设置
+/lead-capacity/*   线索库容设置
+```
+
+当前 MicroMatrix 只有过渡版 `/pool/lead`，尚无 `/lead-pool` 与 `/lead-capacity` Controller；Web 的系统销售设置仍引用已删除写接口的 `/resource-pools`、`/resource-capacities` 通用契约。3.4 要补齐线索分域设置 API，不能恢复旧通用 Pool CRUD 模型。
+
+### 26.2 `/pool/lead` 当前缺口
+
+| 场景 | Cordys 事实 | 当前 MicroMatrix | 3.4 动作 |
+| --- | --- | --- | --- |
+| options | 只返回启用且当前用户为成员/管理员的池；携带 pick/recycle、`editable`、`fieldConfigs` | 复用通用 `ResourcePoolVO`，缺 `editable/fieldConfigs` | 输出线索池专用 DTO |
+| page | `poolId` 必填并先做池成员校验 | 已限定 poolId，但返回仍使用全量线索字段 | 以当前池 `fieldConfigs` 驱动页面字段；不得跨池 |
+| get/delete | clueId 反查 pool，再做池成员校验 | 基本具备 | 保留并补专项越权测试 |
+| pick | 指定 pool + 资源必须仍在该 pool；执行库容/每日领取/新数据/前负责人规则 | 单条路径基本具备 | 保留并补并发与规则 Smoke |
+| assign | **只允许池内线索**；反查 pool 后做成员校验 | 复用通用 `assign()`，普通线索 ID 会走 transfer 分支 | 新建 pool-only assign 路径，禁止退化为普通转移 |
+| batch-pick | 指定 pool + 批量规则 | 当前逐条 catch 后部分成功 | 先校验全部资源同一授权池，再执行；不得吞掉越权原因 |
+| batch-assign | 首条反查 pool；本项目额外收紧全部 IDs 同池 | 当前逐条调用通用 `assign()` | pool-only 批量分配 + 全量同池校验 |
+| batch-update/delete | 池 UPDATE/DELETE 独立权限；全部资源属于同一授权池 | 已有同池检查 | 保持并补隐藏字段/越权专项验证 |
+| export-all/select | 当前池成员校验，筛选/选中资源不得跨池 | 当前 export-all/select 通过 query 参数传 poolId | 改为 Cordys body 契约，并在 Service 再校验资源池归属 |
+| chart | 当前池成员校验 + 当前 pool 数据聚合 | **当前 `chart()` 固定 `scope='mine'`，池图表统计错误** | 增加 pool chart 上下文，强制 `scope='pool',poolId` |
+| template | 池模板不包含 Owner；Cordys 下载模板本身不依赖 poolId | 当前强制 query poolId | 池模板固定排除 Owner；不把 poolId 当模板生成前提 |
+| import | request 中 poolId 必填并校验成员；池导入强制 `inSharedPool=true,poolId=目标池,owner=null` | 基础能力已有 | 对齐 DTO/权限并补池归属验证 |
+
+安全收紧继续沿用 3.1 已定原则：Cordys 某些批量接口只使用第一条资源反查池，本项目实现必须验证**所有 IDs 都属于同一个已授权池**，避免跨池越权。
+
+### 26.3 Pool Scope、管理员与隐藏字段
+
+`CluePool.scopeId` 是成员范围，`ownerId` 是池管理员范围。`/pool/lead/options` 的可见性规则为：
+
+1. Pool 必须 `enable=true`。
+2. 当前用户命中 `scopeId` 或 `ownerId`，系统 `*` 管理员可见全部启用池。
+3. 命中 `ownerId` 时 `editable=true`，用于池页面快捷设置。
+4. `CluePoolHiddenField` 只决定当前池的 `fieldConfigs.enable`；Cordys 源码没有在 API 数据层额外擦除字段值，因此 MicroMatrix 不伪造更强的字段脱敏语义。
+5. 线索名称字段在 `fieldConfigs` 中始终 `editable=false`。
+
+### 26.4 `/lead-pool` 设置语义
+
+- `page/add/update/no-pick/delete/switch` 使用 `system:module:update` 对齐 Cordys `MODULE_SETTING:UPDATE`。
+- `quick-update` 不使用全局模块设置权限，只允许命中该 Pool `ownerId` 的池管理员；`*` 管理员同样允许。
+- Add/Update 必须原子维护 `CluePool + PickRule + RecycleRule + HiddenFields`。
+- 删除前 MicroMatrix 保留更强防护：池中仍存在 `inSharedPool=true` 线索时直接拒绝删除；`/no-pick/{id}` 仍提供页面前置判断。
+- 多个 Scope 同时命中负责人时，以**创建时间最新的 Pool**为默认/自动回收目标，与 Cordys `matchMultiScope/getOwnersBestMatchPoolMap` 一致。
+
+### 26.5 `/lead-capacity` 语义
+
+- `get/add/update/delete` 使用 `system:module:update`。
+- 库容按组织 + Scope 生效，不落到 User 表。
+- Cordys `CapacityAddRequest` 虽带通用 `filters` 字段，但 `ClueCapacityService` 实际只持久化 `scopeIds + capacity`；线索库容不得照搬 Customer Capacity 的排除过滤能力。
+- 不同库容规则的 Scope 不允许解析到同一有效成员；当前 `CluePoolRepository.saveCapacity()` 已具备该约束，3.4 通过专用 Controller 暴露并补 Smoke。
+
+### 26.6 领取/分配规则与通知
+
+领取成功事实：
+
+```text
+poolId = null
+inSharedPool = false
+owner = targetUser
+collectionTime = now
+stage = FOLLOWING
+```
+
+规则边界：
+
+- 库容：领取与分配都检查。
+- 每日领取上限：仅 PICK 检查；池管理员跳过每日数量限制。
+- 新数据保护：仅 PICK；池管理员跳过。
+- 前负责人冷却：PICK 检查；**线索池管理员仍受冷却限制**，这点与 Customer 公海不同。
+- ASSIGN 不执行 PickRule，但仍执行库容。
+- `CLUE_DISTRIBUTED` 只在分配成功后发送；普通领取不发送该通知。
+
+### 26.7 自动回收必须纠正的现状
+
+Cordys `CluePoolRecycleListener.getCluesForRecycle()` 只要求：
+
+```text
+owner 命中启用且 auto=true Pool 的 Scope
+inSharedPool = false
+transitionId 为空
+```
+
+**不限制 stage 必须为 FOLLOWING**。当前 MicroMatrix `PoolRecycleService.recycleClues()` 额外写死 `stage='FOLLOWING'`，会漏回收 `NEW/INTERESTED/SUCCESS/FAIL` 中仍未转换且命中规则的线索；3.4 必须移除该伪限制，并继续保留 `transitionId=null` 的未转换约束。
+
+自动回收时仍需原子写 Owner History、`poolId/inSharedPool/owner/collectionTime/reasonId=system`，成功后发送 `CLUE_AUTOMATIC_MOVE_POOL`。
+
+### 26.8 3.4 关闭条件
+
+3.4 只有在以下运行证据全部具备后才能勾选完成：
+
+- `/pool/lead` options/page/get/pick/assign/batch/update/delete/import/export/chart 完整专项 Smoke。
+- 至少两个 Pool 验证 Scope 隔离、跨池批量拒绝、管理员 `editable` 与 hidden `fieldConfigs`。
+- 每日领取、前负责人冷却、新数据保护、库容与 ASSIGN 不执行 PickRule 的差异全部实测。
+- `/lead-pool` page/add/update/quick-update/no-pick/delete/switch 实测。
+- `/lead-capacity` get/add/update/delete 与重复 Scope 拒绝实测。
+- 自动回收验证非 `FOLLOWING` 的未转换线索同样可命中，并验证已转换线索不回收、重复执行幂等。
+- 3.2 `18/18`、3.3 `21/21`、首页 `17/17` 与规则测试继续回归通过。
