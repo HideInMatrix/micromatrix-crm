@@ -4,8 +4,9 @@ const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
 
 let passed = 0
 let failed = 0
-let createdPoolId = ''
-let createdLeadId = ''
+const createdPoolIds = []
+const createdLeadIds = []
+const createdPoolLeads = []
 
 function check(name, condition, detail = '') {
   if (condition) {
@@ -180,6 +181,37 @@ async function waitForRequestCount(cdp, pathname, minimum = 1, timeoutMs = 5000)
   throw new Error(`等待请求 ${pathname} 超时`)
 }
 
+async function selectPoolOption(cdp, label) {
+  const opened = await cdp.evaluate(`
+    (() => {
+      const select = [...document.querySelectorAll('.el-select')].find(
+        (item) => item.className.includes('!w-52'),
+      )
+      const wrapper = select?.querySelector('.el-select__wrapper')
+      wrapper?.click()
+      return Boolean(wrapper)
+    })()
+  `)
+  if (!opened) throw new Error('无法打开线索池选择器')
+
+  await cdp.waitFor(
+    `[...document.querySelectorAll('.el-select-dropdown__item')].some((item) => item.textContent?.trim() === ${JSON.stringify(label)} && item.getBoundingClientRect().width > 0)`,
+    5000,
+    `等待线索池选项 ${label}`,
+  )
+
+  const selected = await cdp.evaluate(`
+    (() => {
+      const option = [...document.querySelectorAll('.el-select-dropdown__item')].find(
+        (item) => item.textContent?.trim() === ${JSON.stringify(label)} && item.getBoundingClientRect().width > 0,
+      )
+      option?.click()
+      return Boolean(option)
+    })()
+  `)
+  if (!selected) throw new Error(`无法选择线索池 ${label}`)
+}
+
 async function main() {
   console.log('\nW3.4.2 线索页面 Browser Smoke')
 
@@ -194,46 +226,74 @@ async function main() {
   const adminId = login.data.user.id
   const suffix = Date.now().toString(36)
 
-  const poolName = `Browser Pool ${suffix}`
-  const pool = await apiRequest('POST', '/lead-pool/add', token, {
-    name: poolName,
-    scopeIds: ['*'],
-    ownerIds: [adminId],
-    enable: true,
-    auto: false,
-    hiddenFieldIds: [],
-    pickRule: {
-      limitOnNumber: false,
-      pickNumber: null,
-      limitPreOwner: false,
-      pickIntervalDays: null,
-      limitNew: false,
-      newPickInterval: null,
-    },
-    recycleRule: { operator: 'AND', conditions: [] },
-  })
-  if (!pool.response.ok) {
-    throw new Error(
-      `创建 Browser Smoke 线索池失败: status=${pool.response.status} body=${pool.raw}`,
-    )
+  async function createPool(name) {
+    const result = await apiRequest('POST', '/lead-pool/add', token, {
+      name,
+      scopeIds: ['*'],
+      ownerIds: [adminId],
+      enable: true,
+      auto: false,
+      hiddenFieldIds: [],
+      pickRule: {
+        limitOnNumber: false,
+        pickNumber: null,
+        limitPreOwner: false,
+        pickIntervalDays: null,
+        limitNew: false,
+        newPickInterval: null,
+      },
+      recycleRule: { operator: 'AND', conditions: [] },
+    })
+    if (!result.response.ok) {
+      throw new Error(
+        `创建 Browser Smoke 线索池失败: status=${result.response.status} body=${result.raw}`,
+      )
+    }
+    const page = await apiRequest('POST', '/lead-pool/page', token, {
+      current: 1,
+      pageSize: 200,
+      keyword: name,
+    })
+    const created = page.data?.list?.find((item) => item.name === name)
+    if (!page.response.ok || !created?.id) {
+      throw new Error(`回查 Browser Smoke 线索池失败: ${page.raw}`)
+    }
+    createdPoolIds.push(created.id)
+    return created
   }
-  const poolPage = await apiRequest('POST', '/lead-pool/page', token, {
-    current: 1,
-    pageSize: 200,
-    keyword: poolName,
-  })
-  const createdPool = poolPage.data?.list?.find((item) => item.name === poolName)
-  if (!poolPage.response.ok || !createdPool?.id) {
-    throw new Error(`回查 Browser Smoke 线索池失败: ${poolPage.raw}`)
-  }
-  createdPoolId = createdPool.id
+
+  const poolAName = `Browser Pool A ${suffix}`
+  const poolBName = `Browser Pool B ${suffix}`
+  const poolA = await createPool(poolAName)
+  const poolB = await createPool(poolBName)
 
   const leadName = `Browser Lead ${suffix}`
   const lead = await apiRequest('POST', '/lead/add', token, { name: leadName })
   if (!lead.response.ok || !lead.data?.id) {
     throw new Error(`创建 Browser Smoke 线索失败: ${JSON.stringify(lead.data)}`)
   }
-  createdLeadId = lead.data.id
+  createdLeadIds.push(lead.data.id)
+
+  async function createPoolLead(name, poolId) {
+    const result = await apiRequest('POST', '/lead/add', token, { name })
+    if (!result.response.ok || !result.data?.id) {
+      throw new Error(`创建 Browser Pool 线索失败: ${JSON.stringify(result.data)}`)
+    }
+    const moved = await apiRequest('POST', '/lead/to-pool', token, {
+      id: result.data.id,
+      poolId,
+    })
+    if (!moved.response.ok) {
+      throw new Error(`Browser Pool 线索移池失败: status=${moved.response.status} body=${moved.raw}`)
+    }
+    createdPoolLeads.push({ id: result.data.id, poolId })
+    return result.data
+  }
+
+  const poolLeadAName = `Browser Pool Lead A ${suffix}`
+  const poolLeadBName = `Browser Pool Lead B ${suffix}`
+  await createPoolLead(poolLeadAName, poolA.id)
+  await createPoolLead(poolLeadBName, poolB.id)
 
   const target = await loadPageTarget()
   const cdp = new CdpClient(target.webSocketDebuggerUrl)
@@ -299,18 +359,40 @@ async function main() {
         })()
       `),
     )
+    check(
+      '普通 Overview 的转换入口打开真实转换弹窗',
+      await cdp.evaluate(`
+        (() => {
+          const drawer = [...document.querySelectorAll('.el-drawer')].find(
+            (item) => item.getBoundingClientRect().width > 0,
+          )
+          const button = [...(drawer?.querySelectorAll('button') ?? [])].find(
+            (item) => item.textContent?.trim() === '转换',
+          )
+          button?.click()
+          return Boolean(button)
+        })()
+      `),
+    )
+    await cdp.waitFor(
+      `[...document.querySelectorAll('.el-dialog')].some((item) => item.getBoundingClientRect().width > 0 && item.innerText.includes('转换线索'))`,
+      5000,
+      '转换线索弹窗渲染',
+    )
     await cdp.evaluate(`
       (() => {
-        const buttons = [...document.querySelectorAll('.el-drawer__close-btn')]
-        const button = buttons.find((item) => item.getBoundingClientRect().width > 0)
+        const dialog = [...document.querySelectorAll('.el-dialog')].find(
+          (item) => item.getBoundingClientRect().width > 0 && item.innerText.includes('转换线索'),
+        )
+        const button = dialog?.querySelector('.el-dialog__headerbtn')
         button?.click()
         return Boolean(button)
       })()
     `)
     await cdp.waitFor(
-      `![...document.querySelectorAll('.el-overlay')].some((item) => item.getBoundingClientRect().width > 0 && getComputedStyle(item).visibility !== 'hidden')`,
+      `![...document.querySelectorAll('.el-dialog')].some((item) => item.getBoundingClientRect().width > 0 && item.innerText.includes('转换线索'))`,
       5000,
-      '关闭普通线索 Overview Drawer',
+      '关闭转换线索弹窗',
     )
 
     cdp.resetRequests()
@@ -329,6 +411,99 @@ async function main() {
       await cdp.evaluate(
         `document.body.innerText.includes('设置') && document.body.innerText.includes('导入') && document.body.innerText.includes('导出全部')`,
       ),
+    )
+
+    await selectPoolOption(cdp, poolAName)
+    await cdp.waitFor(textIncludes(poolLeadAName), 10000, '切换到 Pool A 后加载目标线索')
+
+    cdp.resetRequests()
+    await selectPoolOption(cdp, poolBName)
+    await waitForRequestCount(cdp, '/api/pool/lead/page')
+    await cdp.waitFor(textIncludes(poolLeadBName), 10000, '切换到 Pool B 后加载目标线索')
+    await sleep(300)
+    const switchToBCount = cdp.countRequests('/api/pool/lead/page')
+    check(
+      '切换到第二个 Pool 一次状态变化只请求一次 /api/pool/lead/page',
+      switchToBCount === 1 && !(await cdp.evaluate(textIncludes(poolLeadAName))),
+      `实际 ${switchToBCount} 次`,
+    )
+
+    cdp.resetRequests()
+    await selectPoolOption(cdp, poolAName)
+    await waitForRequestCount(cdp, '/api/pool/lead/page')
+    await cdp.waitFor(textIncludes(poolLeadAName), 10000, '切回 Pool A 后加载目标线索')
+    await sleep(300)
+    const switchToACount = cdp.countRequests('/api/pool/lead/page')
+    check(
+      '切回第一个 Pool 仍只请求一次且列表不串池',
+      switchToACount === 1 && !(await cdp.evaluate(textIncludes(poolLeadBName))),
+      `实际 ${switchToACount} 次`,
+    )
+
+    check(
+      'Pool 线索名称可打开独立 Overview Drawer',
+      await cdp.evaluate(`
+        (() => {
+          const button = [...document.querySelectorAll('button')].find(
+            (item) => item.textContent?.trim() === ${JSON.stringify(poolLeadAName)},
+          )
+          button?.click()
+          return Boolean(button)
+        })()
+      `),
+    )
+    await cdp.waitFor(textIncludes('前负责人记录'), 5000, 'Pool Overview Drawer 渲染')
+    check(
+      'Pool Overview 只保留领取/分配/删除与跟进记录/前负责人记录',
+      await cdp.evaluate(`
+        (() => {
+          const drawer = [...document.querySelectorAll('.el-drawer')].find(
+            (item) => item.getBoundingClientRect().width > 0,
+          )
+          const text = drawer?.innerText ?? ''
+          return ['领取', '分配', '删除', '跟进记录', '前负责人记录'].every((item) => text.includes(item)) &&
+            !text.includes('跟进计划') && !text.includes('转换') && !text.includes('移入线索池') && !text.includes('转移')
+        })()
+      `),
+    )
+    await cdp.evaluate(`
+      (() => {
+        const button = [...document.querySelectorAll('.el-drawer__close-btn')].find(
+          (item) => item.getBoundingClientRect().width > 0,
+        )
+        button?.click()
+        return Boolean(button)
+      })()
+    `)
+    await cdp.waitFor(
+      `![...document.querySelectorAll('.el-drawer')].some((item) => item.getBoundingClientRect().width > 0)`,
+      5000,
+      '关闭 Pool Overview Drawer',
+    )
+
+    check(
+      'Pool 表格可勾选目标线索',
+      await cdp.evaluate(`
+        (() => {
+          const button = [...document.querySelectorAll('button')].find(
+            (item) => item.textContent?.trim() === ${JSON.stringify(poolLeadAName)},
+          )
+          const row = button?.closest('tr')
+          const checkbox = row?.querySelector('.el-checkbox__input')
+          checkbox?.click()
+          return Boolean(checkbox)
+        })()
+      `),
+    )
+    await cdp.waitFor(textIncludes('批量领取'), 5000, 'Pool 批量操作栏渲染')
+    check(
+      'Pool 批量态包含导出选中/领取/分配/修改/删除',
+      await cdp.evaluate(`
+        (() => {
+          const text = document.body.innerText
+          return ['导出选中', '批量领取', '批量分配', '批量修改', '批量删除'].every((item) => text.includes(item))
+        })()
+      `),
     )
 
     check('可点击顶部“线索”返回', await cdp.evaluate(clickTab('线索')))
@@ -365,8 +540,20 @@ try {
       password: 'admin123',
     })
     const token = login.data?.accessToken
-    if (token && createdLeadId) await apiRequest('GET', `/lead/delete/${createdLeadId}`, token)
-    if (token && createdPoolId) await apiRequest('GET', `/lead-pool/delete/${createdPoolId}`, token)
+    if (token) {
+      for (const item of createdPoolLeads) {
+        await apiRequest('POST', '/pool/lead/batch-delete', token, {
+          poolId: item.poolId,
+          ids: [item.id],
+        })
+      }
+      for (const leadId of createdLeadIds) {
+        await apiRequest('GET', `/lead/delete/${leadId}`, token)
+      }
+      for (const poolId of createdPoolIds) {
+        await apiRequest('GET', `/lead-pool/delete/${poolId}`, token)
+      }
+    }
   } catch (error) {
     console.error(`  · Browser Smoke 清理失败：${error instanceof Error ? error.message : String(error)}`)
   }

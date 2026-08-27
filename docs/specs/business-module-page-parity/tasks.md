@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)、普通线索 API、三条转换链路、多线索池 API / 规则执行以及 PC 线索/线索池页面对齐，当前执行指针进入：**3.6 线索与线索池最终专项验收**。后续验收继续以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
+> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 W3.4.2 task 3.1～3.6 已全部完成：源码证据、普通线索 API、三条转换链路、多线索池 API/规则、PC 页面与最终专项验收均已闭环。W3.4.2 正式关闭，当前执行指针进入 **W3.4.3 task 4.1 固化客户域源码证据矩阵**。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -165,12 +165,14 @@
   - [x] 回归：普通线索 API `18/18`、三条转换 `21/21`、多线索池 `32/32`、首页 `17/17`、规则测试 `114/114`；Web typecheck/build、本批 ESLint 通过。
   - _需求：R2、R5、R6_
 
-- [ ] 3.6 完成线索域专项验收并本地提交
+- [x] 3.6 完成线索域专项验收并本地提交
   - 实施前最终验收矩阵：[W3.4.2 线索与线索池最终专项验收记录](./clue-validation-audit.md)。
   - 新增连续生命周期 Smoke，要求同一线索贯穿新增→跟进→User View→退池→领取→再退池→分配→Owner History，并与导入导出专项证据共同闭环。
   - 扩展 Browser Smoke 到普通/池 Overview、转换入口、批量态和实际切池；`/api/pool/lead/page` 首次进入、再次进入及切池均保留单请求硬断言。
   - Smoke 覆盖新增→跟进→退池→领取→分配→三类转换、多池 Scope、隐藏字段、库容、用户视图、导入导出和事务回滚。
   - 浏览器验收普通/池页面、抽屉、转换、批量和切池；验证旧 `/api/leads` 返回 404。
+  - [x] 最终结果：连续生命周期 `17/17`、普通 API `18/18`、三条转换 `21/21`、多 Pool `32/32`、Browser `20/20`、首页 `17/17`、根 Smoke `219/219`、规则测试 `114/114`。
+  - [x] Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate、`git diff --check` 全通过；根 Smoke 已同步到 `/lead/*`、`/pool/lead/*` 当前契约，不恢复旧 `/api/leads`。
   - _需求：R5、R6、R11、R12_
 
 ## 4. W3.4.3 客户、联系人和客户公海

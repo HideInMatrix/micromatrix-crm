@@ -777,3 +777,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 新增 `.github/workflows/release-docker.yml`：仅监听 `v*.*.*` tag push，先校验 SemVer、执行 typecheck/lint，再跑真实 Docker runtime Smoke，最后 API/Web matrix 并行构建并推送 GHCR `linux/amd64` + `linux/arm64` 镜像；GHCR 写权限仅授予镜像发布 job。
 - 本地 `pnpm smoke:docker-release` 已实测通过：从当前源码构建 API/Web 两个镜像，在隔离 PostgreSQL 中从零成功应用 34 个 migration，随后验证 API `/api/health`、Nginx `/healthz`、`/api` proxy 和 `/login` SPA fallback。Shared/API/Web typecheck、全仓 ESLint、API rules `114/114`、Compose config、workflow YAML、Shell syntax 与 `git diff --check` 同步通过。
 - 正式发布命令为 `git tag v0.0.1 && git push origin v0.0.1`；普通 `git push origin master` 不触发 Docker release。本执行单元只建立发布能力，不自动创建正式版本 tag。
+
+---
+
+## 30. W3.4.2 线索与线索池最终专项验收（2026-08-27）
+
+- task 3.1～3.5 已完成源码证据、普通 `/lead/*`、三条独立转换链路、多 `/pool/lead/*` 与 `/lead-pool`/`/lead-capacity` 分域配置、Pool Scope/Hidden Field/领取规则/库容/自动回收，以及 `/leads`、`/leads/pool` 两个 PC 固定上下文页面；旧 `/api/leads` 保持 404，不恢复兼容 Controller。
+- 3.6 新增同一线索连续生命周期 Smoke：新增→跟进记录/计划→User View→退池→成员读取/领取→再退池→管理员分配→Owner History→导出，最终 `17/17`；普通 API `18/18`、三条转换 `21/21`、多 Pool `32/32` 同步全绿。
+- Browser Smoke 扩展为 `20/20`：覆盖普通/Pool Overview、真实转换弹窗、Pool 批量态和两个池的往返切换；首次进入、A→B、B→A、返回普通线索后再次进入均硬断言 `/api/pool/lead/page` 一次状态变化只请求一次，并验证列表不串池、无未捕获 Runtime 异常。
+- 最终根 `pnpm smoke` 首次复跑暴露历史脚本仍使用旧 `/leads`、旧 Pool 导入导出与旧批量领取语义；按 3.1 固化的 Cordys 契约更新验收脚本后恢复 `219/219`。该修复只更新测试契约，没有恢复旧生产 API。
+- API rules `114/114`、首页 `17/17`、Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate 与 `git diff --check` 全部通过；本阶段无 schema/migration 变更。DB-016 因源码、数据模型、API、页面、权限和测试已完整闭环，更新为 `VERIFIED`。
+- W3.4.2 正式关闭；下一执行指针为 **W3.4.3 客户、联系人和客户公海 task 4.1：固化客户域源码证据矩阵**。

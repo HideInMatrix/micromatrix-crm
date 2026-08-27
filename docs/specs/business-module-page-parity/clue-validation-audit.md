@@ -4,7 +4,7 @@
 >
 > 验收日期：2026-08-27
 >
-> 当前状态：验收计划已固化，等待执行；只有本文件第 6 节全部通过后才允许关闭 W3.4.2。
+> 当前状态：验收通过，W3.4.2 已关闭；下一执行单元为 W3.4.3 客户、联系人和客户公海 task 4.1。
 
 ## 1. 验收基线
 
@@ -17,7 +17,8 @@ task 3.1～3.5 已分别完成源码证据、普通线索 API、三条转换链�
 | `smoke:w342-clue-api` | `18/18` | 普通线索 `/lead` 契约、Owner History、移池、导入导出、图表、旧 `/api/leads` 404 |
 | `smoke:w342-clue-transition` | `21/21` | 三条转换差异、Follow Record/Plan、同名 selector、幂等、公海领取、真实事务回滚 |
 | `smoke:w342-clue-pool` | `32/32` | 多 Pool Scope、Hidden Field、PICK/ASSIGN、批量、库容、导入导出、自动回收 |
-| `smoke:w342-clue-page-browser` | `13/13` | PC 独立路由、普通 Overview、Pool 工具栏、切换 Pool page 请求去重 |
+| `smoke:w342-clue-page-browser` | `20/20` | PC 独立路由、普通/Pool Overview、转换入口、批量态、真实切池与 Pool page 单请求硬断言 |
+| `smoke:w342-clue-domain` | `17/17` | 同一线索贯穿 User View、跟进、退池、领取、再退池、分配、Owner History 与导出 |
 | API `test:rules` | `114/114` | DataScope、Pool Rule、User View、动态字段等公共规则底座 |
 
 这些测试仍要在 3.6 最终代码状态再次执行，但不能代替下面两条“跨功能连续链路”。
@@ -94,9 +95,30 @@ git diff --check
 
 本阶段没有计划新增 Prisma 模型；仍需执行 Prisma validate/generate。如果验收过程中没有 schema/migration 改动，不为“凑验收步骤”制造空 migration。
 
-## 6. 关闭门槛
+## 6. 最终执行结果
 
-W3.4.2 只有同时满足以下条件才关闭：
+2026-08-27 在最终代码状态完成全部验收，结果如下：
+
+| 验收项 | 结果 |
+| --- | ---: |
+| `pnpm smoke:w342-clue-domain` | `17/17` |
+| `pnpm smoke:w342-clue-api` | `18/18` |
+| `pnpm smoke:w342-clue-transition` | `21/21` |
+| `pnpm smoke:w342-clue-pool` | `32/32` |
+| `pnpm smoke:w342-clue-page-browser` | `20/20` |
+| `pnpm smoke:w341-home` | `17/17` |
+| `pnpm smoke` | `219/219` |
+| API `test:rules` | `114/114` |
+
+静态与仓库检查同时通过：Shared/API/Web `typecheck`、全仓 ESLint、三端 production build、Prisma validate/generate 与 `git diff --check`。本阶段未修改 Prisma schema，也没有新增空 migration。
+
+最终根 Smoke 首次执行时暴露的是历史验收脚本仍调用旧 `/api/leads`、旧 Pool 导入导出和旧批量领取语义；专项 W3.4.2 Smoke 已全部通过，因此按 3.1 固化的 Cordys 契约把根 Smoke 更新为 `/lead/*` 与 `/pool/lead/*`，并保留旧 `/api/leads` 404 断言。修正后根关键链路恢复 `219/219`，没有为通过测试恢复旧兼容 Controller。
+
+Browser Smoke 对 `/api/pool/lead/page` 保留硬断言：首次进入、Pool A→B、B→A、返回普通线索后再次进入均为一次状态变化对应一次请求，并校验列表不串池、页面无未捕获 Runtime 异常。
+
+## 7. 关闭结论
+
+W3.4.2 的关闭条件均已满足：
 
 - 新增连续生命周期 Smoke 全绿。
 - 最终 Browser Smoke 全绿，并包含 `/api/pool/lead/page` 单请求硬断言。
@@ -105,6 +127,6 @@ W3.4.2 只有同时满足以下条件才关闭：
 - 根关键链路 Smoke 全绿。
 - Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate、`git diff --check` 全通过。
 - 临时租户、Browser 夹具和独立 API/Vite/Chrome 进程全部清理。
-- 最终 Git 工作区只包含 3.6 验收脚本/文档或验收暴露出的必要修复；提交后工作区干净。
+- 最终 Git 工作区只包含 3.6 验收脚本/文档和验收暴露出的根 Smoke 契约修复；提交后要求工作区干净。
 
-通过后 task 3.6 标记完成，并将下一执行指针切到 **W3.4.3 客户、联系人和客户公海**。
+task 3.6 标记完成，W3.4.2 正式关闭；下一执行指针切到 **W3.4.3 客户、联系人和客户公海 task 4.1：固化客户域源码证据矩阵**。

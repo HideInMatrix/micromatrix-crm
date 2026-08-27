@@ -6,7 +6,7 @@
 
 - 基础公共能力：组织架构、角色权限、租户隔离、数据权限、操作日志、模块菜单底座已具备。
 - 图中销售模块：已有可运行页面和 API，但“存在”不等于与 Cordys 完整一致，仍需按模块逐页读取源码后复查字段、操作、权限、状态与关联数据。
-- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页已关闭，当前执行 W3.4.2 线索与线索池，起点为 task 3.1 源码证据矩阵。
+- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页与 W3.4.2 线索/线索池均已关闭，当前执行 W3.4.3 客户、联系人和客户公海 task 4.1。
 
 ## 执行顺序
 
@@ -49,6 +49,7 @@
 13. W3.4.1 的 [首页最终专项验收](./specs/business-module-page-parity/home-validation-audit.md) 已完成：独立 Home 统计与跨页筛选、Cordys 普通工作台、真实快捷入口、默认密码状态和审批 CC 数据源全部闭环；`108/108` 规则测试、首页 API/数据库 Smoke `17/17`、Chrome Browser Smoke `12/12`、根 Smoke `219/219`、W3.2 `23/23`、W3.3 `19/19` 全绿，Shared/API/Web typecheck、Lint 和三端 production build 通过。W3.4.1 正式关闭，下一独立执行单元为 W3.4.2 线索与线索池。
 14. 2026-08-27 企业设置 W3.4-S 与前端目录最终收口已完成：六页签领域化继续保持，未登录登录页可按 tenant/email 获取公开品牌并同步桌面/Mobile 标题，登录页配置移除模拟预览；前端路由页面统一归档到 `src/views/<业务模块>/`，移动页面进入模块 `mobile/` 子目录，旧 `src/mobile` 根目录删除。最终 `114/114` 规则测试、企业设置 Smoke `23/23`、根 Smoke `219/219`、Shared/API/Web typecheck、全仓 ESLint 和三端 production build 全绿。该收口不改变 W3.4 业务执行顺序，当前正式从 W3.4.2 task 3.1 开始。
 15. 在进入 W3.4.2 前插入的 [W3.4-D Docker 发布链路](./specs/docker-release/tasks.md) 已完成：API/Web 独立 multi-stage image、生产 Prisma migration、Nginx SPA + runtime `/api` proxy、release compose 与 GHCR tag workflow 均已落地；本地 release Smoke 从零应用 34 个 migration 后验证 API/Web runtime 通过。`git push origin v0.0.1`（本地 tag 已存在时）会触发发布；当前执行指针恢复为 W3.4.2 task 3.1。
+16. W3.4.2 的 [线索与线索池最终专项验收](./specs/business-module-page-parity/clue-validation-audit.md) 已完成：普通 `/lead/*`、三条转换、多 `/pool/lead/*`、分域 Pool/Capacity 配置、User View、Owner History 和 PC 双页面全部按 3.1 源码矩阵闭环；连续生命周期 `17/17`、普通 API `18/18`、转换 `21/21`、多 Pool `32/32`、Browser `20/20`、规则 `114/114`、首页 `17/17`、根关键链路 `219/219` 全绿，typecheck、ESLint、production build、Prisma validate/generate 与 diff 检查通过。W3.4.2 正式关闭，当前执行指针进入 W3.4.3 task 4.1。
 
 ## 长期完成约束
 

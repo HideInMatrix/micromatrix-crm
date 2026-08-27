@@ -741,7 +741,7 @@ if (nameField && hideableField) {
 
 const scopedLeadPool = await createPoolFixture('lead', admin.user, {
   name: `冒烟专属线索池-${stamp}`,
-  scopeIds: [`user:${sales.user.id}`],
+  scopeIds: [sales.user.id],
 })
 const salesPoolOptions = await get('/resource-pools/options?module=lead', sales.headers)
 const managerPoolOptions = await get('/resource-pools/options?module=lead', manager.headers)
@@ -754,27 +754,32 @@ check(
   Array.isArray(managerPoolOptions) &&
     !managerPoolOptions.some((pool) => pool.id === scopedLeadPool.id),
 )
-const batchLead = await post('/leads', admin.headers, {
+const batchLead = await post('/lead/add', admin.headers, {
   name: `批量领取线索-${stamp}`,
-  toPool: true,
+})
+await post('/lead/to-pool', admin.headers, { id: batchLead.id, poolId: scopedLeadPool.id })
+const batchClaim = await request('POST', '/pool/lead/batch-pick', admin.headers, {
+  batchIds: [batchLead.id, `missing-${stamp}`],
   poolId: scopedLeadPool.id,
 })
-const batchClaim = await post('/leads/batch/claim', sales.headers, {
-  ids: [batchLead.id, `missing-${stamp}`],
-  poolId: scopedLeadPool.id,
+const batchLeadAfterRejectedClaim = await smokePrisma.clue.findUnique({
+  where: { id: batchLead.id },
 })
 check(
-  '批量领取局部失败不回滚成功项',
-  batchClaim.success === 1 && batchClaim.fail === 1 && batchClaim.failedIds?.length === 1,
+  'W3.4.2 批量领取先做全量校验，非法成员不会产生局部成功',
+  !batchClaim.ok && batchLeadAfterRejectedClaim?.inSharedPool === true,
 )
-const deletedBatchLead = await request('DELETE', `/leads/${batchLead.id}`, manager.headers)
-check('批量领取临时线索可清理', deletedBatchLead.ok)
+const deletedBatchLead = await post('/pool/lead/batch-delete', admin.headers, {
+  poolId: scopedLeadPool.id,
+  ids: [batchLead.id],
+})
+check('批量领取临时线索可清理', deletedBatchLead.success === 1)
 const deletedScopedLeadPool = await deletePoolFixture('lead', admin.user, scopedLeadPool.id)
 check('专属临时线索池可清理', deletedScopedLeadPool)
 
 const autoRecyclePool = await createPoolFixture('lead', admin.user, {
   name: `冒烟自动回收池-${stamp}`,
-  scopeIds: [`user:${sales.user.id}`],
+  scopeIds: [sales.user.id],
   autoRecycle: true,
   recycleRule: {
     operator: 'AND',
@@ -801,25 +806,35 @@ check('W3.4 自动回收直接模型夹具可清理', deletedAutoRecyclePool)
 
 const reclaimLeadPool = await createPoolFixture('lead', admin.user, {
   name: `冒烟再次领取线索池-${stamp}`,
-  scopeIds: [`user:${sales.user.id}`],
+  scopeIds: [sales.user.id],
   pickRule: {
     limitDailyPick: false,
     limitPreviousOwner: false,
     limitNewData: false,
   },
 })
-const lead = await post('/leads', admin.headers, {
+const lead = await post('/lead/add', admin.headers, {
   name: `冒烟线索-${stamp}`,
-  contactName: '测试联系人',
-  toPool: true,
+  contact: '测试联系人',
 })
-check('创建池内线索', lead.inPool === true)
-const claimed = await post(`/leads/${lead.id}/claim`, sales.headers)
-check('专员领取线索', Boolean(claimed.name))
-const movedBack = await post(`/leads/${lead.id}/to-pool`, manager.headers, {
+const movedToPool = await post('/lead/to-pool', admin.headers, {
+  id: lead.id,
   poolId: reclaimLeadPool.id,
 })
-check('主管将线索退回指定线索池', movedBack.poolId === reclaimLeadPool.id)
+const pooledLead = await smokePrisma.clue.findUnique({ where: { id: lead.id } })
+check('创建池内线索', Boolean(movedToPool) && pooledLead?.poolId === reclaimLeadPool.id)
+const claimed = await post('/pool/lead/assign', admin.headers, {
+  clueId: lead.id,
+  assignUserId: sales.user.id,
+})
+const claimedLead = await smokePrisma.clue.findUnique({ where: { id: lead.id } })
+check('管理员从线索池分配给专员', Boolean(claimed) && claimedLead?.owner === sales.user.id)
+await post('/lead/to-pool', admin.headers, {
+  id: lead.id,
+  poolId: reclaimLeadPool.id,
+})
+const movedBack = await smokePrisma.clue.findUnique({ where: { id: lead.id } })
+check('管理员将线索退回指定线索池', movedBack?.poolId === reclaimLeadPool.id)
 const movedLeadNotifications = await get('/notifications?page=1&pageSize=100', sales.headers)
 check(
   'W2.4 人工移池使用 CLUE_MOVED_POOL 通知原负责人',
@@ -827,7 +842,7 @@ check(
     (item) => item.title === '线索已移入线索池' && item.content?.includes(`冒烟线索-${stamp}`),
   ),
 )
-const ownerHistory = await get(`/leads/${lead.id}/owner-history`, sales.headers)
+const ownerHistory = await get(`/lead/owner/history/list/${lead.id}`, admin.headers)
 check(
   '线索负责人历史',
   Array.isArray(ownerHistory) &&
@@ -838,8 +853,12 @@ check(
         typeof item.endedAt === 'string',
     ),
 )
-const reclaimed = await post(`/leads/${lead.id}/claim`, sales.headers)
-check('专员再次领取线索', Boolean(reclaimed.name))
+const reclaimed = await post('/pool/lead/assign', admin.headers, {
+  clueId: lead.id,
+  assignUserId: sales.user.id,
+})
+const reclaimedLead = await smokePrisma.clue.findUnique({ where: { id: lead.id } })
+check('管理员再次从池分配给专员', Boolean(reclaimed) && reclaimedLead?.owner === sales.user.id)
 check('再次领取后临时线索池可清理', await deletePoolFixture('lead', admin.user, reclaimLeadPool.id))
 await post('/follow-ups', sales.headers, {
   targetType: 'lead',
@@ -847,7 +866,7 @@ await post('/follow-ups', sales.headers, {
   type: '电话',
   content: '冒烟跟进',
 })
-const converted = await post('/leads/transform', manager.headers, {
+const converted = await post('/lead/transform', admin.headers, {
   clueId: lead.id,
   oppCreated: true,
   oppName: `冒烟商机-${stamp}`,
@@ -863,7 +882,7 @@ check(
       (item) => item.title === '线索已转换为商机' && item.content?.includes(`冒烟商机-${stamp}`),
     ),
 )
-const convertedLead = await get(`/leads/${lead.id}`, sales.headers)
+const convertedLead = await get(`/lead/get/${lead.id}`, sales.headers)
 check(
   'R4 自动转换写 transitionType / transitionId',
   convertedLead.transitionType === 'CUSTOMER' &&
@@ -879,14 +898,17 @@ const convertedCustomerFollows = await get(
 )
 check(
   'R4 转换复制跟进记录且保留原线索记录',
-  convertedLeadFollows.some((item) => item.content === '冒烟跟进') &&
+  Array.isArray(convertedLeadFollows) &&
+    convertedLeadFollows.some((item) => item.content === '冒烟跟进') &&
+    Array.isArray(convertedCustomerFollows) &&
     convertedCustomerFollows.some((item) => item.content === '冒烟跟进'),
 )
 const convertedContacts = await get(`/contacts/list/${converted.customerId}`, sales.headers)
 const convertedOpportunity = await get(`/opportunities/${converted.opportunityId}`, sales.headers)
 check(
   'R4 自动转换联系人并绑定商机',
-  convertedContacts.some((item) => item.id === converted.contactId) &&
+  Array.isArray(convertedContacts) &&
+    convertedContacts.some((item) => item.id === converted.contactId) &&
     convertedOpportunity.contactId === converted.contactId,
 )
 const convertedCustomerDetail = await get(`/customers/${converted.customerId}`, sales.headers)
@@ -970,9 +992,9 @@ check('W2.2 负责人可删除跟进计划', removedFollowPlan.ok)
 const r4RelationCustomer = await post('/customers', manager.headers, {
   name: `R4关联客户-${stamp}`,
 })
-const r4RelationLead = await post('/leads', sales.headers, {
+const r4RelationLead = await post('/lead/add', sales.headers, {
   name: `R4关联线索-${stamp}`,
-  contactName: `R4关联联系人-${stamp}`,
+  contact: `R4关联联系人-${stamp}`,
   phone: `138${phoneSuffix}`,
 })
 await post('/follow-ups', sales.headers, {
@@ -981,12 +1003,12 @@ await post('/follow-ups', sales.headers, {
   type: '电话',
   content: `R4关联跟进-${stamp}`,
 })
-const r4RelationResult = await post('/leads/re-transition/account', manager.headers, {
+const r4RelationResult = await post('/lead/re-transition/account', manager.headers, {
   clueIds: [r4RelationLead.id],
   customerId: r4RelationCustomer.id,
 })
 check('R4 关联已有客户成功', r4RelationResult.success === 1)
-const r4RelationLeadDetail = await get(`/leads/${r4RelationLead.id}`, manager.headers)
+const r4RelationLeadDetail = await get(`/lead/get/${r4RelationLead.id}`, manager.headers)
 check(
   'R4 已有客户关联写 transition',
   r4RelationLeadDetail.transitionType === 'CUSTOMER' &&
@@ -1018,11 +1040,11 @@ await post(`/customers/${r4ReadOnlyCustomer.id}/team`, manager.headers, {
   userId: sales.user.id,
   collaborationType: 'READ_ONLY',
 })
-const r4ReadOnlyLead = await post('/leads', sales.headers, {
+const r4ReadOnlyLead = await post('/lead/add', sales.headers, {
   name: `R4只读关联线索-${stamp}`,
 })
-const r4CandidatePage = await post('/leads/transition/account/page', sales.headers, {
-  page: 1,
+const r4CandidatePage = await post('/lead/transition/account/page', sales.headers, {
+  current: 1,
   pageSize: 50,
   keyword: `R4只读客户-${stamp}`,
 })
@@ -1032,7 +1054,7 @@ check(
     (item) => item.id === r4ReadOnlyCustomer.id && item.selectable === false,
   ),
 )
-const r4ReadOnlyDenied = await request('POST', '/leads/re-transition/account', sales.headers, {
+const r4ReadOnlyDenied = await request('POST', '/lead/re-transition/account', sales.headers, {
   clueIds: [r4ReadOnlyLead.id],
   customerId: r4ReadOnlyCustomer.id,
 })
@@ -1055,10 +1077,10 @@ check(
     (item) => item.title === '客户已移入公海' && item.content?.includes(`R4公海客户-${stamp}`),
   ),
 )
-const r4SeaLead = await post('/leads', sales.headers, {
+const r4SeaLead = await post('/lead/add', sales.headers, {
   name: `R4公海关联线索-${stamp}`,
 })
-const r4SeaResult = await post('/leads/re-transition/account', sales.headers, {
+const r4SeaResult = await post('/lead/re-transition/account', sales.headers, {
   clueIds: [r4SeaLead.id],
   customerId: r4SeaCustomer.id,
 })
@@ -1093,12 +1115,12 @@ if (r4CustomerNameField && r4ContactNameField) {
     await request('PATCH', `/metadata/fields/${r4ContactNameField.id}`, admin.headers, {
       config: { ...originalContactNameConfig, unique: true },
     })
-    const r4UniqueLead = await post('/leads', sales.headers, {
+    const r4UniqueLead = await post('/lead/add', sales.headers, {
       name: `R4唯一复用客户-${stamp}`,
-      contactName: `R4唯一联系人-${stamp}`,
+      contact: `R4唯一联系人-${stamp}`,
       phone: r4UniqueContact.phone,
     })
-    const r4UniqueTransform = await post('/leads/transform', sales.headers, {
+    const r4UniqueTransform = await post('/lead/transform', sales.headers, {
       clueId: r4UniqueLead.id,
       oppCreated: false,
     })
@@ -1135,10 +1157,14 @@ const savedLeadView = await post('/lead/view/add', admin.headers, {
   ],
 })
 check('创建 Cordys UserView', Boolean(savedLeadView.id))
-const savedLeadList = await get(`/leads?pageSize=100&viewId=${savedLeadView.id}`, admin.headers)
+const savedLeadList = await post('/lead/page', admin.headers, {
+  current: 1,
+  pageSize: 100,
+  viewId: savedLeadView.id,
+})
 check(
   'Cordys UserView 条件参与列表查询',
-  Array.isArray(savedLeadList.items) && savedLeadList.items.some((item) => item.id === lead.id),
+  Array.isArray(savedLeadList.list) && savedLeadList.list.some((item) => item.id === lead.id),
 )
 const fixedSavedView = await request('GET', `/lead/view/fixed/${savedLeadView.id}`, admin.headers)
 check('Cordys UserView 固定状态可切换', fixedSavedView.ok)
@@ -1360,38 +1386,39 @@ check(
 // 4.2 R1 批量字段修改 / 删除：字段 ID/key、owner 副作用、客户引用保护
 const leadFields = await get('/metadata/lead/fields', admin.headers)
 const leadContactField = leadFields.find((field) => field.key === 'contact')
-const leadBatchA = await post('/leads', admin.headers, {
+const leadBatchA = await post('/lead/add', admin.headers, {
   name: `批量编辑线索A-${stamp}`,
-  ownerId: sales.user.id,
+  owner: sales.user.id,
 })
-const leadBatchB = await post('/leads', admin.headers, {
+const leadBatchB = await post('/lead/add', admin.headers, {
   name: `批量编辑线索B-${stamp}`,
-  ownerId: sales.user.id,
+  owner: sales.user.id,
 })
 const leadBatchIds = [leadBatchA.id, leadBatchB.id]
 const leadBatchContactName = `批量联系人-${stamp}`
-const leadBatchFieldResult = await post('/leads/batch/update', admin.headers, {
+const leadBatchFieldResult = await post('/lead/batch/update', admin.headers, {
   ids: leadBatchIds,
   fieldId: leadContactField?.id,
   fieldValue: leadBatchContactName,
 })
-const leadBatchRows = await get(
-  `/leads?pageSize=20&keyword=${encodeURIComponent('批量编辑线索')}`,
-  admin.headers,
-)
+const leadBatchRows = await post('/lead/page', admin.headers, {
+  current: 1,
+  pageSize: 20,
+  keyword: '批量编辑线索',
+})
 check(
   'Lead 批量字段修改支持字段 ID',
   leadBatchFieldResult.success === 2 &&
-    leadBatchRows.items
+    leadBatchRows.list
       ?.filter((item) => leadBatchIds.includes(item.id))
       .every((item) => item.contactName === leadBatchContactName),
 )
-const leadBatchOwnerResult = await post('/leads/batch/update', admin.headers, {
+const leadBatchOwnerResult = await post('/lead/batch/update', admin.headers, {
   ids: leadBatchIds,
   fieldId: 'owner',
   fieldValue: admin.user.id,
 })
-const leadBatchHistory = await get(`/leads/${leadBatchA.id}/owner-history`, admin.headers)
+const leadBatchHistory = await get(`/lead/owner/history/list/${leadBatchA.id}`, admin.headers)
 check(
   'Lead owner 批改支持字段 key 且写负责人历史',
   leadBatchOwnerResult.success === 2 &&
@@ -1403,31 +1430,33 @@ const leadBatchCustomField = await post('/metadata/lead/fields', admin.headers, 
   type: 'text',
 })
 const leadBatchCustomValue = `R1线索自定义值-${stamp}`
-const leadCustomBatchResult = await post('/leads/batch/update', admin.headers, {
+const leadCustomBatchResult = await post('/lead/batch/update', admin.headers, {
   ids: leadBatchIds,
   fieldId: leadBatchCustomField.key,
   fieldValue: leadBatchCustomValue,
 })
-const leadCustomBatchRows = await get(
-  `/leads?pageSize=20&keyword=${encodeURIComponent('批量编辑线索')}`,
-  admin.headers,
-)
+const leadCustomBatchRows = await post('/lead/page', admin.headers, {
+  current: 1,
+  pageSize: 20,
+  keyword: '批量编辑线索',
+})
 check(
   'Lead 自定义字段支持批量修改',
   leadCustomBatchResult.success === 2 &&
-    leadCustomBatchRows.items
+    leadCustomBatchRows.list
       ?.filter((item) => leadBatchIds.includes(item.id))
       .every((item) => item.customData?.[leadBatchCustomField.key] === leadBatchCustomValue),
 )
-const leadBatchDelete = await post('/leads/batch/delete', admin.headers, { ids: leadBatchIds })
-const deletedLeadBatchRows = await get(
-  `/leads?pageSize=20&keyword=${encodeURIComponent('批量编辑线索')}`,
-  admin.headers,
-)
+const leadBatchDelete = await post('/lead/batch/delete', admin.headers, leadBatchIds)
+const deletedLeadBatchRows = await post('/lead/page', admin.headers, {
+  current: 1,
+  pageSize: 20,
+  keyword: '批量编辑线索',
+})
 check(
   'Lead 批量删除同步清理临时数据',
   leadBatchDelete.success === 2 &&
-    !deletedLeadBatchRows.items?.some((item) => leadBatchIds.includes(item.id)),
+    !deletedLeadBatchRows.list?.some((item) => leadBatchIds.includes(item.id)),
 )
 await request('DELETE', `/metadata/fields/${leadBatchCustomField.id}`, admin.headers)
 
@@ -1507,77 +1536,77 @@ await request('DELETE', `/metadata/fields/${customerBatchCustomField.id}`, admin
 // 4.3 R1 池/公海独立批量权限：功能权限 + Pool Scope 两层同时成立
 const restrictedLeadPool = await createPoolFixture('lead', admin.user, {
   name: `R1受限线索池-${stamp}`,
-  scopeIds: [`user:${sales.user.id}`],
+  scopeIds: [sales.user.id],
 })
-const restrictedPoolLead = await post('/leads', admin.headers, {
+const restrictedPoolLead = await post('/lead/add', admin.headers, {
   name: `R1受限池线索-${stamp}`,
-  toPool: true,
+})
+await post('/lead/to-pool', admin.headers, {
+  id: restrictedPoolLead.id,
   poolId: restrictedLeadPool.id,
 })
-const salesPoolUpdateDenied = await request('POST', '/leads/pool/batch/update', sales.headers, {
+const salesPoolUpdateDenied = await request('POST', '/pool/lead/batch-update', sales.headers, {
   poolId: restrictedLeadPool.id,
   ids: [restrictedPoolLead.id],
   fieldId: leadContactField?.id,
   fieldValue: '无池功能权限',
 })
 check('线索池：Scope 成员缺少独立池 UPDATE 权限时拒绝', salesPoolUpdateDenied.status === 403)
-const managerPoolMemberDenied = await request('POST', '/leads/pool/batch/update', manager.headers, {
+const managerPoolMemberDenied = await request('POST', '/pool/lead/batch-update', manager.headers, {
   poolId: restrictedLeadPool.id,
   ids: [restrictedPoolLead.id],
   fieldId: leadContactField?.id,
   fieldValue: '无池成员权限',
 })
 check('线索池：有池 UPDATE 权限但不是池成员时拒绝', managerPoolMemberDenied.status === 403)
-await request('DELETE', `/leads/${restrictedPoolLead.id}`, admin.headers)
+await request('GET', `/pool/lead/delete/${restrictedPoolLead.id}`, admin.headers)
 await deletePoolFixture('lead', admin.user, restrictedLeadPool.id)
 
 const managerLeadPool = await createPoolFixture('lead', admin.user, {
   name: `R1主管线索池-${stamp}`,
-  scopeIds: [`user:${manager.user.id}`],
+  scopeIds: [manager.user.id],
 })
-const poolLeadA = await post('/leads', admin.headers, {
+const poolLeadA = await post('/lead/add', admin.headers, {
   name: `R1池批改线索A-${stamp}`,
-  toPool: true,
-  poolId: managerLeadPool.id,
 })
-const poolLeadB = await post('/leads', admin.headers, {
+const poolLeadB = await post('/lead/add', admin.headers, {
   name: `R1池批改线索B-${stamp}`,
-  toPool: true,
-  poolId: managerLeadPool.id,
 })
-const poolLeadUpdate = await post('/leads/pool/batch/update', manager.headers, {
+await post('/lead/to-pool', admin.headers, { id: poolLeadA.id, poolId: managerLeadPool.id })
+await post('/lead/to-pool', admin.headers, { id: poolLeadB.id, poolId: managerLeadPool.id })
+const poolLeadUpdate = await post('/pool/lead/batch-update', manager.headers, {
   poolId: managerLeadPool.id,
   ids: [poolLeadA.id, poolLeadB.id],
   fieldId: leadContactField?.id,
   fieldValue: `池批量联系人-${stamp}`,
 })
 check('线索池：独立权限 + Scope 命中时可批量修改', poolLeadUpdate.success === 2)
-const poolLeadOwner = await post('/leads', admin.headers, {
+const poolLeadOwner = await post('/lead/add', admin.headers, {
   name: `R1池负责人批改-${stamp}`,
-  toPool: true,
-  poolId: managerLeadPool.id,
 })
-const poolLeadAssignByUpdate = await post('/leads/pool/batch/update', manager.headers, {
+await post('/lead/to-pool', admin.headers, { id: poolLeadOwner.id, poolId: managerLeadPool.id })
+const poolLeadAssignByUpdate = await post('/pool/lead/batch-update', manager.headers, {
   poolId: managerLeadPool.id,
   ids: [poolLeadOwner.id],
   fieldId: 'owner',
   fieldValue: manager.user.id,
 })
-const assignedPoolLeadRows = await get(
-  `/leads?pageSize=20&keyword=${encodeURIComponent(`R1池负责人批改-${stamp}`)}`,
-  manager.headers,
-)
+const assignedPoolLeadRows = await post('/lead/page', manager.headers, {
+  current: 1,
+  pageSize: 20,
+  keyword: `R1池负责人批改-${stamp}`,
+})
 check(
   '线索池：owner 批改复用分配并离开池',
   poolLeadAssignByUpdate.success === 1 &&
-    assignedPoolLeadRows.items?.some((item) => item.id === poolLeadOwner.id),
+    assignedPoolLeadRows.list?.some((item) => item.id === poolLeadOwner.id),
 )
-const poolLeadDelete = await post('/leads/pool/batch/delete', manager.headers, {
+const poolLeadDelete = await post('/pool/lead/batch-delete', manager.headers, {
   poolId: managerLeadPool.id,
   ids: [poolLeadA.id, poolLeadB.id],
 })
 check('线索池：独立 DELETE 权限可批量删除同池记录', poolLeadDelete.success === 2)
-await request('DELETE', `/leads/${poolLeadOwner.id}`, manager.headers)
+await request('GET', `/lead/delete/${poolLeadOwner.id}`, manager.headers)
 await deletePoolFixture('lead', admin.user, managerLeadPool.id)
 
 const managerCustomerPool = await createPoolFixture('customer', admin.user, {
@@ -1655,7 +1684,7 @@ const leadOwnerField = leadImportFields.find((field) => field.key === 'owner')
 const customerNameImportField = fields.find((field) => field.key === 'name')
 const customerPhoneImportField = fields.find((field) => field.key === 'cf_phone')
 
-const leadTemplateResponse = await fetch(`${base}/leads/import/template?importType=ADD`, {
+const leadTemplateResponse = await fetch(`${base}/lead/template/download?importType=ADD`, {
   headers: { Authorization: manager.headers.Authorization },
 })
 const leadTemplateSheet = leadTemplateResponse.ok
@@ -1675,7 +1704,7 @@ const leadAddXlsx = await buildXlsx(
   [[r2LeadName, `R2联系人-${stamp}`]],
 )
 const leadAddPrecheckRes = await postXlsx(
-  '/leads/import/pre-check',
+  '/lead/import/pre-check',
   manager.headers,
   leadAddXlsx,
   'ADD',
@@ -1686,13 +1715,14 @@ check(
   leadAddPrecheckRes.ok && leadAddPrecheck.successCount === 1 && leadAddPrecheck.failCount === 0,
   JSON.stringify(leadAddPrecheck),
 )
-const leadAddImportRes = await postXlsx('/leads/import', manager.headers, leadAddXlsx, 'ADD')
+const leadAddImportRes = await postXlsx('/lead/import', manager.headers, leadAddXlsx, 'ADD')
 const leadAddImport = await leadAddImportRes.json()
-const r2LeadRows = await get(
-  `/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`,
-  manager.headers,
-)
-const r2Lead = r2LeadRows.items?.find((item) => item.name === r2LeadName)
+const r2LeadRows = await post('/lead/page', manager.headers, {
+  current: 1,
+  pageSize: 20,
+  keyword: r2LeadName,
+})
+const r2Lead = r2LeadRows.list?.find((item) => item.name === r2LeadName)
 check(
   'R2 Lead ADD xlsx 正式导入',
   leadAddImportRes.ok && leadAddImport.successCount === 1 && Boolean(r2Lead?.id),
@@ -1705,30 +1735,31 @@ const leadUpdateXlsx = await buildXlsx(
   [[r2Lead?.id, updatedLeadContact]],
 )
 const leadUpdatePrecheckRes = await postXlsx(
-  '/leads/import/pre-check',
+  '/lead/import/pre-check',
   manager.headers,
   leadUpdateXlsx,
   'UPDATE',
 )
 const leadUpdatePrecheck = await leadUpdatePrecheckRes.json()
 const leadUpdateImportRes = await postXlsx(
-  '/leads/import',
+  '/lead/import',
   manager.headers,
   leadUpdateXlsx,
   'UPDATE',
 )
 const leadUpdateImport = await leadUpdateImportRes.json()
-const updatedR2LeadRows = await get(
-  `/leads?pageSize=20&keyword=${encodeURIComponent(r2LeadName)}`,
-  manager.headers,
-)
+const updatedR2LeadRows = await post('/lead/page', manager.headers, {
+  current: 1,
+  pageSize: 20,
+  keyword: r2LeadName,
+})
 check(
   'R2 Lead UPDATE 以唯一ID更新',
   leadUpdatePrecheckRes.ok &&
     leadUpdatePrecheck.successCount === 1 &&
     leadUpdateImportRes.ok &&
     leadUpdateImport.successCount === 1 &&
-    updatedR2LeadRows.items?.some(
+    updatedR2LeadRows.list?.some(
       (item) => item.id === r2Lead?.id && item.contactName === updatedLeadContact,
     ),
 )
@@ -1799,7 +1830,7 @@ check(
 
 const r2LeadPool = await createPoolFixture('lead', admin.user, {
   name: `R2导入线索池-${stamp}`,
-  scopeIds: [`user:${manager.user.id}`],
+  scopeIds: [manager.user.id],
 })
 const r2CustomerPool = await createPoolFixture('customer', admin.user, {
   name: `R2导入客户公海-${stamp}`,
@@ -1807,7 +1838,7 @@ const r2CustomerPool = await createPoolFixture('customer', admin.user, {
 })
 
 const poolLeadTemplateResponse = await fetch(
-  `${base}/leads/pool/import/template?importType=ADD&poolId=${r2LeadPool.id}`,
+  `${base}/pool/lead/template/download?importType=ADD`,
   { headers: { Authorization: manager.headers.Authorization } },
 )
 const poolLeadTemplateSheet = poolLeadTemplateResponse.ok
@@ -1840,7 +1871,7 @@ check(
 const r2PoolLeadName = `R2池导入线索-${stamp}`
 const poolLeadXlsx = await buildXlsx([leadNameField?.label ?? '线索名称'], [[r2PoolLeadName]])
 const poolLeadPrecheckRes = await postXlsx(
-  '/leads/pool/import/pre-check',
+  '/pool/lead/import/pre-check',
   manager.headers,
   poolLeadXlsx,
   'ADD',
@@ -1848,18 +1879,22 @@ const poolLeadPrecheckRes = await postXlsx(
 )
 const poolLeadPrecheck = await poolLeadPrecheckRes.json()
 const poolLeadImportRes = await postXlsx(
-  '/leads/pool/import',
+  '/pool/lead/import',
   manager.headers,
   poolLeadXlsx,
   'ADD',
   r2LeadPool.id,
 )
 const poolLeadImport = await poolLeadImportRes.json()
-const r2PoolLeadRows = await get(
-  `/leads?scope=pool&poolId=${r2LeadPool.id}&pageSize=20&keyword=${encodeURIComponent(r2PoolLeadName)}`,
-  manager.headers,
-)
-const r2PoolLead = r2PoolLeadRows.items?.find((item) => item.name === r2PoolLeadName)
+// manager 在当前历史 seed 中有 leadPool:import/export/update/delete，但没有 leadPool:read；
+// 导入权限仍由 manager 验证，导入结果改由管理员回查，避免把 read 权限混入导入验收。
+const r2PoolLeadRows = await post('/pool/lead/page', admin.headers, {
+  current: 1,
+  pageSize: 20,
+  poolId: r2LeadPool.id,
+  keyword: r2PoolLeadName,
+})
+const r2PoolLead = r2PoolLeadRows.list?.find((item) => item.name === r2PoolLeadName)
 check(
   'R2 线索池 xlsx 导入强制保持池归属且无负责人',
   poolLeadPrecheck.successCount === 1 &&
@@ -1896,7 +1931,7 @@ check(
 )
 
 const deniedPoolImport = await postXlsx(
-  '/leads/pool/import/pre-check',
+  '/pool/lead/import/pre-check',
   sales.headers,
   poolLeadXlsx,
   'ADD',
@@ -1906,9 +1941,15 @@ check('R2 池导入要求独立功能权限', deniedPoolImport.status === 403)
 
 const leadExportAllRes = await request(
   'POST',
-  `/leads/export/all?keyword=${encodeURIComponent(r2LeadName)}`,
+  '/lead/export',
   manager.headers,
-  { fileName: `R2线索导出-${stamp}`, headList: ['name', 'contact', 'status'] },
+  {
+    current: 1,
+    pageSize: 100,
+    keyword: r2LeadName,
+    fileName: `R2线索导出-${stamp}`,
+    headList: ['name', 'contact', 'status'],
+  },
 )
 const leadExportTask = await leadExportAllRes.json()
 check(
@@ -1945,9 +1986,10 @@ check(
 
 const poolLeadExportRes = await request(
   'POST',
-  `/leads/pool/export/select?poolId=${r2LeadPool.id}`,
+  '/pool/lead/export-select',
   manager.headers,
   {
+    poolId: r2LeadPool.id,
     fileName: `R2池线索导出-${stamp}`,
     headList: ['name', 'createdAt'],
     ids: [r2PoolLead.id],
@@ -1991,9 +2033,15 @@ check(
 )
 const deniedPoolExport = await request(
   'POST',
-  `/leads/pool/export/all?poolId=${r2LeadPool.id}`,
+  '/pool/lead/export-all',
   sales.headers,
-  { fileName: `R2禁止导出-${stamp}`, headList: ['name'] },
+  {
+    poolId: r2LeadPool.id,
+    current: 1,
+    pageSize: 20,
+    fileName: `R2禁止导出-${stamp}`,
+    headList: ['name'],
+  },
 )
 check('R2 池导出要求独立功能权限', deniedPoolExport.status === 403)
 
@@ -2001,10 +2049,10 @@ await request('DELETE', `/export-tasks/${leadExportTask.id}`, manager.headers)
 await request('DELETE', `/export-tasks/${poolLeadExportTask.id}`, manager.headers)
 await request('DELETE', `/export-tasks/${customerExportTask.id}`, manager.headers)
 await request('DELETE', `/export-tasks/${poolCustomerExportTask.id}`, manager.headers)
-if (r2Lead?.id) await request('DELETE', `/leads/${r2Lead.id}`, manager.headers)
+if (r2Lead?.id) await request('GET', `/lead/delete/${r2Lead.id}`, manager.headers)
 if (r2Customer?.id) await request('DELETE', `/customers/${r2Customer.id}`, manager.headers)
 if (r2PoolLead?.id) {
-  await post('/leads/pool/batch/delete', manager.headers, {
+  await post('/pool/lead/batch-delete', manager.headers, {
     poolId: r2LeadPool.id,
     ids: [r2PoolLead.id],
   })
