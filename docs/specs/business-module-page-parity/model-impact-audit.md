@@ -147,7 +147,7 @@ Mapper 证明 `scope_id` 是 JSON/范围 token 文本而不是 PostgreSQL 数组
   - `apps/api/src/modules/members/members.service.ts`
   - `apps/api/src/modules/pool-rules/pool-recycle.service.ts`
   - `apps/api/src/modules/pool-rules/resource-pools.service.ts`
-- DTO/shared/Web：`apps/api/src/modules/leads/dto/lead.dto.ts`、`packages/shared/src/sales.ts`、`apps/web/src/api/sales.ts`、`apps/web/src/views/LeadsView.vue`、Mobile Leads 页面与转换组件。
+- DTO/shared/Web：`apps/api/src/modules/leads/dto/lead.dto.ts`、`packages/shared/src/sales.ts`、`apps/web/src/api/sales.ts`、`apps/web/src/views/leads/LeadsView.vue`、`apps/web/src/views/leads/mobile/` 下的 Leads 页面与转换组件。
 - Seed/测试：现有 Seed 没有线索样例；`scripts/smoke.mjs` 直接断言 `status/inPool/customData`，必须重写。
 
 ### 5.2 Contact
@@ -205,10 +205,10 @@ Mapper 证明 `scope_id` 是 JSON/范围 token 文本而不是 PostgreSQL 数组
 | 5 个统计接口     | `dashboard.controller.ts` 的 `summary/funnel/ranking/trend/conversion` | W3.4.1 首页统计改用 `/api/home/statistic/*`；旧路径删除                                    |
 | 统计 Service     | `dashboard.service.ts`                                                 | 线索统计切换 Clue；首页需要的逻辑按 Cordys Home Service 重建，不能整体保留成 Dashboard API |
 | Web API          | `apps/web/src/api/dashboard.ts`                                        | 首页与仪表板分别建立 API，不保留旧 5 接口                                                  |
-| 首页             | `apps/web/src/views/DashboardView.vue`                                 | W3.4.1 重建 Cordys 普通工作台                                                              |
-| 固定报表         | `apps/web/src/views/ReportsView.vue`                                   | W3.4.4 替换为目录、资源、收藏、排序、嵌入/跳转页面                                         |
+| 首页             | `apps/web/src/views/home/DashboardView.vue`                            | W3.4.1 重建 Cordys 普通工作台                                                              |
+| 固定报表         | `apps/web/src/views/home/ReportsView.vue`                              | W3.4.4 替换为目录、资源、收藏、排序、嵌入/跳转页面                                         |
 | 路由/菜单        | `apps/web/src/router/index.ts`、动态菜单配置                           | `/dashboard` 仍是首页；`/reports` 仍是仪表板菜单入口，但组件和业务含义直接替换             |
-| Smoke/Mobile API | `scripts/smoke.mjs`、`apps/web/src/mobile/api/index.ts`                | 删除旧统计断言；Mobile 不新增仪表板，但既有首页 API 引用必须回归                           |
+| Smoke/Mobile API | `scripts/smoke.mjs`、`apps/web/src/api/mobile.ts`                      | 删除旧统计断言；Mobile 不新增仪表板，但既有首页 API 引用必须回归                           |
 
 ## 7. Seed、测试与公共调用方影响
 

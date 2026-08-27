@@ -8,7 +8,7 @@
 - Web 图标统一使用 `lucide-vue-next`，按需导入组件；禁止新增 emoji、Unicode 符号、Element Plus Icons、Vant 内置图标或复制 Cordys 图标资源。无法可靠对应时使用文字按钮/文字标签。
 - 不复制 Cordys 的前端框架或后端技术结构，只迁移业务行为与视觉/交互语义。
 - 每个任务完成时，回复中必须给出“当前可手工测试内容”，至少包含访问入口、操作步骤、预期结果；不得只汇报自动化测试。
-- PC 与 Mobile 统一维护在 `apps/web` 一个 Vite/Vue 工程内：PC 页面在 `src/views`，Mobile 页面在 `src/mobile`；根路由依据当前 viewport 自动选择 PC/Mobile 页面树，不提供 query 参数强制切端。
+- PC 与 Mobile 统一维护在 `apps/web` 一个 Vite/Vue 工程内。所有**路由页面**统一放在 `src/views/<业务模块>/`；同一模块的移动端路由页面放在该模块的 `mobile/` 子目录，例如 `src/views/leads/LeadsView.vue` 与 `src/views/leads/mobile/LeadsView.vue`。不再维护 `src/mobile/` 根目录；移动专用 API、组件、Layout、样式分别归入 `src/api`、`src/components`、`src/layouts`、`src/styles`，文件名/组件名使用 `Mobile` 前缀区分。根路由依据当前 viewport 自动选择 PC/Mobile 页面树，不提供 query 参数强制切端。
 
 ## 文档正确性与线性维护
 
@@ -57,7 +57,9 @@
 
 ## 前端约定（单 Web 工程：PC + Mobile）
 
-- PC 页面放 `apps/web/src/views/`；Mobile 页面放 `apps/web/src/mobile/views/`；共用 API 优先放 `src/api/<域>.ts`，仅移动端组合接口可放 `src/mobile/api/`。
+- 路由页面必须按业务模块归档到 `apps/web/src/views/<module>/`，禁止继续把 `*View.vue` 散放在 `src/views` 根目录；移动端路由页放同模块 `mobile/` 子目录。系统设置等大模块可继续按子域细分，例如 `src/views/system/enterprise-settings/SettingsView.vue` + `components/`。
+- 共用 API 优先放 `src/api/<域>.ts`；移动端专用组合接口同样放在 `src/api/`，文件名体现 `mobile` 语义。跨页面可复用的响应式状态、加载流程、监听/副作用和 UI 行为必须优先抽成 `src/composables/useXxx.ts`；页面只保留页面编排与业务交互，不重复实现相同品牌加载、主题应用、筛选同步等逻辑。
+- 前端布局与视觉样式优先使用项目已配置的 UnoCSS + presetWind4 utility；除全局样式、第三方组件无法通过 utility 覆盖的底层规则外，不新增页面级 scoped CSS 来维护普通布局、尺寸、间距、颜色和响应式样式。
 - 根路由通过 `src/utils/client-mode.ts` 判断 viewport；桌面进入 PC layout，移动 viewport 进入 Mobile layout。Chrome DevTools 切换设备模式后刷新页面即可验证移动端。
 - PC 使用 Element Plus，Mobile 使用 Vant；同一业务模块的两端交互分别以 Cordys 对应端源码为准，不允许为了“组件复用”牺牲布局和功能一致性。
 - PC 与 Mobile 的业务图标统一从 `lucide-vue-next` 按需导入，默认使用 `size=20`、`stroke-width=1.8`；仅组件库自身的状态反馈图标可保留。

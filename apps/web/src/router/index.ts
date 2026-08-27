@@ -27,62 +27,64 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () =>
-        isMobileClient() ? import('@/mobile/views/LoginView.vue') : import('@/views/LoginView.vue'),
+        isMobileClient()
+          ? import('@/views/auth/mobile/LoginView.vue')
+          : import('@/views/auth/LoginView.vue'),
       meta: { public: true, title: '登录', client: 'both' },
     },
     {
       path: '/login/wecom/callback',
       name: 'wecom-login-callback',
-      component: () => import('@/views/WeComCallbackView.vue'),
+      component: () => import('@/views/auth/WeComCallbackView.vue'),
       meta: { public: true, title: '企业微信登录', client: 'both' },
     },
     {
       path: '/login/wecom/workbench',
       name: 'wecom-workbench-login',
-      component: () => import('@/views/WeComWorkbenchLoginView.vue'),
+      component: () => import('@/views/auth/WeComWorkbenchLoginView.vue'),
       meta: { public: true, title: '企业微信工作台登录', client: 'both' },
     },
     {
       path: '/leads/:id/convert',
       name: 'mobile-lead-convert',
-      component: () => import('@/mobile/views/LeadConvertView.vue'),
+      component: () => import('@/views/leads/mobile/LeadConvertView.vue'),
       meta: { title: '转换线索', perm: 'lead:update', client: 'mobile' },
     },
     {
       path: '/customers/detail',
       name: 'mobile-customer-detail',
-      component: () => import('@/mobile/views/CustomerDetailView.vue'),
+      component: () => import('@/views/customers/mobile/CustomerDetailView.vue'),
       meta: { title: '客户详情', perm: 'menu:customer', client: 'mobile' },
     },
     {
       path: '/opportunities/detail',
       name: 'mobile-opportunity-detail',
-      component: () => import('@/mobile/views/OpportunityDetailView.vue'),
+      component: () => import('@/views/opportunities/mobile/OpportunityDetailView.vue'),
       meta: { title: '商机详情', perm: 'menu:opportunity', client: 'mobile' },
     },
     {
       path: '/',
       component: () =>
         isMobileClient()
-          ? import('@/mobile/layouts/TabbarLayout.vue')
+          ? import('@/layouts/MobileTabbarLayout.vue')
           : import('@/layouts/DefaultLayout.vue'),
       redirect: () => (isMobileClient() ? '/home' : '/dashboard'),
       children: [
         {
           path: 'dashboard',
           name: 'dashboard',
-          component: () => import('@/views/DashboardView.vue'),
+          component: () => import('@/views/home/DashboardView.vue'),
           meta: { title: '工作台', perm: 'menu:dashboard', client: 'pc' },
         },
         {
           path: 'home',
           name: 'mobile-home',
-          component: () => import('@/mobile/views/HomeView.vue'),
+          component: () => import('@/views/home/mobile/HomeView.vue'),
           meta: { title: '工作台', client: 'mobile' },
         },
         {
           path: 'reports',
-          component: () => import('@/views/ReportsView.vue'),
+          component: () => import('@/views/home/ReportsView.vue'),
           meta: { title: '销售报表', perm: 'menu:dashboard', client: 'pc' },
         },
         {
@@ -90,14 +92,14 @@ const router = createRouter({
           name: 'leads',
           component: () =>
             isMobileClient()
-              ? import('@/mobile/views/LeadsView.vue')
-              : import('@/views/LeadsView.vue'),
+              ? import('@/views/leads/mobile/LeadsView.vue')
+              : import('@/views/leads/LeadsView.vue'),
           meta: { title: '线索管理', perm: 'menu:lead', client: 'both' },
         },
         {
           path: 'leads/pool',
           name: 'lead-pool',
-          component: () => import('@/views/LeadsView.vue'),
+          component: () => import('@/views/leads/LeadsView.vue'),
           meta: {
             title: '线索池',
             perm: 'menu:lead',
@@ -110,26 +112,26 @@ const router = createRouter({
           name: 'customers',
           component: () =>
             isMobileClient()
-              ? import('@/mobile/views/CustomersView.vue')
-              : import('@/views/CustomersView.vue'),
+              ? import('@/views/customers/mobile/CustomersView.vue')
+              : import('@/views/customers/CustomersView.vue'),
           meta: { title: '客户管理', perm: 'menu:customer', client: 'both' },
         },
         {
           path: 'contacts',
           name: 'contacts',
-          component: () => import('@/views/ContactsView.vue'),
+          component: () => import('@/views/contacts/ContactsView.vue'),
           meta: { title: '联系人', perm: 'contact:read', client: 'pc' },
         },
         {
           path: 'customers/open-sea',
           name: 'customer-open-sea',
-          component: () => import('@/views/CustomerPoolView.vue'),
+          component: () => import('@/views/customers/CustomerPoolView.vue'),
           meta: { title: '客户公海', perm: 'menu:customer', client: 'pc' },
         },
         {
           path: 'customers/:id',
           name: 'customer-detail',
-          component: () => import('@/views/CustomerDetailView.vue'),
+          component: () => import('@/views/customers/CustomerDetailView.vue'),
           meta: {
             title: '客户详情',
             perm: 'menu:customer',
@@ -140,27 +142,27 @@ const router = createRouter({
         {
           path: 'opportunities',
           name: 'opportunities',
-          component: () => import('@/views/OpportunitiesView.vue'),
+          component: () => import('@/views/opportunities/OpportunitiesView.vue'),
           meta: { title: '商机管理', perm: 'menu:opportunity', client: 'pc' },
         },
         {
           path: 'products',
-          component: () => import('@/views/ProductsView.vue'),
+          component: () => import('@/views/products/ProductsView.vue'),
           meta: { title: '产品管理', perm: 'menu:product', client: 'pc' },
         },
         {
           path: 'quotes',
-          component: () => import('@/views/QuotesView.vue'),
+          component: () => import('@/views/quotes/QuotesView.vue'),
           meta: { title: '报价管理', perm: 'menu:quote', client: 'pc' },
         },
         {
           path: 'contracts',
-          component: () => import('@/views/ContractsView.vue'),
+          component: () => import('@/views/contracts/ContractsView.vue'),
           meta: { title: '合同管理', perm: 'menu:contract', client: 'pc' },
         },
         {
           path: 'orders',
-          component: () => import('@/views/OrdersView.vue'),
+          component: () => import('@/views/orders/OrdersView.vue'),
           meta: { title: '订单管理', perm: 'menu:order', client: 'pc' },
         },
         {
@@ -168,8 +170,8 @@ const router = createRouter({
           name: 'approvals',
           component: () =>
             isMobileClient()
-              ? import('@/mobile/views/ApprovalsView.vue')
-              : import('@/views/ApprovalsView.vue'),
+              ? import('@/views/approvals/mobile/ApprovalsView.vue')
+              : import('@/views/approvals/ApprovalsView.vue'),
           meta: { title: '审批中心', perm: 'menu:approval', client: 'both' },
         },
         {
@@ -177,24 +179,24 @@ const router = createRouter({
           name: 'follow-plans',
           component: () =>
             isMobileClient()
-              ? import('@/mobile/views/FollowUpPlansView.vue')
-              : import('@/views/FollowUpPlansView.vue'),
+              ? import('@/views/follow-plans/mobile/FollowUpPlansView.vue')
+              : import('@/views/follow-plans/FollowUpPlansView.vue'),
           meta: { title: '跟进计划', client: 'both' },
         },
         {
           path: 'mine',
           name: 'mobile-mine',
-          component: () => import('@/mobile/views/MineView.vue'),
+          component: () => import('@/views/profile/mobile/MineView.vue'),
           meta: { title: '我的', client: 'mobile' },
         },
         {
           path: 'bidding',
-          component: () => import('@/views/BiddingView.vue'),
+          component: () => import('@/views/bidding/BiddingView.vue'),
           meta: { title: '标讯', perm: 'menu:bidding', client: 'pc' },
         },
         {
           path: 'custom-forms',
-          component: () => import('@/views/PlannedFeatureView.vue'),
+          component: () => import('@/views/custom-forms/PlannedFeatureView.vue'),
           meta: {
             title: '自定义表单',
             perm: 'menu:system',
@@ -258,12 +260,12 @@ const router = createRouter({
         },
         {
           path: 'system/settings',
-          component: () => import('@/views/system/SettingsView.vue'),
+          component: () => import('@/views/system/enterprise-settings/SettingsView.vue'),
           meta: { title: '企业设置', perm: 'system:setting', client: 'pc' },
         },
         {
           path: 'notifications',
-          component: () => import('@/views/NotificationsView.vue'),
+          component: () => import('@/views/notifications/NotificationsView.vue'),
           meta: { title: '消息中心', client: 'pc' },
         },
       ],
@@ -281,7 +283,11 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const enterpriseUi = useEnterpriseUiStore()
   const requestedTenant = typeof to.query.tenant === 'string' ? to.query.tenant.trim() : ''
-  if (!auth.isAuthenticated && requestedTenant) {
+  if (!auth.isAuthenticated && to.name === 'login') {
+    await enterpriseUi
+      .loadLoginBranding({ tenantSlug: requestedTenant || undefined })
+      .catch(() => undefined)
+  } else if (!auth.isAuthenticated && requestedTenant) {
     await enterpriseUi.load(requestedTenant).catch(() => undefined)
   }
   if (

@@ -21,6 +21,8 @@ import type {
 import { http } from './http'
 
 export const enterpriseUiSettingApi = {
+  loginBranding: (params?: { tenant?: string; email?: string }) =>
+    http.get<EnterpriseUiBrandingVO>('/enterprise-settings/branding/login/config', { params }),
   branding: (tenantSlug: string) =>
     http.get<EnterpriseUiBrandingVO>(
       `/enterprise-settings/branding/${encodeURIComponent(tenantSlug)}`,

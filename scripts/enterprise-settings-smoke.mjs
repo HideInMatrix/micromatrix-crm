@@ -130,6 +130,18 @@ try {
     publicBranding.response.ok && publicBranding.data?.title === `Smoke CRM ${suffix}`,
     JSON.stringify(publicBranding.data),
   )
+  const loginBranding = await get(
+    `/enterprise-settings/branding/login/config?email=${encodeURIComponent(
+      `enterprise-settings-primary-${suffix}@smoke.local`,
+    )}`,
+  )
+  check(
+    '登录页首次可在未登录时按邮箱获取所属租户品牌',
+    loginBranding.response.ok &&
+      loginBranding.data?.tenantSlug === primary.user.tenantSlug &&
+      loginBranding.data?.title === `Smoke CRM ${suffix}`,
+    JSON.stringify(loginBranding.data),
+  )
   const isolatedUi = await get('/enterprise-settings/ui', isolated.headers)
   check(
     '界面设置租户隔离',

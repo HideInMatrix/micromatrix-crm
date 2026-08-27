@@ -76,6 +76,46 @@ test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', as
   assert.equal('platformLogoAttachmentId' in branding, false)
 })
 
+test('登录页品牌配置可在未登录时按邮箱解析所属租户', async () => {
+  const now = new Date()
+  const prisma = {
+    user: {
+      findFirst: async ({ where }: any) =>
+        where.email?.equals === 'admin@demo.com'
+          ? { tenant: { id: 'tenant-a', slug: 'demo', status: 'ACTIVE' } }
+          : null,
+    },
+    tenant: { findMany: async () => [] },
+    enterpriseUiSetting: {
+      findUnique: async ({ where }: any) =>
+        where.tenantId === 'tenant-a'
+          ? {
+              id: 'ui-a',
+              tenantId: 'tenant-a',
+              theme: 'default',
+              customTheme: '#008d91',
+              style: 'default',
+              customStyle: '#f9fbfb',
+              title: '一草一木 CRM',
+              slogan: '连接每一位客户',
+              helpDoc: '',
+              iconAttachmentId: null,
+              loginLogoAttachmentId: null,
+              loginImageAttachmentId: null,
+              platformLogoAttachmentId: null,
+              createdAt: now,
+              updatedAt: now,
+            }
+          : null,
+    },
+  } as unknown as PrismaService
+  const service = new EnterpriseUiSettingsService(prisma, {} as any)
+
+  const branding = await service.getLoginBranding({ email: 'admin@demo.com' })
+  assert.equal(branding.tenantSlug, 'demo')
+  assert.equal(branding.title, '一草一木 CRM')
+})
+
 test('SMTP 密码加密保存、留空保留且响应不回显秘密材料', async () => {
   let row: any = null
   const mail = {

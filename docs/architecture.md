@@ -37,7 +37,7 @@ flowchart LR
 
 monorepo：`apps/api`（NestJS CJS）、`apps/web`（单一 Vite ESM 前端，内部同时承载 PC + Mobile）、`packages/shared`（前后端共享类型/权限树/公式求值器）。
 
-前端运行时不再维护两个独立应用。`apps/web/src/router/index.ts` 在根路由按当前 viewport 选择布局与页面：桌面宽度加载 `src/views + DefaultLayout`，移动宽度加载 `src/mobile/views + mobile/TabbarLayout`。两端共用同一套 Pinia、JWT token、HTTP 拦截器、Vite 代理与构建产物；Chrome DevTools 切换到手机设备模式后刷新即可进入 Mobile 页面，不设置 `?client=` 一类调试路由参数。
+前端运行时不再维护两个独立应用。`apps/web/src/router/index.ts` 在根路由按当前 viewport 选择布局与页面：所有路由页面统一归档在 `src/views/<业务模块>/`，同模块移动页面进入 `mobile/` 子目录；桌面使用 `DefaultLayout`，移动端使用 `MobileTabbarLayout`。移动专用 API、组件、Layout 与样式不再放独立 `src/mobile` 根目录，而是分别进入 `src/api`、`src/components`、`src/layouts`、`src/styles`，并以 `Mobile` 文件名/组件名前缀区分。两端共用同一套 Pinia、JWT token、HTTP 拦截器、Vite 代理与构建产物；Chrome DevTools 切换到手机设备模式后刷新即可进入 Mobile 页面，不设置 `?client=` 一类调试路由参数。
 
 ## CordysCRM 语义迁移架构
 

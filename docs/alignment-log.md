@@ -760,6 +760,7 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 界面图片资源复用 Attachment 存储，但由企业设置服务以租户 + 目标对象绑定；术语发现只暴露 `PENDING`，忽略进入 `IGNORED`，采纳在同一事务创建术语并回写 `ADOPTED`；全局任务执行记录只允许等待/执行态停止，终态才允许删除。
 - 新六页签接管后彻底删除前端 `settingApi`、后端 `/settings`、`SettingsModule`/`SettingsService` 和 Prisma `SystemSetting`。独立 migration `20260826193000_remove_legacy_system_settings` 删除 `system_settings`，历史 migration 不修改；全仓当前运行时代码无旧 KV 消费者，`/system/settings` 前端菜单路由继续保留。
 - 本地现有库顺序应用 `20260826173000_enterprise_settings_domain` 与 `20260826193000_remove_legacy_system_settings` 成功，migration 总数为 34。Prisma validate/generate、Shared/API/Web typecheck、全仓 ESLint、三 workspace production build 均通过。
-- `test:rules` 已把企业设置专项测试纳入主规则集，当前 `113/113`；真实 API/数据库企业设置 Smoke `22/22`，覆盖旧 `/settings` 404、UI 租户隔离、公开品牌配置、企微独立域、SMTP/AI 密钥加密、模型路由、术语发现采纳、全局任务执行停止/删除；根关键链路 Smoke 继续 `219/219`。
+- `test:rules` 已把企业设置专项测试纳入主规则集，当前 `114/114`；真实 API/数据库企业设置 Smoke `23/23`，新增覆盖未登录登录页按邮箱解析租户品牌配置，继续覆盖旧 `/settings` 404、UI 租户隔离、公开品牌配置、企微独立域、SMTP/AI 密钥加密、模型路由、术语发现采纳、全局任务执行停止/删除；根关键链路 Smoke 继续 `219/219`。
 - 界面设置后续 UI 收口已验证：平台标题、Slogan、favicon、登录 Logo/背景和平台 Logo 由统一品牌 Store 消费；浏览器刷新首帧通过本地租户品牌缓存同步设置标题，不再先显示静态“微矩阵 CRM”。企业设置六个面板及企微配置卡已移除 scoped CSS，统一改用 UnoCSS `presetWind4` utility；品牌资源预览固定为 `1:1`，Tabs 不产生内部滚动，`el-main` 底部 padding 为 0，保存栏与内容区底边贴合。
+- 前端路由页面已统一收口到 `apps/web/src/views/<业务模块>/`，同模块移动端页面放 `mobile/` 子目录；原 `src/mobile` 根目录已删除，移动专用 API、组件、Layout、样式分别进入 `src/api`、`src/components`、`src/layouts`、`src/styles` 并统一使用 `Mobile` 前缀。登录品牌加载与主题应用分别抽为 `useLoginBranding`、`useEnterpriseUiTheme` composable；桌面与 Mobile 登录页在未登录且未点击登录时即可通过公开接口显示租户品牌与正确浏览器标题，系统设置登录页配置已移除左侧模拟预览。
 - DB 台账复核未发现需要新增编号的企业设置数据模型缺口；钉钉/飞书仍由既有 DB-015 跟踪，不通过恢复通用 `SystemSetting` 规避。企业设置 W3.4-S 完成后，业务主线继续 W3.4.2。

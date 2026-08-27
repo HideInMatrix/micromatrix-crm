@@ -56,6 +56,48 @@ export class EnterpriseUiSettingsService {
     return this.toBranding(tenant.slug, row)
   }
 
+  async getLoginBranding(input: {
+    tenantSlug?: string
+    email?: string
+  }): Promise<EnterpriseUiBrandingVO> {
+    const tenantSlug = input.tenantSlug?.trim()
+    if (tenantSlug) return this.getBranding(tenantSlug)
+
+    const email = input.email?.trim()
+    if (email) {
+      const user = await this.prisma.user.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } },
+        select: {
+          tenant: {
+            select: { id: true, slug: true, status: true },
+          },
+        },
+      })
+      if (user?.tenant.status === 'ACTIVE') {
+        const row = await this.prisma.enterpriseUiSetting.findUnique({
+          where: { tenantId: user.tenant.id },
+        })
+        return this.toBranding(user.tenant.slug, row)
+      }
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: { status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
+      take: 2,
+      select: { id: true, slug: true },
+    })
+    if (tenants.length === 1) {
+      const tenant = tenants[0]!
+      const row = await this.prisma.enterpriseUiSetting.findUnique({
+        where: { tenantId: tenant.id },
+      })
+      return this.toBranding(tenant.slug, row)
+    }
+
+    return this.toBranding('', null)
+  }
+
   async viewBrandingAsset(tenantSlug: string, slot: EnterpriseUiAssetSlot) {
     if (!Object.hasOwn(SLOT_FIELD, slot)) throw new BadRequestException('不支持的界面资源类型')
     const tenant = await this.prisma.tenant.findUnique({

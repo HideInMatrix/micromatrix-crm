@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common'
@@ -37,6 +38,13 @@ export class EnterpriseSettingsController {
     private readonly ui: EnterpriseUiSettingsService,
     private readonly mail: EnterpriseMailSettingsService,
   ) {}
+
+  @Get('branding/login/config')
+  @Public()
+  @ApiOperation({ summary: '获取登录页公开品牌配置' })
+  getLoginBranding(@Query('tenant') tenantSlug?: string, @Query('email') email?: string) {
+    return this.ui.getLoginBranding({ tenantSlug, email })
+  }
 
   @Get('branding/:tenantSlug')
   @Public()

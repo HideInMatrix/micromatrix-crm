@@ -9,7 +9,7 @@ import '@unocss/reset/tailwind-compat.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import 'virtual:uno.css'
 import './styles/index.css'
-import './mobile/styles/index.css'
+import './styles/mobile.css'
 
 async function bootstrap() {
   applyClientModeClass()

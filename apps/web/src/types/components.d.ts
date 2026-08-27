@@ -92,6 +92,12 @@ declare module 'vue' {
     LeadTransitionCustomerDrawer: typeof import('./../components/leads/LeadTransitionCustomerDrawer.vue')['default']
     LineItemsEditor: typeof import('./../components/LineItemsEditor.vue')['default']
     MemberSelectDialog: typeof import('./../components/MemberSelectDialog.vue')['default']
+    MobileContactListPane: typeof import('./../components/customer/MobileContactListPane.vue')['default']
+    MobileCustomerListPane: typeof import('./../components/customer/MobileCustomerListPane.vue')['default']
+    MobileCustomerOpenSeaPane: typeof import('./../components/customer/MobileCustomerOpenSeaPane.vue')['default']
+    MobileDynamicForm: typeof import('./../components/MobileDynamicForm.vue')['default']
+    MobileFollowUpPlanList: typeof import('./../components/MobileFollowUpPlanList.vue')['default']
+    MobileFollowUpSheet: typeof import('./../components/MobileFollowUpSheet.vue')['default']
     NotificationBell: typeof import('./../components/NotificationBell.vue')['default']
     OpportunityDetailDrawer: typeof import('./../components/opportunities/OpportunityDetailDrawer.vue')['default']
     OwnerHistoryTimeline: typeof import('./../components/OwnerHistoryTimeline.vue')['default']
@@ -127,7 +133,7 @@ declare module 'vue' {
     VanTabbarItem: typeof import('vant/es')['TabbarItem']
     VanTabs: typeof import('vant/es')['Tabs']
     VanTag: typeof import('vant/es')['Tag']
-    WeComLoginPanel: typeof import('./../components/WeComLoginPanel.vue')['default']
+    WeComLoginPanel: typeof import('./../components/auth/WeComLoginPanel.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

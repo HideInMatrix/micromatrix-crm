@@ -6,7 +6,7 @@ import type {
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { enterpriseUiSettingApi } from '@/api/enterprise-settings'
-import { applyEnterpriseUiTheme } from '@/utils/enterprise-ui-theme'
+import { useEnterpriseUiTheme } from '@/composables/useEnterpriseUiTheme'
 
 const DEFAULT_BRANDING: EnterpriseUiBrandingVO = {
   tenantSlug: '',
@@ -50,6 +50,7 @@ function cacheBranding(value: EnterpriseUiBrandingVO) {
 }
 
 export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
+  const { applyEnterpriseUiTheme } = useEnterpriseUiTheme()
   const branding = ref<EnterpriseUiBrandingVO>(readCachedBranding() ?? { ...DEFAULT_BRANDING })
   const loadedTenantSlug = ref('')
 
@@ -91,15 +92,15 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
     document.title = pageTitle ? `${pageTitle} · ${productTitle}` : productTitle
   }
 
-  function accept(value: EnterpriseUiBrandingVO) {
+  function acceptBranding(value: EnterpriseUiBrandingVO) {
     branding.value = value
     loadedTenantSlug.value = value.tenantSlug
-    cacheBranding(value)
+    if (value.tenantSlug) cacheBranding(value)
     apply()
   }
 
   function acceptSetting(value: EnterpriseUiSettingVO, tenantSlug: string) {
-    accept({
+    acceptBranding({
       tenantSlug,
       theme: value.theme,
       customTheme: value.customTheme,
@@ -120,7 +121,15 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
     if (!tenantSlug) return
     if (!force && loadedTenantSlug.value === tenantSlug) return
     const { data } = await enterpriseUiSettingApi.branding(tenantSlug)
-    accept(data)
+    acceptBranding(data)
+  }
+
+  async function loadLoginBranding(input: { tenantSlug?: string; email?: string } = {}) {
+    const { data } = await enterpriseUiSettingApi.loginBranding({
+      ...(input.tenantSlug ? { tenant: input.tenantSlug } : {}),
+      ...(input.email ? { email: input.email } : {}),
+    })
+    acceptBranding(data)
   }
 
   function reset() {
@@ -141,6 +150,8 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
     loginImageUrl,
     platformLogoUrl,
     load,
+    loadLoginBranding,
+    acceptBranding,
     acceptSetting,
     setDocumentTitle,
     reset,
