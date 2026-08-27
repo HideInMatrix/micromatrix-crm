@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)、普通线索 API、三条转换链路以及多线索池 API / 规则执行对齐，当前执行指针进入：**3.5 重建线索与线索池 Vue 页面**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
+> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)、普通线索 API、三条转换链路、多线索池 API / 规则执行以及 PC 线索/线索池页面对齐，当前执行指针进入：**3.6 线索与线索池最终专项验收**。后续验收继续以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -155,11 +155,14 @@
   - [x] 验证：多线索池专项 Smoke `32/32`、普通线索 API `18/18`、三条转换 `21/21`、首页 `17/17`、规则测试 `114/114`；API/Web typecheck、API/Web production build、本批 ESLint、`git diff --check` 全通过。
   - _需求：R2、R6、R11_
 
-- [ ] 3.5 重建线索与线索池 Vue 页面
+- [x] 3.5 重建线索与线索池 Vue 页面
   - 实施前页面矩阵固化到 `clue-source-api-audit.md` 第 28 节；PC 以 `/leads` 与 `/leads/pool` 两个固定上下文路由复刻 Cordys，不再由一个页面内部 mine/pool 状态切资源。
   - 使用公共动态表单、用户视图、详情抽屉和高级筛选；普通/池工具栏、批量操作与行操作按 Cordys 顺序和独立权限渲染。
   - 池选择器支持管理员 quick setting，Hidden Field 同时约束表格、筛选、批改和详情；普通与池 Overview Drawer 保持不同 Tab 和操作边界。
   - 不展示 Cordys 主列表不存在的额外按钮；Mobile 既有线索链路保持可用。
+  - [x] 修复路由切换重复请求：`SavedViewBar` 模块初始化与父页面 route watcher 不再同时触发 `/pool/lead/page`；页面上下文 ready 后统一请求，并增加同参数 in-flight 合并与陈旧响应保护。
+  - [x] Browser Smoke `13/13`：验证独立导航、普通工具栏、Overview Drawer、首次进入线索池和“切回再进入”时 `/api/pool/lead/page` 均严格为 `1` 次，页面无 Runtime 异常。
+  - [x] 回归：普通线索 API `18/18`、三条转换 `21/21`、多线索池 `32/32`、首页 `17/17`、规则测试 `114/114`；Web typecheck/build、本批 ESLint 通过。
   - _需求：R2、R5、R6_
 
 - [ ] 3.6 完成线索域专项验收并本地提交

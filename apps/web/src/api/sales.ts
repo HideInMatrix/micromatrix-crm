@@ -88,6 +88,7 @@ export interface ResourcePoolVO {
   id: string
   module: 'lead' | 'customer'
   name: string
+  editable?: boolean
   scopeIds: string[]
   managerIds: string[]
   enabled: boolean
@@ -125,6 +126,7 @@ export interface ResourceCapacityVO {
 interface CluePoolApiVO {
   id: string
   name: string
+  editable?: boolean
   scopeIds: string[]
   ownerIds: string[]
   enable: boolean
@@ -155,6 +157,7 @@ function normalizeCluePool(pool: CluePoolApiVO): ResourcePoolVO {
     id: pool.id,
     module: 'lead',
     name: pool.name,
+    editable: pool.editable ?? false,
     scopeIds: pool.scopeIds,
     managerIds: pool.ownerIds,
     enabled: pool.enable,
@@ -228,6 +231,11 @@ export const resourcePoolApi = {
     }
     return http.patch<ResourcePoolVO>(`/resource-pools/${id}`, data)
   },
+  quickUpdate: (id: string, data: Record<string, unknown>) =>
+    http.post('/lead-pool/quick-update', {
+      id,
+      ...cluePoolPayload({ ...data, module: 'lead' }),
+    }),
   toggle: (id: string, module: 'lead' | 'customer') =>
     module === 'lead'
       ? http.get(`/lead-pool/switch/${id}`)
@@ -319,6 +327,23 @@ export const leadApi = {
     http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/update', data),
   batchTransfer: (ids: string[], owner: string) =>
     http.post<{ count: number }>('/lead/batch/transfer', { ids, owner }),
+  batchToPool: (ids: string[], poolId?: string, reasonId?: string) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/to-pool', {
+      ids,
+      poolId,
+      reasonId,
+    }),
+  poolBatchPick: (poolId: string, batchIds: string[]) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/lead/batch-pick', {
+      poolId,
+      batchIds,
+    }),
+  poolBatchAssign: (poolId: string, batchIds: string[], assignUserId: string) =>
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/lead/batch-assign', {
+      poolId,
+      batchIds,
+      assignUserId,
+    }),
   batchDelete: (ids: string[]) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/delete', ids),
   poolBatchUpdate: (data: {

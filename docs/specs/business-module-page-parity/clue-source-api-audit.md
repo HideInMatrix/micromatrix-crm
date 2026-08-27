@@ -946,3 +946,86 @@ PC 实施顺序：
 8. Mobile 不做结构性重写，只运行 typecheck/build 与既有 Mobile 线索关键链路回归。
 
 3.5 完成条件：PC `/leads` 与 `/leads/pool` 的路由权限、导航、工具栏、批量状态、行操作、Pool quick setting、普通/池详情 Drawer、转换与关联客户均有浏览器级验收；Web typecheck/build 和 3.2/3.3/3.4 API Smoke 不回归。
+
+## 29. task 3.5 实施回写（2026-08-27）
+
+### 29.1 PC 路由与页面结构
+
+PC 已从单页 `mine/pool` 可写状态切换改为路由固定上下文：
+
+```text
+/leads       -> 普通线索
+/leads/pool  -> 线索池
+```
+
+新增 `LeadModuleNav` 作为模块级导航；`/leads/pool` 路由使用独立 `leadPool:read` 权限，无池读取权限时不渲染池入口。`LeadsView.vue` 不再维护可写 `activeTab`，列表、导入导出、Saved View 与批量动作统一从当前路由推导资源类型，避免页面状态和 URL 脱节。
+
+普通线索与线索池的工具栏、批量动作和行操作已经按第 28 节 Cordys 证据重排。转换后的普通线索不再展示普通业务行操作；主列表删除 Cordys 不存在的负责人历史、标记失败和单条关联客户入口。
+
+### 29.2 Pool quick setting 与 Hidden Field
+
+新增 `LeadPoolQuickSettingDrawer.vue`，只有 `/pool/lead/options` 返回 `editable=true` 的当前池可打开，保存直接调用 `/lead-pool/quick-update`，不恢复历史通用 ResourcePool 写接口。
+
+当前池 Hidden Field 已统一约束：动态列表列、Saved View 可配置字段、Advanced Filter、Batch Field Edit、Export Drawer 与 Pool Overview 基础字段；线索名称始终保留。切换池时同时清空当前 Saved View、临时筛选、页码和选中行，再以新 Pool 上下文加载列表。
+
+### 29.3 普通与 Pool Overview Drawer
+
+新增统一容器 `LeadOverviewDrawer.vue`，但内部严格保持两套业务边界：
+
+| 模式 | 顶部 / 业务动作 | 详情 Tab |
+| --- | --- | --- |
+| 普通线索 | 编辑、转换、移入线索池、转移、删除 | 跟进记录、跟进计划、负责人历史 |
+| 线索池 | 领取、分配、删除；有 `leadPool:update` 时只在基础信息区开放字段编辑 | 跟进记录、前负责人历史 |
+
+Pool 字段编辑复用 `/pool/lead/batch-update` 的单资源调用，不错误走普通 `/lead/update`。转换继续复用 3.3 已验收的 `LeadTransformDialog` 与 `LeadTransitionCustomerDrawer`，Vue 层不复制转换业务规则。
+
+### 29.4 `/pool/lead/page` 重复请求根因与修复
+
+浏览器切换 `/leads -> /leads/pool` 时曾存在两条同时触发列表加载的链：
+
+```text
+route watcher
+  -> loadData()
+
+SavedViewBar watch(module: lead -> lead_pool)
+  -> loadViews()
+  -> emit('change')
+  -> handleSavedViewChange()
+  -> loadData()
+```
+
+如果此前已有选中的 Pool，两条链会产生参数相同的 `/api/pool/lead/page`。本次没有使用 debounce 掩盖问题，而是做结构修正：
+
+1. `pageReady` 在路由上下文初始化期间关闭列表加载；Saved View 只恢复状态，Pool options 与页面上下文全部就绪后统一加载一次。
+2. `routeGeneration` 防止快速路由切换时旧初始化流程重新触发旧上下文请求。
+3. `activeListRequestKey + activeListRequest` 合并相同参数的 in-flight 请求；`listRequestGeneration` 阻止较早的不同参数响应覆盖较新的列表状态。
+
+Browser Smoke 通过 Chrome DevTools Protocol 直接监听 `Network.requestWillBeSent`，实测：
+
+```text
+首次 /leads -> /leads/pool
+  /api/pool/lead/page = 1 次
+
+/leads/pool -> /leads -> /leads/pool
+  /api/pool/lead/page = 1 次
+```
+
+### 29.5 运行证据
+
+`smoke:w342-clue-page-browser` 当前为 `13/13`，覆盖独立导航、普通工具栏、Overview Drawer 动作与 Tab、Pool 工具栏、首次/再次进入 Pool 的单请求断言，以及浏览器 Runtime 异常检查。
+
+关闭 3.5 前的回归结果：
+
+```text
+pnpm smoke:w342-clue-page-browser  13/13
+pnpm smoke:w342-clue-api           18/18
+pnpm smoke:w342-clue-transition    21/21
+pnpm smoke:w342-clue-pool          32/32
+pnpm smoke:w341-home               17/17
+pnpm --filter @micromatrix/api test:rules   114/114
+Web typecheck                      PASS
+Web production build               PASS
+本批 ESLint                        PASS
+```
+
+因此 task 3.5 可以关闭，执行指针进入 **3.6 线索与线索池最终专项验收**。

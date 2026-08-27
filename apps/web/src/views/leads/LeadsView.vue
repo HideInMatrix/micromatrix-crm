@@ -11,12 +11,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
-import { leadApi, type ResourcePoolVO } from '@/api/sales'
+import { leadApi, type LeadListParams, type ResourcePoolVO } from '@/api/sales'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
-import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
@@ -25,6 +24,9 @@ import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
+import LeadModuleNav from '@/components/leads/LeadModuleNav.vue'
+import LeadOverviewDrawer from '@/components/leads/LeadOverviewDrawer.vue'
+import LeadPoolQuickSettingDrawer from '@/components/leads/LeadPoolQuickSettingDrawer.vue'
 import LeadTransformDialog from '@/components/leads/LeadTransformDialog.vue'
 import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCustomerDrawer.vue'
 import { consumeHomeFilter } from '@/utils/home-filter'
@@ -35,7 +37,7 @@ const homeQuickCreate = useHomeQuickCreate()
 const route = useRoute()
 const router = useRouter()
 
-const activeTab = ref<'mine' | 'pool'>(route.path.endsWith('/pool') ? 'pool' : 'mine')
+const isPoolMode = computed(() => route.name === 'lead-pool')
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
 const fields = ref<FieldVO[]>([])
@@ -49,6 +51,9 @@ const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<LeadVO[]>([])
 const batchEditVisible = ref(false)
+const batchTransferVisible = ref(false)
+const batchPoolAssignVisible = ref(false)
+const poolSettingVisible = ref(false)
 const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
@@ -58,47 +63,51 @@ const editingId = ref<string | null>(null)
 const saving = ref(false)
 const dynamicFormRef = ref<InstanceType<typeof DynamicForm>>()
 const formModel = ref<Record<string, unknown>>({})
-const toPool = ref(false)
 
 const followVisible = ref(false)
 const followTarget = ref<LeadVO | null>(null)
-const ownerHistoryVisible = ref(false)
-const ownerHistoryTarget = ref<LeadVO | null>(null)
+const overviewVisible = ref(false)
+const overviewTarget = ref<LeadVO | null>(null)
+const pageReady = ref(false)
+let routeGeneration = 0
+let activeListRequestKey = ''
+let activeListRequest: Promise<void> | null = null
+let listRequestGeneration = 0
 
 const convertVisible = ref(false)
 const convertTarget = ref<LeadVO | null>(null)
 const transitionCustomerVisible = ref(false)
 const transitionClueIds = ref<string[]>([])
 
-const savedViewModule = computed(() => (activeTab.value === 'pool' ? 'lead_pool' : 'lead'))
+const savedViewModule = computed(() => (isPoolMode.value ? 'lead_pool' : 'lead'))
 const currentPool = computed(
   () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
 )
 const canImport = computed(() =>
-  activeTab.value === 'pool' ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
+  isPoolMode.value ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
 )
 const canExport = computed(() =>
-  activeTab.value === 'pool' ? auth.hasPerm('leadPool:export') : auth.hasPerm('lead:export'),
+  isPoolMode.value ? auth.hasPerm('leadPool:export') : auth.hasPerm('lead:export'),
 )
+const contextFields = computed(() => {
+  const hiddenIds = isPoolMode.value
+    ? new Set(currentPool.value?.hiddenFieldIds ?? [])
+    : new Set<string>()
+  return fields.value.filter(
+    (field) => !field.hidden && (field.key === 'name' || !hiddenIds.has(field.id)),
+  )
+})
 const defaultColumnKeys = computed(() =>
-  fields.value.filter((field) => field.showInList && !field.hidden).map((field) => field.key),
+  contextFields.value.filter((field) => field.showInList).map((field) => field.key),
 )
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
-  const fieldMap = new Map(
-    fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]),
-  )
-  const hiddenIds =
-    activeTab.value === 'pool'
-      ? new Set(currentPool.value?.hiddenFieldIds ?? [])
-      : new Set<string>()
+  const fieldMap = new Map(contextFields.value.map((field) => [field.key, field]))
   const ordered = keys
     .map((key) => fieldMap.get(key))
-    .filter(
-      (field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)),
-    )
+    .filter((field): field is FieldVO => !!field)
   const nameField = fieldMap.get('name')
-  if (activeTab.value === 'pool' && nameField && !ordered.some((field) => field.key === 'name')) {
+  if (isPoolMode.value && nameField && !ordered.some((field) => field.key === 'name')) {
     ordered.unshift(nameField)
   }
   return ordered
@@ -121,27 +130,66 @@ async function loadPoolOptions() {
   }
 }
 
+async function handlePoolSettingSaved() {
+  await loadPoolOptions()
+  handleSearch()
+}
+
+function currentListParams(): LeadListParams {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword.trim() || undefined,
+    scope: isPoolMode.value ? 'pool' : 'mine',
+    poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
+    status: query.status || undefined,
+    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    viewId: activeSavedViewId.value || undefined,
+    homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
+  }
+}
+
 async function loadData() {
-  loading.value = true
-  try {
-    const { data } = await leadApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword.trim() || undefined,
-      scope: activeTab.value,
-      poolId: activeTab.value === 'pool' ? selectedPoolId.value || undefined : undefined,
-      status: query.status || undefined,
-      filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
-      viewId: activeSavedViewId.value || undefined,
-      homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
-    })
-    items.value = data.items
-    total.value = data.total
+  if (!pageReady.value) return
+  if (isPoolMode.value && !selectedPoolId.value) {
+    items.value = []
+    total.value = 0
     selectedRows.value = []
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+    return
+  }
+
+  const params = currentListParams()
+  const requestKey = JSON.stringify(params)
+  if (activeListRequest && activeListRequestKey === requestKey) {
+    return activeListRequest
+  }
+
+  const requestGeneration = ++listRequestGeneration
+  const request = (async () => {
+    loading.value = true
+    try {
+      const { data } = await leadApi.list(params)
+      if (requestGeneration !== listRequestGeneration) return
+      items.value = data.items
+      total.value = data.total
+      selectedRows.value = []
+    } catch (error) {
+      if (requestGeneration !== listRequestGeneration) return
+      ElMessage.error(extractErrorMessage(error))
+    } finally {
+      if (requestGeneration === listRequestGeneration) loading.value = false
+    }
+  })()
+
+  activeListRequestKey = requestKey
+  activeListRequest = request
+  try {
+    await request
   } finally {
-    loading.value = false
+    if (activeListRequest === request) {
+      activeListRequest = null
+      activeListRequestKey = ''
+    }
   }
 }
 
@@ -150,26 +198,32 @@ function handleSearch() {
   loadData()
 }
 
-function handleTabChange() {
+function handlePoolChange() {
   query.page = 1
-  activeHomeFilter.value = null
   activeSavedViewId.value = ''
+  visibleColumnKeys.value = []
+  filters.value = []
   selectedRows.value = []
-  void router.replace(activeTab.value === 'pool' ? '/leads/pool' : '/leads')
   loadData()
 }
 
 watch(
-  () => route.path,
-  (path) => {
-    const nextTab = path.endsWith('/pool') ? 'pool' : 'mine'
-    if (nextTab === activeTab.value) return
-    activeTab.value = nextTab
+  () => route.name,
+  async () => {
+    const generation = ++routeGeneration
+    pageReady.value = false
     query.page = 1
+    activeHomeFilter.value = null
     activeSavedViewId.value = ''
+    visibleColumnKeys.value = []
+    filters.value = []
     selectedRows.value = []
-    loadData()
+    if (isPoolMode.value) await loadPoolOptions()
+    if (generation !== routeGeneration) return
+    pageReady.value = true
+    await loadData()
   },
+  { flush: 'sync' },
 )
 
 function handleSelectionChange(rows: LeadVO[]) {
@@ -180,7 +234,7 @@ async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }
   if (selectedRows.value.length === 0) return
   try {
     const ids = selectedRows.value.map((row) => row.id)
-    if (activeTab.value === 'pool') {
+    if (isPoolMode.value) {
       if (!selectedPoolId.value) throw new Error('请先选择线索池')
       await leadApi.poolBatchUpdate({ poolId: selectedPoolId.value, ids, ...payload })
     } else {
@@ -204,7 +258,7 @@ async function handleBatchDelete() {
   if (!confirmed) return
   try {
     const ids = selectedRows.value.map((row) => row.id)
-    if (activeTab.value === 'pool') {
+    if (isPoolMode.value) {
       if (!selectedPoolId.value) throw new Error('请先选择线索池')
       await leadApi.poolBatchDelete(selectedPoolId.value, ids)
     } else {
@@ -217,9 +271,91 @@ async function handleBatchDelete() {
   }
 }
 
+function openBatchTransfer() {
+  if (selectedRows.value.length === 0) return
+  batchTransferVisible.value = true
+}
+
+async function handleBatchTransferConfirm(userId: string) {
+  if (selectedRows.value.length === 0) return
+  try {
+    await leadApi.batchTransfer(
+      selectedRows.value.map((row) => row.id),
+      userId,
+    )
+    batchTransferVisible.value = false
+    ElMessage.success(`已转移 ${selectedRows.value.length} 条线索`)
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBatchToPool() {
+  if (selectedRows.value.length === 0) return
+  const confirmed = await ElMessageBox.confirm(
+    `确定将已选择的 ${selectedRows.value.length} 条线索移入匹配的线索池？`,
+    '移入线索池',
+    { type: 'warning', confirmButtonText: '移入' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    const { data } = await leadApi.batchToPool(selectedRows.value.map((row) => row.id))
+    if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
+    else ElMessage.success(`已将 ${data.success} 条线索移入线索池`)
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBatchPick() {
+  if (!selectedPoolId.value || selectedRows.value.length === 0) return
+  const confirmed = await ElMessageBox.confirm(
+    `确定领取已选择的 ${selectedRows.value.length} 条线索？`,
+    '批量领取',
+    { type: 'warning', confirmButtonText: '领取' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    const { data } = await leadApi.poolBatchPick(
+      selectedPoolId.value,
+      selectedRows.value.map((row) => row.id),
+    )
+    if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
+    else ElMessage.success(`已领取 ${data.success} 条线索`)
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function openBatchPoolAssign() {
+  if (!selectedPoolId.value || selectedRows.value.length === 0) return
+  batchPoolAssignVisible.value = true
+}
+
+async function handleBatchPoolAssignConfirm(userId: string) {
+  if (!selectedPoolId.value || selectedRows.value.length === 0) return
+  try {
+    const { data } = await leadApi.poolBatchAssign(
+      selectedPoolId.value,
+      selectedRows.value.map((row) => row.id),
+      userId,
+    )
+    batchPoolAssignVisible.value = false
+    if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
+    else ElMessage.success(`已分配 ${data.success} 条线索`)
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
 function handleSavedViewChange(viewId?: string) {
   activeSavedViewId.value = viewId ?? ''
   query.page = 1
+  if (!pageReady.value) return
   loadData()
 }
 
@@ -233,7 +369,6 @@ function clearTemporaryFilters() {
 
 function openCreate() {
   editingId.value = null
-  toPool.value = activeTab.value === 'pool'
   formModel.value = {}
   dialogVisible.value = true
 }
@@ -321,15 +456,36 @@ async function handleToPool(row: LeadVO) {
   }
 }
 
+async function handleDelete(row: LeadVO) {
+  const confirmed = await ElMessageBox.confirm(`确定删除「${row.name}」？此操作不可恢复。`, '删除线索', {
+    type: 'warning',
+    confirmButtonText: '删除',
+  }).catch(() => false)
+  if (!confirmed) return
+  try {
+    if (isPoolMode.value) {
+      const poolId = row.poolId ?? selectedPoolId.value
+      if (!poolId) throw new Error('请选择线索池')
+      await leadApi.poolBatchDelete(poolId, [row.id])
+    } else {
+      await leadApi.remove(row.id)
+    }
+    ElMessage.success('线索已删除')
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
 const assignVisible = ref(false)
 const assignTarget = ref<LeadVO | null>(null)
 const importVisible = ref(false)
 
-function transferParams() {
+function transferParams(): LeadListParams {
   return {
     keyword: query.keyword.trim() || undefined,
-    scope: activeTab.value,
-    poolId: activeTab.value === 'pool' ? selectedPoolId.value || undefined : undefined,
+    scope: isPoolMode.value ? 'pool' : 'mine',
+    poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
     status: query.status || undefined,
     filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
     viewId: activeSavedViewId.value || undefined,
@@ -348,8 +504,8 @@ function openExport(mode: 'all' | 'selected') {
 async function handleExportConfirm(payload: { fileName: string; headList: string[] }) {
   exportLoading.value = true
   try {
-    const poolId = activeTab.value === 'pool' ? selectedPoolId.value || undefined : undefined
-    if (activeTab.value === 'pool' && !poolId) throw new Error('请先选择线索池')
+    const poolId = isPoolMode.value ? selectedPoolId.value || undefined : undefined
+    if (isPoolMode.value && !poolId) throw new Error('请先选择线索池')
     if (exportMode.value === 'selected') {
       await leadApi.exportSelected(
         transferParams(),
@@ -377,7 +533,7 @@ function handleAssign(row: LeadVO) {
 async function handleAssignConfirm(userId: string) {
   if (!assignTarget.value) return
   try {
-    if (activeTab.value === 'pool') await leadApi.poolAssign(assignTarget.value.id, userId)
+    if (isPoolMode.value) await leadApi.poolAssign(assignTarget.value.id, userId)
     else await leadApi.transfer(assignTarget.value.id, userId)
     ElMessage.success('已分配')
     loadData()
@@ -386,24 +542,59 @@ async function handleAssignConfirm(userId: string) {
   }
 }
 
-async function handleFailed(row: LeadVO) {
-  const confirmed = await ElMessageBox.confirm(`将「${row.name}」标记为失败？`, '确认', {
-    type: 'warning',
-  }).catch(() => false)
-  if (!confirmed) return
-  await leadApi.markFailed(row.id)
-  ElMessage.success('已标记失败')
-  loadData()
-}
-
 function openFollow(row: LeadVO) {
   followTarget.value = row
   followVisible.value = true
 }
 
-function openOwnerHistory(row: LeadVO) {
-  ownerHistoryTarget.value = row
-  ownerHistoryVisible.value = true
+function openOverview(row: LeadVO) {
+  overviewTarget.value = row
+  overviewVisible.value = true
+}
+
+function handleOverviewEdit(row: LeadVO) {
+  overviewVisible.value = false
+  if (isPoolMode.value) {
+    selectedRows.value = [row]
+    batchEditVisible.value = true
+    return
+  }
+  openEdit(row)
+}
+
+function handleOverviewFollow(row: LeadVO) {
+  overviewVisible.value = false
+  openFollow(row)
+}
+
+function handleOverviewConvert(row: LeadVO) {
+  overviewVisible.value = false
+  openConvert(row)
+}
+
+async function handleOverviewToPool(row: LeadVO) {
+  await handleToPool(row)
+  overviewVisible.value = false
+}
+
+function handleOverviewTransfer(row: LeadVO) {
+  overviewVisible.value = false
+  handleAssign(row)
+}
+
+async function handleOverviewDelete(row: LeadVO) {
+  await handleDelete(row)
+  overviewVisible.value = false
+}
+
+async function handleOverviewClaim(row: LeadVO) {
+  await handleClaim(row)
+  overviewVisible.value = false
+}
+
+function handleOverviewAssign(row: LeadVO) {
+  overviewVisible.value = false
+  handleAssign(row)
 }
 
 function openConvert(row: LeadVO) {
@@ -450,25 +641,34 @@ async function consumeRouteHomeFilter() {
     ElMessage.warning('首页筛选已失效或格式不正确')
     return
   }
-  activeTab.value = 'mine'
+  if (isPoolMode.value) {
+    await router.replace('/leads')
+  }
   activeHomeFilter.value = payload
   query.page = 1
 }
 
 onMounted(async () => {
+  const generation = ++routeGeneration
+  pageReady.value = false
   await consumeRouteHomeFilter()
-  await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
-  await homeQuickCreate.consume(openCreate)
-  loadData()
+  if (generation !== routeGeneration) return
+  await Promise.all([
+    loadFields(),
+    fieldRefs.load(),
+    ...(isPoolMode.value ? [loadPoolOptions()] : []),
+  ])
+  if (generation !== routeGeneration) return
+  if (!isPoolMode.value) await homeQuickCreate.consume(openCreate)
+  if (generation !== routeGeneration) return
+  pageReady.value = true
+  await loadData()
 })
 </script>
 
 <template>
   <el-card shadow="never">
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-      <el-tab-pane label="我的线索" name="mine" />
-      <el-tab-pane label="线索池" name="pool" />
-    </el-tabs>
+    <LeadModuleNav :active="isPoolMode ? 'pool' : 'lead'" />
 
     <el-alert
       v-if="activeHomeFilter"
@@ -481,7 +681,7 @@ onMounted(async () => {
 
     <SavedViewBar
       :module="savedViewModule"
-      :fields="fields"
+      :fields="contextFields"
       :members="fieldRefs.members.value"
       :dept-tree="fieldRefs.deptTree.value"
       :current-filters="filters"
@@ -491,17 +691,43 @@ onMounted(async () => {
       @columns-change="handleSavedColumns"
     />
 
-    <div class="flex-between flex-wrap gap-3 mb-4">
-      <div class="flex gap-2 items-center">
-        <el-select
-          v-if="activeTab === 'pool'"
-          v-model="selectedPoolId"
-          class="!w-44"
-          placeholder="选择线索池"
-          @change="handleSearch"
-        >
-          <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
-        </el-select>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <template v-if="!isPoolMode">
+          <el-button v-if="auth.hasPerm('lead:create')" type="primary" @click="openCreate">
+            新建线索
+          </el-button>
+          <el-button v-if="canImport" @click="importVisible = true">导入</el-button>
+          <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">
+            导出全部
+          </el-button>
+        </template>
+        <template v-else>
+          <el-select
+            v-model="selectedPoolId"
+            class="!w-52"
+            placeholder="选择线索池"
+            @change="handlePoolChange"
+          >
+            <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
+          </el-select>
+          <el-button
+            v-if="currentPool?.editable"
+            title="设置当前线索池"
+            @click="poolSettingVisible = true"
+          >
+            设置
+          </el-button>
+          <el-button v-if="canImport" :disabled="!selectedPoolId" @click="importVisible = true">
+            导入
+          </el-button>
+          <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">
+            导出全部
+          </el-button>
+        </template>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
         <el-input
           v-model="query.keyword"
           placeholder="搜索名称 / 联系人 / 电话"
@@ -526,58 +752,62 @@ onMounted(async () => {
         </el-select>
         <AdvancedFilter
           v-model="filters"
-          :fields="fields"
+          :fields="contextFields"
           :members="fieldRefs.members.value"
           :dept-tree="fieldRefs.deptTree.value"
           @apply="(c) => ((filters = c), handleSearch())"
         />
       </div>
-      <div class="flex gap-2">
-        <template v-if="selectedRows.length > 0">
-          <el-button
-            v-if="activeTab === 'mine' && auth.hasPerm('lead:update')"
-            @click="openTransitionCustomer(selectedRows.map((row) => row.id))"
-          >
-            关联客户
-          </el-button>
-          <el-button v-if="canExport" @click="openExport('selected')">
-            导出选中（{{ selectedRows.length }}）
-          </el-button>
-          <el-button
-            v-if="
-              (activeTab === 'mine' && auth.hasPerm('lead:update')) ||
-              (activeTab === 'pool' && auth.hasPerm('leadPool:update'))
-            "
-            @click="batchEditVisible = true"
-          >
-            批量修改（{{ selectedRows.length }}）
-          </el-button>
-          <el-button
-            v-if="
-              (activeTab === 'mine' && auth.hasPerm('lead:delete')) ||
-              (activeTab === 'pool' && auth.hasPerm('leadPool:delete'))
-            "
-            type="danger"
-            plain
-            @click="handleBatchDelete"
-          >
-            批量删除
-          </el-button>
-        </template>
-        <el-button
-          v-if="auth.hasPerm('lead:create') && activeTab === 'mine'"
-          type="primary"
-          @click="openCreate"
-        >
-          新建线索
+    </div>
+
+    <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
+      <el-button v-if="canExport" @click="openExport('selected')">
+        导出选中（{{ selectedRows.length }}）
+      </el-button>
+
+      <template v-if="!isPoolMode">
+        <el-button v-if="auth.hasPerm('lead:transfer')" @click="openBatchTransfer">
+          批量转移
         </el-button>
-        <template v-if="canImport">
-          <el-button @click="importVisible = true">导入</el-button>
-        </template>
-        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')"
-          >导出全部</el-button
+        <el-button v-if="auth.hasPerm('lead:recycle')" @click="handleBatchToPool">
+          移入线索池
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('lead:update')"
+          @click="openTransitionCustomer(selectedRows.map((row) => row.id))"
         >
-      </div>
+          关联客户
+        </el-button>
+        <el-button v-if="auth.hasPerm('lead:update')" @click="batchEditVisible = true">
+          批量修改
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('lead:delete')"
+          type="danger"
+          plain
+          @click="handleBatchDelete"
+        >
+          批量删除
+        </el-button>
+      </template>
+
+      <template v-else>
+        <el-button v-if="auth.hasPerm('leadPool:pick')" @click="handleBatchPick">批量领取</el-button>
+        <el-button v-if="auth.hasPerm('leadPool:assign')" @click="openBatchPoolAssign">
+          批量分配
+        </el-button>
+        <el-button v-if="auth.hasPerm('leadPool:update')" @click="batchEditVisible = true">
+          批量修改
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('leadPool:delete')"
+          type="danger"
+          plain
+          @click="handleBatchDelete"
+        >
+          批量删除
+        </el-button>
+      </template>
     </div>
 
     <el-table
@@ -590,10 +820,18 @@ onMounted(async () => {
     >
       <el-table-column
         v-if="
-          (activeTab === 'mine' && (auth.hasPerm('lead:update') || auth.hasPerm('lead:delete'))) ||
-          (activeTab === 'pool' &&
-            (auth.hasPerm('leadPool:update') || auth.hasPerm('leadPool:delete'))) ||
-          canExport
+          (!isPoolMode &&
+            (canExport ||
+              auth.hasPerm('lead:transfer') ||
+              auth.hasPerm('lead:recycle') ||
+              auth.hasPerm('lead:update') ||
+              auth.hasPerm('lead:delete'))) ||
+          (isPoolMode &&
+            (canExport ||
+              auth.hasPerm('leadPool:pick') ||
+              auth.hasPerm('leadPool:assign') ||
+              auth.hasPerm('leadPool:update') ||
+              auth.hasPerm('leadPool:delete')))
         "
         type="selection"
         width="46"
@@ -606,12 +844,27 @@ onMounted(async () => {
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          {{
-            formatFieldValue(column, row, {
-              memberMap: fieldRefs.memberMap.value,
-              deptMap: fieldRefs.deptMap.value,
-            })
-          }}
+          <el-button
+            v-if="column.key === 'name'"
+            link
+            type="primary"
+            @click="openOverview(row as LeadVO)"
+          >
+            {{
+              formatFieldValue(column, row, {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}
+          </el-button>
+          <template v-else>
+            {{
+              formatFieldValue(column, row, {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}
+          </template>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="90">
@@ -639,7 +892,7 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
-          <template v-if="activeTab === 'pool'">
+          <template v-if="isPoolMode">
             <el-button
               v-if="auth.hasPerm('leadPool:pick')"
               link
@@ -655,34 +908,36 @@ onMounted(async () => {
             >
               分配
             </el-button>
-            <el-button link @click="openOwnerHistory(row as LeadVO)">负责人历史</el-button>
+            <el-button
+              v-if="auth.hasPerm('leadPool:delete')"
+              link
+              type="danger"
+              @click="handleDelete(row as LeadVO)"
+            >
+              删除
+            </el-button>
           </template>
-          <template v-else>
-            <el-button link type="primary" @click="openFollow(row as LeadVO)">跟进</el-button>
-            <el-dropdown trigger="click" class="ml-2">
-              <el-button link type="primary">更多</el-button>
+          <template v-else-if="!['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '')">
+            <el-button v-if="auth.hasPerm('lead:update')" link @click="openEdit(row as LeadVO)">
+              编辑
+            </el-button>
+            <el-button v-if="auth.hasPerm('lead:update')" link @click="openFollow(row as LeadVO)">
+              跟进
+            </el-button>
+            <el-button
+              v-if="auth.hasPerm('lead:update')"
+              link
+              type="primary"
+              @click="openConvert(row as LeadVO)"
+            >
+              转换
+            </el-button>
+            <el-dropdown trigger="click">
+              <el-button link>更多</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="
-                      !['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '') &&
-                      auth.hasPerm('lead:update')
-                    "
-                    @click="openConvert(row as LeadVO)"
-                  >
-                    转化为客户
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('lead:update')"
-                    @click="openTransitionCustomer([(row as LeadVO).id])"
-                  >
-                    关联客户
-                  </el-dropdown-item>
-                  <el-dropdown-item v-if="auth.hasPerm('lead:update')" @click="openEdit(row as LeadVO)">
-                    编辑
-                  </el-dropdown-item>
-                  <el-dropdown-item @click="openOwnerHistory(row as LeadVO)">
-                    负责人历史
+                  <el-dropdown-item v-if="auth.hasPerm('lead:recycle')" @click="handleToPool(row as LeadVO)">
+                    移入线索池
                   </el-dropdown-item>
                   <el-dropdown-item
                     v-if="auth.hasPerm('lead:transfer')"
@@ -691,28 +946,17 @@ onMounted(async () => {
                     转移
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="
-                      !['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '') &&
-                      auth.hasPerm('lead:recycle')
-                    "
-                    @click="handleToPool(row as LeadVO)"
+                    v-if="auth.hasPerm('lead:delete')"
+                    divided
+                    @click="handleDelete(row as LeadVO)"
                   >
-                    移入线索池
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="
-                      !['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '') &&
-                      row.status !== 'FAIL' &&
-                      auth.hasPerm('lead:update')
-                    "
-                    @click="handleFailed(row as LeadVO)"
-                  >
-                    标记失败
+                    删除
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
           </template>
+          <span v-else>-</span>
         </template>
       </el-table-column>
     </el-table>
@@ -735,13 +979,6 @@ onMounted(async () => {
       width="640px"
       destroy-on-close
     >
-      <el-alert
-        v-if="!editingId && activeTab === 'pool'"
-        title="将创建到线索池（无负责人）"
-        type="info"
-        :closable="false"
-        class="mb-3"
-      />
       <DynamicForm
         ref="dynamicFormRef"
         v-model="formModel"
@@ -754,6 +991,21 @@ onMounted(async () => {
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <LeadOverviewDrawer
+      v-model="overviewVisible"
+      :mode="isPoolMode ? 'pool' : 'lead'"
+      :lead="overviewTarget"
+      :fields="contextFields"
+      @edit="handleOverviewEdit"
+      @follow="handleOverviewFollow"
+      @convert="handleOverviewConvert"
+      @to-pool="handleOverviewToPool"
+      @transfer="handleOverviewTransfer"
+      @delete="handleOverviewDelete"
+      @claim="handleOverviewClaim"
+      @assign="handleOverviewAssign"
+    />
 
     <LeadTransformDialog
       v-model="convertVisible"
@@ -783,14 +1035,35 @@ onMounted(async () => {
       @confirm="handleAssignConfirm"
     />
 
+    <MemberSelectDialog
+      v-model="batchTransferVisible"
+      :title="`批量转移 ${selectedRows.length} 条线索`"
+      :members="fieldRefs.members.value"
+      @confirm="handleBatchTransferConfirm"
+    />
+
+    <MemberSelectDialog
+      v-model="batchPoolAssignVisible"
+      :title="`批量分配 ${selectedRows.length} 条线索`"
+      :members="fieldRefs.members.value"
+      @confirm="handleBatchPoolAssignConfirm"
+    />
+
+    <LeadPoolQuickSettingDrawer
+      v-model="poolSettingVisible"
+      :pool="currentPool"
+      :fields="fields"
+      @saved="handlePoolSettingSaved"
+    />
+
     <CrmImportDialog
       v-model="importVisible"
-      :module-label="activeTab === 'pool' ? '线索池' : '线索'"
+      :module-label="isPoolMode ? '线索池' : '线索'"
       :download-template="
         (type) =>
           leadApi.importTemplate(
             type,
-            activeTab === 'pool' ? selectedPoolId || undefined : undefined,
+            isPoolMode ? selectedPoolId || undefined : undefined,
           )
       "
       :precheck="
@@ -798,7 +1071,7 @@ onMounted(async () => {
           leadApi.importPrecheck(
             file,
             type,
-            activeTab === 'pool' ? selectedPoolId || undefined : undefined,
+            isPoolMode ? selectedPoolId || undefined : undefined,
           )
       "
       :execute="
@@ -806,7 +1079,7 @@ onMounted(async () => {
           leadApi.importXlsx(
             file,
             type,
-            activeTab === 'pool' ? selectedPoolId || undefined : undefined,
+            isPoolMode ? selectedPoolId || undefined : undefined,
           )
       "
       @success="loadData"
@@ -814,9 +1087,9 @@ onMounted(async () => {
 
     <CrmExportDrawer
       v-model="exportVisible"
-      :module-label="activeTab === 'pool' ? '线索池' : '线索'"
-      :cache-key="activeTab === 'pool' ? `lead-pool:${selectedPoolId}` : 'lead'"
-      :fields="fields"
+      :module-label="isPoolMode ? '线索池' : '线索'"
+      :cache-key="isPoolMode ? `lead-pool:${selectedPoolId}` : 'lead'"
+      :fields="contextFields"
       :display-fields="[
         { key: 'status', label: '状态' },
         { key: 'lastFollowedAt', label: '最近跟进' },
@@ -832,24 +1105,12 @@ onMounted(async () => {
     <BatchFieldEditDialog
       v-model="batchEditVisible"
       title="批量修改线索"
-      :fields="fields"
+      :fields="contextFields"
       :members="fieldRefs.members.value"
       :dept-tree="fieldRefs.deptTree.value"
       :selected-count="selectedRows.length"
       @confirm="handleBatchEdit"
     />
 
-    <el-drawer
-      v-model="ownerHistoryVisible"
-      :title="`负责人历史 - ${ownerHistoryTarget?.name ?? ''}`"
-      size="560px"
-      destroy-on-close
-    >
-      <OwnerHistoryTimeline
-        v-if="ownerHistoryTarget"
-        module="lead"
-        :resource-id="ownerHistoryTarget.id"
-      />
-    </el-drawer>
   </el-card>
 </template>

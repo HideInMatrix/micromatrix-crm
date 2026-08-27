@@ -102,7 +102,7 @@ const router = createRouter({
           component: () => import('@/views/leads/LeadsView.vue'),
           meta: {
             title: '线索池',
-            perm: 'menu:lead',
+            perm: 'leadPool:read',
             client: 'pc',
             activeMenu: '/leads',
           },
