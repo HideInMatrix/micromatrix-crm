@@ -13,7 +13,8 @@
 
 - [x] D4 实现 GitHub tag release workflow
   - `v*.*.*` tag push 触发。
-  - SemVer 校验、typecheck/lint、真实 Docker Smoke 门禁。
+  - SemVer 校验、shared → API/Web 依赖有序 typecheck/lint、真实 Docker Smoke 门禁。
+  - GitHub Actions 升级到 Node 24 runtime 兼容版本：`actions/checkout@v7`、`actions/setup-node@v7`、`pnpm/action-setup@v6`。
   - API/Web 独立构建并发布 GHCR `linux/amd64` + `linux/arm64` 镜像。
 
 - [x] D5 增加 Docker release Smoke
@@ -23,4 +24,5 @@
 
 - [x] D6 最终质量检查
   - Docker Compose config、pnpm lockfile、typecheck、lint、格式与 diff 检查通过。
+  - 删除本地 `packages/shared/dist` 后重新执行 clean-runner typecheck，确认不依赖开发机残留构建产物。
   - W3.4-D 完成后执行指针恢复到 W3.4.2 task 3.1。

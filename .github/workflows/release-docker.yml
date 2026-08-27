@@ -20,7 +20,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/default?schema=public
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate release tag
         shell: bash
@@ -32,12 +32,12 @@ jobs:
           fi
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -45,8 +45,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Build shared workspace package
+        run: pnpm --filter @micromatrix/shared build
+
+      - name: Typecheck shared
+        run: pnpm --filter @micromatrix/shared typecheck
+
+      - name: Typecheck API
+        run: pnpm --filter @micromatrix/api typecheck
+
+      - name: Typecheck Web
+        run: pnpm --filter @micromatrix/web typecheck
 
       - name: Lint
         run: pnpm lint
@@ -57,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build and smoke test separated images
         run: bash scripts/docker-release-smoke.sh
@@ -80,7 +89,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve lowercase image name
         id: image

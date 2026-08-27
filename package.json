@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
-    "build": "pnpm -r run build",
-    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm --filter @micromatrix/shared build && pnpm --filter @micromatrix/api build && pnpm --filter @micromatrix/web build",
+    "typecheck": "pnpm --filter @micromatrix/shared build && pnpm --filter @micromatrix/shared typecheck && pnpm --filter @micromatrix/api typecheck && pnpm --filter @micromatrix/web typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

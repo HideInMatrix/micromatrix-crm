@@ -27,10 +27,12 @@ git push origin v0.0.1
 流水线依次执行：
 
 1. SemVer tag 校验。
-2. pnpm install、全仓 typecheck、ESLint。
+2. pnpm install；先构建 `@micromatrix/shared`，再执行全仓 typecheck、ESLint。
 3. 真实 Docker runtime Smoke。
 4. API/Web 分别构建 `linux/amd64`、`linux/arm64`。
 5. 推送到 GHCR。
+
+`@micromatrix/shared` 的 `main` / `types` 都指向 `packages/shared/dist`。GitHub Runner 是全新 checkout，不存在开发机残留的 `dist`，因此源码校验必须先生成 shared 构建产物再校验 API/Web。根 `pnpm typecheck` 和 `pnpm build` 均按 `shared → api → web` 的依赖顺序执行，避免本地缓存掩盖 workspace 跨包问题。
 
 以 `v0.0.1` 为例，至少可使用：
 
