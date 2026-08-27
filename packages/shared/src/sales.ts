@@ -2,12 +2,14 @@
 
 import type { LineItemVO } from './deal'
 
-export type LeadStatus = 'FOLLOWING' | 'CONVERTED' | 'INVALID'
+export type LeadStatus = 'NEW' | 'FOLLOWING' | 'INTERESTED' | 'SUCCESS' | 'FAIL'
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
+  NEW: '新建',
   FOLLOWING: '跟进中',
-  CONVERTED: '已转化',
-  INVALID: '无效',
+  INTERESTED: '感兴趣',
+  SUCCESS: '成功',
+  FAIL: '失败',
 }
 
 export interface LeadVO {

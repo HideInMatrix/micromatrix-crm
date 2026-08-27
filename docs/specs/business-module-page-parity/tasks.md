@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)，当前执行指针进入：**3.2 重建普通线索 API**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从当前 `/api/leads` 兼容实现反推行为。
+> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md) 与普通线索 API 重建，当前执行指针进入：**3.3 对齐三条线索转换链路**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -131,10 +131,12 @@
   - 审计记录：[W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)。
   - _需求：R1、R5、R6_
 
-- [ ] 3.2 重建普通线索 API
-  - 切换到 Cordys `/lead` 路径，完成表单、分页、详情、新增、编辑、状态、删除、批量、导入导出、图表和移池。
-  - 普通列表排除池中线索；数据范围和字段权限在后端执行。
-  - 删除旧 `/api/leads` Controller 和 DTO。
+- [x] 3.2 重建普通线索 API
+  - [x] 切换到 Cordys `/lead` 路径，完成表单、分页、详情、新增、编辑、`NEW/FOLLOWING/INTERESTED/SUCCESS/FAIL` 状态、删除、批量转移/批改/批删/移池、导入导出和图表。
+  - [x] 普通列表强制 `inSharedPool=false`；读取、编辑、删除、转移和移池继续在后端执行目标权限与 DataScope，动态字段继续使用 `clue_field/blob` 直接模型。
+  - [x] 删除旧 `LeadsController` 与旧 `lead.dto.ts`；Web/Mobile API 调用切换到 `/lead/*`，旧 `/api/leads` 已由专项 Smoke 验证返回 404。
+  - [x] 普通批量转移改为单事务：容量检查、`clue_owner` 历史与 Owner/collectionTime 更新原子完成；移池维护 pool/reason/Owner History。
+  - [x] 验证：普通线索 API Smoke `18/18`、W3.4.1 回归 Smoke `17/17`、shared/API/Web typecheck、本批 ESLint、API/Web production build 全通过。
   - _需求：R2、R5、R11_
 
 - [ ] 3.3 对齐三条线索转换链路

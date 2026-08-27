@@ -33,6 +33,15 @@ interface ClueTransferInput extends ClueOwnershipInput {
   reasonId?: string | null
 }
 
+interface ClueBatchTransferInput {
+  organizationId: string
+  clueIds: string[]
+  ownerId: string
+  operatorId: string
+  reasonId?: string | null
+  now?: bigint
+}
+
 interface ClueMoveToPoolInput {
   organizationId: string
   clueId: string
@@ -267,6 +276,62 @@ export class CluePoolRepository {
           updateTime: now,
         },
       })
+    })
+  }
+
+  async batchTransfer(input: ClueBatchTransferInput) {
+    const clueIds = [...new Set(input.clueIds)]
+    if (clueIds.length === 0) throw new BadRequestException('请选择线索')
+    const now = input.now ?? BigInt(Date.now())
+    return this.prisma.$transaction(async (tx) => {
+      await acquirePoolTransactionLocks(
+        tx,
+        clueIds.flatMap((clueId) =>
+          poolTransactionLockKeys('clue', input.organizationId, clueId, input.ownerId),
+        ),
+      )
+      const clues = await tx.clue.findMany({
+        where: {
+          id: { in: clueIds },
+          organizationId: input.organizationId,
+          inSharedPool: false,
+        },
+      })
+      if (clues.length !== clueIds.length) {
+        throw new NotFoundException('存在不存在或已在线索池中的线索')
+      }
+
+      const changed = clues.filter((clue) => clue.owner !== input.ownerId)
+      if (changed.length === 0) return { count: 0 }
+      if (changed.some((clue) => !clue.owner || clue.collectionTime === null)) {
+        throw new BadRequestException('存在没有可转移负责人的线索')
+      }
+
+      const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
+      const ownedCount = await tx.clue.count({
+        where: {
+          organizationId: input.organizationId,
+          owner: input.ownerId,
+          inSharedPool: false,
+          transitionId: null,
+        },
+      })
+      this.calculator.assertCapacity(capacity, ownedCount, 0, changed.length)
+
+      for (const clue of changed) {
+        await this.appendOwnerHistory(tx, clue, input.operatorId, input.reasonId, now)
+      }
+      const result = await tx.clue.updateMany({
+        where: { id: { in: changed.map((clue) => clue.id) }, organizationId: input.organizationId },
+        data: {
+          owner: input.ownerId,
+          collectionTime: now,
+          reasonId: input.reasonId ?? null,
+          updateUser: input.operatorId,
+          updateTime: now,
+        },
+      })
+      return { count: result.count }
     })
   }
 

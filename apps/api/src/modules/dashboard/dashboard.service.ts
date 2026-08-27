@@ -276,7 +276,7 @@ export class DashboardService {
           organizationId: user.tenantId,
           AND: [directScope as Prisma.ClueWhereInput],
           createTime: { gte: BigInt(since.getTime()) },
-          stage: 'CONVERTED',
+          transitionId: { not: null },
         },
       }),
       this.prisma.opportunity.groupBy({

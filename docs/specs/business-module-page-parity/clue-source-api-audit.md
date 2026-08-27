@@ -592,3 +592,30 @@ W3.4.2 继续使用 MicroMatrix 已有权限命名，但语义必须与 Cordys �
 - 当前 MicroMatrix API/Prisma/Vue 差异与后续任务边界。
 
 因此 W3.4.2 task 3.1 可以关闭，执行指针进入 **3.2 重建普通线索 API**。
+
+## 23. task 3.2 实施回写（2026-08-27）
+
+普通线索 API 已按本文前述事实切换到 Cordys `/lead` 契约：
+
+- 新 Controller：`ClueController`，覆盖 `module/form`、`page`、`get/:id`、`add`、`update`、`status/update`、`delete/:id`、`batch/*`、`to-pool`、导入导出与 `chart`。
+- Owner History 使用 `/lead/owner/history/list/:clueId`；旧 `LeadsController` 与 `dto/lead.dto.ts` 已删除。
+- `Clue.stage` 恢复 Cordys `NEW/FOLLOWING/INTERESTED/SUCCESS/FAIL`，转换事实不再写伪 `CONVERTED` 状态，继续由 `transitionType + transitionId` 表达。
+- 普通 `page/get` 强制排除 `inSharedPool=true`；批量转移使用单事务写 `clue_owner` 并更新 Owner/collectionTime；移池继续原子维护 Owner History、`poolId/reasonId` 与 Owner 清空。
+- Web 与 Mobile API 层已切到 `/lead/*`；前端 `/leads` 仅作为 SPA 页面路由保留，不再是后端 API。
+
+专项运行证据：
+
+```text
+pnpm smoke:w342-clue-api     18/18
+pnpm smoke:w341-home         17/17
+shared build                PASS
+API typecheck               PASS
+Web typecheck               PASS
+本批 ESLint                 PASS
+API production build        PASS
+Web production build        PASS
+```
+
+`smoke:w342-clue-api` 实际覆盖：表单、两次新增、Cordys Pager 与排序、详情、部分更新、状态/lastStage、批量修改、单事务批量转移、Owner History、移池、普通列表排池、xlsx 模板、真实导出任务、动态字段图表、删除以及旧 `/api/leads` 404。
+
+3.2 不提前宣称线索池完整复刻：当前 `/pool/lead` 只为旧 Controller 删除后的调用连续性提供分域过渡入口；多池 Scope、隐藏字段、池级图表和完整独立权限验收仍归 task 3.4。

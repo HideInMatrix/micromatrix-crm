@@ -10,6 +10,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { claimLead, createLead, fetchFields, listLeads } from '@/api/mobile'
 import { extractErrorMessage } from '@/api/http'
+import { leadApi } from '@/api/sales'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 
@@ -22,6 +23,7 @@ const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
 const keyword = ref('')
+const selectedPoolId = ref('')
 
 const followShow = ref(false)
 const followTarget = ref<LeadVO | null>(null)
@@ -34,10 +36,19 @@ const saving = ref(false)
 async function loadMore() {
   loading.value = true
   try {
+    if (activeTab.value === 'pool' && !selectedPoolId.value) {
+      const { data } = await leadApi.poolOptions()
+      selectedPoolId.value = data[0]?.id ?? ''
+      if (!selectedPoolId.value) {
+        finished.value = true
+        return
+      }
+    }
     const { data } = await listLeads({
       page: page.value,
       pageSize: 20,
       scope: activeTab.value,
+      poolId: activeTab.value === 'pool' ? selectedPoolId.value : undefined,
       keyword: keyword.value.trim() || undefined,
     })
     if (refreshing.value) {
@@ -64,7 +75,9 @@ function reload() {
 
 async function handleClaim(lead: LeadVO) {
   try {
-    await claimLead(lead.id)
+    const poolId = lead.poolId ?? selectedPoolId.value
+    if (!poolId) throw new Error('请选择线索池')
+    await claimLead(lead.id, poolId)
     showSuccessToast('已领取')
     reload()
   } catch (error) {
@@ -98,10 +111,19 @@ async function handleCreate() {
   }
   saving.value = true
   try {
-    const payload: Record<string, unknown> = { customData: {} }
+    const payload: Record<string, unknown> = { moduleFields: [] }
+    const fieldMap = new Map(fields.value.map((field) => [field.key, field]))
     for (const [key, value] of Object.entries(formModel.value)) {
       if (value === undefined || value === '') continue
-      if (isCustomFieldKey(key)) (payload.customData as Record<string, unknown>)[key] = value
+      const field = fieldMap.get(key)
+      if (isCustomFieldKey(key)) {
+        if (!field) continue
+        ;(payload.moduleFields as Array<{ fieldId: string; fieldValue: unknown }>).push({
+          fieldId: field.id,
+          fieldValue: value,
+        })
+      } else if (key === 'owner') payload.owner = value
+      else if (key === 'contact') payload.contact = value
       else payload[key] = value
     }
     await createLead(payload)
@@ -122,7 +144,10 @@ onMounted(() => undefined)
   <div class="min-h-full">
     <van-nav-bar title="线索" fixed placeholder>
       <template #right>
-        <span class="text-sm text-[var(--van-primary-color,#1989fa)]" @click="openCreate"
+        <span
+          v-if="activeTab === 'mine'"
+          class="text-sm text-[var(--van-primary-color,#1989fa)]"
+          @click="openCreate"
           >新建</span
         >
       </template>
@@ -157,9 +182,9 @@ onMounted(() => undefined)
             <template #value>
               <van-tag
                 :type="
-                  lead.status === 'CONVERTED'
+                  lead.status === 'SUCCESS'
                     ? 'success'
-                    : lead.status === 'INVALID'
+                    : lead.status === 'FAIL'
                       ? 'default'
                       : 'primary'
                 "

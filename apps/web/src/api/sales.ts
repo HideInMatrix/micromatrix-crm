@@ -14,6 +14,7 @@ import type {
   StageLogVO,
   TeamMemberVO,
 } from '@micromatrix/shared'
+import type { AxiosResponse } from 'axios'
 import { http } from './http'
 import {
   createImportForm,
@@ -33,6 +34,54 @@ export interface LeadListParams extends PageQuery {
   filters?: string
   viewId?: string
   homeFilter?: string
+}
+
+interface CordysPager<T> {
+  list: T[]
+  total: number
+  pageSize: number
+  current: number
+  optionMap?: Record<string, unknown>
+}
+
+function parseLeadFilters(raw?: string) {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function cluePageBody(params: LeadListParams) {
+  const filters = parseLeadFilters(params.filters)
+  if (params.status) filters.push({ key: 'stage', op: 'eq', value: params.status })
+  return {
+    current: params.page ?? 1,
+    pageSize: params.pageSize ?? 10,
+    keyword: params.keyword,
+    viewId: params.viewId,
+    homeFilter: params.homeFilter,
+    filters,
+  }
+}
+
+async function clueListRequest(params: LeadListParams): Promise<AxiosResponse<PaginatedResult<LeadVO>>> {
+  const poolMode = params.scope === 'pool'
+  const response = await http.post<CordysPager<LeadVO>>(
+    poolMode ? '/pool/lead/page' : '/lead/page',
+    poolMode ? { ...cluePageBody(params), poolId: params.poolId } : cluePageBody(params),
+  )
+  return {
+    ...response,
+    data: {
+      items: response.data.list,
+      total: response.data.total,
+      page: response.data.current,
+      pageSize: response.data.pageSize,
+    },
+  }
 }
 
 export interface ResourcePoolVO {
@@ -96,53 +145,57 @@ export const resourceCapacityApi = {
 }
 
 export const leadApi = {
-  list: (params: LeadListParams) => http.get<PaginatedResult<LeadVO>>('/leads', { params }),
-  importRows: (rows: Record<string, unknown>[]) =>
-    http.post<{ success: number; failed: number; errors: string[] }>('/leads/import/rows', {
-      rows,
-    }),
+  list: (params: LeadListParams) => clueListRequest(params),
+  poolOptions: () => http.get<ResourcePoolVO[]>('/pool/lead/options'),
   importTemplate: (importType: ImportType, poolId?: string) =>
-    http.get<Blob>(poolId ? '/leads/pool/import/template' : '/leads/import/template', {
+    http.get<Blob>(poolId ? '/pool/lead/template/download' : '/lead/template/download', {
       params: { importType, poolId },
       responseType: 'blob',
     }),
   importPrecheck: (file: File, importType: ImportType, poolId?: string) =>
     http.post<ImportResult>(
-      poolId ? '/leads/pool/import/pre-check' : '/leads/import/pre-check',
+      poolId ? '/pool/lead/import/pre-check' : '/lead/import/pre-check',
       createImportForm(file, importType, poolId),
     ),
   importXlsx: (file: File, importType: ImportType, poolId?: string) =>
     http.post<ImportResult>(
-      poolId ? '/leads/pool/import' : '/leads/import',
+      poolId ? '/pool/lead/import' : '/lead/import',
       createImportForm(file, importType, poolId),
     ),
-  exportCsv: (params: LeadListParams) =>
-    http.get<Blob>('/leads/export', { params, responseType: 'blob' }),
   exportAll: (params: LeadListParams, data: ExportCreatePayload, poolId?: string) =>
-    http.post(poolId ? '/leads/pool/export/all' : '/leads/export/all', data, {
-      params: { ...params, poolId },
-    }),
+    http.post(
+      poolId ? '/pool/lead/export-all' : '/lead/export',
+      { ...cluePageBody(params), ...data },
+      { params: poolId ? { poolId } : undefined },
+    ),
   exportSelected: (
-    params: LeadListParams,
+    _params: LeadListParams,
     data: ExportCreatePayload & { ids: string[] },
     poolId?: string,
   ) =>
-    http.post(poolId ? '/leads/pool/export/select' : '/leads/export/select', data, {
-      params: { ...params, poolId },
+    http.post(poolId ? '/pool/lead/export-select' : '/lead/export-select', data, {
+      params: poolId ? { poolId } : undefined,
     }),
-  create: (data: Record<string, unknown>) => http.post<LeadVO>('/leads', data),
-  update: (id: string, data: Record<string, unknown>) => http.patch<LeadVO>(`/leads/${id}`, data),
-  remove: (id: string) => http.delete(`/leads/${id}`),
-  toPool: (id: string, poolId?: string) => http.post(`/leads/${id}/to-pool`, { poolId }),
-  claim: (id: string) => http.post(`/leads/${id}/claim`),
-  assign: (id: string, ownerId: string) => http.post(`/leads/${id}/assign`, { ownerId }),
-  ownerHistory: (id: string) => http.get<OwnerHistoryVO[]>(`/leads/${id}/owner-history`),
+  create: (data: Record<string, unknown>) => http.post<LeadVO>('/lead/add', data),
+  update: (id: string, data: Record<string, unknown>) =>
+    http.post<LeadVO>('/lead/update', { id, ...data }),
+  remove: (id: string) => http.get(`/lead/delete/${id}`),
+  toPool: (id: string, poolId?: string, reasonId?: string) =>
+    http.post('/lead/to-pool', { id, poolId, reasonId }),
+  claim: (id: string, poolId: string) =>
+    http.post('/pool/lead/pick', { clueId: id, poolId }),
+  transfer: (id: string, owner: string) =>
+    http.post('/lead/batch/transfer', { ids: [id], owner }),
+  poolAssign: (id: string, assignUserId: string) =>
+    http.post('/pool/lead/assign', { clueId: id, assignUserId }),
+  ownerHistory: (id: string) =>
+    http.get<OwnerHistoryVO[]>(`/lead/owner/history/list/${id}`),
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue?: unknown }) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/update', data),
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/update', data),
+  batchTransfer: (ids: string[], owner: string) =>
+    http.post<{ count: number }>('/lead/batch/transfer', { ids, owner }),
   batchDelete: (ids: string[]) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/batch/delete', {
-      ids,
-    }),
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/delete', ids),
   poolBatchUpdate: (data: {
     poolId: string
     ids: string[]
@@ -150,30 +203,30 @@ export const leadApi = {
     fieldValue?: unknown
   }) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>(
-      '/leads/pool/batch/update',
+      '/pool/lead/batch-update',
       data,
     ),
   poolBatchDelete: (poolId: string, ids: string[]) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>('/leads/pool/batch/delete', {
+    http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/lead/batch-delete', {
       poolId,
       ids,
     }),
-  markInvalid: (id: string) => http.post(`/leads/${id}/invalid`),
+  markFailed: (id: string) => http.post('/lead/status/update', { id, stage: 'FAIL' }),
   transform: (data: { clueId: string; oppCreated?: boolean; oppName?: string }) =>
     http.post<{
       clueId: string
       customerId: string
       contactId: string | null
       opportunityId: string | null
-    }>('/leads/transform', data),
+    }>('/lead/transform', data),
   transitionCustomer: (data: Record<string, unknown> & { clueId: string }) =>
     http.post<{ clueId: string; customerId: string; contactId: string | null }>(
-      '/leads/transition/account',
+      '/lead/transition/account',
       data,
     ),
   retransitionCustomer: (data: { clueIds: string[]; customerId: string }) =>
     http.post<{ customerId: string; success: number; skippedIds: string[]; contactIds: string[] }>(
-      '/leads/re-transition/account',
+      '/lead/re-transition/account',
       data,
     ),
   transitionCustomerList: (data: {
@@ -205,7 +258,12 @@ export const leadApi = {
       total: number
       page: number
       pageSize: number
-    }>('/leads/transition/account/page', data),
+    }>('/lead/transition/account/page', {
+      current: data.page,
+      pageSize: data.pageSize,
+      keyword: data.keyword,
+      filters: parseLeadFilters(data.filters),
+    }),
 }
 
 // ===== 跟进 =====

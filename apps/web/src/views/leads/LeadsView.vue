@@ -11,7 +11,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
-import { leadApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
+import { leadApi, type ResourcePoolVO } from '@/api/sales'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
@@ -111,7 +111,7 @@ async function loadFields() {
 
 async function loadPoolOptions() {
   try {
-    const { data } = await resourcePoolApi.options('lead')
+    const { data } = await leadApi.poolOptions()
     pools.value = data
     if (!selectedPoolId.value || !data.some((pool) => pool.id === selectedPoolId.value)) {
       selectedPoolId.value = data[0]?.id ?? ''
@@ -247,7 +247,11 @@ function openEdit(row: LeadVO) {
         f.key,
         isCustomFieldKey(f.key)
           ? row.customData[f.key]
-          : (row as unknown as Record<string, unknown>)[f.key],
+          : f.key === 'contact'
+            ? row.contactName
+            : f.key === 'owner'
+              ? row.ownerId
+              : (row as unknown as Record<string, unknown>)[f.key],
       ]),
   )
   dialogVisible.value = true
@@ -259,18 +263,25 @@ async function handleSave() {
   const isCreate = !editingId.value
   saving.value = true
   try {
-    const payload: Record<string, unknown> = { customData: {} }
+    const payload: Record<string, unknown> = { moduleFields: [] }
+    const fieldMap = new Map(fields.value.map((field) => [field.key, field]))
     for (const [key, value] of Object.entries(formModel.value)) {
       if (value === undefined || value === '') continue
-      if (isCustomFieldKey(key)) (payload.customData as Record<string, unknown>)[key] = value
+      const field = fieldMap.get(key)
+      if (isCustomFieldKey(key)) {
+        if (!field) continue
+        ;(payload.moduleFields as Array<{ fieldId: string; fieldValue: unknown }>).push({
+          fieldId: field.id,
+          fieldValue: value,
+        })
+      } else if (key === 'owner') payload.owner = value
+      else if (key === 'contact') payload.contact = value
       else payload[key] = value
     }
     if (editingId.value) {
       await leadApi.update(editingId.value, payload)
       ElMessage.success('线索已更新')
     } else {
-      payload.toPool = toPool.value
-      if (toPool.value && selectedPoolId.value) payload.poolId = selectedPoolId.value
       await leadApi.create(payload)
       ElMessage.success('线索已创建')
     }
@@ -286,7 +297,9 @@ async function handleSave() {
 
 async function handleClaim(row: LeadVO) {
   try {
-    await leadApi.claim(row.id)
+    const poolId = row.poolId ?? selectedPoolId.value
+    if (!poolId) throw new Error('请选择线索池')
+    await leadApi.claim(row.id, poolId)
     ElMessage.success(`已领取「${row.name}」`)
     loadData()
   } catch (error) {
@@ -364,7 +377,8 @@ function handleAssign(row: LeadVO) {
 async function handleAssignConfirm(userId: string) {
   if (!assignTarget.value) return
   try {
-    await leadApi.assign(assignTarget.value.id, userId)
+    if (activeTab.value === 'pool') await leadApi.poolAssign(assignTarget.value.id, userId)
+    else await leadApi.transfer(assignTarget.value.id, userId)
     ElMessage.success('已分配')
     loadData()
   } catch (error) {
@@ -372,13 +386,13 @@ async function handleAssignConfirm(userId: string) {
   }
 }
 
-async function handleInvalid(row: LeadVO) {
-  const confirmed = await ElMessageBox.confirm(`标记「${row.name}」为无效线索？`, '确认', {
+async function handleFailed(row: LeadVO) {
+  const confirmed = await ElMessageBox.confirm(`将「${row.name}」标记为失败？`, '确认', {
     type: 'warning',
   }).catch(() => false)
   if (!confirmed) return
-  await leadApi.markInvalid(row.id)
-  ElMessage.success('已标记无效')
+  await leadApi.markFailed(row.id)
+  ElMessage.success('已标记失败')
   loadData()
 }
 
@@ -604,7 +618,13 @@ onMounted(async () => {
         <template #default="{ row }">
           <el-tag
             :type="
-              row.status === 'CONVERTED' ? 'success' : row.status === 'INVALID' ? 'info' : 'primary'
+              row.status === 'SUCCESS'
+                ? 'success'
+                : row.status === 'FAIL'
+                  ? 'info'
+                  : row.status === 'INTERESTED'
+                    ? 'warning'
+                    : 'primary'
             "
             size="small"
           >
@@ -620,8 +640,19 @@ onMounted(async () => {
       <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
           <template v-if="activeTab === 'pool'">
-            <el-button link type="primary" @click="handleClaim(row as LeadVO)">领取</el-button>
-            <el-button v-if="auth.hasPerm('lead:assign')" link @click="handleAssign(row as LeadVO)">
+            <el-button
+              v-if="auth.hasPerm('leadPool:pick')"
+              link
+              type="primary"
+              @click="handleClaim(row as LeadVO)"
+            >
+              领取
+            </el-button>
+            <el-button
+              v-if="auth.hasPerm('leadPool:assign')"
+              link
+              @click="handleAssign(row as LeadVO)"
+            >
               分配
             </el-button>
             <el-button link @click="openOwnerHistory(row as LeadVO)">负责人历史</el-button>
@@ -633,7 +664,10 @@ onMounted(async () => {
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
-                    v-if="row.status === 'FOLLOWING' && auth.hasPerm('lead:update')"
+                    v-if="
+                      !['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '') &&
+                      auth.hasPerm('lead:update')
+                    "
                     @click="openConvert(row as LeadVO)"
                   >
                     转化为客户
@@ -644,27 +678,36 @@ onMounted(async () => {
                   >
                     关联客户
                   </el-dropdown-item>
-                  <el-dropdown-item @click="openEdit(row as LeadVO)">编辑</el-dropdown-item>
+                  <el-dropdown-item v-if="auth.hasPerm('lead:update')" @click="openEdit(row as LeadVO)">
+                    编辑
+                  </el-dropdown-item>
                   <el-dropdown-item @click="openOwnerHistory(row as LeadVO)">
                     负责人历史
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="auth.hasPerm('lead:assign')"
+                    v-if="auth.hasPerm('lead:transfer')"
                     @click="handleAssign(row as LeadVO)"
                   >
-                    分配
+                    转移
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="row.status === 'FOLLOWING' && auth.hasPerm('lead:assign')"
+                    v-if="
+                      !['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '') &&
+                      auth.hasPerm('lead:recycle')
+                    "
                     @click="handleToPool(row as LeadVO)"
                   >
-                    退回线索池
+                    移入线索池
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="row.status === 'FOLLOWING'"
-                    @click="handleInvalid(row as LeadVO)"
+                    v-if="
+                      !['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '') &&
+                      row.status !== 'FAIL' &&
+                      auth.hasPerm('lead:update')
+                    "
+                    @click="handleFailed(row as LeadVO)"
                   >
-                    标记无效
+                    标记失败
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>

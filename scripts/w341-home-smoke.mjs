@@ -280,7 +280,7 @@ try {
       id: id(),
       name: '已转换不统计',
       owner: primary.user.id,
-      stage: 'CONVERTED',
+      stage: 'FOLLOWING',
       organizationId: primary.user.tenantId,
       createTime: BigInt(now),
       updateTime: BigInt(now),
@@ -476,10 +476,11 @@ try {
     deptIds: [],
     userField: 'OWNER',
   }
-  const leadList = await apiGet(
-    `/leads?page=1&pageSize=100&scope=mine&homeFilter=${encodeURIComponent(JSON.stringify(leadHomeFilter))}`,
-    primary.headers,
-  )
+  const leadList = await apiPost('/lead/page', primary.headers, {
+    current: 1,
+    pageSize: 100,
+    homeFilter: JSON.stringify(leadHomeFilter),
+  })
   check(
     '首页线索点击后的真实列表 total 与统计口径一致',
     leadList.response.ok && leadList.data?.total === leadAll.data?.todayClue?.value,

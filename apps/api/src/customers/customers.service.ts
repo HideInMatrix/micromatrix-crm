@@ -320,7 +320,7 @@ export class CustomersService {
       this.prisma.clue.findMany({
         where: {
           organizationId: user.tenantId,
-          stage: { not: 'INVALID' },
+          stage: { not: 'FAIL' },
           OR: [
             ...(name ? [{ name: { contains: name, mode: 'insensitive' as const } }] : []),
             ...(phone ? [{ phone }] : []),
