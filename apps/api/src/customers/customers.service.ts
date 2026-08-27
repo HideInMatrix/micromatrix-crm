@@ -793,40 +793,65 @@ export class CustomersService {
   }
 
   async create(user: AuthUser, dto: CreateCustomerDto): Promise<CustomerVO> {
+    const prepared = await this.prepareCreateForTransaction(user, dto)
+    const customer = await this.prisma.$transaction((tx) =>
+      this.createPreparedInTransaction(user, dto, prepared, tx),
+    )
+    await this.notifyCreatedCustomer(user, customer, prepared.owner.id)
+    return this.toSingleVO(user, customer)
+  }
+
+  async prepareCreateForTransaction(user: AuthUser, dto: CreateCustomerDto) {
     const values = this.customerFieldInput(dto)
     await this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' })
     await this.assertCustomerUniqueRules(user.tenantId, dto)
     const owner = await this.resolveOwner(user, dto.ownerId)
     await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
+    return { values, owner }
+  }
+
+  async createPreparedInTransaction(
+    user: AuthUser,
+    dto: CreateCustomerDto,
+    prepared: Awaited<ReturnType<CustomersService['prepareCreateForTransaction']>>,
+    tx: Prisma.TransactionClient,
+  ) {
     const now = BigInt(Date.now())
-    const customer = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.customer.create({
-        data: {
-          name: dto.name.trim(),
-          owner: owner.id,
-          collectionTime: now,
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
-      })
-      await this.fieldValues.save(user.tenantId, 'customer', created.id, values, 'create', tx)
-      return created
+    const created = await tx.customer.create({
+      data: {
+        name: dto.name.trim(),
+        owner: prepared.owner.id,
+        collectionTime: now,
+        organizationId: user.tenantId,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
+      },
     })
+    await this.fieldValues.save(
+      user.tenantId,
+      'customer',
+      created.id,
+      prepared.values,
+      'create',
+      tx,
+    )
+    return created
+  }
+
+  async notifyCreatedCustomer(user: AuthUser, customer: Customer, ownerId: string) {
     await this.notifications.send({
       tenantId: user.tenantId,
       event: 'CUSTOMER_ADD',
       operatorId: user.id,
-      recipientIds: [owner.id],
+      recipientIds: [ownerId],
       excludeSelf: true,
       type: 'system',
       title: '新建客户',
       content: `${user.name} 新建了客户「${customer.name}」并将你设为负责人`,
       link: `/customers/${customer.id}`,
     })
-    return this.toSingleVO(user, customer)
   }
 
   async update(user: AuthUser, id: string, dto: UpdateCustomerDto): Promise<CustomerVO> {

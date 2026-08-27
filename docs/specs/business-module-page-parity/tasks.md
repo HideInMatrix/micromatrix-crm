@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md) 与普通线索 API 重建，当前执行指针进入：**3.3 对齐三条线索转换链路**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
+> 前置插入执行单元 [W3.4-D Docker 发布链路](../docker-release/tasks.md) 已完成并关闭。2026-08-27 已完成 [W3.4.2 线索与线索池源码与 API 证据矩阵](./clue-source-api-audit.md)、普通线索 API 与三条转换链路对齐，当前执行指针进入：**3.4 重建多线索池 API 与规则执行**。后续实现严格以 3.1 固化的 Cordys 页面 → API → Controller → Service → Domain/DDL 事实为准，不从历史 `/api/leads` 兼容实现反推行为。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -139,11 +139,12 @@
   - [x] 验证：普通线索 API Smoke `18/18`、W3.4.1 回归 Smoke `17/17`、shared/API/Web typecheck、本批 ESLint、API/Web production build 全通过。
   - _需求：R2、R5、R11_
 
-- [ ] 3.3 对齐三条线索转换链路
-  - 保持自动转换、新建客户并关联、关联已有客户三条路径独立。
-  - 以 `transitionType + transitionId` 维护已转客户事实，并在事务内完成联系人、协作、跟进记录、跟进计划和商机副作用。
-  - 按 Cordys `ClueService.batchCopyCluePlanAndRecord` 同时复制 FollowUpRecord 与 FollowUpPlan（含字段值），保留原线索侧记录/计划，不得继续沿用 R4 只复制记录的历史缺口。
-  - 回归已验收的通知、计划和权限规则。
+- [x] 3.3 对齐三条线索转换链路
+  - [x] 保持 `/lead/transform`、`/lead/transition/account`、`/lead/re-transition/account` 三条路径独立；其中新建客户并关联严格按 Cordys 不复制 Follow、不创建 Collaboration，其余两条按源码复制 Follow 并执行协作规则。
+  - [x] 消除“先创建客户、失败后手工 delete”的补偿式事务；Customer/Contact/Collaboration/Opportunity/`transitionType + transitionId`/Follow 副作用改为同一 Prisma transaction，公海客户领取也可加入同一事务。
+  - [x] 补齐 FollowUpPlan 复制：保留 `customData`、原记录/计划，映射新 Contact 与 `convertedRecordId`；当前模型无独立 opportunityId 列，不伪造字段。
+  - [x] 对齐同名客户 selector、联系人唯一规则、重复协作幂等、无效负责人跳过、客户 follower/followTime 刷新和商机 lastFollowedAt；通知继续在事务提交后发送。
+  - [x] 验证：三条转换 Smoke `21/21`、普通线索 API 回归 `18/18`、W3.4.1 首页回归 `17/17`、规则测试 `114/114`、API typecheck/production build 通过。
   - _需求：R5、R11_
 
 - [ ] 3.4 重建多线索池 API 与规则执行

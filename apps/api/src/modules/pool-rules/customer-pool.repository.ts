@@ -228,6 +228,10 @@ export class CustomerPoolRepository {
     return this.takeFromPool(input, true)
   }
 
+  pickInTransaction(tx: Prisma.TransactionClient, input: CustomerOwnershipInput) {
+    return this.takeFromPoolInTransaction(tx, input, true)
+  }
+
   assign(input: CustomerOwnershipInput) {
     return this.takeFromPool(input, false)
   }
@@ -286,82 +290,87 @@ export class CustomerPoolRepository {
   }
 
   private async takeFromPool(input: CustomerOwnershipInput, enforcePickRule: boolean) {
+    return this.prisma.$transaction((tx) => this.takeFromPoolInTransaction(tx, input, enforcePickRule))
+  }
+
+  private async takeFromPoolInTransaction(
+    tx: Prisma.TransactionClient,
+    input: CustomerOwnershipInput,
+    enforcePickRule: boolean,
+  ) {
     const now = input.now ?? BigInt(Date.now())
-    return this.prisma.$transaction(async (tx) => {
-      await acquirePoolTransactionLocks(
-        tx,
-        poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
-      )
-      const customer = await tx.customer.findFirst({
-        where: { id: input.customerId, organizationId: input.organizationId },
-        include: { pool: { include: { pickRule: true } } },
-      })
-      if (!customer) throw new NotFoundException('客户不存在')
-      if (!customer.inSharedPool || !customer.poolId || !customer.pool?.enable)
-        throw new ConflictException(`客户「${customer.name}」已被领取或所在公海已禁用`)
-
-      const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
-      const [ownedCount, todayPickedCount, previousOwner] = await Promise.all([
-        tx.customer.count({
-          where: {
-            organizationId: input.organizationId,
-            owner: input.ownerId,
-            inSharedPool: false,
-          },
-        }),
-        tx.customer.count({
-          where: {
-            organizationId: input.organizationId,
-            owner: input.ownerId,
-            inSharedPool: false,
-            collectionTime: { gte: startOfLocalDay(now), lte: now },
-          },
-        }),
-        tx.customerOwner.findFirst({
-          where: { customerId: customer.id },
-          orderBy: { collectionTime: 'desc' },
-        }),
-      ])
-      const excludedOwnedCount = capacity
-        ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
-        : 0
-
-      this.calculator.assertClaimAllowed({
-        rule: enforcePickRule ? this.pickRuleSnapshot(customer.pool.pickRule) : null,
-        claimantId: input.ownerId,
-        processCount: 1,
-        todayPickedCount,
-        previousOwner,
-        poolEnteredAt: customer.updateTime,
-        capacity: capacity?.capacity ?? null,
-        ownedCount,
-        excludedOwnedCount,
-        poolAdmin: input.poolAdmin ?? false,
-        // Cordys PoolCustomerService: 公海管理员跳过前负责人冷却。
-        poolAdminStillChecksPreviousOwner: false,
-        now,
-      })
-
-      const updated = await tx.customer.updateMany({
-        where: {
-          id: customer.id,
-          organizationId: input.organizationId,
-          poolId: customer.poolId,
-          inSharedPool: true,
-        },
-        data: {
-          poolId: null,
-          inSharedPool: false,
-          owner: input.ownerId,
-          collectionTime: now,
-          updateUser: input.ownerId,
-          updateTime: now,
-        },
-      })
-      if (updated.count !== 1)
-        throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
-      return tx.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    await acquirePoolTransactionLocks(
+      tx,
+      poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
+    )
+    const customer = await tx.customer.findFirst({
+      where: { id: input.customerId, organizationId: input.organizationId },
+      include: { pool: { include: { pickRule: true } } },
     })
+    if (!customer) throw new NotFoundException('客户不存在')
+    if (!customer.inSharedPool || !customer.poolId || !customer.pool?.enable)
+      throw new ConflictException(`客户「${customer.name}」已被领取或所在公海已禁用`)
+
+    const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
+    const [ownedCount, todayPickedCount, previousOwner] = await Promise.all([
+      tx.customer.count({
+        where: {
+          organizationId: input.organizationId,
+          owner: input.ownerId,
+          inSharedPool: false,
+        },
+      }),
+      tx.customer.count({
+        where: {
+          organizationId: input.organizationId,
+          owner: input.ownerId,
+          inSharedPool: false,
+          collectionTime: { gte: startOfLocalDay(now), lte: now },
+        },
+      }),
+      tx.customerOwner.findFirst({
+        where: { customerId: customer.id },
+        orderBy: { collectionTime: 'desc' },
+      }),
+    ])
+    const excludedOwnedCount = capacity
+      ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
+      : 0
+
+    this.calculator.assertClaimAllowed({
+      rule: enforcePickRule ? this.pickRuleSnapshot(customer.pool.pickRule) : null,
+      claimantId: input.ownerId,
+      processCount: 1,
+      todayPickedCount,
+      previousOwner,
+      poolEnteredAt: customer.updateTime,
+      capacity: capacity?.capacity ?? null,
+      ownedCount,
+      excludedOwnedCount,
+      poolAdmin: input.poolAdmin ?? false,
+      poolAdminStillChecksPreviousOwner: false,
+      now,
+    })
+
+    const updated = await tx.customer.updateMany({
+      where: {
+        id: customer.id,
+        organizationId: input.organizationId,
+        poolId: customer.poolId,
+        inSharedPool: true,
+      },
+      data: {
+        poolId: null,
+        inSharedPool: false,
+        owner: input.ownerId,
+        collectionTime: now,
+        updateUser: input.ownerId,
+        updateTime: now,
+      },
+    })
+    if (updated.count !== 1)
+      throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
+    return tx.customer.findUniqueOrThrow({ where: { id: customer.id } })
   }
 
   private async finishOwnership(input: CustomerMoveToPoolInput, automatic: boolean) {

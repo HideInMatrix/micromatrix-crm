@@ -21,6 +21,7 @@
     "smoke:w341-home": "node scripts/w341-home-smoke.mjs",
     "smoke:w341-home-browser": "node scripts/w341-home-browser-smoke.mjs",
     "smoke:w342-clue-api": "node scripts/w342-clue-api-smoke.mjs",
+    "smoke:w342-clue-transition": "node scripts/w342-clue-transition-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },

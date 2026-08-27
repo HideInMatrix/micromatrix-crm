@@ -390,6 +390,8 @@ oppName?: string
 
 Cordys 先通过真实客户新增表单创建 Customer，然后写线索 `transitionId/transitionType`，并按联系人电话检查后同步创建联系人，最后发送转换通知。
 
+这里必须保留一个与另外两条路径不同的源码事实：`ClueService.transitionCustomer()` **没有**调用 `batchCopyCluePlanAndRecord()`，也没有调用 `transformCsAssociate()`；因此该路径不会复制 FollowUpRecord/FollowUpPlan，也不会因线索 Owner 与新客户 Owner 不同而额外创建 CustomerCollaboration。W3.4.2 不得为了“统一实现”擅自补上这两类副作用。
+
 W3.4.2 保持这一入口与 `/lead/transform` 独立，不合并为一个“万能转换” DTO。
 
 ### 14.3 关联已有客户 `/lead/re-transition/account`
@@ -407,7 +409,7 @@ W3.4.2 保持这一入口与 `/lead/transform` 独立，不合并为一个“万
 
 ## 15. 转换时 FollowUpRecord / FollowUpPlan 复制事实
 
-`ClueService.batchCopyCluePlanAndRecord()` 是本阶段必须保留的关键事实。
+`ClueService.batchCopyCluePlanAndRecord()` 是本阶段必须保留的关键事实，但调用范围只覆盖源码实际调用它的路径：自动转换 `/lead/transform` 与关联已有客户 `/lead/re-transition/account`。`/lead/transition/account` 不调用它。
 
 ### 15.1 FollowUpRecord
 
@@ -436,6 +438,8 @@ Cordys：
 8. 原线索侧计划不删除。
 
 当前 MicroMatrix `LeadsService.associateLeadsToCustomer()` 只复制 `followUpRecord`，没有复制 `FollowUpPlan`。这就是 W3.4.2 task 3.3 已登记的历史缺口；同时当前 `FollowUpRecord` 模型没有独立动态字段表，而 `FollowUpPlan` 使用 `customData`。实现时以当前项目已存在领域模型表达同样业务结果，不伪造 Cordys 不存在的删除行为。
+
+另一个已确认偏差是：当前 `transitionCustomer()` 也调用 `associateLeadsToCustomer()`，因此历史实现会在“新建客户并关联”路径额外复制 FollowUpRecord、可能创建协作并刷新客户跟进时间；这些均超出 Cordys `transitionCustomer()` 源码，应在 task 3.3 拆开。
 
 ## 16. Cordys 数据表事实
 
@@ -619,3 +623,60 @@ Web production build        PASS
 `smoke:w342-clue-api` 实际覆盖：表单、两次新增、Cordys Pager 与排序、详情、部分更新、状态/lastStage、批量修改、单事务批量转移、Owner History、移池、普通列表排池、xlsx 模板、真实导出任务、动态字段图表、删除以及旧 `/api/leads` 404。
 
 3.2 不提前宣称线索池完整复刻：当前 `/pool/lead` 只为旧 Controller 删除后的调用连续性提供分域过渡入口；多池 Scope、隐藏字段、池级图表和完整独立权限验收仍归 task 3.4。
+
+## 24. task 3.3 实施前转换清单（2026-08-27）
+
+再次读取 `ClueService.transform / transitionCustomer / batchTransition / transitionCs / transformCsAssociate / batchCopyCluePlanAndRecord / refreshCsFollowTime` 后，3.3 按以下边界实施，不再把三条路径压成一个“万能转换”函数：
+
+| 路径 | 客户来源 | Collaboration | Contact | Copy Follow Record | Copy Follow Plan | 刷新客户 FollowTime | Opportunity |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `/lead/transform` | 同名 selector 或 CLUE_TO_CUSTOMER 联动新建 | Owner 不同且不存在时创建 | CLUE_TO_CONTACT 联动 + 唯一性 | 是 | 是 | 是 | 可选，CLUE_TO_OPPORTUNITY |
+| `/lead/transition/account` | 用户提交 CustomerAddRequest 新建 | **否** | 按 clue phone 去重后同步基础联系人 | **否** | **否** | **否** | 否 |
+| `/lead/re-transition/account` | 既有客户；公海先领取 | Owner 不同且不存在时创建 | CLUE_TO_CONTACT 联动 + 唯一性 | 是 | 是 | 是 | 否 |
+
+MicroMatrix 当前模型的等价复制规则：
+
+- `FollowUpRecord` 没有 Cordys 的 Field/Blob 子表，因此复制现有记录全部可表达业务列，生成新 ID，目标改为 `targetType=customer,targetId=customerId`，原 lead 记录保留。
+- `FollowUpPlan` 当前尚未迁移成 Cordys 独立 Field/Blob 表（DB-021），其动态字段暂存在 `customData`；复制时完整复制 `customData`，生成新 ID，将 `targetType/targetId/contactId` 指向客户侧，原 lead 计划保留。
+- 当前模型没有 FollowUpPlan 的独立 `opportunityId` 列；在 DB-021 完成前不能伪造不存在字段。商机转换仍复制客户侧计划，商机关联以当前可表达模型为边界并登记该模型差异。
+
+事务边界：Cordys `ClueService` 为类级 `@Transactional(rollbackFor = Exception.class)`。3.3 必须消除当前“先调用 CustomersService 创建、失败再手工 delete”的补偿式事务；客户/联系人/协作/商机/transition/Follow 副作用需要进入同一个 Prisma transaction，通知在提交成功后发送。若复用 Service 无法传入 transaction，应提取可在 `Prisma.TransactionClient` 上运行的内部创建函数，而不是继续依赖事后删除补偿。
+
+3.3 完成条件：三条路径分别有专项测试，验证副作用差异、事务回滚、原 Follow 保留、副本字段完整、重复联系人/协作规则、同名客户 selector、公海客户领取以及 `transitionType + transitionId` 事实。
+
+## 25. task 3.3 实施回写（2026-08-27）
+
+三条转换链路已按第 14、15、24 节事实完成分路实现，不再共享一个副作用完全相同的“万能关联”流程：
+
+- `/lead/transform`：同名客户唯一规则生效时执行 Cordys selector，否则在同一事务创建 Customer；随后创建/去重 Contact、按 Owner 差异创建 Collaboration、可选创建 Opportunity、复制 FollowUpRecord/FollowUpPlan、刷新 Customer `follower/followTime`，最后写 `transitionType=CUSTOMER + transitionId`。
+- `/lead/transition/account`：Customer、基础 Contact 与 transition 在同一事务完成；按 Cordys 源码**不**复制 FollowUpRecord/FollowUpPlan、**不**创建 Collaboration、**不**刷新客户 FollowTime。
+- `/lead/re-transition/account`：普通客户直接关联；公海客户在同一事务先执行领取规则再关联。无负责人或负责人已失效的线索按 Cordys 跳过，其余线索执行 Contact/Collaboration/Follow 复制和 transition 更新。
+
+事务基础设施同步收口：
+
+- `CustomersService` 增加 prepare/create-in-transaction/after-commit notification 三段式入口，普通 `create()` 仍保持原公开行为。
+- `CustomerPoolRepository` 增加 `pickInTransaction()`，把公海领取的锁、容量、每日领取、冷却与资源更新纳入调用方 transaction。
+- `LeadsService` 把关联所需元数据预加载与事务内数据库写分离；通知只在 transaction 成功提交后发送。
+- 新租户首次转换时发现 contact 元数据惰性初始化存在并发 `ensureForm` 竞态；name/phone 唯一规则读取改为顺序初始化，消除 `(organization_id, form_key)` P2002。
+
+Follow 副本规则：
+
+- FollowUpRecord 为每个副本生成新 ID，目标改为 Customer，原 Lead 记录不删除。
+- FollowUpPlan 生成新 ID，保留 content/method/status/owner/dept/createdBy/dueNotifiedAt/时间戳与完整 `customData`，Contact 指向转换得到的新联系人。
+- 已转记录计划的 `convertedRecordId` 映射到新复制的 Customer FollowUpRecord；映射不存在时不制造悬空引用。
+- 当前 Prisma FollowUpPlan 没有 Cordys `opportunityId` 独立列，因此不向 `customData` 注入未定义业务字段；该模型差异继续由 DB-021 跟踪。
+
+专项运行证据：
+
+```text
+pnpm smoke:w342-clue-transition   21/21
+pnpm smoke:w342-clue-api          18/18
+pnpm smoke:w341-home              17/17
+pnpm --filter @micromatrix/api test:rules   114/114
+API typecheck                     PASS
+API production build              PASS
+```
+
+`smoke:w342-clue-transition` 实际覆盖：自动转换 Customer/Contact/Opportunity、`transitionType + transitionId`、Customer follower/followTime、Opportunity lastFollowedAt、Follow Record/Plan 与 convertedRecordId 映射、原 Follow 保留、提交后通知；显式开启唯一规则后的同名客户 selector；新建客户并关联路径“不复制 Follow/不建协作”；Contact 写失败后的完整事务回滚；已有客户协作与 Follow 复制、失效负责人跳过、重复关联不重复 Contact/Collaboration；公海客户先领取再关联。
+
+因此 task 3.3 可以关闭，执行指针进入 **3.4 重建多线索池 API 与规则执行**。
