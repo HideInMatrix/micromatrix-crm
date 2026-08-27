@@ -10,12 +10,13 @@
 
 ## 执行顺序
 
-| 阶段 | 范围                    | 完成标准                                                                               | 状态          |
-| ---- | ----------------------- | -------------------------------------------------------------------------------------- | ------------- |
-| W3.1 | 企业设置 → 企微配置底座 | 配置、AES-GCM 安全存储、连接测试、权限、审计、页面和自动化验收                         | `VERIFIED`    |
-| W3.2 | 企微组织同步            | 部门/成员差异预览、外部 ID 映射、冲突策略、同步执行与记录、失败重试和页面闭环          | `VERIFIED`    |
-| W3.3 | 企微统一登录与消息渠道  | 外部身份/OAuth state、绑定与解绑、登录审计；消息渠道开关、发送器、重试与投递审计       | `VERIFIED`    |
-| W3.4 | 图中业务模块逐页复查    | 首页、线索/池、客户/联系人/公海、仪表板逐页完成源码→API→Service→数据模型→页面→测试闭环 | `IN_PROGRESS` |
+| 阶段   | 范围                    | 完成标准                                                                               | 状态          |
+| ------ | ----------------------- | -------------------------------------------------------------------------------------- | ------------- |
+| W3.1   | 企业设置 → 企微配置底座 | 配置、AES-GCM 安全存储、连接测试、权限、审计、页面和自动化验收                         | `VERIFIED`    |
+| W3.2   | 企微组织同步            | 部门/成员差异预览、外部 ID 映射、冲突策略、同步执行与记录、失败重试和页面闭环          | `VERIFIED`    |
+| W3.3   | 企微统一登录与消息渠道  | 外部身份/OAuth state、绑定与解绑、登录审计；消息渠道开关、发送器、重试与投递审计       | `VERIFIED`    |
+| W3.4-D | Docker 发布链路         | API/Web 双镜像、Prisma migration、Nginx runtime proxy、Tag→GHCR 多架构自动发布         | `VERIFIED`    |
+| W3.4   | 图中业务模块逐页复查    | 首页、线索/池、客户/联系人/公海、仪表板逐页完成源码→API→Service→数据模型→页面→测试闭环 | `IN_PROGRESS` |
 
 ## W3.2 验收结论
 
@@ -47,6 +48,7 @@
 12. 任务 1.9 的 [公共底座最终专项验收](./specs/business-module-page-parity/foundation-validation-audit.md) 已完成：Prisma、`97/97` 规则测试、三类 W3.4 真实库 Smoke、隔离库 30 migration、Shared/API/Web 类型与构建、全仓 Lint 均通过；根关键链路 `219/219`、W3.2 `23/23`、W3.3 `19/19` 全绿。验收同时收口 Pool Options 只读 facade、负责人历史序列化、直接字段别名、关联客户候选范围、关键词 contains 语义和交易链 Customer `organizationId` 遗漏。W3.4.0 正式关闭，随后进入 W3.4.1 首页。
 13. W3.4.1 的 [首页最终专项验收](./specs/business-module-page-parity/home-validation-audit.md) 已完成：独立 Home 统计与跨页筛选、Cordys 普通工作台、真实快捷入口、默认密码状态和审批 CC 数据源全部闭环；`108/108` 规则测试、首页 API/数据库 Smoke `17/17`、Chrome Browser Smoke `12/12`、根 Smoke `219/219`、W3.2 `23/23`、W3.3 `19/19` 全绿，Shared/API/Web typecheck、Lint 和三端 production build 通过。W3.4.1 正式关闭，下一独立执行单元为 W3.4.2 线索与线索池。
 14. 2026-08-27 企业设置 W3.4-S 与前端目录最终收口已完成：六页签领域化继续保持，未登录登录页可按 tenant/email 获取公开品牌并同步桌面/Mobile 标题，登录页配置移除模拟预览；前端路由页面统一归档到 `src/views/<业务模块>/`，移动页面进入模块 `mobile/` 子目录，旧 `src/mobile` 根目录删除。最终 `114/114` 规则测试、企业设置 Smoke `23/23`、根 Smoke `219/219`、Shared/API/Web typecheck、全仓 ESLint 和三端 production build 全绿。该收口不改变 W3.4 业务执行顺序，当前正式从 W3.4.2 task 3.1 开始。
+15. 在进入 W3.4.2 前插入的 [W3.4-D Docker 发布链路](./specs/docker-release/tasks.md) 已完成：API/Web 独立 multi-stage image、生产 Prisma migration、Nginx SPA + runtime `/api` proxy、release compose 与 GHCR tag workflow 均已落地；本地 release Smoke 从零应用 34 个 migration 后验证 API/Web runtime 通过。`git push origin v0.0.1`（本地 tag 已存在时）会触发发布；当前执行指针恢复为 W3.4.2 task 3.1。
 
 ## 长期完成约束
 

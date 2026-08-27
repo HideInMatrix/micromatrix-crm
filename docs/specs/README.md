@@ -14,4 +14,5 @@
 | W3.1 企业微信集成底座     | [requirements](./wecom-integration-foundation/requirements.md)          | [design](./wecom-integration-foundation/design.md)          | [tasks](./wecom-integration-foundation/tasks.md)                        |
 | W3.2 企微组织同步         | [requirements](./wecom-organization-sync/requirements.md)               | [design](./wecom-organization-sync/design.md)               | [tasks（已完成）](./wecom-organization-sync/tasks.md)                   |
 | W3.3 企微登录与消息       | [requirements](./wecom-sso-message-channel/requirements.md)             | [design](./wecom-sso-message-channel/design.md)             | [tasks（已完成）](./wecom-sso-message-channel/tasks.md)                 |
+| W3.4-D Docker 发布链路    | [requirements](./docker-release/requirements.md)                        | [design](./docker-release/design.md)                        | [tasks（已完成）](./docker-release/tasks.md)                            |
 | W3.4 图中业务模块逐页对齐 | [requirements（已确认）](./business-module-page-parity/requirements.md) | [design（已确认）](./business-module-page-parity/design.md) | [tasks（当前 W3.4.2 task 3.1）](./business-module-page-parity/tasks.md) |

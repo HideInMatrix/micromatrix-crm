@@ -1,6 +1,6 @@
 # 微矩阵 CRM（MicroMatrix CRM）
 
-以项目内 `CordysCRM/` 作为功能、业务规则和交互行为的参考基准，使用 NestJS + Prisma + Vue 技术栈进行独立实现。当前定位公司内部使用，架构按多租户 SaaS 设计；功能状态见 [`docs/cordys-parity.md`](./docs/cordys-parity.md)，当前执行计划见 [`docs/cordys-wave2-execution-plan.md`](./docs/cordys-wave2-execution-plan.md)。
+以项目内 `CordysCRM/` 作为功能、业务规则和交互行为的参考基准，使用 NestJS + Prisma + Vue 技术栈进行独立实现。当前定位公司内部使用，架构按多租户 SaaS 设计；功能状态见 [`docs/cordys-parity.md`](./docs/cordys-parity.md)，当前执行计划见 [`docs/cordys-graph-completion-plan.md`](./docs/cordys-graph-completion-plan.md)。
 
 ## 功能清单
 
@@ -34,11 +34,12 @@
 micromatrix-crm/
 ├── apps/
 │   ├── api/          # NestJS 后端（模块：auth/customers + modules/* 14 个业务模块）
-│   ├── web/          # Web 管理端（表单引擎在 src/components/form-engine）
-│   └── mobile/       # 移动端 H5
+│   └── web/          # Vue 单前端：桌面/Mobile 路由页面按 views/<模块>/ 分域
 ├── packages/shared/  # 前后端共享类型、权限树、公式求值器
-├── scripts/smoke.mjs # 全链路冒烟脚本
-└── docker-compose.yml
+├── docker/           # API/Web 独立生产镜像与 Nginx runtime 配置
+├── scripts/          # 全链路、企业设置与 Docker release Smoke
+├── docker-compose.yml
+└── docker-compose.release.yml
 ```
 
 ## 快速开始
@@ -68,9 +69,28 @@ pnpm db:migrate:dev
 pnpm dev
 ```
 
-- Web 管理端 http://localhost:5173 · 移动端 http://localhost:5174 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（当前 **214 条断言**，需 API 已启动）
-- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **27 条**）
+- Web（桌面/Mobile 自适应） http://localhost:5173 · API 文档 http://localhost:3000/api/docs
+- 全链路冒烟：`pnpm smoke`（当前 **219/219**，需 API 已启动）
+- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **114/114**）
+
+## Docker Release
+
+生产镜像前后端分离：API 使用 Node 24，Web 使用 Nginx；Web 在运行时通过 `API_UPSTREAM` 转发 `/api`，无需为不同 API 地址重新构建前端。
+
+本地完整打包验收：
+
+```bash
+pnpm smoke:docker-release
+```
+
+创建并推送 Git tag 后，GitHub Actions 自动构建并发布 API/Web 两个 `linux/amd64` + `linux/arm64` GHCR 镜像：
+
+```bash
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+部署说明、release compose 和镜像标签见 [`docs/docker-release.md`](./docs/docker-release.md)。
 
 ### 演示账号
 
@@ -94,7 +114,7 @@ pnpm dev
 开发计划已经切换为 **CordysCRM 功能语义迁移路线**，不再以零散功能清单作为主计划。
 
 - 功能一致性总表：[`docs/cordys-parity.md`](./docs/cordys-parity.md)
-- 当前分阶段执行计划：[`docs/cordys-wave2-execution-plan.md`](./docs/cordys-wave2-execution-plan.md)
+- 当前分阶段执行计划：[`docs/cordys-graph-completion-plan.md`](./docs/cordys-graph-completion-plan.md)
 - 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
 
 Wave 1 的 R1-R7、Wave 2 的 W2.1 顶部导航、W2.2 跟进计划、W2.3 消息设置底座和 W2.4 业务消息触发链路均已完成验收。当前 35 个目录事件中 32 个具备真实触发链路；合同归档/作废、发票审批及其他数据模型缺口已登记在 [`docs/cordys-deferred-backlog.md`](./docs/cordys-deferred-backlog.md)，不得在整体复刻验收前遗漏。

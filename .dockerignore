@@ -1,0 +1,14 @@
+.git
+.github
+.DS_Store
+CordysCRM
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+apps/api/uploads
+tmp
+*.log

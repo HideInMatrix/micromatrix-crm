@@ -764,3 +764,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 界面设置后续 UI 收口已验证：平台标题、Slogan、favicon、登录 Logo/背景和平台 Logo 由统一品牌 Store 消费；浏览器刷新首帧通过本地租户品牌缓存同步设置标题，不再先显示静态“微矩阵 CRM”。企业设置六个面板及企微配置卡已移除 scoped CSS，统一改用 UnoCSS `presetWind4` utility；品牌资源预览固定为 `1:1`，Tabs 不产生内部滚动，`el-main` 底部 padding 为 0，保存栏与内容区底边贴合。
 - 前端路由页面已统一收口到 `apps/web/src/views/<业务模块>/`，同模块移动端页面放 `mobile/` 子目录；原 `src/mobile` 根目录已删除，移动专用 API、组件、Layout、样式分别进入 `src/api`、`src/components`、`src/layouts`、`src/styles` 并统一使用 `Mobile` 前缀。登录品牌加载与主题应用分别抽为 `useLoginBranding`、`useEnterpriseUiTheme` composable；桌面与 Mobile 登录页在未登录且未点击登录时即可通过公开接口显示租户品牌与正确浏览器标题，系统设置登录页配置已移除左侧模拟预览。
 - DB 台账复核未发现需要新增编号的企业设置数据模型缺口；钉钉/飞书仍由既有 DB-015 跟踪，不通过恢复通用 `SystemSetting` 规避。企业设置 W3.4-S 完成后，业务主线继续 W3.4.2。
+
+---
+
+## 29. W3.4-D Docker 发布链路（2026-08-27）
+
+- 在进入 W3.4.2 前插入独立工程化执行单元 W3.4-D，不改变 Cordys 业务复刻顺序；完成后执行指针恢复到 W3.4.2 task 3.1。
+- 新增 `docker/api.Dockerfile` 与 `docker/web.Dockerfile`：API 使用 Node 24 multi-stage + production `pnpm deploy`，以非 root 用户运行并将 `/app/uploads` 作为持久化边界；Web 使用 Vite builder + Nginx Alpine，运行时由 `API_UPSTREAM` 转发 `/api`，支持 Vue Router history fallback 与 SSE 长连接。
+- API production dependencies 保留 Prisma CLI 与 `dotenv`，同一 API 镜像既能启动 NestJS，也能作为一次性 `prisma migrate deploy` 容器；Node slim builder/runtime 显式安装 OpenSSL/CA，避免 Prisma engine 检测和外部 HTTPS 运行时缺口。
+- 新增 `.dockerignore`，排除 Git、CordysCRM、`node_modules`、构建产物、uploads 与所有真实 `.env`；Docker release Smoke 额外断言 API 镜像内不存在 `/app/.env`。
+- 新增 `docker-compose.release.yml` 与 `docker/.env.release.example`，启动顺序固定为 PostgreSQL healthy → migrate success → API healthy → Web；数据库与上传文件分别使用 `release_pgdata`、`release_uploads` volume。
+- 新增 `.github/workflows/release-docker.yml`：仅监听 `v*.*.*` tag push，先校验 SemVer、执行 typecheck/lint，再跑真实 Docker runtime Smoke，最后 API/Web matrix 并行构建并推送 GHCR `linux/amd64` + `linux/arm64` 镜像；GHCR 写权限仅授予镜像发布 job。
+- 本地 `pnpm smoke:docker-release` 已实测通过：从当前源码构建 API/Web 两个镜像，在隔离 PostgreSQL 中从零成功应用 34 个 migration，随后验证 API `/api/health`、Nginx `/healthz`、`/api` proxy 和 `/login` SPA fallback。Shared/API/Web typecheck、全仓 ESLint、API rules `114/114`、Compose config、workflow YAML、Shell syntax 与 `git diff --check` 同步通过。
+- 正式发布命令为 `git tag v0.0.1 && git push origin v0.0.1`；普通 `git push origin master` 不触发 Docker release。本执行单元只建立发布能力，不自动创建正式版本 tag。
