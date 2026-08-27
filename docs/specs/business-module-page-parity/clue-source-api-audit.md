@@ -862,3 +862,87 @@ transitionId 为空
 - `/lead-capacity` get/add/update/delete 与重复 Scope 拒绝实测。
 - 自动回收验证非 `FOLLOWING` 的未转换线索同样可命中，并验证已转换线索不回收、重复执行幂等。
 - 3.2 `18/18`、3.3 `21/21`、首页 `17/17` 与规则测试继续回归通过。
+
+## 28. task 3.5 实施前页面矩阵（2026-08-27）
+
+本节再次读取 Cordys 前端 `clueManagement/clue`、`clueManagement/cluePool`、普通/池 Overview Drawer、转换弹窗、关联客户全屏 Drawer 以及路由配置，并与当前 `apps/web/src/views/leads/LeadsView.vue`、移动端 `views/leads/mobile/LeadsView.vue` 对照。3.5 先按以下页面事实实施，不从当前单页双 Tab 反推 Cordys 交互。
+
+### 28.1 路由与页面内导航
+
+Cordys 是两个独立子页面：普通线索 `/lead/index` 需要普通线索 READ，线索池 `/lead/leadPool` 需要线索池 READ。父级只负责把两个子页面归到同一线索模块。
+
+MicroMatrix 已有 `/leads` 与 `/leads/pool` 两个 URL，但当前两条路由实际共用一个 `LeadsView.vue` 并在卡片内部再渲染“我的线索 / 线索池”双 Tab。3.5 调整为路由驱动的模块导航：
+
+- `/leads` 固定普通线索上下文；
+- `/leads/pool` 固定线索池上下文，路由本身要求 `leadPool:read`；
+- 导航组件只负责切 URL，不再让同一页面通过 `activeTab` 动态切资源；
+- 无 `leadPool:read` 的用户不展示线索池导航项，也不能直接打开 `/leads/pool`；
+- Mobile 仍保留当前单页 `van-tabs` 轻量交互，本阶段只保证 API 与既有创建、领取、跟进、转换链路不回归。
+
+### 28.2 普通线索列表
+
+Cordys `clueTable.vue` 的工具栏与批量顺序：
+
+| 区域 | 顺序 / 行为 |
+| --- | --- |
+| 左侧主操作 | 新建线索 → 导入 → 导出全部 |
+| 右侧 | 名称/电话关键字 + 高级筛选 |
+| View | 独立用户视图入口，支持列配置与图表 |
+| 批量 | 导出选中 → 批量转移 → 移入线索池 → 关联客户 → 批量编辑 → 批量删除 |
+
+行操作在未转换线索上固定为：`编辑 → 跟进 → 转换 → 更多`，其中 More 为 `移入线索池 / 转移 / 删除`。`transitionType=CUSTOMER/OPPORTUNITY` 时 Cordys 不再展示上述业务行操作。Owner History 属于详情抽屉内容，不是普通表格行操作。
+
+当前 `LeadsView.vue` 缺少普通线索的“批量转移”和“批量移入线索池”，且把编辑放入 More、额外展示负责人历史、标记失败、单条关联客户。3.5 必须按 Cordys 顺序和权限重新组织，同时补单条删除。
+
+### 28.3 线索池列表
+
+Cordys `cluePoolTable.vue` 左侧固定为 `线索池选择器 → 导入 → 导出全部`。池选择器中的 `editable=true` 选项显示设置入口，点击后直接打开当前池 quick-update Drawer。
+
+线索池批量操作固定为 `导出选中 → 批量领取 → 批量分配 → 批量编辑 → 批量删除`；行操作只有 `领取 → 分配 → 删除`。池页没有“新建线索”按钮。
+
+Pool Hidden Field 必须同时作用于表格列、筛选/批改可选字段和详情展示；名称字段始终保留。池切换后要清空选择、View、分页并按当前池重载。当前创建 Dialog 中“创建到线索池”的死分支一并删除。
+
+### 28.4 普通线索详情 Drawer
+
+Cordys `clueOverviewDrawer.vue` 顶部业务按钮为 `编辑 / 转换 / 移入线索池 / 转移`，More 中为删除。内容 Tab 固定为：
+
+```text
+跟进记录
+跟进计划
+负责人历史
+```
+
+当前 MicroMatrix 普通列表主要通过独立 `FollowUpDrawer`、OwnerHistory Drawer 和编辑 Dialog 分散完成上述行为，没有统一的线索 Overview Drawer。3.5 以现有稳定组件为基础新增线索详情 Drawer，把基础字段、跟进记录/计划、负责人历史和顶部操作收口，不重新发明 Follow API。
+
+### 28.5 线索池详情 Drawer
+
+Cordys `cluePoolOverviewDrawer.vue` 与普通详情不同：
+
+- 顶部只允许领取、分配、删除；
+- 基础字段受当前池 Hidden Field 约束；
+- 有池 UPDATE 权限时允许池内字段编辑，没有则只读；
+- Tab 只有“跟进记录”和“前负责人记录”，不展示普通线索跟进计划；
+- 所有读写继续受 `leadPool:*` 权限和 Pool Scope 约束。
+
+因此 3.5 不继续用普通 FollowUpDrawer 直接代表池详情，而是新增池 Overview Drawer 容器；Follow Record 与 Owner History 复用既有数据组件。
+
+### 28.6 转换与关联客户
+
+当前 `LeadTransformDialog.vue` 已基本对齐 Cordys `convertClueModal.vue`：默认联系人+客户、可选商机、商机名称、权限禁用、表单设置入口、成功倒计时和跳转详情。3.5 只修正页面入口和文案/按钮顺序，不重写 3.3 已验收的转换业务。
+
+当前 `LeadTransitionCustomerDrawer.vue` 也已经符合 Cordys `convertToCustomerDrawer.vue` 的核心结构：100% Drawer、客户表格单选、关键字、高级筛选、只读协作禁选、公海客户提示、确认关联。3.5 保留该组件，普通线索只从批量操作进入。
+
+### 28.7 3.5 实施边界
+
+PC 实施顺序：
+
+1. 增加路由驱动 `LeadModuleNav`，去掉 PC `LeadsView` 内部 mine/pool 状态切换。
+2. 把现有列表逻辑收口成固定 `mode=lead | pool` 的页面主体，普通/池路由分别传入固定上下文。
+3. 对齐普通/池工具栏、批量动作和行操作顺序，补齐 batch transfer、batch to-pool、pool batch pick、pool batch assign、单条删除。
+4. 池选择器增加 `editable` quick setting 入口并接 `/lead-pool/quick-update`；不恢复通用 ResourcePool 写 API。
+5. 新增普通线索 Overview Drawer 与 Pool Overview Drawer，复用 DynamicForm、Follow Record/Plan、Owner History 与已有操作 API。
+6. Saved View、AdvancedFilter、动态列继续使用公共实现；池模式把 Hidden Field 同时应用到列、筛选和批改字段。
+7. 保留 `LeadTransformDialog`、`LeadTransitionCustomerDrawer` 业务组件，删除主列表里 Cordys 不存在的额外入口。
+8. Mobile 不做结构性重写，只运行 typecheck/build 与既有 Mobile 线索关键链路回归。
+
+3.5 完成条件：PC `/leads` 与 `/leads/pool` 的路由权限、导航、工具栏、批量状态、行操作、Pool quick setting、普通/池详情 Drawer、转换与关联客户均有浏览器级验收；Web typecheck/build 和 3.2/3.3/3.4 API Smoke 不回归。
