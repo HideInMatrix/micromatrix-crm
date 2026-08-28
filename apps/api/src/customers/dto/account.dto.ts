@@ -367,11 +367,13 @@ export class PoolAccountBatchDto {
   @ArrayMaxSize(500)
   @IsString({ each: true })
   batchIds!: string[]
+}
 
-  @ApiPropertyOptional()
+export class PoolAccountBatchPickDto extends PoolAccountBatchDto {
+  @ApiProperty({ description: '客户公海 ID' })
   @IsString()
-  @IsOptional()
-  poolId?: string
+  @IsNotEmpty()
+  poolId!: string
 }
 
 export class PoolAccountBatchAssignDto extends PoolAccountBatchDto {

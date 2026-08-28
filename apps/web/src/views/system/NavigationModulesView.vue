@@ -18,12 +18,21 @@ import { useModuleConfigStore } from '@/stores/module-config'
 import LeadCapacitySettingsDrawer from './components/LeadCapacitySettingsDrawer.vue'
 import LeadPoolReasonSettingsDrawer from './components/LeadPoolReasonSettingsDrawer.vue'
 import LeadPoolSettingsDrawer from './components/LeadPoolSettingsDrawer.vue'
+import CustomerCapacitySettingsDrawer from './components/CustomerCapacitySettingsDrawer.vue'
+import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSettingsDrawer.vue'
+import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
 
 interface ModuleAction {
   label: string
   path?: string
   query?: Record<string, string>
-  drawer?: 'lead-pool' | 'lead-capacity' | 'lead-reason'
+  drawer?:
+    | 'lead-pool'
+    | 'lead-capacity'
+    | 'lead-reason'
+    | 'customer-pool'
+    | 'customer-capacity'
+    | 'customer-reason'
 }
 
 interface ModuleActionGroup {
@@ -44,9 +53,12 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
     primary: [
       { label: '客户表单设置', path: '/system/modules/fields', query: { module: 'customer' } },
       { label: '联系人表单设置', path: '/system/modules/fields', query: { module: 'contact' } },
-      { label: '公海设置' },
+      { label: '公海设置', drawer: 'customer-pool' },
     ],
-    more: [{ label: '客户库容设置' }, { label: '移入公海原因设置' }],
+    more: [
+      { label: '客户库容设置', drawer: 'customer-capacity' },
+      { label: '移入公海原因设置', drawer: 'customer-reason' },
+    ],
   },
   contract: {
     primary: [
@@ -89,6 +101,9 @@ const orderedTopNavigationConfigs = ref<TopNavigationConfigVO[]>([])
 const leadPoolVisible = ref(false)
 const leadCapacityVisible = ref(false)
 const leadReasonVisible = ref(false)
+const customerPoolVisible = ref(false)
+const customerCapacityVisible = ref(false)
+const customerReasonVisible = ref(false)
 
 const canUpdate = computed(() => auth.hasPerm('system:module:update'))
 const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item]))
@@ -207,6 +222,9 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'lead-pool') leadPoolVisible.value = true
   if (action.drawer === 'lead-capacity') leadCapacityVisible.value = true
   if (action.drawer === 'lead-reason') leadReasonVisible.value = true
+  if (action.drawer === 'customer-pool') customerPoolVisible.value = true
+  if (action.drawer === 'customer-capacity') customerCapacityVisible.value = true
+  if (action.drawer === 'customer-reason') customerReasonVisible.value = true
 }
 
 onMounted(load)
@@ -357,6 +375,9 @@ onMounted(load)
     <LeadPoolSettingsDrawer v-model="leadPoolVisible" />
     <LeadCapacitySettingsDrawer v-model="leadCapacityVisible" />
     <LeadPoolReasonSettingsDrawer v-model="leadReasonVisible" />
+    <CustomerPoolSettingsDrawer v-model="customerPoolVisible" />
+    <CustomerCapacitySettingsDrawer v-model="customerCapacityVisible" />
+    <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
   </div>
 </template>
 
@@ -407,5 +428,9 @@ onMounted(load)
   border-radius: 50%;
   background: var(--el-color-primary);
   color: white;
+}
+
+:deep(.el-button.is-link){
+  height: unset;
 }
 </style>

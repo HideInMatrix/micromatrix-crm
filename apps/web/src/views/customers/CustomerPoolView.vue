@@ -174,7 +174,7 @@ async function handleBatchDelete() {
   ).catch(() => false)
   if (!confirmed) return
   try {
-    await poolBatchDeleteCustomers(selectedPoolId.value, selectedRows.value.map((row) => row.id))
+    await poolBatchDeleteCustomers(selectedRows.value.map((row) => row.id))
     ElMessage.success('批量删除成功')
     await loadData()
   } catch (error) {

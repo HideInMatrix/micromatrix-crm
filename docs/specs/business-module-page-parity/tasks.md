@@ -218,12 +218,13 @@
   - [x] 专项 Smoke `node scripts/w343-customer-deep-api-smoke.mjs`：30/30；回归客户 API/360 22/22、联系人 API 18/18、rules 114/114；Shared/API/Web typecheck、API/Web production build、本批 ESLint 全绿。
   - _需求：R7、R11_
 
-- [ ] 4.5 重建多客户公海 API 与规则执行
-  - [ ] 4.5.0 先完成 `/system/modules` 客户卡片三个模块设置入口：公海设置、客户库容设置、移入公海原因设置；按 Cordys 模块设置源码实现真实 Drawer，不保留占位按钮。
-  - [ ] 4.5.1 对齐 `/account-pool/*`、`/account-capacity/*` 与 `CUSTOMER_POOL_RS` 字典设置，并与页面 Drawer、权限、Scope、原因校验闭环。
-  - 完成公海选项、分页、详情、领取/分配、批量、编辑、删除、导入导出和图表。
-  - 执行公海 Scope、隐藏字段、独立权限、领取限制、冷却、库容/排除、回收、通知和审计。
-  - 后端限制公海 360 只能读取信息、跟进和负责人历史。
+- [x] 4.5 重建多客户公海 API 与规则执行
+  - [x] 4.5.0 `/system/modules` 客户卡片“公海设置 / 客户库容设置 / 移入公海原因设置”三个入口均接真实 Drawer；公海为全屏管理 Drawer，库容和原因设置复用 Cordys 交互语义，不再保留占位按钮。
+  - [x] 4.5.1 `/account-pool/*`、`/account-capacity/*` 与 `CUSTOMER_POOL_RS` 完成分域配置闭环：Pool/Capacity Scope 支持用户、部门、角色，实际成员重叠拒绝；客户库容支持 stage `IN/NOT_IN` 排除；人工入公海原因开启后强制校验。
+  - [x] `/pool/account/*` 完成公海选项、分页、详情、领取/分配、批量领取/分配/编辑/删除、单删、导入预检/导入、导出全部/选中和图表；批量分配/删除/导出选中按 Cordys 从首条客户反查公海并强制整批同池。
+  - [x] 公海 Scope、隐藏字段、独立权限、每日领取、新数据保护、前负责人冷却、客户库容/排除、自动回收、通知和审计均由直接模型执行；公海导入模板不包含负责人，导入客户直接落指定公海且负责人为空。
+  - [x] 后端将公海客户普通 `/account/get` 与协作链路拒绝，公海详情使用 `/pool/account/get`，仅保留信息、跟进和负责人历史允许的读取边界。
+  - [x] 专项验收：模块设置 API **25/25**、模块设置 Browser **17/17**、客户公海主体 **36/36**；回归客户 API/360 **22/22**、联系人 **18/18**、客户深层规则 **30/30**、rules **114/114**；API/Web typecheck、ESLint、production build 与 `git diff --check` 全绿。
   - _需求：R2、R9、R11_
 
 - [ ] 4.6 重建客户域 Vue 页面

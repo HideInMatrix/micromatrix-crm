@@ -844,3 +844,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 合并事务补齐 FollowUpPlan、报价/合同/工商抬头 Customer FK、源协作/负责人继承、源关系清理、主客户联系人负责人、Owner History 与领取时间；负责人/范围校验失败不产生部分删除。
 - 新增 `scripts/w343-customer-deep-api-smoke.mjs`，专项 **30/30**；回归客户 API/360 **22/22**、联系人 API **18/18**、rules **114/114**；Shared/API/Web typecheck、API/Web production build、本批 ESLint 全绿。
 - task 4.4 关闭；下一执行指针为 **W3.4.3 task 4.5.0：先完成 `/system/modules` 客户卡片的公海设置、客户库容设置、移入公海原因设置三个真实 Drawer**。
+
+---
+
+## 36. W3.4.3 task 4.5 客户公海与模块设置（2026-08-28）
+
+- 再次读取 Cordys `configCard.vue`、`openSeaDrawer.vue`、`addOrEditPoolDrawer.vue`、`capacitySetDrawer.vue`、`moveReasonDrawer.vue`、`CustomerPoolController/Service`、`CustomerCapacityController/Service` 与 `PoolCustomerController/Service`，先补齐模块设置三个真实入口，再收口公海资源链路。
+- `/system/modules` 客户卡片现可直接打开公海全屏管理 Drawer、客户库容 Drawer 与 `CUSTOMER_POOL_RS` 原因 Drawer；Pool/Capacity 均使用直接客户模型，Scope 支持用户/部门/角色并按实际成员防重叠，库容支持商机阶段 `IN/NOT_IN` 排除。
+- `/pool/account/*` 补齐并验收选项、分页、详情、领取/分配、批量、编辑/删除、导入导出和图表。领取校验请求公海与客户真实公海一致；批量分配/删除/导出选中由首条客户反查 Pool 并拒绝跨池；公海模板排除负责人，导入数据直接进入指定公海。
+- 每日领取、新数据保护、前负责人冷却、库容和 stage 排除均在后端直接规则中执行；自动回收实际消费 `customer_pool_recycle_rule`，清空负责人、写 `system` 原因并发送 `CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS`。普通客户详情与协作接口不能读取公海客户，公海详情保持独立读取边界。
+- 新增客户模块设置 API Smoke **25/25**、Browser Smoke **17/17**、客户公海主体 Smoke **36/36**；回归客户 **22/22**、联系人 **18/18**、深层规则 **30/30**、rules **114/114**。API/Web typecheck、ESLint、production build 和 `git diff --check` 全绿。
+- task 4.5 正式关闭；下一执行指针为 **W3.4.3 task 4.6：重建客户域 Vue 页面**。

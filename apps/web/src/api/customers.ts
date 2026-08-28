@@ -268,9 +268,8 @@ export function poolBatchUpdateCustomers(data: {
   })
 }
 
-export function poolBatchDeleteCustomers(poolId: string, ids: string[]) {
+export function poolBatchDeleteCustomers(ids: string[]) {
   return http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/account/batch-delete', {
-    poolId,
     batchIds: ids,
   })
 }
@@ -278,7 +277,7 @@ export function poolBatchDeleteCustomers(poolId: string, ids: string[]) {
 export const customerTransferApi = {
   importTemplate: (importType: ImportType, poolId?: string) =>
     http.get<Blob>(poolId ? '/pool/account/template/download' : '/account/template/download', {
-      params: { importType, poolId },
+      params: { importType },
       responseType: 'blob',
     }),
   importPrecheck: (file: File, importType: ImportType, poolId?: string) =>

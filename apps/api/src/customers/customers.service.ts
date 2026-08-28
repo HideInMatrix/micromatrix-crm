@@ -1302,8 +1302,11 @@ export class CustomersService {
   }
 
   /** 从公海领取 */
-  async claimFromSea(user: AuthUser, id: string) {
+  async claimFromSea(user: AuthUser, id: string, poolId?: string) {
     const current = (await this.customerAccess.assertPoolRead(user, id)).customer
+    if (poolId && current.poolId !== poolId) {
+      throw new BadRequestException('客户不属于指定公海')
+    }
     await this.customerPools.pick({
       organizationId: user.tenantId,
       customerId: id,
@@ -1435,16 +1438,16 @@ export class CustomersService {
     return { success, fail: failedIds.length, failedIds }
   }
 
-  async poolBatchAssignOwner(user: AuthUser, ids: string[], ownerId: string, poolId?: string) {
-    const customers = await Promise.all(
-      [...new Set(ids)].map(async (id) => {
-        const customer = (await this.customerAccess.assertPoolRead(user, id)).customer
-        if (poolId && customer.poolId !== poolId) {
-          throw new BadRequestException('所选客户必须全部属于指定公海')
-        }
-        return customer
-      }),
-    )
+  async poolBatchAssignOwner(user: AuthUser, ids: string[], ownerId: string) {
+    const poolId = await this.resolvePoolSelection(user, ids)
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        organizationId: user.tenantId,
+        id: { in: [...new Set(ids)] },
+        inSharedPool: true,
+        poolId,
+      },
+    })
     for (const customer of customers) {
       await this.assignOwnerExisting(user, customer, ownerId)
     }
@@ -1608,6 +1611,32 @@ export class CustomersService {
     await this.assertCustomersDeletable(user.tenantId, ids)
     await this.deleteCustomerResources(user, customers)
     return { success: ids.length, fail: 0, failedIds: [] }
+  }
+
+  async resolvePoolSelection(user: AuthUser, ids: string[]): Promise<string> {
+    const uniqueIds = [...new Set(ids)]
+    const firstId = uniqueIds[0]
+    if (!firstId) throw new BadRequestException('请选择客户')
+    const first = (await this.customerAccess.assertPoolRead(user, firstId)).customer
+    if (!first.poolId) throw new BadRequestException('客户不属于公海')
+    const count = await this.prisma.customer.count({
+      where: {
+        organizationId: user.tenantId,
+        id: { in: uniqueIds },
+        inSharedPool: true,
+        poolId: first.poolId,
+      },
+    })
+    if (count !== uniqueIds.length) {
+      throw new BadRequestException('所选客户必须全部属于同一个公海')
+    }
+    return first.poolId
+  }
+
+  async poolBatchDeleteExact(user: AuthUser, ids: string[]): Promise<BatchAffectResult> {
+    const uniqueIds = [...new Set(ids)]
+    const poolId = await this.resolvePoolSelection(user, uniqueIds)
+    return this.poolBatchDelete(user, poolId, uniqueIds)
   }
 
   // ===== 团队成员 =====
@@ -2654,6 +2683,20 @@ export class CustomersService {
     })
     return {
       filename: `${poolId ? '客户公海' : '客户'}${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`,
+      data,
+    }
+  }
+
+  async poolImportTemplate(
+    user: AuthUser,
+    importType: ImportType,
+  ): Promise<{ filename: string; data: Buffer }> {
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const data = await this.spreadsheet.buildImportTemplate(fields, importType, {
+      excludeKeys: ['owner', 'ownerId'],
+    })
+    return {
+      filename: `客户公海${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`,
       data,
     }
   }

@@ -189,6 +189,10 @@ function normalizeCluePool(pool: CluePoolApiVO): ResourcePoolVO {
   }
 }
 
+function normalizeCustomerPool(pool: CluePoolApiVO): ResourcePoolVO {
+  return { ...normalizeCluePool(pool), module: 'customer' }
+}
+
 function cluePoolPayload(data: Record<string, unknown>) {
   const input = data as Partial<ResourcePoolVO>
   return {
@@ -219,14 +223,21 @@ function cluePoolPayload(data: Record<string, unknown>) {
 
 export const resourcePoolApi = {
   options: async (module: 'lead' | 'customer') => {
-    if (module !== 'lead') {
-      return http.get<ResourcePoolVO[]>('/resource-pools/options', { params: { module } })
+    if (module === 'customer') {
+      const response = await http.get<CluePoolApiVO[]>('/pool/account/options')
+      return { ...response, data: response.data.map(normalizeCustomerPool) }
     }
     const response = await http.get<CluePoolApiVO[]>('/pool/lead/options')
     return { ...response, data: response.data.map(normalizeCluePool) }
   },
   list: async (module: 'lead' | 'customer') => {
-    if (module !== 'lead') return http.get<ResourcePoolVO[]>('/resource-pools', { params: { module } })
+    if (module === 'customer') {
+      const response = await http.post<CordysPager<CluePoolApiVO>>('/account-pool/page', {
+        current: 1,
+        pageSize: 200,
+      })
+      return { ...response, data: response.data.list.map(normalizeCustomerPool) }
+    }
     const response = await http.post<CordysPager<CluePoolApiVO>>('/lead-pool/page', {
       current: 1,
       pageSize: 200,
@@ -244,15 +255,26 @@ export const resourcePoolApi = {
       data: { ...response.data, list: response.data.list.map(normalizeCluePool) },
     }
   },
+  customerSettingsPage: async (params?: { current?: number; pageSize?: number; keyword?: string }) => {
+    const response = await http.post<CordysPager<CluePoolApiVO>>('/account-pool/page', {
+      current: params?.current ?? 1,
+      pageSize: params?.pageSize ?? 20,
+      keyword: params?.keyword,
+    })
+    return {
+      ...response,
+      data: { ...response.data, list: response.data.list.map(normalizeCustomerPool) },
+    }
+  },
   create: (data: Record<string, unknown>) => {
     if (data.module === 'lead') return http.post('/lead-pool/add', cluePoolPayload(data))
-    return http.post<ResourcePoolVO>('/resource-pools', data)
+    return http.post('/account-pool/add', cluePoolPayload(data))
   },
   update: (id: string, data: Record<string, unknown>) => {
     if (data.module === 'lead') {
       return http.post('/lead-pool/update', { id, ...cluePoolPayload(data) })
     }
-    return http.patch<ResourcePoolVO>(`/resource-pools/${id}`, data)
+    return http.post('/account-pool/update', { id, ...cluePoolPayload(data) })
   },
   quickUpdate: (id: string, data: Record<string, unknown>) =>
     http.post('/lead-pool/quick-update', {
@@ -262,16 +284,28 @@ export const resourcePoolApi = {
   toggle: (id: string, module: 'lead' | 'customer') =>
     module === 'lead'
       ? http.get(`/lead-pool/switch/${id}`)
-      : http.post<ResourcePoolVO>(`/resource-pools/${id}/toggle`),
+      : http.get(`/account-pool/switch/${id}`),
   remove: (id: string, module: 'lead' | 'customer') =>
-    module === 'lead' ? http.get(`/lead-pool/delete/${id}`) : http.delete(`/resource-pools/${id}`),
+    module === 'lead' ? http.get(`/lead-pool/delete/${id}`) : http.get(`/account-pool/delete/${id}`),
   noPickLead: (id: string) => http.get<boolean>(`/lead-pool/no-pick/${id}`),
+  noPickCustomer: (id: string) => http.get<boolean>(`/account-pool/no-pick/${id}`),
 }
 
 export const resourceCapacityApi = {
   list: async (module: 'lead' | 'customer') => {
-    if (module !== 'lead') {
-      return http.get<ResourceCapacityVO[]>('/resource-capacities', { params: { module } })
+    if (module === 'customer') {
+      const response = await http.get<
+        Array<{
+          id: string
+          scopeIds: string[]
+          capacity: number | null
+          filters: Record<string, unknown>[]
+        }>
+      >('/account-capacity/get')
+      return {
+        ...response,
+        data: response.data.map((item) => ({ ...item, module: 'customer' as const })),
+      }
     }
     const response = await http.get<ClueCapacityApiVO[]>('/lead-capacity/get')
     return {
@@ -283,7 +317,11 @@ export const resourceCapacityApi = {
     if (data.module === 'lead') {
       return http.post('/lead-capacity/add', { scopeIds: data.scopeIds, capacity: data.capacity })
     }
-    return http.post<ResourceCapacityVO>('/resource-capacities', data)
+    return http.post('/account-capacity/add', {
+      scopeIds: data.scopeIds,
+      capacity: data.capacity,
+      filters: data.filters,
+    })
   },
   update: (id: string, data: Record<string, unknown>) => {
     if (data.module === 'lead') {
@@ -293,12 +331,17 @@ export const resourceCapacityApi = {
         capacity: data.capacity,
       })
     }
-    return http.patch<ResourceCapacityVO>(`/resource-capacities/${id}`, data)
+    return http.post('/account-capacity/update', {
+      id,
+      scopeIds: data.scopeIds,
+      capacity: data.capacity,
+      filters: data.filters,
+    })
   },
   remove: (id: string, module: 'lead' | 'customer') =>
     module === 'lead'
       ? http.get(`/lead-capacity/delete/${id}`)
-      : http.delete(`/resource-capacities/${id}`),
+      : http.get(`/account-capacity/delete/${id}`),
 }
 
 export const leadApi = {

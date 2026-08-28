@@ -472,3 +472,22 @@ task 4.3 已完成联系人 `/account/contact/*` 主契约收口；下一独立�
 - `node scripts/w343-customer-deep-api-smoke.mjs`：**30 passed / 0 failed**；回归 task 4.2 **22/22**、task 4.3 **18/18**、API rules **114/114**；Shared/API/Web typecheck、API/Web production build 与本批 ESLint 全绿。
 
 task 4.4 关闭；下一执行指针为 **W3.4.3 task 4.5.0：先对齐 `/system/modules` 客户卡片的公海设置、客户库容设置、移入公海原因设置三个真实 Drawer**，随后继续 4.5.1 设置 API 与完整客户公海链路。
+
+### 15.5 task 4.5.0～4.5.1 客户公海模块设置实施锁定
+
+再次读取 Cordys `configCard.vue`、`customManagement/openSeaDrawer.vue`、共享 `addOrEditPoolDrawer.vue`、`capacitySetDrawer.vue`、`customManagement/moveReasonDrawer.vue`，并沿调用链复核 `CustomerPoolController/Service` 与 `CustomerCapacityController/Service`。模块设置阶段先锁定以下契约：
+
+1. 客户卡片主操作固定为“客户表单设置 / 联系人表单设置 / 公海设置 / 更多”；“更多”里包含“客户库容设置 / 移入公海原因设置”。三个入口都必须是可操作 Drawer，不再保留 tooltip 占位。
+2. “公海设置”使用 `/account-pool/page|add|update|quick-update|no-pick/{id}|delete/{id}|switch/{id}`；模块设置 CRUD 全部要求 `system:module:update`。列表展示名称、状态、管理员、成员、自动回收、创建/更新人和时间。
+3. 公海新增/编辑复用 Pool 规则结构，但 Hidden Field 必须读取客户表单；客户名称固定显示。领取规则包括每日领取、前负责人冷却和新数据保护；自动回收条件只允许 `storageTime/followUpTime`，支持 `AND/OR + FIXED/DYNAMICS`。
+4. 删除公海前必须执行 `no-pick`；池内仍有公海客户时拒删，并引导用户进入客户公海处理数据。启停只改变 Pool enable，不迁移池内数据。
+5. “客户库容设置”使用 `/account-capacity/get|add|update|delete/{id}`。Scope 支持成员、部门和角色并继续执行“实际成员不可重叠”；`capacity=null` 表示不限制，`capacity=0` 表示真实零库容。
+6. 客户库容特有的排除条件只支持商机阶段 `stage`，操作符 `IN/NOT_IN`；当 capacity 为空或 0 时前端禁用排除条件，后端仍校验 filter 结构。该 filter 会参与客户当前持有量计算。
+7. “移入公海原因设置”继续复用 `/dict/*`，模块固定 `CUSTOMER_POOL_RS`：最多 50 条、支持增删改和拖拽排序；开启后人工单个/批量移入公海必须选择有效原因，开启时至少保留一条原因；`system` 只供自动回收内部使用。
+8. 4.5.0 完成真实 Drawer 与入口后，4.5.1 同步完成上述设置 API；随后再进入 `/pool/account/*` 完整公海资源链路，避免再次出现“业务页已完成但模块设置仍是占位”的补漏。
+
+实施结果：4.5.0～4.5.1 与客户公海主体均已闭环。`/system/modules` 三个客户专属入口已接真实 Drawer；后端新增 `/account-pool/*`、`/account-capacity/*` 直接配置 Controller/Service，并将 Web 客户 Pool/Capacity 调用从旧通用资源池路径切换到 Cordys 分域契约。`CUSTOMER_POOL_RS` 已接人工单个/批量移入公海原因校验与负责人历史原因名。
+
+继续按 `PoolCustomerController/Service` 复核 `/pool/account/*` 后，修正了三个容易被旧页面掩盖的契约差异：单条领取必须校验请求 `poolId` 与客户真实公海一致；批量分配/删除/导出选中按首条客户反查公海并强制整批同池，不能信任前端附带 poolId；公海导出选中必须保留 Pool Scope，公海模板下载必须排除负责人字段。自动回收直接消费 `customer_pool_recycle_rule`，使用 `system` 原因并发送 `CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS`。
+
+验收结果：`scripts/w343-customer-module-settings-smoke.mjs` **25/25**、`scripts/w343-customer-module-settings-browser-smoke.mjs` **17/17**、`scripts/w343-customer-pool-smoke.mjs` **36/36**。回归客户 API/360 **22/22**、联系人 API **18/18**、客户协作/关系/合并 **30/30**、API rules **114/114**；API/Web typecheck、受影响文件 ESLint、API/Web production build 与 `git diff --check` 全绿。task 4.5 关闭，下一执行指针为 **W3.4.3 task 4.6：重建客户域 Vue 页面**。

@@ -136,9 +136,9 @@ async function remove(customer: CustomerVO) {
     confirmButtonText: '删除',
     confirmButtonColor: '#ee0a24',
   }).then(() => true).catch(() => false)
-  if (!confirmed || !selectedPoolId.value) return
+  if (!confirmed) return
   try {
-    await poolBatchDeleteCustomers(selectedPoolId.value, [customer.id])
+    await poolBatchDeleteCustomers([customer.id])
     showSuccessToast('客户已删除')
     actionShow.value = false
     reload()

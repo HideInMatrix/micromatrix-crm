@@ -24,6 +24,7 @@ import {
   PoolAccountAssignDto,
   PoolAccountBatchAssignDto,
   PoolAccountBatchDto,
+  PoolAccountBatchPickDto,
   PoolAccountChartDto,
   PoolAccountExportDto,
   PoolAccountPageDto,
@@ -60,7 +61,7 @@ export class PoolAccountController {
   @RequirePermissions('customerPool:pick')
   @LogOperation('customerPool', 'pick')
   pick(@CurrentUser() user: AuthUser, @Body() dto: PoolAccountPickDto) {
-    return this.service.claimFromSea(user, dto.customerId)
+    return this.service.claimFromSea(user, dto.customerId, dto.poolId)
   }
 
   @Post('assign')
@@ -82,8 +83,7 @@ export class PoolAccountController {
   @Post('batch-pick')
   @RequirePermissions('customerPool:pick')
   @LogOperation('customerPool', 'batchPick')
-  batchPick(@CurrentUser() user: AuthUser, @Body() dto: PoolAccountBatchDto) {
-    if (!dto.poolId) throw new BadRequestException('请选择客户公海')
+  batchPick(@CurrentUser() user: AuthUser, @Body() dto: PoolAccountBatchPickDto) {
     return this.service.batchClaimFromSea(user, dto.batchIds, dto.poolId)
   }
 
@@ -91,12 +91,7 @@ export class PoolAccountController {
   @RequirePermissions('customerPool:assign')
   @LogOperation('customerPool', 'batchAssign')
   batchAssign(@CurrentUser() user: AuthUser, @Body() dto: PoolAccountBatchAssignDto) {
-    return this.service.poolBatchAssignOwner(
-      user,
-      dto.batchIds,
-      dto.assignUserId,
-      dto.poolId,
-    )
+    return this.service.poolBatchAssignOwner(user, dto.batchIds, dto.assignUserId)
   }
 
   @Post('batch-update')
@@ -110,8 +105,7 @@ export class PoolAccountController {
   @RequirePermissions('customerPool:delete')
   @LogOperation('customerPool', 'batchDelete')
   batchDelete(@CurrentUser() user: AuthUser, @Body() dto: PoolAccountBatchDto) {
-    if (!dto.poolId) throw new BadRequestException('请选择客户公海')
-    return this.service.poolBatchDelete(user, dto.poolId, dto.batchIds)
+    return this.service.poolBatchDeleteExact(user, dto.batchIds)
   }
 
   @Post('export-all')
@@ -136,11 +130,12 @@ export class PoolAccountController {
   @Post('export-select')
   @RequirePermissions('customerPool:export')
   @LogOperation('customerPool', 'exportSelected')
-  exportSelect(@CurrentUser() user: AuthUser, @Body() dto: AccountExportSelectDto) {
+  async exportSelect(@CurrentUser() user: AuthUser, @Body() dto: AccountExportSelectDto) {
+    const poolId = await this.service.resolvePoolSelection(user, dto.ids)
     return this.service.exportXlsx(
       user,
       { scope: 'sea' },
-      { fileName: dto.fileName, headList: dto.headList, ids: dto.ids },
+      { fileName: dto.fileName, headList: dto.headList, ids: dto.ids, poolId },
     )
   }
 
@@ -156,7 +151,7 @@ export class PoolAccountController {
     @CurrentUser() user: AuthUser,
     @Query('importType') importType: ImportType = 'ADD',
   ) {
-    const result = await this.service.importTemplate(user, importType)
+    const result = await this.service.poolImportTemplate(user, importType)
     return new StreamableFile(result.data, {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
