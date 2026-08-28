@@ -283,9 +283,9 @@ W3.4 只实现 R10 指定的 DataEase **配置 / token / 嵌入适配边界和�
 | Dashboard Prisma 直接表 | 已存在并与 Cordys 最终 DDL 基本一致 | 复用，不重建 |
 | `/api/dashboard` | 被首页统计 `summary/funnel/ranking/trend/conversion` 占用 | 5.2 迁回 Home 并释放 |
 | `/reports` | 固定 ECharts 报表 | 5.5 破坏式替换 |
-| DashboardModule CRUD/tree/count/move | 未实现业务 Service | 5.3 |
-| Dashboard CRUD/page/sort | 未实现资源 Service | 5.3 |
-| Scope | 表存在但资源 API 尚未实现 | 5.3 全读写强制 tenant + Scope |
+| DashboardModule CRUD/tree/count/move | 5.3 已完成并通过真实 API Smoke | 已闭环 |
+| Dashboard CRUD/page/sort | 5.3 已完成并通过真实 API Smoke | 已闭环 |
+| Scope | 5.3 已统一用于 page/detail/tree/count/update/delete/move | tenant + Scope + 创建人兜底已闭环 |
 | 收藏 | 表存在，API 未落地 | 5.4 |
 | URL 安全 | Dashboard 资源链路未落地 | 5.4 共用 allowlist validator |
 | DataEase 配置/token adapter | 现有企业配置能力需复核复用点 | 5.4，只做适配边界 |
@@ -344,3 +344,17 @@ Dashboard 的源码事实、API、三表 DDL、Scope、收藏、目录/资源排
 5. 验收：根级 Smoke **221/221**；根级 typecheck、受影响文件 ESLint、production build 全绿。
 
 task 5.2 关闭；下一执行指针为 **W3.4.4 task 5.3：实现 DashboardModule 与 Dashboard Service**。
+
+## 17. task 5.3 实施结果
+
+5.3 已完成 DashboardModule 与 Dashboard 资源主体：
+
+1. 新增 `DashboardAccessService`，统一解析 Dashboard `scope_id`。普通成员只在空 Scope、本人用户 ID、本人当前部门/祖先部门命中或自己为创建人时可见；管理员 `*` 可见全部。损坏的 Scope JSON 对普通成员 fail-closed，不能退化成空 Scope。
+2. 新增 `DashboardModuleController/Service`：支持 add/rename/delete/tree/count/move。新增/移动强制同级名称唯一、父目录存在、tenant 一致；目录不能移动到自身或后代；删除目录时如果仍有 Dashboard 或未一并删除的子目录则拒绝，防止孤儿节点。
+3. 新增 `DashboardResourceController/Service`：支持 add/detail/update/rename/delete/page/edit-pos。资源名称在同目录唯一；Scope ID 必须是当前租户真实用户或部门；跨目录移动与 BEFORE/AFTER/APPEND 均在事务内重排 `pos`。
+4. 资源 page/detail/tree/count/update/delete/move 使用同一 tenant + Scope 事实，不复制 Cordys `detail/delete/collect` 按裸 ID 访问的弱边界。第二租户即使拥有管理员 `*`，访问当前租户资源仍返回 404。
+5. 权限树新增 `dashboard:read/create/update/delete`：销售专员默认 `read`，销售主管增加 `create/update/delete`；关键 create/update/rename/delete/move/module 动作全部使用 `@LogOperation('dashboard', ...)` 写真实操作日志。
+6. 专项 `scripts/w344-dashboard-api-smoke.mjs` 最终 **31/31**；覆盖三角色权限、空/user/department Scope、创建人兜底、第二租户隔离、目录重名/无效父节点/防环/防孤儿、资源 update/rename/delete、跨目录 APPEND、BEFORE 排序和操作日志。
+7. 回归：API rules **114/114**、根级 Smoke **221/221**、根级 typecheck、受影响文件 ESLint、production build 全绿。
+
+task 5.3 关闭；下一执行指针为 **W3.4.4 task 5.4：收藏与安全嵌入适配**。

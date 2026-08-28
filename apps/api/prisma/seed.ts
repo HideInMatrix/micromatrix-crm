@@ -68,6 +68,7 @@ async function main() {
 
   const salesPerms = [
     'menu:dashboard',
+    'dashboard:read',
     'menu:lead',
     'lead:create',
     'lead:update',
@@ -104,6 +105,9 @@ async function main() {
   ]
   const managerPerms = [
     ...salesPerms,
+    'dashboard:create',
+    'dashboard:update',
+    'dashboard:delete',
     'lead:transfer',
     'lead:recycle',
     'lead:delete',

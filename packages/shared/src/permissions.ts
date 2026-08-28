@@ -9,7 +9,16 @@ export interface PermissionNode {
 
 /** 权限树：驱动角色管理界面勾选与后端校验 */
 export const PERMISSION_TREE: PermissionNode[] = [
-  { code: 'menu:dashboard', label: '工作台' },
+  {
+    code: 'menu:dashboard',
+    label: '工作台',
+    children: [
+      { code: 'dashboard:read', label: '查看仪表板' },
+      { code: 'dashboard:create', label: '新建仪表板/目录' },
+      { code: 'dashboard:update', label: '编辑仪表板/目录' },
+      { code: 'dashboard:delete', label: '删除仪表板/目录' },
+    ],
+  },
   {
     code: 'menu:lead',
     label: '线索管理',

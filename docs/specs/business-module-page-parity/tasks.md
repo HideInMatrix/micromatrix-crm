@@ -255,10 +255,12 @@
   - [x] 根级 Smoke **221/221**，并显式验证五条旧路径全部 404；根级 typecheck、受影响文件 ESLint、production build 全绿。
   - _需求：R1、R10_
 
-- [ ] 5.3 实现 DashboardModule 与 Dashboard Service
-  - 完成目录新增、改名、删除、移动、树和计数，以及资源新增、详情、编辑、改名、删除、分页和排序。
-  - 防止目录循环/孤儿、自身后代移动和同级重名；事务内维护稀疏排序并按需重排。
-  - 全部读写执行组织隔离、权限、Scope 和操作审计。
+- [x] 5.3 实现 DashboardModule 与 Dashboard Service
+  - [x] 完成 `/dashboard/module/add|rename|delete|tree|count|move` 与 `/dashboard/add|detail|update|rename|delete|page|edit/pos`，直接使用 `dashboard_module/dashboard` 三表模型。
+  - [x] 新增 `dashboard:read/create/update/delete` 权限粒度；销售专员默认只读，销售主管具备增改删，管理员继续使用 `*`。
+  - [x] Dashboard Scope 统一按空数组、用户、当前部门及祖先部门、创建人兜底解析；page/detail/tree/count/update/delete/move 全部执行 tenant + Scope，损坏 Scope JSON fail-closed。
+  - [x] 同级目录/同目录资源重名、无效父目录、目录循环/自身后代移动、孤儿目录、包含 Dashboard 的目录删除均由后端拒绝；目录和资源跨层级/跨目录移动在事务内真实重排 `pos`。
+  - [x] 新增 `scripts/w344-dashboard-api-smoke.mjs`：**31/31**，覆盖三角色权限、上级部门 Scope、创建人兜底、第二租户隔离、CRUD、排序、防环、删除保护和操作日志；回归 rules **114/114**、根级 Smoke **221/221**、typecheck/ESLint/build 全绿。
   - _需求：R10、R11_
 
 - [ ] 5.4 实现收藏与安全嵌入适配
