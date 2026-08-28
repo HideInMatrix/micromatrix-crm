@@ -72,6 +72,9 @@ const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
 const overviewVisible = ref(false)
 const overviewCustomerId = ref<string | null>(null)
+const pageReady = ref(false)
+const savedViewReady = ref(false)
+const initialLoadDone = ref(false)
 
 const savedViewModule = 'customer'
 const isCollaborationView = computed(() => activeSystemView.value === 'COLLABORATION')
@@ -134,6 +137,12 @@ async function loadData() {
   }
 }
 
+function tryInitialLoad() {
+  if (initialLoadDone.value || !pageReady.value || !savedViewReady.value) return
+  initialLoadDone.value = true
+  loadData()
+}
+
 function handleSearch() {
   query.page = 1
   loadData()
@@ -145,6 +154,7 @@ function handleSystemViewChange(viewId?: string) {
   query.page = 1
   activeSavedViewId.value = ''
   selectedRows.value = []
+  if (!initialLoadDone.value) return
   loadData()
 }
 
@@ -153,7 +163,13 @@ function handleSavedViewChange(viewId?: string) {
   if (viewId) activeSystemView.value = ''
   query.page = 1
   if (!viewId && activeSystemView.value) return
+  if (!initialLoadDone.value) return
   loadData()
+}
+
+function handleSavedViewReady() {
+  savedViewReady.value = true
+  tryInitialLoad()
 }
 
 function handleSavedColumns(keys: string[]) {
@@ -398,7 +414,8 @@ async function openFollow(row: CustomerVO) {
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadSystemViews()])
   await homeQuickCreate.consume(openCreate)
-  loadData()
+  pageReady.value = true
+  tryInitialLoad()
 })
 </script>
 
@@ -419,6 +436,7 @@ onMounted(async () => {
       @system-view-change="handleSystemViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
+      @ready="handleSavedViewReady"
     />
 
     <div class="flex-between flex-wrap gap-3 mb-4">

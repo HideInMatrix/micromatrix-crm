@@ -28,6 +28,7 @@ const emit = defineEmits<{
   systemViewChange: [viewId: string | undefined]
   clearFilters: []
   columnsChange: [columnKeys: string[]]
+  ready: []
 }>()
 
 const auth = useAuthStore()
@@ -87,6 +88,7 @@ async function loadViews(emitChange = true) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
     loading.value = false
+    if (emitChange) emit('ready')
   }
 }
 

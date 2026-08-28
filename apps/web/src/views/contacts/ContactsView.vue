@@ -58,6 +58,9 @@ const importVisible = ref(false)
 const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
+const pageReady = ref(false)
+const savedViewReady = ref(false)
+const initialLoadDone = ref(false)
 
 const uiFields = computed<FieldVO[]>(() => {
   const customerFieldOptions = customerOptions.value.map((item) => ({
@@ -129,6 +132,12 @@ async function loadData() {
   }
 }
 
+function tryInitialLoad() {
+  if (initialLoadDone.value || !pageReady.value || !savedViewReady.value) return
+  initialLoadDone.value = true
+  loadData()
+}
+
 function handleSearch() {
   query.page = 1
   loadData()
@@ -144,7 +153,13 @@ function handleScopeChange(value: 'SELF' | 'DEPT' | 'ALL') {
 function handleSavedViewChange(viewId?: string) {
   activeSavedViewId.value = viewId ?? ''
   query.page = 1
+  if (!initialLoadDone.value) return
   loadData()
+}
+
+function handleSavedViewReady() {
+  savedViewReady.value = true
+  tryInitialLoad()
 }
 
 function handleSavedColumns(keys: string[]) {
@@ -343,7 +358,8 @@ function displayValue(field: FieldVO, row: ContactVO) {
 onMounted(async () => {
   await Promise.all([loadReferenceData(), fieldRefs.load()])
   await homeQuickCreate.consume(openCreate)
-  await loadData()
+  pageReady.value = true
+  tryInitialLoad()
 })
 </script>
 
@@ -437,6 +453,7 @@ onMounted(async () => {
       @change="handleSavedViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
+      @ready="handleSavedViewReady"
     />
 
     <el-table

@@ -47,6 +47,9 @@ const detailVisible = ref(false)
 const detailTarget = ref<CustomerVO | null>(null)
 const assignVisible = ref(false)
 const assignTarget = ref<CustomerVO | null>(null)
+const pageReady = ref(false)
+const savedViewReady = ref(false)
+const initialLoadDone = ref(false)
 
 const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
 const canImport = computed(() => auth.hasPerm('customerPool:import'))
@@ -84,6 +87,12 @@ async function loadPoolOptions() {
 }
 
 async function loadData() {
+  if (!selectedPoolId.value) {
+    items.value = []
+    total.value = 0
+    selectedRows.value = []
+    return
+  }
   loading.value = true
   try {
     const { data } = await listCustomers({
@@ -105,6 +114,12 @@ async function loadData() {
   }
 }
 
+function tryInitialLoad() {
+  if (initialLoadDone.value || !pageReady.value || !savedViewReady.value) return
+  initialLoadDone.value = true
+  loadData()
+}
+
 function handleSearch() {
   query.page = 1
   loadData()
@@ -113,7 +128,13 @@ function handleSearch() {
 function handleSavedViewChange(viewId?: string) {
   activeSavedViewId.value = viewId ?? ''
   query.page = 1
+  if (!initialLoadDone.value) return
   loadData()
+}
+
+function handleSavedViewReady() {
+  savedViewReady.value = true
+  tryInitialLoad()
 }
 
 function handleSavedColumns(keys: string[]) {
@@ -241,7 +262,8 @@ async function handleExportConfirm(payload: { fileName: string; headList: string
 
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
-  loadData()
+  pageReady.value = true
+  tryInitialLoad()
 })
 </script>
 
@@ -259,6 +281,7 @@ onMounted(async () => {
       @change="handleSavedViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
+      @ready="handleSavedViewReady"
     />
 
     <div class="flex-between flex-wrap gap-3 mb-4">
