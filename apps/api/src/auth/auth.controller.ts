@@ -53,10 +53,4 @@ export class AuthController {
     return this.authService.changePassword(user.id, dto.oldPassword, dto.newPassword)
   }
 
-  @Post('api-token')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: '签发长效 API 令牌（365 天，用于脚本/集成调用开放 API）' })
-  apiToken(@CurrentUser() user: AuthUser) {
-    return this.authService.issueApiToken(user.id)
-  }
 }

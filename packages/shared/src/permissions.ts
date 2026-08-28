@@ -131,6 +131,15 @@ export const PERMISSION_TREE: PermissionNode[] = [
     label: '审批中心',
   },
   {
+    code: 'PERSONAL_API_KEY:READ',
+    label: '个人 API Key',
+    children: [
+      { code: 'PERSONAL_API_KEY:ADD', label: '新增' },
+      { code: 'PERSONAL_API_KEY:UPDATE', label: '编辑/启停' },
+      { code: 'PERSONAL_API_KEY:DELETE', label: '删除' },
+    ],
+  },
+  {
     code: 'menu:system',
     label: '系统管理',
     children: [

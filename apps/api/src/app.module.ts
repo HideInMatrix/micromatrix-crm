@@ -21,6 +21,7 @@ import { FollowUpsModule } from './modules/follow-ups/follow-ups.module'
 import { EnterpriseIntegrationsModule } from './modules/enterprise-integrations/enterprise-integrations.module'
 import { EnterpriseSettingsModule } from './modules/enterprise-settings/enterprise-settings.module'
 import { FollowUpPlansModule } from './modules/follow-up-plans/follow-up-plans.module'
+import { PersonalCenterModule } from './modules/personal-center/personal-center.module'
 import { HomeModule } from './modules/home/home.module'
 import { LeadsModule } from './modules/leads/leads.module'
 import { OrdersModule } from './modules/orders/orders.module'
@@ -60,6 +61,7 @@ import { PrismaModule } from './prisma/prisma.module'
     WeComSsoModule,
     OrganizationSyncModule,
     FollowUpPlansModule,
+    PersonalCenterModule,
     HomeModule,
     AttachmentsModule,
     ImportExportModule,

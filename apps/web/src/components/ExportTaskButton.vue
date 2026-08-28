@@ -7,11 +7,14 @@ import { extractErrorMessage } from '@/api/http'
 const visible = ref(false)
 const loading = ref(false)
 const tasks = ref<ExportTaskVO[]>([])
+const props = withDefaults(defineProps<{ showTrigger?: boolean }>(), { showTrigger: true })
 
 async function open() {
   visible.value = true
   await load()
 }
+
+defineExpose({ open })
 
 async function load() {
   loading.value = true
@@ -61,7 +64,7 @@ function statusLabel(status: ExportTaskVO['status']) {
 </script>
 
 <template>
-  <el-button link @click="open">导出任务</el-button>
+  <el-button v-if="props.showTrigger" link @click="open">导出任务</el-button>
   <el-drawer v-model="visible" title="导出任务" size="560px" destroy-on-close>
     <div class="flex justify-end mb-3">
       <el-button size="small" :loading="loading" @click="load">刷新</el-button>

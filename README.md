@@ -12,7 +12,7 @@
 - **协同**：跟进记录（贯穿线索/客户/商机/合同）、站内通知（SSE 实时推送 + 35 个事件配置，其中 32 个具备真实业务触发链路）、公海/线索池自动回收、报价/合同/回款计划可配置到期提醒
 - **工作台与报表**：销售简报、待办、商机漏斗、业绩排行、趋势/转化率/输单原因（ECharts 自建，替代 DataEase 企业版嵌入）
 - **移动端 H5**：工作台简报、线索（领取/跟进/新建）、客户（跟进/新建）、移动审批（Vant + 移动版动态表单）
-- **其他**：客户/线索/池 xlsx 两阶段导入（新建/更新）+ 字段可选导出任务中心、开放 API（Swagger 文档 + 365 天 API 令牌）
+- **其他**：客户/线索/池 xlsx 两阶段导入（新建/更新）+ 字段可选导出任务中心、开放 API（Swagger 文档 + 个人中心 AK/SK）
 
 明确排除（对应 Cordys 付费/企业版能力）：DataEase 嵌入式 BI、SQLBot/MaxKB/WorkBuddy 等 AI 组件、CRM Skills/MCP、SaaS 计费（表结构已预留未启用）。
 
@@ -23,7 +23,7 @@
 | Web 管理端 | Vue 3 + TypeScript + Vite + Element Plus + UnoCSS（presetWind4）+ ECharts |
 | 移动端 H5  | Vue 3 + Vant 4 + UnoCSS                                                   |
 | 后端 API   | NestJS 11 + Prisma 7（驱动适配器）+ PostgreSQL 18 + Redis                 |
-| 认证       | JWT（access + refresh）+ RBAC + 数据范围                                  |
+| 认证       | JWT（access + refresh）+ 个人 API Key（AK/SK）+ RBAC + 数据范围             |
 | 工程       | pnpm workspace monorepo + TypeScript 6 + ESLint 9                         |
 
 > UnoCSS 使用 `presetWind4`（Tailwind v4 兼容语法），无需也不应同时安装 `tailwindcss`。

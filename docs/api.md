@@ -15,7 +15,7 @@
 2. 点击页面右上角 **Authorize**，粘贴令牌（不需要 `Bearer ` 前缀），Authorize 后**刷新页面也会保留**
 3. 任意接口 Try it out 即可；响应时长会显示在结果里
 
-长期集成（脚本/第三方系统）请用 `POST /api/auth/api-token` 签发 365 天令牌，或到「Web 端 → 系统管理 → 企业设置 → 开放 API」生成。
+长期集成（脚本/第三方系统）统一到「个人中心 → API Key」创建 AK/SK，并通过 `X-Access-Key` / `X-Secret-Key` 请求头调用。企业设置的第三方集成只用于企微等企业级外部系统配置，不再提供另一套开发 API 凭证。
 
 ## 导入到 Apifox / Postman
 
@@ -25,7 +25,7 @@
 
 ## 阅读约定（与文档首页描述一致）
 
-- **鉴权**：除标注公开的接口（登录/注册/刷新/健康检查/SSE 流）外，一律需要 Bearer 令牌；无权限返回 `403`（缺权限码）、未登录返回 `401`
+- **鉴权**：除标注公开的接口（登录/注册/刷新/健康检查/SSE 流）外，可使用 Bearer accessToken；长期集成使用个人 API Key 的 `X-Access-Key` / `X-Secret-Key`。无权限返回 `403`（缺权限码）、未认证返回 `401`
 - **分页响应**：`{ items: T[], total, page, pageSize }`
 - **高级筛选 filters**：JSON 字符串数组，`[{"key":"name","op":"contains","value":"科技"},{"key":"cf_xxx","op":"gt","value":100}]`
 - **自定义字段**：写操作把 `cf_*` 键放进 `customData` 对象；字段定义通过 `GET /api/metadata/{module}/fields` 获取
@@ -37,7 +37,7 @@
 | 账号              | 密码     | 数据范围     |
 | ----------------- | -------- | ------------ |
 | admin@demo.com    | admin123 | 全部         |
-| zhangwei@demo.com | demo123  | 本部门及下级 |
+| zhangwei@demo.com | admin123 | 本部门及下级 |
 | lina@demo.com     | demo123  | 仅本人       |
 
 ## 已知限制

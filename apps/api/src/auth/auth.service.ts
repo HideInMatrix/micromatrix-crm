@@ -203,7 +203,7 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<LoginResult> {
-    let payload: { sub: string }
+    let payload: { sub: string; authVersion?: number }
     try {
       payload = await this.jwt.verifyAsync(refreshToken, {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
@@ -218,6 +218,9 @@ export class AuthService {
     })
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('用户不存在或已被禁用')
+    }
+    if ((payload.authVersion ?? 0) !== user.authVersion) {
+      throw new UnauthorizedException('登录状态已失效，请重新登录')
     }
     return this.buildLoginResult(user)
   }
@@ -244,21 +247,9 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(newPassword, 10)
     await this.prisma.user.update({
       where: { id: userId },
-      data: { passwordHash, defaultPwd: false },
+      data: { passwordHash, defaultPwd: false, authVersion: { increment: 1 } },
     })
     return { success: true }
-  }
-
-  /** 长效 API 令牌（开放 API 集成用） */
-  async issueApiToken(userId: string): Promise<{ token: string; expiresIn: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } })
-    if (!user) throw new UnauthorizedException('用户不存在')
-    const payload: JwtPayload = { sub: user.id, tenantId: user.tenantId, email: user.email }
-    const token = await this.jwt.signAsync(payload, {
-      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-      expiresIn: '365d',
-    })
-    return { token, expiresIn: '365 天' }
   }
 
   private async recordLoginLog(
@@ -292,7 +283,12 @@ export class AuthService {
   }
 
   private async buildLoginResult(user: UserWithRelations): Promise<LoginResult> {
-    const payload: JwtPayload = { sub: user.id, tenantId: user.tenantId, email: user.email }
+    const payload: JwtPayload = {
+      sub: user.id,
+      tenantId: user.tenantId,
+      email: user.email,
+      authVersion: user.authVersion,
+    }
     const accessExpiresIn = (this.config.get<string>('JWT_ACCESS_EXPIRES_IN') ??
       '15m') as JwtSignOptions['expiresIn']
     const refreshExpiresIn = (this.config.get<string>('JWT_REFRESH_EXPIRES_IN') ??
@@ -304,7 +300,7 @@ export class AuthService {
         expiresIn: accessExpiresIn,
       }),
       this.jwt.signAsync(
-        { sub: user.id },
+        { sub: user.id, authVersion: user.authVersion },
         {
           secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
           expiresIn: refreshExpiresIn,
@@ -321,6 +317,7 @@ export class AuthService {
       tenantName: user.tenant.name,
       tenantSlug: user.tenant.slug,
       email: user.email,
+      phone: user.phone,
       name: user.name,
       gender: user.gender,
       avatarUrl: user.extension?.avatar ?? null,

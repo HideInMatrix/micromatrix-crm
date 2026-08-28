@@ -7,8 +7,8 @@ const DESCRIPTION = `
 ## 认证方式
 
 1. 调用 \`POST /api/auth/login\` 获取 \`accessToken\`（15 分钟有效，配合 \`POST /api/auth/refresh\` 刷新）
-2. 脚本/集成场景调用 \`POST /api/auth/api-token\` 签发 365 天长效令牌（也可在「系统管理 → 企业设置」中生成）
-3. 点击右上角 **Authorize** 填入令牌（无需 Bearer 前缀），即可在线调试
+2. 长期脚本/第三方集成在「个人中心 → API Key」创建 AK/SK，并通过 \`X-Access-Key\` / \`X-Secret-Key\` 请求头调用
+3. 点击右上角 **Authorize** 填入登录 accessToken（无需 Bearer 前缀），即可在线调试
 
 ## 通用约定
 
@@ -25,7 +25,7 @@ OpenAPI JSON 地址：\`/api/docs-json\`（Apifox / Postman / Insomnia 均可直
 
 /** 按业务流程排序的分组（与控制器 @ApiTags 一一对应） */
 const TAGS: [name: string, description: string][] = [
-  ['认证', '登录、令牌刷新、当前用户、API 令牌签发'],
+  ['认证', '登录、令牌刷新、当前用户与密码管理'],
   ['工作台', '销售简报、待办、漏斗、排行、趋势统计'],
   ['线索', '线索池、领取分配、跟进转化、导入导出'],
   ['客户', '客户全生命周期、公海、协作团队、导入导出'],
@@ -107,7 +107,7 @@ export function setupSwagger(app: INestApplication): void {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: '登录接口返回的 accessToken 或 API 长效令牌',
+        description: '登录接口返回的 accessToken',
       },
       'bearer',
     )

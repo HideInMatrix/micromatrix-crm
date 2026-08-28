@@ -96,7 +96,7 @@ flowchart LR
 
 权限树将 `system:setting:update` 挂在 `system:setting` 下。迁移把所有包含旧 `system:setting` 且不包含新动作码的角色补上 `system:setting:update`，管理员的 `*` 不受影响。
 
-通用企业设置 PUT 同步改用更新权限，前端基础信息保存和 API Token 操作按同一更新能力显示。
+通用企业设置 PUT 同步改用更新权限，前端基础信息保存按同一更新能力显示。早期企业设置中的 API Token 入口已在 W3.5 按 Cordys 个人 API Key 契约删除，不再保留双套开放 API 凭证。
 
 ## 8. 测试
 

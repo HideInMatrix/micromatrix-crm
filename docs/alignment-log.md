@@ -930,3 +930,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 最终质量门槛：根级 `pnpm smoke` **223/223**、API rules **114/114**、全仓 typecheck、全仓 ESLint、Shared/API/Web production build 全绿；ESLint 同时清理一个已废弃的 Browser Smoke `clickText` 测试 helper。
 - 文档已同步 `tasks / final-navigation-access-audit / parity / deferred / graph-completion-plan / specs index / docs index`。DataEase provider/token 继续 DB-023 deferred；商机高级配置、合同/发票高级流程、自定义表单等图外能力仍按原 parity/deferred 状态推进。
 - **W3.4.0～W3.4.5 正式全部关闭，用户确认的 W3.4 功能图状态更新为 `VERIFIED`。该状态不等于整个 CordysCRM 所有模块已 100% 复刻。**
+
+---
+
+## 44. W3.5 用户个人中心与 API Key（2026-08-28）
+
+- 按 Cordys `layout-sider.vue / personalInfoDrawer.vue / UserKeyController / UserKeyService` 重建用户入口：桌面用户名从 Header 移到左侧底部，下拉菜单为个人信息、我的计划、我的导出、退出系统；Mobile “我的”同步个人信息编辑、改密和退出。
+- 新增 `/personal/center/info|update|info/reset|follow/plan/list`，手机号/邮箱按 Cordys 用户级语义全局唯一；个人资料修改写操作日志。`User.authVersion` 使改密后旧 access/refresh 会话在服务端即时失效。
+- 补齐条件式 API Key Tab 与 `PERSONAL_API_KEY:READ/ADD/UPDATE/DELETE`，新增 Cordys `/user/api/key/add|list|update|enable|disable|delete`；每人最多 5 个，支持描述、永久/自定义有效期、启停、删除，并对所有 ID 操作增加当前用户所有权校验。
+- `AuthGuard` 支持 `X-Access-Key / X-Secret-Key`，真实复用现有角色权限和 DataScope；错误 Secret、停用、过期和跨用户操作均被拒绝。
+- Cordys 企业“三方设置”只承载企微、钉钉、飞书、DataEase、MaxKB、标讯、企查查等企业级集成，开放 API 凭证属于个人中心。为避免双套凭证混淆，已破坏性删除 MicroMatrix 早期企业设置“开放 API / 365 天 JWT”卡片、`POST /auth/api-token` 和 `AuthService.issueApiToken()`，不保留兼容入口。
+- 最终验收：Personal Center/API Key API **44/44**、Desktop/Mobile Browser **23/23**、根 Smoke **223/223**、rules **114/114**；隔离空库 **14/14** 可从零应用 **37/37 migration** 并双次 Seed，typecheck/ESLint/production build 全绿。

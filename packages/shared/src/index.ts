@@ -40,6 +40,7 @@ export interface CurrentUser {
   tenantName: string
   tenantSlug: string
   email: string | null
+  phone: string | null
   name: string
   /** Cordys sys_user.gender：false=男，true=女。 */
   gender: boolean

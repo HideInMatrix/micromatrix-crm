@@ -18,8 +18,8 @@
 
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/冒烟脚本）
-- 当前主线：[cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md)；用户确认的 W3.4 功能图已完成 W3.4.0～W3.4.5 全部阶段并标记 **`VERIFIED`**。DataEase provider/token 继续由 DB-023 deferred；其它图外 Cordys 能力仍按 parity/deferred 台账推进。
-- 当前最终基线：隔离空库 **14/14**（35 migration、双次 Seed、目标表 32/32、关键索引 23/23、旧表 14/14 不存在）+ Dashboard API **44/44** + Dashboard Browser **28/28** + 全图导航 Browser **29/29** + Mobile Home/Leads **10/10** + 客户域 Browser **23/23** + 线索 Browser **20/20** + 首页 Browser **12/12** + `pnpm smoke` **223/223** + rules **114/114** + typecheck/lint/production build 全绿。
+- 当前主线：W3.4 用户确认功能图与 W3.5 用户个人中心均已标记 **`VERIFIED`**。DataEase provider/token 继续由 DB-023 deferred；其它图外 Cordys 能力仍按 parity/deferred 台账推进。
+- 当前最终基线：隔离空库 **14/14**（37 migration、双次 Seed）+ Personal Center/API Key API **44/44** + Personal Center Browser **23/23** + Dashboard API **44/44** + Dashboard Browser **28/28** + 全图导航 Browser **29/29** + Mobile Home/Leads **10/10** + 客户域 Browser **23/23** + 线索 Browser **20/20** + 首页 Browser **12/12** + `pnpm smoke` **223/223** + rules **114/114** + typecheck/lint/production build 全绿。
 - 数据模型唯一真相：`apps/api/prisma/schema.prisma`；不维护会随迁移快速失真的手写数据模型快照
 - 启动方式与演示账号见根目录 [README.md](../README.md)
 - 文档归档约定：根目录只保留项目入口 `README.md`；其余项目文档统一放在 `docs/`，上游 `CordysCRM/` 自带文档保持原位

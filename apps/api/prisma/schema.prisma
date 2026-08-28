@@ -180,6 +180,8 @@ model User {
   passwordLoginEnabled Boolean    @default(true)
   // Cordys 首页默认密码提醒；用户完成密码修改后置 false。
   defaultPwd           Boolean    @default(false) @map("default_pwd")
+  // 修改密码后自增，使已签发的 access / refresh 会话立即失效。
+  authVersion          Int        @default(0) @map("auth_version")
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 
@@ -189,12 +191,31 @@ model User {
   externalMappings   ExternalUserMapping[]
   externalIdentities ExternalIdentity[]
   messageDeliveries  MessageDelivery[]
+  apiKeys            UserApiKey[]
   extension          UserExtension?
 
   @@index([tenantId])
   @@index([tenantId, deptId])
   @@index([email])
   @@map("users")
+}
+
+// 对齐 Cordys user_key：个人中心最多维护 5 个 AK/SK，用于开放 API 请求。
+model UserApiKey {
+  id          String    @id @default(cuid())
+  userId      String    @map("create_user")
+  accessKey   String    @unique @map("access_key")
+  secretKey   String    @map("secret_key")
+  createdAt   DateTime  @default(now()) @map("create_time")
+  enabled     Boolean   @default(true) @map("enable")
+  forever     Boolean   @default(true)
+  expireAt    DateTime? @map("expire_time")
+  description String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_key")
 }
 
 // 对齐 Cordys sys_user_extend：头像和第三方平台扩展数据不进入用户主表。

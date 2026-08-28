@@ -30,6 +30,8 @@
     "smoke:w345-navigation-browser": "node scripts/w345-navigation-browser-smoke.mjs",
     "smoke:w345-mobile-browser": "node scripts/w345-mobile-browser-smoke.mjs",
     "smoke:w345-empty-db": "node scripts/w345-empty-db-validation.mjs",
+    "smoke:w35-personal-center-api": "node scripts/w35-personal-center-api-smoke.mjs",
+    "smoke:w35-personal-center-browser": "node scripts/w35-personal-center-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },

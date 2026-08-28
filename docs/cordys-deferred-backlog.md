@@ -2,7 +2,7 @@
 
 本台账记录源码对齐过程中已经确认、但当前阶段尚未实施的能力。目的不是描述模糊的“以后再做”，而是保证整体复刻结束时每个已发现缺口都有明确去向。
 
-最近复查：2026-08-28（W3.4.0～W3.4.5 已全部完成，用户确认的 W3.4 功能图现为 `VERIFIED`）。最终回归基线：隔离空库 14/14（35 migration、双次 Seed、目标表 32/32、关键索引 23/23、旧表 14/14 不存在）、Dashboard API 44/44、Dashboard Browser 28/28、全图导航 Browser 29/29、Mobile Home/Leads 10/10、客户域 Browser 23/23、线索 Browser 20/20、首页 Browser 12/12、根级 Smoke 223/223、rules 114/114；本地 migration 总数仍为 **35**。DB-018 已完成，DataEase provider/token 继续由 DB-023 deferred。
+最近复查：2026-08-28（W3.4.0～W3.4.5 与 W3.5 用户个人中心均已完成并 `VERIFIED`）。当前回归基线：隔离空库 14/14（37 migration、双次 Seed）、Personal Center/API Key API 44/44、Personal Center Browser 23/23、Dashboard API 44/44、Dashboard Browser 28/28、全图导航 Browser 29/29、Mobile Home/Leads 10/10、客户域 Browser 23/23、线索 Browser 20/20、首页 Browser 12/12、根级 Smoke 223/223、rules 114/114；本地 migration 总数为 **37**。DB-018 已完成，DataEase provider/token 继续由 DB-023 deferred。
 
 ## 管理规则
 
