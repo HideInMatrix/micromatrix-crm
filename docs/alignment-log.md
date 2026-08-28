@@ -822,3 +822,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 客户编辑时负责人变化、联系人负责人、Owner History、客户主体和动态字段合并进同一事务；客户删除事务补齐动态字段、Blob 和跟进计划清理。Cordys 证据同步纠正 `/account/option` 为 POST，回款计划/记录路径位于 `/account/contract/*`。
 - 新增 `scripts/w343-customer-api-smoke.mjs`，专项验收 **22/22**；API rules **114/114**，Shared/API/Web typecheck 与受影响文件 ESLint 全绿。
 - task 4.2 关闭；下一执行指针为 **W3.4.3 task 4.3：重建联系人 API**。协作、关系、合并的深层规则继续由 task 4.4 收口，客户公海完整规则继续由 task 4.5 收口。
+
+---
+
+## 34. W3.4.3 task 4.3 联系人 API（2026-08-28）
+
+- 再次读取 Cordys `CustomerContactController`、`CustomerContactService`、`ExtCustomerContactMapper.xml` 和前端 requrls，确认联系人主路径必须为 `/account/contact/*`，独立页与客户 360 共用同一直接模型，但访问边界不同。
+- 删除旧 `/api/contacts/*` Controller；补齐 `/account/contact/module/form`、Pager `/page`、`/chart`、客户子资源 `/list/{customerId}`、详情、CRUD、启停、商机关联检查、Tab、批改、导入导出，并保留已完成的 `/account/contact/view/*` User View。
+- `customerId` 从 API DTO 到导入链路改为可选，独立联系人允许不关联客户；显式关联客户时执行 Customer 子资源写权限。独立列表/图表/导出/批改继续只按 CONTACT DataScope，客户 360 READ_ONLY 可只读查看联系人，COLLABORATION 无 Customer 数据范围时只返回自己负责的联系人。
+- 联系人普通动态字段与 Blob、唯一规则、启停原因全部落直接表；后端保留需求 R8 的商机关联强制拒删，删除联系人、动态字段/Blob 与附件处于同一事务。移动端客户联系人调用同步迁移到 `/account/contact/list/*`，浏览器 `/contacts` 仍只作为前端导航路由。
+- 新增 `scripts/w343-contact-api-smoke.mjs`，专项验收 **18/18**；API rules **114/114**，Shared/API/Web typecheck、本批 ESLint、API/Web production build 与 `git diff --check` 全绿。
+- task 4.3 关闭；下一执行指针为 **W3.4.3 task 4.4：对齐客户协作、关系和合并**。

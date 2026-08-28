@@ -427,12 +427,24 @@ task 4.2 已完成普通客户 `/account` 主契约切换与客户 360 后端收
 - Cordys 证据纠正：`/account/option` 为 POST，回款计划/记录位于 `/account/contract/payment-plan/*` 与 `/account/contract/payment-record/*`；
 - 专项 Smoke：`node scripts/w343-customer-api-smoke.mjs`，22 passed / 0 failed；API rules 114/114，Shared/API/Web typecheck 与受影响文件 lint 通过。
 
-下一独立执行单元是 **W3.4.3 task 4.3：重建联系人 API**。客户协作、关系和合并的深层业务规则继续在 task 4.4 收口，客户公海完整规则与 API 继续在 task 4.5 收口。
+task 4.3 已完成联系人 `/account/contact/*` 主契约收口；下一独立执行单元是 **W3.4.3 task 4.4：对齐客户协作、关系和合并**。客户公海完整规则与 API 继续在 task 4.5 收口。
 
-4.2 先完成：
+### 15.1 task 4.3 联系人实施锁定
 
-1. 新建 `/account` 分域 Controller/DTO，替换旧 `/customers` API；
-2. 校正客户权限码并拆分普通、协作和公海访问断言；
-3. 完成普通客户表单、分页、详情、CRUD、转移、批量、入公海、导入导出和图表；
-4. 建立客户 360 聚合入口与各子资源权限裁剪；
-5. 为负责人变更、入池、批量越权、租户隔离和事务回滚增加 API Smoke。
+2026-08-28 再次按 Cordys `CustomerContactController`、`CustomerContactService`、`ExtCustomerContactMapper.xml` 与前端 requrls 复核，task 4.3 按以下顺序实施：
+
+1. **破坏式切换 API 命名空间**：删除旧 `/contacts/*` Controller，统一使用 `/account/contact/*`；User View 已提前位于 `/account/contact/view/*`，本任务不再增加兼容别名。
+2. **恢复 Cordys Pager 契约**：独立联系人 `/page` 使用 `current/pageSize/keyword/filters/viewId/sort` 请求，响应返回 `list/total/current/pageSize/optionMap`；Web 端只在 API adapter 内转换为当前页面使用的 `PaginatedResult`。
+3. **恢复联系人表单与图表入口**：增加 `/module/form` 与 `/chart`，动态字段继续使用 `CustomerContactField/Blob` 直接模型；图表、导出和分页都执行 CONTACT READ DataScope。
+4. **允许独立联系人无客户**：`customer_contact.customer_id` 已是 nullable；独立 `add/import` 不再强制 `customerId`，只有客户 360 内嵌创建时由前端携带当前 `customerId`。若请求显式携带 `customerId`，后端才执行 Customer 子资源写权限校验。
+5. **严格拆分独立联系人与客户子资源访问**：独立 `/page`、导出和批改只按 CONTACT 权限与联系人 owner DataScope；`/list/{customerId}` 继续执行 Customer 资源边界，并按 Cordys 规则处理 Customer owner、部门范围、`COLLABORATION` 与联系人 owner；`READ_ONLY` 不获得联系人写权限。
+6. **写链路与唯一性**：新增、更新、导入继续执行系统字段 + 动态字段唯一规则；启停保存/清空原因；批量仅保留更新与导出选中，不新增批量删除。
+7. **删除安全收紧**：保留需求 R8 的后端商机关联拒删，不能只依赖前端 `/opportunity/check/{id}`；删除主体与联系人动态字段/Blob、附件在同一事务清理。
+8. **验收**：新增 `scripts/w343-contact-api-smoke.mjs`，至少覆盖 nullable customerId、Contact DataScope、客户 360 子资源裁剪、动态字段、启停原因、关联商机拒删、导入模板/导出/图表、旧 `/api/contacts` 404 与事务清理；同时复跑 Web typecheck、API typecheck、rules、ESLint 和 production build。
+
+### 15.2 task 4.3 验收结果
+
+- 旧 `/api/contacts/*` Controller 已删除，Web/移动端业务调用统一使用 `/account/contact/*`；`/contacts` 仅保留为浏览器导航路由。
+- 独立联系人允许 `customerId=null`，显式关联客户时执行 Customer 子资源权限；Contact SELF DataScope 与客户 360 READ_ONLY/COLLABORATION 两类访问已通过真实 API/数据库 Smoke。
+- 动态字段普通值与 Blob、unique、启停原因、图表、导出、模板、商机关联检查和后端拒删均通过；删除事务验证联系人主体与动态字段/Blob 同步清理。
+- `node scripts/w343-contact-api-smoke.mjs`：**18 passed / 0 failed**；API rules **114/114**；Shared/API/Web typecheck、本批 ESLint、API/Web production build 和 `git diff --check` 全部通过。

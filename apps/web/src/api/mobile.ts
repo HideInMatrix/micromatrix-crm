@@ -1,6 +1,5 @@
 import type {
   ApprovalInstanceVO,
-  ContactVO,
   FieldVO,
   FollowUpVO,
   LeadVO,
@@ -14,7 +13,7 @@ import {
   getCustomer as getAccount,
   listCustomers as listAccounts,
 } from '@/api/customers'
-import { leadApi } from '@/api/sales'
+import { contactApi, leadApi } from '@/api/sales'
 
 export function fetchFields(module: string) {
   return http.get<FieldVO[]>(`/metadata/${module}/fields`)
@@ -29,7 +28,7 @@ export function getCustomer(id: string, pool = false) {
 }
 
 export function listCustomerContacts(customerId: string) {
-  return http.get<ContactVO[]>(`/contacts/list/${customerId}`)
+  return contactApi.list(customerId)
 }
 
 export function createCustomer(data: Record<string, unknown>) {

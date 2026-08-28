@@ -24,11 +24,22 @@ import { ExportTasksService } from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
+import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
-import { CreateContactDto, QueryContactsDto, UpdateContactDto } from './dto/contact.dto'
+import {
+  ContactAddDto,
+  ContactChartDto,
+  type ContactModuleFieldValueDto,
+  type ContactPageDto,
+  type ContactSortDto,
+  ContactUpdateDto,
+  CreateContactDto,
+  QueryContactsDto,
+  UpdateContactDto,
+} from './dto/contact.dto'
 
 const MODULE = 'contact'
 const contactInclude = {
@@ -44,6 +55,7 @@ export class ContactsService {
     private readonly customerAccess: CustomerAccessService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
+    private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
     private readonly userViews: UserViewsService,
     private readonly spreadsheet: SpreadsheetService,
@@ -51,8 +63,61 @@ export class ContactsService {
     private readonly notifications: BusinessNotificationsService,
   ) {}
 
+  getModuleForm(user: AuthUser) {
+    return this.moduleForms.getConfig(user.tenantId, MODULE)
+  }
+
+  async page(user: AuthUser, dto: ContactPageDto) {
+    const result = await this.findAll(
+      user,
+      {
+        page: dto.current,
+        pageSize: dto.pageSize,
+        keyword: dto.keyword,
+        viewId: dto.viewId,
+        scopeView: dto.scopeView,
+        filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      },
+      dto.sort,
+    )
+    return {
+      list: result.items,
+      total: result.total,
+      current: result.page,
+      pageSize: result.pageSize,
+      optionMap: {},
+    }
+  }
+
+  async addAccountContact(user: AuthUser, dto: ContactAddDto) {
+    return this.create(user, {
+      customerId: dto.customerId,
+      ownerId: dto.owner,
+      name: dto.name,
+      phone: dto.phone,
+      customData: await this.moduleFieldsToCustomData(user, dto.moduleFields),
+    })
+  }
+
+  async updateAccountContact(user: AuthUser, dto: ContactUpdateDto) {
+    return this.update(user, dto.id, {
+      customerId: dto.customerId,
+      ownerId: dto.owner,
+      name: dto.name,
+      phone: dto.phone,
+      customData:
+        dto.moduleFields === undefined
+          ? undefined
+          : await this.moduleFieldsToCustomData(user, dto.moduleFields),
+    })
+  }
+
   /** Cordys 独立联系人页：按联系人 owner/dept 数据范围分页。 */
-  async findAll(user: AuthUser, query: QueryContactsDto): Promise<PaginatedResult<ContactVO>> {
+  async findAll(
+    user: AuthUser,
+    query: QueryContactsDto,
+    sort?: ContactSortDto,
+  ): Promise<PaginatedResult<ContactVO>> {
     this.assertIndependentReadPermission(user)
     const { page = 1, pageSize = 10, keyword } = query
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
@@ -85,11 +150,12 @@ export class ContactsService {
         : {}),
     }
 
+    const orderBy = this.contactOrderBy(sort, fields)
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customerContact.findMany({
         where,
         include: contactInclude,
-        orderBy: [{ createTime: 'desc' }, { id: 'asc' }],
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -121,16 +187,86 @@ export class ContactsService {
     }
   }
 
+  async chart(user: AuthUser, dto: ContactChartDto) {
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const resolveField = (fieldId?: string) =>
+      fieldId ? fields.find((field) => field.id === fieldId || field.key === fieldId) : undefined
+    const categoryField = resolveField(dto.chartConfig.categoryAxis.fieldId)
+    if (!categoryField) throw new BadRequestException('图表类别字段不存在')
+    const subCategoryField = resolveField(dto.chartConfig.subCategoryAxis?.fieldId)
+    if (dto.chartConfig.subCategoryAxis && !subCategoryField) {
+      throw new BadRequestException('图表子类别字段不存在')
+    }
+    const method = dto.chartConfig.valueAxis.aggregateMethod ?? 'COUNT'
+    const valueField = resolveField(dto.chartConfig.valueAxis.fieldId)
+    if (method !== 'COUNT' && !valueField) throw new BadRequestException('图表值字段不存在')
+
+    const items: ContactVO[] = []
+    let page = 1
+    while (true) {
+      const result = await this.findAll(user, {
+        page,
+        pageSize: 100,
+        viewId: dto.viewId,
+        scopeView: dto.scopeView,
+        filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      })
+      items.push(...result.items)
+      if (items.length >= result.total || result.items.length === 0) break
+      page++
+    }
+
+    type Bucket = {
+      category: unknown
+      categoryName: string
+      subCategory: unknown
+      subCategoryName: string
+      values: number[]
+      count: number
+    }
+    const buckets = new Map<string, Bucket>()
+    for (const item of items) {
+      const category = this.chartFieldValue(item, categoryField.key)
+      const subCategory = subCategoryField
+        ? this.chartFieldValue(item, subCategoryField.key)
+        : null
+      const key = JSON.stringify([category, subCategory])
+      const bucket = buckets.get(key) ?? {
+        category,
+        categoryName: this.chartFieldLabel(categoryField, category),
+        subCategory,
+        subCategoryName: subCategoryField
+          ? this.chartFieldLabel(subCategoryField, subCategory)
+          : '',
+        values: [],
+        count: 0,
+      }
+      bucket.count++
+      if (valueField) {
+        const raw = this.chartFieldValue(item, valueField.key)
+        const numeric = typeof raw === 'number' ? raw : Number(raw)
+        if (Number.isFinite(numeric)) bucket.values.push(numeric)
+      }
+      buckets.set(key, bucket)
+    }
+    return [...buckets.values()].map((bucket) => ({
+      categoryAxis: bucket.category == null ? '' : String(bucket.category),
+      categoryAxisName: bucket.categoryName,
+      subCategoryAxis: bucket.subCategory == null ? '' : String(bucket.subCategory),
+      subCategoryAxisName: bucket.subCategoryName,
+      valueAxis: this.aggregateChartValues(method, bucket.count, bucket.values),
+    }))
+  }
+
   /** 客户详情内嵌联系人：继续沿用 W1.2 协作语义。 */
   async listByCustomer(user: AuthUser, customerId: string): Promise<ContactVO[]> {
     if (!customerId) throw new BadRequestException('缺少 customerId')
     const access = await this.customerAccess.assertRead(user, customerId)
-    if (!access.dataScope && !access.pool && access.collaborationType === 'READ_ONLY') return []
     const rows = await this.prisma.customerContact.findMany({
       where: {
         organizationId: user.tenantId,
         customerId,
-        ...(!access.dataScope && !access.pool && access.collaborationType === 'COLLABORATION'
+        ...(!access.dataScope && access.collaborationType === 'COLLABORATION'
           ? { owner: user.id }
           : {}),
       },
@@ -157,12 +293,11 @@ export class ContactsService {
   }
 
   async create(user: AuthUser, dto: CreateContactDto): Promise<ContactVO> {
-    const access = await this.customerAccess.assertCollaborateWrite(
-      user,
-      dto.customerId,
-      this.pickPermission(user, 'contact:create', 'customer:create'),
-    )
-    if (!access.dataScope && dto.ownerId && dto.ownerId !== user.id) {
+    const permission = this.pickPermission(user, 'contact:create', 'customer:create')
+    const access = dto.customerId
+      ? await this.customerAccess.assertCollaborateWrite(user, dto.customerId, permission)
+      : null
+    if (access && !access.dataScope && dto.ownerId && dto.ownerId !== user.id) {
       throw new ForbiddenException('协作用户只能将联系人负责人设为自己')
     }
     const owner = await this.resolveOwner(user, dto.ownerId)
@@ -175,7 +310,7 @@ export class ContactsService {
     const contact = await this.prisma.$transaction(async (tx) => {
       const created = await tx.customerContact.create({
         data: {
-          customerId: data.customerId,
+          customerId: data.customerId ?? null,
           name: data.name,
           phone: data.phone ?? null,
           owner: owner.id,
@@ -207,7 +342,9 @@ export class ContactsService {
       excludeSelf: true,
       type: 'system',
       title: '客户新增联系人',
-      content: `${user.name} 为客户「${contact.customer?.name ?? ''}」新增联系人「${contact.name}」`,
+      content: contact.customer
+        ? `${user.name} 为客户「${contact.customer.name}」新增联系人「${contact.name}」`
+        : `${user.name} 新增联系人「${contact.name}」`,
       link: '/contacts',
     })
     return this.toSingleVO(user, contact)
@@ -309,12 +446,16 @@ export class ContactsService {
       where: { tenantId: user.tenantId, contactId: id },
     })
     if (linked > 0) throw new BadRequestException('联系人已关联商机，请先在商机中解除联系人关联')
-    await this.prisma.$transaction([
-      this.prisma.attachment.deleteMany({
-        where: { tenantId: user.tenantId, targetType: 'contact', targetId: id },
-      }),
-      this.prisma.customerContact.delete({ where: { id } }),
-    ])
+    await this.prisma.$transaction(async (tx) => {
+      await Promise.all([
+        tx.customerContactField.deleteMany({ where: { resourceId: id } }),
+        tx.customerContactFieldBlob.deleteMany({ where: { resourceId: id } }),
+        tx.attachment.deleteMany({
+          where: { tenantId: user.tenantId, targetType: 'contact', targetId: id },
+        }),
+      ])
+      await tx.customerContact.delete({ where: { id } })
+    })
     return { id, name: contact.name }
   }
 
@@ -547,9 +688,10 @@ export class ContactsService {
       resourceId: importType === 'UPDATE' ? resourceId : undefined,
     })
     if (importType === 'ADD') {
-      if (!dto.customerId) throw new BadRequestException('客户不能为空')
       if (!dto.name?.trim()) throw new BadRequestException('联系人姓名不能为空')
-      await this.customerAccess.assertCollaborateWrite(user, dto.customerId, 'contact:import')
+      if (dto.customerId) {
+        await this.customerAccess.assertCollaborateWrite(user, dto.customerId, 'contact:import')
+      }
     } else {
       if (!resourceId) throw new BadRequestException('唯一ID不能为空')
       const existing = await this.ensureIndependentInScope(user, resourceId)
@@ -740,6 +882,80 @@ export class ContactsService {
   private assertIndependentImportPermission(user: AuthUser) {
     if (!hasPermission(user.permissions, 'contact:import'))
       throw new ForbiddenException('无联系人导入权限')
+  }
+
+  private async moduleFieldsToCustomData(
+    user: AuthUser,
+    moduleFields?: ContactModuleFieldValueDto[],
+  ): Promise<Record<string, unknown>> {
+    if (!moduleFields?.length) return {}
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const byIdentity = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const result: Record<string, unknown> = {}
+    for (const item of moduleFields) {
+      const field = byIdentity.get(item.fieldId)
+      if (!field) throw new BadRequestException(`动态字段「${item.fieldId}」不存在`)
+      if (field.system || !field.key.startsWith('cf_')) {
+        throw new BadRequestException(`字段「${field.label}」不是可写动态字段`)
+      }
+      result[field.key] = item.fieldValue
+    }
+    return result
+  }
+
+  private contactOrderBy(
+    sort: ContactSortDto | undefined,
+    fields: FieldVO[],
+  ): Prisma.CustomerContactOrderByWithRelationInput[] {
+    if (!sort) return [{ createTime: 'desc' }, { id: 'asc' }]
+    const field = fields.find((item) => item.id === sort.fieldId || item.key === sort.fieldId)
+    if (!field || field.key.startsWith('cf_')) return [{ createTime: 'desc' }, { id: 'asc' }]
+    const direction = sort.direction.toLowerCase() as Prisma.SortOrder
+    const keyMap: Record<string, keyof Prisma.CustomerContactOrderByWithRelationInput> = {
+      name: 'name',
+      phone: 'phone',
+      owner: 'owner',
+      ownerId: 'owner',
+      customerId: 'customerId',
+      enable: 'enable',
+      createTime: 'createTime',
+      updateTime: 'updateTime',
+    }
+    const key = keyMap[field.key]
+    if (!key) return [{ createTime: 'desc' }, { id: 'asc' }]
+    return [{ [key]: direction } as Prisma.CustomerContactOrderByWithRelationInput, { id: 'asc' }]
+  }
+
+  private chartFieldValue(item: ContactVO, key: string): unknown {
+    const systemValues: Record<string, unknown> = {
+      customerId: item.customerId,
+      name: item.name,
+      phone: item.phone,
+      owner: item.ownerId,
+      ownerId: item.ownerId,
+      enable: item.enable,
+      createTime: item.createdAt,
+      updateTime: item.updatedAt,
+    }
+    return key.startsWith('cf_') ? item.customData[key] : systemValues[key]
+  }
+
+  private chartFieldLabel(field: FieldVO, value: unknown) {
+    if (value == null || value === '') return '空'
+    return field.options?.find((item) => item.value === value)?.label ?? String(value)
+  }
+
+  private aggregateChartValues(
+    method: 'COUNT' | 'SUM' | 'AVG' | 'MAX' | 'MIN',
+    count: number,
+    values: number[],
+  ) {
+    if (method === 'COUNT') return count
+    if (!values.length) return 0
+    if (method === 'SUM') return values.reduce((sum, value) => sum + value, 0)
+    if (method === 'AVG') return values.reduce((sum, value) => sum + value, 0) / values.length
+    if (method === 'MAX') return Math.max(...values)
+    return Math.min(...values)
   }
 
   private async filterIds(

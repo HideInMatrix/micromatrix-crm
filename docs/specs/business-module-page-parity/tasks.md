@@ -202,10 +202,12 @@
   - [x] 专项验收：`node scripts/w343-customer-api-smoke.mjs`，22 passed / 0 failed；API rules 114/114；Shared/API/Web typecheck 与受影响文件 lint 通过。
   - _需求：R2、R7、R11_
 
-- [ ] 4.3 重建联系人 API
-  - 完成独立页面和客户 360 内嵌入口、动态字段、唯一性、启停原因、批量编辑、导入导出。
-  - 删除前检查商机关联；不新增 Cordys 不存在的批量删除。
-  - 分别执行 Contact 数据范围和 Customer 子资源访问规则。
+- [x] 4.3 重建联系人 API
+  - [x] 旧 `/api/contacts/*` Controller 已删除，统一切换 `/account/contact/*`；补齐 module form、Cordys Pager、chart、详情、CRUD、启停、批改、导入导出和 `/account/contact/view/*` 现有 User View 链路。
+  - [x] `customerId` 改为可选，独立联系人允许不关联客户；显式关联客户时继续执行 Customer 子资源写权限，客户 360 内嵌入口继续携带当前客户。
+  - [x] 独立 `/page`、图表、导出和批改执行 CONTACT DataScope；客户 360 READ_ONLY 可只读查看，COLLABORATION 无 Customer 数据范围时仅看到自己负责的联系人。
+  - [x] 动态字段普通值/Blob、唯一性、启停原因继续走直接模型；删除前后端强制商机关联拒删，联系人主体与动态字段/Blob/附件处于同一事务清理；未增加 Cordys 不存在的批量删除。
+  - [x] 专项 Smoke `node scripts/w343-contact-api-smoke.mjs`：18/18；API rules、Shared/API/Web typecheck、本批 ESLint、API/Web production build 与 `git diff --check` 全绿。
   - _需求：R2、R8、R11_
 
 - [ ] 4.4 对齐客户协作、关系和合并

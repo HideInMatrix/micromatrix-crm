@@ -527,37 +527,88 @@ export interface ContactListParams extends PageQuery {
   scopeView?: 'SELF' | 'DEPT' | 'ALL'
 }
 
+function parseContactFilters(raw?: string) {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function contactPageBody(params: ContactListParams) {
+  return {
+    current: params.page ?? 1,
+    pageSize: params.pageSize ?? 10,
+    keyword: params.keyword,
+    viewId: params.viewId,
+    scopeView: params.scopeView,
+    filters: parseContactFilters(params.filters),
+  }
+}
+
+function toContactPayload(data: Partial<ContactVO> & { name?: string }) {
+  const customData = data.customData ?? {}
+  return {
+    customerId: data.customerId || undefined,
+    owner: data.ownerId || undefined,
+    name: data.name,
+    phone: data.phone ?? undefined,
+    moduleFields: Object.entries(customData).map(([fieldId, fieldValue]) => ({
+      fieldId,
+      fieldValue,
+    })),
+  }
+}
+
 export const contactApi = {
-  list: (customerId: string) => http.get<ContactVO[]>(`/contacts/list/${customerId}`),
-  page: (params: ContactListParams) =>
-    http.post<PaginatedResult<ContactVO>>('/contacts/page', params),
-  get: (id: string) => http.get<ContactVO>(`/contacts/get/${id}`),
-  create: (data: Partial<ContactVO> & { customerId: string; name: string }) =>
-    http.post<ContactVO>('/contacts/add', data),
+  list: async (customerId: string): Promise<AxiosResponse<ContactVO[]>> => {
+    const response = await http.get<{ list: ContactVO[] }>(`/account/contact/list/${customerId}`)
+    return { ...response, data: response.data.list }
+  },
+  page: async (params: ContactListParams): Promise<AxiosResponse<PaginatedResult<ContactVO>>> => {
+    const response = await http.post<CordysPager<ContactVO>>(
+      '/account/contact/page',
+      contactPageBody(params),
+    )
+    return {
+      ...response,
+      data: {
+        items: response.data.list,
+        total: response.data.total,
+        page: response.data.current,
+        pageSize: response.data.pageSize,
+      },
+    }
+  },
+  get: (id: string) => http.get<ContactVO>(`/account/contact/get/${id}`),
+  create: (data: Partial<ContactVO> & { name: string; customerId?: string }) =>
+    http.post<ContactVO>('/account/contact/add', toContactPayload(data)),
   update: (id: string, data: Partial<ContactVO>) =>
-    http.post<ContactVO>('/contacts/update', { id, ...data }),
-  remove: (id: string) => http.get(`/contacts/delete/${id}`),
-  enable: (id: string) => http.get<ContactVO>(`/contacts/enable/${id}`),
+    http.post<ContactVO>('/account/contact/update', { id, ...toContactPayload(data) }),
+  remove: (id: string) => http.get(`/account/contact/delete/${id}`),
+  enable: (id: string) => http.get<ContactVO>(`/account/contact/enable/${id}`),
   disable: (id: string, reason: string) =>
-    http.post<ContactVO>(`/contacts/disable/${id}`, { reason }),
+    http.post<ContactVO>(`/account/contact/disable/${id}`, { reason }),
   checkOpportunity: (id: string) =>
-    http.get<{ linked: boolean; count: number }>(`/contacts/opportunity/check/${id}`),
-  tab: () => http.get<{ all: boolean; dept: boolean }>('/contacts/tab'),
+    http.get<boolean>(`/account/contact/opportunity/check/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/account/contact/tab'),
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>(
-      '/contacts/batch/update',
+      '/account/contact/batch/update',
       data,
     ),
   importTemplate: (_importType: ImportType) =>
-    http.get<Blob>('/contacts/template/download', { responseType: 'blob' }),
+    http.get<Blob>('/account/contact/template/download', { responseType: 'blob' }),
   importPrecheck: (file: File, importType: ImportType) =>
-    http.post<ImportResult>('/contacts/import/pre-check', createImportForm(file, importType)),
+    http.post<ImportResult>('/account/contact/import/pre-check', createImportForm(file, importType)),
   importXlsx: (file: File, importType: ImportType) =>
-    http.post<ImportResult>('/contacts/import', createImportForm(file, importType)),
+    http.post<ImportResult>('/account/contact/import', createImportForm(file, importType)),
   exportAll: (params: ContactListParams, data: ExportCreatePayload) =>
-    http.post('/contacts/export-all', { ...params, ...data }),
-  exportSelected: (params: ContactListParams, data: ExportCreatePayload & { ids: string[] }) =>
-    http.post('/contacts/export-select', { ...params, ...data }),
+    http.post('/account/contact/export-all', { ...contactPageBody(params), ...data }),
+  exportSelected: (_params: ContactListParams, data: ExportCreatePayload & { ids: string[] }) =>
+    http.post('/account/contact/export-select', data),
 }
 
 // ===== 客户公海/团队 =====

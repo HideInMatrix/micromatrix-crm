@@ -273,9 +273,9 @@ async function confirmDeactivate() {
 async function handleDelete(row: ContactVO) {
   try {
     const { data } = await contactApi.checkOpportunity(row.id)
-    if (data.linked) {
+    if (data) {
       await ElMessageBox.confirm(
-        `联系人「${row.name}」已关联 ${data.count} 个商机，请先处理商机关联后再删除。`,
+        `联系人「${row.name}」已关联商机，请先处理商机关联后再删除。`,
         '联系人已关联商机',
         {
           type: 'warning',
