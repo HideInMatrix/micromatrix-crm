@@ -35,7 +35,7 @@ export class CustomerAccessService {
   async resolve(
     user: AuthUser,
     customerId: string,
-    permission = 'menu:customer',
+    permission = 'customer:read',
   ): Promise<CustomerAccessContext> {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, organizationId: user.tenantId },
@@ -65,10 +65,11 @@ export class CustomerAccessService {
     })
     const collaborationType = this.normalizeCollaborationType(collaboration?.collaborationType)
 
-    const canRead = dataScope || pool || collaborationType !== null
-    const canManageCustomer = dataScope || poolManager
-    // 公海可见只代表可读/可领取；未领取前不能因此获得联系人/跟进写权限。
-    const canCollaborateWrite = dataScope || collaborationType === 'COLLABORATION'
+    const canRead =
+      !customer.inSharedPool && (dataScope || collaborationType !== null)
+    const canManageCustomer = !customer.inSharedPool && dataScope
+    const canCollaborateWrite =
+      !customer.inSharedPool && (dataScope || collaborationType === 'COLLABORATION')
 
     return {
       customer,
@@ -83,8 +84,44 @@ export class CustomerAccessService {
   }
 
   async assertRead(user: AuthUser, customerId: string) {
-    const context = await this.resolve(user, customerId, 'menu:customer')
+    const context = await this.resolve(user, customerId, 'customer:read')
     if (!context.canRead) throw new NotFoundException('客户不存在或无权访问')
+    return context
+  }
+
+  async assertPoolRead(user: AuthUser, customerId: string) {
+    const context = await this.resolve(user, customerId, 'customerPool:read')
+    if (!context.customer.inSharedPool || !context.pool) {
+      throw new NotFoundException('公海客户不存在或无权访问')
+    }
+    return context
+  }
+
+  async assertFollowRead(user: AuthUser, customerId: string) {
+    const context = await this.resolve(user, customerId, 'customer:read')
+    if (!context.canRead && !context.pool) {
+      throw new NotFoundException('客户不存在或无权访问')
+    }
+    return context
+  }
+
+  async assertFollowWrite(user: AuthUser, customerId: string) {
+    const context = await this.resolve(user, customerId, 'customer:update')
+    if (context.customer.inSharedPool) {
+      if (!context.pool) throw new ForbiddenException('无权维护该公海客户的跟进记录')
+      return context
+    }
+    if (!context.canCollaborateWrite) {
+      throw new ForbiddenException('当前协作关系仅允许查看')
+    }
+    return context
+  }
+
+  async assertOwnerHistoryRead(user: AuthUser, customerId: string) {
+    const context = await this.resolve(user, customerId, 'customer:read')
+    if (!context.canRead && !context.pool) {
+      throw new NotFoundException('客户不存在或无权访问')
+    }
     return context
   }
 

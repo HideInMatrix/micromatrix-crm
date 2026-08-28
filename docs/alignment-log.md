@@ -801,3 +801,24 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 根 Smoke 复跑同时暴露 demo Seed existing-user 分支未更新 `passwordHash/defaultPwd`，导致 Seed 输出“其余 demo123”与真实库可能漂移；修正后重复 Seed 会恢复默认密码和默认密码状态，已实际验证张伟/李娜使用 `demo123` 登录并恢复 `219/219`。
 - Shared/API/Web typecheck、全仓 ESLint、三端 production build、Prisma validate/generate 与 `git diff --check` 均通过；build 仅保留既有 `ReportsView` 约 565.90 kB chunk warning。DB-016 继续保持 `VERIFIED`，DB-022 更新为线索 Pool/Capacity/Move Reason 已完成，客户与其它模块专属设置继续后续执行单元。
 - W3.4.2 再次正式关闭；下一执行指针为 **W3.4.3 客户、联系人和客户公海 task 4.1：固化客户域源码证据矩阵**。
+
+---
+
+## 32. W3.4.3 task 4.1 客户域源码与 API 证据矩阵（2026-08-28）
+
+- 读取 Cordys 客户、联系人、公海、客户 360、协作、关系、合并、负责人历史、个人视图、Pool Rule、Capacity、自动回收与模块设置的 Vue、API URL、Controller、Service、DTO、Domain 和最终迁移，不以当前 MicroMatrix 页面或截图反推行为。
+- 锁定普通客户 `/account/*`、联系人 `/account/contact/*`、公海资源 `/pool/account/*`、公海设置 `/account-pool/*`、客户库容 `/account-capacity/*` 和 `CUSTOMER_POOL_RS` 原因配置六条独立调用链；旧 `/customers`、`/contacts` 和统一资源池调用不进入兼容范围。
+- 明确四类访问边界：普通客户由 CUSTOMER 数据范围控制；`COLLABORATION` 只获得指定客户及允许子域写权限；`READ_ONLY` 无写权限；公海只由独立 POOL 权限与 Pool Scope 控制，且详情仅开放客户信息、跟进记录和负责人历史。
+- 权限矩阵确认普通客户必须拆分 `transfer/recycle`，公海必须具备 `read/pick/assign/update/delete/import/export`；Cordys 协作管理复用 CUSTOMER UPDATE，因此当前 `customer:team` 不能作为目标独立权限。
+- 数据模型复核确认现有客户域直接表覆盖 Cordys 最终 DDL；联系人 `customerId` 应可空，公海进入时间按源码使用 `Customer.updateTime`，task 4.1 不新增 migration。DB-017/DB-020 继续 `IN_PROGRESS`，DB-022 继续跟踪公海、客户库容和移入公海原因三个设置入口。
+- 完整证据和差异落点见 [W3.4.3 客户、联系人和客户公海源码与 API 证据矩阵](./specs/business-module-page-parity/customer-source-api-audit.md)。task 4.1 关闭；下一执行指针为 **W3.4.3 task 4.2：重建客户 API 与客户 360**。
+
+---
+
+## 33. W3.4.3 task 4.2 客户 API 与客户 360（2026-08-28）
+
+- 旧 `/api/customers` 单体 Controller 已移除，普通客户主契约切换到 Cordys `/account/*`；表单、分页、详情、CRUD、批量转移/编辑/删除、移入公海、客户选项、Tab、导入导出、图表以及客户 360 真实资源入口完成破坏式替换。
+- 客户 360 商机、合同、回款计划、回款记录、发票和订单在 CustomerAccess 通过后继续叠加各自业务模块 DataScope；合同及回款/发票统计同步按关联模块范围裁剪，避免“客户可见”穿透到超范围交易数据。
+- 客户编辑时负责人变化、联系人负责人、Owner History、客户主体和动态字段合并进同一事务；客户删除事务补齐动态字段、Blob 和跟进计划清理。Cordys 证据同步纠正 `/account/option` 为 POST，回款计划/记录路径位于 `/account/contract/*`。
+- 新增 `scripts/w343-customer-api-smoke.mjs`，专项验收 **22/22**；API rules **114/114**，Shared/API/Web typecheck 与受影响文件 ESLint 全绿。
+- task 4.2 关闭；下一执行指针为 **W3.4.3 task 4.3：重建联系人 API**。协作、关系、合并的深层规则继续由 task 4.4 收口，客户公海完整规则继续由 task 4.5 收口。

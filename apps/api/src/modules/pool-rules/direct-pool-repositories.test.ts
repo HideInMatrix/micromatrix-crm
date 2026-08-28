@@ -66,6 +66,7 @@ test('线索手工退池在同一事务中结束当前负责人并保存退池�
 test('客户自动回收写 customer_owner，system 只保留在当前资源而不进入历史原因', async () => {
   const history: Array<Record<string, unknown>> = []
   const updates: Array<Record<string, unknown>> = []
+  const contactUpdates: Array<Record<string, unknown>> = []
   const tx = {
     $queryRaw: async () => [],
     customer: {
@@ -84,6 +85,12 @@ test('客户自动回收写 customer_owner，system 只保留在当前资源而�
       },
     },
     customerPool: { findFirst: async () => ({ id: 'customer-pool-1' }) },
+    customerContact: {
+      updateMany: async ({ data }: { data: Record<string, unknown> }) => {
+        contactUpdates.push(data)
+        return { count: 1 }
+      },
+    },
     customerOwner: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         history.push(data)
@@ -109,4 +116,5 @@ test('客户自动回收写 customer_owner，system 只保留在当前资源而�
   assert.equal(history[0]?.['reasonId'], null)
   assert.equal(updates[0]?.['reasonId'], 'system')
   assert.equal(updates[0]?.['inSharedPool'], true)
+  assert.equal(contactUpdates[0]?.['owner'], '-')
 })

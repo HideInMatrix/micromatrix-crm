@@ -305,7 +305,7 @@ export class FollowUpPlansService {
     write: boolean,
   ): Promise<TargetContext> {
     if (type === 'customer') {
-      const permission = write ? 'customer:update' : 'menu:customer'
+      const permission = write ? 'customer:update' : 'customer:read'
       if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无客户权限')
       const access = write
         ? await this.customerAccess.assertCollaborateWrite(user, id, permission)
@@ -388,7 +388,7 @@ export class FollowUpPlansService {
   private async globalAccessWhere(user: AuthUser): Promise<Prisma.FollowUpPlanWhereInput> {
     const [lead, customer, opportunity, collaborations] = await Promise.all([
       this.dataScope.scopeFilter(user, 'menu:lead'),
-      this.dataScope.scopeFilter(user, 'menu:customer'),
+      this.dataScope.scopeFilter(user, 'customer:read'),
       this.dataScope.scopeFilter(user, 'menu:opportunity'),
       this.prisma.customerCollaboration.findMany({
         where: { userId: user.id, customer: { organizationId: user.tenantId } },

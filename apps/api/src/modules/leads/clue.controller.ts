@@ -195,7 +195,7 @@ export class ClueController {
   }
 
   @Post('transition/account/page')
-  @RequirePermissions('menu:lead', 'menu:customer')
+  @RequirePermissions('menu:lead', 'customer:read')
   @ApiOperation({ summary: '可关联客户分页列表' })
   transitionCustomerPage(
     @CurrentUser() user: AuthUser,

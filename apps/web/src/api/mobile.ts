@@ -1,7 +1,6 @@
 import type {
   ApprovalInstanceVO,
   ContactVO,
-  CustomerVO,
   FieldVO,
   FollowUpVO,
   LeadVO,
@@ -10,6 +9,11 @@ import type {
   PaginatedResult,
 } from '@micromatrix/shared'
 import { http } from '@/api/http'
+import {
+  createCustomer as createAccount,
+  getCustomer as getAccount,
+  listCustomers as listAccounts,
+} from '@/api/customers'
 import { leadApi } from '@/api/sales'
 
 export function fetchFields(module: string) {
@@ -17,11 +21,11 @@ export function fetchFields(module: string) {
 }
 
 export function listCustomers(params: PageQuery & { scope?: string }) {
-  return http.get<PaginatedResult<CustomerVO>>('/customers', { params })
+  return listAccounts({ ...params, scope: params.scope === 'sea' ? 'sea' : undefined })
 }
 
-export function getCustomer(id: string) {
-  return http.get<CustomerVO>(`/customers/${id}`)
+export function getCustomer(id: string, pool = false) {
+  return getAccount(id, pool)
 }
 
 export function listCustomerContacts(customerId: string) {
@@ -29,7 +33,7 @@ export function listCustomerContacts(customerId: string) {
 }
 
 export function createCustomer(data: Record<string, unknown>) {
-  return http.post<CustomerVO>('/customers', data)
+  return createAccount(data)
 }
 
 export function listLeads(params: PageQuery & { scope?: string; status?: string; poolId?: string }) {

@@ -163,7 +163,7 @@ async function handleBatchDelete() {
 
 async function handleClaim(row: CustomerVO) {
   try {
-    await customerExtraApi.claim(row.id)
+    await customerExtraApi.claim(row.id, row.poolId ?? selectedPoolId.value)
     ElMessage.success(`已领取「${row.name}」`)
     loadData()
   } catch (error) {
@@ -174,7 +174,7 @@ async function handleClaim(row: CustomerVO) {
 async function handleAssignConfirm(userId: string) {
   if (!assignTarget.value) return
   try {
-    await customerExtraApi.assign(assignTarget.value.id, userId)
+    await customerExtraApi.assign(assignTarget.value.id, userId, true)
     ElMessage.success('已分配')
     assignVisible.value = false
     loadData()
@@ -343,9 +343,9 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="handleClaim(row as CustomerVO)">领取</el-button>
+          <el-button v-if="auth.hasPerm('customerPool:pick')" link type="primary" @click="handleClaim(row as CustomerVO)">领取</el-button>
           <el-button
-            v-if="auth.hasPerm('customer:assign')"
+            v-if="auth.hasPerm('customerPool:assign')"
             link
             @click="assignTarget = row as CustomerVO, assignVisible = true"
           >
@@ -373,6 +373,7 @@ onMounted(async () => {
       v-model="detailVisible"
       :customer="detailTarget"
       :members="fieldRefs.members.value"
+      pool
     />
 
     <MemberSelectDialog

@@ -1270,7 +1270,7 @@ export class LeadsService {
       return customer
     }
 
-    if (await this.dataScope.matchesDirectOwner(user, customer.owner, 'menu:customer')) {
+    if (await this.dataScope.matchesDirectOwner(user, customer.owner, 'customer:read')) {
       return customer
     }
     const collaboration = await this.prisma.customerCollaboration.findFirst({

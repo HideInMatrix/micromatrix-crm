@@ -17,10 +17,9 @@ export class FollowUpsService {
 
   async list(user: AuthUser, query: QueryFollowUpsDto): Promise<FollowUpVO[]> {
     if (query.targetType === 'customer') {
-      if (!hasPermission(user.permissions, 'menu:customer')) {
-        throw new ForbiddenException('无客户读取权限')
-      }
-      await this.customerAccess.assertRead(user, query.targetId)
+      const access = await this.customerAccess.assertFollowRead(user, query.targetId)
+      const permission = access.customer.inSharedPool ? 'customerPool:read' : 'customer:read'
+      if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无客户读取权限')
     }
     const records = await this.prisma.followUpRecord.findMany({
       where: { tenantId: user.tenantId, targetType: query.targetType, targetId: query.targetId },
@@ -37,10 +36,9 @@ export class FollowUpsService {
 
   async create(user: AuthUser, dto: CreateFollowUpDto): Promise<FollowUpVO> {
     if (dto.targetType === 'customer') {
-      if (!hasPermission(user.permissions, 'customer:update')) {
-        throw new ForbiddenException('无客户更新权限')
-      }
-      await this.customerAccess.assertCollaborateWrite(user, dto.targetId, 'customer:update')
+      const access = await this.customerAccess.assertFollowWrite(user, dto.targetId)
+      const permission = access.customer.inSharedPool ? 'customerPool:update' : 'customer:update'
+      if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无客户更新权限')
     }
     const record = await this.prisma.followUpRecord.create({
       data: {

@@ -65,6 +65,7 @@ const collaboratorUserId = ref('')
 const collaborationType = ref<'READ_ONLY' | 'COLLABORATION'>('COLLABORATION')
 
 const customerId = computed(() => String(route.query.id ?? ''))
+const poolSource = computed(() => route.query.source === 'openSea')
 const canWrite = computed(
   () => customer.value?.canCollaborateWrite === true && auth.hasPerm('customer:update'),
 )
@@ -153,7 +154,7 @@ async function load() {
   loading.value = true
   try {
     const [detailRes, fieldRes] = await Promise.all([
-      getCustomer(customerId.value),
+      getCustomer(customerId.value, poolSource.value),
       fetchFields('customer'),
       fieldRefs.load(),
     ])
@@ -161,13 +162,17 @@ async function load() {
     fields.value = fieldRes.data
 
     const [contactRes, followRes, historyRes, relationRes, teamRes] = await Promise.all([
-      auth.hasPerm('contact:read')
+      !poolSource.value && auth.hasPerm('contact:read')
         ? listCustomerContacts(customerId.value)
         : Promise.resolve({ data: [] as ContactVO[] }),
-      listFollowUps('customer', customerId.value),
+      poolSource.value
+        ? Promise.resolve({ data: [] as FollowUpVO[] })
+        : listFollowUps('customer', customerId.value),
       customerExtraApi.ownerHistory(customerId.value),
-      listCustomerRelations(customerId.value),
-      customer.value.collaborationType
+      poolSource.value
+        ? Promise.resolve({ data: [] as CustomerRelationVO[] })
+        : listCustomerRelations(customerId.value),
+      poolSource.value || customer.value.collaborationType
         ? Promise.resolve({ data: [] as TeamMemberVO[] })
         : customerExtraApi.teamList(customerId.value),
     ])
@@ -465,7 +470,7 @@ onMounted(load)
             </template>
 
             <template v-else-if="tab.name === 'collaborator'">
-              <div v-if="auth.hasPerm('customer:team')" class="px-4 pt-3">
+              <div v-if="auth.hasPerm('customer:update')" class="px-4 pt-3">
                 <van-button
                   type="primary"
                   plain
@@ -487,7 +492,7 @@ onMounted(load)
                     </van-tag>
                   </template>
                 </van-cell>
-                <van-cell v-if="auth.hasPerm('customer:team')">
+                <van-cell v-if="auth.hasPerm('customer:update')">
                   <template #value>
                     <span
                       class="text-[var(--van-primary-color)] mr-4"
@@ -508,7 +513,8 @@ onMounted(load)
           activeTab === 'info' &&
           canMainAction &&
           (auth.hasPerm('customer:update') ||
-            auth.hasPerm('customer:assign') ||
+            auth.hasPerm('customer:transfer') ||
+            auth.hasPerm('customer:recycle') ||
             auth.hasPerm('customer:delete'))
         "
         class="shrink-0 bg-white border-t border-[#ebedf0] p-3 flex gap-3"
@@ -517,7 +523,7 @@ onMounted(load)
           >编辑</van-button
         >
         <van-button
-          v-if="auth.hasPerm('customer:assign') || auth.hasPerm('customer:delete')"
+          v-if="auth.hasPerm('customer:transfer') || auth.hasPerm('customer:recycle') || auth.hasPerm('customer:delete')"
           block
           plain
           @click="moreShow = true"
@@ -548,10 +554,10 @@ onMounted(load)
 
     <van-action-sheet v-model:show="moreShow" title="更多操作">
       <div class="p-4 space-y-3">
-        <van-button v-if="auth.hasPerm('customer:assign')" block @click="transferShow = true"
+        <van-button v-if="auth.hasPerm('customer:transfer')" block @click="transferShow = true"
           >转移</van-button
         >
-        <van-button v-if="auth.hasPerm('customer:assign')" block @click="moveToSea"
+        <van-button v-if="auth.hasPerm('customer:recycle')" block @click="moveToSea"
           >移入客户公海</van-button
         >
         <van-button

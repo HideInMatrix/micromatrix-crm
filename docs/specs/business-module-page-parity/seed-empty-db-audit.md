@@ -74,6 +74,6 @@ pnpm --filter @micromatrix/api smoke:w34-seed
 
 ## 5. 后续边界
 
-任务 1.8 仅关闭 W3.4.0 Seed 与空库启动门槛；任务 1.9 继续执行公共底座专项 Smoke、全量现有关键链路回归、文档总收口和本地提交。
+任务 1.8 仅关闭 W3.4.0 Seed 与空库启动门槛；任务 1.9 后续已完成公共底座专项 Smoke、全量现有关键链路回归、文档总收口和本地提交，最终证据见 [公共底座最终专项验收](./foundation-validation-audit.md)。
 
 DB-016、DB-017、DB-020 仍保持 `IN_PROGRESS`，直到对应 Cordys 页面/API 全链路完成；DB-021 继续跟踪图外业务模块的分域动态字段缺口。

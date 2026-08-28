@@ -563,20 +563,34 @@ export const contactApi = {
 // ===== 客户公海/团队 =====
 
 export const customerExtraApi = {
-  toSea: (id: string, poolId?: string) => http.post(`/customers/${id}/to-sea`, { poolId }),
-  claim: (id: string) => http.post(`/customers/${id}/claim`),
-  assign: (id: string, ownerId: string) => http.post(`/customers/${id}/assign`, { ownerId }),
-  ownerHistory: (id: string) => http.get<OwnerHistoryVO[]>(`/customers/${id}/owner-history`),
-  teamList: (id: string) => http.get<TeamMemberVO[]>(`/customers/${id}/team`),
+  toSea: (id: string, poolId?: string, reasonId?: string) =>
+    http.post('/account/to-pool', { id, poolId, reasonId }),
+  claim: (id: string, poolId: string) =>
+    http.post('/pool/account/pick', { customerId: id, poolId }),
+  assign: (id: string, ownerId: string, pool = false) =>
+    pool
+      ? http.post('/pool/account/assign', { customerId: id, assignUserId: ownerId })
+      : http.post('/account/batch/transfer', { ids: [id], owner: ownerId }),
+  ownerHistory: (id: string) =>
+    http.get<OwnerHistoryVO[]>(`/account/owner/history/list/${id}`),
+  teamList: (id: string) =>
+    http.get<TeamMemberVO[]>(`/account/collaboration/list/${id}`),
   teamAdd: (
     id: string,
     userId: string,
     role?: string,
     collaborationType?: 'READ_ONLY' | 'COLLABORATION',
-  ) => http.post(`/customers/${id}/team`, { userId, role, collaborationType }),
-  teamUpdate: (id: string, memberId: string, collaborationType: 'READ_ONLY' | 'COLLABORATION') =>
-    http.patch(`/customers/${id}/team/${memberId}`, { collaborationType }),
-  teamRemove: (id: string, memberId: string) => http.delete(`/customers/${id}/team/${memberId}`),
+  ) =>
+    http.post('/account/collaboration/add', {
+      customerId: id,
+      userId,
+      role,
+      collaborationType: collaborationType ?? 'COLLABORATION',
+    }),
+  teamUpdate: (_id: string, memberId: string, collaborationType: 'READ_ONLY' | 'COLLABORATION') =>
+    http.post('/account/collaboration/update', { id: memberId, collaborationType }),
+  teamRemove: (_id: string, memberId: string) =>
+    http.get(`/account/collaboration/delete/${memberId}`),
 }
 
 // ===== 公海规则 =====

@@ -237,47 +237,53 @@ export class CustomerPoolRepository {
   }
 
   async transfer(input: CustomerTransferInput) {
-    const now = input.now ?? BigInt(Date.now())
-    return this.prisma.$transaction(async (tx) => {
-      await acquirePoolTransactionLocks(
-        tx,
-        poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
-      )
-      const customer = await tx.customer.findFirst({
-        where: {
-          id: input.customerId,
-          organizationId: input.organizationId,
-          inSharedPool: false,
-        },
-      })
-      if (!customer) throw new NotFoundException('客户不存在或已在公海中')
-      if (!customer.owner || customer.collectionTime === null)
-        throw new BadRequestException('客户当前没有可转移的负责人')
-      if (customer.owner === input.ownerId) return customer
+    return this.prisma.$transaction((tx) => this.transferInTransaction(tx, input))
+  }
 
-      const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
-      const ownedCount = await tx.customer.count({
-        where: {
-          organizationId: input.organizationId,
-          owner: input.ownerId,
-          inSharedPool: false,
-        },
-      })
-      const excludedOwnedCount = capacity
-        ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
-        : 0
-      this.calculator.assertCapacity(capacity?.capacity ?? null, ownedCount, excludedOwnedCount, 1)
-      await this.appendOwnerHistory(tx, customer, input.operatorId, input.reasonId, now)
-      return tx.customer.update({
-        where: { id: customer.id },
-        data: {
-          owner: input.ownerId,
-          collectionTime: now,
-          reasonId: input.reasonId ?? null,
-          updateUser: input.operatorId,
-          updateTime: now,
-        },
-      })
+  async transferInTransaction(tx: Prisma.TransactionClient, input: CustomerTransferInput) {
+    const now = input.now ?? BigInt(Date.now())
+    await acquirePoolTransactionLocks(
+      tx,
+      poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
+    )
+    const customer = await tx.customer.findFirst({
+      where: {
+        id: input.customerId,
+        organizationId: input.organizationId,
+        inSharedPool: false,
+      },
+    })
+    if (!customer) throw new NotFoundException('客户不存在或已在公海中')
+    if (!customer.owner || customer.collectionTime === null)
+      throw new BadRequestException('客户当前没有可转移的负责人')
+    if (customer.owner === input.ownerId) return customer
+
+    const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
+    const ownedCount = await tx.customer.count({
+      where: {
+        organizationId: input.organizationId,
+        owner: input.ownerId,
+        inSharedPool: false,
+      },
+    })
+    const excludedOwnedCount = capacity
+      ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
+      : 0
+    this.calculator.assertCapacity(capacity?.capacity ?? null, ownedCount, excludedOwnedCount, 1)
+    await this.appendOwnerHistory(tx, customer, input.operatorId, input.reasonId, now)
+    await tx.customerContact.updateMany({
+      where: { organizationId: input.organizationId, customerId: customer.id },
+      data: { owner: input.ownerId, updateUser: input.operatorId, updateTime: now },
+    })
+    return tx.customer.update({
+      where: { id: customer.id },
+      data: {
+        owner: input.ownerId,
+        collectionTime: now,
+        reasonId: input.reasonId ?? null,
+        updateUser: input.operatorId,
+        updateTime: now,
+      },
     })
   }
 
@@ -370,6 +376,10 @@ export class CustomerPoolRepository {
     })
     if (updated.count !== 1)
       throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
+    await tx.customerContact.updateMany({
+      where: { organizationId: input.organizationId, customerId: customer.id },
+      data: { owner: input.ownerId, updateUser: input.operatorId, updateTime: now },
+    })
     return tx.customer.findUniqueOrThrow({ where: { id: customer.id } })
   }
 
@@ -403,6 +413,10 @@ export class CustomerPoolRepository {
         throw new BadRequestException('客户当前没有可结束的负责人')
 
       await this.appendOwnerHistory(tx, customer, input.operatorId, input.reasonId, now)
+      await tx.customerContact.updateMany({
+        where: { organizationId: input.organizationId, customerId: customer.id },
+        data: { owner: '-', updateUser: input.operatorId, updateTime: now },
+      })
       return tx.customer.update({
         where: { id: customer.id },
         data: {

@@ -96,7 +96,7 @@ function openActions(customer: CustomerVO) {
 
 async function claim(customer: CustomerVO) {
   try {
-    await customerExtraApi.claim(customer.id)
+    await customerExtraApi.claim(customer.id, customer.poolId ?? selectedPoolId.value)
     showSuccessToast(`已领取「${customer.name}」`)
     actionShow.value = false
     reload()
@@ -120,7 +120,7 @@ async function assign({ selectedValues }: { selectedValues: string[] }) {
   const userId = selectedValues[0]
   if (!userId || !actionTarget.value) return
   try {
-    await customerExtraApi.assign(actionTarget.value.id, userId)
+    await customerExtraApi.assign(actionTarget.value.id, userId, true)
     showSuccessToast('客户已分配')
     assignShow.value = false
     reload()
@@ -197,14 +197,14 @@ defineExpose({ reload, initPools })
             <template #value>
               <div class="flex gap-2 justify-end">
                 <van-button
-                  v-if="auth.hasPerm('customer:assign')"
+                  v-if="auth.hasPerm('customerPool:pick')"
                   size="small"
                   plain
                   type="primary"
                   @click="claim(item)"
                 >领取</van-button>
                 <van-button
-                  v-if="auth.hasPerm('customer:assign') || auth.hasPerm('customerPool:delete')"
+                  v-if="auth.hasPerm('customerPool:pick') || auth.hasPerm('customerPool:assign') || auth.hasPerm('customerPool:delete')"
                   size="small"
                   plain
                   @click="openActions(item)"
@@ -218,8 +218,8 @@ defineExpose({ reload, initPools })
 
     <van-action-sheet v-model:show="actionShow" title="客户公海操作">
       <div v-if="actionTarget" class="p-4 space-y-3">
-        <van-button v-if="auth.hasPerm('customer:assign')" block @click="claim(actionTarget)">领取</van-button>
-        <van-button v-if="auth.hasPerm('customer:assign')" block @click="openAssign(actionTarget)">分配</van-button>
+        <van-button v-if="auth.hasPerm('customerPool:pick')" block @click="claim(actionTarget)">领取</van-button>
+        <van-button v-if="auth.hasPerm('customerPool:assign')" block @click="openAssign(actionTarget)">分配</van-button>
         <van-button
           v-if="auth.hasPerm('customerPool:delete')"
           block

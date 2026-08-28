@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/auth'
 const props = defineProps<{
   customer: CustomerVO | null
   members: MemberOption[]
+  pool?: boolean
 }>()
 
 const visible = defineModel<boolean>({ required: true })
@@ -48,9 +49,13 @@ async function loadAll() {
   loading.value = true
   try {
     const [customerRes, teamRes, followRes] = await Promise.all([
-      getCustomer(props.customer.id),
-      customerExtraApi.teamList(props.customer.id),
-      followUpApi.list('customer', props.customer.id),
+      getCustomer(props.customer.id, props.pool),
+      props.pool
+        ? Promise.resolve({ data: [] as TeamMemberVO[] })
+        : customerExtraApi.teamList(props.customer.id),
+      props.pool
+        ? Promise.resolve({ data: [] as FollowUpVO[] })
+        : followUpApi.list('customer', props.customer.id),
     ])
     collaborationType.value = customerRes.data.collaborationType ?? null
     resourceCanManageCustomer.value = customerRes.data.canManageCustomer === true
@@ -97,7 +102,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
         <el-descriptions-item label="邮箱">{{ customer?.email ?? '-' }}</el-descriptions-item>
       </el-descriptions>
 
-      <el-tabs v-model="activeTab">
+      <el-tabs v-if="!pool" v-model="activeTab">
         <el-tab-pane label="联系人" name="contacts">
           <CustomerContactTable
             v-if="customer"
@@ -109,7 +114,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
         <el-tab-pane label="协作团队" name="team">
           <div class="flex justify-end mb-2">
             <el-button
-              v-if="canManageCustomer && auth.hasPerm('customer:team')"
+              v-if="canManageCustomer && auth.hasPerm('customer:update')"
               size="small"
               type="primary"
               @click="teamDialogVisible = true"
@@ -125,7 +130,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
           >
             <span class="text-sm">{{ member.userName }}</span>
             <el-button
-              v-if="canManageCustomer && auth.hasPerm('customer:team')"
+              v-if="canManageCustomer && auth.hasPerm('customer:update')"
               link
               type="danger"
               size="small"

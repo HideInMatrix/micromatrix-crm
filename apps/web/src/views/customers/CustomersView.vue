@@ -530,13 +530,13 @@ onMounted(async () => {
                   编辑
                 </el-dropdown-item>
                 <el-dropdown-item
-                  v-if="auth.hasPerm('customer:assign')"
+                  v-if="auth.hasPerm('customer:transfer')"
                   @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
                 >
                   分配负责人
                 </el-dropdown-item>
                 <el-dropdown-item
-                  v-if="auth.hasPerm('customer:assign')"
+                  v-if="auth.hasPerm('customer:recycle')"
                   @click="handleToSea(row as CustomerVO)"
                 >
                   退回公海

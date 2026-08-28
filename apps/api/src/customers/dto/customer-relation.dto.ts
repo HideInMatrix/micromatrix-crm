@@ -21,3 +21,10 @@ export class ReplaceCustomerRelationsDto {
   @ValidateNested({ each: true })
   relations!: SaveCustomerRelationDto[]
 }
+
+export class UpdateCustomerRelationDto extends SaveCustomerRelationDto {
+  @ApiProperty({ description: '客户关系 ID' })
+  @IsString()
+  @IsNotEmpty()
+  id!: string
+}

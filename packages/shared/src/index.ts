@@ -56,11 +56,11 @@ export interface LoginResult extends AuthTokens {
   user: CurrentUser
 }
 
-// ============ 兼容旧权限常量（逐步以 permissions.ts 的权限树为准） ============
+// ============ 权限常量（permissions.ts 权限树为唯一真相） ============
 
 export const PERMISSIONS = {
   ALL: '*',
-  CUSTOMER_READ: 'menu:customer',
+  CUSTOMER_READ: 'customer:read',
   CUSTOMER_WRITE: 'customer:update',
   USER_MANAGE: 'system:member',
   ROLE_MANAGE: 'system:role',

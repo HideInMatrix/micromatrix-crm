@@ -123,7 +123,7 @@
 
 ## 3. W3.4.2 线索与线索池
 
-> 2026-08-27 在进入 W3.4.3 前复核发现模块设置中的“线索池设置 / 线索库容设置 / 移入线索池原因设置”仍为占位，因此曾暂停 W3.4.3 并重新打开补漏 task **3.7**。3.7 现已完成并通过专项/全量验收，W3.4.2 再次关闭；当前执行指针恢复到 **W3.4.3 task 4.1**。源码、实施和最终验收基线见 [线索模块设置补漏源码与实施审计](./clue-module-settings-audit.md)。
+> 2026-08-27 在进入 W3.4.3 前复核发现模块设置中的“线索池设置 / 线索库容设置 / 移入线索池原因设置”仍为占位，因此曾暂停 W3.4.3 并重新打开补漏 task **3.7**。3.7 现已完成并通过专项/全量验收，W3.4.2 再次关闭。2026-08-28 客户域 task **4.1** 源码证据矩阵与 task **4.2** 客户 API/360 均已完成，当前执行指针进入 **W3.4.3 task 4.3**。线索补漏基线见 [线索模块设置补漏源码与实施审计](./clue-module-settings-audit.md)。
 
 - [x] 3.1 固化线索与线索池源码证据矩阵
   - 完成普通线索、详情、转换、批量操作、池页面、Owner History、User View、Follow、Pool Rule 全调用链。
@@ -187,15 +187,19 @@
 
 ## 4. W3.4.3 客户、联系人和客户公海
 
-- [ ] 4.1 固化客户域源码证据矩阵
-  - 完成客户、联系人、公海、360、协作、关系、合并、Owner History、User View、Pool Rule 全调用链。
-  - 明确普通客户、协作、只读协作和公海的资源访问边界。
+- [x] 4.1 固化客户域源码证据矩阵
+  - [x] 完成客户、联系人、公海、360、协作、关系、合并、Owner History、User View、Pool Rule 全调用链。
+  - [x] 明确普通客户、协作、只读协作和公海的资源访问边界。
+  - [x] 锁定 `/account`、`/account/contact`、`/pool/account`、`/account-pool`、`/account-capacity` 与 `CUSTOMER_POOL_RS` 分域契约，不保留旧 `/customers`、`/contacts` 或权限别名兼容。
+  - [x] 确认当前直接模型覆盖 Cordys 最终 DDL；联系人 `customerId` 应可空，公海进入时间以 `Customer.updateTime` 为准，本任务不新增 migration。
+  - [x] 实施证据：[W3.4.3 客户、联系人和客户公海源码与 API 证据矩阵](./customer-source-api-audit.md)。
   - _需求：R1、R7～R9_
 
-- [ ] 4.2 重建客户 API 与客户 360
-  - 切换到 Cordys `/account` 路径，完成表单、分页、详情、CRUD、转移、批量、入公海、导入导出、图表、关系和合并。
-  - 360 提供设计列出的全部真实资源，并按各模块权限和 CustomerAccess 裁剪。
-  - 普通客户列表排除公海客户；关键写操作维护负责人历史、协作和关联资源。
+- [x] 4.2 重建客户 API 与客户 360
+  - [x] 切换到 Cordys `/account` 路径，完成表单、分页、详情、CRUD、转移、批量、入公海、导入导出、图表以及关系/合并主入口；深层关系与合并规则继续由 task 4.4 收口。
+  - [x] 360 提供 Cordys 客户详情真实使用的商机、合同、回款计划、回款记录、发票和订单列表/统计，并在 CustomerAccess 后继续叠加关联模块 DataScope。
+  - [x] 普通客户列表强制排除公海客户；负责人变更把客户、联系人、Owner History 与动态字段纳入同一事务；删除同步清理动态字段、Blob、协作、关系、Owner History、跟进记录和跟进计划。
+  - [x] 专项验收：`node scripts/w343-customer-api-smoke.mjs`，22 passed / 0 failed；API rules 114/114；Shared/API/Web typecheck 与受影响文件 lint 通过。
   - _需求：R2、R7、R11_
 
 - [ ] 4.3 重建联系人 API

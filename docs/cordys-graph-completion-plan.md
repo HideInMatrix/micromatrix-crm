@@ -6,7 +6,7 @@
 
 - 基础公共能力：组织架构、角色权限、租户隔离、数据权限、操作日志、模块菜单底座已具备。
 - 图中销售模块：已有可运行页面和 API，但“存在”不等于与 Cordys 完整一致，仍需按模块逐页读取源码后复查字段、操作、权限、状态与关联数据。
-- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页与 W3.4.2 线索/线索池均已关闭，当前执行 W3.4.3 客户、联系人和客户公海 task 4.1。
+- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页与 W3.4.2 线索/线索池均已关闭，W3.4.3 客户域 task 4.2 客户 API/360 已完成，当前执行 task 4.3。
 
 ## 执行顺序
 
@@ -51,6 +51,8 @@
 15. 在进入 W3.4.2 前插入的 [W3.4-D Docker 发布链路](./specs/docker-release/tasks.md) 已完成：API/Web 独立 multi-stage image、生产 Prisma migration、Nginx SPA + runtime `/api` proxy、release compose 与 GHCR tag workflow 均已落地；本地 release Smoke 从零应用 34 个 migration 后验证 API/Web runtime 通过。`git push origin v0.0.1`（本地 tag 已存在时）会触发发布；当前执行指针恢复为 W3.4.2 task 3.1。
 16. W3.4.2 的 [线索与线索池最终专项验收](./specs/business-module-page-parity/clue-validation-audit.md) 已完成：普通 `/lead/*`、三条转换、多 `/pool/lead/*`、分域 Pool/Capacity 配置、User View、Owner History 和 PC 双页面全部按 3.1 源码矩阵闭环；连续生命周期 `17/17`、普通 API `18/18`、转换 `21/21`、多 Pool `32/32`、Browser `20/20`、规则 `114/114`、首页 `17/17`、根关键链路 `219/219` 全绿，typecheck、ESLint、production build、Prisma validate/generate 与 diff 检查通过。该节点曾关闭 W3.4.2，随后在进入客户域前因模块设置三个入口遗漏重新打开 task 3.7。
 17. W3.4.2 task 3.7 的 [线索模块设置补漏源码与实施审计](./specs/business-module-page-parity/clue-module-settings-audit.md) 已完成：`sys_dict/sys_dict_config` 与 `/dict/*`、线索退池原因强校验/Owner History 名称、角色 Scope、模块设置 Pool/Capacity/Move Reason 三个真实 Drawer 全部闭环；新增 migration 后本地 migration 总数为 35。专项 API `22/22`、模块设置 Browser `17/17`，并复跑连续生命周期 `17/17`、普通 API `18/18`、转换 `21/21`、多 Pool `32/32`、线索 Browser `20/20`、首页 `17/17`、rules `114/114`、根 Smoke `219/219` 全绿。验收中同时修复 Pool Drawer 异步初始化覆盖用户输入 race 与 demo Seed 默认密码幂等缺口；typecheck、ESLint、production build、Prisma validate/generate、diff 检查均通过。W3.4.2 现再次正式关闭，执行指针恢复到 **W3.4.3 task 4.1**。
+18. W3.4.3 task 4.1 的 [客户、联系人和客户公海源码与 API 证据矩阵](./specs/business-module-page-parity/customer-source-api-audit.md) 已完成：锁定 `/account`、`/account/contact`、`/pool/account`、`/account-pool`、`/account-capacity` 与 `CUSTOMER_POOL_RS` 分域契约，明确普通数据范围、`COLLABORATION`、`READ_ONLY` 和 Pool Scope 四类边界，并确认联系人 `customerId` 最终可空、公海进入时间使用 `Customer.updateTime`。现有直接模型覆盖 Cordys 最终 DDL，本任务无 migration；当前进入 **W3.4.3 task 4.2：重建客户 API 与客户 360**。
+19. W3.4.3 task 4.2 已完成普通客户 `/account/*` 与客户 360 后端收口：旧 `/api/customers` 移除，商机/合同/回款/发票/订单叠加各自 DataScope，负责人变更与联系人/Owner History/动态字段事务一致，删除链补齐动态字段/Blob/跟进计划清理。专项 Smoke `22/22`、rules `114/114`、Shared/API/Web typecheck 与受影响文件 ESLint 全绿；当前进入 **W3.4.3 task 4.3：重建联系人 API**。
 
 ## 长期完成约束
 

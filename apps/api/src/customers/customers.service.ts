@@ -29,17 +29,27 @@ import { DataScopeService } from '../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../common/services/business-change-log.service'
 import { Customer, Prisma } from '../generated/prisma/client'
 import { MetadataService } from '../modules/metadata/metadata.service'
+import { ModuleFormsService } from '../modules/metadata/module-forms.service'
 import { ResourceFieldValueService } from '../modules/metadata/resource-field-value.service'
+import { DictionariesService } from '../modules/dictionaries/dictionaries.service'
 import { ExportTasksService } from '../modules/import-export/export-tasks.service'
 import type { ImportType } from '../modules/import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../modules/import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
+import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
 import { USER_VIEW_RESOURCE_TYPES } from '../modules/user-views/user-views.constants'
 import { UserViewsService } from '../modules/user-views/user-views.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { CustomerAccessService } from './customer-access.service'
+import type {
+  AccountAddDto,
+  AccountChartDto,
+  AccountModuleFieldValueDto,
+  AccountPageDto,
+  AccountUpdateDto,
+} from './dto/account.dto'
 import { CreateCustomerDto } from './dto/create-customer.dto'
 import type { SaveCustomerRelationDto } from './dto/customer-relation.dto'
 import { CustomerMergeDto } from './dto/customer-merge.dto'
@@ -54,6 +64,7 @@ export class CustomersService {
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
+    private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
     private readonly notifications: BusinessNotificationsService,
     private readonly pools: ResourcePoolsService,
@@ -63,7 +74,220 @@ export class CustomersService {
     private readonly customerAccess: CustomerAccessService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
+    private readonly dictionaries: DictionariesService,
   ) {}
+
+  getModuleForm(user: AuthUser) {
+    return this.moduleForms.getConfig(user.tenantId, MODULE)
+  }
+
+  async page(user: AuthUser, dto: AccountPageDto) {
+    const result = await this.findAll(user, {
+      page: dto.current,
+      pageSize: dto.pageSize,
+      keyword: dto.keyword,
+      viewId: dto.viewId,
+      view: dto.view,
+      filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+    })
+    return {
+      list: result.items,
+      total: result.total,
+      pageSize: result.pageSize,
+      current: result.page,
+      optionMap: {},
+    }
+  }
+
+  async poolPage(user: AuthUser, poolId: string | undefined, dto: AccountPageDto) {
+    if (poolId) await this.pools.assertPoolMember(user, 'customer', poolId)
+    const result = await this.findAll(user, {
+      page: dto.current,
+      pageSize: dto.pageSize,
+      keyword: dto.keyword,
+      viewId: dto.viewId,
+      filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      scope: 'sea',
+      poolId,
+    })
+    return {
+      list: result.items,
+      total: result.total,
+      pageSize: result.pageSize,
+      current: result.page,
+      optionMap: {},
+    }
+  }
+
+  async addAccount(user: AuthUser, dto: AccountAddDto) {
+    const result = await this.create(user, {
+      name: dto.name,
+      ownerId: dto.owner,
+      customData: await this.moduleFieldsToCustomData(user, dto.moduleFields),
+    })
+    if (dto.follower !== undefined || dto.followTime !== undefined) {
+      await this.prisma.customer.update({
+        where: { id: result.id },
+        data: {
+          follower: dto.follower,
+          followTime: dto.followTime === undefined ? undefined : BigInt(dto.followTime),
+        },
+      })
+    }
+    return this.findOne(user, result.id)
+  }
+
+  async updateAccount(user: AuthUser, dto: AccountUpdateDto) {
+    return this.update(user, dto.id, {
+      name: dto.name,
+      ownerId: dto.owner,
+      customData:
+        dto.moduleFields === undefined
+          ? undefined
+          : await this.moduleFieldsToCustomData(user, dto.moduleFields),
+    })
+  }
+
+  async optionPage(user: AuthUser, current = 1, pageSize = 20, keyword?: string) {
+    const value = keyword?.trim()
+    const where: Prisma.CustomerWhereInput = {
+      organizationId: user.tenantId,
+      ...(value ? { name: { contains: value, mode: 'insensitive' } } : {}),
+    }
+    const [list, total] = await Promise.all([
+      this.prisma.customer.findMany({
+        where,
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+        skip: (current - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.customer.count({ where }),
+    ])
+    return { list, total, current, pageSize }
+  }
+
+  async chart(user: AuthUser, dto: AccountChartDto, poolId?: string) {
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const resolveField = (fieldId?: string) =>
+      fieldId ? fields.find((field) => field.id === fieldId || field.key === fieldId) : undefined
+    const categoryField = resolveField(dto.chartConfig.categoryAxis.fieldId)
+    if (!categoryField) throw new BadRequestException('图表类别字段不存在')
+    const subCategoryField = resolveField(dto.chartConfig.subCategoryAxis?.fieldId)
+    if (dto.chartConfig.subCategoryAxis && !subCategoryField) {
+      throw new BadRequestException('图表子类别字段不存在')
+    }
+    const method = dto.chartConfig.valueAxis.aggregateMethod ?? 'COUNT'
+    const valueField = resolveField(dto.chartConfig.valueAxis.fieldId)
+    if (method !== 'COUNT' && !valueField) throw new BadRequestException('图表值字段不存在')
+
+    const items: CustomerVO[] = []
+    let page = 1
+    while (true) {
+      const result = await this.findAll(user, {
+        page,
+        pageSize: 100,
+        viewId: dto.viewId,
+        filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+        scope: poolId ? 'sea' : undefined,
+        poolId,
+      })
+      items.push(...result.items)
+      if (items.length >= result.total || result.items.length === 0) break
+      page++
+    }
+
+    type Bucket = {
+      category: unknown
+      categoryName: string
+      subCategory: unknown
+      subCategoryName: string
+      values: number[]
+      count: number
+    }
+    const buckets = new Map<string, Bucket>()
+    for (const item of items) {
+      const category = this.chartFieldValue(item, categoryField.key)
+      const subCategory = subCategoryField
+        ? this.chartFieldValue(item, subCategoryField.key)
+        : null
+      const key = JSON.stringify([category, subCategory])
+      const bucket = buckets.get(key) ?? {
+        category,
+        categoryName: this.chartFieldLabel(categoryField, category),
+        subCategory,
+        subCategoryName: subCategoryField
+          ? this.chartFieldLabel(subCategoryField, subCategory)
+          : '',
+        values: [],
+        count: 0,
+      }
+      bucket.count++
+      if (valueField) {
+        const raw = this.chartFieldValue(item, valueField.key)
+        const numeric = typeof raw === 'number' ? raw : Number(raw)
+        if (Number.isFinite(numeric)) bucket.values.push(numeric)
+      }
+      buckets.set(key, bucket)
+    }
+    return [...buckets.values()].map((bucket) => ({
+      categoryAxis: bucket.category == null ? '' : String(bucket.category),
+      categoryAxisName: bucket.categoryName,
+      subCategoryAxis: bucket.subCategory == null ? '' : String(bucket.subCategory),
+      subCategoryAxisName: bucket.subCategoryName,
+      valueAxis: this.aggregateChartValues(method, bucket.count, bucket.values),
+    }))
+  }
+
+  private async moduleFieldsToCustomData(
+    user: AuthUser,
+    moduleFields?: AccountModuleFieldValueDto[],
+  ): Promise<Record<string, unknown>> {
+    if (!moduleFields?.length) return {}
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const byIdentity = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const result: Record<string, unknown> = {}
+    for (const item of moduleFields) {
+      const field = byIdentity.get(item.fieldId)
+      if (!field) throw new BadRequestException(`动态字段「${item.fieldId}」不存在`)
+      if (field.system || !field.key.startsWith('cf_')) {
+        throw new BadRequestException(`字段「${field.label}」不是可写动态字段`)
+      }
+      result[field.key] = item.fieldValue
+    }
+    return result
+  }
+
+  private chartFieldValue(item: CustomerVO, key: string): unknown {
+    const systemValues: Record<string, unknown> = {
+      name: item.name,
+      owner: item.ownerId,
+      collectionTime: item.collectedAt,
+      followTime: item.lastFollowedAt,
+      createTime: item.createdAt,
+      updateTime: item.updatedAt,
+      poolId: item.poolId,
+    }
+    return key.startsWith('cf_') ? item.customData[key] : systemValues[key]
+  }
+
+  private chartFieldLabel(field: FieldVO, value: unknown) {
+    if (value == null || value === '') return '空'
+    return field.options?.find((item) => item.value === value)?.label ?? String(value)
+  }
+
+  private aggregateChartValues(
+    method: 'COUNT' | 'SUM' | 'AVG' | 'MAX' | 'MIN',
+    count: number,
+    values: number[],
+  ) {
+    if (method === 'COUNT') return count
+    if (!values.length) return 0
+    if (method === 'SUM') return values.reduce((sum, value) => sum + value, 0)
+    if (method === 'AVG') return values.reduce((sum, value) => sum + value, 0) / values.length
+    if (method === 'MAX') return Math.max(...values)
+    return Math.min(...values)
+  }
 
   async findAll(user: AuthUser, query: QueryCustomersDto): Promise<PaginatedResult<CustomerVO>> {
     const { page = 1, pageSize = 10, keyword } = query
@@ -158,7 +382,7 @@ export class CustomersService {
         select: { customerId: true, collaborationType: true },
       }),
       this.pools.options(user, 'customer'),
-      this.dataScope.directOwnerFilter(user, 'menu:customer'),
+      this.dataScope.directOwnerFilter(user, 'customer:read'),
     ])
     const accessiblePoolIds = poolOptions.map((pool) => pool.id)
     const collaborationIds = collaborations.map((item) => item.customerId)
@@ -237,7 +461,7 @@ export class CustomersService {
 
   /** Cordys /account/tab：决定“全部客户 / 部门客户”系统视图是否显示。 */
   tab(user: AuthUser) {
-    const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
+    const roles = user.roles.filter((role) => hasPermission(role.permissions, 'customer:read'))
     return {
       all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
       dept: roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
@@ -265,6 +489,17 @@ export class CustomersService {
       collaborationType: !access.dataScope && !access.pool ? access.collaborationType : null,
       canManageCustomer: access.canManageCustomer,
       canCollaborateWrite: access.canCollaborateWrite,
+    }
+  }
+
+  async findPoolOne(user: AuthUser, id: string): Promise<CustomerVO> {
+    const access = await this.customerAccess.assertPoolRead(user, id)
+    const result = await this.toSingleVO(user, access.customer)
+    return {
+      ...result,
+      collaborationType: null,
+      canManageCustomer: false,
+      canCollaborateWrite: false,
     }
   }
 
@@ -438,6 +673,12 @@ export class CustomersService {
     const canReadOpportunities = !isOpenSea && hasPermission(user.permissions, 'menu:opportunity')
     const canReadContracts = !isOpenSea && hasPermission(user.permissions, 'menu:contract')
     const canReadTeam = !isOpenSea && access.collaborationType === null
+    const [opportunityScope, contractScope] = await Promise.all([
+      canReadOpportunities
+        ? this.dataScope.scopeFilter(user, 'menu:opportunity')
+        : Promise.resolve(null),
+      canReadContracts ? this.dataScope.scopeFilter(user, 'menu:contract') : Promise.resolve(null),
+    ])
     const [contacts, opportunities, contracts, followUps, team] = await Promise.all([
       canReadContacts
         ? this.prisma.customerContact.findMany({
@@ -447,7 +688,11 @@ export class CustomersService {
         : Promise.resolve([]),
       canReadOpportunities
         ? this.prisma.opportunity.findMany({
-            where: { tenantId: user.tenantId, customerId: id },
+            where: {
+              tenantId: user.tenantId,
+              customerId: id,
+              AND: [opportunityScope as Prisma.OpportunityWhereInput],
+            },
             include: { stage: true },
             orderBy: { createdAt: 'desc' },
             take: 50,
@@ -455,7 +700,11 @@ export class CustomersService {
         : Promise.resolve([]),
       canReadContracts
         ? this.prisma.contract.findMany({
-            where: { tenantId: user.tenantId, customerId: id },
+            where: {
+              tenantId: user.tenantId,
+              customerId: id,
+              AND: [contractScope as Prisma.ContractWhereInput],
+            },
             include: {
               receivableRecords: { select: { amount: true, approvalStatus: true } },
             },
@@ -560,13 +809,18 @@ export class CustomersService {
       throw new ForbiddenException('客户公海详情不提供该 360 业务资源')
     }
     this.assert360ResourcePermission(user, resource)
+    const resourceScope = await this.customer360ResourceScope(user, resource)
 
     const take = Math.min(Math.max(pageSize, 1), 100)
     const currentPage = Math.max(page, 1)
     const skip = (currentPage - 1) * take
 
     if (resource === 'opportunities') {
-      const where: Prisma.OpportunityWhereInput = { tenantId: user.tenantId, customerId: id }
+      const where: Prisma.OpportunityWhereInput = {
+        tenantId: user.tenantId,
+        customerId: id,
+        AND: [resourceScope as Prisma.OpportunityWhereInput],
+      }
       const [rows, total] = await Promise.all([
         this.prisma.opportunity.findMany({
           where,
@@ -594,7 +848,11 @@ export class CustomersService {
     }
 
     if (resource === 'contracts') {
-      const where: Prisma.ContractWhereInput = { tenantId: user.tenantId, customerId: id }
+      const where: Prisma.ContractWhereInput = {
+        tenantId: user.tenantId,
+        customerId: id,
+        AND: [resourceScope as Prisma.ContractWhereInput],
+      }
       const [rows, total] = await Promise.all([
         this.prisma.contract.findMany({
           where,
@@ -637,7 +895,10 @@ export class CustomersService {
     if (resource === 'receivablePlans') {
       const where: Prisma.ReceivablePlanWhereInput = {
         tenantId: user.tenantId,
-        contract: { customerId: id },
+        contract: {
+          customerId: id,
+          AND: [resourceScope as Prisma.ContractWhereInput],
+        },
       }
       const [rows, total] = await Promise.all([
         this.prisma.receivablePlan.findMany({
@@ -685,7 +946,10 @@ export class CustomersService {
     if (resource === 'receivableRecords') {
       const where: Prisma.ReceivableRecordWhereInput = {
         tenantId: user.tenantId,
-        contract: { customerId: id },
+        contract: {
+          customerId: id,
+          AND: [resourceScope as Prisma.ContractWhereInput],
+        },
       }
       const [rows, total] = await Promise.all([
         this.prisma.receivableRecord.findMany({
@@ -724,7 +988,10 @@ export class CustomersService {
     if (resource === 'invoices') {
       const where: Prisma.InvoiceRecordWhereInput = {
         tenantId: user.tenantId,
-        contract: { customerId: id },
+        contract: {
+          customerId: id,
+          AND: [resourceScope as Prisma.ContractWhereInput],
+        },
       }
       const [rows, total] = await Promise.all([
         this.prisma.invoiceRecord.findMany({
@@ -761,6 +1028,7 @@ export class CustomersService {
     const where: Prisma.OrderWhereInput = {
       tenantId: user.tenantId,
       contract: { customerId: id },
+      AND: [resourceScope as Prisma.OrderWhereInput],
     }
     const [rows, total] = await Promise.all([
       this.prisma.order.findMany({
@@ -789,6 +1057,79 @@ export class CustomersService {
       total,
       page: currentPage,
       pageSize: take,
+    }
+  }
+
+  async resourceStatistic(
+    user: AuthUser,
+    customerId: string,
+    resource: 'contracts' | 'receivablePlans' | 'receivableRecords' | 'invoices',
+  ) {
+    await this.customerAccess.assertRead(user, customerId)
+    this.assert360ResourcePermission(user, resource)
+    const contractScope = await this.customer360ResourceScope(user, resource)
+    const contractWhere: Prisma.ContractWhereInput = {
+      tenantId: user.tenantId,
+      customerId,
+      AND: [contractScope as Prisma.ContractWhereInput],
+    }
+    const contractAggregate = await this.prisma.contract.aggregate({
+      where: contractWhere,
+      _sum: { amount: true },
+    })
+    const contractAmount = Number(contractAggregate._sum.amount ?? 0)
+    if (resource === 'contracts') return { totalAmount: contractAmount }
+
+    if (resource === 'receivablePlans') {
+      const result = await this.prisma.receivablePlan.aggregate({
+        where: {
+          tenantId: user.tenantId,
+          contract: {
+            customerId,
+            AND: [contractScope as Prisma.ContractWhereInput],
+          },
+        },
+        _sum: { amount: true },
+      })
+      return { totalPlanAmount: Number(result._sum.amount ?? 0) }
+    }
+
+    if (resource === 'receivableRecords') {
+      const result = await this.prisma.receivableRecord.aggregate({
+        where: {
+          tenantId: user.tenantId,
+          contract: {
+            customerId,
+            AND: [contractScope as Prisma.ContractWhereInput],
+          },
+          approvalStatus: { in: ['NONE', 'APPROVED'] },
+        },
+        _sum: { amount: true },
+      })
+      const receivedAmount = Number(result._sum.amount ?? 0)
+      return {
+        totalAmount: contractAmount,
+        receivedAmount,
+        pendingAmount: Math.max(0, contractAmount - receivedAmount),
+      }
+    }
+
+    const result = await this.prisma.invoiceRecord.aggregate({
+      where: {
+        tenantId: user.tenantId,
+        contract: {
+          customerId,
+          AND: [contractScope as Prisma.ContractWhereInput],
+        },
+        status: { not: 'VOID' },
+      },
+      _sum: { amount: true },
+    })
+    const invoicedAmount = Number(result._sum.amount ?? 0)
+    return {
+      contractAmount,
+      invoicedAmount,
+      uninvoicedAmount: Math.max(0, contractAmount - invoicedAmount),
     }
   }
 
@@ -871,29 +1212,22 @@ export class CustomersService {
     })
     await this.assertCustomerUniqueRules(user.tenantId, dto, existing.id)
 
-    if (dto.ownerId && dto.ownerId !== existing.owner) {
-      const ownerId = dto.ownerId
-      const owner = await this.resolveOwner(user, ownerId)
-      if (existing.inSharedPool) {
-        await this.customerPools.assign({
-          organizationId: user.tenantId,
-          customerId: existing.id,
-          ownerId: owner.id,
-          operatorId: user.id,
-          poolAdmin: await this.pools.isPoolManager(user, 'customer', existing.poolId),
-        })
-      } else {
-        await this.customerPools.transfer({
-          organizationId: user.tenantId,
-          customerId: existing.id,
-          ownerId: owner.id,
-          operatorId: user.id,
-        })
-      }
-    }
+    const owner =
+      dto.ownerId && dto.ownerId !== existing.owner
+        ? await this.resolveOwner(user, dto.ownerId)
+        : null
 
     const now = BigInt(Date.now())
     const customer = await this.prisma.$transaction(async (tx) => {
+      if (owner) {
+        await this.customerPools.transferInTransaction(tx, {
+          organizationId: user.tenantId,
+          customerId: existing.id,
+          ownerId: owner.id,
+          operatorId: user.id,
+          now,
+        })
+      }
       const updated = await tx.customer.update({
         where: { id: existing.id },
         data: {
@@ -905,12 +1239,12 @@ export class CustomersService {
       await this.fieldValues.save(user.tenantId, 'customer', existing.id, values, 'update', tx)
       return updated
     })
-    if (dto.ownerId && dto.ownerId !== existing.owner) {
+    if (owner) {
       await this.notifications.send({
         tenantId: user.tenantId,
         event: 'CUSTOMER_TRANSFERRED_CUSTOMER',
         operatorId: user.id,
-        recipientIds: [dto.ownerId],
+        recipientIds: [owner.id],
         excludeSelf: true,
         type: 'assign',
         title: '客户已转移给你',
@@ -938,7 +1272,8 @@ export class CustomersService {
 
   /** 退回公海 */
   async moveToSea(user: AuthUser, id: string, poolId?: string, reasonId?: string) {
-    const customer = await this.ensureInScope(user, id, 'customer:assign')
+    const customer = await this.ensureInScope(user, id, 'customer:recycle')
+    await this.dictionaries.validateReason(user.tenantId, 'CUSTOMER_POOL_RS', reasonId)
     const pool = await this.pools.resolveMoveTargetPool(
       user.tenantId,
       'customer',
@@ -968,10 +1303,7 @@ export class CustomersService {
 
   /** 从公海领取 */
   async claimFromSea(user: AuthUser, id: string) {
-    const current = await this.prisma.customer.findFirst({
-      where: { id, organizationId: user.tenantId, inSharedPool: true },
-    })
-    if (!current) throw new BadRequestException('客户不存在或已被他人领取')
+    const current = (await this.customerAccess.assertPoolRead(user, id)).customer
     await this.customerPools.pick({
       organizationId: user.tenantId,
       customerId: id,
@@ -1011,8 +1343,38 @@ export class CustomersService {
 
   /** 分配负责人 */
   async assignOwner(user: AuthUser, id: string, ownerId: string) {
-    const customer = (await this.customerAccess.assertManageCustomer(user, id)).customer
+    const customer = await this.ensureInScope(user, id, 'customer:transfer')
     return this.assignOwnerExisting(user, customer, ownerId)
+  }
+
+  async poolAssignOwner(user: AuthUser, id: string, ownerId: string, poolId?: string) {
+    const access = await this.customerAccess.assertPoolRead(user, id)
+    if (poolId && access.customer.poolId !== poolId) {
+      throw new BadRequestException('客户不属于指定公海')
+    }
+    return this.assignOwnerExisting(user, access.customer, ownerId)
+  }
+
+  async batchTransfer(user: AuthUser, ids: string[], ownerId: string) {
+    const uniqueIds = [...new Set(ids)]
+    if (!uniqueIds.length) throw new BadRequestException('请选择客户')
+    const [owner, customers] = await Promise.all([
+      this.resolveOwner(user, ownerId),
+      Promise.all(uniqueIds.map((id) => this.ensureInScope(user, id, 'customer:transfer'))),
+    ])
+    const changed = customers.filter((customer) => customer.owner !== owner.id)
+    if (changed.length) {
+      await this.pools.assertCapacityForOwner(
+        user.tenantId,
+        'customer',
+        owner.id,
+        changed.length,
+      )
+    }
+    for (const customer of changed) {
+      await this.assignOwnerExisting(user, customer, owner.id, true)
+    }
+    return { count: changed.length }
   }
 
   /** 已由调用方完成资源访问校验后的统一负责人变更。 */
@@ -1071,6 +1433,35 @@ export class CustomersService {
       }
     }
     return { success, fail: failedIds.length, failedIds }
+  }
+
+  async poolBatchAssignOwner(user: AuthUser, ids: string[], ownerId: string, poolId?: string) {
+    const customers = await Promise.all(
+      [...new Set(ids)].map(async (id) => {
+        const customer = (await this.customerAccess.assertPoolRead(user, id)).customer
+        if (poolId && customer.poolId !== poolId) {
+          throw new BadRequestException('所选客户必须全部属于指定公海')
+        }
+        return customer
+      }),
+    )
+    for (const customer of customers) {
+      await this.assignOwnerExisting(user, customer, ownerId)
+    }
+    return { success: customers.length, fail: 0, failedIds: [] }
+  }
+
+  async poolOptions(user: AuthUser) {
+    const pools = await this.pools.options(user, 'customer')
+    return pools.map((pool) => ({
+      id: pool.id,
+      name: pool.name,
+      scopeIds: parseStringArray(pool.scopeId),
+      ownerIds: parseStringArray(pool.ownerId),
+      enable: pool.enable,
+      auto: pool.auto,
+      hiddenFieldIds: pool.hiddenFields.map((field) => field.fieldId),
+    }))
   }
 
   async batchMoveToSea(
@@ -1198,6 +1589,14 @@ export class CustomersService {
     return { success: customers.length, fail: 0, failedIds: [] }
   }
 
+  async poolBatchUpdateExact(user: AuthUser, dto: ResourceBatchEditDto) {
+    const firstId = dto.ids[0]
+    if (!firstId) throw new BadRequestException('请选择客户')
+    const customer = (await this.customerAccess.assertPoolRead(user, firstId)).customer
+    if (!customer.poolId) throw new BadRequestException('客户不属于公海')
+    return this.poolBatchUpdate(user, { ...dto, poolId: customer.poolId })
+  }
+
   async poolBatchDelete(user: AuthUser, poolId: string, ids: string[]): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'customer', poolId)
     const customers = await this.prisma.customer.findMany({
@@ -1294,6 +1693,40 @@ export class CustomersService {
       where: { id: memberId, customerId },
     })
     return { id: memberId }
+  }
+
+  async collaborationUpdate(
+    user: AuthUser,
+    memberId: string,
+    collaborationType: 'READ_ONLY' | 'COLLABORATION',
+  ) {
+    const member = await this.prisma.customerCollaboration.findFirst({
+      where: { id: memberId, customer: { organizationId: user.tenantId } },
+      select: { customerId: true },
+    })
+    if (!member) throw new NotFoundException('协作成员不存在')
+    return this.teamUpdate(user, member.customerId, memberId, collaborationType)
+  }
+
+  async collaborationRemove(user: AuthUser, memberId: string) {
+    const member = await this.prisma.customerCollaboration.findFirst({
+      where: { id: memberId, customer: { organizationId: user.tenantId } },
+      select: { customerId: true },
+    })
+    if (!member) throw new NotFoundException('协作成员不存在')
+    return this.teamRemove(user, member.customerId, memberId)
+  }
+
+  async collaborationBatchRemove(user: AuthUser, ids: string[]) {
+    const members = await this.prisma.customerCollaboration.findMany({
+      where: { id: { in: ids }, customer: { organizationId: user.tenantId } },
+      select: { id: true, customerId: true },
+    })
+    if (members.length !== new Set(ids).size) throw new NotFoundException('协作成员不存在')
+    const customerIds = [...new Set(members.map((member) => member.customerId))]
+    await Promise.all(customerIds.map((id) => this.customerAccess.assertManageCustomer(user, id)))
+    await this.prisma.customerCollaboration.deleteMany({ where: { id: { in: ids } } })
+    return { count: members.length }
   }
 
   // ===== 客户集团 / 子公司关系 =====
@@ -1453,6 +1886,22 @@ export class CustomersService {
     })
     if (result.count === 0) throw new NotFoundException('客户关系不存在')
     return { id: relationId }
+  }
+
+  async relationRemoveById(user: AuthUser, relationId: string) {
+    const relation = await this.prisma.customerRelation.findFirst({
+      where: {
+        id: relationId,
+        sourceCustomer: { organizationId: user.tenantId },
+      },
+      select: { sourceCustomerId: true, targetCustomerId: true },
+    })
+    if (!relation) throw new NotFoundException('客户关系不存在')
+    const sourceAccess = await this.customerAccess
+      .assertRead(user, relation.sourceCustomerId)
+      .catch(() => null)
+    const customerId = sourceAccess ? relation.sourceCustomerId : relation.targetCustomerId
+    return this.relationRemove(user, customerId, relationId)
   }
 
   async mergePreview(user: AuthUser, dto: CustomerMergeDto) {
@@ -1695,7 +2144,7 @@ export class CustomersService {
   }
 
   async ownerHistory(user: AuthUser, customerId: string) {
-    await this.customerAccess.assertRead(user, customerId)
+    await this.customerAccess.assertOwnerHistoryRead(user, customerId)
     return this.pools.ownerHistory(user, 'customer', customerId)
   }
 
@@ -1828,15 +2277,22 @@ export class CustomersService {
   }
 
   private assert360ResourcePermission(user: AuthUser, resource: Customer360Resource) {
-    const permission =
-      resource === 'opportunities'
-        ? 'menu:opportunity'
-        : resource === 'orders'
-          ? 'menu:order'
-          : 'menu:contract'
+    const permission = this.customer360ResourcePermission(resource)
     if (!hasPermission(user.permissions, permission)) {
       throw new ForbiddenException('没有查看该客户关联数据的权限')
     }
+  }
+
+  private customer360ResourceScope(user: AuthUser, resource: Customer360Resource) {
+    return this.dataScope.scopeFilter(user, this.customer360ResourcePermission(resource))
+  }
+
+  private customer360ResourcePermission(resource: Customer360Resource) {
+    return resource === 'opportunities'
+      ? 'menu:opportunity'
+      : resource === 'orders'
+        ? 'menu:order'
+        : 'menu:contract'
   }
 
   private receivablePlanStatus(
@@ -2009,7 +2465,7 @@ export class CustomersService {
         organizationId: user.tenantId,
         OR: [
           { inSharedPool: true, poolId: { in: poolIds } },
-          await this.dataScope.directOwnerFilter(user, 'menu:customer'),
+          await this.dataScope.directOwnerFilter(user, 'customer:read'),
           { id: { in: collaborationIds.map((item) => item.customerId) } },
         ],
       },
@@ -2452,7 +2908,12 @@ export class CustomersService {
   ) {
     const ids = customers.map((customer) => customer.id)
     await this.prisma.$transaction(async (tx) => {
+      await tx.customerField.deleteMany({ where: { resourceId: { in: ids } } })
+      await tx.customerFieldBlob.deleteMany({ where: { resourceId: { in: ids } } })
       await tx.followUpRecord.deleteMany({
+        where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: ids } },
+      })
+      await tx.followUpPlan.deleteMany({
         where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: ids } },
       })
       await tx.customerOwner.deleteMany({ where: { customerId: { in: ids } } })
@@ -2497,7 +2958,7 @@ export class CustomersService {
     user: AuthUser,
     view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION',
   ): Promise<Prisma.CustomerWhereInput> {
-    if (!view) return this.dataScope.directOwnerFilter(user, 'menu:customer')
+    if (!view) return this.dataScope.directOwnerFilter(user, 'customer:read')
     if (view === 'SELF') return { owner: user.id }
     if (view === 'COLLABORATION') {
       const collaborations = await this.prisma.customerCollaboration.findMany({
@@ -2507,18 +2968,18 @@ export class CustomersService {
       return { id: { in: collaborations.map((item) => item.customerId) } }
     }
     if (view === 'ALL') {
-      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
+      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'customer:read'))
       if (!roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM')) {
         throw new ForbiddenException('当前角色没有全部客户视图权限')
       }
-      return this.dataScope.directOwnerFilter(user, 'menu:customer')
+      return this.dataScope.directOwnerFilter(user, 'customer:read')
     }
     if (view === 'DEPARTMENT') {
-      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'menu:customer'))
+      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'customer:read'))
       if (!roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope))) {
         throw new ForbiddenException('当前角色没有部门客户视图权限')
       }
-      const effective = await this.dataScope.resolveScope(user, 'menu:customer')
+      const effective = await this.dataScope.resolveScope(user, 'customer:read')
       if (effective.all) return {}
       const owners = await this.prisma.user.findMany({
         where: {
@@ -2529,7 +2990,7 @@ export class CustomersService {
       })
       return { owner: { in: owners.map((item) => item.id) } }
     }
-    return this.dataScope.directOwnerFilter(user, 'menu:customer')
+    return this.dataScope.directOwnerFilter(user, 'customer:read')
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {

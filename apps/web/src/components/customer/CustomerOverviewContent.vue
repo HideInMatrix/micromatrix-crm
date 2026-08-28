@@ -534,8 +534,8 @@ onMounted(async () => {
       </div>
       <div v-if="customer && canMainAction" class="flex items-center gap-2 shrink-0">
         <el-button v-if="auth.hasPerm('customer:update')" @click="openEdit">编辑</el-button>
-        <el-button v-if="auth.hasPerm('customer:assign')" @click="transferVisible = true">转移</el-button>
-        <el-button v-if="auth.hasPerm('customer:assign')" @click="moveToSea">移入公海</el-button>
+        <el-button v-if="auth.hasPerm('customer:transfer')" @click="transferVisible = true">转移</el-button>
+        <el-button v-if="auth.hasPerm('customer:recycle')" @click="moveToSea">移入公海</el-button>
         <el-button v-if="auth.hasPerm('customer:delete')" type="danger" plain @click="deleteCustomer">删除</el-button>
       </div>
     </header>
@@ -681,7 +681,7 @@ onMounted(async () => {
 
                 <template v-else-if="tab.name === 'collaborator'">
                   <div class="flex justify-end mb-3">
-                    <el-button v-if="auth.hasPerm('customer:team')" type="primary" size="small" @click="teamDialogVisible = true">
+                    <el-button v-if="auth.hasPerm('customer:update')" type="primary" size="small" @click="teamDialogVisible = true">
                       添加协作人
                     </el-button>
                   </div>
@@ -694,7 +694,7 @@ onMounted(async () => {
                     <el-table-column label="加入时间" min-width="180">
                       <template #default="{ row }">{{ new Date(row.createdAt).toLocaleString() }}</template>
                     </el-table-column>
-                    <el-table-column v-if="auth.hasPerm('customer:team')" label="操作" width="140" fixed="right">
+                    <el-table-column v-if="auth.hasPerm('customer:update')" label="操作" width="140" fixed="right">
                       <template #default="{ row }">
                         <el-button link type="primary" @click="editTeamMember(row as TeamMemberVO)">编辑</el-button>
                         <el-button link type="danger" @click="removeTeamMember(row as TeamMemberVO)">移除</el-button>
