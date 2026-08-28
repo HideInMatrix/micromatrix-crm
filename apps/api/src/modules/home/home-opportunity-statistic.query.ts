@@ -122,18 +122,18 @@ export class HomeOpportunityStatisticQuery {
     const scopeFilter: Prisma.OpportunityWhereInput = scope.all
       ? {}
       : scope.self
-        ? { ownerId: user.id }
+        ? { owner: user.id }
         : scope.userIds?.length
-          ? { ownerId: { in: scope.userIds } }
-          : { ownerId: '__home_scope_empty__' }
+          ? { owner: { in: scope.userIds } }
+          : { owner: '__home_scope_empty__' }
     const stageFilter: Prisma.OpportunityWhereInput =
       scenario === 'SUCCESS'
-        ? { stage: { isWon: true } }
+        ? { stageConfig: { type: 'END', rate: '100' } }
         : scenario === 'UNDERWAY'
-          ? { stage: { isWon: false, isLost: false } }
+          ? { stageConfig: { type: 'AFOOT' } }
           : {}
     return {
-      tenantId: user.tenantId,
+      organizationId: user.tenantId,
       AND: [scopeFilter, stageFilter, timeFilter],
     }
   }
@@ -150,9 +150,10 @@ export class HomeOpportunityStatisticQuery {
   }
 
   private timeFilter(field: HomeTimeField, start: Date, end: Date): Prisma.OpportunityWhereInput {
-    if (field === 'CREATE_TIME') return { createdAt: { gte: start, lte: end } }
-    if (field === 'EXPECTED_END_TIME') return { expectedCloseAt: { gte: start, lte: end } }
-    return { wonAt: { gte: start, lte: end } }
+    const range = { gte: BigInt(start.getTime()), lte: BigInt(end.getTime()) }
+    if (field === 'CREATE_TIME') return { createTime: range }
+    if (field === 'EXPECTED_END_TIME') return { expectedEndTime: range }
+    return { actualEndTime: range }
   }
 
   private compare(value: number, previous: number) {

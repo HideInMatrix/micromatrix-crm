@@ -109,3 +109,9 @@ export const CustomerPoolUserViewsController = createResourceUserViewsController
   'CUSTOMER_POOL',
   ['customerPool:read'],
 )
+export const OpportunityUserViewsController = createResourceUserViewsController(
+  'opportunity/view',
+  '商机视图',
+  'OPPORTUNITY',
+  ['menu:opportunity'],
+)

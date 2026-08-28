@@ -138,6 +138,20 @@ export interface OpportunityVO {
   lostAt: string | null
   createdAt: string
   updatedAt: string
+  /** Cordys 直接商机字段；旧 Web 适配字段保留到 W3.6.0 页面切换完成。 */
+  possible?: number | null
+  products?: string[]
+  expectedEndTime?: number | null
+  actualEndTime?: number | null
+  failureReason?: string | null
+  owner?: string
+  createTime?: number
+  updateTime?: number
+  createUser?: string
+  updateUser?: string
+  follower?: string | null
+  followTime?: number | null
+  pos?: number | null
 }
 
 export interface StageLogVO {

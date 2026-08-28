@@ -64,7 +64,7 @@ export function transformLead(data: { clueId: string; oppCreated?: boolean; oppN
 }
 
 export function getOpportunity(id: string) {
-  return http.get<OpportunityVO>(`/opportunities/${id}`)
+  return http.get<OpportunityVO>(`/opportunity/get/${id}`)
 }
 
 export function listFollowUps(targetType: string, targetId: string) {

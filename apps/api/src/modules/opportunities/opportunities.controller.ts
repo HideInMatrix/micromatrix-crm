@@ -1,121 +1,220 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
+import { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
+import type { ImportType } from '../import-export/dto/import-export.dto'
 import {
-  ChangeStageDto,
-  CreateOpportunityDto,
-  QueryOpportunitiesDto,
-  ReorderStagesDto,
-  StageDto,
-  UpdateOpportunityDto,
-  UpdateStageDto,
+  OpportunityAddDto,
+  OpportunityBoardSortDto,
+  OpportunityChartDto,
+  OpportunityExportDto,
+  OpportunityExportSelectDto,
+  OpportunityPageDto,
+  OpportunityStageUpdateDto,
+  OpportunityStatisticDto,
+  OpportunityTransferDto,
+  OpportunityUpdateDto,
 } from './dto/opportunity.dto'
 import { OpportunitiesService } from './opportunities.service'
 
+type UploadedBufferFile = {
+  originalname: string
+  mimetype: string
+  size: number
+  buffer: Buffer
+}
+
 @ApiTags('商机')
 @ApiBearerAuth()
-@RequirePermissions('menu:opportunity')
-@Controller('opportunities')
+@Controller('opportunity')
 export class OpportunitiesController {
-  constructor(private readonly opportunitiesService: OpportunitiesService) {}
+  constructor(private readonly service: OpportunitiesService) {}
 
-  // ===== 阶段配置 =====
-
-  @Get('stages')
-  @ApiOperation({ summary: '商机阶段列表（首次访问初始化默认阶段）' })
-  listStages(@CurrentUser() user: AuthUser) {
-    return this.opportunitiesService.listStages(user.tenantId)
+  @Get('module/form')
+  @RequirePermissions('menu:opportunity')
+  @ApiOperation({ summary: '获取商机表单配置' })
+  moduleForm(@CurrentUser() user: AuthUser) {
+    return this.service.getModuleForm(user)
   }
 
-  @Post('stages')
-  @RequirePermissions('system:module')
-  @LogOperation('opportunityStage', 'create')
-  @ApiOperation({ summary: '新建阶段' })
-  createStage(@CurrentUser() user: AuthUser, @Body() dto: StageDto) {
-    return this.opportunitiesService.createStage(user, dto)
-  }
-
-  @Patch('stages/:id')
-  @RequirePermissions('system:module')
-  @LogOperation('opportunityStage', 'update')
-  @ApiOperation({ summary: '更新阶段' })
-  updateStage(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateStageDto) {
-    return this.opportunitiesService.updateStage(user, id, dto)
-  }
-
-  @Delete('stages/:id')
-  @RequirePermissions('system:module')
-  @LogOperation('opportunityStage', 'delete')
-  @ApiOperation({ summary: '删除阶段' })
-  removeStage(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.opportunitiesService.removeStage(user, id)
-  }
-
-  @Post('stages/reorder')
-  @RequirePermissions('system:module')
-  @ApiOperation({ summary: '阶段排序' })
-  reorderStages(@CurrentUser() user: AuthUser, @Body() dto: ReorderStagesDto) {
-    return this.opportunitiesService.reorderStages(user, dto)
-  }
-
-  // ===== 商机 =====
-
-  @Get('kanban')
-  @ApiOperation({ summary: '看板视图（按阶段分组）' })
-  kanban(@CurrentUser() user: AuthUser) {
-    return this.opportunitiesService.kanban(user)
-  }
-
-  @Get()
+  @Post('page')
+  @RequirePermissions('menu:opportunity')
   @ApiOperation({ summary: '商机列表' })
-  findAll(@CurrentUser() user: AuthUser, @Query() query: QueryOpportunitiesDto) {
-    return this.opportunitiesService.findAll(user, query)
+  page(@CurrentUser() user: AuthUser, @Body() dto: OpportunityPageDto) {
+    return this.service.page(user, dto)
   }
 
-  @Get(':id/stage-logs')
-  @ApiOperation({ summary: '阶段变更记录' })
-  stageLogs(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.opportunitiesService.stageLogs(user, id)
+  @Post('statistic')
+  @RequirePermissions('menu:opportunity')
+  @ApiOperation({ summary: '商机统计' })
+  statistic(@CurrentUser() user: AuthUser, @Body() dto: OpportunityStatisticDto) {
+    return this.service.statistic(user, dto)
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: '商机详情（含产品明细）' })
-  findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.opportunitiesService.findOne(user, id)
-  }
-
-  @Post()
+  @Post('add')
   @RequirePermissions('opportunity:create')
   @LogOperation('opportunity', 'create')
-  @ApiOperation({ summary: '新建商机' })
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateOpportunityDto) {
-    return this.opportunitiesService.create(user, dto)
+  @ApiOperation({ summary: '添加商机' })
+  add(@CurrentUser() user: AuthUser, @Body() dto: OpportunityAddDto) {
+    return this.service.addOpportunity(user, dto)
   }
 
-  @Patch(':id')
+  @Post('update')
   @RequirePermissions('opportunity:update')
   @LogOperation('opportunity', 'update')
   @ApiOperation({ summary: '更新商机' })
-  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateOpportunityDto) {
-    return this.opportunitiesService.update(user, id, dto)
+  update(@CurrentUser() user: AuthUser, @Body() dto: OpportunityUpdateDto) {
+    return this.service.updateOpportunity(user, dto)
   }
 
-  @Post(':id/stage')
-  @RequirePermissions('opportunity:stage')
-  @LogOperation('opportunity', 'changeStage')
-  @ApiOperation({ summary: '推进/变更阶段（赢单/输单）' })
-  changeStage(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ChangeStageDto) {
-    return this.opportunitiesService.changeStage(user, id, dto)
-  }
-
-  @Delete(':id')
+  @Get('delete/:id')
   @RequirePermissions('opportunity:delete')
   @LogOperation('opportunity', 'delete')
   @ApiOperation({ summary: '删除商机' })
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.opportunitiesService.remove(user, id)
+    return this.service.remove(user, id)
+  }
+
+  @Post('batch/transfer')
+  @RequirePermissions('opportunity:transfer')
+  @LogOperation('opportunity', 'batchTransfer')
+  @ApiOperation({ summary: '批量转移商机' })
+  batchTransfer(@CurrentUser() user: AuthUser, @Body() dto: OpportunityTransferDto) {
+    return this.service.batchTransfer(user, dto)
+  }
+
+  @Post('batch/delete')
+  @RequirePermissions('opportunity:delete')
+  @LogOperation('opportunity', 'batchDelete')
+  @ApiOperation({ summary: '批量删除商机' })
+  batchDelete(@CurrentUser() user: AuthUser, @Body() ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) throw new BadRequestException('请选择商机')
+    return this.service.batchDelete(user, ids)
+  }
+
+  @Get('get/:id')
+  @RequirePermissions('menu:opportunity')
+  @ApiOperation({ summary: '商机详情' })
+  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.findOne(user, id)
+  }
+
+  @Post('update/stage')
+  @RequirePermissions('opportunity:update')
+  @LogOperation('opportunity', 'updateStage')
+  @ApiOperation({ summary: '更新商机阶段' })
+  updateStage(@CurrentUser() user: AuthUser, @Body() dto: OpportunityStageUpdateDto) {
+    return this.service.updateStageCordys(user, dto)
+  }
+
+  @Post('batch/update')
+  @RequirePermissions('opportunity:update')
+  @LogOperation('opportunity', 'batchUpdate')
+  @ApiOperation({ summary: '批量更新商机' })
+  batchUpdate(@CurrentUser() user: AuthUser, @Body() dto: ResourceBatchEditDto) {
+    return this.service.batchUpdate(user, dto)
+  }
+
+  @Get('tab')
+  @RequirePermissions('menu:opportunity')
+  @ApiOperation({ summary: '所有商机和部门商机 tab 是否显示' })
+  tab(@CurrentUser() user: AuthUser) {
+    return this.service.getTabEnable(user)
+  }
+
+  @Get('contact/list/:opportunityId')
+  @RequirePermissions('menu:opportunity')
+  @ApiOperation({ summary: '商机下的联系人列表' })
+  contactList(@CurrentUser() user: AuthUser, @Param('opportunityId') opportunityId: string) {
+    return this.service.contactList(user, opportunityId)
+  }
+
+  @Post('sort')
+  @RequirePermissions('opportunity:update')
+  @LogOperation('opportunity', 'sort')
+  @ApiOperation({ summary: '商机阶段看板拖拽排序' })
+  sort(@CurrentUser() user: AuthUser, @Body() dto: OpportunityBoardSortDto) {
+    return this.service.sortBoard(user, dto)
+  }
+
+  @Post('export-all')
+  @RequirePermissions('opportunity:export')
+  @LogOperation('opportunity', 'exportAll')
+  @ApiOperation({ summary: '商机导出全部' })
+  exportAll(@CurrentUser() user: AuthUser, @Body() dto: OpportunityExportDto) {
+    return this.service.exportAll(user, dto)
+  }
+
+  @Post('export-select')
+  @RequirePermissions('opportunity:export')
+  @LogOperation('opportunity', 'exportSelected')
+  @ApiOperation({ summary: '导出选中商机' })
+  exportSelected(@CurrentUser() user: AuthUser, @Body() dto: OpportunityExportSelectDto) {
+    return this.service.exportSelected(user, dto)
+  }
+
+  @Get('template/download')
+  @RequirePermissions('opportunity:import')
+  @ApiOperation({ summary: '下载商机导入模板' })
+  async template(
+    @CurrentUser() user: AuthUser,
+    @Query('importType') importType: ImportType = 'ADD',
+  ) {
+    const result = await this.service.importTemplate(user, importType)
+    return new StreamableFile(result.data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+    })
+  }
+
+  @Post('import/pre-check')
+  @RequirePermissions('opportunity:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '商机导入预校验' })
+  precheckImport(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body('importType') importType: ImportType = 'ADD',
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    return this.service.precheckImportXlsx(user, file.buffer, importType)
+  }
+
+  @Post('import')
+  @RequirePermissions('opportunity:import')
+  @LogOperation('opportunity', 'import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '导入商机' })
+  importXlsx(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body('importType') importType: ImportType = 'ADD',
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    return this.service.importXlsx(user, file.buffer, importType)
+  }
+
+  @Post('chart')
+  @RequirePermissions('menu:opportunity')
+  @ApiOperation({ summary: '商机图表生成' })
+  chart(@CurrentUser() user: AuthUser, @Body() dto: OpportunityChartDto) {
+    return this.service.chart(user, dto)
   }
 }

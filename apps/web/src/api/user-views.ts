@@ -1,7 +1,13 @@
 import type { FilterCondition, FilterOp } from '@micromatrix/shared'
 import { http } from './http'
 
-export type UserViewModule = 'lead' | 'lead_pool' | 'customer' | 'contact' | 'customer_pool'
+export type UserViewModule =
+  | 'lead'
+  | 'lead_pool'
+  | 'customer'
+  | 'contact'
+  | 'customer_pool'
+  | 'opportunity'
 
 export interface UserViewConditionVO {
   name: string
@@ -39,6 +45,7 @@ const RESOURCE_PATHS: Record<UserViewModule, string> = {
   customer: '/account/view',
   contact: '/account/contact/view',
   customer_pool: '/pool/account/view',
+  opportunity: '/opportunity/view',
 }
 
 function resourcePath(module: string) {

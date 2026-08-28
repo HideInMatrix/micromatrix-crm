@@ -16,7 +16,8 @@
     "smoke:w34-user-views": "tsx scripts/w34-user-views-smoke.ts",
     "smoke:w34-pools": "tsx scripts/w34-pool-repositories-smoke.ts",
     "smoke:w34-pools:isolated": "node scripts/run-w34-pool-smoke-isolated.mjs",
-    "smoke:w34-seed": "tsx scripts/w34-seed-empty-db-audit.ts"
+    "smoke:w34-seed": "tsx scripts/w34-seed-empty-db-audit.ts",
+    "smoke:w360-opportunity-rule": "tsx scripts/w360-opportunity-rule-smoke.ts"
   },
   "dependencies": {
     "@micromatrix/shared": "workspace:*",

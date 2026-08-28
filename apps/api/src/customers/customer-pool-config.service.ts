@@ -173,8 +173,8 @@ export class CustomerPoolConfigService {
     const filter = values[0]
     if (!filter || filter.column !== 'stage') throw new BadRequestException('客户库容仅支持按商机阶段排除')
     if (!filter.value.length) throw new BadRequestException('请选择要排除的商机阶段')
-    const stageCount = await this.prisma.opportunityStage.count({
-      where: { tenantId: user.tenantId, id: { in: filter.value } },
+    const stageCount = await this.prisma.opportunityStageConfig.count({
+      where: { organizationId: user.tenantId, id: { in: filter.value } },
     })
     if (stageCount !== new Set(filter.value).size) {
       throw new BadRequestException('客户库容排除条件包含不存在的商机阶段')

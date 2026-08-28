@@ -534,8 +534,8 @@ export class CustomerPoolRepository {
         AND: conditions.map((condition) => ({
           opportunities: {
             some: {
-              tenantId: organizationId,
-              stageId:
+              organizationId,
+              stage:
                 condition.operator === 'IN' ? { in: condition.value } : { notIn: condition.value },
             },
           },

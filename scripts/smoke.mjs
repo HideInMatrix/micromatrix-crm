@@ -245,7 +245,7 @@ async function cleanupHistoricalCustomerSmokeData(tenantId) {
   const contactIds = contacts.map((item) => item.id)
 
   await smokePrisma.$transaction(async (tx) => {
-    await tx.opportunity.deleteMany({ where: { tenantId, customerId: { in: ids } } })
+    await tx.opportunity.deleteMany({ where: { organizationId: tenantId, customerId: { in: ids } } })
     await tx.quote.deleteMany({ where: { tenantId, customerId: { in: ids } } })
     await tx.contract.deleteMany({ where: { tenantId, customerId: { in: ids } } })
     await tx.invoiceTitle.updateMany({
@@ -279,6 +279,13 @@ async function cleanupHistoricalCustomerSmokeData(tenantId) {
   return ids.length
 }
 
+async function cleanupHistoricalProductSmokeData(tenantId) {
+  const result = await smokePrisma.product.deleteMany({
+    where: { tenantId, name: { startsWith: '冒烟意向产品-' } },
+  })
+  return result.count
+}
+
 console.log('== 微矩阵 CRM 全链路冒烟 ==')
 
 // 1. 健康与登录
@@ -292,6 +299,8 @@ const historicalLeadSmokeCount = await cleanupHistoricalLeadSmokeData(admin.user
 check('历史线索 Smoke 数据已隔离清理', historicalLeadSmokeCount >= 0)
 const historicalCustomerSmokeCount = await cleanupHistoricalCustomerSmokeData(admin.user.tenantId)
 check('历史客户 Smoke 数据已隔离清理', historicalCustomerSmokeCount >= 0)
+const historicalProductSmokeCount = await cleanupHistoricalProductSmokeData(admin.user.tenantId)
+check('历史产品 Smoke 数据已隔离清理', historicalProductSmokeCount >= 0)
 const stamp = Date.now().toString(36)
 const phoneSuffix = String(Date.now()).slice(-8)
 
@@ -1017,7 +1026,7 @@ check(
     convertedCustomerFollows.some((item) => item.content === '冒烟跟进'),
 )
 const convertedContacts = await get(`/account/contact/list/${converted.customerId}`, sales.headers)
-const convertedOpportunity = await get(`/opportunities/${converted.opportunityId}`, sales.headers)
+const convertedOpportunity = await get(`/opportunity/get/${converted.opportunityId}`, sales.headers)
 check(
   'R4 自动转换联系人并绑定商机',
   Array.isArray(convertedContacts.list) &&
@@ -1692,7 +1701,7 @@ check('Customer 批量删除存在 Contact 引用时整批拒绝', protectedCust
 const customerBatchBStillExists = await get(`/account/get/${customerBatchB.id}`, admin.headers)
 check('Customer 批量删除引用保护不会部分删除', customerBatchBStillExists.id === customerBatchB.id)
 await get(`/account/contact/delete/${protectedContact.id}`, admin.headers)
-const protectedOpportunity = await post('/opportunities', admin.headers, {
+const protectedOpportunity = await post('/opportunity/add', admin.headers, {
   name: `批量删除保护商机-${stamp}`,
   customerId: customerBatchA.id,
 })
@@ -1703,7 +1712,7 @@ const opportunityProtectedDelete = await request(
   customerBatchIds,
 )
 check('Customer 批量删除存在 Opportunity 引用时整批拒绝', opportunityProtectedDelete.status === 400)
-await request('DELETE', `/opportunities/${protectedOpportunity.id}`, admin.headers)
+await request('GET', `/opportunity/delete/${protectedOpportunity.id}`, admin.headers)
 const customerBatchDelete = await post('/account/batch/delete', admin.headers, customerBatchIds)
 check('Customer 无引用后允许整批删除', customerBatchDelete.success === 2)
 await request('DELETE', `/metadata/fields/${customerBatchCustomField.id}`, admin.headers)
@@ -2348,7 +2357,7 @@ check(
       .every((item) => item.customData?.[r3ContactField.key] === r3BatchValue),
 )
 
-const r3Opportunity = await post('/opportunities', manager.headers, {
+const r3Opportunity = await post('/opportunity/add', manager.headers, {
   name: `R3联系人商机-${stamp}`,
   customerId: r3Customer.id,
   contactId: r3ManagerContact.id,
@@ -2365,12 +2374,11 @@ const deniedLinkedContactDelete = await request(
   manager.headers,
 )
 check('R3 Service 级阻止删除已关联商机联系人', deniedLinkedContactDelete.status === 400)
-const invalidOpportunityContact = await request(
-  'PATCH',
-  `/opportunities/${r3Opportunity.id}`,
-  manager.headers,
-  { contactId: r3SalesContact.id, customerId: r3OtherCustomer.id },
-)
+const invalidOpportunityContact = await request('POST', '/opportunity/update', manager.headers, {
+  id: r3Opportunity.id,
+  contactId: r3SalesContact.id,
+  customerId: r3OtherCustomer.id,
+})
 check('R3 Opportunity 联系人必须属于当前客户', invalidOpportunityContact.status === 400)
 
 const contactFields = await get('/metadata/contact/fields', manager.headers)
@@ -2508,8 +2516,8 @@ check('R3 联系人导出使用独立 EXPORT 权限', deniedContactExport.status
 
 await request('DELETE', `/export-tasks/${r3ContactExportTask.id}`, manager.headers)
 await request('DELETE', `/export-tasks/${r3ContactSelectExportTask.id}`, manager.headers)
-await request('PATCH', `/opportunities/${r3Opportunity.id}`, manager.headers, { contactId: '' })
-await request('DELETE', `/opportunities/${r3Opportunity.id}`, manager.headers)
+await post('/opportunity/update', manager.headers, { id: r3Opportunity.id, contactId: '' })
+await request('GET', `/opportunity/delete/${r3Opportunity.id}`, manager.headers)
 if (r3ImportedContact?.id) await get(`/account/contact/delete/${r3ImportedContact.id}`, manager.headers)
 await get(`/account/contact/delete/${r3ManagerContact.id}`, manager.headers)
 await get(`/account/contact/delete/${r3SalesContact.id}`, manager.headers)
@@ -2522,14 +2530,23 @@ const removedJsonRowsImport = await request('POST', '/customers/import/rows', ad
 })
 check('旧 Customer JSON rows 导入入口已移除', removedJsonRowsImport.status === 404)
 
-const oppWithItems = await post('/opportunities', manager.headers, {
+const opportunityProduct = await post('/products', manager.headers, {
+  name: `冒烟意向产品-${stamp}`,
+  price: 30000,
+})
+const oppWithItems = await post('/opportunity/add', manager.headers, {
   name: `冒烟明细商机-${stamp}`,
   customerId: converted.customerId,
-  items: [{ productName: '冒烟产品', quantity: 2, unitPrice: 15000, discount: 100 }],
+  amount: 30000,
+  products: [opportunityProduct.id],
 })
-check('商机明细汇总金额', oppWithItems.amount === 30000 && oppWithItems.items?.length === 1)
-await request('PATCH', `/opportunities/${oppWithItems.id}`, manager.headers, {
-  ownerId: sales.user.id,
+check(
+  '商机意向产品与金额',
+  Number(oppWithItems.amount) === 30000 && oppWithItems.products?.includes(opportunityProduct.id),
+)
+await post('/opportunity/update', manager.headers, {
+  id: oppWithItems.id,
+  owner: sales.user.id,
 })
 const transferredOpportunityNotifications = await get(
   '/notifications?page=1&pageSize=100',
@@ -2549,13 +2566,22 @@ const quoteFromOpp = await post('/quotes', manager.headers, {
 check('报价从商机带入明细', quoteFromOpp.totalAmount === 30000 && quoteFromOpp.items?.length === 1)
 
 // 5. 商机推进赢单
-const stages = await get('/opportunities/stages', sales.headers)
-const won = stages.find((s) => s.isWon)
-await post(`/opportunities/${converted.opportunityId}/stage`, sales.headers, { stageId: won.id })
-const kanban = await get('/opportunities/kanban', sales.headers)
+const stageConfig = await get('/opportunity/stage/get', sales.headers)
+const won = stageConfig.stageConfigList.find((s) => s.type === 'END' && Number(s.rate) === 100)
+if (!won) throw new Error('未找到商机成功阶段')
+await post('/opportunity/update/stage', sales.headers, {
+  id: converted.opportunityId,
+  stage: won.id,
+})
+const kanban = await post('/opportunity/page', sales.headers, {
+  current: 1,
+  pageSize: 500,
+  board: true,
+})
 check(
   '商机赢单与看板',
-  kanban.stages.some((s) => s.isWon && s.count >= 1),
+  kanban.stages.some((s) => s.isWon && s.count >= 1) &&
+    (kanban.list?.[won.id] ?? []).some((item) => item.id === converted.opportunityId),
 )
 
 // 6. 交易链：报价→合同→回款→发票→订单

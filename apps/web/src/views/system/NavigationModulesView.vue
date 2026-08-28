@@ -21,6 +21,9 @@ import LeadPoolSettingsDrawer from './components/LeadPoolSettingsDrawer.vue'
 import CustomerCapacitySettingsDrawer from './components/CustomerCapacitySettingsDrawer.vue'
 import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSettingsDrawer.vue'
 import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
+import OpportunityCloseRuleSettingsDrawer from './components/OpportunityCloseRuleSettingsDrawer.vue'
+import OpportunityFailureReasonSettingsDrawer from './components/OpportunityFailureReasonSettingsDrawer.vue'
+import OpportunityStageSettingsDrawer from './components/OpportunityStageSettingsDrawer.vue'
 
 interface ModuleAction {
   label: string
@@ -33,6 +36,9 @@ interface ModuleAction {
     | 'customer-pool'
     | 'customer-capacity'
     | 'customer-reason'
+    | 'opportunity-stage'
+    | 'opportunity-rule'
+    | 'opportunity-reason'
 }
 
 interface ModuleActionGroup {
@@ -72,9 +78,12 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
     primary: [
       { label: '商机表单设置', path: '/system/modules/fields', query: { module: 'opportunity' } },
       { label: '报价表单设置', path: '/system/modules/fields', query: { module: 'quote' } },
-      { label: '商机阶段设置' },
+      { label: '商机阶段设置', drawer: 'opportunity-stage' },
     ],
-    more: [{ label: '商机关闭规则' }, { label: '商机失败原因设置' }],
+    more: [
+      { label: '商机关闭规则', drawer: 'opportunity-rule' },
+      { label: '商机失败原因设置', drawer: 'opportunity-reason' },
+    ],
   },
   order: {
     primary: [
@@ -104,6 +113,9 @@ const leadReasonVisible = ref(false)
 const customerPoolVisible = ref(false)
 const customerCapacityVisible = ref(false)
 const customerReasonVisible = ref(false)
+const opportunityStageVisible = ref(false)
+const opportunityRuleVisible = ref(false)
+const opportunityReasonVisible = ref(false)
 
 const canUpdate = computed(() => auth.hasPerm('system:module:update'))
 const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item]))
@@ -225,6 +237,9 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-pool') customerPoolVisible.value = true
   if (action.drawer === 'customer-capacity') customerCapacityVisible.value = true
   if (action.drawer === 'customer-reason') customerReasonVisible.value = true
+  if (action.drawer === 'opportunity-stage') opportunityStageVisible.value = true
+  if (action.drawer === 'opportunity-rule') opportunityRuleVisible.value = true
+  if (action.drawer === 'opportunity-reason') opportunityReasonVisible.value = true
 }
 
 onMounted(load)
@@ -378,6 +393,9 @@ onMounted(load)
     <CustomerPoolSettingsDrawer v-model="customerPoolVisible" />
     <CustomerCapacitySettingsDrawer v-model="customerCapacityVisible" />
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
+    <OpportunityStageSettingsDrawer v-model="opportunityStageVisible" />
+    <OpportunityCloseRuleSettingsDrawer v-model="opportunityRuleVisible" />
+    <OpportunityFailureReasonSettingsDrawer v-model="opportunityReasonVisible" />
   </div>
 </template>
 

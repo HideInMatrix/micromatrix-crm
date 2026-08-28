@@ -23,7 +23,9 @@ export class HomeOverviewService {
       unknown
     >
     const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
+    const opportunityScope = directScope as Prisma.OpportunityWhereInput
     const since = monthStart()
+    const sinceMs = BigInt(since.getTime())
     const tenantId = user.tenantId
 
     const [newLeads, newCustomers, newOpportunities, wonAgg, receivedAgg] =
@@ -45,13 +47,18 @@ export class HomeOverviewService {
         }),
         this.prisma.opportunity.count({
           where: {
-            tenantId,
-            AND: [scope as Prisma.OpportunityWhereInput],
-            createdAt: { gte: since },
+            organizationId: tenantId,
+            AND: [opportunityScope],
+            createTime: { gte: sinceMs },
           },
         }),
         this.prisma.opportunity.aggregate({
-          where: { tenantId, AND: [scope as Prisma.OpportunityWhereInput], wonAt: { gte: since } },
+          where: {
+            organizationId: tenantId,
+            AND: [opportunityScope],
+            stageConfig: { type: 'END', rate: '100' },
+            actualEndTime: { gte: sinceMs },
+          },
           _sum: { amount: true },
         }),
         this.prisma.receivableRecord.aggregate({
@@ -110,27 +117,27 @@ export class HomeOverviewService {
 
   /** 商机漏斗（按阶段） */
   async funnel(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(
+    const scope = (await this.dataScope.directOwnerFilter(
       user,
       'menu:dashboard',
     )) as Prisma.OpportunityWhereInput
-    const stages = await this.prisma.opportunityStage.findMany({
-      where: { tenantId: user.tenantId },
-      orderBy: [{ isWon: 'asc' }, { isLost: 'asc' }, { sort: 'asc' }],
+    const stages = await this.prisma.opportunityStageConfig.findMany({
+      where: { organizationId: user.tenantId },
+      orderBy: { pos: 'asc' },
     })
     const grouped = await this.prisma.opportunity.groupBy({
-      by: ['stageId'],
-      where: { tenantId: user.tenantId, AND: [scope] },
+      by: ['stage'],
+      where: { organizationId: user.tenantId, AND: [scope] },
       _count: { _all: true },
       _sum: { amount: true },
     })
-    const map = new Map(grouped.map((g) => [g.stageId, g]))
+    const map = new Map(grouped.map((g) => [g.stage, g]))
     return stages
-      .filter((s) => !s.isLost)
+      .filter((s) => !(s.type === 'END' && Number(s.rate) === 0))
       .map((s) => ({
         name: s.name,
-        probability: s.probability,
-        isWon: s.isWon,
+        probability: Number(s.rate),
+        isWon: s.type === 'END' && Number(s.rate) === 100,
         count: map.get(s.id)?._count._all ?? 0,
         amount: Number(map.get(s.id)?._sum.amount ?? 0),
       }))
@@ -143,15 +150,19 @@ export class HomeOverviewService {
       unknown
     >
     const since = monthStart()
+    const opportunityScope = (await this.dataScope.directOwnerFilter(
+      user,
+      'menu:dashboard',
+    )) as Prisma.OpportunityWhereInput
 
     const [wonGroups, receivedGroups] = await Promise.all([
       this.prisma.opportunity.groupBy({
-        by: ['ownerId'],
+        by: ['owner'],
         where: {
-          tenantId: user.tenantId,
-          AND: [scope as Prisma.OpportunityWhereInput],
-          wonAt: { gte: since },
-          ownerId: { not: null },
+          organizationId: user.tenantId,
+          AND: [opportunityScope],
+          stageConfig: { type: 'END', rate: '100' },
+          actualEndTime: { gte: BigInt(since.getTime()) },
         },
         _sum: { amount: true },
         _count: { _all: true },
@@ -170,7 +181,7 @@ export class HomeOverviewService {
     ])
 
     const ownerIds = [
-      ...new Set([...wonGroups.map((g) => g.ownerId), ...receivedGroups.map((g) => g.ownerId)]),
+      ...new Set([...wonGroups.map((g) => g.owner), ...receivedGroups.map((g) => g.ownerId)]),
     ].filter((v): v is string => !!v)
     const users = ownerIds.length
       ? await this.prisma.user.findMany({
@@ -183,7 +194,7 @@ export class HomeOverviewService {
     return {
       won: wonGroups
         .map((g) => ({
-          name: nameMap.get(g.ownerId!) ?? '未知',
+          name: nameMap.get(g.owner) ?? '未知',
           amount: Number(g._sum.amount ?? 0),
           count: g._count._all,
         }))
@@ -206,15 +217,20 @@ export class HomeOverviewService {
       unknown
     >
     const since = monthStart(-5)
+    const opportunityScope = (await this.dataScope.directOwnerFilter(
+      user,
+      'menu:dashboard',
+    )) as Prisma.OpportunityWhereInput
 
     const [wonList, receivedList] = await Promise.all([
       this.prisma.opportunity.findMany({
         where: {
-          tenantId: user.tenantId,
-          AND: [scope as Prisma.OpportunityWhereInput],
-          wonAt: { gte: since },
+          organizationId: user.tenantId,
+          AND: [opportunityScope],
+          stageConfig: { type: 'END', rate: '100' },
+          actualEndTime: { gte: BigInt(since.getTime()) },
         },
-        select: { wonAt: true, amount: true },
+        select: { actualEndTime: true, amount: true },
       }),
       this.prisma.receivableRecord.findMany({
         where: {
@@ -235,8 +251,9 @@ export class HomeOverviewService {
     const wonByMonth = new Map(months.map((m) => [m, 0]))
     const receivedByMonth = new Map(months.map((m) => [m, 0]))
     for (const o of wonList) {
-      if (!o.wonAt) continue
-      const key = `${o.wonAt.getFullYear()}-${String(o.wonAt.getMonth() + 1).padStart(2, '0')}`
+      if (!o.actualEndTime) continue
+      const wonAt = new Date(Number(o.actualEndTime))
+      const key = `${wonAt.getFullYear()}-${String(wonAt.getMonth() + 1).padStart(2, '0')}`
       if (wonByMonth.has(key)) wonByMonth.set(key, wonByMonth.get(key)! + Number(o.amount ?? 0))
     }
     for (const r of receivedList) {
@@ -255,11 +272,8 @@ export class HomeOverviewService {
 
   /** 线索转化与输单原因 */
   async conversion(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
-      string,
-      unknown
-    >
     const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
+    const opportunityScope = directScope as Prisma.OpportunityWhereInput
     const since = monthStart(-5)
 
     const [totalLeads, convertedLeads, lostGroups] = await Promise.all([
@@ -279,11 +293,12 @@ export class HomeOverviewService {
         },
       }),
       this.prisma.opportunity.groupBy({
-        by: ['lostReason'],
+        by: ['failureReason'],
         where: {
-          tenantId: user.tenantId,
-          AND: [scope as Prisma.OpportunityWhereInput],
-          lostAt: { not: null },
+          organizationId: user.tenantId,
+          AND: [opportunityScope],
+          stageConfig: { type: 'END', rate: '0' },
+          actualEndTime: { not: null },
         },
         _count: { _all: true },
       }),
@@ -294,7 +309,7 @@ export class HomeOverviewService {
       convertedLeads,
       conversionRate: totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 1000) / 10 : 0,
       lostReasons: lostGroups.map((g) => ({
-        reason: g.lostReason?.trim() || '未填写',
+        reason: g.failureReason?.trim() || '未填写',
         count: g._count._all,
       })),
     }

@@ -335,16 +335,11 @@ export class FollowUpPlansService {
     const permission = write ? 'opportunity:update' : 'menu:opportunity'
     if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无商机权限')
     const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, organizationId: user.tenantId },
     })
     if (
       !opportunity ||
-      !(await this.dataScope.matchesResource(
-        user,
-        opportunity.ownerId,
-        opportunity.deptId,
-        permission,
-      ))
+      !(await this.dataScope.matchesDirectOwner(user, opportunity.owner, permission))
     ) {
       throw new NotFoundException('商机不存在或不在你的数据范围内')
     }
@@ -363,7 +358,7 @@ export class FollowUpPlansService {
       customerId =
         (
           await this.prisma.opportunity.findFirst({
-            where: { id: targetId, tenantId },
+            where: { id: targetId, organizationId: tenantId },
             select: { customerId: true },
           })
         )?.customerId ?? null
@@ -424,7 +419,7 @@ export class FollowUpPlansService {
         select: { id: true },
       }),
       this.prisma.opportunity.findMany({
-        where: { tenantId, name: contains },
+        where: { organizationId: tenantId, name: contains },
         select: { id: true },
       }),
     ])
@@ -457,8 +452,8 @@ export class FollowUpPlansService {
       })
     if (targetType === 'opportunity')
       await tx.opportunity.updateMany({
-        where: { id: targetId, tenantId },
-        data: { lastFollowedAt: new Date() },
+        where: { id: targetId, organizationId: tenantId },
+        data: { followTime: now, updateTime: now },
       })
   }
 

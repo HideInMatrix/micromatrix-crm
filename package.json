@@ -32,6 +32,8 @@
     "smoke:w345-empty-db": "node scripts/w345-empty-db-validation.mjs",
     "smoke:w35-personal-center-api": "node scripts/w35-personal-center-api-smoke.mjs",
     "smoke:w35-personal-center-browser": "node scripts/w35-personal-center-browser-smoke.mjs",
+    "smoke:w360-opportunity-rule": "pnpm --filter @micromatrix/api smoke:w360-opportunity-rule",
+    "smoke:w360-opportunity-browser": "node scripts/w360-opportunity-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },

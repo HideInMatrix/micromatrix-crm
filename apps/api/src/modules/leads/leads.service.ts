@@ -1316,9 +1316,9 @@ export class LeadsService {
       throw new BadRequestException('线索负责人不存在或已禁用')
     }
     const firstStage = options.opportunityName
-      ? await this.prisma.opportunityStage.findFirst({
-          where: { tenantId: user.tenantId, isWon: false, isLost: false },
-          orderBy: { sort: 'asc' },
+      ? await this.prisma.opportunityStageConfig.findFirst({
+          where: { organizationId: user.tenantId, type: 'AFOOT' },
+          orderBy: { pos: 'asc' },
           select: { id: true },
         })
       : null
@@ -1358,8 +1358,9 @@ export class LeadsService {
 
     for (const lead of leads) {
       if (!lead.owner) continue
-      const owner = prepared.ownerMap.get(lead.owner)
-      if (!owner) throw new BadRequestException('线索负责人不存在或已禁用')
+      if (!prepared.ownerMap.has(lead.owner)) {
+        throw new BadRequestException('线索负责人不存在或已禁用')
+      }
 
       if (customer.owner !== lead.owner) {
         const existingTeam = await tx.customerCollaboration.findFirst({
@@ -1426,19 +1427,37 @@ export class LeadsService {
       }
 
       if (options.opportunityName && prepared.firstStage && leads.length === 1) {
+        const now = BigInt(Date.now())
+        const currentPos = await tx.opportunity.aggregate({
+          where: { organizationId: user.tenantId, stage: prepared.firstStage.id },
+          _max: { pos: true },
+        })
         const opportunity = await tx.opportunity.create({
           data: {
-            tenantId: user.tenantId,
+            organizationId: user.tenantId,
             name: options.opportunityName,
             customerId,
             contactId,
-            stageId: prepared.firstStage.id,
-            ownerId: lead.owner,
-            deptId: owner.deptId,
-            customData: prepared.opportunityCustomData as Prisma.InputJsonValue,
-            lastFollowedAt: lead.followTime ? new Date(Number(lead.followTime)) : null,
+            stage: prepared.firstStage.id,
+            owner: lead.owner,
+            products: lead.products,
+            follower: lead.follower,
+            followTime: lead.followTime,
+            createTime: now,
+            updateTime: now,
+            createUser: user.id,
+            updateUser: user.id,
+            pos: (currentPos._max.pos ?? 0n) + 1n,
           },
         })
+        await this.fieldValues.save(
+          user.tenantId,
+          'opportunity',
+          opportunity.id,
+          prepared.opportunityCustomData,
+          'create',
+          tx,
+        )
         opportunityId = opportunity.id
       }
 

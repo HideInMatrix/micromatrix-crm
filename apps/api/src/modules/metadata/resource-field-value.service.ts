@@ -14,14 +14,18 @@ import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ModuleFormsService } from './module-forms.service'
 
-export type ResourceFieldType = 'clue' | 'customer' | 'customerContact'
+export type ResourceFieldType = 'clue' | 'customer' | 'customerContact' | 'opportunity'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 interface ResourceConfig {
-  formKey: 'lead' | 'customer' | 'contact'
-  resourceTable: 'clue' | 'customer' | 'customer_contact'
-  normalTable: 'clue_field' | 'customer_field' | 'customer_contact_field'
-  blobTable: 'clue_field_blob' | 'customer_field_blob' | 'customer_contact_field_blob'
+  formKey: 'lead' | 'customer' | 'contact' | 'opportunity'
+  resourceTable: 'clue' | 'customer' | 'customer_contact' | 'opportunity'
+  normalTable: 'clue_field' | 'customer_field' | 'customer_contact_field' | 'opportunity_field'
+  blobTable:
+    | 'clue_field_blob'
+    | 'customer_field_blob'
+    | 'customer_contact_field_blob'
+    | 'opportunity_field_blob'
 }
 
 interface ValidatedFieldValue {
@@ -49,6 +53,12 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'customer_contact',
     normalTable: 'customer_contact_field',
     blobTable: 'customer_contact_field_blob',
+  },
+  opportunity: {
+    formKey: 'opportunity',
+    resourceTable: 'opportunity',
+    normalTable: 'opportunity_field',
+    blobTable: 'opportunity_field_blob',
   },
 }
 
@@ -418,8 +428,13 @@ export class ResourceFieldValueService {
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
-    else
+    else if (resourceType === 'customerContact')
       resource = await tx.customerContact.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else
+      resource = await tx.opportunity.findFirst({
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
@@ -451,11 +466,16 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.customerFieldBlob.findFirst({ where, select: { id: true } })
           : await client.customerField.findFirst({ where, select: { id: true } })
-    else
+    else if (resourceType === 'customerContact')
       repeated =
         item.storage === 'blob'
           ? await client.customerContactFieldBlob.findFirst({ where, select: { id: true } })
           : await client.customerContactField.findFirst({ where, select: { id: true } })
+    else
+      repeated =
+        item.storage === 'blob'
+          ? await client.opportunityFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.opportunityField.findFirst({ where, select: { id: true } })
     if (repeated) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
@@ -476,10 +496,15 @@ export class ResourceFieldValueService {
         tx.customerField.deleteMany({ where }),
         tx.customerFieldBlob.deleteMany({ where }),
       ])
-    else
+    else if (resourceType === 'customerContact')
       await Promise.all([
         tx.customerContactField.deleteMany({ where }),
         tx.customerContactFieldBlob.deleteMany({ where }),
+      ])
+    else
+      await Promise.all([
+        tx.opportunityField.deleteMany({ where }),
+        tx.opportunityFieldBlob.deleteMany({ where }),
       ])
   }
 
@@ -506,9 +531,12 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'customer') {
       if (normalData.length) await tx.customerField.createMany({ data: normalData })
       if (blobData.length) await tx.customerFieldBlob.createMany({ data: blobData })
-    } else {
+    } else if (resourceType === 'customerContact') {
       if (normalData.length) await tx.customerContactField.createMany({ data: normalData })
       if (blobData.length) await tx.customerContactFieldBlob.createMany({ data: blobData })
+    } else {
+      if (normalData.length) await tx.opportunityField.createMany({ data: normalData })
+      if (blobData.length) await tx.opportunityFieldBlob.createMany({ data: blobData })
     }
   }
 
@@ -535,9 +563,14 @@ export class ResourceFieldValueService {
         client.customerField.findMany({ where, select }),
         client.customerFieldBlob.findMany({ where, select }),
       ])
+    if (resourceType === 'customerContact')
+      return Promise.all([
+        client.customerContactField.findMany({ where, select }),
+        client.customerContactFieldBlob.findMany({ where, select }),
+      ])
     return Promise.all([
-      client.customerContactField.findMany({ where, select }),
-      client.customerContactFieldBlob.findMany({ where, select }),
+      client.opportunityField.findMany({ where, select }),
+      client.opportunityFieldBlob.findMany({ where, select }),
     ])
   }
 

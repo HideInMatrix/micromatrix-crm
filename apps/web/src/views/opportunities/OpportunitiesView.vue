@@ -2,25 +2,26 @@
 import {
   type HomeFilterPayload,
   isCustomFieldKey,
-  lineAmount,
   type FieldVO,
   type FilterCondition,
-  type LineItemVO,
   type OpportunityStageVO,
   type OpportunityVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import draggable from 'vuedraggable'
+import { productApi } from '@/api/deal'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { listCustomers } from '@/api/customers'
-import { opportunityApi } from '@/api/sales'
+import { contactApi, opportunityApi } from '@/api/sales'
+import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
-import LineItemsEditor from '@/components/LineItemsEditor.vue'
 import OpportunityDetailDrawer from '@/components/opportunities/OpportunityDetailDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
+import SavedViewBar from '@/components/SavedViewBar.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
@@ -35,6 +36,9 @@ const homeQuickCreate = useHomeQuickCreate()
 const viewMode = ref<'list' | 'kanban'>('list')
 const fields = ref<FieldVO[]>([])
 const stages = ref<OpportunityStageVO[]>([])
+const activeViewId = ref<string>()
+const selectedIds = ref<string[]>([])
+const visibleColumnKeys = ref<string[]>([])
 
 // 列表态
 const loading = ref(false)
@@ -54,36 +58,69 @@ const editingId = ref<string | null>(null)
 const saving = ref(false)
 const dynamicFormRef = ref<InstanceType<typeof DynamicForm>>()
 const formModel = ref<Record<string, unknown>>({})
-const formCustomerId = ref<string>()
-const lineItems = ref<LineItemVO[]>([])
 const customerOptions = ref<{ id: string; name: string }[]>([])
+const contactOptions = ref<{ id: string; name: string }[]>([])
+const productOptions = ref<{ id: string; name: string }[]>([])
+const businessForm = reactive({
+  name: '',
+  customerId: '',
+  contactId: '',
+  amount: null as number | null,
+  possible: null as number | null,
+  products: [] as string[],
+  owner: '',
+  expectedEndTime: null as string | number | null,
+})
 
 // 跟进 / 阶段
 const followVisible = ref(false)
 const followTarget = ref<OpportunityVO | null>(null)
 const stageVisible = ref(false)
 const stageTarget = ref<OpportunityVO | null>(null)
-const stageForm = reactive({ stageId: '', lostReason: '' })
+const stageForm = reactive({ stageId: '', failureReason: '' })
+const failureReasonEnabled = ref(false)
+const failureReasons = ref<DictionaryItemVO[]>([])
+const transferVisible = ref(false)
+const transferOwner = ref('')
 const detailVisible = ref(false)
 const detailOpportunityId = ref<string | null>(null)
 
-const listColumns = computed(() => fields.value.filter((f) => f.showInList && !f.hidden))
+const defaultColumnKeys = computed(() =>
+  fields.value.filter((f) => f.showInList && !f.hidden).map((f) => f.key),
+)
+const listColumns = computed(() => {
+  const allowed = visibleColumnKeys.value.length ? new Set(visibleColumnKeys.value) : null
+  return fields.value.filter(
+    (f) => f.showInList && !f.hidden && (!allowed || allowed.has(f.key)),
+  )
+})
+const customFormFields = computed(() => fields.value.filter((field) => !field.system))
 const selectedStage = computed(() => stages.value.find((s) => s.id === stageForm.stageId))
 
 async function loadMeta() {
-  const [{ data: fieldData }, { data: stageData }] = await Promise.all([
+  const [{ data: fieldData }, { data: stageData }, { data: reasonConfig }, { data: products }] = await Promise.all([
     metadataApi.fields('opportunity'),
     opportunityApi.stages(),
+    dictionaryApi.config('OPPORTUNITY_FAIL_RS'),
+    productApi.list({ page: 1, pageSize: 100, status: 'ON' }),
   ])
   fields.value = fieldData
   stages.value = stageData
+  failureReasonEnabled.value = reasonConfig.enable
+  failureReasons.value = reasonConfig.dictList.filter((item) => item.id !== 'system')
+  productOptions.value = products.items.map((item) => ({ id: item.id, name: item.name }))
 }
 
 async function loadData() {
   loading.value = true
   try {
     if (viewMode.value === 'kanban') {
-      const { data } = await opportunityApi.kanban()
+      const { data } = await opportunityApi.kanban({
+        keyword: query.keyword.trim() || undefined,
+        viewId: activeViewId.value,
+        filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+        homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
+      })
       kanbanStages.value = data.stages
       kanbanItems.value = data.items
     } else {
@@ -92,6 +129,7 @@ async function loadData() {
         pageSize: query.pageSize,
         keyword: query.keyword.trim() || undefined,
         stageId: query.stageId || undefined,
+        viewId: activeViewId.value,
         filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
         homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
       })
@@ -110,30 +148,61 @@ async function searchCustomers(keyword: string) {
   customerOptions.value = data.items.map((c) => ({ id: c.id, name: c.name }))
 }
 
+async function loadContacts(customerId?: string) {
+  contactOptions.value = []
+  if (!customerId) return
+  try {
+    const { data } = await contactApi.list(customerId)
+    contactOptions.value = data.map((contact) => ({ id: contact.id, name: contact.name }))
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function resetBusinessForm() {
+  Object.assign(businessForm, {
+    name: '',
+    customerId: '',
+    contactId: '',
+    amount: null,
+    possible: null,
+    products: [],
+    owner: auth.user?.id ?? '',
+    expectedEndTime: null,
+  })
+  formModel.value = {}
+}
+
 function openCreate() {
   editingId.value = null
-  formModel.value = {}
-  formCustomerId.value = undefined
-  lineItems.value = []
+  resetBusinessForm()
   searchCustomers('')
   dialogVisible.value = true
 }
 
 async function openEdit(row: OpportunityVO) {
   editingId.value = row.id
-  formCustomerId.value = row.customerId
-  customerOptions.value = [{ id: row.customerId, name: row.customerName ?? '' }]
+  resetBusinessForm()
+  if (row.customerId) customerOptions.value = [{ id: row.customerId, name: row.customerName ?? '' }]
   try {
     const { data } = await opportunityApi.get(row.id)
-    lineItems.value = (data.items ?? []).map((item) => ({ ...item }))
+    Object.assign(businessForm, {
+      name: data.name,
+      customerId: data.customerId ?? '',
+      contactId: data.contactId ?? '',
+      amount: data.amount,
+      possible: data.possible ?? null,
+      products: data.products ?? [],
+      owner: data.owner ?? data.ownerId ?? '',
+      expectedEndTime: data.expectedEndTime ?? null,
+    })
+    await loadContacts(data.customerId || undefined)
     formModel.value = Object.fromEntries(
-      fields.value
+      customFormFields.value
         .filter((f) => f.type !== 'formula')
         .map((f) => [
           f.key,
-          isCustomFieldKey(f.key)
-            ? data.customData[f.key]
-            : (data as unknown as Record<string, unknown>)[f.key],
+          isCustomFieldKey(f.key) ? data.customData[f.key] : undefined,
         ]),
     )
   } catch (error) {
@@ -144,10 +213,7 @@ async function openEdit(row: OpportunityVO) {
 }
 
 async function handleSave() {
-  if (!formCustomerId.value) {
-    ElMessage.warning('请选择关联客户')
-    return
-  }
+  if (!businessForm.name.trim()) return ElMessage.warning('请输入商机名称')
   const valid = await dynamicFormRef.value?.validate()
   if (!valid) return
   const isCreate = !editingId.value
@@ -155,8 +221,14 @@ async function handleSave() {
   try {
     const payload: Record<string, unknown> = {
       customData: {},
-      customerId: formCustomerId.value,
-      items: lineItems.value.filter((i) => i.productName),
+      name: businessForm.name.trim(),
+      customerId: businessForm.customerId || undefined,
+      contactId: businessForm.contactId || undefined,
+      amount: businessForm.amount,
+      possible: businessForm.possible,
+      products: businessForm.products,
+      owner: businessForm.owner || undefined,
+      expectedEndTime: businessForm.expectedEndTime ? Number(businessForm.expectedEndTime) : undefined,
     }
     for (const [key, value] of Object.entries(formModel.value)) {
       if (value === undefined || value === '') continue
@@ -197,21 +269,21 @@ async function handleDelete(row: OpportunityVO) {
 function openStageChange(row: OpportunityVO) {
   stageTarget.value = row
   stageForm.stageId = row.stageId
-  stageForm.lostReason = ''
+  stageForm.failureReason = ''
   stageVisible.value = true
 }
 
 async function handleStageChange() {
   if (!stageTarget.value) return
-  if (selectedStage.value?.isLost && !stageForm.lostReason.trim()) {
-    ElMessage.warning('请填写输单原因')
+  if (selectedStage.value?.isLost && failureReasonEnabled.value && !stageForm.failureReason) {
+    ElMessage.warning('请选择失败原因')
     return
   }
   try {
     await opportunityApi.changeStage(
       stageTarget.value.id,
       stageForm.stageId,
-      stageForm.lostReason || undefined,
+      stageForm.failureReason || undefined,
     )
     ElMessage.success('阶段已更新')
     stageVisible.value = false
@@ -239,16 +311,73 @@ function openDetail(id: string) {
   detailVisible.value = true
 }
 
-watch(
-  lineItems,
-  () => {
-    const named = lineItems.value.filter((i) => i.productName)
-    if (named.length === 0) return
-    formModel.value.amount =
-      Math.round(named.reduce((sum, i) => sum + lineAmount(i), 0) * 100) / 100
-  },
-  { deep: true },
-)
+function handleSelectionChange(rows: OpportunityVO[]) {
+  selectedIds.value = rows.map((row) => row.id)
+}
+
+function openBatchTransfer() {
+  if (!selectedIds.value.length) return
+  transferOwner.value = ''
+  transferVisible.value = true
+}
+
+async function handleBatchTransfer() {
+  if (!transferOwner.value) return ElMessage.warning('请选择负责人')
+  try {
+    await opportunityApi.batchTransfer(selectedIds.value, transferOwner.value)
+    ElMessage.success('商机已批量转移')
+    transferVisible.value = false
+    selectedIds.value = []
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBatchDelete() {
+  if (!selectedIds.value.length) return
+  const ok = await ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.length} 个商机吗？`, '批量删除', { type: 'warning' }).catch(() => false)
+  if (!ok) return
+  try {
+    await opportunityApi.batchDelete(selectedIds.value)
+    ElMessage.success('商机已批量删除')
+    selectedIds.value = []
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBoardChange(stageId: string, event: { added?: { element: OpportunityVO } }) {
+  const opportunity = event.added?.element
+  if (!opportunity || opportunity.stageId === stageId) return
+  const target = stages.value.find((stage) => stage.id === stageId)
+  if (target?.isLost && failureReasonEnabled.value) {
+    await loadData()
+    stageTarget.value = opportunity
+    stageForm.stageId = stageId
+    stageForm.failureReason = ''
+    stageVisible.value = true
+    return
+  }
+  try {
+    await opportunityApi.changeStage(opportunity.id, stageId)
+    ElMessage.success('商机阶段已更新')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await loadData()
+  }
+}
+
+function onSavedViewChange(viewId?: string) {
+  activeViewId.value = viewId
+  query.page = 1
+  void loadData()
+}
+
+function onColumnsChange(keys: string[]) {
+  visibleColumnKeys.value = keys
+}
 
 const homeFilterSummary = computed(() => {
   if (!activeHomeFilter.value) return ''
@@ -295,13 +424,20 @@ async function consumeRouteHomeFilter() {
   query.page = 1
 }
 
+watch(
+  () => route.query.id,
+  (value) => {
+    const id = typeof value === 'string' ? value : ''
+    if (id) openDetail(id)
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   await consumeRouteHomeFilter()
   await Promise.all([loadMeta(), fieldRefs.load()])
   await homeQuickCreate.consume(openCreate)
   await loadData()
-  const id = typeof route.query.id === 'string' ? route.query.id : ''
-  if (id) openDetail(id)
 })
 </script>
 
@@ -314,6 +450,18 @@ onMounted(async () => {
       show-icon
       class="mb-4"
       @close="clearHomeFilter"
+    />
+
+    <SavedViewBar
+      module="opportunity"
+      :fields="fields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+      :current-filters="filters"
+      :default-column-keys="defaultColumnKeys"
+      @change="onSavedViewChange"
+      @clear-filters="((filters = []), (query.page = 1), loadData())"
+      @columns-change="onColumnsChange"
     />
 
     <div class="flex-between flex-wrap gap-3 mb-4">
@@ -348,14 +496,21 @@ onMounted(async () => {
           />
         </template>
       </div>
-      <el-button v-if="auth.hasPerm('opportunity:create')" type="primary" @click="openCreate">
-        新建商机
-      </el-button>
+      <div class="flex items-center gap-2">
+        <template v-if="viewMode === 'list' && selectedIds.length">
+          <el-button v-if="auth.hasPerm('opportunity:update')" @click="openBatchTransfer">批量转移</el-button>
+          <el-button v-if="auth.hasPerm('opportunity:delete')" type="danger" plain @click="handleBatchDelete">批量删除</el-button>
+        </template>
+        <el-button v-if="auth.hasPerm('opportunity:create')" type="primary" @click="openCreate">
+          新建商机
+        </el-button>
+      </div>
     </div>
 
     <!-- 列表视图 -->
     <template v-if="viewMode === 'list'">
-      <el-table v-loading="loading" :data="items" stripe class="w-full">
+      <el-table v-loading="loading" :data="items" stripe class="w-full" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="48" />
         <el-table-column
           v-for="column in listColumns"
           :key="column.key"
@@ -446,25 +601,32 @@ onMounted(async () => {
             {{ stage.count }} 个 · ¥{{ (stage.amountSum ?? 0).toLocaleString('zh-CN') }}
           </span>
         </div>
-        <div class="space-y-2 min-h-24 max-h-[60vh] overflow-y-auto">
-          <div
-            v-for="opportunity in kanbanItems[stage.id] ?? []"
-            :key="opportunity.id"
-            class="rounded bg-[var(--el-bg-color)] p-3 shadow-sm cursor-pointer hover:shadow"
-            @click="openStageChange(opportunity)"
-          >
-            <div class="text-sm font-medium truncate">{{ opportunity.name }}</div>
-            <div class="text-xs text-[var(--el-text-color-secondary)] mt-1 truncate">
-              {{ opportunity.customerName }}
+        <draggable
+          :list="kanbanItems[stage.id] ?? []"
+          item-key="id"
+          group="opportunity-board"
+          data-testid="opportunity-board-column"
+          class="space-y-2 min-h-24 max-h-[60vh] overflow-y-auto"
+          @change="handleBoardChange(stage.id, $event)"
+        >
+          <template #item="{ element: opportunity }">
+            <div
+              class="rounded bg-[var(--el-bg-color)] p-3 shadow-sm cursor-pointer hover:shadow"
+              @click="openDetail(opportunity.id)"
+            >
+              <div class="text-sm font-medium truncate">{{ opportunity.name }}</div>
+              <div class="text-xs text-[var(--el-text-color-secondary)] mt-1 truncate">
+                {{ opportunity.customerName || '-' }}
+              </div>
+              <div class="flex-between mt-2">
+                <span class="text-xs">{{ formatAmount(opportunity.amount) }}</span>
+                <span class="text-xs text-[var(--el-text-color-secondary)]">
+                  {{ opportunity.ownerName ?? '-' }}
+                </span>
+              </div>
             </div>
-            <div class="flex-between mt-2">
-              <span class="text-xs">{{ formatAmount(opportunity.amount) }}</span>
-              <span class="text-xs text-[var(--el-text-color-secondary)]">
-                {{ opportunity.ownerName ?? '-' }}
-              </span>
-            </div>
-          </div>
-        </div>
+          </template>
+        </draggable>
       </div>
     </div>
 
@@ -476,28 +638,57 @@ onMounted(async () => {
       destroy-on-close
     >
       <el-form label-position="top">
-        <el-form-item label="关联客户" required>
-          <el-select
-            v-model="formCustomerId"
-            filterable
-            remote
-            :remote-method="searchCustomers"
-            placeholder="搜索并选择客户"
-            class="w-full"
-          >
-            <el-option v-for="c in customerOptions" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
+        <div class="grid grid-cols-2 gap-x-4">
+          <el-form-item label="商机名称" required>
+            <el-input v-model="businessForm.name" maxlength="255" />
+          </el-form-item>
+          <el-form-item label="负责人" required>
+            <el-select v-model="businessForm.owner" filterable class="w-full">
+              <el-option v-for="member in fieldRefs.members.value" :key="member.id" :label="member.name" :value="member.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="关联客户">
+            <el-select
+              v-model="businessForm.customerId"
+              filterable
+              remote
+              clearable
+              :remote-method="searchCustomers"
+              placeholder="搜索并选择客户"
+              class="w-full"
+              @change="((businessForm.contactId = ''), loadContacts(businessForm.customerId || undefined))"
+            >
+              <el-option v-for="c in customerOptions" :key="c.id" :label="c.name" :value="c.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="联系人">
+            <el-select v-model="businessForm.contactId" clearable filterable :disabled="!businessForm.customerId" class="w-full">
+              <el-option v-for="contact in contactOptions" :key="contact.id" :label="contact.name" :value="contact.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="商机金额">
+            <el-input-number v-model="businessForm.amount" :min="0" :precision="2" class="!w-full" />
+          </el-form-item>
+          <el-form-item label="可能性">
+            <el-input-number v-model="businessForm.possible" :min="0" :max="100" :precision="2" class="!w-full" />
+          </el-form-item>
+          <el-form-item label="意向产品">
+            <el-select v-model="businessForm.products" multiple filterable clearable class="w-full">
+              <el-option v-for="product in productOptions" :key="product.id" :label="product.name" :value="product.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="结束时间">
+            <el-date-picker v-model="businessForm.expectedEndTime" type="date" value-format="x" clearable class="!w-full" />
+          </el-form-item>
+        </div>
       </el-form>
       <DynamicForm
         ref="dynamicFormRef"
         v-model="formModel"
-        :fields="fields"
+        :fields="customFormFields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
       />
-      <el-divider content-position="left">产品明细</el-divider>
-      <LineItemsEditor v-model="lineItems" />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
@@ -521,13 +712,34 @@ onMounted(async () => {
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="selectedStage?.isLost" label="输单原因">
-          <el-input v-model="stageForm.lostReason" type="textarea" :rows="3" />
+        <el-form-item v-if="selectedStage?.isLost && failureReasonEnabled" label="失败原因">
+          <el-select v-model="stageForm.failureReason" class="w-full" placeholder="请选择失败原因">
+            <el-option v-for="reason in failureReasons" :key="reason.id" :label="reason.name" :value="reason.id" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="stageVisible = false">取消</el-button>
         <el-button type="primary" @click="handleStageChange">确认</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="transferVisible" title="批量转移商机" width="420px">
+      <el-form label-width="80px">
+        <el-form-item label="负责人" required>
+          <el-select v-model="transferOwner" filterable class="w-full">
+            <el-option
+              v-for="member in fieldRefs.members.value"
+              :key="member.id"
+              :label="member.name"
+              :value="member.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleBatchTransfer">确认转移</el-button>
       </template>
     </el-dialog>
 

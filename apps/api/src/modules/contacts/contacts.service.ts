@@ -430,7 +430,7 @@ export class ContactsService {
   async checkOpportunity(user: AuthUser, id: string): Promise<{ linked: boolean; count: number }> {
     await this.ensureReadable(user, id)
     const count = await this.prisma.opportunity.count({
-      where: { tenantId: user.tenantId, contactId: id },
+      where: { organizationId: user.tenantId, contactId: id },
     })
     return { linked: count > 0, count }
   }
@@ -443,7 +443,7 @@ export class ContactsService {
       this.pickPermission(user, 'contact:delete', 'customer:delete'),
     )
     const linked = await this.prisma.opportunity.count({
-      where: { tenantId: user.tenantId, contactId: id },
+      where: { organizationId: user.tenantId, contactId: id },
     })
     if (linked > 0) throw new BadRequestException('联系人已关联商机，请先在商机中解除联系人关联')
     await this.prisma.$transaction(async (tx) => {

@@ -182,21 +182,41 @@ export class QuotesService {
     if (items && items.length > 0) return items
     if (!opportunityId) throw new BadRequestException('至少添加一行明细')
     const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id: opportunityId, tenantId: user.tenantId },
-      include: { items: { orderBy: { sort: 'asc' } } },
+      where: { id: opportunityId, organizationId: user.tenantId },
     })
     if (!opportunity) throw new BadRequestException('关联商机不存在')
     if (opportunity.customerId !== customerId) throw new BadRequestException('商机与客户不匹配')
-    if (opportunity.items.length === 0)
-      throw new BadRequestException('该商机没有产品明细，请手动添加')
-    return opportunity.items.map((item) => ({
-      productId: item.productId ?? undefined,
-      productName: item.productName,
-      unit: item.unit ?? undefined,
-      quantity: Number(item.quantity),
-      unitPrice: Number(item.unitPrice),
-      discount: Number(item.discount),
-    }))
+    const productIds = this.parseOpportunityProductIds(opportunity.products)
+    if (!productIds.length) throw new BadRequestException('该商机没有意向产品，请手动添加')
+    const products = await this.prisma.product.findMany({
+      where: { tenantId: user.tenantId, id: { in: productIds } },
+    })
+    const productMap = new Map(products.map((product) => [product.id, product]))
+    return productIds.flatMap((productId) => {
+      const product = productMap.get(productId)
+      if (!product) return []
+      return [
+        {
+          productId: product.id,
+          productName: product.name,
+          unit: product.unit ?? undefined,
+          quantity: 1,
+          unitPrice: Number(product.price),
+          discount: 100,
+        },
+      ]
+    })
+  }
+
+  private parseOpportunityProductIds(value: string | null): string[] {
+    try {
+      const parsed: unknown = value ? JSON.parse(value) : []
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : []
+    } catch {
+      return []
+    }
   }
 
   private async ensureCustomer(user: AuthUser, customerId: string) {

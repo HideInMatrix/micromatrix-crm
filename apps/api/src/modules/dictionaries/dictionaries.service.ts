@@ -169,11 +169,17 @@ export class DictionariesService {
       where: { module_organizationId: { module, organizationId } },
     })
     if (!config?.enabled) return null
-    if (!reasonId || reasonId === 'system') throw new BadRequestException('请选择移入线索池原因')
+    const label =
+      module === 'OPPORTUNITY_FAIL_RS'
+        ? '商机失败原因'
+        : module === 'CUSTOMER_POOL_RS'
+          ? '移入客户公海原因'
+          : '移入线索池原因'
+    if (!reasonId || reasonId === 'system') throw new BadRequestException(`请选择${label}`)
     const reason = await this.prisma.sysDict.findFirst({
       where: { id: reasonId, organizationId, module },
     })
-    if (!reason) throw new BadRequestException('移入线索池原因不存在或已删除')
+    if (!reason) throw new BadRequestException(`${label}不存在或已删除`)
     return reason
   }
 

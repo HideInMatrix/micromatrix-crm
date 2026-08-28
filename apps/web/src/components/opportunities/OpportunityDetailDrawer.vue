@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import type { FollowUpVO, OpportunityVO } from '@micromatrix/shared'
-import { ref, watch } from 'vue'
+import type { ContactVO, FieldVO, FollowUpVO, OpportunityVO } from '@micromatrix/shared'
+import { computed, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
+import { metadataApi } from '@/api/metadata'
 import { followUpApi, opportunityApi } from '@/api/sales'
+import { formatFieldValue } from '@/components/form-engine/field-display'
+import { useFieldRefs } from '@/composables/useFieldRefs'
 
 const props = defineProps<{ opportunityId: string | null }>()
 const visible = defineModel<boolean>({ required: true })
@@ -11,17 +14,26 @@ const loading = ref(false)
 const activeTab = ref('info')
 const detail = ref<OpportunityVO | null>(null)
 const records = ref<FollowUpVO[]>([])
+const contacts = ref<ContactVO[]>([])
+const fields = ref<FieldVO[]>([])
+const fieldRefs = useFieldRefs()
+const customFields = computed(() => fields.value.filter((field) => !field.system && !field.hidden))
 
 async function load() {
   if (!props.opportunityId) return
   loading.value = true
   try {
-    const [{ data: opportunity }, { data: followRecords }] = await Promise.all([
+    const [{ data: opportunity }, { data: followRecords }, { data: contactResult }, { data: fieldRows }] = await Promise.all([
       opportunityApi.get(props.opportunityId),
       followUpApi.list('opportunity', props.opportunityId),
+      opportunityApi.contacts(props.opportunityId),
+      metadataApi.fields('opportunity'),
+      fieldRefs.load(),
     ])
     detail.value = opportunity
     records.value = followRecords
+    contacts.value = contactResult.list
+    fields.value = fieldRows
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
     visible.value = false
@@ -38,6 +50,7 @@ watch(
       load()
     }
   },
+  { immediate: true },
 )
 </script>
 
@@ -47,6 +60,7 @@ watch(
     :title="detail?.name ?? '商机详情'"
     size="82%"
     destroy-on-close
+    data-testid="opportunity-detail-drawer"
   >
     <div v-loading="loading" class="h-full">
       <el-tabs v-model="activeTab" class="h-full">
@@ -62,23 +76,35 @@ watch(
                 <el-descriptions-item label="预计金额">
                   {{ detail.amount === null ? '-' : `¥${Number(detail.amount).toLocaleString('zh-CN')}` }}
                 </el-descriptions-item>
-                <el-descriptions-item label="预计成交日期">
+                <el-descriptions-item label="可能性">{{ detail.possible == null ? '-' : `${detail.possible}%` }}</el-descriptions-item>
+                <el-descriptions-item label="结束时间">
                   {{ detail.expectedCloseAt?.slice(0, 10) ?? '-' }}
                 </el-descriptions-item>
-                <el-descriptions-item label="备注" :span="2">{{ detail.remark ?? '-' }}</el-descriptions-item>
+                <el-descriptions-item label="失败原因">{{ detail.failureReason ?? '-' }}</el-descriptions-item>
+                <el-descriptions-item label="最近跟进时间">{{ detail.followTime ? new Date(detail.followTime).toLocaleString() : '-' }}</el-descriptions-item>
+              </el-descriptions>
+            </el-card>
+            <el-card v-if="customFields.length" shadow="never">
+              <template #header><span>自定义字段</span></template>
+              <el-descriptions :column="3" border>
+                <el-descriptions-item v-for="field in customFields" :key="field.id" :label="field.label">
+                  {{ formatFieldValue(field, detail as unknown as Record<string, unknown>, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}
+                </el-descriptions-item>
               </el-descriptions>
             </el-card>
           </div>
         </el-tab-pane>
 
         <el-tab-pane label="联系人" name="contact">
-          <el-empty v-if="!detail?.contactId" description="暂无关联联系人" />
-          <el-card v-else shadow="never">
-            <el-descriptions :column="2" border>
-              <el-descriptions-item label="联系人">{{ detail.contactName ?? '-' }}</el-descriptions-item>
-              <el-descriptions-item label="联系人 ID">{{ detail.contactId }}</el-descriptions-item>
-            </el-descriptions>
-          </el-card>
+          <el-empty v-if="contacts.length === 0" description="暂无联系人" />
+          <el-table v-else :data="contacts" border>
+            <el-table-column prop="name" label="联系人" min-width="160" />
+            <el-table-column prop="phone" label="电话" min-width="160" />
+            <el-table-column prop="ownerName" label="负责人" min-width="120" />
+            <el-table-column label="当前关联" width="100">
+              <template #default="{ row }"><el-tag v-if="row.id === detail?.contactId" type="primary" size="small">当前</el-tag></template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
 
         <el-tab-pane label="跟进记录" name="record">

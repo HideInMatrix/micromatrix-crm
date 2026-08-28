@@ -169,6 +169,94 @@ export const dictionaryApi = {
     http.post<DictionaryItemVO[]>('/dict/sort', { start, end, dragDictId }),
 }
 
+// ===== 商机阶段设置 =====
+
+export interface OpportunityStageConfigItemVO {
+  id: string
+  name: string
+  type: 'AFOOT' | 'END'
+  rate: string
+  afootRollBack?: boolean
+  endRollBack?: boolean
+  pos: number
+  stageHasData?: boolean
+}
+
+export interface OpportunityStageConfigVO {
+  stageConfigList: OpportunityStageConfigItemVO[]
+  afootRollBack: boolean
+  endRollBack: boolean
+}
+
+export const opportunityStageSettingsApi = {
+  get: () => http.get<OpportunityStageConfigVO>('/opportunity/stage/get'),
+  add: (data: {
+    name: string
+    type: 'AFOOT' | 'END'
+    rate: string
+    dropPosition: number
+    targetId?: string
+  }) => http.post<string>('/opportunity/stage/add', data),
+  update: (data: { id: string; name?: string; rate?: string }) =>
+    http.post('/opportunity/stage/update', data),
+  remove: (id: string) => http.get(`/opportunity/stage/delete/${id}`),
+  updateRollback: (data: { afootRollBack?: boolean; endRollBack?: boolean }) =>
+    http.post('/opportunity/stage/update-rollback', data),
+  sort: (ids: string[]) => http.post('/opportunity/stage/sort', ids),
+}
+
+// ===== 商机关闭规则 =====
+
+export interface OpportunityRuleConditionVO {
+  column: 'createTime' | 'opportunityStage'
+  operator: 'FIXED' | 'DYNAMICS' | 'IN' | 'NOT_IN'
+  value: string
+  scope?: string[]
+}
+
+export interface OpportunityRuleVO {
+  id: string
+  name: string
+  organizationId: string
+  ownerId: string
+  scopeId: string
+  enable: boolean
+  auto: boolean
+  operator: 'AND' | 'OR' | null
+  condition: string | null
+  createTime: number
+  updateTime: number
+  createUser: string
+  updateUser: string
+  members: Array<{ id: string; name: string }>
+  owners: Array<{ id: string; name: string }>
+  createUserName: string | null
+  updateUserName: string | null
+}
+
+export interface OpportunityRulePayload {
+  name: string
+  scopeIds: string[]
+  ownerIds: string[]
+  enable: boolean
+  auto: boolean
+  operator: 'AND' | 'OR'
+  conditions: OpportunityRuleConditionVO[]
+}
+
+export const opportunityRuleApi = {
+  page: (current = 1, pageSize = 100, keyword?: string) =>
+    http.post<{ list: OpportunityRuleVO[]; total: number; current: number; pageSize: number }>(
+      '/opportunity-rule/page',
+      { current, pageSize, keyword },
+    ),
+  add: (data: OpportunityRulePayload) => http.post<OpportunityRuleVO>('/opportunity-rule/add', data),
+  update: (id: string, data: OpportunityRulePayload) =>
+    http.post<OpportunityRuleVO>('/opportunity-rule/update', { id, ...data }),
+  remove: (id: string) => http.get(`/opportunity-rule/delete/${id}`),
+  toggle: (id: string) => http.get(`/opportunity-rule/switch/${id}`),
+}
+
 // ===== 日志 =====
 
 export const logApi = {

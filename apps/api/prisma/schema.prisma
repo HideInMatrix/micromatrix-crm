@@ -756,91 +756,111 @@ model FollowUpPlan {
   @@map("follow_up_plans")
 }
 
-// ============ 商机（可配置阶段） ============
+// ============ Cordys 商机直接模型 ============
 
-model OpportunityStage {
-  id          String  @id @default(cuid())
-  tenantId    String
-  name        String
-  // 赢率（0-100），用于漏斗与预测
-  probability Int     @default(0)
-  sort        Int     @default(0)
-  // 结果阶段：赢单/输单（系统内置，不可删除）
-  isWon       Boolean @default(false)
-  isLost      Boolean @default(false)
-  system      Boolean @default(false)
+model OpportunityStageConfig {
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  name           String  @db.VarChar(16)
+  type           String  @db.VarChar(50)
+  rate           String  @db.VarChar(10)
+  afootRollBack  Boolean @default(false) @map("afoot_roll_back")
+  endRollBack    Boolean @default(false) @map("end_roll_back")
+  pos            BigInt
+  organizationId String  @map("organization_id") @db.VarChar(32)
+  createTime     BigInt  @map("create_time")
+  updateTime     BigInt  @map("update_time")
+  createUser     String  @map("create_user") @db.VarChar(32)
+  updateUser     String  @map("update_user") @db.VarChar(32)
 
   opportunities Opportunity[]
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
-  @@map("opportunity_stages")
+  @@index([organizationId])
+  @@index([organizationId, pos])
+  @@map("opportunity_stage_config")
 }
 
 model Opportunity {
-  id              String    @id @default(cuid())
-  tenantId        String
-  name            String
-  customerId      String
-  contactId       String?
-  stageId         String
-  amount          Decimal?  @db.Decimal(14, 2)
-  expectedCloseAt DateTime?
-  lostReason      String?
-  remark          String?
-  ownerId         String?
-  deptId          String?
-  customData      Json?
-  wonAt           DateTime?
-  lostAt          DateTime?
-  lastFollowedAt  DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id              String   @id @default(cuid()) @db.VarChar(32)
+  customerId      String?  @map("customer_id") @db.VarChar(32)
+  name            String   @db.VarChar(255)
+  amount          Decimal? @db.Decimal(20, 10)
+  possible        Decimal? @db.Decimal(20, 10)
+  // Cordys ListTypeHandler 将产品 ID 数组序列化为 JSON 文本写入 varchar(1000)。
+  products        String?  @db.VarChar(1000)
+  organizationId  String   @map("organization_id") @db.VarChar(32)
+  lastStage       String?  @map("last_stage") @db.VarChar(32)
+  stage           String   @db.VarChar(32)
+  contactId       String?  @map("contact_id") @db.VarChar(32)
+  owner           String   @db.VarChar(32)
+  updateUser      String   @map("update_user") @db.VarChar(32)
+  createTime      BigInt   @map("create_time")
+  updateTime      BigInt   @map("update_time")
+  createUser      String   @map("create_user") @db.VarChar(32)
+  follower        String?  @db.VarChar(32)
+  followTime      BigInt?  @map("follow_time")
+  expectedEndTime BigInt?  @map("expected_end_time")
+  actualEndTime   BigInt?  @map("actual_end_time")
+  failureReason   String?  @map("failure_reason") @db.VarChar(50)
+  pos             BigInt?
 
-  customer  Customer              @relation(fields: [customerId], references: [id])
-  contact   CustomerContact?      @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  stage     OpportunityStage      @relation(fields: [stageId], references: [id])
-  stageLogs OpportunityStageLog[]
-  items     OpportunityItem[]
+  customer        Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  contact         CustomerContact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  stageConfig     OpportunityStageConfig @relation(fields: [stage], references: [id])
+  fieldValues     OpportunityField[]
+  fieldBlobValues OpportunityFieldBlob[]
 
-  @@index([tenantId, stageId])
-  @@index([tenantId, deptId])
-  @@index([tenantId, customerId])
-  @@index([tenantId, contactId])
-  @@map("opportunities")
+  @@index([customerId])
+  @@index([organizationId])
+  @@index([stage])
+  @@index([owner])
+  @@index([follower])
+  @@index([followTime])
+  @@map("opportunity")
 }
 
-model OpportunityStageLog {
-  id            String   @id @default(cuid())
-  tenantId      String
-  opportunityId String
-  fromStageName String?
-  toStageName   String
-  userName      String
-  createdAt     DateTime @default(now())
+model OpportunityField {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id") @db.VarChar(32)
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.VarChar(255)
 
-  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  resource Opportunity @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@index([opportunityId])
-  @@map("opportunity_stage_logs")
+  @@unique([resourceId, fieldId])
+  @@index([resourceId, fieldId, fieldValue])
+  @@map("opportunity_field")
 }
 
-model OpportunityItem {
-  id            String  @id @default(cuid())
-  opportunityId String
-  productId     String?
-  productName   String
-  unit          String?
-  quantity      Decimal @default(1) @db.Decimal(14, 2)
-  unitPrice     Decimal @default(0) @db.Decimal(14, 2)
-  discount      Decimal @default(100) @db.Decimal(5, 2)
-  amount        Decimal @default(0) @db.Decimal(14, 2)
-  sort          Int     @default(0)
+model OpportunityFieldBlob {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id") @db.VarChar(32)
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.Text
 
-  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  resource Opportunity @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@index([opportunityId])
-  @@map("opportunity_items")
+  @@unique([resourceId, fieldId])
+  @@index([resourceId])
+  @@map("opportunity_field_blob")
+}
+
+model OpportunityRule {
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  name           String  @db.VarChar(255)
+  organizationId String  @map("organization_id") @db.VarChar(32)
+  ownerId        String  @map("owner_id") @db.Text
+  scopeId        String  @map("scope_id") @db.Text
+  enable         Boolean @default(true)
+  auto           Boolean @default(false)
+  operator       String? @db.VarChar(10)
+  condition      String? @db.Text
+  createTime     BigInt  @map("create_time")
+  updateTime     BigInt  @map("update_time")
+  createUser     String  @map("create_user") @db.VarChar(32)
+  updateUser     String  @map("update_user") @db.VarChar(32)
+
+  @@index([organizationId])
+  @@map("opportunity_rule")
 }
 
 // ============ 产品 ============

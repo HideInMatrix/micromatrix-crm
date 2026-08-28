@@ -4,6 +4,7 @@ export const USER_VIEW_RESOURCE_TYPES = {
   customer: 'CUSTOMER',
   contact: 'CUSTOMER_CONTACT',
   customer_pool: 'CUSTOMER_POOL',
+  opportunity: 'OPPORTUNITY',
 } as const
 
 export type UserViewModule = keyof typeof USER_VIEW_RESOURCE_TYPES
@@ -29,5 +30,11 @@ export const USER_VIEW_RESOURCE_ROUTES: Array<{
     resourceType: 'CUSTOMER_POOL',
     path: 'pool/account/view',
     label: '客户公海视图',
+  },
+  {
+    module: 'opportunity',
+    resourceType: 'OPPORTUNITY',
+    path: 'opportunity/view',
+    label: '商机视图',
   },
 ]

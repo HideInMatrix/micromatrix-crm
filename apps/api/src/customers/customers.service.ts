@@ -566,7 +566,7 @@ export class CustomersService {
       name
         ? this.prisma.opportunity.findMany({
             where: {
-              tenantId: user.tenantId,
+              organizationId: user.tenantId,
               name: { contains: name, mode: 'insensitive' },
             },
             include: { customer: { select: { name: true } } },
@@ -594,7 +594,7 @@ export class CustomersService {
           ...customers.map((customer) => customer.owner),
           ...contacts.map((contact) => contact.customer?.owner),
           ...leads.map((lead) => lead.owner),
-          ...opportunities.map((o) => o.ownerId),
+          ...opportunities.map((o) => o.owner),
         ]),
         this.fieldValues.load(
           user.tenantId,
@@ -646,9 +646,9 @@ export class CustomersService {
       hits.push({
         id: row.id,
         source: 'opportunity',
-        name: inScope ? `${row.name}（${row.customer.name}）` : null,
+        name: inScope ? `${row.name}${row.customer ? `（${row.customer.name}）` : ''}` : null,
         phone: null,
-        ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+        ownerName: ownerMap.get(row.owner) ?? null,
         inSea: false,
         inScope,
       })
@@ -675,7 +675,7 @@ export class CustomersService {
     const canReadTeam = !isOpenSea && access.collaborationType === null
     const [opportunityScope, contractScope] = await Promise.all([
       canReadOpportunities
-        ? this.dataScope.scopeFilter(user, 'menu:opportunity')
+        ? this.dataScope.directOwnerFilter(user, 'menu:opportunity')
         : Promise.resolve(null),
       canReadContracts ? this.dataScope.scopeFilter(user, 'menu:contract') : Promise.resolve(null),
     ])
@@ -689,12 +689,12 @@ export class CustomersService {
       canReadOpportunities
         ? this.prisma.opportunity.findMany({
             where: {
-              tenantId: user.tenantId,
+              organizationId: user.tenantId,
               customerId: id,
               AND: [opportunityScope as Prisma.OpportunityWhereInput],
             },
-            include: { stage: true },
-            orderBy: { createdAt: 'desc' },
+            include: { stageConfig: true },
+            orderBy: { createTime: 'desc' },
             take: 50,
           })
         : Promise.resolve([]),
@@ -726,7 +726,7 @@ export class CustomersService {
     ])
 
     const [ownerMap, attachMap] = await Promise.all([
-      this.userNames([...opportunities.map((o) => o.ownerId), ...team.map((m) => m.userId)]),
+      this.userNames([...opportunities.map((o) => o.owner), ...team.map((m) => m.userId)]),
       this.attachmentMap(
         user.tenantId,
         'follow-up',
@@ -769,9 +769,9 @@ export class CustomersService {
         id: o.id,
         name: o.name,
         amount: o.amount ? Number(o.amount) : null,
-        stageName: o.stage.name,
-        ownerName: o.ownerId ? (ownerMap.get(o.ownerId) ?? null) : null,
-        createdAt: o.createdAt.toISOString(),
+        stageName: o.stageConfig.name,
+        ownerName: ownerMap.get(o.owner) ?? null,
+        createdAt: new Date(Number(o.createTime)).toISOString(),
       })),
       contracts: contractRows,
       followUps: followUps.map((r) => ({
@@ -817,29 +817,29 @@ export class CustomersService {
 
     if (resource === 'opportunities') {
       const where: Prisma.OpportunityWhereInput = {
-        tenantId: user.tenantId,
+        organizationId: user.tenantId,
         customerId: id,
         AND: [resourceScope as Prisma.OpportunityWhereInput],
       }
       const [rows, total] = await Promise.all([
         this.prisma.opportunity.findMany({
           where,
-          include: { stage: true },
-          orderBy: { createdAt: 'desc' },
+          include: { stageConfig: true },
+          orderBy: { createTime: 'desc' },
           skip,
           take,
         }),
         this.prisma.opportunity.count({ where }),
       ])
-      const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+      const ownerMap = await this.userNames(rows.map((row) => row.owner))
       return {
         items: rows.map((row) => ({
           id: row.id,
           name: row.name,
           amount: row.amount === null ? null : Number(row.amount),
-          stageName: row.stage.name,
-          ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
-          createdAt: row.createdAt.toISOString(),
+          stageName: row.stageConfig.name,
+          ownerName: ownerMap.get(row.owner) ?? null,
+          createdAt: new Date(Number(row.createTime)).toISOString(),
         })),
         total,
         page: currentPage,
@@ -1954,7 +1954,7 @@ export class CustomersService {
         context.newOwner.id,
       ]),
       this.prisma.opportunity.count({
-        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+        where: { organizationId: user.tenantId, customerId: { in: context.sourceIds } },
       }),
       this.prisma.quote.count({
         where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
@@ -2066,7 +2066,7 @@ export class CustomersService {
           const targetContactId = conflict.targetContactIds[0]
           if (targetContactId) {
             await tx.opportunity.updateMany({
-              where: { tenantId: user.tenantId, contactId: conflict.sourceContactId },
+              where: { organizationId: user.tenantId, contactId: conflict.sourceContactId },
               data: { contactId: targetContactId },
             })
             await tx.followUpPlan.updateMany({
@@ -2096,7 +2096,7 @@ export class CustomersService {
         },
       })
       await tx.opportunity.updateMany({
-        where: { tenantId: user.tenantId, customerId: { in: sourceIds } },
+        where: { organizationId: user.tenantId, customerId: { in: sourceIds } },
         data: { customerId: dto.toMergeId },
       })
       await tx.quote.updateMany({
@@ -2367,7 +2367,10 @@ export class CustomersService {
   }
 
   private customer360ResourceScope(user: AuthUser, resource: Customer360Resource) {
-    return this.dataScope.scopeFilter(user, this.customer360ResourcePermission(resource))
+    const permission = this.customer360ResourcePermission(resource)
+    return resource === 'opportunities'
+      ? this.dataScope.directOwnerFilter(user, permission)
+      : this.dataScope.scopeFilter(user, permission)
   }
 
   private customer360ResourcePermission(resource: Customer360Resource) {
@@ -2602,11 +2605,11 @@ export class CustomersService {
   private async inScopeOpportunityIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
-    const scope = await this.dataScope.scopeFilter(user, 'menu:opportunity')
+    const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
     const rows = await this.prisma.opportunity.findMany({
       where: {
         id: { in: unique },
-        tenantId: user.tenantId,
+        organizationId: user.tenantId,
         AND: [scope as Prisma.OpportunityWhereInput],
       },
       select: { id: true },
@@ -3018,7 +3021,7 @@ export class CustomersService {
       this.prisma.customerContact.count({
         where: { organizationId: tenantId, customerId: { in: ids } },
       }),
-      this.prisma.opportunity.count({ where: { tenantId, customerId: { in: ids } } }),
+      this.prisma.opportunity.count({ where: { organizationId: tenantId, customerId: { in: ids } } }),
       this.prisma.quote.count({ where: { tenantId, customerId: { in: ids } } }),
       this.prisma.contract.count({ where: { tenantId, customerId: { in: ids } } }),
     ])
