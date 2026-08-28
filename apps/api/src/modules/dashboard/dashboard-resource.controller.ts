@@ -65,6 +65,36 @@ export class DashboardResourceController {
     return this.service.page(user, dto)
   }
 
+  @Get('collect/:id')
+  @RequirePermissions('dashboard:read')
+  @LogOperation('dashboard', 'collect')
+  @ApiOperation({ summary: '收藏仪表板' })
+  collect(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.collect(user, id)
+  }
+
+  @Get('un-collect/:id')
+  @RequirePermissions('dashboard:read')
+  @LogOperation('dashboard', 'uncollect')
+  @ApiOperation({ summary: '取消收藏仪表板' })
+  unCollect(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.unCollect(user, id)
+  }
+
+  @Post('collect/page')
+  @RequirePermissions('dashboard:read')
+  @ApiOperation({ summary: '我的仪表板收藏分页' })
+  collectPage(@CurrentUser() user: AuthUser, @Body() dto: DashboardPageDto) {
+    return this.service.collectPage(user, dto)
+  }
+
+  @Get('embed/policy/:id')
+  @RequirePermissions('dashboard:read')
+  @ApiOperation({ summary: '仪表板 iframe 安全策略' })
+  embedPolicy(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.embedPolicy(user, id)
+  }
+
   @Post('edit/pos')
   @RequirePermissions('dashboard:update')
   @LogOperation('dashboard', 'move')

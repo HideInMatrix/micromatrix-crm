@@ -263,15 +263,16 @@
   - [x] 新增 `scripts/w344-dashboard-api-smoke.mjs`：**31/31**，覆盖三角色权限、上级部门 Scope、创建人兜底、第二租户隔离、CRUD、排序、防环、删除保护和操作日志；根级 Smoke 补齐历史测试线索清理，避免重复执行把演示库容跑满；回归 rules **114/114**、根级 Smoke **222/222**、typecheck/ESLint/build 全绿。
   - _需求：R10、R11_
 
-- [ ] 5.4 实现收藏与安全嵌入适配
-  - 完成收藏、取消收藏、我的收藏和幂等约束。
-  - URL 仅允许 HTTPS；开发环境仅显式允许 localhost HTTP。
-  - 实现 DataEase 配置/token 边界、origin allowlist、CSP/iframe 校验和可诊断失败状态；不实现 License 或 DataEase 服务端。
+- [x] 5.4 实现收藏与通用安全嵌入边界
+  - [x] 完成收藏、取消收藏、我的收藏和幂等/并发唯一约束；收藏分页和计数继续执行 Dashboard Scope，失去 Scope 的历史收藏不泄漏。
+  - [x] Dashboard URL 新增/更新统一只允许 HTTPS；开发环境仅显式允许 localhost/127.0.0.1/::1 HTTP，并拒绝 URL 内嵌用户名密码。
+  - [x] 提供 `/dashboard/embed/policy/:id`，返回资源自身精确 origin、`postMessageOrigin`、`frame-src` 与 sandbox 策略，禁止 `*`；DataEase 配置/token/provider 适配按当前产品决策移入 deferred backlog，不阻塞 Dashboard 主线。
+  - [x] Dashboard API Smoke **44/44**；根级 Smoke **223/223**、rules **114/114**、typecheck/ESLint/production build 全绿；根 Smoke 同步清理明确前缀的历史客户夹具，避免反复执行占满 Seed 客户库容。
   - _需求：R10、R11_
 
 - [ ] 5.5 替换 `/reports` Vue 页面
   - 删除固定 ECharts 报表，重建左树右内容、目录列表、资源表单、成员范围、收藏、iframe、全屏和新窗口。
-  - 加载、缺配置、URL 拒绝和 provider 失败分别展示真实错误状态。
+  - 加载、URL 策略拒绝和 iframe 加载失败分别展示真实错误状态；DataEase provider 专属状态暂不实现。
   - _需求：R10_
 
 - [ ] 5.6 完成仪表板专项验收并本地提交

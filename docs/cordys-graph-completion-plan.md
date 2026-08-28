@@ -6,7 +6,7 @@
 
 - 基础公共能力：组织架构、角色权限、租户隔离、数据权限、操作日志、模块菜单底座已具备。
 - 图中销售模块：已有可运行页面和 API，但“存在”不等于与 Cordys 完整一致，仍需按模块逐页读取源码后复查字段、操作、权限、状态与关联数据。
-- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页、W3.4.2 线索/线索池与 W3.4.3 客户域均已关闭，W3.4.4 task 5.1～5.3 已完成，当前执行 **task 5.4 收藏与安全嵌入适配**。
+- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页、W3.4.2 线索/线索池与 W3.4.3 客户域均已关闭，W3.4.4 task 5.1～5.4 已完成，当前执行 **task 5.5 `/reports` Vue 页面重建**。DataEase provider 暂缓。
 
 ## 执行顺序
 
@@ -57,7 +57,7 @@
 21. W3.4.3 task 4.4 已完成客户协作、关系和合并深层规则：协作管理不再被协作关系越权；关系整组保存强制单集团、最多 10 子公司、重复/防环和失败保留；合并恢复 Cordys 三字段并按联系人 unique 自动去重，补齐商机/FollowUpPlan 引用转挂、报价/合同/工商抬头、协作继承、主客户联系人负责人和 Owner History。专项 Smoke `30/30`，回归客户 `22/22`、联系人 `18/18`、rules `114/114`，typecheck/build/lint 全绿；当前进入 **W3.4.3 task 4.5.0：`/system/modules` 客户公海三个设置入口**。
 22. W3.4.3 task 4.5 已完成客户公海与模块设置：`/system/modules` 客户卡片三个专属 Drawer、`/account-pool/*`、`/account-capacity/*`、`CUSTOMER_POOL_RS` 和 `/pool/account/*` 全部按 Cordys 分域契约闭环；批量同池约束、领取/库容/冷却、stage 排除、导入导出、自动回收与公海详情访问边界均有真实 API/数据库证据。模块设置 API `25/25`、Browser `17/17`、公海主体 `36/36`，回归客户 `22/22`、联系人 `18/18`、深层规则 `30/30`、rules `114/114`。
 23. W3.4.3 task 4.6～4.7 已完成客户域页面与最终验收：普通客户补齐批量转移/移入公海，客户公海补齐领取/分配/批量与独立只读详情，联系人/客户/公海 query 深链和 Mobile 三入口均按 Cordys 收口；客户域 Browser `21/21`、根级 Smoke `220/220`，根级 typecheck、ESLint、production build 与 diff 全绿。W3.4.3 客户域正式关闭，当前进入 **W3.4.4 task 5.1**。
-24. W3.4.4 task 5.1～5.3 已完成 Dashboard 源码证据、旧统计命名空间释放和目录/资源 Service：`/dashboard/module/*` 与 `/dashboard/add|detail|update|rename|delete|page|edit/pos` 已落地，新增 `dashboard:read/create/update/delete` 权限；tenant + Scope、目录防环/孤儿、同级重名、跨目录排序与操作日志均有真实 API 证据。专项 Smoke `31/31`、根级 Smoke `222/222`、rules `114/114`，typecheck/lint/build 全绿；当前进入 **task 5.4 收藏与安全嵌入适配**。
+24. W3.4.4 task 5.1～5.4 已完成 Dashboard 源码证据、旧统计命名空间释放、目录/资源 Service、收藏与通用安全嵌入边界：`/dashboard/module/*`、资源 CRUD/page/sort、收藏/取消/收藏分页及 `/dashboard/embed/policy/:id` 已落地；tenant + Scope、目录防环/孤儿、同级重名、跨目录排序、URL HTTPS 策略、精确 iframe origin/CSP 与操作日志均有真实 API 证据。专项 Smoke `44/44`、根级 Smoke `223/223`、rules `114/114`，typecheck/lint/build 全绿；DataEase provider 延后，当前进入 **task 5.5 `/reports` Vue 页面重建**。
 
 ## 长期完成约束
 

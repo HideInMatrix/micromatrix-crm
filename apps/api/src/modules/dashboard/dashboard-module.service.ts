@@ -189,17 +189,19 @@ export class DashboardModuleService {
   }
 
   async count(user: AuthUser) {
-    const [modules, dashboards, myCollect] = await Promise.all([
+    const [modules, dashboards] = await Promise.all([
       this.prisma.dashboardModule.findMany({
         where: { organizationId: user.tenantId },
         select: { id: true, parentId: true },
       }),
       this.prisma.dashboard.findMany({ where: { organizationId: user.tenantId } }),
-      this.prisma.dashboardCollection.count({
-        where: { userId: user.id, dashboard: { organizationId: user.tenantId } },
-      }),
     ])
     const visibleIds = await this.access.visibleDashboardIds(user, dashboards)
+    const myCollect = visibleIds.size
+      ? await this.prisma.dashboardCollection.count({
+          where: { userId: user.id, dashboardId: { in: [...visibleIds] } },
+        })
+      : 0
     const direct = new Map<string, number>()
     dashboards.filter((row) => visibleIds.has(row.id)).forEach((row) => {
       direct.set(row.dashboardModuleId, (direct.get(row.dashboardModuleId) ?? 0) + 1)

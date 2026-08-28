@@ -897,3 +897,13 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `DashboardAccessService` 将空 Scope、用户 ID、当前部门/祖先部门和创建者可见统一应用到 page/detail/tree/count/update/delete/move；第二租户管理员对当前租户资源仍只能得到 404，损坏 Scope JSON 对普通用户 fail-closed。
 - 新增 `scripts/w344-dashboard-api-smoke.mjs`，最终 **31/31**；根级 Smoke 额外清理历史 `冒烟线索-/R4*/批量编辑线索` 测试数据，避免多次执行占满 Seed 库容；同时 rules **114/114**、根级 Smoke **222/222**、根级 typecheck、ESLint、production build 全绿。
 - task 5.3 关闭；下一执行指针为 **W3.4.4 task 5.4：实现收藏与安全嵌入适配**。
+
+---
+
+## 41. W3.4.4 task 5.4 Dashboard 收藏与通用安全嵌入（2026-08-28）
+
+- 新增收藏、取消收藏、我的收藏分页；重复收藏稳定 409，重复取消幂等，收藏列表/计数继续执行 tenant + Dashboard Scope，失效 Scope 收藏不泄漏。
+- Dashboard `resourceUrl` 的新增/更新共用安全校验：仅 HTTPS；非 production 仅允许 localhost/127.0.0.1/::1 HTTP；禁止 URL 内嵌用户名密码。
+- 新增 `/dashboard/embed/policy/:id`，返回精确 `origin/postMessageOrigin/frameSrc/CSP/sandbox`，不使用 `*`；5.5 页面只消费该策略，不自行拼接宽松 iframe 权限。
+- DataEase 配置/token/provider adapter 按当前产品决策延期，未新增数据库表或 migration，另入 deferred backlog。
+- Dashboard API Smoke **44/44**；根级 Smoke **223/223**、rules **114/114**、typecheck/ESLint/production build 全绿；根 Smoke 同步解决历史客户夹具占满 Seed 库容的问题。task 5.4 关闭，进入 **task 5.5 `/reports` Vue 页面重建**。

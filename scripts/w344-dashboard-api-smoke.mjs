@@ -191,6 +191,31 @@ try {
   })
   check('新增目录拒绝不存在父节点', invalidParent.status === 404)
 
+  const insecureDashboard = await request('POST', '/dashboard/add', manager.headers, {
+    name: `W344非安全URL-${stamp}`,
+    resourceUrl: `http://example.com/${stamp}/insecure`,
+    dashboardModuleId: root.id,
+    scopeIds: [],
+  })
+  check('Dashboard URL 拒绝非 localhost HTTP', insecureDashboard.status === 400)
+
+  const credentialDashboard = await request('POST', '/dashboard/add', manager.headers, {
+    name: `W344URL凭据-${stamp}`,
+    resourceUrl: `https://user:password@example.com/${stamp}/credential`,
+    dashboardModuleId: root.id,
+    scopeIds: [],
+  })
+  check('Dashboard URL 拒绝内嵌账号密码', credentialDashboard.status === 400)
+
+  const localDashboard = await must('POST', '/dashboard/add', manager.headers, {
+    name: `W344本地开发URL-${stamp}`,
+    resourceUrl: `http://127.0.0.1:5174/${stamp}/local`,
+    dashboardModuleId: root.id,
+    scopeIds: [],
+  })
+  createdDashboards.push(localDashboard.id)
+  check('开发环境允许 localhost HTTP', localDashboard.resourceUrl.startsWith('http://127.0.0.1:5174/'))
+
   const publicDashboard = await must('POST', '/dashboard/add', manager.headers, {
     name: names.public,
     resourceUrl: `https://example.com/${stamp}/public`,
@@ -254,11 +279,71 @@ try {
   const deniedDetail = await request('GET', `/dashboard/detail/${managerDashboard.id}`, sales.headers)
   check('详情接口执行 Dashboard Scope', deniedDetail.status === 403)
 
+  const deniedCollect = await request('GET', `/dashboard/collect/${managerDashboard.id}`, sales.headers)
+  check('收藏接口同样执行 Dashboard Scope', deniedCollect.status === 403)
+
   const managerDetail = await must('GET', `/dashboard/detail/${managerDashboard.id}`, manager.headers)
   check(
     '创建人兜底可读取自己的 Dashboard',
     managerDetail.id === managerDashboard.id && managerDetail.members.some((item) => item.id === manager.user.id),
   )
+
+  const staleCollectTime = BigInt(Date.now())
+  await prisma.dashboardCollection.create({
+    data: {
+      userId: sales.user.id,
+      dashboardId: managerDashboard.id,
+      createTime: staleCollectTime,
+      updateTime: staleCollectTime,
+      createUser: sales.user.id,
+      updateUser: sales.user.id,
+    },
+  })
+  const staleCollectCount = await must('GET', '/dashboard/module/count', sales.headers)
+  const staleCollectPage = await must('POST', '/dashboard/collect/page', sales.headers, {
+    current: 1,
+    pageSize: 100,
+    keyword: names.manager,
+  })
+  check(
+    '失去 Scope 的历史收藏不泄漏到收藏数量与收藏分页',
+    staleCollectCount.myCollect === 0 &&
+      !staleCollectPage.list.some((item) => item.id === managerDashboard.id),
+  )
+
+  const beforeCollectCount = await must('GET', '/dashboard/module/count', sales.headers)
+  const collected = await must('GET', `/dashboard/collect/${publicDashboard.id}`, sales.headers)
+  check('Dashboard 可收藏可见资源', collected.collected === true)
+  const duplicateCollect = await request('GET', `/dashboard/collect/${publicDashboard.id}`, sales.headers)
+  check('Dashboard 重复收藏由唯一约束语义拒绝', duplicateCollect.status === 409)
+  const collectPage = await must('POST', '/dashboard/collect/page', sales.headers, {
+    current: 1,
+    pageSize: 100,
+    keyword: names.public,
+  })
+  check(
+    '我的收藏分页只返回本人可见收藏',
+    collectPage.list.some((item) => item.id === publicDashboard.id && item.myCollect === true),
+  )
+  const afterCollectCount = await must('GET', '/dashboard/module/count', sales.headers)
+  check('收藏计数随 DashboardCollection 变化', afterCollectCount.myCollect === beforeCollectCount.myCollect + 1)
+
+  const embedPolicy = await must('GET', `/dashboard/embed/policy/${publicDashboard.id}`, sales.headers)
+  check(
+    'iframe 安全策略使用资源精确 origin 且不返回通配符',
+    embedPolicy.origin === 'https://example.com' &&
+      embedPolicy.postMessageOrigin === 'https://example.com' &&
+      embedPolicy.frameSrc.length === 1 &&
+      embedPolicy.frameSrc[0] === 'https://example.com' &&
+      !embedPolicy.csp.includes('*'),
+  )
+
+  const uncollected = await must('GET', `/dashboard/un-collect/${publicDashboard.id}`, sales.headers)
+  check('Dashboard 可取消收藏', uncollected.collected === false)
+  const repeatUncollect = await must('GET', `/dashboard/un-collect/${publicDashboard.id}`, sales.headers)
+  check('取消收藏重复调用保持幂等', repeatUncollect.collected === false)
+  const afterUncollectCount = await must('GET', '/dashboard/module/count', sales.headers)
+  check('取消收藏后计数恢复', afterUncollectCount.myCollect === beforeCollectCount.myCollect)
 
   const outsider = await register(
     `W344隔离租户-${stamp}`,
@@ -288,7 +373,10 @@ try {
   )
 
   const salesCount = await must('GET', '/dashboard/module/count', sales.headers)
-  check('Dashboard module count 只统计当前用户可见资源', salesCount[root.id] === 3)
+  check(
+    'Dashboard module count 只统计当前用户可见资源',
+    salesCount[root.id] === salesPage.total,
+  )
 
   const cycleMove = await request('POST', '/dashboard/module/move', manager.headers, {
     dragNodeId: root.id,

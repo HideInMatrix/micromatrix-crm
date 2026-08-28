@@ -308,12 +308,12 @@ W3.4 只实现 R10 指定的 DataEase **配置 / token / 嵌入适配边界和�
 - 同级/同目录重名、目录环、孤儿、跨 tenant、排序事务全部由后端强制；
 - Dashboard Scope 按“空数组=全员、user/department Scope、创建者可见”实现，并应用到所有读取和写入目标解析。
 
-### 14.3 task 5.4：收藏与安全嵌入
+### 14.3 task 5.4：收藏与通用安全嵌入
 
 - 收藏/取消收藏/收藏分页/计数；
 - URL validator 同时用于 add/update/open/embed；
-- DataEase 配置与 token adapter 独立于资源 CRUD；
-- 精确 origin + CSP/frame allowlist + provider failure 分类。
+- 精确 origin + CSP/frame allowlist，禁止 `postMessage('*')`；
+- DataEase 配置、token adapter、CRM→DE 变量同步按当前产品决策延后，单独进入 deferred backlog，不阻塞 Dashboard 目录/资源/收藏/通用 iframe 主链。
 
 ### 14.4 task 5.5：Vue 页面
 
@@ -358,3 +358,16 @@ task 5.2 关闭；下一执行指针为 **W3.4.4 task 5.3：实现 DashboardModu
 7. 根级 Smoke 增加明确前缀的历史测试线索清理，防止反复执行后占满 Seed 的 80 条线索库容；回归：API rules **114/114**、根级 Smoke **222/222**、根级 typecheck、受影响文件 ESLint、production build 全绿。
 
 task 5.3 关闭；下一执行指针为 **W3.4.4 task 5.4：收藏与安全嵌入适配**。
+
+## 18. task 5.4 实施结果
+
+5.4 按产品决策收缩为“收藏 + 通用外链安全边界”，**DataEase 暂不实现**：
+
+1. 新增 `/dashboard/collect/{id}`、`/dashboard/un-collect/{id}`、`/dashboard/collect/page`；重复收藏稳定返回 409，重复取消保持幂等。
+2. 收藏目标、收藏分页与 `module/count.myCollect` 全部复用 tenant + Dashboard Scope；即使数据库存在历史收藏，资源失去 Scope 后也不会进入收藏列表或数量。
+3. `resourceUrl` 新增与更新共用同一 validator：生产语义仅 HTTPS；开发环境只额外允许 localhost/127.0.0.1/::1 HTTP；拒绝 URL 内嵌账号密码及其它协议。
+4. 新增 `/dashboard/embed/policy/{id}`，只返回该资源的精确 `origin/postMessageOrigin/frameSrc/CSP/sandbox`，不返回 `*`，为 5.5 iframe 页面提供统一策略事实。
+5. DataEase 配置、token、provider adapter、CRM→DE Scope 变量同步全部转入 deferred backlog；本阶段没有新增 Prisma 模型或 migration。
+6. Dashboard API Smoke **44/44**；根级 Smoke **223/223**、rules **114/114**、typecheck/ESLint/production build 全绿。根 Smoke 同步增加明确前缀的历史客户夹具清理，避免反复执行占满 Seed 的客户库容。
+
+task 5.4 关闭；下一执行指针为 **W3.4.4 task 5.5：替换 `/reports` Vue 页面**。

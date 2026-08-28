@@ -204,6 +204,81 @@ async function cleanupHistoricalLeadSmokeData(tenantId) {
   return ids.length
 }
 
+async function cleanupHistoricalCustomerSmokeData(tenantId) {
+  const prefixes = [
+    'W2.4关闭事件客户-',
+    'W2.4恢复事件客户-',
+    'R6下级范围客户-',
+    '冒烟线索-',
+    'R4关联客户-',
+    'R4只读客户-',
+    'R4公海客户-',
+    'R4唯一复用客户-',
+    '负责人历史客户-',
+    '协作权限客户-',
+    '冒烟集团-',
+    '冒烟子公司-',
+    '冒烟合并主客户-',
+    '冒烟合并副客户-',
+    '批量编辑客户A-',
+    '批量编辑客户B-',
+    'R1公海批改客户A-',
+    'R1公海批改客户B-',
+    'R1公海负责人批改-',
+    'R3联系人客户-',
+    'R3联系人其他客户-',
+  ]
+  const historical = await smokePrisma.customer.findMany({
+    where: {
+      organizationId: tenantId,
+      OR: prefixes.map((prefix) => ({ name: { startsWith: prefix } })),
+    },
+    select: { id: true },
+  })
+  const ids = historical.map((item) => item.id)
+  if (!ids.length) return 0
+
+  const contacts = await smokePrisma.customerContact.findMany({
+    where: { organizationId: tenantId, customerId: { in: ids } },
+    select: { id: true },
+  })
+  const contactIds = contacts.map((item) => item.id)
+
+  await smokePrisma.$transaction(async (tx) => {
+    await tx.opportunity.deleteMany({ where: { tenantId, customerId: { in: ids } } })
+    await tx.quote.deleteMany({ where: { tenantId, customerId: { in: ids } } })
+    await tx.contract.deleteMany({ where: { tenantId, customerId: { in: ids } } })
+    await tx.invoiceTitle.updateMany({
+      where: { tenantId, customerId: { in: ids } },
+      data: { customerId: null },
+    })
+    await tx.followUpRecord.deleteMany({
+      where: { tenantId, targetType: 'customer', targetId: { in: ids } },
+    })
+    await tx.followUpPlan.deleteMany({
+      where: { tenantId, targetType: 'customer', targetId: { in: ids } },
+    })
+    await tx.attachment.deleteMany({
+      where: {
+        tenantId,
+        OR: [
+          { targetType: 'customer', targetId: { in: ids } },
+          ...(contactIds.length
+            ? [{ targetType: 'contact', targetId: { in: contactIds } }]
+            : []),
+        ],
+      },
+    })
+    if (contactIds.length) {
+      await tx.customerContact.deleteMany({
+        where: { organizationId: tenantId, id: { in: contactIds } },
+      })
+    }
+    await tx.customer.deleteMany({ where: { organizationId: tenantId, id: { in: ids } } })
+  })
+  return ids.length
+}
+
 console.log('== 微矩阵 CRM 全链路冒烟 ==')
 
 // 1. 健康与登录
@@ -215,6 +290,8 @@ const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
 const historicalLeadSmokeCount = await cleanupHistoricalLeadSmokeData(admin.user.tenantId)
 check('历史线索 Smoke 数据已隔离清理', historicalLeadSmokeCount >= 0)
+const historicalCustomerSmokeCount = await cleanupHistoricalCustomerSmokeData(admin.user.tenantId)
+check('历史客户 Smoke 数据已隔离清理', historicalCustomerSmokeCount >= 0)
 const stamp = Date.now().toString(36)
 const phoneSuffix = String(Date.now()).slice(-8)
 

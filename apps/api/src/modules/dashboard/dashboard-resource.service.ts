@@ -54,9 +54,22 @@ export class DashboardResourceService {
   }
 
   private normalizeUrl(value: string) {
-    const url = new URL(value.trim())
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new BadRequestException('仪表板 URL 仅允许 HTTP/HTTPS')
+    let url: URL
+    try {
+      url = new URL(value.trim())
+    } catch {
+      throw new BadRequestException('仪表板 URL 格式无效')
+    }
+    if (url.username || url.password) {
+      throw new BadRequestException('仪表板 URL 禁止携带用户名或密码')
+    }
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    const localHttp =
+      process.env.NODE_ENV !== 'production' &&
+      url.protocol === 'http:' &&
+      (host === 'localhost' || host === '127.0.0.1' || host === '::1')
+    if (url.protocol !== 'https:' && !localHttp) {
+      throw new BadRequestException('仪表板 URL 仅允许 HTTPS；开发环境仅允许 localhost HTTP')
     }
     return url.toString()
   }
@@ -229,6 +242,98 @@ export class DashboardResourceService {
       total,
       current,
       pageSize,
+    }
+  }
+
+  async collect(user: AuthUser, id: string) {
+    const dashboard = await this.access.assertVisibleDashboard(user, id)
+    const exists = await this.prisma.dashboardCollection.findUnique({
+      where: { userId_dashboardId: { userId: user.id, dashboardId: dashboard.id } },
+    })
+    if (exists) throw new ConflictException('仪表板已收藏')
+    const now = BigInt(Date.now())
+    try {
+      await this.prisma.dashboardCollection.create({
+        data: {
+          userId: user.id,
+          dashboardId: dashboard.id,
+          createTime: now,
+          updateTime: now,
+          createUser: user.id,
+          updateUser: user.id,
+        },
+      })
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('仪表板已收藏')
+      }
+      throw error
+    }
+    return { id: dashboard.id, name: dashboard.name, collected: true }
+  }
+
+  async unCollect(user: AuthUser, id: string) {
+    const dashboard = await this.access.assertVisibleDashboard(user, id)
+    await this.prisma.dashboardCollection.deleteMany({
+      where: { userId: user.id, dashboardId: dashboard.id },
+    })
+    return { id: dashboard.id, name: dashboard.name, collected: false }
+  }
+
+  async collectPage(user: AuthUser, dto: DashboardPageDto) {
+    const current = dto.current ?? 1
+    const pageSize = dto.pageSize ?? 10
+    const keyword = dto.keyword?.trim()
+    const collections = await this.prisma.dashboardCollection.findMany({
+      where: {
+        userId: user.id,
+        dashboard: {
+          organizationId: user.tenantId,
+          ...(keyword ? { name: { contains: keyword, mode: 'insensitive' } } : {}),
+          ...(dto.dashboardModuleIds?.length
+            ? { dashboardModuleId: { in: dto.dashboardModuleIds } }
+            : {}),
+        },
+      },
+      include: { dashboard: { include: { module: true } } },
+    })
+    const rows = collections.map((item) => ({
+      ...item.dashboard,
+      collections: [{ id: item.id }],
+    }))
+    const visibleIds = await this.access.visibleDashboardIds(user, rows)
+    const visible = rows.filter((row) => visibleIds.has(row.id))
+    const userNames = await this.creatorNames(
+      visible.flatMap((row) => [row.createUser, row.updateUser]),
+    )
+    const sorted = this.sortRows(visible, dto, userNames)
+    const total = sorted.length
+    const pageRows = sorted.slice((current - 1) * pageSize, current * pageSize)
+    return {
+      list: await Promise.all(pageRows.map((row) => this.toResponse(user, row, userNames))),
+      total,
+      current,
+      pageSize,
+    }
+  }
+
+  async embedPolicy(user: AuthUser, id: string) {
+    const dashboard = await this.access.assertVisibleDashboard(user, id)
+    const resourceUrl = this.normalizeUrl(dashboard.resourceUrl)
+    const origin = new URL(resourceUrl).origin
+    return {
+      dashboardId: dashboard.id,
+      resourceUrl,
+      origin,
+      postMessageOrigin: origin,
+      frameSrc: [origin],
+      csp: `frame-src 'self' ${origin};`,
+      sandbox: 'allow-scripts allow-forms allow-popups allow-downloads',
     }
   }
 
