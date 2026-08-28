@@ -500,7 +500,7 @@ PUT /customers/{id}/relations
 
 约束：最多 11 条；同一个关联客户不能重复；最多一个 GROUP；不能关联自身；一个子公司只能属于一个集团；不能形成直接或间接循环。
 
-原有 POST/PATCH/DELETE 单条关系接口继续保留兼容。`READ_ONLY` 协作关系只能查看；`COLLABORATION` 在具备 `customer:update` 权限时可使用整组保存接口编辑客户关系。
+关系写接口统一要求普通 CUSTOMER UPDATE 数据范围；`COLLABORATION` 与 `READ_ONLY` 都不能据协作关系越权维护集团/子公司关系。
 
 ## 客户合并
 
@@ -509,8 +509,8 @@ PUT /customers/{id}/relations
 主要接口：
 
 ```text
-POST /customers/merge/preview
-POST /customers/merge
+POST /account/merge/preview
+POST /account/merge
 ```
 
 请求：
@@ -519,15 +519,11 @@ POST /customers/merge
 {
   "mergeIds": ["customer-a", "customer-b"],
   "toMergeId": "customer-a",
-  "ownerId": "owner-id",
-  "contactConflictStrategy": "KEEP_ALL"
+  "ownerId": "owner-id"
 }
 ```
 
-联系人冲突策略：
-
-- `KEEP_ALL`：默认，迁移全部源联系人，优先保证数据不丢失。
-- `SKIP_DUPLICATES`：与主客户已有联系人姓名或电话冲突的源联系人不迁入；其联系人附件若存在，会先转挂到匹配主联系人。
+Cordys 合并请求只有 `mergeIds / toMergeId / ownerId` 三个字段。联系人姓名或电话字段启用 unique 后，命中主客户已有唯一值的源联系人自动去重；关联商机、跟进计划与附件会先转挂到匹配主联系人。
 
 负责人规则对齐 Cordys：
 
@@ -541,7 +537,7 @@ target / sources / finalOwner
 customersToDelete
 contacts / contactsWillMove / contactsWillSkip
 opportunities / quotes / contracts
-followUps / attachments / collaborations
+followUps / followUpPlans / attachments / collaborations
 relationsToRemove
 contactConflicts[]
 ```

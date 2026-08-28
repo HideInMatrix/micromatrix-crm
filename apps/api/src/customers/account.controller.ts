@@ -143,7 +143,7 @@ export class AccountController {
   }
 
   @Post('merge/page')
-  @RequirePermissions('customer:merge')
+  @RequirePermissions('customer:read')
   mergePage(@CurrentUser() user: AuthUser, @Body() dto: AccountPageDto) {
     return this.service.page(user, dto)
   }

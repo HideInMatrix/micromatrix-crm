@@ -1360,7 +1360,6 @@ const mergePayload = {
   mergeIds: [mergeTarget.id, mergeSource.id],
   toMergeId: mergeTarget.id,
   ownerId: manager.user.id,
-  contactConflictStrategy: 'SKIP_DUPLICATES',
 }
 const mergePreview = await post('/customers/merge/preview', manager.headers, mergePayload)
 check(
@@ -1375,7 +1374,7 @@ const mergedSourceGone = await request('GET', `/customers/${mergeSource.id}`, ma
 check('被合并客户已移除', mergedSourceGone.status === 404)
 const mergedContacts = await get(`/contacts/list/${mergeTarget.id}`, manager.headers)
 check(
-  'SKIP_DUPLICATES 执行结果与 preview 一致',
+  '联系人 unique 去重执行结果与 preview 一致',
   Array.isArray(mergedContacts) &&
     mergedContacts.filter((item) => item.name === `冲突联系人-${stamp}`).length === 1,
 )

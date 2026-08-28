@@ -6,7 +6,7 @@
 
 - 基础公共能力：组织架构、角色权限、租户隔离、数据权限、操作日志、模块菜单底座已具备。
 - 图中销售模块：已有可运行页面和 API，但“存在”不等于与 Cordys 完整一致，仍需按模块逐页读取源码后复查字段、操作、权限、状态与关联数据。
-- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页与 W3.4.2 线索/线索池均已关闭，W3.4.3 客户域 task 4.3 联系人 API 已完成，当前执行 task 4.4。
+- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；当前主线是 W3.4 图中业务模块逐页复查，W3.4.1 首页与 W3.4.2 线索/线索池均已关闭，W3.4.3 客户域 task 4.4 已完成，当前执行 task 4.5.0 模块设置三个客户公海入口。
 
 ## 执行顺序
 
@@ -53,7 +53,8 @@
 17. W3.4.2 task 3.7 的 [线索模块设置补漏源码与实施审计](./specs/business-module-page-parity/clue-module-settings-audit.md) 已完成：`sys_dict/sys_dict_config` 与 `/dict/*`、线索退池原因强校验/Owner History 名称、角色 Scope、模块设置 Pool/Capacity/Move Reason 三个真实 Drawer 全部闭环；新增 migration 后本地 migration 总数为 35。专项 API `22/22`、模块设置 Browser `17/17`，并复跑连续生命周期 `17/17`、普通 API `18/18`、转换 `21/21`、多 Pool `32/32`、线索 Browser `20/20`、首页 `17/17`、rules `114/114`、根 Smoke `219/219` 全绿。验收中同时修复 Pool Drawer 异步初始化覆盖用户输入 race 与 demo Seed 默认密码幂等缺口；typecheck、ESLint、production build、Prisma validate/generate、diff 检查均通过。W3.4.2 现再次正式关闭，执行指针恢复到 **W3.4.3 task 4.1**。
 18. W3.4.3 task 4.1 的 [客户、联系人和客户公海源码与 API 证据矩阵](./specs/business-module-page-parity/customer-source-api-audit.md) 已完成：锁定 `/account`、`/account/contact`、`/pool/account`、`/account-pool`、`/account-capacity` 与 `CUSTOMER_POOL_RS` 分域契约，明确普通数据范围、`COLLABORATION`、`READ_ONLY` 和 Pool Scope 四类边界，并确认联系人 `customerId` 最终可空、公海进入时间使用 `Customer.updateTime`。现有直接模型覆盖 Cordys 最终 DDL，本任务无 migration；当前进入 **W3.4.3 task 4.2：重建客户 API 与客户 360**。
 19. W3.4.3 task 4.2 已完成普通客户 `/account/*` 与客户 360 后端收口：旧 `/api/customers` 移除，商机/合同/回款/发票/订单叠加各自 DataScope，负责人变更与联系人/Owner History/动态字段事务一致，删除链补齐动态字段/Blob/跟进计划清理。专项 Smoke `22/22`、rules `114/114`、Shared/API/Web typecheck 与受影响文件 ESLint 全绿。
-20. W3.4.3 task 4.3 已完成联系人 `/account/contact/*` 破坏式切换：旧 `/api/contacts` 移除，独立联系人支持 nullable `customerId`，Contact SELF/部门/全部 DataScope 与 Customer 360 READ_ONLY/COLLABORATION 子资源边界分离，动态字段/唯一性、启停原因、批改、导入导出、图表和商机关联拒删全部落地；删除事务清理动态字段/Blob/附件。专项 Smoke `18/18`、rules `114/114`、Shared/API/Web typecheck、本批 ESLint、API/Web production build 与 `git diff --check` 全绿；当前进入 **W3.4.3 task 4.4：对齐客户协作、关系和合并**。
+20. W3.4.3 task 4.3 已完成联系人 `/account/contact/*` 破坏式切换：旧 `/api/contacts` 移除，独立联系人支持 nullable `customerId`，Contact SELF/部门/全部 DataScope 与 Customer 360 READ_ONLY/COLLABORATION 子资源边界分离，动态字段/唯一性、启停原因、批改、导入导出、图表和商机关联拒删全部落地；删除事务清理动态字段/Blob/附件。专项 Smoke `18/18`、rules `114/114`、Shared/API/Web typecheck、本批 ESLint、API/Web production build 与 `git diff --check` 全绿。
+21. W3.4.3 task 4.4 已完成客户协作、关系和合并深层规则：协作管理不再被协作关系越权；关系整组保存强制单集团、最多 10 子公司、重复/防环和失败保留；合并恢复 Cordys 三字段并按联系人 unique 自动去重，补齐商机/FollowUpPlan 引用转挂、报价/合同/工商抬头、协作继承、主客户联系人负责人和 Owner History。专项 Smoke `30/30`，回归客户 `22/22`、联系人 `18/18`、rules `114/114`，typecheck/build/lint 全绿；当前进入 **W3.4.3 task 4.5.0：`/system/modules` 客户公海三个设置入口**。
 
 ## 长期完成约束
 

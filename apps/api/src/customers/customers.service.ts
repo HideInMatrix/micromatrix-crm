@@ -1613,7 +1613,9 @@ export class CustomersService {
   // ===== 团队成员 =====
 
   async teamList(user: AuthUser, customerId: string) {
-    await this.customerAccess.assertRead(user, customerId)
+    // Cordys 协作人页签不会暴露给协作访问；这里要求普通 Customer READ 数据范围，
+    // 不把 COLLABORATION/READ_ONLY 当成“可管理协作关系”的替代权限。
+    await this.ensureInScope(user, customerId, 'customer:read')
     const members = await this.prisma.customerCollaboration.findMany({
       where: { customerId },
       orderBy: { createTime: 'asc' },
@@ -1765,10 +1767,7 @@ export class CustomersService {
    * 现有单条 CRUD 保留兼容；新前端优先使用此接口，避免客户端计算增删改差异。
    */
   async relationReplace(user: AuthUser, customerId: string, requests: SaveCustomerRelationDto[]) {
-    const access = await this.customerAccess.assertRead(user, customerId)
-    if (!access.canManageCustomer && access.collaborationType !== 'COLLABORATION') {
-      throw new ForbiddenException('当前客户关系仅允许查看')
-    }
+    await this.ensureInScope(user, customerId, 'customer:update')
     if (requests.length > 11) throw new BadRequestException('客户关系最多 11 条')
 
     const customerIds = requests.map((item) => item.customerId)
@@ -1777,6 +1776,9 @@ export class CustomersService {
     }
     if (requests.filter((item) => item.relationType === 'GROUP').length > 1) {
       throw new BadRequestException('一个客户只能设置一个上级集团')
+    }
+    if (requests.filter((item) => item.relationType === 'SUBSIDIARY').length > 10) {
+      throw new BadRequestException('一个客户最多设置 10 个子公司')
     }
 
     const currentRows = await this.prisma.customerRelation.findMany({
@@ -1912,6 +1914,7 @@ export class CustomersService {
       quoteCount,
       contractCount,
       followUpCount,
+      followUpPlanCount,
       attachmentCount,
       collaborationCount,
       relationCount,
@@ -1931,6 +1934,13 @@ export class CustomersService {
         where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
       }),
       this.prisma.followUpRecord.count({
+        where: {
+          tenantId: user.tenantId,
+          targetType: 'customer',
+          targetId: { in: context.sourceIds },
+        },
+      }),
+      this.prisma.followUpPlan.count({
         where: {
           tenantId: user.tenantId,
           targetType: 'customer',
@@ -1975,7 +1985,6 @@ export class CustomersService {
         id: context.newOwner.id,
         name: ownerMap.get(context.newOwner.id) ?? null,
       },
-      contactConflictStrategy: dto.contactConflictStrategy ?? 'KEEP_ALL',
       counts: {
         customersToDelete: context.sourceIds.length,
         contacts: context.sourceContacts.length,
@@ -1985,6 +1994,7 @@ export class CustomersService {
         quotes: quoteCount,
         contracts: contractCount,
         followUps: followUpCount,
+        followUpPlans: followUpPlanCount,
         attachments: attachmentCount,
         collaborations: collaborationCount,
         relationsToRemove: relationCount,
@@ -2026,6 +2036,14 @@ export class CustomersService {
           if (!skipContactIds.includes(conflict.sourceContactId)) continue
           const targetContactId = conflict.targetContactIds[0]
           if (targetContactId) {
+            await tx.opportunity.updateMany({
+              where: { tenantId: user.tenantId, contactId: conflict.sourceContactId },
+              data: { contactId: targetContactId },
+            })
+            await tx.followUpPlan.updateMany({
+              where: { tenantId: user.tenantId, contactId: conflict.sourceContactId },
+              data: { contactId: targetContactId },
+            })
             await tx.attachment.updateMany({
               where: {
                 tenantId: user.tenantId,
@@ -2042,7 +2060,11 @@ export class CustomersService {
       }
       await tx.customerContact.updateMany({
         where: { organizationId: user.tenantId, customerId: { in: sourceIds } },
-        data: { customerId: dto.toMergeId },
+        data: {
+          customerId: dto.toMergeId,
+          updateTime: now,
+          updateUser: user.id,
+        },
       })
       await tx.opportunity.updateMany({
         where: { tenantId: user.tenantId, customerId: { in: sourceIds } },
@@ -2059,6 +2081,14 @@ export class CustomersService {
       await tx.followUpRecord.updateMany({
         where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: sourceIds } },
         data: { targetId: dto.toMergeId },
+      })
+      await tx.followUpPlan.updateMany({
+        where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: sourceIds } },
+        data: { targetId: dto.toMergeId },
+      })
+      await tx.invoiceTitle.updateMany({
+        where: { tenantId: user.tenantId, customerId: { in: sourceIds } },
+        data: { customerId: dto.toMergeId },
       })
       await tx.attachment.updateMany({
         where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: sourceIds } },
@@ -2098,6 +2128,20 @@ export class CustomersService {
             operator: user.id,
             collectionTime: target.collectionTime,
             endTime: now,
+          },
+        })
+      }
+      if (target.owner && target.owner !== newOwner.id) {
+        await tx.customerContact.updateMany({
+          where: {
+            organizationId: user.tenantId,
+            customerId: target.id,
+            owner: target.owner,
+          },
+          data: {
+            owner: newOwner.id,
+            updateTime: now,
+            updateUser: user.id,
           },
         })
       }
@@ -2195,6 +2239,11 @@ export class CustomersService {
         select: { id: true, customerId: true, name: true, phone: true },
       }),
     ])
+    const contactFields = await this.metadata.fieldsMap(user.tenantId, 'contact')
+    const uniqueRules = {
+      name: contactFields.get('name')?.config?.unique === true,
+      phone: contactFields.get('phone')?.config?.unique === true,
+    }
     const contactConflicts = this.findMergeContactConflicts(
       targetContacts.filter(
         (contact): contact is typeof contact & { customerId: string } =>
@@ -2204,11 +2253,9 @@ export class CustomersService {
         (contact): contact is typeof contact & { customerId: string } =>
           contact.customerId !== null,
       ),
+      uniqueRules,
     )
-    const skipContactIds =
-      (dto.contactConflictStrategy ?? 'KEEP_ALL') === 'SKIP_DUPLICATES'
-        ? contactConflicts.map((item) => item.sourceContactId)
-        : []
+    const skipContactIds = contactConflicts.map((item) => item.sourceContactId)
 
     return {
       requestedIds,
@@ -2226,6 +2273,7 @@ export class CustomersService {
   private findMergeContactConflicts(
     targetContacts: { id: string; customerId: string; name: string; phone: string | null }[],
     sourceContacts: { id: string; customerId: string; name: string; phone: string | null }[],
+    uniqueRules: { name: boolean; phone: boolean },
   ) {
     const normalizeName = (value: string) => value.trim().toLocaleLowerCase()
     const normalizePhone = (value: string | null) => value?.trim() ?? ''
@@ -2233,21 +2281,27 @@ export class CustomersService {
     const targetPhones = new Map<string, string[]>()
     for (const contact of targetContacts) {
       const name = normalizeName(contact.name)
-      if (name) targetNames.set(name, [...(targetNames.get(name) ?? []), contact.id])
+      if (uniqueRules.name && name) {
+        targetNames.set(name, [...(targetNames.get(name) ?? []), contact.id])
+      }
       const phone = normalizePhone(contact.phone)
-      if (phone) targetPhones.set(phone, [...(targetPhones.get(phone) ?? []), contact.id])
+      if (uniqueRules.phone && phone) {
+        targetPhones.set(phone, [...(targetPhones.get(phone) ?? []), contact.id])
+      }
     }
 
     return sourceContacts.flatMap((contact) => {
       const matchedBy: ('name' | 'phone')[] = []
       const targetContactIds = new Set<string>()
-      const nameMatches = targetNames.get(normalizeName(contact.name)) ?? []
+      const nameMatches = uniqueRules.name
+        ? (targetNames.get(normalizeName(contact.name)) ?? [])
+        : []
       if (nameMatches.length > 0) {
         matchedBy.push('name')
         nameMatches.forEach((id) => targetContactIds.add(id))
       }
       const phone = normalizePhone(contact.phone)
-      const phoneMatches = phone ? (targetPhones.get(phone) ?? []) : []
+      const phoneMatches = uniqueRules.phone && phone ? (targetPhones.get(phone) ?? []) : []
       if (phoneMatches.length > 0) {
         matchedBy.push('phone')
         phoneMatches.forEach((id) => targetContactIds.add(id))
@@ -2338,9 +2392,21 @@ export class CustomersService {
     targetCustomerId: string,
     excludeIds: string[] = [],
   ) {
+    const existingEdge = await this.prisma.customerRelation.findFirst({
+      where: {
+        sourceCustomerId,
+        targetCustomerId,
+        sourceCustomer: { organizationId: tenantId },
+        ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
+      },
+      select: { id: true },
+    })
+    if (existingEdge) throw new BadRequestException('同一个客户不能重复建立关系')
+
     const existingParent = await this.prisma.customerRelation.findFirst({
       where: {
         targetCustomerId,
+        sourceCustomer: { organizationId: tenantId },
         ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
       },
       select: { sourceCustomerId: true },
@@ -2353,6 +2419,15 @@ export class CustomersService {
       throw new BadRequestException(`该子公司已属于集团「${group?.name ?? '未知客户'}」`)
     }
 
+    const subsidiaryCount = await this.prisma.customerRelation.count({
+      where: {
+        sourceCustomerId,
+        sourceCustomer: { organizationId: tenantId },
+        ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
+      },
+    })
+    if (subsidiaryCount >= 10) throw new BadRequestException('一个客户最多设置 10 个子公司')
+
     // 防止直接或间接形成集团关系环。
     let current: string | null = sourceCustomerId
     const visited = new Set<string>()
@@ -2364,6 +2439,7 @@ export class CustomersService {
         await this.prisma.customerRelation.findFirst({
           where: {
             targetCustomerId: current,
+            sourceCustomer: { organizationId: tenantId },
             ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
           },
           select: { sourceCustomerId: true },
@@ -2379,6 +2455,7 @@ export class CustomersService {
   ) {
     const existing = await this.prisma.customerRelation.findMany({
       where: {
+        sourceCustomer: { organizationId: tenantId },
         ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
       },
       select: { sourceCustomerId: true, targetCustomerId: true },
@@ -2386,11 +2463,16 @@ export class CustomersService {
     const edges = [...existing, ...pending]
 
     const parentCount = new Map<string, number>()
+    const childCount = new Map<string, number>()
     const adjacency = new Map<string, string[]>()
     for (const edge of edges) {
       parentCount.set(edge.targetCustomerId, (parentCount.get(edge.targetCustomerId) ?? 0) + 1)
       if ((parentCount.get(edge.targetCustomerId) ?? 0) > 1) {
         throw new BadRequestException('一个子公司只能属于一个集团')
+      }
+      childCount.set(edge.sourceCustomerId, (childCount.get(edge.sourceCustomerId) ?? 0) + 1)
+      if ((childCount.get(edge.sourceCustomerId) ?? 0) > 10) {
+        throw new BadRequestException('一个客户最多设置 10 个子公司')
       }
       const next = adjacency.get(edge.sourceCustomerId) ?? []
       next.push(edge.targetCustomerId)

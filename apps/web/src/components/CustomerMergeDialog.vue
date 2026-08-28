@@ -5,7 +5,6 @@ import {
   listCustomers,
   mergeCustomers,
   previewCustomerMerge,
-  type ContactConflictStrategy,
   type CustomerMergePayload,
   type CustomerMergePreviewVO,
 } from '@/api/customers'
@@ -28,12 +27,10 @@ const form = reactive<{
   targetMode: 'selected' | 'other'
   toMergeId: string
   ownerId: string
-  contactConflictStrategy: ContactConflictStrategy
 }>({
   targetMode: 'selected',
   toMergeId: '',
   ownerId: '',
-  contactConflictStrategy: 'KEEP_ALL',
 })
 
 const selectedTargetOptions = computed(() => props.selectedRows)
@@ -55,7 +52,6 @@ function reset() {
     targetMode: 'selected',
     toMergeId: '',
     ownerId: '',
-    contactConflictStrategy: 'KEEP_ALL' as ContactConflictStrategy,
   })
   otherOptions.value = []
 }
@@ -116,7 +112,6 @@ function payload(): CustomerMergePayload | null {
     mergeIds: props.selectedRows.map((row) => row.id),
     toMergeId: form.toMergeId,
     ownerId: form.ownerId,
-    contactConflictStrategy: form.contactConflictStrategy,
   }
 }
 
@@ -139,10 +134,7 @@ async function executeMerge() {
   const data = payload()
   if (!data || !preview.value) return
   const skip = preview.value.counts.contactsWillSkip
-  const conflictText =
-    form.contactConflictStrategy === 'SKIP_DUPLICATES' && skip > 0
-      ? `其中 ${skip} 个冲突联系人不会迁入主客户。`
-      : ''
+  const conflictText = skip > 0 ? `其中 ${skip} 个联系人会按唯一字段规则去重。` : ''
   const confirmed = await ElMessageBox.confirm(
     `将删除 ${preview.value.counts.customersToDelete} 个被合并客户，操作不可回退。${conflictText}`,
     '确认合并客户',
@@ -262,15 +254,6 @@ watch(visible, (open) => {
           </div>
         </el-form-item>
 
-        <el-form-item label="联系人冲突">
-          <el-radio-group v-model="form.contactConflictStrategy">
-            <el-radio value="KEEP_ALL">全部保留</el-radio>
-            <el-radio value="SKIP_DUPLICATES">跳过与主客户同名/同电话联系人</el-radio>
-          </el-radio-group>
-          <div class="text-xs text-[var(--el-text-color-secondary)] mt-1">
-            默认全部保留，避免在没有联系人唯一字段配置时静默丢失数据。下一步会显示实际冲突数量。
-          </div>
-        </el-form-item>
       </el-form>
 
       <div class="rounded border border-[var(--el-border-color-lighter)] p-4 text-sm leading-7">
@@ -288,12 +271,13 @@ watch(visible, (open) => {
         <el-descriptions-item label="最终负责人">{{ preview.finalOwner.name ?? '-' }}</el-descriptions-item>
         <el-descriptions-item label="删除客户">{{ preview.counts.customersToDelete }} 个</el-descriptions-item>
         <el-descriptions-item label="联系人">
-          {{ preview.counts.contactsWillMove }} 迁移 / {{ preview.counts.contactsWillSkip }} 跳过
+          {{ preview.counts.contactsWillMove }} 迁移 / {{ preview.counts.contactsWillSkip }} 唯一去重
         </el-descriptions-item>
         <el-descriptions-item label="商机">{{ preview.counts.opportunities }}</el-descriptions-item>
         <el-descriptions-item label="报价">{{ preview.counts.quotes }}</el-descriptions-item>
         <el-descriptions-item label="合同">{{ preview.counts.contracts }}</el-descriptions-item>
         <el-descriptions-item label="跟进">{{ preview.counts.followUps }}</el-descriptions-item>
+        <el-descriptions-item label="跟进计划">{{ preview.counts.followUpPlans }}</el-descriptions-item>
         <el-descriptions-item label="客户附件">{{ preview.counts.attachments }}</el-descriptions-item>
         <el-descriptions-item label="协作关系">{{ preview.counts.collaborations }}</el-descriptions-item>
         <el-descriptions-item label="将移除集团关系" :span="2">
@@ -303,10 +287,10 @@ watch(visible, (open) => {
 
       <el-alert
         v-if="preview.contactConflicts.length > 0"
-        :type="form.contactConflictStrategy === 'SKIP_DUPLICATES' ? 'warning' : 'info'"
+        type="warning"
         :closable="false"
         class="mb-3"
-        :title="`发现 ${preview.contactConflicts.length} 个与主客户已有联系人姓名或电话冲突的源联系人。`"
+        :title="`发现 ${preview.contactConflicts.length} 个命中联系人唯一字段规则的源联系人，将自动去重。`"
       />
       <el-table v-if="preview.contactConflicts.length > 0" :data="preview.contactConflicts" max-height="220">
         <el-table-column prop="name" label="联系人" min-width="140" />
@@ -318,7 +302,7 @@ watch(visible, (open) => {
         </el-table-column>
         <el-table-column label="处理" min-width="140">
           <template #default>
-            {{ form.contactConflictStrategy === 'SKIP_DUPLICATES' ? '不迁移（附件转挂）' : '仍迁移保留' }}
+            不迁移（关联引用转挂）
           </template>
         </el-table-column>
       </el-table>
@@ -327,7 +311,7 @@ watch(visible, (open) => {
         type="error"
         :closable="false"
         class="mt-4"
-        title="确认后将删除被合并客户，操作不可回退。请确认主客户、负责人和联系人冲突策略无误。"
+        title="确认后将删除被合并客户，操作不可回退。请确认主客户、负责人和影响预览无误。"
       />
     </template>
 

@@ -210,13 +210,17 @@
   - [x] 专项 Smoke `node scripts/w343-contact-api-smoke.mjs`：18/18；API rules、Shared/API/Web typecheck、本批 ESLint、API/Web production build 与 `git diff --check` 全绿。
   - _需求：R2、R8、R11_
 
-- [ ] 4.4 对齐客户协作、关系和合并
-  - 保持 `COLLABORATION/READ_ONLY` 不同读写边界。
-  - 实现集团/子公司唯一、数量、单集团、防循环约束。
-  - 合并保留预览、二次确认、负责人约束和关联资源处理，并保证事务回滚。
+- [x] 4.4 对齐客户协作、关系和合并
+  - [x] 协作管理统一复用 `customer:update`，`COLLABORATION/READ_ONLY` 不扩大 Customer DataScope；协作关系不能进入协作管理、客户关系或合并写链路，同一客户/用户保持唯一并支持批量删除。
+  - [x] 客户关系整组保存强制 1 个 GROUP + 最多 10 个 SUBSIDIARY，并补齐重复边、单上级集团、自关联、防环与事务失败保留原关系。
+  - [x] 合并请求恢复 Cordys `mergeIds/toMergeId/ownerId` 三字段，移除 `KEEP_ALL/SKIP_DUPLICATES`；只在联系人姓名/电话启用 unique 时自动去重并转挂商机、跟进计划和附件引用。
+  - [x] 合并事务补齐 FollowUpPlan、报价/合同/工商抬头 Customer FK、协作继承、源关系清理、主客户联系人负责人、Owner History、领取时间和转移通知；负责人/范围校验失败不产生部分删除。
+  - [x] 专项 Smoke `node scripts/w343-customer-deep-api-smoke.mjs`：30/30；回归客户 API/360 22/22、联系人 API 18/18、rules 114/114；Shared/API/Web typecheck、API/Web production build、本批 ESLint 全绿。
   - _需求：R7、R11_
 
 - [ ] 4.5 重建多客户公海 API 与规则执行
+  - [ ] 4.5.0 先完成 `/system/modules` 客户卡片三个模块设置入口：公海设置、客户库容设置、移入公海原因设置；按 Cordys 模块设置源码实现真实 Drawer，不保留占位按钮。
+  - [ ] 4.5.1 对齐 `/account-pool/*`、`/account-capacity/*` 与 `CUSTOMER_POOL_RS` 字典设置，并与页面 Drawer、权限、Scope、原因校验闭环。
   - 完成公海选项、分页、详情、领取/分配、批量、编辑、删除、导入导出和图表。
   - 执行公海 Scope、隐藏字段、独立权限、领取限制、冷却、库容/排除、回收、通知和审计。
   - 后端限制公海 360 只能读取信息、跟进和负责人历史。

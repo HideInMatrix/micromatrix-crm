@@ -448,3 +448,27 @@ task 4.3 已完成联系人 `/account/contact/*` 主契约收口；下一独立�
 - 独立联系人允许 `customerId=null`，显式关联客户时执行 Customer 子资源权限；Contact SELF DataScope 与客户 360 READ_ONLY/COLLABORATION 两类访问已通过真实 API/数据库 Smoke。
 - 动态字段普通值与 Blob、unique、启停原因、图表、导出、模板、商机关联检查和后端拒删均通过；删除事务验证联系人主体与动态字段/Blob 同步清理。
 - `node scripts/w343-contact-api-smoke.mjs`：**18 passed / 0 failed**；API rules **114/114**；Shared/API/Web typecheck、本批 ESLint、API/Web production build 和 `git diff --check` 全部通过。
+
+### 15.3 task 4.4 协作、关系与合并实施锁定
+
+2026-08-28 再次按 Cordys `CustomerCollaborationController/Service`、`CustomerRelationController/Service`、`CustomerService.merge`、`ExtCustomerContactMapper.batchMerge`、`mergeAccountModal.vue` 与 `customerRelation.vue` 复核，task 4.4 按以下规则收口：
+
+1. **协作管理继续复用 CUSTOMER UPDATE**：列表需要 CUSTOMER READ + Customer 资源访问；新增、更新、删除、批量删除都使用 `customer:update`。协作成员类型只允许 `COLLABORATION/READ_ONLY`，同一客户与用户只保留一条关系；新增通知只发给非公海客户负责人。
+2. **协作关系不扩大 Customer DataScope**：`COLLABORATION` 只开放已确认的联系人/跟进子域写能力，不能据此编辑客户主体、管理协作人、维护集团关系或执行合并；`READ_ONLY` 所有业务子域只读。
+3. **客户关系采用整组保存语义**：页面最多 11 行（1 个 GROUP + 最多 10 个 SUBSIDIARY），排除自身和重复客户；后端继续强制自关联、重复边、单上级集团、最多十个子公司和防环校验，并把“删除旧关系 + 写入新关系”放在同一事务。
+4. **合并请求严格回到 Cordys 三字段**：只接受 `mergeIds / toMergeId / ownerId`。删除 MicroMatrix 额外设计的 `KEEP_ALL/SKIP_DUPLICATES` 联系人冲突策略；合并预览可以保留为只读风险提示，但不能改变合并规则。
+5. **联系人去重由模块唯一规则决定**：仅当联系人姓名和/或电话字段启用 unique 时，源联系人命中主客户已有唯一值才不迁入；未启用 unique 的字段不得参与冲突判定。动态自定义字段仍由现有字段值服务保证数据库唯一性和事务失败回滚。
+6. **合并事务必须完整处理关联资源**：联系人、商机、跟进记录、跟进计划，以及 MicroMatrix 当前模型中带 Customer 外键的报价/合同等资源一并指向主客户；源客户的协作关系合并到主客户并去重，源负责人转换为协作人，源客户关系删除，源客户删除及其字段/Owner History 依赖由数据库级联清理。
+7. **目标负责人规则保持 Cordys 页面行为**：主客户来自已选客户时，最终负责人只能选择已选客户负责人；主客户来自“其它客户”时负责人固定为该主客户当前负责人。负责人变化时同步主客户联系人负责人、Owner History、领取时间、库容校验和转移通知。
+8. **事务一致性**：任何唯一冲突、容量失败或关联资源更新失败都必须整体回滚，不能留下已迁联系人、已删源客户或半写协作关系。
+9. **验收**：新增 task 4.4 专项 Smoke，至少覆盖 COLLABORATION/READ_ONLY 越权、协作去重与批删、关系单集团/10 子公司/防环/整组回滚、合并三字段契约、唯一联系人自动去重、FollowUpPlan 迁移、协作继承、Owner History/联系人负责人同步和事务回滚。
+
+### 15.4 task 4.4 验收结果
+
+- 协作管理列表与写操作不再把 `COLLABORATION/READ_ONLY` 当成 Customer DataScope；协作用户仍按既定规则访问联系人/跟进子域，但不能维护协作人、关系或执行合并。
+- 客户关系整组保存验证 1 个集团 + 最多 10 个子公司、重复客户/重复边、单上级集团、自关联和关系环；失败请求不会先删除旧关系。
+- 合并 DTO/Web 已删除 `contactConflictStrategy`，请求恢复为 Cordys `mergeIds/toMergeId/ownerId`；联系人冲突只由姓名/电话字段的 unique 配置决定，预览只展示结果不改变规则。
+- 合并事务补齐 FollowUpPlan、重复联系人商机/计划引用转挂、报价/合同/工商抬头 Customer FK、主客户联系人负责人同步、Owner History 与源协作/关系清理；源负责人/协作人按 Cordys 规则继承为主客户协作人并排除最终负责人。
+- `node scripts/w343-customer-deep-api-smoke.mjs`：**30 passed / 0 failed**；回归 task 4.2 **22/22**、task 4.3 **18/18**、API rules **114/114**；Shared/API/Web typecheck、API/Web production build 与本批 ESLint 全绿。
+
+task 4.4 关闭；下一执行指针为 **W3.4.3 task 4.5.0：先对齐 `/system/modules` 客户卡片的公海设置、客户库容设置、移入公海原因设置三个真实 Drawer**，随后继续 4.5.1 设置 API 与完整客户公海链路。

@@ -833,3 +833,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 联系人普通动态字段与 Blob、唯一规则、启停原因全部落直接表；后端保留需求 R8 的商机关联强制拒删，删除联系人、动态字段/Blob 与附件处于同一事务。移动端客户联系人调用同步迁移到 `/account/contact/list/*`，浏览器 `/contacts` 仍只作为前端导航路由。
 - 新增 `scripts/w343-contact-api-smoke.mjs`，专项验收 **18/18**；API rules **114/114**，Shared/API/Web typecheck、本批 ESLint、API/Web production build 与 `git diff --check` 全绿。
 - task 4.3 关闭；下一执行指针为 **W3.4.3 task 4.4：对齐客户协作、关系和合并**。
+
+---
+
+## 35. W3.4.3 task 4.4 客户协作、关系和合并（2026-08-28）
+
+- 重读 Cordys `CustomerCollaborationController/Service`、`CustomerRelationController/Service`、`CustomerService.merge`、联系人 `batchMerge` Mapper 与 `mergeAccountModal.vue/customerRelation.vue`，确认协作复用 CUSTOMER UPDATE、关系整组保存以及合并只接收 `mergeIds/toMergeId/ownerId`。
+- 协作管理列表和写接口不再把 `COLLABORATION/READ_ONLY` 当 Customer DataScope；同客户/用户唯一、类型更新和批量删除保持 Cordys 语义。客户关系补齐最多 10 子公司、重复边、单上级集团、自关联、防环和整组失败保留。
+- 删除 MicroMatrix 自定义 `KEEP_ALL/SKIP_DUPLICATES` 合并策略；联系人只在姓名/电话字段启用 unique 时自动去重，重复联系人被删除前先转挂商机、FollowUpPlan 和附件引用。
+- 合并事务补齐 FollowUpPlan、报价/合同/工商抬头 Customer FK、源协作/负责人继承、源关系清理、主客户联系人负责人、Owner History 与领取时间；负责人/范围校验失败不产生部分删除。
+- 新增 `scripts/w343-customer-deep-api-smoke.mjs`，专项 **30/30**；回归客户 API/360 **22/22**、联系人 API **18/18**、rules **114/114**；Shared/API/Web typecheck、API/Web production build、本批 ESLint 全绿。
+- task 4.4 关闭；下一执行指针为 **W3.4.3 task 4.5.0：先完成 `/system/modules` 客户卡片的公海设置、客户库容设置、移入公海原因设置三个真实 Drawer**。

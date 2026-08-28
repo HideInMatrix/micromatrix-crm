@@ -1,12 +1,10 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { ApiProperty } from '@nestjs/swagger'
 import {
   ArrayMaxSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
-  IsIn,
   IsNotEmpty,
-  IsOptional,
   IsString,
 } from 'class-validator'
 
@@ -28,13 +26,4 @@ export class CustomerMergeDto {
   @IsString()
   @IsNotEmpty()
   ownerId!: string
-
-  @ApiPropertyOptional({
-    enum: ['KEEP_ALL', 'SKIP_DUPLICATES'],
-    default: 'KEEP_ALL',
-    description: '联系人冲突策略；默认全部保留，也可跳过与主客户已有姓名/电话重复的源联系人',
-  })
-  @IsIn(['KEEP_ALL', 'SKIP_DUPLICATES'])
-  @IsOptional()
-  contactConflictStrategy?: 'KEEP_ALL' | 'SKIP_DUPLICATES' = 'KEEP_ALL'
 }

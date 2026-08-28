@@ -54,13 +54,10 @@ export interface CustomerRelationPayload {
   customerId: string
 }
 
-export type ContactConflictStrategy = 'KEEP_ALL' | 'SKIP_DUPLICATES'
-
 export interface CustomerMergePayload {
   mergeIds: string[]
   toMergeId: string
   ownerId: string
-  contactConflictStrategy?: ContactConflictStrategy
 }
 
 export interface CustomerMergePreviewVO {
@@ -68,7 +65,6 @@ export interface CustomerMergePreviewVO {
   target: { id: string; name: string; ownerId: string | null; ownerName: string | null }
   sources: { id: string; name: string; ownerId: string | null; ownerName: string | null }[]
   finalOwner: { id: string; name: string | null }
-  contactConflictStrategy: ContactConflictStrategy
   counts: {
     customersToDelete: number
     contacts: number
@@ -78,6 +74,7 @@ export interface CustomerMergePreviewVO {
     quotes: number
     contracts: number
     followUps: number
+    followUpPlans: number
     attachments: number
     collaborations: number
     relationsToRemove: number
