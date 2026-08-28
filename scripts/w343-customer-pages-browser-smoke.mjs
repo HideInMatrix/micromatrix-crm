@@ -86,7 +86,11 @@ class CdpClient {
         )
       }
       if (message.method === 'Network.requestWillBeSent') {
-        this.requests.push({ method: message.params.request.method, url: message.params.request.url })
+        this.requests.push({
+          method: message.params.request.method,
+          url: message.params.request.url,
+          postData: message.params.request.postData ?? '',
+        })
       }
     })
     await Promise.all([
@@ -148,6 +152,26 @@ class CdpClient {
     }).length
   }
 
+  async waitForRequest(pathname, bodyText, timeoutMs = 5000) {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < timeoutMs) {
+      const matched = this.requests.some((item) => {
+        try {
+          return (
+            new URL(item.url).pathname === pathname &&
+            item.method === 'POST' &&
+            (!bodyText || item.postData.includes(bodyText))
+          )
+        } catch {
+          return false
+        }
+      })
+      if (matched) return true
+      await sleep(100)
+    }
+    return false
+  }
+
   close() {
     this.socket.close()
   }
@@ -183,8 +207,20 @@ async function searchCustomerTable(cdp, keyword) {
     10000,
     '客户搜索输入框',
   )
+  const expectedPath = (await cdp.evaluate(`location.pathname.includes('/open-sea')`))
+    ? '/api/pool/account/page'
+    : '/api/account/page'
+  cdp.resetNetwork()
   await fillInput(cdp, 'input[placeholder="搜索名称 / 电话 / 邮箱"]', keyword)
-  await clickText(cdp, '搜索')
+  await cdp.evaluate(`(() => {
+    const el=document.querySelector('input[placeholder="搜索名称 / 电话 / 邮箱"]');
+    if(!el) return false;
+    el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',bubbles:true}));
+    return true;
+  })()`)
+  if (!(await cdp.waitForRequest(expectedPath, keyword))) {
+    throw new Error(`搜索 ${keyword} 未触发 ${expectedPath}`)
+  }
   await cdp.waitFor(
     `[...document.querySelectorAll('.el-table__body-wrapper tbody tr')].some((row)=>row.innerText.includes(${JSON.stringify(keyword)}))`,
     10000,
@@ -292,6 +328,20 @@ async function seed() {
     if (!moved.response.ok) throw new Error(`移入公海失败: ${moved.raw}`)
     cleanupPoolIds.push(created[key])
   }
+  const poolSeedPage = await apiRequest('POST', '/pool/account/page', {
+    current: 1,
+    pageSize: 20,
+    poolId: pool.id,
+    keyword: 'Browser公海客户',
+  })
+  check(
+    'Browser 公海夹具移池后可由目标 Pool 搜索',
+    poolSeedPage.response.ok &&
+      [names.pool1, names.pool2].every((name) =>
+        poolSeedPage.data?.list?.some((row) => row.name === name),
+      ),
+    poolSeedPage.raw,
+  )
   return { pool, names, created, reasonEnabled: reasonConfig.data?.enable === true }
 }
 
@@ -333,7 +383,11 @@ async function main() {
       '客户列表可选中两条数据',
       (await selectRowsContaining(cdp, [names.normal1, names.normal2])) === 2,
     )
-    await sleep(200)
+    await cdp.waitFor(
+      `['批量转移','批量移入公海','批量修改','合并客户','批量删除'].every((x)=>document.body.innerText.includes(x))`,
+      5000,
+      '客户批量动作渲染',
+    )
     check(
       '客户批量动作包含转移/移入公海/修改/合并/删除',
       await cdp.evaluate(
@@ -419,6 +473,20 @@ async function main() {
         const text=document.querySelector('.customer-overview-drawer')?.innerText ?? '';
         return ['领取','分配','删除'].every((x)=>text.includes(x));
       })()`),
+    )
+    const poolBeforeList = await apiRequest('POST', '/pool/account/page', {
+      current: 1,
+      pageSize: 20,
+      poolId: pool.id,
+      keyword: 'Browser公海客户',
+    })
+    check(
+      '打开公海详情不会改变夹具 Pool 归属',
+      poolBeforeList.response.ok &&
+        [names.pool1, names.pool2].every((name) =>
+          poolBeforeList.data?.list?.some((row) => row.name === name),
+        ),
+      poolBeforeList.raw,
     )
     await cdp.navigate(`/customers/open-sea?poolId=${encodeURIComponent(pool.id)}`)
     await cdp.waitFor(

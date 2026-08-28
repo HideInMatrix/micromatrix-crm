@@ -284,7 +284,7 @@ export class OpportunitiesService {
       type: 'system',
       title: '新建商机',
       content: `${user.name} 新建了商机「${opportunity.name}」并将你设为负责人`,
-      link: `/opportunities/${opportunity.id}`,
+      link: `/opportunities?id=${opportunity.id}`,
     })
     return this.toSingleVO(user, opportunity)
   }
@@ -361,7 +361,7 @@ export class OpportunitiesService {
         type: 'assign',
         title: '商机已转移给你',
         content: `${user.name} 将商机「${opportunity.name}」转移给你`,
-        link: `/opportunities/${opportunity.id}`,
+        link: `/opportunities?id=${opportunity.id}`,
       })
     }
     return this.toSingleVO(user, opportunity)

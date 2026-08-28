@@ -284,30 +284,32 @@
 
 ## 6. W3.4.5 全图验收
 
-- [ ] 6.1 对齐菜单和跨页导航
-  - 验证首页、线索/池、客户/联系人/公海、仪表板的 Cordys 菜单层级与页面内导航。
-  - 验证首页统计、消息、审批、计划、线索转换和客户 360 的筛选、资源 ID 与返回路径。
+- [x] 6.1 对齐菜单和跨页导航
+  - [x] 首页、线索/池、客户/联系人/公海、仪表板主菜单与页内导航重新按 Cordys `pathMap` 验证；联系人/公海补齐客户主导航高亮，公海 Guard 收紧到 `customerPool:read`。
+  - [x] 补齐 `/leads?id`、`/leads/pool?id&poolId` 和 `/follow-plans?id` 资源深链；商机通知改为 `/opportunities?id`。全图导航 Browser **29/29**，覆盖统计、消息、审批、计划、资源 ID、刷新保持和 Customer 360 返回路径。
   - _需求：R3、R4、R5、R7、R11_
 
-- [ ] 6.2 完成权限组合、数据范围和组织隔离矩阵
-  - 覆盖管理员、主管、普通成员、协作、只读协作、多角色权限并集及无权限用户。
-  - 覆盖列表、详情、统计、导出、池、公海、收藏和跨页手工请求。
+- [x] 6.2 完成权限组合、数据范围和组织隔离矩阵
+  - [x] `final-navigation-access-audit.md` 固化管理员、主管、普通成员、COLLABORATION、READ_ONLY、多角色权限并集、无权限用户和第二租户的最终访问矩阵。
+  - [x] 现场复跑首页 **17/17**、线索池 **32/32**、客户深层 **30/30**、客户公海 **36/36**、Dashboard **44/44**、根 Smoke **223/223**、全图导航 Browser **29/29**；列表、详情、统计、导出、池、公海、收藏和跨页手工请求均有真实拒绝/成功证据。
   - _需求：R11、R12_
 
-- [ ] 6.3 执行全量自动化与空库验收
-  - 空库应用全部 migration、Seed、启动 API/Web，运行规则测试、专项 Smoke、全量 Smoke、typecheck、Lint 和生产构建。
-  - 验证旧表不存在、旧 API 为 404、目标模型/索引/API 全部存在。
+- [x] 6.3 执行全量自动化与空库验收
+  - [x] `w345-empty-db-validation.mjs` 使用真实独立 PostgreSQL 数据库从零应用 **35/35 migration**，连续 Seed 两次，并以正式 API build + 独立 Web proxy 启动运行时；最终 **14/14**。
+  - [x] 空库审计确认目标直接表 **32/32**、关键索引 **23/23**，旧表 **14/14** 全部不存在；新 `/lead`、`/account`、`/dashboard`、`/module-configs` 可用，旧 `/leads`、`/customers`、`/contacts`、`/dashboard/summary` 全部 404。
+  - [x] 最终自动化：根 Smoke **223/223**、rules **114/114**、全仓 typecheck、ESLint、Shared/API/Web production build 全绿。
   - _需求：R1、R12_
 
-- [ ] 6.4 执行桌面与既有 Mobile 浏览器回归
-  - 逐页完成核心正常路径、拒绝路径、刷新保持、跨页返回和错误状态。
-  - 验证无 console error/warn、无失败网络请求、无静态伪数据和待开发按钮。
+- [x] 6.4 执行桌面与既有 Mobile 浏览器回归
+  - [x] 逐域 Browser 重新执行：首页 **12/12**、线索 **20/20**、客户 **23/23**、Dashboard **28/28**、全图导航 **29/29**、Mobile Home/Leads **10/10**；覆盖正常路径、权限拒绝、资源深链、刷新保持、跨页返回和 Runtime/Console 业务异常检查。
+  - [x] 最终 Browser 发现并修复客户公海列表真实请求竞态：初始请求晚返回会覆盖较新搜索结果；现加入同参数请求复用 + generation，只允许最新请求更新列表。修复后客户 Browser **23/23** 稳定通过。
+  - [x] 静态负向检查确认 W3.4 页面不存在“待开发”占位文本，验收页数据来自真实 API/Seed/专项夹具；既有 Mobile Home、Leads、Customers 链路均有真实手机视口证据。
   - _需求：R2～R12_
 
-- [ ] 6.5 收口文档、缺口与本地提交
-  - 更新 API、数据模型、parity、alignment log、总计划、规格索引和缺口台账。
-  - 仅当 R1～R12 全部有证据时将 W3.4 标记 `VERIFIED`；未实现项保持明确状态和后续阶段。
-  - 形成 W3.4.5 本地提交并记录各阶段提交哈希。
+- [x] 6.5 收口文档、缺口与本地提交
+  - [x] 更新最终验收审计、parity、alignment log、总计划、规格索引和缺口台账；DataEase provider/token 继续 DB-023 deferred，不伪装为已实现。
+  - [x] R1～R12 在本轮用户确认的 W3.4 功能图范围内均已有源码、实现与自动化证据，W3.4 状态更新为 `VERIFIED`；图外 Cordys 能力继续保留在 parity/deferred 台账。
+  - [x] 形成 W3.4.5 本地提交并记录最终提交哈希。
   - _需求：R12_
 
 ## 7. 确认后的首个执行单元

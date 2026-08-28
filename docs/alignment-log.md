@@ -918,3 +918,15 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - Dashboard Browser **28/28**、Dashboard API **44/44**、根级 Smoke **223/223**、rules **114/114**；全仓 typecheck/production build、受影响 ESLint 与最终 Web typecheck/build 全绿。
 - 演示账号约定已同步到 Seed 与 Smoke：管理员/销售主管密码均为 `admin123`，销售专员为 `demo123`。
 - W3.4.4 Dashboard 正式关闭；下一执行指针为 **W3.4.5 task 6.1：菜单和跨页导航全图验收**。
+
+---
+
+## 43. W3.4.5 全图最终验收（2026-08-28）
+
+- task 6.1 完成菜单与跨页导航最终对齐：联系人/客户公海保持客户主导航高亮，客户公海路由 Guard 收紧为 `customerPool:read`；普通线索、线索池、跟进计划补齐资源 ID 深链和刷新恢复，商机通知改为现有页面可消费的 `/opportunities?id=`。全图导航 Browser **29/29**。
+- task 6.2 现场复跑最终权限矩阵：首页 **17/17**、线索池 **32/32**、客户协作/只读/关系/合并 **30/30**、客户公海 **36/36**、Dashboard **44/44**、多角色 DataScope 规则 **4/4**、根 Smoke **223/223**；管理员/主管/专员、COLLABORATION、READ_ONLY、多角色并集、无权限和第二租户均有成功/拒绝证据。
+- task 6.3 新增 `w345-empty-db-validation.mjs`：使用 Prisma PostgreSQL adapter 创建真实临时数据库，从零应用 **35/35 migration**、连续 Seed 两次，确认目标直接表 **32/32**、关键索引 **23/23**、旧表 **14/14** 全部不存在；隔离 API/Web runtime、目标 API 与旧 API 404 合计 **14/14**，临时进程和数据库自动清理。
+- task 6.4 最终 Browser：Home **12/12**、线索 **20/20**、客户 **23/23**、Dashboard **28/28**、全图导航 **29/29**、Mobile Home/Leads **10/10**。最终 Browser 发现并修复客户公海真实竞态：初始列表请求晚返回会覆盖较新的搜索结果；`CustomerPoolView` 现使用同参数请求复用 + generation，只允许最新请求更新列表。
+- 最终质量门槛：根级 `pnpm smoke` **223/223**、API rules **114/114**、全仓 typecheck、全仓 ESLint、Shared/API/Web production build 全绿；ESLint 同时清理一个已废弃的 Browser Smoke `clickText` 测试 helper。
+- 文档已同步 `tasks / final-navigation-access-audit / parity / deferred / graph-completion-plan / specs index / docs index`。DataEase provider/token 继续 DB-023 deferred；商机高级配置、合同/发票高级流程、自定义表单等图外能力仍按原 parity/deferred 状态推进。
+- **W3.4.0～W3.4.5 正式全部关闭，用户确认的 W3.4 功能图状态更新为 `VERIFIED`。该状态不等于整个 CordysCRM 所有模块已 100% 复刻。**

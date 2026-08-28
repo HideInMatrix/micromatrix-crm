@@ -6,13 +6,14 @@ import {
 } from '@micromatrix/shared'
 import { CalendarClock, CheckCheck, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
 import { onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi } from '@/api/sales'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
 
 const loading = ref(false)
 const route = useRoute()
+const router = useRouter()
 const items = ref<FollowUpPlanVO[]>([])
 const total = ref(0)
 const query = reactive({
@@ -83,6 +84,21 @@ function edit(plan: FollowUpPlanVO) {
   dialogVisible.value = true
 }
 
+async function consumeRoutePlan() {
+  const id = typeof route.query.id === 'string' ? route.query.id : ''
+  if (!id) return
+  try {
+    const { data } = await followUpPlanApi.get(id)
+    editing.value = data
+    dialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    const query = { ...route.query }
+    delete query.id
+    await router.replace({ path: route.path, query })
+  }
+}
+
 async function updateStatus(plan: FollowUpPlanVO, status: FollowUpPlanStatus) {
   try {
     await followUpPlanApi.updateStatus(plan.id, status)
@@ -121,9 +137,10 @@ async function remove(plan: FollowUpPlanVO) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   query.mine = route.query.mine === '1'
-  load()
+  await load()
+  await consumeRoutePlan()
 })
 </script>
 

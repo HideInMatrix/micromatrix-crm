@@ -226,6 +226,8 @@ watch(
     if (generation !== routeGeneration) return
     pageReady.value = true
     await loadData()
+    if (generation !== routeGeneration) return
+    await consumeRouteLeadDeepLink()
   },
   { flush: 'sync' },
 )
@@ -658,6 +660,40 @@ async function consumeRouteHomeFilter() {
   query.page = 1
 }
 
+async function consumeRouteLeadDeepLink() {
+  const id = typeof route.query.id === 'string' ? route.query.id : ''
+  if (!id) return
+  if (isPoolMode.value) {
+    const queryPoolId = typeof route.query.poolId === 'string' ? route.query.poolId : ''
+    if (queryPoolId && pools.value.some((pool) => pool.id === queryPoolId)) {
+      selectedPoolId.value = queryPoolId
+    }
+  }
+  try {
+    const { data } = await leadApi.get(id, isPoolMode.value)
+    if (isPoolMode.value && data.poolId && pools.value.some((pool) => pool.id === data.poolId)) {
+      selectedPoolId.value = data.poolId
+    }
+    overviewTarget.value = data
+    overviewVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    const nextQuery = { ...route.query }
+    delete nextQuery.id
+    delete nextQuery.name
+    delete nextQuery.poolId
+    delete nextQuery.transitionType
+    await router.replace({ path: route.path, query: nextQuery })
+  }
+}
+
+watch(
+  () => [route.query.id, route.query.poolId] as const,
+  () => {
+    if (pageReady.value) void consumeRouteLeadDeepLink()
+  },
+)
+
 onMounted(async () => {
   const generation = ++routeGeneration
   pageReady.value = false
@@ -673,6 +709,8 @@ onMounted(async () => {
   if (generation !== routeGeneration) return
   pageReady.value = true
   await loadData()
+  if (generation !== routeGeneration) return
+  await consumeRouteLeadDeepLink()
 })
 </script>
 

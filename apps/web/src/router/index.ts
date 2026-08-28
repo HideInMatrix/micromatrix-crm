@@ -120,13 +120,23 @@ const router = createRouter({
           path: 'contacts',
           name: 'contacts',
           component: () => import('@/views/contacts/ContactsView.vue'),
-          meta: { title: '联系人', perm: 'contact:read', client: 'pc' },
+          meta: {
+            title: '联系人',
+            perm: 'contact:read',
+            client: 'pc',
+            activeMenu: '/customers',
+          },
         },
         {
           path: 'customers/open-sea',
           name: 'customer-open-sea',
           component: () => import('@/views/customers/CustomerPoolView.vue'),
-          meta: { title: '客户公海', perm: 'menu:customer', client: 'pc' },
+          meta: {
+            title: '客户公海',
+            perm: 'customerPool:read',
+            client: 'pc',
+            activeMenu: '/customers',
+          },
         },
         {
           path: 'customers/:id',

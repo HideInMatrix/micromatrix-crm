@@ -1577,7 +1577,7 @@ export class LeadsService {
           type: 'system',
           title: '线索已转换为商机',
           content: `线索「${lead.name}」已创建商机「${opportunityName}」`,
-          link: `/opportunities/${opportunityId}`,
+          link: `/opportunities?id=${opportunityId}`,
         })
       }
     }

@@ -54,6 +54,9 @@ const batchAssignVisible = ref(false)
 const pageReady = ref(false)
 const savedViewReady = ref(false)
 const initialLoadDone = ref(false)
+let activeListRequestKey = ''
+let activeListRequest: Promise<void> | null = null
+let listRequestGeneration = 0
 
 const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
 const canImport = computed(() => auth.hasPerm('customerPool:import'))
@@ -92,29 +95,51 @@ async function loadPoolOptions() {
 
 async function loadData() {
   if (!selectedPoolId.value) {
+    listRequestGeneration += 1
     items.value = []
     total.value = 0
     selectedRows.value = []
     return
   }
-  loading.value = true
+
+  const params = {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword.trim() || undefined,
+    scope: 'sea' as const,
+    poolId: selectedPoolId.value,
+    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    viewId: activeSavedViewId.value || undefined,
+  }
+  const requestKey = JSON.stringify(params)
+  if (activeListRequest && activeListRequestKey === requestKey) return activeListRequest
+
+  const requestGeneration = ++listRequestGeneration
+  const request = (async () => {
+    loading.value = true
+    try {
+      const { data } = await listCustomers(params)
+      if (requestGeneration !== listRequestGeneration) return
+      items.value = data.items
+      total.value = data.total
+      selectedRows.value = []
+    } catch (error) {
+      if (requestGeneration !== listRequestGeneration) return
+      ElMessage.error(extractErrorMessage(error))
+    } finally {
+      if (requestGeneration === listRequestGeneration) loading.value = false
+    }
+  })()
+
+  activeListRequestKey = requestKey
+  activeListRequest = request
   try {
-    const { data } = await listCustomers({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword.trim() || undefined,
-      scope: 'sea',
-      poolId: selectedPoolId.value || undefined,
-      filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
-      viewId: activeSavedViewId.value || undefined,
-    })
-    items.value = data.items
-    total.value = data.total
-    selectedRows.value = []
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+    await request
   } finally {
-    loading.value = false
+    if (activeListRequest === request) {
+      activeListRequest = null
+      activeListRequestKey = ''
+    }
   }
 }
 

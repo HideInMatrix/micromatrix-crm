@@ -6,7 +6,7 @@
 
 - 基础公共能力：组织架构、角色权限、租户隔离、数据权限、操作日志、模块菜单底座已具备。
 - 图中销售模块：已有可运行页面和 API，但“存在”不等于与 Cordys 完整一致，仍需按模块逐页读取源码后复查字段、操作、权限、状态与关联数据。
-- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；W3.4.1 首页、W3.4.2 线索/线索池、W3.4.3 客户域、W3.4.4 仪表板均已关闭，当前执行 **W3.4.5 task 6.1 全图菜单和跨页导航验收**。DataEase provider 暂缓。
+- 企业设置：W3.1 配置、W3.2 组织同步、W3.3 统一登录/企微消息渠道以及后续 W3.4-S 六页签领域化/登录品牌/前端目录收口均已完成；W3.4.0～W3.4.5 已全部关闭，用户确认的 W3.4 功能图现为 **`VERIFIED`**。DataEase provider/token 继续 DB-023 deferred，不计入本轮完成范围。
 
 ## 执行顺序
 
@@ -16,7 +16,7 @@
 | W3.2   | 企微组织同步            | 部门/成员差异预览、外部 ID 映射、冲突策略、同步执行与记录、失败重试和页面闭环          | `VERIFIED`    |
 | W3.3   | 企微统一登录与消息渠道  | 外部身份/OAuth state、绑定与解绑、登录审计；消息渠道开关、发送器、重试与投递审计       | `VERIFIED`    |
 | W3.4-D | Docker 发布链路         | API/Web 双镜像、Prisma migration、Nginx runtime proxy、Tag→GHCR 多架构自动发布         | `VERIFIED`    |
-| W3.4   | 图中业务模块逐页复查    | 首页、线索/池、客户/联系人/公海、仪表板逐页完成源码→API→Service→数据模型→页面→测试闭环 | `IN_PROGRESS` |
+| W3.4   | 图中业务模块逐页复查    | 首页、线索/池、客户/联系人/公海、仪表板逐页完成源码→API→Service→数据模型→页面→测试闭环 | `VERIFIED`    |
 
 ## W3.2 验收结论
 
@@ -58,6 +58,7 @@
 22. W3.4.3 task 4.5 已完成客户公海与模块设置：`/system/modules` 客户卡片三个专属 Drawer、`/account-pool/*`、`/account-capacity/*`、`CUSTOMER_POOL_RS` 和 `/pool/account/*` 全部按 Cordys 分域契约闭环；批量同池约束、领取/库容/冷却、stage 排除、导入导出、自动回收与公海详情访问边界均有真实 API/数据库证据。模块设置 API `25/25`、Browser `17/17`、公海主体 `36/36`，回归客户 `22/22`、联系人 `18/18`、深层规则 `30/30`、rules `114/114`。
 23. W3.4.3 task 4.6～4.7 已完成客户域页面与最终验收：普通客户补齐批量转移/移入公海，客户公海补齐领取/分配/批量与独立只读详情，联系人/客户/公海 query 深链和 Mobile 三入口均按 Cordys 收口；客户域 Browser `21/21`、根级 Smoke `220/220`，根级 typecheck、ESLint、production build 与 diff 全绿。W3.4.3 客户域正式关闭，当前进入 **W3.4.4 task 5.1**。
 24. W3.4.4 task 5.1～5.6 已全部完成：Dashboard 源码证据、旧统计命名空间释放、目录/资源 Service、收藏与通用安全嵌入、`/reports` 左树右内容页面全部闭环；tenant + Scope、目录防环/孤儿、同级重名、跨目录排序、URL HTTPS 策略、精确 iframe origin/CSP 与操作日志均有真实证据。Dashboard API `44/44`、Browser `28/28`、根级 Smoke `223/223`、rules `114/114`，typecheck/lint/build 全绿。W3.4.4 正式关闭，当前进入 **W3.4.5 task 6.1**；DataEase provider 继续 DB-023 deferred。
+25. W3.4.5 task 6.1～6.5 已全部完成：[全图导航与访问边界验收](./specs/business-module-page-parity/final-navigation-access-audit.md) 固化菜单/资源深链、权限组合、多角色 DataScope 与第二租户边界；隔离空库从零应用 **35/35 migration**、双次 Seed、目标表 **32/32**、关键索引 **23/23**、旧表 **14/14** 不存在，隔离 API/Web runtime **14/14**。最终 Browser：首页 `12/12`、线索 `20/20`、客户 `23/23`、Dashboard `28/28`、全图导航 `29/29`、Mobile Home/Leads `10/10`；根 Smoke `223/223`、rules `114/114`、typecheck/lint/build 全绿。验收额外修复客户公海旧请求覆盖新搜索结果的并发竞态。**用户确认的 W3.4 功能图正式标记 `VERIFIED`**；这不代表整个 CordysCRM 所有图外模块均已复刻，后续缺口继续由 parity/deferred 台账跟踪。
 
 ## 长期完成约束
 

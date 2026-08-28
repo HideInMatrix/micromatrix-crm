@@ -346,6 +346,8 @@ export const resourceCapacityApi = {
 
 export const leadApi = {
   list: (params: LeadListParams) => clueListRequest(params),
+  get: (id: string, pool = false) =>
+    http.get<LeadVO>(pool ? `/pool/lead/get/${id}` : `/lead/get/${id}`),
   poolOptions: () => resourcePoolApi.options('lead'),
   importTemplate: (importType: ImportType, poolId?: string) =>
     http.get<Blob>(poolId ? '/pool/lead/template/download' : '/lead/template/download', {

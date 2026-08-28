@@ -1015,7 +1015,7 @@ onMounted(async () => {
               :key="plan.id"
               type="button"
               class="plan-item"
-              @click="router.push('/follow-plans')"
+              @click="router.push({ path: '/follow-plans', query: { id: plan.id, mine: '1' } })"
             >
               <div class="min-w-0 flex-1 text-left">
                 <div class="flex items-center gap-2">

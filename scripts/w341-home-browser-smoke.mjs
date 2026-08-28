@@ -128,7 +128,11 @@ async function main() {
       cdp.send('Network.clearBrowserCookies'),
     ])
     await cdp.navigate('/login')
-    await cdp.waitFor(textIncludes('微矩阵 CRM'), 10000, '登录页渲染')
+    await cdp.waitFor(
+      textIncludes('演示账号：admin@demo.com / admin123'),
+      10000,
+      '登录页渲染',
+    )
     check(
       '桌面登录页正常渲染',
       await cdp.evaluate(textIncludes('演示账号：admin@demo.com / admin123')),

@@ -23,10 +23,12 @@
 
 ## 核心业务模块
 
+> W3.4 用户确认功能图（首页、线索/线索池、客户/联系人/客户公海、仪表板）已于 2026-08-28 完成 W3.4.0～W3.4.5 最终验收并标记 `VERIFIED`。这不改变下表中商机、合同、发票等图外模块仍为 🟡/❌ 的事实。
+
 | CordysCRM 模块 | 关键参考实现                                                                                          | MicroMatrix CRM         | 状态 | 后续动作                                                                                                                                                                                 |
 | -------------- | ----------------------------------------------------------------------------------------------------- | ----------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 线索           | `clue/*`、`ClueService`、`PoolClueService`                                                            | `modules/leads`         | ✅   | W3.4.2 已完成普通 `/lead/*`、三条转换、多线索池、Owner History、User View、PC 页面及模块设置中的 Pool/Capacity/Move Reason；task 3.7 API `22/22`、Browser `17/17` 与原专项/根 Smoke 全绿 |
-| 客户           | `customer/*`、`CustomerService`、`customerOverviewDrawer.vue`、Mobile `customer/index.vue/detail.vue` | `customers`             | ✅   | W3.4.3 task 4.1～4.7 已完成客户/联系人/公海直接模型、分域 API、360、协作/关系/合并、Pool/Capacity/Reason、桌面与 Mobile 页面最终对齐；Browser 21/21、根级 Smoke 220/220 |
+| 客户           | `customer/*`、`CustomerService`、`customerOverviewDrawer.vue`、Mobile `customer/index.vue/detail.vue` | `customers`             | ✅   | W3.4.3 task 4.1～4.7 已完成客户/联系人/公海直接模型、分域 API、360、协作/关系/合并、Pool/Capacity/Reason、桌面与 Mobile 页面最终对齐；W3.4.5 最终客户 Browser 23/23、根级 Smoke 223/223 |
 | 联系人         | `CustomerContactController/Service`、`contact.vue`、`contactTable.vue`                                | `modules/contacts`      | ✅   | W3.4.3 task 4.3 已切换 `/account/contact/*`，完成 nullable `customerId`、Contact DataScope、Customer 子资源裁剪、动态字段/唯一性、启停、批改、导入导出、图表与关联商机拒删；专项 Smoke `18/18` |
 | 商机           | `opportunity/*`、`OpportunityService`                                                                 | `modules/opportunities` | 🟡   | 补齐关闭规则、阶段高级配置、负责人/跟进联动                                                                                                                                              |
 | 报价           | `OpportunityQuotation*`                                                                               | `modules/quotes`        | 🟡   | 对齐审批、快照、联系人、用户视图、操作日志                                                                                                                                               |

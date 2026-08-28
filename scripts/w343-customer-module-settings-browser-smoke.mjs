@@ -159,14 +159,6 @@ const textIncludes = (text) => `document.body?.innerText.includes(${JSON.stringi
 const visibleText = (text) =>
   `[...document.querySelectorAll('*')].some((el) => el.textContent?.trim() === ${JSON.stringify(text)} && el.getBoundingClientRect().width > 0)`
 
-async function clickText(cdp, text, selector = 'button') {
-  return cdp.evaluate(`(() => {
-    const el=[...document.querySelectorAll(${JSON.stringify(selector)})].find((x)=>x.textContent?.trim()===${JSON.stringify(text)} && x.getBoundingClientRect().width>0);
-    el?.click();
-    return Boolean(el)
-  })()`)
-}
-
 async function clickTextIn(cdp, rootSelector, text, selector = 'button') {
   return cdp.evaluate(`(() => {
     const root=document.querySelector(${JSON.stringify(rootSelector)});
