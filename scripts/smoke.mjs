@@ -174,6 +174,36 @@ async function readXlsx(buffer) {
   return workbook.worksheets[0]
 }
 
+async function cleanupHistoricalLeadSmokeData(tenantId) {
+  const historical = await smokePrisma.clue.findMany({
+    where: {
+      organizationId: tenantId,
+      OR: [
+        { name: { startsWith: '冒烟线索-' } },
+        { name: { startsWith: 'R4' } },
+        { name: { startsWith: '批量编辑线索' } },
+      ],
+    },
+    select: { id: true },
+  })
+  const ids = historical.map((item) => item.id)
+  if (!ids.length) return 0
+
+  await smokePrisma.$transaction([
+    smokePrisma.followUpRecord.deleteMany({
+      where: { tenantId, targetType: 'lead', targetId: { in: ids } },
+    }),
+    smokePrisma.followUpPlan.deleteMany({
+      where: { tenantId, targetType: 'lead', targetId: { in: ids } },
+    }),
+    smokePrisma.attachment.deleteMany({
+      where: { tenantId, targetType: 'lead', targetId: { in: ids } },
+    }),
+    smokePrisma.clue.deleteMany({ where: { id: { in: ids }, organizationId: tenantId } }),
+  ])
+  return ids.length
+}
+
 console.log('== 微矩阵 CRM 全链路冒烟 ==')
 
 // 1. 健康与登录
@@ -183,6 +213,8 @@ const admin = await login('admin@demo.com', 'admin123')
 const manager = await login('zhangwei@demo.com', 'demo123')
 const sales = await login('lina@demo.com', 'demo123')
 check('三种角色登录', Boolean(admin.user && manager.user && sales.user))
+const historicalLeadSmokeCount = await cleanupHistoricalLeadSmokeData(admin.user.tenantId)
+check('历史线索 Smoke 数据已隔离清理', historicalLeadSmokeCount >= 0)
 const stamp = Date.now().toString(36)
 const phoneSuffix = String(Date.now()).slice(-8)
 

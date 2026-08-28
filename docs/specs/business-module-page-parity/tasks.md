@@ -260,7 +260,7 @@
   - [x] 新增 `dashboard:read/create/update/delete` 权限粒度；销售专员默认只读，销售主管具备增改删，管理员继续使用 `*`。
   - [x] Dashboard Scope 统一按空数组、用户、当前部门及祖先部门、创建人兜底解析；page/detail/tree/count/update/delete/move 全部执行 tenant + Scope，损坏 Scope JSON fail-closed。
   - [x] 同级目录/同目录资源重名、无效父目录、目录循环/自身后代移动、孤儿目录、包含 Dashboard 的目录删除均由后端拒绝；目录和资源跨层级/跨目录移动在事务内真实重排 `pos`。
-  - [x] 新增 `scripts/w344-dashboard-api-smoke.mjs`：**31/31**，覆盖三角色权限、上级部门 Scope、创建人兜底、第二租户隔离、CRUD、排序、防环、删除保护和操作日志；回归 rules **114/114**、根级 Smoke **221/221**、typecheck/ESLint/build 全绿。
+  - [x] 新增 `scripts/w344-dashboard-api-smoke.mjs`：**31/31**，覆盖三角色权限、上级部门 Scope、创建人兜底、第二租户隔离、CRUD、排序、防环、删除保护和操作日志；根级 Smoke 补齐历史测试线索清理，避免重复执行把演示库容跑满；回归 rules **114/114**、根级 Smoke **222/222**、typecheck/ESLint/build 全绿。
   - _需求：R10、R11_
 
 - [ ] 5.4 实现收藏与安全嵌入适配

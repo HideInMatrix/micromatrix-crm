@@ -355,6 +355,6 @@ task 5.2 关闭；下一执行指针为 **W3.4.4 task 5.3：实现 DashboardModu
 4. 资源 page/detail/tree/count/update/delete/move 使用同一 tenant + Scope 事实，不复制 Cordys `detail/delete/collect` 按裸 ID 访问的弱边界。第二租户即使拥有管理员 `*`，访问当前租户资源仍返回 404。
 5. 权限树新增 `dashboard:read/create/update/delete`：销售专员默认 `read`，销售主管增加 `create/update/delete`；关键 create/update/rename/delete/move/module 动作全部使用 `@LogOperation('dashboard', ...)` 写真实操作日志。
 6. 专项 `scripts/w344-dashboard-api-smoke.mjs` 最终 **31/31**；覆盖三角色权限、空/user/department Scope、创建人兜底、第二租户隔离、目录重名/无效父节点/防环/防孤儿、资源 update/rename/delete、跨目录 APPEND、BEFORE 排序和操作日志。
-7. 回归：API rules **114/114**、根级 Smoke **221/221**、根级 typecheck、受影响文件 ESLint、production build 全绿。
+7. 根级 Smoke 增加明确前缀的历史测试线索清理，防止反复执行后占满 Seed 的 80 条线索库容；回归：API rules **114/114**、根级 Smoke **222/222**、根级 typecheck、受影响文件 ESLint、production build 全绿。
 
 task 5.3 关闭；下一执行指针为 **W3.4.4 task 5.4：收藏与安全嵌入适配**。

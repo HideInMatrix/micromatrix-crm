@@ -895,5 +895,5 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `DashboardModuleService` 完成新增、改名、删除、树、递归计数和 before/inside/after 移动；同级重名、无效父目录、目录环、自身后代移动、未选中子目录和包含 Dashboard 的删除均由后端强制拒绝。
 - `DashboardResourceService` 完成 add/detail/update/rename/delete/page/edit-pos；同目录重名、Scope ID 合法性、跨目录 APPEND、BEFORE/AFTER 排序在服务端与事务内执行。
 - `DashboardAccessService` 将空 Scope、用户 ID、当前部门/祖先部门和创建者可见统一应用到 page/detail/tree/count/update/delete/move；第二租户管理员对当前租户资源仍只能得到 404，损坏 Scope JSON 对普通用户 fail-closed。
-- 新增 `scripts/w344-dashboard-api-smoke.mjs`，最终 **31/31**；同时 rules **114/114**、根级 Smoke **221/221**、根级 typecheck、ESLint、production build 全绿。
+- 新增 `scripts/w344-dashboard-api-smoke.mjs`，最终 **31/31**；根级 Smoke 额外清理历史 `冒烟线索-/R4*/批量编辑线索` 测试数据，避免多次执行占满 Seed 库容；同时 rules **114/114**、根级 Smoke **222/222**、根级 typecheck、ESLint、production build 全绿。
 - task 5.3 关闭；下一执行指针为 **W3.4.4 task 5.4：实现收藏与安全嵌入适配**。
