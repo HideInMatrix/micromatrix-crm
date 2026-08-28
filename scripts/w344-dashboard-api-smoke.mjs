@@ -106,7 +106,7 @@ function flattenTree(nodes, result = []) {
 console.log('\nW3.4.4 task 5.3 Dashboard API Smoke')
 
 const admin = await login('admin@demo.com', 'admin123')
-const manager = await login('zhangwei@demo.com', 'demo123')
+const manager = await login('zhangwei@demo.com', 'admin123')
 const sales = await login('lina@demo.com', 'demo123')
 
 const stamp = Date.now()

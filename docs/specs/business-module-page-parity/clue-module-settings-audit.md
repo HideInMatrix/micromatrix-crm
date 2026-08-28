@@ -261,7 +261,7 @@ Cordys `ClueService` 在移入线索池时读取 `CLUE_POOL_RS` 配置：
 
 全量 `pnpm smoke` 复跑时发现 demo Seed 对已存在成员只更新部门/直属上级，虽然每次重新计算默认密码 Hash 并打印“管理员 admin123 / 其余 demo123”，实际却没有更新 `passwordHash/defaultPwd`，导致本地数据库状态可与 Seed 输出漂移。
 
-本轮修正 `upsertUser` 的 existing-user 分支，使重复执行 Seed 会同步恢复默认密码 Hash 与 `defaultPwd=true`。重新 Seed 后已实际验证 `zhangwei@demo.com`、`lina@demo.com` 均可使用 `demo123` 登录，根 Smoke 随后恢复 **219/219**。该修正不改变生产认证契约，只恢复 Seed 的幂等与可重复验收语义。
+本轮修正 `upsertUser` 的 existing-user 分支，使重复执行 Seed 会同步恢复默认密码 Hash 与 `defaultPwd=true`。后续 W3.4.4 最终收口已按演示账号约定统一为 `zhangwei@demo.com / admin123`、`lina@demo.com / demo123`；该修正不改变生产认证契约，只恢复 Seed 的幂等与可重复验收语义。
 
 ### 10.5 最终自动化结果
 

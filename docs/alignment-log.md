@@ -907,3 +907,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 新增 `/dashboard/embed/policy/:id`，返回精确 `origin/postMessageOrigin/frameSrc/CSP/sandbox`，不使用 `*`；5.5 页面只消费该策略，不自行拼接宽松 iframe 权限。
 - DataEase 配置/token/provider adapter 按当前产品决策延期，未新增数据库表或 migration，另入 deferred backlog。
 - Dashboard API Smoke **44/44**；根级 Smoke **223/223**、rules **114/114**、typecheck/ESLint/production build 全绿；根 Smoke 同步解决历史客户夹具占满 Seed 库容的问题。task 5.4 关闭，进入 **task 5.5 `/reports` Vue 页面重建**。
+
+---
+
+## 42. W3.4.4 task 5.5～5.6 Dashboard Vue 与最终验收（2026-08-28）
+
+- 旧固定 ECharts `/reports` 已破坏式替换为真实 Dashboard 资源页：左侧“我的收藏 / 全部 / 多级目录树”，右侧目录资源表或 Dashboard iframe 预览；新增 `dashboard.ts` API facade、资源表单与预览组件。
+- 页面补齐搜索、分页、排序、成员/部门 Scope、收藏、CRUD、重命名、目录/资源操作、跨目录拖拽、全屏与新窗口；文件夹拖到 Dashboard 节点前后被 UI 拒绝，资源拖入文件夹走 `/dashboard/edit/pos`。
+- iframe 只消费 `/dashboard/embed/policy/:id` 的精确 URL/origin/CSP/sandbox；不使用 `*`，DataEase provider 继续 deferred。
+- Dashboard Browser **28/28**、Dashboard API **44/44**、根级 Smoke **223/223**、rules **114/114**；全仓 typecheck/production build、受影响 ESLint 与最终 Web typecheck/build 全绿。
+- 演示账号约定已同步到 Seed 与 Smoke：管理员/销售主管密码均为 `admin123`，销售专员为 `demo123`。
+- W3.4.4 Dashboard 正式关闭；下一执行指针为 **W3.4.5 task 6.1：菜单和跨页导航全图验收**。

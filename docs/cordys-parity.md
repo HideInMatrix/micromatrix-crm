@@ -80,7 +80,7 @@
 | 能力                                  | 状态 | 说明                                                                                                                    |
 | ------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
 | Cordys License / CE / EE              | ⛔   | MicroMatrix CRM 不实现该授权体系                                                                                        |
-| DataEase                              | ⛔   | 不内置 DataEase 服务端；W3.4.4 仅复刻 Cordys 仪表板目录/资源/收藏与外部嵌入边界，旧固定 ECharts `/reports` 页面将被替换 |
+| DataEase                              | ⛔   | 不内置 DataEase 服务端；W3.4.4 已完成 Cordys 仪表板目录/资源/收藏、通用安全嵌入与 `/reports` 页面替换，DataEase provider/token 由 DB-023 deferred |
 | SQLBot / MaxKB / WorkBuddy 等 AI 能力 | ⛔   | 不属于当前 CRM 核心复刻范围                                                                                             |
 | Cordys MCP / Skills                   | ⛔   | 当前不纳入                                                                                                              |
 | 商业标讯 API                          | ⛔   | 仅保留演示源 + 手动录入 + 转线索                                                                                        |

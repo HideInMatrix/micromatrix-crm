@@ -326,7 +326,7 @@ W3.4 只实现 R10 指定的 DataEase **配置 / token / 嵌入适配边界和�
 
 - API/DB Smoke：tenant、Scope、目录环/重名、收藏幂等、跨目录排序、URL allowlist、旧统计路径 404；
 - Browser：目录→资源→Scope→收藏→移动→嵌入→删除；
-- provider 使用可控测试 endpoint，不要求运行真实 DataEase 服务端；
+- DataEase provider 已 deferred，本阶段 Browser 只验证通用 HTTPS 外链与安全 iframe policy；
 - 根级 smoke/typecheck/lint/build/diff 全量回归后本地提交。
 
 ## 15. task 5.1 结论
@@ -371,3 +371,23 @@ task 5.3 关闭；下一执行指针为 **W3.4.4 task 5.4：收藏与安全嵌�
 6. Dashboard API Smoke **44/44**；根级 Smoke **223/223**、rules **114/114**、typecheck/ESLint/production build 全绿。根 Smoke 同步增加明确前缀的历史客户夹具清理，避免反复执行占满 Seed 的客户库容。
 
 task 5.4 关闭；下一执行指针为 **W3.4.4 task 5.5：替换 `/reports` Vue 页面**。
+
+## 19. task 5.5 实施结果
+
+5.5 已用真实 Dashboard 资源管理页替换旧固定 ECharts `/reports`：
+
+1. `ReportsView.vue` 重建为 Cordys `link.vue/tree.vue/table.vue/dashboard.vue` 同类结构：左侧固定“我的收藏 / 全部”入口与多级 DashboardModule 树，右侧在目录节点显示资源表，在 Dashboard 节点显示资源预览。
+2. 新增 `apps/web/src/api/dashboard.ts`、`DashboardFormDialog.vue`、`DashboardPreview.vue`。资源表单覆盖名称、HTTPS URL、文件夹、成员/部门 Scope、描述；新增与编辑均使用 5.3 的直接 Dashboard API。
+3. 目录树支持搜索、计数、目录/资源操作和拖拽；资源表支持搜索、分页、排序、收藏、编辑、重命名、删除和新窗口。文件夹禁止拖到 Dashboard 节点前后，避免生成后端不接受的 Module move 目标。
+4. 预览不读取 `resourceUrl` 后直接宽松 iframe，而是调用 `/dashboard/embed/policy/{id}`，使用后端返回的精确 URL、CSP、sandbox、referrer policy；全屏、新窗口、收藏和编辑继续走页面真实交互。
+5. `dashboard:read` 用户可查看目录、列表、预览和收藏，但不显示新增、编辑、删除管理动作；管理动作由 `dashboard:create/update/delete` 分别控制。
+
+## 20. task 5.6 最终验收
+
+1. `scripts/w344-dashboard-browser-smoke.mjs` 最终 **28/28**：旧固定报表消失、tree/count/page 单次加载、收藏分页、目录切换、UI 新建、表单 Scope、预览安全策略、编辑、真实拖拽跨目录并拖回、UI 删除、只读角色以及 Runtime/Console 均有浏览器证据。
+2. `scripts/w344-dashboard-api-smoke.mjs` **44/44**；根级 `pnpm smoke` **223/223**；rules **114/114**。
+3. 全仓 `pnpm typecheck`、受影响文件 ESLint、全仓 production build 通过；最终拖拽边界调整后 Web typecheck、ESLint、Web production build 再次通过。
+4. 演示账号约定同步修正并固化到 Seed：`admin@demo.com / admin123`、`zhangwei@demo.com / admin123`，销售专员继续 `demo123`；重复 Seed 会同步恢复默认密码 Hash 与 `defaultPwd=true`。
+5. DataEase provider/token/CRM→DE 变量同步仍由 DB-023 跟踪，不属于 W3.4.4 关闭门槛；当前没有新增 DataEase Prisma 模型或 migration。
+
+**W3.4.4 仪表板阶段正式关闭；下一执行指针为 W3.4.5 task 6.1：全图菜单和跨页导航验收。**

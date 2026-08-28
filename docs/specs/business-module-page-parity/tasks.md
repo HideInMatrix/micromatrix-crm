@@ -270,14 +270,16 @@
   - [x] Dashboard API Smoke **44/44**；根级 Smoke **223/223**、rules **114/114**、typecheck/ESLint/production build 全绿；根 Smoke 同步清理明确前缀的历史客户夹具，避免反复执行占满 Seed 客户库容。
   - _需求：R10、R11_
 
-- [ ] 5.5 替换 `/reports` Vue 页面
-  - 删除固定 ECharts 报表，重建左树右内容、目录列表、资源表单、成员范围、收藏、iframe、全屏和新窗口。
-  - 加载、URL 策略拒绝和 iframe 加载失败分别展示真实错误状态；DataEase provider 专属状态暂不实现。
+- [x] 5.5 替换 `/reports` Vue 页面
+  - [x] 删除固定 ECharts 报表，重建左树右内容、我的收藏/全部、多级目录树、目录资源表、资源表单、成员范围、收藏、iframe、全屏和新窗口。
+  - [x] 新增/编辑/删除/重命名/分页/排序/收藏/拖拽均走真实 Dashboard API；Dashboard 节点只通过 `/dashboard/embed/policy/:id` 获取安全 URL、CSP、sandbox 与精确 origin。
+  - [x] 读权限角色保留目录/列表/预览/收藏，但不展示新增、编辑、删除；DataEase provider 专属状态继续 deferred。
   - _需求：R10_
 
-- [ ] 5.6 完成仪表板专项验收并本地提交
-  - 测试目录防循环、重名、Scope、收藏幂等、排序、URL allowlist、组织隔离和旧接口 404。
-  - Smoke 与浏览器走通目录→资源→范围→收藏→移动→嵌入→删除。
+- [x] 5.6 完成仪表板专项验收并本地提交
+  - [x] Dashboard API Smoke **44/44**：覆盖目录防循环/孤儿、重名、Scope、收藏幂等、跨目录排序、URL 安全、第二租户隔离和操作日志；根级 Smoke **223/223**、rules **114/114**。
+  - [x] Dashboard Browser Smoke **28/28**：真实走通目录→资源→表单/范围→收藏→跨目录拖拽→安全嵌入→编辑→删除，并验证只读角色、单请求加载与 Runtime/Console 零业务异常。
+  - [x] 全仓 typecheck、受影响文件 ESLint、production build、Web 最终 typecheck/build 全绿；演示账号约定同步固化为管理员/销售主管 `admin123`、销售专员 `demo123`。
   - _需求：R10～R12_
 
 ## 6. W3.4.5 全图验收

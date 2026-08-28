@@ -177,7 +177,7 @@ async function main() {
     position?: string
   }) => {
     const passwordHash = await bcrypt.hash(
-      input.email === 'admin@demo.com' ? 'admin123' : 'demo123',
+      ['admin@demo.com', 'zhangwei@demo.com'].includes(input.email) ? 'admin123' : 'demo123',
       10,
     )
     const existing = await prisma.user.findFirst({
@@ -1160,7 +1160,7 @@ async function main() {
     }
   }
 
-  console.log('Seed 完成，演示账号（密码 admin123 / 其余 demo123）：')
+  console.log('Seed 完成，演示账号（管理员/销售主管 admin123，销售专员 demo123）：')
   console.log('  管理员  admin@demo.com      数据范围: 全部')
   console.log('  销售主管 zhangwei@demo.com   数据范围: 本部门及下级（销售部）')
   console.log('  销售专员 lina@demo.com       数据范围: 仅本人（销售一部）')

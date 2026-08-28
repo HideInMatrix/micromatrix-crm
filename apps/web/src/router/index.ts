@@ -85,7 +85,7 @@ const router = createRouter({
         {
           path: 'reports',
           component: () => import('@/views/home/ReportsView.vue'),
-          meta: { title: '销售报表', perm: 'menu:dashboard', client: 'pc' },
+          meta: { title: '仪表板', perm: 'menu:dashboard', client: 'pc' },
         },
         {
           path: 'leads',
