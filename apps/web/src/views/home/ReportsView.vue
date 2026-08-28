@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
-  dashboardApi,
-  type ConversionData,
-  type RankingData,
-  type TrendData,
-} from '@/api/dashboard'
+  homeOverviewApi,
+  type HomeOverviewConversionData,
+  type HomeOverviewRankingData,
+  type HomeOverviewTrendData,
+} from '@/api/home-overview'
 import { extractErrorMessage } from '@/api/http'
 import EChart from '@/components/EChart.vue'
 
-const trend = ref<TrendData | null>(null)
-const conversion = ref<ConversionData | null>(null)
-const ranking = ref<RankingData | null>(null)
+const trend = ref<HomeOverviewTrendData | null>(null)
+const conversion = ref<HomeOverviewConversionData | null>(null)
+const ranking = ref<HomeOverviewRankingData | null>(null)
 const loading = ref(false)
 
 const trendOption = computed(() => ({
@@ -67,9 +67,9 @@ async function loadData() {
   loading.value = true
   try {
     const [trendRes, conversionRes, rankingRes] = await Promise.all([
-      dashboardApi.trend(),
-      dashboardApi.conversion(),
-      dashboardApi.ranking(),
+      homeOverviewApi.trend(),
+      homeOverviewApi.conversion(),
+      homeOverviewApi.ranking(),
     ])
     trend.value = trendRes.data
     conversion.value = conversionRes.data

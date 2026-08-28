@@ -866,3 +866,23 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 新增 `scripts/w343-customer-pages-browser-smoke.mjs`，桌面 + 390px Mobile 最终 **21/21**；模块设置 Browser 继续 **17/17**。根级 `pnpm smoke` 同步迁移旧客户/联系人测试契约后 **220/220**。
 - 回归客户 API/360 **22/22**、联系人 **18/18**、协作/关系/合并 **30/30**、客户公海 **36/36**、模块设置 **25/25**、rules **114/114**；根级 typecheck、受影响文件 ESLint、production build 与 `git diff --check` 全绿。
 - W3.4.3 task 4.1～4.7 客户域全部关闭；下一执行指针为 **W3.4.4 task 5.1：固化仪表板源码证据矩阵**。
+
+---
+
+## 38. W3.4.4 task 5.1 仪表板源码证据矩阵（2026-08-28）
+
+- 完整读取 Cordys `DashboardController / DashboardModuleController / DashboardService / DashboardModuleService / DashboardSortService`、Mapper、Domain、1.1.0 + 1.3.0 DDL 和前端 dashboard 目录，确认 `/dashboard` 是目录化 URL 资源管理，不是首页统计。
+- 锁定 Dashboard 资源 add/detail/update/rename/delete/page/collect/un-collect/collect-page/edit-pos 与 DashboardModule add/rename/delete/tree/count/move 契约；三张最终表为 `dashboard_module/dashboard/dashboard_collection`，当前 Prisma 直接模型已经具备，无需另建数据模型。
+- 明确 Scope：空数组全员、用户/部门祖先命中、创建者可见；MicroMatrix 将把 tenant + Scope 扩展到详情、收藏、编辑、删除、排序，不能复制 Cordys 部分 ID 直查弱边界。
+- DataEase 证据链已锁定：`DE_BOARD` 组织配置、`/organization/settings/de-token`、HMAC JWT、iframe `DashboardPanel/Dashboard` postMessage，以及 CRM→DE 的客户/线索/商机数据权限变量同步。W3.4 只实现配置/token/嵌入 adapter，不捆绑 DE 服务端或 License。
+- 安全偏离锁定：add/update 共用 URL allowlist；仅 HTTPS（开发 localhost HTTP 例外）；禁止脚本协议；校验 `event.origin` 并使用精确 target origin，禁止 Cordys 的 `postMessage('*')`；CSP/frame-src 与 provider 错误分类必须可诊断。
+- 新增 `dashboard-source-api-audit.md`；task 5.1 关闭，下一执行指针为 **W3.4.4 task 5.2：释放 Dashboard API 命名空间**。
+
+---
+
+## 39. W3.4.4 task 5.2 Dashboard API 命名空间释放（2026-08-28）
+
+- 将原 Dashboard 销售统计 Service 迁入 `HomeOverviewService`，新 API 为 `/home/overview/summary|funnel|ranking|trend|conversion`；`/reports` 临时页面与 Mobile 首页同步切换，首页业务未回归。
+- 删除旧 `DashboardController/DashboardService`，`DashboardModule` 暂作为空资源域占位；旧 `/dashboard/summary|funnel|ranking|trend|conversion` 五条路径全部 404，不保留隐藏兼容接口。
+- 根级 Smoke **221/221**，其中新增门槛显式验证五条旧 Dashboard 统计路径全部释放；根级 typecheck、受影响文件 ESLint 和 production build 全绿。
+- task 5.2 关闭；下一执行指针为 **W3.4.4 task 5.3：实现 DashboardModule 与 Dashboard Service**。

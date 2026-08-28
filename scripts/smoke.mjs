@@ -2619,10 +2619,19 @@ const biddingList = await get('/bidding?pageSize=1', manager.headers)
 check('标讯列表', biddingList.total >= 1)
 
 // 9. 报表
-const summary = await get('/dashboard/summary', admin.headers)
+const summary = await get('/home/overview/summary', admin.headers)
 check('工作台简报', typeof summary.wonAmount === 'number')
-const funnel = await get('/dashboard/funnel', admin.headers)
+const funnel = await get('/home/overview/funnel', admin.headers)
 check('商机漏斗', Array.isArray(funnel) && funnel.length > 0)
+
+const oldDashboardStatisticPaths = ['summary', 'funnel', 'ranking', 'trend', 'conversion']
+const oldDashboardStatisticResponses = await Promise.all(
+  oldDashboardStatisticPaths.map((path) => request('GET', `/dashboard/${path}`, admin.headers)),
+)
+check(
+  'W3.4.4 旧 Dashboard 统计命名空间已全部释放',
+  oldDashboardStatisticResponses.every((response) => response.status === 404),
+)
 
 console.log(`\n结果：${passed} 通过, ${failed} 失败`)
 await smokePrisma.$disconnect()

@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common'
-import { DashboardController } from './dashboard.controller'
-import { DashboardService } from './dashboard.service'
 
-@Module({
-  controllers: [DashboardController],
-  providers: [DashboardService],
-})
+/**
+ * W3.4.4 Dashboard 资源域占位模块。
+ * task 5.2 已释放 `/api/dashboard`；task 5.3 在此注册 Cordys 资源 Controller/Service。
+ */
+@Module({})
 export class DashboardModule {}

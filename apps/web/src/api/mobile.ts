@@ -108,5 +108,5 @@ export interface MobileSummary {
 }
 
 export function dashboardSummary() {
-  return http.get<MobileSummary>('/dashboard/summary')
+  return http.get<MobileSummary>('/home/overview/summary')
 }

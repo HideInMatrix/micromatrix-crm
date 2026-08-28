@@ -10,7 +10,7 @@ function monthStart(offset = 0): Date {
 }
 
 @Injectable()
-export class DashboardService {
+export class HomeOverviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
@@ -65,7 +65,6 @@ export class DashboardService {
         }),
       ])
 
-    // 待办
     const [pendingApprovals, upcomingFollows] = await this.prisma.$transaction([
       this.prisma.approvalTask.count({
         where: { tenantId, approverId: user.id, status: 'PENDING' },
@@ -82,7 +81,6 @@ export class DashboardService {
       }),
     ])
 
-    // 逾期回款计划（按合同数据范围）
     const plans = await this.prisma.receivablePlan.findMany({
       where: {
         tenantId,
@@ -243,8 +241,9 @@ export class DashboardService {
     }
     for (const r of receivedList) {
       const key = `${r.receivedAt.getFullYear()}-${String(r.receivedAt.getMonth() + 1).padStart(2, '0')}`
-      if (receivedByMonth.has(key))
+      if (receivedByMonth.has(key)) {
         receivedByMonth.set(key, receivedByMonth.get(key)! + Number(r.amount))
+      }
     }
 
     return {

@@ -243,14 +243,16 @@
 
 ## 5. W3.4.4 仪表板资源管理
 
-- [ ] 5.1 固化仪表板源码证据矩阵
-  - 完成 Cordys Dashboard 页面、API、Controller、Service、Sort Service、Domain 和 DDL 调用链。
-  - 明确 DataEase 配置、token、嵌入、Scope 和错误状态边界。
+- [x] 5.1 固化仪表板源码证据矩阵
+  - [x] 完成 Cordys Dashboard 页面、API、Controller、Service、Sort Service、Domain、Mapper 和最终 DDL 调用链，新增 `dashboard-source-api-audit.md`。
+  - [x] 明确 DataEase 配置、token、嵌入、CRM→DE 数据范围变量同步、Dashboard Scope 和错误状态边界，并单独锁定 Cordys URL / postMessage / 组织隔离弱边界的加固要求。
+  - [x] 确认现有 Prisma `dashboard_module/dashboard/dashboard_collection` 直接表可复用；当前真实阻塞点是旧首页统计占用 `/api/dashboard`。
   - _需求：R1、R10_
 
-- [ ] 5.2 释放 Dashboard API 命名空间
-  - 将旧首页统计 Service 迁入 Home 模块并删除旧 summary/funnel/ranking/trend/conversion 路径。
-  - `/api/dashboard` 只承载 Cordys 仪表板资源，不保留旧统计兼容入口。
+- [x] 5.2 释放 Dashboard API 命名空间
+  - [x] 旧销售概览统计迁入 `HomeOverviewController/Service`，新路径为 `/home/overview/summary|funnel|ranking|trend|conversion`；Web `/reports` 与 Mobile 首页同步切换。
+  - [x] 删除旧 Dashboard 统计 Controller/Service；`DashboardModule` 暂为空资源域占位，旧 `/api/dashboard/summary|funnel|ranking|trend|conversion` 五条路径全部真实 404，不保留兼容入口。
+  - [x] 根级 Smoke **221/221**，并显式验证五条旧路径全部 404；根级 typecheck、受影响文件 ESLint、production build 全绿。
   - _需求：R1、R10_
 
 - [ ] 5.3 实现 DashboardModule 与 Dashboard Service
