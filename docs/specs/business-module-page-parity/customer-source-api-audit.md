@@ -491,3 +491,16 @@ task 4.4 关闭；下一执行指针为 **W3.4.3 task 4.5.0：先对齐 `/system
 继续按 `PoolCustomerController/Service` 复核 `/pool/account/*` 后，修正了三个容易被旧页面掩盖的契约差异：单条领取必须校验请求 `poolId` 与客户真实公海一致；批量分配/删除/导出选中按首条客户反查公海并强制整批同池，不能信任前端附带 poolId；公海导出选中必须保留 Pool Scope，公海模板下载必须排除负责人字段。自动回收直接消费 `customer_pool_recycle_rule`，使用 `system` 原因并发送 `CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS`。
 
 验收结果：`scripts/w343-customer-module-settings-smoke.mjs` **25/25**、`scripts/w343-customer-module-settings-browser-smoke.mjs` **17/17**、`scripts/w343-customer-pool-smoke.mjs` **36/36**。回归客户 API/360 **22/22**、联系人 API **18/18**、客户协作/关系/合并 **30/30**、API rules **114/114**；API/Web typecheck、受影响文件 ESLint、API/Web production build 与 `git diff --check` 全绿。task 4.5 关闭，下一执行指针为 **W3.4.3 task 4.6：重建客户域 Vue 页面**。
+
+### 15.6 task 4.6～4.7 客户域 Vue 与最终验收
+
+再次逐项对照 Cordys `customerTable.vue`、`contactTable.vue`、`openSeaTable.vue`、`customerOverviewDrawer.vue`、`openSeaOverviewDrawer.vue` 与 `contact.vue` 后完成页面最终收口：
+
+1. 普通客户列表恢复 Cordys 批量转移、批量移入公海；单条负责人操作统一为“转移”，移入公海统一使用目标 Pool + `CUSTOMER_POOL_RS` 原因 Dialog，不再使用无原因确认框。
+2. 客户公海补齐批量领取/分配/修改/删除和单条领取/分配/删除；名称直接打开公海独立详情，不再跳普通 `/customers/:id`。领取/分配成功只触发一次父列表刷新，避免重复 `/pool/account/page`。
+3. 公海详情复用客户 360 外壳但严格运行 Pool 模式：数据读取 `/pool/account/get`，只显示客户信息、跟进记录、负责人记录，应用当前 Pool `hiddenFieldIds`；普通联系人、关系、协作、商机、合同等 Tab 不暴露。
+4. `/customers?id=...`、`/customers/open-sea?poolId=...&id=...`、`/contacts?id=...` 和 `inSharedPool=true&poolId=...` 深链均可直接打开正确 Drawer；联系人页公海深链继续应用 Pool 隐藏字段。
+5. Mobile 客户页仍保留客户、联系人、客户公海三入口；真实手机视口 Browser Smoke 验证客户公海 Pane 会读取 Pool options 并渲染可操作页面，不是空壳。
+6. 旧根级 `scripts/smoke.mjs` 中残留的 `/customers/*`、`/contacts/*` 测试契约同步迁移到 `/account/*`、`/account/contact/*`、`/pool/account/*`，最终全链路重新恢复为可执行基线。
+
+最终验收：客户域 Browser **21/21**、模块设置 Browser **17/17**、根级全链路 Smoke **220/220**；专项客户 **22/22**、联系人 **18/18**、协作/关系/合并 **30/30**、客户公海 **36/36**、客户模块设置 **25/25**、rules **114/114**。根级 typecheck、受影响文件 ESLint、production build 与 `git diff --check` 全绿。W3.4.3 客户域 task 4.1～4.7 全部关闭，下一执行指针为 **W3.4.4 task 5.1：固化仪表板源码证据矩阵**。

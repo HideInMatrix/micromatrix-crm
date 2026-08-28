@@ -855,3 +855,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 每日领取、新数据保护、前负责人冷却、库容和 stage 排除均在后端直接规则中执行；自动回收实际消费 `customer_pool_recycle_rule`，清空负责人、写 `system` 原因并发送 `CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS`。普通客户详情与协作接口不能读取公海客户，公海详情保持独立读取边界。
 - 新增客户模块设置 API Smoke **25/25**、Browser Smoke **17/17**、客户公海主体 Smoke **36/36**；回归客户 **22/22**、联系人 **18/18**、深层规则 **30/30**、rules **114/114**。API/Web typecheck、ESLint、production build 和 `git diff --check` 全绿。
 - task 4.5 正式关闭；下一执行指针为 **W3.4.3 task 4.6：重建客户域 Vue 页面**。
+
+---
+
+## 37. W3.4.3 task 4.6～4.7 客户域 Vue 与最终验收（2026-08-28）
+
+- 再次对照 Cordys 客户、联系人、公海三个页面和普通/公海 Overview Drawer，补齐普通客户批量转移/批量移入公海、客户公海批量领取/分配/修改/删除，以及联系人/客户/公海 query 深链。
+- 新增 `CustomerMoveToPoolDialog.vue`，统一目标客户公海与 `CUSTOMER_POOL_RS` 原因选择；普通客户单条“分配负责人/退回公海”恢复为 Cordys“转移/移入公海”。
+- 公海详情不再跳普通客户详情，统一使用 `/pool/account/get` 的独立 360 模式，只显示客户信息、跟进记录与负责人记录并应用 Pool 隐藏字段；领取/分配后的列表刷新去重，避免重复 `/pool/account/page`。
+- 新增 `scripts/w343-customer-pages-browser-smoke.mjs`，桌面 + 390px Mobile 最终 **21/21**；模块设置 Browser 继续 **17/17**。根级 `pnpm smoke` 同步迁移旧客户/联系人测试契约后 **220/220**。
+- 回归客户 API/360 **22/22**、联系人 **18/18**、协作/关系/合并 **30/30**、客户公海 **36/36**、模块设置 **25/25**、rules **114/114**；根级 typecheck、受影响文件 ESLint、production build 与 `git diff --check` 全绿。
+- W3.4.3 task 4.1～4.7 客户域全部关闭；下一执行指针为 **W3.4.4 task 5.1：固化仪表板源码证据矩阵**。

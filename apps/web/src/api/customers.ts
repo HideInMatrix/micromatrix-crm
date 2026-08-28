@@ -165,6 +165,40 @@ export function getCustomer(id: string, pool = false) {
   return http.get<CustomerVO>(pool ? `/pool/account/get/${id}` : `/account/get/${id}`)
 }
 
+export function batchTransferCustomers(ids: string[], owner: string) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/account/batch/transfer', { ids, owner })
+}
+
+export function moveCustomerToPool(id: string, poolId?: string, reasonId?: string) {
+  return http.post('/account/to-pool', { id, poolId, reasonId })
+}
+
+export function batchMoveCustomersToPool(ids: string[], poolId?: string, reasonId?: string) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/account/batch/to-pool', {
+    ids,
+    poolId,
+    reasonId,
+  })
+}
+
+export function poolBatchPickCustomers(poolId: string, ids: string[]) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/account/batch-pick', {
+    poolId,
+    batchIds: ids,
+  })
+}
+
+export function poolBatchAssignCustomers(ids: string[], ownerId: string) {
+  return http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/account/batch-assign', {
+    batchIds: ids,
+    assignUserId: ownerId,
+  })
+}
+
+export function poolDeleteCustomer(id: string) {
+  return http.get(`/pool/account/delete/${id}`)
+}
+
 export interface Customer360ResourceMap {
   opportunities: Customer360OpportunityVO
   contracts: Customer360ContractVO

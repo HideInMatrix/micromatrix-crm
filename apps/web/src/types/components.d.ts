@@ -22,6 +22,7 @@ declare module 'vue' {
     CustomerDetailDrawer: typeof import('./../components/CustomerDetailDrawer.vue')['default']
     CustomerMergeDialog: typeof import('./../components/CustomerMergeDialog.vue')['default']
     CustomerModuleNav: typeof import('./../components/CustomerModuleNav.vue')['default']
+    CustomerMoveToPoolDialog: typeof import('./../components/customer/CustomerMoveToPoolDialog.vue')['default']
     CustomerOverviewContent: typeof import('./../components/customer/CustomerOverviewContent.vue')['default']
     CustomerOverviewDrawer: typeof import('./../components/customer/CustomerOverviewDrawer.vue')['default']
     CustomerRelationsPanel: typeof import('./../components/CustomerRelationsPanel.vue')['default']

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import CustomerOverviewContent from './CustomerOverviewContent.vue'
 
-defineProps<{ customerId: string | null }>()
+defineProps<{
+  customerId: string | null
+  pool?: boolean
+  poolId?: string
+  hiddenFieldIds?: string[]
+}>()
 
 const visible = defineModel<boolean>({ required: true })
 const emit = defineEmits<{
@@ -21,6 +26,9 @@ const emit = defineEmits<{
     <CustomerOverviewContent
       v-if="customerId"
       :customer-id="customerId"
+      :pool="pool"
+      :pool-id="poolId"
+      :hidden-field-ids="hiddenFieldIds"
       @close="visible = false"
       @changed="emit('changed')"
       @deleted="emit('deleted')"

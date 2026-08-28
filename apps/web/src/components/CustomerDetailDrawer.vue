@@ -30,9 +30,7 @@ const resourceCanManageCustomer = ref(false)
 const resourceCanCollaborateWrite = ref(false)
 const canManageCustomer = computed(() => resourceCanManageCustomer.value)
 const canEditRelations = computed(
-  () =>
-    auth.hasPerm('customer:update') &&
-    (resourceCanManageCustomer.value || collaborationType.value === 'COLLABORATION'),
+  () => auth.hasPerm('customer:update') && resourceCanManageCustomer.value,
 )
 
 const teamDialogVisible = ref(false)

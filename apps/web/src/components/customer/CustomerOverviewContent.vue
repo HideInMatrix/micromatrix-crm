@@ -21,6 +21,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   getCustomer,
   getCustomer360Resource,
+  poolDeleteCustomer,
   removeCustomer,
   updateCustomer,
 } from '@/api/customers'
@@ -34,6 +35,7 @@ import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import CustomerContactTable from '@/components/contacts/CustomerContactTable.vue'
+import CustomerMoveToPoolDialog from '@/components/customer/CustomerMoveToPoolDialog.vue'
 import OpportunityDetailDrawer from '@/components/opportunities/OpportunityDetailDrawer.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -56,6 +58,9 @@ type TabName =
 
 const props = defineProps<{
   customerId: string
+  pool?: boolean
+  poolId?: string
+  hiddenFieldIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -79,6 +84,8 @@ const editSaving = ref(false)
 const editForm = ref<Record<string, unknown>>({})
 const dynamicFormRef = ref<InstanceType<typeof DynamicForm>>()
 const transferVisible = ref(false)
+const poolAssignVisible = ref(false)
+const moveToPoolVisible = ref(false)
 const followVisible = ref(false)
 const teamDialogVisible = ref(false)
 const teamTypeVisible = ref(false)
@@ -138,71 +145,76 @@ const contractDetailId = ref<string | null>(null)
 
 const canMainAction = computed(
   () =>
+    !props.pool &&
     customer.value?.canManageCustomer === true &&
     customer.value.inSea !== true &&
     !customer.value.collaborationType,
 )
 const canWrite = computed(
-  () => customer.value?.canCollaborateWrite === true && auth.hasPerm('customer:update'),
+  () => !props.pool && customer.value?.canCollaborateWrite === true && auth.hasPerm('customer:update'),
 )
 const canEditRelations = computed(
-  () =>
-    auth.hasPerm('customer:update') &&
-    (customer.value?.canManageCustomer === true || customer.value?.collaborationType === 'COLLABORATION'),
+  () => auth.hasPerm('customer:update') && customer.value?.canManageCustomer === true,
 )
 
 const allTabs = computed<{ name: TabName; label: string; visible: boolean }[]>(() => [
   { name: 'followRecord', label: '跟进记录', visible: true },
-  { name: 'followPlan', label: '跟进计划', visible: true },
+  { name: 'followPlan', label: '跟进计划', visible: !props.pool },
   {
     name: 'contact',
     label: '联系人',
-    visible: customer.value?.inSea !== true && auth.hasPerm('contact:read'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('contact:read'),
   },
   { name: 'headRecord', label: '负责人记录', visible: true },
-  { name: 'relation', label: '客户关系', visible: customer.value?.inSea !== true },
+  { name: 'relation', label: '客户关系', visible: !props.pool && customer.value?.inSea !== true },
   {
     name: 'opportunityInfo',
     label: '商机',
-    visible: customer.value?.inSea !== true && auth.hasPerm('menu:opportunity'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:opportunity'),
   },
   {
     name: 'collaborator',
     label: '协作人',
-    visible: customer.value?.inSea !== true && !customer.value?.collaborationType,
+    visible: !props.pool && customer.value?.inSea !== true && !customer.value?.collaborationType,
   },
   {
     name: 'contract',
     label: '合同',
-    visible: customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
   },
   {
     name: 'contractPayment',
     label: '回款计划',
-    visible: customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
   },
   {
     name: 'contractPaymentRecord',
     label: '回款记录',
-    visible: customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
   },
   {
     name: 'invoice',
     label: '发票',
-    visible: customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
   },
   {
     name: 'order',
     label: '订单',
-    visible: customer.value?.inSea !== true && auth.hasPerm('menu:order'),
+    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:order'),
   },
 ])
 
-const visibleTabs = computed(() =>
-  allTabs.value.filter((tab) => tab.visible && !hiddenTabs.value.includes(tab.name)),
-)
+const visibleTabs = computed(() => {
+  const visible = allTabs.value.filter((tab) => tab.visible)
+  return props.pool ? visible : visible.filter((tab) => !hiddenTabs.value.includes(tab.name))
+})
 
-const descriptionFields = computed(() => fields.value.filter((field) => !field.hidden))
+const descriptionFields = computed(() => {
+  const hidden = new Set(props.hiddenFieldIds ?? [])
+  return fields.value.filter(
+    (field) => !field.hidden && (field.key === 'name' || !hidden.has(field.id)),
+  )
+})
 
 function displayField(field: FieldVO) {
   if (!customer.value) return '-'
@@ -250,7 +262,7 @@ async function loadBase() {
   loading.value = true
   try {
     const [{ data: detail }, { data: fieldList }] = await Promise.all([
-      getCustomer(props.customerId),
+      getCustomer(props.customerId, props.pool),
       metadataApi.fields('customer'),
     ])
     customer.value = detail
@@ -370,16 +382,57 @@ async function transferOwner(userId: string) {
   }
 }
 
-async function moveToSea() {
+function moveToSea() {
   if (!customer.value) return
-  const confirmed = await ElMessageBox.confirm(`将「${customer.value.name}」移入客户公海？`, '移入客户公海', {
-    type: 'warning',
-  }).catch(() => false)
+  moveToPoolVisible.value = true
+}
+
+async function claimPoolCustomer() {
+  if (!customer.value || !props.poolId) return
+  const confirmed = await ElMessageBox.confirm(
+    `领取客户「${customer.value.name}」后，该客户将进入你的客户列表。`,
+    '领取客户',
+    { confirmButtonText: '领取', cancelButtonText: '取消' },
+  ).catch(() => false)
   if (!confirmed) return
   try {
-    await customerExtraApi.toSea(props.customerId)
-    ElMessage.success('已移入客户公海')
-    emit('changed')
+    await customerExtraApi.claim(props.customerId, props.poolId)
+    ElMessage.success('客户领取成功')
+    emit('deleted')
+    emit('close')
+    window.open(
+      `${window.location.origin}/customers?id=${encodeURIComponent(props.customerId)}`,
+      '_blank',
+    )
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function assignPoolCustomer(userId: string) {
+  try {
+    await customerExtraApi.assign(props.customerId, userId, true)
+    ElMessage.success('客户分配成功')
+    poolAssignVisible.value = false
+    emit('deleted')
+    emit('close')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function deletePoolCustomer() {
+  if (!customer.value) return
+  const confirmed = await ElMessageBox.confirm(
+    `确定删除公海客户「${customer.value.name}」吗？`,
+    '删除客户',
+    { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    await poolDeleteCustomer(props.customerId)
+    ElMessage.success('客户已删除')
+    emit('deleted')
     emit('close')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -538,6 +591,30 @@ onMounted(async () => {
         <el-button v-if="auth.hasPerm('customer:recycle')" @click="moveToSea">移入公海</el-button>
         <el-button v-if="auth.hasPerm('customer:delete')" type="danger" plain @click="deleteCustomer">删除</el-button>
       </div>
+      <div v-else-if="customer && pool" class="flex items-center gap-2 shrink-0">
+        <el-button
+          v-if="auth.hasPerm('customerPool:pick')"
+          type="primary"
+          plain
+          @click="claimPoolCustomer"
+        >
+          领取
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('customerPool:assign')"
+          @click="poolAssignVisible = true"
+        >
+          分配
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('customerPool:delete')"
+          type="danger"
+          plain
+          @click="deletePoolCustomer"
+        >
+          删除
+        </el-button>
+      </div>
     </header>
 
     <div v-loading="loading" class="flex-1 min-h-0 p-4 overflow-hidden">
@@ -579,13 +656,13 @@ onMounted(async () => {
         >
           <template #header>
             <div class="flex items-center justify-between gap-4">
-              <span class="font-medium">客户 360</span>
+              <span class="font-medium">{{ pool ? '公海客户详情' : '客户 360' }}</span>
               <div class="flex items-center gap-2">
                 <el-radio-group :model-value="layout" size="small" @change="setLayout($event as 'horizontal' | 'vertical')">
                   <el-radio-button value="horizontal">左右</el-radio-button>
                   <el-radio-button value="vertical">上下</el-radio-button>
                 </el-radio-group>
-                <el-popover placement="bottom-end" :width="240" trigger="click">
+                <el-popover v-if="!pool" placement="bottom-end" :width="240" trigger="click">
                   <template #reference>
                     <el-button size="small">Tab 设置</el-button>
                   </template>
@@ -801,6 +878,18 @@ onMounted(async () => {
       title="转移客户"
       :members="fieldRefs.members.value"
       @confirm="transferOwner"
+    />
+    <MemberSelectDialog
+      v-model="poolAssignVisible"
+      title="分配公海客户"
+      :members="fieldRefs.members.value"
+      @confirm="assignPoolCustomer"
+    />
+    <CustomerMoveToPoolDialog
+      v-model="moveToPoolVisible"
+      :customer-ids="[customerId]"
+      :customer-name="customer?.name"
+      @moved="() => { emit('changed'); emit('close') }"
     />
     <MemberSelectDialog
       v-model="teamDialogVisible"

@@ -6,16 +6,17 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { listCustomerOptions, type CustomerOptionVO } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
-import { contactApi } from '@/api/sales'
+import { contactApi, resourcePoolApi } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
 import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -25,6 +26,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
 
@@ -61,6 +63,11 @@ const exportLoading = ref(false)
 const pageReady = ref(false)
 const savedViewReady = ref(false)
 const initialLoadDone = ref(false)
+const linkedCustomerVisible = ref(false)
+const linkedCustomerId = ref<string | null>(null)
+const linkedCustomerPool = ref(false)
+const linkedCustomerPoolId = ref('')
+const linkedCustomerHiddenFieldIds = ref<string[]>([])
 
 const uiFields = computed<FieldVO[]>(() => {
   const customerFieldOptions = customerOptions.value.map((item) => ({
@@ -355,9 +362,29 @@ function displayValue(field: FieldVO, row: ContactVO) {
   })
 }
 
+async function initLinkedCustomerFromRoute() {
+  const customerId = typeof route.query.id === 'string' ? route.query.id : ''
+  if (!customerId) return
+  linkedCustomerId.value = customerId
+  linkedCustomerPool.value = route.query.inSharedPool === 'true'
+  linkedCustomerPoolId.value = typeof route.query.poolId === 'string' ? route.query.poolId : ''
+  linkedCustomerHiddenFieldIds.value = []
+  if (linkedCustomerPool.value && linkedCustomerPoolId.value) {
+    try {
+      const { data } = await resourcePoolApi.options('customer')
+      linkedCustomerHiddenFieldIds.value =
+        data.find((pool) => pool.id === linkedCustomerPoolId.value)?.hiddenFieldIds ?? []
+    } catch (error) {
+      ElMessage.error(extractErrorMessage(error))
+    }
+  }
+  linkedCustomerVisible.value = true
+}
+
 onMounted(async () => {
   await Promise.all([loadReferenceData(), fieldRefs.load()])
   await homeQuickCreate.consume(openCreate)
+  await initLinkedCustomerFromRoute()
   pageReady.value = true
   tryInitialLoad()
 })
@@ -596,5 +623,15 @@ onMounted(async () => {
     :selected-count="selectedRows.length"
     :loading="exportLoading"
     @confirm="handleExportConfirm"
+  />
+
+  <CustomerOverviewDrawer
+    v-model="linkedCustomerVisible"
+    :customer-id="linkedCustomerId"
+    :pool="linkedCustomerPool"
+    :pool-id="linkedCustomerPoolId || undefined"
+    :hidden-field-ids="linkedCustomerHiddenFieldIds"
+    @changed="loadData"
+    @deleted="loadData"
   />
 </template>

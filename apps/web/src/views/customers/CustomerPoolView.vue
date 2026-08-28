@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { type CustomerVO, type FieldVO, type FilterCondition } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import {
   customerTransferApi,
   listCustomers,
+  poolBatchAssignCustomers,
   poolBatchDeleteCustomers,
+  poolBatchPickCustomers,
   poolBatchUpdateCustomers,
+  poolDeleteCustomer,
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
@@ -14,17 +17,17 @@ import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sa
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CustomerDetailDrawer from '@/components/CustomerDetailDrawer.vue'
 import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
-const router = useRouter()
+const route = useRoute()
 const fieldRefs = useFieldRefs()
 
 const pools = ref<ResourcePoolVO[]>([])
@@ -44,9 +47,10 @@ const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
 const detailVisible = ref(false)
-const detailTarget = ref<CustomerVO | null>(null)
+const detailCustomerId = ref<string | null>(null)
 const assignVisible = ref(false)
 const assignTarget = ref<CustomerVO | null>(null)
+const batchAssignVisible = ref(false)
 const pageReady = ref(false)
 const savedViewReady = ref(false)
 const initialLoadDone = ref(false)
@@ -182,11 +186,52 @@ async function handleBatchDelete() {
   }
 }
 
+async function handleBatchClaim() {
+  if (!selectedPoolId.value || !selectedRows.value.length) return
+  const confirmed = await ElMessageBox.confirm(
+    `确定领取已选择的 ${selectedRows.value.length} 个客户？领取限制、冷却和库容规则仍会逐条校验。`,
+    '批量领取客户',
+    { confirmButtonText: '领取', cancelButtonText: '取消' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    const { data } = await poolBatchPickCustomers(
+      selectedPoolId.value,
+      selectedRows.value.map((row) => row.id),
+    )
+    if (data.fail > 0) ElMessage.warning(`领取完成：成功 ${data.success} 个，失败 ${data.fail} 个`)
+    else ElMessage.success(`已领取 ${data.success} 个客户`)
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBatchAssignConfirm(userId: string) {
+  if (!selectedRows.value.length) return
+  try {
+    const { data } = await poolBatchAssignCustomers(selectedRows.value.map((row) => row.id), userId)
+    if (data.fail > 0) ElMessage.warning(`分配完成：成功 ${data.success} 个，失败 ${data.fail} 个`)
+    else ElMessage.success(`已分配 ${data.success} 个客户`)
+    batchAssignVisible.value = false
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
 async function handleClaim(row: CustomerVO) {
+  const confirmed = await ElMessageBox.confirm(
+    `领取客户「${row.name}」后，该客户将进入你的客户列表。`,
+    '领取客户',
+    { confirmButtonText: '领取', cancelButtonText: '取消' },
+  ).catch(() => false)
+  if (!confirmed) return
   try {
     await customerExtraApi.claim(row.id, row.poolId ?? selectedPoolId.value)
     ElMessage.success(`已领取「${row.name}」`)
-    loadData()
+    await loadData()
+    window.open(`${window.location.origin}/customers?id=${encodeURIComponent(row.id)}`, '_blank')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
@@ -204,13 +249,25 @@ async function handleAssignConfirm(userId: string) {
   }
 }
 
-function openPreview(row: CustomerVO) {
-  detailTarget.value = row
+function openDetail(row: CustomerVO) {
+  detailCustomerId.value = row.id
   detailVisible.value = true
 }
 
-function openDetail(row: CustomerVO) {
-  router.push(`/customers/${row.id}`)
+async function handleDelete(row: CustomerVO) {
+  const confirmed = await ElMessageBox.confirm(
+    `确定删除公海客户「${row.name}」吗？存在联系人、商机或交易数据时会拒绝删除。`,
+    '删除公海客户',
+    { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+  ).catch(() => false)
+  if (!confirmed) return
+  try {
+    await poolDeleteCustomer(row.id)
+    ElMessage.success('客户已删除')
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 function transferParams() {
@@ -262,6 +319,14 @@ async function handleExportConfirm(payload: { fileName: string; headList: string
 
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadPoolOptions()])
+  const queryPoolId = typeof route.query.poolId === 'string' ? route.query.poolId : ''
+  if (queryPoolId && pools.value.some((pool) => pool.id === queryPoolId)) {
+    selectedPoolId.value = queryPoolId
+  }
+  if (typeof route.query.id === 'string') {
+    detailCustomerId.value = route.query.id
+    detailVisible.value = true
+  }
   pageReady.value = true
   tryInitialLoad()
 })
@@ -316,6 +381,12 @@ onMounted(async () => {
           <el-button v-if="canExport" @click="openExport('selected')">
             导出选中（{{ selectedRows.length }}）
           </el-button>
+          <el-button v-if="auth.hasPerm('customerPool:pick')" @click="handleBatchClaim">
+            批量领取
+          </el-button>
+          <el-button v-if="auth.hasPerm('customerPool:assign')" @click="batchAssignVisible = true">
+            批量分配
+          </el-button>
           <el-button v-if="auth.hasPerm('customerPool:update')" @click="batchEditVisible = true">
             批量修改（{{ selectedRows.length }}）
           </el-button>
@@ -344,7 +415,13 @@ onMounted(async () => {
       @selection-change="handleSelectionChange"
     >
       <el-table-column
-        v-if="auth.hasPerm('customerPool:update') || auth.hasPerm('customerPool:delete') || canExport"
+        v-if="
+          auth.hasPerm('customerPool:pick') ||
+          auth.hasPerm('customerPool:assign') ||
+          auth.hasPerm('customerPool:update') ||
+          auth.hasPerm('customerPool:delete') ||
+          canExport
+        "
         type="selection"
         width="46"
       />
@@ -356,15 +433,25 @@ onMounted(async () => {
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          {{
-            formatFieldValue(column, row, {
-              memberMap: fieldRefs.memberMap.value,
-              deptMap: fieldRefs.deptMap.value,
-            })
-          }}
+          <el-button
+            v-if="column.key === 'name'"
+            link
+            type="primary"
+            @click="openDetail(row as CustomerVO)"
+          >
+            {{ formatFieldValue(column, row, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}
+          </el-button>
+          <template v-else>
+            {{
+              formatFieldValue(column, row, {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}
+          </template>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="190" fixed="right">
         <template #default="{ row }">
           <el-button v-if="auth.hasPerm('customerPool:pick')" link type="primary" @click="handleClaim(row as CustomerVO)">领取</el-button>
           <el-button
@@ -374,8 +461,14 @@ onMounted(async () => {
           >
             分配
           </el-button>
-          <el-button link @click="openPreview(row as CustomerVO)">预览</el-button>
-          <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>
+          <el-button
+            v-if="auth.hasPerm('customerPool:delete')"
+            link
+            type="danger"
+            @click="handleDelete(row as CustomerVO)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -392,11 +485,14 @@ onMounted(async () => {
       />
     </div>
 
-    <CustomerDetailDrawer
+    <CustomerOverviewDrawer
       v-model="detailVisible"
-      :customer="detailTarget"
-      :members="fieldRefs.members.value"
+      :customer-id="detailCustomerId"
       pool
+      :pool-id="selectedPoolId"
+      :hidden-field-ids="currentPool?.hiddenFieldIds ?? []"
+      @changed="loadData"
+      @deleted="loadData"
     />
 
     <MemberSelectDialog
@@ -404,6 +500,13 @@ onMounted(async () => {
       :title="`分配客户「${assignTarget?.name ?? ''}」`"
       :members="fieldRefs.members.value"
       @confirm="handleAssignConfirm"
+    />
+
+    <MemberSelectDialog
+      v-model="batchAssignVisible"
+      :title="`批量分配客户（${selectedRows.length}）`"
+      :members="fieldRefs.members.value"
+      @confirm="handleBatchAssignConfirm"
     />
 
     <CrmImportDialog

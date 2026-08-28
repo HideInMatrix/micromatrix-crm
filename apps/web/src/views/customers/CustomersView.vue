@@ -6,8 +6,10 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   batchDeleteCustomers,
+  batchTransferCustomers,
   batchUpdateCustomers,
   checkDuplicate,
   createCustomer,
@@ -29,6 +31,7 @@ import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import CustomerMoveToPoolDialog from '@/components/customer/CustomerMoveToPoolDialog.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
@@ -39,6 +42,7 @@ import { useAuthStore } from '@/stores/auth'
 import { confirmIfDuplicates } from '@/utils/duplicate'
 
 const auth = useAuthStore()
+const route = useRoute()
 const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
 
@@ -64,6 +68,10 @@ const followVisible = ref(false)
 const followTarget = ref<CustomerVO | null>(null)
 const assignVisible = ref(false)
 const assignTarget = ref<CustomerVO | null>(null)
+const batchTransferVisible = ref(false)
+const moveToPoolVisible = ref(false)
+const moveToPoolIds = ref<string[]>([])
+const moveToPoolName = ref('')
 const mergeVisible = ref(false)
 const selectedRows = ref<CustomerVO[]>([])
 const batchEditVisible = ref(false)
@@ -231,6 +239,31 @@ async function handleBatchDelete() {
   }
 }
 
+function openBatchTransfer() {
+  if (!selectedRows.value.length) return
+  batchTransferVisible.value = true
+}
+
+async function handleBatchTransferConfirm(userId: string) {
+  if (!selectedRows.value.length) return
+  try {
+    const { data } = await batchTransferCustomers(selectedRows.value.map((row) => row.id), userId)
+    if (data.fail > 0) ElMessage.warning(`转移完成：成功 ${data.success} 个，失败 ${data.fail} 个`)
+    else ElMessage.success(`已转移 ${data.success} 个客户`)
+    batchTransferVisible.value = false
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function openMoveToPool(rows: CustomerVO[]) {
+  if (!rows.length) return
+  moveToPoolIds.value = rows.map((row) => row.id)
+  moveToPoolName.value = rows.length === 1 ? rows[0]?.name ?? '' : ''
+  moveToPoolVisible.value = true
+}
+
 function buildDefaultModel(): Record<string, unknown> {
   const model: Record<string, unknown> = {}
   for (const field of fields.value) {
@@ -326,25 +359,12 @@ async function handleDelete(row: CustomerVO) {
   }
 }
 
-async function handleToSea(row: CustomerVO) {
-  const confirmed = await ElMessageBox.confirm(`将「${row.name}」退回公海？`, '确认', {
-    type: 'warning',
-  }).catch(() => false)
-  if (!confirmed) return
-  try {
-    await customerExtraApi.toSea(row.id)
-    ElMessage.success('已退回公海')
-    loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
 async function handleAssignConfirm(userId: string) {
   if (!assignTarget.value) return
   try {
     await customerExtraApi.assign(assignTarget.value.id, userId)
-    ElMessage.success('已分配')
+    ElMessage.success('客户已转移')
+    assignVisible.value = false
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -414,6 +434,10 @@ async function openFollow(row: CustomerVO) {
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadSystemViews()])
   await homeQuickCreate.consume(openCreate)
+  if (typeof route.query.id === 'string') {
+    overviewCustomerId.value = route.query.id
+    overviewVisible.value = true
+  }
   pageReady.value = true
   tryInitialLoad()
 })
@@ -463,6 +487,15 @@ onMounted(async () => {
           <el-button v-if="canExport" @click="openExport('selected')">
             导出选中（{{ selectedRows.length }}）
           </el-button>
+          <el-button v-if="auth.hasPerm('customer:transfer')" @click="openBatchTransfer">
+            批量转移
+          </el-button>
+          <el-button
+            v-if="auth.hasPerm('customer:recycle')"
+            @click="openMoveToPool(selectedRows)"
+          >
+            批量移入公海
+          </el-button>
           <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true">
             批量修改（{{ selectedRows.length }}）
           </el-button>
@@ -510,6 +543,8 @@ onMounted(async () => {
         v-if="
           !isCollaborationView &&
           (auth.hasPerm('customer:merge') ||
+            auth.hasPerm('customer:transfer') ||
+            auth.hasPerm('customer:recycle') ||
             auth.hasPerm('customer:update') ||
             auth.hasPerm('customer:delete') ||
             canExport)
@@ -551,13 +586,13 @@ onMounted(async () => {
                   v-if="auth.hasPerm('customer:transfer')"
                   @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
                 >
-                  分配负责人
+                  转移
                 </el-dropdown-item>
                 <el-dropdown-item
                   v-if="auth.hasPerm('customer:recycle')"
-                  @click="handleToSea(row as CustomerVO)"
+                  @click="openMoveToPool([row as CustomerVO])"
                 >
-                  退回公海
+                  移入公海
                 </el-dropdown-item>
                 <el-dropdown-item
                   v-if="auth.hasPerm('customer:delete')"
@@ -613,9 +648,23 @@ onMounted(async () => {
 
     <MemberSelectDialog
       v-model="assignVisible"
-      :title="`分配客户「${assignTarget?.name ?? ''}」`"
+      :title="`转移客户「${assignTarget?.name ?? ''}」`"
       :members="fieldRefs.members.value"
       @confirm="handleAssignConfirm"
+    />
+
+    <MemberSelectDialog
+      v-model="batchTransferVisible"
+      :title="`批量转移客户（${selectedRows.length}）`"
+      :members="fieldRefs.members.value"
+      @confirm="handleBatchTransferConfirm"
+    />
+
+    <CustomerMoveToPoolDialog
+      v-model="moveToPoolVisible"
+      :customer-ids="moveToPoolIds"
+      :customer-name="moveToPoolName"
+      @moved="loadData"
     />
 
     <CrmImportDialog

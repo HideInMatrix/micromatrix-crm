@@ -4,7 +4,7 @@
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [cordys-parity.md](./cordys-parity.md)                               | 当前 CordysCRM 功能一致性总表与迁移状态                                      |
 | [cordys-wave2-execution-plan.md](./cordys-wave2-execution-plan.md)   | Wave 2 执行记录；W2.1-W2.5 已验收，含流程设置版本底座与 Vue Flow 设计器      |
-| [cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md) | 用户功能图收口计划；客户公海与模块设置已完成，当前进入 W3.4.3 task 4.6    |
+| [cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md) | 用户功能图收口计划；W3.4.3 客户域已全部关闭，当前进入 W3.4.4 task 5.1 |
 | [cordys-menu-parity.md](./cordys-menu-parity.md)                     | 当前 Cordys 实例经模块开关与角色权限过滤后的实际左侧菜单基线                 |
 | [alignment-log.md](./alignment-log.md)                               | 对齐探测与实施证据：运行实例基线、公共底座、Wave 2 与 W3.1-W3.3 企业微信能力 |
 | [architecture.md](./architecture.md)                                 | 架构设计与关键技术决策记录（含踩坑记录）                                     |
@@ -18,7 +18,7 @@
 
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/冒烟脚本）
-- 当前主线：[cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md)；W3.4.3 task 4.5 已完成客户公海分域 API、完整规则和 `/system/modules` 三个客户设置入口，当前进入 **W3.4.3 task 4.6：重建客户域 Vue 页面**。
+- 当前主线：[cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md)；W3.4.3 task 4.1～4.7 已完成客户/联系人/客户公海 API、规则、页面与最终验收，当前进入 **W3.4.4 task 5.1：固化仪表板源码证据矩阵**。
 - 当前回归基线：客户公海主体 **36/36** + 客户模块设置 API **25/25** + Browser **17/17** + 客户协作/关系/合并 **30/30** + 客户 API/360 **22/22** + 联系人 API **18/18** + `pnpm smoke`（**219/219**，历史根基线，待 4.7 统一迁移到当前 `/account/*` 契约）+ 线索模块设置 API **22/22** + Browser **17/17** + 线索连续生命周期 **17/17** + 普通 API **18/18** + 转换 **21/21** + 多 Pool **32/32** + 线索 Browser **20/20** + rules **114/114**
 - 数据模型唯一真相：`apps/api/prisma/schema.prisma`；不维护会随迁移快速失真的手写数据模型快照
 - 启动方式与演示账号见根目录 [README.md](../README.md)
