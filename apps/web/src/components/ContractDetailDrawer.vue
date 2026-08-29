@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  CONTRACT_STATUS_LABELS,
   INVOICE_STATUS_LABELS,
   INVOICE_TYPES,
   RECEIVABLE_METHODS,
@@ -23,6 +22,8 @@ const emit = defineEmits<{ changed: [] }>()
 const auth = useAuthStore()
 
 const detail = ref<ContractVO | null>(null)
+const detailSnapshot = ref<Record<string, unknown> | null>(null)
+const detailSnapshotForm = ref<Record<string, unknown> | null>(null)
 const plans = ref<ReceivablePlanVO[]>([])
 const records = ref<ReceivableRecordVO[]>([])
 const invoices = ref<InvoiceVO[]>([])
@@ -42,22 +43,29 @@ const invoiceForm = reactive({ titleId: '', amount: 0, type: '增值税普通发
 const titleDialogVisible = ref(false)
 const titleForm = reactive({ name: '', taxNo: '', bankName: '', bankAccount: '', address: '', phone: '' })
 
-watch(visible, (open) => {
-  if (open && props.contractId) loadAll()
-})
+watch(
+  [visible, () => props.contractId],
+  ([open, contractId]) => {
+    if (open && contractId) void loadAll(contractId)
+  },
+)
 
-async function loadAll() {
-  if (!props.contractId) return
+async function loadAll(contractId = props.contractId) {
+  if (!contractId) return
   loading.value = true
   try {
-    const [detailRes, planRes, recordRes, invoiceRes, titleRes] = await Promise.all([
-      contractApi.detail(props.contractId),
-      contractApi.plans(props.contractId),
-      contractApi.records(props.contractId),
-      contractApi.invoices(props.contractId),
+    const [detailRes, snapshotRes, snapshotFormRes, planRes, recordRes, invoiceRes, titleRes] = await Promise.all([
+      contractApi.detail(contractId),
+      contractApi.snapshot(contractId),
+      contractApi.snapshotForm(contractId),
+      contractApi.plans(contractId),
+      contractApi.records(contractId),
+      contractApi.invoices(contractId),
       contractApi.titles(),
     ])
     detail.value = detailRes.data
+    detailSnapshot.value = snapshotRes.data
+    detailSnapshotForm.value = snapshotFormRes.data
     plans.value = planRes.data
     records.value = recordRes.data
     invoices.value = invoiceRes.data
@@ -196,17 +204,21 @@ async function addTitle() {
 
 const canManageReceivable = () => auth.hasPerm('receivable:manage')
 const canManageInvoice = () => auth.hasPerm('invoice:manage')
+
+function formatDate(value: number | null | undefined) {
+  return value ? new Date(value).toLocaleDateString('zh-CN') : '-'
+}
 </script>
 
 <template>
-  <el-drawer v-model="visible" :title="detail ? `${detail.name}（${detail.code}）` : '合同详情'" size="640px">
+  <el-drawer v-model="visible" :title="detail ? `${detail.name}（${detail.number}）` : '合同详情'" size="640px">
     <div v-loading="loading">
       <el-descriptions v-if="detail" :column="3" border size="small" class="mb-4">
         <el-descriptions-item label="客户">{{ detail.customerName }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          {{ CONTRACT_STATUS_LABELS[detail.status] }}
-        </el-descriptions-item>
-        <el-descriptions-item label="签约日期">{{ detail.signedAt ?? '-' }}</el-descriptions-item>
+        <el-descriptions-item label="阶段">{{ detail.stageName ?? detail.stage }}</el-descriptions-item>
+        <el-descriptions-item label="审批状态">{{ detail.approvalStatus }}</el-descriptions-item>
+        <el-descriptions-item label="开始时间">{{ formatDate(detail.startTime) }}</el-descriptions-item>
+        <el-descriptions-item label="结束时间">{{ formatDate(detail.endTime) }}</el-descriptions-item>
         <el-descriptions-item label="合同金额">
           ¥{{ detail.amount.toLocaleString('zh-CN') }}
         </el-descriptions-item>
@@ -218,16 +230,22 @@ const canManageInvoice = () => auth.hasPerm('invoice:manage')
         </el-descriptions-item>
       </el-descriptions>
 
+      <el-collapse v-if="detailSnapshot || detailSnapshotForm" class="mb-4">
+        <el-collapse-item v-if="detailSnapshot" title="合同冻结快照" name="business-snapshot">
+          <pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(detailSnapshot, null, 2) }}</pre>
+        </el-collapse-item>
+        <el-collapse-item v-if="detailSnapshotForm" title="表单配置快照" name="form-snapshot">
+          <pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(detailSnapshotForm, null, 2) }}</pre>
+        </el-collapse-item>
+      </el-collapse>
+
       <el-tabs v-model="activeTab">
         <el-tab-pane label="合同明细" name="items">
-          <el-table :data="detail?.items ?? []" size="small">
+          <el-table :data="detail?.products ?? []" size="small">
             <el-table-column prop="productName" label="产品/项目" min-width="180" />
-            <el-table-column prop="quantity" label="数量" width="80" />
+            <el-table-column prop="productNumber" label="数量" width="80" />
             <el-table-column label="单价" width="110" align="right">
-              <template #default="{ row }">¥{{ row.unitPrice.toLocaleString('zh-CN') }}</template>
-            </el-table-column>
-            <el-table-column label="折扣" width="70">
-              <template #default="{ row }">{{ row.discount }}%</template>
+              <template #default="{ row }">¥{{ row.productAmount.toLocaleString('zh-CN') }}</template>
             </el-table-column>
             <el-table-column label="金额" width="110" align="right">
               <template #default="{ row }">¥{{ row.amount.toLocaleString('zh-CN') }}</template>

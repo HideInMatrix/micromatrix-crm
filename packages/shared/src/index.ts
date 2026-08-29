@@ -162,14 +162,15 @@ export interface Customer360OpportunityVO {
 
 export interface Customer360ContractVO {
   id: string
-  code: string
+  number: string
   name: string
   amount: number
   paidAmount: number
-  status: string
+  stage: string
+  stageName: string
   approvalStatus: string
   ownerName: string | null
-  createdAt: string
+  createTime: number
 }
 
 export interface Customer360ReceivablePlanVO {

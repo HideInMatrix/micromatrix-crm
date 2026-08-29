@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import {
   CluePoolUserViewsController,
   ClueUserViewsController,
+  ContractUserViewsController,
   CustomerContactUserViewsController,
   CustomerPoolUserViewsController,
   CustomerUserViewsController,
@@ -19,6 +20,7 @@ import { UserViewsService } from './user-views.service'
     CustomerPoolUserViewsController,
     OpportunityUserViewsController,
     OpportunityQuotationUserViewsController,
+    ContractUserViewsController,
   ],
   providers: [UserViewsService],
   exports: [UserViewsService],

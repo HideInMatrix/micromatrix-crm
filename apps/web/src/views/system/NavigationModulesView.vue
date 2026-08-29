@@ -21,6 +21,7 @@ import LeadPoolSettingsDrawer from './components/LeadPoolSettingsDrawer.vue'
 import CustomerCapacitySettingsDrawer from './components/CustomerCapacitySettingsDrawer.vue'
 import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSettingsDrawer.vue'
 import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
+import ContractStageSettingsDrawer from './components/ContractStageSettingsDrawer.vue'
 import OpportunityCloseRuleSettingsDrawer from './components/OpportunityCloseRuleSettingsDrawer.vue'
 import OpportunityFailureReasonSettingsDrawer from './components/OpportunityFailureReasonSettingsDrawer.vue'
 import OpportunityStageSettingsDrawer from './components/OpportunityStageSettingsDrawer.vue'
@@ -29,6 +30,7 @@ interface ModuleAction {
   label: string
   path?: string
   query?: Record<string, string>
+  deferred?: string
   drawer?:
     | 'lead-pool'
     | 'lead-capacity'
@@ -36,6 +38,7 @@ interface ModuleAction {
     | 'customer-pool'
     | 'customer-capacity'
     | 'customer-reason'
+    | 'contract-stage'
     | 'opportunity-stage'
     | 'opportunity-rule'
     | 'opportunity-reason'
@@ -69,10 +72,14 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   contract: {
     primary: [
       { label: '合同表单设置', path: '/system/modules/fields', query: { module: 'contract' } },
-      { label: '回款计划表单设置' },
-      { label: '回款记录表单设置' },
+      { label: '回款计划表单设置', deferred: 'W3.6.4：回款计划 direct model 与表单消费链完成后开放' },
+      { label: '回款记录表单设置', deferred: 'W3.6.4：回款记录 direct model 与表单消费链完成后开放' },
     ],
-    more: [{ label: '工商抬头表单必填设置' }, { label: '发票表单设置' }, { label: '合同阶段设置' }],
+    more: [
+      { label: '工商抬头表单必填设置', deferred: 'W3.6.4：工商抬头直接模型与 /business-title/config/* 完成后开放' },
+      { label: '发票表单设置', deferred: 'W3.6.4：发票 direct model 与表单消费链完成后开放' },
+      { label: '合同阶段设置', drawer: 'contract-stage' },
+    ],
   },
   opportunity: {
     primary: [
@@ -113,6 +120,7 @@ const leadReasonVisible = ref(false)
 const customerPoolVisible = ref(false)
 const customerCapacityVisible = ref(false)
 const customerReasonVisible = ref(false)
+const contractStageVisible = ref(false)
 const opportunityStageVisible = ref(false)
 const opportunityRuleVisible = ref(false)
 const opportunityReasonVisible = ref(false)
@@ -139,7 +147,7 @@ function actionsOf(moduleKey: NavigationModuleKey) {
 }
 
 function unavailableActionTip(action: ModuleAction) {
-  return `「${action.label}」将在对应 Cordys 业务模块执行单元中继续对齐`
+  return action.deferred ?? `「${action.label}」将在对应 Cordys 业务模块执行单元中继续对齐`
 }
 
 async function load() {
@@ -237,6 +245,7 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-pool') customerPoolVisible.value = true
   if (action.drawer === 'customer-capacity') customerCapacityVisible.value = true
   if (action.drawer === 'customer-reason') customerReasonVisible.value = true
+  if (action.drawer === 'contract-stage') contractStageVisible.value = true
   if (action.drawer === 'opportunity-stage') opportunityStageVisible.value = true
   if (action.drawer === 'opportunity-rule') opportunityRuleVisible.value = true
   if (action.drawer === 'opportunity-reason') opportunityReasonVisible.value = true
@@ -360,8 +369,9 @@ onMounted(load)
                         :key="action.label"
                         :command="action"
                         :disabled="!action.path && !action.drawer"
+                        :title="action.deferred"
                       >
-                        {{ action.label }}
+                        {{ action.label }}{{ action.deferred ? '（W3.6.4）' : '' }}
                       </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -393,6 +403,7 @@ onMounted(load)
     <CustomerPoolSettingsDrawer v-model="customerPoolVisible" />
     <CustomerCapacitySettingsDrawer v-model="customerCapacityVisible" />
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
+    <ContractStageSettingsDrawer v-model="contractStageVisible" />
     <OpportunityStageSettingsDrawer v-model="opportunityStageVisible" />
     <OpportunityCloseRuleSettingsDrawer v-model="opportunityRuleVisible" />
     <OpportunityFailureReasonSettingsDrawer v-model="opportunityReasonVisible" />

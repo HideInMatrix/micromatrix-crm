@@ -121,3 +121,10 @@ export const OpportunityQuotationUserViewsController = createResourceUserViewsCo
   'OPPORTUNITY_QUOTATION',
   ['menu:quote'],
 )
+
+export const ContractUserViewsController = createResourceUserViewsController(
+  'contract/view',
+  '合同视图',
+  'CONTRACT',
+  ['menu:contract'],
+)

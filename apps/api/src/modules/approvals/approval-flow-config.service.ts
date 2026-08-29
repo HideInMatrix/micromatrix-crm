@@ -264,9 +264,9 @@ export class ApprovalFlowConfigService {
     nodes: FlowNodeDto[],
   ) {
     if (!dto.name.trim()) throw new BadRequestException('流程名称不能为空')
-    if (formType === 'quotation') {
+    if (formType === 'quotation' || formType === 'contract') {
       if (!dto.createExecute && !dto.updateExecute && !dto.deleteExecute) {
-        throw new UnprocessableEntityException('报价审批至少需要开启一种执行时机')
+        throw new UnprocessableEntityException('当前业务对象审批至少需要开启一种执行时机')
       }
     } else {
       if (!dto.createExecute) {
@@ -561,7 +561,7 @@ export class ApprovalFlowConfigService {
     }
     if (contractIds.length) {
       await tx.contract.updateMany({
-        where: { tenantId, id: { in: contractIds } },
+        where: { organizationId: tenantId, id: { in: contractIds } },
         data: { approvalStatus: 'NONE' },
       })
     }

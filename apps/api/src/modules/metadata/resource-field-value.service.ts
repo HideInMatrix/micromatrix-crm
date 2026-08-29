@@ -22,10 +22,11 @@ export type ResourceFieldType =
   | 'product'
   | 'productPrice'
   | 'quotation'
+  | 'contract'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 interface ResourceConfig {
-  formKey: 'lead' | 'customer' | 'contact' | 'opportunity' | 'product' | 'price' | 'quote'
+  formKey: 'lead' | 'customer' | 'contact' | 'opportunity' | 'product' | 'price' | 'quote' | 'contract'
   resourceTable:
     | 'clue'
     | 'customer'
@@ -34,6 +35,7 @@ interface ResourceConfig {
     | 'product'
     | 'product_price'
     | 'opportunity_quotation'
+    | 'contract'
   normalTable:
     | 'clue_field'
     | 'customer_field'
@@ -42,6 +44,7 @@ interface ResourceConfig {
     | 'product_field'
     | 'product_price_field'
     | 'opportunity_quotation_field'
+    | 'contract_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
@@ -50,6 +53,7 @@ interface ResourceConfig {
     | 'product_field_blob'
     | 'product_price_field_blob'
     | 'opportunity_quotation_field_blob'
+    | 'contract_field_blob'
 }
 
 interface ValidatedFieldValue {
@@ -101,6 +105,12 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'opportunity_quotation',
     normalTable: 'opportunity_quotation_field',
     blobTable: 'opportunity_quotation_field_blob',
+  },
+  contract: {
+    formKey: 'contract',
+    resourceTable: 'contract',
+    normalTable: 'contract_field',
+    blobTable: 'contract_field_blob',
   },
 }
 
@@ -491,8 +501,13 @@ export class ResourceFieldValueService {
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
-    else
+    else if (resourceType === 'quotation')
       resource = await tx.opportunityQuotation.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else
+      resource = await tx.contract.findFirst({
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
@@ -544,11 +559,16 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.productPriceFieldBlob.findFirst({ where, select: { id: true } })
           : await client.productPriceField.findFirst({ where, select: { id: true } })
-    else
+    else if (resourceType === 'quotation')
       repeated =
         item.storage === 'blob'
           ? await client.opportunityQuotationFieldBlob.findFirst({ where, select: { id: true } })
           : await client.opportunityQuotationField.findFirst({ where, select: { id: true } })
+    else
+      repeated =
+        item.storage === 'blob'
+          ? await client.contractFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.contractField.findFirst({ where, select: { id: true } })
     if (repeated) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
@@ -589,10 +609,15 @@ export class ResourceFieldValueService {
         tx.productPriceField.deleteMany({ where }),
         tx.productPriceFieldBlob.deleteMany({ where }),
       ])
-    else
+    else if (resourceType === 'quotation')
       await Promise.all([
         tx.opportunityQuotationField.deleteMany({ where }),
         tx.opportunityQuotationFieldBlob.deleteMany({ where }),
+      ])
+    else
+      await Promise.all([
+        tx.contractField.deleteMany({ where }),
+        tx.contractFieldBlob.deleteMany({ where }),
       ])
   }
 
@@ -631,9 +656,12 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'productPrice') {
       if (normalData.length) await tx.productPriceField.createMany({ data: normalData })
       if (blobData.length) await tx.productPriceFieldBlob.createMany({ data: blobData })
-    } else {
+    } else if (resourceType === 'quotation') {
       if (normalData.length) await tx.opportunityQuotationField.createMany({ data: normalData })
       if (blobData.length) await tx.opportunityQuotationFieldBlob.createMany({ data: blobData })
+    } else {
+      if (normalData.length) await tx.contractField.createMany({ data: normalData })
+      if (blobData.length) await tx.contractFieldBlob.createMany({ data: blobData })
     }
   }
 
@@ -680,9 +708,14 @@ export class ResourceFieldValueService {
         client.productPriceField.findMany({ where, select }),
         client.productPriceFieldBlob.findMany({ where, select }),
       ])
+    if (resourceType === 'quotation')
+      return Promise.all([
+        client.opportunityQuotationField.findMany({ where, select }),
+        client.opportunityQuotationFieldBlob.findMany({ where, select }),
+      ])
     return Promise.all([
-      client.opportunityQuotationField.findMany({ where, select }),
-      client.opportunityQuotationFieldBlob.findMany({ where, select }),
+      client.contractField.findMany({ where, select }),
+      client.contractFieldBlob.findMany({ where, select }),
     ])
   }
 

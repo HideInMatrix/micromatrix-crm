@@ -141,14 +141,66 @@ export const quoteApi = {
 // ===== 合同 =====
 
 export const contractApi = {
-  list: (params: PageQuery & { status?: string; customerId?: string; filters?: string }) =>
-    http.get<PaginatedResult<ContractVO>>('/contracts', { params }),
-  detail: (id: string) => http.get<ContractVO>(`/contracts/${id}`),
-  create: (data: Record<string, unknown>) => http.post<ContractVO>('/contracts', data),
-  update: (id: string, data: Record<string, unknown>) =>
-    http.patch<ContractVO>(`/contracts/${id}`, data),
-  changeStatus: (id: string, status: string) => http.post(`/contracts/${id}/status`, { status }),
-  remove: (id: string) => http.delete(`/contracts/${id}`),
+  moduleForm: () => http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    '/contract/module/form',
+  ),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    viewId?: string
+    filters?: unknown[]
+    board?: boolean
+    stage?: string
+    customerId?: string
+  }) =>
+    http.post<{
+      list: ContractVO[]
+      total: number
+      current: number
+      pageSize: number
+      stages: Array<{ id: string; name: string; type: string; pos: number; circulationType: string }>
+      optionMap: Record<string, unknown>
+    }>('/contract/page', data),
+  detail: (id: string) => http.get<ContractVO>(`/contract/get/${id}`),
+  snapshot: (id: string) => http.get<Record<string, unknown>>(`/contract/get/snapshot/${id}`),
+  snapshotForm: (id: string) => http.get<Record<string, unknown>>(`/contract/module/form/snapshot/${id}`),
+  create: (data: Record<string, unknown>) => http.post<ContractVO>('/contract/add', data),
+  update: (data: Record<string, unknown>) => http.post<ContractVO>('/contract/update', data),
+  updateStage: (data: {
+    id: string
+    stage: string
+    voidReason?: string
+    fields?: Array<{ fieldId: string; fieldValue?: unknown }>
+  }) => http.post<ContractVO>('/contract/update/stage', data),
+  approve: (data: { id: string; approvalStatus: string }) => http.post('/contract/approval', data),
+  batchApprove: (data: { ids: string[]; approvalStatus: string }) =>
+    http.post<{ success: number; fail: number; skip: number }>('/contract/batch/approval', data),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
+    http.post<{ success: number; fail: number; skip: number }>('/contract/batch/update', data),
+  revoke: (id: string) => http.get(`/contract/revoke/${id}`),
+  remove: (id: string) =>
+    http.get<{ id: string; name: string; pendingApproval: boolean }>(`/contract/delete/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/contract/tab'),
+  statistic: (data: Record<string, unknown>) =>
+    http.post<{ count: number; amount: number; paidAmount: number; invoicedAmount: number }>(
+      '/contract/statistic',
+      data,
+    ),
+  sort: (data: { id: string; stage: string; pos?: number }) => http.post('/contract/sort', data),
+  stages: () => http.get<{
+    stageConfigList: Array<{
+      id: string
+      name: string
+      type: string
+      pos: number
+      circulationType: string
+      stageHasData: boolean
+    }>
+    afootRollBack: boolean
+    endRollBack: boolean
+    circulationType: string
+  }>('/contract/stage/get'),
 
   // 回款计划
   plans: (contractId: string) =>

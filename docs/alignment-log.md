@@ -975,3 +975,28 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `/system/modules` 商机卡“报价表单设置”保持 REAL，独立 Browser **5/5** 验证真实进入 `module=quote`，并确认报价、商机、联系人、报价日期、有效期、累计金额等 direct 字段存在，旧报价单号/报价状态字段不存在。
 - 最终验收：报价业务 Browser **28/28**、审批 HTTP Smoke 全绿、根 Smoke **224/224**、Rules **114/114**；隔离空库 **46/46** 全量 replay + Seed 连跑两次成功；全仓 typecheck、ESLint、Shared/API/Web production build 全绿；`prisma.quote` 与 `QuoteStatus` 运行时残留为 0。
 - W3.6.2 正式关闭；下一执行指针为 **W3.6.3 合同 4.1：先读 Cordys 合同源码/DDL/API/页面并建立证据矩阵**。
+
+---
+
+## 48. W3.6.3 task 4.1 合同源码与 DDL 证据矩阵（2026-08-29）
+
+- 完整锁定 Cordys 合同前端 requrls、contract table/detail/billboard、`ContractController/Service/FieldService/StageController/StageService/UserViewController` 与 1.4.0～1.7.2 最终 DDL 演进。
+- 最终合同直接模型确认为 `contract + contract_field/blob + contract_snapshot + contract_stage_config`；当前 MicroMatrix `contracts + ContractItem + ContractStatus + customData` 不是目标契约，后续采用破坏式收口，不保留双写。
+- 产品信息属于合同 `products` SUB_TABLE，通过 `refSubId/rowId/bizId` 落 Field/Blob；合同创建即冻结表单和值快照，UPDATE/DELETE 走通用 Approval，驳回/撤回需恢复业务快照。
+- 合同阶段保存组织级 stage config id，支持最多 15 阶段、NORMAL/ADVANCED 流转、回退设置、阶段字段条件、看板排序，以及 VOID/ARCHIVED 通知；不能继续使用固定 `DRAFT/EXECUTING/COMPLETED/TERMINATED` 枚举。
+- 合同物理删除前必须拒绝仍有关联回款记录或发票的合同；回款计划/回款记录/发票/工商抬头独立 direct model 留 W3.6.4，但 `/system/modules` 的依赖边界已在合同审计中锁定。
+- 新增 `contract-source-api-audit.md`；task 4.1 关闭，下一执行指针为 **W3.6.3 task 4.2A：合同直接模型与 forward migration**。
+
+---
+
+## 49. W3.6.3 合同直接模型、阶段、审批与页面最终收口（2026-08-29）
+
+- 按 4.1 证据矩阵完成破坏式 direct-model 收口：旧 `ContractStatus / ContractItem / contracts / contract_items / customData` 不再作为合同真相源，目标模型统一为 `contract + contract_field/blob + contract_snapshot + contract_stage_config`；产品明细通过 `products` SUB_TABLE 的 `refSubId/rowId/bizId` 保存。
+- 合同主表不持久化 Cordys 不存在的 `quoteId/opportunityId`；已审批且未作废报价仅作为 `fromQuote` 创建预填来源，客户由报价→商机上下文取得，产品复制进合同 SUB_TABLE。46→47 upgrade Smoke 证明旧合同/明细可迁移到 direct model，旧 `EXECUTING` 映射真实“履行中”阶段并保留审批事实位。
+- CREATE/UPDATE/DELETE 已接通通用 Approval：UPDATE 固定命中 UPDATE 执行时机，驳回/撤回恢复主字段、Field/Blob、products 和合同 Snapshot；DELETE 命中流程时延迟物理删除；`approved` 保持“历史上曾审批通过”的事实语义。回款记录/发票继续作为物理删除保护，等待 W3.6.4 direct model 接管。
+- 建立 Cordys `/contract/*` 主契约与 `CONTRACT` Saved View；`/contract/page` 统一求交 DataScope + Saved View + ad-hoc filters。旧 `/contracts` 主 CRUD 已移除，只暂留 W3.6.4 的工商抬头、回款计划/记录、发票子域。
+- Vue 合同页切换到 direct `stage/moduleFields/products`：列表/看板、动态表单、Saved View、高级筛选、批量、真实阶段流转、作废原因、详情/业务 Snapshot/表单 Snapshot、Approval 与 `fromQuote` 深链全部使用新契约。首屏由 `metaReady + savedViewReady + initialLoaded` 保证 `/contract/page` 只发一次；深链在 metadata + route query ready 后消费。
+- `/system/modules` 合同卡片审计完成：合同表单、合同阶段为 REAL；回款计划表单、回款记录表单、工商抬头必填、发票表单明确标记 W3.6.4 deferred 且不可执行，不用旧模型或空表单伪装 REAL。模块设置 Browser **14/14**。
+- 最终专项：合同 direct HTTP Smoke 全绿；业务 Browser **56/56**；根 Smoke **224/224**；Rules **114/114**；全仓 typecheck、ESLint、Shared/API/Web production build 全绿。根 Smoke 同步修复历史客户夹具清理仍按旧合同 `tenantId` 查询的问题，改为 direct `organizationId`。
+- 数据库门槛：正式 `default` Prisma status 为 **47 migrations / schema up to date**；空库从零 **47/47 migrations** + Seed **2/2**，direct tables **5/5**、legacy tables **0/2**、默认阶段 **7**；46→47 upgrade Smoke：legacy contract/item **1/1** → direct contract **1/1**，products SUB_TABLE **4/4**、Snapshot **1/1**、stages **7/7**。
+- 静态扫描：手写运行时代码 `ContractStatus=0`、`ContractItem=0`；合同页 `row.status=0`、`row.items=0`、`contractApi.list=0`。W3.6.3 正式关闭，下一执行指针为 **W3.6.4 task 5.1：回款计划/回款记录源码与直接模型证据矩阵**。

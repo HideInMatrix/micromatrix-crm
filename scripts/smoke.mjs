@@ -256,7 +256,7 @@ async function cleanupHistoricalCustomerSmokeData(tenantId) {
       })
     }
     await tx.opportunity.deleteMany({ where: { organizationId: tenantId, customerId: { in: ids } } })
-    await tx.contract.deleteMany({ where: { tenantId, customerId: { in: ids } } })
+    await tx.contract.deleteMany({ where: { organizationId: tenantId, customerId: { in: ids } } })
     await tx.invoiceTitle.updateMany({
       where: { tenantId, customerId: { in: ids } },
       data: { customerId: null },
@@ -2617,13 +2617,22 @@ const quote = await post('/opportunity/quotation/add', manager.headers, {
   products: [quotationProduct],
 })
 check('创建报价', quote.amount === 30000 && quote.products?.length === 1)
-const contract = await post('/contracts', manager.headers, {
+const contractForm = await get('/contract/module/form', manager.headers)
+const contract = await post('/contract/add', manager.headers, {
   name: `冒烟合同-${stamp}`,
   customerId: converted.customerId,
-  fromQuoteId: quote.id,
+  owner: manager.user.id,
+  amount: quote.amount,
+  moduleFields: [],
+  moduleFormConfigDTO: contractForm,
+  products: (quote.products ?? []).map((item) => ({
+    product: item.productId,
+    productAmount: item.productAmount,
+    productNumber: 1,
+    amount: item.amount,
+  })),
 })
-check('从报价创建合同', contract.amount === 30000 && contract.items?.length === 1)
-await post(`/contracts/${contract.id}/status`, manager.headers, { status: 'EXECUTING' })
+check('报价产品带入 direct 合同', contract.amount === 30000 && contract.products?.length === 1)
 const plan = await post('/contracts/receivable-plans', manager.headers, {
   contractId: contract.id,
   amount: 30000,
@@ -2635,7 +2644,7 @@ const paymentRecord = await post('/contracts/receivable-records', manager.header
   amount: 30000,
   receivedAt: new Date().toISOString().slice(0, 10),
 })
-const contractDetail = await get(`/contracts/${contract.id}`, manager.headers)
+const contractDetail = await get(`/contract/get/${contract.id}`, manager.headers)
 check('回款计入合同汇总', contractDetail.paidAmount === 30000)
 const order = await post('/orders', manager.headers, {
   name: `冒烟订单-${stamp}`,
@@ -2738,19 +2747,24 @@ const downloaded = await fetch(`${base}/attachments/${uploaded.id}/download`, {
 })
 check('下载附件', downloaded.ok)
 
-// 7. 审批流（合同 8 万以上需审批：直接生效被拦截 → 提审 → 两级通过自动生效）
-const bigContract = await post('/contracts', sales.headers, {
+// 7. 审批流（合同 8 万以上 CREATE 自动提审 → 两级通过）
+const bigContract = await post('/contract/add', sales.headers, {
   name: `冒烟审批合同-${stamp}`,
   customerId: converted.customerId,
-  items: [{ productName: '大额服务', quantity: 1, unitPrice: 88000, discount: 100 }],
+  owner: sales.user.id,
+  amount: 88000,
+  moduleFields: [],
+  moduleFormConfigDTO: contractForm,
+  products: [
+    {
+      product: opportunityProduct.id,
+      productAmount: 88000,
+      productNumber: 1,
+      amount: 88000,
+    },
+  ],
 })
-const blocked = await fetch(`${base}/contracts/${bigContract.id}/status`, {
-  method: 'POST',
-  headers: sales.headers,
-  body: JSON.stringify({ status: 'EXECUTING' }),
-})
-check('大额合同直接生效被拦截', blocked.status === 400)
-await post('/approvals/submit', sales.headers, { module: 'contract', targetId: bigContract.id })
+check('大额合同 CREATE 自动进入审批', bigContract.approvalStatus === 'APPROVING')
 const managerPending = await get('/approvals/my-pending?pageSize=5', manager.headers)
 const task1 = managerPending.items.find((i) => i.targetId === bigContract.id)
 check('直属上级收到审批待办', Boolean(task1?.myPendingTaskId))
@@ -2760,10 +2774,10 @@ await post(`/approvals/tasks/${task1.myPendingTaskId}/approve`, manager.headers,
 const adminPending = await get('/approvals/my-pending?pageSize=5', admin.headers)
 const task2 = adminPending.items.find((i) => i.targetId === bigContract.id)
 await post(`/approvals/tasks/${task2.myPendingTaskId}/approve`, admin.headers, { comment: '批准' })
-const approvedContract = await get(`/contracts/${bigContract.id}`, sales.headers)
+const approvedContract = await get(`/contract/get/${bigContract.id}`, sales.headers)
 check(
-  '审批通过后合同自动生效',
-  approvedContract.status === 'EXECUTING' && approvedContract.approvalStatus === 'APPROVED',
+  '审批通过后合同保留 Cordys 审批事实位',
+  approvedContract.approved === true && approvedContract.approvalStatus === 'APPROVED',
 )
 const contractApprovalNotifications = await get('/notifications?page=1&pageSize=100', sales.headers)
 check(

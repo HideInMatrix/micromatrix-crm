@@ -259,7 +259,7 @@ async function main() {
 
   // ===== Cordys 模块表单与动态字段 =====
   const now = BigInt(Date.now())
-  const ensureModuleForm = async (formKey: 'lead' | 'customer' | 'contact') => {
+  const ensureModuleForm = async (formKey: 'lead' | 'customer' | 'contact' | 'contract') => {
     const form = await prisma.sysModuleForm.upsert({
       where: { organizationId_formKey: { organizationId: tenant.id, formKey } },
       update: { updateTime: now, updateUser: admin.id },
@@ -331,6 +331,53 @@ async function main() {
   const leadForm = await ensureModuleForm('lead')
   const customerForm = await ensureModuleForm('customer')
   const contactForm = await ensureModuleForm('contact')
+  await ensureModuleForm('contract')
+
+  const contractStages = [
+    ['待签署', 'AFOOT'],
+    ['已签署', 'AFOOT'],
+    ['合同变更', 'AFOOT'],
+    ['履行中', 'AFOOT'],
+    ['履行完毕', 'AFOOT'],
+    ['合同完结', 'END'],
+    ['作废', 'END'],
+  ] as const
+  for (const [index, [name, type]] of contractStages.entries()) {
+    const existing = await prisma.contractStageConfig.findFirst({
+      where: { organizationId: tenant.id, name },
+    })
+    if (existing) {
+      await prisma.contractStageConfig.update({
+        where: { id: existing.id },
+        data: {
+          type,
+          pos: BigInt(index + 1),
+          afootRollBack: true,
+          endRollBack: false,
+          circulationType: 'NORMAL',
+          updateTime: now,
+          updateUser: admin.id,
+        },
+      })
+    } else {
+      await prisma.contractStageConfig.create({
+        data: {
+          id: randomUUID().replaceAll('-', '').slice(0, 32),
+          name,
+          type,
+          pos: BigInt(index + 1),
+          afootRollBack: true,
+          endRollBack: false,
+          organizationId: tenant.id,
+          circulationType: 'NORMAL',
+          createTime: now,
+          updateTime: now,
+          createUser: admin.id,
+          updateUser: admin.id,
+        },
+      })
+    }
+  }
 
   const ensureSeedCustomField = async (
     formId: string,

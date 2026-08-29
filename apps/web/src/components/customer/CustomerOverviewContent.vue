@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  CONTRACT_STATUS_LABELS,
   INVOICE_STATUS_LABELS,
   ORDER_STATUS_LABELS,
   RECEIVABLE_PLAN_STATUS_LABELS,
@@ -782,11 +781,9 @@ onMounted(async () => {
 
                 <template v-else-if="tab.name === 'contract'">
                   <el-table v-loading="resourceLoading.contracts" :data="contracts" stripe class="w-full">
-                    <el-table-column prop="code" label="合同编号" min-width="150" />
+                    <el-table-column prop="number" label="合同编号" min-width="150" />
                     <el-table-column prop="name" label="合同名称" min-width="220" show-overflow-tooltip />
-                    <el-table-column label="状态" min-width="100">
-                      <template #default="{ row }">{{ CONTRACT_STATUS_LABELS[row.status as keyof typeof CONTRACT_STATUS_LABELS] ?? row.status }}</template>
-                    </el-table-column>
+                    <el-table-column prop="stageName" label="阶段" min-width="120" />
                     <el-table-column label="合同金额" min-width="130" align="right">
                       <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
                     </el-table-column>
@@ -794,6 +791,9 @@ onMounted(async () => {
                       <template #default="{ row }">{{ formatAmount(row.paidAmount) }}</template>
                     </el-table-column>
                     <el-table-column prop="ownerName" label="负责人" min-width="120" />
+                    <el-table-column label="创建时间" min-width="160">
+                      <template #default="{ row }">{{ new Date(row.createTime).toLocaleString() }}</template>
+                    </el-table-column>
                     <el-table-column label="操作" width="80" fixed="right">
                       <template #default="{ row }"><el-button link type="primary" @click="openContract(row.id)">详情</el-button></template>
                     </el-table-column>

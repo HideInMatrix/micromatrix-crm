@@ -118,37 +118,49 @@ export interface QuoteVO {
 
 // ===== 合同 =====
 
-export type ContractStatus = 'DRAFT' | 'EXECUTING' | 'COMPLETED' | 'TERMINATED'
+export interface ContractModuleFieldValue {
+  fieldId: string
+  fieldValue?: unknown
+}
 
-export const CONTRACT_STATUS_LABELS: Record<ContractStatus, string> = {
-  DRAFT: '草稿',
-  EXECUTING: '履约中',
-  COMPLETED: '已完成',
-  TERMINATED: '已终止',
+export interface ContractProductVO {
+  rowId: string
+  bizId: string
+  productId: string
+  productName?: string
+  productAmount: number
+  productNumber: number
+  amount: number
+  values?: Record<string, unknown>
 }
 
 export interface ContractVO {
   id: string
-  code: string
   name: string
   customerId: string
   customerName?: string
-  opportunityId: string | null
-  quoteId: string | null
+  owner: string
+  ownerName?: string | null
+  departmentId?: string | null
+  departmentName?: string | null
   amount: number
+  number: string
+  stage: string
+  stageName?: string | null
   paidAmount: number
   invoicedAmount: number
-  status: ContractStatus
   approvalStatus: string
-  signedAt: string | null
-  startAt: string | null
-  endAt: string | null
-  remark: string | null
-  ownerId: string | null
-  ownerName?: string | null
-  customData: Record<string, unknown>
-  items: LineItemVO[]
-  createdAt: string
+  approved: boolean
+  startTime: number | null
+  endTime: number | null
+  voidReason: string | null
+  createUser: string
+  updateUser: string
+  createTime: number
+  updateTime: number
+  moduleFields: ContractModuleFieldValue[]
+  products: ContractProductVO[]
+  firstApproved?: boolean
 }
 
 // ===== 回款 =====

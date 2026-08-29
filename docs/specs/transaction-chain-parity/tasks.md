@@ -110,18 +110,42 @@
 
 ## 4. W3.6.3 合同
 
-- [ ] 4.1 源码与 DDL 证据矩阵。
-- [ ] 4.2 合同直接字段、审批/快照、作废/归档与交易关联。
-- [ ] 4.3 Cordys 合同 API 与页面。
-- [ ] 4.4 `/system/modules` 合同卡片：合同表单、回款计划表单、回款记录表单、工商抬头必填、发票表单、合同阶段按依赖关闭缺口。
-- [ ] 4.5 专项验收与提交。
+- [x] 4.1 源码与 DDL 证据矩阵。
+  - 已锁定 Cordys `ContractController/Service/FieldService/StageController/StageService/UserViewController`、最终 DDL、前端 contract table/detail/billboard 与 requrls。
+  - 已确认最终模型为 `contract + contract_field/blob + contract_snapshot + contract_stage_config`；产品是 `products` SUB_TABLE，不保留 MicroMatrix `ContractItem` 真相源。
+  - 已确认合同阶段保存组织级 stage config id，支持 NORMAL/ADVANCED 流转、回退和最多 15 阶段；CREATE/UPDATE/DELETE 使用通用 Approval 与业务快照。
+  - 证据：[合同源码、DDL 与 API 证据矩阵](./contract-source-api-audit.md)。
+- [x] 4.2 合同直接字段、审批/快照、作废/归档与交易关联。
+  - 已破坏式收口到 `contract + contract_field/blob + contract_snapshot + contract_stage_config`；旧 `ContractStatus/ContractItem/contracts/contract_items/customData` 不再作为合同真相源，合同产品按 `products` SUB_TABLE 保存。
+  - CREATE/UPDATE/DELETE 已接通通用 Approval；UPDATE 固定使用 Cordys `UPDATE` 时机，驳回/撤回恢复业务快照，`approved` 保留历史审批事实，DELETE 命中流程后延迟物理删除。
+  - 报价→合同仅接受已审批且未作废报价作为预填/复制来源，不持久化 Cordys 不存在的 `quoteId/opportunityId`；回款记录/发票继续阻止合同删除。
+  - 正式库 **47/47 migrations**；隔离空库 **47/47** replay + Seed **2/2**，direct tables **5/5**、旧合同表 **0/2**、默认阶段 **7**；隔离合同审批 HTTP Smoke 全绿。
+- [x] 4.3 Cordys 合同 API 与页面。
+  - [x] 4.3A 建立 `/contract/module/form|page|add|update|get|snapshot|delete|approval|revoke|batch/*|tab|statistic|sort` 主契约，停止旧 `/contracts` 主合同 REST。
+    - 隔离 direct HTTP Smoke 已验证 module form、add/page/get/snapshot/update、stage、delete、approval/revoke、batch update/approval、tab/statistic/sort；旧主 `/contracts` REST 返回 404，仅保留 W3.6.4 回款/发票临时子域。
+  - [x] 4.3B 注册 `contract -> CONTRACT -> /contract/view/*` Saved View，并让 `/contract/page` 统一处理 DataScope + User View + filters。
+    - `CONTRACT` User View CRUD 与 `/contract/page` Saved View + ad-hoc filters 求交已通过隔离 HTTP Smoke；ALL / DEPARTMENT / SELF DataScope 均已验证。
+  - [x] 4.3C Vue 合同列表/看板切 direct `stage/moduleFields/products`；`metaReady + savedViewReady + initialLoaded` 保证首屏 `/contract/page` 只请求 1 次，深链在 `metaReady + route.query` ready 后消费。
+  - [x] 4.3D 合同详情/业务快照/表单快照、已审批未作废报价 `fromQuote` 深链、CREATE/UPDATE/DELETE Approval、NORMAL/ADVANCED 阶段流转与作废原因全部走 Cordys 契约；Browser 已验证真实 drag/drop 调用 `/contract/update/stage` 并持久化真实 stage id。
+  - [x] 4.3E 隔离 direct HTTP Smoke 全绿；Browser Smoke **56/56**；DataScope **ALL/DEPT/SELF** 全绿；静态扫描 `ContractStatus=0`、合同页 `row.status=0`、`row.items=0`，旧主 `/contracts` REST 404，Web `/contracts` 仅剩页面路由与 W3.6.4 临时回款/发票/工商抬头子域。
+- [x] 4.4 `/system/modules` 合同卡片：合同表单、回款计划表单、回款记录表单、工商抬头必填、发票表单、合同阶段按依赖关闭缺口。
+  - 合同表单设置继续直连 `/system/modules/fields?module=contract`，消费 direct contract metadata；合同阶段设置已接真实 `ContractStageSettingsDrawer` 与 `/contract/stage/*`，两项均为 REAL。
+  - 回款计划、回款记录、工商抬头必填、发票四项经 Cordys 源码与 MicroMatrix metadata/runtime 双向审计，确认必须等待 W3.6.4 direct model；页面明确标记 `W3.6.4`、保持不可执行，不用旧模型或空表单伪装 REAL。
+  - 合同模块设置 Browser Smoke **14/14**：合同表单 direct 字段、四项 deferred、合同阶段 direct 配置/回退/流转模式、API 5xx=0、Runtime exception=0 全绿。
+- [x] 4.5 专项验收与提交。
+  - 合同 direct HTTP Smoke 全绿：隔离库从零应用 **47/47 migrations**，覆盖 module form、CRUD、Snapshot、Saved View + filters 求交、NORMAL/ADVANCED 阶段、作废原因、批量修改/排序、CREATE/UPDATE/DELETE Approval、撤回回滚、批量审批与 **ALL/DEPT/SELF** DataScope；旧主 `/contracts` REST 404。
+  - 合同业务 Browser Smoke **56/56**，首屏 `/contract/page` 单请求、Saved View、direct CRUD、详情/快照、看板真实 drag/drop、作废、`fromQuote` 深链和产品 SUB_TABLE、合同审批均通过；API 5xx=0、Runtime exception=0。合同模块设置 Browser Smoke **14/14**。
+  - 根级 `pnpm smoke` 在同步修复历史清理脚本的旧合同 `tenantId` 条件后 **224/224**；API Rules **114/114**；全仓 typecheck、ESLint、Shared/API/Web production build 全部 exit 0。
+  - 正式 `default` 的 Prisma status 确认 **47 migrations / schema up to date**；合同 migration Smoke：空库 **47/47** replay、Seed **2/2**、direct tables **5/5**、legacy tables **0/2**、默认阶段 **7**；46→47 upgrade Smoke 验证旧合同/明细 **1/1** 迁移、产品 SUB_TABLE cell **4/4**、Snapshot **1/1**，`EXECUTING` 正确迁到“履行中”并保留 `approved=true`。
+  - 手写运行时代码扫描：`ContractStatus=0`、`ContractItem=0`，`ContractsView` 的 `row.status/row.items/contractApi.list` 均为 0；旧 `@Controller('contracts')` 仅保留 W3.6.4 明确接管的工商抬头、回款计划/记录、发票临时子域。
+  - W3.6.3 合同正式关闭；下一执行指针为 **W3.6.4 task 5.1：先读 Cordys 回款计划/回款记录源码与最终 DDL，建立直接模型证据矩阵**。
 
 ## 5. W3.6.4 回款与发票
 
 - [ ] 5.1 回款计划/记录源码与直接模型。
 - [ ] 5.2 发票源码、审批、作废与直接模型。
 - [ ] 5.3 Cordys API、页面、通知/到期任务。
-- [ ] 5.4 回查 `/system/modules` 合同卡片的回款计划、回款记录、发票入口全部 REAL。
+- [ ] 5.4 回查 `/system/modules` 合同卡片的回款计划、回款记录、工商抬头必填、发票入口全部 REAL。
 - [ ] 5.5 专项验收与提交。
 
 ## 6. W3.6.5 订单

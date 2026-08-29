@@ -86,8 +86,12 @@ export class OrdersService {
       requireAll: true,
     })
     const contract = await this.contracts.ensureInScope(user, dto.contractId, 'order:create')
-    if (contract.status === 'DRAFT') {
-      throw new BadRequestException('合同尚未生效（草稿状态），不能创建订单')
+    const contractStage = await this.prisma.contractStageConfig.findFirst({
+      where: { id: contract.stage, organizationId: user.tenantId },
+      select: { type: true },
+    })
+    if (!contractStage || contractStage.type === 'END') {
+      throw new BadRequestException('完结、作废或阶段无效的合同不能创建订单')
     }
     const owner = await this.resolveOwner(user, ownerId)
 

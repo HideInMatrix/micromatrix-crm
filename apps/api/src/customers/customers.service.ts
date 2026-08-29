@@ -677,7 +677,7 @@ export class CustomersService {
       canReadOpportunities
         ? this.dataScope.directOwnerFilter(user, 'menu:opportunity')
         : Promise.resolve(null),
-      canReadContracts ? this.dataScope.scopeFilter(user, 'menu:contract') : Promise.resolve(null),
+      canReadContracts ? this.dataScope.directOwnerFilter(user, 'menu:contract') : Promise.resolve(null),
     ])
     const [contacts, opportunities, contracts, followUps, team] = await Promise.all([
       canReadContacts
@@ -701,14 +701,14 @@ export class CustomersService {
       canReadContracts
         ? this.prisma.contract.findMany({
             where: {
-              tenantId: user.tenantId,
+              organizationId: user.tenantId,
               customerId: id,
               AND: [contractScope as Prisma.ContractWhereInput],
             },
             include: {
               receivableRecords: { select: { amount: true, approvalStatus: true } },
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createTime: 'desc' },
             take: 50,
           })
         : Promise.resolve([]),
@@ -746,8 +746,8 @@ export class CustomersService {
         name: c.name,
         amount: Number(c.amount),
         paidAmount,
-        status: c.status,
-        createdAt: c.createdAt.toISOString(),
+        status: c.stage,
+        createdAt: new Date(Number(c.createTime)).toISOString(),
       }
     })
 
@@ -849,7 +849,7 @@ export class CustomersService {
 
     if (resource === 'contracts') {
       const where: Prisma.ContractWhereInput = {
-        tenantId: user.tenantId,
+        organizationId: user.tenantId,
         customerId: id,
         AND: [resourceScope as Prisma.ContractWhereInput],
       }
@@ -859,17 +859,24 @@ export class CustomersService {
           include: {
             receivableRecords: { select: { amount: true, approvalStatus: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createTime: 'desc' },
           skip,
           take,
         }),
         this.prisma.contract.count({ where }),
       ])
-      const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+      const [ownerMap, stageConfigs] = await Promise.all([
+        this.userNames(rows.map((row) => row.owner)),
+        this.prisma.contractStageConfig.findMany({
+          where: { organizationId: user.tenantId },
+          select: { id: true, name: true },
+        }),
+      ])
+      const stageMap = new Map(stageConfigs.map((stage) => [stage.id, stage.name]))
       return {
         items: rows.map((row) => ({
           id: row.id,
-          code: row.code,
+          number: row.number,
           name: row.name,
           amount: Number(row.amount),
           paidAmount:
@@ -881,10 +888,11 @@ export class CustomersService {
                 )
                 .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
             ) / 100,
-          status: row.status,
+          stage: row.stage,
+          stageName: stageMap.get(row.stage) ?? row.stage,
           approvalStatus: row.approvalStatus,
-          ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
-          createdAt: row.createdAt.toISOString(),
+          ownerName: ownerMap.get(row.owner) ?? null,
+          createTime: Number(row.createTime),
         })),
         total,
         page: currentPage,
@@ -1069,7 +1077,7 @@ export class CustomersService {
     this.assert360ResourcePermission(user, resource)
     const contractScope = await this.customer360ResourceScope(user, resource)
     const contractWhere: Prisma.ContractWhereInput = {
-      tenantId: user.tenantId,
+      organizationId: user.tenantId,
       customerId,
       AND: [contractScope as Prisma.ContractWhereInput],
     }
@@ -1963,7 +1971,7 @@ export class CustomersService {
         },
       }),
       this.prisma.contract.count({
-        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+        where: { organizationId: user.tenantId, customerId: { in: context.sourceIds } },
       }),
       this.prisma.followUpRecord.count({
         where: {
@@ -2103,7 +2111,7 @@ export class CustomersService {
         data: { customerId: dto.toMergeId },
       })
       await tx.contract.updateMany({
-        where: { tenantId: user.tenantId, customerId: { in: sourceIds } },
+        where: { organizationId: user.tenantId, customerId: { in: sourceIds } },
         data: { customerId: dto.toMergeId },
       })
       await tx.followUpRecord.updateMany({
@@ -2367,7 +2375,11 @@ export class CustomersService {
 
   private customer360ResourceScope(user: AuthUser, resource: Customer360Resource) {
     const permission = this.customer360ResourcePermission(resource)
-    return resource === 'opportunities'
+    return resource === 'opportunities' ||
+      resource === 'contracts' ||
+      resource === 'receivablePlans' ||
+      resource === 'receivableRecords' ||
+      resource === 'invoices'
       ? this.dataScope.directOwnerFilter(user, permission)
       : this.dataScope.scopeFilter(user, permission)
   }
@@ -3024,7 +3036,7 @@ export class CustomersService {
       this.prisma.opportunityQuotation.count({
         where: { organizationId: tenantId, opportunity: { customerId: { in: ids } } },
       }),
-      this.prisma.contract.count({ where: { tenantId, customerId: { in: ids } } }),
+      this.prisma.contract.count({ where: { organizationId: tenantId, customerId: { in: ids } } }),
     ])
     if (contacts + opportunities + quotes + contracts > 0) {
       throw new BadRequestException('客户已关联联系人、商机或交易数据，不能删除')

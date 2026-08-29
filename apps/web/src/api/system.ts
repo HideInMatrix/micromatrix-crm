@@ -205,6 +205,63 @@ export const opportunityStageSettingsApi = {
   sort: (ids: string[]) => http.post('/opportunity/stage/sort', ids),
 }
 
+// ===== 合同阶段设置 =====
+
+export interface ContractStageAdvancedTargetVO {
+  targetId: string
+  enable: boolean
+  circulationFieldValues: unknown[]
+}
+
+export interface ContractStageAdvancedRowVO {
+  originId: string
+  moduleType: 'contract'
+  targets: ContractStageAdvancedTargetVO[]
+}
+
+export interface ContractStageConfigItemVO {
+  id: string
+  name: string
+  type: 'AFOOT' | 'END'
+  afootRollBack: boolean
+  endRollBack: boolean
+  pos: number
+  circulationType: 'NORMAL' | 'ADVANCED'
+  stageHasData: boolean
+}
+
+export interface ContractStageConfigVO {
+  stageConfigList: ContractStageConfigItemVO[]
+  afootRollBack: boolean
+  endRollBack: boolean
+  circulationType: 'NORMAL' | 'ADVANCED'
+  advancedConfigs: ContractStageAdvancedRowVO[]
+}
+
+export const contractStageSettingsApi = {
+  get: () => http.get<ContractStageConfigVO>('/contract/stage/get'),
+  add: (data: {
+    name: string
+    type?: 'AFOOT' | 'END'
+    targetId?: string
+    dropPosition?: number
+  }) => http.post<string>('/contract/stage/add', data),
+  update: (data: { id: string; name?: string }) => http.post('/contract/stage/update', data),
+  remove: (id: string) => http.get(`/contract/stage/delete/${id}`),
+  updateRollback: (data: { afootRollBack: boolean; endRollBack: boolean }) =>
+    http.post('/contract/stage/update-rollback', data),
+  sort: (ids: string[]) => http.post('/contract/stage/sort', ids),
+  switchCirculationType: (type: 'NORMAL' | 'ADVANCED') =>
+    http.get(`/contract/stage/circulation-type/${type}`),
+  saveAdvancedConfig: (data: {
+    circulationType: 'NORMAL' | 'ADVANCED'
+    circulationSettings: Array<{
+      originId: string
+      targets: Array<{ targetId: string; enable: boolean; circulationFieldValues?: unknown[] }>
+    }>
+  }) => http.post('/contract/stage/advanced/config', data),
+}
+
 // ===== 商机关闭规则 =====
 
 export interface OpportunityRuleConditionVO {

@@ -1041,65 +1041,129 @@ model OpportunityQuotationSnapshot {
   @@map("opportunity_quotation_snapshot")
 }
 
-// ============ 合同与回款 ============
-
-enum ContractStatus {
-  DRAFT // 草稿
-  EXECUTING // 履约中
-  COMPLETED // 已完成
-  TERMINATED // 已终止
-}
+// ============ 合同（Cordys 直接模型）与回款 ============
 
 model Contract {
-  id             String         @id @default(cuid())
-  tenantId       String
-  code           String
-  name           String
-  customerId     String
-  opportunityId  String?
-  quoteId        String?
-  amount         Decimal        @default(0) @db.Decimal(14, 2)
-  status         ContractStatus @default(DRAFT)
-  approvalStatus String         @default("NONE")
-  signedAt       DateTime?
-  startAt        DateTime?
-  endAt          DateTime?
-  remark         String?
-  ownerId        String?
-  deptId         String?
-  customData     Json?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id             String   @id @default(cuid()) @db.VarChar(32)
+  name           String   @db.VarChar(255)
+  customerId     String   @map("customer_id") @db.VarChar(32)
+  owner          String   @db.VarChar(32)
+  amount         Decimal  @default(0) @db.Decimal(14, 2)
+  number         String   @db.VarChar(50)
+  approvalStatus String   @default("NONE") @map("approval_status") @db.VarChar(50)
+  stage          String   @db.VarChar(32)
+  startTime      BigInt?  @map("start_time")
+  endTime        BigInt?  @map("end_time")
+  voidReason     String?  @map("void_reason") @db.VarChar(255)
+  organizationId String   @map("organization_id") @db.VarChar(32)
+  pos            BigInt?
+  approved       Boolean  @default(false)
+  createTime     BigInt   @map("create_time")
+  updateTime     BigInt   @map("update_time")
+  createUser     String   @map("create_user") @db.VarChar(32)
+  updateUser     String   @map("update_user") @db.VarChar(32)
 
-  customer          Customer           @relation(fields: [customerId], references: [id])
-  items             ContractItem[]
+  customer          Customer            @relation(fields: [customerId], references: [id])
+  fieldValues       ContractField[]
+  fieldBlobValues   ContractFieldBlob[]
+  snapshots         ContractSnapshot[]
   receivablePlans   ReceivablePlan[]
   receivableRecords ReceivableRecord[]
   invoices          InvoiceRecord[]
   orders            Order[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId, customerId])
-  @@index([tenantId, deptId])
-  @@map("contracts")
+  @@index([name])
+  @@index([customerId])
+  @@index([owner])
+  @@index([number])
+  @@index([organizationId])
+  @@index([approvalStatus])
+  @@index([stage])
+  @@index([createUser])
+  @@map("contract")
 }
 
-model ContractItem {
-  id          String  @id @default(cuid())
-  contractId  String
-  productId   String?
-  productName String
-  unit        String?
-  quantity    Decimal @default(1) @db.Decimal(14, 2)
-  unitPrice   Decimal @default(0) @db.Decimal(14, 2)
-  discount    Decimal @default(100) @db.Decimal(5, 2)
-  amount      Decimal @default(0) @db.Decimal(14, 2)
-  sort        Int     @default(0)
+model ContractField {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.VarChar(255)
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
+
+  resource Contract @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("contract_field")
+}
+
+model ContractFieldBlob {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.Text
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
+
+  resource Contract @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_blob_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("contract_field_blob")
+}
+
+model ContractSnapshot {
+  id            String  @id @default(cuid()) @db.VarChar(32)
+  contractId    String  @map("contract_id") @db.VarChar(32)
+  contractProp  String? @map("contract_prop") @db.Text
+  contractValue String? @map("contract_value") @db.Text
 
   contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@index([contractId])
-  @@map("contract_items")
+  @@map("contract_snapshot")
+}
+
+model ContractStageConfig {
+  id              String  @id @default(cuid()) @db.VarChar(32)
+  name            String  @db.VarChar(255)
+  type            String  @db.VarChar(50)
+  afootRollBack   Boolean @default(true) @map("afoot_roll_back")
+  endRollBack     Boolean @default(false) @map("end_roll_back")
+  pos             BigInt
+  organizationId  String  @map("organization_id") @db.VarChar(32)
+  circulationType String  @default("NORMAL") @map("circulation_type") @db.VarChar(50)
+  createTime      BigInt  @map("create_time")
+  updateTime      BigInt  @map("update_time")
+  createUser      String  @map("create_user") @db.VarChar(32)
+  updateUser      String  @map("update_user") @db.VarChar(32)
+
+  @@index([organizationId, pos])
+  @@map("contract_stage_config")
+}
+
+model StageAdvancedConfig {
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  originId       String  @map("origin_id") @db.VarChar(32)
+  targetId       String  @map("target_id") @db.VarChar(32)
+  enable         Boolean @default(false)
+  fieldConfig    String? @map("field_config") @db.Text
+  moduleType     String  @map("module_type") @db.VarChar(20)
+  organizationId String  @map("organization_id") @db.VarChar(32)
+  createTime     BigInt  @map("create_time")
+  updateTime     BigInt  @map("update_time")
+  createUser     String  @map("create_user") @db.VarChar(32)
+  updateUser     String  @map("update_user") @db.VarChar(32)
+
+  @@unique([organizationId, moduleType, originId, targetId], map: "uk_stage_advanced_transition")
+  @@index([moduleType], map: "idx_stage_advanced_type")
+  @@index([organizationId, moduleType])
+  @@map("stage_advanced_config")
 }
 
 model ReceivablePlan {

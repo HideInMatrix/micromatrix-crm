@@ -324,7 +324,6 @@ export class QuotesService {
   async setInvalid(user: AuthUser, id: string, invalid = true) {
     const row = await this.ensureWritable(user, id)
     if (row.invalid === invalid) return this.get(user, id)
-    if (invalid) await this.assertNotLinkedByContract(user.tenantId, id)
     await this.prisma.opportunityQuotation.update({
       where: { id },
       data: { invalid, updateUser: user.id, updateTime: BigInt(Date.now()) },
@@ -345,7 +344,6 @@ export class QuotesService {
           skip++
           continue
         }
-        await this.assertNotLinkedByContract(user.tenantId, id)
         await this.prisma.opportunityQuotation.update({
           where: { id },
           data: { invalid: true, updateUser: user.id, updateTime: BigInt(Date.now()) },
@@ -376,7 +374,6 @@ export class QuotesService {
 
   async remove(user: AuthUser, id: string) {
     const row = await this.ensureWritable(user, id)
-    await this.assertNotLinkedByContract(user.tenantId, id)
     if (await this.approvals.flowRequired(user.tenantId, 'quote', Number(row.amount), 'DELETE')) {
       const approval = await this.approvals.submit(user, 'quote', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
@@ -439,13 +436,6 @@ export class QuotesService {
     if (exists) throw new BadRequestException('报价名称不能重复')
   }
 
-  private async assertNotLinkedByContract(organizationId: string, id: string) {
-    const linked = await this.prisma.contract.findFirst({
-      where: { tenantId: organizationId, quoteId: id },
-      select: { id: true },
-    })
-    if (linked) throw new BadRequestException('报价单已被合同关联，不能作废或删除')
-  }
 
   private async ensureWritable(user: AuthUser, id: string) {
     const row = await this.prisma.opportunityQuotation.findFirst({

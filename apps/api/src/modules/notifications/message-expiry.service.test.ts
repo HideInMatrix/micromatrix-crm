@@ -22,6 +22,7 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
             ]
           : [],
     },
+    contractStageConfig: { findMany: async () => [] },
     contract: { findMany: async () => [] },
     receivablePlan: {
       findMany: async ({ where }: { where: { dueDate: { gte: Date } } }) =>
@@ -31,14 +32,14 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
                 period: 1,
                 amount: 100,
                 dueDate: new Date(2026, 7, 24),
-                contract: { name: '年度合同', ownerId: 'owner-a' },
+                contract: { name: '年度合同', owner: 'owner-a' },
                 records: [{ amount: 40, approvalStatus: 'APPROVED' }],
               },
               {
                 period: 2,
                 amount: 100,
                 dueDate: new Date(2026, 7, 24),
-                contract: { name: '已回款合同', ownerId: 'owner-b' },
+                contract: { name: '已回款合同', owner: 'owner-b' },
                 records: [{ amount: 100, approvalStatus: 'APPROVED' }],
               },
             ]
@@ -86,21 +87,31 @@ test('关闭事件或清空提前时间时不查询业务数据', async () => {
   assert.equal(queried, false)
 })
 
-test('合同到期按 3/7 天和当天窗口分别发送且只查询执行中合同', async () => {
-  const windows: Array<{ day: number; status: string }> = []
+test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合同', async () => {
+  const windows: Array<{ day: number; excludedStages: string[] }> = []
   const delivered: Array<{ event: string; title: string; content?: string }> = []
   const prisma = {
     opportunityQuotation: { findMany: async () => [] },
     receivablePlan: { findMany: async () => [] },
+    contractStageConfig: {
+      findMany: async () => [{ id: 'stage-end' }],
+    },
     contract: {
-      findMany: async ({ where }: { where: { status: string; endAt: { gte: Date } } }) => {
-        windows.push({ day: where.endAt.gte.getDate(), status: where.status })
+      findMany: async ({
+        where,
+      }: {
+        where: { stage: { notIn: string[] }; endTime: { gte: bigint } }
+      }) => {
+        windows.push({
+          day: new Date(Number(where.endTime.gte)).getDate(),
+          excludedStages: where.stage.notIn,
+        })
         return [
           {
-            id: `contract-${where.endAt.gte.getDate()}`,
-            name: `合同-${where.endAt.gte.getDate()}`,
-            ownerId: 'owner-a',
-            endAt: where.endAt.gte,
+            id: `contract-${new Date(Number(where.endTime.gte)).getDate()}`,
+            name: `合同-${new Date(Number(where.endTime.gte)).getDate()}`,
+            owner: 'owner-a',
+            endTime: where.endTime.gte,
           },
         ]
       },
@@ -130,9 +141,9 @@ test('合同到期按 3/7 天和当天窗口分别发送且只查询执行中合
 
   assert.equal(await service.runTenant('tenant-a', new Date(2026, 7, 24, 10)), 3)
   assert.deepEqual(windows, [
-    { day: 27, status: 'EXECUTING' },
-    { day: 31, status: 'EXECUTING' },
-    { day: 24, status: 'EXECUTING' },
+    { day: 27, excludedStages: ['stage-end'] },
+    { day: 31, excludedStages: ['stage-end'] },
+    { day: 24, excludedStages: ['stage-end'] },
   ])
   assert.deepEqual(
     delivered.map((item) => item.event),

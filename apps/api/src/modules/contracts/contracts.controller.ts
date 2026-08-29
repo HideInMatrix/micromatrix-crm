@@ -4,13 +4,6 @@ import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
-import { ContractsService } from './contracts.service'
-import {
-  ChangeContractStatusDto,
-  CreateContractDto,
-  QueryContractsDto,
-  UpdateContractDto,
-} from './dto/contract.dto'
 import { CreateInvoiceDto, IssueInvoiceDto, TitleDto } from './dto/invoice.dto'
 import { CreatePlanDto, CreateRecordDto, UpdatePlanDto } from './dto/receivable.dto'
 import { InvoicesService } from './invoices.service'
@@ -22,7 +15,6 @@ import { ReceivablesService } from './receivables.service'
 @Controller('contracts')
 export class ContractsController {
   constructor(
-    private readonly contractsService: ContractsService,
     private readonly receivablesService: ReceivablesService,
     private readonly invoicesService: InvoicesService,
   ) {}
@@ -59,57 +51,7 @@ export class ContractsController {
     return this.invoicesService.removeTitle(user, id)
   }
 
-  // ===== 合同 =====
-
-  @Get()
-  @ApiOperation({ summary: '合同列表' })
-  findAll(@CurrentUser() user: AuthUser, @Query() query: QueryContractsDto) {
-    return this.contractsService.findAll(user, query)
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: '合同详情（含明细/回款汇总）' })
-  findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.contractsService.findOne(user, id)
-  }
-
-  @Post()
-  @RequirePermissions('contract:create')
-  @LogOperation('contract', 'create')
-  @ApiOperation({ summary: '新建合同（支持从报价单创建）' })
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateContractDto) {
-    return this.contractsService.create(user, dto)
-  }
-
-  @Patch(':id')
-  @RequirePermissions('contract:update')
-  @LogOperation('contract', 'update')
-  @ApiOperation({ summary: '更新合同（仅草稿）' })
-  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateContractDto) {
-    return this.contractsService.update(user, id, dto)
-  }
-
-  @Post(':id/status')
-  @RequirePermissions('contract:update')
-  @LogOperation('contract', 'changeStatus')
-  @ApiOperation({ summary: '变更合同状态（履约/完成/终止）' })
-  changeStatus(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: ChangeContractStatusDto,
-  ) {
-    return this.contractsService.changeStatus(user, id, dto)
-  }
-
-  @Delete(':id')
-  @RequirePermissions('contract:delete')
-  @LogOperation('contract', 'delete')
-  @ApiOperation({ summary: '删除合同（仅草稿）' })
-  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.contractsService.remove(user, id)
-  }
-
-  // ===== 回款计划 =====
+  // ===== W3.6.4 临时子域边界：回款/发票/工商抬头。合同主域已迁移到 /contract/* =====
 
   @Get(':id/receivable-plans')
   @ApiOperation({ summary: '回款计划列表' })

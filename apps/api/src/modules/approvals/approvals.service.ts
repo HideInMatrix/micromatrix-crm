@@ -54,6 +54,45 @@ interface QuotationBusinessSnapshot {
   }>
 }
 
+interface ContractBusinessSnapshot {
+  contract: {
+    name: string
+    customerId: string
+    owner: string
+    amount: string
+    number: string
+    stage: string
+    startTime: string | null
+    endTime: string | null
+    voidReason: string | null
+    pos: string | null
+  }
+  fields: Array<{
+    id: string
+    resourceId: string
+    fieldId: string
+    fieldValue: string
+    refSubId: string | null
+    rowId: string | null
+    bizId: string | null
+  }>
+  fieldBlobs: Array<{
+    id: string
+    resourceId: string
+    fieldId: string
+    fieldValue: string
+    refSubId: string | null
+    rowId: string | null
+    bizId: string | null
+  }>
+  snapshots: Array<{
+    id: string
+    contractId: string
+    contractProp: string | null
+    contractValue: string | null
+  }>
+}
+
 @Injectable()
 export class ApprovalsService {
   constructor(
@@ -75,12 +114,53 @@ export class ApprovalsService {
     return amountGte === undefined || amountGte === null || amount >= amountGte
   }
 
-  /** 报价 UPDATE 审批命中前保存编辑前业务快照。 */
+  /** Cordys UPDATE 审批命中前保存编辑前业务快照。 */
   async captureBusinessSnapshot(
     user: AuthUser,
     module: ApprovalModule,
     targetId: string,
   ): Promise<Prisma.InputJsonValue | null> {
+    if (module === 'contract') {
+      const contract = await this.prisma.contract.findFirst({
+        where: { id: targetId, organizationId: user.tenantId },
+        select: {
+          name: true,
+          customerId: true,
+          owner: true,
+          amount: true,
+          number: true,
+          stage: true,
+          startTime: true,
+          endTime: true,
+          voidReason: true,
+          pos: true,
+        },
+      })
+      if (!contract) throw new NotFoundException('合同不存在')
+      const [fields, fieldBlobs, snapshots] = await Promise.all([
+        this.prisma.contractField.findMany({ where: { resourceId: targetId } }),
+        this.prisma.contractFieldBlob.findMany({ where: { resourceId: targetId } }),
+        this.prisma.contractSnapshot.findMany({ where: { contractId: targetId } }),
+      ])
+      const snapshot: ContractBusinessSnapshot = {
+        contract: {
+          name: contract.name,
+          customerId: contract.customerId,
+          owner: contract.owner,
+          amount: contract.amount.toString(),
+          number: contract.number,
+          stage: contract.stage,
+          startTime: contract.startTime?.toString() ?? null,
+          endTime: contract.endTime?.toString() ?? null,
+          voidReason: contract.voidReason,
+          pos: contract.pos?.toString() ?? null,
+        },
+        fields,
+        fieldBlobs,
+        snapshots,
+      }
+      return snapshot as unknown as Prisma.InputJsonValue
+    }
     if (module !== 'quote') return null
     const quotation = await this.prisma.opportunityQuotation.findFirst({
       where: { id: targetId, organizationId: user.tenantId },
@@ -243,7 +323,7 @@ export class ApprovalsService {
     await this.setBizStatus(
       instance.module,
       instance.targetId,
-      instance.module === 'quote' ? 'REVOKED' : 'NONE',
+      instance.module === 'quote' || instance.module === 'contract' ? 'REVOKED' : 'NONE',
     )
     await this.restoreBusinessSnapshot(instance, user.id)
     return { id: instanceId, name: instance.targetName }
@@ -639,12 +719,14 @@ export class ApprovalsService {
         }
       }
       case 'contract': {
-        const contract = await this.prisma.contract.findFirst({ where: { id: targetId, tenantId } })
+        const contract = await this.prisma.contract.findFirst({
+          where: { id: targetId, organizationId: tenantId },
+        })
         if (!contract) throw new NotFoundException('合同不存在')
         return {
           name: `合同 ${contract.name}`,
           amount: Number(contract.amount),
-          approvalStatus: contract.approvalStatus,
+          approvalStatus: this.normalizeQuotationApprovalStatus(contract.approvalStatus),
         }
       }
       case 'order': {
@@ -685,9 +767,18 @@ export class ApprovalsService {
         await this.syncQuotationSnapshot(targetId, approvalStatus, updated.approved)
         break
       }
-      case 'contract':
-        await this.prisma.contract.update({ where: { id: targetId }, data })
+      case 'contract': {
+        const approvalStatus = this.toQuotationApprovalStatus(status)
+        const updated = await this.prisma.contract.update({
+          where: { id: targetId },
+          data: {
+            approvalStatus,
+            ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
+          },
+        })
+        await this.syncContractSnapshot(targetId, approvalStatus, updated.approved)
         break
+      }
       case 'order':
         await this.prisma.order.update({ where: { id: targetId }, data })
         break
@@ -706,10 +797,9 @@ export class ApprovalsService {
         }
         break
       case 'contract':
-        await this.prisma.contract.update({
-          where: { id: instance.targetId },
-          data: { status: 'EXECUTING' },
-        })
+        if (instance.executeTiming === 'DELETE') {
+          await this.prisma.contract.delete({ where: { id: instance.targetId } })
+        }
         break
       default:
         break
@@ -718,6 +808,10 @@ export class ApprovalsService {
 
   /** Cordys UPDATE 审批驳回/撤回：恢复编辑前业务数据，但保留当前审批状态与 approved 历史事实。 */
   private async restoreBusinessSnapshot(instance: ApprovalInstance, operatorId: string) {
+    if (instance.module === 'contract' && instance.executeTiming === 'UPDATE' && instance.businessSnapshot) {
+      await this.restoreContractBusinessSnapshot(instance, operatorId)
+      return
+    }
     if (instance.module !== 'quote' || instance.executeTiming !== 'UPDATE' || !instance.businessSnapshot) {
       return
     }
@@ -759,6 +853,43 @@ export class ApprovalsService {
     await this.syncQuotationSnapshot(instance.targetId, current.approvalStatus, current.approved)
   }
 
+  private async restoreContractBusinessSnapshot(instance: ApprovalInstance, operatorId: string) {
+    const snapshot = instance.businessSnapshot as unknown as ContractBusinessSnapshot
+    if (!snapshot.contract || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs)) return
+    const current = await this.prisma.contract.findUnique({
+      where: { id: instance.targetId },
+      select: { approvalStatus: true, approved: true },
+    })
+    if (!current) return
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contract.update({
+        where: { id: instance.targetId },
+        data: {
+          name: snapshot.contract.name,
+          customerId: snapshot.contract.customerId,
+          owner: snapshot.contract.owner,
+          amount: new Prisma.Decimal(snapshot.contract.amount),
+          number: snapshot.contract.number,
+          stage: snapshot.contract.stage,
+          startTime: snapshot.contract.startTime === null ? null : BigInt(snapshot.contract.startTime),
+          endTime: snapshot.contract.endTime === null ? null : BigInt(snapshot.contract.endTime),
+          voidReason: snapshot.contract.voidReason,
+          pos: snapshot.contract.pos === null ? null : BigInt(snapshot.contract.pos),
+          updateTime: BigInt(Date.now()),
+          updateUser: operatorId,
+        },
+      })
+      await tx.contractField.deleteMany({ where: { resourceId: instance.targetId } })
+      await tx.contractFieldBlob.deleteMany({ where: { resourceId: instance.targetId } })
+      await tx.contractSnapshot.deleteMany({ where: { contractId: instance.targetId } })
+      if (snapshot.fields.length) await tx.contractField.createMany({ data: snapshot.fields })
+      if (snapshot.fieldBlobs.length) await tx.contractFieldBlob.createMany({ data: snapshot.fieldBlobs })
+      if (snapshot.snapshots?.length) await tx.contractSnapshot.createMany({ data: snapshot.snapshots })
+    })
+    await this.syncContractSnapshot(instance.targetId, current.approvalStatus, current.approved)
+  }
+
   private normalizeQuotationApprovalStatus(status: string) {
     if (status === 'APPROVING') return 'PENDING'
     if (status === 'UNAPPROVED') return 'REJECTED'
@@ -797,6 +928,28 @@ export class ApprovalsService {
       await this.prisma.opportunityQuotationSnapshot.update({
         where: { id: snapshot.id },
         data: { quotationValue: JSON.stringify(value) },
+      })
+    }
+  }
+
+  private async syncContractSnapshot(contractId: string, approvalStatus: string, approved: boolean) {
+    const snapshots = await this.prisma.contractSnapshot.findMany({ where: { contractId } })
+    for (const snapshot of snapshots) {
+      if (!snapshot.contractValue) continue
+      let value: Record<string, unknown>
+      try {
+        const parsed: unknown = JSON.parse(snapshot.contractValue)
+        value = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {}
+      } catch {
+        value = {}
+      }
+      value.approvalStatus = approvalStatus
+      value.approved = approved
+      await this.prisma.contractSnapshot.update({
+        where: { id: snapshot.id },
+        data: { contractValue: JSON.stringify(value) },
       })
     }
   }

@@ -63,16 +63,20 @@ async function loadData() {
 }
 
 async function searchContracts(keyword: string) {
-  const { data } = await contractApi.list({
-    page: 1,
+  const { data } = await contractApi.page({
+    current: 1,
     pageSize: 20,
     keyword: keyword || undefined,
-    status: 'EXECUTING',
   })
-  contractOptions.value = data.items.map((c) => ({
-    id: c.id,
-    name: `${c.code} ${c.name}（${c.customerName}）`,
-  }))
+  const terminalStageIds = new Set(
+    data.stages.filter((stage) => stage.type === 'END').map((stage) => stage.id),
+  )
+  contractOptions.value = data.list
+    .filter((contract) => !terminalStageIds.has(contract.stage))
+    .map((contract) => ({
+      id: contract.id,
+      name: `${contract.number} ${contract.name}（${contract.customerName}）`,
+    }))
 }
 
 function openCreate() {

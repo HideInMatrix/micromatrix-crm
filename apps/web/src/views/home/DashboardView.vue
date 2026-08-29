@@ -664,8 +664,8 @@ async function openInvoiceDialog() {
   invoiceDialogVisible.value = true
   invoiceLoading.value = true
   try {
-    const { data } = await contractApi.list({ page: 1, pageSize: 100 })
-    invoiceContracts.value = data.items
+    const { data } = await contractApi.page({ current: 1, pageSize: 100 })
+    invoiceContracts.value = data.list
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -1217,7 +1217,7 @@ onMounted(async () => {
             <el-option
               v-for="contract in invoiceContracts"
               :key="contract.id"
-              :label="`${contract.code} · ${contract.name}`"
+              :label="`${contract.number} · ${contract.name}`"
               :value="contract.id"
             />
           </el-select>

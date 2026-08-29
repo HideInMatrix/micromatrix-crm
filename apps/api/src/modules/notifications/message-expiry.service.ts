@@ -113,7 +113,7 @@ export class MessageExpiryService {
         where: { tenantId, dueDate: { gte: start, lt: end } },
         include: {
           records: { select: { amount: true, approvalStatus: true } },
-          contract: { select: { name: true, ownerId: true } },
+          contract: { select: { name: true, owner: true } },
         },
       })
       const outstanding = plans.filter((plan) => {
@@ -130,7 +130,7 @@ export class MessageExpiryService {
         days,
         outstanding.map((plan) => ({
           name: `${plan.contract.name}第 ${plan.period} 期回款`,
-          ownerId: plan.contract.ownerId,
+          ownerId: plan.contract.owner,
           dueDate: plan.dueDate,
           link: '/contracts',
           label: '回款计划',
@@ -138,13 +138,17 @@ export class MessageExpiryService {
       )
     }
 
+    const endStages = await this.prisma.contractStageConfig.findMany({
+      where: { organizationId: tenantId, type: 'END' },
+      select: { id: true },
+    })
     const contracts = await this.prisma.contract.findMany({
       where: {
-        tenantId,
-        status: 'EXECUTING',
-        endAt: { gte: start, lt: end },
+        organizationId: tenantId,
+        ...(endStages.length ? { stage: { notIn: endStages.map((item) => item.id) } } : {}),
+        endTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
       },
-      select: { id: true, name: true, ownerId: true, endAt: true },
+      select: { id: true, name: true, owner: true, endTime: true },
     })
     return this.sendRows(
       tenantId,
@@ -152,8 +156,8 @@ export class MessageExpiryService {
       days,
       contracts.map((contract) => ({
         name: contract.name,
-        ownerId: contract.ownerId,
-        dueDate: contract.endAt!,
+        ownerId: contract.owner,
+        dueDate: new Date(Number(contract.endTime!)),
         link: '/contracts',
         label: '合同',
       })),
