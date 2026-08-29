@@ -1,4 +1,4 @@
-import { isCustomFieldKey, type FieldVO } from '@micromatrix/shared'
+import type { FieldVO } from '@micromatrix/shared'
 
 export interface DisplayContext {
   memberMap: Map<string, string>
@@ -7,7 +7,7 @@ export interface DisplayContext {
 
 /** 从行数据中取字段值（系统字段取实体列，自定义字段取 customData） */
 export function fieldValue(field: FieldVO, row: Record<string, unknown>): unknown {
-  if (isCustomFieldKey(field.key) || field.type === 'formula') {
+  if (!field.system || field.type === 'formula') {
     return (row.customData as Record<string, unknown> | undefined)?.[field.key]
   }
   return row[field.key]

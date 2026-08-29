@@ -189,7 +189,7 @@ export class QuotesService {
     const productIds = this.parseOpportunityProductIds(opportunity.products)
     if (!productIds.length) throw new BadRequestException('该商机没有意向产品，请手动添加')
     const products = await this.prisma.product.findMany({
-      where: { tenantId: user.tenantId, id: { in: productIds } },
+      where: { organizationId: user.tenantId, id: { in: productIds } },
     })
     const productMap = new Map(products.map((product) => [product.id, product]))
     return productIds.flatMap((productId) => {
@@ -199,9 +199,8 @@ export class QuotesService {
         {
           productId: product.id,
           productName: product.name,
-          unit: product.unit ?? undefined,
           quantity: 1,
-          unitPrice: Number(product.price),
+          unitPrice: Number(product.price ?? 0),
           discount: 100,
         },
       ]

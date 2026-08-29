@@ -5,6 +5,7 @@ import type {
   OrderVO,
   PageQuery,
   PaginatedResult,
+  ProductPriceVO,
   ProductVO,
   QuoteVO,
   ReceivablePlanVO,
@@ -15,13 +16,87 @@ import { http } from './http'
 // ===== 产品 =====
 
 export const productApi = {
-  list: (params: PageQuery & { status?: string; filters?: string }) =>
-    http.get<PaginatedResult<ProductVO>>('/products', { params }),
-  create: (data: Record<string, unknown>) => http.post<ProductVO>('/products', data),
-  update: (id: string, data: Record<string, unknown>) =>
-    http.patch<ProductVO>(`/products/${id}`, data),
-  toggleStatus: (id: string) => http.post(`/products/${id}/toggle-status`),
-  remove: (id: string) => http.delete(`/products/${id}`),
+  moduleForm: () => http.get('/product/module/form'),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    status?: '1' | '2'
+    filters?: unknown[]
+  }) =>
+    http.post<{ list: ProductVO[]; total: number; current: number; pageSize: number; optionMap: Record<string, unknown> }>(
+      '/product/page',
+      data,
+    ),
+  detail: (id: string) => http.get<ProductVO>(`/product/get/${id}`),
+  create: (data: Record<string, unknown>) => http.post<ProductVO>('/product/add', data),
+  update: (data: Record<string, unknown>) => http.post<ProductVO>('/product/update', data),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
+    http.post('/product/batch/update', data),
+  remove: (id: string) => http.get(`/product/delete/${id}`),
+  batchDelete: (ids: string[]) => http.post('/product/batch/delete', ids),
+  sort: (data: { dragNodeId: string; dropNodeId?: string; dropPosition: -1 | 1 }) =>
+    http.post('/product/edit/pos', data),
+  options: () => http.get<Array<{ id: string; name: string }>>('/product/list/option'),
+  downloadTemplate: (importType: 'ADD' | 'UPDATE') =>
+    http.get<Blob>('/product/template/download', { params: { importType }, responseType: 'blob' }),
+  precheckImport: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post('/product/import/pre-check', form)
+  },
+  importXlsx: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post('/product/import', form)
+  },
+  exportAll: (data: Record<string, unknown>) => http.post('/product/export-all', data),
+  exportSelected: (data: Record<string, unknown>) => http.post('/product/export-select', data),
+}
+
+export const productPriceApi = {
+  moduleForm: () => http.get('/price/module/form'),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    status?: '1' | '2'
+    filters?: unknown[]
+  }) =>
+    http.post<{
+      list: ProductPriceVO[]
+      total: number
+      current: number
+      pageSize: number
+      optionMap: Record<string, unknown>
+    }>('/price/page', data),
+  detail: (id: string) => http.get<ProductPriceVO>(`/price/get/${id}`),
+  create: (data: Record<string, unknown>) => http.post<ProductPriceVO>('/price/add', data),
+  update: (data: Record<string, unknown>) => http.post<ProductPriceVO>('/price/update', data),
+  copy: (id: string) => http.get<ProductPriceVO>(`/price/copy/${id}`),
+  remove: (id: string) => http.get(`/price/delete/${id}`),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
+    http.post('/price/batch/update', data),
+  sort: (data: { dragNodeId: string; dropNodeId?: string; dropPosition: -1 | 1 }) =>
+    http.post('/price/edit/pos', data),
+  downloadTemplate: (importType: 'ADD' | 'UPDATE') =>
+    http.get<Blob>('/price/template/download', { params: { importType }, responseType: 'blob' }),
+  precheckImport: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post('/price/import/pre-check', form)
+  },
+  importXlsx: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post('/price/import', form)
+  },
+  exportAll: (data: Record<string, unknown>) => http.post('/price/export', data),
+  exportSelected: (data: Record<string, unknown>) => http.post('/price/export-select', data),
 }
 
 // ===== 报价 =====

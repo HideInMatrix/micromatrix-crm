@@ -941,3 +941,24 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `AuthGuard` 支持 `X-Access-Key / X-Secret-Key`，真实复用现有角色权限和 DataScope；错误 Secret、停用、过期和跨用户操作均被拒绝。
 - Cordys 企业“三方设置”只承载企微、钉钉、飞书、DataEase、MaxKB、标讯、企查查等企业级集成，开放 API 凭证属于个人中心。为避免双套凭证混淆，已破坏性删除 MicroMatrix 早期企业设置“开放 API / 365 天 JWT”卡片、`POST /auth/api-token` 和 `AuthService.issueApiToken()`，不保留兼容入口。
 - 最终验收：Personal Center/API Key API **44/44**、Desktop/Mobile Browser **23/23**、根 Smoke **223/223**、rules **114/114**；隔离空库 **14/14** 可从零应用 **37/37 migration** 并双次 Seed，typecheck/ESLint/production build 全绿。
+
+---
+
+## 45. W3.6.0 商机直接模型与高级配置（2026-08-28）
+
+- 按 Cordys `opportunity/*`、最终 DDL 与 ModuleForm 源码把商机主表、阶段、失败原因、关闭规则和动态字段值切换到直接模型；旧 `/opportunities` API 假设从根 Smoke 清除。
+- `/system/modules` 商机阶段、关闭规则、失败原因均为真实 API/Drawer；专项规则 Smoke 与 Browser **18/18** 全绿。
+- 最终验收：根 Smoke **224/224**、Rules **114/114**、typecheck/ESLint/production build 全绿；正式库最终达到当阶段 **40/40 migration**。
+
+---
+
+## 46. W3.6.1 产品与价格表（2026-08-29）
+
+- Product 主表按 Cordys 直接模型重建，旧 `code/category/unit/cost/ownerId/deptId/customData` 主表真相源、旧 `/products` REST API 和 `ON/OFF` 状态全部删除；产品 API 统一 `/product/*`，状态统一 `1/2`。
+- 产品动态值使用 `product_field/product_field_blob`；默认描述走 TEXTAREA，`productPic` 走 PICTURE Blob，Web 支持最多 10 张/20MB 上传预览。按 Cordys `canImport/canExport` 明确禁止 Picture 进入 Excel 导入导出。
+- 新增独立 Price 直接模型和 `/price/*`；价格表产品信息按 `SUB_PRODUCT` 的 `refSubId/rowId/bizId` 存入 `product_price_field/blob`，支持产品、SKU、产品定价、税点，产品/定价 required。
+- 价格表 ADD/UPDATE Excel 与 ExportTask 导出均升级为 Cordys 二级表头：主字段纵向合并，`产品信息` 横跨子字段；连续多产品行聚合为同一价格表，UPDATE 以唯一 ID 聚合。
+- `/system/modules` 产品卡的“产品表单设置 / 价格表表单设置”均已 REAL；现有租户通过 forward migration 43 补齐 `productPic` 和价格表子字段元数据，不依赖重新 Seed。
+- 数据库验收：正式 `default` **43/43 migrations**；隔离空库从零 **43/43** 全量 replay + Seed 连跑两次成功；SQL 直接确认 `productPic=picture`、price product/amount `required:true`、SKU/税点元数据存在。
+- 最终验收：W3.6.1 Service Smoke 全绿、Browser **19/19**、根 Smoke **224/224**、Rules **114/114**、全仓 typecheck/ESLint/production build 全绿。旧 `/products` API、旧 Product 主字段和 `ON/OFF` 残留扫描均为 0。
+- 报价引用价格表后的删除保护留给 W3.6.2 报价直接 Field/Blob 真相源关闭；不为提前变绿重新引入旧 Quote 兼容逻辑。

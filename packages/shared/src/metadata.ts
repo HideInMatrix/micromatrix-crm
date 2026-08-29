@@ -17,6 +17,7 @@ export type FieldType =
   | 'dept'
   | 'phone'
   | 'email'
+  | 'picture'
   | 'formula'
 
 export interface FieldOption {
@@ -35,6 +36,9 @@ export interface FieldConfig {
   precision?: number
   min?: number
   max?: number
+  pictureShowType?: 'card' | 'list'
+  uploadLimit?: number
+  uploadSizeLimit?: number
 }
 
 export interface FieldVO {
@@ -71,6 +75,7 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
   { value: 'dept', label: '部门' },
   { value: 'phone', label: '电话' },
   { value: 'email', label: '邮箱' },
+  { value: 'picture', label: '图片' },
   { value: 'formula', label: '计算字段' },
 ]
 

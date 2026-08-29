@@ -20,6 +20,7 @@ const AVAILABLE_MODULES: ModuleKey[] = [
   'contact',
   'opportunity',
   'product',
+  'price',
   'quote',
   'contract',
   'order',

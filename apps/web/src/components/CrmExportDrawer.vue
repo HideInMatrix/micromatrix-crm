@@ -28,12 +28,15 @@ const dragIndex = ref<number | null>(null)
 
 const systemFields = computed<ExportDisplayField[]>(() =>
   props.fields
-    .filter((field) => !field.hidden && field.system)
+    .filter((field) => !field.hidden && field.system && field.type !== 'picture')
     .map((field) => ({ key: field.key, label: field.label })),
 )
 const customFields = computed<ExportDisplayField[]>(() =>
   props.fields
-    .filter((field) => !field.hidden && !field.system && field.type !== 'formula')
+    .filter(
+      (field) =>
+        !field.hidden && !field.system && !['formula', 'picture'].includes(field.type),
+    )
     .map((field) => ({ key: field.key, label: field.label })),
 )
 const showFields = computed(() => props.displayFields ?? [])

@@ -109,6 +109,7 @@ declare module 'vue' {
     OwnerHistoryTimeline: typeof import('./../components/OwnerHistoryTimeline.vue')['default']
     PersonalApiKeyPanel: typeof import('./../components/personal/PersonalApiKeyPanel.vue')['default']
     PersonalCenterDrawer: typeof import('./../components/personal/PersonalCenterDrawer.vue')['default']
+    PictureFieldInput: typeof import('./../components/form-engine/PictureFieldInput.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SavedViewBar: typeof import('./../components/SavedViewBar.vue')['default']

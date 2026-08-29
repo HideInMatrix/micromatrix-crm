@@ -94,7 +94,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   product: {
     primary: [
       { label: '产品表单设置', path: '/system/modules/fields', query: { module: 'product' } },
-      { label: '价格表表单设置' },
+      { label: '价格表表单设置', path: '/system/modules/fields', query: { module: 'price' } },
     ],
   },
 }

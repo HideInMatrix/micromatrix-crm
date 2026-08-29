@@ -102,13 +102,13 @@ async function loadMeta() {
     metadataApi.fields('opportunity'),
     opportunityApi.stages(),
     dictionaryApi.config('OPPORTUNITY_FAIL_RS'),
-    productApi.list({ page: 1, pageSize: 100, status: 'ON' }),
+    productApi.options(),
   ])
   fields.value = fieldData
   stages.value = stageData
   failureReasonEnabled.value = reasonConfig.enable
   failureReasons.value = reasonConfig.dictList.filter((item) => item.id !== 'system')
-  productOptions.value = products.items.map((item) => ({ id: item.id, name: item.name }))
+  productOptions.value = products
 }
 
 async function loadData() {

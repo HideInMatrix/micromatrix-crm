@@ -1,20 +1,42 @@
 // ============ 交易链路：产品 / 报价 / 合同 / 回款 / 发票 / 订单 ============
 
-export type ProductStatus = 'ON' | 'OFF'
+export type ProductStatus = '1' | '2'
 
 export interface ProductVO {
   id: string
   name: string
-  code: string | null
-  category: string | null
-  unit: string | null
-  price: number
-  cost: number | null
+  price: number | null
   status: ProductStatus
-  description: string | null
-  ownerId: string | null
+  pos: number
   customData: Record<string, unknown>
   createdAt: string
+  updatedAt: string
+  createUser: string
+  updateUser: string
+}
+
+export type ProductPriceStatus = '1' | '2'
+
+export interface ProductPriceItemVO {
+  rowId: string
+  bizId: string
+  productId: string
+  productName?: string
+  amount: number
+  values: Record<string, unknown>
+}
+
+export interface ProductPriceVO {
+  id: string
+  name: string
+  status: ProductPriceStatus
+  pos: number
+  customData: Record<string, unknown>
+  products: ProductPriceItemVO[]
+  createdAt: string
+  updatedAt: string
+  createUser: string
+  updateUser: string
 }
 
 // ===== 明细行（报价/合同共用） =====

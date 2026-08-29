@@ -14,18 +14,38 @@ import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ModuleFormsService } from './module-forms.service'
 
-export type ResourceFieldType = 'clue' | 'customer' | 'customerContact' | 'opportunity'
+export type ResourceFieldType =
+  | 'clue'
+  | 'customer'
+  | 'customerContact'
+  | 'opportunity'
+  | 'product'
+  | 'productPrice'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 interface ResourceConfig {
-  formKey: 'lead' | 'customer' | 'contact' | 'opportunity'
-  resourceTable: 'clue' | 'customer' | 'customer_contact' | 'opportunity'
-  normalTable: 'clue_field' | 'customer_field' | 'customer_contact_field' | 'opportunity_field'
+  formKey: 'lead' | 'customer' | 'contact' | 'opportunity' | 'product' | 'price'
+  resourceTable:
+    | 'clue'
+    | 'customer'
+    | 'customer_contact'
+    | 'opportunity'
+    | 'product'
+    | 'product_price'
+  normalTable:
+    | 'clue_field'
+    | 'customer_field'
+    | 'customer_contact_field'
+    | 'opportunity_field'
+    | 'product_field'
+    | 'product_price_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
     | 'customer_contact_field_blob'
     | 'opportunity_field_blob'
+    | 'product_field_blob'
+    | 'product_price_field_blob'
 }
 
 interface ValidatedFieldValue {
@@ -59,6 +79,18 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'opportunity',
     normalTable: 'opportunity_field',
     blobTable: 'opportunity_field_blob',
+  },
+  product: {
+    formKey: 'product',
+    resourceTable: 'product',
+    normalTable: 'product_field',
+    blobTable: 'product_field_blob',
+  },
+  productPrice: {
+    formKey: 'price',
+    resourceTable: 'product_price',
+    normalTable: 'product_price_field',
+    blobTable: 'product_price_field_blob',
   },
 }
 
@@ -347,11 +379,12 @@ export class ResourceFieldValueService {
           throw new BadRequestException(`「${field.label}」必须是布尔值`)
         return String(value)
       case 'multiselect':
-      case 'checkbox': {
+      case 'checkbox':
+      case 'picture': {
         if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
           throw new BadRequestException(`「${field.label}」必须是字符串数组`)
         }
-        this.assertOptions(field, value)
+        if (field.type !== 'picture') this.assertOptions(field, value)
         return JSON.stringify(value)
       }
       case 'select':
@@ -385,7 +418,7 @@ export class ResourceFieldValueService {
   }
 
   private deserialize(type: FieldType, value: string): unknown {
-    if (['multiselect', 'checkbox'].includes(type)) {
+    if (['multiselect', 'checkbox', 'picture'].includes(type)) {
       try {
         const parsed: unknown = JSON.parse(value)
         return Array.isArray(parsed) ? parsed : []
@@ -407,7 +440,7 @@ export class ResourceFieldValueService {
   }
 
   private storageFor(type: FieldType, serialized: string | null): 'normal' | 'blob' {
-    if (['textarea', 'multiselect', 'checkbox'].includes(type)) return 'blob'
+    if (['textarea', 'multiselect', 'checkbox', 'picture'].includes(type)) return 'blob'
     return serialized !== null && serialized.length > 255 ? 'blob' : 'normal'
   }
 
@@ -433,8 +466,18 @@ export class ResourceFieldValueService {
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
-    else
+    else if (resourceType === 'opportunity')
       resource = await tx.opportunity.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else if (resourceType === 'product')
+      resource = await tx.product.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else
+      resource = await tx.productPrice.findFirst({
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
@@ -471,11 +514,21 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.customerContactFieldBlob.findFirst({ where, select: { id: true } })
           : await client.customerContactField.findFirst({ where, select: { id: true } })
-    else
+    else if (resourceType === 'opportunity')
       repeated =
         item.storage === 'blob'
           ? await client.opportunityFieldBlob.findFirst({ where, select: { id: true } })
           : await client.opportunityField.findFirst({ where, select: { id: true } })
+    else if (resourceType === 'product')
+      repeated =
+        item.storage === 'blob'
+          ? await client.productFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.productField.findFirst({ where, select: { id: true } })
+    else
+      repeated =
+        item.storage === 'blob'
+          ? await client.productPriceFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.productPriceField.findFirst({ where, select: { id: true } })
     if (repeated) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
@@ -501,10 +554,20 @@ export class ResourceFieldValueService {
         tx.customerContactField.deleteMany({ where }),
         tx.customerContactFieldBlob.deleteMany({ where }),
       ])
-    else
+    else if (resourceType === 'opportunity')
       await Promise.all([
         tx.opportunityField.deleteMany({ where }),
         tx.opportunityFieldBlob.deleteMany({ where }),
+      ])
+    else if (resourceType === 'product')
+      await Promise.all([
+        tx.productField.deleteMany({ where }),
+        tx.productFieldBlob.deleteMany({ where }),
+      ])
+    else
+      await Promise.all([
+        tx.productPriceField.deleteMany({ where }),
+        tx.productPriceFieldBlob.deleteMany({ where }),
       ])
   }
 
@@ -534,9 +597,15 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'customerContact') {
       if (normalData.length) await tx.customerContactField.createMany({ data: normalData })
       if (blobData.length) await tx.customerContactFieldBlob.createMany({ data: blobData })
-    } else {
+    } else if (resourceType === 'opportunity') {
       if (normalData.length) await tx.opportunityField.createMany({ data: normalData })
       if (blobData.length) await tx.opportunityFieldBlob.createMany({ data: blobData })
+    } else if (resourceType === 'product') {
+      if (normalData.length) await tx.productField.createMany({ data: normalData })
+      if (blobData.length) await tx.productFieldBlob.createMany({ data: blobData })
+    } else {
+      if (normalData.length) await tx.productPriceField.createMany({ data: normalData })
+      if (blobData.length) await tx.productPriceFieldBlob.createMany({ data: blobData })
     }
   }
 
@@ -568,9 +637,19 @@ export class ResourceFieldValueService {
         client.customerContactField.findMany({ where, select }),
         client.customerContactFieldBlob.findMany({ where, select }),
       ])
+    if (resourceType === 'opportunity')
+      return Promise.all([
+        client.opportunityField.findMany({ where, select }),
+        client.opportunityFieldBlob.findMany({ where, select }),
+      ])
+    if (resourceType === 'product')
+      return Promise.all([
+        client.productField.findMany({ where, select }),
+        client.productFieldBlob.findMany({ where, select }),
+      ])
     return Promise.all([
-      client.opportunityField.findMany({ where, select }),
-      client.opportunityFieldBlob.findMany({ where, select }),
+      client.productPriceField.findMany({ where, select }),
+      client.productPriceFieldBlob.findMany({ where, select }),
     ])
   }
 

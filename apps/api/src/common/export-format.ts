@@ -1,9 +1,9 @@
-import { isCustomFieldKey, type FieldVO } from '@micromatrix/shared'
+import type { FieldVO } from '@micromatrix/shared'
 
 /** 导出时将字段值转为可读文本（选项转 label、开关转是/否） */
 export function formatForExport(field: FieldVO, row: Record<string, unknown>): string {
   const value =
-    isCustomFieldKey(field.key) || field.type === 'formula'
+    !field.system || field.type === 'formula'
       ? (row.customData as Record<string, unknown> | undefined)?.[field.key]
       : row[field.key]
 

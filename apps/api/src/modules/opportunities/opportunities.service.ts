@@ -1396,7 +1396,9 @@ export class OpportunitiesService {
 
   private async validateProducts(tenantId: string, productIds: string[]) {
     if (!productIds.length) return
-    const count = await this.prisma.product.count({ where: { tenantId, id: { in: productIds } } })
+    const count = await this.prisma.product.count({
+      where: { organizationId: tenantId, id: { in: productIds } },
+    })
     if (count !== productIds.length) throw new BadRequestException('意向产品包含不存在的数据')
   }
 

@@ -281,7 +281,7 @@ async function cleanupHistoricalCustomerSmokeData(tenantId) {
 
 async function cleanupHistoricalProductSmokeData(tenantId) {
   const result = await smokePrisma.product.deleteMany({
-    where: { tenantId, name: { startsWith: '冒烟意向产品-' } },
+    where: { organizationId: tenantId, name: { startsWith: '冒烟意向产品-' } },
   })
   return result.count
 }
@@ -2530,9 +2530,10 @@ const removedJsonRowsImport = await request('POST', '/customers/import/rows', ad
 })
 check('旧 Customer JSON rows 导入入口已移除', removedJsonRowsImport.status === 404)
 
-const opportunityProduct = await post('/products', manager.headers, {
+const opportunityProduct = await post('/product/add', manager.headers, {
   name: `冒烟意向产品-${stamp}`,
   price: 30000,
+  status: '1',
 })
 const oppWithItems = await post('/opportunity/add', manager.headers, {
   name: `冒烟明细商机-${stamp}`,

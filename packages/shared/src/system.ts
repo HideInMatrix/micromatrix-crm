@@ -278,7 +278,15 @@ export interface NotificationVO {
 // ============ 模块（业务对象）标识 ============
 
 export type ModuleKey =
-  'lead' | 'customer' | 'contact' | 'opportunity' | 'product' | 'quote' | 'contract' | 'order'
+  | 'lead'
+  | 'customer'
+  | 'contact'
+  | 'opportunity'
+  | 'product'
+  | 'price'
+  | 'quote'
+  | 'contract'
+  | 'order'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   lead: '线索',
@@ -286,6 +294,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   contact: '联系人',
   opportunity: '商机',
   product: '产品',
+  price: '价格表',
   quote: '报价',
   contract: '合同',
   order: '订单',

@@ -183,7 +183,6 @@ export class MembersService {
       this.prisma.customerContact.count({ where: { organizationId: tenantId, owner: id } }),
       this.prisma.clue.count({ where: { organizationId: tenantId, owner: id } }),
       this.prisma.opportunity.count({ where: { organizationId: tenantId, owner: id } }),
-      this.prisma.product.count({ where: { tenantId, ownerId: id } }),
       this.prisma.quote.count({ where: { tenantId, ownerId: id } }),
       this.prisma.contract.count({ where: { tenantId, ownerId: id } }),
       this.prisma.receivableRecord.count({ where: { tenantId, ownerId: id } }),

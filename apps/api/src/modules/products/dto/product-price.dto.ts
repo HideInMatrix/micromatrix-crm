@@ -10,40 +10,54 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
-  IsPositive,
   IsString,
   Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator'
+import { ProductModuleFieldValueDto } from './product.dto'
 
-export class ProductModuleFieldValueDto {
-  @ApiProperty({ description: '动态字段 ID' })
+export class ProductPriceItemDto {
+  @ApiPropertyOptional({ description: '子表格行实例 ID' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(32)
+  rowId?: string
+
+  @ApiPropertyOptional({ description: '子表格业务行 ID' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(32)
+  bizId?: string
+
+  @ApiProperty({ description: '产品 ID' })
   @IsString()
   @IsNotEmpty()
-  fieldId!: string
+  @MaxLength(32)
+  product!: string
 
-  @ApiPropertyOptional({ description: '动态字段值' })
+  @ApiProperty({ description: '产品定价' })
+  @IsNumber()
+  @Min(0)
+  amount!: number
+
+  @ApiPropertyOptional({ description: '扩展子字段值' })
+  @IsObject()
   @IsOptional()
-  fieldValue?: unknown
+  values?: Record<string, unknown>
 }
 
-export class ProductAddDto {
-  @ApiProperty({ description: '产品名称' })
+export class ProductPriceAddDto {
+  @ApiProperty({ description: '价格表名称' })
   @IsString()
-  @IsNotEmpty({ message: '产品名称不能为空' })
+  @IsNotEmpty({ message: '价格表名称不能为空' })
   @MaxLength(255)
   name!: string
 
-  @ApiPropertyOptional({ description: '产品价格' })
-  @IsNumber()
-  @IsPositive()
-  @IsOptional()
-  price?: number
-
-  @ApiProperty({ description: '1=上架，2=下架', enum: ['1', '2'] })
+  @ApiProperty({ description: '1=启用，2=禁用', enum: ['1', '2'] })
   @IsIn(['1', '2'])
   status!: '1' | '2'
 
@@ -53,17 +67,24 @@ export class ProductAddDto {
   @Type(() => ProductModuleFieldValueDto)
   @IsOptional()
   moduleFields?: ProductModuleFieldValueDto[]
+
+  @ApiPropertyOptional({ description: '产品信息子表', type: [ProductPriceItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductPriceItemDto)
+  @IsOptional()
+  products?: ProductPriceItemDto[]
 }
 
-export class ProductUpdateDto extends PartialType(ProductAddDto) {
-  @ApiProperty({ description: '产品 ID' })
+export class ProductPriceUpdateDto extends PartialType(ProductPriceAddDto) {
+  @ApiProperty({ description: '价格表 ID' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(32)
   id!: string
 }
 
-export class ProductPageDto {
+export class ProductPricePageDto {
   @ApiPropertyOptional({ default: 1 })
   @Type(() => Number)
   @IsInt()
@@ -95,7 +116,7 @@ export class ProductPageDto {
   filters?: FilterCondition[]
 }
 
-export class ProductExportDto extends ProductPageDto {
+export class ProductPriceExportDto extends ProductPricePageDto {
   @ApiProperty({ description: '导出文件名（不含 .xlsx）' })
   @IsString()
   @IsNotEmpty()
@@ -111,7 +132,7 @@ export class ProductExportDto extends ProductPageDto {
   headList!: string[]
 }
 
-export class ProductExportSelectDto {
+export class ProductPriceExportSelectDto {
   @ApiProperty({ description: '导出文件名（不含 .xlsx）' })
   @IsString()
   @IsNotEmpty()
@@ -126,7 +147,7 @@ export class ProductExportSelectDto {
   @IsString({ each: true })
   headList!: string[]
 
-  @ApiProperty({ description: '选中的产品 ID', type: [String] })
+  @ApiProperty({ description: '选中的价格表 ID', type: [String] })
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()
@@ -135,13 +156,13 @@ export class ProductExportSelectDto {
   ids!: string[]
 }
 
-export class ProductSortDto {
-  @ApiProperty({ description: '被拖拽产品 ID' })
+export class ProductPriceSortDto {
+  @ApiProperty({ description: '被拖拽价格表 ID' })
   @IsString()
   @IsNotEmpty()
   dragNodeId!: string
 
-  @ApiPropertyOptional({ description: '目标产品 ID；为空时放到末尾' })
+  @ApiPropertyOptional({ description: '目标价格表 ID；为空时放到末尾' })
   @IsString()
   @IsOptional()
   dropNodeId?: string

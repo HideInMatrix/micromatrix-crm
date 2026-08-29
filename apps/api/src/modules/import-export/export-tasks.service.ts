@@ -72,6 +72,49 @@ export class ExportTasksService {
     }
   }
 
+  async createFromBuffer(
+    user: AuthUser,
+    input: { module: string; fileName: string; data: Buffer; rowCount: number },
+  ): Promise<ExportTaskVO> {
+    const fileName = this.normalizeFileName(input.fileName)
+    const task = await this.prisma.exportTask.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        module: input.module,
+        fileName,
+        expiresAt: new Date(Date.now() + DAY_MS),
+      },
+    })
+    try {
+      const dir = path.join(this.root, user.tenantId, user.id)
+      await fs.mkdir(dir, { recursive: true })
+      const filePath = path.join(dir, `${task.id}.xlsx`)
+      await fs.writeFile(filePath, input.data)
+      const completed = await this.prisma.exportTask.update({
+        where: { id: task.id },
+        data: {
+          status: 'SUCCESS',
+          filePath,
+          rowCount: input.rowCount,
+          fileSize: input.data.byteLength,
+          completedAt: new Date(),
+        },
+      })
+      return this.toVO(completed)
+    } catch (error) {
+      const failed = await this.prisma.exportTask.update({
+        where: { id: task.id },
+        data: {
+          status: 'FAILED',
+          errorMessage: error instanceof Error ? error.message.slice(0, 500) : '导出失败',
+          completedAt: new Date(),
+        },
+      })
+      return this.toVO(failed)
+    }
+  }
+
   async list(user: AuthUser): Promise<ExportTaskVO[]> {
     await this.cleanupExpired(user)
     const tasks = await this.prisma.exportTask.findMany({

@@ -863,32 +863,107 @@ model OpportunityRule {
   @@map("opportunity_rule")
 }
 
-// ============ 产品 ============
-
-enum ProductStatus {
-  ON // 上架
-  OFF // 下架
-}
+// ============ 产品 / 价格表（Cordys 直接模型） ============
 
 model Product {
-  id          String        @id @default(cuid())
-  tenantId    String
-  name        String
-  code        String?
-  category    String?
-  unit        String?
-  price       Decimal       @default(0) @db.Decimal(14, 2)
-  cost        Decimal?      @db.Decimal(14, 2)
-  status      ProductStatus @default(ON)
-  description String?
-  customData  Json?
-  ownerId     String?
-  deptId      String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String   @id @default(cuid()) @db.VarChar(32)
+  name           String   @db.VarChar(255)
+  price          Decimal? @db.Decimal(14, 4)
+  status         String   @db.VarChar(32)
+  pos            BigInt
+  organizationId String   @map("organization_id") @db.VarChar(32)
+  createTime     BigInt   @map("create_time")
+  updateTime     BigInt   @map("update_time")
+  createUser     String   @map("create_user") @db.VarChar(32)
+  updateUser     String   @map("update_user") @db.VarChar(32)
 
-  @@index([tenantId, status])
-  @@map("products")
+  fieldValues     ProductField[]
+  fieldBlobValues ProductFieldBlob[]
+
+  @@index([organizationId])
+  @@index([name])
+  @@index([organizationId, pos])
+  @@map("product")
+}
+
+model ProductField {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id") @db.VarChar(32)
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.VarChar(255)
+
+  resource Product @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId, fieldId, fieldValue])
+  @@map("product_field")
+}
+
+model ProductFieldBlob {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id") @db.VarChar(32)
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.Text
+
+  resource Product @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId])
+  @@map("product_field_blob")
+}
+
+model ProductPrice {
+  id             String @id @default(cuid()) @db.VarChar(32)
+  name           String @db.VarChar(255)
+  status         String @db.VarChar(32)
+  pos            BigInt
+  organizationId String @map("organization_id") @db.VarChar(32)
+  createTime     BigInt @map("create_time")
+  updateTime     BigInt @map("update_time")
+  createUser     String @map("create_user") @db.VarChar(32)
+  updateUser     String @map("update_user") @db.VarChar(32)
+
+  fieldValues     ProductPriceField[]
+  fieldBlobValues ProductPriceFieldBlob[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([organizationId, pos])
+  @@map("product_price")
+}
+
+model ProductPriceField {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.VarChar(255)
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
+
+  resource ProductPrice @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("product_price_field")
+}
+
+model ProductPriceFieldBlob {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.Text
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
+
+  resource ProductPrice @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_blob_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("product_price_field_blob")
 }
 
 // ============ 报价 ============

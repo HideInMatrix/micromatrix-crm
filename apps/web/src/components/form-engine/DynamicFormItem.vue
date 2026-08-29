@@ -2,6 +2,7 @@
 import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed } from 'vue'
 import type { MemberOption } from '@/api/system'
+import PictureFieldInput from './PictureFieldInput.vue'
 
 const props = defineProps<{
   field: FieldVO
@@ -138,6 +139,14 @@ const precision = computed(() =>
   <el-switch
     v-else-if="field.type === 'switch'"
     :model-value="Boolean(model)"
+    @update:model-value="model = $event"
+  />
+
+  <PictureFieldInput
+    v-else-if="field.type === 'picture'"
+    :model-value="(model as string[] | undefined) ?? []"
+    :max="field.config?.uploadLimit ?? 10"
+    :max-size-mb="field.config?.uploadSizeLimit ?? 20"
     @update:model-value="model = $event"
   />
 

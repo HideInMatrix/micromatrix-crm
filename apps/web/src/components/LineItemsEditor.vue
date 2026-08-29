@@ -32,20 +32,19 @@ function removeRow(index: number) {
   items.value.splice(index, 1)
 }
 
-/** 选择产品自动带出名称/单位/单价 */
+/** Cordys Product 只提供产品名称/价格；单据明细自己的单位不从产品主表继承。 */
 function handleProductSelect(item: LineItemVO, productId: string | null) {
   item.productId = productId
   const product = products.value.find((p) => p.id === productId)
   if (product) {
     item.productName = product.name
-    item.unit = product.unit
-    item.unitPrice = product.price
+    item.unitPrice = product.price ?? 0
   }
 }
 
 onMounted(async () => {
-  const { data } = await productApi.list({ page: 1, pageSize: 100, status: 'ON' })
-  products.value = data.items
+  const { data } = await productApi.page({ current: 1, pageSize: 500, status: '1' })
+  products.value = data.list
 })
 </script>
 

@@ -48,10 +48,25 @@
 
 ## 2. W3.6.1 产品与价格表
 
-- [ ] 2.1 源码与 DDL 证据矩阵。
-- [ ] 2.2 产品与价格表直接字段值/API/页面。
-- [ ] 2.3 `/system/modules` 产品卡片：产品表单 + 价格表表单全部 REAL。
-- [ ] 2.4 专项验收与提交。
+- [x] 2.1 源码与 DDL 证据矩阵。
+  - 已锁定产品/价格表页面、前端 requrls、Controller/Service、Domain、最终 DDL、动态字段和 `SUB_PRODUCT` 子表语义。
+  - 已确认旧 `products + /products + customData` 不是目标契约；价格表是完全缺失的独立领域。
+  - 证据：[产品与价格表源码、DDL 与 API 证据矩阵](./product-price-source-api-audit.md)。
+- [x] 2.2 产品与价格表直接字段值/API/页面。
+  - Product 主表已破坏式收口到 Cordys `id/name/price/status/pos/organizationId/createTime/updateTime/createUser/updateUser`，旧 `code/category/unit/cost/ownerId/deptId/customData` 主表真相源及旧 `/products` REST 契约均已删除；状态统一为 `1/2`。
+  - 产品动态值已进入 `product_field/product_field_blob`；默认 `description` 为 TEXTAREA，`productPic` 为 PICTURE，图片值按 Cordys 字符串 key 数组进入 Blob，Web 支持最多 10 张、单张 20MB 的上传/预览，Picture 明确不进入 Excel 导入导出。
+  - 价格表已建立独立 `product_price`、`product_price_field/product_price_field_blob`，完整暴露 `/price/*`；`SUB_PRODUCT` 使用 `refSubId/rowId/bizId` 保存产品、SKU、产品定价、税点，产品与产品定价均为必填。
+  - 价格表 ADD/UPDATE Excel 已改为 Cordys 二级表头：主字段纵向合并，`产品信息` 横跨产品/SKU/产品定价/税点；多产品行聚合为同一价格表，UPDATE 按唯一 ID 聚合。导出任务同样生成二级表头，不旁路现有 ExportTask。
+  - 报价引用价格表后的“被使用价格表禁止删除”由 W3.6.2 报价直接 Field/Blob 真相源关闭；本阶段不重新引入旧 Quote 兼容判断。
+- [x] 2.3 `/system/modules` 产品卡片：产品表单 + 价格表表单全部 REAL。
+  - `产品表单设置` 真实消费 `module=product`，默认字段包含产品名称/价格/状态/描述/产品图片，并已清理旧编码/分类/单位/成本价。
+  - `价格表表单设置` 真实消费 `module=price`；产品、定价、SKU、税点作为 `SUB_PRODUCT` 子字段元数据参与存储/导入导出，不伪装成主表字段。
+  - Browser Smoke 已实际从 `/system/modules` 点击并验证两个入口，非仅代码路由映射。
+- [x] 2.4 专项验收与提交。
+  - W3.6.1 Product/Price Service Smoke 全绿，覆盖产品 PICTURE Blob、产品 CRUD/批改/排序、价格表 CRUD/复制/SUB_PRODUCT/批改/排序、ADD/UPDATE 二级表头导入及二级表头 ExportTask 导出。
+  - Product/Price Browser Smoke **19/19**；根 Smoke **224/224**；Rules **114/114**；全仓 typecheck、ESLint、production build 全绿。
+  - Prisma 正式库 **43/43 migrations**；隔离空库从零 **43/43** 全量复放并连续 Seed 两次成功。正式库额外用 SQL 验证 `productPic=picture`、价格表 product/amount `required:true` 及 SKU/税点元数据真实存在。
+  - 运行时代码扫描确认旧 `/products` API、`ON/OFF` 产品状态和旧 Product 主字段引用均已清零；本地提交随本任务收口完成。
 
 ## 3. W3.6.2 报价
 
