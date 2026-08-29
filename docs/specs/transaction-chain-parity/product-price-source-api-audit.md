@@ -373,5 +373,5 @@ W3.6 规则明确不保留旧 `/products` 兼容 Controller、旧表双写或 `c
 - `/system/modules` 的产品表单和价格表表单均为真实 ModuleForm 入口；现有租户元数据由 forward migration 补齐，不依赖重跑 Seed。
 - migrations：`20260828234500_w361_product_price_direct_models`、`20260828235900_w361_product_form_metadata_repair`、`20260829091500_w361_product_picture_price_subtable_metadata`。正式库 43/43，空库 43/43 + 双 Seed。
 - 验收：专项 Service Smoke 全绿，Browser **19/19**，根 Smoke **224/224**，Rules **114/114**，全仓 typecheck/ESLint/production build 全绿。
-- 仍由 W3.6.2 关闭的跨域依赖只有“Quote Field/Blob 引用价格表后的删除保护”；在报价直接模型完成前不保留或新建旧 Quote 兼容真相源。
+- W3.6.2 已关闭最后一个跨域依赖：`ProductPriceService.delete()` 直接检查 `opportunity_quotation_field/blob` 的报价引用，命中时按 Cordys 语义返回“价格表已被报价单关联，无法删除！”，报价删除后价格表恢复可删除；专项 HTTP Smoke 已覆盖该闭环，未重新引入旧 Quote 兼容真相源。
 

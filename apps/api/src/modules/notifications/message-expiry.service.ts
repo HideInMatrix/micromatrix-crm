@@ -87,13 +87,13 @@ export class MessageExpiryService {
   ): Promise<number> {
     const { start, end } = this.dayWindow(now, days)
     if (event.startsWith('BUSINESS_QUOTATION_')) {
-      const quotes = await this.prisma.quote.findMany({
+      const quotes = await this.prisma.opportunityQuotation.findMany({
         where: {
-          tenantId,
-          status: { not: 'VOID' },
-          validUntil: { gte: start, lt: end },
+          organizationId: tenantId,
+          invalid: false,
+          untilTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
         },
-        select: { id: true, name: true, ownerId: true, validUntil: true },
+        select: { id: true, name: true, createUser: true, untilTime: true },
       })
       return this.sendRows(
         tenantId,
@@ -101,8 +101,8 @@ export class MessageExpiryService {
         days,
         quotes.map((quote) => ({
           name: quote.name,
-          ownerId: quote.ownerId,
-          dueDate: quote.validUntil!,
+          ownerId: quote.createUser,
+          dueDate: new Date(Number(quote.untilTime)),
           link: '/quotes',
           label: '报价',
         })),

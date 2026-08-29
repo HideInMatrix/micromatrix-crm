@@ -5,6 +5,7 @@ import {
   CustomerContactUserViewsController,
   CustomerPoolUserViewsController,
   CustomerUserViewsController,
+  OpportunityQuotationUserViewsController,
   OpportunityUserViewsController,
 } from './user-views.controller'
 import { UserViewsService } from './user-views.service'
@@ -17,6 +18,7 @@ import { UserViewsService } from './user-views.service'
     CustomerContactUserViewsController,
     CustomerPoolUserViewsController,
     OpportunityUserViewsController,
+    OpportunityQuotationUserViewsController,
   ],
   providers: [UserViewsService],
   exports: [UserViewsService],

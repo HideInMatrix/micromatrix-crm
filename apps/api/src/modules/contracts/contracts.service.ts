@@ -9,6 +9,7 @@ import { Contract, ContractItem, InvoiceStatus, Prisma } from '../../generated/p
 import { PrismaService } from '../../prisma/prisma.service'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { MetadataService } from '../metadata/metadata.service'
+import { QuotationFieldsService } from '../quotes/quotation-fields.service'
 import {
   ChangeContractStatusDto,
   CreateContractDto,
@@ -39,6 +40,7 @@ export class ContractsService {
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly approvals: ApprovalsService,
+    private readonly quotationFields: QuotationFieldsService,
   ) {}
 
   async findAll(user: AuthUser, query: QueryContractsDto): Promise<PaginatedResult<ContractVO>> {
@@ -103,18 +105,17 @@ export class ContractsService {
     // 从报价单创建：复制明细
     let sourceItems: LineItemDto[] = items ?? []
     if (fromQuoteId && sourceItems.length === 0) {
-      const quote = await this.prisma.quote.findFirst({
-        where: { id: fromQuoteId, tenantId: user.tenantId },
-        include: { items: true },
+      const quote = await this.prisma.opportunityQuotation.findFirst({
+        where: { id: fromQuoteId, organizationId: user.tenantId, invalid: false },
       })
       if (!quote) throw new BadRequestException('报价单不存在')
-      sourceItems = quote.items.map((item) => ({
-        productId: item.productId ?? undefined,
-        productName: item.productName,
-        unit: item.unit ?? undefined,
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        discount: Number(item.discount),
+      const quoteProducts = await this.quotationFields.loadProducts(user.tenantId, fromQuoteId)
+      sourceItems = quoteProducts.map((item) => ({
+        productId: item.productId,
+        productName: item.productName ?? item.productId,
+        quantity: 1,
+        unitPrice: item.productAmount,
+        discount: item.discount,
       }))
     }
     const normalized = this.normalizeItems(sourceItems)

@@ -298,7 +298,6 @@ model Customer {
   sourceRelations CustomerRelation[]      @relation("CustomerRelationSource")
   targetRelations CustomerRelation[]      @relation("CustomerRelationTarget")
   opportunities   Opportunity[]
-  quotes          Quote[]
   contracts       Contract[]
 
   @@index([organizationId])
@@ -808,6 +807,7 @@ model Opportunity {
   stageConfig     OpportunityStageConfig @relation(fields: [stage], references: [id])
   fieldValues     OpportunityField[]
   fieldBlobValues OpportunityFieldBlob[]
+  quotations      OpportunityQuotation[]
 
   @@index([customerId])
   @@index([organizationId])
@@ -966,59 +966,79 @@ model ProductPriceFieldBlob {
   @@map("product_price_field_blob")
 }
 
-// ============ 报价 ============
+// ============ 报价（Cordys 直接模型） ============
 
-enum QuoteStatus {
-  DRAFT // 草稿
-  CONFIRMED // 已确认
-  VOID // 已作废
+model OpportunityQuotation {
+  id             String   @id @default(cuid()) @db.VarChar(32)
+  name           String   @db.VarChar(255)
+  opportunityId  String   @map("opportunity_id") @db.VarChar(32)
+  untilTime      BigInt   @map("until_time")
+  amount         Decimal  @default(0) @db.Decimal(14, 2)
+  approvalStatus String   @default("NONE") @map("approval_status") @db.VarChar(50)
+  invalid        Boolean  @default(false)
+  organizationId String   @map("organization_id") @db.VarChar(32)
+  createTime     BigInt   @map("create_time")
+  updateTime     BigInt   @map("update_time")
+  createUser     String   @map("create_user") @db.VarChar(32)
+  updateUser     String   @map("update_user") @db.VarChar(32)
+  approved       Boolean  @default(false)
+
+  opportunity    Opportunity                    @relation(fields: [opportunityId], references: [id])
+  fieldValues    OpportunityQuotationField[]
+  fieldBlobValues OpportunityQuotationFieldBlob[]
+  snapshots      OpportunityQuotationSnapshot[]
+
+  @@index([opportunityId])
+  @@index([organizationId])
+  @@index([approvalStatus])
+  @@index([createUser])
+  @@map("opportunity_quotation")
 }
 
-model Quote {
-  id             String      @id @default(cuid())
-  tenantId       String
-  code           String
-  name           String
-  customerId     String
-  opportunityId  String?
-  totalAmount    Decimal     @default(0) @db.Decimal(14, 2)
-  status         QuoteStatus @default(DRAFT)
-  // 审批状态：NONE=无需/未提交, PENDING/APPROVED/REJECTED
-  approvalStatus String      @default("NONE")
-  validUntil     DateTime?
-  remark         String?
-  ownerId        String?
-  deptId         String?
-  customData     Json?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+model OpportunityQuotationField {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.VarChar(255)
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
 
-  customer Customer    @relation(fields: [customerId], references: [id])
-  items    QuoteItem[]
+  resource OpportunityQuotation @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, code])
-  @@index([tenantId, customerId])
-  @@index([tenantId, deptId])
-  @@map("quotes")
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("opportunity_quotation_field")
 }
 
-model QuoteItem {
-  id          String  @id @default(cuid())
-  quoteId     String
-  productId   String?
-  productName String
-  unit        String?
-  quantity    Decimal @default(1) @db.Decimal(14, 2)
-  unitPrice   Decimal @default(0) @db.Decimal(14, 2)
-  // 折扣百分比（100 = 不打折）
-  discount    Decimal @default(100) @db.Decimal(5, 2)
-  amount      Decimal @default(0) @db.Decimal(14, 2)
-  sort        Int     @default(0)
+model OpportunityQuotationFieldBlob {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.Text
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
 
-  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  resource OpportunityQuotation @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@index([quoteId])
-  @@map("quote_items")
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_blob_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("opportunity_quotation_field_blob")
+}
+
+model OpportunityQuotationSnapshot {
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  quotationId    String  @map("quotation_id") @db.VarChar(32)
+  quotationProp  String? @map("quotation_prop") @db.Text
+  quotationValue String? @map("quotation_value") @db.Text
+
+  quotation OpportunityQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+  @@map("opportunity_quotation_snapshot")
 }
 
 // ============ 合同与回款 ============
@@ -1403,6 +1423,8 @@ model ApprovalInstance {
   currentNodeIndex Int                    @default(0)
   // 节点快照（提交时冻结流程配置）：[{ name, approverType, mode, approverIds }]
   nodesSnapshot    Json
+  // UPDATE 审批的业务前置快照；用于驳回/撤回时恢复业务数据。
+  businessSnapshot Json?                  @map("business_snapshot")
   submitterId      String
   submitterName    String
   finishedAt       DateTime?

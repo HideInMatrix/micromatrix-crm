@@ -18,7 +18,8 @@
     "smoke:w34-pools:isolated": "node scripts/run-w34-pool-smoke-isolated.mjs",
     "smoke:w34-seed": "tsx scripts/w34-seed-empty-db-audit.ts",
     "smoke:w360-opportunity-rule": "tsx scripts/w360-opportunity-rule-smoke.ts",
-    "smoke:w361-product-price": "tsx scripts/w361-product-price-smoke.ts"
+    "smoke:w361-product-price": "tsx scripts/w361-product-price-smoke.ts",
+    "smoke:w362-quotation-approval": "node scripts/w362-quotation-approval-http-smoke.mjs"
   },
   "dependencies": {
     "@micromatrix/shared": "workspace:*",

@@ -8,6 +8,7 @@ export type UserViewModule =
   | 'contact'
   | 'customer_pool'
   | 'opportunity'
+  | 'quote'
 
 export interface UserViewConditionVO {
   name: string
@@ -46,6 +47,7 @@ const RESOURCE_PATHS: Record<UserViewModule, string> = {
   contact: '/account/contact/view',
   customer_pool: '/pool/account/view',
   opportunity: '/opportunity/view',
+  quote: '/opportunity/quotation/view',
 }
 
 function resourcePath(module: string) {

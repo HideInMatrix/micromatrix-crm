@@ -115,3 +115,9 @@ export const OpportunityUserViewsController = createResourceUserViewsController(
   'OPPORTUNITY',
   ['menu:opportunity'],
 )
+export const OpportunityQuotationUserViewsController = createResourceUserViewsController(
+  'opportunity/quotation/view',
+  '报价单视图',
+  'OPPORTUNITY_QUOTATION',
+  ['menu:quote'],
+)

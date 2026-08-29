@@ -243,10 +243,19 @@ async function cleanupHistoricalCustomerSmokeData(tenantId) {
     select: { id: true },
   })
   const contactIds = contacts.map((item) => item.id)
+  const opportunities = await smokePrisma.opportunity.findMany({
+    where: { organizationId: tenantId, customerId: { in: ids } },
+    select: { id: true },
+  })
+  const opportunityIds = opportunities.map((item) => item.id)
 
   await smokePrisma.$transaction(async (tx) => {
+    if (opportunityIds.length) {
+      await tx.opportunityQuotation.deleteMany({
+        where: { organizationId: tenantId, opportunityId: { in: opportunityIds } },
+      })
+    }
     await tx.opportunity.deleteMany({ where: { organizationId: tenantId, customerId: { in: ids } } })
-    await tx.quote.deleteMany({ where: { tenantId, customerId: { in: ids } } })
     await tx.contract.deleteMany({ where: { tenantId, customerId: { in: ids } } })
     await tx.invoiceTitle.updateMany({
       where: { tenantId, customerId: { in: ids } },
@@ -2559,12 +2568,24 @@ check(
     (item) => item.title === '商机已转移给你' && item.content?.includes(`冒烟明细商机-${stamp}`),
   ),
 )
-const quoteFromOpp = await post('/quotes', manager.headers, {
+const quotationForm = await get('/opportunity/quotation/module/form', manager.headers)
+const quotationProduct = {
+  product: opportunityProduct.id,
+  productAmount: 30000,
+  discount: 100,
+  tax: 0,
+  amount: 30000,
+}
+const quoteFromOpp = await post('/opportunity/quotation/add', manager.headers, {
   name: `冒烟带入报价-${stamp}`,
-  customerId: converted.customerId,
   opportunityId: oppWithItems.id,
+  untilTime: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  amount: 30000,
+  moduleFields: [],
+  moduleFormConfigDTO: quotationForm,
+  products: [quotationProduct],
 })
-check('报价从商机带入明细', quoteFromOpp.totalAmount === 30000 && quoteFromOpp.items?.length === 1)
+check('报价从商机带入明细', quoteFromOpp.amount === 30000 && quoteFromOpp.products?.length === 1)
 
 // 5. 商机推进赢单
 const stageConfig = await get('/opportunity/stage/get', sales.headers)
@@ -2586,12 +2607,16 @@ check(
 )
 
 // 6. 交易链：报价→合同→回款→发票→订单
-const quote = await post('/quotes', manager.headers, {
+const quote = await post('/opportunity/quotation/add', manager.headers, {
   name: `冒烟报价-${stamp}`,
-  customerId: converted.customerId,
-  items: [{ productName: '冒烟服务', quantity: 1, unitPrice: 30000, discount: 100 }],
+  opportunityId: oppWithItems.id,
+  untilTime: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  amount: 30000,
+  moduleFields: [],
+  moduleFormConfigDTO: quotationForm,
+  products: [quotationProduct],
 })
-check('创建报价', quote.totalAmount === 30000)
+check('创建报价', quote.amount === 30000 && quote.products?.length === 1)
 const contract = await post('/contracts', manager.headers, {
   name: `冒烟合同-${stamp}`,
   customerId: converted.customerId,

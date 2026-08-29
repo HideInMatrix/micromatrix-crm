@@ -36,6 +36,8 @@
     "smoke:w360-opportunity-browser": "node scripts/w360-opportunity-browser-smoke.mjs",
     "smoke:w361-product-price": "pnpm --filter @micromatrix/api smoke:w361-product-price",
     "smoke:w361-product-price-browser": "node scripts/w361-product-price-browser-smoke.mjs",
+    "smoke:w362-quotation-browser": "node scripts/w362-quotation-browser-smoke.mjs",
+    "smoke:w362-quotation-module-settings-browser": "node scripts/w362-quotation-module-settings-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },

@@ -9,15 +9,15 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
   const events: string[] = []
   const day = (value: Date) => value.getDate()
   const prisma = {
-    quote: {
-      findMany: async ({ where }: { where: { validUntil: { gte: Date } } }) =>
-        day(where.validUntil.gte) === 27
+    opportunityQuotation: {
+      findMany: async ({ where }: { where: { untilTime: { gte: bigint } } }) =>
+        day(new Date(Number(where.untilTime.gte))) === 27
           ? [
               {
                 id: 'quote-a',
                 name: '年度报价',
-                ownerId: 'owner-a',
-                validUntil: new Date(2026, 7, 27),
+                createUser: 'owner-a',
+                untilTime: BigInt(new Date(2026, 7, 27).getTime()),
               },
             ]
           : [],
@@ -70,7 +70,7 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
 test('关闭事件或清空提前时间时不查询业务数据', async () => {
   let queried = false
   const prisma = {
-    quote: { findMany: async () => ((queried = true), []) },
+    opportunityQuotation: { findMany: async () => ((queried = true), []) },
     contract: { findMany: async () => ((queried = true), []) },
     receivablePlan: { findMany: async () => ((queried = true), []) },
   } as unknown as PrismaService
@@ -90,7 +90,7 @@ test('合同到期按 3/7 天和当天窗口分别发送且只查询执行中合
   const windows: Array<{ day: number; status: string }> = []
   const delivered: Array<{ event: string; title: string; content?: string }> = []
   const prisma = {
-    quote: { findMany: async () => [] },
+    opportunityQuotation: { findMany: async () => [] },
     receivablePlan: { findMany: async () => [] },
     contract: {
       findMany: async ({ where }: { where: { status: string; endAt: { gte: Date } } }) => {

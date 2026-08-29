@@ -191,7 +191,13 @@ export class ApprovalFlowConfigService {
     const formType = fromDbFormType(flow.formType)
     if (!formType) throw new NotFoundException('流程不存在')
     if (enabled) {
-      await this.validateRunnable(formType, flow.createExecute, this.approverInputs(flow))
+      await this.validateRunnable(
+        formType,
+        flow.createExecute,
+        flow.updateExecute,
+        flow.deleteExecute,
+        this.approverInputs(flow),
+      )
     }
     await this.prisma.approvalFlow.update({
       where: { id },
@@ -258,11 +264,17 @@ export class ApprovalFlowConfigService {
     nodes: FlowNodeDto[],
   ) {
     if (!dto.name.trim()) throw new BadRequestException('流程名称不能为空')
-    if (!dto.createExecute) {
-      throw new UnprocessableEntityException('W2.5 至少需要开启新建时审批')
-    }
-    if (dto.updateExecute || dto.deleteExecute) {
-      throw new UnprocessableEntityException('编辑和删除审批将在后续阶段接入')
+    if (formType === 'quotation') {
+      if (!dto.createExecute && !dto.updateExecute && !dto.deleteExecute) {
+        throw new UnprocessableEntityException('报价审批至少需要开启一种执行时机')
+      }
+    } else {
+      if (!dto.createExecute) {
+        throw new UnprocessableEntityException('当前业务对象至少需要开启新建时审批')
+      }
+      if (dto.updateExecute || dto.deleteExecute) {
+        throw new UnprocessableEntityException('当前业务对象的编辑和删除审批尚未接入')
+      }
     }
     if (
       dto.allowBatchProcess ||
@@ -284,19 +296,33 @@ export class ApprovalFlowConfigService {
       }
     }
     await this.validateReferences(user.tenantId, nodes)
-    if (dto.enabled) await this.validateRunnable(formType, dto.createExecute, nodes)
+    if (dto.enabled) {
+      await this.validateRunnable(
+        formType,
+        dto.createExecute,
+        dto.updateExecute,
+        dto.deleteExecute,
+        nodes,
+      )
+    }
   }
 
   private async validateRunnable(
     formType: SharedApprovalFormType,
     createExecute: boolean,
+    updateExecute: boolean,
+    deleteExecute: boolean,
     nodes: Array<ApprovalFlowNodeInput | FlowNodeDto>,
   ) {
     if (formType === 'invoice') {
       throw new ConflictException('发票审批业务链路尚未接入，当前流程只能保持停用')
     }
-    if (!createExecute || nodes.length === 0) {
-      throw new ConflictException('启用的流程至少需要一个新建时审批节点')
+    const hasExecuteTiming =
+      formType === 'quotation'
+        ? createExecute || updateExecute || deleteExecute
+        : createExecute
+    if (!hasExecuteTiming || nodes.length === 0) {
+      throw new ConflictException('启用的流程至少需要一个审批执行时机和有效审批节点')
     }
   }
 
@@ -528,8 +554,8 @@ export class ApprovalFlowConfigService {
       .filter((item) => item.module === 'order')
       .map((item) => item.targetId)
     if (quoteIds.length) {
-      await tx.quote.updateMany({
-        where: { tenantId, id: { in: quoteIds } },
+      await tx.opportunityQuotation.updateMany({
+        where: { organizationId: tenantId, id: { in: quoteIds } },
         data: { approvalStatus: 'NONE' },
       })
     }

@@ -57,33 +57,63 @@ export function lineAmount(item: Pick<LineItemVO, 'quantity' | 'unitPrice' | 'di
   return Math.round(item.quantity * item.unitPrice * (item.discount / 100) * 100) / 100
 }
 
-// ===== 报价 =====
+// ===== 报价（Cordys Opportunity Quotation） =====
 
-export type QuoteStatus = 'DRAFT' | 'CONFIRMED' | 'VOID'
+export type QuotationApprovalStatus =
+  | 'NONE'
+  | 'APPROVING'
+  | 'APPROVED'
+  | 'UNAPPROVED'
+  | 'REVOKED'
 
-export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
-  DRAFT: '草稿',
-  CONFIRMED: '已确认',
-  VOID: '已作废',
+export const QUOTATION_APPROVAL_STATUS_LABELS: Record<QuotationApprovalStatus, string> = {
+  NONE: '未提审',
+  APPROVING: '审批中',
+  APPROVED: '审批通过',
+  UNAPPROVED: '审批未通过',
+  REVOKED: '已撤销',
+}
+
+export interface QuotationModuleFieldValue {
+  fieldId: string
+  fieldValue?: unknown
+}
+
+export interface QuotationProductVO {
+  rowId: string
+  bizId: string
+  productId: string
+  productName?: string
+  priceId?: string | null
+  priceName?: string | null
+  productAmount: number
+  discount: number
+  tax: number
+  amount: number
+  values?: Record<string, unknown>
 }
 
 export interface QuoteVO {
   id: string
-  code: string
   name: string
-  customerId: string
-  customerName?: string
-  opportunityId: string | null
-  totalAmount: number
-  status: QuoteStatus
-  approvalStatus: string
-  validUntil: string | null
-  remark: string | null
-  ownerId: string | null
-  ownerName?: string | null
-  customData: Record<string, unknown>
-  items: LineItemVO[]
-  createdAt: string
+  opportunityId: string
+  opportunityName?: string
+  departmentId?: string | null
+  departmentName?: string | null
+  amount: number
+  approvalStatus: QuotationApprovalStatus
+  invalid: boolean
+  untilTime: number
+  createUser: string
+  updateUser: string
+  createTime: number
+  updateTime: number
+  createUserName?: string | null
+  updateUserName?: string | null
+  moduleFields: QuotationModuleFieldValue[]
+  products: QuotationProductVO[]
+  firstApproved?: boolean
+  approved: boolean
 }
 
 // ===== 合同 =====

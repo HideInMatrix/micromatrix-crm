@@ -962,3 +962,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 数据库验收：正式 `default` **43/43 migrations**；隔离空库从零 **43/43** 全量 replay + Seed 连跑两次成功；SQL 直接确认 `productPic=picture`、price product/amount `required:true`、SKU/税点元数据存在。
 - 最终验收：W3.6.1 Service Smoke 全绿、Browser **19/19**、根 Smoke **224/224**、Rules **114/114**、全仓 typecheck/ESLint/production build 全绿。旧 `/products` API、旧 Product 主字段和 `ON/OFF` 残留扫描均为 0。
 - 报价引用价格表后的删除保护留给 W3.6.2 报价直接 Field/Blob 真相源关闭；不为提前变绿重新引入旧 Quote 兼容逻辑。
+
+---
+
+## 47. W3.6.2 报价直接模型、审批与交易链（2026-08-29）
+
+- 按 Cordys `OpportunityQuotationController/Service/FieldService/UserViewController`、最终 DDL、前端 quotation table/detail/PDF 和 requrls 重建报价域；旧 `Quote/QuoteItem/QuoteStatus`、`customerId/ownerId/deptId/customData` 主数据假设和旧 `/quotes` REST 契约全部删除。
+- Prisma 新增 `opportunity_quotation`、`opportunity_quotation_field/blob`、`opportunity_quotation_snapshot`；产品明细按 SUB_TABLE 的 `refSubId/rowId/bizId` 保存，客户关系从商机取得，DataScope 按 `createUser` 所属部门执行。正式库最终 **46/46 migrations**。
+- 通用 Approval 按 Cordys `@HitApproval` 补齐 quotation CREATE/UPDATE/DELETE：CREATE 自动提审；UPDATE 保存 `business_snapshot`，驳回/撤回恢复主字段、动态字段、产品子表与报价 Snapshot；DELETE 审批通过后才物理删除。`approved` 作为历史审批事实位，通过后不因撤回/驳回清零。
+- `/opportunity/quotation/*`、`OPPORTUNITY_QUOTATION` User View、作废/批量作废、审批/批量审批、Tab、Download 日志均完成；PDF 由 Web 按冻结 Snapshot 生成并触发打印。商机→报价 `fromOpportunity`、报价→合同 `fromQuote` 深链均通过真实 Browser。
+- W3.6.1 延期的价格表引用保护在本阶段关闭：`ProductPriceService.delete()` 直接检查报价 Field/Blob，命中返回 Cordys“价格表已被报价单关联，无法删除！”；报价删除后价格表可再次删除，HTTP Smoke 已覆盖。
+- `/system/modules` 商机卡“报价表单设置”保持 REAL，独立 Browser **5/5** 验证真实进入 `module=quote`，并确认报价、商机、联系人、报价日期、有效期、累计金额等 direct 字段存在，旧报价单号/报价状态字段不存在。
+- 最终验收：报价业务 Browser **28/28**、审批 HTTP Smoke 全绿、根 Smoke **224/224**、Rules **114/114**；隔离空库 **46/46** 全量 replay + Seed 连跑两次成功；全仓 typecheck、ESLint、Shared/API/Web production build 全绿；`prisma.quote` 与 `QuoteStatus` 运行时残留为 0。
+- W3.6.2 正式关闭；下一执行指针为 **W3.6.3 合同 4.1：先读 Cordys 合同源码/DDL/API/页面并建立证据矩阵**。

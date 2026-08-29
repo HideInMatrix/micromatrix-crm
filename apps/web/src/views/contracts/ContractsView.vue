@@ -6,12 +6,14 @@ import {
   type FieldVO,
   type LineItemVO,
 } from '@micromatrix/shared'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { listCustomers } from '@/api/customers'
 import { contractApi, quoteApi } from '@/api/deal'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
+import { opportunityApi } from '@/api/sales'
 import ContractDetailDrawer from '@/components/ContractDetailDrawer.vue'
 import LineItemsEditor from '@/components/LineItemsEditor.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
@@ -21,6 +23,7 @@ import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
 
@@ -74,11 +77,39 @@ async function loadQuotes(customerId?: string) {
     quoteOptions.value = []
     return
   }
-  const { data } = await quoteApi.list({ page: 1, pageSize: 50, customerId, status: 'CONFIRMED' })
-  quoteOptions.value = data.items.map((q) => ({
+  const { data } = await quoteApi.page({
+    current: 1,
+    pageSize: 50,
+    filters: [
+      { key: 'approved', op: 'eq', value: true },
+      { key: 'invalid', op: 'eq', value: false },
+    ],
+  })
+  quoteOptions.value = data.list.map((q) => ({
     id: q.id,
-    name: `${q.code} ${q.name}（¥${q.totalAmount}）`,
+    name: `${q.name}（¥${q.amount}）`,
   }))
+}
+
+async function openFromQuote(quoteId: string) {
+  try {
+    const { data: quote } = await quoteApi.detail(quoteId)
+    const { data: opportunity } = await opportunityApi.get(quote.opportunityId)
+    editingId.value = null
+    formModel.value = {}
+    formCustomerId.value = opportunity.customerId || undefined
+    fromQuoteId.value = quote.id
+    lineItems.value = []
+    if (opportunity.customerId) {
+      customerOptions.value = [
+        { id: opportunity.customerId, name: opportunity.customerName ?? opportunity.customerId },
+      ]
+    }
+    quoteOptions.value = [{ id: quote.id, name: `${quote.name}（¥${quote.amount}）` }]
+    dialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 function openCreate() {
@@ -201,6 +232,15 @@ function openDetail(row: ContractVO) {
   detailId.value = row.id
   detailVisible.value = true
 }
+
+watch(
+  () => route.query.fromQuote,
+  (value) => {
+    const quoteId = typeof value === 'string' ? value : ''
+    if (quoteId) void openFromQuote(quoteId)
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   const [{ data }] = await Promise.all([metadataApi.fields('contract'), fieldRefs.load()])
@@ -374,7 +414,7 @@ onMounted(async () => {
               <el-option v-for="c in customerOptions" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!editingId" label="从已确认报价创建（可选，自动复制明细）">
+          <el-form-item v-if="!editingId" label="从已审批报价创建（可选，自动复制明细）">
             <el-select v-model="fromQuoteId" clearable placeholder="选择报价单" class="w-full">
               <el-option v-for="q in quoteOptions" :key="q.id" :label="q.name" :value="q.id" />
             </el-select>

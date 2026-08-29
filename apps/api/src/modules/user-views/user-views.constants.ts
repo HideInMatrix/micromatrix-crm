@@ -5,6 +5,7 @@ export const USER_VIEW_RESOURCE_TYPES = {
   contact: 'CUSTOMER_CONTACT',
   customer_pool: 'CUSTOMER_POOL',
   opportunity: 'OPPORTUNITY',
+  quote: 'OPPORTUNITY_QUOTATION',
 } as const
 
 export type UserViewModule = keyof typeof USER_VIEW_RESOURCE_TYPES
@@ -36,5 +37,11 @@ export const USER_VIEW_RESOURCE_ROUTES: Array<{
     resourceType: 'OPPORTUNITY',
     path: 'opportunity/view',
     label: '商机视图',
+  },
+  {
+    module: 'quote',
+    resourceType: 'OPPORTUNITY_QUOTATION',
+    path: 'opportunity/quotation/view',
+    label: '报价单视图',
   },
 ]

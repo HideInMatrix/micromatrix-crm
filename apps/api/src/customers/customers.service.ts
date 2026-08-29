@@ -1956,8 +1956,11 @@ export class CustomersService {
       this.prisma.opportunity.count({
         where: { organizationId: user.tenantId, customerId: { in: context.sourceIds } },
       }),
-      this.prisma.quote.count({
-        where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
+      this.prisma.opportunityQuotation.count({
+        where: {
+          organizationId: user.tenantId,
+          opportunity: { customerId: { in: context.sourceIds } },
+        },
       }),
       this.prisma.contract.count({
         where: { tenantId: user.tenantId, customerId: { in: context.sourceIds } },
@@ -2097,10 +2100,6 @@ export class CustomersService {
       })
       await tx.opportunity.updateMany({
         where: { organizationId: user.tenantId, customerId: { in: sourceIds } },
-        data: { customerId: dto.toMergeId },
-      })
-      await tx.quote.updateMany({
-        where: { tenantId: user.tenantId, customerId: { in: sourceIds } },
         data: { customerId: dto.toMergeId },
       })
       await tx.contract.updateMany({
@@ -3014,7 +3013,7 @@ export class CustomersService {
 
   /**
    * Cordys 在删除客户前会阻止仍被 Contact / Opportunity 引用的客户。
-   * MicroMatrix 另外有 Quote / Contract 直接外键，因此一起保护，避免把业务拒绝退化成数据库 FK 500。
+   * 报价通过商机关联客户；Contract 仍有旧直接外键，因此一起保护，避免把业务拒绝退化成数据库 FK 500。
    */
   private async assertCustomersDeletable(tenantId: string, ids: string[]) {
     const [contacts, opportunities, quotes, contracts] = await Promise.all([
@@ -3022,7 +3021,9 @@ export class CustomersService {
         where: { organizationId: tenantId, customerId: { in: ids } },
       }),
       this.prisma.opportunity.count({ where: { organizationId: tenantId, customerId: { in: ids } } }),
-      this.prisma.quote.count({ where: { tenantId, customerId: { in: ids } } }),
+      this.prisma.opportunityQuotation.count({
+        where: { organizationId: tenantId, opportunity: { customerId: { in: ids } } },
+      }),
       this.prisma.contract.count({ where: { tenantId, customerId: { in: ids } } }),
     ])
     if (contacts + opportunities + quotes + contracts > 0) {

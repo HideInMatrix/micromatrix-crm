@@ -177,6 +177,25 @@ export class ProductPriceService {
 
   async delete(user: AuthUser, id: string) {
     const price = await this.ensureExists(user, id)
+    const [quotationField, quotationBlobField] = await Promise.all([
+      this.prisma.opportunityQuotationField.findFirst({
+        where: {
+          fieldValue: id,
+          resource: { organizationId: user.tenantId },
+        },
+        select: { id: true },
+      }),
+      this.prisma.opportunityQuotationFieldBlob.findFirst({
+        where: {
+          fieldValue: id,
+          resource: { organizationId: user.tenantId },
+        },
+        select: { id: true },
+      }),
+    ])
+    if (quotationField || quotationBlobField) {
+      throw new BadRequestException('价格表已被报价单关联，无法删除！')
+    }
     await this.prisma.productPrice.delete({ where: { id: price.id } })
     return { id: price.id, name: price.name }
   }

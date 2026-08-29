@@ -102,13 +102,40 @@ export const productPriceApi = {
 // ===== 报价 =====
 
 export const quoteApi = {
-  list: (params: PageQuery & { status?: string; customerId?: string; filters?: string }) =>
-    http.get<PaginatedResult<QuoteVO>>('/quotes', { params }),
-  create: (data: Record<string, unknown>) => http.post<QuoteVO>('/quotes', data),
-  update: (id: string, data: Record<string, unknown>) => http.patch<QuoteVO>(`/quotes/${id}`, data),
-  confirm: (id: string) => http.post(`/quotes/${id}/confirm`),
-  void: (id: string) => http.post(`/quotes/${id}/void`),
-  remove: (id: string) => http.delete(`/quotes/${id}`),
+  moduleForm: () => http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    '/opportunity/quotation/module/form',
+  ),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    opportunityId?: string
+    viewId?: string
+    filters?: unknown[]
+  }) =>
+    http.post<{ list: QuoteVO[]; total: number; current: number; pageSize: number }>(
+      '/opportunity/quotation/page',
+      data,
+    ),
+  detail: (id: string) => http.get<QuoteVO>(`/opportunity/quotation/get/${id}`),
+  snapshot: (id: string) => http.get<Record<string, unknown>>(`/opportunity/quotation/get/snapshot/${id}`),
+  snapshotForm: (id: string) => http.get<Record<string, unknown>>(`/opportunity/quotation/module/form/snapshot/${id}`),
+  create: (data: Record<string, unknown>) => http.post<QuoteVO>('/opportunity/quotation/add', data),
+  update: (data: Record<string, unknown>) => http.post<QuoteVO>('/opportunity/quotation/update', data),
+  revoke: (id: string) => http.get<string>(`/opportunity/quotation/revoke/${id}`),
+  void: (id: string) => http.get(`/opportunity/quotation/voided/${id}`),
+  batchVoid: (ids: string[]) => http.post<{ success: number; fail: number; skip: number; errorMessages?: string }>(
+    '/opportunity/quotation/batch/voided',
+    { ids },
+  ),
+  approve: (data: { id: string; approvalStatus: string }) => http.post<string>('/opportunity/quotation/approve', data),
+  batchApprove: (data: { ids: string[]; approvalStatus: string }) =>
+    http.post<{ success: number; fail: number; skip: number }>('/opportunity/quotation/batch/approve', data),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
+    http.post('/opportunity/quotation/batch/update', data),
+  remove: (id: string) => http.get<{ id: string; name: string; pendingApproval: boolean }>(`/opportunity/quotation/delete/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/opportunity/quotation/tab'),
+  download: (id: string) => http.get<{ id: string; name: string }>(`/opportunity/quotation/download/${id}`),
 }
 
 // ===== 合同 =====

@@ -65,6 +65,41 @@ export class DataScopeService {
     }))
   }
 
+  /** Cordys 报价等资源按 create_user 所属部门做数据范围，而不是伪造 owner/dept 主表字段。 */
+  async directCreatorFilter(
+    user: AuthUser,
+    permission: string,
+  ): Promise<{ createUser?: string | { in: string[] } }> {
+    const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return { createUser: '__permission_scope_denied__' }
+    if (scope.all) return {}
+    const userIds = new Set([user.id])
+    if (scope.deptIds.length) {
+      const users = await this.prisma.user.findMany({
+        where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: scope.deptIds } },
+        select: { id: true },
+      })
+      users.forEach((item) => userIds.add(item.id))
+    }
+    return userIds.size === 1 ? { createUser: user.id } : { createUser: { in: [...userIds] } }
+  }
+
+  async matchesDirectCreator(user: AuthUser, createUser: string | null, permission: string) {
+    const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return false
+    if (scope.all || createUser === user.id) return true
+    if (!createUser || !scope.deptIds.length) return false
+    return !!(await this.prisma.user.findFirst({
+      where: {
+        id: createUser,
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
+        deptId: { in: scope.deptIds },
+      },
+      select: { id: true },
+    }))
+  }
+
   /** Cordys 语义：筛出拥有当前权限的角色，再对这些角色的数据范围取并集。 */
   async resolveScope(user: AuthUser, permission: string) {
     const roles = user.roles.filter((role) => hasPermission(role.permissions, permission))
