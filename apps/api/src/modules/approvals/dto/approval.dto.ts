@@ -18,7 +18,7 @@ import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 export const APPROVER_TYPES = ['USER', 'ROLE', 'DEPT_LEADER', 'DIRECT_LEADER'] as const
 export const APPROVAL_MODES = ['ALL', 'ANY'] as const
 export const APPROVAL_FORM_TYPES = ['quotation', 'contract', 'invoice', 'order'] as const
-export const APPROVAL_MODULES = ['quote', 'contract', 'order'] as const
+export const APPROVAL_MODULES = ['quote', 'contract', 'invoice', 'order'] as const
 export const DUPLICATE_APPROVER_RULES = ['FIRST_ONLY', 'SEQUENTIAL_ALL', 'EACH'] as const
 
 export class FlowNodeDto {

@@ -84,7 +84,7 @@ const drawerTitle = computed(() => {
   if (props.mode === 'edit') return `编辑流程${detail.value ? ` · ${detail.value.number}` : ''}`
   return `流程详情${detail.value ? ` · ${detail.value.number}` : ''}`
 })
-const invoiceSelected = computed(() => form.formType === 'invoice')
+const supportsExtendedTiming = computed(() => form.formType !== 'order')
 const amountGte = computed<number | undefined>({
   get: () => form.condition?.amountGte,
   set: (value) => {
@@ -154,7 +154,10 @@ watch(visible, (value) => value && initialize())
 function setFormType(value: ApprovalFormType) {
   form.formType = value
   if (!form.name) form.name = `${APPROVAL_FORM_TYPE_LABELS[value]}审批流程`
-  if (value === 'invoice') form.enabled = false
+  if (value === 'order') {
+    form.updateExecute = false
+    form.deleteExecute = false
+  }
 }
 
 function validate() {
@@ -305,16 +308,6 @@ function formatDate(value?: string | null) {
               />
             </el-form-item>
 
-            <el-alert
-              v-if="invoiceSelected"
-              type="warning"
-              :closable="false"
-              show-icon
-              class="mb-5"
-            >
-              发票审批业务对象及运行时尚未接入。当前可保存配置底座，但不能启用流程。
-            </el-alert>
-
             <el-form-item label="简化入口条件">
               <div class="flex items-center gap-3">
                 <span class="text-sm">单据金额 ≥</span>
@@ -338,17 +331,17 @@ function formatDate(value?: string | null) {
                 <div><strong>新建时执行</strong><small>单据提交确认时触发审批</small></div>
                 <el-switch v-model="form.createExecute" :disabled="readonly" />
               </div>
-              <div class="timing-item is-disabled">
+              <div class="timing-item" :class="{ 'is-disabled': !supportsExtendedTiming }">
                 <div>
-                  <strong>编辑时执行</strong><small>运行时与业务状态回写将在后续阶段接入</small>
+                  <strong>编辑时执行</strong><small>编辑保存后进入审批，驳回或撤回时恢复编辑前快照</small>
                 </div>
-                <el-switch v-model="form.updateExecute" disabled />
+                <el-switch v-model="form.updateExecute" :disabled="readonly || !supportsExtendedTiming" />
               </div>
-              <div class="timing-item is-disabled">
+              <div class="timing-item" :class="{ 'is-disabled': !supportsExtendedTiming }">
                 <div>
-                  <strong>删除时执行</strong><small>删除拦截与恢复语义将在后续阶段接入</small>
+                  <strong>删除时执行</strong><small>命中流程时先进入审批，通过后才真正删除</small>
                 </div>
-                <el-switch v-model="form.deleteExecute" disabled />
+                <el-switch v-model="form.deleteExecute" :disabled="readonly || !supportsExtendedTiming" />
               </div>
             </div>
 
@@ -356,7 +349,7 @@ function formatDate(value?: string | null) {
               <span class="font-medium">流程状态</span>
               <el-switch
                 v-model="form.enabled"
-                :disabled="readonly || invoiceSelected"
+                :disabled="readonly"
                 active-text="启用"
                 inactive-text="停用"
               />

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ApprovalFormType } from '../../generated/prisma/client'
 import {
+  FORM_TYPE_TO_MODULE,
+  MODULE_TO_FORM_TYPE,
   flowNodesEqual,
   fromDbFormType,
   normalizeFlowNodes,
@@ -13,6 +15,8 @@ test('流程表单类型只在受支持的配置类型与数据库枚举间映�
   assert.equal(toDbFormType('contract'), ApprovalFormType.CONTRACT)
   assert.equal(toDbFormType('invoice'), ApprovalFormType.INVOICE)
   assert.equal(toDbFormType('order'), ApprovalFormType.ORDER)
+  assert.equal(FORM_TYPE_TO_MODULE.invoice, 'invoice')
+  assert.equal(MODULE_TO_FORM_TYPE.invoice, 'invoice')
   assert.equal(fromDbFormType(ApprovalFormType.RECEIVABLE_RECORD_LEGACY), null)
 })
 

@@ -23,10 +23,24 @@ export type ResourceFieldType =
   | 'productPrice'
   | 'quotation'
   | 'contract'
+  | 'contractPaymentPlan'
+  | 'contractPaymentRecord'
+  | 'invoice'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 interface ResourceConfig {
-  formKey: 'lead' | 'customer' | 'contact' | 'opportunity' | 'product' | 'price' | 'quote' | 'contract'
+  formKey:
+    | 'lead'
+    | 'customer'
+    | 'contact'
+    | 'opportunity'
+    | 'product'
+    | 'price'
+    | 'quote'
+    | 'contract'
+    | 'contractPaymentPlan'
+    | 'contractPaymentRecord'
+    | 'invoice'
   resourceTable:
     | 'clue'
     | 'customer'
@@ -36,6 +50,9 @@ interface ResourceConfig {
     | 'product_price'
     | 'opportunity_quotation'
     | 'contract'
+    | 'contract_payment_plan'
+    | 'contract_payment_record'
+    | 'contract_invoice'
   normalTable:
     | 'clue_field'
     | 'customer_field'
@@ -45,6 +62,9 @@ interface ResourceConfig {
     | 'product_price_field'
     | 'opportunity_quotation_field'
     | 'contract_field'
+    | 'contract_payment_plan_field'
+    | 'contract_payment_record_field'
+    | 'contract_invoice_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
@@ -54,6 +74,9 @@ interface ResourceConfig {
     | 'product_price_field_blob'
     | 'opportunity_quotation_field_blob'
     | 'contract_field_blob'
+    | 'contract_payment_plan_field_blob'
+    | 'contract_payment_record_field_blob'
+    | 'contract_invoice_field_blob'
 }
 
 interface ValidatedFieldValue {
@@ -111,6 +134,24 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'contract',
     normalTable: 'contract_field',
     blobTable: 'contract_field_blob',
+  },
+  contractPaymentPlan: {
+    formKey: 'contractPaymentPlan',
+    resourceTable: 'contract_payment_plan',
+    normalTable: 'contract_payment_plan_field',
+    blobTable: 'contract_payment_plan_field_blob',
+  },
+  contractPaymentRecord: {
+    formKey: 'contractPaymentRecord',
+    resourceTable: 'contract_payment_record',
+    normalTable: 'contract_payment_record_field',
+    blobTable: 'contract_payment_record_field_blob',
+  },
+  invoice: {
+    formKey: 'invoice',
+    resourceTable: 'contract_invoice',
+    normalTable: 'contract_invoice_field',
+    blobTable: 'contract_invoice_field_blob',
   },
 }
 
@@ -506,8 +547,23 @@ export class ResourceFieldValueService {
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
-    else
+    else if (resourceType === 'contract')
       resource = await tx.contract.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else if (resourceType === 'contractPaymentPlan')
+      resource = await tx.contractPaymentPlan.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else if (resourceType === 'contractPaymentRecord')
+      resource = await tx.contractPaymentRecord.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else
+      resource = await tx.contractInvoice.findFirst({
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
@@ -564,11 +620,26 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.opportunityQuotationFieldBlob.findFirst({ where, select: { id: true } })
           : await client.opportunityQuotationField.findFirst({ where, select: { id: true } })
-    else
+    else if (resourceType === 'contract')
       repeated =
         item.storage === 'blob'
           ? await client.contractFieldBlob.findFirst({ where, select: { id: true } })
           : await client.contractField.findFirst({ where, select: { id: true } })
+    else if (resourceType === 'contractPaymentPlan')
+      repeated =
+        item.storage === 'blob'
+          ? await client.contractPaymentPlanFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.contractPaymentPlanField.findFirst({ where, select: { id: true } })
+    else if (resourceType === 'contractPaymentRecord')
+      repeated =
+        item.storage === 'blob'
+          ? await client.contractPaymentRecordFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.contractPaymentRecordField.findFirst({ where, select: { id: true } })
+    else
+      repeated =
+        item.storage === 'blob'
+          ? await client.contractInvoiceFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.contractInvoiceField.findFirst({ where, select: { id: true } })
     if (repeated) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
@@ -614,10 +685,25 @@ export class ResourceFieldValueService {
         tx.opportunityQuotationField.deleteMany({ where }),
         tx.opportunityQuotationFieldBlob.deleteMany({ where }),
       ])
-    else
+    else if (resourceType === 'contract')
       await Promise.all([
         tx.contractField.deleteMany({ where }),
         tx.contractFieldBlob.deleteMany({ where }),
+      ])
+    else if (resourceType === 'contractPaymentPlan')
+      await Promise.all([
+        tx.contractPaymentPlanField.deleteMany({ where }),
+        tx.contractPaymentPlanFieldBlob.deleteMany({ where }),
+      ])
+    else if (resourceType === 'contractPaymentRecord')
+      await Promise.all([
+        tx.contractPaymentRecordField.deleteMany({ where }),
+        tx.contractPaymentRecordFieldBlob.deleteMany({ where }),
+      ])
+    else
+      await Promise.all([
+        tx.contractInvoiceField.deleteMany({ where }),
+        tx.contractInvoiceFieldBlob.deleteMany({ where }),
       ])
   }
 
@@ -659,9 +745,18 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'quotation') {
       if (normalData.length) await tx.opportunityQuotationField.createMany({ data: normalData })
       if (blobData.length) await tx.opportunityQuotationFieldBlob.createMany({ data: blobData })
-    } else {
+    } else if (resourceType === 'contract') {
       if (normalData.length) await tx.contractField.createMany({ data: normalData })
       if (blobData.length) await tx.contractFieldBlob.createMany({ data: blobData })
+    } else if (resourceType === 'contractPaymentPlan') {
+      if (normalData.length) await tx.contractPaymentPlanField.createMany({ data: normalData })
+      if (blobData.length) await tx.contractPaymentPlanFieldBlob.createMany({ data: blobData })
+    } else if (resourceType === 'contractPaymentRecord') {
+      if (normalData.length) await tx.contractPaymentRecordField.createMany({ data: normalData })
+      if (blobData.length) await tx.contractPaymentRecordFieldBlob.createMany({ data: blobData })
+    } else {
+      if (normalData.length) await tx.contractInvoiceField.createMany({ data: normalData })
+      if (blobData.length) await tx.contractInvoiceFieldBlob.createMany({ data: blobData })
     }
   }
 
@@ -713,9 +808,23 @@ export class ResourceFieldValueService {
         client.opportunityQuotationField.findMany({ where, select }),
         client.opportunityQuotationFieldBlob.findMany({ where, select }),
       ])
+    if (resourceType === 'contract')
+      return Promise.all([
+        client.contractField.findMany({ where, select }),
+        client.contractFieldBlob.findMany({ where, select }),
+      ])
+    if (resourceType === 'contractPaymentPlan')
+      return Promise.all([
+        client.contractPaymentPlanField.findMany({ where, select }),
+        client.contractPaymentPlanFieldBlob.findMany({ where, select }),
+      ])
+    if (resourceType === 'contractPaymentRecord') return Promise.all([
+      client.contractPaymentRecordField.findMany({ where, select }),
+      client.contractPaymentRecordFieldBlob.findMany({ where, select }),
+    ])
     return Promise.all([
-      client.contractField.findMany({ where, select }),
-      client.contractFieldBlob.findMany({ where, select }),
+      client.contractInvoiceField.findMany({ where, select }),
+      client.contractInvoiceFieldBlob.findMany({ where, select }),
     ])
   }
 

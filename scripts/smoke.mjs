@@ -257,10 +257,6 @@ async function cleanupHistoricalCustomerSmokeData(tenantId) {
     }
     await tx.opportunity.deleteMany({ where: { organizationId: tenantId, customerId: { in: ids } } })
     await tx.contract.deleteMany({ where: { organizationId: tenantId, customerId: { in: ids } } })
-    await tx.invoiceTitle.updateMany({
-      where: { tenantId, customerId: { in: ids } },
-      data: { customerId: null },
-    })
     await tx.followUpRecord.deleteMany({
       where: { tenantId, targetType: 'customer', targetId: { in: ids } },
     })
@@ -295,6 +291,13 @@ async function cleanupHistoricalProductSmokeData(tenantId) {
   return result.count
 }
 
+async function cleanupHistoricalInvoiceSmokeData(tenantId) {
+  const result = await smokePrisma.businessTitle.deleteMany({
+    where: { organizationId: tenantId, name: { startsWith: '冒烟开票抬头-' } },
+  })
+  return result.count
+}
+
 console.log('== 微矩阵 CRM 全链路冒烟 ==')
 
 // 1. 健康与登录
@@ -310,6 +313,8 @@ const historicalCustomerSmokeCount = await cleanupHistoricalCustomerSmokeData(ad
 check('历史客户 Smoke 数据已隔离清理', historicalCustomerSmokeCount >= 0)
 const historicalProductSmokeCount = await cleanupHistoricalProductSmokeData(admin.user.tenantId)
 check('历史产品 Smoke 数据已隔离清理', historicalProductSmokeCount >= 0)
+const historicalInvoiceSmokeCount = await cleanupHistoricalInvoiceSmokeData(admin.user.tenantId)
+check('历史发票 Smoke 数据已隔离清理', historicalInvoiceSmokeCount >= 0)
 const stamp = Date.now().toString(36)
 const phoneSuffix = String(Date.now()).slice(-8)
 
@@ -384,8 +389,8 @@ const invoiceFlowPayload = {
   description: 'W2.5 临时配置',
   enabled: false,
   createExecute: true,
-  updateExecute: false,
-  deleteExecute: false,
+  updateExecute: true,
+  deleteExecute: true,
   submitterCanRevoke: true,
   allowBatchProcess: false,
   allowWithdraw: false,
@@ -410,11 +415,14 @@ const invoiceFlowResponse = await request(
 )
 const invoiceFlow = await invoiceFlowResponse.json()
 check(
-  'W2.5 发票可建立停用配置底座并生成编号与 V1',
+  'W2.5 发票审批已接入运行时并支持三执行时机',
   invoiceFlowResponse.ok &&
     invoiceFlow.number?.startsWith('INV-APV-') &&
     invoiceFlow.currentVersion === 1 &&
-    invoiceFlow.runtimeReady === false,
+    invoiceFlow.runtimeReady === true &&
+    invoiceFlow.createExecute === true &&
+    invoiceFlow.updateExecute === true &&
+    invoiceFlow.deleteExecute === true,
 )
 const enableInvoiceFlow = await request(
   'PATCH',
@@ -422,7 +430,7 @@ const enableInvoiceFlow = await request(
   processAdmin.headers,
   { enabled: true },
 )
-check('W2.5 未接入发票运行时的流程不能启用', enableInvoiceFlow.status === 409)
+check('W2.5 发票审批流程可真实启用', enableInvoiceFlow.ok)
 
 const { formType: _invoiceFormType, ...invoiceUpdatePayload } = invoiceFlowPayload
 invoiceUpdatePayload.name = `${invoiceFlowPayload.name}-V2`
@@ -2633,16 +2641,24 @@ const contract = await post('/contract/add', manager.headers, {
   })),
 })
 check('报价产品带入 direct 合同', contract.amount === 30000 && contract.products?.length === 1)
-const plan = await post('/contracts/receivable-plans', manager.headers, {
+const plan = await post('/contract/payment-plan/add', manager.headers, {
+  name: `冒烟回款计划-${stamp}`,
   contractId: contract.id,
-  amount: 30000,
-  dueDate: '2026-12-31',
+  owner: manager.user.id,
+  planAmount: 30000,
+  planEndTime: new Date('2026-12-31T00:00:00').getTime(),
 })
-const paymentRecord = await post('/contracts/receivable-records', manager.headers, {
+const paymentRecord = await post('/contract/payment-record/add', manager.headers, {
+  name: `冒烟回款记录-${stamp}`,
   contractId: contract.id,
-  planId: plan.id,
-  amount: 30000,
-  receivedAt: new Date().toISOString().slice(0, 10),
+  paymentPlanId: plan.id,
+  owner: manager.user.id,
+  recordAmount: 30000,
+  recordEndTime: Date.now(),
+  moduleFields: [
+    { fieldId: 'contractPaymentRecordBank', fieldValue: '1' },
+    { fieldId: 'contractPaymentRecordBankNo', fieldValue: '1' },
+  ],
 })
 const contractDetail = await get(`/contract/get/${contract.id}`, manager.headers)
 check('回款计入合同汇总', contractDetail.paidAmount === 30000)
@@ -2653,18 +2669,38 @@ const order = await post('/orders', manager.headers, {
 })
 check('创建订单', Boolean(order.code))
 
-const invoiceTitle = await post('/contracts/invoice-titles', manager.headers, {
-  customerId: converted.customerId,
+const invoiceTitle = await post('/contract/business-title/add', manager.headers, {
   name: `冒烟开票抬头-${stamp}`,
-  taxNo: `TAX${stamp}`,
+  type: 'THIRD_PARTY',
+  identificationNumber: `91310000${String(Date.now()).slice(-10)}`,
+  openingBank: '中国银行上海分行',
+  bankAccount: '6222000000000000000',
+  registrationAddress: '上海市浦东新区测试路1号',
+  phoneNumber: '021-12345678',
+  registeredCapital: '1000万人民币',
+  companySize: '100-499人',
+  registrationNumber: `REG-${stamp}`,
+  province: '上海市',
+  city: '上海市',
+  scale: '中型',
+  industry: '软件与信息服务',
+  remark: 'root smoke',
 })
-const invoice = await post('/contracts/invoices', manager.headers, {
+const invoice = await post('/invoice/add', manager.headers, {
+  name: `冒烟开票申请-${stamp}`,
   contractId: contract.id,
-  titleId: invoiceTitle.id,
+  owner: manager.user.id,
+  businessTitleId: invoiceTitle.id,
   amount: 30000,
-  type: '增值税普通发票',
+  invoiceType: '增值税普通发票',
+  taxRate: 0,
+  moduleFields: [],
 })
 check('R5 客户360 测试发票创建', Boolean(invoice.id))
+const legacyInvoiceList = await request('GET', `/contracts/${contract.id}/invoices`, manager.headers)
+check('R5 旧合同发票路由已退出', legacyInvoiceList.status === 404)
+const legacyTitleList = await request('GET', '/contracts/invoice-titles', manager.headers)
+check('R5 旧工商抬头路由已退出', legacyTitleList.status === 404)
 
 const [r5OpportunityRows, r5ContractRows, r5PlanRows, r5PaymentRows, r5InvoiceRows, r5OrderRows] =
   await Promise.all([

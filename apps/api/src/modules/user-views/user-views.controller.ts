@@ -128,3 +128,24 @@ export const ContractUserViewsController = createResourceUserViewsController(
   'CONTRACT',
   ['menu:contract'],
 )
+
+export const ContractPaymentPlanUserViewsController = createResourceUserViewsController(
+  'contract/payment-plan/view',
+  '回款计划视图',
+  'CONTRACT_PAYMENT_PLAN',
+  ['CONTRACT_PAYMENT_PLAN:READ'],
+)
+
+export const ContractPaymentRecordUserViewsController = createResourceUserViewsController(
+  'contract/payment-record/view',
+  '回款记录视图',
+  'CONTRACT_PAYMENT_RECORD',
+  ['CONTRACT_PAYMENT_RECORD:READ'],
+)
+
+export const ContractInvoiceUserViewsController = createResourceUserViewsController(
+  'invoice/view',
+  '发票视图',
+  'CONTRACT_INVOICE',
+  ['CONTRACT_INVOICE:READ'],
+)

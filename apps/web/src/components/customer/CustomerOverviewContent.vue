@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import {
-  INVOICE_STATUS_LABELS,
+  CONTRACT_INVOICE_APPROVAL_STATUS_LABELS,
   ORDER_STATUS_LABELS,
-  RECEIVABLE_PLAN_STATUS_LABELS,
+  CONTRACT_PAYMENT_PLAN_STATUS_LABELS,
   isCustomFieldKey,
   type Customer360ContractVO,
+  type Customer360ContractPaymentPlanVO,
+  type Customer360ContractPaymentRecordVO,
   type Customer360InvoiceVO,
   type Customer360OpportunityVO,
   type Customer360OrderVO,
-  type Customer360ReceivablePlanVO,
-  type Customer360ReceivableRecordVO,
   type Customer360Resource,
   type CustomerVO,
   type FieldVO,
@@ -100,40 +100,40 @@ const teamLoading = ref(false)
 const resourcePage = reactive<Record<Customer360Resource, number>>({
   opportunities: 1,
   contracts: 1,
-  receivablePlans: 1,
-  receivableRecords: 1,
+  contractPaymentPlans: 1,
+  contractPaymentRecords: 1,
   invoices: 1,
   orders: 1,
 })
 const resourceTotal = reactive<Record<Customer360Resource, number>>({
   opportunities: 0,
   contracts: 0,
-  receivablePlans: 0,
-  receivableRecords: 0,
+  contractPaymentPlans: 0,
+  contractPaymentRecords: 0,
   invoices: 0,
   orders: 0,
 })
 const resourceLoading = reactive<Record<Customer360Resource, boolean>>({
   opportunities: false,
   contracts: false,
-  receivablePlans: false,
-  receivableRecords: false,
+  contractPaymentPlans: false,
+  contractPaymentRecords: false,
   invoices: false,
   orders: false,
 })
 const resourceLoaded = reactive<Record<Customer360Resource, boolean>>({
   opportunities: false,
   contracts: false,
-  receivablePlans: false,
-  receivableRecords: false,
+  contractPaymentPlans: false,
+  contractPaymentRecords: false,
   invoices: false,
   orders: false,
 })
 
 const opportunities = ref<Customer360OpportunityVO[]>([])
 const contracts = ref<Customer360ContractVO[]>([])
-const receivablePlans = ref<Customer360ReceivablePlanVO[]>([])
-const receivableRecords = ref<Customer360ReceivableRecordVO[]>([])
+const contractPaymentPlans = ref<Customer360ContractPaymentPlanVO[]>([])
+const contractPaymentRecords = ref<Customer360ContractPaymentRecordVO[]>([])
 const invoices = ref<Customer360InvoiceVO[]>([])
 const orders = ref<Customer360OrderVO[]>([])
 
@@ -232,6 +232,10 @@ function formatAmount(value: number | null | undefined) {
   return `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function invoiceApprovalLabel(status: Customer360InvoiceVO['approvalStatus']) {
+  return status ? CONTRACT_INVOICE_APPROVAL_STATUS_LABELS[status] : '-'
+}
+
 function buildEditModel() {
   const row = customer.value
   if (!row) return {}
@@ -305,8 +309,8 @@ function rowsRef(resource: Customer360Resource) {
   switch (resource) {
     case 'opportunities': return opportunities
     case 'contracts': return contracts
-    case 'receivablePlans': return receivablePlans
-    case 'receivableRecords': return receivableRecords
+    case 'contractPaymentPlans': return contractPaymentPlans
+    case 'contractPaymentRecords': return contractPaymentRecords
     case 'invoices': return invoices
     case 'orders': return orders
   }
@@ -334,8 +338,8 @@ function tabResource(tab: TabName): Customer360Resource | null {
   switch (tab) {
     case 'opportunityInfo': return 'opportunities'
     case 'contract': return 'contracts'
-    case 'contractPayment': return 'receivablePlans'
-    case 'contractPaymentRecord': return 'receivableRecords'
+    case 'contractPayment': return 'contractPaymentPlans'
+    case 'contractPaymentRecord': return 'contractPaymentRecords'
     case 'invoice': return 'invoices'
     case 'order': return 'orders'
     default: return null
@@ -804,38 +808,40 @@ onMounted(async () => {
                 </template>
 
                 <template v-else-if="tab.name === 'contractPayment'">
-                  <el-table v-loading="resourceLoading.receivablePlans" :data="receivablePlans" stripe class="w-full">
+                  <el-table v-loading="resourceLoading.contractPaymentPlans" :data="contractPaymentPlans" stripe class="w-full">
                     <el-table-column prop="contractName" label="合同" min-width="220" show-overflow-tooltip />
-                    <el-table-column label="期次" min-width="90"><template #default="{ row }">第 {{ row.period }} 期</template></el-table-column>
-                    <el-table-column label="计划金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.amount) }}</template></el-table-column>
-                    <el-table-column label="已回款" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.paidAmount) }}</template></el-table-column>
-                    <el-table-column label="状态" min-width="110"><template #default="{ row }">{{ RECEIVABLE_PLAN_STATUS_LABELS[row.status as keyof typeof RECEIVABLE_PLAN_STATUS_LABELS] }}</template></el-table-column>
-                    <el-table-column prop="dueDate" label="计划日期" min-width="120" />
+                    <el-table-column prop="name" label="计划名称" min-width="180" show-overflow-tooltip />
+                    <el-table-column label="计划金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.planAmount ?? 0) }}</template></el-table-column>
+                    <el-table-column label="状态" min-width="110"><template #default="{ row }">{{ CONTRACT_PAYMENT_PLAN_STATUS_LABELS[row.planStatus as keyof typeof CONTRACT_PAYMENT_PLAN_STATUS_LABELS] }}</template></el-table-column>
+                    <el-table-column label="计划日期" min-width="120"><template #default="{ row }">{{ row.planEndTime ? new Date(row.planEndTime).toLocaleDateString() : '-' }}</template></el-table-column>
+                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
                   </el-table>
-                  <div class="flex justify-end mt-3"><el-pagination layout="total, prev, pager, next" :total="resourceTotal.receivablePlans" :page-size="10" :current-page="resourcePage.receivablePlans" @current-change="handleResourcePage('receivablePlans', $event)" /></div>
+                  <div class="flex justify-end mt-3"><el-pagination layout="total, prev, pager, next" :total="resourceTotal.contractPaymentPlans" :page-size="10" :current-page="resourcePage.contractPaymentPlans" @current-change="handleResourcePage('contractPaymentPlans', $event)" /></div>
                 </template>
 
                 <template v-else-if="tab.name === 'contractPaymentRecord'">
-                  <el-table v-loading="resourceLoading.receivableRecords" :data="receivableRecords" stripe class="w-full">
+                  <el-table v-loading="resourceLoading.contractPaymentRecords" :data="contractPaymentRecords" stripe class="w-full">
                     <el-table-column prop="contractName" label="合同" min-width="220" show-overflow-tooltip />
-                    <el-table-column label="期次" min-width="90"><template #default="{ row }">{{ row.planPeriod ? `第 ${row.planPeriod} 期` : '-' }}</template></el-table-column>
-                    <el-table-column label="回款金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.amount) }}</template></el-table-column>
-                    <el-table-column prop="receivedAt" label="回款日期" min-width="120" />
-                    <el-table-column prop="method" label="方式" min-width="120" />
-                    <el-table-column prop="ownerName" label="登记人" min-width="120" />
+                    <el-table-column prop="name" label="记录名称" min-width="180" show-overflow-tooltip />
+                    <el-table-column prop="no" label="回款编码" min-width="160" />
+                    <el-table-column prop="paymentPlanName" label="回款计划" min-width="160" show-overflow-tooltip />
+                    <el-table-column label="回款金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.recordAmount ?? 0) }}</template></el-table-column>
+                    <el-table-column label="回款日期" min-width="120"><template #default="{ row }">{{ row.recordEndTime ? new Date(row.recordEndTime).toLocaleDateString() : '-' }}</template></el-table-column>
+                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
                   </el-table>
-                  <div class="flex justify-end mt-3"><el-pagination layout="total, prev, pager, next" :total="resourceTotal.receivableRecords" :page-size="10" :current-page="resourcePage.receivableRecords" @current-change="handleResourcePage('receivableRecords', $event)" /></div>
+                  <div class="flex justify-end mt-3"><el-pagination layout="total, prev, pager, next" :total="resourceTotal.contractPaymentRecords" :page-size="10" :current-page="resourcePage.contractPaymentRecords" @current-change="handleResourcePage('contractPaymentRecords', $event)" /></div>
                 </template>
 
                 <template v-else-if="tab.name === 'invoice'">
                   <el-table v-loading="resourceLoading.invoices" :data="invoices" stripe class="w-full">
+                    <el-table-column prop="name" label="发票名称" min-width="180" show-overflow-tooltip />
                     <el-table-column prop="contractName" label="合同" min-width="220" show-overflow-tooltip />
-                    <el-table-column prop="titleName" label="发票抬头" min-width="180" show-overflow-tooltip />
-                    <el-table-column prop="type" label="发票类型" min-width="150" />
-                    <el-table-column label="金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.amount) }}</template></el-table-column>
-                    <el-table-column label="状态" min-width="100"><template #default="{ row }">{{ INVOICE_STATUS_LABELS[row.status as keyof typeof INVOICE_STATUS_LABELS] }}</template></el-table-column>
-                    <el-table-column prop="invoiceNo" label="发票号码" min-width="160" />
-                    <el-table-column prop="issuedAt" label="开票日期" min-width="120" />
+                    <el-table-column prop="businessTitleName" label="工商抬头" min-width="180" show-overflow-tooltip />
+                    <el-table-column prop="invoiceType" label="发票类型" min-width="150" />
+                    <el-table-column label="金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.amount ?? 0) }}</template></el-table-column>
+                    <el-table-column label="税率" min-width="100"><template #default="{ row }">{{ row.taxRate == null ? '-' : `${row.taxRate}%` }}</template></el-table-column>
+                    <el-table-column label="审批状态" min-width="110"><template #default="{ row }">{{ invoiceApprovalLabel(row.approvalStatus) }}</template></el-table-column>
+                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
                   </el-table>
                   <div class="flex justify-end mt-3"><el-pagination layout="total, prev, pager, next" :total="resourceTotal.invoices" :page-size="10" :current-page="resourcePage.invoices" @current-change="handleResourcePage('invoices', $event)" /></div>
                 </template>
@@ -929,7 +935,7 @@ onMounted(async () => {
     <ContractDetailDrawer
       v-model="contractDetailVisible"
       :contract-id="contractDetailId"
-      @changed="() => { resourceLoaded.contracts = false; resourceLoaded.receivablePlans = false; resourceLoaded.receivableRecords = false; resourceLoaded.invoices = false; loadResource(tabResource(activeTab) ?? 'contracts', true) }"
+      @changed="() => { resourceLoaded.contracts = false; resourceLoaded.contractPaymentPlans = false; resourceLoaded.contractPaymentRecords = false; resourceLoaded.invoices = false; loadResource(tabResource(activeTab) ?? 'contracts', true) }"
     />
   </div>
 </template>

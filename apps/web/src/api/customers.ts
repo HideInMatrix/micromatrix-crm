@@ -1,10 +1,10 @@
 import type {
   Customer360ContractVO,
+  Customer360ContractPaymentPlanVO,
+  Customer360ContractPaymentRecordVO,
   Customer360InvoiceVO,
   Customer360OpportunityVO,
   Customer360OrderVO,
-  Customer360ReceivablePlanVO,
-  Customer360ReceivableRecordVO,
   Customer360Resource,
   CustomerVO,
   DuplicateHitVO,
@@ -202,8 +202,8 @@ export function poolDeleteCustomer(id: string) {
 export interface Customer360ResourceMap {
   opportunities: Customer360OpportunityVO
   contracts: Customer360ContractVO
-  receivablePlans: Customer360ReceivablePlanVO
-  receivableRecords: Customer360ReceivableRecordVO
+  contractPaymentPlans: Customer360ContractPaymentPlanVO
+  contractPaymentRecords: Customer360ContractPaymentRecordVO
   invoices: Customer360InvoiceVO
   orders: Customer360OrderVO
 }
@@ -216,8 +216,8 @@ export function getCustomer360Resource<T extends Customer360Resource>(
   const paths: Record<Customer360Resource, string> = {
     opportunities: '/account/opportunity/page',
     contracts: '/account/contract/page',
-    receivablePlans: '/account/contract/payment-plan/page',
-    receivableRecords: '/account/contract/payment-record/page',
+    contractPaymentPlans: '/account/contract/payment-plan/page',
+    contractPaymentRecords: '/account/contract/payment-record/page',
     invoices: '/account/invoice/page',
     orders: '/account/order/page',
   }

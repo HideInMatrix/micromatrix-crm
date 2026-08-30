@@ -18,12 +18,10 @@ export class HomeOverviewService {
 
   /** 销售简报 + 待办（按数据范围统计） */
   async summary(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
-      string,
-      unknown
-    >
     const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const opportunityScope = directScope as Prisma.OpportunityWhereInput
+    const paymentRecordScope = directScope as Prisma.ContractPaymentRecordWhereInput
+    const paymentPlanScope = directScope as Prisma.ContractPaymentPlanWhereInput
     const since = monthStart()
     const sinceMs = BigInt(since.getTime())
     const tenantId = user.tenantId
@@ -61,14 +59,13 @@ export class HomeOverviewService {
           },
           _sum: { amount: true },
         }),
-        this.prisma.receivableRecord.aggregate({
+        this.prisma.contractPaymentRecord.aggregate({
           where: {
-            tenantId,
-            AND: [scope as Prisma.ReceivableRecordWhereInput],
-            receivedAt: { gte: since },
-            approvalStatus: { in: ['NONE', 'APPROVED'] },
+            organizationId: tenantId,
+            AND: [paymentRecordScope],
+            recordEndTime: { gte: BigInt(since.getTime()) },
           },
-          _sum: { amount: true },
+          _sum: { recordAmount: true },
         }),
       ])
 
@@ -88,27 +85,21 @@ export class HomeOverviewService {
       }),
     ])
 
-    const plans = await this.prisma.receivablePlan.findMany({
+    const overduePlans = await this.prisma.contractPaymentPlan.count({
       where: {
-        tenantId,
-        dueDate: { lt: new Date() },
-        contract: { AND: [scope as Prisma.ContractWhereInput] },
+        organizationId: tenantId,
+        AND: [paymentPlanScope],
+        planEndTime: { lt: BigInt(Date.now()) },
+        planStatus: { not: 'COMPLETED' },
       },
-      include: { records: { select: { amount: true, approvalStatus: true } } },
     })
-    const overduePlans = plans.filter((p) => {
-      const paid = p.records
-        .filter((r) => r.approvalStatus === 'NONE' || r.approvalStatus === 'APPROVED')
-        .reduce((sum, r) => sum + Number(r.amount), 0)
-      return paid < Number(p.amount)
-    }).length
 
     return {
       newLeads,
       newCustomers,
       newOpportunities,
       wonAmount: Number(wonAgg._sum.amount ?? 0),
-      receivedAmount: Number(receivedAgg._sum.amount ?? 0),
+      receivedAmount: Number(receivedAgg._sum.recordAmount ?? 0),
       pendingApprovals,
       upcomingFollows,
       overduePlans,
@@ -145,15 +136,13 @@ export class HomeOverviewService {
 
   /** 本月业绩排行（赢单金额 / 回款金额 TOP10） */
   async ranking(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
-      string,
-      unknown
-    >
     const since = monthStart()
-    const opportunityScope = (await this.dataScope.directOwnerFilter(
+    const directScope = await this.dataScope.directOwnerFilter(
       user,
       'menu:dashboard',
-    )) as Prisma.OpportunityWhereInput
+    )
+    const opportunityScope = directScope as Prisma.OpportunityWhereInput
+    const paymentRecordScope = directScope as Prisma.ContractPaymentRecordWhereInput
 
     const [wonGroups, receivedGroups] = await Promise.all([
       this.prisma.opportunity.groupBy({
@@ -167,21 +156,19 @@ export class HomeOverviewService {
         _sum: { amount: true },
         _count: { _all: true },
       }),
-      this.prisma.receivableRecord.groupBy({
-        by: ['ownerId'],
+      this.prisma.contractPaymentRecord.groupBy({
+        by: ['owner'],
         where: {
-          tenantId: user.tenantId,
-          AND: [scope as Prisma.ReceivableRecordWhereInput],
-          receivedAt: { gte: since },
-          approvalStatus: { in: ['NONE', 'APPROVED'] },
-          ownerId: { not: null },
+          organizationId: user.tenantId,
+          AND: [paymentRecordScope],
+          recordEndTime: { gte: BigInt(since.getTime()) },
         },
-        _sum: { amount: true },
+        _sum: { recordAmount: true },
       }),
     ])
 
     const ownerIds = [
-      ...new Set([...wonGroups.map((g) => g.owner), ...receivedGroups.map((g) => g.ownerId)]),
+      ...new Set([...wonGroups.map((g) => g.owner), ...receivedGroups.map((g) => g.owner)]),
     ].filter((v): v is string => !!v)
     const users = ownerIds.length
       ? await this.prisma.user.findMany({
@@ -202,8 +189,8 @@ export class HomeOverviewService {
         .slice(0, 10),
       received: receivedGroups
         .map((g) => ({
-          name: nameMap.get(g.ownerId!) ?? '未知',
-          amount: Number(g._sum.amount ?? 0),
+          name: nameMap.get(g.owner) ?? '未知',
+          amount: Number(g._sum.recordAmount ?? 0),
         }))
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 10),
@@ -212,15 +199,13 @@ export class HomeOverviewService {
 
   /** 近 6 个月趋势：赢单金额 / 回款金额 */
   async trend(user: AuthUser) {
-    const scope = (await this.dataScope.scopeFilter(user, 'menu:dashboard')) as Record<
-      string,
-      unknown
-    >
     const since = monthStart(-5)
-    const opportunityScope = (await this.dataScope.directOwnerFilter(
+    const directScope = await this.dataScope.directOwnerFilter(
       user,
       'menu:dashboard',
-    )) as Prisma.OpportunityWhereInput
+    )
+    const opportunityScope = directScope as Prisma.OpportunityWhereInput
+    const paymentRecordScope = directScope as Prisma.ContractPaymentRecordWhereInput
 
     const [wonList, receivedList] = await Promise.all([
       this.prisma.opportunity.findMany({
@@ -232,14 +217,13 @@ export class HomeOverviewService {
         },
         select: { actualEndTime: true, amount: true },
       }),
-      this.prisma.receivableRecord.findMany({
+      this.prisma.contractPaymentRecord.findMany({
         where: {
-          tenantId: user.tenantId,
-          AND: [scope as Prisma.ReceivableRecordWhereInput],
-          receivedAt: { gte: since },
-          approvalStatus: { in: ['NONE', 'APPROVED'] },
+          organizationId: user.tenantId,
+          AND: [paymentRecordScope],
+          recordEndTime: { gte: BigInt(since.getTime()) },
         },
-        select: { receivedAt: true, amount: true },
+        select: { recordEndTime: true, recordAmount: true },
       }),
     ])
 
@@ -257,9 +241,11 @@ export class HomeOverviewService {
       if (wonByMonth.has(key)) wonByMonth.set(key, wonByMonth.get(key)! + Number(o.amount ?? 0))
     }
     for (const r of receivedList) {
-      const key = `${r.receivedAt.getFullYear()}-${String(r.receivedAt.getMonth() + 1).padStart(2, '0')}`
+      if (r.recordEndTime === null) continue
+      const receivedAt = new Date(Number(r.recordEndTime))
+      const key = `${receivedAt.getFullYear()}-${String(receivedAt.getMonth() + 1).padStart(2, '0')}`
       if (receivedByMonth.has(key)) {
-        receivedByMonth.set(key, receivedByMonth.get(key)! + Number(r.amount))
+        receivedByMonth.set(key, receivedByMonth.get(key)! + Number(r.recordAmount ?? 0))
       }
     }
 

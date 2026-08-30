@@ -7,6 +7,9 @@ export const USER_VIEW_RESOURCE_TYPES = {
   opportunity: 'OPPORTUNITY',
   quote: 'OPPORTUNITY_QUOTATION',
   contract: 'CONTRACT',
+  contract_payment_plan: 'CONTRACT_PAYMENT_PLAN',
+  contract_payment_record: 'CONTRACT_PAYMENT_RECORD',
+  invoice: 'CONTRACT_INVOICE',
 } as const
 
 export type UserViewModule = keyof typeof USER_VIEW_RESOURCE_TYPES
@@ -46,4 +49,17 @@ export const USER_VIEW_RESOURCE_ROUTES: Array<{
     label: '报价单视图',
   },
   { module: 'contract', resourceType: 'CONTRACT', path: 'contract/view', label: '合同视图' },
+  {
+    module: 'contract_payment_plan',
+    resourceType: 'CONTRACT_PAYMENT_PLAN',
+    path: 'contract/payment-plan/view',
+    label: '回款计划视图',
+  },
+  {
+    module: 'contract_payment_record',
+    resourceType: 'CONTRACT_PAYMENT_RECORD',
+    path: 'contract/payment-record/view',
+    label: '回款记录视图',
+  },
+  { module: 'invoice', resourceType: 'CONTRACT_INVOICE', path: 'invoice/view', label: '发票视图' },
 ]

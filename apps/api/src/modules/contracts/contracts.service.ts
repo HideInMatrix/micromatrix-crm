@@ -8,7 +8,7 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { generateBizCode } from '../../common/code-gen'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { InvoiceStatus, Prisma } from '../../generated/prisma/client'
+import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -35,8 +35,8 @@ const MAX_AMOUNT = 9_999_999_999
 
 const contractInclude = {
   customer: { select: { name: true } },
-  receivableRecords: { select: { amount: true, approvalStatus: true } },
-  invoices: { select: { amount: true, status: true } },
+  paymentRecords: { select: { recordAmount: true } },
+  contractInvoices: { select: { amount: true, approvalStatus: true } },
 } as const
 
 type ContractWithRefs = Prisma.ContractGetPayload<{ include: typeof contractInclude }>
@@ -816,8 +816,8 @@ export class ContractsService {
 
   private async assertDeletable(id: string) {
     const [recordCount, invoiceCount] = await Promise.all([
-      this.prisma.receivableRecord.count({ where: { contractId: id } }),
-      this.prisma.invoiceRecord.count({ where: { contractId: id } }),
+      this.prisma.contractPaymentRecord.count({ where: { contractId: id } }),
+      this.prisma.contractInvoice.count({ where: { contractId: id } }),
     ])
     if (recordCount) throw new BadRequestException('合同存在回款记录，无法删除')
     if (invoiceCount) throw new BadRequestException('合同存在发票，无法删除')
@@ -858,13 +858,11 @@ export class ContractsService {
     stageMap: Map<string, string>,
   ): ContractVO {
     const paidAmount = Math.round(
-      row.receivableRecords
-        .filter((item) => item.approvalStatus === 'NONE' || item.approvalStatus === 'APPROVED')
-        .reduce((sum, item) => sum + Number(item.amount), 0) * 100,
+      row.paymentRecords.reduce((sum, item) => sum + Number(item.recordAmount ?? 0), 0) * 100,
     ) / 100
     const invoicedAmount = Math.round(
-      row.invoices
-        .filter((item) => item.status === InvoiceStatus.ISSUED)
+      row.contractInvoices
+        .filter((item) => item.approvalStatus === 'APPROVED')
         .reduce((sum, item) => sum + Number(item.amount), 0) * 100,
     ) / 100
     return {

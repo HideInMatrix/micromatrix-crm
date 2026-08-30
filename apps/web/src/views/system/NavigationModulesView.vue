@@ -21,6 +21,7 @@ import LeadPoolSettingsDrawer from './components/LeadPoolSettingsDrawer.vue'
 import CustomerCapacitySettingsDrawer from './components/CustomerCapacitySettingsDrawer.vue'
 import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSettingsDrawer.vue'
 import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
+import BusinessTitleRequiredSettingsDrawer from './components/BusinessTitleRequiredSettingsDrawer.vue'
 import ContractStageSettingsDrawer from './components/ContractStageSettingsDrawer.vue'
 import OpportunityCloseRuleSettingsDrawer from './components/OpportunityCloseRuleSettingsDrawer.vue'
 import OpportunityFailureReasonSettingsDrawer from './components/OpportunityFailureReasonSettingsDrawer.vue'
@@ -38,6 +39,7 @@ interface ModuleAction {
     | 'customer-pool'
     | 'customer-capacity'
     | 'customer-reason'
+    | 'business-title-required'
     | 'contract-stage'
     | 'opportunity-stage'
     | 'opportunity-rule'
@@ -72,12 +74,12 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   contract: {
     primary: [
       { label: '合同表单设置', path: '/system/modules/fields', query: { module: 'contract' } },
-      { label: '回款计划表单设置', deferred: 'W3.6.4：回款计划 direct model 与表单消费链完成后开放' },
-      { label: '回款记录表单设置', deferred: 'W3.6.4：回款记录 direct model 与表单消费链完成后开放' },
+      { label: '回款计划表单设置', path: '/system/modules/fields', query: { module: 'contractPaymentPlan' } },
+      { label: '回款记录表单设置', path: '/system/modules/fields', query: { module: 'contractPaymentRecord' } },
     ],
     more: [
-      { label: '工商抬头表单必填设置', deferred: 'W3.6.4：工商抬头直接模型与 /business-title/config/* 完成后开放' },
-      { label: '发票表单设置', deferred: 'W3.6.4：发票 direct model 与表单消费链完成后开放' },
+      { label: '工商抬头表单必填设置', drawer: 'business-title-required' },
+      { label: '发票表单设置', path: '/system/modules/fields', query: { module: 'invoice' } },
       { label: '合同阶段设置', drawer: 'contract-stage' },
     ],
   },
@@ -120,6 +122,7 @@ const leadReasonVisible = ref(false)
 const customerPoolVisible = ref(false)
 const customerCapacityVisible = ref(false)
 const customerReasonVisible = ref(false)
+const businessTitleRequiredVisible = ref(false)
 const contractStageVisible = ref(false)
 const opportunityStageVisible = ref(false)
 const opportunityRuleVisible = ref(false)
@@ -245,6 +248,7 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-pool') customerPoolVisible.value = true
   if (action.drawer === 'customer-capacity') customerCapacityVisible.value = true
   if (action.drawer === 'customer-reason') customerReasonVisible.value = true
+  if (action.drawer === 'business-title-required') businessTitleRequiredVisible.value = true
   if (action.drawer === 'contract-stage') contractStageVisible.value = true
   if (action.drawer === 'opportunity-stage') opportunityStageVisible.value = true
   if (action.drawer === 'opportunity-rule') opportunityRuleVisible.value = true
@@ -403,6 +407,7 @@ onMounted(load)
     <CustomerPoolSettingsDrawer v-model="customerPoolVisible" />
     <CustomerCapacitySettingsDrawer v-model="customerCapacityVisible" />
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
+    <BusinessTitleRequiredSettingsDrawer v-model="businessTitleRequiredVisible" />
     <ContractStageSettingsDrawer v-model="contractStageVisible" />
     <OpportunityStageSettingsDrawer v-model="opportunityStageVisible" />
     <OpportunityCloseRuleSettingsDrawer v-model="opportunityRuleVisible" />

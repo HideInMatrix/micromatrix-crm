@@ -10,7 +10,11 @@ export * from './sales'
 export * from './system'
 
 import type { FollowUpVO, TeamMemberVO } from './sales'
-import type { InvoiceStatus, OrderStatus, ReceivablePlanStatus } from './deal'
+import type {
+  ContractInvoiceApprovalStatus,
+  ContractPaymentPlanStatus,
+  OrderStatus,
+} from './deal'
 
 // ============ 通用分页 ============
 
@@ -149,7 +153,7 @@ export interface CustomerRelatedVO {
 }
 
 export type Customer360Resource =
-  'opportunities' | 'contracts' | 'receivablePlans' | 'receivableRecords' | 'invoices' | 'orders'
+  'opportunities' | 'contracts' | 'contractPaymentPlans' | 'contractPaymentRecords' | 'invoices' | 'orders'
 
 export interface Customer360OpportunityVO {
   id: string
@@ -173,43 +177,49 @@ export interface Customer360ContractVO {
   createTime: number
 }
 
-export interface Customer360ReceivablePlanVO {
+export interface Customer360ContractPaymentPlanVO {
   id: string
+  name: string
   contractId: string
   contractName: string
-  period: number
-  amount: number
-  paidAmount: number
-  status: ReceivablePlanStatus
-  dueDate: string
-  remark: string | null
+  owner: string
+  ownerName: string | null
+  planStatus: ContractPaymentPlanStatus
+  planAmount: number | null
+  planEndTime: number | null
+  createTime: number
 }
 
-export interface Customer360ReceivableRecordVO {
+export interface Customer360ContractPaymentRecordVO {
   id: string
+  name: string
+  no: string | null
   contractId: string
   contractName: string
-  planId: string | null
-  planPeriod: number | null
-  amount: number
-  receivedAt: string
-  method: string | null
-  remark: string | null
-  approvalStatus: string
+  paymentPlanId: string | null
+  paymentPlanName: string | null
+  owner: string
   ownerName: string | null
+  recordAmount: number | null
+  recordEndTime: number | null
+  createTime: number
 }
 
 export interface Customer360InvoiceVO {
   id: string
+  name: string
   contractId: string
   contractName: string
-  titleName: string | null
-  amount: number
-  type: string
-  status: InvoiceStatus
-  invoiceNo: string | null
-  issuedAt: string | null
-  remark: string | null
+  businessTitleId: string | null
+  businessTitleName: string | null
+  owner: string
+  ownerName: string | null
+  amount: number | null
+  invoiceType: string | null
+  taxRate: number | null
+  approvalStatus: ContractInvoiceApprovalStatus | null
+  approved: boolean
+  createTime: number
 }
 
 export interface Customer360OrderVO {

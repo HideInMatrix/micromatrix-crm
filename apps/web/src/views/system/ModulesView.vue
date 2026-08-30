@@ -23,6 +23,9 @@ const AVAILABLE_MODULES: ModuleKey[] = [
   'price',
   'quote',
   'contract',
+  'contractPaymentPlan',
+  'contractPaymentRecord',
+  'invoice',
   'order',
 ]
 

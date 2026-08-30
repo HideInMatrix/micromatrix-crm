@@ -109,29 +109,22 @@ export class MessageExpiryService {
       )
     }
     if (event.startsWith('CONTRACT_PAYMENT_')) {
-      const plans = await this.prisma.receivablePlan.findMany({
-        where: { tenantId, dueDate: { gte: start, lt: end } },
-        include: {
-          records: { select: { amount: true, approvalStatus: true } },
-          contract: { select: { name: true, owner: true } },
+      const plans = await this.prisma.contractPaymentPlan.findMany({
+        where: {
+          organizationId: tenantId,
+          planStatus: { not: 'COMPLETED' },
+          planEndTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
         },
-      })
-      const outstanding = plans.filter((plan) => {
-        const paid = plan.records
-          .filter(
-            (record) => record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED',
-          )
-          .reduce((sum, record) => sum + Number(record.amount), 0)
-        return paid < Number(plan.amount)
+        include: { contract: { select: { name: true } } },
       })
       return this.sendRows(
         tenantId,
         event,
         days,
-        outstanding.map((plan) => ({
-          name: `${plan.contract.name}第 ${plan.period} 期回款`,
-          ownerId: plan.contract.owner,
-          dueDate: plan.dueDate,
+        plans.map((plan) => ({
+          name: plan.name || `${plan.contract.name}回款计划`,
+          ownerId: plan.owner,
+          dueDate: new Date(Number(plan.planEndTime!)),
           link: '/contracts',
           label: '回款计划',
         })),

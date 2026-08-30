@@ -96,9 +96,33 @@ async function main() {
     'contract:create',
     'contract:update',
     'contract:submit',
-    'receivable:manage',
-    'invoice:manage',
-    'invoiceTitle:manage',
+    'CONTRACT:PAYMENT',
+    'CONTRACT_PAYMENT_PLAN:READ',
+    'CONTRACT_PAYMENT_PLAN:ADD',
+    'CONTRACT_PAYMENT_PLAN:UPDATE',
+    'CONTRACT_PAYMENT_PLAN:DELETE',
+    'CONTRACT_PAYMENT_PLAN:IMPORT',
+    'CONTRACT_PAYMENT_PLAN:EXPORT',
+    'CONTRACT_PAYMENT_RECORD:READ',
+    'CONTRACT_PAYMENT_RECORD:ADD',
+    'CONTRACT_PAYMENT_RECORD:UPDATE',
+    'CONTRACT_PAYMENT_RECORD:DELETE',
+    'CONTRACT_PAYMENT_RECORD:IMPORT',
+    'CONTRACT_PAYMENT_RECORD:EXPORT',
+    'CONTRACT_INVOICE:READ',
+    'CONTRACT_INVOICE:ADD',
+    'CONTRACT_INVOICE:UPDATE',
+    'CONTRACT_INVOICE:DELETE',
+    'CONTRACT_INVOICE:IMPORT',
+    'CONTRACT_INVOICE:EXPORT',
+    'CONTRACT_INVOICE:APPROVAL',
+    'CONTRACT_BUSINESS_TITLE:READ',
+    'CONTRACT_BUSINESS_TITLE:ADD',
+    'CONTRACT_BUSINESS_TITLE:UPDATE',
+    'CONTRACT_BUSINESS_TITLE:DELETE',
+    'CONTRACT_BUSINESS_TITLE:IMPORT',
+    'CONTRACT_BUSINESS_TITLE:EXPORT',
+    'CONTRACT_BUSINESS_TITLE:APPROVAL',
     'menu:order',
     'order:create',
     'order:update',
@@ -259,7 +283,15 @@ async function main() {
 
   // ===== Cordys 模块表单与动态字段 =====
   const now = BigInt(Date.now())
-  const ensureModuleForm = async (formKey: 'lead' | 'customer' | 'contact' | 'contract') => {
+  const ensureModuleForm = async (
+    formKey:
+      | 'lead'
+      | 'customer'
+      | 'contact'
+      | 'contract'
+      | 'contractPaymentPlan'
+      | 'contractPaymentRecord',
+  ) => {
     const form = await prisma.sysModuleForm.upsert({
       where: { organizationId_formKey: { organizationId: tenant.id, formKey } },
       update: { updateTime: now, updateUser: admin.id },
@@ -332,6 +364,8 @@ async function main() {
   const customerForm = await ensureModuleForm('customer')
   const contactForm = await ensureModuleForm('contact')
   await ensureModuleForm('contract')
+  await ensureModuleForm('contractPaymentPlan')
+  await ensureModuleForm('contractPaymentRecord')
 
   const contractStages = [
     ['待签署', 'AFOOT'],

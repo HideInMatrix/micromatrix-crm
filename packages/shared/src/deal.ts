@@ -165,75 +165,130 @@ export interface ContractVO {
 
 // ===== 回款 =====
 
-export type ReceivablePlanStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'OVERDUE'
+export type ContractPaymentPlanStatus = 'PENDING' | 'PARTIALLY_COMPLETED' | 'COMPLETED'
 
-export const RECEIVABLE_PLAN_STATUS_LABELS: Record<ReceivablePlanStatus, string> = {
-  PENDING: '待回款',
-  PARTIAL: '部分回款',
-  PAID: '已回款',
-  OVERDUE: '已逾期',
+export const CONTRACT_PAYMENT_PLAN_STATUS_LABELS: Record<ContractPaymentPlanStatus, string> = {
+  PENDING: '待处理',
+  PARTIALLY_COMPLETED: '部分完成',
+  COMPLETED: '已完成',
 }
 
-export interface ReceivablePlanVO {
-  id: string
-  contractId: string
-  period: number
-  amount: number
-  paidAmount: number
-  status: ReceivablePlanStatus
-  dueDate: string
-  remark: string | null
+export interface ContractPaymentModuleFieldValue {
+  fieldId: string
+  fieldValue?: unknown
 }
 
-export interface ReceivableRecordVO {
+export interface ContractPaymentPlanVO {
   id: string
+  name: string
   contractId: string
-  planId: string | null
-  planPeriod?: number | null
-  amount: number
-  receivedAt: string
-  method: string | null
-  remark: string | null
-  approvalStatus: string
+  contractName?: string
+  customerId?: string
+  owner: string
   ownerName?: string | null
+  departmentId?: string | null
+  departmentName?: string | null
+  planStatus: ContractPaymentPlanStatus
+  planAmount: number | null
+  planEndTime: number | null
+  createUser: string
+  createUserName?: string | null
+  updateUser: string
+  updateUserName?: string | null
+  createTime: number
+  updateTime: number
+  moduleFields: ContractPaymentModuleFieldValue[]
 }
 
-export const RECEIVABLE_METHODS = ['银行转账', '现金', '票据', '在线支付', '其他'] as const
+export interface ContractPaymentRecordVO {
+  id: string
+  name: string
+  no: string | null
+  contractId: string
+  contractName?: string
+  customerId?: string
+  paymentPlanId: string | null
+  paymentPlanName?: string | null
+  owner: string
+  ownerName?: string | null
+  departmentId?: string | null
+  departmentName?: string | null
+  recordAmount: number | null
+  recordEndTime: number | null
+  createUser: string
+  createUserName?: string | null
+  updateUser: string
+  updateUserName?: string | null
+  createTime: number
+  updateTime: number
+  moduleFields: ContractPaymentModuleFieldValue[]
+}
 
 // ===== 工商抬头与发票 =====
 
-export interface InvoiceTitleVO {
-  id: string
-  customerId: string | null
-  name: string
-  taxNo: string
-  bankName: string | null
-  bankAccount: string | null
-  address: string | null
-  phone: string | null
-}
-
-export type InvoiceStatus = 'PENDING' | 'ISSUED' | 'VOID'
-
-export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
-  PENDING: '待开票',
-  ISSUED: '已开票',
-  VOID: '已作废',
-}
-
 export const INVOICE_TYPES = ['增值税专用发票', '增值税普通发票', '电子发票'] as const
 
-export interface InvoiceVO {
+export type ContractInvoiceApprovalStatus = QuotationApprovalStatus
+
+export const CONTRACT_INVOICE_APPROVAL_STATUS_LABELS: Record<ContractInvoiceApprovalStatus, string> =
+  QUOTATION_APPROVAL_STATUS_LABELS
+
+export interface ContractInvoiceModuleFieldValue {
+  fieldId: string
+  fieldValue?: unknown
+}
+
+export interface ContractInvoiceVO {
   id: string
+  name: string
   contractId: string
-  titleId: string | null
-  titleName?: string | null
-  amount: number
-  type: string
-  status: InvoiceStatus
-  invoiceNo: string | null
-  issuedAt: string | null
+  contractName?: string
+  customerId?: string
+  owner: string
+  ownerName?: string | null
+  amount: number | null
+  invoiceType: string | null
+  taxRate: number | null
+  approvalStatus: ContractInvoiceApprovalStatus | null
+  businessTitleId: string | null
+  businessTitleName?: string | null
+  approved: boolean
+  createTime: number
+  updateTime: number
+  moduleFields: ContractInvoiceModuleFieldValue[]
+}
+
+export interface BusinessTitleVO {
+  id: string
+  name: string
+  type: 'CUSTOM' | 'THIRD_PARTY' | null
+  identificationNumber: string | null
+  openingBank: string | null
+  bankAccount: string | null
+  registrationAddress: string | null
+  phoneNumber: string | null
+  registeredCapital: string | null
+  companySize: string | null
+  registrationNumber: string | null
+  approvalStatus: ContractInvoiceApprovalStatus | null
+  unapprovedReason: string | null
+  province: string | null
+  city: string | null
+  scale: string | null
+  industry: string | null
   remark: string | null
+  companyNumber: number
+  createTime: number
+  updateTime: number
+  createUser: string
+  updateUser: string
+}
+
+export interface BusinessTitleConfigVO {
+  id: string
+  field: string
+  required: boolean
+  organizationId: string
 }
 
 // ===== 订单 =====

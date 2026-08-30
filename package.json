@@ -38,6 +38,10 @@
     "smoke:w361-product-price-browser": "node scripts/w361-product-price-browser-smoke.mjs",
     "smoke:w362-quotation-browser": "node scripts/w362-quotation-browser-smoke.mjs",
     "smoke:w362-quotation-module-settings-browser": "node scripts/w362-quotation-module-settings-browser-smoke.mjs",
+    "smoke:w364-contract-payment": "pnpm --filter @micromatrix/api smoke:w364-contract-payment",
+    "smoke:w364-invoice": "pnpm --filter @micromatrix/api smoke:w364-invoice",
+    "smoke:w364-invoice-approval": "pnpm --filter @micromatrix/api smoke:w364-invoice-approval",
+    "smoke:w364-invoice-browser": "node scripts/w364-invoice-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },

@@ -182,13 +182,13 @@ export class AccountController {
   @Post('contract/payment-plan/page')
   @RequirePermissions('customer:read')
   plans(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'receivablePlans')
+    return this.resource(user, dto, 'contractPaymentPlans')
   }
 
   @Post('contract/payment-record/page')
   @RequirePermissions('customer:read')
   records(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'receivableRecords')
+    return this.resource(user, dto, 'contractPaymentRecords')
   }
 
   @Post('invoice/page')
@@ -212,13 +212,13 @@ export class AccountController {
   @Get('contract/payment-plan/statistic/:accountId')
   @RequirePermissions('customer:read')
   planStatistic(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string) {
-    return this.service.resourceStatistic(user, accountId, 'receivablePlans')
+    return this.service.resourceStatistic(user, accountId, 'contractPaymentPlans')
   }
 
   @Get('contract/payment-record/statistic/:accountId')
   @RequirePermissions('customer:read')
   recordStatistic(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string) {
-    return this.service.resourceStatistic(user, accountId, 'receivableRecords')
+    return this.service.resourceStatistic(user, accountId, 'contractPaymentRecords')
   }
 
   @Get('invoice/statistic/:accountId')
@@ -302,8 +302,8 @@ export class AccountController {
     resource:
       | 'opportunities'
       | 'contracts'
-      | 'receivablePlans'
-      | 'receivableRecords'
+      | 'contractPaymentPlans'
+      | 'contractPaymentRecords'
       | 'invoices'
       | 'orders',
   ) {

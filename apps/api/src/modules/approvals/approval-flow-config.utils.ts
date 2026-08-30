@@ -16,12 +16,14 @@ export const FORM_TYPE_PREFIX: Record<SharedApprovalFormType, string> = {
 export const FORM_TYPE_TO_MODULE: Partial<Record<SharedApprovalFormType, ApprovalModule>> = {
   quotation: 'quote',
   contract: 'contract',
+  invoice: 'invoice',
   order: 'order',
 }
 
 export const MODULE_TO_FORM_TYPE: Partial<Record<ApprovalModule, SharedApprovalFormType>> = {
   quote: 'quotation',
   contract: 'contract',
+  invoice: 'invoice',
   order: 'order',
 }
 

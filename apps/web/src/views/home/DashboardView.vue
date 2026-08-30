@@ -38,7 +38,7 @@ import { useRouter } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { changePassword } from '@/api/auth'
 import { listCustomerOptions } from '@/api/customers'
-import { contractApi } from '@/api/deal'
+import { businessTitleApi, contractApi, contractInvoiceApi } from '@/api/deal'
 import { homeApi } from '@/api/home'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
@@ -370,7 +370,7 @@ const quickAccessCatalog = computed<QuickAccessItem[]>(() => {
       key: 'invoice',
       label: '新建发票',
       icon: ReceiptText,
-      permissions: ['invoice:manage'],
+      permissions: ['CONTRACT_INVOICE:ADD'],
       moduleEnabled: () => moduleConfig.isEnabled('contract'),
     },
     {
@@ -657,7 +657,6 @@ const invoiceForm = reactive({
   titleId: '',
   amount: 0,
   type: '增值税普通发票',
-  remark: '',
 })
 
 async function openInvoiceDialog() {
@@ -680,7 +679,7 @@ async function handleInvoiceContractChange() {
   invoiceTitles.value = []
   if (!contract) return
   try {
-    const { data } = await contractApi.titles(contract.customerId)
+    const { data } = await businessTitleApi.options()
     invoiceTitles.value = data.map((item) => ({ id: item.id, name: item.name }))
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -694,19 +693,21 @@ async function saveInvoice() {
   }
   invoiceSaving.value = true
   try {
-    await contractApi.createInvoice({
+    const contract = invoiceContracts.value.find((item) => item.id === invoiceForm.contractId)
+    await contractInvoiceApi.create({
+      name: `开票申请-${contract?.name ?? invoiceForm.contractId}`,
       contractId: invoiceForm.contractId,
-      titleId: invoiceForm.titleId || undefined,
+      businessTitleId: invoiceForm.titleId || undefined,
       amount: invoiceForm.amount,
-      type: invoiceForm.type || undefined,
-      remark: invoiceForm.remark.trim() || undefined,
+      invoiceType: invoiceForm.type || undefined,
+      taxRate: 0,
+      moduleFields: [],
     })
     ElMessage.success('发票已创建')
     invoiceDialogVisible.value = false
     invoiceForm.contractId = ''
     invoiceForm.titleId = ''
     invoiceForm.amount = 0
-    invoiceForm.remark = ''
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -1245,9 +1246,6 @@ onMounted(async () => {
             <el-option label="增值税普通发票" value="增值税普通发票" />
             <el-option label="增值税专用发票" value="增值税专用发票" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="invoiceForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>

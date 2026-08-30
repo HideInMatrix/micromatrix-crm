@@ -137,16 +137,83 @@
   - 合同业务 Browser Smoke **56/56**，首屏 `/contract/page` 单请求、Saved View、direct CRUD、详情/快照、看板真实 drag/drop、作废、`fromQuote` 深链和产品 SUB_TABLE、合同审批均通过；API 5xx=0、Runtime exception=0。合同模块设置 Browser Smoke **14/14**。
   - 根级 `pnpm smoke` 在同步修复历史清理脚本的旧合同 `tenantId` 条件后 **224/224**；API Rules **114/114**；全仓 typecheck、ESLint、Shared/API/Web production build 全部 exit 0。
   - 正式 `default` 的 Prisma status 确认 **47 migrations / schema up to date**；合同 migration Smoke：空库 **47/47** replay、Seed **2/2**、direct tables **5/5**、legacy tables **0/2**、默认阶段 **7**；46→47 upgrade Smoke 验证旧合同/明细 **1/1** 迁移、产品 SUB_TABLE cell **4/4**、Snapshot **1/1**，`EXECUTING` 正确迁到“履行中”并保留 `approved=true`。
-  - 手写运行时代码扫描：`ContractStatus=0`、`ContractItem=0`，`ContractsView` 的 `row.status/row.items/contractApi.list` 均为 0；旧 `@Controller('contracts')` 仅保留 W3.6.4 明确接管的工商抬头、回款计划/记录、发票临时子域。
+  - 手写运行时代码扫描：`ContractStatus=0`、`ContractItem=0`，`ContractsView` 的 `row.status/row.items/contractApi.list` 均为 0；旧 `@Controller('contracts')` 在 W3.6.4 5.1 完成后已退出回款计划/记录，仅暂留工商抬头与发票子域。
   - W3.6.3 合同正式关闭；下一执行指针为 **W3.6.4 task 5.1：先读 Cordys 回款计划/回款记录源码与最终 DDL，建立直接模型证据矩阵**。
 
 ## 5. W3.6.4 回款与发票
 
-- [ ] 5.1 回款计划/记录源码与直接模型。
-- [ ] 5.2 发票源码、审批、作废与直接模型。
-- [ ] 5.3 Cordys API、页面、通知/到期任务。
-- [ ] 5.4 回查 `/system/modules` 合同卡片的回款计划、回款记录、工商抬头必填、发票入口全部 REAL。
-- [ ] 5.5 专项验收与提交。
+- [x] 5.1 回款计划/记录源码与直接模型。
+  - [x] 5.1A Cordys 源码、最终 DDL、默认表单、API/User View/DataScope/Import/Export/Statistic 证据矩阵。
+    - 已锁定 `contract_payment_plan + field/blob` 与 `contract_payment_record + field/blob`；计划状态为直接 `PENDING/PARTIALLY_COMPLETED/COMPLETED`，不沿用 MicroMatrix 运行时 `PAID/PARTIAL/OVERDUE` 计算。
+    - 回款记录最终主表已确认 1.5.1 删除 `record_bank/record_bank_no`，但默认表单继续以动态字段保留银行/账号；`no` 为 `PAY-yyyyMM-6` SERIAL_NUMBER。
+    - API 为 `/contract/payment-plan/*`、`/contract/payment-record/*`，User View 资源分别为 `CONTRACT_PAYMENT_PLAN / CONTRACT_PAYMENT_RECORD`；两域都按 owner 做 DataScope，并完整支持导入导出，record 额外有 statistic。
+    - 证据：[回款计划 / 回款记录源码、DDL 与 API 证据矩阵](./payment-source-api-audit.md)。
+  - [x] 5.1B direct Prisma、Field/Blob、metadata/权限、forward migration 与旧 `receivable_*` 数据升级；不双写。
+    - `20260829220000_w364_contract_payment_direct_models` 完成 direct 六表、旧有效回款数据升级、状态一次性转换与编号生成；`20260829223000_w364_drop_legacy_receivables` 删除旧 `receivable_plans/receivable_records`。
+    - Prisma 旧 `ReceivablePlan/ReceivableRecord`、旧 Service/DTO、旧 `receivable:manage` 兼容权限均已清理；运行时代码旧语义扫描为 0。
+  - [x] 5.1C `/contract/payment-plan/*`、`/contract/payment-record/*`、User View/DataScope/import/export/statistic/日志真实 API。
+    - 两域已具备 module form、page/get/add/update/delete/tab、batch update、User View、Import/Export；record statistic 为 direct 全量口径，`no` 始终由服务端生成且 UPDATE 不可覆盖。
+  - [x] 5.1D 合同详情、客户 360、到期提醒等调用迁到 direct model，并清理旧 `/contracts/receivable-*` 主调用链。
+    - 合同详情、客户 360 page/statistic、消息到期任务均消费 `contractPaymentPlan/contractPaymentRecord`；客户 360 内部资源 key/VO 也已去除 `receivable*` 兼容命名。
+    - 旧 `/contracts/:id/receivable-plans`、`/contracts/:id/receivable-records` 返回 404，不再存在旧写入口或第二真相源。
+  - [x] 5.1E migration/upgrade/API 专项 Smoke + typecheck；完成后再关闭父任务 5.1。
+    - `pnpm smoke:w364-contract-payment`：CRUD、owner 默认、planStatus、SERIAL_NUMBER、动态 Field、batch update、User View、客户 360 page/statistic、Import/Export、旧路由 404 全绿；Smoke 自清理历史 `W364 Smoke/Imported` 残留。
+    - `pnpm smoke:w345-empty-db`：隔离空库从零重放全部 49 migrations、Seed 幂等和 API/Web 启动验收 exit 0。
+    - 根级 `pnpm smoke` 已同步将交易链回款夹具迁到 direct API，最终 **224/224**；旧 `/contracts/receivable-*` 删除后无历史链路回归。
+    - `pnpm typecheck`、`pnpm lint`、`pnpm build` 全绿；Rules 回归 114/114（本轮 5.1 direct 迁移期间完成）。
+- [x] 5.2 发票源码、审批、作废与直接模型。
+  - [x] 5.2A Cordys 发票/工商抬头源码、最终 DDL、表单字段、审批/快照、API/User View/DataScope/Import/Export 证据矩阵。
+    - 发票主域锁定 `contract_invoice + field/blob + snapshot`，direct 字段为 name/contract/owner/amount/invoiceType/taxRate/businessTitleId/approvalStatus/approved + audit/org。
+    - 当前真实提审/撤回主链是通用 `/approval-resource/push|revoke`；历史 requrl `/invoice/approval|revoke` 不作为实现依据。
+    - ADD/UPDATE 有真实“有效开票额不得超过合同金额”规则，额度占用包含 `APPROVED + APPROVING`。
+    - 工商抬头是 `business_title + business_title_config` 独立依赖，不等价于当前 `invoice_titles` 简化表。
+    - 证据：[发票 / 工商抬头源码、DDL 与审批证据矩阵](./invoice-source-approval-audit.md)。
+  - [x] 5.2B direct Prisma：`contract_invoice + field/blob + snapshot + business_title/config`，forward migration 与旧 `invoice_records/invoice_titles` 数据升级；不双写。
+    - `20260829231000_w364_invoice_direct_models` 已作为第 50 个 migration 在当前库成功执行；旧表暂留为 5.2C/D 切换期间的只读升级来源，不做双写。
+    - 现库升级核对：`invoice_titles 16 -> business_title 16`、`invoice_records 1 -> contract_invoice 1`、snapshot `1/1`；35 个租户的工商抬头 required config 为 `490/490`（14 项/租户）。
+    - 旧 `PENDING/ISSUED/VOID` 一次性映射到 `NONE/APPROVED/REVOKED`；ISSUED 才回填 `approved=true`。旧 invoiceNo/issuedAt/remark/status 进入 migration snapshot，不污染 direct 主表。
+  - [x] 5.2C `/invoice/*` CRUD/batch delete/snapshot/User View/DataScope/Import/Export + 合同/客户统计真实 API。
+    - direct runtime 已落到 `contract_invoice + field/blob + snapshot`：module form、page/get/add/update/delete、batch delete、snapshot/form snapshot、tab、User View、Import/Export 全部真实接入；owner 默认当前用户，DataScope 按 `CONTRACT_INVOICE:READ` 展开。
+    - `business_title + business_title_config` 已提供 page/get/option/add/update/delete/invoice-check/approval/revoke 与 14 项 required config；`CUSTOM -> APPROVING`，审核通过后才进入发票抬头 option。
+    - 合同详情与客户 360 已消费 direct 发票模型；旧 `/contracts/*` 仅保留 5.2E 前兼容 URL，内部只转发 direct service，旧 issue/void 显式拒绝。
+    - runtime 扫描 `prisma.invoiceRecord / prisma.invoiceTitle / invoice:manage / invoiceTitle:manage` 为 0；`pnpm smoke:w364-invoice`、根级 `pnpm typecheck`、`pnpm lint`、`pnpm build` 全绿。
+  - [x] 5.2D invoice 审批 runtime：解除流程 `runtimeReady=false`，CREATE/UPDATE/DELETE execute timing、提审/撤回、approved 事实位、update snapshot rollback 与额度占用口径对齐。
+    - `ApprovalModule` 已纳入 `invoice`；`invoice <-> ApprovalFormType.INVOICE` 映射、流程启用校验和配置 UI 均开放 CREATE/UPDATE/DELETE，旧 invoice runtime gating 扫描为 0。
+    - `ContractInvoiceService` ADD/UPDATE/DELETE/batch-delete 已复用统一 `ApprovalsService`：CREATE 自动提审，UPDATE 提审前保存完整 direct/Field/Blob/Snapshot 快照，驳回/撤回恢复旧业务值，DELETE 审批通过后才真实删除。
+    - 审批状态统一写回 `APPROVING/APPROVED/UNAPPROVED/REVOKED`；只有 APPROVED 将 `approved` 置 true，后续驳回/撤回不清除历史事实位，并同步 `contract_invoice_snapshot`。
+    - Cordys `/approval-resource/push|revoke|simple-detail|detail` 的 invoice 分支已接入 direct DataScope；batch delete 按源码将命中 DELETE 审批的资源送审，未命中的才直接删除。
+    - `pnpm smoke:w364-invoice-approval` 全绿，覆盖 APPROVING 额度占用、CREATE 驳回后重提、UPDATE 驳回/撤回 rollback、DELETE、batch delete；`pnpm smoke:w364-invoice` 复跑全绿。
+    - Rules **114/114**、根级 `pnpm typecheck` / `pnpm lint` / `pnpm build` 全绿；根 `pnpm smoke` 已更新旧 W2.5 invoice gating 断言并最终 **224/224**。
+  - [x] 5.2E 旧 `/contracts/invoices`、`InvoiceStatus(PENDING/ISSUED/VOID)`、issue/void 运行时退出；migration/upgrade/API/approval 专项 Smoke + Rules/typecheck/lint/build。
+    - 旧 `ContractsController/InvoicesService/invoice.dto`、shared `InvoiceStatus/InvoiceVO/InvoiceTitleVO`、Prisma `InvoiceRecord/InvoiceTitle` 全部删除；Dashboard 与根 Smoke 均迁到 direct `/invoice/* + /contract/business-title/*`，旧 `/contracts/:id/invoices` 与 `/contracts/invoice-titles` 明确 404。
+    - 第 51 个 migration `20260830094000_w364_drop_legacy_invoice_tables` 已在当前库 deploy；drop 前后 direct `business_title / contract_invoice / contract_invoice_snapshot` 数量均保持 `1/1/1`，`invoice_records / invoice_titles` 的 `to_regclass` 均为 `null`。
+    - `pnpm smoke:w364-invoice`、`pnpm smoke:w364-invoice-approval` 全绿；根 `pnpm smoke` 在 direct 发票夹具和旧路由 404 断言下最终 **227/227**。
+    - Rules **114/114**，根级 `pnpm typecheck`、`pnpm lint`、`pnpm build` 全绿；`pnpm smoke:w345-empty-db` 从零重放全部 **51 migrations**、双次 Seed、旧表审计及隔离 API/Web 启动均 exit 0。
+    - runtime 扫描 `InvoiceStatus/InvoiceVO/InvoiceTitleVO/InvoicesService/invoiceRecord/invoiceTitle/旧 routes/旧权限` **0 匹配**；`/system/modules` 工商抬头 required 与 invoice form 仍保持 REAL；`git diff --check` 通过。
+- [x] 5.3 Cordys API、页面、通知/到期任务。
+  - [x] 5.3A Cordys 独立发票/工商抬头页面、审批完成通知与到期任务源码矩阵。
+    - 证据：[发票页面、通知与任务源码证据](./invoice-page-notification-audit.md)。
+  - [x] 5.3B 独立发票页面：路由/菜单、Saved View、高级筛选、新建/编辑/详情、审批 review/revoke、批量删除与 Import/Export。
+    - 已按 Cordys 合同域子路由注册 `/contract/contractInvoice`，保留“合同”父导航，不伪造新的顶级 invoice 模块。
+    - `InvoicesView.vue` 已消费 direct `/invoice/* + /invoice/view/* + /approval-resource/*`，具备 Saved View、关键词/高级筛选、动态列、新建/编辑/详情、review/revoke、批删、Import/Export 与审批快照展示。
+  - [x] 5.3C 独立工商抬头页面：列表/筛选、新增编辑详情、approval/revoke、invoice-check 删除保护与 Import/Export。
+    - 已按 Cordys 注册 `/contract/contractBusinessName`；`BusinessTitlesView.vue` 使用 direct `business_title` API，支持 module form、keyword/高级筛选、新增编辑详情、approval/revoke、删除前 invoice-check、Import/Export。
+  - [x] 5.3D `INVOICE_APPROVAL` 业务消息真实触发；保持到期执行器无 invoice 分支；专项 Browser/API Smoke + Rules/typecheck/lint/build。
+    - `invoice -> INVOICE_APPROVAL` 已真实接入 BusinessNotifications；合同与客户 360 invoice statistic 已按审批流启用状态切换 `APPROVED-only / all`。
+    - `MessageExpiryService` 保持无 invoice 分支，并有测试锁定该边界。
+    - `pnpm smoke:w364-invoice-browser` 最终 **31/31**，API 5xx=0、Runtime exception=0；实跑发现并修复独立发票页 `approvalPush/revoke` 漏传 `formKey: 'invoice'` 导致 400 的真实集成缺口，提交审批 → `APPROVING` → 撤回已在浏览器链路验证。
+    - `pnpm smoke:w364-invoice`、`pnpm smoke:w364-invoice-approval` 最终复跑全绿；Rules **117/117**，根级 `pnpm typecheck`、`pnpm lint`、`pnpm build` 全部 exit 0。
+    - 根 `pnpm smoke` **227/227**；`pnpm smoke:w345-empty-db` 从零应用全部 **51 migrations**、双次 Seed、旧表/关键索引审计与隔离 API/Web 启动均 exit 0。
+    - 最终 runtime legacy 扫描为 0，非测试 runtime 的 invoice expiry 扫描为 0；`/system/modules` 合同卡片四项保持 REAL 且 `deferred:` 实例为 0；Browser 夹具清理后 `W364 Browser` 临时审批流 / 发票 / 工商抬头均为 0；`git diff --check` 通过。
+- [x] 5.4 回查 `/system/modules` 合同卡片的回款计划、回款记录、工商抬头必填、发票入口全部 REAL。
+  - [x] 回款计划表单设置：`contractPaymentPlan` metadata 真实接入，可进入 `/system/modules/fields?module=contractPaymentPlan`。
+  - [x] 回款记录表单设置：`contractPaymentRecord` metadata 真实接入，可进入 `/system/modules/fields?module=contractPaymentRecord`。
+  - [x] 工商抬头必填设置：真实 Drawer 消费 `/business-title/config/get|switch/:id`，按 `system:module:update` 控制 14 项 required 开关。
+  - [x] 发票入口：`invoice` 已加入 ModuleKey/字段设置模块，可进入 `/system/modules/fields?module=invoice`，合同卡片不再保留 deferred 占位。
+- [x] 5.5 专项验收与提交。
+  - 最终封版证据：[W3.6.4 回款与发票最终专项验收](./w364-final-acceptance.md)。
+  - `smoke:w364-contract-payment`、`smoke:w364-invoice`、`smoke:w364-invoice-approval` 全绿；Browser **31/31**，根 Smoke **227/227**，Rules **117/117**。
+  - typecheck/lint/build、51 migrations 空库重放、双次 Seed、runtime/deferred 扫描和 `git diff --check` 全绿；本阶段只做本地提交，不 push。
 
 ## 6. W3.6.5 订单
 

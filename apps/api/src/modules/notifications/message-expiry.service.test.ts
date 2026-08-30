@@ -24,23 +24,16 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
     },
     contractStageConfig: { findMany: async () => [] },
     contract: { findMany: async () => [] },
-    receivablePlan: {
-      findMany: async ({ where }: { where: { dueDate: { gte: Date } } }) =>
-        day(where.dueDate.gte) === 24
+    contractPaymentPlan: {
+      findMany: async ({ where }: { where: { planEndTime: { gte: bigint } } }) =>
+        day(new Date(Number(where.planEndTime.gte))) === 24
           ? [
               {
-                period: 1,
-                amount: 100,
-                dueDate: new Date(2026, 7, 24),
-                contract: { name: '年度合同', owner: 'owner-a' },
-                records: [{ amount: 40, approvalStatus: 'APPROVED' }],
-              },
-              {
-                period: 2,
-                amount: 100,
-                dueDate: new Date(2026, 7, 24),
-                contract: { name: '已回款合同', owner: 'owner-b' },
-                records: [{ amount: 100, approvalStatus: 'APPROVED' }],
+                name: '年度合同回款计划',
+                owner: 'owner-a',
+                planStatus: 'PENDING',
+                planEndTime: BigInt(new Date(2026, 7, 24).getTime()),
+                contract: { name: '年度合同' },
               },
             ]
           : [],
@@ -73,7 +66,7 @@ test('关闭事件或清空提前时间时不查询业务数据', async () => {
   const prisma = {
     opportunityQuotation: { findMany: async () => ((queried = true), []) },
     contract: { findMany: async () => ((queried = true), []) },
-    receivablePlan: { findMany: async () => ((queried = true), []) },
+    contractPaymentPlan: { findMany: async () => ((queried = true), []) },
   } as unknown as PrismaService
   const settings = {
     getEffectiveSetting: async (_tenantId: string, event: string) => ({
@@ -87,12 +80,38 @@ test('关闭事件或清空提前时间时不查询业务数据', async () => {
   assert.equal(queried, false)
 })
 
+test('到期执行器严格保持 Cordys 六个事件且不增加发票到期分支', async () => {
+  const events: string[] = []
+  const settings = {
+    getEffectiveSetting: async (_tenantId: string, event: string) => {
+      events.push(event)
+      return { systemEnabled: false, config: { timeList: [] } }
+    },
+  } as unknown as MessageSettingsService
+  const service = new MessageExpiryService(
+    {} as PrismaService,
+    settings,
+    {} as BusinessNotificationsService,
+  )
+
+  assert.equal(await service.runTenant('tenant-a', new Date(2026, 7, 24, 10)), 0)
+  assert.deepEqual(events, [
+    'BUSINESS_QUOTATION_EXPIRING',
+    'BUSINESS_QUOTATION_EXPIRED',
+    'CONTRACT_EXPIRING',
+    'CONTRACT_EXPIRED',
+    'CONTRACT_PAYMENT_EXPIRING',
+    'CONTRACT_PAYMENT_EXPIRED',
+  ])
+  assert.equal(events.some((event) => event.includes('INVOICE')), false)
+})
+
 test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合同', async () => {
   const windows: Array<{ day: number; excludedStages: string[] }> = []
   const delivered: Array<{ event: string; title: string; content?: string }> = []
   const prisma = {
     opportunityQuotation: { findMany: async () => [] },
-    receivablePlan: { findMany: async () => [] },
+    contractPaymentPlan: { findMany: async () => [] },
     contractStageConfig: {
       findMany: async () => [{ id: 'stage-end' }],
     },

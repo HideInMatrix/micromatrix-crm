@@ -171,6 +171,26 @@ const router = createRouter({
           meta: { title: '合同管理', perm: 'menu:contract', client: 'pc' },
         },
         {
+          path: 'contract/contractInvoice',
+          name: 'contract-invoice',
+          component: () => import('@/views/contracts/InvoicesView.vue'),
+          meta: {
+            title: '发票',
+            perm: 'CONTRACT_INVOICE:READ',
+            client: 'pc',
+          },
+        },
+        {
+          path: 'contract/contractBusinessName',
+          name: 'contract-business-title',
+          component: () => import('@/views/contracts/BusinessTitlesView.vue'),
+          meta: {
+            title: '工商抬头',
+            perm: 'CONTRACT_BUSINESS_TITLE:READ',
+            client: 'pc',
+          },
+        },
+        {
           path: 'orders',
           component: () => import('@/views/orders/OrdersView.vue'),
           meta: { title: '订单管理', perm: 'menu:order', client: 'pc' },

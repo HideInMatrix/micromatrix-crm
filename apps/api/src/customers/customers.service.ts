@@ -13,7 +13,6 @@ import {
   type FilterCondition,
   ImportResultVO,
   PaginatedResult,
-  ReceivablePlanStatus,
   hasPermission,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
@@ -706,7 +705,7 @@ export class CustomersService {
               AND: [contractScope as Prisma.ContractWhereInput],
             },
             include: {
-              receivableRecords: { select: { amount: true, approvalStatus: true } },
+              paymentRecords: { select: { recordAmount: true } },
             },
             orderBy: { createTime: 'desc' },
             take: 50,
@@ -737,9 +736,7 @@ export class CustomersService {
     const contractRows = contracts.map((c) => {
       const paidAmount =
         Math.round(
-          c.receivableRecords
-            .filter((r) => r.approvalStatus === 'NONE' || r.approvalStatus === 'APPROVED')
-            .reduce((sum, r) => sum + Number(r.amount), 0) * 100,
+          c.paymentRecords.reduce((sum, r) => sum + Number(r.recordAmount ?? 0), 0) * 100,
         ) / 100
       return {
         id: c.id,
@@ -857,7 +854,7 @@ export class CustomersService {
         this.prisma.contract.findMany({
           where,
           include: {
-            receivableRecords: { select: { amount: true, approvalStatus: true } },
+            paymentRecords: { select: { recordAmount: true } },
           },
           orderBy: { createTime: 'desc' },
           skip,
@@ -881,12 +878,10 @@ export class CustomersService {
           amount: Number(row.amount),
           paidAmount:
             Math.round(
-              row.receivableRecords
-                .filter(
-                  (record) =>
-                    record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED',
-                )
-                .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
+              row.paymentRecords.reduce(
+                (sum, record) => sum + Number(record.recordAmount ?? 0),
+                0,
+              ) * 100,
             ) / 100,
           stage: row.stage,
           stageName: stageMap.get(row.stage) ?? row.stage,
@@ -900,92 +895,80 @@ export class CustomersService {
       }
     }
 
-    if (resource === 'receivablePlans') {
-      const where: Prisma.ReceivablePlanWhereInput = {
-        tenantId: user.tenantId,
+    if (resource === 'contractPaymentPlans') {
+      const where: Prisma.ContractPaymentPlanWhereInput = {
+        organizationId: user.tenantId,
+        AND: [resourceScope as Prisma.ContractPaymentPlanWhereInput],
         contract: {
           customerId: id,
-          AND: [resourceScope as Prisma.ContractWhereInput],
         },
       }
       const [rows, total] = await Promise.all([
-        this.prisma.receivablePlan.findMany({
+        this.prisma.contractPaymentPlan.findMany({
           where,
-          include: {
-            contract: { select: { name: true } },
-            records: { select: { amount: true, approvalStatus: true } },
-          },
-          orderBy: [{ dueDate: 'asc' }, { period: 'asc' }],
+          include: { contract: { select: { name: true } } },
+          orderBy: [{ planEndTime: 'asc' }, { createTime: 'asc' }],
           skip,
           take,
         }),
-        this.prisma.receivablePlan.count({ where }),
+        this.prisma.contractPaymentPlan.count({ where }),
       ])
+      const ownerMap = await this.userNames(rows.map((row) => row.owner))
       return {
-        items: rows.map((row) => {
-          const paidAmount =
-            Math.round(
-              row.records
-                .filter(
-                  (record) =>
-                    record.approvalStatus === 'NONE' || record.approvalStatus === 'APPROVED',
-                )
-                .reduce((sum, record) => sum + Number(record.amount), 0) * 100,
-            ) / 100
-          const amount = Number(row.amount)
-          return {
-            id: row.id,
-            contractId: row.contractId,
-            contractName: row.contract.name,
-            period: row.period,
-            amount,
-            paidAmount,
-            status: this.receivablePlanStatus(amount, paidAmount, row.dueDate),
-            dueDate: row.dueDate.toISOString().slice(0, 10),
-            remark: row.remark,
-          }
-        }),
+        items: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          contractId: row.contractId,
+          contractName: row.contract.name,
+          owner: row.owner,
+          ownerName: ownerMap.get(row.owner) ?? null,
+          planStatus: row.planStatus,
+          planAmount: row.planAmount === null ? null : Number(row.planAmount),
+          planEndTime: row.planEndTime === null ? null : Number(row.planEndTime),
+          createTime: Number(row.createTime),
+        })),
         total,
         page: currentPage,
         pageSize: take,
       }
     }
 
-    if (resource === 'receivableRecords') {
-      const where: Prisma.ReceivableRecordWhereInput = {
-        tenantId: user.tenantId,
+    if (resource === 'contractPaymentRecords') {
+      const where: Prisma.ContractPaymentRecordWhereInput = {
+        organizationId: user.tenantId,
+        AND: [resourceScope as Prisma.ContractPaymentRecordWhereInput],
         contract: {
           customerId: id,
-          AND: [resourceScope as Prisma.ContractWhereInput],
         },
       }
       const [rows, total] = await Promise.all([
-        this.prisma.receivableRecord.findMany({
+        this.prisma.contractPaymentRecord.findMany({
           where,
           include: {
             contract: { select: { name: true } },
-            plan: { select: { period: true } },
+            paymentPlan: { select: { name: true } },
           },
-          orderBy: { receivedAt: 'desc' },
+          orderBy: { recordEndTime: 'desc' },
           skip,
           take,
         }),
-        this.prisma.receivableRecord.count({ where }),
+        this.prisma.contractPaymentRecord.count({ where }),
       ])
-      const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+      const ownerMap = await this.userNames(rows.map((row) => row.owner))
       return {
         items: rows.map((row) => ({
           id: row.id,
+          name: row.name,
+          no: row.no,
           contractId: row.contractId,
           contractName: row.contract.name,
-          planId: row.planId,
-          planPeriod: row.plan?.period ?? null,
-          amount: Number(row.amount),
-          receivedAt: row.receivedAt.toISOString().slice(0, 10),
-          method: row.method,
-          remark: row.remark,
-          approvalStatus: row.approvalStatus,
-          ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
+          paymentPlanId: row.paymentPlanId,
+          paymentPlanName: row.paymentPlan?.name ?? null,
+          owner: row.owner,
+          ownerName: ownerMap.get(row.owner) ?? null,
+          recordAmount: row.recordAmount === null ? null : Number(row.recordAmount),
+          recordEndTime: row.recordEndTime === null ? null : Number(row.recordEndTime),
+          createTime: Number(row.createTime),
         })),
         total,
         page: currentPage,
@@ -994,38 +977,43 @@ export class CustomersService {
     }
 
     if (resource === 'invoices') {
-      const where: Prisma.InvoiceRecordWhereInput = {
-        tenantId: user.tenantId,
+      const where: Prisma.ContractInvoiceWhereInput = {
+        organizationId: user.tenantId,
+        AND: [resourceScope as Prisma.ContractInvoiceWhereInput],
         contract: {
           customerId: id,
-          AND: [resourceScope as Prisma.ContractWhereInput],
         },
       }
       const [rows, total] = await Promise.all([
-        this.prisma.invoiceRecord.findMany({
+        this.prisma.contractInvoice.findMany({
           where,
           include: {
             contract: { select: { name: true } },
-            title: { select: { name: true } },
+            businessTitle: { select: { name: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createTime: 'desc' },
           skip,
           take,
         }),
-        this.prisma.invoiceRecord.count({ where }),
+        this.prisma.contractInvoice.count({ where }),
       ])
+      const ownerMap = await this.userNames(rows.map((row) => row.owner))
       return {
         items: rows.map((row) => ({
           id: row.id,
+          name: row.name,
           contractId: row.contractId,
           contractName: row.contract.name,
-          titleName: row.title?.name ?? null,
-          amount: Number(row.amount),
-          type: row.type,
-          status: row.status,
-          invoiceNo: row.invoiceNo,
-          issuedAt: row.issuedAt?.toISOString().slice(0, 10) ?? null,
-          remark: row.remark,
+          businessTitleId: row.businessTitleId,
+          businessTitleName: row.businessTitle?.name ?? null,
+          owner: row.owner,
+          ownerName: ownerMap.get(row.owner) ?? null,
+          amount: row.amount === null ? null : Number(row.amount),
+          invoiceType: row.invoiceType,
+          taxRate: row.taxRate === null ? null : Number(row.taxRate),
+          approvalStatus: row.approvalStatus,
+          approved: row.approved,
+          createTime: Number(row.createTime),
         })),
         total,
         page: currentPage,
@@ -1071,11 +1059,15 @@ export class CustomersService {
   async resourceStatistic(
     user: AuthUser,
     customerId: string,
-    resource: 'contracts' | 'receivablePlans' | 'receivableRecords' | 'invoices',
+    resource: 'contracts' | 'contractPaymentPlans' | 'contractPaymentRecords' | 'invoices',
   ) {
     await this.customerAccess.assertRead(user, customerId)
     this.assert360ResourcePermission(user, resource)
-    const contractScope = await this.customer360ResourceScope(user, resource)
+    const resourceScope = await this.customer360ResourceScope(user, resource)
+    const contractScope =
+      resource === 'invoices'
+        ? await this.dataScope.directOwnerFilter(user, 'menu:contract')
+        : resourceScope
     const contractWhere: Prisma.ContractWhereInput = {
       organizationId: user.tenantId,
       customerId,
@@ -1088,33 +1080,32 @@ export class CustomersService {
     const contractAmount = Number(contractAggregate._sum.amount ?? 0)
     if (resource === 'contracts') return { totalAmount: contractAmount }
 
-    if (resource === 'receivablePlans') {
-      const result = await this.prisma.receivablePlan.aggregate({
+    if (resource === 'contractPaymentPlans') {
+      const result = await this.prisma.contractPaymentPlan.aggregate({
         where: {
-          tenantId: user.tenantId,
+          organizationId: user.tenantId,
+          AND: [contractScope as Prisma.ContractPaymentPlanWhereInput],
           contract: {
             customerId,
-            AND: [contractScope as Prisma.ContractWhereInput],
           },
         },
-        _sum: { amount: true },
+        _sum: { planAmount: true },
       })
-      return { totalPlanAmount: Number(result._sum.amount ?? 0) }
+      return { totalPlanAmount: Number(result._sum.planAmount ?? 0) }
     }
 
-    if (resource === 'receivableRecords') {
-      const result = await this.prisma.receivableRecord.aggregate({
+    if (resource === 'contractPaymentRecords') {
+      const result = await this.prisma.contractPaymentRecord.aggregate({
         where: {
-          tenantId: user.tenantId,
+          organizationId: user.tenantId,
+          AND: [contractScope as Prisma.ContractPaymentRecordWhereInput],
           contract: {
             customerId,
-            AND: [contractScope as Prisma.ContractWhereInput],
           },
-          approvalStatus: { in: ['NONE', 'APPROVED'] },
         },
-        _sum: { amount: true },
+        _sum: { recordAmount: true },
       })
-      const receivedAmount = Number(result._sum.amount ?? 0)
+      const receivedAmount = Number(result._sum.recordAmount ?? 0)
       return {
         totalAmount: contractAmount,
         receivedAmount,
@@ -1122,14 +1113,24 @@ export class CustomersService {
       }
     }
 
-    const result = await this.prisma.invoiceRecord.aggregate({
+    const invoiceApprovalEnabled =
+      (await this.prisma.approvalFlow.count({
+        where: {
+          tenantId: user.tenantId,
+          formType: 'INVOICE',
+          enabled: true,
+          deletedAt: null,
+          currentVersionId: { not: null },
+        },
+      })) > 0
+    const result = await this.prisma.contractInvoice.aggregate({
       where: {
-        tenantId: user.tenantId,
+        organizationId: user.tenantId,
+        AND: [resourceScope as Prisma.ContractInvoiceWhereInput],
         contract: {
           customerId,
-          AND: [contractScope as Prisma.ContractWhereInput],
         },
-        status: { not: 'VOID' },
+        ...(invoiceApprovalEnabled ? { approvalStatus: 'APPROVED' } : {}),
       },
       _sum: { amount: true },
     })
@@ -2122,10 +2123,6 @@ export class CustomersService {
         where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: sourceIds } },
         data: { targetId: dto.toMergeId },
       })
-      await tx.invoiceTitle.updateMany({
-        where: { tenantId: user.tenantId, customerId: { in: sourceIds } },
-        data: { customerId: dto.toMergeId },
-      })
       await tx.attachment.updateMany({
         where: { tenantId: user.tenantId, targetType: 'customer', targetId: { in: sourceIds } },
         data: { targetId: dto.toMergeId },
@@ -2377,8 +2374,8 @@ export class CustomersService {
     const permission = this.customer360ResourcePermission(resource)
     return resource === 'opportunities' ||
       resource === 'contracts' ||
-      resource === 'receivablePlans' ||
-      resource === 'receivableRecords' ||
+      resource === 'contractPaymentPlans' ||
+      resource === 'contractPaymentRecords' ||
       resource === 'invoices'
       ? this.dataScope.directOwnerFilter(user, permission)
       : this.dataScope.scopeFilter(user, permission)
@@ -2387,20 +2384,11 @@ export class CustomersService {
   private customer360ResourcePermission(resource: Customer360Resource) {
     return resource === 'opportunities'
       ? 'menu:opportunity'
+      : resource === 'invoices'
+        ? 'CONTRACT_INVOICE:READ'
       : resource === 'orders'
         ? 'menu:order'
         : 'menu:contract'
-  }
-
-  private receivablePlanStatus(
-    amount: number,
-    paidAmount: number,
-    dueDate: Date,
-  ): ReceivablePlanStatus {
-    if (paidAmount >= amount && amount > 0) return 'PAID'
-    if (paidAmount > 0) return 'PARTIAL'
-    if (dueDate < new Date()) return 'OVERDUE'
-    return 'PENDING'
   }
 
   private async buildCustomerRelation(

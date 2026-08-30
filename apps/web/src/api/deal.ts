@@ -1,15 +1,17 @@
 import type {
+  BusinessTitleConfigVO,
+  BusinessTitleVO,
+  ContractInvoiceVO,
+  ContractPaymentPlanVO,
+  ContractPaymentRecordVO,
   ContractVO,
-  InvoiceTitleVO,
-  InvoiceVO,
+  ImportResultVO,
   OrderVO,
   PageQuery,
   PaginatedResult,
   ProductPriceVO,
   ProductVO,
   QuoteVO,
-  ReceivablePlanVO,
-  ReceivableRecordVO,
 } from '@micromatrix/shared'
 import { http } from './http'
 
@@ -202,47 +204,175 @@ export const contractApi = {
     circulationType: string
   }>('/contract/stage/get'),
 
-  // 回款计划
-  plans: (contractId: string) =>
-    http.get<ReceivablePlanVO[]>(`/contracts/${contractId}/receivable-plans`),
-  createPlan: (data: { contractId: string; amount: number; dueDate: string; remark?: string }) =>
-    http.post('/contracts/receivable-plans', data),
-  removePlan: (planId: string) => http.delete(`/contracts/receivable-plans/${planId}`),
+}
 
-  // 回款记录
-  records: (contractId: string) =>
-    http.get<ReceivableRecordVO[]>(`/contracts/${contractId}/receivable-records`),
-  createRecord: (data: {
-    contractId: string
-    planId?: string
-    amount: number
-    receivedAt: string
-    method?: string
-    remark?: string
-  }) => http.post('/contracts/receivable-records', data),
-  removeRecord: (recordId: string) => http.delete(`/contracts/receivable-records/${recordId}`),
+// ===== 发票 / 工商抬头（Cordys direct） =====
 
-  // 发票
-  invoices: (contractId: string) => http.get<InvoiceVO[]>(`/contracts/${contractId}/invoices`),
-  createInvoice: (data: {
-    contractId: string
-    titleId?: string
-    amount: number
-    type?: string
-    remark?: string
-  }) => http.post('/contracts/invoices', data),
-  issueInvoice: (invoiceId: string, invoiceNo: string) =>
-    http.post(`/contracts/invoices/${invoiceId}/issue`, { invoiceNo }),
-  voidInvoice: (invoiceId: string) => http.post(`/contracts/invoices/${invoiceId}/void`),
+export const contractInvoiceApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+      '/invoice/module/form',
+    ),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    viewId?: string
+    filters?: unknown[]
+    contractId?: string
+    customerId?: string
+  }) =>
+    http.post<{
+      list: ContractInvoiceVO[]
+      total: number
+      current: number
+      pageSize: number
+      optionMap: Record<string, unknown>
+    }>('/invoice/page', data),
+  detail: (id: string) => http.get<ContractInvoiceVO>(`/invoice/get/${id}`),
+  snapshot: (id: string) => http.get<Record<string, unknown>>(`/invoice/get/snapshot/${id}`),
+  snapshotForm: (id: string) => http.get<Record<string, unknown>>(`/invoice/module/form/snapshot/${id}`),
+  create: (data: Record<string, unknown>) => http.post<ContractInvoiceVO>('/invoice/add', data),
+  update: (data: Record<string, unknown>) => http.post<ContractInvoiceVO>('/invoice/update', data),
+  remove: (id: string) => http.get(`/invoice/delete/${id}`),
+  batchDelete: (ids: string[]) => http.post('/invoice/batch/delete', ids),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/invoice/tab'),
+  contractStatistic: (contractId: string) =>
+    http.get<{ contractAmount: number; invoicedAmount: number; uninvoicedAmount: number }>(
+      `/contract/invoice/statistic/${contractId}`,
+    ),
+  approvalPush: (resourceId: string) =>
+    http.post<ContractInvoiceVO>('/approval-resource/push', { resourceId, formKey: 'invoice' }),
+  approvalRevoke: (resourceId: string) =>
+    http.post<ContractInvoiceVO>('/approval-resource/revoke', { resourceId, formKey: 'invoice' }),
+  approvalSimpleDetail: (resourceId: string) =>
+    http.get<Record<string, unknown>>(`/approval-resource/simple-detail/${resourceId}`),
+  approvalDetail: (resourceId: string) =>
+    http.get<Record<string, unknown>>(`/approval-resource/detail/${resourceId}`),
+  downloadTemplate: (importType: 'ADD' | 'UPDATE') =>
+    http.get<Blob>('/invoice/template/download', { params: { importType }, responseType: 'blob' }),
+  precheckImport: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post<ImportResultVO>('/invoice/import/pre-check', form)
+  },
+  importXlsx: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post<ImportResultVO>('/invoice/import', form)
+  },
+  exportAll: (data: Record<string, unknown>) => http.post('/invoice/export-all', data),
+  exportSelected: (data: Record<string, unknown>) => http.post('/invoice/export-select', data),
+}
 
-  // 工商抬头
-  titles: (customerId?: string) =>
-    http.get<InvoiceTitleVO[]>('/contracts/invoice-titles', { params: { customerId } }),
-  createTitle: (data: Partial<InvoiceTitleVO> & { name: string; taxNo: string }) =>
-    http.post('/contracts/invoice-titles', data),
-  updateTitle: (id: string, data: Partial<InvoiceTitleVO>) =>
-    http.patch(`/contracts/invoice-titles/${id}`, data),
-  removeTitle: (id: string) => http.delete(`/contracts/invoice-titles/${id}`),
+export const businessTitleApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+      '/contract/business-title/module/form',
+    ),
+  page: (data: { current?: number; pageSize?: number; keyword?: string; filters?: unknown[] }) =>
+    http.post<{ list: BusinessTitleVO[]; total: number; current: number; pageSize: number }>(
+      '/contract/business-title/page',
+      data,
+    ),
+  detail: (id: string) => http.get<BusinessTitleVO>(`/contract/business-title/get/${id}`),
+  options: () => http.get<BusinessTitleVO[]>('/contract/business-title/option'),
+  create: (data: Record<string, unknown>) => http.post<BusinessTitleVO>('/contract/business-title/add', data),
+  update: (data: Record<string, unknown>) => http.post<BusinessTitleVO>('/contract/business-title/update', data),
+  remove: (id: string) => http.get(`/contract/business-title/delete/${id}`),
+  approval: (data: { id: string; approvalStatus: 'APPROVED' | 'UNAPPROVED'; reason?: string }) =>
+    http.post<BusinessTitleVO>('/contract/business-title/approval', data),
+  revoke: (id: string) => http.get<BusinessTitleVO>(`/contract/business-title/revoke/${id}`),
+  hasInvoice: (id: string) => http.get<boolean>(`/contract/business-title/invoice/check/${id}`),
+  downloadTemplate: (importType: 'ADD' | 'UPDATE') =>
+    http.get<Blob>('/contract/business-title/template/download', {
+      params: { importType },
+      responseType: 'blob',
+    }),
+  precheckImport: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post<ImportResultVO>('/contract/business-title/import/pre-check', form)
+  },
+  importXlsx: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post<ImportResultVO>('/contract/business-title/import', form)
+  },
+  exportAll: (data: Record<string, unknown>) =>
+    http.post('/contract/business-title/export-all', data),
+  exportSelected: (data: Record<string, unknown>) =>
+    http.post('/contract/business-title/export-select', data),
+  config: () => http.get<BusinessTitleConfigVO[]>('/business-title/config/get'),
+  switchRequired: (id: string) => http.get<BusinessTitleConfigVO>(`/business-title/config/switch/${id}`),
+}
+
+// ===== 回款计划 / 回款记录（Cordys direct） =====
+
+export const contractPaymentPlanApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+      '/contract/payment-plan/module/form',
+    ),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    viewId?: string
+    filters?: unknown[]
+    contractId?: string
+    customerId?: string
+  }) =>
+    http.post<{
+      list: ContractPaymentPlanVO[]
+      total: number
+      current: number
+      pageSize: number
+      optionMap: Record<string, unknown>
+    }>('/contract/payment-plan/page', data),
+  detail: (id: string) => http.get<ContractPaymentPlanVO>(`/contract/payment-plan/get/${id}`),
+  create: (data: Record<string, unknown>) =>
+    http.post<ContractPaymentPlanVO>('/contract/payment-plan/add', data),
+  update: (data: Record<string, unknown>) =>
+    http.post<ContractPaymentPlanVO>('/contract/payment-plan/update', data),
+  remove: (id: string) => http.get(`/contract/payment-plan/delete/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/contract/payment-plan/tab'),
+}
+
+export const contractPaymentRecordApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+      '/contract/payment-record/module/form',
+    ),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    viewId?: string
+    filters?: unknown[]
+    contractId?: string
+    customerId?: string
+  }) =>
+    http.post<{
+      list: ContractPaymentRecordVO[]
+      total: number
+      current: number
+      pageSize: number
+      optionMap: Record<string, unknown>
+    }>('/contract/payment-record/page', data),
+  detail: (id: string) => http.get<ContractPaymentRecordVO>(`/contract/payment-record/get/${id}`),
+  create: (data: Record<string, unknown>) =>
+    http.post<ContractPaymentRecordVO>('/contract/payment-record/add', data),
+  update: (data: Record<string, unknown>) =>
+    http.post<ContractPaymentRecordVO>('/contract/payment-record/update', data),
+  remove: (id: string) => http.get(`/contract/payment-record/delete/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/contract/payment-record/tab'),
+  statistic: (data: Record<string, unknown>) =>
+    http.post<{ count: number; recordAmount: number }>('/contract/payment-record/statistic', data),
 }
 
 // ===== 订单 =====

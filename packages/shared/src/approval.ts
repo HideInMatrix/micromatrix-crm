@@ -28,13 +28,13 @@ export const APPROVAL_INSTANCE_STATUS_LABELS: Record<ApprovalInstanceStatus, str
 }
 
 /** 可挂接审批的业务对象 */
-export type ApprovalModule = 'quote' | 'contract' | 'order' | 'receivableRecord'
+export type ApprovalModule = 'quote' | 'contract' | 'invoice' | 'order'
 
 export const APPROVAL_MODULE_LABELS: Record<ApprovalModule, string> = {
   quote: '报价',
   contract: '合同',
+  invoice: '发票',
   order: '订单',
-  receivableRecord: '回款',
 }
 
 export interface ApprovalNodeConfig {

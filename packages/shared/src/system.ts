@@ -286,6 +286,9 @@ export type ModuleKey =
   | 'price'
   | 'quote'
   | 'contract'
+  | 'contractPaymentPlan'
+  | 'contractPaymentRecord'
+  | 'invoice'
   | 'order'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
@@ -297,6 +300,9 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   price: '价格表',
   quote: '报价',
   contract: '合同',
+  contractPaymentPlan: '回款计划',
+  contractPaymentRecord: '回款记录',
+  invoice: '发票',
   order: '订单',
 }
 

@@ -187,8 +187,8 @@ export class MembersService {
         where: { organizationId: tenantId, createUser: id },
       }),
       this.prisma.contract.count({ where: { organizationId: tenantId, owner: id } }),
-      this.prisma.receivableRecord.count({ where: { tenantId, ownerId: id } }),
-      this.prisma.invoiceRecord.count({ where: { tenantId, ownerId: id } }),
+      this.prisma.contractPaymentRecord.count({ where: { organizationId: tenantId, owner: id } }),
+      this.prisma.contractInvoice.count({ where: { organizationId: tenantId, owner: id } }),
       this.prisma.order.count({ where: { tenantId, ownerId: id } }),
       this.prisma.followUpRecord.count({ where: { tenantId, ownerId: id } }),
       this.prisma.customerCollaboration.count({
