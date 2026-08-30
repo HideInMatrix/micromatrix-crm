@@ -1714,8 +1714,10 @@ model ApprovalInstance {
   currentNodeIndex Int                    @default(0)
   // 节点快照（提交时冻结流程配置）：[{ name, approverType, mode, approverIds }]
   nodesSnapshot    Json
-  // UPDATE 审批的业务前置快照；用于驳回/撤回时恢复业务数据。
-  businessSnapshot Json?                  @map("business_snapshot")
+  // Cordys approval_instance.comment：实例级提交说明，不等同于任务审批意见。
+  comment          String?
+  // Cordys approval_instance.update_fields：JSON 字符串形式的本次编辑字段 ID 列表。
+  updateFields     String?                @db.VarChar(2000) @map("update_fields")
   submitterId      String
   submitterName    String
   finishedAt       DateTime?
@@ -1732,6 +1734,22 @@ model ApprovalInstance {
   @@index([flowId, status])
   @@index([flowVersionId])
   @@map("approval_instances")
+}
+
+model ApprovalResourceSnapshot {
+  id          String           @id @default(cuid())
+  tenantId    String
+  formType    ApprovalFormType
+  resourceId  String
+  snapshotData Json            @map("snapshot_data")
+  createdById String?          @map("created_by_id")
+  updatedById String?          @map("updated_by_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@unique([tenantId, formType, resourceId])
+  @@index([tenantId, formType])
+  @@map("approval_resource_snapshots")
 }
 
 model ApprovalTask {

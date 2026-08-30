@@ -224,8 +224,8 @@ export class OrdersService {
       amount,
       'UPDATE',
     )
-    const businessSnapshot = approvalRequired
-      ? await this.approvals.captureBusinessSnapshot(user, 'order', dto.id)
+    const preUpdateSnapshot = approvalRequired
+      ? await this.approvals.capturePreUpdateSnapshot(user, 'order', dto.id)
       : null
     const config = dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const existingDynamic = await this.fieldValues.load(user.tenantId, 'order', [dto.id])
@@ -266,7 +266,10 @@ export class OrdersService {
       await this.writeSnapshot(tx, user.tenantId, row, config, dynamicValues, latestProducts)
     })
     if (approvalRequired) {
-      await this.approvals.submit(user, 'order', dto.id, 'UPDATE', businessSnapshot)
+      await this.approvals.submit(user, 'order', dto.id, 'UPDATE', {
+        preUpdateSnapshot,
+        comment: dto.comment,
+      })
     }
     return this.findOne(user, dto.id)
   }

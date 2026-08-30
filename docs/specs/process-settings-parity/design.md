@@ -325,3 +325,68 @@ START -> APPROVER_1 -> APPROVER_2 -> ... -> END
 - `docs/cordys-deferred-backlog.md`
 
 DB-009 只有在主表、版本、基础节点图、迁移、API、页面和测试全部完成后才能标记 `VERIFIED`。DB-003、DB-010、DB-011、DB-012 继续保持未完成状态。
+
+## 12. W3.7 高级审批演进设计
+
+W3.7 不替换 W2.5 的 Flow / Version / Node / Instance / Task 主模型，而是在其上补齐三个缺口层。详细阶段计划见 [W3.7 高级审批深化执行计划](./w370-advanced-approval-plan.md)。
+
+### 12.1 DB-010：资源适配边界
+
+目标结构：
+
+```mermaid
+flowchart LR
+    Biz[Quotation / Contract / Invoice / Order] --> RR[Approval Resource Registry]
+    RR --> H[Resource Handler]
+    H --> S[(ApprovalResourceSnapshot)]
+    Runtime[ApprovalsService] --> RR
+    Runtime --> I[(ApprovalInstance updateFields/comment)]
+    Reject[Reject / Cancel] --> RR
+    Approve[Approve] --> Biz
+```
+
+`ApprovalsService` 只负责审批状态机，不再知道某个业务表有哪些主字段、Field/Blob 或业务 snapshot 表。资源 Handler 至少负责：
+
+- capture pre-update state；
+- restore pre-update state；
+- 读取审批目标摘要；
+- 写审批状态和必要的业务快照状态；
+- DELETE 审批通过后的真实删除动作（若该业务支持）。
+
+Handler 注册必须是显式白名单；不根据用户输入动态加载类或执行任意 Prisma model 名称。
+
+### 12.2 快照数据模型
+
+新通用 snapshot 以 Cordys `formKey/resourceId/snapshotData` 语义为核心，同时补项目必需的多租户边界和生命周期字段。最终 Prisma 字段在实施时冻结，但必须满足：
+
+- tenant + form/module + resource 唯一活动快照；
+- snapshot 为结构化 JSON，不存可执行代码；
+- 可追踪创建时间/操作者；
+- reject/cancel 恢复成功后删除或明确标记已消费；
+- 跨租户查询必须从数据库条件上 fail closed。
+
+迁移顺序：先新增通用模型和 Handler，再切四业务调用，最后移除 `businessSnapshot` 旧路径；禁止长期双写。
+
+### 12.3 DB-011：任务状态机扩展
+
+当前 `ApprovalTask` 继续作为“当前/历史待办实体”，补齐高级动作所需 node round、action/type 语义。独立 `ApprovalRecord` 作为不可变执行历史，避免任务状态变化破坏审计。
+
+加签使用 root task + stable sort 表达同一加签链。节点退回不篡改流程版本，而是增加 node round 并重新生成目标节点任务。审批人任务撤回必须验证下游是否已进入不可逆状态。
+
+提交人 cancel 继续是实例级动作，不能与 approver withdraw 合并为一个 endpoint 或一个状态判断。
+
+### 12.4 DB-012：图结构与后置动作
+
+- `ApprovalNode` 继续承载公共节点字段；Condition 使用独立配置模型或等价一对一扩展，不把复杂条件塞入节点名称/临时前端 JSON。
+- Link 是条件图唯一连线真相；Vue Flow 仍只是编辑器，不保存插件内部对象。
+- Condition runtime 使用业务字段快照 + `updateFields`；DEFAULT 只有条件分支均不匹配时进入。
+- Approver 扩展保存 fallback/sameSubmitter/fieldPermissions/pass/reject post config 等源码确认字段。
+- 通过/驳回后置字段更新经 Resource Handler 执行，不能绕开业务字段校验和动态字段服务。
+- Webhook 走独立安全 client/service，禁止业务 Service 直接 `fetch(userUrl)`；必须做协议白名单、目标解析、私网阻断、超时、响应上限和安全日志。
+
+### 12.5 兼容与删除策略
+
+- W3.6 已通过的 quotation/contract/invoice/order CREATE/UPDATE/DELETE 行为是强回归基线。
+- `nodesSnapshot` 继续冻结实例审批路径；高级动作不得回读最新版本改变历史实例。
+- W2.5 已存在但 runtime disabled 的高级字段只有在对应实现完成后开放；不因数据库字段存在而改变 `runtimeReady`。
+- 删除旧 snapshot 硬编码、旧字段或兼容结构必须放在对应专项 Smoke 之后，并执行 runtime 搜索确认 0 引用。

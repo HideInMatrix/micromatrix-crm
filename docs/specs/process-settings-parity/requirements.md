@@ -95,3 +95,43 @@ Cordys 的独立“工作流”页面当前只有占位内容，不属于本阶�
 - 不在业务对象具备变更暂存、审批后回放与删除恢复机制前启用 `update / delete` 审批触发。
 
 上述非目标对应的数据模型和运行时缺口必须保留在暂缓台账，后续只有完成源码、迁移、API、页面、权限和测试闭环后才能标记为已对齐。
+
+## W3.7 高级审批深化扩展需求
+
+W3.7 继续使用本规格作为审批流程唯一需求真相源，不新建第二套审批规格。源码审计见 [W3.7.0 高级审批源码与运行时差异审计](./w370-advanced-approval-audit.md)。
+
+### R9 通用资源快照与变更上下文
+
+- 系统 shall 把当前 Quote / Contract / Invoice / Order 的 UPDATE 业务快照恢复能力收口到统一审批资源边界，新增审批业务不得继续向 `ApprovalsService` 增加业务专用 capture/restore switch。
+- UPDATE 提审 shall 保存编辑前资源快照；驳回或提交人撤销 shall 恢复快照并清理已消费快照；重复提审不得留下多份互相竞争的活动快照。
+- DELETE 审批 shall 继续保持“审批通过后执行实际删除”，不得改为先删除后恢复。
+- `ApprovalInstance` shall 保存本次业务修改字段集合，并为实例级提交说明保留独立 comment 上下文；任务审批意见不得被实例 comment 覆盖。
+- 通用快照和实例上下文 shall 强制租户隔离，跨租户资源 ID 即使可猜中也不得读取、覆盖或恢复。
+- 旧 `businessSnapshot` 和业务硬编码 shall 只有在四类交易业务等价回归通过、无第二真相源后才能删除。
+
+### R10 高级审批任务与动作
+
+- 系统 shall 区分“提交人撤销整个审批实例”和“审批人撤回自己已经执行的审批任务”，两者使用不同权限与状态约束。
+- 流程启用 `allowAddSign` 后，合法当前审批人 shall 能执行 BEFORE / AFTER 加签；加签链 shall 保持稳定顺序并支持在加签任务上再次加签。
+- 审批人 shall 能把审批中实例退回到服务端允许的历史节点；系统 shall 保存退回节点、原因、操作者与原任务关系，并重新生成目标节点有效待办。
+- 高级动作 shall 保存独立审批记录，至少保留实例、任务、节点轮次、节点、动作结果、意见和时间；不得只通过覆盖当前 task 状态表达完整历史。
+- 当流程要求审批意见时，approve/reject/return-back/add-sign 等对应动作 shall 在服务端强制校验，不得只靠前端必填。
+- 高级动作 shall 校验当前任务 owner、实例/节点状态和租户边界，并对重复提交或并发操作 fail closed。
+
+### R11 高级节点、条件和后置动作
+
+- 流程设计 shall 支持真实 Condition / DEFAULT 分支，服务端 shall 校验节点与连接属于同一流程版本和执行时机，并保证不存在后端无法执行的悬空图。
+- 条件运行时 shall 能读取业务字段值以及 R9 的 `updateFields`，并支持 Cordys 源码实际使用的 AND / OR 与“字段是否相对原值发生修改”等条件。
+- 审批人节点 shall 支持空审批人策略、fallback、审批人与提交人相同时的策略，以及源码确认的动态审批方向；这些能力未完成前对应 UI 必须保持不可执行。
+- `duplicateApproverRule` shall 由真实运行时执行，而不是仅保存字段。
+- 节点 shall 能配置字段权限，并在审批详情/处理界面真实约束字段可见和可编辑行为。
+- 通过/驳回后置动作 shall 能按配置更新业务字段；运行时应记录可审计结果。
+- Webhook shall 支持源码确认的配置和测试连接，但实现必须额外具备 SSRF、内网目标、超时、响应大小、敏感 Header/Body 日志脱敏等安全边界，不机械复制任意 URL 请求。
+- 高级节点配置只有在运行时、API 与 Browser 验收全部通过后才允许从流程设置中的 disabled 状态开放。
+
+### R12 W3.7 验收与关闭
+
+- DB-010、DB-011、DB-012 shall 按依赖顺序关闭，不得以一个总开关同时标记完成。
+- 每个子阶段 shall 完成 Prisma/migration、Rules、专项 API Smoke 和受影响业务回归；涉及页面的阶段还 shall 完成 Browser Smoke。
+- W3.7 最终 shall 通过隔离空库全部 migrations + 双 Seed、Root Smoke、workspace typecheck/lint/build、runtime legacy/deferred scan 和 `git diff --check`。
+- deferred backlog、parity、alignment log 和本规格 tasks shall 与最终真实结果同步；没有真实验收证据的能力不得标记 `VERIFIED`。

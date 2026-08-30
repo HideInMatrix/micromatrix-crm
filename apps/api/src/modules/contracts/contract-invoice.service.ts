@@ -236,8 +236,8 @@ export class ContractInvoiceService {
       amount,
       'UPDATE',
     )
-    const businessSnapshot = approvalRequired
-      ? await this.approvals.captureBusinessSnapshot(user, 'invoice', dto.id)
+    const preUpdateSnapshot = approvalRequired
+      ? await this.approvals.capturePreUpdateSnapshot(user, 'invoice', dto.id)
       : null
     const customData = dto.moduleFields === undefined ? null : await this.toCustomData(user.tenantId, dto.moduleFields)
     await this.prisma.$transaction(async (tx) => {
@@ -259,7 +259,10 @@ export class ContractInvoiceService {
     })
     await this.writeSnapshot(user, dto.id)
     if (approvalRequired) {
-      await this.approvals.submit(user, 'invoice', dto.id, 'UPDATE', businessSnapshot)
+      await this.approvals.submit(user, 'invoice', dto.id, 'UPDATE', {
+        preUpdateSnapshot,
+        comment: dto.comment,
+      })
     }
     return this.get(user, dto.id)
   }

@@ -26,6 +26,7 @@
     "smoke:w365-order": "tsx scripts/w365-order-smoke.ts",
     "smoke:w365-order-stage": "tsx scripts/w365-order-stage-smoke.ts",
     "smoke:w365-order-approval": "tsx scripts/w365-order-approval-smoke.ts",
+    "smoke:w370-db010-regression": "node scripts/w370-db010-approval-regression.mjs",
     "smoke:db021-follow-plan-runtime": "tsx scripts/db021-follow-plan-runtime-smoke.ts"
   },
   "dependencies": {

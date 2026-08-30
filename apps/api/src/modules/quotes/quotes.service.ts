@@ -163,9 +163,9 @@ export class QuotesService {
       nextAmount,
       executeTiming,
     )
-    const businessSnapshot =
+    const preUpdateSnapshot =
       approvalRequired && executeTiming === 'UPDATE'
-        ? await this.approvals.captureBusinessSnapshot(user, 'quote', dto.id)
+        ? await this.approvals.capturePreUpdateSnapshot(user, 'quote', dto.id)
         : null
     await this.prisma.$transaction(async (tx) => {
       const row = await tx.opportunityQuotation.update({
@@ -196,7 +196,10 @@ export class QuotesService {
       })
     })
     if (approvalRequired) {
-      await this.approvals.submit(user, 'quote', dto.id, executeTiming, businessSnapshot)
+      await this.approvals.submit(user, 'quote', dto.id, executeTiming, {
+        preUpdateSnapshot,
+        comment: dto.comment,
+      })
     }
     return this.get(user, dto.id)
   }

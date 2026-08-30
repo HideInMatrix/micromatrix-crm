@@ -88,3 +88,49 @@
   - 仅在主表、版本、基础节点图、迁移、API、页面和测试全部完成后把 DB-009 标记为 `VERIFIED`。
   - 保留 DB-003、DB-010、DB-011、DB-012 的未完成状态和前置条件，并创建 W2.5 本地 Git 提交。
   - _Requirements: R8_
+
+## W3.7 高级审批深化
+
+- [x] W3.7-9.1 完成 DB-010～DB-012 重新审计与执行计划冻结。
+  - 已重新读取 Cordys `ApprovalResourceService / ApprovalActionService / ApprovalFlowService` 以及 ResourceSnapshot、Instance、Task、AddSign、ReturnBack、Record、Attachment、NodeApprover、NodeCondition Domain。
+  - 已确认 W3.6 后 DB-010 旧描述过时：Quote / Contract / Invoice / Order 已具备真实 UPDATE rollback 与 DELETE 延迟执行，但仍缺通用 `ApprovalResourceSnapshot + Handler` 和实例 `updateFields/comment`。
+  - 已确认 DB-011 的 BEFORE/AFTER 加签、节点退回、审批人任务撤回、独立记录/附件仍为真实运行时缺口。
+  - 已确认 DB-012 的 Condition/DEFAULT、fallback/sameSubmitter、fieldPermissions、pass/reject post action、Webhook 和 duplicate rule 仍未接运行时；当前高级开关仍由 Service 422 + Web disabled 保护。
+  - 已固化 [W3.7.0 高级审批源码与运行时差异审计](./w370-advanced-approval-audit.md) 与 [W3.7 高级审批深化执行计划](./w370-advanced-approval-plan.md)，并扩展 requirements/design。
+  - _Requirements: R9-R12_
+
+- [x] W3.7-9.2 DB-010：通用资源快照与实例变更上下文。
+  - [x] 9.2A 固化 Prisma / migration / handler 设计，并建立通用 `ApprovalResourceSnapshot` 与 `ApprovalInstance.updateFields/comment`。
+    - Migration 58 建立通用快照表与实例上下文，并只搬运仍在途的旧 UPDATE 快照；`default` 与隔离库均实际执行通过。
+  - [x] 9.2B 为 quotation / contract / invoice / order 注册同一 Resource Handler 边界，迁移 capture/restore/status/delete 职责。
+    - `ApprovalsService` 对四业务 direct Prisma 引用已归零；Resource boundary 对 target/status/delete/restore 全部 tenant fail-closed。
+  - [x] 9.2C 删除 `ApprovalsService` 四套业务 snapshot 硬编码和长期双写，按最终生命周期清理旧 `businessSnapshot`。
+    - Migration 59 已删除 `approval_instances.business_snapshot`；production `businessSnapshot` 扫描为 0，通用 `approval_resource_snapshots` 成为唯一活动快照真相源。
+  - [x] 9.2D Rules + 四业务 UPDATE reject/cancel + DELETE + tenant isolation 专项 Smoke；migration/空库回归后关闭 DB-010。
+    - `smoke:w370-db010-regression`：59 migrations + generic lifecycle / tenant isolation / Quote / Invoice / Order 全绿；W3.6.3 Contract 独立 HTTP Smoke 在 59 migrations 下全绿。
+    - Rules **119/119**、Root Smoke **227/227**、空库 **59/59 + 双 Seed**、API typecheck、workspace lint/build、`git diff --check` 全绿。
+    - 证据：[W3.7-9.2 DB-010 通用审批资源快照专项验收](./w370-db010-acceptance.md)。
+  - _Requirements: R9, R12_
+
+- [ ] W3.7-9.3 DB-011：高级任务、动作、记录与附件。
+  - [ ] 9.3A 扩展 task nodeRound/type/action，并建立不可变 ApprovalRecord。
+  - [ ] 9.3B BEFORE/AFTER 加签与嵌套加签链。
+  - [ ] 9.3C 节点退回 + return-back record + round 重建。
+  - [ ] 9.3D 审批人任务撤回；与 submitter cancel 分离，并处理 ANY/ALL/后续节点约束。
+  - [ ] 9.3E requireComment、附件及对应 API/UI；专项 Rules/API/Browser 后关闭 DB-011。
+  - _Requirements: R10, R12_
+
+- [ ] W3.7-9.4 DB-012：高级节点、条件、字段权限与后置动作。
+  - [ ] 9.4A Condition / DEFAULT 图结构、条件 DTO 与 `updateFields` runtime。
+  - [ ] 9.4B empty approver / fallback / sameSubmitter / 动态审批方向与 duplicate rule。
+  - [ ] 9.4C 节点字段权限和审批详情真实约束。
+  - [ ] 9.4D pass/reject 后置字段更新。
+  - [ ] 9.4E Webhook 安全 client、测试连接、运行时发送与审计。
+  - [ ] 9.4F Vue Flow 条件图、更多设置开放与专项 Browser；完成后关闭 DB-012。
+  - _Requirements: R11, R12_
+
+- [ ] W3.7-9.5 最终验收与文档封板。
+  - DB-010/011/012 专项 Smoke、Root Smoke、Rules、流程设置/审批中心 Browser、空库全 migration + 双 Seed、workspace typecheck/lint/build 全绿。
+  - runtime legacy/deferred scan、`git diff --check`、parity/alignment/backlog 同步；仅在真实证据齐全后标记对应项 `VERIFIED`。
+  - scoped 本地提交；不 push，除非用户明确要求。
+  - _Requirements: R12_

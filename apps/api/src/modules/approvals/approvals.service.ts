@@ -12,152 +12,13 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
-
-interface TargetInfo {
-  name: string
-  amount: number
-  approvalStatus: string
-}
+import { ApprovalResourceService } from './approval-resource.service'
 
 type ApprovalExecuteTimingValue = 'CREATE' | 'UPDATE' | 'DELETE'
 
-interface QuotationBusinessSnapshot {
-  quotation: {
-    name: string
-    opportunityId: string
-    untilTime: string
-    amount: string
-  }
-  fields: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-    refSubId: string | null
-    rowId: string | null
-    bizId: string | null
-  }>
-  fieldBlobs: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-    refSubId: string | null
-    rowId: string | null
-    bizId: string | null
-  }>
-  snapshots: Array<{
-    id: string
-    quotationId: string
-    quotationProp: string | null
-    quotationValue: string | null
-  }>
-}
-
-interface ContractBusinessSnapshot {
-  contract: {
-    name: string
-    customerId: string
-    owner: string
-    amount: string
-    number: string
-    stage: string
-    startTime: string | null
-    endTime: string | null
-    voidReason: string | null
-    pos: string | null
-  }
-  fields: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-    refSubId: string | null
-    rowId: string | null
-    bizId: string | null
-  }>
-  fieldBlobs: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-    refSubId: string | null
-    rowId: string | null
-    bizId: string | null
-  }>
-  snapshots: Array<{
-    id: string
-    contractId: string
-    contractProp: string | null
-    contractValue: string | null
-  }>
-}
-
-interface InvoiceBusinessSnapshot {
-  invoice: {
-    name: string
-    contractId: string
-    owner: string
-    amount: string | null
-    invoiceType: string | null
-    taxRate: string | null
-    businessTitleId: string | null
-  }
-  fields: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-  }>
-  fieldBlobs: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-  }>
-  snapshots: Array<{
-    id: string
-    invoiceId: string
-    invoiceProp: string | null
-    invoiceValue: string | null
-  }>
-}
-
-interface OrderBusinessSnapshot {
-  order: {
-    number: string
-    name: string
-    customerId: string | null
-    contractId: string | null
-    owner: string | null
-    amount: string | null
-    stage: string
-    pos: string | null
-  }
-  fields: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-    refSubId: string | null
-    rowId: string | null
-    bizId: string | null
-  }>
-  fieldBlobs: Array<{
-    id: string
-    resourceId: string
-    fieldId: string
-    fieldValue: string
-    refSubId: string | null
-    rowId: string | null
-    bizId: string | null
-  }>
-  snapshots: Array<{
-    id: string
-    orderId: string
-    orderProp: string | null
-    orderValue: string | null
-  }>
+interface ApprovalSubmitContext {
+  preUpdateSnapshot?: Prisma.InputJsonValue | null
+  comment?: string | null
 }
 
 @Injectable()
@@ -166,6 +27,7 @@ export class ApprovalsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly businessNotifications: BusinessNotificationsService,
+    private readonly resources: ApprovalResourceService,
   ) {}
 
   /** 该模块在指定金额/执行时机下是否命中启用审批流。 */
@@ -197,100 +59,12 @@ export class ApprovalsService {
   }
 
   /** Cordys UPDATE 审批命中前保存编辑前业务快照。 */
-  async captureBusinessSnapshot(
+  async capturePreUpdateSnapshot(
     user: AuthUser,
     module: ApprovalModule,
     targetId: string,
   ): Promise<Prisma.InputJsonValue | null> {
-    if (module === 'contract') {
-      const contract = await this.prisma.contract.findFirst({
-        where: { id: targetId, organizationId: user.tenantId },
-        select: {
-          name: true,
-          customerId: true,
-          owner: true,
-          amount: true,
-          number: true,
-          stage: true,
-          startTime: true,
-          endTime: true,
-          voidReason: true,
-          pos: true,
-        },
-      })
-      if (!contract) throw new NotFoundException('合同不存在')
-      const [fields, fieldBlobs, snapshots] = await Promise.all([
-        this.prisma.contractField.findMany({ where: { resourceId: targetId } }),
-        this.prisma.contractFieldBlob.findMany({ where: { resourceId: targetId } }),
-        this.prisma.contractSnapshot.findMany({ where: { contractId: targetId } }),
-      ])
-      const snapshot: ContractBusinessSnapshot = {
-        contract: {
-          name: contract.name,
-          customerId: contract.customerId,
-          owner: contract.owner,
-          amount: contract.amount.toString(),
-          number: contract.number,
-          stage: contract.stage,
-          startTime: contract.startTime?.toString() ?? null,
-          endTime: contract.endTime?.toString() ?? null,
-          voidReason: contract.voidReason,
-          pos: contract.pos?.toString() ?? null,
-        },
-        fields,
-        fieldBlobs,
-        snapshots,
-      }
-      return snapshot as unknown as Prisma.InputJsonValue
-    }
-    if (module === 'invoice') return this.captureInvoiceBusinessSnapshot(user, targetId)
-    if (module === 'order') {
-      const order = await this.prisma.order.findFirst({
-        where: { id: targetId, organizationId: user.tenantId },
-        select: {
-          number: true, name: true, customerId: true, contractId: true, owner: true,
-          amount: true, stage: true, pos: true,
-        },
-      })
-      if (!order) throw new NotFoundException('订单不存在')
-      const [fields, fieldBlobs, snapshots] = await Promise.all([
-        this.prisma.orderField.findMany({ where: { resourceId: targetId } }),
-        this.prisma.orderFieldBlob.findMany({ where: { resourceId: targetId } }),
-        this.prisma.orderSnapshot.findMany({ where: { orderId: targetId } }),
-      ])
-      const snapshot: OrderBusinessSnapshot = {
-        order: {
-          number: order.number, name: order.name, customerId: order.customerId,
-          contractId: order.contractId, owner: order.owner, amount: order.amount?.toString() ?? null,
-          stage: order.stage, pos: order.pos?.toString() ?? null,
-        },
-        fields, fieldBlobs, snapshots,
-      }
-      return snapshot as unknown as Prisma.InputJsonValue
-    }
-    if (module !== 'quote') return null
-    const quotation = await this.prisma.opportunityQuotation.findFirst({
-      where: { id: targetId, organizationId: user.tenantId },
-      select: { name: true, opportunityId: true, untilTime: true, amount: true },
-    })
-    if (!quotation) throw new NotFoundException('报价不存在')
-    const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma.opportunityQuotationField.findMany({ where: { resourceId: targetId } }),
-      this.prisma.opportunityQuotationFieldBlob.findMany({ where: { resourceId: targetId } }),
-      this.prisma.opportunityQuotationSnapshot.findMany({ where: { quotationId: targetId } }),
-    ])
-    const snapshot: QuotationBusinessSnapshot = {
-      quotation: {
-        name: quotation.name,
-        opportunityId: quotation.opportunityId,
-        untilTime: quotation.untilTime.toString(),
-        amount: quotation.amount.toString(),
-      },
-      fields,
-      fieldBlobs,
-      snapshots,
-    }
-    return snapshot as unknown as Prisma.InputJsonValue
+    return this.resources.capture(user, module, targetId)
   }
 
   // ===== 提交与审批 =====
@@ -300,9 +74,9 @@ export class ApprovalsService {
     module: ApprovalModule,
     targetId: string,
     executeTiming: ApprovalExecuteTimingValue = 'CREATE',
-    businessSnapshot?: Prisma.InputJsonValue | null,
+    context?: ApprovalSubmitContext,
   ) {
-    const target = await this.targetInfo(user.tenantId, module, targetId)
+    const target = await this.resources.targetInfo(user.tenantId, module, targetId)
     if (target.approvalStatus === 'PENDING') throw new BadRequestException('该单据已在审批中')
     if (executeTiming === 'CREATE' && target.approvalStatus === 'APPROVED') {
       throw new BadRequestException('该单据已审批通过')
@@ -325,6 +99,16 @@ export class ApprovalsService {
         mode: node.approver!.mode,
       }))
 
+    const preUpdateSnapshot = context?.preUpdateSnapshot ?? null
+    const updateFields =
+      executeTiming === 'UPDATE' && preUpdateSnapshot
+        ? await this.resources.deriveUpdateFields(user, module, targetId, preUpdateSnapshot)
+        : []
+
+    if (executeTiming === 'UPDATE' && preUpdateSnapshot) {
+      await this.resources.savePreUpdateSnapshot(user, module, targetId, preUpdateSnapshot)
+    }
+
     const instance = await this.prisma.approvalInstance.create({
       data: {
         tenantId: user.tenantId,
@@ -336,14 +120,15 @@ export class ApprovalsService {
         targetName: target.name,
         summary: target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null,
         nodesSnapshot: snapshot as unknown as Prisma.InputJsonValue,
-        businessSnapshot: businessSnapshot ?? Prisma.DbNull,
+        comment: context?.comment?.trim() || null,
+        updateFields: updateFields.length ? JSON.stringify(updateFields) : null,
         currentNodeIndex: -1,
         submitterId: user.id,
         submitterName: user.name,
       },
     })
 
-    await this.setBizStatus(module, targetId, 'PENDING')
+    await this.resources.setBizStatus(user.tenantId, module, targetId, 'PENDING')
     await this.advance(instance.id, user.id)
     return { id: instance.id, name: target.name }
   }
@@ -397,8 +182,13 @@ export class ApprovalsService {
         data: { status: 'REJECTED', finishedAt: new Date() },
       }),
     ])
-    await this.setBizStatus(instance.module, instance.targetId, 'REJECTED')
-    await this.restoreBusinessSnapshot(instance, user.id)
+    await this.resources.setBizStatus(
+      instance.tenantId,
+      instance.module as ApprovalModule,
+      instance.targetId,
+      'REJECTED',
+    )
+    await this.restorePreUpdateSnapshot(instance, user.id)
     await this.sendApprovalResult(instance, user.id, {
       title: '审批被驳回',
       content: `「${instance.targetName}」被 ${user.name} 驳回：${comment}`,
@@ -424,14 +214,15 @@ export class ApprovalsService {
         data: { status: 'CANCELED', finishedAt: new Date() },
       }),
     ])
-    await this.setBizStatus(
-      instance.module,
+    await this.resources.setBizStatus(
+      instance.tenantId,
+      instance.module as ApprovalModule,
       instance.targetId,
       instance.module === 'quote' || instance.module === 'contract' || instance.module === 'invoice' || instance.module === 'order'
         ? 'REVOKED'
         : 'NONE',
     )
-    await this.restoreBusinessSnapshot(instance, user.id)
+    await this.restorePreUpdateSnapshot(instance, user.id)
     return { id: instanceId, name: instance.targetName }
   }
 
@@ -690,8 +481,13 @@ export class ApprovalsService {
       where: { id: instance.id },
       data: { status: 'APPROVED', finishedAt: new Date() },
     })
-    await this.setBizStatus(instance.module, instance.targetId, 'APPROVED')
-    await this.effectApproved(instance)
+    await this.resources.setBizStatus(
+      instance.tenantId,
+      instance.module as ApprovalModule,
+      instance.targetId,
+      'APPROVED',
+    )
+    await this.resources.effectApproved(instance)
     await this.sendApprovalResult(instance, operatorId, {
       title: '审批已通过',
       content: `「${instance.targetName}」已审批通过`,
@@ -808,450 +604,9 @@ export class ApprovalsService {
     })
   }
 
-  private async captureInvoiceBusinessSnapshot(
-    user: AuthUser,
-    targetId: string,
-  ): Promise<Prisma.InputJsonValue> {
-    const invoice = await this.prisma.contractInvoice.findFirst({
-      where: { id: targetId, organizationId: user.tenantId },
-      select: {
-        name: true,
-        contractId: true,
-        owner: true,
-        amount: true,
-        invoiceType: true,
-        taxRate: true,
-        businessTitleId: true,
-      },
-    })
-    if (!invoice) throw new NotFoundException('发票不存在')
-    const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma.contractInvoiceField.findMany({ where: { resourceId: targetId } }),
-      this.prisma.contractInvoiceFieldBlob.findMany({ where: { resourceId: targetId } }),
-      this.prisma.contractInvoiceSnapshot.findMany({ where: { invoiceId: targetId } }),
-    ])
-    const snapshot: InvoiceBusinessSnapshot = {
-      invoice: {
-        name: invoice.name,
-        contractId: invoice.contractId,
-        owner: invoice.owner,
-        amount: invoice.amount?.toString() ?? null,
-        invoiceType: invoice.invoiceType,
-        taxRate: invoice.taxRate?.toString() ?? null,
-        businessTitleId: invoice.businessTitleId,
-      },
-      fields,
-      fieldBlobs,
-      snapshots,
-    }
-    return snapshot as unknown as Prisma.InputJsonValue
-  }
-
-  private async targetInfo(
-    tenantId: string,
-    module: ApprovalModule,
-    targetId: string,
-  ): Promise<TargetInfo> {
-    switch (module) {
-      case 'quote': {
-        const quote = await this.prisma.opportunityQuotation.findFirst({
-          where: { id: targetId, organizationId: tenantId },
-        })
-        if (!quote) throw new NotFoundException('报价不存在')
-        return {
-          name: `报价 ${quote.name}`,
-          amount: Number(quote.amount),
-          approvalStatus: this.normalizeQuotationApprovalStatus(quote.approvalStatus),
-        }
-      }
-      case 'contract': {
-        const contract = await this.prisma.contract.findFirst({
-          where: { id: targetId, organizationId: tenantId },
-        })
-        if (!contract) throw new NotFoundException('合同不存在')
-        return {
-          name: `合同 ${contract.name}`,
-          amount: Number(contract.amount),
-          approvalStatus: this.normalizeQuotationApprovalStatus(contract.approvalStatus),
-        }
-      }
-      case 'invoice': {
-        const invoice = await this.prisma.contractInvoice.findFirst({
-          where: { id: targetId, organizationId: tenantId },
-        })
-        if (!invoice) throw new NotFoundException('发票不存在')
-        return {
-          name: `发票 ${invoice.name}`,
-          amount: Number(invoice.amount ?? 0),
-          approvalStatus: this.normalizeQuotationApprovalStatus(invoice.approvalStatus ?? 'NONE'),
-        }
-      }
-      case 'order': {
-        const order = await this.prisma.order.findFirst({ where: { id: targetId, organizationId: tenantId } })
-        if (!order) throw new NotFoundException('订单不存在')
-        return {
-          name: `订单 ${order.name}`,
-          amount: Number(order.amount),
-          approvalStatus: this.normalizeQuotationApprovalStatus(order.approvalStatus),
-        }
-      }
-    }
-  }
-
-  private async setBizStatus(module: string, targetId: string, status: string) {
-    switch (module) {
-      case 'quote': {
-        const approvalStatus = this.toQuotationApprovalStatus(status)
-        const updated = await this.prisma.opportunityQuotation.update({
-          where: { id: targetId },
-          data: {
-            approvalStatus,
-            ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
-          },
-        })
-        await this.syncQuotationSnapshot(targetId, approvalStatus, updated.approved)
-        break
-      }
-      case 'contract': {
-        const approvalStatus = this.toQuotationApprovalStatus(status)
-        const updated = await this.prisma.contract.update({
-          where: { id: targetId },
-          data: {
-            approvalStatus,
-            ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
-          },
-        })
-        await this.syncContractSnapshot(targetId, approvalStatus, updated.approved)
-        break
-      }
-      case 'invoice': {
-        const approvalStatus = this.toQuotationApprovalStatus(status)
-        const updated = await this.prisma.contractInvoice.update({
-          where: { id: targetId },
-          data: {
-            approvalStatus,
-            ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
-            updateTime: BigInt(Date.now()),
-          },
-        })
-        await this.syncInvoiceSnapshot(targetId, approvalStatus, updated.approved)
-        break
-      }
-      case 'order': {
-        const approvalStatus = this.toQuotationApprovalStatus(status)
-        const updated = await this.prisma.order.update({
-          where: { id: targetId },
-          data: {
-            approvalStatus,
-            ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
-            updateTime: BigInt(Date.now()),
-          },
-        })
-        await this.syncOrderSnapshot(targetId, approvalStatus, updated.approved)
-        break
-      }
-    }
-  }
-
-  /** 审批通过后的业务生效动作。DELETE 报价直到审批通过才真正删除。 */
-  private async effectApproved(instance: ApprovalInstance) {
-    switch (instance.module) {
-      case 'quote':
-        if (instance.executeTiming === 'DELETE') {
-          await this.prisma.opportunityQuotation.delete({ where: { id: instance.targetId } })
-        }
-        break
-      case 'contract':
-        if (instance.executeTiming === 'DELETE') {
-          await this.prisma.contract.delete({ where: { id: instance.targetId } })
-        }
-        break
-      case 'invoice':
-        if (instance.executeTiming === 'DELETE') {
-          await this.prisma.contractInvoice.delete({ where: { id: instance.targetId } })
-        }
-        break
-      case 'order':
-        if (instance.executeTiming === 'DELETE') {
-          await this.prisma.order.delete({ where: { id: instance.targetId } })
-        }
-        break
-      default:
-        break
-    }
-  }
-
   /** Cordys UPDATE 审批驳回/撤回：恢复编辑前业务数据，但保留当前审批状态与 approved 历史事实。 */
-  private async restoreBusinessSnapshot(instance: ApprovalInstance, operatorId: string) {
-    if (instance.module === 'contract' && instance.executeTiming === 'UPDATE' && instance.businessSnapshot) {
-      await this.restoreContractBusinessSnapshot(instance, operatorId)
-      return
-    }
-    if (instance.module === 'invoice' && instance.executeTiming === 'UPDATE' && instance.businessSnapshot) {
-      await this.restoreInvoiceBusinessSnapshot(instance, operatorId)
-      return
-    }
-    if (instance.module === 'order' && instance.executeTiming === 'UPDATE' && instance.businessSnapshot) {
-      await this.restoreOrderBusinessSnapshot(instance, operatorId)
-      return
-    }
-    if (instance.module !== 'quote' || instance.executeTiming !== 'UPDATE' || !instance.businessSnapshot) {
-      return
-    }
-    const snapshot = instance.businessSnapshot as unknown as QuotationBusinessSnapshot
-    if (!snapshot.quotation || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs)) {
-      return
-    }
-    const current = await this.prisma.opportunityQuotation.findUnique({
-      where: { id: instance.targetId },
-      select: { approvalStatus: true, approved: true },
-    })
-    if (!current) return
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.opportunityQuotation.update({
-        where: { id: instance.targetId },
-        data: {
-          name: snapshot.quotation.name,
-          opportunityId: snapshot.quotation.opportunityId,
-          untilTime: BigInt(snapshot.quotation.untilTime),
-          amount: new Prisma.Decimal(snapshot.quotation.amount),
-          updateTime: BigInt(Date.now()),
-          updateUser: operatorId,
-        },
-      })
-      await Promise.all([
-        tx.opportunityQuotationField.deleteMany({ where: { resourceId: instance.targetId } }),
-        tx.opportunityQuotationFieldBlob.deleteMany({ where: { resourceId: instance.targetId } }),
-        tx.opportunityQuotationSnapshot.deleteMany({ where: { quotationId: instance.targetId } }),
-      ])
-      if (snapshot.fields.length) await tx.opportunityQuotationField.createMany({ data: snapshot.fields })
-      if (snapshot.fieldBlobs.length) {
-        await tx.opportunityQuotationFieldBlob.createMany({ data: snapshot.fieldBlobs })
-      }
-      if (snapshot.snapshots?.length) {
-        await tx.opportunityQuotationSnapshot.createMany({ data: snapshot.snapshots })
-      }
-    })
-    await this.syncQuotationSnapshot(instance.targetId, current.approvalStatus, current.approved)
-  }
-
-  private async restoreContractBusinessSnapshot(instance: ApprovalInstance, operatorId: string) {
-    const snapshot = instance.businessSnapshot as unknown as ContractBusinessSnapshot
-    if (!snapshot.contract || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs)) return
-    const current = await this.prisma.contract.findUnique({
-      where: { id: instance.targetId },
-      select: { approvalStatus: true, approved: true },
-    })
-    if (!current) return
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.contract.update({
-        where: { id: instance.targetId },
-        data: {
-          name: snapshot.contract.name,
-          customerId: snapshot.contract.customerId,
-          owner: snapshot.contract.owner,
-          amount: new Prisma.Decimal(snapshot.contract.amount),
-          number: snapshot.contract.number,
-          stage: snapshot.contract.stage,
-          startTime: snapshot.contract.startTime === null ? null : BigInt(snapshot.contract.startTime),
-          endTime: snapshot.contract.endTime === null ? null : BigInt(snapshot.contract.endTime),
-          voidReason: snapshot.contract.voidReason,
-          pos: snapshot.contract.pos === null ? null : BigInt(snapshot.contract.pos),
-          updateTime: BigInt(Date.now()),
-          updateUser: operatorId,
-        },
-      })
-      await tx.contractField.deleteMany({ where: { resourceId: instance.targetId } })
-      await tx.contractFieldBlob.deleteMany({ where: { resourceId: instance.targetId } })
-      await tx.contractSnapshot.deleteMany({ where: { contractId: instance.targetId } })
-      if (snapshot.fields.length) await tx.contractField.createMany({ data: snapshot.fields })
-      if (snapshot.fieldBlobs.length) await tx.contractFieldBlob.createMany({ data: snapshot.fieldBlobs })
-      if (snapshot.snapshots?.length) await tx.contractSnapshot.createMany({ data: snapshot.snapshots })
-    })
-    await this.syncContractSnapshot(instance.targetId, current.approvalStatus, current.approved)
-  }
-
-  private async restoreOrderBusinessSnapshot(instance: ApprovalInstance, operatorId: string) {
-    const snapshot = instance.businessSnapshot as unknown as OrderBusinessSnapshot
-    if (!snapshot.order || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs)) return
-    const current = await this.prisma.order.findUnique({
-      where: { id: instance.targetId },
-      select: { approvalStatus: true, approved: true },
-    })
-    if (!current) return
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.order.update({
-        where: { id: instance.targetId },
-        data: {
-          number: snapshot.order.number,
-          name: snapshot.order.name,
-          customerId: snapshot.order.customerId,
-          contractId: snapshot.order.contractId,
-          owner: snapshot.order.owner,
-          amount: snapshot.order.amount === null ? null : new Prisma.Decimal(snapshot.order.amount),
-          stage: snapshot.order.stage,
-          pos: snapshot.order.pos === null ? null : BigInt(snapshot.order.pos),
-          updateTime: BigInt(Date.now()),
-          updateUser: operatorId,
-        },
-      })
-      await tx.orderField.deleteMany({ where: { resourceId: instance.targetId } })
-      await tx.orderFieldBlob.deleteMany({ where: { resourceId: instance.targetId } })
-      await tx.orderSnapshot.deleteMany({ where: { orderId: instance.targetId } })
-      if (snapshot.fields.length) await tx.orderField.createMany({ data: snapshot.fields })
-      if (snapshot.fieldBlobs.length) await tx.orderFieldBlob.createMany({ data: snapshot.fieldBlobs })
-      if (snapshot.snapshots?.length) await tx.orderSnapshot.createMany({ data: snapshot.snapshots })
-    })
-    await this.syncOrderSnapshot(instance.targetId, current.approvalStatus, current.approved)
-  }
-
-  private async restoreInvoiceBusinessSnapshot(instance: ApprovalInstance, operatorId: string) {
-    const snapshot = instance.businessSnapshot as unknown as InvoiceBusinessSnapshot
-    if (!snapshot.invoice || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs)) return
-    const current = await this.prisma.contractInvoice.findUnique({
-      where: { id: instance.targetId },
-      select: { approvalStatus: true, approved: true },
-    })
-    if (!current) return
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.contractInvoice.update({
-        where: { id: instance.targetId },
-        data: {
-          name: snapshot.invoice.name,
-          contractId: snapshot.invoice.contractId,
-          owner: snapshot.invoice.owner,
-          amount: snapshot.invoice.amount === null ? null : new Prisma.Decimal(snapshot.invoice.amount),
-          invoiceType: snapshot.invoice.invoiceType,
-          taxRate: snapshot.invoice.taxRate === null ? null : new Prisma.Decimal(snapshot.invoice.taxRate),
-          businessTitleId: snapshot.invoice.businessTitleId,
-          updateTime: BigInt(Date.now()),
-          updateUser: operatorId,
-        },
-      })
-      await tx.contractInvoiceField.deleteMany({ where: { resourceId: instance.targetId } })
-      await tx.contractInvoiceFieldBlob.deleteMany({ where: { resourceId: instance.targetId } })
-      await tx.contractInvoiceSnapshot.deleteMany({ where: { invoiceId: instance.targetId } })
-      if (snapshot.fields.length) await tx.contractInvoiceField.createMany({ data: snapshot.fields })
-      if (snapshot.fieldBlobs.length) await tx.contractInvoiceFieldBlob.createMany({ data: snapshot.fieldBlobs })
-      if (snapshot.snapshots?.length) await tx.contractInvoiceSnapshot.createMany({ data: snapshot.snapshots })
-    })
-    await this.syncInvoiceSnapshot(
-      instance.targetId,
-      current.approvalStatus ?? 'NONE',
-      current.approved,
-    )
-  }
-
-  private normalizeQuotationApprovalStatus(status: string) {
-    if (status === 'APPROVING') return 'PENDING'
-    if (status === 'UNAPPROVED') return 'REJECTED'
-    if (status === 'REVOKED') return 'NONE'
-    return status
-  }
-
-  private toQuotationApprovalStatus(status: string) {
-    if (status === 'PENDING') return 'APPROVING'
-    if (status === 'REJECTED') return 'UNAPPROVED'
-    return status
-  }
-
-  private async syncQuotationSnapshot(
-    quotationId: string,
-    approvalStatus: string,
-    approved: boolean,
-  ) {
-    const snapshots = await this.prisma.opportunityQuotationSnapshot.findMany({
-      where: { quotationId },
-    })
-    for (const snapshot of snapshots) {
-      if (!snapshot.quotationValue) continue
-      let value: Record<string, unknown>
-      try {
-        const parsed: unknown = JSON.parse(snapshot.quotationValue)
-        value =
-          parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>)
-            : {}
-      } catch {
-        value = {}
-      }
-      value.approvalStatus = approvalStatus
-      value.approved = approved
-      await this.prisma.opportunityQuotationSnapshot.update({
-        where: { id: snapshot.id },
-        data: { quotationValue: JSON.stringify(value) },
-      })
-    }
-  }
-
-  private async syncContractSnapshot(contractId: string, approvalStatus: string, approved: boolean) {
-    const snapshots = await this.prisma.contractSnapshot.findMany({ where: { contractId } })
-    for (const snapshot of snapshots) {
-      if (!snapshot.contractValue) continue
-      let value: Record<string, unknown>
-      try {
-        const parsed: unknown = JSON.parse(snapshot.contractValue)
-        value = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : {}
-      } catch {
-        value = {}
-      }
-      value.approvalStatus = approvalStatus
-      value.approved = approved
-      await this.prisma.contractSnapshot.update({
-        where: { id: snapshot.id },
-        data: { contractValue: JSON.stringify(value) },
-      })
-    }
-  }
-
-  private async syncOrderSnapshot(orderId: string, approvalStatus: string, approved: boolean) {
-    const snapshots = await this.prisma.orderSnapshot.findMany({ where: { orderId } })
-    for (const snapshot of snapshots) {
-      if (!snapshot.orderValue) continue
-      let value: Record<string, unknown>
-      try {
-        const parsed: unknown = JSON.parse(snapshot.orderValue)
-        value = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : {}
-      } catch {
-        value = {}
-      }
-      value.approvalStatus = approvalStatus
-      value.approved = approved
-      await this.prisma.orderSnapshot.update({
-        where: { id: snapshot.id },
-        data: { orderValue: JSON.stringify(value) },
-      })
-    }
-  }
-
-  private async syncInvoiceSnapshot(invoiceId: string, approvalStatus: string, approved: boolean) {
-    const snapshots = await this.prisma.contractInvoiceSnapshot.findMany({ where: { invoiceId } })
-    for (const snapshot of snapshots) {
-      if (!snapshot.invoiceValue) continue
-      let value: Record<string, unknown>
-      try {
-        const parsed: unknown = JSON.parse(snapshot.invoiceValue)
-        value = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : {}
-      } catch {
-        value = {}
-      }
-      value.approvalStatus = approvalStatus
-      value.approved = approved
-      await this.prisma.contractInvoiceSnapshot.update({
-        where: { id: snapshot.id },
-        data: { invoiceValue: JSON.stringify(value) },
-      })
-    }
+  private async restorePreUpdateSnapshot(instance: ApprovalInstance, operatorId: string) {
+    await this.resources.restore(instance, operatorId)
   }
 
   private async ensurePendingTask(user: AuthUser, taskId: string): Promise<ApprovalTask> {

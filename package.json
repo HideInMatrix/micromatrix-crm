@@ -50,6 +50,7 @@
     "smoke:w366-access-matrix": "node apps/api/scripts/w366-access-matrix-smoke.mjs",
     "smoke:w366-empty-db": "node apps/api/scripts/w366-empty-db-smoke.mjs",
     "smoke:w366-system-modules-browser": "node scripts/w366-system-modules-browser-smoke.mjs",
+    "smoke:w370-db010-regression": "pnpm --filter @micromatrix/api smoke:w370-db010-regression",
     "smoke:db021-follow-plan-runtime": "pnpm --filter @micromatrix/api smoke:db021-follow-plan-runtime",
     "smoke:db021-follow-plan-browser": "node scripts/db021-follow-plan-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
