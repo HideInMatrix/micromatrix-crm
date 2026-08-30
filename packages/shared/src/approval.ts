@@ -4,7 +4,8 @@ export type ApproverType = 'USER' | 'ROLE' | 'DEPT_LEADER' | 'DIRECT_LEADER'
 export type ApprovalMode = 'ALL' | 'ANY'
 export type ApprovalInstanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED'
 export type ApprovalTaskStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED'
-export type ApprovalTaskType = 'APPROVAL' | 'CC'
+export type ApprovalTaskType = 'APPROVAL' | 'CC' | 'SIGN' | 'BACK'
+export type ApprovalTaskAction = 'APPROVE' | 'REJECT' | 'SIGN' | 'BACK'
 /** 业务对象上的审批状态 */
 export type BizApprovalStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
 
@@ -38,6 +39,8 @@ export const APPROVAL_MODULE_LABELS: Record<ApprovalModule, string> = {
 }
 
 export interface ApprovalNodeConfig {
+  /** 新实例冻结真实流程节点 ID；历史实例没有该字段时保持兼容。 */
+  nodeId?: string
   name: string
   approverType: ApproverType
   approverIds: string[]
@@ -155,14 +158,29 @@ export interface ApprovalFlowDetail extends ApprovalFlowListItem {
 export interface ApprovalTaskVO {
   id: string
   instanceId: string
+  nodeId: string | null
   nodeIndex: number
+  nodeRound: number
   nodeName: string
   approverId: string
   approverName?: string
   taskType: ApprovalTaskType
   status: ApprovalTaskStatus
+  action: ApprovalTaskAction | null
+  /** 兼容现有时间线，由对应 ApprovalRecord.comment 派生。 */
   comment: string | null
   handledAt: string | null
+}
+
+export interface ApprovalRecordVO {
+  id: string
+  taskId: string
+  nodeId: string | null
+  nodeRound: number
+  result: ApprovalTaskAction
+  comment: string | null
+  createdById: string
+  createdAt: string
 }
 
 export interface ApprovalInstanceVO {
@@ -179,6 +197,7 @@ export interface ApprovalInstanceVO {
   finishedAt: string | null
   createdAt: string
   tasks: ApprovalTaskVO[]
+  records: ApprovalRecordVO[]
   /** 当前用户待处理的任务 id */
   myPendingTaskId?: string | null
 }

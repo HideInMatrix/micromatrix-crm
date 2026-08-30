@@ -1580,6 +1580,15 @@ enum ApprovalTaskStatus {
 enum ApprovalTaskType {
   APPROVAL
   CC
+  SIGN
+  BACK
+}
+
+enum ApprovalTaskAction {
+  APPROVE
+  REJECT
+  SIGN
+  BACK
 }
 
 model ApprovalFlow {
@@ -1727,6 +1736,7 @@ model ApprovalInstance {
   flow        ApprovalFlow?        @relation(fields: [flowId], references: [id], onDelete: SetNull)
   flowVersion ApprovalFlowVersion? @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
   tasks       ApprovalTask[]
+  records     ApprovalRecord[]
 
   @@index([tenantId, status])
   @@index([tenantId, module, targetId])
@@ -1753,24 +1763,50 @@ model ApprovalResourceSnapshot {
 }
 
 model ApprovalTask {
-  id         String             @id @default(cuid())
+  id         String              @id @default(cuid())
   tenantId   String
   instanceId String
+  nodeId     String?             @map("node_id")
   nodeIndex  Int
+  nodeRound  Int                 @default(1) @map("node_round")
   nodeName   String
   approverId String
-  taskType   ApprovalTaskType   @default(APPROVAL) @map("task_type")
-  status     ApprovalTaskStatus @default(PENDING)
-  comment    String?
+  taskType   ApprovalTaskType    @default(APPROVAL) @map("task_type")
+  status     ApprovalTaskStatus  @default(PENDING)
+  action     ApprovalTaskAction?
   handledAt  DateTime?
-  createdAt  DateTime           @default(now())
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
 
   instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  records  ApprovalRecord[]
 
   @@index([tenantId, approverId, status])
   @@index([tenantId, approverId, taskType, status])
   @@index([instanceId])
+  @@index([instanceId, nodeIndex, nodeRound])
   @@map("approval_tasks")
+}
+
+model ApprovalRecord {
+  id          String             @id @default(cuid())
+  tenantId    String
+  instanceId  String
+  taskId      String
+  nodeId      String?            @map("node_id")
+  nodeRound   Int                @default(1) @map("node_round")
+  result      ApprovalTaskAction
+  comment     String?
+  createdById String             @map("created_by_id")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  task     ApprovalTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, instanceId, createdAt])
+  @@index([taskId])
+  @@map("approval_records")
 }
 
 // ============ 标讯（招投标信息） ============

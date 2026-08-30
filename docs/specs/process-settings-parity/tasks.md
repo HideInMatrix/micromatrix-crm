@@ -113,7 +113,12 @@
   - _Requirements: R9, R12_
 
 - [ ] W3.7-9.3 DB-011：高级任务、动作、记录与附件。
-  - [ ] 9.3A 扩展 task nodeRound/type/action，并建立不可变 ApprovalRecord。
+  - 源码证据：[DB-011 高级审批任务与动作源码审计](./w370-db011-action-runtime-audit.md)。
+  - 实施计划：[DB-011 高级审批任务与动作实施计划](./w370-db011-action-runtime-plan.md)。
+  - [x] 9.3A 扩展 task nodeRound/type/action，并建立不可变 ApprovalRecord。
+    - Migration 60 已部署到 `default`；历史 task comment 迁移为 ApprovalRecord 后删除旧列，历史 nodeId 保持 nullable，新实例冻结真实 nodeId。
+    - 四业务审批在 60 migrations 下回归全绿；空库 **60/60 + 双 Seed**、Rules **121/121**、Root Smoke **227/227**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
+    - 证据：[W3.7-9.3A DB-011 Task / ApprovalRecord 基座专项验收](./w370-db011-task-record-acceptance.md)。
   - [ ] 9.3B BEFORE/AFTER 加签与嵌套加签链。
   - [ ] 9.3C 节点退回 + return-back record + round 重建。
   - [ ] 9.3D 审批人任务撤回；与 submitter cancel 分离，并处理 ANY/ALL/后续节点约束。

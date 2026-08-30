@@ -51,3 +51,166 @@ test('发票审批结束真实走 INVOICE_APPROVAL 业务消息并通知提交�
   assert.equal(sent[0]?.operatorId, 'approver-a')
   assert.equal(sent[0]?.excludeSelf, true)
 })
+
+test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 task', async () => {
+  const taskUpdates: Array<Record<string, unknown>> = []
+  const records: Array<Record<string, unknown>> = []
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const runtime = service as unknown as {
+    prisma: {
+      approvalTask: {
+        update(input: Record<string, unknown>): Promise<unknown>
+        findMany(input: Record<string, unknown>): Promise<Array<Record<string, unknown>>>
+        updateMany(input: Record<string, unknown>): Promise<unknown>
+      }
+      approvalRecord: { create(input: { data: Record<string, unknown> }): Promise<unknown> }
+      approvalInstance: { findUniqueOrThrow(input: Record<string, unknown>): Promise<Record<string, unknown>> }
+      $transaction(input: Array<Promise<unknown>>): Promise<unknown[]>
+    }
+    ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+  }
+  runtime.ensurePendingTask = async () => ({
+    id: 'task-a',
+    tenantId: 'tenant-a',
+    instanceId: 'instance-a',
+    nodeId: 'node-a',
+    nodeIndex: 0,
+    nodeRound: 2,
+    nodeName: '主管审批',
+    approverId: 'approver-a',
+    taskType: 'APPROVAL',
+    status: 'PENDING',
+    action: null,
+    handledAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  runtime.prisma = {
+    approvalTask: {
+      update: async (input) => {
+        taskUpdates.push(input)
+        return input
+      },
+      findMany: async () => [{ id: 'still-pending' }],
+      updateMany: async (input) => input,
+    },
+    approvalRecord: {
+      create: async (input) => {
+        records.push(input.data)
+        return input
+      },
+    },
+    approvalInstance: {
+      findUniqueOrThrow: async () => ({
+        id: 'instance-a',
+        targetName: '测试合同',
+        nodesSnapshot: [{ name: '主管审批', approverType: 'USER', approverIds: [], mode: 'ALL' }],
+      }),
+    },
+    $transaction: async (input) => Promise.all(input),
+  }
+
+  await service.approveTask(
+    { id: 'approver-a', tenantId: 'tenant-a', name: '审批人' } as never,
+    'task-a',
+    '  同意执行  ',
+  )
+
+  assert.equal(taskUpdates.length, 1)
+  assert.deepEqual((taskUpdates[0]?.data as Record<string, unknown>).status, 'APPROVED')
+  assert.deepEqual((taskUpdates[0]?.data as Record<string, unknown>).action, 'APPROVE')
+  assert.equal('comment' in (taskUpdates[0]?.data as Record<string, unknown>), false)
+  assert.equal(records.length, 1)
+  assert.equal(records[0]?.taskId, 'task-a')
+  assert.equal(records[0]?.nodeId, 'node-a')
+  assert.equal(records[0]?.nodeRound, 2)
+  assert.equal(records[0]?.result, 'APPROVE')
+  assert.equal(records[0]?.comment, '同意执行')
+})
+
+test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node', async () => {
+  const transactionEntries: unknown[] = []
+  const records: Array<Record<string, unknown>> = []
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const runtime = service as unknown as {
+    prisma: {
+      approvalTask: {
+        update(input: Record<string, unknown>): Promise<unknown>
+        updateMany(input: Record<string, unknown>): Promise<unknown>
+      }
+      approvalRecord: { create(input: { data: Record<string, unknown> }): Promise<unknown> }
+      approvalInstance: {
+        findUniqueOrThrow(input: Record<string, unknown>): Promise<Record<string, unknown>>
+        update(input: Record<string, unknown>): Promise<unknown>
+      }
+      $transaction(input: Array<Promise<unknown>>): Promise<unknown[]>
+    }
+    resources: { setBizStatus(): Promise<void> }
+    ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+    restorePreUpdateSnapshot(instance: Record<string, unknown>, operatorId: string): Promise<void>
+    sendApprovalResult(
+      instance: Record<string, unknown>,
+      operatorId: string,
+      message: Record<string, unknown>,
+    ): Promise<void>
+  }
+  runtime.ensurePendingTask = async () => ({
+    id: 'task-r',
+    tenantId: 'tenant-a',
+    instanceId: 'instance-r',
+    nodeId: 'node-r',
+    nodeIndex: 1,
+    nodeRound: 3,
+    nodeName: '财务审批',
+    approverId: 'approver-a',
+    taskType: 'APPROVAL',
+    status: 'PENDING',
+    action: null,
+    handledAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  runtime.prisma = {
+    approvalTask: {
+      update: async (input) => input,
+      updateMany: async (input) => input,
+    },
+    approvalRecord: {
+      create: async (input) => {
+        records.push(input.data)
+        return input
+      },
+    },
+    approvalInstance: {
+      findUniqueOrThrow: async () => ({
+        id: 'instance-r',
+        tenantId: 'tenant-a',
+        module: 'contract',
+        targetId: 'contract-r',
+        targetName: '测试合同',
+      }),
+      update: async (input) => input,
+    },
+    $transaction: async (input) => {
+      transactionEntries.push(...input)
+      return Promise.all(input)
+    },
+  }
+  runtime.resources = { setBizStatus: async () => undefined }
+  runtime.restorePreUpdateSnapshot = async () => undefined
+  runtime.sendApprovalResult = async () => undefined
+
+  await service.rejectTask(
+    { id: 'approver-a', tenantId: 'tenant-a', name: '审批人' } as never,
+    'task-r',
+    '  资料不完整  ',
+  )
+
+  assert.equal(transactionEntries.length, 4)
+  assert.equal(records.length, 1)
+  assert.equal(records[0]?.taskId, 'task-r')
+  assert.equal(records[0]?.nodeId, 'node-r')
+  assert.equal(records[0]?.nodeRound, 3)
+  assert.equal(records[0]?.result, 'REJECT')
+  assert.equal(records[0]?.comment, '资料不完整')
+})

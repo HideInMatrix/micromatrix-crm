@@ -92,6 +92,7 @@ export class ApprovalsService {
     const snapshot: ApprovalNodeConfig[] = flow.currentVersion.nodes
       .filter((node) => node.nodeType === 'APPROVER' && node.approver)
       .map((node) => ({
+        nodeId: node.id,
         name: node.name,
         approverType: node.approver!.approverType,
         approverIds: node.approver!.approverIds,
@@ -135,10 +136,26 @@ export class ApprovalsService {
 
   async approveTask(user: AuthUser, taskId: string, comment?: string) {
     const task = await this.ensurePendingTask(user, taskId)
-    await this.prisma.approvalTask.update({
-      where: { id: taskId },
-      data: { status: 'APPROVED', comment, handledAt: new Date() },
-    })
+    const handledAt = new Date()
+    const normalizedComment = comment?.trim() || null
+    await this.prisma.$transaction([
+      this.prisma.approvalTask.update({
+        where: { id: taskId },
+        data: { status: 'APPROVED', action: 'APPROVE', handledAt },
+      }),
+      this.prisma.approvalRecord.create({
+        data: {
+          tenantId: user.tenantId,
+          instanceId: task.instanceId,
+          taskId: task.id,
+          nodeId: task.nodeId,
+          nodeRound: task.nodeRound,
+          result: 'APPROVE',
+          comment: normalizedComment,
+          createdById: user.id,
+        },
+      }),
+    ])
 
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
       where: { id: task.instanceId },
@@ -164,6 +181,8 @@ export class ApprovalsService {
   async rejectTask(user: AuthUser, taskId: string, comment?: string) {
     const task = await this.ensurePendingTask(user, taskId)
     if (!comment?.trim()) throw new BadRequestException('驳回时请填写审批意见')
+    const normalizedComment = comment.trim()
+    const handledAt = new Date()
 
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
       where: { id: task.instanceId },
@@ -171,7 +190,19 @@ export class ApprovalsService {
     await this.prisma.$transaction([
       this.prisma.approvalTask.update({
         where: { id: taskId },
-        data: { status: 'REJECTED', comment, handledAt: new Date() },
+        data: { status: 'REJECTED', action: 'REJECT', handledAt },
+      }),
+      this.prisma.approvalRecord.create({
+        data: {
+          tenantId: user.tenantId,
+          instanceId: task.instanceId,
+          taskId: task.id,
+          nodeId: task.nodeId,
+          nodeRound: task.nodeRound,
+          result: 'REJECT',
+          comment: normalizedComment,
+          createdById: user.id,
+        },
       }),
       this.prisma.approvalTask.updateMany({
         where: { instanceId: instance.id, status: 'PENDING' },
@@ -191,7 +222,7 @@ export class ApprovalsService {
     await this.restorePreUpdateSnapshot(instance, user.id)
     await this.sendApprovalResult(instance, user.id, {
       title: '审批被驳回',
-      content: `「${instance.targetName}」被 ${user.name} 驳回：${comment}`,
+      content: `「${instance.targetName}」被 ${user.name} 驳回：${normalizedComment}`,
     })
     return { id: taskId, name: instance.targetName }
   }
@@ -437,7 +468,9 @@ export class ApprovalsService {
           data: approvers.map((approverId) => ({
             tenantId: instance.tenantId,
             instanceId,
+            nodeId: snapshot[nodeIndex].nodeId ?? null,
             nodeIndex,
+            nodeRound: 1,
             nodeName: snapshot[nodeIndex].name,
             approverId,
             taskType: 'APPROVAL',
@@ -449,7 +482,9 @@ export class ApprovalsService {
                 data: ccUserIds.map((approverId) => ({
                   tenantId: instance.tenantId,
                   instanceId,
+                  nodeId: snapshot[nodeIndex].nodeId ?? null,
                   nodeIndex,
+                  nodeRound: 1,
                   nodeName: snapshot[nodeIndex].name,
                   approverId,
                   taskType: 'CC' as const,
@@ -636,6 +671,11 @@ export class ApprovalsService {
         })
       : []
     const nameMap = new Map(users.map((u) => [u.id, u.name]))
+    const records = await this.prisma.approvalRecord.findMany({
+      where: { tenantId: instance.tenantId, instanceId: instance.id },
+      orderBy: { createdAt: 'asc' },
+    })
+    const latestRecordByTaskId = new Map(records.map((record) => [record.taskId, record]))
     const approvalTasks = tasks.filter((task) => task.taskType === 'APPROVAL')
     const myPending = approvalTasks.find(
       (task) => task.approverId === currentUserId && task.status === 'PENDING',
@@ -659,15 +699,28 @@ export class ApprovalsService {
         .map((t) => ({
           id: t.id,
           instanceId: t.instanceId,
+          nodeId: t.nodeId,
           nodeIndex: t.nodeIndex,
+          nodeRound: t.nodeRound,
           nodeName: t.nodeName,
           approverId: t.approverId,
           approverName: nameMap.get(t.approverId),
           taskType: t.taskType,
           status: t.status,
-          comment: t.comment,
+          action: t.action,
+          comment: latestRecordByTaskId.get(t.id)?.comment ?? null,
           handledAt: t.handledAt?.toISOString() ?? null,
         })),
+      records: records.map((record) => ({
+        id: record.id,
+        taskId: record.taskId,
+        nodeId: record.nodeId,
+        nodeRound: record.nodeRound,
+        result: record.result,
+        comment: record.comment,
+        createdById: record.createdById,
+        createdAt: record.createdAt.toISOString(),
+      })),
       myPendingTaskId: myPending?.id ?? null,
     }
   }
