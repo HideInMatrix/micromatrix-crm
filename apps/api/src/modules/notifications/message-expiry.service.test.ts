@@ -172,3 +172,88 @@ test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合�
   assert.match(delivered[1].content ?? '', /7 天后/)
   assert.equal(delivered[2].title, '合同已到期')
 })
+
+test('报价/合同/回款计划到期通知携带 direct createUser，且回款计划使用独立负责人', async () => {
+  const delivered: Array<{
+    event: string
+    ownerId?: string | null
+    createUserId?: string | null
+  }> = []
+  const prisma = {
+    opportunityQuotation: {
+      findMany: async ({ where }: { where: { untilTime: { gte: bigint } } }) => [
+        {
+          id: 'quote-a',
+          name: '报价A',
+          createUser: 'quote-creator',
+          untilTime: where.untilTime.gte,
+        },
+      ],
+    },
+    contractPaymentPlan: {
+      findMany: async ({ where }: { where: { planEndTime: { gte: bigint } } }) => [
+        {
+          id: 'plan-a',
+          name: '计划A',
+          owner: 'plan-owner',
+          createUser: 'plan-creator',
+          planEndTime: where.planEndTime.gte,
+          contract: { name: '合同A' },
+        },
+      ],
+    },
+    contractStageConfig: { findMany: async () => [] },
+    contract: {
+      findMany: async ({ where }: { where: { endTime: { gte: bigint } } }) => [
+        {
+          id: 'contract-a',
+          name: '合同A',
+          owner: 'contract-owner',
+          createUser: 'contract-creator',
+          endTime: where.endTime.gte,
+        },
+      ],
+    },
+  } as unknown as PrismaService
+  const settings = {
+    getEffectiveSetting: async (_tenantId: string, event: string) => ({
+      systemEnabled: event.endsWith('_EXPIRING'),
+      config: event.endsWith('_EXPIRING')
+        ? { timeList: [{ timeValue: 1, timeUnit: 'DAY' }] }
+        : { timeList: [] },
+    }),
+  } as unknown as MessageSettingsService
+  const notifications = {
+    sendConfigured: async (input: {
+      event: string
+      ownerId?: string | null
+      createUserId?: string | null
+    }) => {
+      delivered.push(input)
+      return 1
+    },
+  } as unknown as BusinessNotificationsService
+  const service = new MessageExpiryService(prisma, settings, notifications)
+
+  assert.equal(await service.runTenant('tenant-a', new Date(2026, 7, 24, 10)), 3)
+  assert.deepEqual(
+    delivered.map(({ event, ownerId, createUserId }) => ({ event, ownerId, createUserId })),
+    [
+      {
+        event: 'BUSINESS_QUOTATION_EXPIRING',
+        ownerId: 'quote-creator',
+        createUserId: 'quote-creator',
+      },
+      {
+        event: 'CONTRACT_EXPIRING',
+        ownerId: 'contract-owner',
+        createUserId: 'contract-creator',
+      },
+      {
+        event: 'CONTRACT_PAYMENT_EXPIRING',
+        ownerId: 'plan-owner',
+        createUserId: 'plan-creator',
+      },
+    ],
+  )
+})

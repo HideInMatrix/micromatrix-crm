@@ -102,6 +102,7 @@ export class MessageExpiryService {
         quotes.map((quote) => ({
           name: quote.name,
           ownerId: quote.createUser,
+          createUserId: quote.createUser,
           dueDate: new Date(Number(quote.untilTime)),
           link: '/quotes',
           label: '报价',
@@ -124,6 +125,7 @@ export class MessageExpiryService {
         plans.map((plan) => ({
           name: plan.name || `${plan.contract.name}回款计划`,
           ownerId: plan.owner,
+          createUserId: plan.createUser,
           dueDate: new Date(Number(plan.planEndTime!)),
           link: '/contracts',
           label: '回款计划',
@@ -141,7 +143,7 @@ export class MessageExpiryService {
         ...(endStages.length ? { stage: { notIn: endStages.map((item) => item.id) } } : {}),
         endTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
       },
-      select: { id: true, name: true, owner: true, endTime: true },
+      select: { id: true, name: true, owner: true, createUser: true, endTime: true },
     })
     return this.sendRows(
       tenantId,
@@ -150,6 +152,7 @@ export class MessageExpiryService {
       contracts.map((contract) => ({
         name: contract.name,
         ownerId: contract.owner,
+        createUserId: contract.createUser,
         dueDate: new Date(Number(contract.endTime!)),
         link: '/contracts',
         label: '合同',
@@ -164,6 +167,7 @@ export class MessageExpiryService {
     rows: Array<{
       name: string
       ownerId: string | null
+      createUserId?: string | null
       dueDate: Date
       link: string
       label: string
@@ -176,6 +180,7 @@ export class MessageExpiryService {
         tenantId,
         event,
         ownerId: row.ownerId,
+        createUserId: row.createUserId,
         type: row.label === '回款计划' ? 'receivable' : 'system',
         title: `${row.label}${expiring ? '即将到期' : '已到期'}`,
         content: `${row.label}「${row.name}」将于 ${this.dateLabel(row.dueDate)}${

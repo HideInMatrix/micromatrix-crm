@@ -270,8 +270,39 @@
 
 ## 7. W3.6.6 全交易链最终验收
 
-- [ ] 7.1 商机 → 报价 → 合同 → 回款/发票 → 订单连续生命周期 Smoke。
-- [ ] 7.2 全角色/DataScope/第二租户权限矩阵。
-- [ ] 7.3 隔离空库全 migration + 双次 Seed + runtime Smoke。
-- [ ] 7.4 `/system/modules` 最终卡片全量复查，DB-001～005、DB-021、DB-022 更新状态。
-- [ ] 7.5 根 Smoke、rules、Browser、typecheck、ESLint、production build 全绿并更新总文档。
+- [x] 7.1 商机 → 报价 → 合同 → 回款/发票 → 订单连续生命周期 Smoke。
+  - 新增 `pnpm smoke:w366-transaction-chain`：临时库从零 56/56 migrations + Seed + API build/start，finally 自动 drop，不污染 `default`。
+  - 报价真实 CREATE 审批后以 `fromQuotationId` 创建合同；合同不手工传 products/amount，断言报价产品和金额由 Service 真正带入。
+  - 同一产品 ID 连续贯穿 Opportunity → Quotation → Contract → Order；合同回款计划/记录、paidAmount、工商抬头/发票与 invoice statistic 全绿。
+  - 同一 customerId 的客户 360 六类交易分页 **6/6**、同一 contractId 的合同关联分页 **4/4** 均能反向读回本次链路资源。
+  - 专项 Smoke PASS / exit 0；随后 Root Smoke **227/227**。
+  - 证据：[W3.6.6 7.1 全交易链连续生命周期验收](./w366-transaction-chain-acceptance.md)。
+- [x] 7.2 全角色/DataScope/第二租户权限矩阵。
+  - 新增 `pnpm smoke:w366-access-matrix`，隔离库 `w366_scope_39256b259c` 从零 56 migrations + Seed + API build/start，finally 自动 drop。
+  - Seed 真实角色：admin=ALL、zhangwei=DEPT_AND_CHILD、lina=SELF；Opportunity/Quotation/Contract/Payment Plan/Payment Record/Invoice/Order 七类资源 page + known-ID 详情全部按真实 permission/DataScope fail-closed。
+  - customer 360 六类关联分页与 contract 四类关联分页均不能绕过父资源 DataScope。
+  - 第二租户管理员对第一租户七类 known ID 全部不可读；第二租户 direct Order 反向验证第一租户也不可读。
+  - 专项 Smoke PASS / exit 0；首跑仅修正测试 helper 对 POST page 201 的错误假设，没有放宽业务断言。
+  - 证据：[W3.6.6 7.2 权限矩阵验收](./w366-access-matrix-acceptance.md)。
+- [x] 7.3 隔离空库全 migration + 双次 Seed + runtime Smoke。
+  - 新增 `pnpm smoke:w366-empty-db`：同一临时库 `w366_empty_ecdd904081` 从零 56/56 migrations，Seed #1 + Seed #2 连续执行均 PASS。
+  - 两次 Seed 后 tenants/departments/roles/users/user_roles/module form+field+blob/contract+order stage 等 11 张关键表计数完全一致，`seedCountsStable=true`。
+  - Opportunity stage 当前为 runtime 懒初始化：Seed 后表计数为 0，但 `/opportunity/stage/get` 实际补齐并通过，不把它误记为 Seed 预置。
+  - 双次 Seed 后三演示角色登录、七类 module form、Opportunity/Contract/Order stage、七类 direct 资源 page+detail runtime 全绿。
+  - 证据：[W3.6.6 7.3 空库双 Seed 验收](./w366-empty-db-acceptance.md)。
+- [x] 7.4 `/system/modules` 最终卡片全量复查，DB-001～005、DB-021、DB-022 更新状态。
+  - `pnpm smoke:w366-system-modules-browser` 最终 **47/47 / exit 0**：Opportunity/Product/Contract/Order 四张交易链卡片 15 个入口全部 REAL，字段路由均消费对应 metadata，6 个 Drawer 实际可打开，API 5xx=0、Runtime exception=0。
+  - 更新 W3.6.3 合同卡 Browser Smoke：回款计划/回款记录/工商抬头/发票不再按旧 deferred 断言，真实点击 + direct metadata/stage 验收 **23/23 / exit 0**。
+  - 修复 `ContractStageSettingsDrawer` 首开加载：改为 Drawer `open` 生命周期加载 stage；避免特定导航序列下只显示控制项而无阶段列表。
+  - W3.6.3 isolated contract HTTP Smoke 再次 PASS，并实际断言 `CONTRACT_VOID -> 合同已作废`、`CONTRACT_ARCHIVED -> 合同已归档` 通知。
+  - Deferred backlog：DB-001～005=`VERIFIED`；DB-022=`VERIFIED`；DB-021 仅因 FollowUpPlan 尚无独立 Field/Blob 保持 `IN_PROGRESS`，W3.6 交易链部分已全部关闭。
+  - 证据：[W3.6.6 7.4 system/modules 最终验收](./w366-system-modules-acceptance.md)。
+- [x] 7.5 根 Smoke、rules、Browser、typecheck、ESLint、production build 全绿并更新总文档。
+  - Root `pnpm smoke`：**227/227 / exit 0**。
+  - API Rules：**118/118 / exit 0**。
+  - W3.6.6 最终隔离复跑：transaction-chain、access-matrix、empty-db 均 PASS；各自从零 56 migrations，empty-db 同库双 Seed 继续幂等。
+  - `/system/modules` 总 Browser **47/47 / exit 0**；合同模块设置补充 Browser 在 lint 转义修正后再次 **23/23 / exit 0**。
+  - Workspace `pnpm typecheck`、`pnpm lint`、`pnpm build` 全部 exit 0。
+  - 最终 runtime legacy/deferred 精确扫描：旧 `/orders` HTTP/router、Order 旧状态/权限、旧交易模型、交易链 deferred/TODO/PLACEHOLDER 实例、Order `customData` 全部 0。
+  - `git diff --check` PASS；DB-001～005、DB-022=`VERIFIED`，DB-021 仅剩 FollowUpPlan 保持 `IN_PROGRESS`。
+  - 证据：[W3.6.6 7.5 最终封板验收](./w366-final-acceptance.md)。

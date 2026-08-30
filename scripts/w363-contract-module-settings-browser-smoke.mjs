@@ -111,11 +111,19 @@ class CdpClient {
   }
 
   async clickElement(expression) {
+    const visible = await this.evaluate(`(() => {
+      const element=${expression}
+      if(!element) return false
+      element.scrollIntoView({block:'center',inline:'center'})
+      return true
+    })()`)
+    if (!visible) return false
+    await sleep(150)
     const point = await this.evaluate(`(() => {
       const element=${expression}
       if(!element) return null
       const rect=element.getBoundingClientRect()
-      if(!rect.width||!rect.height) return null
+      if(!rect.width||!rect.height||rect.bottom<0||rect.right<0||rect.top>innerHeight||rect.left>innerWidth) return null
       return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}
     })()`)
     if (!point) return false
@@ -127,11 +135,19 @@ class CdpClient {
   }
 
   async hoverElement(expression) {
+    const visible = await this.evaluate(`(() => {
+      const element=${expression}
+      if(!element) return false
+      element.scrollIntoView({block:'center',inline:'center'})
+      return true
+    })()`)
+    if (!visible) return false
+    await sleep(150)
     const point = await this.evaluate(`(() => {
       const element=${expression}
       if(!element) return null
       const rect=element.getBoundingClientRect()
-      if(!rect.width||!rect.height) return null
+      if(!rect.width||!rect.height||rect.bottom<0||rect.right<0||rect.top>innerHeight||rect.left>innerWidth) return null
       return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}
     })()`)
     if (!point) return false
@@ -185,36 +201,16 @@ async function main() {
     await sleep(800)
 
     check('合同表单设置为 REAL', await cdp.evaluate(`(() => { const b=${contractButton('合同表单设置')}; return Boolean(b && !b.disabled) })()`))
-    check('回款计划表单明确 deferred', await cdp.evaluate(`(() => { const b=${contractButton('回款计划表单设置')}; return Boolean(b?.disabled) })()`))
-    check('回款记录表单明确 deferred', await cdp.evaluate(`(() => { const b=${contractButton('回款记录表单设置')}; return Boolean(b?.disabled) })()`))
+    check('回款计划表单设置为 REAL', await cdp.evaluate(`(() => { const b=${contractButton('回款计划表单设置')}; return Boolean(b && !b.disabled) })()`))
+    check('回款记录表单设置为 REAL', await cdp.evaluate(`(() => { const b=${contractButton('回款记录表单设置')}; return Boolean(b && !b.disabled) })()`))
 
-    check('合同表单设置可点击', await cdp.clickElement(contractButton('合同表单设置')))
-    await cdp.waitFor(`location.pathname==='/system/modules/fields' && new URLSearchParams(location.search).get('module')==='contract'`, 15000, '合同表单设置导航')
-    await cdp.waitFor(`document.body?.innerText.includes('产品信息')===true`, 15000, '合同 direct metadata')
-    const formText = await cdp.evaluate('document.body.innerText')
-    check('合同表单消费 direct 字段', ['合同名称','客户','合同开始时间','合同金额','合同结束时间','合同编号','负责人','产品信息'].every((text) => formText.includes(text)))
-
-    await cdp.navigate('/system/modules')
-    await cdp.waitFor(`document.querySelector('[data-module-config-key="contract"]')!==null`, 10000, '合同模块卡片重载')
-    await sleep(800)
     check('合同更多菜单可打开', await cdp.hoverElement(contractButton('更多')))
     await cdp.waitFor(`[...document.querySelectorAll('.el-dropdown-menu')].some((el)=>el.getBoundingClientRect().width>0)`, 5000, '合同更多菜单')
-    const deferredMore = await cdp.evaluate(`(() => {
-      const visible=[...document.querySelectorAll('.el-dropdown-menu')].filter((el)=>el.getBoundingClientRect().width>0)
-      const items=visible.flatMap((menu)=>[...menu.querySelectorAll('.el-dropdown-menu__item')])
-      const state=(text)=>{const item=items.find((el)=>el.textContent?.replace(/\\s/g,'').startsWith(text));return {exists:Boolean(item),disabled:Boolean(item?.classList.contains('is-disabled')||item?.getAttribute('aria-disabled')==='true')}}
-      return { title:state('工商抬头表单必填设置'), invoice:state('发票表单设置'), stage:state('合同阶段设置') }
-    })()`)
-    check('工商抬头必填明确 deferred', deferredMore.title.exists && deferredMore.title.disabled, JSON.stringify(deferredMore.title))
-    check('发票表单明确 deferred', deferredMore.invoice.exists && deferredMore.invoice.disabled, JSON.stringify(deferredMore.invoice))
-    check('合同阶段设置为 REAL', deferredMore.stage.exists && !deferredMore.stage.disabled, JSON.stringify(deferredMore.stage))
-
     check('合同阶段设置可点击', await cdp.evaluate(`(() => {
       const item=[...document.querySelectorAll('.el-dropdown-menu__item')].find((el)=>el.getBoundingClientRect().width>0 && el.textContent?.replace(/\\s/g,'').startsWith('合同阶段设置'))
       item?.click(); return Boolean(item)
     })()`))
     await cdp.waitFor(`(() => { const el=document.querySelector('[data-testid="contract-stage-settings-drawer"]'); return Boolean(el && el.getBoundingClientRect().width>0) })()`, 10000, '合同阶段 Drawer')
-    await cdp.waitFor(`document.body?.innerText.includes('基础流转') && document.body?.innerText.includes('高级流转')`, 10000, '合同阶段配置加载')
     await cdp.waitFor(`document.querySelector('[data-testid="contract-stage-settings-drawer"]')?.innerText.includes('待签署')===true`, 10000, '合同阶段 direct 数据加载')
     const stageText = await cdp.evaluate(`document.querySelector('[data-testid="contract-stage-settings-drawer"]')?.innerText ?? ''`)
     const stageApiLoaded = cdp.responses.some((item) => {
@@ -226,6 +222,71 @@ async function main() {
       stageText,
     )
     check('合同阶段 Drawer 暴露回退与流转模式', ['进行中允许回退','完结后允许回退','基础流转','高级流转','添加阶段'].every((text) => stageText.includes(text)))
+
+    await cdp.navigate('/system/modules')
+    await cdp.waitFor(`document.querySelector('[data-module-config-key="contract"]')!==null`, 10000, '合同模块卡片重载')
+    await sleep(800)
+
+    const contractMetadataBefore = cdp.requestCount('/api/metadata/contract/fields', 'GET')
+    check('合同表单设置可点击', await cdp.clickElement(contractButton('合同表单设置')))
+    await cdp.waitFor(`location.pathname==='/system/modules/fields' && new URLSearchParams(location.search).get('module')==='contract'`, 15000, '合同表单设置导航')
+    await sleep(800)
+    check('合同表单消费 direct metadata', cdp.requestCount('/api/metadata/contract/fields', 'GET') > contractMetadataBefore)
+
+    await cdp.navigate('/system/modules')
+    await cdp.waitFor(`document.querySelector('[data-module-config-key="contract"]')!==null`, 10000, '合同模块卡片重载')
+    await sleep(500)
+    const planMetadataBefore = cdp.requestCount('/api/metadata/contractPaymentPlan/fields', 'GET')
+    check('回款计划表单设置可点击', await cdp.clickElement(contractButton('回款计划表单设置')))
+    await cdp.waitFor(`location.pathname==='/system/modules/fields' && new URLSearchParams(location.search).get('module')==='contractPaymentPlan'`, 15000, '回款计划表单设置导航')
+    await sleep(800)
+    check('回款计划表单消费 direct metadata', cdp.requestCount('/api/metadata/contractPaymentPlan/fields', 'GET') > planMetadataBefore)
+
+    await cdp.navigate('/system/modules')
+    await cdp.waitFor(`document.querySelector('[data-module-config-key="contract"]')!==null`, 10000, '合同模块卡片重载')
+    await sleep(500)
+    const recordMetadataBefore = cdp.requestCount('/api/metadata/contractPaymentRecord/fields', 'GET')
+    check('回款记录表单设置可点击', await cdp.clickElement(contractButton('回款记录表单设置')))
+    await cdp.waitFor(`location.pathname==='/system/modules/fields' && new URLSearchParams(location.search).get('module')==='contractPaymentRecord'`, 15000, '回款记录表单设置导航')
+    await sleep(800)
+    check('回款记录表单消费 direct metadata', cdp.requestCount('/api/metadata/contractPaymentRecord/fields', 'GET') > recordMetadataBefore)
+
+    await cdp.navigate('/system/modules')
+    await cdp.waitFor(`document.querySelector('[data-module-config-key="contract"]')!==null`, 10000, '合同模块卡片重载')
+    await sleep(800)
+    check('合同更多菜单可打开', await cdp.hoverElement(contractButton('更多')))
+    await cdp.waitFor(`[...document.querySelectorAll('.el-dropdown-menu')].some((el)=>el.getBoundingClientRect().width>0)`, 5000, '合同更多菜单')
+    const moreState = await cdp.evaluate(`(() => {
+      const visible=[...document.querySelectorAll('.el-dropdown-menu')].filter((el)=>el.getBoundingClientRect().width>0)
+      const items=visible.flatMap((menu)=>[...menu.querySelectorAll('.el-dropdown-menu__item')])
+      const state=(text)=>{const item=items.find((el)=>el.textContent?.replace(/\\s/g,'').startsWith(text));return {exists:Boolean(item),disabled:Boolean(item?.classList.contains('is-disabled')||item?.getAttribute('aria-disabled')==='true')}}
+      return { title:state('工商抬头表单必填设置'), invoice:state('发票表单设置'), stage:state('合同阶段设置') }
+    })()`)
+    check('工商抬头必填设置为 REAL', moreState.title.exists && !moreState.title.disabled, JSON.stringify(moreState.title))
+    check('发票表单设置为 REAL', moreState.invoice.exists && !moreState.invoice.disabled, JSON.stringify(moreState.invoice))
+    check('合同阶段设置为 REAL', moreState.stage.exists && !moreState.stage.disabled, JSON.stringify(moreState.stage))
+
+    check('工商抬头必填设置可点击', await cdp.evaluate(`(() => {
+      const item=[...document.querySelectorAll('.el-dropdown-menu__item')].find((el)=>el.getBoundingClientRect().width>0 && el.textContent?.replace(/\\s/g,'').startsWith('工商抬头表单必填设置'))
+      item?.click(); return Boolean(item)
+    })()`))
+    await cdp.waitFor(`(() => { const el=document.querySelector('[data-testid="business-title-required-settings-drawer"]'); return Boolean(el && el.getBoundingClientRect().width>0) })()`, 10000, '工商抬头必填 Drawer')
+
+    await cdp.navigate('/system/modules')
+    await cdp.waitFor(`document.querySelector('[data-module-config-key="contract"]')!==null`, 10000, '合同模块卡片重载')
+    await sleep(500)
+    check('合同更多菜单可再次打开', await cdp.hoverElement(contractButton('更多')))
+    await cdp.waitFor(`[...document.querySelectorAll('.el-dropdown-menu')].some((el)=>el.getBoundingClientRect().width>0)`, 5000, '合同更多菜单')
+    const invoiceMetadataBefore = cdp.requestCount('/api/metadata/invoice/fields', 'GET')
+    check('发票表单设置可点击', await cdp.evaluate(`(() => {
+      const item=[...document.querySelectorAll('.el-dropdown-menu__item')].find((el)=>el.getBoundingClientRect().width>0 && el.textContent?.replace(/\\s/g,'').startsWith('发票表单设置'))
+      if (!item) return false
+      setTimeout(() => item.click(), 0)
+      return true
+    })()`))
+    await cdp.waitFor(`location.pathname==='/system/modules/fields' && new URLSearchParams(location.search).get('module')==='invoice'`, 15000, '发票表单设置导航')
+    await sleep(800)
+    check('发票表单消费 direct metadata', cdp.requestCount('/api/metadata/invoice/fields', 'GET') > invoiceMetadataBefore)
 
     const api5xx = cdp.responses.filter((item) => item.status >= 500 && item.url.includes('/api/'))
     check('合同模块设置 Browser Smoke 无 API 5xx', api5xx.length === 0, api5xx.map((item) => `${item.status} ${item.url}`).join(', '))

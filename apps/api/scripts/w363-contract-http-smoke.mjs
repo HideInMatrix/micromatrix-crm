@@ -175,7 +175,9 @@ try {
   assert.equal(defaultStages.at(-1).name, '作废')
   const firstStage = defaultStages[0]
   const secondStage = defaultStages[1]
+  const archivedStage = defaultStages.find((item) => item.name === '合同完结')
   const voidStage = defaultStages.find((item) => item.name === '作废')
+  assert(archivedStage, 'archived stage missing')
   assert(voidStage, 'void stage missing')
 
   const product = (await request('/product/add', {
@@ -343,6 +345,29 @@ try {
   })).data
   assert.equal(stageChanged.stage, voidStage.id)
   assert.equal(stageChanged.voidReason, `${prefix}_VOID_REASON`)
+  const voidNotifications = (await request('/notifications?page=1&pageSize=100', { token })).data
+  assert(
+    voidNotifications.items?.some(
+      (item) => item.title === '合同已作废' && item.content === normalContract.name,
+    ),
+    'CONTRACT_VOID notification missing',
+  )
+
+  const archivedContract = await addContract(token, form, {
+    name: `${prefix}_ARCHIVED_STAGE`, customerId: customer.id, owner: userId, amount: 1,
+  })
+  stageChanged = (await request('/contract/update/stage', {
+    method: 'POST', token,
+    body: { id: archivedContract.id, stage: archivedStage.id },
+  })).data
+  assert.equal(stageChanged.stage, archivedStage.id)
+  const archivedNotifications = (await request('/notifications?page=1&pageSize=100', { token })).data
+  assert(
+    archivedNotifications.items?.some(
+      (item) => item.title === '合同已归档' && item.content === archivedContract.name,
+    ),
+    'CONTRACT_ARCHIVED notification missing',
+  )
 
   const advancedContract = await addContract(token, form, {
     name: `${prefix}_ADVANCED_STAGE`, customerId: customer.id, owner: userId, amount: 1,
@@ -635,6 +660,7 @@ try {
     pageGetSnapshotUpdate: true,
     userViewCrudAndIntersection: true,
     normalStageAndVoidReason: true,
+    contractStageNotifications: true,
     advancedStageGuard: true,
     batchUpdateAndSort: true,
     statistic: true,

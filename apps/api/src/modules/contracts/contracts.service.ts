@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
+import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { QuotationFieldsService } from '../quotes/quotation-fields.service'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
@@ -53,6 +54,7 @@ export class ContractsService {
     private readonly contractStages: ContractStageService,
     private readonly quotationFields: QuotationFieldsService,
     private readonly userViews: UserViewsService,
+    private readonly businessNotifications: BusinessNotificationsService,
   ) {}
 
   form(user: AuthUser) {
@@ -472,6 +474,23 @@ export class ContractsService {
         })),
       )
     })
+    const stageEvent = target.name === '作废'
+      ? 'CONTRACT_VOID'
+      : target.name === '合同完结'
+        ? 'CONTRACT_ARCHIVED'
+        : null
+    if (stageEvent) {
+      await this.businessNotifications.sendConfigured({
+        tenantId: user.tenantId,
+        event: stageEvent,
+        operatorId: user.id,
+        ownerId: current.owner,
+        createUserId: current.createUser,
+        type: 'system',
+        title: stageEvent === 'CONTRACT_VOID' ? '合同已作废' : '合同已归档',
+        content: current.name,
+      })
+    }
     return this.findOne(user, dto.id)
   }
 

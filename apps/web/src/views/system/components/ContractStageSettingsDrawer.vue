@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import draggable from 'vuedraggable'
 import { extractErrorMessage } from '@/api/http'
 import {
@@ -170,11 +170,10 @@ async function saveAdvanced() {
   }
 }
 
-watch(visible, (open) => { if (open) void load() })
 </script>
 
 <template>
-  <el-drawer v-model="visible" title="合同阶段设置" size="820px" destroy-on-close data-testid="contract-stage-settings-drawer">
+  <el-drawer v-model="visible" title="合同阶段设置" size="820px" destroy-on-close data-testid="contract-stage-settings-drawer" @open="load">
     <el-alert class="mb-4" type="info" :closable="false" title="最多 15 个合同阶段。进行中阶段可新增、改名、排序；已有合同数据的阶段禁止删除。" />
 
     <div class="mb-4 flex flex-wrap items-center justify-between gap-4">

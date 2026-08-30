@@ -46,6 +46,10 @@
     "smoke:w365-order-stage": "pnpm --filter @micromatrix/api smoke:w365-order-stage",
     "smoke:w365-order-approval": "pnpm --filter @micromatrix/api smoke:w365-order-approval",
     "smoke:w365-order-browser": "node scripts/w365-order-browser-smoke.mjs",
+    "smoke:w366-transaction-chain": "node apps/api/scripts/w366-transaction-chain-smoke.mjs",
+    "smoke:w366-access-matrix": "node apps/api/scripts/w366-access-matrix-smoke.mjs",
+    "smoke:w366-empty-db": "node apps/api/scripts/w366-empty-db-smoke.mjs",
+    "smoke:w366-system-modules-browser": "node scripts/w366-system-modules-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },
