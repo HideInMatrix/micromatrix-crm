@@ -387,11 +387,11 @@ function formatDate(value?: string | null) {
               </div>
               <el-switch v-model="form.allowWithdraw" disabled />
             </div>
-            <div class="setting-row is-disabled">
+            <div class="setting-row">
               <div>
-                <strong>允许审批人加签</strong><small>动态任务和节点快照变更待后续阶段接入</small>
+                <strong>允许审批人加签</strong><small>开启后，当前待办审批人可执行前置或后置加签</small>
               </div>
-              <el-switch v-model="form.allowAddSign" disabled />
+              <el-switch v-model="form.allowAddSign" :disabled="readonly" />
             </div>
             <div class="setting-row is-disabled">
               <div><strong>审批意见必填</strong><small>运行时尚未统一强制校验</small></div>

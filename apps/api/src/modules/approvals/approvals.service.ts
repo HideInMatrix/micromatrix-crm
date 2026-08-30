@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import {
   ApprovalInstanceVO,
@@ -13,6 +14,7 @@ import { BusinessNotificationsService } from '../notifications/business-notifica
 import { NotificationsService } from '../notifications/notifications.service'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 import { ApprovalResourceService } from './approval-resource.service'
+import type { AddSignTaskDto } from './dto/approval.dto'
 
 type ApprovalExecuteTimingValue = 'CREATE' | 'UPDATE' | 'DELETE'
 
@@ -160,22 +162,99 @@ export class ApprovalsService {
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
       where: { id: task.instanceId },
     })
-    const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
-    const mode = snapshot[task.nodeIndex]?.mode ?? 'ANY'
-
-    const siblings = await this.prisma.approvalTask.findMany({
-      where: { instanceId: instance.id, nodeIndex: task.nodeIndex, status: 'PENDING' },
-    })
-    if (mode === 'ANY') {
-      await this.prisma.approvalTask.updateMany({
-        where: { instanceId: instance.id, nodeIndex: task.nodeIndex, status: 'PENDING' },
-        data: { status: 'SKIPPED' },
-      })
-      await this.advance(instance.id, user.id)
-    } else if (siblings.length === 0) {
-      await this.advance(instance.id, user.id)
-    }
+    if (task.taskType === 'SIGN') await this.continueAddSignChain(task, instance, user.id)
+    else await this.completeApprovedNodeTask(task, instance, user.id)
     return { id: taskId, name: instance.targetName }
+  }
+
+  async signTask(user: AuthUser, taskId: string, dto: AddSignTaskDto) {
+    const sourceTask = await this.ensurePendingTask(user, taskId)
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: { id: sourceTask.instanceId, tenantId: user.tenantId, status: 'PENDING' },
+    })
+    if (!instance) throw new BadRequestException('仅审批中的实例允许加签')
+    if (!instance.flowId) throw new BadRequestException('审批实例缺少流程引用，不能加签')
+
+    const flow = await this.prisma.approvalFlow.findFirst({
+      where: { id: instance.flowId, tenantId: user.tenantId, deletedAt: null },
+      select: { allowAddSign: true },
+    })
+    if (!flow?.allowAddSign) throw new BadRequestException('当前审批流未开启加签')
+
+    const signApprover = await this.prisma.user.findFirst({
+      where: { id: dto.signApprover, tenantId: user.tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    })
+    if (!signApprover) throw new BadRequestException('加签审批人不存在或已停用')
+
+    const sourceRelation = await this.prisma.approvalAddSignTask.findUnique({
+      where: { taskId: sourceTask.id },
+    })
+    const rootTaskId = sourceRelation?.rootTaskId ?? sourceTask.id
+    const sort = await this.nextAddSignSort(rootTaskId, sourceRelation, dto.type)
+    const normalizedComment = dto.comment?.trim() || null
+    const handledAt = new Date()
+    const signTaskId = randomUUID()
+
+    const operations: Prisma.PrismaPromise<unknown>[] = [
+      this.prisma.approvalTask.update({
+        where: { id: sourceTask.id },
+        data:
+          dto.type === 'BEFORE'
+            ? { action: 'SIGN' }
+            : { status: 'APPROVED', action: 'APPROVE', handledAt },
+      }),
+      this.prisma.approvalTask.create({
+        data: {
+          id: signTaskId,
+          tenantId: user.tenantId,
+          instanceId: sourceTask.instanceId,
+          nodeId: sourceTask.nodeId,
+          nodeIndex: sourceTask.nodeIndex,
+          nodeRound: sourceTask.nodeRound,
+          nodeName: sourceTask.nodeName,
+          approverId: signApprover.id,
+          taskType: 'SIGN',
+        },
+      }),
+      this.prisma.approvalAddSignTask.create({
+        data: {
+          tenantId: user.tenantId,
+          instanceId: sourceTask.instanceId,
+          taskId: signTaskId,
+          signTaskId: sourceTask.id,
+          type: dto.type,
+          rootTaskId,
+          sort,
+          comment: normalizedComment,
+          createdById: user.id,
+        },
+      }),
+    ]
+    if (dto.type === 'AFTER') {
+      operations.push(
+        this.prisma.approvalRecord.create({
+          data: {
+            tenantId: user.tenantId,
+            instanceId: sourceTask.instanceId,
+            taskId: sourceTask.id,
+            nodeId: sourceTask.nodeId,
+            nodeRound: sourceTask.nodeRound,
+            result: 'APPROVE',
+            comment: normalizedComment,
+            createdById: user.id,
+          },
+        }),
+      )
+    }
+    await this.prisma.$transaction(operations)
+    await this.notifications.notifyMany(user.tenantId, [signApprover.id], {
+      type: 'approval',
+      title: '有新的加签审批待处理',
+      content: `${user.name} 为「${instance.targetName}」添加了${dto.type === 'BEFORE' ? '前置' : '后置'}加签`,
+      link: '/approvals',
+    })
+    return { id: signTaskId, name: instance.targetName }
   }
 
   async rejectTask(user: AuthUser, taskId: string, comment?: string) {
@@ -318,8 +397,9 @@ export class ApprovalsService {
     const where: Prisma.ApprovalTaskWhereInput = {
       tenantId: user.tenantId,
       approverId: user.id,
-      taskType: 'APPROVAL',
+      taskType: { in: ['APPROVAL', 'SIGN'] },
       status: 'PENDING',
+      OR: [{ action: null }, { action: { not: 'SIGN' } }],
     }
     const [tasks, total] = await this.prisma.$transaction([
       this.prisma.approvalTask.findMany({
@@ -369,7 +449,7 @@ export class ApprovalsService {
     const where: Prisma.ApprovalTaskWhereInput = {
       tenantId: user.tenantId,
       approverId: user.id,
-      taskType: 'APPROVAL',
+      taskType: { in: ['APPROVAL', 'SIGN'] },
       status: { in: ['APPROVED', 'REJECTED'] },
     }
     const [tasks, total] = await this.prisma.$transaction([
@@ -644,17 +724,141 @@ export class ApprovalsService {
     await this.resources.restore(instance, operatorId)
   }
 
+  private async nextAddSignSort(
+    rootTaskId: string,
+    sourceRelation: { rootTaskId: string; sort: bigint } | null,
+    type: 'BEFORE' | 'AFTER',
+  ): Promise<bigint> {
+    if (!sourceRelation) {
+      const tail = await this.prisma.approvalAddSignTask.findFirst({
+        where: { rootTaskId },
+        orderBy: { sort: 'desc' },
+        select: { sort: true },
+      })
+      return (tail?.sort ?? 0n) + 100n
+    }
+    if (type === 'BEFORE') return sourceRelation.sort - 100n
+
+    const next = await this.prisma.approvalAddSignTask.findFirst({
+      where: { rootTaskId, sort: { gt: sourceRelation.sort } },
+      orderBy: { sort: 'asc' },
+      select: { sort: true },
+    })
+    if (!next) return sourceRelation.sort + 100n
+    const midpoint = (sourceRelation.sort + next.sort) / 2n
+    if (midpoint === sourceRelation.sort || midpoint === next.sort) {
+      throw new BadRequestException('当前加签链排序空间不足，请完成已有加签后再操作')
+    }
+    return midpoint
+  }
+
+  private async continueAddSignChain(
+    completedTask: ApprovalTask,
+    instance: ApprovalInstance,
+    operatorId: string,
+  ) {
+    const relation = await this.prisma.approvalAddSignTask.findUnique({
+      where: { taskId: completedTask.id },
+    })
+    if (!relation) throw new BadRequestException('加签任务缺少链路关系')
+
+    const next = await this.prisma.approvalAddSignTask.findFirst({
+      where: {
+        rootTaskId: relation.rootTaskId,
+        sort: { gt: relation.sort },
+        task: { status: 'PENDING' },
+      },
+      orderBy: { sort: 'asc' },
+      include: { task: true },
+    })
+    if (next) {
+      if (next.task.action === 'SIGN') {
+        await this.prisma.approvalTask.update({
+          where: { id: next.task.id },
+          data: { action: null },
+        })
+      }
+      return
+    }
+
+    const rootTask = await this.prisma.approvalTask.findUnique({
+      where: { id: relation.rootTaskId },
+    })
+    if (!rootTask) throw new BadRequestException('加签根任务不存在')
+    if (rootTask.status === 'PENDING') {
+      if (rootTask.action === 'SIGN') {
+        await this.prisma.approvalTask.update({
+          where: { id: rootTask.id },
+          data: { action: null },
+        })
+      }
+      return
+    }
+    if (rootTask.status === 'APPROVED') {
+      await this.completeApprovedNodeTask(rootTask, instance, operatorId)
+    }
+  }
+
+  private async completeApprovedNodeTask(
+    task: ApprovalTask,
+    instance: ApprovalInstance,
+    operatorId: string,
+  ) {
+    const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const mode = snapshot[task.nodeIndex]?.mode ?? 'ANY'
+    const pending = await this.prisma.approvalTask.findMany({
+      where: {
+        instanceId: instance.id,
+        nodeIndex: task.nodeIndex,
+        status: 'PENDING',
+        taskType: { in: ['APPROVAL', 'SIGN'] },
+      },
+      select: { id: true },
+    })
+    if (mode === 'ANY') {
+      if (pending.length) {
+        await this.prisma.approvalTask.updateMany({
+          where: {
+            instanceId: instance.id,
+            nodeIndex: task.nodeIndex,
+            status: 'PENDING',
+            taskType: { in: ['APPROVAL', 'SIGN'] },
+          },
+          data: { status: 'SKIPPED' },
+        })
+      }
+      await this.advance(instance.id, operatorId)
+    } else if (pending.length === 0) {
+      await this.advance(instance.id, operatorId)
+    }
+  }
+
   private async ensurePendingTask(user: AuthUser, taskId: string): Promise<ApprovalTask> {
     const task = await this.prisma.approvalTask.findFirst({
       where: {
         id: taskId,
         tenantId: user.tenantId,
         approverId: user.id,
-        taskType: 'APPROVAL',
+        taskType: { in: ['APPROVAL', 'SIGN'] },
         status: 'PENDING',
+        instance: { status: 'PENDING' },
       },
     })
     if (!task) throw new NotFoundException('待办任务不存在或已处理')
+    if (task.action === 'SIGN') throw new BadRequestException('当前任务正在等待前置加签完成')
+    if (task.taskType === 'SIGN') {
+      const relation = await this.prisma.approvalAddSignTask.findUnique({ where: { taskId: task.id } })
+      if (!relation) throw new BadRequestException('加签任务缺少链路关系')
+      const earlier = await this.prisma.approvalAddSignTask.findFirst({
+        where: {
+          rootTaskId: relation.rootTaskId,
+          sort: { lt: relation.sort },
+          task: { status: 'PENDING' },
+        },
+        select: { id: true },
+      })
+      if (earlier) throw new BadRequestException('当前加签任务尚未轮到处理')
+    }
     return task
   }
 
@@ -671,14 +875,29 @@ export class ApprovalsService {
         })
       : []
     const nameMap = new Map(users.map((u) => [u.id, u.name]))
-    const records = await this.prisma.approvalRecord.findMany({
-      where: { tenantId: instance.tenantId, instanceId: instance.id },
-      orderBy: { createdAt: 'asc' },
-    })
+    const [records, addSignTasks, flowCapability] = await Promise.all([
+      this.prisma.approvalRecord.findMany({
+        where: { tenantId: instance.tenantId, instanceId: instance.id },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.approvalAddSignTask.findMany({
+        where: { tenantId: instance.tenantId, instanceId: instance.id },
+        orderBy: [{ rootTaskId: 'asc' }, { sort: 'asc' }, { createdAt: 'asc' }],
+      }),
+      instance.flowId
+        ? this.prisma.approvalFlow.findFirst({
+            where: { id: instance.flowId, tenantId: instance.tenantId, deletedAt: null },
+            select: { allowAddSign: true },
+          })
+        : Promise.resolve(null),
+    ])
     const latestRecordByTaskId = new Map(records.map((record) => [record.taskId, record]))
-    const approvalTasks = tasks.filter((task) => task.taskType === 'APPROVAL')
+    const approvalTasks = tasks.filter(
+      (task) => task.taskType === 'APPROVAL' || task.taskType === 'SIGN',
+    )
     const myPending = approvalTasks.find(
-      (task) => task.approverId === currentUserId && task.status === 'PENDING',
+      (task) =>
+        task.approverId === currentUserId && task.status === 'PENDING' && task.action !== 'SIGN',
     )
 
     return {
@@ -721,6 +940,18 @@ export class ApprovalsService {
         createdById: record.createdById,
         createdAt: record.createdAt.toISOString(),
       })),
+      addSignTasks: addSignTasks.map((relation) => ({
+        id: relation.id,
+        taskId: relation.taskId,
+        signTaskId: relation.signTaskId,
+        type: relation.type,
+        rootTaskId: relation.rootTaskId,
+        sort: relation.sort.toString(),
+        comment: relation.comment,
+        createdById: relation.createdById,
+        createdAt: relation.createdAt.toISOString(),
+      })),
+      canAddSign: Boolean(myPending && flowCapability?.allowAddSign),
       myPendingTaskId: myPending?.id ?? null,
     }
   }

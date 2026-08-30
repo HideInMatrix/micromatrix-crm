@@ -8,6 +8,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { extractErrorMessage } from '@/api/http'
+import { memberApi, type MemberOption } from '@/api/system'
 
 type ApprovalTab = 'pending' | 'handled' | 'mine' | 'copied'
 
@@ -22,6 +23,14 @@ const query = reactive({ page: 1, pageSize: 10 })
 const detailVisible = ref(false)
 const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
+const addSignVisible = ref(false)
+const addSignLoading = ref(false)
+const memberOptions = ref<MemberOption[]>([])
+const addSignForm = reactive({
+  type: 'BEFORE' as 'BEFORE' | 'AFTER',
+  signApprover: '',
+  comment: '',
+})
 
 async function loadData() {
   loading.value = true
@@ -75,6 +84,44 @@ async function handleReject() {
     loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function openAddSign() {
+  if (!current.value?.myPendingTaskId || !current.value.canAddSign) return
+  addSignForm.type = 'BEFORE'
+  addSignForm.signApprover = ''
+  addSignForm.comment = ''
+  try {
+    const { data } = await memberApi.options()
+    memberOptions.value = data
+    addSignVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleAddSign() {
+  if (!current.value?.myPendingTaskId || !current.value.canAddSign) return
+  if (!addSignForm.signApprover) {
+    ElMessage.warning('请选择加签审批人')
+    return
+  }
+  addSignLoading.value = true
+  try {
+    await approvalApi.sign(current.value.myPendingTaskId, {
+      type: addSignForm.type,
+      signApprover: addSignForm.signApprover,
+      comment: addSignForm.comment.trim() || undefined,
+    })
+    ElMessage.success(addSignForm.type === 'BEFORE' ? '前置加签已发起' : '后置加签已发起')
+    addSignVisible.value = false
+    detailVisible.value = false
+    loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    addSignLoading.value = false
   }
 }
 
@@ -254,10 +301,53 @@ onMounted(() => {
       </div>
       <template #footer>
         <template v-if="current?.myPendingTaskId && current?.status === 'PENDING'">
+          <el-button v-if="current.canAddSign" @click="openAddSign">加签</el-button>
           <el-button type="danger" @click="handleReject">驳回</el-button>
           <el-button type="primary" @click="handleApprove">同意</el-button>
         </template>
         <el-button v-else @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="addSignVisible" title="加签" width="460px" append-to-body>
+      <el-form label-width="92px">
+        <el-form-item label="加签方式">
+          <el-radio-group v-model="addSignForm.type">
+            <el-radio-button value="BEFORE">我之前</el-radio-button>
+            <el-radio-button value="AFTER">我之后</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="加签审批人" required>
+          <el-select
+            v-model="addSignForm.signApprover"
+            filterable
+            placeholder="选择成员"
+            class="w-full"
+          >
+            <el-option
+              v-for="member in memberOptions"
+              :key="member.id"
+              :label="member.name"
+              :value="member.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input
+            v-model="addSignForm.comment"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="可填写加签说明"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addSignVisible = false">取消</el-button>
+        <el-button type="primary" :loading="addSignLoading" @click="handleAddSign">
+          确认加签
+        </el-button>
       </template>
     </el-dialog>
   </el-card>

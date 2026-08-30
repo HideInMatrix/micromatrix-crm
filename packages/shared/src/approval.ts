@@ -6,6 +6,7 @@ export type ApprovalInstanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANC
 export type ApprovalTaskStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED'
 export type ApprovalTaskType = 'APPROVAL' | 'CC' | 'SIGN' | 'BACK'
 export type ApprovalTaskAction = 'APPROVE' | 'REJECT' | 'SIGN' | 'BACK'
+export type ApprovalAddSignType = 'BEFORE' | 'AFTER'
 /** 业务对象上的审批状态 */
 export type BizApprovalStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
 
@@ -183,6 +184,18 @@ export interface ApprovalRecordVO {
   createdAt: string
 }
 
+export interface ApprovalAddSignTaskVO {
+  id: string
+  taskId: string
+  signTaskId: string
+  type: ApprovalAddSignType
+  rootTaskId: string
+  sort: string
+  comment: string | null
+  createdById: string
+  createdAt: string
+}
+
 export interface ApprovalInstanceVO {
   id: string
   module: ApprovalModule
@@ -198,6 +211,9 @@ export interface ApprovalInstanceVO {
   createdAt: string
   tasks: ApprovalTaskVO[]
   records: ApprovalRecordVO[]
+  addSignTasks: ApprovalAddSignTaskVO[]
+  /** 当前用户的当前待办是否允许执行加签。 */
+  canAddSign: boolean
   /** 当前用户待处理的任务 id */
   myPendingTaskId?: string | null
 }

@@ -96,6 +96,13 @@ export function rejectTask(taskId: string, comment: string) {
   return http.post(`/approvals/tasks/${taskId}/reject`, { comment })
 }
 
+export function signTask(
+  taskId: string,
+  data: { type: 'BEFORE' | 'AFTER'; signApprover: string; comment?: string },
+) {
+  return http.post(`/approvals/tasks/${taskId}/sign`, data)
+}
+
 export interface MobileSummary {
   newLeads: number
   newCustomers: number

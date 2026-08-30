@@ -9,6 +9,7 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto'
 import { ApprovalFlowConfigService } from './approval-flow-config.service'
 import { ApprovalsService } from './approvals.service'
 import {
+  AddSignTaskDto,
   ApprovalFlowPageQueryDto,
   CreateApprovalFlowDto,
   HandleTaskDto,
@@ -106,6 +107,14 @@ export class ApprovalsController {
   @ApiOperation({ summary: '驳回' })
   reject(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: HandleTaskDto) {
     return this.approvalsService.rejectTask(user, id, dto.comment)
+  }
+
+  @Post('tasks/:id/sign')
+  @RequirePermissions('menu:approval')
+  @LogOperation('approval', 'sign')
+  @ApiOperation({ summary: '加签（BEFORE / AFTER）' })
+  sign(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddSignTaskDto) {
+    return this.approvalsService.signTask(user, id, dto)
   }
 
   @Post(':id/cancel')

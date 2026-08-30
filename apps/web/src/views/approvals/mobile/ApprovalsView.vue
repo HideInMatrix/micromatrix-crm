@@ -5,9 +5,10 @@ import {
   type ApprovalInstanceVO,
 } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
-import { ref } from 'vue'
-import { approveTask, myApplications, myPendingApprovals, rejectTask } from '@/api/mobile'
+import { computed, ref } from 'vue'
+import { approveTask, myApplications, myPendingApprovals, rejectTask, signTask } from '@/api/mobile'
 import { extractErrorMessage } from '@/api/http'
+import { memberApi, type MemberOption } from '@/api/system'
 
 const activeTab = ref<'pending' | 'mine'>('pending')
 const items = ref<ApprovalInstanceVO[]>([])
@@ -19,6 +20,17 @@ const refreshing = ref(false)
 const detailShow = ref(false)
 const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
+const addSignShow = ref(false)
+const addSignLoading = ref(false)
+const memberPickerShow = ref(false)
+const memberOptions = ref<MemberOption[]>([])
+const addSignType = ref<'BEFORE' | 'AFTER'>('BEFORE')
+const addSignApprover = ref('')
+const addSignApproverName = ref('')
+const addSignComment = ref('')
+const memberColumns = computed(() =>
+  memberOptions.value.map((member) => ({ text: member.name, value: member.id })),
+)
 
 async function loadMore() {
   loading.value = true
@@ -78,6 +90,54 @@ async function handleReject() {
     reload()
   } catch (error) {
     showFailToast(extractErrorMessage(error))
+  }
+}
+
+async function openAddSign() {
+  if (!current.value?.myPendingTaskId || !current.value.canAddSign) return
+  addSignType.value = 'BEFORE'
+  addSignApprover.value = ''
+  addSignApproverName.value = ''
+  addSignComment.value = ''
+  try {
+    const { data } = await memberApi.options()
+    memberOptions.value = data
+    addSignShow.value = true
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  }
+}
+
+function selectAddSignMember({ selectedValues }: { selectedValues: string[] }) {
+  const userId = selectedValues[0]
+  const member = memberOptions.value.find((item) => item.id === userId)
+  if (!userId || !member) return
+  addSignApprover.value = userId
+  addSignApproverName.value = member.name
+  memberPickerShow.value = false
+}
+
+async function handleAddSign() {
+  if (!current.value?.myPendingTaskId || !current.value.canAddSign) return
+  if (!addSignApprover.value) {
+    showFailToast('请选择加签审批人')
+    return
+  }
+  addSignLoading.value = true
+  try {
+    await signTask(current.value.myPendingTaskId, {
+      type: addSignType.value,
+      signApprover: addSignApprover.value,
+      comment: addSignComment.value.trim() || undefined,
+    })
+    showSuccessToast(addSignType.value === 'BEFORE' ? '前置加签已发起' : '后置加签已发起')
+    addSignShow.value = false
+    detailShow.value = false
+    reload()
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    addSignLoading.value = false
   }
 }
 
@@ -171,11 +231,52 @@ function taskStatusLabel(status: string) {
             class="!bg-[#f7f8fa] rounded mb-3"
           />
           <div class="flex gap-3 pb-2">
+            <van-button v-if="current.canAddSign" block plain @click="openAddSign">加签</van-button>
             <van-button type="danger" block plain @click="handleReject">驳回</van-button>
             <van-button type="primary" block @click="handleApprove">同意</van-button>
           </div>
         </template>
       </div>
+    </van-popup>
+
+    <van-popup v-model:show="addSignShow" position="bottom" round>
+      <div class="p-4">
+        <div class="text-center font-medium mb-4">加签</div>
+        <van-radio-group v-model="addSignType" direction="horizontal" class="mb-3">
+          <van-radio name="BEFORE">我之前</van-radio>
+          <van-radio name="AFTER">我之后</van-radio>
+        </van-radio-group>
+        <van-field
+          v-model="addSignApproverName"
+          readonly
+          is-link
+          label="审批人"
+          placeholder="选择成员"
+          @click="memberPickerShow = true"
+        />
+        <van-field
+          v-model="addSignComment"
+          type="textarea"
+          rows="2"
+          maxlength="500"
+          show-word-limit
+          label="说明"
+          placeholder="可填写加签说明"
+        />
+        <div class="pt-4">
+          <van-button type="primary" block :loading="addSignLoading" @click="handleAddSign">
+            确认加签
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="memberPickerShow" position="bottom" round>
+      <van-picker
+        :columns="memberColumns"
+        @confirm="selectAddSignMember"
+        @cancel="memberPickerShow = false"
+      />
     </van-popup>
   </div>
 </template>

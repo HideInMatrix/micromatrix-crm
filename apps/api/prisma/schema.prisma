@@ -1591,6 +1591,11 @@ enum ApprovalTaskAction {
   BACK
 }
 
+enum ApprovalAddSignType {
+  BEFORE
+  AFTER
+}
+
 model ApprovalFlow {
   id                    String                @id @default(cuid())
   tenantId              String
@@ -1737,6 +1742,7 @@ model ApprovalInstance {
   flowVersion ApprovalFlowVersion? @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
   tasks       ApprovalTask[]
   records     ApprovalRecord[]
+  addSignTasks ApprovalAddSignTask[]
 
   @@index([tenantId, status])
   @@index([tenantId, module, targetId])
@@ -1780,12 +1786,38 @@ model ApprovalTask {
 
   instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   records  ApprovalRecord[]
+  addSignTask ApprovalAddSignTask? @relation("AddSignCreatedTask")
+  signedByTasks ApprovalAddSignTask[] @relation("AddSignSourceTask")
 
   @@index([tenantId, approverId, status])
   @@index([tenantId, approverId, taskType, status])
   @@index([instanceId])
   @@index([instanceId, nodeIndex, nodeRound])
   @@map("approval_tasks")
+}
+
+model ApprovalAddSignTask {
+  id          String              @id @default(cuid())
+  tenantId    String
+  instanceId  String
+  taskId      String              @unique @map("task_id")
+  signTaskId  String              @map("sign_task_id")
+  type        ApprovalAddSignType
+  rootTaskId  String              @map("root_task_id")
+  sort        BigInt
+  comment     String?
+  createdById String              @map("created_by_id")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  task     ApprovalTask     @relation("AddSignCreatedTask", fields: [taskId], references: [id], onDelete: Cascade)
+  signTask ApprovalTask     @relation("AddSignSourceTask", fields: [signTaskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, instanceId])
+  @@index([rootTaskId, sort])
+  @@index([signTaskId])
+  @@map("approval_add_sign_tasks")
 }
 
 model ApprovalRecord {

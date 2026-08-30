@@ -20,6 +20,7 @@ export const APPROVAL_MODES = ['ALL', 'ANY'] as const
 export const APPROVAL_FORM_TYPES = ['quotation', 'contract', 'invoice', 'order'] as const
 export const APPROVAL_MODULES = ['quote', 'contract', 'invoice', 'order'] as const
 export const DUPLICATE_APPROVER_RULES = ['FIRST_ONLY', 'SEQUENTIAL_ALL', 'EACH'] as const
+export const ADD_SIGN_TYPES = ['BEFORE', 'AFTER'] as const
 
 export class FlowNodeDto {
   @ApiPropertyOptional({ description: '前端编辑期稳定键' })
@@ -243,6 +244,23 @@ export class SubmitApprovalDto {
 
 export class HandleTaskDto {
   @ApiPropertyOptional({ description: '审批意见' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  comment?: string
+}
+
+export class AddSignTaskDto {
+  @ApiProperty({ enum: ADD_SIGN_TYPES, description: 'BEFORE=在我之前，AFTER=在我之后' })
+  @IsIn(ADD_SIGN_TYPES)
+  type!: (typeof ADD_SIGN_TYPES)[number]
+
+  @ApiProperty({ description: '加签审批人 ID' })
+  @IsString()
+  @IsNotEmpty()
+  signApprover!: string
+
+  @ApiPropertyOptional({ description: '加签说明' })
   @IsString()
   @IsOptional()
   @MaxLength(500)

@@ -284,7 +284,6 @@ export class ApprovalFlowConfigService {
     if (
       dto.allowBatchProcess ||
       dto.allowWithdraw ||
-      dto.allowAddSign ||
       dto.duplicateApproverRule !== 'FIRST_ONLY' ||
       dto.requireComment
     ) {
