@@ -52,7 +52,7 @@ export const MENUS: MenuItem[] = [
     perm: 'menu:system',
   },
   { path: '/bidding', title: '标讯', moduleKey: 'bidding', perm: 'menu:bidding' },
-  { path: '/orders', title: '订单', moduleKey: 'order', perm: 'menu:order' },
+  { path: '/order/index', title: '订单', moduleKey: 'order', perm: 'ORDER:READ' },
   {
     path: '/system',
     title: '系统',

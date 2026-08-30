@@ -264,7 +264,12 @@ export class ApprovalFlowConfigService {
     nodes: FlowNodeDto[],
   ) {
     if (!dto.name.trim()) throw new BadRequestException('流程名称不能为空')
-    if (formType === 'quotation' || formType === 'contract' || formType === 'invoice') {
+    if (
+      formType === 'quotation' ||
+      formType === 'contract' ||
+      formType === 'invoice' ||
+      formType === 'order'
+    ) {
       if (!dto.createExecute && !dto.updateExecute && !dto.deleteExecute) {
         throw new UnprocessableEntityException('当前业务对象审批至少需要开启一种执行时机')
       }
@@ -314,8 +319,7 @@ export class ApprovalFlowConfigService {
     deleteExecute: boolean,
     nodes: Array<ApprovalFlowNodeInput | FlowNodeDto>,
   ) {
-    const hasExecuteTiming =
-      formType === 'order' ? createExecute : createExecute || updateExecute || deleteExecute
+    const hasExecuteTiming = createExecute || updateExecute || deleteExecute
     if (!hasExecuteTiming || nodes.length === 0) {
       throw new ConflictException('启用的流程至少需要一个审批执行时机和有效审批节点')
     }

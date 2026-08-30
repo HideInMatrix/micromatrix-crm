@@ -217,10 +217,56 @@
 
 ## 6. W3.6.5 订单
 
-- [ ] 6.1 源码与 DDL 证据矩阵。
+- [x] 6.1 源码与 DDL 证据矩阵。
+  - 证据：[订单源码与 DDL 证据矩阵](./order-source-ddl-audit.md)。
+  - Cordys 真实目标为 `sales_order + field/blob + snapshot + sales_order_stage_config`，高级流转复用 `stage_advanced_config`；订单主表后续增加 `pos / approval_status / approved`。
+  - 默认 7 阶段为新建/待发货/部分发货/已发货/待验收/已完成/已作废；阶段支持 rollback、排序、NORMAL/ADVANCED 流转和字段条件，当前固定 `OrderStatus` 不能保留为目标模型。
+  - 产品明细是 `SUB_PRODUCT` 动态子表字段，使用 field/blob 的 `ref_sub_id / row_id / biz_id`，不新建 Cordys 不存在的固定 OrderItem 聚合。
+  - Cordys 独立路由 `/order/index`；API namespace `/order/*`；CREATE/UPDATE/DELETE 均接审批，结束事件为 `ORDER_APPROVAL`。
 - [ ] 6.2 订单直接字段/API/状态流/页面。
-- [ ] 6.3 `/system/modules` 订单卡片：订单表单 + 订单状态流全部 REAL。
-- [ ] 6.4 专项验收与提交。
+  - [x] 6.2A Direct schema + migration/data upgrade：`sales_order`、field/blob、snapshot、stage config、默认 7 阶段与旧数据升级。
+    - Prisma 已删除固定 `OrderStatus` 真相源并切到 Cordys direct `Order`；新增 `OrderField / OrderFieldBlob / OrderSnapshot / OrderStageConfig`，高级流转继续复用通用 `StageAdvancedConfig`。
+    - 第 52 个 migration `20260830113000_w365_order_direct_models` 已在当前 `default` 成功 deploy；Prisma 输出 **52 migrations found / all successfully applied**。
+    - 当前库旧订单升级 **1 -> 1**：保留原 id、编号、客户、合同、负责人、金额与审批状态；旧 `PENDING` 按历史业务语义映射到 Cordys“待发货”。
+    - 默认阶段实库核对 **7/7**：新建、待发货、部分发货、已发货、待验收、已完成、已作废，`circulationType=NORMAL`；旧 `orders` 的 `to_regclass` 为 `null`，`sales_order` 存在。
+    - order module metadata 已由旧 `name/amount/ownerId/remark` 切到 direct 主字段与动态 Field/Blob；Seed 已补订单表单和默认 7 阶段。API typecheck、API production build 均 exit 0。
+  - [x] 6.2B Direct API + DataScope + metadata + Saved View + Import/Export：完整 `/order/*` 契约，退出 `customData Json`。
+    - `/order/module/form|page|add|update|update/stage|batch/update|delete|get|snapshot|tab|download|statistic|sort|template/download|import/pre-check|import|export-all|export-select` 已切 direct `sales_order + field/blob + snapshot`；Order User View 已注册 `/order/view/* -> ORDER`，客户 360 order 分支改用 direct `customerId/owner/stage/createTime` 与 `ORDER:READ` DataScope。
+    - 订单产品明细使用 `sales_order_field/blob.ref_sub_id/row_id/biz_id` 存储，CRUD/detail/snapshot 均返回 `products`；没有新建固定 `OrderItem`。第 53 个 migration `20260830121000_w365_order_form_fields` 补齐产品子表和收货地址/收货人/联系方式 metadata，第 54 个 `20260830122000_w365_order_form_positions` 固定 0～13 表单排序；该阶段当时为 **54/54 migrations**，6.4 最终修复后当前总数为 **56/56**。
+    - Import/Export 复用统一 Spreadsheet/ExportTask，并使用真实二级表头 SUB_PRODUCT：同一订单可聚合多产品行；客户/合同/负责人/产品支持 ID 或可读名称（合同额外支持编号、负责人支持邮箱）解析，名称歧义显式拒绝。
+    - `pnpm smoke:w365-order` 全绿：真实登录、direct module form、含 2 行产品的 add/page/detail/snapshot、客户 360、Saved View、batch update、sort/statistic/download、SUB_PRODUCT Import/Export、删除清理与旧 `/orders` 404 均通过；API typecheck exit 0。
+    - 证据：[W3.6.5 订单 direct API 专项验收](./order-direct-api-acceptance.md)。
+  - [x] 6.2C Stage runtime：stage CRUD/sort/rollback、NORMAL/ADVANCED circulation、字段条件、业务 `update/stage` 与 billboard pos。
+    - `/order/stage/get|add|delete|update|update-rollback|sort|circulation-type|advanced/config` 已接真实 `sales_order_stage_config + stage_advanced_config`；业务 `/order/update/stage` 强制执行 NORMAL/ADVANCED 校验并同步真实 `stage / stageName / pos`。
+    - NORMAL 已按 Cordys `StageAdvancedConfigService` 的 `afootRollBack/endRollBack` 四组合语义实现；ADVANCED 支持显式流转边与 metadata 字段条件。`circulationFieldValues` 已改共享强类型 DTO，修复 Nest whitelist 将对象退化为 `[[]]` 的问题，并同步合同 DTO。
+    - `pnpm smoke:w365-order-stage` 关闭前复跑 PASS；覆盖 stage CRUD/sort、stageHasData 删除保护、NORMAL 回退、ADVANCED 流转、required 字段条件、真实订单 stage/pos/字段写入，并在 finally 恢复原状态流配置。
+    - 共享修复在本阶段当时已用 W3.6.3 独立合同 HTTP Smoke 回归：新建临时库、**54/54 migrations + Seed**，contract runtime/DataScope/CREATE-UPDATE-DELETE approval/revoke/batch approval/legacy 404 全绿；6.4 最终再次以 **56/56 migrations + Seed** 复放通过。API production build 同步 exit 0。
+    - 证据：[W3.6.5 订单状态流 runtime 专项验收](./order-stage-runtime-acceptance.md)。
+  - [x] 6.2D Approval + snapshot + notification：CREATE/UPDATE/DELETE、reject/revoke rollback、`approved` 事实位、`ORDER_APPROVAL`。
+    - Order approval flow 已解除历史 CREATE-only gating，CREATE/UPDATE/DELETE 三执行时机可真实启用且 `runtimeReady=true`；首次专项 Smoke 真实发现并修复 422“编辑和删除审批尚未接入”。
+    - `/order/add|update|delete` 已接统一 `ApprovalsService`：CREATE 自动提审；UPDATE 提审前捕获 direct Order + Field/Blob + Snapshot，reject/revoke 恢复编辑前业务数据；DELETE 审批通过后才物理删除。
+    - `approvalStatus` 统一为 `APPROVING/APPROVED/UNAPPROVED/REVOKED`；只有 APPROVED 将 `approved=true`，后续 reject/revoke 不清除历史事实位，并同步 `sales_order_snapshot`。
+    - 订单复用 `/approval-resource/push|revoke|simple-detail|detail`，`formKey=order`；源码复核后删除开发过程中多加的 `/order/approval|batch/approval|revoke` 和 `ORDER:APPROVAL`，最终严格保持 Cordys OrderController API/权限边界。
+    - `ORDER_APPROVAL` 已用 admin 提交、zhangwei 审批做真实通知验收，提交人的 `/notifications` 可读取本次订单“审批已通过”消息。
+    - `pnpm smoke:w365-order-approval`、`smoke:w365-order`、`smoke:w365-order-stage` 全绿；`smoke:w364-invoice-approval` 回归全绿；W3.6.3 独立合同 HTTP Smoke 在本阶段当时的临时库 **54/54 migrations + Seed** 后全绿；6.4 最终空库已升级为 **56/56 migrations + Seed**。API Rules **117/117**，typecheck/build exit 0。
+    - 证据：[W3.6.5 订单审批 runtime 专项验收](./order-approval-runtime-acceptance.md)。
+  - [x] 6.2E 独立订单页 + 客户/合同关联消费 + legacy exit：`/order/index`、table/billboard、batch edit、review/revoke、旧 `/orders`/`OrderStatus` 运行时退出。
+    - PC 路由与主导航已切 `/order/index + ORDER:READ`；订单主页面改为可复用 direct `OrderTable`，完整消费 `/order/* + /order/view/* + approval-resource`，覆盖 Saved View、高级筛选、动态列、table/billboard、CRUD、batch edit、stage、review/revoke、detail snapshot、Import/Export。
+    - 客户 360 与合同详情已复用同一 `OrderTable`，分别使用 `customerId/contractId` direct filter；合同详情提供“转订单”并跳 `/order/index?fromContract=<id>`，真实预填 customer/contract/owner/amount/products。
+    - legacy 扫描已清理运行时 `ORDER_STATUS_LABELS/ORDER_STATUS_FLOW/OrderStatus`、小写 `order:create/update/delete` 与根 Smoke 的旧 `/orders`；`w365-order-smoke` 继续保留旧 `/orders` -> 404 断言作为退出证据。当前 Prisma `Order` 无旧 `customData Json/status`。
+    - `pnpm smoke:w365-order-browser` 6.2E 初验 **29/29**；6.3 加入模块设置验收后最终扩展为 **37/37**。独立页、审批、客户 360、合同详情、合同转订单及 `/system/modules` 均全绿，API 5xx / Runtime exception = 0；Web typecheck/build exit 0，`pnpm smoke:w365-order` PASS。
+    - 证据：[W3.6.5 订单独立页 / 关联消费 / legacy exit 专项验收](./order-page-runtime-acceptance.md)。
+- [x] 6.3 `/system/modules` 订单卡片：订单表单 + 订单状态流全部 REAL。
+  - [x] 订单表单设置消费 direct order metadata；Browser Smoke 实际点击 `/system/modules/fields?module=order` 并确认请求 `/api/metadata/order/fields`。
+  - [x] 订单状态流设置已接真实 `OrderStageSettingsDrawer + /order/stage/*`，覆盖 CRUD/sort/rollback/NORMAL/ADVANCED；不再是 label-only 占位。
+  - `pnpm smoke:w365-order-browser` 扩展后 **37/37**，订单模块设置两项均真实可点击，API 5xx / Runtime exception = 0；Web typecheck/build exit 0。
+  - 证据：[W3.6.5 订单 `/system/modules` 专项验收](./order-module-settings-acceptance.md)。
+- [x] 6.4 专项验收与提交：API/approval/stage/module-settings/Browser Smoke + root Smoke + Rules/typecheck/lint/build + migration/空库复放 + legacy/deferred 扫描，文档封版后本地提交。
+  - 最终订单专项：`smoke:w365-order` / stage / approval 全部 PASS，Browser **37/37**；Root Smoke **227/227**；API Rules **117/117**；workspace typecheck/lint/build 全部 exit 0。
+  - 6.4 实际发现并修复旧表升级遗留：第 55 个 migration 解除 `sales_order.contract_id/amount` 旧 NOT NULL，第 56 个 migration 等价迁移历史 `order:* -> ORDER:*` 权限且不额外扩权。
+  - 独立临时库 `w363_contract_api_dd8c85eafe` 从零 **56/56 migrations + Seed** 成功，contract direct/runtime/DataScope/stage/approval/revoke/batch approval/legacy 404 全绿。
+  - 最终运行时扫描：小写 `order:create/update/delete`、临时 `ORDER:APPROVAL`、`ORDER_STATUS_FLOW/LABELS` 均 0；旧 `/orders` 只保留专项 Smoke 的 404 退出断言；订单 deferred/planned/占位命中 0。
+  - 证据：[W3.6.5 订单最终验收](./order-final-acceptance.md)。
 
 ## 7. W3.6.6 全交易链最终验收
 

@@ -376,7 +376,7 @@ export class ApprovalResourceBaseDto {
   @IsNotEmpty()
   resourceId!: string
 
-  @ApiProperty({ enum: ['invoice'] })
-  @IsIn(['invoice'])
-  formKey!: 'invoice'
+  @ApiProperty({ enum: ['invoice', 'order'] })
+  @IsIn(['invoice', 'order'])
+  formKey!: 'invoice' | 'order'
 }

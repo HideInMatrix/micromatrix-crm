@@ -1022,33 +1022,35 @@ export class CustomersService {
     }
 
     const where: Prisma.OrderWhereInput = {
-      tenantId: user.tenantId,
-      contract: { customerId: id },
+      organizationId: user.tenantId,
+      customerId: id,
       AND: [resourceScope as Prisma.OrderWhereInput],
     }
     const [rows, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
         include: { contract: { select: { name: true } } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createTime: 'desc' },
         skip,
         take,
       }),
       this.prisma.order.count({ where }),
     ])
-    const ownerMap = await this.userNames(rows.map((row) => row.ownerId))
+    const ownerMap = await this.userNames(rows.map((row) => row.owner))
     return {
       items: rows.map((row) => ({
         id: row.id,
-        code: row.code,
+        number: row.number,
         name: row.name,
         contractId: row.contractId,
-        contractName: row.contract.name,
-        amount: Number(row.amount),
-        status: row.status,
+        contractName: row.contract?.name ?? null,
+        amount: row.amount === null ? null : Number(row.amount),
+        stage: row.stage,
         approvalStatus: row.approvalStatus,
-        ownerName: row.ownerId ? (ownerMap.get(row.ownerId) ?? null) : null,
-        createdAt: row.createdAt.toISOString(),
+        approved: row.approved,
+        owner: row.owner,
+        ownerName: row.owner ? (ownerMap.get(row.owner) ?? null) : null,
+        createTime: Number(row.createTime),
       })),
       total,
       page: currentPage,
@@ -2376,7 +2378,8 @@ export class CustomersService {
       resource === 'contracts' ||
       resource === 'contractPaymentPlans' ||
       resource === 'contractPaymentRecords' ||
-      resource === 'invoices'
+      resource === 'invoices' ||
+      resource === 'orders'
       ? this.dataScope.directOwnerFilter(user, permission)
       : this.dataScope.scopeFilter(user, permission)
   }
@@ -2387,7 +2390,7 @@ export class CustomersService {
       : resource === 'invoices'
         ? 'CONTRACT_INVOICE:READ'
       : resource === 'orders'
-        ? 'menu:order'
+        ? 'ORDER:READ'
         : 'menu:contract'
   }
 

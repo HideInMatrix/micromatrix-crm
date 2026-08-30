@@ -149,3 +149,10 @@ export const ContractInvoiceUserViewsController = createResourceUserViewsControl
   'CONTRACT_INVOICE',
   ['CONTRACT_INVOICE:READ'],
 )
+
+export const OrderUserViewsController = createResourceUserViewsController(
+  'order/view',
+  '订单视图',
+  'ORDER',
+  ['ORDER:READ'],
+)

@@ -262,6 +262,61 @@ export const contractStageSettingsApi = {
   }) => http.post('/contract/stage/advanced/config', data),
 }
 
+export interface OrderStageAdvancedTargetVO {
+  targetId: string
+  enable: boolean
+  circulationFieldValues: unknown[]
+}
+
+export interface OrderStageAdvancedRowVO {
+  originId: string
+  moduleType: 'order'
+  targets: OrderStageAdvancedTargetVO[]
+}
+
+export interface OrderStageConfigItemVO {
+  id: string
+  name: string
+  type: 'AFOOT' | 'END'
+  afootRollBack: boolean
+  endRollBack: boolean
+  pos: number
+  circulationType: 'NORMAL' | 'ADVANCED'
+  stageHasData: boolean
+}
+
+export interface OrderStageConfigVO {
+  stageConfigList: OrderStageConfigItemVO[]
+  afootRollBack: boolean
+  endRollBack: boolean
+  circulationType: 'NORMAL' | 'ADVANCED'
+  advancedConfigs: OrderStageAdvancedRowVO[]
+}
+
+export const orderStageSettingsApi = {
+  get: () => http.get<OrderStageConfigVO>('/order/stage/get'),
+  add: (data: {
+    name: string
+    type?: 'AFOOT' | 'END'
+    targetId?: string
+    dropPosition?: number
+  }) => http.post<string>('/order/stage/add', data),
+  update: (data: { id: string; name?: string }) => http.post('/order/stage/update', data),
+  remove: (id: string) => http.get(`/order/stage/delete/${id}`),
+  updateRollback: (data: { afootRollBack: boolean; endRollBack: boolean }) =>
+    http.post('/order/stage/update-rollback', data),
+  sort: (ids: string[]) => http.post('/order/stage/sort', ids),
+  switchCirculationType: (type: 'NORMAL' | 'ADVANCED') =>
+    http.get(`/order/stage/circulation-type/${type}`),
+  saveAdvancedConfig: (data: {
+    circulationType: 'NORMAL' | 'ADVANCED'
+    circulationSettings: Array<{
+      originId: string
+      targets: Array<{ targetId: string; enable: boolean; circulationFieldValues?: unknown[] }>
+    }>
+  }) => http.post('/order/stage/advanced/config', data),
+}
+
 // ===== 商机关闭规则 =====
 
 export interface OpportunityRuleConditionVO {

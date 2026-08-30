@@ -11,6 +11,7 @@ import {
   CustomerUserViewsController,
   OpportunityQuotationUserViewsController,
   OpportunityUserViewsController,
+  OrderUserViewsController,
 } from './user-views.controller'
 import { UserViewsService } from './user-views.service'
 
@@ -27,6 +28,7 @@ import { UserViewsService } from './user-views.service'
     ContractPaymentPlanUserViewsController,
     ContractPaymentRecordUserViewsController,
     ContractInvoiceUserViewsController,
+    OrderUserViewsController,
   ],
   providers: [UserViewsService],
   exports: [UserViewsService],

@@ -11,6 +11,7 @@ import {
   type ContractVO,
 } from '@micromatrix/shared'
 import { reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   businessTitleApi,
   contractApi,
@@ -20,12 +21,14 @@ import {
 } from '@/api/deal'
 import { extractErrorMessage } from '@/api/http'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
+import OrderTable from '@/components/order/OrderTable.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ contractId: string | null }>()
 const visible = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ changed: [] }>()
 const auth = useAuthStore()
+const router = useRouter()
 
 const detail = ref<ContractVO | null>(null)
 const detailSnapshot = ref<Record<string, unknown> | null>(null)
@@ -278,10 +281,16 @@ function invoiceApprovalLabel(status: ContractInvoiceVO['approvalStatus']) {
 function formatDate(value: number | null | undefined) {
   return value ? new Date(value).toLocaleDateString('zh-CN') : '-'
 }
+
+async function convertToOrder() {
+  if (!props.contractId) return
+  visible.value = false
+  await router.push({ path: '/order/index', query: { fromContract: props.contractId } })
+}
 </script>
 
 <template>
-  <el-drawer v-model="visible" :title="detail ? `${detail.name}（${detail.number}）` : '合同详情'" size="640px">
+  <el-drawer v-model="visible" :title="detail ? `${detail.name}（${detail.number}）` : '合同详情'" size="900px">
     <div v-loading="loading">
       <el-descriptions v-if="detail" :column="3" border size="small" class="mb-4">
         <el-descriptions-item label="客户">{{ detail.customerName }}</el-descriptions-item>
@@ -416,6 +425,15 @@ function formatDate(value: number | null | undefined) {
               </template>
             </el-table-column>
           </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="订单" name="orders">
+          <div class="flex justify-end mb-2">
+            <el-button v-if="auth.hasPerm('ORDER:ADD')" size="small" type="primary" @click="convertToOrder">
+              转订单
+            </el-button>
+          </div>
+          <OrderTable :standalone="false" :contract-id="contractId ?? undefined" />
         </el-tab-pane>
       </el-tabs>
     </div>

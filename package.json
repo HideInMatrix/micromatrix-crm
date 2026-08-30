@@ -42,6 +42,10 @@
     "smoke:w364-invoice": "pnpm --filter @micromatrix/api smoke:w364-invoice",
     "smoke:w364-invoice-approval": "pnpm --filter @micromatrix/api smoke:w364-invoice-approval",
     "smoke:w364-invoice-browser": "node scripts/w364-invoice-browser-smoke.mjs",
+    "smoke:w365-order": "pnpm --filter @micromatrix/api smoke:w365-order",
+    "smoke:w365-order-stage": "pnpm --filter @micromatrix/api smoke:w365-order-stage",
+    "smoke:w365-order-approval": "pnpm --filter @micromatrix/api smoke:w365-order-approval",
+    "smoke:w365-order-browser": "node scripts/w365-order-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",
     "smoke:wecom-sso-message": "node scripts/wecom-sso-message-smoke.mjs"
   },

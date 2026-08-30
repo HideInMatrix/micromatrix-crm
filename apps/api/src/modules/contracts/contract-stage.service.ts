@@ -250,11 +250,32 @@ export class ContractStageService {
       if (!config?.enable) throw new BadRequestException('当前合同阶段不允许流转到目标阶段')
       return this.parseFieldConfig(config.fieldConfig)
     }
-    if (target.pos < origin.pos) {
-      const rollback = origin.type === 'END' ? origin.endRollBack : origin.afootRollBack
-      if (!rollback) throw new BadRequestException('当前合同阶段不允许回退')
-    }
+    this.assertNormalTransition(origin, target)
     return [] as unknown[]
+  }
+
+  private assertNormalTransition(
+    origin: { name: string; type: string; pos: bigint; afootRollBack: boolean; endRollBack: boolean },
+    target: { name: string; type: string; pos: bigint },
+  ) {
+    const deny = () => {
+      throw new BadRequestException(`[${origin.name}] 不允许流转至 [${target.name}]`)
+    }
+    if (origin.endRollBack && origin.afootRollBack) return
+    if (!origin.endRollBack && !origin.afootRollBack) {
+      if (target.pos > origin.pos) return
+      return deny()
+    }
+    if (origin.endRollBack) {
+      if (target.pos > origin.pos) return
+      if (!(origin.type === 'AFOOT' && target.type === 'AFOOT')) return
+      return deny()
+    }
+    if (origin.afootRollBack) {
+      if (origin.type === 'END') return deny()
+      if (target.type === 'AFOOT' || target.type === 'END') return
+    }
+    return deny()
   }
 
   private async list(organizationId: string) {

@@ -124,8 +124,13 @@ async function main() {
     'CONTRACT_BUSINESS_TITLE:EXPORT',
     'CONTRACT_BUSINESS_TITLE:APPROVAL',
     'menu:order',
-    'order:create',
-    'order:update',
+    'ORDER:READ',
+    'ORDER:ADD',
+    'ORDER:UPDATE',
+    'ORDER:DELETE',
+    'ORDER:IMPORT',
+    'ORDER:EXPORT',
+    'ORDER:DOWNLOAD',
     'menu:approval',
   ]
   const managerPerms = [
@@ -171,7 +176,6 @@ async function main() {
     'price:export',
     'quote:delete',
     'contract:delete',
-    'order:delete',
     'menu:bidding',
     'bidding:manage',
     'bidding:convert',
@@ -290,7 +294,8 @@ async function main() {
       | 'contact'
       | 'contract'
       | 'contractPaymentPlan'
-      | 'contractPaymentRecord',
+      | 'contractPaymentRecord'
+      | 'order',
   ) => {
     const form = await prisma.sysModuleForm.upsert({
       where: { organizationId_formKey: { organizationId: tenant.id, formKey } },
@@ -366,6 +371,7 @@ async function main() {
   await ensureModuleForm('contract')
   await ensureModuleForm('contractPaymentPlan')
   await ensureModuleForm('contractPaymentRecord')
+  await ensureModuleForm('order')
 
   const contractStages = [
     ['待签署', 'AFOOT'],
@@ -395,6 +401,52 @@ async function main() {
       })
     } else {
       await prisma.contractStageConfig.create({
+        data: {
+          id: randomUUID().replaceAll('-', '').slice(0, 32),
+          name,
+          type,
+          pos: BigInt(index + 1),
+          afootRollBack: true,
+          endRollBack: false,
+          organizationId: tenant.id,
+          circulationType: 'NORMAL',
+          createTime: now,
+          updateTime: now,
+          createUser: admin.id,
+          updateUser: admin.id,
+        },
+      })
+    }
+  }
+
+  const orderStages = [
+    ['新建', 'AFOOT'],
+    ['待发货', 'AFOOT'],
+    ['部分发货', 'AFOOT'],
+    ['已发货', 'AFOOT'],
+    ['待验收', 'AFOOT'],
+    ['已完成', 'END'],
+    ['已作废', 'END'],
+  ] as const
+  for (const [index, [name, type]] of orderStages.entries()) {
+    const existing = await prisma.orderStageConfig.findFirst({
+      where: { organizationId: tenant.id, name },
+    })
+    if (existing) {
+      await prisma.orderStageConfig.update({
+        where: { id: existing.id },
+        data: {
+          type,
+          pos: BigInt(index + 1),
+          afootRollBack: true,
+          endRollBack: false,
+          circulationType: 'NORMAL',
+          updateTime: now,
+          updateUser: admin.id,
+        },
+      })
+    } else {
+      await prisma.orderStageConfig.create({
         data: {
           id: randomUUID().replaceAll('-', '').slice(0, 32),
           name,

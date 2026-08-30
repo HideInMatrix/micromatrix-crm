@@ -22,7 +22,10 @@
     "smoke:w362-quotation-approval": "node scripts/w362-quotation-approval-http-smoke.mjs",
     "smoke:w364-contract-payment": "tsx scripts/w364-contract-payment-smoke.ts",
     "smoke:w364-invoice": "tsx scripts/w364-invoice-smoke.ts",
-    "smoke:w364-invoice-approval": "tsx scripts/w364-invoice-approval-smoke.ts"
+    "smoke:w364-invoice-approval": "tsx scripts/w364-invoice-approval-smoke.ts",
+    "smoke:w365-order": "tsx scripts/w365-order-smoke.ts",
+    "smoke:w365-order-stage": "tsx scripts/w365-order-stage-smoke.ts",
+    "smoke:w365-order-approval": "tsx scripts/w365-order-approval-smoke.ts"
   },
   "dependencies": {
     "@micromatrix/shared": "workspace:*",

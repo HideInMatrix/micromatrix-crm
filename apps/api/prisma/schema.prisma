@@ -299,6 +299,7 @@ model Customer {
   targetRelations CustomerRelation[]      @relation("CustomerRelationTarget")
   opportunities   Opportunity[]
   contracts       Contract[]
+  orders          Order[]
 
   @@index([organizationId])
   @@index([poolId])
@@ -1388,40 +1389,104 @@ model ContractInvoiceSnapshot {
   @@map("contract_invoice_snapshot")
 }
 
-// ============ 订单（合同履约执行） ============
+model Order {
+  id             String   @id @default(cuid()) @db.VarChar(32)
+  number         String   @db.VarChar(50)
+  name           String   @db.VarChar(255)
+  customerId     String?  @map("customer_id") @db.VarChar(32)
+  contractId     String?  @map("contract_id") @db.VarChar(32)
+  owner          String?  @db.VarChar(32)
+  amount         Decimal? @db.Decimal(20, 10)
+  stage          String   @db.VarChar(50)
+  approvalStatus String   @default("NONE") @map("approval_status") @db.VarChar(50)
+  organizationId String   @map("organization_id") @db.VarChar(32)
+  pos            BigInt?
+  approved       Boolean  @default(false)
+  createTime     BigInt   @map("create_time")
+  updateTime     BigInt   @map("update_time")
+  createUser     String   @map("create_user") @db.VarChar(32)
+  updateUser     String   @map("update_user") @db.VarChar(32)
 
-enum OrderStatus {
-  PENDING // 待交付
-  DELIVERING // 交付中
-  ACCEPTED // 已验收
-  COMPLETED // 已完成
-  CANCELED // 已取消
+  customer        Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  contract        Contract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  fieldValues     OrderField[]
+  fieldBlobValues OrderFieldBlob[]
+  snapshots       OrderSnapshot[]
+
+  @@index([customerId])
+  @@index([contractId])
+  @@index([owner])
+  @@index([name])
+  @@index([number])
+  @@index([organizationId])
+  @@index([approvalStatus])
+  @@index([stage])
+  @@index([createUser])
+  @@map("sales_order")
 }
 
-model Order {
-  id             String      @id @default(cuid())
-  tenantId       String
-  code           String
-  name           String
-  contractId     String
-  amount         Decimal     @default(0) @db.Decimal(14, 2)
-  status         OrderStatus @default(PENDING)
-  approvalStatus String      @default("NONE")
-  deliveredAt    DateTime?
-  acceptedAt     DateTime?
-  remark         String?
-  ownerId        String?
-  deptId         String?
-  customData     Json?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+model OrderField {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.VarChar(255)
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
 
-  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  resource Order @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, code])
-  @@index([tenantId, contractId])
-  @@index([tenantId, deptId])
-  @@map("orders")
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("sales_order_field")
+}
+
+model OrderFieldBlob {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.Text
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      String? @map("row_id") @db.VarChar(32)
+  bizId      String? @map("biz_id") @db.VarChar(32)
+
+  resource Order @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_blob_cell")
+  @@index([resourceId])
+  @@index([refSubId])
+  @@map("sales_order_field_blob")
+}
+
+model OrderSnapshot {
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  orderId    String  @map("order_id") @db.VarChar(32)
+  orderProp  String? @map("order_prop") @db.Text
+  orderValue String? @map("order_value") @db.Text
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("sales_order_snapshot")
+}
+
+model OrderStageConfig {
+  id              String  @id @default(cuid()) @db.VarChar(32)
+  name            String  @db.VarChar(255)
+  type            String  @db.VarChar(50)
+  afootRollBack   Boolean @default(true) @map("afoot_roll_back")
+  endRollBack     Boolean @default(false) @map("end_roll_back")
+  pos             BigInt
+  organizationId  String  @map("organization_id") @db.VarChar(32)
+  circulationType String  @default("NORMAL") @map("circulation_type") @db.VarChar(50)
+  createTime      BigInt  @map("create_time")
+  updateTime      BigInt  @map("update_time")
+  createUser      String  @map("create_user") @db.VarChar(32)
+  updateUser      String  @map("update_user") @db.VarChar(32)
+
+  @@index([organizationId, pos])
+  @@map("sales_order_stage_config")
 }
 
 // ============ 审批流引擎 ============

@@ -293,40 +293,41 @@ export interface BusinessTitleConfigVO {
 
 // ===== 订单 =====
 
-export type OrderStatus = 'PENDING' | 'DELIVERING' | 'ACCEPTED' | 'COMPLETED' | 'CANCELED'
-
-export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  PENDING: '待交付',
-  DELIVERING: '交付中',
-  ACCEPTED: '已验收',
-  COMPLETED: '已完成',
-  CANCELED: '已取消',
+export interface OrderProductVO {
+  rowId: string
+  bizId: string
+  productId: string
+  productName?: string
+  productPrice: number
+  productNumber: number
+  amount: number
+  values: Record<string, unknown>
 }
 
-/** 订单状态机：允许的流转 */
-export const ORDER_STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ['DELIVERING', 'CANCELED'],
-  DELIVERING: ['ACCEPTED', 'CANCELED'],
-  ACCEPTED: ['COMPLETED'],
-  COMPLETED: [],
-  CANCELED: [],
+export interface OrderModuleFieldValue {
+  fieldId: string
+  fieldValue?: unknown
 }
 
 export interface OrderVO {
   id: string
-  code: string
+  number: string
   name: string
-  contractId: string
-  contractName?: string
-  customerName?: string
-  amount: number
-  status: OrderStatus
-  approvalStatus: string
-  deliveredAt: string | null
-  acceptedAt: string | null
-  remark: string | null
-  ownerId: string | null
+  customerId: string | null
+  customerName?: string | null
+  contractId: string | null
+  contractName?: string | null
+  owner: string | null
   ownerName?: string | null
-  customData: Record<string, unknown>
-  createdAt: string
+  amount: number | null
+  stage: string
+  stageName?: string | null
+  approvalStatus: string
+  approved: boolean
+  pos: number | null
+  moduleFields: OrderModuleFieldValue[]
+  products: OrderProductVO[]
+  createTime: number
+  updateTime: number
+  organizationId: string
 }

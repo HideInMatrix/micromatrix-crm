@@ -26,6 +26,7 @@ export type ResourceFieldType =
   | 'contractPaymentPlan'
   | 'contractPaymentRecord'
   | 'invoice'
+  | 'order'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 interface ResourceConfig {
@@ -41,6 +42,7 @@ interface ResourceConfig {
     | 'contractPaymentPlan'
     | 'contractPaymentRecord'
     | 'invoice'
+    | 'order'
   resourceTable:
     | 'clue'
     | 'customer'
@@ -53,6 +55,7 @@ interface ResourceConfig {
     | 'contract_payment_plan'
     | 'contract_payment_record'
     | 'contract_invoice'
+    | 'sales_order'
   normalTable:
     | 'clue_field'
     | 'customer_field'
@@ -65,6 +68,7 @@ interface ResourceConfig {
     | 'contract_payment_plan_field'
     | 'contract_payment_record_field'
     | 'contract_invoice_field'
+    | 'sales_order_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
@@ -77,6 +81,7 @@ interface ResourceConfig {
     | 'contract_payment_plan_field_blob'
     | 'contract_payment_record_field_blob'
     | 'contract_invoice_field_blob'
+    | 'sales_order_field_blob'
 }
 
 interface ValidatedFieldValue {
@@ -152,6 +157,12 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'contract_invoice',
     normalTable: 'contract_invoice_field',
     blobTable: 'contract_invoice_field_blob',
+  },
+  order: {
+    formKey: 'order',
+    resourceTable: 'sales_order',
+    normalTable: 'sales_order_field',
+    blobTable: 'sales_order_field_blob',
   },
 }
 
@@ -562,8 +573,13 @@ export class ResourceFieldValueService {
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
-    else
+    else if (resourceType === 'invoice')
       resource = await tx.contractInvoice.findFirst({
+        where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else
+      resource = await tx.order.findFirst({
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
@@ -635,11 +651,16 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.contractPaymentRecordFieldBlob.findFirst({ where, select: { id: true } })
           : await client.contractPaymentRecordField.findFirst({ where, select: { id: true } })
-    else
+    else if (resourceType === 'invoice')
       repeated =
         item.storage === 'blob'
           ? await client.contractInvoiceFieldBlob.findFirst({ where, select: { id: true } })
           : await client.contractInvoiceField.findFirst({ where, select: { id: true } })
+    else
+      repeated =
+        item.storage === 'blob'
+          ? await client.orderFieldBlob.findFirst({ where, select: { id: true } })
+          : await client.orderField.findFirst({ where, select: { id: true } })
     if (repeated) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
@@ -700,10 +721,15 @@ export class ResourceFieldValueService {
         tx.contractPaymentRecordField.deleteMany({ where }),
         tx.contractPaymentRecordFieldBlob.deleteMany({ where }),
       ])
-    else
+    else if (resourceType === 'invoice')
       await Promise.all([
         tx.contractInvoiceField.deleteMany({ where }),
         tx.contractInvoiceFieldBlob.deleteMany({ where }),
+      ])
+    else
+      await Promise.all([
+        tx.orderField.deleteMany({ where }),
+        tx.orderFieldBlob.deleteMany({ where }),
       ])
   }
 
@@ -754,9 +780,12 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'contractPaymentRecord') {
       if (normalData.length) await tx.contractPaymentRecordField.createMany({ data: normalData })
       if (blobData.length) await tx.contractPaymentRecordFieldBlob.createMany({ data: blobData })
-    } else {
+    } else if (resourceType === 'invoice') {
       if (normalData.length) await tx.contractInvoiceField.createMany({ data: normalData })
       if (blobData.length) await tx.contractInvoiceFieldBlob.createMany({ data: blobData })
+    } else {
+      if (normalData.length) await tx.orderField.createMany({ data: normalData })
+      if (blobData.length) await tx.orderFieldBlob.createMany({ data: blobData })
     }
   }
 
@@ -822,9 +851,14 @@ export class ResourceFieldValueService {
       client.contractPaymentRecordField.findMany({ where, select }),
       client.contractPaymentRecordFieldBlob.findMany({ where, select }),
     ])
+    if (resourceType === 'invoice')
+      return Promise.all([
+        client.contractInvoiceField.findMany({ where, select }),
+        client.contractInvoiceFieldBlob.findMany({ where, select }),
+      ])
     return Promise.all([
-      client.contractInvoiceField.findMany({ where, select }),
-      client.contractInvoiceFieldBlob.findMany({ where, select }),
+      client.orderField.findMany({ where, select }),
+      client.orderFieldBlob.findMany({ where, select }),
     ])
   }
 

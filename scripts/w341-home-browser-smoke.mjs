@@ -214,7 +214,7 @@ async function main() {
         lead: ['/leads', '新建线索'],
         opportunity: ['/opportunities', '新建商机'],
         contract: ['/contracts', '新建合同'],
-        order: ['/orders', '新建订单'],
+        order: ['/order/index', '新建订单'],
       }
       await cdp.evaluate(
         `document.querySelector(${JSON.stringify(`[data-testid="${quickEntry.testId}"]`)})?.click()`,

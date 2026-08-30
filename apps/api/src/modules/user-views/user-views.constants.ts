@@ -10,6 +10,7 @@ export const USER_VIEW_RESOURCE_TYPES = {
   contract_payment_plan: 'CONTRACT_PAYMENT_PLAN',
   contract_payment_record: 'CONTRACT_PAYMENT_RECORD',
   invoice: 'CONTRACT_INVOICE',
+  order: 'ORDER',
 } as const
 
 export type UserViewModule = keyof typeof USER_VIEW_RESOURCE_TYPES
@@ -62,4 +63,5 @@ export const USER_VIEW_RESOURCE_ROUTES: Array<{
     label: '回款记录视图',
   },
   { module: 'invoice', resourceType: 'CONTRACT_INVOICE', path: 'invoice/view', label: '发票视图' },
+  { module: 'order', resourceType: 'ORDER', path: 'order/view', label: '订单视图' },
 ]

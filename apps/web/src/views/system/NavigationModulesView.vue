@@ -23,6 +23,7 @@ import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSet
 import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
 import BusinessTitleRequiredSettingsDrawer from './components/BusinessTitleRequiredSettingsDrawer.vue'
 import ContractStageSettingsDrawer from './components/ContractStageSettingsDrawer.vue'
+import OrderStageSettingsDrawer from './components/OrderStageSettingsDrawer.vue'
 import OpportunityCloseRuleSettingsDrawer from './components/OpportunityCloseRuleSettingsDrawer.vue'
 import OpportunityFailureReasonSettingsDrawer from './components/OpportunityFailureReasonSettingsDrawer.vue'
 import OpportunityStageSettingsDrawer from './components/OpportunityStageSettingsDrawer.vue'
@@ -41,6 +42,7 @@ interface ModuleAction {
     | 'customer-reason'
     | 'business-title-required'
     | 'contract-stage'
+    | 'order-stage'
     | 'opportunity-stage'
     | 'opportunity-rule'
     | 'opportunity-reason'
@@ -97,7 +99,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   order: {
     primary: [
       { label: '订单表单设置', path: '/system/modules/fields', query: { module: 'order' } },
-      { label: '订单状态流设置' },
+      { label: '订单状态流设置', drawer: 'order-stage' },
     ],
   },
   product: {
@@ -124,6 +126,7 @@ const customerCapacityVisible = ref(false)
 const customerReasonVisible = ref(false)
 const businessTitleRequiredVisible = ref(false)
 const contractStageVisible = ref(false)
+const orderStageVisible = ref(false)
 const opportunityStageVisible = ref(false)
 const opportunityRuleVisible = ref(false)
 const opportunityReasonVisible = ref(false)
@@ -250,6 +253,7 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-reason') customerReasonVisible.value = true
   if (action.drawer === 'business-title-required') businessTitleRequiredVisible.value = true
   if (action.drawer === 'contract-stage') contractStageVisible.value = true
+  if (action.drawer === 'order-stage') orderStageVisible.value = true
   if (action.drawer === 'opportunity-stage') opportunityStageVisible.value = true
   if (action.drawer === 'opportunity-rule') opportunityRuleVisible.value = true
   if (action.drawer === 'opportunity-reason') opportunityReasonVisible.value = true
@@ -409,6 +413,7 @@ onMounted(load)
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
     <BusinessTitleRequiredSettingsDrawer v-model="businessTitleRequiredVisible" />
     <ContractStageSettingsDrawer v-model="contractStageVisible" />
+    <OrderStageSettingsDrawer v-model="orderStageVisible" />
     <OpportunityStageSettingsDrawer v-model="opportunityStageVisible" />
     <OpportunityCloseRuleSettingsDrawer v-model="opportunityRuleVisible" />
     <OpportunityFailureReasonSettingsDrawer v-model="opportunityReasonVisible" />

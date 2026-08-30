@@ -11,6 +11,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator'
+import { StageCirculationFieldValueDto } from '../../../common/dto/stage-circulation.dto'
 
 export class ContractStageAddDto {
   @ApiProperty()
@@ -68,10 +69,12 @@ export class ContractStageAdvancedTargetDto {
   @IsBoolean()
   enable!: boolean
 
-  @ApiPropertyOptional({ type: [Object] })
+  @ApiPropertyOptional({ type: [StageCirculationFieldValueDto] })
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StageCirculationFieldValueDto)
   @IsOptional()
-  circulationFieldValues?: unknown[]
+  circulationFieldValues?: StageCirculationFieldValueDto[]
 }
 
 export class ContractStageAdvancedRowDto {

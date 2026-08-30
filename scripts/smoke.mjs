@@ -2662,12 +2662,15 @@ const paymentRecord = await post('/contract/payment-record/add', manager.headers
 })
 const contractDetail = await get(`/contract/get/${contract.id}`, manager.headers)
 check('回款计入合同汇总', contractDetail.paidAmount === 30000)
-const order = await post('/orders', manager.headers, {
+const order = await post('/order/add', manager.headers, {
   name: `冒烟订单-${stamp}`,
+  customerId: converted.customerId,
   contractId: contract.id,
+  owner: manager.user.id,
   amount: 30000,
+  moduleFields: [],
 })
-check('创建订单', Boolean(order.code))
+check('创建 direct 订单', Boolean(order.id) && Boolean(order.number), JSON.stringify(order))
 
 const invoiceTitle = await post('/contract/business-title/add', manager.headers, {
   name: `冒烟开票抬头-${stamp}`,
@@ -2761,6 +2764,7 @@ check(
 check(
   'R5 客户360 订单 Tab 数据可分页读取',
   Array.isArray(r5OrderRows.list) && r5OrderRows.list.some((item) => item.id === order.id),
+  JSON.stringify(r5OrderRows),
 )
 
 const form = new FormData()

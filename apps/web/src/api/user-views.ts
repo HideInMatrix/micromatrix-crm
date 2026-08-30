@@ -11,6 +11,7 @@ export type UserViewModule =
   | 'quote'
   | 'contract'
   | 'invoice'
+  | 'order'
 
 export interface UserViewConditionVO {
   name: string
@@ -52,6 +53,7 @@ const RESOURCE_PATHS: Record<UserViewModule, string> = {
   quote: '/opportunity/quotation/view',
   contract: '/contract/view',
   invoice: '/invoice/view',
+  order: '/order/view',
 }
 
 function resourcePath(module: string) {

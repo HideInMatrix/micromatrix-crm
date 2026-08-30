@@ -413,6 +413,8 @@ export class ModuleFormsService {
       tx.contractPaymentRecordFieldBlob.count({ where: { fieldId } }),
       tx.contractInvoiceField.count({ where: { fieldId } }),
       tx.contractInvoiceFieldBlob.count({ where: { fieldId } }),
+      tx.orderField.count({ where: { fieldId } }),
+      tx.orderFieldBlob.count({ where: { fieldId } }),
     ])
     return counts.reduce((sum, count) => sum + count, 0)
   }
@@ -441,6 +443,8 @@ export class ModuleFormsService {
       tx.contractPaymentRecordFieldBlob.deleteMany({ where: { fieldId } }),
       tx.contractInvoiceField.deleteMany({ where: { fieldId } }),
       tx.contractInvoiceFieldBlob.deleteMany({ where: { fieldId } }),
+      tx.orderField.deleteMany({ where: { fieldId } }),
+      tx.orderFieldBlob.deleteMany({ where: { fieldId } }),
     ])
   }
 

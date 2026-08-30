@@ -13,7 +13,6 @@ import type { FollowUpVO, TeamMemberVO } from './sales'
 import type {
   ContractInvoiceApprovalStatus,
   ContractPaymentPlanStatus,
-  OrderStatus,
 } from './deal'
 
 // ============ 通用分页 ============
@@ -224,13 +223,16 @@ export interface Customer360InvoiceVO {
 
 export interface Customer360OrderVO {
   id: string
-  code: string
+  number: string
   name: string
-  contractId: string
-  contractName: string
-  amount: number
-  status: OrderStatus
+  customerId: string | null
+  contractId: string | null
+  contractName: string | null
+  amount: number | null
+  stage: string
+  stageName: string | null
   approvalStatus: string
+  approved: boolean
   ownerName: string | null
-  createdAt: string
+  createTime: number
 }

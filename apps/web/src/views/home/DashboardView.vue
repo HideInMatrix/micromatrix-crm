@@ -397,7 +397,7 @@ const quickAccessCatalog = computed<QuickAccessItem[]>(() => {
       key: 'order',
       label: '新建订单',
       icon: ShoppingCart,
-      permissions: ['order:create'],
+      permissions: ['ORDER:ADD'],
       moduleEnabled: () => moduleConfig.isEnabled('order'),
     },
   ]
@@ -475,7 +475,7 @@ function handleQuickAccess(key: QuickAccessKey) {
   if (key === 'lead') return routeCreate('/leads')
   if (key === 'opportunity') return routeCreate('/opportunities')
   if (key === 'contract') return routeCreate('/contracts')
-  if (key === 'order') return routeCreate('/orders')
+  if (key === 'order') return routeCreate('/order/index')
   if (key === 'invoice') return openInvoiceDialog()
   if (key === 'followRecord') return openFollowTargetDialog()
   followPlanDialogVisible.value = true

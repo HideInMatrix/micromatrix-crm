@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { OrdersModule } from '../orders/orders.module'
 import { QuotesModule } from '../quotes/quotes.module'
 import { UserViewsModule } from '../user-views/user-views.module'
 import { ImportExportModule } from '../import-export/import-export.module'
@@ -19,14 +20,14 @@ import {
   BusinessTitleController,
   ContractInvoiceController,
   ContractInvoiceDetailController,
-  InvoiceApprovalResourceController,
+  ApprovalResourceController,
 } from './contract-invoice.controller'
 import { ContractInvoiceService } from './contract-invoice.service'
 import { BusinessTitleService } from './business-title.service'
 import { ContractsService } from './contracts.service'
 
 @Module({
-  imports: [QuotesModule, UserViewsModule, ImportExportModule],
+  imports: [QuotesModule, OrdersModule, UserViewsModule, ImportExportModule],
   controllers: [
     ContractController,
     ContractStageController,
@@ -34,7 +35,7 @@ import { ContractsService } from './contracts.service'
     ContractPaymentRecordController,
     ContractInvoiceController,
     ContractInvoiceDetailController,
-    InvoiceApprovalResourceController,
+    ApprovalResourceController,
     BusinessTitleController,
     BusinessTitleConfigController,
   ],

@@ -108,6 +108,7 @@ declare module 'vue' {
     MobileFollowUpSheet: typeof import('./../components/MobileFollowUpSheet.vue')['default']
     NotificationBell: typeof import('./../components/NotificationBell.vue')['default']
     OpportunityDetailDrawer: typeof import('./../components/opportunities/OpportunityDetailDrawer.vue')['default']
+    OrderTable: typeof import('./../components/order/OrderTable.vue')['default']
     OwnerHistoryTimeline: typeof import('./../components/OwnerHistoryTimeline.vue')['default']
     PersonalApiKeyPanel: typeof import('./../components/personal/PersonalApiKeyPanel.vue')['default']
     PersonalCenterDrawer: typeof import('./../components/personal/PersonalCenterDrawer.vue')['default']

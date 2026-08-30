@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   CONTRACT_INVOICE_APPROVAL_STATUS_LABELS,
-  ORDER_STATUS_LABELS,
   CONTRACT_PAYMENT_PLAN_STATUS_LABELS,
   isCustomFieldKey,
   type Customer360ContractVO,
@@ -9,7 +8,6 @@ import {
   type Customer360ContractPaymentRecordVO,
   type Customer360InvoiceVO,
   type Customer360OpportunityVO,
-  type Customer360OrderVO,
   type Customer360Resource,
   type CustomerVO,
   type FieldVO,
@@ -36,6 +34,7 @@ import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import CustomerContactTable from '@/components/contacts/CustomerContactTable.vue'
 import CustomerMoveToPoolDialog from '@/components/customer/CustomerMoveToPoolDialog.vue'
 import OpportunityDetailDrawer from '@/components/opportunities/OpportunityDetailDrawer.vue'
+import OrderTable from '@/components/order/OrderTable.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -135,7 +134,6 @@ const contracts = ref<Customer360ContractVO[]>([])
 const contractPaymentPlans = ref<Customer360ContractPaymentPlanVO[]>([])
 const contractPaymentRecords = ref<Customer360ContractPaymentRecordVO[]>([])
 const invoices = ref<Customer360InvoiceVO[]>([])
-const orders = ref<Customer360OrderVO[]>([])
 
 const opportunityDetailVisible = ref(false)
 const opportunityDetailId = ref<string | null>(null)
@@ -312,7 +310,7 @@ function rowsRef(resource: Customer360Resource) {
     case 'contractPaymentPlans': return contractPaymentPlans
     case 'contractPaymentRecords': return contractPaymentRecords
     case 'invoices': return invoices
-    case 'orders': return orders
+    case 'orders': throw new Error('orders use direct OrderTable')
   }
 }
 
@@ -341,7 +339,7 @@ function tabResource(tab: TabName): Customer360Resource | null {
     case 'contractPayment': return 'contractPaymentPlans'
     case 'contractPaymentRecord': return 'contractPaymentRecords'
     case 'invoice': return 'invoices'
-    case 'order': return 'orders'
+    case 'order': return null
     default: return null
   }
 }
@@ -847,16 +845,7 @@ onMounted(async () => {
                 </template>
 
                 <template v-else-if="tab.name === 'order'">
-                  <el-table v-loading="resourceLoading.orders" :data="orders" stripe class="w-full">
-                    <el-table-column prop="code" label="订单编号" min-width="150" />
-                    <el-table-column prop="name" label="订单名称" min-width="200" show-overflow-tooltip />
-                    <el-table-column prop="contractName" label="合同" min-width="200" show-overflow-tooltip />
-                    <el-table-column label="金额" min-width="130" align="right"><template #default="{ row }">{{ formatAmount(row.amount) }}</template></el-table-column>
-                    <el-table-column label="状态" min-width="110"><template #default="{ row }">{{ ORDER_STATUS_LABELS[row.status as keyof typeof ORDER_STATUS_LABELS] }}</template></el-table-column>
-                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
-                    <el-table-column label="创建时间" min-width="160"><template #default="{ row }">{{ new Date(row.createdAt).toLocaleString() }}</template></el-table-column>
-                  </el-table>
-                  <div class="flex justify-end mt-3"><el-pagination layout="total, prev, pager, next" :total="resourceTotal.orders" :page-size="10" :current-page="resourcePage.orders" @current-change="handleResourcePage('orders', $event)" /></div>
+                  <OrderTable :standalone="false" :customer-id="customerId" />
                 </template>
               </div>
             </el-tab-pane>

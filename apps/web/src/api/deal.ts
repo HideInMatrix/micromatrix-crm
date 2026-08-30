@@ -7,8 +7,6 @@ import type {
   ContractVO,
   ImportResultVO,
   OrderVO,
-  PageQuery,
-  PaginatedResult,
   ProductPriceVO,
   ProductVO,
   QuoteVO,
@@ -378,10 +376,64 @@ export const contractPaymentRecordApi = {
 // ===== 订单 =====
 
 export const orderApi = {
-  list: (params: PageQuery & { status?: string; contractId?: string; filters?: string }) =>
-    http.get<PaginatedResult<OrderVO>>('/orders', { params }),
-  create: (data: Record<string, unknown>) => http.post<OrderVO>('/orders', data),
-  update: (id: string, data: Record<string, unknown>) => http.patch<OrderVO>(`/orders/${id}`, data),
-  changeStatus: (id: string, status: string) => http.post(`/orders/${id}/status`, { status }),
-  remove: (id: string) => http.delete(`/orders/${id}`),
+  moduleForm: () => http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    '/order/module/form',
+  ),
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    viewId?: string
+    filters?: unknown[]
+    board?: boolean
+    stage?: string
+    customerId?: string
+    contractId?: string
+  }) =>
+    http.post<{
+      list: OrderVO[]
+      total: number
+      current: number
+      pageSize: number
+      stages: Array<{ id: string; name: string; type: string; pos: number; circulationType: string }>
+      optionMap: Record<string, unknown>
+    }>('/order/page', data),
+  detail: (id: string) => http.get<OrderVO>(`/order/get/${id}`),
+  snapshot: (id: string) => http.get<Record<string, unknown>>(`/order/get/snapshot/${id}`),
+  snapshotForm: (id: string) => http.get<Record<string, unknown>>(`/order/module/form/snapshot/${id}`),
+  create: (data: Record<string, unknown>) => http.post<OrderVO>('/order/add', data),
+  update: (data: Record<string, unknown>) => http.post<OrderVO>('/order/update', data),
+  updateStage: (data: { id: string; stage: string; fields?: Array<{ fieldId: string; fieldValue?: unknown }> }) =>
+    http.post<OrderVO>('/order/update/stage', data),
+  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
+    http.post<{ success: number; fail: number; skip: number }>('/order/batch/update', data),
+  remove: (id: string) =>
+    http.get<{ id: string; name: string; approvalId?: string; pendingApproval: boolean }>(`/order/delete/${id}`),
+  tab: () => http.get<{ all: boolean; dept: boolean }>('/order/tab'),
+  statistic: (data: Record<string, unknown>) => http.post<{ count: number; amount: number }>('/order/statistic', data),
+  sort: (data: { id: string; stage: string; pos?: number }) => http.post('/order/sort', data),
+  approvalPush: (resourceId: string) =>
+    http.post('/approval-resource/push', { resourceId, formKey: 'order' }),
+  approvalRevoke: (resourceId: string) =>
+    http.post('/approval-resource/revoke', { resourceId, formKey: 'order' }),
+  approvalSimpleDetail: (resourceId: string) =>
+    http.get<Record<string, unknown>>(`/approval-resource/simple-detail/${resourceId}`),
+  approvalDetail: (resourceId: string) =>
+    http.get<Record<string, unknown>>(`/approval-resource/detail/${resourceId}`),
+  downloadTemplate: (importType: 'ADD' | 'UPDATE') =>
+    http.get<Blob>('/order/template/download', { params: { importType }, responseType: 'blob' }),
+  precheckImport: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post<ImportResultVO>('/order/import/pre-check', form)
+  },
+  importXlsx: (file: File, importType: 'ADD' | 'UPDATE') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importType', importType)
+    return http.post<ImportResultVO>('/order/import', form)
+  },
+  exportAll: (data: Record<string, unknown>) => http.post('/order/export-all', data),
+  exportSelected: (data: Record<string, unknown>) => http.post('/order/export-select', data),
 }

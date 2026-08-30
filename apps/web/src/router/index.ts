@@ -191,9 +191,10 @@ const router = createRouter({
           },
         },
         {
-          path: 'orders',
+          path: 'order/index',
+          name: 'order-index',
           component: () => import('@/views/orders/OrdersView.vue'),
-          meta: { title: '订单管理', perm: 'menu:order', client: 'pc' },
+          meta: { title: '订单管理', perm: 'ORDER:READ', client: 'pc' },
         },
         {
           path: 'approvals',

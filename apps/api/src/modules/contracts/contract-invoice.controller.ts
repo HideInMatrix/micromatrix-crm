@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -17,6 +18,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import type { ImportType } from '../import-export/dto/import-export.dto'
+import { OrdersService } from '../orders/orders.service'
 import { BusinessTitleService } from './business-title.service'
 import { ContractInvoiceService } from './contract-invoice.service'
 import {
@@ -322,32 +324,45 @@ export class ContractInvoiceDetailController {
 @ApiTags('审批资源')
 @ApiBearerAuth()
 @Controller('approval-resource')
-export class InvoiceApprovalResourceController {
-  constructor(private readonly service: ContractInvoiceService) {}
+export class ApprovalResourceController {
+  constructor(
+    private readonly service: ContractInvoiceService,
+    private readonly orders: OrdersService,
+  ) {}
 
   @Post('push')
-  @RequirePermissions('CONTRACT_INVOICE:UPDATE')
-  @LogOperation('contractInvoice', 'approvalPush')
+  @LogOperation('approvalResource', 'push')
   push(@CurrentUser() user: AuthUser, @Body() dto: ApprovalResourceBaseDto) {
-    return this.service.pushApproval(user, dto.resourceId)
+    return dto.formKey === 'order'
+      ? this.orders.pushApproval(user, dto.resourceId)
+      : this.service.pushApproval(user, dto.resourceId)
   }
 
   @Post('revoke')
-  @RequirePermissions('CONTRACT_INVOICE:UPDATE')
-  @LogOperation('contractInvoice', 'approvalRevoke')
+  @LogOperation('approvalResource', 'revoke')
   revoke(@CurrentUser() user: AuthUser, @Body() dto: ApprovalResourceBaseDto) {
-    return this.service.revokeApproval(user, dto.resourceId)
+    return dto.formKey === 'order'
+      ? this.orders.revokeApproval(user, dto.resourceId)
+      : this.service.revokeApproval(user, dto.resourceId)
   }
 
   @Get('simple-detail/:resourceId')
-  @RequirePermissions('CONTRACT_INVOICE:READ')
-  simpleDetail(@CurrentUser() user: AuthUser, @Param('resourceId') resourceId: string) {
-    return this.service.approvalSimpleDetail(user, resourceId)
+  async simpleDetail(@CurrentUser() user: AuthUser, @Param('resourceId') resourceId: string) {
+    try {
+      return await this.service.approvalSimpleDetail(user, resourceId)
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error
+      return this.orders.approvalSimpleDetail(user, resourceId)
+    }
   }
 
   @Get('detail/:resourceId')
-  @RequirePermissions('CONTRACT_INVOICE:READ')
-  detail(@CurrentUser() user: AuthUser, @Param('resourceId') resourceId: string) {
-    return this.service.approvalDetail(user, resourceId)
+  async detail(@CurrentUser() user: AuthUser, @Param('resourceId') resourceId: string) {
+    try {
+      return await this.service.approvalDetail(user, resourceId)
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error
+      return this.orders.approvalDetail(user, resourceId)
+    }
   }
 }

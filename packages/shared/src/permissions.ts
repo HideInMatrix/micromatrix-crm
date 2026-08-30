@@ -165,9 +165,18 @@ export const PERMISSION_TREE: PermissionNode[] = [
     code: 'menu:order',
     label: '订单管理',
     children: [
-      { code: 'order:create', label: '新建' },
-      { code: 'order:update', label: '编辑' },
-      { code: 'order:delete', label: '删除' },
+      {
+        code: 'ORDER:READ',
+        label: '查看订单',
+        children: [
+          { code: 'ORDER:ADD', label: '新建订单' },
+          { code: 'ORDER:UPDATE', label: '编辑订单' },
+          { code: 'ORDER:DELETE', label: '删除订单' },
+          { code: 'ORDER:IMPORT', label: '导入订单' },
+          { code: 'ORDER:EXPORT', label: '导出订单' },
+          { code: 'ORDER:DOWNLOAD', label: '下载订单' },
+        ],
+      },
     ],
   },
   {
