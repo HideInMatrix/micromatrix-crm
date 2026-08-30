@@ -1,14 +1,16 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
-import { Transform } from 'class-transformer'
+import type { FilterCondition } from '@micromatrix/shared'
+import { Transform, Type } from 'class-transformer'
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
   IsNotEmpty,
-  IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
@@ -19,6 +21,17 @@ export const FOLLOW_UP_PLAN_STATUSES = [
   'COMPLETED',
   'CANCELLED',
 ] as const
+
+export class FollowUpPlanModuleFieldValueDto {
+  @ApiProperty({ description: '动态字段 ID 或 key' })
+  @IsString()
+  @IsNotEmpty()
+  fieldId!: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  fieldValue?: unknown
+}
 
 export class CreateFollowUpPlanDto {
   @ApiProperty({ enum: FOLLOW_UP_PLAN_TARGET_TYPES })
@@ -57,10 +70,12 @@ export class CreateFollowUpPlanDto {
   @IsOptional()
   ownerId?: string
 
-  @ApiPropertyOptional()
-  @IsObject()
+  @ApiPropertyOptional({ type: [FollowUpPlanModuleFieldValueDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FollowUpPlanModuleFieldValueDto)
   @IsOptional()
-  customData?: Record<string, unknown>
+  moduleFields?: FollowUpPlanModuleFieldValueDto[]
 }
 
 export class UpdateFollowUpPlanDto extends PartialType(CreateFollowUpPlanDto) {}
@@ -86,6 +101,11 @@ export class QueryFollowUpPlansDto extends PaginationQueryDto {
   @IsBoolean()
   @IsOptional()
   mine?: boolean
+
+  @ApiPropertyOptional({ description: '高级筛选' })
+  @IsArray()
+  @IsOptional()
+  filters?: FilterCondition[]
 }
 
 export class UpdateFollowUpPlanStatusDto {

@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import {
   FOLLOW_UP_PLAN_STATUS_LABELS,
+  type FieldVO,
   type FollowUpPlanStatus,
   type FollowUpPlanTargetType,
   type FollowUpPlanVO,
 } from '@micromatrix/shared'
 import { CalendarClock, Plus } from 'lucide-vue-next'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
+import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import { useFieldRefs } from '@/composables/useFieldRefs'
 
 interface TargetOption {
   id: string
@@ -40,6 +43,10 @@ const saving = ref(false)
 const editing = ref<FollowUpPlanVO | null>(null)
 const current = ref<FollowUpPlanVO | null>(null)
 const targets = ref<TargetOption[]>([])
+const fieldRefs = useFieldRefs()
+const fields = ref<FieldVO[]>([])
+const formModel = ref<Record<string, unknown>>({})
+const metaLoaded = ref(false)
 const form = reactive({
   targetType: (props.targetType ?? 'customer') as FollowUpPlanTargetType,
   targetId: props.targetId ?? '',
@@ -47,6 +54,9 @@ const form = reactive({
   estimatedAt: '',
   content: '',
 })
+const dynamicFields = computed(() =>
+  fields.value.filter((field) => !field.system && !field.hidden && field.type !== 'formula'),
+)
 
 async function loadMore() {
   loading.value = true
@@ -99,13 +109,53 @@ async function loadTargets() {
   }
 }
 
+function defaultDynamicModel() {
+  return Object.fromEntries(
+    dynamicFields.value.map((field) => [field.key, field.config?.defaultValue]),
+  )
+}
+
+function dynamicValues(plan?: FollowUpPlanVO | null) {
+  const byId = new Map((plan?.moduleFields ?? []).map((item) => [item.fieldId, item.fieldValue]))
+  return Object.fromEntries(dynamicFields.value.map((field) => [field.key, byId.get(field.id)]))
+}
+
+function moduleFieldsPayload() {
+  return dynamicFields.value.map((field) => ({
+    fieldId: field.id,
+    fieldValue: formModel.value[field.key],
+  }))
+}
+
+function hasMissingRequiredDynamicField() {
+  return dynamicFields.value.some((field) => {
+    if (!field.required) return false
+    const value = formModel.value[field.key]
+    return value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)
+  })
+}
+
+async function loadMeta() {
+  if (metaLoaded.value) return
+  const [{ data }] = await Promise.all([followUpPlanApi.moduleForm(), fieldRefs.load()])
+  fields.value = data.fields
+  metaLoaded.value = true
+}
+
 async function openCreate(plan?: FollowUpPlanVO) {
+  try {
+    await loadMeta()
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+    return
+  }
   editing.value = plan ?? null
   form.targetType = props.targetType ?? plan?.targetType ?? 'customer'
   form.targetId = props.targetId ?? plan?.targetId ?? ''
   form.method = plan?.method ?? '电话'
   form.estimatedAt = plan?.estimatedAt ? plan.estimatedAt.slice(0, 16) : ''
   form.content = plan?.content ?? ''
+  formModel.value = { ...defaultDynamicModel(), ...dynamicValues(plan) }
   await loadTargets()
   formShow.value = true
 }
@@ -113,6 +163,10 @@ async function openCreate(plan?: FollowUpPlanVO) {
 async function save() {
   if (!form.targetId || !form.content.trim()) {
     showFailToast('请选择计划对象并填写内容')
+    return
+  }
+  if (hasMissingRequiredDynamicField()) {
+    showFailToast('请填写必填的自定义字段')
     return
   }
   saving.value = true
@@ -123,6 +177,7 @@ async function save() {
       method: form.method || undefined,
       estimatedAt: form.estimatedAt ? new Date(form.estimatedAt).toISOString() : undefined,
       content: form.content.trim(),
+      moduleFields: moduleFieldsPayload(),
     }
     if (editing.value) await followUpPlanApi.update(editing.value.id, payload)
     else await followUpPlanApi.create(payload)
@@ -235,7 +290,7 @@ onMounted(reload)
       </van-list>
     </van-pull-refresh>
 
-    <van-popup v-model:show="formShow" position="bottom" round :style="{ height: '78%' }">
+    <van-popup v-model:show="formShow" position="bottom" round :style="{ height: '78%' }" data-testid="mobile-follow-plan-form">
       <div class="h-full flex flex-col">
         <div class="p-4 text-center font-medium">{{ editing ? '编辑跟进计划' : '新建跟进计划' }}</div>
         <div class="flex-1 overflow-auto px-4 space-y-3">
@@ -266,9 +321,17 @@ onMounted(reload)
           <van-field label="计划时间">
             <template #input><input v-model="form.estimatedAt" type="datetime-local" class="w-full bg-transparent" /></template>
           </van-field>
-          <van-field v-model="form.content" label="计划内容" type="textarea" rows="4" maxlength="3000" show-word-limit />
+          <van-field v-model="form.content" data-testid="mobile-follow-plan-content" label="计划内容" type="textarea" rows="4" maxlength="3000" show-word-limit />
+          <div v-if="dynamicFields.length" data-testid="mobile-follow-plan-dynamic-fields">
+            <MobileDynamicForm
+              v-model="formModel"
+              :fields="dynamicFields"
+              :members="fieldRefs.members.value"
+              :dept-tree="fieldRefs.deptTree.value"
+            />
+          </div>
         </div>
-        <div class="p-4"><van-button type="primary" block :loading="saving" @click="save">保存</van-button></div>
+        <div class="p-4"><van-button data-testid="mobile-follow-plan-save" type="primary" block :loading="saving" @click="save">保存</van-button></div>
       </div>
     </van-popup>
 

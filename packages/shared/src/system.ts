@@ -290,6 +290,7 @@ export type ModuleKey =
   | 'contractPaymentRecord'
   | 'invoice'
   | 'order'
+  | 'followPlan'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   lead: '线索',
@@ -304,6 +305,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   contractPaymentRecord: '回款记录',
   invoice: '发票',
   order: '订单',
+  followPlan: '跟进计划',
 }
 
 // ============ 主导航模块配置 ============

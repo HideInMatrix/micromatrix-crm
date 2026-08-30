@@ -27,6 +27,7 @@ export type ResourceFieldType =
   | 'contractPaymentRecord'
   | 'invoice'
   | 'order'
+  | 'followPlan'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 interface ResourceConfig {
@@ -43,6 +44,7 @@ interface ResourceConfig {
     | 'contractPaymentRecord'
     | 'invoice'
     | 'order'
+    | 'followPlan'
   resourceTable:
     | 'clue'
     | 'customer'
@@ -56,6 +58,7 @@ interface ResourceConfig {
     | 'contract_payment_record'
     | 'contract_invoice'
     | 'sales_order'
+    | 'follow_up_plans'
   normalTable:
     | 'clue_field'
     | 'customer_field'
@@ -69,6 +72,7 @@ interface ResourceConfig {
     | 'contract_payment_record_field'
     | 'contract_invoice_field'
     | 'sales_order_field'
+    | 'follow_up_plan_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
@@ -82,6 +86,8 @@ interface ResourceConfig {
     | 'contract_payment_record_field_blob'
     | 'contract_invoice_field_blob'
     | 'sales_order_field_blob'
+    | 'follow_up_plan_field_blob'
+  organizationColumn?: 'organization_id' | '"tenantId"'
 }
 
 interface ValidatedFieldValue {
@@ -163,6 +169,13 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'sales_order',
     normalTable: 'sales_order_field',
     blobTable: 'sales_order_field_blob',
+  },
+  followPlan: {
+    formKey: 'followPlan',
+    resourceTable: 'follow_up_plans',
+    normalTable: 'follow_up_plan_field',
+    blobTable: 'follow_up_plan_field_blob',
+    organizationColumn: '"tenantId"',
   },
 }
 
@@ -360,7 +373,8 @@ export class ResourceFieldValueService {
       predicates.push(this.compilePredicate(config, field, condition))
     }
     const combined = predicates.length ? Prisma.join(predicates, ' AND ') : Prisma.sql`TRUE`
-    return Prisma.sql`SELECT resource.id FROM ${Prisma.raw(config.resourceTable)} AS resource WHERE resource.organization_id = ${organizationId} AND ${combined}`
+    const organizationColumn = config.organizationColumn ?? 'organization_id'
+    return Prisma.sql`SELECT resource.id FROM ${Prisma.raw(config.resourceTable)} AS resource WHERE resource.${Prisma.raw(organizationColumn)} = ${organizationId} AND ${combined}`
   }
 
   async filterResourceIds(
@@ -578,9 +592,14 @@ export class ResourceFieldValueService {
         where: { id: resourceId, organizationId },
         select: { id: true },
       })
-    else
+    else if (resourceType === 'order')
       resource = await tx.order.findFirst({
         where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else
+      resource = await tx.followUpPlan.findFirst({
+        where: { id: resourceId, tenantId: organizationId },
         select: { id: true },
       })
     if (!resource) throw new NotFoundException('业务数据不存在')
@@ -656,6 +675,24 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.contractInvoiceFieldBlob.findFirst({ where, select: { id: true } })
           : await client.contractInvoiceField.findFirst({ where, select: { id: true } })
+    else if (resourceType === 'followPlan') {
+      const followPlanWhere = {
+        fieldId: item.field.id,
+        fieldValue: item.serialized,
+        resourceId: excludeResourceId ? { not: excludeResourceId } : undefined,
+        resource: { tenantId: organizationId },
+      }
+      repeated =
+        item.storage === 'blob'
+          ? await client.followUpPlanFieldBlob.findFirst({
+              where: followPlanWhere,
+              select: { id: true },
+            })
+          : await client.followUpPlanField.findFirst({
+              where: followPlanWhere,
+              select: { id: true },
+            })
+    }
     else
       repeated =
         item.storage === 'blob'
@@ -726,6 +763,11 @@ export class ResourceFieldValueService {
         tx.contractInvoiceField.deleteMany({ where }),
         tx.contractInvoiceFieldBlob.deleteMany({ where }),
       ])
+    else if (resourceType === 'followPlan')
+      await Promise.all([
+        tx.followUpPlanField.deleteMany({ where }),
+        tx.followUpPlanFieldBlob.deleteMany({ where }),
+      ])
     else
       await Promise.all([
         tx.orderField.deleteMany({ where }),
@@ -783,6 +825,9 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'invoice') {
       if (normalData.length) await tx.contractInvoiceField.createMany({ data: normalData })
       if (blobData.length) await tx.contractInvoiceFieldBlob.createMany({ data: blobData })
+    } else if (resourceType === 'followPlan') {
+      if (normalData.length) await tx.followUpPlanField.createMany({ data: normalData })
+      if (blobData.length) await tx.followUpPlanFieldBlob.createMany({ data: blobData })
     } else {
       if (normalData.length) await tx.orderField.createMany({ data: normalData })
       if (blobData.length) await tx.orderFieldBlob.createMany({ data: blobData })
@@ -856,6 +901,16 @@ export class ResourceFieldValueService {
         client.contractInvoiceField.findMany({ where, select }),
         client.contractInvoiceFieldBlob.findMany({ where, select }),
       ])
+    if (resourceType === 'followPlan') {
+      const followPlanWhere = {
+        resourceId: { in: resourceIds },
+        resource: { tenantId: organizationId },
+      }
+      return Promise.all([
+        client.followUpPlanField.findMany({ where: followPlanWhere, select }),
+        client.followUpPlanFieldBlob.findMany({ where: followPlanWhere, select }),
+      ])
+    }
     return Promise.all([
       client.orderField.findMany({ where, select }),
       client.orderFieldBlob.findMany({ where, select }),

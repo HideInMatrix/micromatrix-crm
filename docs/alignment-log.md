@@ -1000,3 +1000,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 最终专项：合同 direct HTTP Smoke 全绿；业务 Browser **56/56**；根 Smoke **224/224**；Rules **114/114**；全仓 typecheck、ESLint、Shared/API/Web production build 全绿。根 Smoke 同步修复历史客户夹具清理仍按旧合同 `tenantId` 查询的问题，改为 direct `organizationId`。
 - 数据库门槛：正式 `default` Prisma status 为 **47 migrations / schema up to date**；空库从零 **47/47 migrations** + Seed **2/2**，direct tables **5/5**、legacy tables **0/2**、默认阶段 **7**；46→47 upgrade Smoke：legacy contract/item **1/1** → direct contract **1/1**，products SUB_TABLE **4/4**、Snapshot **1/1**、stages **7/7**。
 - 静态扫描：手写运行时代码 `ContractStatus=0`、`ContractItem=0`；合同页 `row.status=0`、`row.items=0`、`contractApi.list=0`。W3.6.3 正式关闭，下一执行指针为 **W3.6.4 task 5.1：回款计划/回款记录源码与直接模型证据矩阵**。
+
+---
+
+## 50. W3.6.4～W3.6.6 与 DB-021 FollowUpPlan Field/Blob 最终收口（2026-08-30）
+
+- W3.6.4 已完成回款计划、回款记录、工商抬头与发票 direct model：Payment Plan/Record/Invoice 均进入独立 Field/Blob，回款计划负责人独立于合同负责人；Invoice CREATE/UPDATE/DELETE 接统一 Approval，Snapshot/回滚、`INVOICE_APPROVAL` 业务消息和工商抬头关联均闭环。
+- W3.6.5 已完成 direct Order：`sales_order + sales_order_field/blob + snapshot + stage_config`、产品信息、阶段流、CREATE/UPDATE/DELETE Approval、页面/看板/详情、模块设置全部进入真实契约；旧 `/orders`、旧 OrderStatus 和 lowercase order 权限从 runtime 退出。
+- W3.6.6 交易链最终闭环完成：交易链 Smoke、ALL/DEPT_AND_CHILD/SELF + 第二租户权限矩阵、空库双 Seed、`/system/modules` 四卡 15 个真实入口全部通过；DB-001～005、DB-022 已 `VERIFIED`。最终 W3.6.6 Root **227/227**、Rules 当阶段 **118/118**、System Modules Browser **47/47**、合同卡 Browser **23/23**、workspace typecheck/ESLint/build 全绿。
+- DB-021 最后剩余的 FollowUpPlan 已按 Cordys `FollowUpPlanFieldService / FollowUpPlanFieldBlob / ExtFollowUpPlanMapper / ClueService` 完成源码审计和破坏式运行时迁移：新增 `follow_up_plan_field/blob`、`followPlan` ModuleForm/Metadata，CRUD/list/detail/filter/delete、Lead -> Customer 复制和 Customer merge 全部使用分域字段值，production runtime 不再读写 `customData`。
+- PC 新增 `GET /follow-up-plans/module/form` 并复用 `DynamicForm + useFieldRefs`；Mobile 复用 `MobileDynamicForm`，同时补齐 member/dept/multiselect/checkbox/datetime 五类动态字段。未为了 FollowPlan 新增 Cordys `/system/modules` 中不存在的专属按钮。
+- DB-021 最终专项：runtime Smoke **12/12**、PC/Mobile Browser **25/25**（API 5xx=0、Runtime exception=0）、Rules **119/119**、Root **227/227**；隔离空库从零 **57/57 migrations + 双 Seed**，`sys_module_form=8`、`sys_module_field=68`、`sys_module_field_blob=68`；workspace typecheck/ESLint/Shared+API+Web production build 全绿。
+- 最终 runtime legacy scan：FollowUpPlan production `customData=0`、`plan.customData=0`；`apps/web/src/views/system` 中 `followPlan=0`。`follow_up_plans.customData` 物理列仅作为无法安全猜测历史 key->fieldId 时的升级兼容保留位，不再是真相源。
+- `docs/cordys-deferred-backlog.md` 中 DB-021 正式更新为 `VERIFIED`。这关闭的是“图外业务模块分域动态字段值”缺口，不等于整个 CordysCRM 已 100% 对齐；评论/完整 FormDesign、公告、高级审批、全局搜索、字段脱敏及其它 provider 仍以 `cordys-parity.md` / deferred backlog 为准。

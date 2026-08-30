@@ -7,6 +7,9 @@ import {
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
+  filterOpsForType,
+  type FieldVO,
+  type FilterCondition,
   type MessageTaskEvent,
   FollowUpPlanStatus as SharedFollowUpPlanStatus,
   FollowUpPlanVO,
@@ -18,10 +21,14 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
 import { FollowUpPlan, FollowUpPlanStatus, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { ModuleFormsService } from '../metadata/module-forms.service'
+import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import {
   CreateFollowUpPlanDto,
+  FOLLOW_UP_PLAN_STATUSES,
+  FOLLOW_UP_PLAN_TARGET_TYPES,
   QueryFollowUpPlansDto,
   UpdateFollowUpPlanDto,
 } from './dto/follow-up-plan.dto'
@@ -41,14 +48,20 @@ export class FollowUpPlansService {
     private readonly dataScope: DataScopeService,
     private readonly customerAccess: CustomerAccessService,
     private readonly pools: ResourcePoolsService,
+    private readonly moduleForms: ModuleFormsService,
+    private readonly fieldValues: ResourceFieldValueService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  form(user: AuthUser) {
+    return this.moduleForms.getConfig(user.tenantId, 'followPlan')
+  }
 
   async list(
     user: AuthUser,
     query: QueryFollowUpPlansDto,
   ): Promise<PaginatedResult<FollowUpPlanVO>> {
-    const { page = 1, pageSize = 10, keyword, status, targetType, targetId, mine } = query
+    const { page = 1, pageSize = 10, keyword, status, targetType, targetId, mine, filters } = query
     if (targetId && !targetType) throw new BadRequestException('指定业务对象时必须同时提供类型')
 
     let accessWhere: Prisma.FollowUpPlanWhereInput
@@ -64,12 +77,14 @@ export class FollowUpPlansService {
     }
 
     const keywordWhere = keyword ? await this.keywordWhere(user.tenantId, keyword) : undefined
+    const filteredIds = filters?.length ? await this.filterIds(user.tenantId, filters) : null
     const where: Prisma.FollowUpPlanWhereInput = {
       tenantId: user.tenantId,
       AND: [
         accessWhere,
         ...(keywordWhere ? [keywordWhere] : []),
         ...(mine ? [{ ownerId: user.id }] : []),
+        ...(filteredIds ? [{ id: { in: filteredIds } }] : []),
       ],
       ...(status ? { status } : {}),
     }
@@ -103,20 +118,31 @@ export class FollowUpPlansService {
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
     await this.assertContact(user.tenantId, dto.targetType, dto.targetId, dto.contactId)
     const owner = await this.resolveOwner(user, dto.ownerId)
-    const plan = await this.prisma.followUpPlan.create({
-      data: {
-        tenantId: user.tenantId,
-        targetType: dto.targetType,
-        targetId: dto.targetId,
-        contactId: dto.contactId ?? null,
-        content: dto.content,
-        method: dto.method ?? null,
-        estimatedAt: dto.estimatedAt ? new Date(dto.estimatedAt) : null,
-        ownerId: owner.id,
-        deptId: owner.deptId,
-        createdById: user.id,
-        customData: (dto.customData ?? {}) as Prisma.InputJsonValue,
-      },
+    const dynamicValues = await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields ?? [])
+    const plan = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.followUpPlan.create({
+        data: {
+          tenantId: user.tenantId,
+          targetType: dto.targetType,
+          targetId: dto.targetId,
+          contactId: dto.contactId ?? null,
+          content: dto.content,
+          method: dto.method ?? null,
+          estimatedAt: dto.estimatedAt ? new Date(dto.estimatedAt) : null,
+          ownerId: owner.id,
+          deptId: owner.deptId,
+          createdById: user.id,
+        },
+      })
+      await this.fieldValues.save(
+        user.tenantId,
+        'followPlan',
+        created.id,
+        dynamicValues,
+        'create',
+        tx,
+      )
+      return created
     })
     return (await this.toVOs(user, [plan]))[0]
   }
@@ -136,27 +162,36 @@ export class FollowUpPlansService {
           ? new Date(dto.estimatedAt)
           : null
     const dueDateChanged = estimatedAt?.getTime() !== existing.estimatedAt?.getTime()
+    const dynamicValues =
+      dto.moduleFields === undefined
+        ? null
+        : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
 
-    const plan = await this.prisma.followUpPlan.update({
-      where: { id },
-      data: {
-        targetType,
-        targetId,
-        contactId,
-        content: dto.content,
-        method: dto.method,
-        estimatedAt,
-        ...(owner ? { ownerId: owner.id, deptId: owner.deptId } : {}),
-        ...(dto.customData
-          ? {
-              customData: {
-                ...((existing.customData as Record<string, unknown> | null) ?? {}),
-                ...dto.customData,
-              } as Prisma.InputJsonValue,
-            }
-          : {}),
-        ...(dueDateChanged ? { dueNotifiedAt: null } : {}),
-      },
+    const plan = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.followUpPlan.update({
+        where: { id },
+        data: {
+          targetType,
+          targetId,
+          contactId,
+          content: dto.content,
+          method: dto.method,
+          estimatedAt,
+          ...(owner ? { ownerId: owner.id, deptId: owner.deptId } : {}),
+          ...(dueDateChanged ? { dueNotifiedAt: null } : {}),
+        },
+      })
+      if (dynamicValues !== null) {
+        await this.fieldValues.save(
+          user.tenantId,
+          'followPlan',
+          id,
+          dynamicValues,
+          'update',
+          tx,
+        )
+      }
+      return updated
     })
     return (await this.toVOs(user, [plan]))[0]
   }
@@ -433,6 +468,158 @@ export class FollowUpPlansService {
     }
   }
 
+  private async filterIds(tenantId: string, conditions: FilterCondition[]): Promise<string[]> {
+    const fields = await this.moduleForms.listFields(tenantId, 'followPlan')
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
+    const direct: Array<{ field: FieldVO; condition: FilterCondition }> = []
+    const dynamic: FilterCondition[] = []
+
+    for (const condition of conditions) {
+      const field = fieldMap.get(condition.key)
+      if (!field) throw new BadRequestException(`筛选字段不存在：${condition.key}`)
+      if (!filterOpsForType(field.type).includes(condition.op)) {
+        throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
+      }
+      if (field.system) direct.push({ field, condition })
+      else dynamic.push(condition)
+    }
+
+    const [directRows, dynamicIds] = await Promise.all([
+      direct.length
+        ? this.prisma.followUpPlan.findMany({
+            where: {
+              tenantId,
+              AND: direct.map(({ field, condition }) =>
+                this.systemFilterClause(field, condition),
+              ),
+            },
+            select: { id: true },
+          })
+        : null,
+      dynamic.length
+        ? this.fieldValues.filterResourceIds(tenantId, 'followPlan', dynamic)
+        : null,
+    ])
+
+    let selected: string[] | null = directRows?.map((row) => row.id) ?? null
+    if (dynamicIds !== null) {
+      if (selected === null) selected = dynamicIds
+      else {
+        const dynamicSet = new Set(dynamicIds)
+        selected = selected.filter((id) => dynamicSet.has(id))
+      }
+    }
+    return selected ?? []
+  }
+
+  private systemFilterClause(
+    field: FieldVO,
+    condition: FilterCondition,
+  ): Prisma.FollowUpPlanWhereInput {
+    const key = field.key
+    const allowed = new Set([
+      'targetType',
+      'targetId',
+      'ownerId',
+      'contactId',
+      'estimatedAt',
+      'content',
+      'method',
+      'status',
+    ])
+    if (!allowed.has(key)) throw new BadRequestException(`筛选字段不支持：${key}`)
+
+    const nullableText = new Set(['contactId', 'method'])
+    if (condition.op === 'isEmpty') {
+      if (key === 'estimatedAt') return { estimatedAt: null }
+      if (nullableText.has(key)) {
+        return {
+          OR: [
+            { [key]: null } as Prisma.FollowUpPlanWhereInput,
+            { [key]: '' } as Prisma.FollowUpPlanWhereInput,
+          ],
+        }
+      }
+      if (key === 'status') return { id: { in: [] } }
+      return { [key]: '' } as Prisma.FollowUpPlanWhereInput
+    }
+    if (condition.op === 'notEmpty') {
+      if (key === 'estimatedAt') return { estimatedAt: { not: null } }
+      if (nullableText.has(key)) {
+        return {
+          AND: [
+            { [key]: { not: null } } as Prisma.FollowUpPlanWhereInput,
+            { [key]: { not: '' } } as Prisma.FollowUpPlanWhereInput,
+          ],
+        }
+      }
+      if (key === 'status') return {}
+      return { [key]: { not: '' } } as Prisma.FollowUpPlanWhereInput
+    }
+
+    if (condition.value === undefined || condition.value === null || condition.value === '') {
+      throw new BadRequestException(`「${field.label}」筛选值不能为空`)
+    }
+    if (key === 'estimatedAt') {
+      const value = new Date(String(condition.value))
+      if (Number.isNaN(value.getTime())) throw new BadRequestException('计划时间筛选值不合法')
+      if (condition.op === 'gte') return { estimatedAt: { gte: value } }
+      if (condition.op === 'lte') return { estimatedAt: { lte: value } }
+      throw new BadRequestException('计划时间不支持该筛选操作')
+    }
+    if (key === 'status') {
+      if (!FOLLOW_UP_PLAN_STATUSES.includes(condition.value as never)) {
+        throw new BadRequestException('计划状态筛选值不合法')
+      }
+      const status = condition.value as FollowUpPlanStatus
+      if (condition.op === 'eq') return { status }
+      if (condition.op === 'ne') return { status: { not: status } }
+      throw new BadRequestException('计划状态不支持该筛选操作')
+    }
+    if (key === 'targetType' && !FOLLOW_UP_PLAN_TARGET_TYPES.includes(condition.value as never)) {
+      throw new BadRequestException('关联类型筛选值不合法')
+    }
+
+    const value = String(condition.value)
+    if (condition.op === 'contains') {
+      return {
+        [key]: { contains: value, mode: 'insensitive' },
+      } as Prisma.FollowUpPlanWhereInput
+    }
+    if (condition.op === 'eq') return { [key]: value } as Prisma.FollowUpPlanWhereInput
+    if (condition.op === 'ne') {
+      return { [key]: { not: value } } as Prisma.FollowUpPlanWhereInput
+    }
+    throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
+  }
+
+  private async moduleFieldsToDynamicValues(
+    tenantId: string,
+    moduleFields: Array<{ fieldId: string; fieldValue?: unknown }>,
+  ): Promise<Record<string, unknown>> {
+    if (!moduleFields.length) return {}
+    const fields = await this.moduleForms.listFields(tenantId, 'followPlan')
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
+    const values: Record<string, unknown> = {}
+    for (const item of moduleFields) {
+      const field = fieldMap.get(item.fieldId)
+      if (!field) throw new BadRequestException(`跟进计划字段不存在：${item.fieldId}`)
+      if (field.system) continue
+      values[field.key] = item.fieldValue
+    }
+    return values
+  }
+
   private async touchTarget(
     tx: Prisma.TransactionClient,
     tenantId: string,
@@ -487,7 +674,7 @@ export class FollowUpPlansService {
   private async toVOs(user: AuthUser, plans: FollowUpPlan[]): Promise<FollowUpPlanVO[]> {
     if (plans.length === 0) return []
     const names = await this.targetNames(plans)
-    const [owners, contacts, opportunities] = await Promise.all([
+    const [owners, contacts, opportunities, fields, dynamic] = await Promise.all([
       this.prisma.user.findMany({
         where: { id: { in: [...new Set(plans.map((p) => p.ownerId))] } },
         select: { id: true, name: true },
@@ -504,37 +691,51 @@ export class FollowUpPlansService {
         },
         select: { id: true, customerId: true },
       }),
+      this.moduleForms.listFields(user.tenantId, 'followPlan'),
+      this.fieldValues.load(
+        user.tenantId,
+        'followPlan',
+        plans.map((plan) => plan.id),
+      ),
     ])
     const ownerMap = new Map(owners.map((item) => [item.id, item.name]))
     const contactMap = new Map(contacts.map((item) => [item.id, item.name]))
     const opportunityCustomerMap = new Map(opportunities.map((item) => [item.id, item.customerId]))
     const admin = hasPermission(user.permissions, '*')
-    return plans.map((plan) => ({
-      id: plan.id,
-      targetType: plan.targetType as FollowUpPlanVO['targetType'],
-      targetId: plan.targetId,
-      targetName: names.get(`${plan.targetType}:${plan.targetId}`) ?? '已删除业务对象',
-      customerId:
-        plan.targetType === 'customer'
-          ? plan.targetId
-          : plan.targetType === 'opportunity'
-            ? (opportunityCustomerMap.get(plan.targetId) ?? null)
-            : null,
-      contactId: plan.contactId,
-      contactName: plan.contactId ? (contactMap.get(plan.contactId) ?? null) : null,
-      content: plan.content,
-      method: plan.method,
-      estimatedAt: plan.estimatedAt?.toISOString() ?? null,
-      status: plan.status,
-      converted: plan.converted,
-      convertedRecordId: plan.convertedRecordId,
-      ownerId: plan.ownerId,
-      ownerName: ownerMap.get(plan.ownerId) ?? '已停用成员',
-      createdById: plan.createdById,
-      customData: (plan.customData as Record<string, unknown> | null) ?? {},
-      canManage: admin || plan.ownerId === user.id,
-      createdAt: plan.createdAt.toISOString(),
-      updatedAt: plan.updatedAt.toISOString(),
-    }))
+    return plans.map((plan) => {
+      const dynamicValues = dynamic.get(plan.id) ?? {}
+      return {
+        id: plan.id,
+        targetType: plan.targetType as FollowUpPlanVO['targetType'],
+        targetId: plan.targetId,
+        targetName: names.get(`${plan.targetType}:${plan.targetId}`) ?? '已删除业务对象',
+        customerId:
+          plan.targetType === 'customer'
+            ? plan.targetId
+            : plan.targetType === 'opportunity'
+              ? (opportunityCustomerMap.get(plan.targetId) ?? null)
+              : null,
+        contactId: plan.contactId,
+        contactName: plan.contactId ? (contactMap.get(plan.contactId) ?? null) : null,
+        content: plan.content,
+        method: plan.method,
+        estimatedAt: plan.estimatedAt?.toISOString() ?? null,
+        status: plan.status,
+        converted: plan.converted,
+        convertedRecordId: plan.convertedRecordId,
+        ownerId: plan.ownerId,
+        ownerName: ownerMap.get(plan.ownerId) ?? '已停用成员',
+        createdById: plan.createdById,
+        moduleFields: fields
+          .filter(
+            (field) =>
+              !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key),
+          )
+          .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
+        canManage: admin || plan.ownerId === user.id,
+        createdAt: plan.createdAt.toISOString(),
+        updatedAt: plan.updatedAt.toISOString(),
+      }
+    })
   }
 }

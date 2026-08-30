@@ -750,10 +750,39 @@ model FollowUpPlan {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
+  fields     FollowUpPlanField[]
+  fieldBlobs FollowUpPlanFieldBlob[]
+
   @@index([tenantId, targetType, targetId])
   @@index([tenantId, ownerId, status])
   @@index([tenantId, estimatedAt, status])
   @@map("follow_up_plans")
+}
+
+model FollowUpPlanField {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id")
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.VarChar(255)
+
+  resource FollowUpPlan @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId, fieldId, fieldValue])
+  @@map("follow_up_plan_field")
+}
+
+model FollowUpPlanFieldBlob {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id")
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.Text
+
+  resource FollowUpPlan @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId])
+  @@map("follow_up_plan_field_blob")
 }
 
 // ============ Cordys 商机直接模型 ============

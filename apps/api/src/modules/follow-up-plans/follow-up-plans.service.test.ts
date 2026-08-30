@@ -54,6 +54,11 @@ function dependencies(
     {} as never,
     {} as never,
     {} as never,
+    { listFields: async () => [] } as never,
+    {
+      load: async (_tenantId: string, _resourceType: string, ids: string[]) =>
+        new Map(ids.map((id) => [id, {}])),
+    } as never,
     { notify } as never,
   )
 }

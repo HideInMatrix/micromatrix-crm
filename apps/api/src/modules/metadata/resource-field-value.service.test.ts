@@ -392,3 +392,143 @@ test('字段值写入失败时由调用方同一事务整体回滚', async () =>
   ])
   assert.deepEqual(blob, [])
 })
+
+test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', async () => {
+  const followFields: FieldVO[] = [
+    {
+      id: 'plan-content',
+      module: 'followPlan',
+      key: 'content',
+      label: '预计沟通内容',
+      type: 'textarea',
+      required: true,
+      system: true,
+      hidden: false,
+      options: null,
+      config: null,
+      sort: 0,
+      span: 24,
+      showInList: true,
+      listWidth: 200,
+    },
+    {
+      id: 'plan-short',
+      module: 'followPlan',
+      key: 'cf_short',
+      label: '短字段',
+      type: 'text',
+      required: false,
+      system: false,
+      hidden: false,
+      options: null,
+      config: null,
+      sort: 1,
+      span: 12,
+      showInList: true,
+      listWidth: 120,
+    },
+    {
+      id: 'plan-note',
+      module: 'followPlan',
+      key: 'cf_note',
+      label: '长字段',
+      type: 'textarea',
+      required: false,
+      system: false,
+      hidden: false,
+      options: null,
+      config: null,
+      sort: 2,
+      span: 24,
+      showInList: false,
+      listWidth: null,
+    },
+  ]
+  const normal: ValueRow[] = []
+  const blob: ValueRow[] = []
+  const tenantByPlan = new Map([
+    ['plan-a', 'tenant-a'],
+    ['plan-b', 'tenant-b'],
+  ])
+  const delegate = (rows: ValueRow[]) => ({
+    findFirst: async () => null,
+    deleteMany: async ({ where }: { where: { resourceId: string; fieldId: { in: string[] } } }) => {
+      for (let index = rows.length - 1; index >= 0; index--) {
+        const row = rows[index]
+        if (row && row.resourceId === where.resourceId && where.fieldId.in.includes(row.fieldId)) {
+          rows.splice(index, 1)
+        }
+      }
+      return { count: 1 }
+    },
+    createMany: async ({ data }: { data: ValueRow[] }) => {
+      rows.push(...data)
+      return { count: data.length }
+    },
+    findMany: async ({
+      where,
+    }: {
+      where: { resourceId: { in: string[] }; resource: { tenantId: string } }
+    }) =>
+      rows.filter(
+        (row) =>
+          where.resourceId.in.includes(row.resourceId) &&
+          tenantByPlan.get(row.resourceId) === where.resource.tenantId,
+      ),
+  })
+  const forbidOrder = () => {
+    throw new Error('FollowPlan 不应访问 Order 字段表')
+  }
+  const prismaRecord = {
+    followUpPlan: {
+      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
+        tenantByPlan.get(where.id) === where.tenantId ? { id: where.id } : null,
+    },
+    followUpPlanField: delegate(normal),
+    followUpPlanFieldBlob: delegate(blob),
+    orderField: {
+      findFirst: forbidOrder,
+      deleteMany: forbidOrder,
+      createMany: forbidOrder,
+      findMany: forbidOrder,
+    },
+    orderFieldBlob: {
+      findFirst: forbidOrder,
+      deleteMany: forbidOrder,
+      createMany: forbidOrder,
+      findMany: forbidOrder,
+    },
+    $queryRaw: async () => [],
+  }
+  const moduleForms = {
+    listFields: async () => followFields,
+    listFieldsInTransaction: async () => followFields,
+  } as unknown as ModuleFormsService
+  const service = new ResourceFieldValueService(
+    prismaRecord as unknown as PrismaService,
+    moduleForms,
+  )
+
+  await service.save(
+    'tenant-a',
+    'followPlan',
+    'plan-a',
+    { cf_short: '短值', cf_note: '长备注' },
+    'create',
+    prismaRecord as never,
+  )
+  assert.deepEqual(normal, [{ resourceId: 'plan-a', fieldId: 'plan-short', fieldValue: '短值' }])
+  assert.deepEqual(blob, [{ resourceId: 'plan-a', fieldId: 'plan-note', fieldValue: '长备注' }])
+  assert.deepEqual(await service.load('tenant-a', 'followPlan', ['plan-a', 'plan-b']), new Map([
+    ['plan-a', { cf_short: '短值', cf_note: '长备注' }],
+    ['plan-b', {}],
+  ]))
+
+  const query = await service.buildFilter('tenant-a', 'followPlan', [
+    { key: 'cf_short', op: 'contains', value: '短' },
+  ])
+  assert.match(query.sql, /FROM follow_up_plans AS resource/)
+  assert.match(query.sql, /follow_up_plan_field/)
+  assert.match(query.sql, /"tenantId"/)
+  assert.equal(query.values.includes('tenant-a'), true)
+})

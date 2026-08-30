@@ -1537,12 +1537,16 @@ export class LeadsService {
     const sourcePlans = await tx.followUpPlan.findMany({
       where: { tenantId: user.tenantId, targetType: 'lead', targetId: leadId },
       orderBy: { createdAt: 'asc' },
+      include: {
+        fields: { select: { fieldId: true, fieldValue: true } },
+        fieldBlobs: { select: { fieldId: true, fieldValue: true } },
+      },
     })
     for (const plan of sourcePlans) {
       const convertedRecordId = plan.convertedRecordId
         ? (recordIdMap.get(plan.convertedRecordId) ?? null)
         : null
-      await tx.followUpPlan.create({
+      const copied = await tx.followUpPlan.create({
         data: {
           tenantId: plan.tenantId,
           targetType: 'customer',
@@ -1558,11 +1562,28 @@ export class LeadsService {
           deptId: plan.deptId,
           createdById: plan.createdById,
           dueNotifiedAt: plan.dueNotifiedAt,
-          customData: ((plan.customData as Record<string, unknown> | null) ?? {}) as Prisma.InputJsonValue,
           createdAt: plan.createdAt,
           updatedAt: plan.updatedAt,
         },
       })
+      if (plan.fields.length) {
+        await tx.followUpPlanField.createMany({
+          data: plan.fields.map((field) => ({
+            resourceId: copied.id,
+            fieldId: field.fieldId,
+            fieldValue: field.fieldValue,
+          })),
+        })
+      }
+      if (plan.fieldBlobs.length) {
+        await tx.followUpPlanFieldBlob.createMany({
+          data: plan.fieldBlobs.map((field) => ({
+            resourceId: copied.id,
+            fieldId: field.fieldId,
+            fieldValue: field.fieldValue,
+          })),
+        })
+      }
     }
   }
 

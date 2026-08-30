@@ -295,7 +295,8 @@ async function main() {
       | 'contract'
       | 'contractPaymentPlan'
       | 'contractPaymentRecord'
-      | 'order',
+      | 'order'
+      | 'followPlan',
   ) => {
     const form = await prisma.sysModuleForm.upsert({
       where: { organizationId_formKey: { organizationId: tenant.id, formKey } },
@@ -372,6 +373,7 @@ async function main() {
   await ensureModuleForm('contractPaymentPlan')
   await ensureModuleForm('contractPaymentRecord')
   await ensureModuleForm('order')
+  await ensureModuleForm('followPlan')
 
   const contractStages = [
     ['待签署', 'AFOOT'],

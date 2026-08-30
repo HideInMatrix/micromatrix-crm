@@ -17,6 +17,12 @@ import { FollowUpPlansService } from './follow-up-plans.service'
 export class FollowUpPlansController {
   constructor(private readonly service: FollowUpPlansService) {}
 
+  @Get('module/form')
+  @ApiOperation({ summary: '获取跟进计划表单配置' })
+  moduleForm(@CurrentUser() user: AuthUser) {
+    return this.service.form(user)
+  }
+
   @Get()
   @ApiOperation({ summary: '跟进计划分页列表（全局或指定业务对象）' })
   list(@CurrentUser() user: AuthUser, @Query() query: QueryFollowUpPlansDto) {

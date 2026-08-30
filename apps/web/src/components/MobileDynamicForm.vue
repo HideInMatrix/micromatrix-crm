@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import type { FieldVO } from '@micromatrix/shared'
+import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed, ref } from 'vue'
 
-const props = defineProps<{ fields: FieldVO[] }>()
+const props = defineProps<{
+  fields: FieldVO[]
+  members?: Array<{ id: string; name: string }>
+  deptTree?: DepartmentVO[]
+}>()
 const model = defineModel<Record<string, unknown>>({ required: true })
 
 const visibleFields = computed(() =>
@@ -13,6 +17,18 @@ const pickerField = ref<FieldVO | null>(null)
 const showPicker = ref(false)
 const showDatePicker = ref(false)
 const dateValue = ref<string[]>([])
+
+const deptOptions = computed(() => {
+  const result: Array<{ text: string; value: string }> = []
+  const walk = (nodes: DepartmentVO[], depth = 0) => {
+    for (const node of nodes) {
+      result.push({ text: `${'　'.repeat(depth)}${node.name}`, value: node.id })
+      if (node.children?.length) walk(node.children, depth + 1)
+    }
+  }
+  walk(props.deptTree ?? [])
+  return result
+})
 
 function openPicker(field: FieldVO) {
   pickerField.value = field
@@ -41,12 +57,40 @@ function displayValue(field: FieldVO): string {
   if (field.type === 'select' || field.type === 'radio') {
     return field.options?.find((o) => o.value === value)?.label ?? String(value)
   }
+  if (field.type === 'multiselect' || field.type === 'checkbox') {
+    const values = Array.isArray(value) ? value : []
+    return values
+      .map((item) => field.options?.find((o) => o.value === item)?.label ?? String(item))
+      .join('、')
+  }
+  if (field.type === 'member') {
+    return props.members?.find((item) => item.id === value)?.name ?? String(value)
+  }
+  if (field.type === 'dept') {
+    return deptOptions.value.find((item) => item.value === value)?.text.trim() ?? String(value)
+  }
   return String(value)
 }
 
-const pickerColumns = computed(
-  () => pickerField.value?.options?.map((o) => ({ text: o.label, value: o.value })) ?? [],
-)
+const pickerColumns = computed(() => {
+  const field = pickerField.value
+  if (!field) return []
+  if (field.type === 'member') {
+    return (props.members ?? []).map((item) => ({ text: item.name, value: item.id }))
+  }
+  if (field.type === 'dept') return deptOptions.value
+  return field.options?.map((o) => ({ text: o.label, value: o.value })) ?? []
+})
+
+function datetimeLocalValue(field: FieldVO) {
+  const value = model.value[field.key]
+  if (typeof value !== 'string' || !value) return ''
+  return value.replace(' ', 'T').slice(0, 16)
+}
+
+function updateDatetime(field: FieldVO, value: string) {
+  model.value[field.key] = value ? `${value.replace('T', ' ')}:00` : undefined
+}
 </script>
 
 <template>
@@ -54,7 +98,7 @@ const pickerColumns = computed(
     <template v-for="field in visibleFields" :key="field.key">
       <!-- 选项/日期类：只读点击唤起选择器 -->
       <van-field
-        v-if="['select', 'radio', 'date'].includes(field.type)"
+        v-if="['select', 'radio', 'date', 'member', 'dept'].includes(field.type)"
         :model-value="displayValue(field)"
         :label="field.label"
         :placeholder="`请选择${field.label}`"
@@ -63,6 +107,17 @@ const pickerColumns = computed(
         readonly
         @click="openPicker(field)"
       />
+      <!-- 日期时间 -->
+      <van-field v-else-if="field.type === 'datetime'" :label="field.label" :required="field.required">
+        <template #input>
+          <input
+            :value="datetimeLocalValue(field)"
+            type="datetime-local"
+            class="w-full bg-transparent"
+            @input="updateDatetime(field, ($event.target as HTMLInputElement).value)"
+          />
+        </template>
+      </van-field>
       <!-- 数字类 -->
       <van-field
         v-else-if="['number', 'currency', 'percent'].includes(field.type)"
@@ -95,9 +150,31 @@ const pickerColumns = computed(
           />
         </template>
       </van-cell>
-      <!-- 成员/部门等复杂类型移动端暂不支持编辑，跳过 -->
+      <!-- 多选类 -->
       <van-field
-        v-else-if="!['member', 'dept', 'multiselect', 'checkbox', 'datetime'].includes(field.type)"
+        v-else-if="field.type === 'multiselect' || field.type === 'checkbox'"
+        :label="field.label"
+        :required="field.required"
+      >
+        <template #input>
+          <van-checkbox-group
+            :model-value="(model[field.key] as string[] | undefined) ?? []"
+            direction="horizontal"
+            @update:model-value="model[field.key] = $event"
+          >
+            <van-checkbox
+              v-for="option in field.options ?? []"
+              :key="option.value"
+              :name="option.value"
+              shape="square"
+            >
+              {{ option.label }}
+            </van-checkbox>
+          </van-checkbox-group>
+        </template>
+      </van-field>
+      <van-field
+        v-else
         :model-value="(model[field.key] as string) ?? ''"
         :label="field.label"
         :placeholder="`请输入${field.label}`"

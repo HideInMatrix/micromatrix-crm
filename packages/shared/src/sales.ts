@@ -76,6 +76,11 @@ export const FOLLOW_UP_PLAN_STATUS_LABELS: Record<FollowUpPlanStatus, string> = 
   CANCELLED: '已取消',
 }
 
+export interface FollowUpPlanModuleFieldValue {
+  fieldId: string
+  fieldValue?: unknown
+}
+
 export interface FollowUpPlanVO {
   id: string
   targetType: FollowUpPlanTargetType
@@ -93,7 +98,7 @@ export interface FollowUpPlanVO {
   ownerId: string
   ownerName: string
   createdById: string
-  customData: Record<string, unknown>
+  moduleFields: FollowUpPlanModuleFieldValue[]
   canManage: boolean
   createdAt: string
   updatedAt: string

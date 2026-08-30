@@ -1,5 +1,6 @@
 import type {
   ContactVO,
+  FieldVO,
   FollowUpPlanStatus,
   FollowUpPlanTargetType,
   FollowUpPlanVO,
@@ -513,10 +514,14 @@ export interface FollowUpPlanPayload {
   method?: string
   estimatedAt?: string
   ownerId?: string
-  customData?: Record<string, unknown>
+  moduleFields?: Array<{ fieldId: string; fieldValue?: unknown }>
 }
 
 export const followUpPlanApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/follow-up-plans/module/form',
+    ),
   list: (params: FollowUpPlanListParams) =>
     http.get<PaginatedResult<FollowUpPlanVO>>('/follow-up-plans', { params }),
   get: (id: string) => http.get<FollowUpPlanVO>(`/follow-up-plans/${id}`),

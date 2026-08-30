@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 
@@ -9,6 +9,8 @@ const apiRoot = new URL('../', import.meta.url)
 const requireFromApi = createRequire(new URL('../package.json', import.meta.url))
 const { PrismaPg } = requireFromApi('@prisma/adapter-pg')
 const { PrismaClient } = requireFromApi('./dist/generated/prisma/client.js')
+const migrationCount = readdirSync(new URL('../prisma/migrations/', import.meta.url), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory()).length
 
 function resolveDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL
@@ -212,7 +214,7 @@ try {
 
   console.log(JSON.stringify({
     database,
-    migrations56: true,
+    migrationCount,
     seed1: true,
     seed2: true,
     seedCountsStable: true,
