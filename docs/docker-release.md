@@ -29,10 +29,13 @@ git push origin v0.0.1
 1. SemVer tag 校验。
 2. pnpm install；先构建 `@micromatrix/shared`，再执行全仓 typecheck、ESLint。
 3. 真实 Docker runtime Smoke。
-4. API/Web 分别构建 `linux/amd64`、`linux/arm64`。
-5. 推送到 GHCR。
+4. API 按架构原生构建：`linux/amd64` 使用 x64 GitHub Runner，`linux/arm64` 使用 `ubuntu-24.04-arm`，随后合并为同一 multi-arch manifest；不通过 QEMU 执行 Prisma/TypeScript 构建。
+5. Web 的 Vite 静态产物固定在 BuildKit `BUILDPLATFORM` 构建一次，再组装 `linux/amd64`、`linux/arm64` 两个 Nginx runtime 镜像。
+6. 推送到 GHCR。
 
 `@micromatrix/shared` 的 `main` / `types` 都指向 `packages/shared/dist`。GitHub Runner 是全新 checkout，不存在开发机残留的 `dist`，因此源码校验必须先生成 shared 构建产物再校验 API/Web。根 `pnpm typecheck` 和 `pnpm build` 均按 `shared → api → web` 的依赖顺序执行，避免本地缓存掩盖 workspace 跨包问题。
+
+镜像构建阶段继续收窄 workspace 依赖：API builder 只安装 `@micromatrix/api...`（API + shared），Web builder 只安装 `@micromatrix/web...`（Web + shared）。API 使用 pnpm dedicated-lockfile deploy，并让 install/deploy 复用同一个 BuildKit pnpm store cache，避免 production deploy 再次访问 registry 解析整仓依赖。
 
 以 `v0.0.1` 为例，至少可使用：
 
@@ -55,6 +58,7 @@ pnpm smoke:docker-release
 
 - API Docker build。
 - Web Docker build。
+- API/Web Dockerfile workspace scope 与多架构构建策略防回归检查。
 - API 镜像内 `prisma migrate deploy`。
 - `/api/health`。
 - Nginx `/healthz`。

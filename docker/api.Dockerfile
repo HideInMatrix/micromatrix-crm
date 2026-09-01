@@ -1,38 +1,40 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS base
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+FROM base AS builder
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl \
-  && rm -rf /var/lib/apt/lists/* \
-  && corepack enable \
+RUN corepack enable \
   && corepack prepare pnpm@10.30.3 --activate
 
 WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
-COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
-RUN pnpm install --frozen-lockfile
+# API 只安装自身及 workspace 依赖（shared）。避免把 Web/Vite 依赖带入 API builder，
+# 降低每个架构的下载量、node_modules 体积和 BuildKit 缓存体积。
+RUN --mount=type=cache,id=pnpm-api,target=/pnpm/store \
+  pnpm install --frozen-lockfile --filter @micromatrix/api...
 
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 
-RUN pnpm --filter @micromatrix/shared build \
+RUN --mount=type=cache,id=pnpm-api,target=/pnpm/store \
+  pnpm --filter @micromatrix/shared build \
   && pnpm --filter @micromatrix/api build \
-  && pnpm --filter @micromatrix/api deploy --prod --legacy /opt/micromatrix-api \
+  && pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod deploy /opt/micromatrix-api \
   && rm -f /opt/micromatrix-api/.env
 
-FROM node:24-bookworm-slim AS runtime
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl \
-  && rm -rf /var/lib/apt/lists/*
+FROM base AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=3000

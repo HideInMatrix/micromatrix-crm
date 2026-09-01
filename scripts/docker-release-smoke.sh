@@ -28,6 +28,18 @@ if grep -Fq 'COPY apps/api/package.json apps/api/package.json' docker/web.Docker
   exit 1
 fi
 
+echo '[docker-release] validating API workspace dependency scope'
+grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/api...' docker/api.Dockerfile
+grep -Fq 'pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod deploy' docker/api.Dockerfile
+if grep -Fq 'COPY apps/web/package.json apps/web/package.json' docker/api.Dockerfile; then
+  echo '[docker-release] API image must not install Web workspace dependencies' >&2
+  exit 1
+fi
+if grep -Fq ' deploy --prod --legacy ' docker/api.Dockerfile; then
+  echo '[docker-release] API image must use pnpm dedicated-lockfile deploy instead of legacy deploy' >&2
+  exit 1
+fi
+
 echo '[docker-release] building API image'
 docker build -f docker/api.Dockerfile -t "$API_IMAGE" .
 
