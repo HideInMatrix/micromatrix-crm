@@ -20,6 +20,14 @@ trap cleanup EXIT
 
 cd "$ROOT_DIR"
 
+echo '[docker-release] validating Web multi-platform build strategy'
+grep -Fq 'FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder' docker/web.Dockerfile
+grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/web...' docker/web.Dockerfile
+if grep -Fq 'COPY apps/api/package.json apps/api/package.json' docker/web.Dockerfile; then
+  echo '[docker-release] Web image must not install API workspace dependencies' >&2
+  exit 1
+fi
+
 echo '[docker-release] building API image'
 docker build -f docker/api.Dockerfile -t "$API_IMAGE" .
 

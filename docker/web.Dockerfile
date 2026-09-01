@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim AS builder
+# Web 产物是与 CPU 架构无关的静态文件。
+# 多架构镜像构建时固定在 BuildKit 原生平台执行 Node/Vite，避免在
+# GitHub x64 runner 上通过 QEMU 执行 arm64 Node 导致 transforming 阶段极慢。
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -10,11 +13,12 @@ RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
-RUN pnpm install --frozen-lockfile
+# Web 只需要自身及 workspace 依赖（shared）。不要安装 API/Prisma 依赖，
+# 可明显降低 CI 下载量与多架构构建缓存体积。
+RUN pnpm install --frozen-lockfile --filter @micromatrix/web...
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web

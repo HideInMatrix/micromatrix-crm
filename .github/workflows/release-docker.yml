@@ -99,6 +99,7 @@ jobs:
           echo "name=ghcr.io/${REPOSITORY}-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
 
       - name: Setup QEMU
+        if: matrix.name == 'api'
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker Buildx
