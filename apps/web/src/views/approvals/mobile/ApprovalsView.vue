@@ -8,16 +8,18 @@ import { showFailToast, showSuccessToast } from 'vant'
 import { computed, ref } from 'vue'
 import {
   approveTask,
+  myHandledApprovals,
   myApplications,
   myPendingApprovals,
   rejectTask,
+  revokeApprovalTask,
   returnBackTask,
   signTask,
 } from '@/api/mobile'
 import { extractErrorMessage } from '@/api/http'
 import { memberApi, type MemberOption } from '@/api/system'
 
-const activeTab = ref<'pending' | 'mine'>('pending')
+const activeTab = ref<'pending' | 'handled' | 'mine'>('pending')
 const items = ref<ApprovalInstanceVO[]>([])
 const page = ref(1)
 const loading = ref(false)
@@ -46,7 +48,12 @@ const memberColumns = computed(() =>
 async function loadMore() {
   loading.value = true
   try {
-    const api = activeTab.value === 'pending' ? myPendingApprovals : myApplications
+    const api =
+      activeTab.value === 'pending'
+        ? myPendingApprovals
+        : activeTab.value === 'handled'
+          ? myHandledApprovals
+          : myApplications
     const { data } = await api({ page: page.value, pageSize: 20 })
     if (refreshing.value) {
       items.value = []
@@ -182,6 +189,18 @@ async function handleReturnBack() {
   }
 }
 
+async function handleWithdraw() {
+  if (!current.value?.canWithdraw || !current.value.myWithdrawTaskId) return
+  try {
+    await revokeApprovalTask(current.value.myWithdrawTaskId)
+    showSuccessToast('审批任务已撤回')
+    detailShow.value = false
+    reload()
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  }
+}
+
 function taskStatusLabel(status: string, action?: string | null) {
   if (action === 'BACK') return '已退回'
   return status === 'APPROVED'
@@ -200,6 +219,7 @@ function taskStatusLabel(status: string, action?: string | null) {
 
     <van-tabs v-model:active="activeTab" @change="reload">
       <van-tab title="待我审批" name="pending" />
+      <van-tab title="我已审批" name="handled" />
       <van-tab title="我发起的" name="mine" />
     </van-tabs>
 
@@ -281,6 +301,9 @@ function taskStatusLabel(status: string, action?: string | null) {
             <van-button type="primary" block @click="handleApprove">同意</van-button>
           </div>
         </template>
+        <div v-else-if="current.canWithdraw && current.myWithdrawTaskId" class="pb-2">
+          <van-button type="warning" block @click="handleWithdraw">撤回审批</van-button>
+        </div>
       </div>
     </van-popup>
 

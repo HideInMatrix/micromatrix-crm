@@ -161,6 +161,22 @@ async function handleReturnBack() {
   }
 }
 
+async function handleWithdraw() {
+  if (!current.value?.canWithdraw || !current.value.myWithdrawTaskId) return
+  const confirmed = await ElMessageBox.confirm('撤回这条已通过的审批任务并重新处理？', '确认撤回', {
+    type: 'warning',
+  }).catch(() => false)
+  if (!confirmed) return
+  try {
+    await approvalApi.revokeTask(current.value.myWithdrawTaskId)
+    ElMessage.success('审批任务已撤回')
+    detailVisible.value = false
+    loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
 async function handleCancel(row: ApprovalInstanceVO) {
   const confirmed = await ElMessageBox.confirm(`撤回「${row.targetName}」的审批申请？`, '确认', {
     type: 'warning',
@@ -343,7 +359,16 @@ onMounted(() => {
           <el-button type="danger" @click="handleReject">驳回</el-button>
           <el-button type="primary" @click="handleApprove">同意</el-button>
         </template>
-        <el-button v-else @click="detailVisible = false">关闭</el-button>
+        <template v-else>
+          <el-button
+            v-if="current?.canWithdraw && current?.myWithdrawTaskId"
+            type="warning"
+            @click="handleWithdraw"
+          >
+            撤回审批
+          </el-button>
+          <el-button @click="detailVisible = false">关闭</el-button>
+        </template>
       </template>
     </el-dialog>
 

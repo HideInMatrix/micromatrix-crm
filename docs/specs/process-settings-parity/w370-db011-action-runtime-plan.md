@@ -36,12 +36,18 @@
 
 ## 9.3D 审批人任务撤回
 
+源码证据：[9.3D 审批人任务撤回源码审计](./w370-db011-approver-revoke-audit.md)
+
 1. 新建与 submitter cancel 完全分离的 task revoke API。
 2. flow `allowWithdraw` 硬 gate；必须由原 task approver 执行。
-3. 只允许撤回最近仍可逆的已通过 task；下游已形成不可逆执行时 fail-closed。
-4. 撤回后恢复该 task 为待办、清理需要重建的下游活动任务，实例 current node 回到目标节点。
-5. 写独立撤回记录/动作事实，不调用 submitter cancel 的实例 CANCELED 语义。
-6. 当前 MicroMatrix 未实现的 DB-012 SEQUENTIAL/条件分支场景保持不可执行，不臆造等价规则。
+3. 只允许撤回仍可逆的 `APPROVAL + APPROVED + action=APPROVE` task；ALL 要求原节点仍在审批，ANY/单人要求后继审批节点仍处于活动状态，已继续流转或实例结束时 fail-closed。
+4. 撤回后把原 task 同 round 恢复为 `PENDING + action=null`，清理需要重建的下游活动任务，实例 current node/index 回到原任务节点。
+5. Cordys 的 REVOKE 只用于操作日志，`refreshRevokeTask()` 会清空 task action；因此不新增 REVOKE task action / ApprovalRecord，既有 APPROVE record 保持可追溯，撤回动作由独立 API 操作日志记录。
+6. Cordys 会把失效下游轮次改成 `node_round=-1`；MicroMatrix 继续遵守 9.3A/9.3C 的历史不可变约束，以 `SKIPPED + 后续新 round` 映射，不改写已完成 task/record。
+7. 当前 MicroMatrix 未实现的 DB-012 SEQUENTIAL/条件分支场景保持不可执行，不臆造等价规则。
+8. 专项覆盖 ALL/ANY、下游部分会签、BACK 新 round 后撤回、CC/SIGN 活动任务失效、跨租户/非 owner/重复调用、ApprovalRecord 保留和 submitter cancel 回归。
+
+关闭证据：[9.3D 审批人任务撤回专项验收](./w370-db011-approver-revoke-acceptance.md)
 
 ## 9.3E requireComment / Attachment / UI 与关闭验收
 

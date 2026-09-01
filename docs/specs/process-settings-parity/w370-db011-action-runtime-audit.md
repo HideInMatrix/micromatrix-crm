@@ -133,6 +133,8 @@ Cordys revoke 先校验：
 
 多人节点还会按 ALL / ANY / SEQUENTIAL 分别校验当前节点和下游任务是否已经继续执行。允许撤回时，当前 task 恢复审批中、action 清空，实例 current node 回到该任务节点，并清理需要重建的后续待办。
 
+当前 Cordys `ApprovalAction` 枚举包含 `REVOKE`，但它只用于 `saveLogAndNotice()` 的操作日志/通知；`refreshRevokeTask()` 明确把撤回后的 task `action` 清为 null，因此不能把 `REVOKE` 误建成 task 的持久 action。撤回本身也不会新增 `ApprovalRecord`。9.3D 的精确映射见 `w370-db011-approver-revoke-audit.md`。
+
 ## 5. MicroMatrix 当前差异
 
 当前已有：
@@ -162,7 +164,7 @@ Cordys revoke 先校验：
 
 - DB-011 不重做 DB-010 资源快照；reject/cancel 的业务恢复继续复用现有 Resource boundary。
 - 不在 9.3 提前实现 DB-012 的 SEQUENTIAL 流程设计器、条件分支或动态审批人；如果 Cordys revoke 对 SEQUENTIAL 有额外语义，当前只能在现有可表达节点模式范围内实现并明确 fail-closed。
-- 历史 task/record 必须可追溯，退回和撤回不得物理覆盖掉已经完成的动作事实。
+- 历史 task/record 必须可追溯；BACK 产生的新 round 不覆盖旧 round。审批人 REVOKE 本身不删除 record，但同一个 task/node/round 被重新执行时，Cordys 会按 `saveApprovalRecord()` 规则保留旧 record 或先删后建，不能无条件追加重复 record。
 - 所有动作必须同时校验 tenant、instance、task owner、实例状态与任务状态，并防重复请求。
 
 ## 7. 审计结论

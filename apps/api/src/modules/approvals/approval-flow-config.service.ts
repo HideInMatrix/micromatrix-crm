@@ -283,7 +283,6 @@ export class ApprovalFlowConfigService {
     }
     if (
       dto.allowBatchProcess ||
-      dto.allowWithdraw ||
       dto.duplicateApproverRule !== 'FIRST_ONLY' ||
       dto.requireComment
     ) {

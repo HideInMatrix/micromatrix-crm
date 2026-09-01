@@ -6,10 +6,10 @@
 
 `docker/api.Dockerfile` 使用 multi-stage build：
 
-1. Node 24 Debian builder 安装固定 pnpm `10.30.3`、OpenSSL 与 CA。
-2. 使用 workspace lockfile 安装依赖。
-3. 构建 `@micromatrix/shared`，随后执行 API 的 Prisma generate + TypeScript build。
-4. 使用 `pnpm deploy --prod --legacy` 生成独立生产依赖目录。
+1. Node 24 Debian `base` 统一安装 OpenSSL 与 CA，builder/runtime 复用同一基础层，避免同一架构重复 apt 安装。
+2. builder 固定 pnpm `10.30.3`，只安装 `@micromatrix/api...`（API + shared）workspace 范围，不再把 Web/Vite 拉入 API 镜像。
+3. pnpm store 使用 BuildKit cache mount；构建 `@micromatrix/shared`，随后执行 API 的 Prisma generate + TypeScript build。
+4. 使用 pnpm modern deploy：`--config.inject-workspace-packages=true --filter @micromatrix/api --prod deploy`。deploy 复用同一 store 与 dedicated lockfile，不再走 `--legacy` 的二次全 workspace 依赖解析/联网路径。
 5. runtime 只复制 deploy 结果，并以非 root `node` 用户执行 `node dist/main.js`。
 6. `/app/uploads` 声明为持久化卷。
 
@@ -23,7 +23,7 @@ Prisma CLI 与 `dotenv` 属于 API 生产部署能力，因此保留在 producti
 
 ### Web
 
-`docker/web.Dockerfile` 在 Node 24 builder 内运行 Vite build，最终仅把 `apps/web/dist` 放入 Nginx Alpine。
+`docker/web.Dockerfile` 在 `BUILDPLATFORM` 的 Node 24 builder 内运行 Vite build，最终仅把与 CPU 架构无关的 `apps/web/dist` 放入 Nginx Alpine。多架构发布时不会在 QEMU arm64 Node 下重复执行 Vite。
 
 Nginx 配置使用官方 `/etc/nginx/templates/*.template` 运行时 envsubst：
 
@@ -61,13 +61,14 @@ on:
       - 'v*.*.*'
 ```
 
-流水线分为三层：
+流水线分为四层：
 
 1. `verify`：校验 SemVer tag，固定 Node 24/pnpm 10.30.3，执行全仓 typecheck 和 lint。
 2. `docker-smoke`：从 tag 对应源码真实构建 API/Web 镜像，并用隔离 PostgreSQL 验证 migration/runtime/proxy。
-3. `images`：API/Web matrix 并行，通过 Buildx/QEMU 构建 `linux/amd64,linux/arm64`，登录 GHCR 后推送。
+3. `api-images`：amd64 使用 `ubuntu-latest` 原生构建，arm64 使用 `ubuntu-24.04-arm` 原生构建，各自推送临时架构 tag；不再通过 QEMU 执行 Prisma/TypeScript/pnpm deploy。
+4. `api-manifest` 合并两个 API 架构镜像为正式 multi-arch tags；`web-image` 在 x64 runner 原生构建一次静态 dist，再组装 `linux/amd64,linux/arm64` Nginx 镜像。
 
-GHCR 写权限只授予 `images` job，其余 job 只有源码读取权限。
+GHCR 写权限只授予 API 架构发布、manifest 和 Web 发布 job，其余 job 只有源码读取权限。
 
 ## 4. 镜像标签
 

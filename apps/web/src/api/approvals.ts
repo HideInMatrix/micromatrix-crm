@@ -40,6 +40,7 @@ export const approvalApi = {
   ) => http.post(`/approvals/tasks/${taskId}/sign`, data),
   back: (taskId: string, data: { returnToNodeId: string; comment?: string }) =>
     http.post(`/approvals/tasks/${taskId}/back`, data),
+  revokeTask: (taskId: string) => http.post(`/approvals/tasks/${taskId}/revoke`),
   cancel: (instanceId: string) => http.post(`/approvals/${instanceId}/cancel`),
 
   myPending: (params: PageQuery) =>

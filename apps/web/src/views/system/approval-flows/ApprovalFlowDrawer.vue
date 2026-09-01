@@ -381,11 +381,11 @@ function formatDate(value?: string | null) {
               </div>
               <el-switch v-model="form.allowBatchProcess" disabled />
             </div>
-            <div class="setting-row is-disabled">
+            <div class="setting-row">
               <div>
-                <strong>允许审批人退回</strong><small>退回节点的运行语义待后续阶段接入</small>
+                <strong>允许审批人撤回</strong><small>开启后，审批人可撤回自己仍处于可逆路径的已通过任务</small>
               </div>
-              <el-switch v-model="form.allowWithdraw" disabled />
+              <el-switch v-model="form.allowWithdraw" :disabled="readonly" />
             </div>
             <div class="setting-row">
               <div>

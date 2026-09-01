@@ -115,7 +115,7 @@
 - [ ] W3.7-9.3 DB-011：高级任务、动作、记录与附件。
   - 源码证据：[DB-011 高级审批任务与动作源码审计](./w370-db011-action-runtime-audit.md)。
   - 实施计划：[DB-011 高级审批任务与动作实施计划](./w370-db011-action-runtime-plan.md)。
-  - [x] 9.3A 扩展 task nodeRound/type/action，并建立不可变 ApprovalRecord。
+  - [x] 9.3A 扩展 task nodeRound/type/action，并建立独立 ApprovalRecord。
     - Migration 60 已部署到 `default`；历史 task comment 迁移为 ApprovalRecord 后删除旧列，历史 nodeId 保持 nullable，新实例冻结真实 nodeId。
     - 四业务审批在 60 migrations 下回归全绿；空库 **60/60 + 双 Seed**、Rules **121/121**、Root Smoke **227/227**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
     - 证据：[W3.7-9.3A DB-011 Task / ApprovalRecord 基座专项验收](./w370-db011-task-record-acceptance.md)。
@@ -131,7 +131,13 @@
     - 隔离 HTTP Smoke 在 **62/62 migrations + Seed + API build** 下覆盖合法/非法目标、owner/tenant/repeat gate、round 1→2→3、latest ReturnBackRecord 与最终 APPROVED；PC Browser **17/17**，9.3B Browser 回归 **17/17**。
     - Rules **123/123**、DB-010 regression 全绿、Root Smoke **227/227**、空库 **62/62 + 双 Seed**、workspace typecheck/lint/build、Prisma validate 全绿。
     - 证据：[W3.7-9.3C DB-011 节点退回专项验收](./w370-db011-return-back-acceptance.md)。
-  - [ ] 9.3D 审批人任务撤回；与 submitter cancel 分离，并处理 ANY/ALL/后续节点约束。
+  - [x] 9.3D 审批人任务撤回；与 submitter cancel 分离，并处理 ANY/ALL/后续节点约束。
+    - 不新增 migration：Cordys 的 `REVOKE` 只用于操作日志，撤回后的 task 恢复 `PENDING + action=null + handledAt=null`，原 task/node/round 继续复用；下游活动待办置 `SKIPPED`，再次推进用新 round 重建。
+    - `allowWithdraw` 已解除 422 配置门禁，并由 runtime 再次硬校验 tenant、owner、实例状态、task 类型/状态/action、冻结 nodeId 与下游可逆状态；submitter cancel 仍保持独立动作。
+    - 撤回本身不新增/删除 ApprovalRecord；同 task/node/round 再审批按 Cordys `saveApprovalRecord()` 语义处理：无新意见再次同意保留原 record，有新意见或动作改变时 delete+create，避免重复 record。
+    - 隔离 HTTP Smoke 在 **62/62 migrations + Seed + API build** 下覆盖 owner/flow gate、同 task 回开、下游失效、record 保留/替换、round 2 重建、旧 task/已结束实例 fail-closed；PC/Mobile Browser **24/24**，API 5xx=0、Runtime exception=0。
+    - Rules **125/125**、9.3B/9.3C HTTP + Browser regression（各 **17/17**）、DB-010 regression、Root Smoke **227/227**、`system/modules` Browser **47/47**、workspace typecheck/lint/build、Prisma validate 全绿。
+    - 证据：[W3.7-9.3D DB-011 审批人任务撤回专项验收](./w370-db011-approver-revoke-acceptance.md)。
   - [ ] 9.3E requireComment、附件及对应 API/UI；专项 Rules/API/Browser 后关闭 DB-011。
   - _Requirements: R10, R12_
 

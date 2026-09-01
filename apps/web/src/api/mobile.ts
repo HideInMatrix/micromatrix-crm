@@ -88,6 +88,10 @@ export function myApplications(params: PageQuery) {
   return http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-applications', { params })
 }
 
+export function myHandledApprovals(params: PageQuery) {
+  return http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-handled', { params })
+}
+
 export function approveTask(taskId: string, comment?: string) {
   return http.post(`/approvals/tasks/${taskId}/approve`, { comment })
 }
@@ -108,6 +112,10 @@ export function returnBackTask(
   data: { returnToNodeId: string; comment?: string },
 ) {
   return http.post(`/approvals/tasks/${taskId}/back`, data)
+}
+
+export function revokeApprovalTask(taskId: string) {
+  return http.post(`/approvals/tasks/${taskId}/revoke`)
 }
 
 export interface MobileSummary {

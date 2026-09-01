@@ -63,9 +63,13 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
         findMany(input: Record<string, unknown>): Promise<Array<Record<string, unknown>>>
         updateMany(input: Record<string, unknown>): Promise<unknown>
       }
-      approvalRecord: { create(input: { data: Record<string, unknown> }): Promise<unknown> }
+      approvalRecord: {
+        findFirst(input: Record<string, unknown>): Promise<Record<string, unknown> | null>
+        deleteMany(input: Record<string, unknown>): Promise<unknown>
+        create(input: { data: Record<string, unknown> }): Promise<unknown>
+      }
       approvalInstance: { findUniqueOrThrow(input: Record<string, unknown>): Promise<Record<string, unknown>> }
-      $transaction(input: Array<Promise<unknown>>): Promise<unknown[]>
+      $transaction(input: (tx: unknown) => Promise<unknown>): Promise<unknown>
     }
     ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
   }
@@ -95,6 +99,8 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
       updateMany: async (input) => input,
     },
     approvalRecord: {
+      findFirst: async () => null,
+      deleteMany: async (input) => input,
       create: async (input) => {
         records.push(input.data)
         return input
@@ -107,7 +113,7 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
         nodesSnapshot: [{ name: '主管审批', approverType: 'USER', approverIds: [], mode: 'ALL' }],
       }),
     },
-    $transaction: async (input) => Promise.all(input),
+    $transaction: async (input) => input(runtime.prisma),
   }
 
   await service.approveTask(
@@ -129,7 +135,9 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
 })
 
 test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node', async () => {
-  const transactionEntries: unknown[] = []
+  const taskUpdates: Array<Record<string, unknown>> = []
+  const skippedUpdates: Array<Record<string, unknown>> = []
+  const instanceUpdates: Array<Record<string, unknown>> = []
   const records: Array<Record<string, unknown>> = []
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const runtime = service as unknown as {
@@ -138,12 +146,16 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
         update(input: Record<string, unknown>): Promise<unknown>
         updateMany(input: Record<string, unknown>): Promise<unknown>
       }
-      approvalRecord: { create(input: { data: Record<string, unknown> }): Promise<unknown> }
+      approvalRecord: {
+        findFirst(input: Record<string, unknown>): Promise<Record<string, unknown> | null>
+        deleteMany(input: Record<string, unknown>): Promise<unknown>
+        create(input: { data: Record<string, unknown> }): Promise<unknown>
+      }
       approvalInstance: {
         findUniqueOrThrow(input: Record<string, unknown>): Promise<Record<string, unknown>>
         update(input: Record<string, unknown>): Promise<unknown>
       }
-      $transaction(input: Array<Promise<unknown>>): Promise<unknown[]>
+      $transaction(input: (tx: unknown) => Promise<unknown>): Promise<unknown>
     }
     resources: { setBizStatus(): Promise<void> }
     ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
@@ -172,10 +184,18 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
   })
   runtime.prisma = {
     approvalTask: {
-      update: async (input) => input,
-      updateMany: async (input) => input,
+      update: async (input) => {
+        taskUpdates.push(input)
+        return input
+      },
+      updateMany: async (input) => {
+        skippedUpdates.push(input)
+        return input
+      },
     },
     approvalRecord: {
+      findFirst: async () => null,
+      deleteMany: async (input) => input,
       create: async (input) => {
         records.push(input.data)
         return input
@@ -189,12 +209,12 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
         targetId: 'contract-r',
         targetName: '测试合同',
       }),
-      update: async (input) => input,
+      update: async (input) => {
+        instanceUpdates.push(input)
+        return input
+      },
     },
-    $transaction: async (input) => {
-      transactionEntries.push(...input)
-      return Promise.all(input)
-    },
+    $transaction: async (input) => input(runtime.prisma),
   }
   runtime.resources = { setBizStatus: async () => undefined }
   runtime.restorePreUpdateSnapshot = async () => undefined
@@ -206,7 +226,9 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
     '  资料不完整  ',
   )
 
-  assert.equal(transactionEntries.length, 4)
+  assert.equal(taskUpdates.length, 1)
+  assert.equal(skippedUpdates.length, 1)
+  assert.equal(instanceUpdates.length, 1)
   assert.equal(records.length, 1)
   assert.equal(records[0]?.taskId, 'task-r')
   assert.equal(records[0]?.nodeId, 'node-r')
@@ -231,6 +253,148 @@ test('节点再次进入时 round 取 task/record 最大值 + 1', async () => {
 
   assert.equal(await runtime.nextApprovalNodeRound('instance-a', 'node-a'), 4)
   assert.equal(await runtime.nextApprovalNodeRound('instance-a', null), 1)
+})
+
+test('审批人撤回的 ANY / ALL 可逆边界按当前活动节点 fail-closed', () => {
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const canWithdraw = (service as unknown as {
+    isTaskWithdrawable(
+      instance: Record<string, unknown>,
+      tasks: Array<Record<string, unknown>>,
+      task: Record<string, unknown>,
+      allowWithdraw: boolean,
+    ): boolean
+  }).isTaskWithdrawable.bind(service)
+
+  const baseTask = {
+    id: 'task-a',
+    instanceId: 'instance-a',
+    tenantId: 'tenant-a',
+    nodeId: 'node-a',
+    nodeIndex: 0,
+    nodeRound: 1,
+    nodeName: '一级审批',
+    approverId: 'user-a',
+    taskType: 'APPROVAL',
+    status: 'APPROVED',
+    action: 'APPROVE',
+  }
+  const anyInstance = {
+    id: 'instance-a',
+    status: 'PENDING',
+    currentNodeIndex: 1,
+    nodesSnapshot: [
+      { nodeId: 'node-a', name: '一级审批', approverType: 'USER', approverIds: ['user-a'], mode: 'ANY' },
+      { nodeId: 'node-b', name: '二级审批', approverType: 'USER', approverIds: ['user-b'], mode: 'ANY' },
+      { nodeId: 'node-c', name: '三级审批', approverType: 'USER', approverIds: ['user-c'], mode: 'ANY' },
+    ],
+  }
+  const nextPending = {
+    ...baseTask,
+    id: 'task-b',
+    nodeId: 'node-b',
+    nodeIndex: 1,
+    nodeName: '二级审批',
+    approverId: 'user-b',
+    status: 'PENDING',
+    action: null,
+  }
+  assert.equal(canWithdraw(anyInstance, [baseTask, nextPending], baseTask, true), true)
+  assert.equal(canWithdraw(anyInstance, [baseTask, nextPending], baseTask, false), false)
+
+  const secondApproved = { ...nextPending, status: 'APPROVED', action: 'APPROVE' }
+  const thirdPending = {
+    ...baseTask,
+    id: 'task-c',
+    nodeId: 'node-c',
+    nodeIndex: 2,
+    nodeName: '三级审批',
+    approverId: 'user-c',
+    status: 'PENDING',
+    action: null,
+  }
+  assert.equal(
+    canWithdraw(
+      { ...anyInstance, currentNodeIndex: 2 },
+      [baseTask, secondApproved, thirdPending],
+      baseTask,
+      true,
+    ),
+    false,
+    '已有中间审批节点完成后，旧 task 必须不可撤回',
+  )
+
+  const peerPending = {
+    ...baseTask,
+    id: 'task-peer',
+    approverId: 'user-peer',
+    status: 'PENDING',
+    action: null,
+  }
+  const allInstance = {
+    ...anyInstance,
+    currentNodeIndex: 0,
+    nodesSnapshot: [
+      {
+        nodeId: 'node-a',
+        name: '一级会签',
+        approverType: 'USER',
+        approverIds: ['user-a', 'user-peer'],
+        mode: 'ALL',
+      },
+    ],
+  }
+  assert.equal(canWithdraw(allInstance, [baseTask, peerPending], baseTask, true), true)
+  assert.equal(
+    canWithdraw({ ...allInstance, currentNodeIndex: 1 }, [baseTask, peerPending], baseTask, true),
+    false,
+  )
+})
+
+test('撤回后同 task/node/round 重审按 Cordys 保留或 delete+create ApprovalRecord', async () => {
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const runtime = service as unknown as {
+    saveApprovalRecord(
+      tx: Record<string, unknown>,
+      user: Record<string, unknown>,
+      task: Record<string, unknown>,
+      result: 'APPROVE' | 'REJECT',
+      comment: string | null,
+    ): Promise<void>
+  }
+  let deleted = 0
+  const created: Array<Record<string, unknown>> = []
+  const tx = {
+    approvalRecord: {
+      findFirst: async () => ({ result: 'APPROVE' }),
+      deleteMany: async () => {
+        deleted += 1
+        return { count: 1 }
+      },
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        created.push(data)
+        return data
+      },
+    },
+  }
+  const user = { id: 'user-a', tenantId: 'tenant-a' }
+  const task = { id: 'task-a', instanceId: 'instance-a', nodeId: 'node-a', nodeRound: 1 }
+
+  await runtime.saveApprovalRecord(tx, user, task, 'APPROVE', null)
+  assert.equal(deleted, 0)
+  assert.equal(created.length, 0, '无新意见再次同意时保留原 record')
+
+  await runtime.saveApprovalRecord(tx, user, task, 'APPROVE', '重新确认通过')
+  assert.equal(deleted, 1)
+  assert.equal(created.length, 1)
+  assert.equal(created[0]?.result, 'APPROVE')
+  assert.equal(created[0]?.comment, '重新确认通过')
+
+  await runtime.saveApprovalRecord(tx, user, task, 'REJECT', '复核后驳回')
+  assert.equal(deleted, 2)
+  assert.equal(created.length, 2)
+  assert.equal(created[1]?.result, 'REJECT')
+  assert.equal(created[1]?.comment, '复核后驳回')
 })
 
 test('待办任务查询强制 tenant/owner/status，并拒绝已执行 BACK 的旧任务', async () => {

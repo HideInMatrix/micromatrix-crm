@@ -26,3 +26,10 @@
   - Docker Compose config、pnpm lockfile、typecheck、lint、格式与 diff 检查通过。
   - 删除本地 `packages/shared/dist` 后重新执行 clean-runner typecheck，确认不依赖开发机残留构建产物。
   - W3.4-D 完成后执行指针恢复到 W3.4.2 task 3.1。
+
+- [x] D7 GitHub Actions 多架构构建性能加固（2026-09-01）
+  - Web builder 固定 `BUILDPLATFORM`，Vite 静态产物只在原生 runner 构建一次；Web workspace install 收窄到 `@micromatrix/web...`，不再安装 API/Prisma。
+  - API amd64/arm64 拆到 `ubuntu-latest` / `ubuntu-24.04-arm` 原生 Runner 并行构建，随后通过 `buildx imagetools create` 合并正式 multi-arch manifest，移除 API QEMU 构建路径。
+  - API Dockerfile 只安装 API + shared；OpenSSL/CA 抽为共享 base；production deploy 从 `--legacy` 切到 dedicated-lockfile modern deploy，并复用 pnpm store。
+  - amd64 与 arm64 API 镜像均已真实构建并验证 `dist/main.js`、Prisma CLI、无 `/app/.env`；ARM production deploy **369 reused / 0 downloaded**。
+  - `pnpm smoke:docker-release` 在 62 migrations 基线上 PASS：Prisma migrate、API health、Nginx health、`/api` proxy 与 SPA fallback 全绿。

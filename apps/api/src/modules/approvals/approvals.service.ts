@@ -140,24 +140,13 @@ export class ApprovalsService {
     const task = await this.ensurePendingTask(user, taskId)
     const handledAt = new Date()
     const normalizedComment = comment?.trim() || null
-    await this.prisma.$transaction([
-      this.prisma.approvalTask.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.approvalTask.update({
         where: { id: taskId },
         data: { status: 'APPROVED', action: 'APPROVE', handledAt },
-      }),
-      this.prisma.approvalRecord.create({
-        data: {
-          tenantId: user.tenantId,
-          instanceId: task.instanceId,
-          taskId: task.id,
-          nodeId: task.nodeId,
-          nodeRound: task.nodeRound,
-          result: 'APPROVE',
-          comment: normalizedComment,
-          createdById: user.id,
-        },
-      }),
-    ])
+      })
+      await this.saveApprovalRecord(tx, user, task, 'APPROVE', normalizedComment)
+    })
 
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
       where: { id: task.instanceId },
@@ -408,6 +397,77 @@ export class ApprovalsService {
     }
   }
 
+  async revokeTask(user: AuthUser, taskId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const sourceTask = await tx.approvalTask.findFirst({
+        where: {
+          id: taskId,
+          tenantId: user.tenantId,
+          approverId: user.id,
+          taskType: 'APPROVAL',
+          status: 'APPROVED',
+          action: 'APPROVE',
+        },
+      })
+      if (!sourceTask) throw new NotFoundException('可撤回的已办任务不存在')
+
+      const instance = await tx.approvalInstance.findFirst({
+        where: { id: sourceTask.instanceId, tenantId: user.tenantId, status: 'PENDING' },
+        include: { tasks: true },
+      })
+      if (!instance) throw new BadRequestException('仅审批中的实例允许撤回审批任务')
+      if (!instance.flowId) throw new BadRequestException('审批实例缺少流程引用，不能撤回审批任务')
+
+      const flow = await tx.approvalFlow.findFirst({
+        where: { id: instance.flowId, tenantId: user.tenantId, deletedAt: null },
+        select: { allowWithdraw: true },
+      })
+      if (!flow?.allowWithdraw) throw new BadRequestException('当前审批流未开启审批人撤回')
+      if (!this.isTaskWithdrawable(instance, instance.tasks, sourceTask, true)) {
+        throw new BadRequestException('当前审批任务已无法撤回')
+      }
+
+      // Cordys clearExpiredNode 会让下游当前轮次失效；MicroMatrix 保留历史 round，
+      // 仅把仍活动的待办置为 SKIPPED，下一次 advance 以新 nodeRound 重建。
+      if (instance.currentNodeIndex > sourceTask.nodeIndex) {
+        await tx.approvalTask.updateMany({
+          where: {
+            instanceId: instance.id,
+            tenantId: user.tenantId,
+            nodeIndex: { gt: sourceTask.nodeIndex, lte: instance.currentNodeIndex },
+            status: 'PENDING',
+          },
+          data: { status: 'SKIPPED' },
+        })
+      }
+
+      const reopened = await tx.approvalTask.updateMany({
+        where: {
+          id: sourceTask.id,
+          tenantId: user.tenantId,
+          approverId: user.id,
+          taskType: 'APPROVAL',
+          status: 'APPROVED',
+          action: 'APPROVE',
+        },
+        data: { status: 'PENDING', action: null, handledAt: null },
+      })
+      if (reopened.count !== 1) throw new BadRequestException('审批任务状态已变化，请刷新后重试')
+
+      await tx.approvalInstance.update({
+        where: { id: instance.id },
+        data: { currentNodeIndex: sourceTask.nodeIndex },
+      })
+
+      return {
+        id: sourceTask.id,
+        name: instance.targetName,
+        nodeId: sourceTask.nodeId,
+        nodeRound: sourceTask.nodeRound,
+      }
+    })
+  }
+
   async rejectTask(user: AuthUser, taskId: string, comment?: string) {
     const task = await this.ensurePendingTask(user, taskId)
     if (!comment?.trim()) throw new BadRequestException('驳回时请填写审批意见')
@@ -417,32 +477,21 @@ export class ApprovalsService {
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
       where: { id: task.instanceId },
     })
-    await this.prisma.$transaction([
-      this.prisma.approvalTask.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.approvalTask.update({
         where: { id: taskId },
         data: { status: 'REJECTED', action: 'REJECT', handledAt },
-      }),
-      this.prisma.approvalRecord.create({
-        data: {
-          tenantId: user.tenantId,
-          instanceId: task.instanceId,
-          taskId: task.id,
-          nodeId: task.nodeId,
-          nodeRound: task.nodeRound,
-          result: 'REJECT',
-          comment: normalizedComment,
-          createdById: user.id,
-        },
-      }),
-      this.prisma.approvalTask.updateMany({
+      })
+      await this.saveApprovalRecord(tx, user, task, 'REJECT', normalizedComment)
+      await tx.approvalTask.updateMany({
         where: { instanceId: instance.id, status: 'PENDING' },
         data: { status: 'SKIPPED' },
-      }),
-      this.prisma.approvalInstance.update({
+      })
+      await tx.approvalInstance.update({
         where: { id: instance.id },
         data: { status: 'REJECTED', finishedAt: new Date() },
-      }),
-    ])
+      })
+    })
     await this.resources.setBizStatus(
       instance.tenantId,
       instance.module as ApprovalModule,
@@ -1040,6 +1089,98 @@ export class ApprovalsService {
     return Math.max(taskRound._max.nodeRound ?? 0, recordRound._max.nodeRound ?? 0) + 1
   }
 
+  /**
+   * Cordys 同一 task/node/round 在“审批人撤回 -> 再次执行”时不会无条件追加第二条 record：
+   * - 再次同意且没有新意见/附件时保留原 record；
+   * - 有新意见，或动作从 APPROVE 改为 REJECT 时，先删除旧 record 再创建新的执行记录。
+   * 当前 9.3D 尚未接审批附件，因此这里只按 result/comment 实现对应语义。
+   */
+  private async saveApprovalRecord(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    task: ApprovalTask,
+    result: 'APPROVE' | 'REJECT',
+    comment: string | null,
+  ) {
+    const where = {
+      tenantId: user.tenantId,
+      instanceId: task.instanceId,
+      taskId: task.id,
+      nodeId: task.nodeId,
+      nodeRound: task.nodeRound,
+    }
+    const existing = await tx.approvalRecord.findFirst({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: { result: true },
+    })
+    if (existing?.result === 'APPROVE' && result === 'APPROVE' && !comment) return
+    if (existing) await tx.approvalRecord.deleteMany({ where })
+    await tx.approvalRecord.create({
+      data: {
+        tenantId: user.tenantId,
+        instanceId: task.instanceId,
+        taskId: task.id,
+        nodeId: task.nodeId,
+        nodeRound: task.nodeRound,
+        result,
+        comment,
+        createdById: user.id,
+      },
+    })
+  }
+
+  private isTaskWithdrawable(
+    instance: ApprovalInstance,
+    tasks: ApprovalTask[],
+    task: ApprovalTask,
+    allowWithdraw: boolean,
+  ): boolean {
+    if (!allowWithdraw || instance.status !== 'PENDING') return false
+    if (
+      task.taskType !== 'APPROVAL' ||
+      task.status !== 'APPROVED' ||
+      task.action !== 'APPROVE' ||
+      !task.nodeId
+    ) {
+      return false
+    }
+
+    const frozenNodes = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const sourceNode = frozenNodes[task.nodeIndex]
+    if (!sourceNode || sourceNode.nodeId !== task.nodeId) return false
+    const isActiveApprovalTask = (candidate: ApprovalTask) =>
+      candidate.status === 'PENDING' &&
+      (candidate.taskType === 'APPROVAL' || candidate.taskType === 'SIGN') &&
+      candidate.action !== 'BACK'
+
+    if (sourceNode.mode === 'ALL') {
+      return (
+        instance.currentNodeIndex === task.nodeIndex &&
+        tasks.some(
+          (candidate) =>
+            candidate.nodeIndex === task.nodeIndex &&
+            candidate.nodeRound === task.nodeRound &&
+            isActiveApprovalTask(candidate),
+        )
+      )
+    }
+
+    if (instance.currentNodeIndex <= task.nodeIndex) return false
+    const completedIntermediateTask = tasks.some(
+      (candidate) =>
+        candidate.nodeIndex > task.nodeIndex &&
+        candidate.nodeIndex < instance.currentNodeIndex &&
+        (candidate.taskType === 'APPROVAL' || candidate.taskType === 'SIGN') &&
+        (candidate.status === 'APPROVED' || candidate.status === 'REJECTED'),
+    )
+    if (completedIntermediateTask) return false
+    return tasks.some(
+      (candidate) =>
+        candidate.nodeIndex === instance.currentNodeIndex && isActiveApprovalTask(candidate),
+    )
+  }
+
   private async toInstanceVO(
     instance: ApprovalInstance,
     tasks: ApprovalTask[],
@@ -1069,7 +1210,7 @@ export class ApprovalsService {
       instance.flowId
         ? this.prisma.approvalFlow.findFirst({
             where: { id: instance.flowId, tenantId: instance.tenantId, deletedAt: null },
-            select: { allowAddSign: true },
+            select: { allowAddSign: true, allowWithdraw: true },
           })
         : Promise.resolve(null),
     ])
@@ -1084,6 +1225,29 @@ export class ApprovalsService {
         task.action !== 'SIGN' &&
         task.action !== 'BACK',
     )
+    const latestMyApproved = approvalTasks
+      .filter(
+        (task) =>
+          task.approverId === currentUserId &&
+          task.taskType === 'APPROVAL' &&
+          task.status === 'APPROVED' &&
+          task.action === 'APPROVE',
+      )
+      .sort(
+        (a, b) =>
+          (b.handledAt?.getTime() ?? b.updatedAt.getTime()) -
+          (a.handledAt?.getTime() ?? a.updatedAt.getTime()),
+      )[0]
+    const myWithdrawTask =
+      latestMyApproved &&
+      this.isTaskWithdrawable(
+        instance,
+        tasks,
+        latestMyApproved,
+        Boolean(flowCapability?.allowWithdraw),
+      )
+        ? latestMyApproved
+        : null
     const frozenNodes = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
     const returnBackTargets = myPending?.taskType === 'APPROVAL'
       ? [...new Set(records.map((record) => record.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)))]
@@ -1176,7 +1340,9 @@ export class ApprovalsService {
       returnBackTargets,
       canAddSign: Boolean(myPending && flowCapability?.allowAddSign),
       canReturnBack: Boolean(myPending?.taskType === 'APPROVAL' && returnBackTargets.length),
+      canWithdraw: Boolean(myWithdrawTask),
       myPendingTaskId: myPending?.id ?? null,
+      myWithdrawTaskId: myWithdrawTask?.id ?? null,
     }
   }
 }

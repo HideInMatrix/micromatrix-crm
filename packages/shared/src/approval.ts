@@ -234,6 +234,10 @@ export interface ApprovalInstanceVO {
   canAddSign: boolean
   /** 当前用户的普通审批待办是否存在可退回的历史审批节点。 */
   canReturnBack: boolean
+  /** 当前用户最近一次已通过普通审批任务是否仍允许撤回。 */
+  canWithdraw: boolean
   /** 当前用户待处理的任务 id */
   myPendingTaskId?: string | null
+  /** 当前用户当前可撤回的已通过普通审批任务 id。 */
+  myWithdrawTaskId?: string | null
 }

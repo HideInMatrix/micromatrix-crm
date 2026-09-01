@@ -1027,3 +1027,27 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 9.3C HTTP isolated Smoke 在 **62/62 migrations + Seed + API build** 下覆盖合法/非法目标、owner/tenant/repeat gate、两次连续退回、历史 record 不可变与最终 APPROVED；PC Browser **17/17**，9.3B Browser 回归 **17/17**，API 5xx=0、Runtime exception=0。
 - 当前回归基线：Rules **123/123**、DB-010 regression PASS、Root Smoke **227/227**、空库 **62/62 + 双 Seed** 且幂等、workspace typecheck/ESLint/production build、Prisma validate 全绿。
 - DB-011 当前状态为 `IN_PROGRESS`：9.3A/B/C 已关闭，**下一执行指针为 W3.7-9.3D 审批人任务撤回**；9.3E requireComment/附件完成后才能关闭 DB-011。
+
+---
+
+## 52. Docker Release 多架构性能加固（2026-09-01）
+
+- GitHub Release 实测发现 Web/API 在 `linux/arm64` 上通过 QEMU 执行 Node 构建耗时异常：Web Vite 在 amd64 数秒完成，但 arm64 QEMU 长时间停在 `transforming...`；API 同时重复执行 pnpm install、Prisma generate、TypeScript build 和 legacy deploy。
+- Web 已改为 `FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder`，静态 dist 只在 runner 原生平台生成；workspace install 收窄为 `@micromatrix/web...`，不再安装 API/Prisma。Web release job 不再依赖 QEMU。
+- API 发布拆为两个原生 Runner：`linux/amd64 -> ubuntu-latest`、`linux/arm64 -> ubuntu-24.04-arm`，各自推送临时架构 tag 后由 `api-manifest` 合并正式 GHCR multi-arch tags；Prisma/TypeScript 不再通过 QEMU 执行。
+- API Dockerfile 收窄为 API + shared，OpenSSL/CA 使用共享 base；pnpm install/deploy 复用 BuildKit store。`pnpm deploy --prod --legacy` 已退出，改为 `inject-workspace-packages + modern deploy`，避免 legacy deploy 再次解析整个 workspace 和访问 registry。
+- 实测 amd64、arm64 API image 均构建成功并保留 `dist/main.js`、Prisma CLI、migration 目录且无 `/app/.env`。ARM filtered install 约 14.4s；build + Prisma + modern production deploy 约 16.8s，deploy **369 reused / 0 downloaded**。
+- 最终 `pnpm smoke:docker-release` PASS：隔离 PostgreSQL 从零应用 **62/62 migrations**，API runtime/Prisma migration、Nginx `/healthz`、`/api` proxy 与 `/login` SPA fallback 全绿。发布基线进入 `v0.0.5`。
+
+---
+
+## 53. W3.7-9.3D DB-011 审批人任务撤回（2026-09-01）
+
+- Cordys 当前源码确认审批人 REVOKE 与 submitter cancel 完全分离；`ApprovalAction.REVOKE` 只进入操作日志/通知，`refreshRevokeTask()` 会把原 task 恢复审批中并清空 action，因此 MicroMatrix 未新增 REVOKE task action，也未新增 migration。
+- `POST /approvals/tasks/:id/revoke` 已落地并强制 tenant + owner + `APPROVAL/APPROVED/APPROVE` + instance PENDING + flow `allowWithdraw` + 冻结 nodeId + downstream 可逆状态校验；ALL/ANY 均 fail-closed，不支持的 SEQUENTIAL/条件节点未臆造兼容逻辑。
+- 合法撤回会复用原 task/node/round，恢复为 `PENDING + action=null + handledAt=null`，下游活动待办置 `SKIPPED`，实例 currentNodeIndex 回退；再次推进时由现有 round 算法创建新下游 round。
+- 撤回动作本身不新增/删除 ApprovalRecord；修正 approve/reject 的 record 保存逻辑，使同 task/node/round 在撤回后重审时遵循 Cordys：无新意见再次同意保留原 record，有新意见或动作改变时 delete+create，避免同槽位重复 record。
+- 流程设置 `allowWithdraw` 已解除未实现门禁；详情 VO 新增 `canWithdraw/myWithdrawTaskId`，PC“我已处理”与 Mobile“我已审批”均可真实执行撤回，服务端仍重新鉴权，UI capability 不作为权限依据。
+- 9.3D isolated HTTP Smoke 在 **62/62 migrations + Seed + API build** 下覆盖 owner/flow gate、同 task 回开、下游 SKIPPED、record 保留/替换、round 2 重建、旧 task 与 finished instance fail-closed；Browser **24/24 PASS**，PC/Mobile 都真实调用 revoke API，API 5xx=0、Runtime exception=0。
+- 回归基线：Rules **125/125**、9.3B add-sign PASS、9.3C return-back PASS、DB-010 regression PASS、Root Smoke **227/227**、workspace typecheck/ESLint/production build、Prisma validate 全绿。
+- DB-011 仍为 `IN_PROGRESS`，9.3A/B/C/D 已关闭；**下一执行指针正式推进到 W3.7-9.3E requireComment + ApprovalInstanceAttachment**。

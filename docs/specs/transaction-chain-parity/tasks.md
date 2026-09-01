@@ -7,9 +7,9 @@
 ## 0. 全程执行约束
 
 - [x] 0.1 建立 W3.6 需求、设计和任务三件套。
-- [ ] 0.2 每个大模块先输出 Cordys 源码证据矩阵，再实施代码。
-- [ ] 0.3 每个大模块完成后检查 `/system/modules` 对应卡片，所有 Cordys action 必须变成真实功能或有明确后续依赖。
-- [ ] 0.4 每个大模块独立完成 API/数据库 Smoke、Browser Smoke、根回归、typecheck、ESLint、build、Prisma 与 diff 检查后再提交。
+- [x] 0.2 每个大模块先输出 Cordys 源码证据矩阵，再实施代码。
+- [x] 0.3 每个大模块完成后检查 `/system/modules` 对应卡片，所有 Cordys action 必须变成真实功能或有明确后续依赖。
+- [x] 0.4 每个大模块独立完成 API/数据库 Smoke、Browser Smoke、根回归、typecheck、ESLint、build、Prisma 与 diff 检查后再提交。
 
 ## 1. W3.6.0 商机
 
@@ -223,7 +223,7 @@
   - 默认 7 阶段为新建/待发货/部分发货/已发货/待验收/已完成/已作废；阶段支持 rollback、排序、NORMAL/ADVANCED 流转和字段条件，当前固定 `OrderStatus` 不能保留为目标模型。
   - 产品明细是 `SUB_PRODUCT` 动态子表字段，使用 field/blob 的 `ref_sub_id / row_id / biz_id`，不新建 Cordys 不存在的固定 OrderItem 聚合。
   - Cordys 独立路由 `/order/index`；API namespace `/order/*`；CREATE/UPDATE/DELETE 均接审批，结束事件为 `ORDER_APPROVAL`。
-- [ ] 6.2 订单直接字段/API/状态流/页面。
+- [x] 6.2 订单直接字段/API/状态流/页面。
   - [x] 6.2A Direct schema + migration/data upgrade：`sales_order`、field/blob、snapshot、stage config、默认 7 阶段与旧数据升级。
     - Prisma 已删除固定 `OrderStatus` 真相源并切到 Cordys direct `Order`；新增 `OrderField / OrderFieldBlob / OrderSnapshot / OrderStageConfig`，高级流转继续复用通用 `StageAdvancedConfig`。
     - 第 52 个 migration `20260830113000_w365_order_direct_models` 已在当前 `default` 成功 deploy；Prisma 输出 **52 migrations found / all successfully applied**。

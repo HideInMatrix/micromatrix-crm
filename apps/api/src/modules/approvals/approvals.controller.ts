@@ -126,6 +126,14 @@ export class ApprovalsController {
     return this.approvalsService.returnBackTask(user, id, dto)
   }
 
+  @Post('tasks/:id/revoke')
+  @RequirePermissions('menu:approval')
+  @LogOperation('approval', 'revoke')
+  @ApiOperation({ summary: '撤回本人已通过且仍可逆的审批任务' })
+  revokeTask(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.approvalsService.revokeTask(user, id)
+  }
+
   @Post(':id/cancel')
   @RequirePermissions('menu:approval')
   @LogOperation('approval', 'cancel')
