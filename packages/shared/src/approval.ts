@@ -196,6 +196,22 @@ export interface ApprovalAddSignTaskVO {
   createdAt: string
 }
 
+export interface ApprovalReturnBackRecordVO {
+  id: string
+  taskId: string
+  returnToNodeId: string
+  returnReason: string | null
+  returnUserId: string
+  createdAt: string
+}
+
+export interface ApprovalReturnBackTargetVO {
+  nodeId: string
+  nodeIndex: number
+  nodeName: string
+  nextRound: number
+}
+
 export interface ApprovalInstanceVO {
   id: string
   module: ApprovalModule
@@ -212,8 +228,12 @@ export interface ApprovalInstanceVO {
   tasks: ApprovalTaskVO[]
   records: ApprovalRecordVO[]
   addSignTasks: ApprovalAddSignTaskVO[]
+  returnBackRecords: ApprovalReturnBackRecordVO[]
+  returnBackTargets: ApprovalReturnBackTargetVO[]
   /** 当前用户的当前待办是否允许执行加签。 */
   canAddSign: boolean
+  /** 当前用户的普通审批待办是否存在可退回的历史审批节点。 */
+  canReturnBack: boolean
   /** 当前用户待处理的任务 id */
   myPendingTaskId?: string | null
 }

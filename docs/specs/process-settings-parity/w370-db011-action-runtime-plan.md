@@ -23,12 +23,16 @@
 
 ## 9.3C 节点退回
 
+源码证据：[9.3C 节点退回源码审计](./w370-db011-return-back-audit.md)
+
 1. 新增 `ApprovalReturnBackRecord`。
 2. 以 nodeRound 追加目标节点新一轮任务，不覆盖旧轮次。
 3. 只允许退回到当前实例已经执行过且属于同一冻结流程版本的历史审批节点。
 4. 清理区间内活动待办，但保留 task/record 历史。
 5. instance current node/index 回到目标节点。
 6. 专项覆盖非法目标、当前节点、已结束实例、跨租户、重复 back 和 round 递增。
+
+关闭证据：[9.3C 节点退回专项验收](./w370-db011-return-back-acceptance.md)
 
 ## 9.3D 审批人任务撤回
 

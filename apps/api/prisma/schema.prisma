@@ -1743,6 +1743,7 @@ model ApprovalInstance {
   tasks       ApprovalTask[]
   records     ApprovalRecord[]
   addSignTasks ApprovalAddSignTask[]
+  returnBackRecords ApprovalReturnBackRecord[]
 
   @@index([tenantId, status])
   @@index([tenantId, module, targetId])
@@ -1788,6 +1789,7 @@ model ApprovalTask {
   records  ApprovalRecord[]
   addSignTask ApprovalAddSignTask? @relation("AddSignCreatedTask")
   signedByTasks ApprovalAddSignTask[] @relation("AddSignSourceTask")
+  returnBackRecords ApprovalReturnBackRecord[]
 
   @@index([tenantId, approverId, status])
   @@index([tenantId, approverId, taskType, status])
@@ -1839,6 +1841,26 @@ model ApprovalRecord {
   @@index([tenantId, instanceId, createdAt])
   @@index([taskId])
   @@map("approval_records")
+}
+
+model ApprovalReturnBackRecord {
+  id             String   @id @default(cuid())
+  tenantId       String
+  instanceId     String   @map("instance_id")
+  taskId         String   @map("task_id")
+  returnToNodeId String   @map("return_to_node_id")
+  returnReason   String?  @map("return_reason")
+  returnUserId   String   @map("return_user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  task     ApprovalTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, returnToNodeId])
+  @@index([tenantId, instanceId, createdAt])
+  @@index([taskId])
+  @@map("approval_return_back_records")
 }
 
 // ============ 标讯（招投标信息） ============

@@ -29,6 +29,7 @@
     "smoke:w370-db010-regression": "node scripts/w370-db010-approval-regression.mjs",
     "smoke:w370-db011-task-record-migration": "tsx scripts/w370-db011-task-record-migration-smoke.ts",
     "smoke:w370-db011-add-sign": "node scripts/w370-db011-add-sign-http-smoke.mjs",
+    "smoke:w370-db011-return-back": "node scripts/w370-db011-return-back-http-smoke.mjs",
     "smoke:db021-follow-plan-runtime": "tsx scripts/db021-follow-plan-runtime-smoke.ts"
   },
   "dependencies": {

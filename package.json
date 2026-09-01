@@ -52,6 +52,8 @@
     "smoke:w366-system-modules-browser": "node scripts/w366-system-modules-browser-smoke.mjs",
     "smoke:w370-db010-regression": "pnpm --filter @micromatrix/api smoke:w370-db010-regression",
     "smoke:w370-db011-add-sign-browser": "node scripts/w370-db011-add-sign-browser-smoke.mjs",
+    "smoke:w370-db011-return-back": "pnpm --filter @micromatrix/api smoke:w370-db011-return-back",
+    "smoke:w370-db011-return-back-browser": "node scripts/w370-db011-return-back-browser-smoke.mjs",
     "smoke:db021-follow-plan-runtime": "pnpm --filter @micromatrix/api smoke:db021-follow-plan-runtime",
     "smoke:db021-follow-plan-browser": "node scripts/db021-follow-plan-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",

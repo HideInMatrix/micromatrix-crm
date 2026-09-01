@@ -214,3 +214,64 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
   assert.equal(records[0]?.result, 'REJECT')
   assert.equal(records[0]?.comment, '资料不完整')
 })
+
+test('节点再次进入时 round 取 task/record 最大值 + 1', async () => {
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const runtime = service as unknown as {
+    prisma: {
+      approvalTask: { aggregate(): Promise<{ _max: { nodeRound: number | null } }> }
+      approvalRecord: { aggregate(): Promise<{ _max: { nodeRound: number | null } }> }
+    }
+    nextApprovalNodeRound(instanceId: string, nodeId: string | null): Promise<number>
+  }
+  runtime.prisma = {
+    approvalTask: { aggregate: async () => ({ _max: { nodeRound: 2 } }) },
+    approvalRecord: { aggregate: async () => ({ _max: { nodeRound: 3 } }) },
+  }
+
+  assert.equal(await runtime.nextApprovalNodeRound('instance-a', 'node-a'), 4)
+  assert.equal(await runtime.nextApprovalNodeRound('instance-a', null), 1)
+})
+
+test('待办任务查询强制 tenant/owner/status，并拒绝已执行 BACK 的旧任务', async () => {
+  const captured: Array<Record<string, unknown>> = []
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const runtime = service as unknown as {
+    prisma: {
+      approvalTask: { findFirst(input: Record<string, unknown>): Promise<Record<string, unknown> | null> }
+      approvalAddSignTask: { findUnique(): Promise<null> }
+    }
+    ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+  }
+  runtime.prisma = {
+    approvalTask: {
+      findFirst: async (input) => {
+        captured.push(input)
+        return {
+          id: 'task-back',
+          tenantId: 'tenant-a',
+          instanceId: 'instance-a',
+          nodeId: 'node-a',
+          nodeIndex: 1,
+          nodeRound: 1,
+          nodeName: '二级审批',
+          approverId: 'user-a',
+          taskType: 'APPROVAL',
+          status: 'PENDING',
+          action: 'BACK',
+        }
+      },
+    },
+    approvalAddSignTask: { findUnique: async () => null },
+  }
+
+  await assert.rejects(
+    () => runtime.ensurePendingTask({ id: 'user-a', tenantId: 'tenant-a' }, 'task-back'),
+    /当前任务已经执行节点退回/,
+  )
+  const where = captured[0]?.where as Record<string, unknown>
+  assert.equal(where.tenantId, 'tenant-a')
+  assert.equal(where.approverId, 'user-a')
+  assert.equal(where.status, 'PENDING')
+  assert.deepEqual(where.instance, { status: 'PENDING' })
+})

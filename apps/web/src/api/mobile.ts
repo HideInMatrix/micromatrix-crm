@@ -103,6 +103,13 @@ export function signTask(
   return http.post(`/approvals/tasks/${taskId}/sign`, data)
 }
 
+export function returnBackTask(
+  taskId: string,
+  data: { returnToNodeId: string; comment?: string },
+) {
+  return http.post(`/approvals/tasks/${taskId}/back`, data)
+}
+
 export interface MobileSummary {
   newLeads: number
   newCustomers: number

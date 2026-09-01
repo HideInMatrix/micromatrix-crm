@@ -25,10 +25,16 @@ const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
 const addSignVisible = ref(false)
 const addSignLoading = ref(false)
+const returnBackVisible = ref(false)
+const returnBackLoading = ref(false)
 const memberOptions = ref<MemberOption[]>([])
 const addSignForm = reactive({
   type: 'BEFORE' as 'BEFORE' | 'AFTER',
   signApprover: '',
+  comment: '',
+})
+const returnBackForm = reactive({
+  returnToNodeId: '',
   comment: '',
 })
 
@@ -125,6 +131,36 @@ async function handleAddSign() {
   }
 }
 
+function openReturnBack() {
+  if (!current.value?.myPendingTaskId || !current.value.canReturnBack) return
+  returnBackForm.returnToNodeId = current.value.returnBackTargets.at(-1)?.nodeId ?? ''
+  returnBackForm.comment = ''
+  returnBackVisible.value = true
+}
+
+async function handleReturnBack() {
+  if (!current.value?.myPendingTaskId || !current.value.canReturnBack) return
+  if (!returnBackForm.returnToNodeId) {
+    ElMessage.warning('请选择退回节点')
+    return
+  }
+  returnBackLoading.value = true
+  try {
+    await approvalApi.back(current.value.myPendingTaskId, {
+      returnToNodeId: returnBackForm.returnToNodeId,
+      comment: returnBackForm.comment.trim() || undefined,
+    })
+    ElMessage.success('已退回到历史审批节点')
+    returnBackVisible.value = false
+    detailVisible.value = false
+    loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    returnBackLoading.value = false
+  }
+}
+
 async function handleCancel(row: ApprovalInstanceVO) {
   const confirmed = await ElMessageBox.confirm(`撤回「${row.targetName}」的审批申请？`, '确认', {
     type: 'warning',
@@ -149,7 +185,8 @@ function statusTagType(status: string) {
         : 'primary'
 }
 
-function taskStatusLabel(status: string) {
+function taskStatusLabel(status: string, action?: string | null) {
+  if (action === 'BACK') return '已退回'
   return status === 'APPROVED'
     ? '已同意'
     : status === 'REJECTED'
@@ -280,7 +317,7 @@ onMounted(() => {
                       : ''
                 "
               >
-                {{ taskStatusLabel(task.status) }}
+                {{ taskStatusLabel(task.status, task.action) }}
               </span>
             </div>
             <div v-if="task.comment" class="text-xs text-[var(--el-text-color-secondary)] mt-1">
@@ -302,6 +339,7 @@ onMounted(() => {
       <template #footer>
         <template v-if="current?.myPendingTaskId && current?.status === 'PENDING'">
           <el-button v-if="current.canAddSign" @click="openAddSign">加签</el-button>
+          <el-button v-if="current.canReturnBack" @click="openReturnBack">退回节点</el-button>
           <el-button type="danger" @click="handleReject">驳回</el-button>
           <el-button type="primary" @click="handleApprove">同意</el-button>
         </template>
@@ -347,6 +385,41 @@ onMounted(() => {
         <el-button @click="addSignVisible = false">取消</el-button>
         <el-button type="primary" :loading="addSignLoading" @click="handleAddSign">
           确认加签
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="returnBackVisible" title="退回节点" width="460px" append-to-body>
+      <el-form label-width="92px">
+        <el-form-item label="退回到" required>
+          <el-select
+            v-model="returnBackForm.returnToNodeId"
+            class="w-full"
+            placeholder="选择历史审批节点"
+          >
+            <el-option
+              v-for="target in current?.returnBackTargets ?? []"
+              :key="target.nodeId"
+              :label="`${target.nodeName}（重新进入第 ${target.nextRound} 轮）`"
+              :value="target.nodeId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="退回原因">
+          <el-input
+            v-model="returnBackForm.comment"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="可填写退回原因"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="returnBackVisible = false">取消</el-button>
+        <el-button type="primary" :loading="returnBackLoading" @click="handleReturnBack">
+          确认退回
         </el-button>
       </template>
     </el-dialog>

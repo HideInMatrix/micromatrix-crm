@@ -1013,3 +1013,16 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - DB-021 最终专项：runtime Smoke **12/12**、PC/Mobile Browser **25/25**（API 5xx=0、Runtime exception=0）、Rules **119/119**、Root **227/227**；隔离空库从零 **57/57 migrations + 双 Seed**，`sys_module_form=8`、`sys_module_field=68`、`sys_module_field_blob=68`；workspace typecheck/ESLint/Shared+API+Web production build 全绿。
 - 最终 runtime legacy scan：FollowUpPlan production `customData=0`、`plan.customData=0`；`apps/web/src/views/system` 中 `followPlan=0`。`follow_up_plans.customData` 物理列仅作为无法安全猜测历史 key->fieldId 时的升级兼容保留位，不再是真相源。
 - `docs/cordys-deferred-backlog.md` 中 DB-021 正式更新为 `VERIFIED`。这关闭的是“图外业务模块分域动态字段值”缺口，不等于整个 CordysCRM 已 100% 对齐；评论/完整 FormDesign、公告、高级审批、全局搜索、字段脱敏及其它 provider 仍以 `cordys-parity.md` / deferred backlog 为准。
+
+---
+
+## 51. W3.7 DB-010 与 DB-011 9.3A～9.3C 高级审批运行时（2026-08-30～2026-09-01）
+
+- W3.7-9.2 DB-010 已关闭：Migration 58 建立通用 `ApprovalResourceSnapshot + ApprovalInstance.updateFields/comment`，Quote/Contract/Invoice/Order 统一走 Resource Handler capture/restore/status/delete；Migration 59 删除旧 `business_snapshot`。DB-010 最终 `VERIFIED`。
+- W3.7-9.3A 已完成 task/record 基座：Migration 60 增加稳定 `nodeId/nodeRound/type/action` 与不可变 `ApprovalRecord`，历史 task comment 迁移后删除旧列；approve/reject 改为 task action + record，不再让 task comment 承担动作事实。
+- W3.7-9.3B 已完成 Cordys BEFORE/AFTER 加签与嵌套链：Migration 61 建立 `ApprovalAddSignTask`，`rootTaskId + sort` 保持嵌套顺序，SIGN 纳入待办/已办/详情；HTTP 与 Browser 均覆盖 owner/tenant/repeat/ALL sibling 边界。
+- W3.7-9.3C 已完成节点退回：Migration 62 建立 `ApprovalReturnBackRecord`；BACK 源任务记录 `action=BACK` 但不生成 ApprovalRecord；目标必须是冻结流程中真实执行过的历史审批节点，同一实例+目标只保留最新退回记录。
+- nodeRound 不仅在 BACK 时递增，普通 `advance()` 也统一改为 `max(task round, record round)+1`，因此二次退回可真实得到 round 1→2→3；ALL/ANY 只判断当前 round，旧轮次不再阻塞新轮次。
+- 9.3C HTTP isolated Smoke 在 **62/62 migrations + Seed + API build** 下覆盖合法/非法目标、owner/tenant/repeat gate、两次连续退回、历史 record 不可变与最终 APPROVED；PC Browser **17/17**，9.3B Browser 回归 **17/17**，API 5xx=0、Runtime exception=0。
+- 当前回归基线：Rules **123/123**、DB-010 regression PASS、Root Smoke **227/227**、空库 **62/62 + 双 Seed** 且幂等、workspace typecheck/ESLint/production build、Prisma validate 全绿。
+- DB-011 当前状态为 `IN_PROGRESS`：9.3A/B/C 已关闭，**下一执行指针为 W3.7-9.3D 审批人任务撤回**；9.3E requireComment/附件完成后才能关闭 DB-011。

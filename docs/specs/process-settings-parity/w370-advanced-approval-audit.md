@@ -206,12 +206,12 @@ DB-012 必须建立在 DB-010 `updateFields` 上下文和 DB-011 稳定任务状
 | `ApprovalInstance.updateFields` | REAL | 缺失 | DB-010 |
 | 实例 comment | REAL | 仅任务 comment | DB-010 |
 | DELETE 延迟执行 | REAL | REAL（交易链四域） | 保持回归 |
-| BEFORE/AFTER 加签 | REAL | 缺失 | DB-011 |
-| 节点退回 | REAL | 缺失 | DB-011 |
+| BEFORE/AFTER 加签 | REAL | W3.7-9.3B REAL | DB-011 已完成子项 |
+| 节点退回 | REAL | W3.7-9.3C REAL | DB-011 已完成子项 |
 | 审批人任务撤回 | REAL | 缺失 | DB-011 |
-| 独立 ApprovalRecord | REAL | 缺失 | DB-011 |
+| 独立 ApprovalRecord | REAL | W3.7-9.3A REAL | DB-011 已完成子项 |
 | 审批附件 | REAL | 缺失 | DB-011 |
-| task nodeRound/type/action | REAL | 仅基础 taskType/status | DB-011 |
+| task nodeRound/type/action | REAL | W3.7-9.3A REAL | DB-011 已完成子项 |
 | 条件节点/DEFAULT | REAL | 缺失 | DB-012 |
 | updateFields 条件 | REAL | 缺失 | DB-010 → DB-012 |
 | 空审批人/fallback/sameSubmitter | REAL | 缺失 | DB-012 |

@@ -125,7 +125,12 @@
     - 隔离 HTTP Smoke 在 **61/61 migrations + Seed + API build** 下覆盖 BEFORE/AFTER、二级嵌套、owner/tenant gate、重复/挂起 gate、ALL sibling 等边界；Browser Smoke **17/17**。
     - 四业务审批在 61 migrations 下回归全绿；空库 **61/61 + 双 Seed**、Rules **121/121**、Root Smoke **227/227**、workspace typecheck/lint/build、Prisma validate、`git diff --check`、`system/modules` Browser **47/47** 全绿。
     - 证据：[W3.7-9.3B DB-011 BEFORE / AFTER 加签专项验收](./w370-db011-add-sign-acceptance.md)。
-  - [ ] 9.3C 节点退回 + return-back record + round 重建。
+  - [x] 9.3C 节点退回 + return-back record + round 重建。
+    - 源码证据：[9.3C 节点退回源码审计](./w370-db011-return-back-audit.md)。Migration 62 已部署到 `default`，新增 `ApprovalReturnBackRecord`，同一实例/目标只保留最新退回记录，task/ApprovalRecord 历史轮次保持不可变。
+    - BACK 只允许当前普通 PENDING task owner 退回到冻结流程中真实执行过的历史节点；原任务写 `action=BACK` 且不生成 ApprovalRecord，目标节点按 `max(task/record round)+1` 重建，普通 advance 同步支持后续节点新 round。
+    - 隔离 HTTP Smoke 在 **62/62 migrations + Seed + API build** 下覆盖合法/非法目标、owner/tenant/repeat gate、round 1→2→3、latest ReturnBackRecord 与最终 APPROVED；PC Browser **17/17**，9.3B Browser 回归 **17/17**。
+    - Rules **123/123**、DB-010 regression 全绿、Root Smoke **227/227**、空库 **62/62 + 双 Seed**、workspace typecheck/lint/build、Prisma validate 全绿。
+    - 证据：[W3.7-9.3C DB-011 节点退回专项验收](./w370-db011-return-back-acceptance.md)。
   - [ ] 9.3D 审批人任务撤回；与 submitter cancel 分离，并处理 ANY/ALL/后续节点约束。
   - [ ] 9.3E requireComment、附件及对应 API/UI；专项 Rules/API/Browser 后关闭 DB-011。
   - _Requirements: R10, R12_

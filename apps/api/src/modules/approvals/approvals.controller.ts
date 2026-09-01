@@ -13,6 +13,7 @@ import {
   ApprovalFlowPageQueryDto,
   CreateApprovalFlowDto,
   HandleTaskDto,
+  ReturnBackTaskDto,
   SubmitApprovalDto,
   UpdateApprovalFlowDto,
   UpdateApprovalFlowEnabledDto,
@@ -115,6 +116,14 @@ export class ApprovalsController {
   @ApiOperation({ summary: '加签（BEFORE / AFTER）' })
   sign(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddSignTaskDto) {
     return this.approvalsService.signTask(user, id, dto)
+  }
+
+  @Post('tasks/:id/back')
+  @RequirePermissions('menu:approval')
+  @LogOperation('approval', 'back')
+  @ApiOperation({ summary: '退回到已执行的历史审批节点' })
+  back(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ReturnBackTaskDto) {
+    return this.approvalsService.returnBackTask(user, id, dto)
   }
 
   @Post(':id/cancel')

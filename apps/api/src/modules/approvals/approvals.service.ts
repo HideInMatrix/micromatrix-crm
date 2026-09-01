@@ -14,7 +14,7 @@ import { BusinessNotificationsService } from '../notifications/business-notifica
 import { NotificationsService } from '../notifications/notifications.service'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 import { ApprovalResourceService } from './approval-resource.service'
-import type { AddSignTaskDto } from './dto/approval.dto'
+import type { AddSignTaskDto, ReturnBackTaskDto } from './dto/approval.dto'
 
 type ApprovalExecuteTimingValue = 'CREATE' | 'UPDATE' | 'DELETE'
 
@@ -257,6 +257,157 @@ export class ApprovalsService {
     return { id: signTaskId, name: instance.targetName }
   }
 
+  async returnBackTask(user: AuthUser, taskId: string, dto: ReturnBackTaskDto) {
+    const sourceTask = await this.ensurePendingTask(user, taskId)
+    if (sourceTask.taskType !== 'APPROVAL') {
+      throw new BadRequestException('加签任务不能直接执行节点退回')
+    }
+    if (!sourceTask.nodeId) throw new BadRequestException('当前任务缺少稳定节点 ID，不能执行节点退回')
+
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: { id: sourceTask.instanceId, tenantId: user.tenantId, status: 'PENDING' },
+    })
+    if (!instance) throw new BadRequestException('仅审批中的实例允许节点退回')
+    const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const targetIndex = snapshot.findIndex((node) => node.nodeId === dto.returnToNodeId)
+    if (targetIndex < 0) throw new BadRequestException('退回目标不属于当前审批实例的冻结流程版本')
+    if (targetIndex >= sourceTask.nodeIndex) throw new BadRequestException('只能退回到当前节点之前的历史审批节点')
+    const targetNode = snapshot[targetIndex]
+    if (!targetNode?.nodeId) throw new BadRequestException('退回目标缺少稳定节点 ID')
+    const targetNodeId = targetNode.nodeId
+
+    const historicalRecord = await this.prisma.approvalRecord.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        instanceId: instance.id,
+        nodeId: targetNodeId,
+      },
+      select: { id: true },
+    })
+    if (!historicalRecord) throw new BadRequestException('只能退回到已经执行过的历史审批节点')
+
+    const submitter = await this.prisma.user.findUnique({ where: { id: instance.submitterId } })
+    const approvers = await this.resolveApprovers(
+      instance.tenantId,
+      targetNode,
+      submitter?.deptId ?? null,
+      submitter?.leaderId ?? null,
+    )
+    if (!approvers.length) throw new BadRequestException('退回目标节点当前没有可用审批人')
+    const ccUserIds = [...new Set(targetNode.ccUserIds ?? [])].filter(
+      (id) => id !== instance.submitterId,
+    )
+    const [taskRound, recordRound] = await Promise.all([
+      this.prisma.approvalTask.aggregate({
+        where: { instanceId: instance.id, nodeId: targetNodeId },
+        _max: { nodeRound: true },
+      }),
+      this.prisma.approvalRecord.aggregate({
+        where: { instanceId: instance.id, nodeId: targetNodeId },
+        _max: { nodeRound: true },
+      }),
+    ])
+    const nextRound = Math.max(taskRound._max.nodeRound ?? 0, recordRound._max.nodeRound ?? 0) + 1
+    const normalizedComment = dto.comment?.trim() || null
+    const backRecordId = randomUUID()
+
+    await this.prisma.$transaction(async (tx) => {
+      const stillPending = await tx.approvalTask.count({
+        where: {
+          id: sourceTask.id,
+          tenantId: user.tenantId,
+          approverId: user.id,
+          status: 'PENDING',
+          action: null,
+          instance: { status: 'PENDING' },
+        },
+      })
+      if (!stillPending) throw new BadRequestException('待办任务不存在或已处理')
+
+      await tx.approvalTask.updateMany({
+        where: {
+          instanceId: instance.id,
+          nodeIndex: { gt: targetIndex, lte: sourceTask.nodeIndex },
+          status: 'PENDING',
+        },
+        data: { status: 'SKIPPED' },
+      })
+      await tx.approvalTask.update({
+        where: { id: sourceTask.id },
+        data: { status: 'PENDING', action: 'BACK', handledAt: new Date() },
+      })
+      await tx.approvalTask.createMany({
+        data: approvers.map((approverId) => ({
+          tenantId: instance.tenantId,
+          instanceId: instance.id,
+          nodeId: targetNodeId,
+          nodeIndex: targetIndex,
+          nodeRound: nextRound,
+          nodeName: targetNode.name,
+          approverId,
+          taskType: 'APPROVAL' as const,
+        })),
+      })
+      if (ccUserIds.length) {
+        await tx.approvalTask.createMany({
+          data: ccUserIds.map((approverId) => ({
+            tenantId: instance.tenantId,
+            instanceId: instance.id,
+            nodeId: targetNodeId,
+            nodeIndex: targetIndex,
+            nodeRound: nextRound,
+            nodeName: targetNode.name,
+            approverId,
+            taskType: 'CC' as const,
+          })),
+        })
+      }
+      await tx.approvalReturnBackRecord.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          instanceId: instance.id,
+          returnToNodeId: targetNodeId,
+        },
+      })
+      await tx.approvalReturnBackRecord.create({
+        data: {
+          id: backRecordId,
+          tenantId: user.tenantId,
+          instanceId: instance.id,
+          taskId: sourceTask.id,
+          returnToNodeId: targetNodeId,
+          returnReason: normalizedComment,
+          returnUserId: user.id,
+        },
+      })
+      await tx.approvalInstance.update({
+        where: { id: instance.id },
+        data: { currentNodeIndex: targetIndex },
+      })
+    })
+
+    await this.notifications.notifyMany(instance.tenantId, approvers, {
+      type: 'approval',
+      title: '审批已退回到你的节点',
+      content: `${user.name} 将「${instance.targetName}」退回到「${targetNode.name}」重新审批`,
+      link: '/approvals',
+    })
+    if (ccUserIds.length) {
+      await this.notifications.notifyMany(instance.tenantId, ccUserIds, {
+        type: 'approval',
+        title: '审批退回节点抄送',
+        content: `「${instance.targetName}」已退回到「${targetNode.name}」`,
+        link: '/approvals?tab=copied',
+      })
+    }
+    return {
+      id: sourceTask.id,
+      name: instance.targetName,
+      returnToNodeId: targetNodeId,
+      nodeRound: nextRound,
+    }
+  }
+
   async rejectTask(user: AuthUser, taskId: string, comment?: string) {
     const task = await this.ensurePendingTask(user, taskId)
     if (!comment?.trim()) throw new BadRequestException('驳回时请填写审批意见')
@@ -399,7 +550,7 @@ export class ApprovalsService {
       approverId: user.id,
       taskType: { in: ['APPROVAL', 'SIGN'] },
       status: 'PENDING',
-      OR: [{ action: null }, { action: { not: 'SIGN' } }],
+      OR: [{ action: null }, { action: { notIn: ['SIGN', 'BACK'] } }],
     }
     const [tasks, total] = await this.prisma.$transaction([
       this.prisma.approvalTask.findMany({
@@ -450,7 +601,10 @@ export class ApprovalsService {
       tenantId: user.tenantId,
       approverId: user.id,
       taskType: { in: ['APPROVAL', 'SIGN'] },
-      status: { in: ['APPROVED', 'REJECTED'] },
+      OR: [
+        { status: { in: ['APPROVED', 'REJECTED'] } },
+        { status: 'PENDING', action: 'BACK' },
+      ],
     }
     const [tasks, total] = await this.prisma.$transaction([
       this.prisma.approvalTask.findMany({
@@ -538,6 +692,10 @@ export class ApprovalsService {
       const ccUserIds = [...new Set(snapshot[nodeIndex].ccUserIds ?? [])].filter(
         (userId) => userId !== instance.submitterId,
       )
+      const nodeRound = await this.nextApprovalNodeRound(
+        instance.id,
+        snapshot[nodeIndex].nodeId ?? null,
+      )
 
       await this.prisma.$transaction([
         this.prisma.approvalInstance.update({
@@ -550,7 +708,7 @@ export class ApprovalsService {
             instanceId,
             nodeId: snapshot[nodeIndex].nodeId ?? null,
             nodeIndex,
-            nodeRound: 1,
+            nodeRound,
             nodeName: snapshot[nodeIndex].name,
             approverId,
             taskType: 'APPROVAL',
@@ -564,7 +722,7 @@ export class ApprovalsService {
                   instanceId,
                   nodeId: snapshot[nodeIndex].nodeId ?? null,
                   nodeIndex,
-                  nodeRound: 1,
+                  nodeRound,
                   nodeName: snapshot[nodeIndex].name,
                   approverId,
                   taskType: 'CC' as const,
@@ -810,8 +968,10 @@ export class ApprovalsService {
       where: {
         instanceId: instance.id,
         nodeIndex: task.nodeIndex,
+        nodeRound: task.nodeRound,
         status: 'PENDING',
         taskType: { in: ['APPROVAL', 'SIGN'] },
+        OR: [{ action: null }, { action: { not: 'BACK' } }],
       },
       select: { id: true },
     })
@@ -821,8 +981,10 @@ export class ApprovalsService {
           where: {
             instanceId: instance.id,
             nodeIndex: task.nodeIndex,
+            nodeRound: task.nodeRound,
             status: 'PENDING',
             taskType: { in: ['APPROVAL', 'SIGN'] },
+            OR: [{ action: null }, { action: { not: 'BACK' } }],
           },
           data: { status: 'SKIPPED' },
         })
@@ -846,6 +1008,7 @@ export class ApprovalsService {
     })
     if (!task) throw new NotFoundException('待办任务不存在或已处理')
     if (task.action === 'SIGN') throw new BadRequestException('当前任务正在等待前置加签完成')
+    if (task.action === 'BACK') throw new BadRequestException('当前任务已经执行节点退回')
     if (task.taskType === 'SIGN') {
       const relation = await this.prisma.approvalAddSignTask.findUnique({ where: { taskId: task.id } })
       if (!relation) throw new BadRequestException('加签任务缺少链路关系')
@@ -862,6 +1025,21 @@ export class ApprovalsService {
     return task
   }
 
+  private async nextApprovalNodeRound(instanceId: string, nodeId: string | null): Promise<number> {
+    if (!nodeId) return 1
+    const [taskRound, recordRound] = await Promise.all([
+      this.prisma.approvalTask.aggregate({
+        where: { instanceId, nodeId },
+        _max: { nodeRound: true },
+      }),
+      this.prisma.approvalRecord.aggregate({
+        where: { instanceId, nodeId },
+        _max: { nodeRound: true },
+      }),
+    ])
+    return Math.max(taskRound._max.nodeRound ?? 0, recordRound._max.nodeRound ?? 0) + 1
+  }
+
   private async toInstanceVO(
     instance: ApprovalInstance,
     tasks: ApprovalTask[],
@@ -875,7 +1053,7 @@ export class ApprovalsService {
         })
       : []
     const nameMap = new Map(users.map((u) => [u.id, u.name]))
-    const [records, addSignTasks, flowCapability] = await Promise.all([
+    const [records, addSignTasks, returnBackRecords, flowCapability] = await Promise.all([
       this.prisma.approvalRecord.findMany({
         where: { tenantId: instance.tenantId, instanceId: instance.id },
         orderBy: { createdAt: 'asc' },
@@ -883,6 +1061,10 @@ export class ApprovalsService {
       this.prisma.approvalAddSignTask.findMany({
         where: { tenantId: instance.tenantId, instanceId: instance.id },
         orderBy: [{ rootTaskId: 'asc' }, { sort: 'asc' }, { createdAt: 'asc' }],
+      }),
+      this.prisma.approvalReturnBackRecord.findMany({
+        where: { tenantId: instance.tenantId, instanceId: instance.id },
+        orderBy: { createdAt: 'asc' },
       }),
       instance.flowId
         ? this.prisma.approvalFlow.findFirst({
@@ -897,8 +1079,35 @@ export class ApprovalsService {
     )
     const myPending = approvalTasks.find(
       (task) =>
-        task.approverId === currentUserId && task.status === 'PENDING' && task.action !== 'SIGN',
+        task.approverId === currentUserId &&
+        task.status === 'PENDING' &&
+        task.action !== 'SIGN' &&
+        task.action !== 'BACK',
     )
+    const frozenNodes = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const returnBackTargets = myPending?.taskType === 'APPROVAL'
+      ? [...new Set(records.map((record) => record.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)))]
+          .map((nodeId) => ({
+            nodeId,
+            nodeIndex: frozenNodes.findIndex((node) => node.nodeId === nodeId),
+          }))
+          .filter(({ nodeIndex }) => nodeIndex >= 0 && nodeIndex < myPending.nodeIndex)
+          .map(({ nodeId, nodeIndex }) => {
+            const maxTaskRound = tasks
+              .filter((task) => task.nodeId === nodeId)
+              .reduce((max, task) => Math.max(max, task.nodeRound), 0)
+            const maxRecordRound = records
+              .filter((record) => record.nodeId === nodeId)
+              .reduce((max, record) => Math.max(max, record.nodeRound), 0)
+            return {
+              nodeId,
+              nodeIndex,
+              nodeName: frozenNodes[nodeIndex]?.name ?? '历史审批节点',
+              nextRound: Math.max(maxTaskRound, maxRecordRound) + 1,
+            }
+          })
+          .sort((a, b) => a.nodeIndex - b.nodeIndex)
+      : []
 
     return {
       id: instance.id,
@@ -914,7 +1123,12 @@ export class ApprovalsService {
       finishedAt: instance.finishedAt?.toISOString() ?? null,
       createdAt: instance.createdAt.toISOString(),
       tasks: approvalTasks
-        .sort((a, b) => a.nodeIndex - b.nodeIndex || a.createdAt.getTime() - b.createdAt.getTime())
+        .sort(
+          (a, b) =>
+            a.nodeIndex - b.nodeIndex ||
+            a.nodeRound - b.nodeRound ||
+            a.createdAt.getTime() - b.createdAt.getTime(),
+        )
         .map((t) => ({
           id: t.id,
           instanceId: t.instanceId,
@@ -951,7 +1165,17 @@ export class ApprovalsService {
         createdById: relation.createdById,
         createdAt: relation.createdAt.toISOString(),
       })),
+      returnBackRecords: returnBackRecords.map((record) => ({
+        id: record.id,
+        taskId: record.taskId,
+        returnToNodeId: record.returnToNodeId,
+        returnReason: record.returnReason,
+        returnUserId: record.returnUserId,
+        createdAt: record.createdAt.toISOString(),
+      })),
+      returnBackTargets,
       canAddSign: Boolean(myPending && flowCapability?.allowAddSign),
+      canReturnBack: Boolean(myPending?.taskType === 'APPROVAL' && returnBackTargets.length),
       myPendingTaskId: myPending?.id ?? null,
     }
   }

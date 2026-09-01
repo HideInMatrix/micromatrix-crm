@@ -266,3 +266,16 @@ export class AddSignTaskDto {
   @MaxLength(500)
   comment?: string
 }
+
+export class ReturnBackTaskDto {
+  @ApiProperty({ description: '退回到的历史审批节点 ID' })
+  @IsString()
+  @IsNotEmpty()
+  returnToNodeId!: string
+
+  @ApiPropertyOptional({ description: '退回原因' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  comment?: string
+}

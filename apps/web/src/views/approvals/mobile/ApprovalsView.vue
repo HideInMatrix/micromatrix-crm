@@ -6,7 +6,14 @@ import {
 } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { computed, ref } from 'vue'
-import { approveTask, myApplications, myPendingApprovals, rejectTask, signTask } from '@/api/mobile'
+import {
+  approveTask,
+  myApplications,
+  myPendingApprovals,
+  rejectTask,
+  returnBackTask,
+  signTask,
+} from '@/api/mobile'
 import { extractErrorMessage } from '@/api/http'
 import { memberApi, type MemberOption } from '@/api/system'
 
@@ -22,6 +29,10 @@ const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
 const addSignShow = ref(false)
 const addSignLoading = ref(false)
+const returnBackShow = ref(false)
+const returnBackLoading = ref(false)
+const returnBackNodeId = ref('')
+const returnBackComment = ref('')
 const memberPickerShow = ref(false)
 const memberOptions = ref<MemberOption[]>([])
 const addSignType = ref<'BEFORE' | 'AFTER'>('BEFORE')
@@ -141,7 +152,38 @@ async function handleAddSign() {
   }
 }
 
-function taskStatusLabel(status: string) {
+function openReturnBack() {
+  if (!current.value?.myPendingTaskId || !current.value.canReturnBack) return
+  returnBackNodeId.value = current.value.returnBackTargets.at(-1)?.nodeId ?? ''
+  returnBackComment.value = ''
+  returnBackShow.value = true
+}
+
+async function handleReturnBack() {
+  if (!current.value?.myPendingTaskId || !current.value.canReturnBack) return
+  if (!returnBackNodeId.value) {
+    showFailToast('请选择退回节点')
+    return
+  }
+  returnBackLoading.value = true
+  try {
+    await returnBackTask(current.value.myPendingTaskId, {
+      returnToNodeId: returnBackNodeId.value,
+      comment: returnBackComment.value.trim() || undefined,
+    })
+    showSuccessToast('已退回到历史审批节点')
+    returnBackShow.value = false
+    detailShow.value = false
+    reload()
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    returnBackLoading.value = false
+  }
+}
+
+function taskStatusLabel(status: string, action?: string | null) {
+  if (action === 'BACK') return '已退回'
   return status === 'APPROVED'
     ? '已同意'
     : status === 'REJECTED'
@@ -211,7 +253,7 @@ function taskStatusLabel(status: string) {
           <van-step v-for="task in current.tasks" :key="task.id">
             <div class="text-sm">
               {{ task.nodeName }} · {{ task.approverName ?? '-' }} ·
-              {{ taskStatusLabel(task.status) }}
+              {{ taskStatusLabel(task.status, task.action) }}
             </div>
             <div v-if="task.comment" class="text-xs text-gray-500 mt-1">
               意见：{{ task.comment }}
@@ -232,6 +274,9 @@ function taskStatusLabel(status: string) {
           />
           <div class="flex gap-3 pb-2">
             <van-button v-if="current.canAddSign" block plain @click="openAddSign">加签</van-button>
+            <van-button v-if="current.canReturnBack" block plain @click="openReturnBack">
+              退回
+            </van-button>
             <van-button type="danger" block plain @click="handleReject">驳回</van-button>
             <van-button type="primary" block @click="handleApprove">同意</van-button>
           </div>
@@ -277,6 +322,42 @@ function taskStatusLabel(status: string) {
         @confirm="selectAddSignMember"
         @cancel="memberPickerShow = false"
       />
+    </van-popup>
+
+    <van-popup v-model:show="returnBackShow" position="bottom" round>
+      <div class="p-4">
+        <div class="text-center font-medium mb-4">退回节点</div>
+        <van-radio-group v-model="returnBackNodeId">
+          <van-cell-group inset>
+            <van-cell
+              v-for="target in current?.returnBackTargets ?? []"
+              :key="target.nodeId"
+              clickable
+              :title="target.nodeName"
+              :label="`重新进入第 ${target.nextRound} 轮`"
+              @click="returnBackNodeId = target.nodeId"
+            >
+              <template #right-icon>
+                <van-radio :name="target.nodeId" />
+              </template>
+            </van-cell>
+          </van-cell-group>
+        </van-radio-group>
+        <van-field
+          v-model="returnBackComment"
+          type="textarea"
+          rows="2"
+          maxlength="500"
+          show-word-limit
+          label="原因"
+          placeholder="可填写退回原因"
+        />
+        <div class="pt-4">
+          <van-button type="primary" block :loading="returnBackLoading" @click="handleReturnBack">
+            确认退回
+          </van-button>
+        </div>
+      </div>
     </van-popup>
   </div>
 </template>
