@@ -112,7 +112,7 @@
     - 证据：[W3.7-9.2 DB-010 通用审批资源快照专项验收](./w370-db010-acceptance.md)。
   - _Requirements: R9, R12_
 
-- [ ] W3.7-9.3 DB-011：高级任务、动作、记录与附件。
+- [x] W3.7-9.3 DB-011：高级任务、动作、记录与附件。
   - 源码证据：[DB-011 高级审批任务与动作源码审计](./w370-db011-action-runtime-audit.md)。
   - 实施计划：[DB-011 高级审批任务与动作实施计划](./w370-db011-action-runtime-plan.md)。
   - [x] 9.3A 扩展 task nodeRound/type/action，并建立独立 ApprovalRecord。
@@ -138,7 +138,13 @@
     - 隔离 HTTP Smoke 在 **62/62 migrations + Seed + API build** 下覆盖 owner/flow gate、同 task 回开、下游失效、record 保留/替换、round 2 重建、旧 task/已结束实例 fail-closed；PC/Mobile Browser **24/24**，API 5xx=0、Runtime exception=0。
     - Rules **125/125**、9.3B/9.3C HTTP + Browser regression（各 **17/17**）、DB-010 regression、Root Smoke **227/227**、`system/modules` Browser **47/47**、workspace typecheck/lint/build、Prisma validate 全绿。
     - 证据：[W3.7-9.3D DB-011 审批人任务撤回专项验收](./w370-db011-approver-revoke-acceptance.md)。
-  - [ ] 9.3E requireComment、附件及对应 API/UI；专项 Rules/API/Browser 后关闭 DB-011。
+  - [x] 9.3E requireComment、附件及对应 API/UI；专项 Rules/API/Browser 后关闭 DB-011。
+    - Migration 63 新增 `ApprovalInstanceAttachment`，按 `instanceId + elementId + attachmentId` 保存动作级关系；复用现有 `Attachment`，历史绑定通过 FK `RESTRICT` + 删除服务 gate 保持不可破坏。
+    - `requireComment` 已解除 422 门禁并进入 approve/reject 服务端硬校验：开启时两动作空意见均拒绝，关闭时两动作均允许空意见；`allowBatchProcess` 与高级 duplicate rule 继续 fail-closed。
+    - approve/reject 附件绑定 `ApprovalRecord.id`，BACK 绑定 `ApprovalReturnBackRecord.id`，SIGN 绑定 `ApprovalAddSignTask.id`；AFTER SIGN 同一附件同时绑定原审批 record 与 add-sign element，撤回重审带新意见/附件时同步替换 record/relation。
+    - 9.3E isolated HTTP Smoke 在 **63/63 migrations + Seed + Shared/API build** 下覆盖 requireComment 双态、tenant/uploader/未挂载/归档 gate、approve/SIGN/BACK element 绑定、撤回重审附件替换、详情 VO 与最终 APPROVED；PC/Mobile Browser **28/28**，真实调用 `/attachments/upload`，API 5xx=0、Runtime exception=0。
+    - DB-011 最终回归：9.3A migration smoke PASS；9.3B/9.3C/9.3D HTTP 在 63 migrations 下 PASS；Browser **17/17、17/17、24/24**；DB-010 regression PASS；Rules **127/127**、Root Smoke **227/227**、`system/modules` Browser **47/47**、空库 **63/63 + 双 Seed**、workspace typecheck/lint/build、Prisma validate 全绿。
+    - 证据：[W3.7-9.3E DB-011 requireComment / ApprovalInstanceAttachment 专项验收](./w370-db011-attachment-comment-acceptance.md)。DB-011 正式关闭，下一执行指针进入 9.4A。
   - _Requirements: R10, R12_
 
 - [ ] W3.7-9.4 DB-012：高级节点、条件、字段权限与后置动作。

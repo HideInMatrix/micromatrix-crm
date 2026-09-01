@@ -92,24 +92,29 @@ export function myHandledApprovals(params: PageQuery) {
   return http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-handled', { params })
 }
 
-export function approveTask(taskId: string, comment?: string) {
-  return http.post(`/approvals/tasks/${taskId}/approve`, { comment })
+export function approveTask(taskId: string, comment?: string, attachmentIds?: string[]) {
+  return http.post(`/approvals/tasks/${taskId}/approve`, { comment, attachmentIds })
 }
 
-export function rejectTask(taskId: string, comment: string) {
-  return http.post(`/approvals/tasks/${taskId}/reject`, { comment })
+export function rejectTask(taskId: string, comment?: string, attachmentIds?: string[]) {
+  return http.post(`/approvals/tasks/${taskId}/reject`, { comment, attachmentIds })
 }
 
 export function signTask(
   taskId: string,
-  data: { type: 'BEFORE' | 'AFTER'; signApprover: string; comment?: string },
+  data: {
+    type: 'BEFORE' | 'AFTER'
+    signApprover: string
+    comment?: string
+    attachmentIds?: string[]
+  },
 ) {
   return http.post(`/approvals/tasks/${taskId}/sign`, data)
 }
 
 export function returnBackTask(
   taskId: string,
-  data: { returnToNodeId: string; comment?: string },
+  data: { returnToNodeId: string; comment?: string; attachmentIds?: string[] },
 ) {
   return http.post(`/approvals/tasks/${taskId}/back`, data)
 }

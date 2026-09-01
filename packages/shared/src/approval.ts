@@ -1,3 +1,5 @@
+import type { AttachmentVO } from './sales'
+
 // ============ 审批流 ============
 
 export type ApproverType = 'USER' | 'ROLE' | 'DEPT_LEADER' | 'DIRECT_LEADER'
@@ -212,6 +214,12 @@ export interface ApprovalReturnBackTargetVO {
   nextRound: number
 }
 
+export interface ApprovalInstanceAttachmentVO {
+  id: string
+  elementId: string
+  attachment: AttachmentVO
+}
+
 export interface ApprovalInstanceVO {
   id: string
   module: ApprovalModule
@@ -230,6 +238,9 @@ export interface ApprovalInstanceVO {
   addSignTasks: ApprovalAddSignTaskVO[]
   returnBackRecords: ApprovalReturnBackRecordVO[]
   returnBackTargets: ApprovalReturnBackTargetVO[]
+  approvalAttachments: ApprovalInstanceAttachmentVO[]
+  /** 当前审批流是否要求审批意见必填。 */
+  requireComment: boolean
   /** 当前用户的当前待办是否允许执行加签。 */
   canAddSign: boolean
   /** 当前用户的普通审批待办是否存在可退回的历史审批节点。 */

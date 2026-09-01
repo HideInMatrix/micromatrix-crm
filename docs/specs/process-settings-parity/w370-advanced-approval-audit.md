@@ -123,18 +123,15 @@ Cordys 高级动作至少包括：
 
 ### 4.2 MicroMatrix 当前状态
 
-当前 `ApprovalsController` 运行时接口只有：
+截至 W3.7-9.3E 封板，DB-011 已从本审计阶段的真实缺口推进为 `VERIFIED`：
 
-- submit
-- approve
-- reject
-- cancel（提交人撤销实例）
-- my-pending / my-handled / my-applications / my-copied
-- instance detail
-
-当前没有 add-sign、return-back、approver-withdraw 对应 API；Prisma 也没有 AddSign、ReturnBack、ApprovalRecord、InstanceAttachment 独立模型。
-
-虽然 `ApprovalFlow` 已有 `allowWithdraw / allowAddSign / allowBatchProcess / duplicateApproverRule / requireComment` 字段，但 `ApprovalFlowConfigService` 会对这些高级配置返回 `422`，明确说明尚未接入运行时。
+- `ApprovalRecord`、task `nodeId/nodeRound/type/action` 已落地；
+- BEFORE/AFTER 与嵌套加签链已落地；
+- 节点退回、`ApprovalReturnBackRecord` 与 round 重建已落地；
+- 审批人 task revoke 已与 submitter cancel 分离；
+- `ApprovalInstanceAttachment` 已落地，approve/reject/SIGN/BACK 均使用动作 element 绑定；
+- `requireComment` 已进入 PC/Mobile 与服务端 approve/reject runtime；
+- `allowAddSign / allowWithdraw / requireComment` 已按各自专项验收逐项开放；`allowBatchProcess` 与高级 duplicate rule 仍保持 fail-closed。
 
 ### 4.3 审计结论
 
@@ -190,7 +187,7 @@ Cordys 还真实执行重复审批人规则，例如 `FIRST_ONLY / SEQUENTIAL_AL
 
 当前 `fieldPermissions`、`webHook` 在审批 API/Web/Shared 中均不存在；没有 Condition 模型和 DEFAULT 分支运行时。
 
-流程层虽然已有 `duplicateApproverRule / requireComment` 等字段，但高级设置在 Web 中保持 disabled，Service 同样拒绝非基础值。
+流程层 `requireComment` 已在 DB-011 关闭；`duplicateApproverRule` 高级值仍保持 disabled/Service fail-closed，等待 DB-012 runtime。
 
 ### 5.3 审计结论
 
@@ -201,22 +198,22 @@ DB-012 必须建立在 DB-010 `updateFields` 上下文和 DB-011 稳定任务状
 | 能力 | Cordys | MicroMatrix 当前 | W3.7 归属 |
 | --- | --- | --- | --- |
 | CREATE/UPDATE/DELETE execute timing | REAL | REAL（交易链四域） | 保持回归 |
-| UPDATE 编辑前快照 | 通用 `ApprovalResourceSnapshot + Handler` | 四业务硬编码 `businessSnapshot` | DB-010 |
-| UPDATE 回退 | Handler 通用恢复并清理快照 | 四业务硬编码恢复 | DB-010 |
-| `ApprovalInstance.updateFields` | REAL | 缺失 | DB-010 |
-| 实例 comment | REAL | 仅任务 comment | DB-010 |
+| UPDATE 编辑前快照 | 通用 `ApprovalResourceSnapshot + Handler` | W3.7-9.2 REAL | DB-010 已完成 |
+| UPDATE 回退 | Handler 通用恢复并清理快照 | W3.7-9.2 REAL | DB-010 已完成 |
+| `ApprovalInstance.updateFields` | REAL | W3.7-9.2 REAL | DB-010 已完成 |
+| 实例 comment | REAL | W3.7-9.2 REAL | DB-010 已完成 |
 | DELETE 延迟执行 | REAL | REAL（交易链四域） | 保持回归 |
 | BEFORE/AFTER 加签 | REAL | W3.7-9.3B REAL | DB-011 已完成子项 |
 | 节点退回 | REAL | W3.7-9.3C REAL | DB-011 已完成子项 |
-| 审批人任务撤回 | REAL | 缺失 | DB-011 |
+| 审批人任务撤回 | REAL | W3.7-9.3D REAL | DB-011 已完成子项 |
 | 独立 ApprovalRecord | REAL | W3.7-9.3A REAL | DB-011 已完成子项 |
-| 审批附件 | REAL | 缺失 | DB-011 |
+| 审批附件 | REAL | W3.7-9.3E REAL | DB-011 已完成子项 |
 | task nodeRound/type/action | REAL | W3.7-9.3A REAL | DB-011 已完成子项 |
 | 条件节点/DEFAULT | REAL | 缺失 | DB-012 |
-| updateFields 条件 | REAL | 缺失 | DB-010 → DB-012 |
+| updateFields 条件 | REAL | updateFields 已具备，条件求值缺失 | DB-012 |
 | 空审批人/fallback/sameSubmitter | REAL | 缺失 | DB-012 |
 | 重复审批人高级规则 | REAL | 字段存在，运行时拒绝 | DB-012 |
-| 必填审批意见 | REAL | 字段存在，运行时拒绝 | DB-011/012 |
+| 必填审批意见 | REAL | W3.7-9.3E REAL | DB-011 已完成子项 |
 | 节点字段权限 | REAL | 缺失 | DB-012 |
 | pass/reject 字段更新 | REAL | 缺失 | DB-012 |
 | Webhook | REAL | 缺失 | DB-012 |

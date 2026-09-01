@@ -324,7 +324,7 @@ START -> APPROVER_1 -> APPROVER_2 -> ... -> END
 - `docs/cordys-wave2-execution-plan.md`
 - `docs/cordys-deferred-backlog.md`
 
-DB-009 只有在主表、版本、基础节点图、迁移、API、页面和测试全部完成后才能标记 `VERIFIED`。DB-003、DB-010、DB-011、DB-012 继续保持未完成状态。
+该段最初用于约束 W2.5 收口顺序。按后续实际验收，DB-003、DB-009、DB-010、DB-011 均已 `VERIFIED`；当前 W3.7 只剩 DB-012 高级节点配置继续按专项任务实施。
 
 ## 12. W3.7 高级审批演进设计
 
@@ -372,6 +372,8 @@ Handler 注册必须是显式白名单；不根据用户输入动态加载类或
 当前 `ApprovalTask` 继续作为“当前/历史待办实体”，补齐高级动作所需 node round、action/type 语义。独立 `ApprovalRecord` 作为不可变执行历史，避免任务状态变化破坏审计。
 
 加签使用 root task + stable sort 表达同一加签链。节点退回不篡改流程版本，而是增加 node round 并重新生成目标节点任务。审批人任务撤回必须验证下游是否已进入不可逆状态。
+
+9.3E 进一步以独立 `ApprovalInstanceAttachment` 把现有 Attachment 绑定到具体执行 element：approve/reject -> ApprovalRecord，BACK -> ReturnBackRecord，SIGN -> AddSignTask；`requireComment` 只对 approve/reject 生效，并由 PC/Mobile + API 双层校验。DB-011 已在 Migration 63 与专项回归后关闭。
 
 提交人 cancel 继续是实例级动作，不能与 approver withdraw 合并为一个 endpoint 或一个状态判断。
 

@@ -283,8 +283,7 @@ export class ApprovalFlowConfigService {
     }
     if (
       dto.allowBatchProcess ||
-      dto.duplicateApproverRule !== 'FIRST_ONLY' ||
-      dto.requireComment
+      dto.duplicateApproverRule !== 'FIRST_ONLY'
     ) {
       throw new UnprocessableEntityException('所选高级审批设置尚未接入运行时')
     }

@@ -51,12 +51,14 @@
 
 ## 9.3E requireComment / Attachment / UI 与关闭验收
 
-1. approve/reject/sign/back 按 flow `requireComment` 校验非空意见；batch 行为按 Cordys 当前源码再次核对后接入。
+1. approve/reject 按 flow `requireComment` 校验非空意见；SIGN/BACK 的说明/原因保持 Cordys 独立语义，不错误套用 requireComment。
 2. 新增 `ApprovalInstanceAttachment`，element 指向具体 action record / add-sign / return-back 元素。
 3. 接入现有 Attachment 资源的 tenant 归属校验，不复制附件实体。
 4. 审批详情展示 records、动作、轮次和附件；按钮按 runtime capability + task 状态显示。
-5. 流程设置只开放已经验收完成的 `allowAddSign / allowWithdraw / requireComment / allowBatchProcess`，不能因同属 DB-011 一次性全开。
+5. 流程设置只开放已经验收完成的 `allowAddSign / allowWithdraw / requireComment`；`allowBatchProcess` 与高级 duplicate rule 继续 fail-closed，不能因同属高级设置一次性全开。
 6. DB-011 专项 Rules/API/Browser、四业务审批回归、Root Smoke、空库全 migration + 双 Seed、workspace typecheck/lint/build 全绿后更新 backlog 为 `VERIFIED`。
+
+关闭证据：[9.3E requireComment / ApprovalInstanceAttachment 专项验收](./w370-db011-attachment-comment-acceptance.md)
 
 ## Forward-only 原则
 

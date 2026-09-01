@@ -108,6 +108,7 @@ export class AttachmentsService {
     if (!isAdmin && row.uploaderId && row.uploaderId !== user.id) {
       throw new BadRequestException('只能删除自己上传的附件')
     }
+    await this.ensureNotApprovalBound(user.tenantId, id)
     await this.storage.remove(row.path)
     await this.prisma.attachment.delete({ where: { id } })
     return { id, name: row.name }
@@ -122,6 +123,7 @@ export class AttachmentsService {
       where: { id, tenantId, targetType, targetId },
     })
     if (!row) return false
+    await this.ensureNotApprovalBound(tenantId, id)
     await this.storage.remove(row.path)
     await this.prisma.attachment.delete({ where: { id } })
     return true
@@ -145,6 +147,13 @@ export class AttachmentsService {
     })
     if (!row) throw new NotFoundException('附件不存在')
     return row
+  }
+
+  private async ensureNotApprovalBound(tenantId: string, attachmentId: string) {
+    const linked = await this.prisma.approvalInstanceAttachment.count({
+      where: { tenantId, attachmentId },
+    })
+    if (linked > 0) throw new BadRequestException('审批历史附件不能删除')
   }
 
   private toVO(row: {

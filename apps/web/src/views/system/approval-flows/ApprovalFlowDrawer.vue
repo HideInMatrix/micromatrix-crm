@@ -393,9 +393,9 @@ function formatDate(value?: string | null) {
               </div>
               <el-switch v-model="form.allowAddSign" :disabled="readonly" />
             </div>
-            <div class="setting-row is-disabled">
-              <div><strong>审批意见必填</strong><small>运行时尚未统一强制校验</small></div>
-              <el-switch v-model="form.requireComment" disabled />
+            <div class="setting-row">
+              <div><strong>审批意见必填</strong><small>开启后，同意/驳回均要求填写审批意见</small></div>
+              <el-switch v-model="form.requireComment" :disabled="readonly" />
             </div>
             <div class="setting-row setting-row--select is-disabled">
               <div>

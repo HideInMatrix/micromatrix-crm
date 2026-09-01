@@ -72,6 +72,8 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
       $transaction(input: (tx: unknown) => Promise<unknown>): Promise<unknown>
     }
     ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+    ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
+    requireCommentForInstance(user: Record<string, unknown>, instanceId: string): Promise<boolean>
   }
   runtime.ensurePendingTask = async () => ({
     id: 'task-a',
@@ -89,6 +91,8 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
     createdAt: new Date(),
     updatedAt: new Date(),
   })
+  runtime.ensureActionAttachmentIds = async (_user, ids) => ids ?? []
+  runtime.requireCommentForInstance = async () => false
   runtime.prisma = {
     approvalTask: {
       update: async (input) => {
@@ -159,6 +163,8 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
     }
     resources: { setBizStatus(): Promise<void> }
     ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+    ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
+    requireCommentForInstance(user: Record<string, unknown>, instanceId: string): Promise<boolean>
     restorePreUpdateSnapshot(instance: Record<string, unknown>, operatorId: string): Promise<void>
     sendApprovalResult(
       instance: Record<string, unknown>,
@@ -182,6 +188,8 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
     createdAt: new Date(),
     updatedAt: new Date(),
   })
+  runtime.ensureActionAttachmentIds = async (_user, ids) => ids ?? []
+  runtime.requireCommentForInstance = async () => false
   runtime.prisma = {
     approvalTask: {
       update: async (input) => {
@@ -360,20 +368,33 @@ test('撤回后同 task/node/round 重审按 Cordys 保留或 delete+create Appr
       task: Record<string, unknown>,
       result: 'APPROVE' | 'REJECT',
       comment: string | null,
+      attachmentIds?: string[],
     ): Promise<void>
   }
   let deleted = 0
+  let relationDeleted = 0
   const created: Array<Record<string, unknown>> = []
+  const attachmentRelations: Array<Record<string, unknown>> = []
   const tx = {
     approvalRecord: {
-      findFirst: async () => ({ result: 'APPROVE' }),
+      findFirst: async () => ({ id: 'record-old', result: 'APPROVE' }),
       deleteMany: async () => {
         deleted += 1
         return { count: 1 }
       },
       create: async ({ data }: { data: Record<string, unknown> }) => {
         created.push(data)
-        return data
+        return { id: `record-new-${created.length}`, ...data }
+      },
+    },
+    approvalInstanceAttachment: {
+      deleteMany: async () => {
+        relationDeleted += 1
+        return { count: 1 }
+      },
+      createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        attachmentRelations.push(...data)
+        return { count: data.length }
       },
     },
   }
@@ -386,15 +407,94 @@ test('撤回后同 task/node/round 重审按 Cordys 保留或 delete+create Appr
 
   await runtime.saveApprovalRecord(tx, user, task, 'APPROVE', '重新确认通过')
   assert.equal(deleted, 1)
+  assert.equal(relationDeleted, 1)
   assert.equal(created.length, 1)
   assert.equal(created[0]?.result, 'APPROVE')
   assert.equal(created[0]?.comment, '重新确认通过')
 
   await runtime.saveApprovalRecord(tx, user, task, 'REJECT', '复核后驳回')
   assert.equal(deleted, 2)
+  assert.equal(relationDeleted, 2)
   assert.equal(created.length, 2)
   assert.equal(created[1]?.result, 'REJECT')
   assert.equal(created[1]?.comment, '复核后驳回')
+
+  await runtime.saveApprovalRecord(tx, user, task, 'APPROVE', null, ['attachment-a'])
+  assert.equal(deleted, 3, '出现新附件时必须替换旧 record')
+  assert.equal(relationDeleted, 3, '替换旧 record 时同步清理旧 element relation')
+  assert.equal(attachmentRelations.length, 1)
+  assert.equal(attachmentRelations[0]?.attachmentId, 'attachment-a')
+  assert.equal(attachmentRelations[0]?.elementId, 'record-new-3')
+})
+
+test('requireComment=true 时同意和驳回都拒绝空审批意见', async () => {
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  const runtime = service as unknown as {
+    ensurePendingTask(): Promise<Record<string, unknown>>
+    ensureActionAttachmentIds(): Promise<string[]>
+    requireCommentForInstance(): Promise<boolean>
+  }
+  runtime.ensurePendingTask = async () => ({
+    id: 'task-required',
+    tenantId: 'tenant-a',
+    instanceId: 'instance-required',
+    nodeId: 'node-required',
+    nodeIndex: 0,
+    nodeRound: 1,
+    nodeName: '必填审批',
+    approverId: 'user-a',
+    taskType: 'APPROVAL',
+    status: 'PENDING',
+    action: null,
+  })
+  runtime.ensureActionAttachmentIds = async () => []
+  runtime.requireCommentForInstance = async () => true
+
+  const user = { id: 'user-a', tenantId: 'tenant-a', name: '审批人' } as never
+  await assert.rejects(() => service.approveTask(user, 'task-required'), /要求填写审批意见/)
+  await assert.rejects(() => service.rejectTask(user, 'task-required'), /要求填写审批意见/)
+})
+
+test('审批动作附件只接受当前操作人尚未归档的租户内附件', async () => {
+  const service = Object.create(ApprovalsService.prototype) as ApprovalsService
+  let attachmentQuery: Record<string, unknown> | undefined
+  const runtime = service as unknown as {
+    prisma: {
+      attachment: { findMany(input: Record<string, unknown>): Promise<Array<{ id: string }>> }
+      approvalInstanceAttachment: {
+        findMany(input: Record<string, unknown>): Promise<Array<{ attachmentId: string }>>
+      }
+    }
+    ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
+  }
+  runtime.prisma = {
+    attachment: {
+      findMany: async (input) => {
+        attachmentQuery = input
+        return [{ id: 'attachment-a' }]
+      },
+    },
+    approvalInstanceAttachment: { findMany: async () => [] },
+  }
+  const user = { id: 'user-a', tenantId: 'tenant-a' }
+  assert.deepEqual(await runtime.ensureActionAttachmentIds(user, ['attachment-a', 'attachment-a']), [
+    'attachment-a',
+  ])
+  assert.deepEqual((attachmentQuery?.where as Record<string, unknown>) ?? {}, {
+    id: { in: ['attachment-a'] },
+    tenantId: 'tenant-a',
+    uploaderId: 'user-a',
+    targetType: null,
+    targetId: null,
+  })
+
+  runtime.prisma.approvalInstanceAttachment.findMany = async () => [
+    { attachmentId: 'attachment-a' },
+  ]
+  await assert.rejects(
+    () => runtime.ensureActionAttachmentIds(user, ['attachment-a']),
+    /已归档的审批附件不能重复绑定/,
+  )
 })
 
 test('待办任务查询强制 tenant/owner/status，并拒绝已执行 BACK 的旧任务', async () => {

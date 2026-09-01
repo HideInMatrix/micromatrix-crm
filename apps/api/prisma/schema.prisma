@@ -1744,6 +1744,7 @@ model ApprovalInstance {
   records     ApprovalRecord[]
   addSignTasks ApprovalAddSignTask[]
   returnBackRecords ApprovalReturnBackRecord[]
+  attachments ApprovalInstanceAttachment[]
 
   @@index([tenantId, status])
   @@index([tenantId, module, targetId])
@@ -1861,6 +1862,24 @@ model ApprovalReturnBackRecord {
   @@index([tenantId, instanceId, createdAt])
   @@index([taskId])
   @@map("approval_return_back_records")
+}
+
+model ApprovalInstanceAttachment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  instanceId   String   @map("instance_id")
+  elementId    String   @map("element_id")
+  attachmentId String   @map("attachment_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  instance   ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  attachment Attachment       @relation(fields: [attachmentId], references: [id], onDelete: Restrict)
+
+  @@unique([instanceId, elementId, attachmentId])
+  @@index([tenantId, instanceId, createdAt])
+  @@index([elementId])
+  @@index([attachmentId])
+  @@map("approval_instance_attachments")
 }
 
 // ============ 标讯（招投标信息） ============
@@ -2658,6 +2677,8 @@ model Attachment {
   targetType String?
   targetId   String?
   createdAt  DateTime @default(now())
+
+  approvalInstanceAttachments ApprovalInstanceAttachment[]
 
   @@index([tenantId, targetType, targetId])
   @@map("attachments")

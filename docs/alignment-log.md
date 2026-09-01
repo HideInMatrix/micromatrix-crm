@@ -1051,3 +1051,17 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 9.3D isolated HTTP Smoke 在 **62/62 migrations + Seed + API build** 下覆盖 owner/flow gate、同 task 回开、下游 SKIPPED、record 保留/替换、round 2 重建、旧 task 与 finished instance fail-closed；Browser **24/24 PASS**，PC/Mobile 都真实调用 revoke API，API 5xx=0、Runtime exception=0。
 - 回归基线：Rules **125/125**、9.3B add-sign PASS、9.3C return-back PASS、DB-010 regression PASS、Root Smoke **227/227**、workspace typecheck/ESLint/production build、Prisma validate 全绿。
 - DB-011 仍为 `IN_PROGRESS`，9.3A/B/C/D 已关闭；**下一执行指针正式推进到 W3.7-9.3E requireComment + ApprovalInstanceAttachment**。
+
+---
+
+## 54. W3.7-9.3E DB-011 requireComment / ApprovalInstanceAttachment 最终关闭（2026-09-01）
+
+- 按 Cordys `ApprovalActionService.saveApprovalRecord/saveInstanceAttachment`、`ApprovalInstanceAttachment` Domain 及 PC/Mobile 审批详情源码完成最后一轮证据核对：`requireComment` 只约束 approve/reject 审批意见；SIGN/BACK 的说明/原因保持独立语义。MicroMatrix 服务端额外做 fail-closed 校验，不能靠前端 required 绕过。
+- Migration 63 新增 `approval_instance_attachments`，复用现有 `attachments` 实体；relation 同时关联 ApprovalInstance 与 Attachment，历史绑定附件 `ON DELETE RESTRICT`。通用附件删除服务在物理文件删除前先检查审批 relation，避免数据库关系仍在但文件已被删掉。
+- approve/reject 附件以 `ApprovalRecord.id` 为 element；BACK 以 `ApprovalReturnBackRecord.id`；SIGN 以 `ApprovalAddSignTask.id`。AFTER SIGN 按 Cordys 同时产生原审批 record 与 add-sign element，因此同一 attachmentId 会分别建立两条动作关系。
+- 审批人撤回后同 task/node/round 重审继续遵守 Cordys 同槽位语义：无新 comment/attachment 时保留旧 record/relation；有新意见、新附件或结果改变时先清旧 relation，再 delete+create record 并绑定新附件，不产生重复 ApprovalRecord。
+- 附件动作 API 强制 tenant + uploader + 未归档校验，单次最多 20 个；已进入审批历史的附件不能被重复绑定，也不能由通用附件删除接口物理删除。ApprovalInstanceVO 返回 `requireComment + approvalAttachments`，PC/Mobile 均完成临时上传、动作提交和历史下载展示。
+- 9.3E isolated HTTP Smoke 在 **63/63 migrations + Seed + Shared/API build** 下覆盖 requireComment 双态、跨租户/归档附件 gate、approve/SIGN/BACK element 绑定、撤回重审附件替换、详情 VO 与最终 APPROVED；Browser **28/28**，PC/Mobile 均真实调用 `/attachments/upload`，API 5xx=0、Runtime exception=0。
+- DB-011 最终相邻回归：9.3A migration smoke PASS；9.3B/9.3C/9.3D HTTP PASS（实际 deploy 63 migrations）；Browser **17/17、17/17、24/24**；DB-010 regression PASS；Root **227/227**；Rules **127/127**；`/system/modules` Browser **47/47**。
+- 空库从零 **63/63 migrations + Seed 2/2** 且计数幂等；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate 全绿，Web production build **4144 modules transformed**。
+- DB-011 9.3A～9.3E 全部关闭，deferred backlog 正式更新为 `VERIFIED`。**下一执行指针：W3.7-9.4A / DB-012 Condition / DEFAULT 图结构、条件 DTO 与 updateFields runtime。**

@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AdvancedFilter: typeof import('./../components/form-engine/AdvancedFilter.vue')['default']
+    ApprovalActionAttachments: typeof import('./../components/ApprovalActionAttachments.vue')['default']
     AttachmentUploader: typeof import('./../components/AttachmentUploader.vue')['default']
     BatchFieldEditDialog: typeof import('./../components/BatchFieldEditDialog.vue')['default']
     ContractDetailDrawer: typeof import('./../components/ContractDetailDrawer.vue')['default']

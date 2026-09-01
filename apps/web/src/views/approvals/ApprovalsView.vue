@@ -2,11 +2,14 @@
 import {
   APPROVAL_INSTANCE_STATUS_LABELS,
   APPROVAL_MODULE_LABELS,
+  type AttachmentVO,
   type ApprovalInstanceVO,
 } from '@micromatrix/shared'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ApprovalActionAttachments from '@/components/ApprovalActionAttachments.vue'
 import { approvalApi } from '@/api/approvals'
+import { attachmentApi } from '@/api/attachments'
 import { extractErrorMessage } from '@/api/http'
 import { memberApi, type MemberOption } from '@/api/system'
 
@@ -23,10 +26,13 @@ const query = reactive({ page: 1, pageSize: 10 })
 const detailVisible = ref(false)
 const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
+const actionAttachments = ref<AttachmentVO[]>([])
 const addSignVisible = ref(false)
 const addSignLoading = ref(false)
+const addSignAttachments = ref<AttachmentVO[]>([])
 const returnBackVisible = ref(false)
 const returnBackLoading = ref(false)
+const returnBackAttachments = ref<AttachmentVO[]>([])
 const memberOptions = ref<MemberOption[]>([])
 const addSignForm = reactive({
   type: 'BEFORE' as 'BEFORE' | 'AFTER',
@@ -62,13 +68,65 @@ async function loadData() {
 function openDetail(row: ApprovalInstanceVO) {
   current.value = row
   comment.value = ''
+  actionAttachments.value = []
   detailVisible.value = true
+}
+
+function taskAttachments(taskId: string): AttachmentVO[] {
+  if (!current.value) return []
+  const elementIds = new Set<string>()
+  for (const record of current.value.records) {
+    if (record.taskId === taskId) elementIds.add(record.id)
+  }
+  for (const record of current.value.returnBackRecords) {
+    if (record.taskId === taskId) elementIds.add(record.id)
+  }
+  for (const relation of current.value.addSignTasks) {
+    if (relation.signTaskId === taskId) elementIds.add(relation.id)
+  }
+  const unique = new Map<string, AttachmentVO>()
+  current.value.approvalAttachments
+    .filter((relation) => elementIds.has(relation.elementId))
+    .forEach((relation) => unique.set(relation.attachment.id, relation.attachment))
+  return [...unique.values()]
+}
+
+async function discardTempAttachments(files: AttachmentVO[]) {
+  if (!files.length) return
+  await Promise.allSettled(files.map((file) => attachmentApi.remove(file.id)))
+}
+
+async function cleanupActionAttachments() {
+  const files = actionAttachments.value
+  actionAttachments.value = []
+  await discardTempAttachments(files)
+}
+
+async function cleanupAddSignAttachments() {
+  const files = addSignAttachments.value
+  addSignAttachments.value = []
+  await discardTempAttachments(files)
+}
+
+async function cleanupReturnBackAttachments() {
+  const files = returnBackAttachments.value
+  returnBackAttachments.value = []
+  await discardTempAttachments(files)
 }
 
 async function handleApprove() {
   if (!current.value?.myPendingTaskId) return
+  if (current.value.requireComment && !comment.value.trim()) {
+    ElMessage.warning('当前审批流要求填写审批意见')
+    return
+  }
   try {
-    await approvalApi.approve(current.value.myPendingTaskId, comment.value || undefined)
+    await approvalApi.approve(
+      current.value.myPendingTaskId,
+      comment.value.trim() || undefined,
+      actionAttachments.value.map((file) => file.id),
+    )
+    actionAttachments.value = []
     ElMessage.success('已同意')
     detailVisible.value = false
     loadData()
@@ -79,12 +137,17 @@ async function handleApprove() {
 
 async function handleReject() {
   if (!current.value?.myPendingTaskId) return
-  if (!comment.value.trim()) {
-    ElMessage.warning('驳回需填写审批意见')
+  if (current.value.requireComment && !comment.value.trim()) {
+    ElMessage.warning('当前审批流要求填写审批意见')
     return
   }
   try {
-    await approvalApi.reject(current.value.myPendingTaskId, comment.value)
+    await approvalApi.reject(
+      current.value.myPendingTaskId,
+      comment.value.trim() || undefined,
+      actionAttachments.value.map((file) => file.id),
+    )
+    actionAttachments.value = []
     ElMessage.success('已驳回')
     detailVisible.value = false
     loadData()
@@ -98,6 +161,7 @@ async function openAddSign() {
   addSignForm.type = 'BEFORE'
   addSignForm.signApprover = ''
   addSignForm.comment = ''
+  addSignAttachments.value = []
   try {
     const { data } = await memberApi.options()
     memberOptions.value = data
@@ -119,7 +183,9 @@ async function handleAddSign() {
       type: addSignForm.type,
       signApprover: addSignForm.signApprover,
       comment: addSignForm.comment.trim() || undefined,
+      attachmentIds: addSignAttachments.value.map((file) => file.id),
     })
+    addSignAttachments.value = []
     ElMessage.success(addSignForm.type === 'BEFORE' ? '前置加签已发起' : '后置加签已发起')
     addSignVisible.value = false
     detailVisible.value = false
@@ -135,6 +201,7 @@ function openReturnBack() {
   if (!current.value?.myPendingTaskId || !current.value.canReturnBack) return
   returnBackForm.returnToNodeId = current.value.returnBackTargets.at(-1)?.nodeId ?? ''
   returnBackForm.comment = ''
+  returnBackAttachments.value = []
   returnBackVisible.value = true
 }
 
@@ -149,7 +216,9 @@ async function handleReturnBack() {
     await approvalApi.back(current.value.myPendingTaskId, {
       returnToNodeId: returnBackForm.returnToNodeId,
       comment: returnBackForm.comment.trim() || undefined,
+      attachmentIds: returnBackAttachments.value.map((file) => file.id),
     })
+    returnBackAttachments.value = []
     ElMessage.success('已退回到历史审批节点')
     returnBackVisible.value = false
     detailVisible.value = false
@@ -288,7 +357,12 @@ onMounted(() => {
       />
     </div>
 
-    <el-dialog v-model="detailVisible" :title="current?.targetName ?? '审批详情'" width="560px">
+    <el-dialog
+      v-model="detailVisible"
+      :title="current?.targetName ?? '审批详情'"
+      width="560px"
+      @closed="cleanupActionAttachments"
+    >
       <div v-if="current">
         <el-descriptions :column="2" border size="small" class="mb-4">
           <el-descriptions-item label="类型">
@@ -339,17 +413,27 @@ onMounted(() => {
             <div v-if="task.comment" class="text-xs text-[var(--el-text-color-secondary)] mt-1">
               意见：{{ task.comment }}
             </div>
+            <ApprovalActionAttachments
+              v-if="taskAttachments(task.id).length"
+              :model-value="taskAttachments(task.id)"
+              readonly
+              class="mt-2"
+            />
           </el-timeline-item>
         </el-timeline>
 
         <template v-if="current.myPendingTaskId && current.status === 'PENDING'">
+          <div class="mt-2 mb-1 text-sm font-medium">
+            审批意见
+            <span v-if="current.requireComment" class="text-[var(--el-color-danger)]">*</span>
+          </div>
           <el-input
             v-model="comment"
             type="textarea"
             :rows="2"
-            placeholder="审批意见（驳回时必填）"
-            class="mt-2"
+            :placeholder="current.requireComment ? '审批意见（必填）' : '审批意见（选填）'"
           />
+          <ApprovalActionAttachments v-model="actionAttachments" class="mt-3" />
         </template>
       </div>
       <template #footer>
@@ -372,7 +456,13 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="addSignVisible" title="加签" width="460px" append-to-body>
+    <el-dialog
+      v-model="addSignVisible"
+      title="加签"
+      width="460px"
+      append-to-body
+      @closed="cleanupAddSignAttachments"
+    >
       <el-form label-width="92px">
         <el-form-item label="加签方式">
           <el-radio-group v-model="addSignForm.type">
@@ -405,6 +495,9 @@ onMounted(() => {
             placeholder="可填写加签说明"
           />
         </el-form-item>
+        <el-form-item label="附件">
+          <ApprovalActionAttachments v-model="addSignAttachments" class="w-full" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="addSignVisible = false">取消</el-button>
@@ -414,7 +507,13 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="returnBackVisible" title="退回节点" width="460px" append-to-body>
+    <el-dialog
+      v-model="returnBackVisible"
+      title="退回节点"
+      width="460px"
+      append-to-body
+      @closed="cleanupReturnBackAttachments"
+    >
       <el-form label-width="92px">
         <el-form-item label="退回到" required>
           <el-select
@@ -439,6 +538,9 @@ onMounted(() => {
             show-word-limit
             placeholder="可填写退回原因"
           />
+        </el-form-item>
+        <el-form-item label="附件">
+          <ApprovalActionAttachments v-model="returnBackAttachments" class="w-full" />
         </el-form-item>
       </el-form>
       <template #footer>

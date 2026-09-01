@@ -136,16 +136,27 @@ export class ApprovalsService {
     return { id: instance.id, name: target.name }
   }
 
-  async approveTask(user: AuthUser, taskId: string, comment?: string) {
+  async approveTask(user: AuthUser, taskId: string, comment?: string, attachmentIds?: string[]) {
     const task = await this.ensurePendingTask(user, taskId)
     const handledAt = new Date()
     const normalizedComment = comment?.trim() || null
+    const normalizedAttachmentIds = await this.ensureActionAttachmentIds(user, attachmentIds)
+    if ((await this.requireCommentForInstance(user, task.instanceId)) && !normalizedComment) {
+      throw new BadRequestException('当前审批流要求填写审批意见')
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.approvalTask.update({
         where: { id: taskId },
         data: { status: 'APPROVED', action: 'APPROVE', handledAt },
       })
-      await this.saveApprovalRecord(tx, user, task, 'APPROVE', normalizedComment)
+      await this.saveApprovalRecord(
+        tx,
+        user,
+        task,
+        'APPROVE',
+        normalizedComment,
+        normalizedAttachmentIds,
+      )
     })
 
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
@@ -182,18 +193,20 @@ export class ApprovalsService {
     const rootTaskId = sourceRelation?.rootTaskId ?? sourceTask.id
     const sort = await this.nextAddSignSort(rootTaskId, sourceRelation, dto.type)
     const normalizedComment = dto.comment?.trim() || null
+    const normalizedAttachmentIds = await this.ensureActionAttachmentIds(user, dto.attachmentIds)
     const handledAt = new Date()
     const signTaskId = randomUUID()
+    const addSignRelationId = randomUUID()
 
-    const operations: Prisma.PrismaPromise<unknown>[] = [
-      this.prisma.approvalTask.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.approvalTask.update({
         where: { id: sourceTask.id },
         data:
           dto.type === 'BEFORE'
             ? { action: 'SIGN' }
             : { status: 'APPROVED', action: 'APPROVE', handledAt },
-      }),
-      this.prisma.approvalTask.create({
+      })
+      await tx.approvalTask.create({
         data: {
           id: signTaskId,
           tenantId: user.tenantId,
@@ -205,9 +218,10 @@ export class ApprovalsService {
           approverId: signApprover.id,
           taskType: 'SIGN',
         },
-      }),
-      this.prisma.approvalAddSignTask.create({
+      })
+      await tx.approvalAddSignTask.create({
         data: {
+          id: addSignRelationId,
           tenantId: user.tenantId,
           instanceId: sourceTask.instanceId,
           taskId: signTaskId,
@@ -218,25 +232,25 @@ export class ApprovalsService {
           comment: normalizedComment,
           createdById: user.id,
         },
-      }),
-    ]
-    if (dto.type === 'AFTER') {
-      operations.push(
-        this.prisma.approvalRecord.create({
-          data: {
-            tenantId: user.tenantId,
-            instanceId: sourceTask.instanceId,
-            taskId: sourceTask.id,
-            nodeId: sourceTask.nodeId,
-            nodeRound: sourceTask.nodeRound,
-            result: 'APPROVE',
-            comment: normalizedComment,
-            createdById: user.id,
-          },
-        }),
+      })
+      if (dto.type === 'AFTER') {
+        await this.saveApprovalRecord(
+          tx,
+          user,
+          sourceTask,
+          'APPROVE',
+          normalizedComment,
+          normalizedAttachmentIds,
+        )
+      }
+      await this.saveActionAttachmentRelations(
+        tx,
+        user.tenantId,
+        sourceTask.instanceId,
+        addSignRelationId,
+        normalizedAttachmentIds,
       )
-    }
-    await this.prisma.$transaction(operations)
+    })
     await this.notifications.notifyMany(user.tenantId, [signApprover.id], {
       type: 'approval',
       title: '有新的加签审批待处理',
@@ -298,6 +312,7 @@ export class ApprovalsService {
     ])
     const nextRound = Math.max(taskRound._max.nodeRound ?? 0, recordRound._max.nodeRound ?? 0) + 1
     const normalizedComment = dto.comment?.trim() || null
+    const normalizedAttachmentIds = await this.ensureActionAttachmentIds(user, dto.attachmentIds)
     const backRecordId = randomUUID()
 
     await this.prisma.$transaction(async (tx) => {
@@ -351,6 +366,23 @@ export class ApprovalsService {
           })),
         })
       }
+      const previousBackRecords = await tx.approvalReturnBackRecord.findMany({
+        where: {
+          tenantId: user.tenantId,
+          instanceId: instance.id,
+          returnToNodeId: targetNodeId,
+        },
+        select: { id: true },
+      })
+      if (previousBackRecords.length) {
+        await tx.approvalInstanceAttachment.deleteMany({
+          where: {
+            tenantId: user.tenantId,
+            instanceId: instance.id,
+            elementId: { in: previousBackRecords.map((record) => record.id) },
+          },
+        })
+      }
       await tx.approvalReturnBackRecord.deleteMany({
         where: {
           tenantId: user.tenantId,
@@ -369,6 +401,13 @@ export class ApprovalsService {
           returnUserId: user.id,
         },
       })
+      await this.saveActionAttachmentRelations(
+        tx,
+        user.tenantId,
+        instance.id,
+        backRecordId,
+        normalizedAttachmentIds,
+      )
       await tx.approvalInstance.update({
         where: { id: instance.id },
         data: { currentNodeIndex: targetIndex },
@@ -468,10 +507,13 @@ export class ApprovalsService {
     })
   }
 
-  async rejectTask(user: AuthUser, taskId: string, comment?: string) {
+  async rejectTask(user: AuthUser, taskId: string, comment?: string, attachmentIds?: string[]) {
     const task = await this.ensurePendingTask(user, taskId)
-    if (!comment?.trim()) throw new BadRequestException('驳回时请填写审批意见')
-    const normalizedComment = comment.trim()
+    const normalizedComment = comment?.trim() || null
+    const normalizedAttachmentIds = await this.ensureActionAttachmentIds(user, attachmentIds)
+    if ((await this.requireCommentForInstance(user, task.instanceId)) && !normalizedComment) {
+      throw new BadRequestException('当前审批流要求填写审批意见')
+    }
     const handledAt = new Date()
 
     const instance = await this.prisma.approvalInstance.findUniqueOrThrow({
@@ -482,7 +524,14 @@ export class ApprovalsService {
         where: { id: taskId },
         data: { status: 'REJECTED', action: 'REJECT', handledAt },
       })
-      await this.saveApprovalRecord(tx, user, task, 'REJECT', normalizedComment)
+      await this.saveApprovalRecord(
+        tx,
+        user,
+        task,
+        'REJECT',
+        normalizedComment,
+        normalizedAttachmentIds,
+      )
       await tx.approvalTask.updateMany({
         where: { instanceId: instance.id, status: 'PENDING' },
         data: { status: 'SKIPPED' },
@@ -1089,11 +1138,70 @@ export class ApprovalsService {
     return Math.max(taskRound._max.nodeRound ?? 0, recordRound._max.nodeRound ?? 0) + 1
   }
 
+  private async requireCommentForInstance(user: AuthUser, instanceId: string): Promise<boolean> {
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: { id: instanceId, tenantId: user.tenantId },
+      select: { flowId: true },
+    })
+    if (!instance?.flowId) return false
+    const flow = await this.prisma.approvalFlow.findFirst({
+      where: { id: instance.flowId, tenantId: user.tenantId, deletedAt: null },
+      select: { requireComment: true },
+    })
+    return Boolean(flow?.requireComment)
+  }
+
+  private async ensureActionAttachmentIds(
+    user: AuthUser,
+    attachmentIds?: string[],
+  ): Promise<string[]> {
+    const ids = [...new Set((attachmentIds ?? []).map((id) => id.trim()).filter(Boolean))]
+    if (!ids.length) return []
+    if (ids.length > 20) throw new BadRequestException('单次审批最多上传 20 个附件')
+    const attachments = await this.prisma.attachment.findMany({
+      where: {
+        id: { in: ids },
+        tenantId: user.tenantId,
+        uploaderId: user.id,
+        targetType: null,
+        targetId: null,
+      },
+      select: { id: true },
+    })
+    if (attachments.length !== ids.length) {
+      throw new BadRequestException('审批附件不存在、已挂载、已删除或不属于当前操作人')
+    }
+    const bound = await this.prisma.approvalInstanceAttachment.findMany({
+      where: { tenantId: user.tenantId, attachmentId: { in: ids } },
+      select: { attachmentId: true },
+    })
+    if (bound.length) throw new BadRequestException('已归档的审批附件不能重复绑定')
+    return ids
+  }
+
+  private async saveActionAttachmentRelations(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    instanceId: string,
+    elementId: string,
+    attachmentIds: string[],
+  ) {
+    if (!attachmentIds.length) return
+    await tx.approvalInstanceAttachment.createMany({
+      data: attachmentIds.map((attachmentId) => ({
+        tenantId,
+        instanceId,
+        elementId,
+        attachmentId,
+      })),
+      skipDuplicates: true,
+    })
+  }
+
   /**
    * Cordys 同一 task/node/round 在“审批人撤回 -> 再次执行”时不会无条件追加第二条 record：
    * - 再次同意且没有新意见/附件时保留原 record；
-   * - 有新意见，或动作从 APPROVE 改为 REJECT 时，先删除旧 record 再创建新的执行记录。
-   * 当前 9.3D 尚未接审批附件，因此这里只按 result/comment 实现对应语义。
+   * - 有新意见/附件，或动作从 APPROVE 改为 REJECT 时，先删除旧 record 再创建新的执行记录。
    */
   private async saveApprovalRecord(
     tx: Prisma.TransactionClient,
@@ -1101,6 +1209,7 @@ export class ApprovalsService {
     task: ApprovalTask,
     result: 'APPROVE' | 'REJECT',
     comment: string | null,
+    attachmentIds: string[] = [],
   ) {
     const where = {
       tenantId: user.tenantId,
@@ -1112,11 +1221,23 @@ export class ApprovalsService {
     const existing = await tx.approvalRecord.findFirst({
       where,
       orderBy: { createdAt: 'desc' },
-      select: { result: true },
+      select: { id: true, result: true },
     })
-    if (existing?.result === 'APPROVE' && result === 'APPROVE' && !comment) return
-    if (existing) await tx.approvalRecord.deleteMany({ where })
-    await tx.approvalRecord.create({
+    if (
+      existing?.result === 'APPROVE' &&
+      result === 'APPROVE' &&
+      !comment &&
+      attachmentIds.length === 0
+    ) {
+      return existing
+    }
+    if (existing) {
+      await tx.approvalInstanceAttachment.deleteMany({
+        where: { tenantId: user.tenantId, instanceId: task.instanceId, elementId: existing.id },
+      })
+      await tx.approvalRecord.deleteMany({ where })
+    }
+    const record = await tx.approvalRecord.create({
       data: {
         tenantId: user.tenantId,
         instanceId: task.instanceId,
@@ -1128,6 +1249,14 @@ export class ApprovalsService {
         createdById: user.id,
       },
     })
+    await this.saveActionAttachmentRelations(
+      tx,
+      user.tenantId,
+      task.instanceId,
+      record.id,
+      attachmentIds,
+    )
+    return record
   }
 
   private isTaskWithdrawable(
@@ -1194,7 +1323,7 @@ export class ApprovalsService {
         })
       : []
     const nameMap = new Map(users.map((u) => [u.id, u.name]))
-    const [records, addSignTasks, returnBackRecords, flowCapability] = await Promise.all([
+    const [records, addSignTasks, returnBackRecords, attachmentRelations, flowCapability] = await Promise.all([
       this.prisma.approvalRecord.findMany({
         where: { tenantId: instance.tenantId, instanceId: instance.id },
         orderBy: { createdAt: 'asc' },
@@ -1207,13 +1336,24 @@ export class ApprovalsService {
         where: { tenantId: instance.tenantId, instanceId: instance.id },
         orderBy: { createdAt: 'asc' },
       }),
+      this.prisma.approvalInstanceAttachment.findMany({
+        where: { tenantId: instance.tenantId, instanceId: instance.id },
+        orderBy: { createdAt: 'asc' },
+      }),
       instance.flowId
         ? this.prisma.approvalFlow.findFirst({
             where: { id: instance.flowId, tenantId: instance.tenantId, deletedAt: null },
-            select: { allowAddSign: true, allowWithdraw: true },
+            select: { allowAddSign: true, allowWithdraw: true, requireComment: true },
           })
         : Promise.resolve(null),
     ])
+    const attachmentIds = [...new Set(attachmentRelations.map((relation) => relation.attachmentId))]
+    const attachmentRows = attachmentIds.length
+      ? await this.prisma.attachment.findMany({
+          where: { tenantId: instance.tenantId, id: { in: attachmentIds } },
+        })
+      : []
+    const attachmentMap = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
     const latestRecordByTaskId = new Map(records.map((record) => [record.taskId, record]))
     const approvalTasks = tasks.filter(
       (task) => task.taskType === 'APPROVAL' || task.taskType === 'SIGN',
@@ -1338,6 +1478,25 @@ export class ApprovalsService {
         createdAt: record.createdAt.toISOString(),
       })),
       returnBackTargets,
+      approvalAttachments: attachmentRelations.flatMap((relation) => {
+        const attachment = attachmentMap.get(relation.attachmentId)
+        if (!attachment) return []
+        return [{
+          id: relation.id,
+          elementId: relation.elementId,
+          attachment: {
+            id: attachment.id,
+            name: attachment.name,
+            size: attachment.size,
+            mime: attachment.mime,
+            targetType: attachment.targetType,
+            targetId: attachment.targetId,
+            uploaderId: attachment.uploaderId,
+            createdAt: attachment.createdAt.toISOString(),
+          },
+        }]
+      }),
+      requireComment: Boolean(flowCapability?.requireComment),
       canAddSign: Boolean(myPending && flowCapability?.allowAddSign),
       canReturnBack: Boolean(myPending?.taskType === 'APPROVAL' && returnBackTargets.length),
       canWithdraw: Boolean(myWithdrawTask),

@@ -18,4 +18,4 @@
 | W3.4 图中业务模块逐页对齐 | [requirements（已确认）](./business-module-page-parity/requirements.md) | [design（已确认）](./business-module-page-parity/design.md) | [tasks（W3.4.0～W3.4.5 已完成 / VERIFIED）](./business-module-page-parity/tasks.md) |
 | W3.5 用户个人中心对齐     | [requirements](./personal-center-parity/requirements.md)               | [design](./personal-center-parity/design.md)               | [tasks（已完成 / VERIFIED）](./personal-center-parity/tasks.md)         |
 | W3.6 交易链深度对齐       | [requirements](./transaction-chain-parity/requirements.md)             | [design](./transaction-chain-parity/design.md)             | [tasks（W3.6.0～W3.6.6 已完成）](./transaction-chain-parity/tasks.md)   |
-| W3.7 高级审批深化         | [requirements](./process-settings-parity/requirements.md)              | [design](./process-settings-parity/design.md)              | [tasks（当前 9.3E）](./process-settings-parity/tasks.md)                |
+| W3.7 高级审批深化         | [requirements](./process-settings-parity/requirements.md)              | [design](./process-settings-parity/design.md)              | [tasks（当前 9.4A）](./process-settings-parity/tasks.md)                |

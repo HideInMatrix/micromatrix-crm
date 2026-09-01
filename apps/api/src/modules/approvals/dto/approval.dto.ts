@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { Type } from 'class-transformer'
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
@@ -248,6 +250,14 @@ export class HandleTaskDto {
   @IsOptional()
   @MaxLength(500)
   comment?: string
+
+  @ApiPropertyOptional({ description: '审批附件 ID 集合', type: [String] })
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsOptional()
+  attachmentIds?: string[]
 }
 
 export class AddSignTaskDto {
@@ -265,6 +275,14 @@ export class AddSignTaskDto {
   @IsOptional()
   @MaxLength(500)
   comment?: string
+
+  @ApiPropertyOptional({ description: '加签附件 ID 集合', type: [String] })
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsOptional()
+  attachmentIds?: string[]
 }
 
 export class ReturnBackTaskDto {
@@ -278,4 +296,12 @@ export class ReturnBackTaskDto {
   @IsOptional()
   @MaxLength(500)
   comment?: string
+
+  @ApiPropertyOptional({ description: '退回附件 ID 集合', type: [String] })
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsOptional()
+  attachmentIds?: string[]
 }

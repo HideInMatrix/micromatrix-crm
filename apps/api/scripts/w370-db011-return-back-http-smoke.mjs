@@ -303,7 +303,7 @@ try {
 
   console.log(JSON.stringify({
     database,
-    migrations: 62,
+    migrations: 63,
     validBack: true,
     invalidTargetGate: true,
     currentNodeGate: true,

@@ -31,6 +31,7 @@
     "smoke:w370-db011-add-sign": "node scripts/w370-db011-add-sign-http-smoke.mjs",
     "smoke:w370-db011-return-back": "node scripts/w370-db011-return-back-http-smoke.mjs",
     "smoke:w370-db011-approver-revoke": "node scripts/w370-db011-approver-revoke-http-smoke.mjs",
+    "smoke:w370-db011-attachment-comment": "node scripts/w370-db011-attachment-comment-http-smoke.mjs",
     "smoke:db021-follow-plan-runtime": "tsx scripts/db021-follow-plan-runtime-smoke.ts"
   },
   "dependencies": {

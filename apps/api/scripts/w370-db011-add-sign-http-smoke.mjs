@@ -356,7 +356,7 @@ try {
 
   console.log(JSON.stringify({
     database,
-    migrations: 62,
+    migrations: 63,
     allowAddSignGate: true,
     before: true,
     nestedBefore: true,

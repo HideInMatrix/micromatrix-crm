@@ -30,15 +30,23 @@ export const approvalApi = {
 
   submit: (module: string, targetId: string) =>
     http.post('/approvals/submit', { module, targetId }),
-  approve: (taskId: string, comment?: string) =>
-    http.post(`/approvals/tasks/${taskId}/approve`, { comment }),
-  reject: (taskId: string, comment: string) =>
-    http.post(`/approvals/tasks/${taskId}/reject`, { comment }),
+  approve: (taskId: string, comment?: string, attachmentIds?: string[]) =>
+    http.post(`/approvals/tasks/${taskId}/approve`, { comment, attachmentIds }),
+  reject: (taskId: string, comment?: string, attachmentIds?: string[]) =>
+    http.post(`/approvals/tasks/${taskId}/reject`, { comment, attachmentIds }),
   sign: (
     taskId: string,
-    data: { type: 'BEFORE' | 'AFTER'; signApprover: string; comment?: string },
+    data: {
+      type: 'BEFORE' | 'AFTER'
+      signApprover: string
+      comment?: string
+      attachmentIds?: string[]
+    },
   ) => http.post(`/approvals/tasks/${taskId}/sign`, data),
-  back: (taskId: string, data: { returnToNodeId: string; comment?: string }) =>
+  back: (
+    taskId: string,
+    data: { returnToNodeId: string; comment?: string; attachmentIds?: string[] },
+  ) =>
     http.post(`/approvals/tasks/${taskId}/back`, data),
   revokeTask: (taskId: string) => http.post(`/approvals/tasks/${taskId}/revoke`),
   cancel: (instanceId: string) => http.post(`/approvals/${instanceId}/cancel`),

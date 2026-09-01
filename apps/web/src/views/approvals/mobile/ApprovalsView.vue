@@ -2,10 +2,13 @@
 import {
   APPROVAL_INSTANCE_STATUS_LABELS,
   APPROVAL_MODULE_LABELS,
+  type AttachmentVO,
   type ApprovalInstanceVO,
 } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { computed, ref } from 'vue'
+import ApprovalActionAttachments from '@/components/ApprovalActionAttachments.vue'
+import { attachmentApi } from '@/api/attachments'
 import {
   approveTask,
   myHandledApprovals,
@@ -29,10 +32,13 @@ const refreshing = ref(false)
 const detailShow = ref(false)
 const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
+const actionAttachments = ref<AttachmentVO[]>([])
 const addSignShow = ref(false)
 const addSignLoading = ref(false)
+const addSignAttachments = ref<AttachmentVO[]>([])
 const returnBackShow = ref(false)
 const returnBackLoading = ref(false)
+const returnBackAttachments = ref<AttachmentVO[]>([])
 const returnBackNodeId = ref('')
 const returnBackComment = ref('')
 const memberPickerShow = ref(false)
@@ -80,13 +86,65 @@ function reload() {
 function openDetail(item: ApprovalInstanceVO) {
   current.value = item
   comment.value = ''
+  actionAttachments.value = []
   detailShow.value = true
+}
+
+function taskAttachments(taskId: string): AttachmentVO[] {
+  if (!current.value) return []
+  const elementIds = new Set<string>()
+  current.value.records.forEach((record) => {
+    if (record.taskId === taskId) elementIds.add(record.id)
+  })
+  current.value.returnBackRecords.forEach((record) => {
+    if (record.taskId === taskId) elementIds.add(record.id)
+  })
+  current.value.addSignTasks.forEach((relation) => {
+    if (relation.signTaskId === taskId) elementIds.add(relation.id)
+  })
+  const unique = new Map<string, AttachmentVO>()
+  current.value.approvalAttachments
+    .filter((relation) => elementIds.has(relation.elementId))
+    .forEach((relation) => unique.set(relation.attachment.id, relation.attachment))
+  return [...unique.values()]
+}
+
+async function discardTempAttachments(files: AttachmentVO[]) {
+  if (!files.length) return
+  await Promise.allSettled(files.map((file) => attachmentApi.remove(file.id)))
+}
+
+async function cleanupActionAttachments() {
+  const files = actionAttachments.value
+  actionAttachments.value = []
+  await discardTempAttachments(files)
+}
+
+async function cleanupAddSignAttachments() {
+  const files = addSignAttachments.value
+  addSignAttachments.value = []
+  await discardTempAttachments(files)
+}
+
+async function cleanupReturnBackAttachments() {
+  const files = returnBackAttachments.value
+  returnBackAttachments.value = []
+  await discardTempAttachments(files)
 }
 
 async function handleApprove() {
   if (!current.value?.myPendingTaskId) return
+  if (current.value.requireComment && !comment.value.trim()) {
+    showFailToast('当前审批流要求填写审批意见')
+    return
+  }
   try {
-    await approveTask(current.value.myPendingTaskId, comment.value || undefined)
+    await approveTask(
+      current.value.myPendingTaskId,
+      comment.value.trim() || undefined,
+      actionAttachments.value.map((file) => file.id),
+    )
+    actionAttachments.value = []
     showSuccessToast('已同意')
     detailShow.value = false
     reload()
@@ -97,12 +155,17 @@ async function handleApprove() {
 
 async function handleReject() {
   if (!current.value?.myPendingTaskId) return
-  if (!comment.value.trim()) {
-    showFailToast('驳回需填写意见')
+  if (current.value.requireComment && !comment.value.trim()) {
+    showFailToast('当前审批流要求填写审批意见')
     return
   }
   try {
-    await rejectTask(current.value.myPendingTaskId, comment.value)
+    await rejectTask(
+      current.value.myPendingTaskId,
+      comment.value.trim() || undefined,
+      actionAttachments.value.map((file) => file.id),
+    )
+    actionAttachments.value = []
     showSuccessToast('已驳回')
     detailShow.value = false
     reload()
@@ -117,6 +180,7 @@ async function openAddSign() {
   addSignApprover.value = ''
   addSignApproverName.value = ''
   addSignComment.value = ''
+  addSignAttachments.value = []
   try {
     const { data } = await memberApi.options()
     memberOptions.value = data
@@ -147,7 +211,9 @@ async function handleAddSign() {
       type: addSignType.value,
       signApprover: addSignApprover.value,
       comment: addSignComment.value.trim() || undefined,
+      attachmentIds: addSignAttachments.value.map((file) => file.id),
     })
+    addSignAttachments.value = []
     showSuccessToast(addSignType.value === 'BEFORE' ? '前置加签已发起' : '后置加签已发起')
     addSignShow.value = false
     detailShow.value = false
@@ -163,6 +229,7 @@ function openReturnBack() {
   if (!current.value?.myPendingTaskId || !current.value.canReturnBack) return
   returnBackNodeId.value = current.value.returnBackTargets.at(-1)?.nodeId ?? ''
   returnBackComment.value = ''
+  returnBackAttachments.value = []
   returnBackShow.value = true
 }
 
@@ -177,7 +244,9 @@ async function handleReturnBack() {
     await returnBackTask(current.value.myPendingTaskId, {
       returnToNodeId: returnBackNodeId.value,
       comment: returnBackComment.value.trim() || undefined,
+      attachmentIds: returnBackAttachments.value.map((file) => file.id),
     })
+    returnBackAttachments.value = []
     showSuccessToast('已退回到历史审批节点')
     returnBackShow.value = false
     detailShow.value = false
@@ -257,7 +326,13 @@ function taskStatusLabel(status: string, action?: string | null) {
       </van-list>
     </van-pull-refresh>
 
-    <van-popup v-model:show="detailShow" position="bottom" round :style="{ height: '75%' }">
+    <van-popup
+      v-model:show="detailShow"
+      position="bottom"
+      round
+      :style="{ height: '75%' }"
+      @closed="cleanupActionAttachments"
+    >
       <div v-if="current" class="p-4 flex flex-col h-full">
         <div class="text-center font-medium mb-3">{{ current.targetName }}</div>
         <div class="text-xs text-gray-500 mb-3">
@@ -281,6 +356,12 @@ function taskStatusLabel(status: string, action?: string | null) {
             <div v-if="task.handledAt" class="text-xs text-gray-400 mt-0.5">
               {{ new Date(task.handledAt).toLocaleString() }}
             </div>
+            <ApprovalActionAttachments
+              v-if="taskAttachments(task.id).length"
+              :model-value="taskAttachments(task.id)"
+              readonly
+              class="mt-2"
+            />
           </van-step>
         </van-steps>
 
@@ -289,9 +370,11 @@ function taskStatusLabel(status: string, action?: string | null) {
             v-model="comment"
             type="textarea"
             rows="2"
-            placeholder="审批意见（驳回时必填）"
+            :required="current.requireComment"
+            :placeholder="current.requireComment ? '审批意见（必填）' : '审批意见（选填）'"
             class="!bg-[#f7f8fa] rounded mb-3"
           />
+          <ApprovalActionAttachments v-model="actionAttachments" class="mb-3" />
           <div class="flex gap-3 pb-2">
             <van-button v-if="current.canAddSign" block plain @click="openAddSign">加签</van-button>
             <van-button v-if="current.canReturnBack" block plain @click="openReturnBack">
@@ -307,7 +390,12 @@ function taskStatusLabel(status: string, action?: string | null) {
       </div>
     </van-popup>
 
-    <van-popup v-model:show="addSignShow" position="bottom" round>
+    <van-popup
+      v-model:show="addSignShow"
+      position="bottom"
+      round
+      @closed="cleanupAddSignAttachments"
+    >
       <div class="p-4">
         <div class="text-center font-medium mb-4">加签</div>
         <van-radio-group v-model="addSignType" direction="horizontal" class="mb-3">
@@ -331,6 +419,7 @@ function taskStatusLabel(status: string, action?: string | null) {
           label="说明"
           placeholder="可填写加签说明"
         />
+        <ApprovalActionAttachments v-model="addSignAttachments" class="mt-3" />
         <div class="pt-4">
           <van-button type="primary" block :loading="addSignLoading" @click="handleAddSign">
             确认加签
@@ -347,7 +436,12 @@ function taskStatusLabel(status: string, action?: string | null) {
       />
     </van-popup>
 
-    <van-popup v-model:show="returnBackShow" position="bottom" round>
+    <van-popup
+      v-model:show="returnBackShow"
+      position="bottom"
+      round
+      @closed="cleanupReturnBackAttachments"
+    >
       <div class="p-4">
         <div class="text-center font-medium mb-4">退回节点</div>
         <van-radio-group v-model="returnBackNodeId">
@@ -375,6 +469,7 @@ function taskStatusLabel(status: string, action?: string | null) {
           label="原因"
           placeholder="可填写退回原因"
         />
+        <ApprovalActionAttachments v-model="returnBackAttachments" class="mt-3" />
         <div class="pt-4">
           <van-button type="primary" block :loading="returnBackLoading" @click="handleReturnBack">
             确认退回

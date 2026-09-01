@@ -99,7 +99,7 @@ export class ApprovalsController {
   @LogOperation('approval', 'approve')
   @ApiOperation({ summary: '同意' })
   approve(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: HandleTaskDto) {
-    return this.approvalsService.approveTask(user, id, dto.comment)
+    return this.approvalsService.approveTask(user, id, dto.comment, dto.attachmentIds)
   }
 
   @Post('tasks/:id/reject')
@@ -107,7 +107,7 @@ export class ApprovalsController {
   @LogOperation('approval', 'reject')
   @ApiOperation({ summary: '驳回' })
   reject(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: HandleTaskDto) {
-    return this.approvalsService.rejectTask(user, id, dto.comment)
+    return this.approvalsService.rejectTask(user, id, dto.comment, dto.attachmentIds)
   }
 
   @Post('tasks/:id/sign')
