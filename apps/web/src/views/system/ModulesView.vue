@@ -82,6 +82,21 @@ const numericFieldKeys = computed(() =>
 const typeLabel = (type: string) =>
   FIELD_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
 
+function normalizeFieldOptions(options: FieldOption[] | null | undefined): FieldOption[] {
+  return ((options ?? []) as unknown[]).flatMap((option) => {
+    if (!option || typeof option !== 'object' || Array.isArray(option)) return []
+    const record = option as Record<string, unknown>
+    if (typeof record.label !== 'string' || typeof record.value !== 'string') return []
+    return [
+      {
+        label: record.label,
+        value: record.value,
+        ...(typeof record.color === 'string' ? { color: record.color } : {}),
+      },
+    ]
+  })
+}
+
 async function loadFields() {
   loading.value = true
   try {
@@ -116,7 +131,8 @@ function openEdit(field: FieldVO) {
     label: field.label,
     type: field.type,
     required: field.required,
-    options: field.options ? [...field.options] : [],
+    // 深拷贝并丢弃异常 option 元素，避免历史的 [] 元素在编辑后再次被 JSON 序列化成 []。
+    options: normalizeFieldOptions(field.options),
     config: { ...(field.config ?? {}) },
     span: field.span,
     showInList: field.showInList,
@@ -129,7 +145,12 @@ function openEdit(field: FieldVO) {
 async function handleSave() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-  if (needOptions.value && form.options.filter((o) => o.label && o.value).length === 0) {
+  const normalizedOptions = needOptions.value
+    ? normalizeFieldOptions(form.options)
+        .map((option) => ({ ...option, label: option.label.trim(), value: option.value.trim() }))
+        .filter((option) => option.label && option.value)
+    : undefined
+  if (needOptions.value && normalizedOptions?.length === 0) {
     ElMessage.warning('请至少配置一个选项')
     return
   }
@@ -144,7 +165,7 @@ async function handleSave() {
       label: form.label.trim(),
       type: form.type,
       required: form.required,
-      options: needOptions.value ? form.options.filter((o) => o.label && o.value) : undefined,
+      options: normalizedOptions,
       config: form.config,
       span: form.span,
       showInList: form.showInList,
@@ -158,8 +179,8 @@ async function handleSave() {
       await metadataApi.createField(activeModule.value, payload)
       ElMessage.success('字段已创建')
     }
+    await loadFields()
     drawerVisible.value = false
-    loadFields()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -177,7 +198,7 @@ async function handleDelete(field: FieldVO) {
   try {
     await metadataApi.deleteField(field.id)
     ElMessage.success('已删除')
-    loadFields()
+    await loadFields()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }

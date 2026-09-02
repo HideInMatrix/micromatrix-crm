@@ -15,6 +15,7 @@ async function main() {
   const customerA = randomUUID().replaceAll('-', '').slice(0, 32)
   const customerB = randomUUID().replaceAll('-', '').slice(0, 32)
   const rollbackCustomer = randomUUID().replaceAll('-', '').slice(0, 32)
+  const clueId = randomUUID().replaceAll('-', '').slice(0, 32)
 
   try {
     const initial = await forms.getConfig(organizationId, 'customer')
@@ -38,6 +39,59 @@ async function main() {
       'customer',
       { label: '审计备注', type: 'textarea' },
       actorId,
+    )
+
+    const status = await forms.createField(
+      organizationId,
+      'contact',
+      {
+        label: '业务状态',
+        type: 'multiselect',
+        options: [
+          { label: '启用', value: 'enabled' },
+          { label: '停用', value: 'disabled' },
+        ],
+      },
+      actorId,
+    )
+    const statusBlob = await prisma.sysModuleFieldBlob.findUniqueOrThrow({ where: { id: status.id } })
+    const malformedStatusProp = JSON.parse(statusBlob.prop ?? '{}') as Record<string, unknown>
+    await prisma.sysModuleFieldBlob.update({
+      where: { id: status.id },
+      data: { prop: JSON.stringify({ ...malformedStatusProp, options: [[], []] }) },
+    })
+    const malformedStatus = (await forms.listFields(organizationId, 'contact')).find(
+      (field) => field.id === status.id,
+    )
+    assert.deepEqual(malformedStatus?.options, [])
+    await assert.rejects(
+      () =>
+        forms.updateField(
+          organizationId,
+          status.id,
+          { options: [[], []] as unknown as NonNullable<typeof status.options> },
+          actorId,
+        ),
+      /选项格式不正确/,
+    )
+    const repairedStatus = await forms.updateField(
+      organizationId,
+      status.id,
+      {
+        options: [
+          { label: '启用', value: 'enabled' },
+          { label: '停用', value: 'disabled' },
+        ],
+      },
+      actorId,
+    )
+    assert.deepEqual(repairedStatus.options, [
+      { label: '启用', value: 'enabled' },
+      { label: '停用', value: 'disabled' },
+    ])
+    assert.deepEqual(
+      (await forms.listFields(organizationId, 'contact')).find((field) => field.id === status.id)?.options,
+      repairedStatus.options,
     )
 
     await prisma.$transaction(async (tx) => {
@@ -133,8 +187,64 @@ async function main() {
 
     await forms.deleteField(organizationId, note.id)
     assert.equal(await prisma.customerFieldBlob.count({ where: { fieldId: note.id } }), 0)
-    console.log('W3.4 module forms/field values smoke: 12 assertions passed')
+
+    const leadText = await forms.createField(
+      organizationId,
+      'lead',
+      { label: '待删除文本', type: 'text' },
+      actorId,
+    )
+    const leadMulti = await forms.createField(
+      organizationId,
+      'lead',
+      {
+        label: '待删除多选',
+        type: 'multiselect',
+        options: [
+          { label: 'A', value: 'a' },
+          { label: 'B', value: 'b' },
+        ],
+      },
+      actorId,
+    )
+    await prisma.$transaction(async (tx) => {
+      const now = BigInt(Date.now())
+      await tx.clue.create({
+        data: {
+          id: clueId,
+          name: '字段删除回归线索',
+          stage: 'NEW',
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        },
+      })
+      await values.save(
+        organizationId,
+        'clue',
+        clueId,
+        { [leadText.key]: 'hello', [leadMulti.key]: ['a', 'b'] },
+        'create',
+        tx,
+      )
+    })
+    assert.equal(await prisma.clueField.count({ where: { fieldId: leadText.id } }), 1)
+    assert.equal(await prisma.clueFieldBlob.count({ where: { fieldId: leadMulti.id } }), 1)
+    await forms.deleteField(organizationId, leadText.id)
+    await forms.deleteField(organizationId, leadMulti.id)
+    assert.equal(await prisma.clueField.count({ where: { fieldId: leadText.id } }), 0)
+    assert.equal(await prisma.clueFieldBlob.count({ where: { fieldId: leadMulti.id } }), 0)
+    assert.equal(
+      (await forms.listFields(organizationId, 'lead')).some((field) =>
+        [leadText.id, leadMulti.id].includes(field.id),
+      ),
+      false,
+    )
+    console.log('W3.4 module forms/field values smoke: 21 assertions passed')
   } finally {
+    await prisma.clue.deleteMany({ where: { organizationId } })
     await prisma.customer.deleteMany({ where: { organizationId } })
     await prisma.sysModuleForm.deleteMany({ where: { organizationId } })
     await prisma.onModuleDestroy()

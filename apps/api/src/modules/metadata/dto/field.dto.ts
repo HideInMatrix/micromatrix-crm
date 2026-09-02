@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
-import type { FieldConfig, FieldOption, FieldType } from '@micromatrix/shared'
+import type { FieldConfig, FieldType } from '@micromatrix/shared'
+import { Type } from 'class-transformer'
 import {
   IsArray,
   IsBoolean,
@@ -12,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator'
 
 const FIELD_TYPES = [
@@ -34,6 +36,23 @@ const FIELD_TYPES = [
   'formula',
 ] as const
 
+export class FieldOptionDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty({ message: '选项名称不能为空' })
+  label!: string
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty({ message: '选项值不能为空' })
+  value!: string
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  color?: string
+}
+
 export class CreateFieldDto {
   @ApiProperty({ description: '字段名称' })
   @IsString()
@@ -50,10 +69,12 @@ export class CreateFieldDto {
   @IsOptional()
   required?: boolean
 
-  @ApiPropertyOptional({ description: '选项集（select/radio 等）' })
+  @ApiPropertyOptional({ description: '选项集（select/radio 等）', type: [FieldOptionDto] })
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FieldOptionDto)
   @IsOptional()
-  options?: FieldOption[]
+  options?: FieldOptionDto[]
 
   @ApiPropertyOptional({ description: '扩展配置（placeholder/公式等）' })
   @IsObject()

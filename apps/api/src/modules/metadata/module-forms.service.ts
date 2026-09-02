@@ -334,7 +334,7 @@ export class ModuleFormsService {
       required: raw['required'] === true,
       system: raw['system'] === true,
       hidden: raw['hidden'] === true,
-      options: Array.isArray(raw['options']) ? (raw['options'] as FieldOption[]) : null,
+      options: this.parseFieldOptions(raw['options']),
       config: this.isRecord(raw['config']) ? (raw['config'] as FieldConfig) : null,
       span: typeof raw['span'] === 'number' ? raw['span'] : 12,
       showInList: raw['showInList'] !== false,
@@ -373,12 +373,39 @@ export class ModuleFormsService {
   private validateFieldInput(dto: Partial<CreateFieldDto>): void {
     if (dto.type === 'formula' || dto.config?.formula) this.validateFormula(dto.config?.formula)
     if (dto.options) {
+      for (const option of dto.options as unknown[]) {
+        if (!this.isRecord(option)) throw new BadRequestException('选项格式不正确')
+        if (typeof option['label'] !== 'string' || typeof option['value'] !== 'string') {
+          throw new BadRequestException('选项格式不正确')
+        }
+        if (!option['label'].trim() || !option['value'].trim()) {
+          throw new BadRequestException('选项名称和值不能为空')
+        }
+      }
       const labels = dto.options.map((option) => option.label.trim())
-      const values = dto.options.map((option) => option.value)
+      const values = dto.options.map((option) => option.value.trim())
       if (new Set(labels).size !== labels.length || new Set(values).size !== values.length) {
         throw new BadRequestException('同一字段的选项名称和值不能重复')
       }
     }
+  }
+
+  private parseFieldOptions(value: unknown): FieldOption[] | null {
+    if (!Array.isArray(value)) return null
+    return value.flatMap((option) => {
+      if (!this.isRecord(option)) return []
+      const label = option['label']
+      const optionValue = option['value']
+      if (typeof label !== 'string' || typeof optionValue !== 'string') return []
+      const color = option['color']
+      return [
+        {
+          label,
+          value: optionValue,
+          ...(typeof color === 'string' ? { color } : {}),
+        },
+      ]
+    })
   }
 
   private validateFormula(formula?: string): void {

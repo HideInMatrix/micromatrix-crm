@@ -5,12 +5,24 @@ export interface DisplayContext {
   deptMap: Map<string, string>
 }
 
+const SYSTEM_FIELD_ALIASES: Record<string, string[]> = {
+  // 元数据沿用 Cordys 业务键，VO 则使用更明确的展示/关联字段名。
+  owner: ['ownerId'],
+  contact: ['contactName'],
+}
+
 /** 从行数据中取字段值（系统字段取实体列，自定义字段取 customData） */
 export function fieldValue(field: FieldVO, row: Record<string, unknown>): unknown {
   if (!field.system || field.type === 'formula') {
     return (row.customData as Record<string, unknown> | undefined)?.[field.key]
   }
-  return row[field.key]
+  const directValue = row[field.key]
+  if (directValue !== undefined) return directValue
+  for (const alias of SYSTEM_FIELD_ALIASES[field.key] ?? []) {
+    const aliasedValue = row[alias]
+    if (aliasedValue !== undefined) return aliasedValue
+  }
+  return undefined
 }
 
 /** 将字段值格式化为列表展示文本 */
@@ -37,7 +49,7 @@ export function formatFieldValue(
     }
     case 'member': {
       // 负责人列优先用后端拼好的 ownerName
-      if (field.key === 'ownerId' && row.ownerName) return String(row.ownerName)
+      if (['owner', 'ownerId'].includes(field.key) && row.ownerName) return String(row.ownerName)
       return ctx.memberMap.get(String(value)) ?? '-'
     }
     case 'dept':
