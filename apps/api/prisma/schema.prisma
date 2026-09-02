@@ -1526,12 +1526,31 @@ enum ApproverType {
   ROLE // 指定角色（该角色全部成员）
   DEPT_LEADER // 发起人部门主管
   DIRECT_LEADER // 发起人直属上级
+  MULTIPLE_DEPT_LEADER // 连续多级部门主管
+  MULTIPLE_DIRECT_LEADER // 连续多级直属上级
 }
 
 // 多审批人模式
 enum ApprovalMode {
   ALL // 会签（全部通过）
   ANY // 或签（任一通过）
+}
+
+enum EmptyApproverAction {
+  AUTO_PASS
+  ASSIGN_SPECIFIC
+  ASSIGN_ADMIN
+}
+
+enum SameSubmitterAction {
+  SKIP
+  ALLOW
+  ASSIGN_SUPERIOR
+}
+
+enum ApproverDirection {
+  BOTTOM_UP
+  TOP_DOWN
 }
 
 enum ApprovalFormType {
@@ -1655,6 +1674,7 @@ model ApprovalFlowVersion {
   currentForFlows ApprovalFlow[]     @relation("CurrentFlowVersion")
   nodes           ApprovalNode[]
   links           ApprovalNodeLink[]
+  conditions      ApprovalNodeCondition[]
   instances       ApprovalInstance[]
 
   @@unique([flowId, version])
@@ -1673,6 +1693,7 @@ model ApprovalNode {
 
   flowVersion   ApprovalFlowVersion   @relation(fields: [flowVersionId], references: [id], onDelete: Restrict)
   approver      ApprovalNodeApprover?
+  condition     ApprovalNodeCondition?
   outgoingLinks ApprovalNodeLink[]    @relation("ApprovalNodeOutgoing")
   incomingLinks ApprovalNodeLink[]    @relation("ApprovalNodeIncoming")
 
@@ -1682,17 +1703,33 @@ model ApprovalNode {
 }
 
 model ApprovalNodeApprover {
-  id           String       @id @default(cuid())
-  nodeId       String       @unique
-  approverType ApproverType
-  // USER=用户ID集合；ROLE=角色ID集合
-  approverIds  String[]     @default([])
-  ccUserIds    String[]     @default([]) @map("cc_user_ids")
-  mode         ApprovalMode @default(ANY)
+  id                  String              @id @default(cuid())
+  nodeId              String              @unique
+  approverType        ApproverType
+  // USER=用户ID集合；ROLE=角色ID集合；层级类型保存 1~10 的层级值。
+  approverIds         String[]            @default([])
+  ccUserIds           String[]            @default([]) @map("cc_user_ids")
+  mode                ApprovalMode        @default(ANY)
+  emptyApproverAction EmptyApproverAction @default(AUTO_PASS) @map("empty_approver_action")
+  fallbackApprover    String?             @map("fallback_approver")
+  sameSubmitterAction SameSubmitterAction @default(SKIP) @map("same_submitter_action")
+  approverDirection   ApproverDirection   @default(BOTTOM_UP) @map("approver_direction")
 
   node ApprovalNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
 
   @@map("approval_node_approvers")
+}
+
+model ApprovalNodeCondition {
+  id              String @id
+  flowVersionId   String
+  conditionConfig Json?  @map("condition_config")
+
+  node        ApprovalNode        @relation(fields: [id], references: [id], onDelete: Restrict)
+  flowVersion ApprovalFlowVersion @relation(fields: [flowVersionId], references: [id], onDelete: Restrict)
+
+  @@index([flowVersionId])
+  @@map("approval_node_conditions")
 }
 
 model ApprovalNodeLink {
@@ -1827,7 +1864,7 @@ model ApprovalRecord {
   id          String             @id @default(cuid())
   tenantId    String
   instanceId  String
-  taskId      String
+  taskId      String?
   nodeId      String?            @map("node_id")
   nodeRound   Int                @default(1) @map("node_round")
   result      ApprovalTaskAction
@@ -1837,7 +1874,7 @@ model ApprovalRecord {
   updatedAt   DateTime           @updatedAt @map("updated_at")
 
   instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  task     ApprovalTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task     ApprovalTask?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, instanceId, createdAt])
   @@index([taskId])

@@ -1,6 +1,6 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-01。
+最近对齐：2026-09-02。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
@@ -8,8 +8,8 @@
 
 - 分支：`master`
 - 当前发布标签：`v0.0.5`
-- 当前开发现场已关闭 W3.7-9.3 / DB-011，代码与文档按 scoped 本地提交管理；是否 push 继续由用户显式决定。
-- 当前数据库基线：**63 migrations**。
+- 当前开发现场已关闭 W3.7-9.4A Condition 与 9.4B 审批人异常策略两个 DB-012 子单元；DB-012 继续 `IN_PROGRESS`，代码与文档按 scoped 本地提交管理；是否 push 继续由用户显式决定。
+- 当前数据库基线：**65 migrations**。
 
 ## 2. 已关闭主里程碑
 
@@ -24,36 +24,41 @@
 | DB-021 | FollowUpPlan 独立 Field/Blob 与动态字段运行时 | `VERIFIED` |
 | W3.7-9.2 / DB-010 | 通用审批资源快照与 UPDATE/DELETE 变更上下文 | `VERIFIED` |
 | W3.7-9.3 / DB-011 | ApprovalRecord、加签、节点退回、ReturnBackRecord、nodeRound、审批人任务撤回、requireComment、ApprovalInstanceAttachment | `VERIFIED` |
+| W3.7-9.4A / DB-012 子单元 | Condition/DEFAULT、条件 DTO、link.sort 分支与 `updateFields` runtime | 已完成；DB-012 整体仍 `IN_PROGRESS` |
+| W3.7-9.4B / DB-012 子单元 | empty/fallback/sameSubmitter、动态方向、多级审批人与 duplicate runtime | 已完成；DB-012 整体仍 `IN_PROGRESS` |
 
 ## 3. 当前执行指针
 
 当前唯一已冻结的主执行指针是：
 
-> **W3.7-9.4A / DB-012：Condition / DEFAULT 图结构、条件 DTO 与 updateFields runtime**
+> **W3.7-9.4C / DB-012：节点字段权限和审批详情真实约束**
 
 W3.7 内部剩余顺序已经在 `docs/specs/process-settings-parity/tasks.md` 固化：
 
-1. **9.4A Condition / DEFAULT**：图结构、条件 DTO、`updateFields` 条件上下文与 runtime 分支选择。
-2. **9.4B～F / DB-012 高级节点剩余能力**：动态审批人/fallback/sameSubmitter、字段权限、pass/reject 后置字段更新、Webhook、安全测试连接、Vue Flow 条件图。
+1. **9.4C 字段权限**：节点字段权限和审批详情真实约束。
+2. **9.4D～F / DB-012 剩余能力**：pass/reject 后置字段更新、Webhook、安全测试连接、Vue Flow 条件图；9.4F 同时删除旧线性 payload 自动推导兼容。
 3. **9.5 W3.7 最终封板**：DB-010/011/012 专项 + Root Smoke + Rules + Browser + 空库全 migration/双 Seed + typecheck/lint/build + legacy/deferred scan。
 
-当前 DB-011 状态：`VERIFIED`；DB-012 已有明确 W3.7 实施计划，状态为 `PLANNED`，并成为当前唯一冻结的高级审批执行主线。
+当前 DB-011 状态：`VERIFIED`；DB-012 的 9.4A/9.4B 已完成，整体继续 `IN_PROGRESS`，当前唯一冻结执行单元为 9.4C。
 
-当前 deferred backlog 共 23 项：**18 项 VERIFIED、0 项 IN_PROGRESS、1 项 PLANNED（DB-012）、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
+当前 deferred backlog 共 23 项：**18 项 VERIFIED、1 项 IN_PROGRESS（DB-012）、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
-- 空库：**63/63 migrations + 双 Seed**，Seed 计数幂等。
+- 空库：**65/65 migrations + 双 Seed**，Seed 计数幂等。
 - Root Smoke：**227/227**。
-- Rules：**127/127**。
+- Rules：**133/133**。
+- W3.7-9.4B approver policy HTTP Smoke：PASS（65 migrations）；empty auto-pass + ApprovalRecord、fallback、sameSubmitter、直属/部门方向与三种 duplicate rule 均已真实执行。
+- W3.7-9.4A Condition / DEFAULT HTTP Smoke：在 65 migrations 下继续 PASS；Browser 最近基线 **14/14**，高级图只读 fail-closed、API 5xx=0、Runtime exception=0。
+- W3.7-9.4A 已验证 link.sort 首命中、DEFAULT fallback、`NOT_EQUAL_ORIGINAL`、历史实例 path 冻结，CONDITION/DEFAULT 不产生 task。
 - W3.7-9.3E requireComment / ApprovalInstanceAttachment HTTP Smoke：PASS（63 migrations）。
 - W3.7-9.3E PC/Mobile Browser：**28/28**，真实 `/attachments/upload`、API 5xx=0、Runtime exception=0。
 - W3.7-9.3B / 9.3C / 9.3D HTTP 回归：PASS；Browser 回归分别 **17/17、17/17、24/24**。
-- DB-010 regression：PASS。
+- DB-010 regression：PASS（65 migrations）；DB-011 9.3A～E 相邻 regression 在当前 65 migrations 下保持 PASS。
 - `/system/modules` Browser：**47/47**，API 5xx=0、Runtime exception=0。
 - workspace typecheck / ESLint / Shared+API+Web production build / Prisma validate：PASS。
 - Web production build：**4144 modules transformed**。
-- Docker release Smoke 最近一次基线：62 migrations、API runtime、Prisma CLI、Web/Nginx `/api` proxy、SPA fallback：PASS；Migration 63 本轮通过空库/HTTP/DB 回归验证，Docker release 未因 DB-011 业务单元重复执行。
+- Docker release Smoke 最近一次基线：62 migrations、API runtime、Prisma CLI、Web/Nginx `/api` proxy、SPA fallback：PASS；Migration 63/64 已分别通过业务专项、空库和回归验证，Docker release 未因审批业务子单元重复执行。
 - API Docker：amd64、arm64 均已原生实建；production deploy 为 369 packages reuse、0 download。
 
 ## 5. W3.7 完成后仍未关闭的 Cordys 差异

@@ -98,6 +98,10 @@ function flowWrite(detail, enabled = detail.enabled) {
         approverIds: [...(node.approverIds ?? [])],
         ccUserIds: [...(node.ccUserIds ?? [])],
         mode: node.mode,
+        emptyApproverAction: node.emptyApproverAction,
+        fallbackApprover: node.fallbackApprover,
+        sameSubmitterAction: node.sameSubmitterAction,
+        approverDirection: node.approverDirection,
       })),
   }
 }
@@ -171,6 +175,7 @@ try {
       approverIds: [adminId],
       ccUserIds: [],
       mode: 'ANY',
+      sameSubmitterAction: 'ALLOW',
     }],
   }
   const flow = await request('/approvals/flows', {
@@ -328,6 +333,7 @@ try {
       approverIds: [adminId, zhangweiId],
       ccUserIds: [],
       mode: 'ALL',
+      sameSubmitterAction: 'ALLOW',
     }],
   }
   await request(`/approvals/flows/${flow.id}`, { method: 'PUT', token, body: allFlow })
@@ -356,7 +362,7 @@ try {
 
   console.log(JSON.stringify({
     database,
-    migrations: 63,
+    migrations: 65,
     allowAddSignGate: true,
     before: true,
     nestedBefore: true,

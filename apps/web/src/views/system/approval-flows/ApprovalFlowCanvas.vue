@@ -54,19 +54,21 @@ watch(
 )
 
 function approverSummary(node: ApprovalFlowNodeInput) {
-  if (node.approverType === 'USER') {
-    const names = node.approverIds
+  const approverType = node.approverType ?? 'USER'
+  const approverIds = node.approverIds ?? []
+  if (approverType === 'USER') {
+    const names = approverIds
       .map((id) => props.members.find((item) => item.id === id)?.name)
       .filter(Boolean)
     return names.length ? names.join('、') : '未选择成员'
   }
-  if (node.approverType === 'ROLE') {
-    const names = node.approverIds
+  if (approverType === 'ROLE') {
+    const names = approverIds
       .map((id) => props.roles.find((item) => item.id === id)?.name)
       .filter(Boolean)
     return names.length ? names.join('、') : '未选择角色'
   }
-  return APPROVER_TYPE_LABELS[node.approverType]
+  return APPROVER_TYPE_LABELS[approverType]
 }
 
 const graphNodes = computed<Node<CanvasNodeData>[]>(() => {
@@ -90,7 +92,7 @@ const graphNodes = computed<Node<CanvasNodeData>[]>(() => {
       data: {
         kind: 'approver',
         label: node.name || `审批节点 ${index + 1}`,
-        detail: `${approverSummary(node)} · ${APPROVAL_MODE_LABELS[node.mode]}`,
+        detail: `${approverSummary(node)} · ${APPROVAL_MODE_LABELS[node.mode ?? 'ANY']}`,
         clientId: node.clientId,
         index,
       },

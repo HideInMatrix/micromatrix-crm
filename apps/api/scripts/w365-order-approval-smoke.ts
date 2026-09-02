@@ -159,6 +159,7 @@ async function main() {
         approverIds: [adminId, approverId],
         ccUserIds: [],
         mode: 'ANY',
+        sameSubmitterAction: 'ALLOW',
       },
     ],
   }

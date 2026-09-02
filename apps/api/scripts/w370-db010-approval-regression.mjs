@@ -180,6 +180,7 @@ try {
         approverIds: [userId],
         ccUserIds: [],
         mode: 'ANY',
+        sameSubmitterAction: 'ALLOW',
       },
     ],
   }

@@ -148,12 +148,24 @@
   - _Requirements: R10, R12_
 
 - [ ] W3.7-9.4 DB-012：高级节点、条件、字段权限与后置动作。
-  - [ ] 9.4A Condition / DEFAULT 图结构、条件 DTO 与 `updateFields` runtime。
-  - [ ] 9.4B empty approver / fallback / sameSubmitter / 动态审批方向与 duplicate rule。
+  - [x] 9.4A Condition / DEFAULT 图结构、条件 DTO 与 `updateFields` runtime。
+    - Migration 64 新增 `ApprovalNodeCondition`；高级图显式保存 CONDITION/DEFAULT + links，按 `link.sort` 第一命中 / DEFAULT fallback 解析实际 APPROVER path，并继续冻结到现有 `nodesSnapshot`。
+    - 条件 runtime 已接 DB-010 `updateFields` 与资源字段值，支持 Cordys 当前实际比较操作符、子表任意行与 `NOT_EQUAL_ORIGINAL`；未知/异常 operator fail-closed。
+    - 旧线性 payload 仅作为 9.4F 前过渡兼容；9.4F 必须迁移全部调用方到统一 `nodes + links`，DB-012 封板前删除 `createLinearGraph()` / `isExplicitGraph()` 双协议入口。
+    - 专项 HTTP 在 **64/64 migrations + Seed** 下 PASS；Browser **14/14** 验证高级图真实读取、只读 warning、无 PUT 覆盖和版本/links 不变，同时修复 ApprovalFlowDrawer 首次挂载未 initialize 的 immediate-watch 缺陷。
+    - Rules **130/130**、DB-010 与 DB-011 A～E regression、Root **227/227**、`/system/modules` **47/47**、空库 **64/64 + 双 Seed**、workspace typecheck/lint/build、Prisma validate 全绿。
+    - 证据：[W3.7-9.4A DB-012 Condition / DEFAULT 专项验收](./w370-db012-condition-acceptance.md)。
+  - [x] 9.4B empty approver / fallback / sameSubmitter / 动态审批方向与 duplicate rule。
+    - Migration 65 扩展 `ApprovalNodeApprover` 的 empty/fallback/sameSubmitter/direction，并新增连续多级直属上级/部门负责人 approver type；`ApprovalRecord.taskId` 按 Cordys 自动审批记录语义改为 nullable。
+    - runtime 严格按“动态审批人解析 → empty → sameSubmitter → duplicate”执行；AUTO_PASS、无上级 ASSIGN_SUPERIOR、重复审批自动通过均留下 ApprovalRecord，明确跳过的审批人保留 SKIPPED task。
+    - `FIRST_ONLY` 看同实例不同节点历史 APPROVED，`SEQUENTIAL_ALL` 只看紧邻上一节点当前 round，`EACH` 每次审批；BOTTOM_UP/TOP_DOWN 同时覆盖直属上级链和部门负责人链。
+    - 项目未发布，本单元不做旧配置 backfill/旧 `nodesSnapshot` 兼容；`AUTO_PASS / SKIP / BOTTOM_UP` 是 Cordys 业务默认值。旧专项 Smoke 若要求提交人手工审批自己，显式设置 `sameSubmitterAction=ALLOW`。
+    - isolated HTTP 在 **65/65 migrations + Seed** 下完整 PASS；9.4A、DB-010、DB-011 A～E regression 全绿；Rules **133/133**、Root **227/227**、空库 **65/65 + 双 Seed**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
+    - 证据：[W3.7-9.4B DB-012 审批人异常策略专项验收](./w370-db012-approver-policy-acceptance.md)。下一执行指针进入 9.4C。
   - [ ] 9.4C 节点字段权限和审批详情真实约束。
   - [ ] 9.4D pass/reject 后置字段更新。
   - [ ] 9.4E Webhook 安全 client、测试连接、运行时发送与审计。
-  - [ ] 9.4F Vue Flow 条件图、更多设置开放与专项 Browser；完成后关闭 DB-012。
+  - [ ] 9.4F Vue Flow 条件图、更多设置开放与专项 Browser；迁移全部调用方到统一 `nodes + links` 写契约并删除旧线性 payload 自动推导兼容；完成后关闭 DB-012。
   - _Requirements: R11, R12_
 
 - [ ] W3.7-9.5 最终验收与文档封板。

@@ -25,6 +25,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import {
   ApprovalFlowPageQueryDto,
   CreateApprovalFlowDto,
+  FlowLinkDto,
   FlowNodeDto,
   UpdateApprovalFlowDto,
 } from './dto/approval.dto'
@@ -44,7 +45,7 @@ type FlowDetailRecord = Prisma.ApprovalFlowGetPayload<{
   include: {
     currentVersion: {
       include: {
-        nodes: { include: { approver: true } }
+        nodes: { include: { approver: true; condition: true } }
         links: true
       }
     }
@@ -128,7 +129,7 @@ export class ApprovalFlowConfigService {
             createdById: user.id,
           },
         })
-        await this.createLinearGraph(tx, version.id, dto.createNodes)
+        await this.createGraph(tx, version.id, dto.createNodes, dto.createLinks)
         await tx.approvalFlow.update({
           where: { id: flow.id },
           data: { currentVersionId: version.id },
@@ -154,8 +155,13 @@ export class ApprovalFlowConfigService {
     if (!formType) throw new NotFoundException('流程不存在')
     await this.validateWrite(user, formType, dto, dto.createNodes)
 
+    const originAdvanced = this.hasAdvancedGraph(origin)
+    const explicitGraph = this.isExplicitGraph(dto.createNodes, dto.createLinks)
+    if (originAdvanced && !explicitGraph) {
+      throw new UnprocessableEntityException('当前流程包含条件分支，请使用高级流程设计器保存')
+    }
     const existingNodes = this.approverInputs(origin)
-    const nodeChanged = !flowNodesEqual(existingNodes, dto.createNodes)
+    const nodeChanged = explicitGraph || !flowNodesEqual(existingNodes, dto.createNodes)
 
     await this.prisma.$transaction(async (tx) => {
       let currentVersionId = origin.currentVersionId
@@ -172,7 +178,7 @@ export class ApprovalFlowConfigService {
             createdById: user.id,
           },
         })
-        await this.createLinearGraph(tx, version.id, dto.createNodes)
+        await this.createGraph(tx, version.id, dto.createNodes, dto.createLinks)
         currentVersionId = version.id
       }
       await tx.approvalFlow.update({
@@ -247,7 +253,7 @@ export class ApprovalFlowConfigService {
       include: {
         currentVersion: {
           include: {
-            nodes: { include: { approver: true }, orderBy: { sort: 'asc' } },
+            nodes: { include: { approver: true, condition: true }, orderBy: { sort: 'asc' } },
             links: { orderBy: { sort: 'asc' } },
           },
         },
@@ -281,22 +287,43 @@ export class ApprovalFlowConfigService {
         throw new UnprocessableEntityException('当前业务对象的编辑和删除审批尚未接入')
       }
     }
-    if (
-      dto.allowBatchProcess ||
-      dto.duplicateApproverRule !== 'FIRST_ONLY'
-    ) {
+    if (dto.allowBatchProcess) {
       throw new UnprocessableEntityException('所选高级审批设置尚未接入运行时')
     }
     if (nodes.length > 100) throw new BadRequestException('审批节点不能超过 100 个')
+    const explicitGraph = this.isExplicitGraph(nodes, dto.createLinks)
     for (const node of nodes) {
       if (!node.name.trim()) throw new BadRequestException('节点名称不能为空')
+      const nodeType = node.nodeType ?? 'APPROVER'
+      if (nodeType === 'CONDITION') this.validateConditionConfig(node)
+      if (nodeType !== 'APPROVER') continue
+      if (!node.approverType || !node.mode) {
+        throw new BadRequestException(`节点「${node.name}」缺少审批人类型或多人审批方式`)
+      }
       if (
         (node.approverType === 'USER' || node.approverType === 'ROLE') &&
         (node.approverIds?.length ?? 0) === 0
       ) {
         throw new BadRequestException(`节点「${node.name}」必须选择审批对象`)
       }
+      const hierarchyType = [
+        'DIRECT_LEADER',
+        'DEPT_LEADER',
+        'MULTIPLE_DIRECT_LEADER',
+        'MULTIPLE_DEPT_LEADER',
+      ].includes(node.approverType)
+      if (hierarchyType && node.approverIds?.length) {
+        const level = Number(node.approverIds[0])
+        if (!Number.isInteger(level) || level < 1 || level > 10) {
+          throw new BadRequestException(`节点「${node.name}」的审批层级必须为 1~10`)
+        }
+      }
+      const emptyAction = node.emptyApproverAction ?? 'AUTO_PASS'
+      if (emptyAction !== 'AUTO_PASS' && !node.fallbackApprover?.trim()) {
+        throw new BadRequestException(`节点「${node.name}」必须配置空审批人兜底人员`)
+      }
     }
+    if (explicitGraph) this.validateGraph(nodes, dto.createLinks ?? [])
     await this.validateReferences(user.tenantId, nodes)
     if (dto.enabled) {
       await this.validateRunnable(
@@ -317,7 +344,8 @@ export class ApprovalFlowConfigService {
     nodes: Array<ApprovalFlowNodeInput | FlowNodeDto>,
   ) {
     const hasExecuteTiming = createExecute || updateExecute || deleteExecute
-    if (!hasExecuteTiming || nodes.length === 0) {
+    const hasApprover = nodes.some((node) => (node.nodeType ?? 'APPROVER') === 'APPROVER')
+    if (!hasExecuteTiming || !hasApprover) {
       throw new ConflictException('启用的流程至少需要一个审批执行时机和有效审批节点')
     }
   }
@@ -325,16 +353,22 @@ export class ApprovalFlowConfigService {
   private async validateReferences(tenantId: string, nodes: FlowNodeDto[]) {
     const userIds = [
       ...new Set(
-        nodes.flatMap((node) => [
-          ...(node.approverType === 'USER' ? (node.approverIds ?? []) : []),
-          ...(node.ccUserIds ?? []),
-        ]),
+        nodes
+          .filter((node) => (node.nodeType ?? 'APPROVER') === 'APPROVER')
+          .flatMap((node) => [
+            ...(node.approverType === 'USER' ? (node.approverIds ?? []) : []),
+            ...(node.ccUserIds ?? []),
+            ...(node.fallbackApprover?.trim() ? [node.fallbackApprover.trim()] : []),
+          ]),
       ),
     ]
     const roleIds = [
       ...new Set(
         nodes
-          .filter((node) => node.approverType === 'ROLE')
+          .filter(
+            (node) =>
+              (node.nodeType ?? 'APPROVER') === 'APPROVER' && node.approverType === 'ROLE',
+          )
           .flatMap((node) => node.approverIds ?? []),
       ),
     ]
@@ -348,6 +382,131 @@ export class ApprovalFlowConfigService {
     ])
     if (userCount !== userIds.length) throw new BadRequestException('存在无效或跨租户审批成员')
     if (roleCount !== roleIds.length) throw new BadRequestException('存在无效或跨租户审批角色')
+  }
+
+  private validateConditionConfig(node: FlowNodeDto) {
+    const config = node.conditionConfig
+    if (!config || !['AND', 'OR'].includes(config.searchMode) || config.conditions.length === 0) {
+      throw new BadRequestException(`条件节点「${node.name}」至少需要一个有效条件`)
+    }
+    for (const condition of config.conditions) {
+      if (!condition.name?.trim() || !condition.operator) {
+        throw new BadRequestException(`条件节点「${node.name}」存在无效条件`)
+      }
+      if (['EMPTY', 'NOT_EMPTY', 'NOT_EQUAL_ORIGINAL'].includes(condition.operator)) continue
+      const value = condition.value
+      if (
+        value === undefined ||
+        value === null ||
+        (typeof value === 'string' && !value.trim()) ||
+        (Array.isArray(value) && value.length === 0)
+      ) {
+        throw new BadRequestException(`条件节点「${node.name}」存在缺少比较值的条件`)
+      }
+    }
+  }
+
+  private isExplicitGraph(nodes: FlowNodeDto[], links?: FlowLinkDto[]) {
+    return (
+      links !== undefined ||
+      nodes.some((node) => node.nodeType !== undefined && node.nodeType !== 'APPROVER')
+    )
+  }
+
+  private hasAdvancedGraph(flow: FlowDetailRecord) {
+    return Boolean(flow.currentVersion?.nodes.some(
+      (node) => node.nodeType === ApprovalNodeType.CONDITION || node.nodeType === ApprovalNodeType.DEFAULT,
+    ))
+  }
+
+  private validateGraph(nodes: FlowNodeDto[], links: FlowLinkDto[]) {
+    const nodeIds = nodes.map((node) => node.clientId?.trim() || '')
+    if (nodeIds.some((id) => !id)) {
+      throw new BadRequestException('高级流程图的每个节点都必须提供稳定 clientId')
+    }
+    if (new Set(nodeIds).size !== nodeIds.length) {
+      throw new BadRequestException('高级流程图存在重复节点 clientId')
+    }
+    const nodeMap = new Map(nodes.map((node) => [node.clientId!, node]))
+    const starts = nodes.filter((node) => node.nodeType === 'START')
+    const ends = nodes.filter((node) => node.nodeType === 'END')
+    if (starts.length !== 1 || ends.length !== 1) {
+      throw new BadRequestException('高级流程图必须且只能包含一个 START 和一个 END')
+    }
+    if (!nodes.some((node) => node.nodeType === 'APPROVER')) {
+      throw new BadRequestException('高级流程图至少需要一个 APPROVER 节点')
+    }
+    if (!links.length) throw new BadRequestException('高级流程图必须包含节点连接')
+
+    const pairKeys = new Set<string>()
+    const outgoing = new Map<string, FlowLinkDto[]>()
+    const incoming = new Map<string, FlowLinkDto[]>()
+    for (const [index, link] of links.entries()) {
+      if (!nodeMap.has(link.fromNodeId) || !nodeMap.has(link.toNodeId)) {
+        throw new BadRequestException('高级流程图存在指向未知节点的连接')
+      }
+      if (link.fromNodeId === link.toNodeId) throw new BadRequestException('高级流程图不允许节点自环')
+      const pairKey = `${link.fromNodeId}\u0000${link.toNodeId}`
+      if (pairKeys.has(pairKey)) throw new BadRequestException('高级流程图存在重复连接')
+      pairKeys.add(pairKey)
+      const normalized = { ...link, sort: link.sort ?? index }
+      outgoing.set(link.fromNodeId, [...(outgoing.get(link.fromNodeId) ?? []), normalized])
+      incoming.set(link.toNodeId, [...(incoming.get(link.toNodeId) ?? []), normalized])
+    }
+
+    const startId = starts[0].clientId!
+    const endId = ends[0].clientId!
+    for (const node of nodes) {
+      const id = node.clientId!
+      const next = [...(outgoing.get(id) ?? [])].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+      const prev = incoming.get(id) ?? []
+      if (id === startId && prev.length) throw new BadRequestException('START 节点不能存在入边')
+      if (id !== startId && prev.length === 0) throw new BadRequestException(`节点「${node.name}」缺少入边`)
+      if (id === endId && next.length) throw new BadRequestException('END 节点不能存在出边')
+      if (id !== endId && next.length === 0) throw new BadRequestException(`节点「${node.name}」缺少出边`)
+      if (id === endId) continue
+
+      const targetTypes = next.map((link) => nodeMap.get(link.toNodeId)!.nodeType ?? 'APPROVER')
+      const hasConditionBranch = targetTypes.some((type) => type === 'CONDITION')
+      if (hasConditionBranch) {
+        if (targetTypes.some((type) => type !== 'CONDITION' && type !== 'DEFAULT')) {
+          throw new BadRequestException('条件分支的同层后继只能是 CONDITION / DEFAULT')
+        }
+        if (targetTypes.filter((type) => type === 'DEFAULT').length !== 1) {
+          throw new BadRequestException('条件分支必须且只能包含一个 DEFAULT')
+        }
+        const sorts = next.map((link) => link.sort ?? 0)
+        if (new Set(sorts).size !== sorts.length) {
+          throw new BadRequestException('同一条件分支下的 link.sort 必须唯一')
+        }
+      } else if (targetTypes.some((type) => type === 'DEFAULT')) {
+        throw new BadRequestException('DEFAULT 必须与至少一个 CONDITION 同层出现')
+      } else if (next.length !== 1) {
+        throw new BadRequestException(`节点「${node.name}」存在不受支持的并行后继`)
+      }
+    }
+
+    const visited = new Set<string>()
+    const active = new Set<string>()
+    const walk = (id: string) => {
+      if (active.has(id)) throw new BadRequestException('高级流程图不允许循环连接')
+      if (visited.has(id)) return
+      active.add(id)
+      for (const link of outgoing.get(id) ?? []) walk(link.toNodeId)
+      active.delete(id)
+      visited.add(id)
+    }
+    walk(startId)
+    if (visited.size !== nodes.length) throw new BadRequestException('高级流程图存在 START 不可达节点')
+
+    const reachesEnd = new Set<string>()
+    const reverseWalk = (id: string) => {
+      if (reachesEnd.has(id)) return
+      reachesEnd.add(id)
+      for (const link of incoming.get(id) ?? []) reverseWalk(link.fromNodeId)
+    }
+    reverseWalk(endId)
+    if (reachesEnd.size !== nodes.length) throw new BadRequestException('高级流程图存在无法到达 END 的节点')
   }
 
   private mainFields(dto: CreateApprovalFlowDto | UpdateApprovalFlowDto, userId: string) {
@@ -383,6 +542,69 @@ export class ApprovalFlowConfigService {
       create: { tenantId, formType: toDbFormType(formType), nextValue: 2 },
     })
     return `${FORM_TYPE_PREFIX[formType]}-${String(counter.nextValue - 1).padStart(5, '0')}`
+  }
+
+  private async createGraph(
+    tx: Prisma.TransactionClient,
+    flowVersionId: string,
+    inputNodes: FlowNodeDto[],
+    inputLinks?: FlowLinkDto[],
+  ) {
+    if (!this.isExplicitGraph(inputNodes, inputLinks)) {
+      await this.createLinearGraph(tx, flowVersionId, inputNodes)
+      return
+    }
+
+    const idMap = new Map<string, string>()
+    for (const [index, node] of inputNodes.entries()) {
+      idMap.set(node.clientId!, randomUUID())
+      const nodeType = node.nodeType ?? 'APPROVER'
+      const id = idMap.get(node.clientId!)!
+      await tx.approvalNode.create({
+        data: {
+          id,
+          flowVersionId,
+          number: node.number?.trim() || `PN${String(index + 1).padStart(3, '0')}`,
+          name: node.name.trim(),
+          nodeType: nodeType as ApprovalNodeType,
+          executeTiming: ApprovalExecuteTiming.CREATE,
+          sort: index,
+        },
+      })
+      if (nodeType === 'APPROVER') {
+        await tx.approvalNodeApprover.create({
+          data: {
+            nodeId: id,
+            approverType: node.approverType!,
+            approverIds: node.approverIds ?? [],
+            ccUserIds: node.ccUserIds ?? [],
+            mode: node.mode!,
+            emptyApproverAction: node.emptyApproverAction ?? 'AUTO_PASS',
+            fallbackApprover: node.fallbackApprover?.trim() || null,
+            sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
+            approverDirection: node.approverDirection ?? 'BOTTOM_UP',
+          },
+        })
+      } else if (nodeType === 'CONDITION') {
+        await tx.approvalNodeCondition.create({
+          data: {
+            id,
+            flowVersionId,
+            conditionConfig: node.conditionConfig as unknown as Prisma.InputJsonValue,
+          },
+        })
+      }
+    }
+
+    await tx.approvalNodeLink.createMany({
+      data: (inputLinks ?? []).map((link, index) => ({
+        id: randomUUID(),
+        flowVersionId,
+        fromNodeId: idMap.get(link.fromNodeId)!,
+        toNodeId: idMap.get(link.toNodeId)!,
+        sort: link.sort ?? index,
+      })),
+    })
   }
 
   private async createLinearGraph(
@@ -421,6 +643,10 @@ export class ApprovalFlowConfigService {
               approverIds: node.approverIds,
               ccUserIds: node.ccUserIds ?? [],
               mode: node.mode,
+              emptyApproverAction: node.emptyApproverAction ?? 'AUTO_PASS',
+              fallbackApprover: node.fallbackApprover ?? null,
+              sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
+              approverDirection: node.approverDirection ?? 'BOTTOM_UP',
             },
           },
         },
@@ -459,6 +685,10 @@ export class ApprovalFlowConfigService {
         approverIds: node.approver!.approverIds,
         ccUserIds: node.approver!.ccUserIds,
         mode: node.approver!.mode,
+        emptyApproverAction: node.approver!.emptyApproverAction,
+        fallbackApprover: node.approver!.fallbackApprover,
+        sameSubmitterAction: node.approver!.sameSubmitterAction,
+        approverDirection: node.approver!.approverDirection,
       }))
   }
 
@@ -525,6 +755,11 @@ export class ApprovalFlowConfigService {
         approverIds: node.approver?.approverIds,
         ccUserIds: node.approver?.ccUserIds,
         mode: node.approver?.mode,
+        emptyApproverAction: node.approver?.emptyApproverAction,
+        fallbackApprover: node.approver?.fallbackApprover,
+        sameSubmitterAction: node.approver?.sameSubmitterAction,
+        approverDirection: node.approver?.approverDirection,
+        conditionConfig: node.condition?.conditionConfig as ApprovalFlowDetail['createNodes'][number]['conditionConfig'],
       })),
       createLinks: flow.currentVersion.links.map((link) => ({
         id: link.id,

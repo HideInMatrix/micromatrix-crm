@@ -1065,3 +1065,31 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - DB-011 最终相邻回归：9.3A migration smoke PASS；9.3B/9.3C/9.3D HTTP PASS（实际 deploy 63 migrations）；Browser **17/17、17/17、24/24**；DB-010 regression PASS；Root **227/227**；Rules **127/127**；`/system/modules` Browser **47/47**。
 - 空库从零 **63/63 migrations + Seed 2/2** 且计数幂等；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate 全绿，Web production build **4144 modules transformed**。
 - DB-011 9.3A～9.3E 全部关闭，deferred backlog 正式更新为 `VERIFIED`。**下一执行指针：W3.7-9.4A / DB-012 Condition / DEFAULT 图结构、条件 DTO 与 updateFields runtime。**
+
+---
+
+## 55. W3.7-9.4A DB-012 Condition / DEFAULT 与 updateFields runtime（2026-09-01）
+
+- 按 Cordys `ApprovalNodeTypeEnum`、`ApprovalNodeCondition`、`CombineSearch / FilterCondition`、`ApprovalFlowService.getNextNode()` 重新核实：CONDITION/DEFAULT 是正式节点，条件按 `ApprovalNodeLink.sort` 顺序第一命中，全部不命中才走 DEFAULT；CONDITION/DEFAULT 自身不产生审批任务。
+- Migration 64 新增 `approval_node_conditions`，ID 与 ApprovalNode 一对一；Shared/API 扩展条件 DTO 和显式 links 图契约。高级图保存执行 START/END 唯一、引用完整、无环、全图可达、CONDITION + 唯一 DEFAULT、同层 sort 唯一等硬校验。
+- submit runtime 复用 DB-010 `updateFields` 与 ApprovalResourceService 资源字段值，从不可变 FlowVersion 解析唯一实际 APPROVER path 后继续冻结到现有 `nodesSnapshot`。`NOT_EQUAL_ORIGINAL` 不重新比较旧值；子表按任意行满足；未知 operator 与异常比较 fail-closed。
+- 修正 EQUALS/IN 为 Cordys `Objects.equals` 的类型严格语义；数字字符串转换只用于 GT/LT/GE/LE/BETWEEN 等比较路径。
+- 9.4A isolated HTTP Smoke 在 **64/64 migrations + Seed + Shared/API build** 下覆盖 graph round-trip、legacy 过渡协议、结构/reference gate、sort 首命中、第二条件、DEFAULT、CONDITION 无 task、历史实例 path 冻结、`NOT_EQUAL_ORIGINAL` 和未修改字段 fallback，全部 PASS。
+- 新增 9.4A Browser Smoke **14/14 PASS**：真实创建条件图、流程列表读取、编辑 detail、只读 warning、线性画布不可新增节点、点击保存不发 PUT、版本/links 不变、API 5xx=0、Runtime exception=0。Browser 验收同时暴露并修复 `ApprovalFlowDrawer` 由 `v-if` 首次挂载时 non-immediate watch 不执行 `initialize()` 的旧缺陷。
+- 回归基线：Rules **130/130**、DB-010 regression、DB-011 9.3A～E HTTP、Root **227/227**、`/system/modules` **47/47** 全绿；空库 **64/64 + Seed 2/2** 幂等；workspace typecheck/ESLint/Shared+API+Web build、Prisma validate 全绿，Web **4144 modules transformed**。
+- 旧 `createNodes-only` 线性 payload 继续仅作为 9.4F 前过渡兼容；9.4F 必须迁移全部调用方到统一 `nodes + links` 写契约并删除自动线性图推导入口。DB-012 状态切换为 `IN_PROGRESS`；**下一执行指针：W3.7-9.4B empty approver / fallback / sameSubmitter / 动态审批方向与 duplicate rule。**
+
+---
+
+## 56. W3.7-9.4B DB-012 审批人异常策略与动态方向（2026-09-02）
+
+- 按 Cordys `EmptyApproverActionEnum / SameSubmitterActionEnum / DuplicateApproverRuleEnum / ApproverDirectionEnum / ApproverLevelEnum` 和 `ApprovalFlowService` 复核真实顺序：先解析动态审批人，再处理 empty approver，再处理 sameSubmitter，最后处理 duplicate rule。
+- Migration 65 扩展 `ApprovalNodeApprover` 的 empty/fallback/sameSubmitter/direction，并新增 `MULTIPLE_DEPT_LEADER / MULTIPLE_DIRECT_LEADER`；`ApprovalRecord.taskId` 改为 nullable，使没有人工 task 的 AUTO_PASS/异常自动通过仍有独立审计记录。
+- empty：AUTO_PASS 自动记录并推进；ASSIGN_SPECIFIC/ASSIGN_ADMIN 使用配置 fallback，runtime 不猜管理员角色。sameSubmitter：SKIP 对单人/ANY 自动通过、ALL 只过滤提交人；ASSIGN_SUPERIOR 替换直属上级，无上级则自动通过；ALLOW 正常生成提交人 task。
+- 动态方向支持 1～10 层级的直属上级/部门负责人单级与连续多级选择；BOTTOM_UP 从近到远，TOP_DOWN 从层级链顶部向下。duplicate：FIRST_ONLY 看同实例其他节点历史 APPROVED，SEQUENTIAL_ALL 只看紧邻上一节点当前 round，EACH 不跳过。
+- 项目没有发布历史数据，本单元没有增加旧配置 backfill 或旧 `nodesSnapshot` 兼容分支；`AUTO_PASS / SKIP / BOTTOM_UP` 仅作为 Cordys 业务默认值。旧专项 Smoke 若明确要求提交人手工审批自己，测试夹具显式声明 `sameSubmitterAction=ALLOW`。
+- 9.4B isolated HTTP 在 **65/65 migrations + Seed + Shared/API build** 下覆盖 empty auto-pass/record、fallback/reference gate、sameSubmitter SKIP/ASSIGN_SUPERIOR、直属/部门方向和 FIRST_ONLY/SEQUENTIAL_ALL/EACH，全部 PASS；9.4A Condition HTTP 在 65 migrations 下继续 PASS。
+- DB-010 regression PASS；DB-011 9.3A～E regression 全绿。DB-011 flowWrite Smoke helper 同步 round-trip 9.4B 字段，避免 detail→PUT 测试动作意外重置策略。
+- 默认开发库初次 Root Smoke 暴露仅缺 Migration 65；经 `prisma migrate status` 确认后执行正常 `prisma migrate deploy`，无 backfill，随后 Root **227/227 PASS**。
+- 最终基线：Rules **133/133**；空库 **65/65 migrations + Seed 2/2** 且计数幂等；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿，Web **4144 modules transformed**。9.4B 无新增 UI，`/system/modules` Browser 沿用 9.4A 最近 **47/47** 基线。
+- W3.7-9.4B 正式关闭；DB-012 继续 `IN_PROGRESS`。**下一执行指针：W3.7-9.4C 节点字段权限和审批详情真实约束。**

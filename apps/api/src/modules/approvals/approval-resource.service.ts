@@ -90,6 +90,20 @@ export class ApprovalResourceService {
     )
   }
 
+  async conditionFieldValues(
+    user: AuthUser,
+    module: ApprovalModule,
+    targetId: string,
+  ): Promise<Record<string, unknown>> {
+    const captured = (await this.capture(user, module, targetId)) as unknown as Record<string, unknown>
+    const values: Record<string, unknown> = {
+      ...this.asRecord(captured[this.handlers[module].rootKey]),
+    }
+    this.appendConditionDynamicFields(values, captured.fields)
+    this.appendConditionDynamicFields(values, captured.fieldBlobs)
+    return values
+  }
+
   targetInfo(tenantId: string, module: ApprovalModule, targetId: string) {
     return this.handlers[module].targetInfo(tenantId, targetId)
   }
@@ -146,6 +160,35 @@ export class ApprovalResourceService {
         const fieldId = newCell?.fieldId ?? oldCell?.fieldId
         if (fieldId) changed.add(fieldId)
       }
+    }
+  }
+
+  private appendConditionDynamicFields(target: Record<string, unknown>, value: unknown) {
+    if (!Array.isArray(value)) return
+    for (const item of value) {
+      const row = this.asRecord(item)
+      const fieldId = typeof row.fieldId === 'string' ? row.fieldId : ''
+      if (!fieldId) continue
+      const fieldValue = this.parseConditionValue(row.fieldValue)
+      const refSubId = typeof row.refSubId === 'string' ? row.refSubId : ''
+      if (!refSubId) {
+        target[fieldId] = fieldValue
+        continue
+      }
+      const key = `${refSubId}.${fieldId}`
+      const existing = target[key]
+      target[key] = Array.isArray(existing) ? [...existing, fieldValue] : [fieldValue]
+    }
+  }
+
+  private parseConditionValue(value: unknown) {
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    if (!trimmed || !['[', '{'].includes(trimmed[0])) return value
+    try {
+      return JSON.parse(trimmed) as unknown
+    } catch {
+      return value
     }
   }
 

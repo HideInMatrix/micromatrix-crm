@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import {
+  type ApprovalConditionConfig,
+  type ApprovalFilterCondition,
   ApprovalInstanceVO,
   ApprovalModule,
   ApprovalNodeConfig,
@@ -22,6 +24,13 @@ interface ApprovalSubmitContext {
   preUpdateSnapshot?: Prisma.InputJsonValue | null
   comment?: string | null
 }
+
+type RuntimeFlowVersion = Prisma.ApprovalFlowVersionGetPayload<{
+  include: {
+    nodes: { include: { approver: true; condition: true } }
+    links: true
+  }
+}>
 
 @Injectable()
 export class ApprovalsService {
@@ -91,22 +100,19 @@ export class ApprovalsService {
       throw new BadRequestException('该单据金额未达到审批条件，无需审批')
     }
 
-    const snapshot: ApprovalNodeConfig[] = flow.currentVersion.nodes
-      .filter((node) => node.nodeType === 'APPROVER' && node.approver)
-      .map((node) => ({
-        nodeId: node.id,
-        name: node.name,
-        approverType: node.approver!.approverType,
-        approverIds: node.approver!.approverIds,
-        ccUserIds: node.approver!.ccUserIds,
-        mode: node.approver!.mode,
-      }))
-
     const preUpdateSnapshot = context?.preUpdateSnapshot ?? null
     const updateFields =
       executeTiming === 'UPDATE' && preUpdateSnapshot
         ? await this.resources.deriveUpdateFields(user, module, targetId, preUpdateSnapshot)
         : []
+
+    const snapshot = await this.resolveApprovalPath(
+      user,
+      module,
+      targetId,
+      flow.currentVersion,
+      new Set(updateFields),
+    )
 
     if (executeTiming === 'UPDATE' && preUpdateSnapshot) {
       await this.resources.savePreUpdateSnapshot(user, module, targetId, preUpdateSnapshot)
@@ -293,6 +299,7 @@ export class ApprovalsService {
     const approvers = await this.resolveApprovers(
       instance.tenantId,
       targetNode,
+      instance.submitterId,
       submitter?.deptId ?? null,
       submitter?.leaderId ?? null,
     )
@@ -772,6 +779,13 @@ export class ApprovalsService {
     if (instance.status !== 'PENDING') return
     const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
     const submitter = await this.prisma.user.findUnique({ where: { id: instance.submitterId } })
+    if (!instance.flowId) throw new BadRequestException('审批实例缺少流程引用')
+    const flowPolicy = await this.prisma.approvalFlow.findFirst({
+      where: { id: instance.flowId, tenantId: instance.tenantId, deletedAt: null },
+      select: { duplicateApproverRule: true },
+    })
+    if (!flowPolicy) throw new BadRequestException('审批实例关联流程不存在')
+    const duplicateApproverRule = flowPolicy.duplicateApproverRule
 
     let nodeIndex = instance.currentNodeIndex
     for (;;) {
@@ -780,20 +794,190 @@ export class ApprovalsService {
         await this.finalizeApproved(instance, operatorId)
         return
       }
-      const approvers = await this.resolveApprovers(
+      const node = snapshot[nodeIndex]
+      let approvers = await this.resolveApprovers(
         instance.tenantId,
-        snapshot[nodeIndex],
+        node,
+        instance.submitterId,
         submitter?.deptId ?? null,
         submitter?.leaderId ?? null,
       )
-      if (approvers.length === 0) continue
-      const ccUserIds = [...new Set(snapshot[nodeIndex].ccUserIds ?? [])].filter(
+      const skippedApprovers = new Map<string, string>()
+      let autoPassNode = false
+      let nodeAutoPassReason: string | null = null
+
+      if (approvers.length === 0) {
+        if ((node.emptyApproverAction ?? 'AUTO_PASS') === 'AUTO_PASS') {
+          autoPassNode = true
+          nodeAutoPassReason = '审批人为空，自动通过'
+        } else {
+          const fallback = node.fallbackApprover?.trim()
+          const activeFallback = fallback
+            ? await this.prisma.user.findFirst({
+                where: { id: fallback, tenantId: instance.tenantId, status: 'ACTIVE' },
+                select: { id: true },
+              })
+            : null
+          if (!activeFallback) {
+            throw new BadRequestException(`审批节点「${node.name}」的兜底审批人不存在或已停用`)
+          }
+          approvers = [activeFallback.id]
+        }
+      }
+
+      if (!autoPassNode && approvers.includes(instance.submitterId)) {
+        const sameAction = node.sameSubmitterAction ?? 'ALLOW'
+        if (sameAction === 'ASSIGN_SUPERIOR') {
+          const superior = submitter?.leaderId
+            ? await this.prisma.user.findFirst({
+                where: {
+                  id: submitter.leaderId,
+                  tenantId: instance.tenantId,
+                  status: 'ACTIVE',
+                },
+                select: { id: true },
+              })
+            : null
+          if (!superior) {
+            skippedApprovers.set(
+              instance.submitterId,
+              '审批人与提交人为同一人时，直属上级为空，自动通过',
+            )
+            autoPassNode = true
+          } else {
+            approvers = [
+              ...new Set(
+                approvers.map((approverId) =>
+                  approverId === instance.submitterId ? superior.id : approverId,
+                ),
+              ),
+            ]
+          }
+        } else if (sameAction === 'SKIP') {
+          skippedApprovers.set(instance.submitterId, '审批人与提交人为同一人，自动通过')
+          if (approvers.length === 1 || node.mode === 'ANY') {
+            autoPassNode = true
+          } else {
+            approvers = approvers.filter((approverId) => approverId !== instance.submitterId)
+          }
+        }
+      }
+
+      if (!autoPassNode && approvers.length) {
+        const duplicates = await this.duplicateApproversToSkip(
+          instance,
+          nodeIndex,
+          node.nodeId ?? null,
+          duplicateApproverRule,
+          approvers,
+        )
+        if (duplicates.size) {
+          for (const id of duplicates) {
+            if (!skippedApprovers.has(id)) {
+              skippedApprovers.set(id, '审批人重复出现，后续节点自动通过')
+            }
+          }
+          if (approvers.length === 1 || node.mode === 'ANY') {
+            autoPassNode = true
+          } else {
+            approvers = approvers.filter((approverId) => !duplicates.has(approverId))
+          }
+        }
+      }
+
+      const ccUserIds = [...new Set(node.ccUserIds ?? [])].filter(
         (userId) => userId !== instance.submitterId,
       )
       const nodeRound = await this.nextApprovalNodeRound(
         instance.id,
-        snapshot[nodeIndex].nodeId ?? null,
+        node.nodeId ?? null,
       )
+      const handledAt = new Date()
+      const skippedFacts = [...skippedApprovers.entries()].map(([approverId, comment]) => ({
+        taskId: randomUUID(),
+        approverId,
+        comment,
+      }))
+      const autoTaskRows = skippedFacts.map((fact) => ({
+        id: fact.taskId,
+        tenantId: instance.tenantId,
+        instanceId,
+        nodeId: node.nodeId ?? null,
+        nodeIndex,
+        nodeRound,
+        nodeName: node.name,
+        approverId: fact.approverId,
+        taskType: 'APPROVAL' as const,
+        status: 'SKIPPED' as const,
+        action: 'APPROVE' as const,
+        handledAt,
+      }))
+      const autoRecordRows: Prisma.ApprovalRecordCreateManyInput[] = skippedFacts.map((fact) => ({
+        tenantId: instance.tenantId,
+        instanceId,
+        taskId: fact.taskId,
+        nodeId: node.nodeId ?? null,
+        nodeRound,
+        result: 'APPROVE' as const,
+        comment: fact.comment,
+        createdById: 'SYSTEM',
+      }))
+      if (autoPassNode && skippedFacts.length === 0) {
+        autoRecordRows.push({
+          tenantId: instance.tenantId,
+          instanceId,
+          taskId: null,
+          nodeId: node.nodeId ?? null,
+          nodeRound,
+          result: 'APPROVE',
+          comment: nodeAutoPassReason ?? '审批节点自动通过',
+          createdById: 'SYSTEM',
+        })
+      }
+
+      if (autoPassNode || approvers.length === 0) {
+        await this.prisma.$transaction([
+          this.prisma.approvalInstance.update({
+            where: { id: instanceId },
+            data: { currentNodeIndex: nodeIndex },
+          }),
+          ...(autoTaskRows.length
+            ? [
+                this.prisma.approvalTask.createMany({
+                  data: autoTaskRows,
+                }),
+              ]
+            : []),
+          ...(autoRecordRows.length
+            ? [this.prisma.approvalRecord.createMany({ data: autoRecordRows })]
+            : []),
+          ...(ccUserIds.length
+            ? [
+                this.prisma.approvalTask.createMany({
+                  data: ccUserIds.map((approverId) => ({
+                    tenantId: instance.tenantId,
+                    instanceId,
+                    nodeId: node.nodeId ?? null,
+                    nodeIndex,
+                    nodeRound,
+                    nodeName: node.name,
+                    approverId,
+                    taskType: 'CC' as const,
+                  })),
+                }),
+              ]
+            : []),
+        ])
+        if (ccUserIds.length) {
+          await this.notifications.notifyMany(instance.tenantId, ccUserIds, {
+            type: 'approval',
+            title: '有新的审批抄送给你',
+            content: `${instance.submitterName} 提交的「${instance.targetName}」已抄送给你`,
+            link: '/approvals?tab=copied',
+          })
+        }
+        continue
+      }
 
       await this.prisma.$transaction([
         this.prisma.approvalInstance.update({
@@ -804,24 +988,34 @@ export class ApprovalsService {
           data: approvers.map((approverId) => ({
             tenantId: instance.tenantId,
             instanceId,
-            nodeId: snapshot[nodeIndex].nodeId ?? null,
+            nodeId: node.nodeId ?? null,
             nodeIndex,
             nodeRound,
-            nodeName: snapshot[nodeIndex].name,
+            nodeName: node.name,
             approverId,
             taskType: 'APPROVAL',
           })),
         }),
+        ...(autoTaskRows.length
+          ? [
+              this.prisma.approvalTask.createMany({
+                data: autoTaskRows,
+              }),
+            ]
+          : []),
+        ...(autoRecordRows.length
+          ? [this.prisma.approvalRecord.createMany({ data: autoRecordRows })]
+          : []),
         ...(ccUserIds.length
           ? [
               this.prisma.approvalTask.createMany({
                 data: ccUserIds.map((approverId) => ({
                   tenantId: instance.tenantId,
                   instanceId,
-                  nodeId: snapshot[nodeIndex].nodeId ?? null,
+                  nodeId: node.nodeId ?? null,
                   nodeIndex,
                   nodeRound,
-                  nodeName: snapshot[nodeIndex].name,
+                  nodeName: node.name,
                   approverId,
                   taskType: 'CC' as const,
                 })),
@@ -902,6 +1096,7 @@ export class ApprovalsService {
   private async resolveApprovers(
     tenantId: string,
     node: ApprovalNodeConfig,
+    submitterId: string,
     submitterDeptId: string | null,
     submitterLeaderId: string | null,
   ): Promise<string[]> {
@@ -923,21 +1118,435 @@ export class ApprovalsService {
         break
       }
       case 'DEPT_LEADER': {
-        if (!submitterDeptId) break
-        const dept = await this.prisma.department.findUnique({ where: { id: submitterDeptId } })
-        if (dept?.leaderId) ids = [dept.leaderId]
+        const chain = await this.departmentLeaderChain(tenantId, submitterDeptId)
+        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, false)
         break
       }
-      case 'DIRECT_LEADER':
-        if (submitterLeaderId) ids = [submitterLeaderId]
+      case 'MULTIPLE_DEPT_LEADER': {
+        const chain = await this.departmentLeaderChain(tenantId, submitterDeptId)
+        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, true)
         break
+      }
+      case 'DIRECT_LEADER': {
+        const chain = await this.directLeaderChain(tenantId, submitterId, submitterLeaderId)
+        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, false)
+        break
+      }
+      case 'MULTIPLE_DIRECT_LEADER': {
+        const chain = await this.directLeaderChain(tenantId, submitterId, submitterLeaderId)
+        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, true)
+        break
+      }
     }
     if (ids.length === 0) return []
+    const uniqueIds = [...new Set(ids)]
     const active = await this.prisma.user.findMany({
-      where: { id: { in: [...new Set(ids)] }, tenantId, status: 'ACTIVE' },
+      where: { id: { in: uniqueIds }, tenantId, status: 'ACTIVE' },
       select: { id: true },
     })
-    return active.map((u) => u.id)
+    const activeIds = new Set(active.map((u) => u.id))
+    return uniqueIds.filter((id) => activeIds.has(id))
+  }
+
+  private approverLevel(node: ApprovalNodeConfig) {
+    const raw = node.approverIds?.[0]
+    if (!raw) return 1
+    const level = Number(raw)
+    return Number.isInteger(level) && level >= 1 && level <= 10 ? level : 0
+  }
+
+  private async directLeaderChain(
+    tenantId: string,
+    submitterId: string,
+    firstLeaderId: string | null,
+  ): Promise<Array<string | null>> {
+    const chain: Array<string | null> = []
+    const visited = new Set<string>([submitterId])
+    let currentLeaderId = firstLeaderId
+    while (currentLeaderId && chain.length < 50 && !visited.has(currentLeaderId)) {
+      chain.push(currentLeaderId)
+      visited.add(currentLeaderId)
+      const leader = await this.prisma.user.findFirst({
+        where: { id: currentLeaderId, tenantId },
+        select: { leaderId: true },
+      })
+      if (!leader) break
+      currentLeaderId = leader.leaderId
+    }
+    return chain
+  }
+
+  private async departmentLeaderChain(
+    tenantId: string,
+    submitterDeptId: string | null,
+  ): Promise<Array<string | null>> {
+    const chain: Array<string | null> = []
+    const visited = new Set<string>()
+    let deptId = submitterDeptId
+    while (deptId && chain.length < 50 && !visited.has(deptId)) {
+      visited.add(deptId)
+      const dept = await this.prisma.department.findFirst({
+        where: { id: deptId, tenantId },
+        select: { leaderId: true, parentId: true },
+      })
+      if (!dept) break
+      chain.push(dept.leaderId)
+      deptId = dept.parentId
+    }
+    return chain
+  }
+
+  private selectHierarchyApprovers(
+    bottomUpIds: Array<string | null>,
+    level: number,
+    direction: ApprovalNodeConfig['approverDirection'],
+    multiple: boolean,
+  ): string[] {
+    if (level <= 0 || level > bottomUpIds.length) return []
+    if (!multiple) {
+      const index = direction === 'TOP_DOWN' ? bottomUpIds.length - level : level - 1
+      const id = bottomUpIds[index]
+      return id ? [id] : []
+    }
+    const ordered = direction === 'TOP_DOWN' ? [...bottomUpIds].reverse() : bottomUpIds
+    return ordered.slice(0, level).filter((id): id is string => Boolean(id))
+  }
+
+  private async duplicateApproversToSkip(
+    instance: ApprovalInstance,
+    nodeIndex: number,
+    nodeId: string | null,
+    rule: 'FIRST_ONLY' | 'SEQUENTIAL_ALL' | 'EACH',
+    approvers: string[],
+  ): Promise<Set<string>> {
+    if (rule === 'EACH' || approvers.length === 0) return new Set()
+    let previousApproverIds: string[] = []
+    if (rule === 'FIRST_ONLY') {
+      const approved = await this.prisma.approvalTask.findMany({
+        where: {
+          instanceId: instance.id,
+          status: 'APPROVED',
+          taskType: { in: ['APPROVAL', 'SIGN'] },
+          ...(nodeId ? { OR: [{ nodeId: null }, { nodeId: { not: nodeId } }] } : { nodeIndex: { not: nodeIndex } }),
+        },
+        select: { approverId: true },
+      })
+      previousApproverIds = approved.map((task) => task.approverId)
+    } else if (nodeIndex > 0) {
+      const maxRound = await this.prisma.approvalTask.aggregate({
+        where: { instanceId: instance.id, nodeIndex: nodeIndex - 1 },
+        _max: { nodeRound: true },
+      })
+      if (maxRound._max.nodeRound !== null) {
+        const approved = await this.prisma.approvalTask.findMany({
+          where: {
+            instanceId: instance.id,
+            nodeIndex: nodeIndex - 1,
+            nodeRound: maxRound._max.nodeRound,
+            status: 'APPROVED',
+            taskType: { in: ['APPROVAL', 'SIGN'] },
+          },
+          select: { approverId: true },
+        })
+        previousApproverIds = approved.map((task) => task.approverId)
+      }
+    }
+    const previous = new Set(previousApproverIds)
+    return new Set(approvers.filter((approverId) => previous.has(approverId)))
+  }
+
+  private async resolveApprovalPath(
+    user: AuthUser,
+    module: ApprovalModule,
+    targetId: string,
+    version: RuntimeFlowVersion,
+    updateFields: Set<string>,
+  ): Promise<ApprovalNodeConfig[]> {
+    const hasConditionGraph = version.nodes.some(
+      (node) => node.nodeType === 'CONDITION' || node.nodeType === 'DEFAULT',
+    )
+    if (!hasConditionGraph) {
+      return version.nodes
+        .filter((node) => node.nodeType === 'APPROVER' && node.approver)
+        .map((node) => this.toFrozenApproverNode(node))
+    }
+
+    const fieldValues = await this.resources.conditionFieldValues(user, module, targetId)
+    const nodeMap = new Map(version.nodes.map((node) => [node.id, node]))
+    const outgoing = new Map<string, typeof version.links>()
+    for (const link of version.links) {
+      const list = outgoing.get(link.fromNodeId) ?? []
+      list.push(link)
+      outgoing.set(link.fromNodeId, list)
+    }
+    for (const links of outgoing.values()) links.sort((a, b) => a.sort - b.sort)
+
+    const start = version.nodes.find((node) => node.nodeType === 'START')
+    if (!start) throw new BadRequestException('审批流程版本缺少 START 节点')
+    const path: ApprovalNodeConfig[] = []
+    let current = start
+    let guard = 0
+    while (current.nodeType !== 'END') {
+      guard += 1
+      if (guard > Math.max(version.nodes.length * 2, 10)) {
+        throw new BadRequestException('审批流程条件图存在循环或无法收敛')
+      }
+      const links = outgoing.get(current.id) ?? []
+      if (!links.length) throw new BadRequestException(`审批节点「${current.name}」缺少后继节点`)
+      const targets = links
+        .map((link) => nodeMap.get(link.toNodeId))
+        .filter((node): node is RuntimeFlowVersion['nodes'][number] => Boolean(node))
+      if (!targets.length) throw new BadRequestException('审批流程存在无效节点连接')
+
+      let next: RuntimeFlowVersion['nodes'][number] | undefined
+      if (targets.some((node) => node.nodeType === 'CONDITION')) {
+        let defaultNode: RuntimeFlowVersion['nodes'][number] | undefined
+        for (const target of targets) {
+          if (target.nodeType === 'DEFAULT') {
+            defaultNode = target
+            continue
+          }
+          if (target.nodeType !== 'CONDITION') continue
+          const config = target.condition?.conditionConfig as unknown as ApprovalConditionConfig | null
+          if (this.matchCondition(config, fieldValues, updateFields)) {
+            next = target
+            break
+          }
+        }
+        next ??= defaultNode
+        if (!next) throw new BadRequestException('审批流程条件未匹配且缺少 DEFAULT 分支')
+      } else {
+        next = targets[0]
+      }
+
+      current = next
+      if (current.nodeType === 'APPROVER') {
+        if (!current.approver) throw new BadRequestException(`审批节点「${current.name}」缺少审批人配置`)
+        path.push(this.toFrozenApproverNode(current))
+      }
+    }
+    return path
+  }
+
+  private toFrozenApproverNode(node: RuntimeFlowVersion['nodes'][number]): ApprovalNodeConfig {
+    if (!node.approver) throw new BadRequestException(`审批节点「${node.name}」缺少审批人配置`)
+    return {
+      nodeId: node.id,
+      name: node.name,
+      approverType: node.approver.approverType,
+      approverIds: node.approver.approverIds,
+      ccUserIds: node.approver.ccUserIds,
+      mode: node.approver.mode,
+      emptyApproverAction: node.approver.emptyApproverAction,
+      fallbackApprover: node.approver.fallbackApprover,
+      sameSubmitterAction: node.approver.sameSubmitterAction,
+      approverDirection: node.approver.approverDirection,
+    }
+  }
+
+  private matchCondition(
+    config: ApprovalConditionConfig | null | undefined,
+    fieldValues: Record<string, unknown>,
+    updateFields: Set<string>,
+  ) {
+    const conditions = config?.conditions?.filter((condition) => this.validCondition(condition)) ?? []
+    if (!conditions.length) return false
+    if ((config?.searchMode ?? 'AND') === 'AND') {
+      return conditions.every((condition) =>
+        this.matchSingleCondition(condition, fieldValues, updateFields),
+      )
+    }
+    return conditions.some((condition) =>
+      this.matchSingleCondition(condition, fieldValues, updateFields),
+    )
+  }
+
+  private validCondition(condition: ApprovalFilterCondition) {
+    if (!condition?.name?.trim() || !condition.operator) return false
+    if (['EMPTY', 'NOT_EMPTY', 'NOT_EQUAL_ORIGINAL'].includes(condition.operator)) return true
+    const value = condition.value
+    return !(
+      value === undefined ||
+      value === null ||
+      (typeof value === 'string' && !value.trim()) ||
+      (Array.isArray(value) && value.length === 0)
+    )
+  }
+
+  private matchSingleCondition(
+    condition: ApprovalFilterCondition,
+    fieldValues: Record<string, unknown>,
+    updateFields: Set<string>,
+  ) {
+    const fieldName = condition.name
+    if (condition.operator === 'NOT_EQUAL_ORIGINAL') {
+      const fieldId = fieldName.includes('.') ? (fieldName.split('.')[1] ?? fieldName) : fieldName
+      return updateFields.has(fieldId)
+    }
+
+    const actualValue = fieldValues[fieldName]
+    const { operator, value: expectedValue } = this.resolveDynamicCondition(condition)
+    if (fieldName.includes('.') && Array.isArray(actualValue)) {
+      return actualValue.some((cell) => this.matchFieldValue(cell, expectedValue, operator))
+    }
+    return this.matchFieldValue(actualValue, expectedValue, operator)
+  }
+
+  private matchFieldValue(
+    actualValue: unknown,
+    expectedValue: unknown,
+    operator: ApprovalFilterCondition['operator'],
+  ) {
+    if (operator === 'EMPTY') return actualValue === null || actualValue === undefined
+    if (operator === 'NOT_EMPTY') return actualValue !== null && actualValue !== undefined
+    if (actualValue === null || actualValue === undefined) return false
+    try {
+      switch (operator) {
+        case 'EQUALS':
+          return this.conditionEquals(actualValue, expectedValue)
+        case 'NOT_EQUALS':
+          return !this.conditionEquals(actualValue, expectedValue)
+        case 'CONTAINS':
+          return String(actualValue).includes(String(expectedValue))
+        case 'NOT_CONTAINS':
+          return !String(actualValue).includes(String(expectedValue))
+        case 'IN':
+          return this.conditionIn(actualValue, expectedValue)
+        case 'NOT_IN':
+          return !this.conditionIn(actualValue, expectedValue)
+        case 'GT':
+          return this.conditionCompare(actualValue, expectedValue) > 0
+        case 'LT':
+          return this.conditionCompare(actualValue, expectedValue) < 0
+        case 'GE':
+          return this.conditionCompare(actualValue, expectedValue) >= 0
+        case 'LE':
+          return this.conditionCompare(actualValue, expectedValue) <= 0
+        case 'BETWEEN':
+          return (
+            Array.isArray(expectedValue) &&
+            expectedValue.length === 2 &&
+            this.conditionCompare(actualValue, expectedValue[0]) >= 0 &&
+            this.conditionCompare(actualValue, expectedValue[1]) <= 0
+          )
+        default:
+          // Cordys 当前 matchFieldValue 对 COUNT_* 等未实现 operator 同样返回 false。
+          return false
+      }
+    } catch {
+      return false
+    }
+  }
+
+  private conditionEquals(actualValue: unknown, expectedValue: unknown) {
+    if (Array.isArray(actualValue) && Array.isArray(expectedValue)) {
+      return JSON.stringify(actualValue) === JSON.stringify(expectedValue)
+    }
+    // Cordys matchEquals 使用 Objects.equals：EQUALS/IN 不做数字字符串隐式转换。
+    return Object.is(actualValue, expectedValue)
+  }
+
+  private conditionIn(actualValue: unknown, expectedValue: unknown) {
+    if (!Array.isArray(expectedValue)) return false
+    if (Array.isArray(actualValue)) {
+      return actualValue.some((item) => expectedValue.some((expected) => this.conditionEquals(item, expected)))
+    }
+    return expectedValue.some((expected) => this.conditionEquals(actualValue, expected))
+  }
+
+  private conditionCompare(actualValue: unknown, expectedValue: unknown) {
+    const actualNumber = this.asFiniteNumber(actualValue)
+    const expectedNumber = this.asFiniteNumber(expectedValue)
+    if (actualNumber !== null && expectedNumber !== null) return actualNumber - expectedNumber
+    return String(actualValue).localeCompare(String(expectedValue))
+  }
+
+  private asFiniteNumber(value: unknown) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null
+    if (typeof value !== 'string' || !value.trim()) return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  private resolveDynamicCondition(condition: ApprovalFilterCondition): {
+    operator: ApprovalFilterCondition['operator']
+    value: unknown
+  } {
+    if (condition.operator !== 'DYNAMICS' || typeof condition.value !== 'string') {
+      return { operator: condition.operator, value: condition.value }
+    }
+    const parts = condition.value.split(',')
+    if (parts.length > 1) {
+      const amount = Number(parts[1])
+      const unit = parts[2]
+      if (!Number.isFinite(amount) || !unit) return { operator: 'DYNAMICS', value: condition.value }
+      const target = new Date()
+      if (unit === 'BEFORE_DAY') target.setDate(target.getDate() - amount)
+      else if (unit === 'AFTER_DAY') target.setDate(target.getDate() + amount)
+      else if (unit === 'BEFORE_WEEK') target.setDate(target.getDate() - amount * 7)
+      else if (unit === 'AFTER_WEEK') target.setDate(target.getDate() + amount * 7)
+      else if (unit === 'BEFORE_MONTH') target.setMonth(target.getMonth() - amount)
+      else if (unit === 'AFTER_MONTH') target.setMonth(target.getMonth() + amount)
+      else return { operator: 'DYNAMICS', value: condition.value }
+      return {
+        operator: unit.startsWith('BEFORE_') ? 'LT' : 'GT',
+        value: target.getTime(),
+      }
+    }
+    const range = this.dynamicDateRange(parts[0])
+    return range ? { operator: 'BETWEEN', value: range } : { operator: 'DYNAMICS', value: condition.value }
+  }
+
+  private dynamicDateRange(key: string): [number, number] | null {
+    const now = new Date()
+    const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+    const endOfDay = (date: Date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999).getTime()
+    const daysRange = (from: number, to: number): [number, number] => {
+      const start = new Date(now)
+      start.setDate(start.getDate() + from)
+      const end = new Date(now)
+      end.setDate(end.getDate() + to)
+      return [startOfDay(start), endOfDay(end)]
+    }
+    if (key === 'TODAY') return daysRange(0, 0)
+    if (key === 'YESTERDAY') return daysRange(-1, -1)
+    if (key === 'TOMORROW') return daysRange(1, 1)
+    if (key === 'LAST_SEVEN') return [daysRange(-7, 0)[0], startOfDay(now)]
+    if (key === 'SEVEN') return daysRange(0, 6)
+    if (key === 'LAST_THIRTY') return [daysRange(-30, 0)[0], startOfDay(now)]
+    if (key === 'THIRTY') return daysRange(0, 29)
+    if (key === 'LAST_SIXTY') return [daysRange(-60, 0)[0], startOfDay(now)]
+    if (key === 'SIXTY') return daysRange(0, 59)
+
+    const day = now.getDay() || 7
+    if (['WEEK', 'LAST_WEEK', 'NEXT_WEEK'].includes(key)) {
+      const offset = key === 'LAST_WEEK' ? -7 : key === 'NEXT_WEEK' ? 7 : 0
+      const monday = new Date(now)
+      monday.setDate(now.getDate() - day + 1 + offset)
+      const sunday = new Date(monday)
+      sunday.setDate(monday.getDate() + 6)
+      return [startOfDay(monday), endOfDay(sunday)]
+    }
+    if (['MONTH', 'LAST_MONTH', 'NEXT_MONTH'].includes(key)) {
+      const monthOffset = key === 'LAST_MONTH' ? -1 : key === 'NEXT_MONTH' ? 1 : 0
+      const start = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0)
+      return [startOfDay(start), endOfDay(end)]
+    }
+    if (['QUARTER', 'LAST_QUARTER', 'NEXT_QUARTER'].includes(key)) {
+      const currentQuarterStart = Math.floor(now.getMonth() / 3) * 3
+      const offset = key === 'LAST_QUARTER' ? -3 : key === 'NEXT_QUARTER' ? 3 : 0
+      const start = new Date(now.getFullYear(), currentQuarterStart + offset, 1)
+      const end = new Date(start.getFullYear(), start.getMonth() + 3, 0)
+      return [startOfDay(start), endOfDay(end)]
+    }
+    if (['YEAR', 'LAST_YEAR', 'NEXT_YEAR'].includes(key)) {
+      const yearOffset = key === 'LAST_YEAR' ? -1 : key === 'NEXT_YEAR' ? 1 : 0
+      const year = now.getFullYear() + yearOffset
+      return [startOfDay(new Date(year, 0, 1)), endOfDay(new Date(year, 11, 31))]
+    }
+    return null
   }
 
   private async enabledFlow(
@@ -966,9 +1575,10 @@ export class ApprovalsService {
           include: {
             // 当前配置 UI 复用同一审批节点链，执行时机由 flow flags 决定。
             nodes: {
-              include: { approver: true },
+              include: { approver: true, condition: true },
               orderBy: { sort: 'asc' },
             },
+            links: { orderBy: { sort: 'asc' } },
           },
         },
       },

@@ -31,6 +31,7 @@ const members = ref<MemberOption[]>([])
 const roles = ref<RoleOption[]>([])
 const detail = ref<ApprovalFlowDetail | null>(null)
 const initialSnapshot = ref('')
+const advancedGraphLocked = ref(false)
 
 const form = reactive<ApprovalFlowWriteInput>(createDefaultForm())
 
@@ -58,7 +59,7 @@ function replaceForm(value: ApprovalFlowWriteInput) {
   Object.assign(form, createDefaultForm(), value)
   form.createNodes = value.createNodes.map((node) => ({
     ...node,
-    approverIds: [...node.approverIds],
+    approverIds: [...(node.approverIds ?? [])],
     ccUserIds: [...(node.ccUserIds ?? [])],
   }))
 }
@@ -71,7 +72,7 @@ function serializeForm() {
     createNodes: form.createNodes.map(({ clientId: _clientId, ...node }) => ({
       ...node,
       name: node.name.trim(),
-      approverIds: [...node.approverIds].sort(),
+      approverIds: [...(node.approverIds ?? [])].sort(),
       ccUserIds: [...(node.ccUserIds ?? [])].sort(),
     })),
   })
@@ -126,6 +127,7 @@ async function initialize() {
   activeStep.value = 'basic'
   loading.value = true
   detail.value = null
+  advancedGraphLocked.value = false
   replaceForm(createDefaultForm())
   try {
     const optionPromise = Promise.all([memberApi.options(), roleApi.options()])
@@ -138,6 +140,9 @@ async function initialize() {
     roles.value = roleResponse.data
     if (detailResponse) {
       detail.value = detailResponse.data
+      advancedGraphLocked.value = detailResponse.data.createNodes.some(
+        (node) => node.nodeType === 'CONDITION' || node.nodeType === 'DEFAULT',
+      )
       replaceForm(toWriteInput(detailResponse.data))
     }
     initialSnapshot.value = serializeForm()
@@ -149,7 +154,7 @@ async function initialize() {
   }
 }
 
-watch(visible, (value) => value && initialize())
+watch(visible, (value) => value && initialize(), { immediate: true })
 
 function setFormType(value: ApprovalFormType) {
   form.formType = value
@@ -161,6 +166,11 @@ function setFormType(value: ApprovalFormType) {
 }
 
 function validate() {
+  if (advancedGraphLocked.value && props.mode === 'edit') {
+    activeStep.value = 'flow'
+    ElMessage.warning('该流程包含条件分支，完整条件设计器将在 W3.7-9.4F 开放；当前版本禁止线性覆盖保存')
+    return false
+  }
   if (!form.name.trim()) {
     activeStep.value = 'basic'
     ElMessage.warning('请填写流程名称')
@@ -179,7 +189,7 @@ function validate() {
     }
     if (
       (node.approverType === 'USER' || node.approverType === 'ROLE') &&
-      node.approverIds.length === 0
+      (node.approverIds?.length ?? 0) === 0
     ) {
       activeStep.value = 'flow'
       ElMessage.warning(`节点「${node.name}」尚未选择审批对象`)
@@ -358,9 +368,17 @@ function formatDate(value?: string | null) {
         </section>
 
         <section v-if="activeStep === 'flow'">
+          <el-alert
+            v-if="advancedGraphLocked"
+            class="mb-4"
+            type="warning"
+            :closable="false"
+            title="该流程包含 Condition / DEFAULT 分支"
+            description="9.4A 已接入后端条件图与运行时；完整 Vue Flow 条件设计器将在 9.4F 开放。当前线性画布仅供查看审批节点，禁止覆盖保存。"
+          />
           <ApprovalFlowCanvas
             v-model="form.createNodes"
-            :readonly="readonly"
+            :readonly="readonly || advancedGraphLocked"
             :members="members"
             :roles="roles"
           />

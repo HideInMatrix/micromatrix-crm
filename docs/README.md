@@ -19,8 +19,8 @@
 
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/冒烟脚本）
-- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链均已完成；当前进入 **W3.7 高级审批深化**。DB-010、DB-011 已 `VERIFIED`，**下一执行单元为 W3.7-9.4A / DB-012 Condition / DEFAULT 图结构、条件 DTO 与 updateFields runtime**。
-- 当前最终基线：隔离空库 **63/63 migrations + 双 Seed**、W3.7-9.3E HTTP Smoke PASS、PC/Mobile Browser **28/28**、9.3B/9.3C/9.3D HTTP 回归 PASS + Browser **17/17、17/17、24/24**、`pnpm smoke` **227/227**、Rules **127/127**、DB-010 regression PASS、`/system/modules` Browser **47/47**、workspace typecheck/ESLint/Shared+API+Web production build/Prisma validate 全绿；Docker release runtime Smoke 最近一次仍验证 62 migrations、API/Web runtime、Nginx proxy 与 SPA fallback 全绿。
+- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链均已完成；当前进入 **W3.7 高级审批深化**。DB-010、DB-011 已 `VERIFIED`，DB-012 已完成 9.4A 并处于 `IN_PROGRESS`；**下一执行单元为 W3.7-9.4B empty approver / fallback / sameSubmitter / 动态审批方向与 duplicate rule**。
+- 当前最终基线：隔离空库 **64/64 migrations + 双 Seed**、9.4A Condition HTTP Smoke PASS + Browser **14/14**、9.3B～E 相邻 HTTP 回归 PASS、`pnpm smoke` **227/227**、Rules **130/130**、DB-010 regression PASS、`/system/modules` Browser **47/47**、workspace typecheck/ESLint/Shared+API+Web production build/Prisma validate 全绿；Web build **4144 modules transformed**。Docker release runtime Smoke 最近一次仍验证 62 migrations、API/Web runtime、Nginx proxy 与 SPA fallback 全绿。
 - 当前发布基线：`v0.0.5` 已包含 Web `BUILDPLATFORM` 静态构建优化和 API amd64/arm64 原生 Runner 分架构构建；API production deploy 已退出 legacy 二次联网路径。
 - 整体剩余范围与完成标准见 [project-progress.md](./project-progress.md)；DataEase provider/token 继续由 DB-023 deferred，AI/License/MCP/商业标讯等明确排除项不计入当前 CRM 核心完成标准。
 - 数据模型唯一真相：`apps/api/prisma/schema.prisma`；不维护会随迁移快速失真的手写数据模型快照

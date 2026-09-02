@@ -2,8 +2,17 @@ import type { AttachmentVO } from './sales'
 
 // ============ 审批流 ============
 
-export type ApproverType = 'USER' | 'ROLE' | 'DEPT_LEADER' | 'DIRECT_LEADER'
+export type ApproverType =
+  | 'USER'
+  | 'ROLE'
+  | 'DEPT_LEADER'
+  | 'DIRECT_LEADER'
+  | 'MULTIPLE_DEPT_LEADER'
+  | 'MULTIPLE_DIRECT_LEADER'
 export type ApprovalMode = 'ALL' | 'ANY'
+export type EmptyApproverAction = 'AUTO_PASS' | 'ASSIGN_SPECIFIC' | 'ASSIGN_ADMIN'
+export type SameSubmitterAction = 'SKIP' | 'ALLOW' | 'ASSIGN_SUPERIOR'
+export type ApproverDirection = 'BOTTOM_UP' | 'TOP_DOWN'
 export type ApprovalInstanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED'
 export type ApprovalTaskStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED'
 export type ApprovalTaskType = 'APPROVAL' | 'CC' | 'SIGN' | 'BACK'
@@ -17,6 +26,8 @@ export const APPROVER_TYPE_LABELS: Record<ApproverType, string> = {
   ROLE: '指定角色',
   DEPT_LEADER: '部门主管',
   DIRECT_LEADER: '直属上级',
+  MULTIPLE_DEPT_LEADER: '连续多级部门主管',
+  MULTIPLE_DIRECT_LEADER: '连续多级直属上级',
 }
 
 export const APPROVAL_MODE_LABELS: Record<ApprovalMode, string> = {
@@ -50,6 +61,10 @@ export interface ApprovalNodeConfig {
   /** Cordys approver node 的抄送成员；进入该节点时生成 CC task。 */
   ccUserIds?: string[]
   mode: ApprovalMode
+  emptyApproverAction?: EmptyApproverAction
+  fallbackApprover?: string | null
+  sameSubmitterAction?: SameSubmitterAction
+  approverDirection?: ApproverDirection
 }
 
 // ============ 流程设置 ============
@@ -58,6 +73,39 @@ export type ApprovalFormType = 'quotation' | 'contract' | 'invoice' | 'order'
 export type ApprovalExecuteTiming = 'CREATE' | 'UPDATE' | 'DELETE'
 export type ApprovalNodeType = 'START' | 'APPROVER' | 'CONDITION' | 'DEFAULT' | 'END'
 export type DuplicateApproverRule = 'FIRST_ONLY' | 'SEQUENTIAL_ALL' | 'EACH'
+export type ApprovalConditionSearchMode = 'AND' | 'OR'
+export type ApprovalConditionOperator =
+  | 'DYNAMICS'
+  | 'IN'
+  | 'NOT_IN'
+  | 'BETWEEN'
+  | 'GT'
+  | 'LT'
+  | 'GE'
+  | 'LE'
+  | 'COUNT_GT'
+  | 'COUNT_LT'
+  | 'EQUALS'
+  | 'NOT_EQUALS'
+  | 'CONTAINS'
+  | 'NOT_CONTAINS'
+  | 'EMPTY'
+  | 'NOT_EMPTY'
+  | 'NOT_EQUAL_ORIGINAL'
+
+export interface ApprovalFilterCondition {
+  name: string
+  value?: unknown
+  multipleValue?: boolean
+  operator: ApprovalConditionOperator
+  type?: string | null
+  containChildIds?: string[]
+}
+
+export interface ApprovalConditionConfig {
+  searchMode: ApprovalConditionSearchMode
+  conditions: ApprovalFilterCondition[]
+}
 
 export const APPROVAL_FORM_TYPE_LABELS: Record<ApprovalFormType, string> = {
   quotation: '报价',
@@ -94,9 +142,28 @@ export interface ApprovalFlowSettings {
   requireComment: boolean
 }
 
-export interface ApprovalFlowNodeInput extends ApprovalNodeConfig {
+export interface ApprovalFlowNodeInput {
   /** 前端编辑期稳定键；后端不会将其作为数据库主键。 */
   clientId?: string
+  /** 旧线性 payload 未提供时默认为 APPROVER。 */
+  nodeType?: ApprovalNodeType
+  number?: string
+  name: string
+  approverType?: ApproverType
+  approverIds?: string[]
+  ccUserIds?: string[]
+  mode?: ApprovalMode
+  emptyApproverAction?: EmptyApproverAction
+  fallbackApprover?: string | null
+  sameSubmitterAction?: SameSubmitterAction
+  approverDirection?: ApproverDirection
+  conditionConfig?: ApprovalConditionConfig | null
+}
+
+export interface ApprovalFlowLinkInput {
+  fromNodeId: string
+  toNodeId: string
+  sort?: number
 }
 
 export interface ApprovalFlowWriteInput extends ApprovalFlowSettings {
@@ -109,6 +176,8 @@ export interface ApprovalFlowWriteInput extends ApprovalFlowSettings {
   deleteExecute: boolean
   condition?: { amountGte?: number } | null
   createNodes: ApprovalFlowNodeInput[]
+  /** 条件图显式连线；旧线性 payload 可省略。 */
+  createLinks?: ApprovalFlowLinkInput[]
 }
 
 export interface ApprovalFlowListItem extends ApprovalFlowSettings {
@@ -142,6 +211,11 @@ export interface ApprovalFlowNodeDetail {
   approverIds?: string[]
   ccUserIds?: string[]
   mode?: ApprovalMode
+  emptyApproverAction?: EmptyApproverAction
+  fallbackApprover?: string | null
+  sameSubmitterAction?: SameSubmitterAction
+  approverDirection?: ApproverDirection
+  conditionConfig?: ApprovalConditionConfig | null
 }
 
 export interface ApprovalFlowLinkDetail {
@@ -177,7 +251,7 @@ export interface ApprovalTaskVO {
 
 export interface ApprovalRecordVO {
   id: string
-  taskId: string
+  taskId: string | null
   nodeId: string | null
   nodeRound: number
   result: ApprovalTaskAction

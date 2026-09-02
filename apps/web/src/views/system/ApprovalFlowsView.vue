@@ -292,6 +292,7 @@ onMounted(load)
             link
             type="primary"
             :icon="Pencil"
+            :data-flow-edit="row.id"
             @click="openDrawer('edit', row.id)"
           >
             编辑

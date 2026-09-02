@@ -20,7 +20,7 @@ test('流程表单类型只在受支持的配置类型与数据库枚举间映�
   assert.equal(fromDbFormType(ApprovalFormType.RECEIVABLE_RECORD_LEGACY), null)
 })
 
-test('节点规范化会裁剪名称、去重并稳定排序指定对象', () => {
+test('节点规范化会裁剪名称、去重排序指定对象并保留层级策略默认值', () => {
   assert.deepEqual(
     normalizeFlowNodes([
       {
@@ -33,7 +33,7 @@ test('节点规范化会裁剪名称、去重并稳定排序指定对象', () =>
       {
         name: '主管审批',
         approverType: 'DIRECT_LEADER',
-        approverIds: ['ignored-user'],
+        approverIds: ['2'],
         mode: 'ANY',
       },
     ]),
@@ -44,13 +44,21 @@ test('节点规范化会裁剪名称、去重并稳定排序指定对象', () =>
         approverIds: ['user-a', 'user-b'],
         ccUserIds: ['cc-a', 'cc-b'],
         mode: 'ALL',
+        emptyApproverAction: 'AUTO_PASS',
+        fallbackApprover: null,
+        sameSubmitterAction: 'SKIP',
+        approverDirection: 'BOTTOM_UP',
       },
       {
         name: '主管审批',
         approverType: 'DIRECT_LEADER',
-        approverIds: [],
+        approverIds: ['2'],
         ccUserIds: [],
         mode: 'ANY',
+        emptyApproverAction: 'AUTO_PASS',
+        fallbackApprover: null,
+        sameSubmitterAction: 'SKIP',
+        approverDirection: 'BOTTOM_UP',
       },
     ],
   )

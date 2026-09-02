@@ -113,7 +113,7 @@ async function main() {
     createExecute: true, updateExecute: true, deleteExecute: true, submitterCanRevoke: true,
     allowBatchProcess: false, allowWithdraw: false, allowAddSign: false,
     duplicateApproverRule: 'FIRST_ONLY', requireComment: false, condition: null,
-    createNodes: [{ name: '管理员审批', approverType: 'USER', approverIds: [userId], ccUserIds: [], mode: 'ANY' }],
+    createNodes: [{ name: '管理员审批', approverType: 'USER', approverIds: [userId], ccUserIds: [], mode: 'ANY', sameSubmitterAction: 'ALLOW' }],
   }
 
   if (flowId) {

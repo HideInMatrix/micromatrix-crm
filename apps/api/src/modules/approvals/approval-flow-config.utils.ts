@@ -53,16 +53,30 @@ export function fromDbFormType(formType: ApprovalFormType): SharedApprovalFormTy
 }
 
 export function normalizeFlowNodes(nodes: NormalizableFlowNode[]): ApprovalNodeConfig[] {
-  return nodes.map((node) => ({
-    name: node.name.trim(),
-    approverType: node.approverType,
-    approverIds:
-      node.approverType === 'USER' || node.approverType === 'ROLE'
-        ? [...new Set(node.approverIds ?? [])].sort()
-        : [],
-    ccUserIds: [...new Set(node.ccUserIds ?? [])].sort(),
-    mode: node.mode,
-  }))
+  return nodes.map((node) => {
+    const approverType = node.approverType!
+    const hierarchyType =
+      approverType === 'DIRECT_LEADER' ||
+      approverType === 'DEPT_LEADER' ||
+      approverType === 'MULTIPLE_DIRECT_LEADER' ||
+      approverType === 'MULTIPLE_DEPT_LEADER'
+    return {
+      name: node.name.trim(),
+      approverType,
+      approverIds:
+        approverType === 'USER' || approverType === 'ROLE'
+          ? [...new Set(node.approverIds ?? [])].sort()
+          : hierarchyType
+            ? [node.approverIds?.[0] ?? '1']
+            : [],
+      ccUserIds: [...new Set(node.ccUserIds ?? [])].sort(),
+      mode: node.mode!,
+      emptyApproverAction: node.emptyApproverAction ?? 'AUTO_PASS',
+      fallbackApprover: node.fallbackApprover?.trim() || null,
+      sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
+      approverDirection: node.approverDirection ?? 'BOTTOM_UP',
+    }
+  })
 }
 
 export function flowNodesEqual(

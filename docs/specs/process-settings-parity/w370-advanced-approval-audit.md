@@ -179,13 +179,14 @@ Cordys 还真实执行重复审批人规则，例如 `FIRST_ONLY / SEQUENTIAL_AL
 
 ### 5.2 MicroMatrix 当前状态
 
-当前节点模型只有基础：
+当前节点模型在 9.4A 后已经具备：
 
 - `ApprovalNode`
 - `ApprovalNodeApprover.approverType / approverIds / ccUserIds / mode`
-- 线性 `ApprovalNodeLink`
+- `ApprovalNodeCondition.conditionConfig`
+- 显式 `ApprovalNodeLink` 图与 `link.sort`
 
-当前 `fieldPermissions`、`webHook` 在审批 API/Web/Shared 中均不存在；没有 Condition 模型和 DEFAULT 分支运行时。
+9.4A 已完成 CONDITION / DEFAULT 图、CombineSearch DTO、资源字段条件求值、`NOT_EQUAL_ORIGINAL` 和实例实际 APPROVER path 冻结；当前线性 PC 编辑器在 9.4F 前对高级图 fail-closed。`fieldPermissions`、`webHook` 仍未接入。
 
 流程层 `requireComment` 已在 DB-011 关闭；`duplicateApproverRule` 高级值仍保持 disabled/Service fail-closed，等待 DB-012 runtime。
 
@@ -209,10 +210,10 @@ DB-012 必须建立在 DB-010 `updateFields` 上下文和 DB-011 稳定任务状
 | 独立 ApprovalRecord | REAL | W3.7-9.3A REAL | DB-011 已完成子项 |
 | 审批附件 | REAL | W3.7-9.3E REAL | DB-011 已完成子项 |
 | task nodeRound/type/action | REAL | W3.7-9.3A REAL | DB-011 已完成子项 |
-| 条件节点/DEFAULT | REAL | 缺失 | DB-012 |
-| updateFields 条件 | REAL | updateFields 已具备，条件求值缺失 | DB-012 |
-| 空审批人/fallback/sameSubmitter | REAL | 缺失 | DB-012 |
-| 重复审批人高级规则 | REAL | 字段存在，运行时拒绝 | DB-012 |
+| 条件节点/DEFAULT | REAL | W3.7-9.4A REAL | DB-012 已完成子项 |
+| updateFields 条件 | REAL | W3.7-9.4A REAL | DB-012 已完成子项 |
+| 空审批人/fallback/sameSubmitter | REAL | W3.7-9.4B REAL | DB-012 已完成子项 |
+| 重复审批人高级规则 | REAL | W3.7-9.4B REAL | DB-012 已完成子项 |
 | 必填审批意见 | REAL | W3.7-9.3E REAL | DB-011 已完成子项 |
 | 节点字段权限 | REAL | 缺失 | DB-012 |
 | pass/reject 字段更新 | REAL | 缺失 | DB-012 |

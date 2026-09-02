@@ -17,12 +17,87 @@ import {
 } from 'class-validator'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
-export const APPROVER_TYPES = ['USER', 'ROLE', 'DEPT_LEADER', 'DIRECT_LEADER'] as const
+export const APPROVER_TYPES = [
+  'USER',
+  'ROLE',
+  'DEPT_LEADER',
+  'DIRECT_LEADER',
+  'MULTIPLE_DEPT_LEADER',
+  'MULTIPLE_DIRECT_LEADER',
+] as const
 export const APPROVAL_MODES = ['ALL', 'ANY'] as const
 export const APPROVAL_FORM_TYPES = ['quotation', 'contract', 'invoice', 'order'] as const
 export const APPROVAL_MODULES = ['quote', 'contract', 'invoice', 'order'] as const
 export const DUPLICATE_APPROVER_RULES = ['FIRST_ONLY', 'SEQUENTIAL_ALL', 'EACH'] as const
+export const EMPTY_APPROVER_ACTIONS = ['AUTO_PASS', 'ASSIGN_SPECIFIC', 'ASSIGN_ADMIN'] as const
+export const SAME_SUBMITTER_ACTIONS = ['SKIP', 'ALLOW', 'ASSIGN_SUPERIOR'] as const
+export const APPROVER_DIRECTIONS = ['BOTTOM_UP', 'TOP_DOWN'] as const
 export const ADD_SIGN_TYPES = ['BEFORE', 'AFTER'] as const
+export const APPROVAL_NODE_TYPES = ['START', 'APPROVER', 'CONDITION', 'DEFAULT', 'END'] as const
+export const CONDITION_SEARCH_MODES = ['AND', 'OR'] as const
+export const CONDITION_OPERATORS = [
+  'DYNAMICS',
+  'IN',
+  'NOT_IN',
+  'BETWEEN',
+  'GT',
+  'LT',
+  'GE',
+  'LE',
+  'COUNT_GT',
+  'COUNT_LT',
+  'EQUALS',
+  'NOT_EQUALS',
+  'CONTAINS',
+  'NOT_CONTAINS',
+  'EMPTY',
+  'NOT_EMPTY',
+  'NOT_EQUAL_ORIGINAL',
+] as const
+
+export class FilterConditionDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  name!: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  value?: unknown
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  multipleValue?: boolean
+
+  @ApiProperty({ enum: CONDITION_OPERATORS })
+  @IsIn(CONDITION_OPERATORS)
+  operator!: (typeof CONDITION_OPERATORS)[number]
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  type?: string | null
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  containChildIds?: string[]
+}
+
+export class CombineSearchDto {
+  @ApiProperty({ enum: CONDITION_SEARCH_MODES })
+  @IsIn(CONDITION_SEARCH_MODES)
+  searchMode!: (typeof CONDITION_SEARCH_MODES)[number]
+
+  @ApiProperty({ type: [FilterConditionDto] })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => FilterConditionDto)
+  conditions!: FilterConditionDto[]
+}
 
 export class FlowNodeDto {
   @ApiPropertyOptional({ description: '前端编辑期稳定键' })
@@ -30,15 +105,26 @@ export class FlowNodeDto {
   @IsOptional()
   clientId?: string
 
+  @ApiPropertyOptional({ enum: APPROVAL_NODE_TYPES, default: 'APPROVER' })
+  @IsIn(APPROVAL_NODE_TYPES)
+  @IsOptional()
+  nodeType?: (typeof APPROVAL_NODE_TYPES)[number]
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  number?: string
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty({ message: '节点名称不能为空' })
   @MaxLength(255)
   name!: string
 
-  @ApiProperty({ enum: APPROVER_TYPES })
+  @ApiPropertyOptional({ enum: APPROVER_TYPES })
   @IsIn(APPROVER_TYPES)
-  approverType!: (typeof APPROVER_TYPES)[number]
+  @IsOptional()
+  approverType?: (typeof APPROVER_TYPES)[number]
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
@@ -52,9 +138,54 @@ export class FlowNodeDto {
   @IsOptional()
   ccUserIds?: string[]
 
-  @ApiProperty({ enum: APPROVAL_MODES })
+  @ApiPropertyOptional({ enum: APPROVAL_MODES })
   @IsIn(APPROVAL_MODES)
-  mode!: (typeof APPROVAL_MODES)[number]
+  @IsOptional()
+  mode?: (typeof APPROVAL_MODES)[number]
+
+  @ApiPropertyOptional({ enum: EMPTY_APPROVER_ACTIONS, default: 'AUTO_PASS' })
+  @IsIn(EMPTY_APPROVER_ACTIONS)
+  @IsOptional()
+  emptyApproverAction?: (typeof EMPTY_APPROVER_ACTIONS)[number]
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  fallbackApprover?: string | null
+
+  @ApiPropertyOptional({ enum: SAME_SUBMITTER_ACTIONS, default: 'SKIP' })
+  @IsIn(SAME_SUBMITTER_ACTIONS)
+  @IsOptional()
+  sameSubmitterAction?: (typeof SAME_SUBMITTER_ACTIONS)[number]
+
+  @ApiPropertyOptional({ enum: APPROVER_DIRECTIONS, default: 'BOTTOM_UP' })
+  @IsIn(APPROVER_DIRECTIONS)
+  @IsOptional()
+  approverDirection?: (typeof APPROVER_DIRECTIONS)[number]
+
+  @ApiPropertyOptional({ type: CombineSearchDto })
+  @ValidateNested()
+  @Type(() => CombineSearchDto)
+  @IsOptional()
+  conditionConfig?: CombineSearchDto | null
+}
+
+export class FlowLinkDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  fromNodeId!: string
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  toNodeId!: string
+
+  @ApiPropertyOptional()
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sort?: number
 }
 
 export class FlowConditionDto {
@@ -134,6 +265,13 @@ export class CreateApprovalFlowDto {
   @Type(() => FlowNodeDto)
   @ValidateNested({ each: true })
   createNodes!: FlowNodeDto[]
+
+  @ApiPropertyOptional({ type: [FlowLinkDto] })
+  @IsArray()
+  @Type(() => FlowLinkDto)
+  @ValidateNested({ each: true })
+  @IsOptional()
+  createLinks?: FlowLinkDto[]
 }
 
 export class UpdateApprovalFlowDto {
@@ -201,6 +339,13 @@ export class UpdateApprovalFlowDto {
   @Type(() => FlowNodeDto)
   @ValidateNested({ each: true })
   createNodes!: FlowNodeDto[]
+
+  @ApiPropertyOptional({ type: [FlowLinkDto] })
+  @IsArray()
+  @Type(() => FlowLinkDto)
+  @ValidateNested({ each: true })
+  @IsOptional()
+  createLinks?: FlowLinkDto[]
 }
 
 export class ApprovalFlowPageQueryDto extends PaginationQueryDto {

@@ -98,6 +98,10 @@ function flowWrite(detail, enabled = detail.enabled) {
         approverIds: [...(node.approverIds ?? [])],
         ccUserIds: [...(node.ccUserIds ?? [])],
         mode: node.mode,
+        emptyApproverAction: node.emptyApproverAction,
+        fallbackApprover: node.fallbackApprover,
+        sameSubmitterAction: node.sameSubmitterAction,
+        approverDirection: node.approverDirection,
       })),
   }
 }
@@ -169,7 +173,7 @@ try {
       requireComment: false,
       condition: null,
       createNodes: [
-        { name: '一级审批', approverType: 'USER', approverIds: [admin.user.id], ccUserIds: [], mode: 'ANY' },
+        { name: '一级审批', approverType: 'USER', approverIds: [admin.user.id], ccUserIds: [], mode: 'ANY', sameSubmitterAction: 'ALLOW' },
         { name: '二级审批', approverType: 'USER', approverIds: [manager.user.id], ccUserIds: [], mode: 'ANY' },
         { name: '三级审批', approverType: 'USER', approverIds: [lina.user.id], ccUserIds: [], mode: 'ANY' },
       ],
@@ -303,7 +307,7 @@ try {
 
   console.log(JSON.stringify({
     database,
-    migrations: 63,
+    migrations: 65,
     allowWithdrawConfig: true,
     ownerGate: true,
     flowGate: true,
