@@ -1,3 +1,5 @@
+import { explicitApprovalFlowRequest } from './helpers/approval-flow-graph.mjs'
+
 const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
@@ -23,6 +25,7 @@ function check(name, condition, detail = '') {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function apiRequest(method, path, body) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: {

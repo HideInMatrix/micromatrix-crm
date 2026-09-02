@@ -96,6 +96,17 @@ export function approveTask(taskId: string, comment?: string, attachmentIds?: st
   return http.post(`/approvals/tasks/${taskId}/approve`, { comment, attachmentIds })
 }
 
+export function updateApprovalTaskFields(
+  taskId: string,
+  fields: Array<{ fieldId: string; value: unknown }>,
+) {
+  return http.patch<{ id: string; count: number }>(`/approvals/tasks/${taskId}/fields`, { fields })
+}
+
+export function getApprovalInstanceDetail(instanceId: string) {
+  return http.get<ApprovalInstanceVO>(`/approvals/instances/${instanceId}`)
+}
+
 export function rejectTask(taskId: string, comment?: string, attachmentIds?: string[]) {
   return http.post(`/approvals/tasks/${taskId}/reject`, { comment, attachmentIds })
 }

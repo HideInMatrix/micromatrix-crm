@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { explicitApprovalFlowRequest } from '../../../scripts/helpers/approval-flow-graph.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -41,6 +42,7 @@ function run(program, args, cwd = repoRoot, customEnv = env) {
 }
 
 async function request(path, { method = 'GET', token, body, expected = 200 } = {}) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {
@@ -168,7 +170,7 @@ try {
   run('pnpm', ['--filter', '@micromatrix/api', 'exec', 'tsx', 'prisma/seed.ts'])
   targetClient = client(target.toString())
   const migrations = await targetClient.$queryRawUnsafe('SELECT COUNT(*)::int AS count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL')
-  assert.equal(migrations[0]?.count, 65, '9.4B isolated DB must apply exactly 65 migrations')
+  assert.equal(migrations[0]?.count, 68, '9.4B isolated DB must apply current 68 migrations')
 
   api = spawn(process.execPath, ['dist/main.js'], { cwd: apiRoot, env, stdio: ['ignore', 'pipe', 'pipe'] })
   await waitHealth(api)
@@ -348,7 +350,7 @@ try {
   await approve(managerToken, each2.myPendingTaskId, 'each second pass')
 
   console.log(JSON.stringify({
-    migrations: 65,
+    migrations: 68,
     emptyAutoPass: true,
     emptyAutoRecord: true,
     fallbackApprover: true,

@@ -1,3 +1,8 @@
+import {
+  approvalFlowWriteFromDetail,
+  explicitApprovalFlowRequest,
+} from './helpers/approval-flow-graph.mjs'
+
 const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
@@ -6,6 +11,8 @@ let passed = 0
 let failed = 0
 let adminToken = ''
 let flowId = ''
+let flowCreated = false
+let restoreFlow = null
 
 function check(name, condition, detail = '') {
   if (condition) {
@@ -20,6 +27,7 @@ function check(name, condition, detail = '') {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function api(method, path, body, token = adminToken, allowed = []) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: {
@@ -129,7 +137,16 @@ class Cdp {
 
 async function cleanup() {
   if (!flowId) return
-  try { await api('DELETE', `/approvals/flows/${flowId}`, undefined, adminToken, [400, 404]) } catch { /* best effort */ }
+  try {
+    if (flowCreated) {
+      await api('DELETE', `/approvals/flows/${flowId}`, undefined, adminToken, [400, 404])
+      return
+    }
+    if (restoreFlow) await api('PUT', `/approvals/flows/${flowId}`, restoreFlow, adminToken)
+  } catch (error) {
+    console.error(`9.4A Browser fixture 恢复失败: ${error instanceof Error ? error.message : String(error)}`)
+    process.exitCode = 1
+  }
 }
 
 let cdp
@@ -142,10 +159,9 @@ try {
 
   const suffix = Date.now().toString(36)
   const name = `W370_DB012_BROWSER_${suffix}`
-  const created = (await api('POST', '/approvals/flows', {
-    formType: 'quotation',
+  const testFlow = {
     name,
-    description: '9.4A browser readonly guard',
+    description: '9.4A browser condition designer',
     enabled: false,
     createExecute: true,
     updateExecute: false,
@@ -176,8 +192,21 @@ try {
       { fromNodeId: 'manager', toNodeId: 'end', sort: 0 },
       { fromNodeId: 'sales', toNodeId: 'end', sort: 0 },
     ],
-  })).data
-  flowId = created.id
+  }
+  const existingPage = (await api('GET', '/approvals/flows?formType=quotation&page=1&pageSize=100')).data
+  let created
+  if ((existingPage.items ?? []).length) {
+    flowId = existingPage.items[0].id
+    const original = (await api('GET', `/approvals/flows/${flowId}`)).data
+    restoreFlow = approvalFlowWriteFromDetail(original)
+    created = (await api('PUT', `/approvals/flows/${flowId}`, testFlow)).data
+    check('Condition Browser fixture 复用并冻结现有报价流程配置', Boolean(restoreFlow?.createLinks?.length))
+  } else {
+    created = (await api('POST', '/approvals/flows', { formType: 'quotation', ...testFlow })).data
+    flowId = created.id
+    flowCreated = true
+    check('Condition Browser fixture 创建独立报价流程', true)
+  }
   const before = (await api('GET', `/approvals/flows/${flowId}`)).data
   check('API 已创建真实 CONDITION / DEFAULT 图', before.createNodes.some((node) => node.nodeType === 'CONDITION') && before.createNodes.some((node) => node.nodeType === 'DEFAULT'))
 
@@ -222,10 +251,38 @@ try {
   check('编辑抽屉可切换到流程设计', flowStepClicked)
   await cdp.waitFor(`(() => {
     const drawer=[...document.querySelectorAll('.el-drawer')].find((item)=>item.getBoundingClientRect().width>0)
-    return Boolean(drawer?.innerText.includes('该流程包含 Condition / DEFAULT 分支'))
-  })()`, 8000, '高级图只读警告')
-  check('页面明确显示高级图只读警告', true)
-  check('线性画布不提供添加审批节点', !(await cdp.evaluate(`document.body?.innerText.includes('添加审批节点')===true`)))
+    return Boolean(drawer?.querySelector('[data-testid="approval-flow-canvas"]'))
+  })()`, 8000, '高级图设计器')
+  check('高级图使用真实 Vue Flow 设计器', true)
+  const toolbarState = await cdp.evaluate(`(() => ({
+    approver:Boolean(document.querySelector('[data-testid="flow-add-approver"]')),
+    condition:Boolean(document.querySelector('[data-testid="flow-add-condition"]')),
+    defaultBranch:Boolean(document.querySelector('[data-testid="flow-add-default"]')),
+    oldWarning:document.body?.innerText.includes('当前版本禁止线性覆盖保存')===true,
+  }))()`)
+  check('高级图开放审批/条件/默认节点入口', toolbarState.approver && toolbarState.condition && toolbarState.defaultBranch, JSON.stringify(toolbarState))
+  check('9.4A 高级图只读锁已删除', !toolbarState.oldWarning)
+
+  const renamed = `高金额_${suffix}`
+  const conditionSelected = await cdp.evaluate(`(() => {
+    const drawer=[...document.querySelectorAll('.el-drawer')].find((item)=>item.getBoundingClientRect().width>0)
+    const condition=[...(drawer?.querySelectorAll('.process-node--condition')??[])].find((item)=>item.innerText.includes('高金额'))
+    condition?.click()
+    return Boolean(condition)
+  })()`)
+  await sleep(150)
+  const edited = await cdp.evaluate(`(() => {
+    const drawer=[...document.querySelectorAll('.el-drawer')].find((item)=>item.getBoundingClientRect().width>0)
+    const input=drawer?.querySelector('.node-inspector .el-form-item .el-input__inner')
+    if (!input) return false
+    const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set
+    setter?.call(input, ${JSON.stringify(renamed)})
+    input.dispatchEvent(new Event('input',{bubbles:true}))
+    input.dispatchEvent(new Event('change',{bubbles:true}))
+    return true
+  })()`)
+  check('CONDITION 节点可在设计器中真实编辑', conditionSelected && edited)
+  await sleep(300)
 
   const saveClicked = await cdp.evaluate(`(() => {
     const drawers=[...document.querySelectorAll('.el-drawer')].filter((item)=>item.getBoundingClientRect().width>0)
@@ -233,18 +290,19 @@ try {
     save?.click()
     return Boolean(save)
   })()`)
-  check('编辑抽屉仍保留保存入口用于 fail-closed 校验', saveClicked)
-  await cdp.waitFor(`document.body?.innerText.includes('当前版本禁止线性覆盖保存')===true`, 5000, '禁止覆盖提示')
-  check('点击保存被前端明确阻止', true)
-  await sleep(500)
+  check('高级图编辑抽屉可提交保存', saveClicked)
+  await cdp.waitFor(`(() => ![...document.querySelectorAll('.el-drawer')].some((item)=>item.getBoundingClientRect().width>0))()`, 8000, '高级图保存关闭抽屉')
+  await sleep(300)
   const putRequests = cdp.requests.slice(requestStart).filter((item) => {
     try { return item.method === 'PUT' && new URL(item.url).pathname === `/api/approvals/flows/${flowId}` } catch { return false }
   })
-  check('高级图编辑未发出 PUT 覆盖请求', putRequests.length === 0, `PUT=${putRequests.length}`)
+  check('高级图编辑真实发出统一 nodes + links PUT', putRequests.length === 1, `PUT=${putRequests.length}`)
 
   const after = (await api('GET', `/approvals/flows/${flowId}`)).data
-  check('高级图版本未被线性编辑器改写', after.currentVersion === before.currentVersion)
-  check('高级图 links 保持不变', JSON.stringify(after.createLinks) === JSON.stringify(before.createLinks))
+  check('高级图节点变化生成不可变新版本', after.currentVersion === before.currentVersion + 1)
+  check('CONDITION 编辑结果真实持久化', after.createNodes.some((node) => node.nodeType === 'CONDITION' && node.name === renamed))
+  check('高级图 CONDITION/DEFAULT 结构保持完整', after.createNodes.some((node) => node.nodeType === 'CONDITION') && after.createNodes.some((node) => node.nodeType === 'DEFAULT'))
+  check('高级图 links 数量保持完整', after.createLinks.length === before.createLinks.length)
   check('Browser API 5xx = 0', !cdp.responses.some((item) => item.status >= 500 && item.url.includes('/api/')))
   check('Browser Runtime exception = 0', cdp.exceptions.length === 0, cdp.exceptions.join('; '))
 

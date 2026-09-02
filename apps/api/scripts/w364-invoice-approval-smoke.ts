@@ -1,11 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-empty */
 import assert from 'node:assert/strict'
+import { approvalFlowWriteFromDetail, explicitApprovalFlowRequest } from '../../../scripts/helpers/approval-flow-graph.mjs'
 
 const base = process.env.API_BASE_URL ?? 'http://127.0.0.1:3000/api'
 type Json = Record<string, any>
 
 async function request(path: string, init: RequestInit = {}, expected = 200) {
-  const response = await fetch(`${base}${path}`, init)
+  let nextInit = init
+  if (typeof init.body === 'string') {
+    try {
+      const parsed = JSON.parse(init.body)
+      const normalized = explicitApprovalFlowRequest(path, String(init.method ?? 'GET'), parsed)
+      nextInit = { ...init, body: JSON.stringify(normalized) }
+    } catch {}
+  }
+  const response = await fetch(`${base}${path}`, nextInit)
   const text = await response.text()
   let body: any = text
   try { body = text ? JSON.parse(text) : null } catch {}
@@ -37,18 +46,7 @@ async function reject(token: string, targetId: string) {
 }
 
 function flowWrite(detail: Json, enabled = detail.enabled) {
-  return {
-    name: detail.name, description: detail.description, enabled,
-    createExecute: detail.createExecute, updateExecute: detail.updateExecute, deleteExecute: detail.deleteExecute,
-    submitterCanRevoke: detail.submitterCanRevoke, allowBatchProcess: detail.allowBatchProcess,
-    allowWithdraw: detail.allowWithdraw, allowAddSign: detail.allowAddSign,
-    duplicateApproverRule: detail.duplicateApproverRule, requireComment: detail.requireComment,
-    condition: detail.condition,
-    createNodes: (detail.createNodes ?? [])
-      .filter((node: Json) => node.nodeType === 'APPROVER' && node.approverType && node.mode)
-      .map((node: Json) => ({ clientId: node.id, name: node.name, approverType: node.approverType,
-        approverIds: [...(node.approverIds ?? [])], ccUserIds: [...(node.ccUserIds ?? [])], mode: node.mode })),
-  }
+  return approvalFlowWriteFromDetail(detail, enabled)
 }
 
 async function cleanupInvoices(token: string) {

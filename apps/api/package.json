@@ -34,6 +34,9 @@
     "smoke:w370-db011-attachment-comment": "node scripts/w370-db011-attachment-comment-http-smoke.mjs",
     "smoke:w370-db012-condition": "node scripts/w370-db012-condition-http-smoke.mjs",
     "smoke:w370-db012-approver-policy": "node scripts/w370-db012-approver-policy-http-smoke.mjs",
+    "smoke:w370-db012-field-permission": "node scripts/w370-db012-field-permission-http-smoke.mjs",
+    "smoke:w370-db012-post-field": "node scripts/w370-db012-post-field-http-smoke.mjs",
+    "smoke:w370-db012-webhook": "node scripts/w370-db012-webhook-http-smoke.mjs",
     "smoke:db021-follow-plan-runtime": "tsx scripts/db021-follow-plan-runtime-smoke.ts"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { approvalFlowWriteFromDetail, explicitApprovalFlowRequest } from '../../../scripts/helpers/approval-flow-graph.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -41,6 +42,7 @@ function run(program, args, cwd = repoRoot, customEnv = env) {
 }
 
 async function request(path, { method = 'GET', token, body, expected = 200 } = {}) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {
@@ -75,35 +77,7 @@ async function login(email, password) {
 }
 
 function flowWrite(detail, enabled = detail.enabled) {
-  return {
-    name: detail.name,
-    description: detail.description,
-    enabled,
-    createExecute: detail.createExecute,
-    updateExecute: detail.updateExecute,
-    deleteExecute: detail.deleteExecute,
-    submitterCanRevoke: detail.submitterCanRevoke,
-    allowBatchProcess: detail.allowBatchProcess,
-    allowWithdraw: detail.allowWithdraw,
-    allowAddSign: detail.allowAddSign,
-    duplicateApproverRule: detail.duplicateApproverRule,
-    requireComment: detail.requireComment,
-    condition: detail.condition,
-    createNodes: (detail.createNodes ?? [])
-      .filter((node) => node.nodeType === 'APPROVER' && node.approverType && node.mode)
-      .map((node) => ({
-        clientId: node.id,
-        name: node.name,
-        approverType: node.approverType,
-        approverIds: [...(node.approverIds ?? [])],
-        ccUserIds: [...(node.ccUserIds ?? [])],
-        mode: node.mode,
-        emptyApproverAction: node.emptyApproverAction,
-        fallbackApprover: node.fallbackApprover,
-        sameSubmitterAction: node.sameSubmitterAction,
-        approverDirection: node.approverDirection,
-      })),
-  }
+  return approvalFlowWriteFromDetail(detail, enabled)
 }
 
 async function detail(token, targetId) {
@@ -307,7 +281,7 @@ try {
 
   console.log(JSON.stringify({
     database,
-    migrations: 65,
+    migrations: 68,
     allowWithdrawConfig: true,
     ownerGate: true,
     flowGate: true,

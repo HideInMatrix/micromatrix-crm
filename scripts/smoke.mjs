@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { explicitApprovalFlowRequest } from './helpers/approval-flow-graph.mjs'
 
 const requireFromApi = createRequire(new URL('../apps/api/package.json', import.meta.url))
 const ExcelJS = requireFromApi('exceljs')
@@ -54,14 +55,20 @@ async function register(tenantName, name, email, password) {
 
 const get = (url, h) => fetch(`${base}${url}`, { headers: h }).then((r) => r.json())
 const post = (url, h, body) =>
-  fetch(`${base}${url}`, { method: 'POST', headers: h, body: JSON.stringify(body ?? {}) }).then(
+  fetch(`${base}${url}`, {
+    method: 'POST',
+    headers: h,
+    body: JSON.stringify(explicitApprovalFlowRequest(url, 'POST', body ?? {})),
+  }).then(
     (r) => r.json(),
   )
 const request = (method, url, h, body) =>
   fetch(`${base}${url}`, {
     method,
     headers: h,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(body === undefined
+      ? {}
+      : { body: JSON.stringify(explicitApprovalFlowRequest(url, method, body)) }),
   })
 
 function resolveSmokeDatabaseUrl() {

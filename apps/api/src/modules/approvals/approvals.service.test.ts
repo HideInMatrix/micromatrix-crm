@@ -162,6 +162,7 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
       $transaction(input: (tx: unknown) => Promise<unknown>): Promise<unknown>
     }
     resources: { setBizStatus(): Promise<void> }
+    webhooks: { enqueueRuntime(): Promise<void> }
     ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
     ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
     requireCommentForInstance(user: Record<string, unknown>, instanceId: string): Promise<boolean>
@@ -216,6 +217,24 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
         module: 'contract',
         targetId: 'contract-r',
         targetName: '测试合同',
+        nodesSnapshot: [
+          {
+            nodeId: 'node-before',
+            name: '前置审批',
+            approverType: 'USER',
+            approverIds: ['approver-before'],
+            ccUserIds: [],
+            mode: 'ANY',
+          },
+          {
+            nodeId: 'node-r',
+            name: '财务审批',
+            approverType: 'USER',
+            approverIds: ['approver-a'],
+            ccUserIds: [],
+            mode: 'ANY',
+          },
+        ],
       }),
       update: async (input) => {
         instanceUpdates.push(input)
@@ -225,6 +244,7 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
     $transaction: async (input) => input(runtime.prisma),
   }
   runtime.resources = { setBizStatus: async () => undefined }
+  runtime.webhooks = { enqueueRuntime: async () => undefined }
   runtime.restorePreUpdateSnapshot = async () => undefined
   runtime.sendApprovalResult = async () => undefined
 

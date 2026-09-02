@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { explicitApprovalFlowRequest } from '../../../scripts/helpers/approval-flow-graph.mjs'
 
 const base = process.env.W362_API_BASE ?? 'http://127.0.0.1:3012/api'
 
 async function request(path, { method = 'GET', token, body } = {}) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {

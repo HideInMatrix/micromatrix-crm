@@ -4,6 +4,7 @@ import {
   APPROVAL_MODULE_LABELS,
   type AttachmentVO,
   type ApprovalInstanceVO,
+  type ApprovalResourceFieldVO,
 } from '@micromatrix/shared'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -26,6 +27,8 @@ const query = reactive({ page: 1, pageSize: 10 })
 const detailVisible = ref(false)
 const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
+const fieldSaving = ref(false)
+const fieldDraft = reactive<Record<string, unknown>>({})
 const actionAttachments = ref<AttachmentVO[]>([])
 const addSignVisible = ref(false)
 const addSignLoading = ref(false)
@@ -65,11 +68,101 @@ async function loadData() {
   }
 }
 
-function openDetail(row: ApprovalInstanceVO) {
+function resetFieldDraft() {
+  Object.keys(fieldDraft).forEach((key) => delete fieldDraft[key])
+  for (const field of current.value?.resourceFields ?? []) {
+    if (field.permissionType !== 'EDIT') continue
+    fieldDraft[field.fieldId] =
+      (field.type === 'date' || field.type === 'datetime') && field.value != null
+        ? new Date(Number(field.value))
+        : field.value
+  }
+}
+
+async function refreshDetail(instanceId: string) {
+  const { data } = await approvalApi.instanceDetail(instanceId)
+  current.value = data
+  resetFieldDraft()
+}
+
+async function openDetail(row: ApprovalInstanceVO) {
   current.value = row
   comment.value = ''
   actionAttachments.value = []
   detailVisible.value = true
+  try {
+    await refreshDetail(row.id)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function hasEditableResourceFields() {
+  return Boolean(
+    current.value?.myPendingTaskId &&
+      current.value.resourceFields.some((field) => field.permissionType === 'EDIT'),
+  )
+}
+
+function setFieldDraft(fieldId: string, value: unknown) {
+  fieldDraft[fieldId] = value
+}
+
+function numberDraft(fieldId: string) {
+  const value = fieldDraft[fieldId]
+  if (value === undefined || value === null || value === '') return undefined
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function dateDraft(fieldId: string) {
+  const value = fieldDraft[fieldId]
+  if (value instanceof Date) return value
+  if (value === undefined || value === null || value === '') return null
+  const date = new Date(typeof value === 'number' ? value : String(value))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function selectDraft(fieldId: string, multiple: boolean) {
+  const value = fieldDraft[fieldId]
+  if (multiple) return Array.isArray(value) ? value.map(String) : []
+  return value === undefined || value === null ? '' : String(value)
+}
+
+function formatResourceField(field: ApprovalResourceFieldVO) {
+  const value = field.value
+  if (value === undefined || value === null || value === '') return '-'
+  if (field.options?.length) {
+    const labels = new Map(field.options.map((option) => [option.value, option.label]))
+    if (Array.isArray(value)) return value.map((item) => labels.get(String(item)) ?? String(item)).join('、')
+    return labels.get(String(value)) ?? String(value)
+  }
+  if (field.type === 'date' || field.type === 'datetime') {
+    const date = new Date(typeof value === 'number' ? value : Number(value) || String(value))
+    if (!Number.isNaN(date.getTime())) {
+      return field.type === 'date' ? date.toLocaleDateString() : date.toLocaleString()
+    }
+  }
+  if (Array.isArray(value)) return value.join('、')
+  return String(value)
+}
+
+async function saveResourceFields() {
+  if (!current.value?.myPendingTaskId) return
+  const fields = current.value.resourceFields
+    .filter((field) => field.permissionType === 'EDIT')
+    .map((field) => ({ fieldId: field.fieldId, value: fieldDraft[field.fieldId] }))
+  if (!fields.length) return
+  fieldSaving.value = true
+  try {
+    await approvalApi.updateTaskFields(current.value.myPendingTaskId, fields)
+    await refreshDetail(current.value.id)
+    ElMessage.success('审批字段已保存')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    fieldSaving.value = false
+  }
 }
 
 function taskAttachments(taskId: string): AttachmentVO[] {
@@ -360,7 +453,7 @@ onMounted(() => {
     <el-dialog
       v-model="detailVisible"
       :title="current?.targetName ?? '审批详情'"
-      width="560px"
+      width="720px"
       @closed="cleanupActionAttachments"
     >
       <div v-if="current">
@@ -374,6 +467,76 @@ onMounted(() => {
           <el-descriptions-item label="发起人">{{ current.submitterName }}</el-descriptions-item>
           <el-descriptions-item label="摘要">{{ current.summary ?? '-' }}</el-descriptions-item>
         </el-descriptions>
+
+        <div v-if="current.resourceFields.length" class="mb-5">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-sm font-medium">业务字段</span>
+            <el-button
+              v-if="hasEditableResourceFields()"
+              type="primary"
+              plain
+              size="small"
+              :loading="fieldSaving"
+              @click="saveResourceFields"
+            >
+              保存字段
+            </el-button>
+          </div>
+          <el-form label-position="left" label-width="130px" class="rounded border p-3">
+            <el-form-item
+              v-for="field in current.resourceFields"
+              :key="field.fieldId"
+              :label="field.label"
+              class="mb-3 last:mb-0"
+            >
+              <template v-if="field.permissionType === 'EDIT' && current.myPendingTaskId">
+                <el-input
+                  v-if="field.type === 'textarea'"
+                  type="textarea"
+                  :rows="2"
+                  :model-value="String(fieldDraft[field.fieldId] ?? '')"
+                  @update:model-value="setFieldDraft(field.fieldId, $event)"
+                />
+                <el-input-number
+                  v-else-if="['number', 'currency', 'percent'].includes(field.type)"
+                  :model-value="numberDraft(field.fieldId)"
+                  :controls="false"
+                  class="w-full"
+                  @update:model-value="setFieldDraft(field.fieldId, $event)"
+                />
+                <el-select
+                  v-else-if="field.type === 'select' || field.type === 'multiselect'"
+                  :model-value="selectDraft(field.fieldId, field.type === 'multiselect')"
+                  :multiple="field.type === 'multiselect'"
+                  class="w-full"
+                  @update:model-value="setFieldDraft(field.fieldId, $event)"
+                >
+                  <el-option
+                    v-for="option in field.options ?? []"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
+                </el-select>
+                <el-date-picker
+                  v-else-if="field.type === 'date' || field.type === 'datetime'"
+                  :model-value="dateDraft(field.fieldId)"
+                  :type="field.type === 'datetime' ? 'datetime' : 'date'"
+                  class="w-full"
+                  @update:model-value="setFieldDraft(field.fieldId, $event)"
+                />
+                <el-input
+                  v-else
+                  :model-value="String(fieldDraft[field.fieldId] ?? '')"
+                  @update:model-value="setFieldDraft(field.fieldId, $event)"
+                />
+              </template>
+              <span v-else class="text-sm text-[var(--el-text-color-regular)]">
+                {{ formatResourceField(field) }}
+              </span>
+            </el-form-item>
+          </el-form>
+        </div>
 
         <el-timeline>
           <el-timeline-item

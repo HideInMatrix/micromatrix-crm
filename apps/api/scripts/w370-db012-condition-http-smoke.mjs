@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { approvalFlowWriteFromDetail, explicitApprovalFlowRequest } from '../../../scripts/helpers/approval-flow-graph.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -41,6 +42,7 @@ function run(program, args, cwd = repoRoot, customEnv = env) {
 }
 
 async function request(path, { method = 'GET', token, body, expected = 200 } = {}) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {
@@ -201,7 +203,7 @@ try {
   run('pnpm', ['--filter', '@micromatrix/api', 'exec', 'tsx', 'prisma/seed.ts'])
   targetClient = client(target.toString())
   const migrations = await targetClient.$queryRawUnsafe('SELECT COUNT(*)::int AS count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL')
-  assert.equal(migrations[0]?.count, 65, '9.4A regression must apply current 65 migrations')
+  assert.equal(migrations[0]?.count, 68, '9.4A regression must apply current 68 migrations')
 
   api = spawn(process.execPath, ['dist/main.js'], { cwd: apiRoot, env, stdio: ['ignore', 'pipe', 'pipe'] })
   await waitHealth(api)
@@ -216,17 +218,17 @@ try {
   const linaToken = lina.accessToken
   const suffix = Date.now().toString(36)
 
-  // 过渡期旧线性 payload 仍能生成标准 node/link 图；9.4F 后删除该写协议。
-  const legacy = await request('/approvals/flows', {
-    method: 'POST', token: adminToken, expected: 201,
-    body: {
+  // 9.4F 删除服务端旧线性推导：缺少 createLinks 的写请求必须直接被 DTO 拒绝。
+  const legacyResponse = await fetch(`${base}/approvals/flows`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
       formType: 'quotation',
       ...settings({ name: `W370_DB012_LEGACY_${suffix}`, enabled: false, updateExecute: false }),
       createNodes: [{ name: '旧线性审批', approverType: 'USER', approverIds: [admin.user.id], ccUserIds: [], mode: 'ANY' }],
-    },
+    }),
   })
-  assert.deepEqual(legacy.createNodes.map((node) => node.nodeType), ['START', 'APPROVER', 'END'])
-  assert.equal(legacy.createLinks.length, 2)
+  assert.equal(legacyResponse.status, 400, `legacy createNodes-only payload must be rejected: ${await legacyResponse.text()}`)
 
   const amount = amountGraph(admin.user.id, manager.user.id, lina.user.id)
   await request('/approvals/flows', {
@@ -248,6 +250,12 @@ try {
     flowV1.createNodes.find((node) => node.nodeType === 'CONDITION' && node.name === '高金额')?.conditionConfig?.conditions?.[0]?.operator,
     'GE',
   )
+  const sameGraph = await request(`/approvals/flows/${flowItem.id}`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { ...approvalFlowWriteFromDetail(flowV1), description: '9.4F same graph settings-only update' },
+  })
+  assert.equal(sameGraph.currentVersion, 1, 'settings-only update must not create a redundant FlowVersion')
 
   // API graph/reference gates: no DEFAULT and invalid approver must fail before persistence.
   await request('/approvals/flows', {
@@ -338,7 +346,7 @@ try {
   await approve(linaToken, unchangedPending.myPendingTaskId, 'name unchanged default pass')
 
   console.log(JSON.stringify({
-    migrations: 65,
+    migrations: 68,
     graphRoundTrip: true,
     legacyPayloadTransition: true,
     graphValidationGate: true,

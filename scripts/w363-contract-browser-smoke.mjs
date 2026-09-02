@@ -1,3 +1,5 @@
+import { approvalFlowWriteFromDetail, explicitApprovalFlowRequest } from './helpers/approval-flow-graph.mjs'
+
 const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
@@ -30,6 +32,7 @@ function check(name, condition, detail = '') {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function apiRequest(method, path, body, allowed = []) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: {
@@ -245,30 +248,7 @@ async function waitContract(id, predicate, timeoutMs = 10000) {
 }
 
 function flowUpdateBody(detail) {
-  return {
-    name: detail.name,
-    description: detail.description ?? null,
-    enabled: detail.enabled,
-    createExecute: detail.createExecute,
-    updateExecute: detail.updateExecute,
-    deleteExecute: detail.deleteExecute,
-    submitterCanRevoke: detail.submitterCanRevoke,
-    allowBatchProcess: detail.allowBatchProcess,
-    allowWithdraw: detail.allowWithdraw,
-    allowAddSign: detail.allowAddSign,
-    duplicateApproverRule: detail.duplicateApproverRule,
-    requireComment: detail.requireComment,
-    condition: detail.condition ?? null,
-    createNodes: (detail.createNodes ?? [])
-      .filter((node) => node.approverType)
-      .map((node) => ({
-        name: node.name,
-        approverType: node.approverType,
-        approverIds: node.approverIds ?? [],
-        ccUserIds: node.ccUserIds ?? [],
-        mode: node.mode ?? 'ANY',
-      })),
-  }
+  return approvalFlowWriteFromDetail(detail)
 }
 
 async function prepareFlow(formType, body) {

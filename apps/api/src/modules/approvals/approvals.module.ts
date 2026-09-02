@@ -5,6 +5,8 @@ import { ApprovalResourceCaptureService } from './approval-resource-capture.serv
 import { ApprovalResourceRestoreService } from './approval-resource-restore.service'
 import { ApprovalResourceService } from './approval-resource.service'
 import { ApprovalResourceSnapshotService } from './approval-resource-snapshot.service'
+import { ApprovalWebhookClient } from './approval-webhook.client'
+import { ApprovalWebhookService } from './approval-webhook.service'
 import { ApprovalsService } from './approvals.service'
 
 /** 全局模块：业务模块需要检查审批流是否启用 */
@@ -18,6 +20,8 @@ import { ApprovalsService } from './approvals.service'
     ApprovalResourceRestoreService,
     ApprovalResourceSnapshotService,
     ApprovalResourceService,
+    ApprovalWebhookClient,
+    ApprovalWebhookService,
   ],
   exports: [ApprovalsService, ApprovalFlowConfigService],
 })

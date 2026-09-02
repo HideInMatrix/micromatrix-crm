@@ -1,3 +1,4 @@
+import type { FieldOption, FieldType } from './metadata'
 import type { AttachmentVO } from './sales'
 
 // ============ 审批流 ============
@@ -13,6 +14,8 @@ export type ApprovalMode = 'ALL' | 'ANY'
 export type EmptyApproverAction = 'AUTO_PASS' | 'ASSIGN_SPECIFIC' | 'ASSIGN_ADMIN'
 export type SameSubmitterAction = 'SKIP' | 'ALLOW' | 'ASSIGN_SUPERIOR'
 export type ApproverDirection = 'BOTTOM_UP' | 'TOP_DOWN'
+export type ApprovalFieldPermissionMode = 'HIDDEN' | 'VIEW' | 'EDIT'
+export type ApprovalWebhookMethod = 'GET' | 'POST'
 export type ApprovalInstanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED'
 export type ApprovalTaskStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED'
 export type ApprovalTaskType = 'APPROVAL' | 'CC' | 'SIGN' | 'BACK'
@@ -52,6 +55,31 @@ export const APPROVAL_MODULE_LABELS: Record<ApprovalModule, string> = {
   order: '订单',
 }
 
+export interface ApprovalFieldPermission {
+  fieldId: string
+  permissionType: ApprovalFieldPermissionMode
+}
+
+export interface ApprovalFieldUpdateConfig {
+  fieldId: string
+  fieldValue?: unknown
+  enable: boolean
+}
+
+export interface ApprovalWebhookConfig {
+  webHookEnable: boolean
+  webHookUrl: string
+  webHookMethod: ApprovalWebhookMethod
+  webHookHeader: string
+  webHookBody: string
+  webHookDescribe: string
+}
+
+export interface ApprovalPostConfig {
+  fieldUpdateConfigs: ApprovalFieldUpdateConfig[]
+  webHookConfig?: ApprovalWebhookConfig
+}
+
 export interface ApprovalNodeConfig {
   /** 新实例冻结真实流程节点 ID；历史实例没有该字段时保持兼容。 */
   nodeId?: string
@@ -65,6 +93,9 @@ export interface ApprovalNodeConfig {
   fallbackApprover?: string | null
   sameSubmitterAction?: SameSubmitterAction
   approverDirection?: ApproverDirection
+  fieldPermissions?: ApprovalFieldPermission[]
+  passPostConfig?: ApprovalPostConfig
+  rejectPostConfig?: ApprovalPostConfig
 }
 
 // ============ 流程设置 ============
@@ -157,6 +188,9 @@ export interface ApprovalFlowNodeInput {
   fallbackApprover?: string | null
   sameSubmitterAction?: SameSubmitterAction
   approverDirection?: ApproverDirection
+  fieldPermissions?: ApprovalFieldPermission[]
+  passPostConfig?: ApprovalPostConfig
+  rejectPostConfig?: ApprovalPostConfig
   conditionConfig?: ApprovalConditionConfig | null
 }
 
@@ -176,8 +210,8 @@ export interface ApprovalFlowWriteInput extends ApprovalFlowSettings {
   deleteExecute: boolean
   condition?: { amountGte?: number } | null
   createNodes: ApprovalFlowNodeInput[]
-  /** 条件图显式连线；旧线性 payload 可省略。 */
-  createLinks?: ApprovalFlowLinkInput[]
+  /** 唯一写契约：所有流程均显式提交节点连接，不再由服务端推导线性图。 */
+  createLinks: ApprovalFlowLinkInput[]
 }
 
 export interface ApprovalFlowListItem extends ApprovalFlowSettings {
@@ -215,7 +249,21 @@ export interface ApprovalFlowNodeDetail {
   fallbackApprover?: string | null
   sameSubmitterAction?: SameSubmitterAction
   approverDirection?: ApproverDirection
+  fieldPermissions?: ApprovalFieldPermission[]
+  passPostConfig?: ApprovalPostConfig
+  rejectPostConfig?: ApprovalPostConfig
   conditionConfig?: ApprovalConditionConfig | null
+}
+
+export interface ApprovalResourceFieldVO {
+  fieldId: string
+  key: string
+  label: string
+  type: FieldType
+  required: boolean
+  options: FieldOption[] | null
+  value: unknown
+  permissionType: ApprovalFieldPermissionMode
 }
 
 export interface ApprovalFlowLinkDetail {
@@ -313,6 +361,10 @@ export interface ApprovalInstanceVO {
   returnBackRecords: ApprovalReturnBackRecordVO[]
   returnBackTargets: ApprovalReturnBackTargetVO[]
   approvalAttachments: ApprovalInstanceAttachmentVO[]
+  /** 当前用户在当前审批节点上的有效字段权限。 */
+  currentNodeFieldPermissions: ApprovalFieldPermission[]
+  /** 已按 HIDDEN 权限在服务端裁剪后的审批业务字段。 */
+  resourceFields: ApprovalResourceFieldVO[]
   /** 当前审批流是否要求审批意见必填。 */
   requireComment: boolean
   /** 当前用户的当前待办是否允许执行加签。 */

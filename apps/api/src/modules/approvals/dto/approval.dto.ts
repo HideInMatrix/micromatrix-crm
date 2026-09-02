@@ -32,6 +32,8 @@ export const DUPLICATE_APPROVER_RULES = ['FIRST_ONLY', 'SEQUENTIAL_ALL', 'EACH']
 export const EMPTY_APPROVER_ACTIONS = ['AUTO_PASS', 'ASSIGN_SPECIFIC', 'ASSIGN_ADMIN'] as const
 export const SAME_SUBMITTER_ACTIONS = ['SKIP', 'ALLOW', 'ASSIGN_SUPERIOR'] as const
 export const APPROVER_DIRECTIONS = ['BOTTOM_UP', 'TOP_DOWN'] as const
+export const FIELD_PERMISSION_MODES = ['HIDDEN', 'VIEW', 'EDIT'] as const
+export const APPROVAL_WEBHOOK_METHODS = ['GET', 'POST'] as const
 export const ADD_SIGN_TYPES = ['BEFORE', 'AFTER'] as const
 export const APPROVAL_NODE_TYPES = ['START', 'APPROVER', 'CONDITION', 'DEFAULT', 'END'] as const
 export const CONDITION_SEARCH_MODES = ['AND', 'OR'] as const
@@ -99,6 +101,79 @@ export class CombineSearchDto {
   conditions!: FilterConditionDto[]
 }
 
+export class FieldPermissionDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  fieldId!: string
+
+  @ApiProperty({ enum: FIELD_PERMISSION_MODES })
+  @IsIn(FIELD_PERMISSION_MODES)
+  permissionType!: (typeof FIELD_PERMISSION_MODES)[number]
+}
+
+export class ApprovalFieldUpdateConfigDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  fieldId!: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  fieldValue?: unknown
+
+  @ApiProperty()
+  @IsBoolean()
+  enable!: boolean
+}
+
+export class ApprovalWebhookConfigDto {
+  @ApiProperty()
+  @IsBoolean()
+  webHookEnable!: boolean
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(2048)
+  webHookUrl!: string
+
+  @ApiProperty({ enum: APPROVAL_WEBHOOK_METHODS })
+  @IsIn(APPROVAL_WEBHOOK_METHODS)
+  webHookMethod!: (typeof APPROVAL_WEBHOOK_METHODS)[number]
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(16384)
+  webHookHeader!: string
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(65536)
+  webHookBody!: string
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(500)
+  webHookDescribe!: string
+}
+
+export class ApprovalPostConfigDto {
+  @ApiProperty({ type: [ApprovalFieldUpdateConfigDto] })
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ApprovalFieldUpdateConfigDto)
+  fieldUpdateConfigs!: ApprovalFieldUpdateConfigDto[]
+
+  @ApiPropertyOptional({ type: ApprovalWebhookConfigDto })
+  @ValidateNested()
+  @Type(() => ApprovalWebhookConfigDto)
+  @IsOptional()
+  webHookConfig?: ApprovalWebhookConfigDto
+}
+
+export class TestApprovalWebhookDto extends ApprovalWebhookConfigDto {}
+
 export class FlowNodeDto {
   @ApiPropertyOptional({ description: '前端编辑期稳定键' })
   @IsString()
@@ -163,11 +238,51 @@ export class FlowNodeDto {
   @IsOptional()
   approverDirection?: (typeof APPROVER_DIRECTIONS)[number]
 
+  @ApiPropertyOptional({ type: [FieldPermissionDto] })
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => FieldPermissionDto)
+  @IsOptional()
+  fieldPermissions?: FieldPermissionDto[]
+
+  @ApiPropertyOptional({ type: ApprovalPostConfigDto })
+  @ValidateNested()
+  @Type(() => ApprovalPostConfigDto)
+  @IsOptional()
+  passPostConfig?: ApprovalPostConfigDto
+
+  @ApiPropertyOptional({ type: ApprovalPostConfigDto })
+  @ValidateNested()
+  @Type(() => ApprovalPostConfigDto)
+  @IsOptional()
+  rejectPostConfig?: ApprovalPostConfigDto
+
   @ApiPropertyOptional({ type: CombineSearchDto })
   @ValidateNested()
   @Type(() => CombineSearchDto)
   @IsOptional()
   conditionConfig?: CombineSearchDto | null
+}
+
+export class ApprovalFieldUpdateDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  fieldId!: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  value?: unknown
+}
+
+export class UpdateApprovalFieldsDto {
+  @ApiProperty({ type: [ApprovalFieldUpdateDto] })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => ApprovalFieldUpdateDto)
+  fields!: ApprovalFieldUpdateDto[]
 }
 
 export class FlowLinkDto {
@@ -266,12 +381,11 @@ export class CreateApprovalFlowDto {
   @ValidateNested({ each: true })
   createNodes!: FlowNodeDto[]
 
-  @ApiPropertyOptional({ type: [FlowLinkDto] })
+  @ApiProperty({ type: [FlowLinkDto] })
   @IsArray()
   @Type(() => FlowLinkDto)
   @ValidateNested({ each: true })
-  @IsOptional()
-  createLinks?: FlowLinkDto[]
+  createLinks!: FlowLinkDto[]
 }
 
 export class UpdateApprovalFlowDto {
@@ -340,12 +454,11 @@ export class UpdateApprovalFlowDto {
   @ValidateNested({ each: true })
   createNodes!: FlowNodeDto[]
 
-  @ApiPropertyOptional({ type: [FlowLinkDto] })
+  @ApiProperty({ type: [FlowLinkDto] })
   @IsArray()
   @Type(() => FlowLinkDto)
   @ValidateNested({ each: true })
-  @IsOptional()
-  createLinks?: FlowLinkDto[]
+  createLinks!: FlowLinkDto[]
 }
 
 export class ApprovalFlowPageQueryDto extends PaginationQueryDto {

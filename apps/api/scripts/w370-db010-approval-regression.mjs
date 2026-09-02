@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { explicitApprovalFlowRequest } from '../../../scripts/helpers/approval-flow-graph.mjs'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -70,6 +71,7 @@ async function waitHealth(child) {
 }
 
 async function request(path, { method = 'GET', token, body } = {}) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {

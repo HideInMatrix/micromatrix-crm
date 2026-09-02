@@ -1,3 +1,5 @@
+import { approvalFlowWriteFromDetail, explicitApprovalFlowRequest } from './helpers/approval-flow-graph.mjs'
+
 const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
@@ -26,6 +28,7 @@ function check(name, condition, detail = '') {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function apiRequest(method, path, body, allowed = []) {
+  body = explicitApprovalFlowRequest(path, method, body)
   const response = await fetch(`${apiBase}${path}`, {
     method,
     headers: {
@@ -44,31 +47,7 @@ async function apiRequest(method, path, body, allowed = []) {
 }
 
 function flowWrite(detail, enabled = detail.enabled) {
-  return {
-    name: detail.name,
-    description: detail.description,
-    enabled,
-    createExecute: detail.createExecute,
-    updateExecute: detail.updateExecute,
-    deleteExecute: detail.deleteExecute,
-    submitterCanRevoke: detail.submitterCanRevoke,
-    allowBatchProcess: detail.allowBatchProcess,
-    allowWithdraw: detail.allowWithdraw,
-    allowAddSign: detail.allowAddSign,
-    duplicateApproverRule: detail.duplicateApproverRule,
-    requireComment: detail.requireComment,
-    condition: detail.condition,
-    createNodes: (detail.createNodes ?? [])
-      .filter((node) => node.nodeType === 'APPROVER' && node.approverType && node.mode)
-      .map((node) => ({
-        clientId: node.id,
-        name: node.name,
-        approverType: node.approverType,
-        approverIds: [...(node.approverIds ?? [])],
-        ccUserIds: [...(node.ccUserIds ?? [])],
-        mode: node.mode,
-      })),
-  }
+  return approvalFlowWriteFromDetail(detail, enabled)
 }
 
 async function disableOrderFlows() {
@@ -230,6 +209,29 @@ class CdpClient {
 
 const textIncludes = (text) => `document.body?.innerText.includes(${JSON.stringify(text)})===true`
 
+async function findApprovalRowAcrossPages(cdp, rowName, maxPages = 10) {
+  const readyAt = Date.now() + 5000
+  while (Date.now() < readyAt) {
+    if (await cdp.evaluate(textIncludes(rowName))) return true
+    if (await cdp.evaluate(`document.querySelectorAll('.el-table__row').length>0 && Boolean(document.querySelector('.el-pagination'))`)) break
+    await sleep(100)
+  }
+  for (let page = 1; page <= maxPages; page += 1) {
+    if (await cdp.evaluate(textIncludes(rowName))) return true
+    const moved = await cdp.evaluate(`(() => {
+      const pages=[...document.querySelectorAll('.el-pagination .el-pager li.number')]
+      const active=pages.find((item)=>item.classList.contains('is-active'))
+      const current=Number(active?.textContent?.trim() || 1)
+      const next=pages.find((item)=>Number(item.textContent?.trim())===current+1)
+      next?.click()
+      return Boolean(next)
+    })()`)
+    if (!moved) return false
+    await sleep(250)
+  }
+  return false
+}
+
 async function clickRowAction(cdp, rowName, action) {
   return cdp.evaluate(`(() => {
     const row=[...document.querySelectorAll('.el-table__row')].find((item)=>item.textContent?.includes(${JSON.stringify(rowName)}) && item.getBoundingClientRect().width>0)
@@ -289,6 +291,7 @@ async function main() {
         approverIds: [adminId],
         ccUserIds: [],
         mode: 'ANY',
+        sameSubmitterAction: 'ALLOW',
       }],
     }
     if (flowRestore.length) {
@@ -319,6 +322,11 @@ async function main() {
     const gatedName = `W370 AddSign Gate ${suffix}`
     const gated = await createOrder(gatedName)
     check('gate 关闭时 API canAddSign=false', gated.instance.canAddSign === false)
+    check(
+      'gate 关闭时管理员待办任务已生成',
+      Boolean(gated.instance.myPendingTaskId),
+      JSON.stringify({ status: gated.instance.status, tasks: gated.instance.tasks, myPendingTaskId: gated.instance.myPendingTaskId }),
+    )
 
     const target = await loadPageTarget()
     const cdp = new CdpClient(target.webSocketDebuggerUrl)
@@ -332,7 +340,7 @@ async function main() {
       await cdp.navigate('/login')
       await cdp.evaluate(`localStorage.setItem('mmx_access_token',${JSON.stringify(token)});localStorage.setItem('mmx_refresh_token',${JSON.stringify(refreshToken)});true`)
       await cdp.navigate('/approvals')
-      await cdp.waitFor(textIncludes(gatedName), 10000, 'gate 关闭待办')
+      if (!(await findApprovalRowAcrossPages(cdp, gatedName))) throw new Error('gate 关闭待办未出现在分页列表')
       check('gate 关闭待办可打开', await clickRowAction(cdp, gatedName, '去审批'))
       await cdp.waitFor(textIncludes('驳回'), 5000, 'gate 关闭审批详情')
       check('gate 关闭时不展示加签按钮', await cdp.evaluate(`(() => {
@@ -348,7 +356,7 @@ async function main() {
       const enabled = await createOrder(enabledName)
       check('gate 开启时 API canAddSign=true', enabled.instance.canAddSign === true)
       await cdp.navigate('/approvals')
-      await cdp.waitFor(textIncludes(enabledName), 10000, 'gate 开启待办')
+      if (!(await findApprovalRowAcrossPages(cdp, enabledName))) throw new Error('gate 开启待办未出现在分页列表')
       check('gate 开启待办可打开', await clickRowAction(cdp, enabledName, '去审批'))
       await cdp.waitFor(textIncludes('加签'), 5000, '加签按钮')
       check('gate 开启时展示加签按钮', await clickVisibleDialogButton(cdp, '加签'))

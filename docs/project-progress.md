@@ -8,8 +8,8 @@
 
 - 分支：`master`
 - 当前发布标签：`v0.0.5`
-- 当前开发现场已关闭 W3.7-9.4A Condition 与 9.4B 审批人异常策略两个 DB-012 子单元；DB-012 继续 `IN_PROGRESS`，代码与文档按 scoped 本地提交管理；是否 push 继续由用户显式决定。
-- 当前数据库基线：**65 migrations**。
+- W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 之后尚未冻结新的正式 task 编号；代码与文档按 scoped 本地提交管理，是否 push 继续由用户显式决定。
+- 当前数据库基线：**68 migrations**。
 
 ## 2. 已关闭主里程碑
 
@@ -24,41 +24,45 @@
 | DB-021 | FollowUpPlan 独立 Field/Blob 与动态字段运行时 | `VERIFIED` |
 | W3.7-9.2 / DB-010 | 通用审批资源快照与 UPDATE/DELETE 变更上下文 | `VERIFIED` |
 | W3.7-9.3 / DB-011 | ApprovalRecord、加签、节点退回、ReturnBackRecord、nodeRound、审批人任务撤回、requireComment、ApprovalInstanceAttachment | `VERIFIED` |
-| W3.7-9.4A / DB-012 子单元 | Condition/DEFAULT、条件 DTO、link.sort 分支与 `updateFields` runtime | 已完成；DB-012 整体仍 `IN_PROGRESS` |
-| W3.7-9.4B / DB-012 子单元 | empty/fallback/sameSubmitter、动态方向、多级审批人与 duplicate runtime | 已完成；DB-012 整体仍 `IN_PROGRESS` |
+| W3.7-9.4A / DB-012 子单元 | Condition/DEFAULT、条件 DTO、link.sort 分支与 `updateFields` runtime | 已完成 |
+| W3.7-9.4B / DB-012 子单元 | empty/fallback/sameSubmitter、动态方向、多级审批人与 duplicate runtime | 已完成 |
+| W3.7-9.4C / DB-012 子单元 | 节点 HIDDEN/VIEW/EDIT 字段权限、审批详情与审批态字段写入 gate | 已完成 |
+| W3.7-9.4D / DB-012 子单元 | pass/reject 后置字段更新、冻结配置、UPDATE reject restore→post 最终顺序 | 已完成 |
+| W3.7-9.4E / DB-012 子单元 | Webhook 安全 client、测试连接、运行时发送、SSRF/超时/响应限制与 delivery 审计 | 已完成 |
+| W3.7-9.4F / DB-012 子单元 | Vue Flow 高级条件图、节点高级配置、统一 `nodes + links` 写契约与旧线性兼容清理 | 已完成；DB-012 `VERIFIED` |
+| W3.7-9.5 | DB-010/011/012 最终专项、Browser、空库、Root/Rules、workspace 与 legacy scan | 已完成；W3.7 正式封板 |
 
 ## 3. 当前执行指针
 
-当前唯一已冻结的主执行指针是：
+当前执行状态：
 
-> **W3.7-9.4C / DB-012：节点字段权限和审批详情真实约束**
+> **W3.7 已完成。当前没有尚未执行的 W3.7 task；下一正式阶段需要基于剩余 parity/backlog 重新立项。**
 
-W3.7 内部剩余顺序已经在 `docs/specs/process-settings-parity/tasks.md` 固化：
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。
 
-1. **9.4C 字段权限**：节点字段权限和审批详情真实约束。
-2. **9.4D～F / DB-012 剩余能力**：pass/reject 后置字段更新、Webhook、安全测试连接、Vue Flow 条件图；9.4F 同时删除旧线性 payload 自动推导兼容。
-3. **9.5 W3.7 最终封板**：DB-010/011/012 专项 + Root Smoke + Rules + Browser + 空库全 migration/双 Seed + typecheck/lint/build + legacy/deferred scan。
-
-当前 DB-011 状态：`VERIFIED`；DB-012 的 9.4A/9.4B 已完成，整体继续 `IN_PROGRESS`，当前唯一冻结执行单元为 9.4C。
-
-当前 deferred backlog 共 23 项：**18 项 VERIFIED、1 项 IN_PROGRESS（DB-012）、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
+当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
-- 空库：**65/65 migrations + 双 Seed**，Seed 计数幂等。
+- 空库：**68/68 migrations + 双 Seed**，Seed 计数幂等，关键运行时资源检查全部通过。
 - Root Smoke：**227/227**。
-- Rules：**133/133**。
-- W3.7-9.4B approver policy HTTP Smoke：PASS（65 migrations）；empty auto-pass + ApprovalRecord、fallback、sameSubmitter、直属/部门方向与三种 duplicate rule 均已真实执行。
-- W3.7-9.4A Condition / DEFAULT HTTP Smoke：在 65 migrations 下继续 PASS；Browser 最近基线 **14/14**，高级图只读 fail-closed、API 5xx=0、Runtime exception=0。
+- Rules：**141/141**。
+- W3.7-9.5 最终专项链：DB-010、DB-011 9.3A～E、DB-012 9.4A～E 全部重新执行 exit 0；Prisma generate/validate、default DB 68 migrations status/deploy、空库双 Seed、workspace typecheck/lint/build 与 `git diff --check` 全绿。
+- W3.7-9.4F Advanced Designer Browser：**25/25**；Vue Flow 高级图、字段权限、后置字段、Webhook 安全测试、duplicate rule、统一 PUT 图契约和完整 round-trip 全绿，API 非预期 5xx=0、Runtime exception=0。
+- W3.7-9.4E Webhook HTTP Smoke：PASS（68 migrations）；连接测试 GET/POST、private target/危险 header/redirect/response limit/timeout gate、审计脱敏、冻结版本、field-before-webhook、reject placeholder、ALL 单次、AUTO_PASS 及 runtime failure non-blocking 全部真实验证。
+- W3.7-9.4D post-field HTTP Smoke：PASS（68 migrations）；Flow round-trip/reference/duplicate/enabled-value/safe-field gate、冻结版本、manual pass/reject、disabled noop、ALL 完成点单次执行、AUTO_PASS、系统字段、实例展示同步及 UPDATE reject restore→post 最终顺序均保持。
+- W3.7-9.4C field permission HTTP Smoke：PASS（68 migrations）；Flow round-trip/reference/edit eligibility、HIDDEN/VIEW/EDIT detail、owner/view/sign write gate、系统/自定义字段写入与版本冻结均保持；PC/Mobile Browser **21/21**。
+- W3.7-9.4B approver policy HTTP Smoke：PASS（68 migrations）；empty auto-pass + ApprovalRecord、fallback、sameSubmitter、直属/部门方向与三种 duplicate rule 均保持。
+- W3.7-9.4A Condition / DEFAULT HTTP Smoke：在 68 migrations 下继续 PASS；9.4F 收口后 Browser 已升级为真实可编辑条件图验收 **18/18**，CONDITION 编辑、统一 nodes+links PUT、版本/links round-trip、API 5xx=0、Runtime exception=0。
 - W3.7-9.4A 已验证 link.sort 首命中、DEFAULT fallback、`NOT_EQUAL_ORIGINAL`、历史实例 path 冻结，CONDITION/DEFAULT 不产生 task。
 - W3.7-9.3E requireComment / ApprovalInstanceAttachment HTTP Smoke：PASS（63 migrations）。
-- W3.7-9.3E PC/Mobile Browser：**28/28**，真实 `/attachments/upload`、API 5xx=0、Runtime exception=0。
-- W3.7-9.3B / 9.3C / 9.3D HTTP 回归：PASS；Browser 回归分别 **17/17、17/17、24/24**。
-- DB-010 regression：PASS（65 migrations）；DB-011 9.3A～E 相邻 regression 在当前 65 migrations 下保持 PASS。
+- W3.7-9.3E PC/Mobile Browser：本轮相邻回归 **28/28**，真实 `/attachments/upload`、API 5xx=0、Runtime exception=0。
+- W3.7-9.3B / 9.3C / 9.3D HTTP 回归：PASS；Browser 回归分别 **18/18、17/17、24/24**。
+- DB-010 regression：PASS；DB-011 9.3A～E、DB-012 9.4A～D 相邻 HTTP regression 在当前 **68 migrations** schema 基线下保持 PASS。
 - `/system/modules` Browser：**47/47**，API 5xx=0、Runtime exception=0。
 - workspace typecheck / ESLint / Shared+API+Web production build / Prisma validate：PASS。
-- Web production build：**4144 modules transformed**。
-- Docker release Smoke 最近一次基线：62 migrations、API runtime、Prisma CLI、Web/Nginx `/api` proxy、SPA fallback：PASS；Migration 63/64 已分别通过业务专项、空库和回归验证，Docker release 未因审批业务子单元重复执行。
+- Web production build：**4145 modules transformed**。
+- Docker release Smoke 最近一次基线：62 migrations、API runtime、Prisma CLI、Web/Nginx `/api` proxy、SPA fallback：PASS；Migration 63～68 已分别通过业务专项、空库和回归验证，Docker release 未因审批业务子单元重复执行。
 - API Docker：amd64、arm64 均已原生实建；production deploy 为 369 packages reuse、0 download。
 
 ## 5. W3.7 完成后仍未关闭的 Cordys 差异
@@ -99,14 +103,13 @@ W3.7 内部剩余顺序已经在 `docs/specs/process-settings-parity/tasks.md` �
 
 ## 6. 建议的整体收口波次
 
-以下是基于当前 parity/backlog 的建议顺序，**W3.7 已冻结；W3.7 之后的编号尚未固化为正式 tasks**：
+以下是基于当前 parity/backlog 的建议顺序，**W3.7 已完成；W3.7 之后的编号尚未固化为正式 tasks**：
 
-1. **先完成 W3.7 高级审批**：这是当前唯一进行中的核心运行时主线。
-2. **协同闭环**：跟进记录/计划评论附件 + 通知/定时任务，把高频业务协作链闭合。
-3. **元数据/表单/搜索闭环**：动态字段、动态/自定义表单、高级/全局搜索、字段脱敏。
-4. **平台治理闭环**：操作/登录日志、异步导出、成员剩余字段、多部门、数据字典/模块配置扩展、公告/模板。
-5. **第三方决策轮**：仅在产品决定恢复时实施钉钉/飞书、DataEase 等 deferred provider；明确排除项保持排除，不为了“100% 数字”伪实现。
-6. **全项目最终验收**：重新扫描 Cordys 页面/API/Controller/Service/Domain/Mapper/DDL，确保 parity 表所有项最终只能落在“已验证”或“明确不纳入/延期且有产品决策”之一；执行完整空库、升级库、租户/权限矩阵、Root/Rules/Browser、Docker release 和 legacy runtime scan 后封版。
+1. **协同闭环**：跟进记录/计划评论附件 + 通知/定时任务，把高频业务协作链闭合。
+2. **元数据/表单/搜索闭环**：动态字段、动态/自定义表单、高级/全局搜索、字段脱敏。
+3. **平台治理闭环**：操作/登录日志、异步导出、成员剩余字段、多部门、数据字典/模块配置扩展、公告/模板。
+4. **第三方决策轮**：仅在产品决定恢复时实施钉钉/飞书、DataEase 等 deferred provider；明确排除项保持排除，不为了“100% 数字”伪实现。
+5. **全项目最终验收**：重新扫描 Cordys 页面/API/Controller/Service/Domain/Mapper/DDL，确保 parity 表所有项最终只能落在“已验证”或“明确不纳入/延期且有产品决策”之一；执行完整空库、升级库、租户/权限矩阵、Root/Rules/Browser、Docker release 和 legacy runtime scan 后封版。
 
 ## 7. “整体完成”的判定标准
 

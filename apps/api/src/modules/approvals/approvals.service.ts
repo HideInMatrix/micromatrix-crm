@@ -16,6 +16,7 @@ import { BusinessNotificationsService } from '../notifications/business-notifica
 import { NotificationsService } from '../notifications/notifications.service'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 import { ApprovalResourceService } from './approval-resource.service'
+import { ApprovalWebhookService } from './approval-webhook.service'
 import type { AddSignTaskDto, ReturnBackTaskDto } from './dto/approval.dto'
 
 type ApprovalExecuteTimingValue = 'CREATE' | 'UPDATE' | 'DELETE'
@@ -39,6 +40,7 @@ export class ApprovalsService {
     private readonly notifications: NotificationsService,
     private readonly businessNotifications: BusinessNotificationsService,
     private readonly resources: ApprovalResourceService,
+    private readonly webhooks: ApprovalWebhookService,
   ) {}
 
   /** 该模块在指定金额/执行时机下是否命中启用审批流。 */
@@ -171,6 +173,68 @@ export class ApprovalsService {
     if (task.taskType === 'SIGN') await this.continueAddSignChain(task, instance, user.id)
     else await this.completeApprovedNodeTask(task, instance, user.id)
     return { id: taskId, name: instance.targetName }
+  }
+
+  async updateTaskFields(
+    user: AuthUser,
+    taskId: string,
+    fields: Array<{ fieldId: string; value?: unknown }>,
+  ) {
+    if (!fields.length) throw new BadRequestException('至少需要提交一个审批字段')
+    const task = await this.ensurePendingTask(user, taskId)
+    if (task.taskType !== 'APPROVAL') {
+      throw new BadRequestException('加签/抄送任务只允许查看业务字段')
+    }
+    if (!task.nodeId) throw new BadRequestException('当前任务缺少稳定节点 ID')
+    const normalized = fields.map((field) => ({
+      fieldId: field.fieldId.trim(),
+      value: field.value,
+    }))
+    if (normalized.some((field) => !field.fieldId)) throw new BadRequestException('审批字段 ID 不能为空')
+    if (new Set(normalized.map((field) => field.fieldId)).size !== normalized.length) {
+      throw new BadRequestException('审批字段不能重复提交')
+    }
+
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: { id: task.instanceId, tenantId: user.tenantId, status: 'PENDING' },
+    })
+    if (!instance || instance.currentNodeIndex !== task.nodeIndex) {
+      throw new BadRequestException('仅当前审批节点允许修改业务字段')
+    }
+    const frozenNodes = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const node = frozenNodes[task.nodeIndex]
+    if (!node || node.nodeId !== task.nodeId) {
+      throw new BadRequestException('当前任务与冻结审批节点不一致')
+    }
+    const editableFieldIds = new Set(
+      (node.fieldPermissions ?? [])
+        .filter((permission) => permission.permissionType === 'EDIT')
+        .map((permission) => permission.fieldId),
+    )
+    if (normalized.some((field) => !editableFieldIds.has(field.fieldId))) {
+      throw new BadRequestException('存在当前审批节点无编辑权限的字段')
+    }
+
+    await this.resources.updateApprovalFields(
+      user,
+      instance.module as ApprovalModule,
+      instance.targetId,
+      normalized,
+      editableFieldIds,
+    )
+    const target = await this.resources.targetInfo(
+      user.tenantId,
+      instance.module as ApprovalModule,
+      instance.targetId,
+    )
+    await this.prisma.approvalInstance.update({
+      where: { id: instance.id },
+      data: {
+        targetName: target.name,
+        summary: target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null,
+      },
+    })
+    return { id: taskId, count: normalized.length }
   }
 
   async signTask(user: AuthUser, taskId: string, dto: AddSignTaskDto) {
@@ -555,6 +619,7 @@ export class ApprovalsService {
       'REJECTED',
     )
     await this.restorePreUpdateSnapshot(instance, user.id)
+    await this.applyNodePostFieldUpdates(instance, task.nodeIndex, 'REJECT', user.id)
     await this.sendApprovalResult(instance, user.id, {
       title: '审批被驳回',
       content: `「${instance.targetName}」被 ${user.name} 驳回：${normalizedComment}`,
@@ -668,7 +733,7 @@ export class ApprovalsService {
       this.prisma.approvalTask.count({ where }),
     ])
     const items = await Promise.all(
-      tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user.id)),
+      tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user)),
     )
     return { items, total, page, pageSize }
   }
@@ -692,7 +757,7 @@ export class ApprovalsService {
       }),
       this.prisma.approvalInstance.count({ where }),
     ])
-    const items = await Promise.all(instances.map((i) => this.toInstanceVO(i, i.tasks, user.id)))
+    const items = await Promise.all(instances.map((i) => this.toInstanceVO(i, i.tasks, user)))
     return { items, total, page, pageSize }
   }
 
@@ -722,7 +787,7 @@ export class ApprovalsService {
       this.prisma.approvalTask.count({ where }),
     ])
     const items = await Promise.all(
-      tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user.id)),
+      tasks.map((t) => this.toInstanceVO(t.instance, t.instance.tasks, user)),
     )
     return { items, total, page, pageSize }
   }
@@ -749,7 +814,7 @@ export class ApprovalsService {
       this.prisma.approvalTask.count({ where }),
     ])
     const items = await Promise.all(
-      tasks.map((task) => this.toInstanceVO(task.instance, task.instance.tasks, user.id)),
+      tasks.map((task) => this.toInstanceVO(task.instance, task.instance.tasks, user)),
     )
     return { items, total, page, pageSize }
   }
@@ -766,7 +831,23 @@ export class ApprovalsService {
       orderBy: { createdAt: 'desc' },
     })
     if (!instance) return null
-    return this.toInstanceVO(instance, instance.tasks, user.id)
+    return this.toInstanceVO(instance, instance.tasks, user)
+  }
+
+  async instanceDetail(user: AuthUser, instanceId: string): Promise<ApprovalInstanceVO> {
+    const instance = await this.prisma.approvalInstance.findFirst({
+      where: {
+        id: instanceId,
+        tenantId: user.tenantId,
+        OR: [
+          { submitterId: user.id },
+          { tasks: { some: { tenantId: user.tenantId, approverId: user.id } } },
+        ],
+      },
+      include: { tasks: true },
+    })
+    if (!instance) throw new NotFoundException('审批实例不存在')
+    return this.toInstanceVO(instance, instance.tasks, user, true)
   }
 
   // ===== 引擎内部 =====
@@ -976,6 +1057,12 @@ export class ApprovalsService {
             link: '/approvals?tab=copied',
           })
         }
+        await this.applyNodePostFieldUpdates(
+          instance,
+          nodeIndex,
+          'APPROVE',
+          operatorId ?? instance.submitterId,
+        )
         continue
       }
 
@@ -1341,6 +1428,12 @@ export class ApprovalsService {
       fallbackApprover: node.approver.fallbackApprover,
       sameSubmitterAction: node.approver.sameSubmitterAction,
       approverDirection: node.approver.approverDirection,
+      fieldPermissions:
+        (node.approver.fieldPermissions as unknown as ApprovalNodeConfig['fieldPermissions']) ?? [],
+      passPostConfig:
+        (node.approver.passPostConfig as unknown as ApprovalNodeConfig['passPostConfig']) ?? undefined,
+      rejectPostConfig:
+        (node.approver.rejectPostConfig as unknown as ApprovalNodeConfig['rejectPostConfig']) ?? undefined,
     }
   }
 
@@ -1697,10 +1790,51 @@ export class ApprovalsService {
           data: { status: 'SKIPPED' },
         })
       }
+      await this.applyNodePostFieldUpdates(instance, task.nodeIndex, 'APPROVE', operatorId)
       await this.advance(instance.id, operatorId)
     } else if (pending.length === 0) {
+      await this.applyNodePostFieldUpdates(instance, task.nodeIndex, 'APPROVE', operatorId)
       await this.advance(instance.id, operatorId)
     }
+  }
+
+  private async applyNodePostFieldUpdates(
+    instance: ApprovalInstance,
+    nodeIndex: number,
+    action: 'APPROVE' | 'REJECT',
+    operatorId: string,
+  ) {
+    const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const node = snapshot[nodeIndex]
+    if (!node) throw new BadRequestException('审批实例缺少冻结节点配置')
+    const config = action === 'APPROVE' ? node.passPostConfig : node.rejectPostConfig
+    const updates = (config?.fieldUpdateConfigs ?? [])
+      .filter((item) => item.enable && item.fieldValue !== undefined && item.fieldValue !== null)
+      .map((item) => ({ fieldId: item.fieldId, value: item.fieldValue }))
+    if (updates.length) {
+      await this.resources.updateApprovalPostFields(
+        instance.tenantId,
+        operatorId,
+        instance.module as ApprovalModule,
+        instance.targetId,
+        updates,
+      )
+      const target = await this.resources.targetInfo(
+        instance.tenantId,
+        instance.module as ApprovalModule,
+        instance.targetId,
+      )
+      await this.prisma.approvalInstance.update({
+        where: { id: instance.id },
+        data: {
+          targetName: target.name,
+          summary: target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null,
+        },
+      })
+      instance.targetName = target.name
+      instance.summary = target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null
+    }
+    await this.webhooks.enqueueRuntime(instance, nodeIndex, action, operatorId)
   }
 
   private async ensurePendingTask(user: AuthUser, taskId: string): Promise<ApprovalTask> {
@@ -1923,7 +2057,8 @@ export class ApprovalsService {
   private async toInstanceVO(
     instance: ApprovalInstance,
     tasks: ApprovalTask[],
-    currentUserId: string,
+    currentUser: AuthUser,
+    includeResourceFields = false,
   ): Promise<ApprovalInstanceVO> {
     const approverIds = [...new Set(tasks.map((t) => t.approverId))]
     const users = approverIds.length
@@ -1970,7 +2105,7 @@ export class ApprovalsService {
     )
     const myPending = approvalTasks.find(
       (task) =>
-        task.approverId === currentUserId &&
+        task.approverId === currentUser.id &&
         task.status === 'PENDING' &&
         task.action !== 'SIGN' &&
         task.action !== 'BACK',
@@ -1978,7 +2113,7 @@ export class ApprovalsService {
     const latestMyApproved = approvalTasks
       .filter(
         (task) =>
-          task.approverId === currentUserId &&
+          task.approverId === currentUser.id &&
           task.taskType === 'APPROVAL' &&
           task.status === 'APPROVED' &&
           task.action === 'APPROVE',
@@ -1999,6 +2134,24 @@ export class ApprovalsService {
         ? latestMyApproved
         : null
     const frozenNodes = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
+    const currentFrozenNode = myPending ? frozenNodes[myPending.nodeIndex] : null
+    const currentNodeFieldPermissions = myPending
+      ? myPending.taskType === 'SIGN'
+        ? (currentFrozenNode?.fieldPermissions ?? []).map((permission) => ({
+            ...permission,
+            permissionType: 'VIEW' as const,
+          }))
+        : (currentFrozenNode?.fieldPermissions ?? [])
+      : []
+    const resourceFields = includeResourceFields
+      ? await this.resources.approvalFields(
+          currentUser,
+          instance.module as ApprovalModule,
+          instance.targetId,
+          currentNodeFieldPermissions,
+          myPending?.taskType === 'SIGN',
+        )
+      : []
     const returnBackTargets = myPending?.taskType === 'APPROVAL'
       ? [...new Set(records.map((record) => record.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)))]
           .map((nodeId) => ({
@@ -2106,6 +2259,8 @@ export class ApprovalsService {
           },
         }]
       }),
+      currentNodeFieldPermissions,
+      resourceFields,
       requireComment: Boolean(flowCapability?.requireComment),
       canAddSign: Boolean(myPending && flowCapability?.allowAddSign),
       canReturnBack: Boolean(myPending?.taskType === 'APPROVAL' && returnBackTargets.length),

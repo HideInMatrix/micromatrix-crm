@@ -1093,3 +1093,74 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 默认开发库初次 Root Smoke 暴露仅缺 Migration 65；经 `prisma migrate status` 确认后执行正常 `prisma migrate deploy`，无 backfill，随后 Root **227/227 PASS**。
 - 最终基线：Rules **133/133**；空库 **65/65 migrations + Seed 2/2** 且计数幂等；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿，Web **4144 modules transformed**。9.4B 无新增 UI，`/system/modules` Browser 沿用 9.4A 最近 **47/47** 基线。
 - W3.7-9.4B 正式关闭；DB-012 继续 `IN_PROGRESS`。**下一执行指针：W3.7-9.4C 节点字段权限和审批详情真实约束。**
+
+---
+
+## 57. W3.7-9.4C DB-012 节点字段权限与审批详情约束（2026-09-02）
+
+- 按 Cordys `ApprovalNodeApproverRequest.fieldPermissions`、`FieldPermissionTypeEnum`、`ApprovalInstanceService` 和审批表单详情组件复核真实语义：节点保存 `fieldId + HIDDEN/VIEW/EDIT`；当前普通审批人应用节点权限，加签任务统一降为 VIEW，非当前审批人只读。
+- Cordys 的审批业务更新旁路没有形成足够严格的逐字段后端 whitelist；MicroMatrix 按 R11 补强为服务端最终授权，前端输入控件状态不作为授权依据。
+- Migration 66 新增 `approval_node_approver.field_permissions JSONB`；Shared/DTO/Flow write/detail、版本比较及实例冻结 `nodesSnapshot` 已完整承载字段权限。未配置权限继续保持属性缺省，旧实例按只读处理，不制造历史 backfill。
+- Flow 保存校验 fieldId 必须属于当前 formType、同节点不可重复、metadata hidden 不可 VIEW/EDIT；EDIT 只允许安全字段类型和显式系统字段白名单。相同规则由配置校验与 runtime 共享，避免配置允许而运行时拒绝的双轨语义。
+- 新增实例详情和审批字段更新 API。当前普通 APPROVAL 待办按 HIDDEN/VIEW/EDIT 返回资源字段；VIEW/HIDDEN/未配置字段、非 owner、非 PENDING/current node、SIGN task 均 fail-closed。自定义字段复用 `ResourceFieldValueService`，安全系统字段走显式 Prisma 白名单，并同步实例 targetName/summary。
+- PC/Mobile 审批中心真实消费字段权限：HIDDEN 不入 DOM，VIEW 只读，EDIT 可修改并保存。9.4F 前不开放流程设计器字段权限 UI，避免跨执行单元提前开放高级配置入口。
+- 9.4C isolated HTTP 在 **66/66 migrations + Seed + Shared/API build** 下覆盖 flow round-trip、reference/edit eligibility/hidden/duplicate gate、HIDDEN/VIEW/EDIT detail、non-current readonly、task owner/view/sign write gate、系统/自定义字段写入、SIGN downgrade 和冻结版本，全部 PASS。
+- 新增 Field Permission PC/Mobile Browser **21/21 PASS**；审批中心相邻 9.3E Browser **28/28 PASS**；9.4A Condition Browser **14/14 PASS**；`/system/modules` 在干净 desktop CDP 下 **47/47 PASS**。一次被前序 mobile emulation 污染的 modules 运行已判定为无效环境结果并重启桌面 Chrome 复验全绿。
+- API 回归：DB-010、DB-011 9.3A～E、DB-012 9.4A/9.4B 全绿；旧 9.4A/9.4B Smoke 的“当前 migration 总数”断言从 65 同步为 66，不改变历史单元语义。
+- 最终基线：Rules **136/136**、Root **227/227**、空库 **66/66 migrations + Seed 2/2（14/14）**；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿，Web **4144 modules transformed**。
+- W3.7-9.4C 正式关闭；DB-012 继续 `IN_PROGRESS`。**下一执行指针：W3.7-9.4D pass/reject 后置字段更新。**
+
+---
+
+## 58. W3.7-9.4D DB-012 pass/reject 后置字段更新（2026-09-02）
+
+- 对照 Cordys `ApprovalFlowService.updateApprovalPostField`、`ApprovalResourceService.updateApprovalPostField` 与 APPROVER 配置模型，确认 pass/reject 后置字段配置属于节点版本事实；人工通过只在节点真正完成时触发，自动通过同样属于节点完成动作。
+- Migration 67 为 `ApprovalNodeApprover` 新增 pass/reject post JSON；Shared/DTO、Flow write/detail、版本比较与实例 `nodesSnapshot` 已完整承载。配置 normalize 按 fieldId 稳定排序，并校验 reference、duplicate、enabled non-null 与 9.4C 安全可编辑字段集合。
+- runtime 统一从实例冻结 snapshot 执行 post-field。ANY/ALL 只在真实节点完成点执行一次 pass；AUTO_PASS 执行 pass；SIGN 本身不独立触发；自定义字段复用 `ResourceFieldValueService`，系统字段复用显式安全白名单，并在更新后同步实例 `targetName/summary`。
+- UPDATE reject 明确采用“DB-010 快照先恢复、reject post 后执行”的最终值语义，避免 Cordys 原顺序中显式 reject 配置被旧快照覆盖。专项 HTTP 新增断言：主字段恢复审批前值、reject 自定义字段成为最终值、`ApprovalResourceSnapshot` 被消费为 0。
+- 9.4D isolated HTTP 在 **67/67 migrations + Seed + Shared/API build** 下覆盖 flow round-trip、reference/duplicate/value/safe-field gate、冻结版本、manual pass/reject、disabled noop、ALL completion、AUTO_PASS、系统字段与实例展示同步，全部 PASS。
+- API 回归：DB-010、DB-011 9.3A～E、DB-012 9.4A/9.4B/9.4C 全绿，均在当前 67 migration schema 基线上完成业务验证。
+- 最终基线：Rules **137/137**、Root **227/227**、空库 **67/67 migrations + Seed 2/2（14/14）**；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿，Web **4144 modules transformed**。
+- 隔离 Smoke 与 live API `tsc --watch` 同时重建 `apps/api/dist` 会产生构建目录竞争；最终回归仅临时暂停 API 编译 watcher、保留原 dev 进程链并在结束后恢复，稳定复验全绿。该现象属于验证环境并发 build race，不是审批 runtime 回归。
+- W3.7-9.4D 正式关闭；DB-012 继续 `IN_PROGRESS`。**下一执行指针：W3.7-9.4E Webhook 安全 client、测试连接、运行时发送与审计。**
+
+---
+
+## 59. W3.7-9.4E DB-012 Webhook 安全发送与审计（2026-09-02）
+
+- 对照 Cordys `WebHookConfig`、`ApprovalPostConfigDTO`、`ApprovalResourceService.sendWebHook/sendGet/sendPost/testConnect` 与流程设计器 `afterApprovalTab.vue`，确认 Webhook 与字段更新同属 pass/reject 节点后置配置，并在节点真实完成后后台发送；GET URL 和 POST JSON body 支持业务字段占位符，Cordys 同时提供连接测试接口。
+- MicroMatrix 按 R11 没有复制 Cordys 任意 URL 请求和原始请求/响应日志。新增 `ApprovalWebhookClient` 统一承担测试连接和 runtime：HTTP/HTTPS + GET/POST 白名单、DNS resolve 后公网地址 gate、DNS pin、防 DNS rebinding、redirect disabled、5s timeout、64 KiB response limit、16 KiB header JSON / 64 KiB body 上限，以及 framing/hop-by-hop header 拒绝。
+- SSRF 地址分类覆盖 loopback、RFC1918、link-local、CGNAT、ULA、multicast、unspecified、documentation/reserved、IPv4-mapped IPv6 与 NAT64 非公网映射；一次 Rules 回归暴露 BlockList IPv6 映射规则过宽导致公网 IPv4 被误拒绝，已修正为显式 mapped/NAT64 解析后再复用 IPv4 公网判断，并稳定复验 **141/141 PASS**。
+- Migration 68 新增 `approval_webhook_deliveries`，记录 TEST/RUNTIME、实例/流程/版本/节点/action、method、SENT/FAILED、HTTP status、响应字节、耗时和稳定错误摘要。审计不保存 Authorization/Cookie/API Key、header/body/query/response body，目标 path 使用脱敏 marker，避免敏感 token 进入审计库。
+- Shared/DTO/Flow normalize/version compare/detail/实例 `nodesSnapshot` 已完整承载 `webHookConfig`；webhook-only post config 可保存，disabled 配置保留 round-trip。新实例只读取创建时冻结的 Webhook 配置，后续 FlowVersion 修改不影响在途实例。
+- 新增 `POST /api/approvals/flows/webhook/test`，要求 `system:process:update`。占位符从真实审批资源与 metadata 字段映射读取：四业务 id、系统 field key、自定义 field key/fieldId；GET 单值 URL encode，POST JSON 递归替换，未知占位符 fail-closed。
+- runtime 顺序固定为 DB-010 restore（如需）→ 9.4D field updates → 读取最新业务值 → 创建 delivery → 异步请求 → SENT/FAILED；ANY/ALL/AUTO_PASS 只在节点真实完成点发送一次，SIGN 不独立发送，第三方网络失败不会回滚已经完成的审批状态机。
+- 9.4E isolated HTTP 在 **68/68 migrations + Seed + Shared/API build** 下覆盖 GET/POST test、private target、forbidden header、redirect、oversize response、timeout、审计脱敏、冻结版本、post-field-before-hook、reject placeholder、ALL 单次、AUTO_PASS 和 runtime failure non-blocking，全部 PASS。
+- 相邻审批回归：DB-010 PASS；DB-011 9.3A～E 全绿；DB-012 9.4A～D 全绿，旧专项脚本同步当前 68 migration 总数。Root **227/227**；空库 **68/68 migrations + Seed 2/2** 且计数幂等；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿，Web **4144 modules transformed**。
+- 9.4E 没有提前开放新的高级流程设计器 UI，因此不新增 Browser；最近 UI 基线继续使用 9.4C Field Permission **21/21**、9.3E Browser **28/28**、9.4A Condition **14/14** 和 `/system/modules` **47/47**。
+- W3.7-9.4E 正式关闭；DB-012 继续 `IN_PROGRESS`，只剩高级编辑器/图写契约收口。**下一执行指针：W3.7-9.4F Vue Flow 条件图、更多设置开放、统一 `nodes + links` 写契约迁移与旧线性 payload 自动推导清理。**
+
+---
+
+## 60. W3.7-9.4F DB-012 Vue Flow 高级设计器与统一图写契约（2026-09-02）
+
+- Shared `ApprovalFlowWriteInput` 与 API Create/Update DTO 已统一要求显式 `createNodes + createLinks`；`ApprovalFlowConfigService` 删除 9.4A 过渡期 `createLinearGraph()` / `isExplicitGraph()` 分流，所有 create/update 都执行同一 graph validation、persistence 与 graph equality/version compare。
+- Vue Flow 从高级图只读保护升级为真实业务编辑器：START/APPROVER/CONDITION/DEFAULT/END、显式连线/删除/分支 sort、AND/OR 条件、审批人异常策略与动态方向、HIDDEN/VIEW/EDIT、pass/reject post-field、Webhook 测试/配置、duplicateApproverRule 均可真实编辑和保存；画布 position 不进入 API 真相源，`allowBatchProcess` 继续 fail-closed。
+- 全部现有审批 Flow 写调用方和 Smoke fixture 迁移为调用端显式图 helper；production `apps/api/src + apps/web/src + packages/shared/src` 精确扫描 `createLinearGraph / isExplicitGraph / 当前版本禁止线性覆盖保存` 均为 0，不再保留双写契约。
+- 9.4F Advanced Designer Browser **25/25 PASS**：节点高级配置、字段权限、post-field、Webhook loopback 安全测试、duplicate rule、真实 PUT、完整 round-trip、API 5xx=0、Runtime exception=0。9.4A Browser 同步升级为真实条件图编辑 **18/18 PASS**；9.4C Field Permission **21/21 PASS**。
+- DB-011 Browser 回归同步适配 9.4B 默认 sameSubmitter 语义与审批中心分页：Add Sign **18/18**、Return Back **17/17**、Approver Revoke **24/24**、Attachment/requireComment **28/28**，全部真实 UI/runtime 通过。
+- API/runtime 回归：DB-010 PASS；DB-011 9.3A～E PASS；DB-012 9.4A～E PASS。Root **227/227**，Rules **141/141**；隔离空库 **68/68 migrations + Seed 2/2** 且 `seedCountsStable=true`。
+- 最终静态封板：workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿；Web production build **4145 modules transformed**。
+- W3.7-9.4F 正式关闭，DB-012 从 `IN_PROGRESS` 切换为 `VERIFIED`。**下一执行指针：W3.7-9.5 最终验收与文档封板。**
+
+---
+
+## 61. W3.7-9.5 高级审批最终验收与文档封板（2026-09-02）
+
+- Prisma 最终状态重新核实：Client generate 与 schema validate PASS；default 数据库发现 **68 migrations** 且 `Database schema is up to date`，`migrate deploy` 返回 `No pending migrations to apply`。
+- DB-010 / DB-011 / DB-012 完整专项链按当前源码重新执行并整体 exit 0：DB-010 generic snapshot + Quote/Invoice/Order regression；DB-011 task-record/add-sign/return-back/approver-revoke/attachment-comment；DB-012 Condition/approver-policy/field-permission/post-field/Webhook 均通过，isolated runtime 使用当前 68 migration 基线。
+- 流程设置最终 Browser：Advanced Designer **25/25**、Condition 可编辑图 **18/18**、Field Permission PC/Mobile **21/21**；审批中心 Browser：Add Sign **18/18**、Return Back **17/17**、Approver Revoke **24/24**、Attachment/requireComment **28/28**；`/system/modules` **47/47**，API 非预期 5xx 与 Runtime exception 均为 0。
+- 最终质量批次整体 exit 0：Root **227/227**、Rules **141/141**、隔离空库 **68/68 migrations + Seed 2/2** 且 `seedCountsStable=true`、workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、`git diff --check` 全绿；Web build **4145 modules transformed**。
+- production runtime 精确 legacy scan：`createLinearGraph=0`、`isExplicitGraph=0`、旧高级图只读 warning=0、`createNodes-only=0`、`businessSnapshot=0`；Prisma `ApprovalTask` 已无旧 `comment` 字段。
+- `/system` 流程设置高级能力逐项复核：发起人撤回、审批人撤回、加签、审批意见必填、duplicate rule、条件节点、字段权限、post-field、Webhook 均为 REAL；仅 `allowBatchProcess` 继续明确 disabled 并标注等待任务中心批量处理能力接入，没有用假入口伪造完成。
+- `tasks.md`、project progress、parity、deferred backlog 与最终 acceptance 已同步。**W3.7-9.2 / 9.3 / 9.4 / 9.5 全部关闭，DB-010 / DB-011 / DB-012 均为 `VERIFIED`；W3.7 正式完成。W3.7 之后不在本单元中预造新的任务编号。**

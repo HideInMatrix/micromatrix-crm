@@ -5,6 +5,7 @@ import type {
   ApprovalNodeConfig,
 } from '@micromatrix/shared'
 import { ApprovalFormType } from '../../generated/prisma/client'
+import { normalizeApprovalWebhookConfig } from './approval-webhook.utils'
 
 export const FORM_TYPE_PREFIX: Record<SharedApprovalFormType, string> = {
   quotation: 'QTE-APV',
@@ -30,6 +31,22 @@ export const MODULE_TO_FORM_TYPE: Partial<Record<ApprovalModule, SharedApprovalF
 export type NormalizableFlowNode = Omit<ApprovalFlowNodeInput, 'approverIds' | 'ccUserIds'> & {
   approverIds?: string[]
   ccUserIds?: string[]
+}
+
+function normalizePostConfig(config: ApprovalFlowNodeInput['passPostConfig']) {
+  if (!config) return undefined
+  const webHookConfig = normalizeApprovalWebhookConfig(config.webHookConfig)
+  if (!config.fieldUpdateConfigs?.length && !webHookConfig) return undefined
+  return {
+    fieldUpdateConfigs: (config.fieldUpdateConfigs ?? [])
+      .map((item) => ({
+        fieldId: item.fieldId.trim(),
+        fieldValue: item.fieldValue,
+        enable: item.enable,
+      }))
+      .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
+    ...(webHookConfig ? { webHookConfig } : {}),
+  }
 }
 
 export function toDbFormType(formType: SharedApprovalFormType): ApprovalFormType {
@@ -60,6 +77,8 @@ export function normalizeFlowNodes(nodes: NormalizableFlowNode[]): ApprovalNodeC
       approverType === 'DEPT_LEADER' ||
       approverType === 'MULTIPLE_DIRECT_LEADER' ||
       approverType === 'MULTIPLE_DEPT_LEADER'
+    const passPostConfig = normalizePostConfig(node.passPostConfig)
+    const rejectPostConfig = normalizePostConfig(node.rejectPostConfig)
     return {
       name: node.name.trim(),
       approverType,
@@ -75,6 +94,18 @@ export function normalizeFlowNodes(nodes: NormalizableFlowNode[]): ApprovalNodeC
       fallbackApprover: node.fallbackApprover?.trim() || null,
       sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
       approverDirection: node.approverDirection ?? 'BOTTOM_UP',
+      ...(node.fieldPermissions?.length
+        ? {
+            fieldPermissions: node.fieldPermissions
+              .map((permission) => ({
+                fieldId: permission.fieldId.trim(),
+                permissionType: permission.permissionType,
+              }))
+              .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
+          }
+        : {}),
+      ...(passPostConfig ? { passPostConfig } : {}),
+      ...(rejectPostConfig ? { rejectPostConfig } : {}),
     }
   })
 }

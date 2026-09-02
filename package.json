@@ -59,6 +59,8 @@
     "smoke:w370-db011-attachment-comment": "pnpm --filter @micromatrix/api smoke:w370-db011-attachment-comment",
     "smoke:w370-db011-attachment-comment-browser": "node scripts/w370-db011-attachment-comment-browser-smoke.mjs",
     "smoke:w370-db012-condition-browser": "node scripts/w370-db012-condition-browser-smoke.mjs",
+    "smoke:w370-db012-field-permission-browser": "node scripts/w370-db012-field-permission-browser-smoke.mjs",
+    "smoke:w370-db012-advanced-designer-browser": "node scripts/w370-db012-advanced-designer-browser-smoke.mjs",
     "smoke:db021-follow-plan-runtime": "pnpm --filter @micromatrix/api smoke:db021-follow-plan-runtime",
     "smoke:db021-follow-plan-browser": "node scripts/db021-follow-plan-browser-smoke.mjs",
     "smoke:wecom-sync": "node scripts/wecom-sync-smoke.mjs",

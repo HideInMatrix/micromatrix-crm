@@ -1,9 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
-import type { ApprovalModule } from '@micromatrix/shared'
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import type {
+  ApprovalFieldPermission,
+  ApprovalModule,
+  ApprovalResourceFieldVO,
+  FieldVO,
+} from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { ApprovalInstance } from '../../generated/prisma/client'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { ModuleFormsService } from '../metadata/module-forms.service'
+import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
+import {
+  APPROVAL_MODULE_FORM_TYPE,
+  APPROVAL_MODULE_METADATA_KEY,
+  APPROVAL_MODULE_RESOURCE_TYPE,
+  isApprovalEditableField,
+} from './approval-field-permission.utils'
 import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
 import { ApprovalResourceRestoreService } from './approval-resource-restore.service'
 import { ApprovalResourceSnapshotService } from './approval-resource-snapshot.service'
@@ -34,6 +47,8 @@ export class ApprovalResourceService {
     private readonly captureService: ApprovalResourceCaptureService,
     private readonly restoreService: ApprovalResourceRestoreService,
     private readonly snapshots: ApprovalResourceSnapshotService,
+    private readonly moduleForms: ModuleFormsService,
+    private readonly fieldValues: ResourceFieldValueService,
   ) {
     this.handlers = {
       quote: {
@@ -104,6 +119,135 @@ export class ApprovalResourceService {
     return values
   }
 
+  async approvalFields(
+    user: AuthUser,
+    module: ApprovalModule,
+    targetId: string,
+    permissions: ApprovalFieldPermission[],
+    forceView = false,
+  ): Promise<ApprovalResourceFieldVO[]> {
+    const [fields, values] = await Promise.all([
+      this.moduleForms.listFields(user.tenantId, APPROVAL_MODULE_METADATA_KEY[module]),
+      this.conditionFieldValues(user, module, targetId),
+    ])
+    const permissionMap = new Map(
+      permissions.map((permission) => [permission.fieldId, permission.permissionType]),
+    )
+    return fields.flatMap((field) => {
+      if (field.hidden) return []
+      const permissionType = forceView ? 'VIEW' : (permissionMap.get(field.id) ?? 'VIEW')
+      if (permissionType === 'HIDDEN') return []
+      const rawValue = field.system ? values[field.key] : values[field.id]
+      return [{
+        fieldId: field.id,
+        key: field.key,
+        label: field.label,
+        type: field.type,
+        required: field.required,
+        options: field.options,
+        value: this.approvalFieldValue(field, rawValue),
+        permissionType,
+      }]
+    })
+  }
+
+  async updateApprovalFields(
+    user: AuthUser,
+    module: ApprovalModule,
+    targetId: string,
+    updates: Array<{ fieldId: string; value: unknown }>,
+    editableFieldIds: ReadonlySet<string>,
+  ) {
+    await this.targetInfo(user.tenantId, module, targetId)
+    const fields = await this.moduleForms.listFields(user.tenantId, APPROVAL_MODULE_METADATA_KEY[module])
+    const fieldMap = new Map(fields.map((field) => [field.id, field]))
+    const formType = APPROVAL_MODULE_FORM_TYPE[module]
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const update of updates) {
+        const field = fieldMap.get(update.fieldId)
+        if (!field || !editableFieldIds.has(update.fieldId)) {
+          throw new BadRequestException('审批字段不存在或当前节点无编辑权限')
+        }
+        if (!isApprovalEditableField(formType, field)) {
+          throw new BadRequestException(`字段「${field.label}」不支持审批中编辑`)
+        }
+        if (field.system) {
+          await this.updateApprovalSystemField(tx, user, module, targetId, field, update.value)
+        } else {
+          await this.fieldValues.saveBatch(
+            user.tenantId,
+            APPROVAL_MODULE_RESOURCE_TYPE[module],
+            [targetId],
+            field.id,
+            update.value,
+            tx,
+          )
+        }
+      }
+    })
+  }
+
+  async updateApprovalPostFields(
+    tenantId: string,
+    operatorId: string,
+    module: ApprovalModule,
+    targetId: string,
+    updates: Array<{ fieldId: string; value: unknown }>,
+  ) {
+    if (!updates.length) return
+    const actor: AuthUser = {
+      id: operatorId,
+      tenantId,
+      email: null,
+      name: '审批后置动作',
+      deptId: null,
+      leaderId: null,
+      roles: [],
+      permissions: [],
+    }
+    await this.updateApprovalFields(
+      actor,
+      module,
+      targetId,
+      updates,
+      new Set(updates.map((update) => update.fieldId)),
+    )
+  }
+
+  async webhookVariables(
+    tenantId: string,
+    module: ApprovalModule,
+    targetId: string,
+  ): Promise<Record<string, Record<string, unknown>>> {
+    const actor: AuthUser = {
+      id: 'SYSTEM',
+      tenantId,
+      email: null,
+      name: '审批 Webhook',
+      deptId: null,
+      leaderId: null,
+      roles: [],
+      permissions: [],
+    }
+    const [fields, values] = await Promise.all([
+      this.moduleForms.listFields(tenantId, APPROVAL_MODULE_METADATA_KEY[module]),
+      this.conditionFieldValues(actor, module, targetId),
+    ])
+    const resource: Record<string, unknown> = { id: targetId }
+    for (const field of fields) {
+      const rawValue = field.system ? values[field.key] : values[field.id]
+      const value = this.approvalFieldValue(field, rawValue)
+      resource[field.key] = value
+      resource[field.id] = value
+    }
+    const formType = APPROVAL_MODULE_FORM_TYPE[module]
+    return {
+      [formType]: resource,
+      [module]: resource,
+    }
+  }
+
   targetInfo(tenantId: string, module: ApprovalModule, targetId: string) {
     return this.handlers[module].targetInfo(tenantId, targetId)
   }
@@ -132,6 +276,137 @@ export class ApprovalResourceService {
       return
     }
     if (instance.executeTiming === 'UPDATE') await this.snapshots.clear(instance)
+  }
+
+  private approvalFieldValue(field: FieldVO, value: unknown) {
+    if (value === undefined || value === null || value === '') return null
+    if (field.type === 'number' || field.type === 'currency' || field.type === 'percent') {
+      const parsed = typeof value === 'number' ? value : Number(value)
+      return Number.isFinite(parsed) ? parsed : value
+    }
+    if (field.type === 'date' || field.type === 'datetime') {
+      const parsed = typeof value === 'number' ? value : Number(value)
+      return Number.isFinite(parsed) ? parsed : value
+    }
+    return value
+  }
+
+  private async updateApprovalSystemField(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    module: ApprovalModule,
+    targetId: string,
+    field: FieldVO,
+    value: unknown,
+  ) {
+    const now = BigInt(Date.now())
+    let count = 0
+    if (module === 'quote') {
+      if (field.key === 'name') {
+        count = (await tx.opportunityQuotation.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { name: this.textFieldValue(field, value, 255)!, updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'untilTime') {
+        count = (await tx.opportunityQuotation.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { untilTime: this.dateFieldValue(field, value)!, updateUser: user.id, updateTime: now },
+        })).count
+      }
+    } else if (module === 'contract') {
+      if (field.key === 'name') {
+        count = (await tx.contract.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { name: this.textFieldValue(field, value, 255)!, updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'number') {
+        count = (await tx.contract.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { number: this.textFieldValue(field, value, 50)!, updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'startTime' || field.key === 'endTime') {
+        count = (await tx.contract.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: {
+            [field.key]: this.dateFieldValue(field, value),
+            updateUser: user.id,
+            updateTime: now,
+          },
+        })).count
+      }
+    } else if (module === 'invoice') {
+      if (field.key === 'name') {
+        count = (await tx.contractInvoice.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { name: this.textFieldValue(field, value, 255)!, updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'amount') {
+        count = (await tx.contractInvoice.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { amount: this.numberFieldValue(field, value), updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'invoiceType') {
+        count = (await tx.contractInvoice.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { invoiceType: this.textFieldValue(field, value, 32), updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'taxRate') {
+        count = (await tx.contractInvoice.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { taxRate: this.numberFieldValue(field, value), updateUser: user.id, updateTime: now },
+        })).count
+      }
+    } else if (module === 'order') {
+      if (field.key === 'name') {
+        count = (await tx.order.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { name: this.textFieldValue(field, value, 255)!, updateUser: user.id, updateTime: now },
+        })).count
+      } else if (field.key === 'number') {
+        count = (await tx.order.updateMany({
+          where: { id: targetId, organizationId: user.tenantId },
+          data: { number: this.textFieldValue(field, value, 50)!, updateUser: user.id, updateTime: now },
+        })).count
+      }
+    }
+    if (count !== 1) throw new BadRequestException(`字段「${field.label}」不支持审批中编辑`)
+  }
+
+  private textFieldValue(field: FieldVO, value: unknown, maxLength: number) {
+    if (value === undefined || value === null || String(value).trim() === '') {
+      if (field.required) throw new BadRequestException(`「${field.label}」为必填项`)
+      return null
+    }
+    const result = String(value).trim()
+    if (result.length > maxLength) throw new BadRequestException(`「${field.label}」长度不能超过 ${maxLength}`)
+    return result
+  }
+
+  private numberFieldValue(field: FieldVO, value: unknown) {
+    if (value === undefined || value === null || value === '') {
+      if (field.required) throw new BadRequestException(`「${field.label}」为必填项`)
+      return null
+    }
+    const result = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(result)) throw new BadRequestException(`「${field.label}」必须是有效数字`)
+    if (field.config?.min !== undefined && result < field.config.min) {
+      throw new BadRequestException(`「${field.label}」不能小于 ${field.config.min}`)
+    }
+    if (field.config?.max !== undefined && result > field.config.max) {
+      throw new BadRequestException(`「${field.label}」不能大于 ${field.config.max}`)
+    }
+    return result
+  }
+
+  private dateFieldValue(field: FieldVO, value: unknown) {
+    if (value === undefined || value === null || value === '') {
+      if (field.required) throw new BadRequestException(`「${field.label}」为必填项`)
+      return null
+    }
+    const direct = typeof value === 'number' ? value : Number(value)
+    const timestamp = Number.isFinite(direct) ? direct : new Date(String(value)).getTime()
+    if (!Number.isFinite(timestamp)) throw new BadRequestException(`「${field.label}」必须是有效日期`)
+    return BigInt(Math.trunc(timestamp))
   }
 
   private diffBusinessFields(

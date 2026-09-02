@@ -186,9 +186,9 @@ Cordys 还真实执行重复审批人规则，例如 `FIRST_ONLY / SEQUENTIAL_AL
 - `ApprovalNodeCondition.conditionConfig`
 - 显式 `ApprovalNodeLink` 图与 `link.sort`
 
-9.4A 已完成 CONDITION / DEFAULT 图、CombineSearch DTO、资源字段条件求值、`NOT_EQUAL_ORIGINAL` 和实例实际 APPROVER path 冻结；当前线性 PC 编辑器在 9.4F 前对高级图 fail-closed。`fieldPermissions`、`webHook` 仍未接入。
+9.4A～9.4F 已全部完成：CONDITION / DEFAULT 图、审批人异常策略、节点字段权限、pass/reject 字段后置动作、Webhook 安全发送/审计和 Vue Flow 高级设计器均已进入真实运行时。流程写契约已统一为显式 `nodes + links`，服务端旧线性 payload 自动推导兼容与高级图只读锁已删除。
 
-流程层 `requireComment` 已在 DB-011 关闭；`duplicateApproverRule` 高级值仍保持 disabled/Service fail-closed，等待 DB-012 runtime。
+流程层 `requireComment` 已在 DB-011 关闭；`duplicateApproverRule` 已在 9.4B runtime 完成并于 9.4F 正式开放 UI。`allowBatchProcess` 仍保持未实现能力的 fail-closed 状态。
 
 ### 5.3 审计结论
 
@@ -215,9 +215,11 @@ DB-012 必须建立在 DB-010 `updateFields` 上下文和 DB-011 稳定任务状
 | 空审批人/fallback/sameSubmitter | REAL | W3.7-9.4B REAL | DB-012 已完成子项 |
 | 重复审批人高级规则 | REAL | W3.7-9.4B REAL | DB-012 已完成子项 |
 | 必填审批意见 | REAL | W3.7-9.3E REAL | DB-011 已完成子项 |
-| 节点字段权限 | REAL | 缺失 | DB-012 |
-| pass/reject 字段更新 | REAL | 缺失 | DB-012 |
-| Webhook | REAL | 缺失 | DB-012 |
+| 节点字段权限 | REAL | W3.7-9.4C REAL | DB-012 已完成子项 |
+| pass/reject 字段更新 | REAL | W3.7-9.4D REAL | DB-012 已完成子项 |
+| Webhook | REAL | W3.7-9.4E REAL（安全 client + test/runtime + audit） | DB-012 已完成子项 |
+| Vue Flow 高级图编辑 / 显式 links | REAL | W3.7-9.4F REAL | DB-012 已完成 |
+| 统一 nodes + links 写契约 | REAL | W3.7-9.4F REAL，旧线性自动推导已删除 | DB-012 已完成 |
 
 ## 7. 实施依赖结论
 

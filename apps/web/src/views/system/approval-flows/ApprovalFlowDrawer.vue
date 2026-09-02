@@ -3,16 +3,22 @@ import {
   APPROVAL_FORM_TYPE_LABELS,
   DUPLICATE_APPROVER_RULE_LABELS,
   type ApprovalFlowDetail,
-  type ApprovalFlowNodeInput,
   type ApprovalFlowWriteInput,
   type ApprovalFormType,
+  type FieldVO,
 } from '@micromatrix/shared'
 import { Check, GitBranch, Info, Settings2 } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { approvalApi } from '@/api/approvals'
 import { extractErrorMessage } from '@/api/http'
+import { metadataApi } from '@/api/metadata'
 import { memberApi, roleApi, type MemberOption, type RoleOption } from '@/api/system'
 import ApprovalFlowCanvas from './ApprovalFlowCanvas.vue'
+import {
+  createDefaultApprovalGraph,
+  detailGraphToWrite,
+  validateApprovalGraph,
+} from './approval-flow-graph'
 
 type DrawerMode = 'create' | 'edit' | 'detail'
 type DrawerStep = 'basic' | 'flow' | 'settings'
@@ -29,13 +35,14 @@ const loading = ref(false)
 const saving = ref(false)
 const members = ref<MemberOption[]>([])
 const roles = ref<RoleOption[]>([])
+const fields = ref<FieldVO[]>([])
 const detail = ref<ApprovalFlowDetail | null>(null)
 const initialSnapshot = ref('')
-const advancedGraphLocked = ref(false)
 
 const form = reactive<ApprovalFlowWriteInput>(createDefaultForm())
 
 function createDefaultForm(): ApprovalFlowWriteInput {
+  const graph = createDefaultApprovalGraph()
   return {
     formType: 'contract',
     name: '',
@@ -51,7 +58,7 @@ function createDefaultForm(): ApprovalFlowWriteInput {
     duplicateApproverRule: 'FIRST_ONLY',
     requireComment: false,
     condition: null,
-    createNodes: [],
+    ...graph,
   }
 }
 
@@ -61,7 +68,12 @@ function replaceForm(value: ApprovalFlowWriteInput) {
     ...node,
     approverIds: [...(node.approverIds ?? [])],
     ccUserIds: [...(node.ccUserIds ?? [])],
+    fieldPermissions: node.fieldPermissions?.map((item) => ({ ...item })),
+    passPostConfig: node.passPostConfig ? structuredClone(node.passPostConfig) : undefined,
+    rejectPostConfig: node.rejectPostConfig ? structuredClone(node.rejectPostConfig) : undefined,
+    conditionConfig: node.conditionConfig ? structuredClone(node.conditionConfig) : undefined,
   }))
+  form.createLinks = value.createLinks.map((link) => ({ ...link }))
 }
 
 function serializeForm() {
@@ -69,12 +81,16 @@ function serializeForm() {
     ...form,
     name: form.name.trim(),
     description: form.description?.trim() || null,
-    createNodes: form.createNodes.map(({ clientId: _clientId, ...node }) => ({
+    createNodes: form.createNodes.map((node) => ({
       ...node,
       name: node.name.trim(),
       approverIds: [...(node.approverIds ?? [])].sort(),
       ccUserIds: [...(node.ccUserIds ?? [])].sort(),
-    })),
+      fieldPermissions: [...(node.fieldPermissions ?? [])].sort((a, b) => a.fieldId.localeCompare(b.fieldId)),
+    })).sort((a, b) => (a.clientId ?? '').localeCompare(b.clientId ?? '')),
+    createLinks: form.createLinks
+      .map((link) => ({ ...link, sort: link.sort ?? 0 }))
+      .sort((a, b) => a.fromNodeId.localeCompare(b.fromNodeId) || a.sort - b.sort || a.toNodeId.localeCompare(b.toNodeId)),
   })
 }
 
@@ -94,16 +110,7 @@ const amountGte = computed<number | undefined>({
 })
 
 function toWriteInput(source: ApprovalFlowDetail): ApprovalFlowWriteInput {
-  const nodes: ApprovalFlowNodeInput[] = source.createNodes
-    .filter((node) => node.nodeType === 'APPROVER' && node.approverType && node.mode)
-    .map((node) => ({
-      clientId: node.id,
-      name: node.name,
-      approverType: node.approverType!,
-      approverIds: [...(node.approverIds ?? [])],
-      ccUserIds: [...(node.ccUserIds ?? [])],
-      mode: node.mode!,
-    }))
+  const graph = detailGraphToWrite(source)
   return {
     formType: source.formType,
     name: source.name,
@@ -119,15 +126,26 @@ function toWriteInput(source: ApprovalFlowDetail): ApprovalFlowWriteInput {
     duplicateApproverRule: source.duplicateApproverRule,
     requireComment: source.requireComment,
     condition: source.condition,
-    createNodes: nodes,
+    ...graph,
   }
+}
+
+const metadataModuleByFormType: Record<ApprovalFormType, string> = {
+  quotation: 'quote',
+  contract: 'contract',
+  invoice: 'invoice',
+  order: 'order',
+}
+
+async function loadFields(formType: ApprovalFormType) {
+  const { data } = await metadataApi.fields(metadataModuleByFormType[formType])
+  fields.value = data
 }
 
 async function initialize() {
   activeStep.value = 'basic'
   loading.value = true
   detail.value = null
-  advancedGraphLocked.value = false
   replaceForm(createDefaultForm())
   try {
     const optionPromise = Promise.all([memberApi.options(), roleApi.options()])
@@ -140,11 +158,9 @@ async function initialize() {
     roles.value = roleResponse.data
     if (detailResponse) {
       detail.value = detailResponse.data
-      advancedGraphLocked.value = detailResponse.data.createNodes.some(
-        (node) => node.nodeType === 'CONDITION' || node.nodeType === 'DEFAULT',
-      )
       replaceForm(toWriteInput(detailResponse.data))
     }
+    await loadFields(form.formType)
     initialSnapshot.value = serializeForm()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -156,45 +172,31 @@ async function initialize() {
 
 watch(visible, (value) => value && initialize(), { immediate: true })
 
-function setFormType(value: ApprovalFormType) {
+async function setFormType(value: ApprovalFormType) {
   form.formType = value
   if (!form.name) form.name = `${APPROVAL_FORM_TYPE_LABELS[value]}审批流程`
   if (value === 'order') {
     form.updateExecute = false
     form.deleteExecute = false
   }
+  try {
+    await loadFields(value)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 function validate() {
-  if (advancedGraphLocked.value && props.mode === 'edit') {
-    activeStep.value = 'flow'
-    ElMessage.warning('该流程包含条件分支，完整条件设计器将在 W3.7-9.4F 开放；当前版本禁止线性覆盖保存')
-    return false
-  }
   if (!form.name.trim()) {
     activeStep.value = 'basic'
     ElMessage.warning('请填写流程名称')
     return false
   }
-  if (form.enabled && form.createNodes.length === 0) {
+  const graphError = validateApprovalGraph(form.createNodes, form.createLinks)
+  if (graphError) {
     activeStep.value = 'flow'
-    ElMessage.warning('启用的流程至少需要一个审批节点')
+    ElMessage.warning(graphError)
     return false
-  }
-  for (const node of form.createNodes) {
-    if (!node.name.trim()) {
-      activeStep.value = 'flow'
-      ElMessage.warning('审批节点名称不能为空')
-      return false
-    }
-    if (
-      (node.approverType === 'USER' || node.approverType === 'ROLE') &&
-      (node.approverIds?.length ?? 0) === 0
-    ) {
-      activeStep.value = 'flow'
-      ElMessage.warning(`节点「${node.name}」尚未选择审批对象`)
-      return false
-    }
   }
   return true
 }
@@ -207,6 +209,7 @@ async function save() {
     name: form.name.trim(),
     description: form.description?.trim() || null,
     createNodes: form.createNodes.map(({ clientId, ...node }) => ({ ...node, clientId })),
+    createLinks: form.createLinks.map((link) => ({ ...link })),
   }
   try {
     if (props.mode === 'create') {
@@ -330,7 +333,7 @@ function formatDate(value?: string | null) {
                   placeholder="留空则全部"
                 />
                 <span class="text-xs text-[var(--el-text-color-secondary)]">
-                  暂沿用现有金额门槛；图形条件节点后续接入。
+                  这是流程入口的兼容金额门槛；复杂业务条件请在“流程设计”中使用 CONDITION / DEFAULT 分支。
                 </span>
               </div>
             </el-form-item>
@@ -368,19 +371,14 @@ function formatDate(value?: string | null) {
         </section>
 
         <section v-if="activeStep === 'flow'">
-          <el-alert
-            v-if="advancedGraphLocked"
-            class="mb-4"
-            type="warning"
-            :closable="false"
-            title="该流程包含 Condition / DEFAULT 分支"
-            description="9.4A 已接入后端条件图与运行时；完整 Vue Flow 条件设计器将在 9.4F 开放。当前线性画布仅供查看审批节点，禁止覆盖保存。"
-          />
           <ApprovalFlowCanvas
-            v-model="form.createNodes"
-            :readonly="readonly || advancedGraphLocked"
+            v-model:nodes="form.createNodes"
+            v-model:links="form.createLinks"
+            :readonly="readonly"
+            :form-type="form.formType"
             :members="members"
             :roles="roles"
+            :fields="fields"
           />
         </section>
 
@@ -415,12 +413,12 @@ function formatDate(value?: string | null) {
               <div><strong>审批意见必填</strong><small>开启后，同意/驳回均要求填写审批意见</small></div>
               <el-switch v-model="form.requireComment" :disabled="readonly" />
             </div>
-            <div class="setting-row setting-row--select is-disabled">
+            <div class="setting-row setting-row--select">
               <div>
                 <strong>同一审批人重复出现</strong
-                ><small>当前运行时固定为只处理首次出现的节点</small>
+                ><small>决定同一成员在不同审批节点重复出现时的实际处理规则</small>
               </div>
-              <el-select v-model="form.duplicateApproverRule" disabled class="!w-56">
+              <el-select v-model="form.duplicateApproverRule" :disabled="readonly" class="!w-56">
                 <el-option
                   v-for="(label, value) in DUPLICATE_APPROVER_RULE_LABELS"
                   :key="value"

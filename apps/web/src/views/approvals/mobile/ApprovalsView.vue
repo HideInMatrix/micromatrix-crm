@@ -4,6 +4,7 @@ import {
   APPROVAL_MODULE_LABELS,
   type AttachmentVO,
   type ApprovalInstanceVO,
+  type ApprovalResourceFieldVO,
 } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { computed, ref } from 'vue'
@@ -11,6 +12,7 @@ import ApprovalActionAttachments from '@/components/ApprovalActionAttachments.vu
 import { attachmentApi } from '@/api/attachments'
 import {
   approveTask,
+  getApprovalInstanceDetail,
   myHandledApprovals,
   myApplications,
   myPendingApprovals,
@@ -18,6 +20,7 @@ import {
   revokeApprovalTask,
   returnBackTask,
   signTask,
+  updateApprovalTaskFields,
 } from '@/api/mobile'
 import { extractErrorMessage } from '@/api/http'
 import { memberApi, type MemberOption } from '@/api/system'
@@ -32,6 +35,8 @@ const refreshing = ref(false)
 const detailShow = ref(false)
 const current = ref<ApprovalInstanceVO | null>(null)
 const comment = ref('')
+const fieldSaving = ref(false)
+const fieldDraft = ref<Record<string, unknown>>({})
 const actionAttachments = ref<AttachmentVO[]>([])
 const addSignShow = ref(false)
 const addSignLoading = ref(false)
@@ -83,11 +88,105 @@ function reload() {
   loadMore()
 }
 
-function openDetail(item: ApprovalInstanceVO) {
+function resetFieldDraft() {
+  const next: Record<string, unknown> = {}
+  for (const field of current.value?.resourceFields ?? []) {
+    if (field.permissionType !== 'EDIT') continue
+    if ((field.type === 'date' || field.type === 'datetime') && field.value != null) {
+      const date = new Date(Number(field.value))
+      if (!Number.isNaN(date.getTime())) {
+        next[field.fieldId] = field.type === 'date'
+          ? date.toISOString().slice(0, 10)
+          : date.toISOString().slice(0, 16)
+        continue
+      }
+    }
+    next[field.fieldId] = field.value
+  }
+  fieldDraft.value = next
+}
+
+async function refreshDetail(instanceId: string) {
+  const { data } = await getApprovalInstanceDetail(instanceId)
+  current.value = data
+  resetFieldDraft()
+}
+
+async function openDetail(item: ApprovalInstanceVO) {
   current.value = item
   comment.value = ''
   actionAttachments.value = []
   detailShow.value = true
+  try {
+    await refreshDetail(item.id)
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  }
+}
+
+function mobileInputType(field: ApprovalResourceFieldVO) {
+  if (field.type === 'textarea') return 'textarea'
+  if (field.type === 'number' || field.type === 'currency' || field.type === 'percent') return 'number'
+  if (field.type === 'date') return 'date'
+  if (field.type === 'datetime') return 'datetime-local'
+  return 'text'
+}
+
+function setFieldDraft(fieldId: string, value: unknown) {
+  fieldDraft.value[fieldId] = value
+}
+
+function singleSelectDraft(fieldId: string) {
+  const value = fieldDraft.value[fieldId]
+  return value === undefined || value === null ? '' : String(value)
+}
+
+function multiSelectDraft(fieldId: string) {
+  const value = fieldDraft.value[fieldId]
+  return Array.isArray(value) ? value.map(String) : []
+}
+
+function formatResourceField(field: ApprovalResourceFieldVO) {
+  const value = field.value
+  if (value === undefined || value === null || value === '') return '-'
+  if (field.options?.length) {
+    const labels = new Map(field.options.map((option) => [option.value, option.label]))
+    if (Array.isArray(value)) return value.map((item) => labels.get(String(item)) ?? String(item)).join('、')
+    return labels.get(String(value)) ?? String(value)
+  }
+  if (field.type === 'date' || field.type === 'datetime') {
+    const date = new Date(typeof value === 'number' ? value : Number(value) || String(value))
+    if (!Number.isNaN(date.getTime())) {
+      return field.type === 'date' ? date.toLocaleDateString() : date.toLocaleString()
+    }
+  }
+  if (Array.isArray(value)) return value.join('、')
+  return String(value)
+}
+
+function hasEditableResourceFields() {
+  return Boolean(
+    current.value?.myPendingTaskId &&
+      current.value.resourceFields.some((field) => field.permissionType === 'EDIT'),
+  )
+}
+
+async function saveResourceFields() {
+  if (!current.value?.myPendingTaskId) return
+  const fields = current.value.resourceFields
+    .filter((field) => field.permissionType === 'EDIT')
+    .map((field) => ({ fieldId: field.fieldId, value: fieldDraft.value[field.fieldId] }))
+  if (!fields.length) return
+  fieldSaving.value = true
+  try {
+    await updateApprovalTaskFields(current.value.myPendingTaskId, fields)
+    await refreshDetail(current.value.id)
+    showSuccessToast('审批字段已保存')
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    fieldSaving.value = false
+  }
 }
 
 function taskAttachments(taskId: string): AttachmentVO[] {
@@ -338,6 +437,75 @@ function taskStatusLabel(status: string, action?: string | null) {
         <div class="text-xs text-gray-500 mb-3">
           {{ APPROVAL_MODULE_LABELS[current.module] }} · {{ current.submitterName }} 发起 ·
           {{ new Date(current.createdAt).toLocaleString() }}
+        </div>
+
+        <div v-if="current.resourceFields.length" class="mb-3 overflow-y-auto max-h-[38%]">
+          <div class="flex items-center justify-between px-1 mb-2">
+            <span class="text-sm font-medium">业务字段</span>
+            <van-button
+              v-if="hasEditableResourceFields()"
+              size="mini"
+              type="primary"
+              plain
+              :loading="fieldSaving"
+              @click="saveResourceFields"
+            >
+              保存字段
+            </van-button>
+          </div>
+          <van-cell-group inset class="!mx-0">
+            <template v-for="field in current.resourceFields" :key="field.fieldId">
+              <template v-if="field.permissionType === 'EDIT' && current.myPendingTaskId">
+                <div
+                  v-if="field.type === 'select'"
+                  class="px-4 py-3 border-b border-[var(--van-border-color)]"
+                >
+                  <div class="text-sm mb-2">{{ field.label }}</div>
+                  <van-radio-group
+                    :model-value="singleSelectDraft(field.fieldId)"
+                    direction="horizontal"
+                    @update:model-value="setFieldDraft(field.fieldId, $event)"
+                  >
+                    <van-radio
+                      v-for="option in field.options ?? []"
+                      :key="option.value"
+                      :name="option.value"
+                    >
+                      {{ option.label }}
+                    </van-radio>
+                  </van-radio-group>
+                </div>
+                <div
+                  v-else-if="field.type === 'multiselect'"
+                  class="px-4 py-3 border-b border-[var(--van-border-color)]"
+                >
+                  <div class="text-sm mb-2">{{ field.label }}</div>
+                  <van-checkbox-group
+                    :model-value="multiSelectDraft(field.fieldId)"
+                    direction="horizontal"
+                    @update:model-value="setFieldDraft(field.fieldId, $event)"
+                  >
+                    <van-checkbox
+                      v-for="option in field.options ?? []"
+                      :key="option.value"
+                      :name="option.value"
+                    >
+                      {{ option.label }}
+                    </van-checkbox>
+                  </van-checkbox-group>
+                </div>
+                <van-field
+                  v-else
+                  :label="field.label"
+                  :type="mobileInputType(field)"
+                  :model-value="String(fieldDraft[field.fieldId] ?? '')"
+                  :required="field.required"
+                  @update:model-value="setFieldDraft(field.fieldId, $event)"
+                />
+              </template>
+              <van-cell v-else :title="field.label" :value="formatResourceField(field)" />
+            </template>
+          </van-cell-group>
         </div>
 
         <van-steps

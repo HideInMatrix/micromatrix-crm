@@ -1615,6 +1615,17 @@ enum ApprovalAddSignType {
   AFTER
 }
 
+enum ApprovalWebhookDeliverySource {
+  TEST
+  RUNTIME
+}
+
+enum ApprovalWebhookDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model ApprovalFlow {
   id                    String                @id @default(cuid())
   tenantId              String
@@ -1714,6 +1725,9 @@ model ApprovalNodeApprover {
   fallbackApprover    String?             @map("fallback_approver")
   sameSubmitterAction SameSubmitterAction @default(SKIP) @map("same_submitter_action")
   approverDirection   ApproverDirection   @default(BOTTOM_UP) @map("approver_direction")
+  fieldPermissions    Json?               @map("field_permissions")
+  passPostConfig      Json?               @map("pass_post_config")
+  rejectPostConfig    Json?               @map("reject_post_config")
 
   node ApprovalNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
 
@@ -1782,6 +1796,7 @@ model ApprovalInstance {
   addSignTasks ApprovalAddSignTask[]
   returnBackRecords ApprovalReturnBackRecord[]
   attachments ApprovalInstanceAttachment[]
+  webhookDeliveries ApprovalWebhookDelivery[]
 
   @@index([tenantId, status])
   @@index([tenantId, module, targetId])
@@ -1917,6 +1932,39 @@ model ApprovalInstanceAttachment {
   @@index([elementId])
   @@index([attachmentId])
   @@map("approval_instance_attachments")
+}
+
+model ApprovalWebhookDelivery {
+  id            String                        @id @default(cuid())
+  tenantId      String                        @map("tenant_id")
+  instanceId    String?                       @map("instance_id")
+  flowId        String?                       @map("flow_id")
+  flowVersionId String?                       @map("flow_version_id")
+  nodeId        String?                       @map("node_id")
+  nodeIndex     Int?                          @map("node_index")
+  action        String?
+  source        ApprovalWebhookDeliverySource
+  method        String
+  targetOrigin  String                        @map("target_origin")
+  targetPath    String                        @map("target_path")
+  status        ApprovalWebhookDeliveryStatus @default(PENDING)
+  httpStatus    Int?                          @map("http_status")
+  responseBytes Int?                          @map("response_bytes")
+  durationMs    Int?                          @map("duration_ms")
+  errorCode     String?                       @db.VarChar(64) @map("error_code")
+  errorMessage  String?                       @db.VarChar(500) @map("error_message")
+  createdById   String?                       @map("created_by_id")
+  startedAt     DateTime?                     @map("started_at")
+  finishedAt    DateTime?                     @map("finished_at")
+  createdAt     DateTime                      @default(now()) @map("created_at")
+  updatedAt     DateTime                      @updatedAt @map("updated_at")
+
+  instance ApprovalInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, instanceId, createdAt])
+  @@index([tenantId, flowId, createdAt])
+  @@map("approval_webhook_deliveries")
 }
 
 // ============ 标讯（招投标信息） ============

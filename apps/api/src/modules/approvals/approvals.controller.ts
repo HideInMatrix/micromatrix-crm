@@ -7,6 +7,7 @@ import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import { PaginationQueryDto } from '../../common/dto/pagination.dto'
 import { ApprovalFlowConfigService } from './approval-flow-config.service'
+import { ApprovalWebhookService } from './approval-webhook.service'
 import { ApprovalsService } from './approvals.service'
 import {
   AddSignTaskDto,
@@ -15,8 +16,10 @@ import {
   HandleTaskDto,
   ReturnBackTaskDto,
   SubmitApprovalDto,
+  UpdateApprovalFieldsDto,
   UpdateApprovalFlowDto,
   UpdateApprovalFlowEnabledDto,
+  TestApprovalWebhookDto,
 } from './dto/approval.dto'
 
 @ApiTags('审批')
@@ -26,6 +29,7 @@ export class ApprovalsController {
   constructor(
     private readonly approvalsService: ApprovalsService,
     private readonly flowConfigService: ApprovalFlowConfigService,
+    private readonly webhookService: ApprovalWebhookService,
   ) {}
 
   // ===== 流程配置 =====
@@ -84,6 +88,14 @@ export class ApprovalsController {
     return this.flowConfigService.remove(user, id)
   }
 
+  @Post('flows/webhook/test')
+  @RequirePermissions('system:process:update')
+  @LogOperation('approvalFlow', 'webhook-test')
+  @ApiOperation({ summary: '审批流 Webhook 安全连接测试' })
+  testWebhook(@CurrentUser() user: AuthUser, @Body() dto: TestApprovalWebhookDto) {
+    return this.webhookService.testConnection(user, dto)
+  }
+
   // ===== 提交 / 处理 =====
 
   @Post('submit')
@@ -108,6 +120,18 @@ export class ApprovalsController {
   @ApiOperation({ summary: '驳回' })
   reject(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: HandleTaskDto) {
     return this.approvalsService.rejectTask(user, id, dto.comment, dto.attachmentIds)
+  }
+
+  @Patch('tasks/:id/fields')
+  @RequirePermissions('menu:approval')
+  @LogOperation('approval', 'update-fields')
+  @ApiOperation({ summary: '按当前审批节点字段权限修改业务字段' })
+  updateTaskFields(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateApprovalFieldsDto,
+  ) {
+    return this.approvalsService.updateTaskFields(user, id, dto.fields)
   }
 
   @Post('tasks/:id/sign')
@@ -176,5 +200,11 @@ export class ApprovalsController {
     @Query('targetId') targetId: string,
   ) {
     return this.approvalsService.instanceForTarget(user, module, targetId)
+  }
+
+  @Get('instances/:id')
+  @ApiOperation({ summary: '审批实例详情（含当前节点业务字段权限）' })
+  instanceDetail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.approvalsService.instanceDetail(user, id)
   }
 }

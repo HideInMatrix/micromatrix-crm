@@ -60,7 +60,7 @@ W3.7 在 W2.5 流程设置底座和 W3.6 交易链审批运行时之上，继续
 8. Webhook 配置、测试连接、运行时发送和安全审计；
 9. Vue Flow 从受控线性图升级为受控条件图，并保持前端只提交业务契约；随后迁移现有调用方到统一 `nodes + links` 图写契约，删除 9.4A 过渡期保留的旧线性 payload 自动推导入口，避免长期双 truth。
 
-当前执行状态（2026-09-02）：步骤 1～5 已由 9.4A/9.4B 完成；下一执行单元从步骤 6“节点字段权限”开始。9.4B 已确认项目没有发布历史数据，因此 Migration 65 不增加旧配置 backfill 或旧实例兼容分支，直接以最终模型前进。
+当前执行状态（2026-09-02）：步骤 1～9 已由 9.4A～9.4F 全部完成。9.4E 使用 Migration 68 建立独立 Webhook delivery 审计并通过安全 client 统一承担测试连接和 runtime 发送；9.4F 已正式开放完整高级配置 UI，全部调用方迁移到显式 `nodes + links`，服务端旧线性 payload 自动推导兼容已删除。DB-012 已 `VERIFIED`；随后 W3.7-9.5 已完成最终专项、Browser、空库、Root/Rules、workspace 和 legacy scan 封板，W3.7 正式关闭。
 
 Webhook 必须增加 SSRF/内网目标、超时、响应大小、敏感 header/body 日志等安全边界；不得直接照搬 Cordys 的任意 URL 请求实现。
 

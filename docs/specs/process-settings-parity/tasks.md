@@ -147,7 +147,7 @@
     - 证据：[W3.7-9.3E DB-011 requireComment / ApprovalInstanceAttachment 专项验收](./w370-db011-attachment-comment-acceptance.md)。DB-011 正式关闭，下一执行指针进入 9.4A。
   - _Requirements: R10, R12_
 
-- [ ] W3.7-9.4 DB-012：高级节点、条件、字段权限与后置动作。
+- [x] W3.7-9.4 DB-012：高级节点、条件、字段权限与后置动作。
   - [x] 9.4A Condition / DEFAULT 图结构、条件 DTO 与 `updateFields` runtime。
     - Migration 64 新增 `ApprovalNodeCondition`；高级图显式保存 CONDITION/DEFAULT + links，按 `link.sort` 第一命中 / DEFAULT fallback 解析实际 APPROVER path，并继续冻结到现有 `nodesSnapshot`。
     - 条件 runtime 已接 DB-010 `updateFields` 与资源字段值，支持 Cordys 当前实际比较操作符、子表任意行与 `NOT_EQUAL_ORIGINAL`；未知/异常 operator fail-closed。
@@ -162,14 +162,44 @@
     - 项目未发布，本单元不做旧配置 backfill/旧 `nodesSnapshot` 兼容；`AUTO_PASS / SKIP / BOTTOM_UP` 是 Cordys 业务默认值。旧专项 Smoke 若要求提交人手工审批自己，显式设置 `sameSubmitterAction=ALLOW`。
     - isolated HTTP 在 **65/65 migrations + Seed** 下完整 PASS；9.4A、DB-010、DB-011 A～E regression 全绿；Rules **133/133**、Root **227/227**、空库 **65/65 + 双 Seed**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
     - 证据：[W3.7-9.4B DB-012 审批人异常策略专项验收](./w370-db012-approver-policy-acceptance.md)。下一执行指针进入 9.4C。
-  - [ ] 9.4C 节点字段权限和审批详情真实约束。
-  - [ ] 9.4D pass/reject 后置字段更新。
-  - [ ] 9.4E Webhook 安全 client、测试连接、运行时发送与审计。
-  - [ ] 9.4F Vue Flow 条件图、更多设置开放与专项 Browser；迁移全部调用方到统一 `nodes + links` 写契约并删除旧线性 payload 自动推导兼容；完成后关闭 DB-012。
+  - [x] 9.4C 节点字段权限和审批详情真实约束。
+    - Migration 66 为 `ApprovalNodeApprover` 新增 `fieldPermissions JSONB`；Flow write/detail、Shared/DTO、版本比较和实例 `nodesSnapshot` 已完整承载 `HIDDEN / VIEW / EDIT`，未配置权限继续保持旧 payload 缺省而不是强补空数组。
+    - Flow 保存真实校验 fieldId 属于当前 formType、同节点不可重复、metadata hidden 不可 VIEW/EDIT，EDIT 只允许安全字段类型和显式系统字段白名单；运行时最终授权只认实例冻结节点的 EDIT，不依赖前端控件状态。
+    - 新增实例详情与审批字段更新 API：当前普通 APPROVAL 待办按 HIDDEN/VIEW/EDIT 返回并允许 EDIT 写入；非当前审批人只读；SIGN 全部降为 VIEW；tenant/owner/PENDING/current-node/frozen-node 与 VIEW/HIDDEN 写入均 fail-closed。
+    - 9.4C isolated HTTP 在 **66/66 migrations + Seed + Shared/API build** 下完整 PASS；PC/Mobile Field Permission Browser **21/21**，DB-011 9.3E Browser **28/28**、9.4A Browser **14/14**、`/system/modules` **47/47**。
+    - Rules **136/136**、DB-010 与 DB-011 A～E、9.4A/9.4B HTTP regression、Root **227/227**、空库 **66/66 + 双 Seed（14/14）**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
+    - 证据：[W3.7-9.4C DB-012 节点字段权限专项验收](./w370-db012-field-permission-acceptance.md)。下一执行指针进入 9.4D。
+  - [x] 9.4D pass/reject 后置字段更新。
+    - Migration 67 为 `ApprovalNodeApprover` 新增 `passPostConfig/rejectPostConfig JSONB`；Shared/DTO、Flow write/detail、版本比较和实例冻结 `nodesSnapshot` 已完整承载字段后置配置，未发布项目不做历史 backfill。
+    - Flow 保存校验 fieldId/reference/duplicate/enabled non-null，并复用 9.4C 安全可编辑字段集合；normalize 保留 disabled 配置并按 fieldId 稳定排序。
+    - runtime 只读冻结 snapshot：人工 APPROVE 仅在 ANY/ALL 节点真正完成时执行一次 pass，AUTO_PASS 同样执行 pass；REJECT 先恢复 DB-010 UPDATE 快照再执行 reject post，保证显式后置值成为最终业务状态；SIGN 不独立触发。
+    - 9.4D isolated HTTP 在 **67/67 migrations + Seed + Shared/API build** 下覆盖配置 round-trip/gate、冻结版本、manual pass/reject、disabled noop、ALL 完成点、auto-pass、系统字段、实例展示同步和 UPDATE reject restore→post 最终顺序，全部 PASS。
+    - Rules **137/137**、DB-010、DB-011 A～E、9.4A/9.4B/9.4C HTTP regression、Root **227/227**、空库 **67/67 + 双 Seed（14/14）**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
+    - 证据：[W3.7-9.4D DB-012 pass/reject 后置字段更新专项验收](./w370-db012-post-field-acceptance.md)。下一执行指针进入 9.4E。
+  - [x] 9.4E Webhook 安全 client、测试连接、运行时发送与审计。
+    - `ApprovalPostConfig.webHookConfig` 已进入 Shared/DTO、Flow normalize/version compare/detail 和实例冻结 `nodesSnapshot`；enabled 配置只允许 HTTP/HTTPS + GET/POST，header/body/URL 均有真实服务端校验。
+    - Migration 68 新增 `ApprovalWebhookDelivery` TEST/RUNTIME 审计真相源；不保存 header/body/query/response body/path secret，只保存 method、脱敏目标、状态、HTTP status、bytes、duration 和稳定错误摘要。
+    - `ApprovalWebhookClient` 每次请求执行 DNS resolve + 公网地址 gate + DNS pin，拒绝 loopback/RFC1918/link-local/CGNAT/ULA/reserved/IPv4-mapped/NAT64 非公网目标；redirect disabled，timeout 5s，response 上限 64 KiB，危险 framing/hop-by-hop header fail-closed。
+    - 新增 `POST /api/approvals/flows/webhook/test`；测试连接与 runtime 共用同一安全 client。GET/POST 占位符读取真实业务资源，未知变量 fail-closed。
+    - runtime 固定执行顺序为 DB-010 restore（如需）→ 9.4D field updates → 读取最新业务字段 → delivery → 异步发送；ANY/ALL/AUTO_PASS 只在节点真实完成点发送一次，SIGN 不独立触发，第三方失败不回滚审批。
+    - 9.4E isolated HTTP 在 **68/68 migrations + Seed + Shared/API build** 下覆盖 GET/POST test、私网/危险 header/redirect/oversize/timeout gate、审计脱敏、冻结版本、field-before-hook、reject placeholder、ALL/AUTO_PASS 和 runtime failure non-blocking，全部 PASS。
+    - Rules **141/141**、DB-010、DB-011 A～E、9.4A～9.4D HTTP regression、Root **227/227**、空库 **68/68 + 双 Seed**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿。
+    - 证据：[W3.7-9.4E DB-012 Webhook 专项验收](./w370-db012-webhook-acceptance.md)。下一执行指针进入 9.4F。
+  - [x] 9.4F Vue Flow 条件图、更多设置开放与专项 Browser；迁移全部调用方到统一 `nodes + links` 写契约并删除旧线性 payload 自动推导兼容；完成后关闭 DB-012。
+    - Shared/Create/Update DTO 已强制显式 `createNodes + createLinks`；`ApprovalFlowConfigService` 删除 `createLinearGraph()` / `isExplicitGraph()` 和服务端线性 payload 自动推导，create/update 全部统一执行 graph validate + persist + graph equality/version compare。
+    - Vue Flow 已升级为可编辑业务图，开放 START/APPROVER/CONDITION/DEFAULT/END、显式连线/删除/分支 sort、AND/OR 条件、审批人异常策略、动态层级/方向、字段 HIDDEN/VIEW/EDIT、pass/reject post-field、Webhook test/config 和 `duplicateApproverRule`；position 不写入业务 API，`allowBatchProcess` 继续 fail-closed。
+    - 现有业务/API/Browser Smoke 调用方已迁移到调用端显式图 helper；production source scan 中 `createLinearGraph` / `isExplicitGraph` / 旧高级图只读 warning 均为 0。旧 9.4A Browser 已升级为真实 CONDITION 编辑 + nodes/links PUT + version/links round-trip。
+    - 9.4F Advanced Designer Browser **25/25 PASS**；9.4A Condition Browser **18/18 PASS**；9.4C Field Permission **21/21 PASS**；DB-011 Browser 回归 **18/18、17/17、24/24、28/28**，API 5xx=0、Runtime exception=0。
+    - 当前 68 migration 基线下 DB-010、DB-011、DB-012 A～E API/runtime regression 全绿；Rules **141/141**、Root **227/227**、空库 **68/68 + 双 Seed**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿；Web build **4145 modules transformed**。
+    - 证据：[W3.7-9.4F DB-012 高级流程设计器与统一图写契约专项验收](./w370-db012-advanced-designer-acceptance.md)。DB-012 正式关闭并切换为 `VERIFIED`；下一执行指针进入 W3.7-9.5。
   - _Requirements: R11, R12_
 
-- [ ] W3.7-9.5 最终验收与文档封板。
-  - DB-010/011/012 专项 Smoke、Root Smoke、Rules、流程设置/审批中心 Browser、空库全 migration + 双 Seed、workspace typecheck/lint/build 全绿。
-  - runtime legacy/deferred scan、`git diff --check`、parity/alignment/backlog 同步；仅在真实证据齐全后标记对应项 `VERIFIED`。
+- [x] W3.7-9.5 最终验收与文档封板。
+  - DB-010/011/012 完整专项链最终重新执行 exit 0；DB-012 Condition/approver policy/field permission/post-field/Webhook 全部基于当前 68 migration schema PASS。
+  - 流程设置 Browser：Advanced Designer **25/25**、Condition **18/18**、Field Permission **21/21**；审批中心 Browser：Add Sign **18/18**、Return Back **17/17**、Approver Revoke **24/24**、Attachment/requireComment **28/28**；`/system/modules` **47/47**。
+  - Prisma generate/validate PASS，default DB `migrate status` 为 **68 migrations / up to date**，`migrate deploy` 无 pending migration；隔离空库 **68/68 + 双 Seed**、`seedCountsStable=true`。
+  - Root **227/227**、Rules **141/141**、workspace typecheck/lint/build、Prisma validate、`git diff --check` 全绿；Web build **4145 modules transformed**。
+  - production legacy scan：`createLinearGraph=0`、`isExplicitGraph=0`、旧高级图只读 warning=0、`createNodes-only=0`、`businessSnapshot=0`；ApprovalTask 旧 comment 字段不存在。流程设置高级能力除明确 deferred 的 `allowBatchProcess` 外均为 REAL。
+  - parity/alignment/backlog/project-progress 已同步；证据：[W3.7 高级审批深化最终验收与封板](./w370-final-acceptance.md)。W3.7 正式关闭，DB-010/011/012 均为 `VERIFIED`。
   - scoped 本地提交；不 push，除非用户明确要求。
   - _Requirements: R12_

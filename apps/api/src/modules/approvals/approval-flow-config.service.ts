@@ -6,10 +6,12 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common'
 import type {
+  ApprovalFieldPermission,
   ApprovalFlowDetail,
   ApprovalFlowListItem,
   ApprovalFlowNodeInput,
   ApprovalFormType as SharedApprovalFormType,
+  ApprovalPostConfig,
   PaginatedResult,
 } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
@@ -22,6 +24,16 @@ import {
   Prisma,
 } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { ModuleFormsService } from '../metadata/module-forms.service'
+import {
+  APPROVAL_FORM_METADATA_KEY,
+  isApprovalEditableField,
+} from './approval-field-permission.utils'
+import {
+  ApprovalWebhookConfigError,
+  normalizeApprovalWebhookConfig,
+  validateApprovalWebhookConfig,
+} from './approval-webhook.utils'
 import {
   ApprovalFlowPageQueryDto,
   CreateApprovalFlowDto,
@@ -30,10 +42,8 @@ import {
   UpdateApprovalFlowDto,
 } from './dto/approval.dto'
 import {
-  flowNodesEqual,
   FORM_TYPE_PREFIX,
   fromDbFormType,
-  normalizeFlowNodes,
   toDbFormType,
 } from './approval-flow-config.utils'
 
@@ -54,7 +64,10 @@ type FlowDetailRecord = Prisma.ApprovalFlowGetPayload<{
 
 @Injectable()
 export class ApprovalFlowConfigService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly moduleForms: ModuleFormsService,
+  ) {}
 
   async list(
     user: AuthUser,
@@ -155,13 +168,7 @@ export class ApprovalFlowConfigService {
     if (!formType) throw new NotFoundException('流程不存在')
     await this.validateWrite(user, formType, dto, dto.createNodes)
 
-    const originAdvanced = this.hasAdvancedGraph(origin)
-    const explicitGraph = this.isExplicitGraph(dto.createNodes, dto.createLinks)
-    if (originAdvanced && !explicitGraph) {
-      throw new UnprocessableEntityException('当前流程包含条件分支，请使用高级流程设计器保存')
-    }
-    const existingNodes = this.approverInputs(origin)
-    const nodeChanged = explicitGraph || !flowNodesEqual(existingNodes, dto.createNodes)
+    const nodeChanged = this.graphChanged(origin, dto.createNodes, dto.createLinks)
 
     await this.prisma.$transaction(async (tx) => {
       let currentVersionId = origin.currentVersionId
@@ -291,7 +298,6 @@ export class ApprovalFlowConfigService {
       throw new UnprocessableEntityException('所选高级审批设置尚未接入运行时')
     }
     if (nodes.length > 100) throw new BadRequestException('审批节点不能超过 100 个')
-    const explicitGraph = this.isExplicitGraph(nodes, dto.createLinks)
     for (const node of nodes) {
       if (!node.name.trim()) throw new BadRequestException('节点名称不能为空')
       const nodeType = node.nodeType ?? 'APPROVER'
@@ -323,7 +329,8 @@ export class ApprovalFlowConfigService {
         throw new BadRequestException(`节点「${node.name}」必须配置空审批人兜底人员`)
       }
     }
-    if (explicitGraph) this.validateGraph(nodes, dto.createLinks ?? [])
+    await this.validateFieldPermissions(user.tenantId, formType, nodes)
+    this.validateGraph(nodes, dto.createLinks)
     await this.validateReferences(user.tenantId, nodes)
     if (dto.enabled) {
       await this.validateRunnable(
@@ -384,6 +391,97 @@ export class ApprovalFlowConfigService {
     if (roleCount !== roleIds.length) throw new BadRequestException('存在无效或跨租户审批角色')
   }
 
+  private async validateFieldPermissions(
+    tenantId: string,
+    formType: SharedApprovalFormType,
+    nodes: FlowNodeDto[],
+  ) {
+    const approverNodes = nodes.filter((node) =>
+      (node.nodeType ?? 'APPROVER') === 'APPROVER' && (
+        (node.fieldPermissions?.length ?? 0) > 0 ||
+        (node.passPostConfig?.fieldUpdateConfigs.length ?? 0) > 0 ||
+        (node.rejectPostConfig?.fieldUpdateConfigs.length ?? 0) > 0 ||
+        Boolean(node.passPostConfig?.webHookConfig) ||
+        Boolean(node.rejectPostConfig?.webHookConfig)
+      ),
+    )
+    if (!approverNodes.length) return
+
+    const fields = await this.moduleForms.listFields(tenantId, APPROVAL_FORM_METADATA_KEY[formType])
+    const fieldMap = new Map(fields.map((field) => [field.id, field]))
+    for (const node of approverNodes) {
+      const permissions = node.fieldPermissions ?? []
+      const fieldIds = permissions.map((permission) => permission.fieldId.trim())
+      if (fieldIds.some((fieldId) => !fieldId)) {
+        throw new BadRequestException(`节点「${node.name}」存在空字段权限引用`)
+      }
+      if (new Set(fieldIds).size !== fieldIds.length) {
+        throw new BadRequestException(`节点「${node.name}」存在重复字段权限`)
+      }
+      for (const permission of permissions) {
+        const fieldId = permission.fieldId.trim()
+        const field = fieldMap.get(fieldId)
+        if (!field) {
+          throw new BadRequestException(`节点「${node.name}」存在无效字段权限引用`)
+        }
+        if (field.hidden && permission.permissionType !== 'HIDDEN') {
+          throw new BadRequestException(`字段「${field.label}」在当前表单中不可见，只能配置为隐藏`)
+        }
+        if (permission.permissionType === 'EDIT' && !isApprovalEditableField(formType, field)) {
+          throw new BadRequestException(`字段「${field.label}」不支持审批中编辑`)
+        }
+      }
+      for (const [actionName, config] of [
+        ['通过后', node.passPostConfig],
+        ['驳回后', node.rejectPostConfig],
+      ] as const) {
+        try {
+          validateApprovalWebhookConfig(config?.webHookConfig)
+        } catch (error) {
+          if (error instanceof ApprovalWebhookConfigError) {
+            throw new BadRequestException(`节点「${node.name}」${actionName}${error.message}`)
+          }
+          throw error
+        }
+        const updates = config?.fieldUpdateConfigs ?? []
+        const updateFieldIds = updates.map((item) => item.fieldId.trim())
+        if (updateFieldIds.some((fieldId) => !fieldId)) {
+          throw new BadRequestException(`节点「${node.name}」${actionName}存在空字段引用`)
+        }
+        if (new Set(updateFieldIds).size !== updateFieldIds.length) {
+          throw new BadRequestException(`节点「${node.name}」${actionName}存在重复字段更新`)
+        }
+        for (const update of updates) {
+          const field = fieldMap.get(update.fieldId.trim())
+          if (!field) {
+            throw new BadRequestException(`节点「${node.name}」${actionName}存在无效字段引用`)
+          }
+          if (!update.enable) continue
+          if (update.fieldValue === undefined || update.fieldValue === null) {
+            throw new BadRequestException(`字段「${field.label}」${actionName}更新值不能为空`)
+          }
+          if (!isApprovalEditableField(formType, field)) {
+            throw new BadRequestException(`字段「${field.label}」不支持审批后置更新`)
+          }
+        }
+      }
+    }
+  }
+
+  private postConfigJson(config: FlowNodeDto['passPostConfig']) {
+    if (!config) return Prisma.DbNull
+    const webHookConfig = normalizeApprovalWebhookConfig(config.webHookConfig)
+    if (!config.fieldUpdateConfigs.length && !webHookConfig) return Prisma.DbNull
+    return {
+      fieldUpdateConfigs: config.fieldUpdateConfigs.map((item) => ({
+        fieldId: item.fieldId.trim(),
+        fieldValue: item.fieldValue ?? null,
+        enable: item.enable,
+      })),
+      ...(webHookConfig ? { webHookConfig } : {}),
+    } as unknown as Prisma.InputJsonValue
+  }
+
   private validateConditionConfig(node: FlowNodeDto) {
     const config = node.conditionConfig
     if (!config || !['AND', 'OR'].includes(config.searchMode) || config.conditions.length === 0) {
@@ -404,19 +502,6 @@ export class ApprovalFlowConfigService {
         throw new BadRequestException(`条件节点「${node.name}」存在缺少比较值的条件`)
       }
     }
-  }
-
-  private isExplicitGraph(nodes: FlowNodeDto[], links?: FlowLinkDto[]) {
-    return (
-      links !== undefined ||
-      nodes.some((node) => node.nodeType !== undefined && node.nodeType !== 'APPROVER')
-    )
-  }
-
-  private hasAdvancedGraph(flow: FlowDetailRecord) {
-    return Boolean(flow.currentVersion?.nodes.some(
-      (node) => node.nodeType === ApprovalNodeType.CONDITION || node.nodeType === ApprovalNodeType.DEFAULT,
-    ))
   }
 
   private validateGraph(nodes: FlowNodeDto[], links: FlowLinkDto[]) {
@@ -548,13 +633,8 @@ export class ApprovalFlowConfigService {
     tx: Prisma.TransactionClient,
     flowVersionId: string,
     inputNodes: FlowNodeDto[],
-    inputLinks?: FlowLinkDto[],
+    inputLinks: FlowLinkDto[],
   ) {
-    if (!this.isExplicitGraph(inputNodes, inputLinks)) {
-      await this.createLinearGraph(tx, flowVersionId, inputNodes)
-      return
-    }
-
     const idMap = new Map<string, string>()
     for (const [index, node] of inputNodes.entries()) {
       idMap.set(node.clientId!, randomUUID())
@@ -583,6 +663,14 @@ export class ApprovalFlowConfigService {
             fallbackApprover: node.fallbackApprover?.trim() || null,
             sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
             approverDirection: node.approverDirection ?? 'BOTTOM_UP',
+            fieldPermissions: node.fieldPermissions?.length
+              ? (node.fieldPermissions.map((permission) => ({
+                  fieldId: permission.fieldId.trim(),
+                  permissionType: permission.permissionType,
+                })) as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+            passPostConfig: this.postConfigJson(node.passPostConfig),
+            rejectPostConfig: this.postConfigJson(node.rejectPostConfig),
           },
         })
       } else if (nodeType === 'CONDITION') {
@@ -597,7 +685,7 @@ export class ApprovalFlowConfigService {
     }
 
     await tx.approvalNodeLink.createMany({
-      data: (inputLinks ?? []).map((link, index) => ({
+      data: inputLinks.map((link, index) => ({
         id: randomUUID(),
         flowVersionId,
         fromNodeId: idMap.get(link.fromNodeId)!,
@@ -607,73 +695,109 @@ export class ApprovalFlowConfigService {
     })
   }
 
-  private async createLinearGraph(
-    tx: Prisma.TransactionClient,
-    flowVersionId: string,
+  private graphChanged(
+    flow: FlowDetailRecord,
     inputNodes: FlowNodeDto[],
+    inputLinks: FlowLinkDto[],
   ) {
-    const nodes = normalizeFlowNodes(inputNodes)
-    const startId = randomUUID()
-    const endId = randomUUID()
-    const approverIds = nodes.map(() => randomUUID())
-    await tx.approvalNode.create({
-      data: {
-        id: startId,
-        flowVersionId,
-        number: 'PN001',
-        name: '开始',
-        nodeType: ApprovalNodeType.START,
-        executeTiming: ApprovalExecuteTiming.CREATE,
-        sort: 0,
-      },
-    })
-    for (const [index, node] of nodes.entries()) {
-      await tx.approvalNode.create({
-        data: {
-          id: approverIds[index],
-          flowVersionId,
-          number: `PN${String(index + 2).padStart(3, '0')}`,
-          name: node.name,
-          nodeType: ApprovalNodeType.APPROVER,
-          executeTiming: ApprovalExecuteTiming.CREATE,
-          sort: index + 1,
-          approver: {
-            create: {
-              approverType: node.approverType,
-              approverIds: node.approverIds,
-              ccUserIds: node.ccUserIds ?? [],
-              mode: node.mode,
-              emptyApproverAction: node.emptyApproverAction ?? 'AUTO_PASS',
-              fallbackApprover: node.fallbackApprover ?? null,
-              sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
-              approverDirection: node.approverDirection ?? 'BOTTOM_UP',
-            },
-          },
-        },
-      })
-    }
-    await tx.approvalNode.create({
-      data: {
-        id: endId,
-        flowVersionId,
-        number: `PN${String(nodes.length + 2).padStart(3, '0')}`,
-        name: '结束',
-        nodeType: ApprovalNodeType.END,
-        executeTiming: ApprovalExecuteTiming.CREATE,
-        sort: nodes.length + 1,
-      },
-    })
+    const existingNodes: FlowNodeDto[] = (flow.currentVersion?.nodes ?? []).map((node) => ({
+      clientId: node.id,
+      nodeType: node.nodeType,
+      number: node.number,
+      name: node.name,
+      approverType: node.approver?.approverType,
+      approverIds: node.approver?.approverIds ?? [],
+      ccUserIds: node.approver?.ccUserIds ?? [],
+      mode: node.approver?.mode,
+      emptyApproverAction: node.approver?.emptyApproverAction,
+      fallbackApprover: node.approver?.fallbackApprover,
+      sameSubmitterAction: node.approver?.sameSubmitterAction,
+      approverDirection: node.approver?.approverDirection,
+      fieldPermissions:
+        (node.approver?.fieldPermissions as unknown as ApprovalFieldPermission[] | null) ?? [],
+      passPostConfig:
+        (node.approver?.passPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
+      rejectPostConfig:
+        (node.approver?.rejectPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
+      conditionConfig:
+        (node.condition?.conditionConfig as unknown as FlowNodeDto['conditionConfig']) ?? undefined,
+    }))
+    const existingLinks: FlowLinkDto[] = (flow.currentVersion?.links ?? []).map((link) => ({
+      fromNodeId: link.fromNodeId,
+      toNodeId: link.toNodeId,
+      sort: link.sort,
+    }))
+    return (
+      JSON.stringify(this.canonicalGraph(existingNodes, existingLinks)) !==
+      JSON.stringify(this.canonicalGraph(inputNodes, inputLinks))
+    )
+  }
 
-    const orderedIds = [startId, ...approverIds, endId]
-    await tx.approvalNodeLink.createMany({
-      data: orderedIds.slice(1).map((toNodeId, index) => ({
-        id: randomUUID(),
-        flowVersionId,
-        fromNodeId: orderedIds[index],
-        toNodeId,
-        sort: index,
-      })),
-    })
+  private canonicalGraph(nodes: FlowNodeDto[], links: FlowLinkDto[]) {
+    const canonicalNodes = nodes
+      .map((node) => {
+        const nodeType = node.nodeType ?? 'APPROVER'
+        const base: Record<string, unknown> = {
+          clientId: node.clientId?.trim() || '',
+          nodeType,
+          name: node.name.trim(),
+        }
+        if (nodeType === 'APPROVER') {
+          base.approverType = node.approverType
+          base.approverIds = [...(node.approverIds ?? [])].sort()
+          base.ccUserIds = [...(node.ccUserIds ?? [])].sort()
+          base.mode = node.mode
+          base.emptyApproverAction = node.emptyApproverAction ?? 'AUTO_PASS'
+          base.fallbackApprover = node.fallbackApprover?.trim() || null
+          base.sameSubmitterAction = node.sameSubmitterAction ?? 'SKIP'
+          base.approverDirection = node.approverDirection ?? 'BOTTOM_UP'
+          base.fieldPermissions = [...(node.fieldPermissions ?? [])]
+            .map((item) => ({ fieldId: item.fieldId.trim(), permissionType: item.permissionType }))
+            .sort((left, right) => left.fieldId.localeCompare(right.fieldId))
+          base.passPostConfig = this.canonicalPostConfig(node.passPostConfig)
+          base.rejectPostConfig = this.canonicalPostConfig(node.rejectPostConfig)
+        } else if (nodeType === 'CONDITION') {
+          base.conditionConfig = this.stableJson(node.conditionConfig ?? null)
+        }
+        return base
+      })
+      .sort((left, right) => String(left.clientId).localeCompare(String(right.clientId)))
+    const canonicalLinks = links
+      .map((link, index) => ({
+        fromNodeId: link.fromNodeId,
+        toNodeId: link.toNodeId,
+        sort: link.sort ?? index,
+      }))
+      .sort((left, right) =>
+        left.fromNodeId.localeCompare(right.fromNodeId) ||
+        left.sort - right.sort ||
+        left.toNodeId.localeCompare(right.toNodeId),
+      )
+    return { nodes: canonicalNodes, links: canonicalLinks }
+  }
+
+  private canonicalPostConfig(config: FlowNodeDto['passPostConfig']) {
+    if (!config) return null
+    return {
+      fieldUpdateConfigs: [...(config.fieldUpdateConfigs ?? [])]
+        .map((item) => ({
+          fieldId: item.fieldId.trim(),
+          fieldValue: this.stableJson(item.fieldValue ?? null),
+          enable: item.enable,
+        }))
+        .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
+      webHookConfig: normalizeApprovalWebhookConfig(config.webHookConfig) ?? null,
+    }
+  }
+
+  private stableJson(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map((item) => this.stableJson(item))
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, this.stableJson(item)]),
+    )
   }
 
   private approverInputs(flow: FlowDetailRecord): ApprovalFlowNodeInput[] {
@@ -689,6 +813,12 @@ export class ApprovalFlowConfigService {
         fallbackApprover: node.approver!.fallbackApprover,
         sameSubmitterAction: node.approver!.sameSubmitterAction,
         approverDirection: node.approver!.approverDirection,
+        fieldPermissions:
+          (node.approver!.fieldPermissions as unknown as ApprovalFieldPermission[] | null) ?? [],
+        passPostConfig:
+          (node.approver!.passPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
+        rejectPostConfig:
+          (node.approver!.rejectPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
       }))
   }
 
@@ -759,6 +889,12 @@ export class ApprovalFlowConfigService {
         fallbackApprover: node.approver?.fallbackApprover,
         sameSubmitterAction: node.approver?.sameSubmitterAction,
         approverDirection: node.approver?.approverDirection,
+        fieldPermissions:
+          (node.approver?.fieldPermissions as unknown as ApprovalFieldPermission[] | null) ?? [],
+        passPostConfig:
+          (node.approver?.passPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
+        rejectPostConfig:
+          (node.approver?.rejectPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
         conditionConfig: node.condition?.conditionConfig as ApprovalFlowDetail['createNodes'][number]['conditionConfig'],
       })),
       createLinks: flow.currentVersion.links.map((link) => ({

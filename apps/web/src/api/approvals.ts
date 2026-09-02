@@ -4,6 +4,7 @@ import type {
   ApprovalFlowWriteInput,
   ApprovalFormType,
   ApprovalInstanceVO,
+  ApprovalWebhookConfig,
   PageQuery,
   PaginatedResult,
 } from '@micromatrix/shared'
@@ -27,6 +28,11 @@ export const approvalApi = {
   updateFlowEnabled: (id: string, enabled: boolean) =>
     http.patch<{ id: string; name: string }>(`/approvals/flows/${id}/enabled`, { enabled }),
   removeFlow: (id: string) => http.delete<{ id: string; name: string }>(`/approvals/flows/${id}`),
+  testWebhook: (data: ApprovalWebhookConfig) =>
+    http.post<{ ok: boolean; httpStatus: number; responseBytes: number; durationMs: number }>(
+      '/approvals/flows/webhook/test',
+      data,
+    ),
 
   submit: (module: string, targetId: string) =>
     http.post('/approvals/submit', { module, targetId }),
@@ -34,6 +40,8 @@ export const approvalApi = {
     http.post(`/approvals/tasks/${taskId}/approve`, { comment, attachmentIds }),
   reject: (taskId: string, comment?: string, attachmentIds?: string[]) =>
     http.post(`/approvals/tasks/${taskId}/reject`, { comment, attachmentIds }),
+  updateTaskFields: (taskId: string, fields: Array<{ fieldId: string; value: unknown }>) =>
+    http.patch<{ id: string; count: number }>(`/approvals/tasks/${taskId}/fields`, { fields }),
   sign: (
     taskId: string,
     data: {
@@ -59,6 +67,7 @@ export const approvalApi = {
     http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-applications', { params }),
   myCopied: (params: PageQuery) =>
     http.get<PaginatedResult<ApprovalInstanceVO>>('/approvals/my-copied', { params }),
+  instanceDetail: (id: string) => http.get<ApprovalInstanceVO>(`/approvals/instances/${id}`),
   instanceForTarget: (module: string, targetId: string) =>
     http.get<ApprovalInstanceVO | null>('/approvals/instance', { params: { module, targetId } }),
 }
