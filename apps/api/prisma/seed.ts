@@ -9,6 +9,16 @@ const adapter = new PrismaPg({ connectionString: process.env['DATABASE_URL']! })
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
+  const seedMode = process.env['SEED_MODE'] ?? 'demo'
+
+  if (seedMode === 'bootstrap') {
+    const existingUserCount = await prisma.user.count()
+    if (existingUserCount > 0) {
+      console.log(`Bootstrap 跳过：检测到 ${existingUserCount} 个已有用户，保留现有安装数据`)
+      return
+    }
+  }
+
   // ===== 套餐（商业化预留） =====
   const freePlan = await prisma.plan.upsert({
     where: { code: 'free' },
@@ -212,28 +222,32 @@ async function main() {
     leaderId?: string
     position?: string
   }) => {
-    const passwordHash = await bcrypt.hash(
-      ['admin@demo.com', 'zhangwei@demo.com'].includes(input.email) ? 'admin123' : 'demo123',
-      10,
-    )
     const existing = await prisma.user.findFirst({
       where: { tenantId: tenant.id, email: input.email },
     })
+    const passwordHash =
+      existing && seedMode === 'bootstrap'
+        ? undefined
+        : await bcrypt.hash(
+            ['admin@demo.com', 'zhangwei@demo.com'].includes(input.email)
+              ? 'admin123'
+              : 'demo123',
+            10,
+          )
     const user = existing
       ? await prisma.user.update({
           where: { id: existing.id },
           data: {
             deptId: input.deptId,
             leaderId: input.leaderId,
-            passwordHash,
-            defaultPwd: true,
+            ...(passwordHash ? { passwordHash, defaultPwd: true } : {}),
           },
         })
       : await prisma.user.create({
           data: {
             tenantId: tenant.id,
             email: input.email,
-            passwordHash,
+            passwordHash: passwordHash!,
             name: input.name,
             deptId: input.deptId,
             leaderId: input.leaderId,
@@ -258,6 +272,13 @@ async function main() {
     deptId: rootDept.id,
     position: 'CEO',
   })
+
+  if (seedMode === 'bootstrap') {
+    console.log('Bootstrap 初始化完成：')
+    console.log('  超级管理员 admin@demo.com / admin123')
+    return
+  }
+
   const manager = await upsertUser({
     email: 'zhangwei@demo.com',
     name: '张伟',

@@ -10,6 +10,7 @@ POSTGRES_CONTAINER="mmx-release-postgres-${SUFFIX}"
 API_CONTAINER="mmx-release-api-${SUFFIX}"
 WEB_CONTAINER="mmx-release-web-${SUFFIX}"
 API_IMAGE="micromatrix-crm-api:release-smoke"
+MIGRATE_IMAGE="micromatrix-crm-migrate:release-smoke"
 WEB_IMAGE="micromatrix-crm-web:release-smoke"
 
 cleanup() {
@@ -29,8 +30,9 @@ if grep -Fq 'COPY apps/api/package.json apps/api/package.json' docker/web.Docker
 fi
 
 echo '[docker-release] validating API workspace dependency scope'
-grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/api...' docker/api.Dockerfile
-grep -Fq 'pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod deploy' docker/api.Dockerfile
+grep -Fq 'FROM node:24-alpine AS base' docker/api.Dockerfile
+grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate --filter @micromatrix/api...' docker/api.Dockerfile
+grep -Fq 'pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod --no-optional deploy' docker/api.Dockerfile
 if grep -Fq 'COPY apps/web/package.json apps/web/package.json' docker/api.Dockerfile; then
   echo '[docker-release] API image must not install Web workspace dependencies' >&2
   exit 1
@@ -40,8 +42,16 @@ if grep -Fq ' deploy --prod --legacy ' docker/api.Dockerfile; then
   exit 1
 fi
 
+echo '[docker-release] validating migration image isolation'
+grep -Fq 'FROM node:24-alpine AS base' docker/migrate.Dockerfile
+grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate --filter @micromatrix/api...' docker/migrate.Dockerfile
+grep -Fq 'ENTRYPOINT ["./release-init.sh"]' docker/migrate.Dockerfile
+
 echo '[docker-release] building API image'
 docker build -f docker/api.Dockerfile -t "$API_IMAGE" .
+
+echo '[docker-release] building migration image'
+docker build -f docker/migrate.Dockerfile -t "$MIGRATE_IMAGE" .
 
 echo '[docker-release] building Web image'
 docker build -f docker/web.Dockerfile -t "$WEB_IMAGE" .
@@ -65,14 +75,16 @@ docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d default >/dev/null
 
 DATABASE_URL="postgresql://postgres:postgres@${POSTGRES_CONTAINER}:5432/default?schema=public"
 
-echo '[docker-release] applying Prisma migrations from API image'
-docker run --rm "$API_IMAGE" sh -c 'test ! -f /app/.env'
+echo '[docker-release] validating API runtime excludes build/migration tooling'
+docker run --rm "$API_IMAGE" sh -c 'test ! -f /app/.env && test ! -e /app/node_modules/.bin/prisma'
+
+echo '[docker-release] applying Prisma migrations and bootstrap data from initialization image'
+docker run --rm --entrypoint sh "$MIGRATE_IMAGE" -c 'test ! -f /app/.env && test -x /app/node_modules/.bin/prisma && test -x /app/node_modules/.bin/tsx'
 docker run --rm \
   --network "$NETWORK" \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
-  "$API_IMAGE" \
-  ./node_modules/.bin/prisma migrate deploy
+  "$MIGRATE_IMAGE"
 
 echo '[docker-release] starting API image'
 docker run -d \
@@ -94,6 +106,20 @@ for _ in $(seq 1 30); do
 done
 docker exec "$API_CONTAINER" node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+echo '[docker-release] validating bootstrap administrator login'
+docker exec "$API_CONTAINER" node -e "fetch('http://127.0.0.1:3000/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'admin@demo.com',password:'admin123'})}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+echo '[docker-release] validating repeated initialization does not reset administrator password'
+docker exec "$API_CONTAINER" node -e "(async()=>{const login=await fetch('http://127.0.0.1:3000/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'admin@demo.com',password:'admin123'})});if(!login.ok)process.exit(1);const body=await login.json();const changed=await fetch('http://127.0.0.1:3000/api/auth/change-password',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+body.accessToken},body:JSON.stringify({oldPassword:'admin123',newPassword:'release456'})});if(!changed.ok){console.error(await changed.text());process.exit(1)}})().catch(e=>{console.error(e);process.exit(1)})"
+repeat_init_output="$(docker run --rm \
+  --network "$NETWORK" \
+  -e NODE_ENV=production \
+  -e DATABASE_URL="$DATABASE_URL" \
+  "$MIGRATE_IMAGE")"
+printf '%s\n' "$repeat_init_output"
+grep -q 'Bootstrap 跳过：检测到' <<< "$repeat_init_output"
+docker exec "$API_CONTAINER" node -e "(async()=>{const fresh=await fetch('http://127.0.0.1:3000/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'admin@demo.com',password:'release456'})});const old=await fetch('http://127.0.0.1:3000/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'admin@demo.com',password:'admin123'})});if(!fresh.ok||old.ok)process.exit(1)})().catch(e=>{console.error(e);process.exit(1)})"
+
 echo '[docker-release] starting Web image'
 docker run -d \
   --name "$WEB_CONTAINER" \
@@ -112,4 +138,4 @@ docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/healthz | grep -q '^ok'
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/api/health | grep -q 'ok'
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/login | grep -q '<div id="app">'
 
-echo '[docker-release] PASS: API runtime, Prisma migration, Nginx SPA fallback and /api proxy are healthy'
+echo '[docker-release] PASS: slim API runtime, automatic bootstrap initialization, Nginx SPA fallback and /api proxy are healthy'

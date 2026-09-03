@@ -117,7 +117,7 @@ async function handleSubmit() {
       </div>
 
       <p class="text-xs text-[var(--el-text-color-secondary)] mt-4 text-center">
-        演示账号：admin@demo.com / admin123（需先执行种子数据）
+        演示账号：admin@demo.com / admin123
       </p>
     </el-card>
 

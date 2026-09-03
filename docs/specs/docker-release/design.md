@@ -6,20 +6,16 @@
 
 `docker/api.Dockerfile` 使用 multi-stage build：
 
-1. Node 24 Debian `base` 统一安装 OpenSSL 与 CA，builder/runtime 复用同一基础层，避免同一架构重复 apt 安装。
-2. builder 固定 pnpm `10.30.3`，只安装 `@micromatrix/api...`（API + shared）workspace 范围，不再把 Web/Vite 拉入 API 镜像。
+1. Node 24 Alpine `base` 安装 OpenSSL 与 CA，builder/runtime 复用同一基础层。
+2. builder 固定 pnpm `10.30.3`，只安装 `@micromatrix/migrate` 与 `@micromatrix/api...`（Prisma 构建工具 + API + shared），不再把 Web/Vite 或根目录 ESLint 工具链拉入 API builder。
 3. pnpm store 使用 BuildKit cache mount；构建 `@micromatrix/shared`，随后执行 API 的 Prisma generate + TypeScript build。
-4. 使用 pnpm modern deploy：`--config.inject-workspace-packages=true --filter @micromatrix/api --prod deploy`。deploy 复用同一 store 与 dedicated lockfile，不再走 `--legacy` 的二次全 workspace 依赖解析/联网路径。
+4. 使用 pnpm modern deploy：`--config.inject-workspace-packages=true --filter @micromatrix/api --prod --no-optional deploy`。runtime 不携带 `prisma` CLI、Studio、TypeScript/PGlite 等 optional peer 工具链。
 5. runtime 只复制 deploy 结果，并以非 root `node` 用户执行 `node dist/main.js`。
 6. `/app/uploads` 声明为持久化卷。
 
-Prisma CLI 与 `dotenv` 属于 API 生产部署能力，因此保留在 production dependencies。同一个镜像可以用：
+### Migration
 
-```bash
-./node_modules/.bin/prisma migrate deploy
-```
-
-作为一次性 migration 容器。
+`docker/migrate.Dockerfile` 使用 Node 24 Alpine，仅部署 `@micromatrix/migrate`（`prisma + dotenv`）以及 `apps/api/prisma` schema/migrations/config。它以 `./node_modules/.bin/prisma` 为 ENTRYPOINT，默认执行 `migrate deploy`。Migration 镜像只在升级时短暂运行，API 常驻镜像不再承担数据库迁移工具链。
 
 ### Web
 
@@ -41,7 +37,7 @@ Nginx 配置使用官方 `/etc/nginx/templates/*.template` 运行时 envsubst：
 ```text
 postgres healthy
     ↓
-migrate (API image / prisma migrate deploy)
+migrate (Migration image / prisma migrate deploy)
     ↓ success
 api healthy
     ↓
@@ -64,9 +60,9 @@ on:
 流水线分为四层：
 
 1. `verify`：校验 SemVer tag，固定 Node 24/pnpm 10.30.3，执行全仓 typecheck 和 lint。
-2. `docker-smoke`：从 tag 对应源码真实构建 API/Web 镜像，并用隔离 PostgreSQL 验证 migration/runtime/proxy。
-3. `api-images`：amd64 使用 `ubuntu-latest` 原生构建，arm64 使用 `ubuntu-24.04-arm` 原生构建，各自推送临时架构 tag；不再通过 QEMU 执行 Prisma/TypeScript/pnpm deploy。
-4. `api-manifest` 合并两个 API 架构镜像为正式 multi-arch tags；`web-image` 在 x64 runner 原生构建一次静态 dist，再组装 `linux/amd64,linux/arm64` Nginx 镜像。
+2. `docker-smoke`：从 tag 对应源码真实构建 API/Migration/Web 镜像，并用隔离 PostgreSQL 验证 migration/runtime/proxy。
+3. `api-images`：amd64 使用 `ubuntu-latest` 原生构建，arm64 使用 `ubuntu-24.04-arm` 原生构建 API 与 Migration，各自推送临时架构 tag；不通过 QEMU 执行 Prisma/TypeScript/pnpm deploy。
+4. `api-manifest` 分别合并 API/Migration 两套架构镜像为正式 multi-arch tags；`web-image` 在 x64 runner 原生构建一次静态 dist，再组装 `linux/amd64,linux/arm64` Nginx 镜像。
 
 GHCR 写权限只授予 API 架构发布、manifest 和 Web 发布 job，其余 job 只有源码读取权限。
 
@@ -79,6 +75,11 @@ ghcr.io/hideinmatrix/micromatrix-crm-api:v0.0.1
 ghcr.io/hideinmatrix/micromatrix-crm-api:0.0.1
 ghcr.io/hideinmatrix/micromatrix-crm-api:0.0
 ghcr.io/hideinmatrix/micromatrix-crm-api:latest
+
+ghcr.io/hideinmatrix/micromatrix-crm-migrate:v0.0.1
+ghcr.io/hideinmatrix/micromatrix-crm-migrate:0.0.1
+ghcr.io/hideinmatrix/micromatrix-crm-migrate:0.0
+ghcr.io/hideinmatrix/micromatrix-crm-migrate:latest
 
 ghcr.io/hideinmatrix/micromatrix-crm-web:v0.0.1
 ghcr.io/hideinmatrix/micromatrix-crm-web:0.0.1

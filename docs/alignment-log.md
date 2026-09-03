@@ -778,6 +778,7 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 本地 `pnpm smoke:docker-release` 已实测通过：从当前源码构建 API/Web 两个镜像，在隔离 PostgreSQL 中从零成功应用 34 个 migration，随后验证 API `/api/health`、Nginx `/healthz`、`/api` proxy 和 `/login` SPA fallback。Shared/API/Web typecheck、全仓 ESLint、API rules `114/114`、Compose config、workflow YAML、Shell syntax 与 `git diff --check` 同步通过。
 - 正式发布命令为 `git tag v0.0.1 && git push origin v0.0.1`；普通 `git push origin master` 不触发 Docker release。本执行单元只建立发布能力，不自动创建正式版本 tag。
 - 2026-09-01 发布构建性能收口：Web Vite builder 固定 `BUILDPLATFORM`，避免 x64 Runner 通过 QEMU 执行 arm64 Vite；Web workspace install 收窄为 Web + shared。API 多架构发布从单 x64 Runner + QEMU 改为 `ubuntu-latest` 原生 amd64 与 `ubuntu-24.04-arm` 原生 arm64 并行构建，再合并 multi-arch manifest；API install 收窄为 API + shared，builder/runtime 共用单一 OpenSSL/CA base layer，production deploy 切到 pnpm dedicated-lockfile 路径并复用 BuildKit pnpm store，避免 legacy deploy 二次访问 registry。Prisma CLI 仍保留在 production image，既有 migration 容器契约不变。
+- 2026-09-02 API runtime 镜像瘦身：实测原 release API 镜像约 988MB，其中 `/app` 约 484MB，Prisma CLI 的 Studio/React/PGlite/TypeScript/engines peer 图占用显著。API 改用 Node 24 Alpine，并以 `pnpm deploy --prod --no-optional` 生成纯 runtime，`prisma` 从 API package manifest 移出；新增 `@micromatrix/migrate`、`docker/migrate.Dockerfile` 与 `micromatrix-crm-migrate` GHCR 镜像承接 `prisma migrate deploy`。API 镜像本地实测降至约 517MB（约 -47.7%），Migration 镜像约 574MB 且只在升级时短暂运行；独立 Migration 在空 PostgreSQL 成功应用 68 个 migration，随后 Alpine API health 200。该条 supersede 上述“Prisma CLI 保留在 API production image”的旧部署契约。
 
 ---
 

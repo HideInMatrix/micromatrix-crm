@@ -36,7 +36,7 @@ micromatrix-crm/
 │   ├── api/          # NestJS 后端（模块：auth/customers + modules/* 14 个业务模块）
 │   └── web/          # Vue 单前端：桌面/Mobile 路由页面按 views/<模块>/ 分域
 ├── packages/shared/  # 前后端共享类型、权限树、公式求值器
-├── docker/           # API/Web 独立生产镜像与 Nginx runtime 配置
+├── docker/           # API/Migration/Web 独立生产镜像与 Nginx runtime 配置
 ├── scripts/          # 全链路、企业设置与 Docker release Smoke
 ├── docker-compose.yml
 └── docker-compose.release.yml
@@ -92,7 +92,7 @@ git push origin v0.0.1
 
 部署说明、release compose 和镜像标签见 [`docs/docker-release.md`](./docs/docker-release.md)。
 
-### 演示账号
+### 默认/演示账号
 
 | 账号               | 密码     | 角色     | 数据范围     |
 | ------------------ | -------- | -------- | ------------ |
@@ -100,6 +100,8 @@ git push origin v0.0.1
 | zhangwei@demo.com  | demo123  | 销售主管 | 本部门及下级 |
 | lina@demo.com      | demo123  | 销售专员 | 仅本人       |
 | wangqiang@demo.com | demo123  | 销售专员 | 仅本人       |
+
+Release 首次安装只自动创建 `admin@demo.com / admin123` 默认管理员；其余演示账号和业务样例仅由开发/验收用完整 Seed 创建。
 
 ## 架构约定
 

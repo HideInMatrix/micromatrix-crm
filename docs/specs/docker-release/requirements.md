@@ -6,9 +6,9 @@
 
 ## 2. 范围
 
-### R1 前后端独立镜像
+### R1 运行职责独立镜像
 
-- API 与 Web 必须分别构建镜像，不能把 NestJS 与 Web 静态资源塞进同一个容器。
+- API、Migration 与 Web 必须按职责分别构建镜像，不能把 NestJS、Prisma CLI 与 Web 静态资源塞进同一个常驻容器。
 - API 使用 Node 24 生产运行时；Web 使用 Nginx 提供静态资源。
 - workspace 共享包必须在镜像构建阶段正常参与编译，不能依赖宿主机 `node_modules` 或预先生成的 `dist`。
 
@@ -18,7 +18,7 @@
 - Vue Router 必须支持 history fallback，直接访问 `/login`、业务详情页等不能返回 404。
 - SSE/长连接代理必须关闭响应缓冲并允许长 read timeout。
 - API 附件目录 `/app/uploads` 必须作为持久化卷边界。
-- API 镜像必须能够独立执行 `prisma migrate deploy`，不额外维护 migration 镜像。
+- API runtime 不携带 Prisma CLI；独立 Migration 镜像负责 `prisma migrate deploy`，成功后 API 才允许启动。
 - `.env`、本地上传文件、Cordys 源码、Git 数据和构建产物不得进入 Docker build context。
 
 ### R3 Tag 驱动 GitHub Release
@@ -38,6 +38,7 @@ git push origin v0.0.1
 
 - 发布目标为 GitHub Container Registry：
   - `ghcr.io/<owner>/<repo>-api`
+  - `ghcr.io/<owner>/<repo>-migrate`
   - `ghcr.io/<owner>/<repo>-web`
 - 镜像名必须转换为小写，避免 Docker repository name 大小写错误。
 - 每个 release 同时构建 `linux/amd64` 与 `linux/arm64`。
@@ -47,7 +48,7 @@ git push origin v0.0.1
 
 - 提供 `docker-compose.release.yml` 和无真实密钥的 release 环境变量示例。
 - migration 成功后 API 才启动，API 健康后 Web 才启动。
-- 提供 `pnpm smoke:docker-release`：真实构建两个镜像、启动隔离 PostgreSQL、执行全部 migration、启动 API/Web，并验证健康检查、SPA fallback 与 `/api` proxy。
+- 提供 `pnpm smoke:docker-release`：真实构建三个镜像、启动隔离 PostgreSQL、执行全部 migration、启动 API/Web，并验证健康检查、SPA fallback 与 `/api` proxy。
 
 ## 3. 不在本执行单元内
 

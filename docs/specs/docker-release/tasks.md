@@ -33,3 +33,9 @@
   - API Dockerfile 只安装 API + shared；OpenSSL/CA 抽为共享 base；production deploy 从 `--legacy` 切到 dedicated-lockfile modern deploy，并复用 pnpm store。
   - amd64 与 arm64 API 镜像均已真实构建并验证 `dist/main.js`、Prisma CLI、无 `/app/.env`；ARM production deploy **369 reused / 0 downloaded**。
   - `pnpm smoke:docker-release` 在 62 migrations 基线上 PASS：Prisma migrate、API health、Nginx health、`/api` proxy 与 SPA fallback 全绿。
+
+- [x] D8 API runtime 镜像瘦身与 migration 职责拆分（2026-09-02）
+  - API runtime 从 Node 24 Debian slim 切换到 Node 24 Alpine，production deploy 增加 `--no-optional`，移除 Prisma CLI、Studio、TypeScript/PGlite 等非运行时依赖。
+  - `prisma` 从 API package manifest 移出，仓库根保留开发构建 CLI；新增 `@micromatrix/migrate` 与 `docker/migrate.Dockerfile`，专门执行生产 migration。
+  - release compose 改为 PostgreSQL → 独立 Migration 镜像 → API → Web；GitHub tag workflow 同时发布 `-api`、`-migrate`、`-web` 三个 multi-arch 镜像。
+  - 本地 API 镜像实测由约 **988MB** 降至约 **517MB**；空 PostgreSQL 上独立 Migration 镜像成功应用 **68 migrations**，随后瘦身 API `/api/health` 返回 200。

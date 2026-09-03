@@ -15,9 +15,8 @@ services:
       retries: 20
 
   migrate:
-    image: ${API_IMAGE:-ghcr.io/hideinmatrix/micromatrix-crm-api:${APP_VERSION:-latest}}
+    image: ${MIGRATE_IMAGE:-ghcr.io/hideinmatrix/micromatrix-crm-migrate:${APP_VERSION:-latest}}
     restart: 'no'
-    command: ['./node_modules/.bin/prisma', 'migrate', 'deploy']
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
