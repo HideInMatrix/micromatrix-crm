@@ -21,7 +21,7 @@ flowchart LR
     Notify[NotificationsService<br/>站内信 + SSE]
   end
   DB[(PostgreSQL 18<br/>Prisma 7)]
-  Redis[(Redis<br/>CACHE-001 可降级缓存)]
+  Redis[(Redis<br/>CACHE-001/002 缓存 + EVENT-001 Pub/Sub)]
 
   PC -->|/api 代理| Guard
   Mobile -->|/api 代理| Guard
@@ -33,6 +33,7 @@ flowchart LR
   Biz --> Notify
   Biz --> DB
   Notify --> Redis
+  Redis --> Notify
   Cron --> DB
   Cron --> Notify
 ```
@@ -138,7 +139,7 @@ flowchart LR
 - 对已有 MicroMatrix 实现优先做差异重构，不重复建立第二套平行模块。
 - 迁移完成标准是业务一致性和自动化测试通过，不是代码行数或文件数量一致。
 
-### ADR-9 Redis：可丢弃派生缓存，不作为业务真相源
+### ADR-9 Redis：派生缓存与非持久实时事件，不作为业务真相源
 
 - `CACHE-001` 起 Redis 从“预留基础设施”进入实际 API runtime；`CACHE-002` 继续扩展为租户配置、目录读模型与首页聚合结果的派生缓存。PostgreSQL 始终是认证资料、角色权限、通知、企业配置、元数据和 CRM 业务记录的唯一真相源。
 - API 通过全局 `RedisService` 统一访问 Redis；业务模块不得自行创建客户端或私有连接池。
@@ -147,7 +148,9 @@ flowchart LR
 - 首页 statistic/overview 只使用 30 秒短 TTL，key 同时包含 user/DataScope 上下文与筛选参数摘要；客户、线索、商机、合同等高频写路径不维护统计缓存失效矩阵，由短 TTL 自然收敛。
 - `/health` 可观察 Redis enabled/ready 与 CACHE-002 namespace 累计指标，但不得暴露 Redis host/password/URL、业务 key 或缓存内容。
 - Redis 未配置或暂时故障时缓存调用必须 fail-open 到 PostgreSQL，不能阻断登录、权限判断和通知读取；缓存写失败不得回滚业务数据库写入。
-- API Key Secret、密码、JWT、企业集成凭据等敏感认证材料不进入缓存。验证码、分布式锁、序列号、BullMQ、跨实例 SSE Pub/Sub 需要独立需求与一致性设计后才能扩展。
+- `EVENT-001` 起 Redis 同时承担通知实时 Pub/Sub，但只传播已落库通知的 CREATED / STATE_CHANGED 信号，不承担持久消息队列。每个 API 实例使用独立 subscriber 连接接收 `micromatrix-crm:event:*`，来源实例本地直推并通过 `sourceInstanceId` 忽略自身 Redis 回环；Redis 故障时仅跨实例实时性降级，Notification 数据不会丢失。
+- SSE 新通知继续使用默认 `message = NotificationVO`，已读变化使用命名 `refresh`，另有 15 秒 `heartbeat`；`/health` 同时暴露 Pub/Sub readiness 与 transport 计数，但不暴露消息正文。
+- API Key Secret、密码、JWT、企业集成凭据等敏感认证材料不进入 Redis payload。验证码、分布式锁、序列号、BullMQ 仍需要独立需求与一致性设计后才能扩展。
 
 ## 踩坑记录（环境与版本）
 

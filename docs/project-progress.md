@@ -33,14 +33,15 @@
 | W3.7-9.5 | DB-010/011/012 最终专项、Browser、空库、Root/Rules、workspace 与 legacy scan | 已完成；W3.7 正式封板 |
 | CACHE-001 | Redis 可降级公共基座、AuthGuard 认证上下文缓存、通知未读/分页缓存 | `VERIFIED` |
 | CACHE-002 | 租户配置/Metadata/Directory 版本缓存、首页 statistic/overview 30 秒聚合缓存、缓存指标 | `VERIFIED` |
+| EVENT-001 | Redis Pub/Sub 实时事件总线、通知多实例 SSE 与多标签页状态同步 | `VERIFIED` |
 
 ## 3. 当前执行指针
 
 当前执行状态：
 
-> **W3.7、CACHE-001 与 CACHE-002 均已完成。当前没有已冻结的下一正式执行单元；后续仍按“先立 requirements/design/tasks，再实现”的项目流程从剩余 parity/backlog 中立项。**
+> **W3.7、CACHE-001、CACHE-002 与 EVENT-001 均已完成。当前没有已冻结的下一正式执行单元；后续 Redis 平台化继续按独立失败语义立项，优先候选为 COORD-001 / ASYNC-001 / SEQ-001。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001` 与 `CACHE-002` 分别在 `docs/specs/redis-cache-foundation/tasks.md`、`docs/specs/redis-cache-read-models/tasks.md` 全部关闭；验证码、流水号、BullMQ、分布式锁或 SSE Pub/Sub 没有被顺带纳入，后续如实施必须重新立项。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002` 与 `EVENT-001` 已分别在对应 tasks 文档全部关闭；BullMQ、同步/Cron 分布式协调、流水号或验证码仍未被顺带纳入。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
@@ -48,8 +49,9 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 - 空库：**68/68 migrations + 双 Seed**，Seed 计数幂等，关键运行时资源检查全部通过。
 - Root Smoke：**227/227**。
-- Rules：**150/150**；CACHE-001 认证/通知缓存与 CACHE-002 版本缓存、Directory、首页筛选隔离行为测试保持全绿。
+- Rules：**153/153**；CACHE-001/002 缓存行为与 EVENT-001 多实例通知实时事件测试保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
+- EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - W3.7-9.5 最终专项链：DB-010、DB-011 9.3A～E、DB-012 9.4A～E 全部重新执行 exit 0；Prisma generate/validate、default DB 68 migrations status/deploy、空库双 Seed、workspace typecheck/lint/build 与 `git diff --check` 全绿。
 - W3.7-9.4F Advanced Designer Browser：**25/25**；Vue Flow 高级图、字段权限、后置字段、Webhook 安全测试、duplicate rule、统一 PUT 图契约和完整 round-trip 全绿，API 非预期 5xx=0、Runtime exception=0。
 - W3.7-9.4E Webhook HTTP Smoke：PASS（68 migrations）；连接测试 GET/POST、private target/危险 header/redirect/response limit/timeout gate、审计脱敏、冻结版本、field-before-webhook、reject placeholder、ALL 单次、AUTO_PASS 及 runtime failure non-blocking 全部真实验证。

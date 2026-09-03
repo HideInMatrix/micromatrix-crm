@@ -3,12 +3,39 @@ import { ConfigService } from '@nestjs/config'
 import Redis, { type RedisOptions } from 'ioredis'
 
 const REDIS_KEY_PREFIX = 'micromatrix-crm:'
+const REDIS_EVENT_CHANNEL_PREFIX = 'micromatrix-crm:event:'
 const ERROR_LOG_INTERVAL_MS = 30_000
+
+type RedisMessageHandler = (message: string) => void | Promise<void>
+
+interface RedisPubSubMetrics {
+  publishAttempts: number
+  publishedMessages: number
+  deliveredSubscriptions: number
+  publishFailures: number
+  receivedMessages: number
+  unhandledMessages: number
+  handlerErrors: number
+  subscribeErrors: number
+}
 
 @Injectable()
 export class RedisService implements OnApplicationShutdown {
   private readonly logger = new Logger(RedisService.name)
   private readonly client: Redis | null
+  private subscriber: Redis | null = null
+  private readonly channelHandlers = new Map<string, Set<RedisMessageHandler>>()
+  private readonly subscribedChannels = new Set<string>()
+  private readonly pubSubMetrics: RedisPubSubMetrics = {
+    publishAttempts: 0,
+    publishedMessages: 0,
+    deliveredSubscriptions: 0,
+    publishFailures: 0,
+    receivedMessages: 0,
+    unhandledMessages: 0,
+    handlerErrors: 0,
+    subscribeErrors: 0,
+  }
   private lastErrorLogAt = 0
 
   constructor(private readonly config: ConfigService) {
@@ -46,6 +73,20 @@ export class RedisService implements OnApplicationShutdown {
 
   get ready(): boolean {
     return this.client?.status === 'ready'
+  }
+
+  get pubSubReady(): boolean {
+    return this.subscriber?.status === 'ready' && this.subscribedChannels.size > 0
+  }
+
+  pubSubSnapshot() {
+    return {
+      enabled: this.enabled,
+      ready: this.pubSubReady,
+      channels: this.channelHandlers.size,
+      handlers: [...this.channelHandlers.values()].reduce((sum, handlers) => sum + handlers.size, 0),
+      ...this.pubSubMetrics,
+    }
   }
 
   async get(key: string): Promise<string | null> {
@@ -105,12 +146,116 @@ export class RedisService implements OnApplicationShutdown {
     }
   }
 
-  async onApplicationShutdown(): Promise<void> {
-    if (!this.client) return
+  async publish(channel: string, payload: string): Promise<number | null> {
+    this.pubSubMetrics.publishAttempts += 1
+    if (!this.client || this.client.status !== 'ready') {
+      this.pubSubMetrics.publishFailures += 1
+      return null
+    }
     try {
-      if (this.client.status !== 'end') await this.client.quit()
+      const delivered = await this.client.publish(this.eventChannel(channel), payload)
+      this.pubSubMetrics.publishedMessages += 1
+      this.pubSubMetrics.deliveredSubscriptions += delivered
+      return delivered
+    } catch (error) {
+      this.pubSubMetrics.publishFailures += 1
+      this.logError(error)
+      return null
+    }
+  }
+
+  async subscribe(
+    channel: string,
+    handler: RedisMessageHandler,
+  ): Promise<() => Promise<void>> {
+    if (!this.client) return async () => undefined
+    const fullChannel = this.eventChannel(channel)
+    const handlers = this.channelHandlers.get(fullChannel) ?? new Set<RedisMessageHandler>()
+    handlers.add(handler)
+    this.channelHandlers.set(fullChannel, handlers)
+
+    const subscriber = this.ensureSubscriber()
+    if (subscriber?.status === 'ready') await this.subscribeChannel(fullChannel)
+
+    return async () => {
+      const current = this.channelHandlers.get(fullChannel)
+      if (!current) return
+      current.delete(handler)
+      if (current.size > 0) return
+      this.channelHandlers.delete(fullChannel)
+      this.subscribedChannels.delete(fullChannel)
+      if (this.subscriber?.status !== 'ready') return
+      try {
+        await this.subscriber.unsubscribe(fullChannel)
+      } catch (error) {
+        this.pubSubMetrics.subscribeErrors += 1
+        this.logError(error)
+      }
+    }
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.closeClient(this.subscriber)
+    await this.closeClient(this.client)
+  }
+
+  private ensureSubscriber(): Redis | null {
+    if (!this.client) return null
+    if (this.subscriber) return this.subscriber
+    const subscriber = this.client.duplicate({ enableOfflineQueue: false })
+    subscriber.on('ready', () => {
+      this.logger.log('Redis Pub/Sub 订阅连接已就绪')
+      this.subscribedChannels.clear()
+      void this.resubscribeChannels()
+    })
+    subscriber.on('close', () => this.subscribedChannels.clear())
+    subscriber.on('error', (error) => this.logError(error))
+    subscriber.on('message', (channel, message) => this.dispatchMessage(channel, message))
+    this.subscriber = subscriber
+    return subscriber
+  }
+
+  private async resubscribeChannels(): Promise<void> {
+    for (const channel of this.channelHandlers.keys()) await this.subscribeChannel(channel)
+  }
+
+  private async subscribeChannel(channel: string): Promise<void> {
+    if (!this.subscriber || this.subscriber.status !== 'ready' || this.subscribedChannels.has(channel))
+      return
+    try {
+      await this.subscriber.subscribe(channel)
+      this.subscribedChannels.add(channel)
+    } catch (error) {
+      this.pubSubMetrics.subscribeErrors += 1
+      this.logError(error)
+    }
+  }
+
+  private dispatchMessage(channel: string, message: string): void {
+    this.pubSubMetrics.receivedMessages += 1
+    const handlers = this.channelHandlers.get(channel)
+    if (!handlers?.size) {
+      this.pubSubMetrics.unhandledMessages += 1
+      return
+    }
+    for (const handler of handlers) {
+      Promise.resolve(handler(message)).catch((error) => {
+        this.pubSubMetrics.handlerErrors += 1
+        this.logError(error)
+      })
+    }
+  }
+
+  private eventChannel(channel: string): string {
+    return `${REDIS_EVENT_CHANNEL_PREFIX}${channel}`
+  }
+
+  private async closeClient(client: Redis | null): Promise<void> {
+    if (!client) return
+    try {
+      if (client.status !== 'end') await client.quit()
     } catch {
-      this.client.disconnect(false)
+      client.disconnect(false)
     }
   }
 

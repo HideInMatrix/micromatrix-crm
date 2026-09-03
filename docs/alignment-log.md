@@ -1209,3 +1209,27 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 新增公共缓存专项覆盖 loader 单次执行、版本失效、Redis not-ready bypass、稳定 fingerprint；新增读模型专项证明 ModuleConfig cache hit 不重复补种/查询且写后立即读到新值、Directory cache hit 不重复查库且部门创建后失效、Home 相同用户/等价筛选命中而不同筛选隔离。
 - 最终验证：API typecheck PASS；CACHE-002 + 相邻模块专项 **37/37 PASS**；完整 Rules **150/150 PASS**。本批未重复执行耗时较高的完整 Docker 三镜像 Smoke，最近 Docker runtime 基线仍为 CACHE-001 封板时的 PASS；CACHE-002 没有修改镜像拓扑、Redis Compose 契约或数据库 migration。
 - `CACHE-002 C1～C7` 全部关闭，状态切换为 **`VERIFIED`**。下一阶段如继续 Redis 平台化，应另立 EVENT-001（Pub/Sub + 多实例 SSE）、COORD-001（同步/Cron 协调）、ASYNC-001（BullMQ）或 SEQ-001（原子业务编号），不得把不同失败语义混入 CACHE-002。
+
+---
+
+## 66. EVENT-001 Redis Pub/Sub 与多实例 SSE 立项（2026-09-03）
+
+- 按 CACHE-002 封板后的既定路线，本轮独立冻结为 `EVENT-001`，规格落在 `docs/specs/redis-pubsub-sse/requirements.md`、`design.md`、`tasks.md`；继续执行“先文档、后实现”。
+- Cordys 真实实现已复核：`MessagePublisher` 使用 Redis topic 发布，`MessageSubscriber` 按 channel 分派给 `TopicConsumer`，`SSEConsumer` 最终调用 `SseService` 向当前实例的用户连接广播；这正是当前 MicroMatrix 单进程 `Subject` 在多 API 实例下缺失的能力。
+- MicroMatrix 迁移语义已冻结：PostgreSQL Notification 继续是真相源，CACHE-001 的通知列表/未读缓存继续保留；Redis Pub/Sub 只做非持久实时事件总线。Redis 故障时数据库写入不回滚，实时能力退化为发布实例本地 SSE，客户端刷新后从 PostgreSQL 最终收敛。
+- 对外 SSE 保持新通知默认 `message = NotificationVO` 兼容；已读状态变化新增命名 `refresh` 事件，多标签页统一刷新；另增加 15 秒 `heartbeat`。首批不引入 durable queue、BullMQ、Export topic、Redis Lock、流水号、Session 或验证码。
+- 当前状态为 `IN_PROGRESS`，E1 已关闭。**下一执行指针：EVENT-001 E2 Redis Pub/Sub 平台能力。**
+
+---
+
+## 67. EVENT-001 Redis Pub/Sub 与多实例 SSE 最终验收（2026-09-03）
+
+- Redis 平台层已扩展为普通 command client + 专用 subscriber client。Pub/Sub channel 显式使用 `micromatrix-crm:event:*` 前缀，subscriber 首次注册 handler 后按需创建；Redis 晚启动/断线恢复时在 `ready` 后重新订阅登记 channel，普通 GET/SET/INCR 连接不进入 subscriber mode。
+- 通知实时协议冻结为 version 1 CREATED / STATE_CHANGED envelope，含 eventId/sourceInstanceId/tenantId/userId/occurredAt。新通知只在 PostgreSQL create 与 CACHE-001 version bump 成功后生成 CREATED；已读真实发生变化后生成 STATE_CHANGED。Redis payload 不包含 JWT、密码或企业集成 Secret。
+- 实现阶段发现“依据 PUBLISH subscriber count 决定本地直推”会在来源实例 subscriber 尚未 ready 时产生本机漏推窗口，因此在写代码前先修正规格：来源实例始终本地投递，再 best-effort PUBLISH；Redis 回环通过 sourceInstanceId 忽略。其它实例只消费远端事件，60 秒/2000 条 eventId 窗口阻止重复远端消息。
+- SSE 对外兼容保持：CREATED 继续是默认 `message` 且 data 为现有 `NotificationVO`；STATE_CHANGED 映射为 `refresh`，NotificationBell 收到后复用 unread/list refresh。点击单条/全部已读后前端不再手工减计数，而是统一重新读取服务端，避免 SSE refresh 与 HTTP 返回竞态。另增加 15 秒命名 heartbeat 保持长连接。
+- 可观测已接入 `/health`：Redis command ready、Pub/Sub ready/channels/handlers/publish/receive/error 指标，以及 Notifications local users/connections/publish/source-ignore/duplicate/invalid 指标；不暴露 Redis 地址、密码、channel payload 或通知正文。
+- 自动测试：通知专项 **5/5 PASS**，覆盖双 API 实例 CREATED、来源实例不重复、markRead/markAllRead 跨实例 refresh、Redis publish 不可用本机降级、malformed/unknown-version 丢弃与重复 eventId 丢弃。完整 Rules 提升至 **153/153 PASS**。
+- 真实 `redis:7-alpine` Smoke PASS：command JSON round-trip 正常；首次 Pub/Sub 消息送达；通过 Redis `CLIENT KILL` 主动断开专用 subscriber 后 ioredis 自动重连并重新订阅，第二条消息继续送达且前后各一次，subscriber `subscribeErrors=0`、`handlerErrors=0`。临时容器已清理。
+- 最终质量批次整体 exit 0：API typecheck、Web typecheck、Web production build **4145 modules transformed**、Rules **153/153**、`git diff --check` 全绿。EVENT-001 未修改数据库 migration 或 Compose 拓扑，因此未重复执行完整 Docker 三镜像 release Smoke。
+- `EVENT-001 E1～E7` 全部关闭，状态切换为 **`VERIFIED`**。后续 Redis 候选仍按独立单元推进：COORD-001（组织同步/Cron 协调）、ASYNC-001（BullMQ 异步任务）、SEQ-001（原子业务编号）。

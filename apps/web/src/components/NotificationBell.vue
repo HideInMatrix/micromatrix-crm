@@ -35,19 +35,20 @@ function connectStream() {
       duration: 4000,
     })
   }
+  eventSource.addEventListener('refresh', () => {
+    refresh().catch(() => undefined)
+  })
 }
 
 async function openItem(item: NotificationVO) {
   await notificationApi.markRead(item.id)
-  unread.value = Math.max(0, unread.value - 1)
-  recent.value = recent.value.filter((n) => n.id !== item.id)
+  await refresh()
   if (item.link) router.push(item.link)
 }
 
 async function markAll() {
   await notificationApi.markAllRead()
-  unread.value = 0
-  recent.value = []
+  await refresh()
 }
 
 onMounted(() => {
