@@ -1,6 +1,6 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-02。
+最近对齐：2026-09-03。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
@@ -8,7 +8,7 @@
 
 - 分支：`master`
 - 当前发布标签：`v0.0.5`
-- W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 之后尚未冻结新的正式 task 编号；代码与文档按 scoped 本地提交管理，是否 push 继续由用户显式决定。
+- W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
 - 当前数据库基线：**68 migrations**。
 
 ## 2. 已关闭主里程碑
@@ -31,14 +31,16 @@
 | W3.7-9.4E / DB-012 子单元 | Webhook 安全 client、测试连接、运行时发送、SSRF/超时/响应限制与 delivery 审计 | 已完成 |
 | W3.7-9.4F / DB-012 子单元 | Vue Flow 高级条件图、节点高级配置、统一 `nodes + links` 写契约与旧线性兼容清理 | 已完成；DB-012 `VERIFIED` |
 | W3.7-9.5 | DB-010/011/012 最终专项、Browser、空库、Root/Rules、workspace 与 legacy scan | 已完成；W3.7 正式封板 |
+| CACHE-001 | Redis 可降级公共基座、AuthGuard 认证上下文缓存、通知未读/分页缓存 | `VERIFIED` |
+| CACHE-002 | 租户配置/Metadata/Directory 版本缓存、首页 statistic/overview 30 秒聚合缓存、缓存指标 | `VERIFIED` |
 
 ## 3. 当前执行指针
 
 当前执行状态：
 
-> **W3.7 已完成。当前没有尚未执行的 W3.7 task；下一正式阶段需要基于剩余 parity/backlog 重新立项。**
+> **W3.7、CACHE-001 与 CACHE-002 均已完成。当前没有已冻结的下一正式执行单元；后续仍按“先立 requirements/design/tasks，再实现”的项目流程从剩余 parity/backlog 中立项。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001` 与 `CACHE-002` 分别在 `docs/specs/redis-cache-foundation/tasks.md`、`docs/specs/redis-cache-read-models/tasks.md` 全部关闭；验证码、流水号、BullMQ、分布式锁或 SSE Pub/Sub 没有被顺带纳入，后续如实施必须重新立项。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
@@ -46,7 +48,8 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 - 空库：**68/68 migrations + 双 Seed**，Seed 计数幂等，关键运行时资源检查全部通过。
 - Root Smoke：**227/227**。
-- Rules：**141/141**。
+- Rules：**150/150**；CACHE-001 认证/通知缓存与 CACHE-002 版本缓存、Directory、首页筛选隔离行为测试保持全绿。
+- CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - W3.7-9.5 最终专项链：DB-010、DB-011 9.3A～E、DB-012 9.4A～E 全部重新执行 exit 0；Prisma generate/validate、default DB 68 migrations status/deploy、空库双 Seed、workspace typecheck/lint/build 与 `git diff --check` 全绿。
 - W3.7-9.4F Advanced Designer Browser：**25/25**；Vue Flow 高级图、字段权限、后置字段、Webhook 安全测试、duplicate rule、统一 PUT 图契约和完整 round-trip 全绿，API 非预期 5xx=0、Runtime exception=0。
 - W3.7-9.4E Webhook HTTP Smoke：PASS（68 migrations）；连接测试 GET/POST、private target/危险 header/redirect/response limit/timeout gate、审计脱敏、冻结版本、field-before-webhook、reject placeholder、ALL 单次、AUTO_PASS 及 runtime failure non-blocking 全部真实验证。
@@ -62,7 +65,7 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 - `/system/modules` Browser：**47/47**，API 5xx=0、Runtime exception=0。
 - workspace typecheck / ESLint / Shared+API+Web production build / Prisma validate：PASS。
 - Web production build：**4145 modules transformed**。
-- Docker release Smoke 最近一次基线：62 migrations、API runtime、Prisma CLI、Web/Nginx `/api` proxy、SPA fallback：PASS；Migration 63～68 已分别通过业务专项、空库和回归验证，Docker release 未因审批业务子单元重复执行。
+- Docker release Smoke 最新基线：**68/68 migrations**，API/Migration/Web 三镜像实建、Redis 密码/运行时缓存集成、改密认证缓存失效、重复初始化保护、API health、Web/Nginx `/api` proxy 与 SPA fallback：PASS。
 - API Docker：amd64、arm64 均已原生实建；production deploy 为 369 packages reuse、0 download。
 
 ## 5. W3.7 完成后仍未关闭的 Cordys 差异

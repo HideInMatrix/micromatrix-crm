@@ -1,13 +1,33 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { DepartmentVO } from '@micromatrix/shared'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto'
 
+const CACHE_NAMESPACE = 'directory'
+const CACHE_TTL_SECONDS = 3 * 60
+
 @Injectable()
 export class DepartmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
+  ) {}
 
   async tree(tenantId: string): Promise<DepartmentVO[]> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId,
+        namespace: CACHE_NAMESPACE,
+        key: 'department-tree',
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: () => this.loadTree(tenantId),
+      })
+    }
+    return this.loadTree(tenantId)
+  }
+
+  private async loadTree(tenantId: string): Promise<DepartmentVO[]> {
     const [departments, users] = await Promise.all([
       this.prisma.department.findMany({
         where: { tenantId },
@@ -54,9 +74,11 @@ export class DepartmentsService {
     if (dto.leaderId) {
       throw new BadRequestException('请先创建部门并将成员加入该部门，再设置部门主管')
     }
-    return this.prisma.department.create({
+    const department = await this.prisma.department.create({
       data: { tenantId, name, parentId, sort: dto.sort ?? 0 },
     })
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
+    return department
   }
 
   async update(tenantId: string, id: string, dto: UpdateDepartmentDto) {
@@ -74,7 +96,7 @@ export class DepartmentsService {
     if (dto.leaderId) {
       await this.ensureLeaderCandidate(tenantId, id, dto.leaderId)
     }
-    return this.prisma.department.update({
+    const department = await this.prisma.department.update({
       where: { id },
       data: {
         ...(dto.name === undefined ? {} : { name }),
@@ -83,6 +105,8 @@ export class DepartmentsService {
         ...(dto.sort === undefined ? {} : { sort: dto.sort }),
       },
     })
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
+    return department
   }
 
   async remove(tenantId: string, id: string) {
@@ -115,6 +139,7 @@ export class DepartmentsService {
       throw new BadRequestException('当前部门或下级部门仍被角色数据范围使用，无法删除')
     }
     await this.prisma.department.deleteMany({ where: { tenantId, id: { in: subtreeIds } } })
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return { id, name: dept.name, deletedCount: subtreeIds.length }
   }
 

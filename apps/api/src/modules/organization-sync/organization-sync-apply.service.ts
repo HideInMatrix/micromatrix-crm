@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
+import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma, type OrganizationSyncItem } from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -15,6 +17,8 @@ export class OrganizationSyncApplyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly authCache?: AuthContextCacheService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
   async apply(user: AuthUser, batchId: string): Promise<void> {
@@ -24,6 +28,29 @@ export class OrganizationSyncApplyService {
     if (!initial) throw new NotFoundException('同步批次不存在')
     if (initial.status === 'SUCCEEDED') return
     if (initial.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
+
+    const disabledUserIds = (
+      await this.prisma.organizationSyncItem.findMany({
+        where: {
+          tenantId: user.tenantId,
+          batchId,
+          resourceType: 'USER',
+          action: 'DISABLE',
+          localId: { not: null },
+        },
+        select: { localId: true },
+      })
+    )
+      .map(({ localId }) => localId)
+      .filter((id): id is string => Boolean(id))
+    const subordinateIds = disabledUserIds.length
+      ? (
+          await this.prisma.user.findMany({
+            where: { tenantId: user.tenantId, leaderId: { in: disabledUserIds } },
+            select: { id: true },
+          })
+        ).map(({ id }) => id)
+      : []
 
     let applyStarted = false
     try {
@@ -135,6 +162,26 @@ export class OrganizationSyncApplyService {
       }
       throw error
     }
+
+    const affectedUsers = await this.prisma.organizationSyncItem.findMany({
+      where: {
+        tenantId: user.tenantId,
+        batchId,
+        resourceType: 'USER',
+        result: 'APPLIED',
+        localId: { not: null },
+      },
+      select: { localId: true },
+    })
+    await this.authCache?.invalidateMany(
+      [
+        ...affectedUsers
+          .map(({ localId }) => localId)
+          .filter((id): id is string => Boolean(id)),
+        ...subordinateIds,
+      ],
+    )
+    await this.cache?.invalidate(user.tenantId, 'directory')
 
     try {
       await this.notifications.notify(user.tenantId, user.id, {

@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
+import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AuthService } from '../../auth/auth.service'
@@ -17,6 +18,7 @@ export class PersonalCenterService {
     private readonly auth: AuthService,
     private readonly followPlans: FollowUpPlansService,
     private readonly changeLog: BusinessChangeLogService,
+    private readonly authCache: AuthContextCacheService,
   ) {}
 
   async info(user: AuthUser) {
@@ -69,6 +71,7 @@ export class PersonalCenterService {
       where: { id: user.id, tenantId: user.tenantId },
       data: { phone, email },
     })
+    await this.authCache.invalidate(user.id)
     const result = await this.info(user)
     await this.changeLog.record(user, {
       module: 'systemOrganization',

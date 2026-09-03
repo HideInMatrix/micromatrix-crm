@@ -2,7 +2,7 @@
 
 本台账记录源码对齐过程中已经确认、但当前阶段尚未实施的能力。目的不是描述模糊的“以后再做”，而是保证整体复刻结束时每个已发现缺口都有明确去向。
 
-最近复查：2026-09-02（W3.7-9.5 已完成最终封板，DB-010/011/012 均为 `VERIFIED`）。当前核心回归基线：隔离空库 **68/68 migrations + 双次 Seed**且 `seedCountsStable=true`、DB-010/011/012 最终专项链 exit 0、9.4F Advanced Designer Browser **25/25**、9.4A Condition Browser **18/18**、9.4C PC/Mobile Browser **21/21**、DB-011 Browser **18/18、17/17、24/24、28/28**、W3.6.6 `/system/modules` Browser **47/47**、根级 Smoke **227/227**、Rules **141/141**；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、runtime legacy scan、`git diff --check` 全绿。本地 migration 总数为 **68**。Docker release Smoke 最近一次仍是在 62 migrations 下验证 API/Web runtime；DataEase provider/token 继续由 DB-023 deferred。
+最近复查：2026-09-03（W3.7-9.5 已完成最终封板，DB-010/011/012 均为 `VERIFIED`；独立工程化单元 CACHE-001 也已 `VERIFIED`）。当前核心回归基线：隔离空库 **68/68 migrations + 双次 Seed**且 `seedCountsStable=true`、DB-010/011/012 最终专项链 exit 0、9.4F Advanced Designer Browser **25/25**、9.4A Condition Browser **18/18**、9.4C PC/Mobile Browser **21/21**、DB-011 Browser **18/18、17/17、24/24、28/28**、W3.6.6 `/system/modules` Browser **47/47**、根级 Smoke **227/227**、Rules **143/143**；workspace typecheck、ESLint、Shared/API/Web production build、Prisma validate、runtime legacy scan、`git diff --check` 全绿。本地 migration 总数为 **68**。Docker release Smoke 已重新覆盖 **68/68 migrations**、Redis cache runtime、API/Web runtime、Nginx proxy 与 SPA fallback；DataEase provider/token 继续由 DB-023 deferred。
 
 ## 管理规则
 

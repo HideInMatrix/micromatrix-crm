@@ -1,8 +1,9 @@
-import { Injectable, type MessageEvent } from '@nestjs/common'
+import { Injectable, Optional, type MessageEvent } from '@nestjs/common'
 import { type MessageTaskEvent, NotificationBizType, NotificationVO } from '@micromatrix/shared'
 import { finalize, Observable, Subject } from 'rxjs'
 import { Notification } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { RedisService } from '../../redis/redis.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 
 export interface NotifyInput {
@@ -13,6 +14,9 @@ export interface NotifyInput {
   event?: MessageTaskEvent
 }
 
+const NOTIFICATION_CACHE_TTL_SECONDS = 30
+const NOTIFICATION_VERSION_TTL_SECONDS = 5 * 60
+
 @Injectable()
 export class NotificationsService {
   /** 每个在线用户一组 SSE 流（同一用户可能开多个页签） */
@@ -21,6 +25,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly messageSettings: MessageSettingsService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   subscribe(userId: string): Observable<MessageEvent> {
@@ -52,6 +57,7 @@ export class NotificationsService {
     const notification = await this.prisma.notification.create({
       data: { tenantId, userId, ...data },
     })
+    await this.bumpCacheVersion(tenantId, userId)
     this.push(userId, notification)
   }
 
@@ -69,6 +75,16 @@ export class NotificationsService {
     pageSize: number,
     unreadOnly: boolean,
   ) {
+    const version = await this.cacheVersion(tenantId, userId)
+    const cacheKey = this.listCacheKey(tenantId, userId, version, page, pageSize, unreadOnly)
+    const cached = await this.redis?.getJson<{
+      items: NotificationVO[]
+      total: number
+      page: number
+      pageSize: number
+    }>(cacheKey)
+    if (cached) return cached
+
     const where = {
       tenantId,
       userId,
@@ -83,14 +99,23 @@ export class NotificationsService {
       }),
       this.prisma.notification.count({ where }),
     ])
-    return { items: items.map((n) => this.toVO(n)), total, page, pageSize }
+    const result = { items: items.map((n) => this.toVO(n)), total, page, pageSize }
+    await this.redis?.setJson(cacheKey, result, NOTIFICATION_CACHE_TTL_SECONDS)
+    return result
   }
 
   async unreadCount(tenantId: string, userId: string): Promise<{ count: number }> {
+    const version = await this.cacheVersion(tenantId, userId)
+    const cacheKey = this.unreadCacheKey(tenantId, userId, version)
+    const cached = await this.redis?.getJson<{ count: number }>(cacheKey)
+    if (cached) return cached
+
     const count = await this.prisma.notification.count({
       where: { tenantId, userId, readAt: null },
     })
-    return { count }
+    const result = { count }
+    await this.redis?.setJson(cacheKey, result, NOTIFICATION_CACHE_TTL_SECONDS)
+    return result
   }
 
   async markRead(tenantId: string, userId: string, id: string) {
@@ -98,6 +123,7 @@ export class NotificationsService {
       where: { id, tenantId, userId, readAt: null },
       data: { readAt: new Date() },
     })
+    await this.bumpCacheVersion(tenantId, userId)
     return { id }
   }
 
@@ -106,7 +132,35 @@ export class NotificationsService {
       where: { tenantId, userId, readAt: null },
       data: { readAt: new Date() },
     })
+    await this.bumpCacheVersion(tenantId, userId)
     return { count: result.count }
+  }
+
+  private async cacheVersion(tenantId: string, userId: string): Promise<string> {
+    return (await this.redis?.get(this.versionKey(tenantId, userId))) ?? '0'
+  }
+
+  private async bumpCacheVersion(tenantId: string, userId: string): Promise<void> {
+    await this.redis?.increment(this.versionKey(tenantId, userId), NOTIFICATION_VERSION_TTL_SECONDS)
+  }
+
+  private versionKey(tenantId: string, userId: string): string {
+    return `notifications:version:${tenantId}:${userId}`
+  }
+
+  private unreadCacheKey(tenantId: string, userId: string, version: string): string {
+    return `notifications:unread:${tenantId}:${userId}:v${version}`
+  }
+
+  private listCacheKey(
+    tenantId: string,
+    userId: string,
+    version: string,
+    page: number,
+    pageSize: number,
+    unreadOnly: boolean,
+  ): string {
+    return `notifications:list:${tenantId}:${userId}:v${version}:${page}:${pageSize}:${unreadOnly ? 1 : 0}`
   }
 
   private push(userId: string, notification: Notification): void {

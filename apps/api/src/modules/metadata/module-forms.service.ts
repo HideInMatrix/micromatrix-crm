@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import {
   evaluateFormula,
   formulaVariables,
@@ -8,12 +8,14 @@ import {
   type FieldType,
   type FieldVO,
 } from '@micromatrix/shared'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import type { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
 
 const SYSTEM_ACTOR = 'SYSTEM'
+const CACHE_TTL_SECONDS = 10 * 60
 
 type DatabaseClient = PrismaService | Prisma.TransactionClient
 type FieldWithBlob = Prisma.SysModuleFieldGetPayload<{ include: { blob: true } }>
@@ -38,9 +40,28 @@ export interface ModuleFormConfigVO {
 
 @Injectable()
 export class ModuleFormsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
+  ) {}
 
   async getConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId: organizationId,
+        namespace: this.cacheNamespace(formKey),
+        key: 'config',
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: () => this.loadConfig(organizationId, formKey),
+      })
+    }
+    return this.loadConfig(organizationId, formKey)
+  }
+
+  private async loadConfig(
+    organizationId: string,
+    formKey: string,
+  ): Promise<ModuleFormConfigVO> {
     return this.prisma.$transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey)
       const [blob, fields] = await Promise.all([
@@ -88,6 +109,7 @@ export class ModuleFormsService {
         update: { prop: JSON.stringify(formProp) },
       })
     })
+    await this.invalidateForm(organizationId, formKey)
     return this.getConfig(organizationId, formKey)
   }
 
@@ -98,7 +120,7 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
     this.validateFieldInput(dto)
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const duplicated = await tx.sysModuleField.findFirst({
         where: { formId: form.id, name: dto.label.trim() },
@@ -130,6 +152,8 @@ export class ModuleFormsService {
       })
       return this.toVO(created, formKey)
     })
+    await this.invalidateForm(organizationId, formKey)
+    return result
   }
 
   async updateField(
@@ -139,7 +163,7 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
     this.validateFieldInput(dto)
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       const current = this.parseProp(field)
       if (dto.label && dto.label.trim() !== field.name) {
@@ -190,16 +214,20 @@ export class ModuleFormsService {
       })
       return this.toVO(updated, field.form.formKey)
     })
+    await this.invalidateForm(organizationId, result.module)
+    return result
   }
 
   async deleteField(organizationId: string, id: string): Promise<{ id: string; name: string }> {
-    return this.prisma.$transaction(async (tx) => {
+    const deleted = await this.prisma.$transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       if (this.parseProp(field).system) throw new BadRequestException('系统字段不可删除')
       await this.deleteFieldValues(tx, id)
       await tx.sysModuleField.delete({ where: { id } })
-      return { id, name: field.name }
+      return { result: { id, name: field.name }, formKey: field.form.formKey }
     })
+    await this.invalidateForm(organizationId, deleted.formKey)
+    return deleted.result
   }
 
   async reorder(
@@ -208,7 +236,7 @@ export class ModuleFormsService {
     orderedIds: string[],
     actorId = SYSTEM_ACTOR,
   ): Promise<{ count: number }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const fields = await tx.sysModuleField.findMany({
         where: { formId: form.id },
@@ -230,6 +258,8 @@ export class ModuleFormsService {
       )
       return { count: uniqueIds.length }
     })
+    await this.invalidateForm(organizationId, formKey)
+    return result
   }
 
   toVO(field: FieldWithBlob, formKey: string): FieldVO {
@@ -274,6 +304,14 @@ export class ModuleFormsService {
     })
     await this.ensureSystemFields(tx, form.id, formKey, actorId)
     return form
+  }
+
+  private cacheNamespace(formKey: string): string {
+    return `metadata:${formKey}`
+  }
+
+  private async invalidateForm(organizationId: string, formKey: string): Promise<void> {
+    await this.cache?.invalidate(organizationId, this.cacheNamespace(formKey))
   }
 
   private async ensureSystemFields(

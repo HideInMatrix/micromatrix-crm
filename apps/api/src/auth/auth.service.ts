@@ -9,6 +9,7 @@ import { JwtService, type JwtSignOptions } from '@nestjs/jwt'
 import { CurrentUser, LoginResult } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { Prisma } from '../generated/prisma/client'
+import { AuthContextCacheService } from '../common/services/auth-context-cache.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { LoginDto } from './dto/login.dto'
 import { RegisterDto } from './dto/register.dto'
@@ -50,6 +51,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly authCache: AuthContextCacheService,
   ) {}
 
   /** 注册 = 创建租户 + 根部门 + 管理员角色 + 管理员账号 */
@@ -249,6 +251,7 @@ export class AuthService {
       where: { id: userId },
       data: { passwordHash, defaultPwd: false, authVersion: { increment: 1 } },
     })
+    await this.authCache.invalidate(userId)
     return { success: true }
   }
 

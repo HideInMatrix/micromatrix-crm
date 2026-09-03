@@ -47,8 +47,9 @@ git push origin v0.0.1
 ### R5 可复现部署与验收
 
 - 提供 `docker-compose.release.yml` 和无真实密钥的 release 环境变量示例。
-- migration 成功后 API 才启动，API 健康后 Web 才启动。
-- 提供 `pnpm smoke:docker-release`：真实构建三个镜像、启动隔离 PostgreSQL、执行全部 migration、启动 API/Web，并验证健康检查、SPA fallback 与 `/api` proxy。
+- Redis 作为 API cache runtime 时必须启用密码、内部网络、volume 与 healthcheck，默认不得发布宿主机端口；Redis 不得成为 API 冷启动硬依赖，Migration 也不依赖 Redis。
+- migration 成功后 API 才启动；Redis 未就绪时 API 仍按数据库路径启动，Redis 恢复后缓存客户端自动重连；API 健康后 Web 才启动。
+- 提供 `pnpm smoke:docker-release`：真实构建三个镜像、启动隔离 PostgreSQL/Redis、执行全部 migration、启动 API/Web，并验证 Redis 缓存集成、健康检查、SPA fallback 与 `/api` proxy。
 
 ## 3. 不在本执行单元内
 

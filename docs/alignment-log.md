@@ -1165,3 +1165,47 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - production runtime 精确 legacy scan：`createLinearGraph=0`、`isExplicitGraph=0`、旧高级图只读 warning=0、`createNodes-only=0`、`businessSnapshot=0`；Prisma `ApprovalTask` 已无旧 `comment` 字段。
 - `/system` 流程设置高级能力逐项复核：发起人撤回、审批人撤回、加签、审批意见必填、duplicate rule、条件节点、字段权限、post-field、Webhook 均为 REAL；仅 `allowBatchProcess` 继续明确 disabled 并标注等待任务中心批量处理能力接入，没有用假入口伪造完成。
 - `tasks.md`、project progress、parity、deferred backlog 与最终 acceptance 已同步。**W3.7-9.2 / 9.3 / 9.4 / 9.5 全部关闭，DB-010 / DB-011 / DB-012 均为 `VERIFIED`；W3.7 正式完成。W3.7 之后不在本单元中预造新的任务编号。**
+
+---
+
+## 62. CACHE-001 Redis 平台缓存第一批立项（2026-09-03）
+
+- W3.7 封板后没有沿用审批任务编号；本轮按独立工程化单元冻结为 `CACHE-001`，需求、设计和任务清单分别落在 `docs/specs/redis-cache-foundation/requirements.md`、`design.md`、`tasks.md`。
+- 现状复核确认 `architecture.md` 长期把 Redis 标注为“预留队列/缓存”，虽然 README/技术栈与 Compose 历史上已经包含 Redis 方向，但 API 没有统一 Redis runtime abstraction；本单元先修正这个平台缺口，不把它伪装成新的 Cordys 业务 parity 项。
+- 第一批范围固定为三块：Redis 公共基座、AuthGuard 认证上下文缓存、通知未读/分页缓存。PostgreSQL 继续是唯一业务真相源，Redis 故障必须降级数据库；API Key Secret、JWT、密码和企业集成凭据不进入缓存。
+- 安全边界已经在设计阶段冻结：认证缓存 60 秒并要求成员/角色/个人资料/企微同步等写路径主动失效；通知缓存 30 秒，使用用户通知版本号失效，禁止 `KEYS/SCAN`；Redis 默认不发布宿主端口。
+- 本节只表示规格完成、执行单元进入 `IN_PROGRESS`，不提前宣称实现验收完成。下一指针为 `CACHE-001 C2`，完成真实 Redis、Rules、typecheck 与 Compose 验收后再回写最终结论。
+
+---
+
+## 63. CACHE-001 Redis 平台缓存第一批最终验收（2026-09-03）
+
+- 公共基座已落地：API 引入 `ioredis` 与全局 `RedisModule/RedisService`，统一 `micromatrix-crm:` key prefix，支持 URL/host 配置、有限重试/超时、错误日志节流和 shutdown；未配置或命令失败均返回 cache miss/no-op，不替代 PostgreSQL 真相源。
+- AuthGuard 已接入 60 秒 `auth:context:<userId>` cache-aside，缓存对象包含 `authVersion + AuthUser`；JWT 命中缓存后继续比较 authVersion，API Key 本体仍逐请求读取数据库并校验 enabled/expire/secret。成员、角色、个人资料、企微资料回写和组织同步写路径均主动失效。
+- 重新按需求矩阵扫描 production `User/UserRole/Role` 写入口时发现并修复关联失效遗漏：禁用/删除直属上级或企微同步 DISABLE 成员会同步清空下属 `leaderId`，因此相关下属认证上下文现在一并失效，不再等待 60 秒 TTL。
+- Notifications 已接入 30 秒短缓存：未读数与参数化分页 key 均包含 tenant/user；新通知、单条已读、全部已读只执行用户版本号 `INCR`，不使用 `KEYS/SCAN`。专项测试证明第二次读取不重复访问 Prisma，版本变化后重新落库并回填缓存。
+- 验收全绿：API typecheck PASS、缓存专项 **3/3**、Rules **143/143**、`git diff --check` PASS。真实 Redis 验证密码认证、health、SET/TTL/INCR/GET；项目 `RedisService` 对真实 Redis 完成 JSON/计数/删除，未配置和不可连接两类故障路径均快速降级。
+- `pnpm smoke:docker-release` 从当前源码重新构建 API/Migration/Web 并最终 PASS：隔离 PostgreSQL 成功应用 **68/68 migrations**，API 真实生成 auth context 与 notification unread Redis key，管理员改密后 auth key 被删除；重复初始化、API health、Nginx health、`/api` proxy 与 SPA fallback 全绿。
+- Release Compose 验证 Redis 无宿主 published port；API 只把 Migration 成功作为启动硬依赖，Redis health 不再阻断 API 冷启动，Migration 仍只依赖 PostgreSQL。额外使用 release 镜像在**完全没有 Redis 容器**的网络中启动 API，`health/login/me/unread-count` 均返回 200，并观察到明确的数据库降级日志。`CACHE-001 C1～C7` 全部关闭，状态切换为 **`VERIFIED`**；下一正式阶段尚未冻结编号。
+
+---
+
+## 64. CACHE-002 租户读模型与首页统计缓存立项（2026-09-03）
+
+- 在 CACHE-001 已建立 Redis 公共运行基座、认证上下文和通知缓存后，本轮独立冻结为 `CACHE-002`；规格落在 `docs/specs/redis-cache-read-models/requirements.md`、`design.md`、`tasks.md`，继续保持“先需求/设计/任务再实现”的线性流程。
+- 范围只包含可丢弃派生读模型：ModuleConfig/TopNavigation、MessageSettings、Enterprise UI/Branding、ModuleForm/Metadata、Department tree/ACTIVE member options，以及 Home statistic/overview 聚合结果。PostgreSQL 继续是真相源。
+- 配置/目录类使用版本号主动失效，首页聚合使用 30 秒短 TTL 自然收敛；禁止为了失效执行 `KEYS/SCAN`。Pub/Sub、BullMQ、Redis Lock、业务流水号、验证码和 Session 明确不进入本批。
+- 首页缓存 key 在规格阶段明确纳入 user/DataScope 与筛选参数稳定摘要，避免不同角色范围、部门筛选或统计场景互相复用结果。
+
+---
+
+## 65. CACHE-002 租户读模型与首页统计缓存最终验收（2026-09-03）
+
+- 公共层新增 `TenantDerivedCacheService`：统一 `remember/invalidate/fingerprint/snapshot`，key 使用 namespace + tenant + version + 参数摘要；版本 key 使用 7 天 TTL，明显长于最长业务缓存 10 分钟，避免版本过期回到 v0 时命中仍存活旧值。Redis 未 ready 时直接 bypass loader，运行时故障继续由 CACHE-001 `RedisService` fail-open。
+- `RedisService` 增加只读 ready 状态，`/health` 增加 Redis enabled/ready 与 namespace 级 hit/miss/bypass/write 累计指标；没有暴露 host/password/URL、业务 key 或缓存内容。
+- ModuleConfig/TopNavigation 采用 10 分钟缓存，cache hit 不再执行默认 `createMany(skipDuplicates)`；MessageSettings 采用 5 分钟缓存并让通知开关判断复用单事件 effective setting；Enterprise UI/Branding 采用 5 分钟缓存，邮箱到租户解析继续实时查库且附件文件内容不入 Redis；ModuleForm/Metadata 采用 10 分钟缓存，事务内 `listFieldsInTransaction` 始终绕过 Redis。
+- `directory` 采用 3 分钟缓存覆盖 Department tree、ACTIVE member options 与首页权限部门树；Departments create/update/remove、Members create/update/toggle/remove、WeCom OrganizationSync apply 成功后统一 bump 目录版本。写入口审计确认注册属于全新租户；个人中心当前只改 phone/email，企微工作台资料回写只改 phone/email/gender，不改变本批 directory 读模型字段，因此不需要额外失效。
+- Home statistic 的 lead/opportunity/underway/success 与 overview 的 summary/funnel/ranking/trend/conversion 使用 30 秒短 TTL，不建立客户/线索/商机/合同全写路径失效矩阵。摘要输入包含 user id/dept、排序后的 permissions/roles/dataScope/scopeDeptIds，以及 method/request；deptIds 归一化排序后相同语义请求可命中同一 key。
+- 新增公共缓存专项覆盖 loader 单次执行、版本失效、Redis not-ready bypass、稳定 fingerprint；新增读模型专项证明 ModuleConfig cache hit 不重复补种/查询且写后立即读到新值、Directory cache hit 不重复查库且部门创建后失效、Home 相同用户/等价筛选命中而不同筛选隔离。
+- 最终验证：API typecheck PASS；CACHE-002 + 相邻模块专项 **37/37 PASS**；完整 Rules **150/150 PASS**。本批未重复执行耗时较高的完整 Docker 三镜像 Smoke，最近 Docker runtime 基线仍为 CACHE-001 封板时的 PASS；CACHE-002 没有修改镜像拓扑、Redis Compose 契约或数据库 migration。
+- `CACHE-002 C1～C7` 全部关闭，状态切换为 **`VERIFIED`**。下一阶段如继续 Redis 平台化，应另立 EVENT-001（Pub/Sub + 多实例 SSE）、COORD-001（同步/Cron 协调）、ASYNC-001（BullMQ）或 SEQ-001（原子业务编号），不得把不同失败语义混入 CACHE-002。

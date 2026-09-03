@@ -14,6 +14,7 @@ import {
 } from '@micromatrix/shared'
 import { DataScope, Prisma, Role } from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
+import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateRoleDto, QueryRoleMembersDto, UpdateRoleDto } from './dto/role.dto'
@@ -25,6 +26,7 @@ export class RolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
+    private readonly authCache: AuthContextCacheService,
   ) {}
 
   async findAll(tenantId: string): Promise<RoleVO[]> {
@@ -78,6 +80,10 @@ export class RolesService {
       dto.scopeDeptIds ?? role.scopeDeptIds,
       dto.permissions ?? role.permissions,
     )
+    const affectedUsers = await this.prisma.userRole.findMany({
+      where: { tenantId: user.tenantId, roleId: id },
+      select: { userId: true },
+    })
     const updated = await this.prisma.role.update({
       where: { id },
       data: {
@@ -88,6 +94,7 @@ export class RolesService {
         ...(dto.remark === undefined ? {} : { remark: dto.remark.trim() || null }),
       },
     })
+    await this.authCache.invalidateMany(affectedUsers.map(({ userId }) => userId))
     return this.toVO(updated)
   }
 
@@ -106,7 +113,12 @@ export class RolesService {
     if (soleRoleMemberCount > 0) {
       throw new BadRequestException('该角色仍是部分成员的唯一角色，请先为其分配其他角色')
     }
+    const affectedUsers = await this.prisma.userRole.findMany({
+      where: { tenantId, roleId: id },
+      select: { userId: true },
+    })
     await this.prisma.role.delete({ where: { id } })
+    await this.authCache.invalidateMany(affectedUsers.map(({ userId }) => userId))
     return { id, name: role.name }
   }
 
@@ -197,6 +209,7 @@ export class RolesService {
       data: ids.map((userId) => ({ tenantId, roleId, userId })),
       skipDuplicates: true,
     })
+    await this.authCache.invalidateMany(ids)
     return { roleId, userIds: ids }
   }
 
@@ -209,6 +222,7 @@ export class RolesService {
     const roleCount = await this.prisma.userRole.count({ where: { tenantId, userId } })
     if (roleCount <= 1) throw new BadRequestException('成员至少需要保留一个角色')
     await this.prisma.userRole.delete({ where: { id: relation.id } })
+    await this.authCache.invalidate(userId)
     return { roleId, userId }
   }
 

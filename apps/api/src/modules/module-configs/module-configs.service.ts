@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import {
   NAVIGATION_MODULES,
   TOP_NAVIGATION_DEFINITIONS,
@@ -7,18 +7,37 @@ import {
   type TopNavigationConfigVO,
   type TopNavigationKey,
 } from '@micromatrix/shared'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
 const definitionMap = new Map(NAVIGATION_MODULES.map((definition) => [definition.key, definition]))
 const topNavigationDefinitionMap = new Map(
   TOP_NAVIGATION_DEFINITIONS.map((definition) => [definition.key, definition]),
 )
+const CACHE_NAMESPACE = 'module-config'
+const CACHE_TTL_SECONDS = 10 * 60
 
 @Injectable()
 export class ModuleConfigsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
+  ) {}
 
   async list(tenantId: string): Promise<ModuleConfigVO[]> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId,
+        namespace: CACHE_NAMESPACE,
+        key: 'list',
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: () => this.loadList(tenantId),
+      })
+    }
+    return this.loadList(tenantId)
+  }
+
+  private async loadList(tenantId: string): Promise<ModuleConfigVO[]> {
     await this.ensureDefaults(tenantId)
     const rows = await this.prisma.moduleConfig.findMany({
       where: { tenantId },
@@ -35,6 +54,7 @@ export class ModuleConfigsService {
       where: { tenantId_key: { tenantId, key: definition.key } },
       data: { enabled },
     })
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.toVO(row)
   }
 
@@ -57,10 +77,24 @@ export class ModuleConfigsService {
         }),
       ),
     )
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.list(tenantId)
   }
 
   async listTopNavigation(tenantId: string): Promise<TopNavigationConfigVO[]> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId,
+        namespace: CACHE_NAMESPACE,
+        key: 'top-navigation',
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: () => this.loadTopNavigation(tenantId),
+      })
+    }
+    return this.loadTopNavigation(tenantId)
+  }
+
+  private async loadTopNavigation(tenantId: string): Promise<TopNavigationConfigVO[]> {
     await this.ensureTopNavigationDefaults(tenantId)
     const rows = await this.prisma.topNavigationConfig.findMany({
       where: { tenantId },
@@ -91,6 +125,7 @@ export class ModuleConfigsService {
         }),
       ),
     )
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.listTopNavigation(tenantId)
   }
 

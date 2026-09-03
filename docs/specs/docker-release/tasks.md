@@ -39,3 +39,9 @@
   - `prisma` 从 API package manifest 移出，仓库根保留开发构建 CLI；新增 `@micromatrix/migrate` 与 `docker/migrate.Dockerfile`，专门执行生产 migration。
   - release compose 改为 PostgreSQL → 独立 Migration 镜像 → API → Web；GitHub tag workflow 同时发布 `-api`、`-migrate`、`-web` 三个 multi-arch 镜像。
   - 本地 API 镜像实测由约 **988MB** 降至约 **517MB**；空 PostgreSQL 上独立 Migration 镜像成功应用 **68 migrations**，随后瘦身 API `/api/health` 返回 200。
+
+- [x] D9 Redis cache runtime 纳入 release 验收（2026-09-03）
+  - release Compose 增加密码认证 Redis、AOF volume 与 healthcheck，不发布宿主机端口；API 不把 Redis healthy 作为启动硬门槛，Migration 继续只依赖 PostgreSQL。
+  - `pnpm smoke:docker-release` 增加真实 Redis 容器，登录后验证 AuthGuard cache key、通知 unread cache key，并在修改管理员密码后断言认证缓存被主动删除。
+  - 当前源码三镜像重新实建，隔离 PostgreSQL **68/68 migrations**、Redis cache integration、重复初始化保护、API/Nginx health、`/api` proxy 与 SPA fallback 全部 PASS。
+  - 另以相同 release API/Migration 镜像完成 Redis 缺席冷启动：不启动 Redis 时 API health、登录、AuthGuard protected endpoint 与通知未读接口仍全部 200，确认 cache runtime 不是业务单点。

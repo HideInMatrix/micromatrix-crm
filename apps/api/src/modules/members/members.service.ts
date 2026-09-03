@@ -3,9 +3,12 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common'
 import { MemberVO, PaginatedResult } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
+import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import type { AuthUser } from '../../common/auth-user'
@@ -16,11 +19,16 @@ type MemberWithRelations = Prisma.UserGetPayload<{
   include: { userRoles: { include: { role: true } }; dept: true }
 }>
 
+const DIRECTORY_CACHE_NAMESPACE = 'directory'
+const DIRECTORY_CACHE_TTL_SECONDS = 3 * 60
+
 @Injectable()
 export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rolesService: RolesService,
+    private readonly authCache: AuthContextCacheService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
   async findAll(tenantId: string, query: QueryMembersDto): Promise<PaginatedResult<MemberVO>> {
@@ -69,10 +77,19 @@ export class MembersService {
   }
 
   async options(tenantId: string) {
-    return this.prisma.user.findMany({
-      where: { tenantId, status: 'ACTIVE' },
-      select: { id: true, name: true, deptId: true },
-      orderBy: { createdAt: 'asc' },
+    const loader = () =>
+      this.prisma.user.findMany({
+        where: { tenantId, status: 'ACTIVE' },
+        select: { id: true, name: true, deptId: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    if (!this.cache) return loader()
+    return this.cache.remember({
+      tenantId,
+      namespace: DIRECTORY_CACHE_NAMESPACE,
+      key: 'members-options',
+      ttlSeconds: DIRECTORY_CACHE_TTL_SECONDS,
+      loader,
     })
   }
 
@@ -101,6 +118,7 @@ export class MembersService {
       },
       include: { userRoles: { include: { role: true } }, dept: true },
     })
+    await this.cache?.invalidate(tenantId, DIRECTORY_CACHE_NAMESPACE)
     return this.toVO(user, await this.getLeaderMap(tenantId, [user.leaderId]))
   }
 
@@ -147,6 +165,8 @@ export class MembersService {
         include: { userRoles: { include: { role: true } }, dept: true },
       })
     })
+    await this.authCache.invalidate(id)
+    await this.cache?.invalidate(tenantId, DIRECTORY_CACHE_NAMESPACE)
     return this.toVO(user, await this.getLeaderMap(tenantId, [user.leaderId]))
   }
 
@@ -156,6 +176,7 @@ export class MembersService {
       where: { id },
       data: { passwordHash: await bcrypt.hash(password, 10), defaultPwd: true },
     })
+    await this.authCache.invalidate(id)
     return { id, name: user.name }
   }
 
@@ -163,6 +184,15 @@ export class MembersService {
     if (operatorId === id) throw new BadRequestException('不能禁用自己的账号')
     const user = await this.ensureExists(tenantId, id)
     const nextStatus = user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+    const subordinateIds =
+      nextStatus === 'DISABLED'
+        ? (
+            await this.prisma.user.findMany({
+              where: { tenantId, leaderId: id },
+              select: { id: true },
+            })
+          ).map(({ id: subordinateId }) => subordinateId)
+        : []
     const updated = await this.prisma.$transaction(async (tx) => {
       if (nextStatus === 'DISABLED') {
         await Promise.all([
@@ -172,6 +202,8 @@ export class MembersService {
       }
       return tx.user.update({ where: { id }, data: { status: nextStatus } })
     })
+    await this.authCache.invalidateMany([id, ...subordinateIds])
+    await this.cache?.invalidate(tenantId, DIRECTORY_CACHE_NAMESPACE)
     return { id, name: updated.name, status: updated.status }
   }
 
@@ -201,6 +233,13 @@ export class MembersService {
       throw new BadRequestException('成员仍有关联业务数据，请先转移负责人或停用账号')
     }
 
+    const subordinateIds = (
+      await this.prisma.user.findMany({
+        where: { tenantId, leaderId: id },
+        select: { id: true },
+      })
+    ).map(({ id: subordinateId }) => subordinateId)
+
     await this.prisma.$transaction(async (tx) => {
       await tx.department.updateMany({
         where: { tenantId, leaderId: id },
@@ -211,6 +250,8 @@ export class MembersService {
       await tx.notification.deleteMany({ where: { tenantId, userId: id } })
       await tx.user.delete({ where: { id } })
     })
+    await this.authCache.invalidateMany([id, ...subordinateIds])
+    await this.cache?.invalidate(tenantId, DIRECTORY_CACHE_NAMESPACE)
     return { id, name: user.name }
   }
 

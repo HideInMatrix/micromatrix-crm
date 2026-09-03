@@ -39,12 +39,12 @@ postgres healthy
     ↓
 migrate (Migration image / prisma migrate deploy)
     ↓ success
-api healthy
+api healthy <------ redis cache（非启动硬依赖）
     ↓
 web
 ```
 
-附件数据存放在 `release_uploads` volume，PostgreSQL 数据存放在 `release_pgdata`。
+附件数据存放在 `release_uploads` volume，PostgreSQL 数据存放在 `release_pgdata`，Redis AOF 存放在 `release_redisdata`。Redis 使用密码认证且不发布宿主机端口；Migration 与 Redis 无依赖，API 也不等待 Redis healthy，Redis 冷启动或运行时故障时内部缓存逻辑直接降级 PostgreSQL。
 
 ## 3. GitHub Actions
 
@@ -60,7 +60,7 @@ on:
 流水线分为四层：
 
 1. `verify`：校验 SemVer tag，固定 Node 24/pnpm 10.30.3，执行全仓 typecheck 和 lint。
-2. `docker-smoke`：从 tag 对应源码真实构建 API/Migration/Web 镜像，并用隔离 PostgreSQL 验证 migration/runtime/proxy。
+2. `docker-smoke`：从 tag 对应源码真实构建 API/Migration/Web 镜像，并用隔离 PostgreSQL/Redis 验证 migration、Redis cache runtime、API/Web runtime 与 proxy。
 3. `api-images`：amd64 使用 `ubuntu-latest` 原生构建，arm64 使用 `ubuntu-24.04-arm` 原生构建 API 与 Migration，各自推送临时架构 tag；不通过 QEMU 执行 Prisma/TypeScript/pnpm deploy。
 4. `api-manifest` 分别合并 API/Migration 两套架构镜像为正式 multi-arch tags；`web-image` 在 x64 runner 原生构建一次静态 dist，再组装 `linux/amd64,linux/arm64` Nginx 镜像。
 

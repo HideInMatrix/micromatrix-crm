@@ -21,16 +21,18 @@ flowchart LR
     Notify[NotificationsService<br/>站内信 + SSE]
   end
   DB[(PostgreSQL 18<br/>Prisma 7)]
-  Redis[(Redis<br/>预留队列/缓存)]
+  Redis[(Redis<br/>CACHE-001 可降级缓存)]
 
   PC -->|/api 代理| Guard
   Mobile -->|/api 代理| Guard
   Guard --> Biz
+  Guard --> Redis
   Biz --> Scope
   Biz --> Meta
   Biz --> Approval
   Biz --> Notify
   Biz --> DB
+  Notify --> Redis
   Cron --> DB
   Cron --> Notify
 ```
@@ -135,6 +137,17 @@ flowchart LR
 - MyBatis XML 是高级筛选、统计、权限条件和列表行为的重要事实来源；复杂查询不能只依据 Domain 类推断。
 - 对已有 MicroMatrix 实现优先做差异重构，不重复建立第二套平行模块。
 - 迁移完成标准是业务一致性和自动化测试通过，不是代码行数或文件数量一致。
+
+### ADR-9 Redis：可丢弃派生缓存，不作为业务真相源
+
+- `CACHE-001` 起 Redis 从“预留基础设施”进入实际 API runtime；`CACHE-002` 继续扩展为租户配置、目录读模型与首页聚合结果的派生缓存。PostgreSQL 始终是认证资料、角色权限、通知、企业配置、元数据和 CRM 业务记录的唯一真相源。
+- API 通过全局 `RedisService` 统一访问 Redis；业务模块不得自行创建客户端或私有连接池。
+- 第一批只缓存 AuthGuard 的活动用户/角色/权限上下文和通知未读数/分页结果；认证上下文 60 秒、通知结果 30 秒，并配合写路径主动失效。
+- `CACHE-002` 通过 `TenantDerivedCacheService` 统一租户派生缓存 key、稳定参数摘要、版本号主动失效和进程内 hit/miss/bypass/write 指标。ModuleConfig/TopNavigation、MessageSettings、Enterprise UI、Metadata 使用 5～10 分钟 TTL + DB 写后版本失效；部门树/成员 options 使用 3 分钟 TTL + 组织成员写后版本失效。
+- 首页 statistic/overview 只使用 30 秒短 TTL，key 同时包含 user/DataScope 上下文与筛选参数摘要；客户、线索、商机、合同等高频写路径不维护统计缓存失效矩阵，由短 TTL 自然收敛。
+- `/health` 可观察 Redis enabled/ready 与 CACHE-002 namespace 累计指标，但不得暴露 Redis host/password/URL、业务 key 或缓存内容。
+- Redis 未配置或暂时故障时缓存调用必须 fail-open 到 PostgreSQL，不能阻断登录、权限判断和通知读取；缓存写失败不得回滚业务数据库写入。
+- API Key Secret、密码、JWT、企业集成凭据等敏感认证材料不进入缓存。验证码、分布式锁、序列号、BullMQ、跨实例 SSE Pub/Sub 需要独立需求与一致性设计后才能扩展。
 
 ## 踩坑记录（环境与版本）
 

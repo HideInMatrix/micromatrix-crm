@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -15,6 +16,7 @@ import type {
 } from '@micromatrix/shared'
 import { createHash, randomBytes } from 'node:crypto'
 import { AuthService, type LoginContext } from '../../auth/auth.service'
+import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import type {
   ExternalIdentity,
   ExternalOAuthFlow,
@@ -47,6 +49,7 @@ export class WeComSsoService {
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly weComClient: WeComClient,
     private readonly auth: AuthService,
+    @Optional() private readonly authCache?: AuthContextCacheService,
   ) {}
 
   async discovery(tenantSlug?: string): Promise<WeComLoginDiscoveryVO> {
@@ -473,6 +476,7 @@ export class WeComSsoService {
     }
     if (Object.keys(data).length > 0) {
       await this.prisma.user.update({ where: { id: user.id }, data })
+      await this.authCache?.invalidate(user.id)
     }
     if (profile.avatarUrl) {
       await this.prisma.userExtension.upsert({

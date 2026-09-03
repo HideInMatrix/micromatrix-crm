@@ -54,7 +54,7 @@ ghcr.io/hideinmatrix/micromatrix-crm-web:v0.0.1
 pnpm smoke:docker-release
 ```
 
-脚本不会使用当前开发数据库。它会创建临时 Docker network/PostgreSQL，通过独立 Migration 镜像执行全部 Prisma migration，再启动 API/Web，完成验证后自动清理临时容器和网络。
+脚本不会使用当前开发数据库。它会创建临时 Docker network/PostgreSQL/Redis，通过独立 Migration 镜像执行全部 Prisma migration，再启动 API/Web，完成验证后自动清理临时容器和网络。
 
 验证内容：
 
@@ -63,6 +63,7 @@ pnpm smoke:docker-release
 - Web Docker build。
 - API/Migration/Web Dockerfile workspace scope 与多架构构建策略防回归检查。
 - API runtime 不包含 Prisma CLI；Migration 镜像独立执行 `prisma migrate deploy`。
+- Redis 使用密码认证；API 实际写入认证上下文与通知缓存 key，并验证修改密码后认证缓存主动失效。
 - `/api/health`。
 - Nginx `/healthz`。
 - Nginx `/api` 反向代理。
@@ -78,14 +79,9 @@ pnpm smoke:docker-release
 cp docker/.env.release.example docker/.env.release
 ```
 
-修改 `docker/.env.release` 中的数据库密码、JWT 密钥、`INTEGRATION_CREDENTIALS_KEY`、外部 Web 地址和镜像版本，然后：
+修改 `docker/.env.release` 中的数据库密码、Redis 密码、JWT 密钥、`INTEGRATION_CREDENTIALS_KEY`、外部 Web 地址和镜像版本，然后：
 
 ```bash
-docker compose \
-  --env-file docker/.env.release \
-  -f docker-compose.release.yml \
-  pull
-
 docker compose \
   --env-file docker/.env.release \
   -f docker-compose.release.yml \
@@ -99,9 +95,9 @@ docker compose \
 
 Compose 内部会自动完成以下启动顺序：
 
-1. PostgreSQL 启动并通过健康检查；
-2. 内部初始化服务自动执行数据库 migration，并在首次安装时创建系统基础数据和默认管理员；
-3. 初始化成功后启动 API；
+1. PostgreSQL 与 Redis 作为独立基础服务启动；Redis 只存在于 Compose 内部网络，不发布宿主机端口，并保留 healthcheck 供运行状态观测；
+2. 内部初始化服务只依赖 PostgreSQL，自动执行数据库 migration，并在首次安装时创建系统基础数据和默认管理员；
+3. Migration 成功后启动 API；API 不把 Redis healthy 作为启动硬门槛，Redis 尚未就绪时缓存调用直接按 miss 回退 PostgreSQL，恢复后客户端自动重新连接；
 4. API 健康后启动 Web。
 
 `migrate` 是内部一次性服务，作用等同于 Cordys CRM 启动时自动执行的 Flyway migration，部署者不需要直接运行它。
@@ -117,14 +113,15 @@ Compose 内部会自动完成以下启动顺序：
 
 默认 Web 暴露在 `8080`，可通过 `WEB_PORT` 修改。
 
-启动顺序由 Compose 负责：PostgreSQL 健康 → migration 成功 → API 健康 → Web。
+启动顺序由 Compose 负责：PostgreSQL 健康 → migration 成功 → API 健康 → Web；Redis 独立运行并提供可降级缓存，不阻断 API 冷启动。
 
 ## 4. 数据持久化
 
 - PostgreSQL：`release_pgdata`
+- Redis AOF：`release_redisdata`
 - API 附件/导出文件：`release_uploads` → `/app/uploads`
 
-升级应用镜像不会删除这两个 volume。
+升级应用镜像不会删除这些 volume。Redis 只保存可丢弃派生缓存，即使 Redis volume 被清空，业务数据仍以 PostgreSQL 为准。
 
 生产环境若使用外部 PostgreSQL，只需把 `DATABASE_URL` 指向外部数据库；是否保留 compose 内 PostgreSQL 可根据部署环境进一步裁剪。
 

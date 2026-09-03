@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import type {
   EnterpriseUiAssetSlot,
   EnterpriseUiAssetVO,
@@ -6,11 +6,14 @@ import type {
   EnterpriseUiSettingVO,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AttachmentsService } from '../attachments/attachments.service'
 import type { UpdateEnterpriseUiSettingDto } from './dto/ui-setting.dto'
 
 const TARGET_TYPE = 'enterprise-ui-setting'
+const CACHE_NAMESPACE = 'enterprise-ui'
+const CACHE_TTL_SECONDS = 5 * 60
 const DEFAULT_UI_SETTING = {
   theme: 'default',
   customTheme: '#008d91',
@@ -39,9 +42,22 @@ export class EnterpriseUiSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly attachments: AttachmentsService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
   async get(user: AuthUser): Promise<EnterpriseUiSettingVO> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId: user.tenantId,
+        namespace: CACHE_NAMESPACE,
+        key: 'setting',
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: async () => {
+          const row = await this.ensureRow(user.tenantId)
+          return this.toVO(user.tenantId, row)
+        },
+      })
+    }
     const row = await this.ensureRow(user.tenantId)
     return this.toVO(user.tenantId, row)
   }
@@ -52,8 +68,7 @@ export class EnterpriseUiSettingsService {
       select: { id: true, slug: true },
     })
     if (!tenant) throw new NotFoundException('企业不存在')
-    const row = await this.prisma.enterpriseUiSetting.findUnique({ where: { tenantId: tenant.id } })
-    return this.toBranding(tenant.slug, row)
+    return this.brandingForTenant(tenant.id, tenant.slug)
   }
 
   async getLoginBranding(input: {
@@ -74,10 +89,7 @@ export class EnterpriseUiSettingsService {
         },
       })
       if (user?.tenant.status === 'ACTIVE') {
-        const row = await this.prisma.enterpriseUiSetting.findUnique({
-          where: { tenantId: user.tenant.id },
-        })
-        return this.toBranding(user.tenant.slug, row)
+        return this.brandingForTenant(user.tenant.id, user.tenant.slug)
       }
     }
 
@@ -89,10 +101,7 @@ export class EnterpriseUiSettingsService {
     })
     if (tenants.length === 1) {
       const tenant = tenants[0]!
-      const row = await this.prisma.enterpriseUiSetting.findUnique({
-        where: { tenantId: tenant.id },
-      })
-      return this.toBranding(tenant.slug, row)
+      return this.brandingForTenant(tenant.id, tenant.slug)
     }
 
     return this.toBranding('', null)
@@ -121,6 +130,7 @@ export class EnterpriseUiSettingsService {
       where: { id: row.id },
       data: input,
     })
+    await this.cache?.invalidate(user.tenantId, CACHE_NAMESPACE)
     return this.toVO(user.tenantId, updated)
   }
 
@@ -142,6 +152,7 @@ export class EnterpriseUiSettingsService {
         where: { id: row.id },
         data: { [field]: uploaded.id },
       })
+      await this.cache?.invalidate(user.tenantId, CACHE_NAMESPACE)
       if (oldAttachmentId) {
         await this.attachments.removeFromTarget(user.tenantId, oldAttachmentId, TARGET_TYPE, row.id)
       }
@@ -161,6 +172,7 @@ export class EnterpriseUiSettingsService {
       where: { id: row.id },
       data: { [field]: null },
     })
+    await this.cache?.invalidate(user.tenantId, CACHE_NAMESPACE)
     if (oldAttachmentId) {
       await this.attachments.removeFromTarget(user.tenantId, oldAttachmentId, TARGET_TYPE, row.id)
     }
@@ -172,6 +184,24 @@ export class EnterpriseUiSettingsService {
       where: { tenantId },
       update: {},
       create: { tenantId, ...DEFAULT_UI_SETTING },
+    })
+  }
+
+  private async brandingForTenant(
+    tenantId: string,
+    tenantSlug: string,
+  ): Promise<EnterpriseUiBrandingVO> {
+    const loader = async () => {
+      const row = await this.prisma.enterpriseUiSetting.findUnique({ where: { tenantId } })
+      return this.toBranding(tenantSlug, row)
+    }
+    if (!this.cache) return loader()
+    return this.cache.remember({
+      tenantId,
+      namespace: CACHE_NAMESPACE,
+      key: `branding:${tenantSlug}`,
+      ttlSeconds: CACHE_TTL_SECONDS,
+      loader,
     })
   }
 

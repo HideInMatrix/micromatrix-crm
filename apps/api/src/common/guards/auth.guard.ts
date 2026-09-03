@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { toAuthUser } from '../auth-user'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
+import { AuthContextCacheService } from '../services/auth-context-cache.service'
 
 /**
  * 全局认证守卫：
@@ -30,6 +31,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly authCache: AuthContextCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -75,18 +77,27 @@ export class AuthGuard implements CanActivate {
       jwtCredential = true
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { userRoles: { include: { role: true } } },
-    })
-    if (!user || user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('用户不存在或已被禁用')
+    const cached = await this.authCache.get(userId)
+    let authUser
+    if (cached) {
+      if (jwtCredential && (jwtAuthVersion ?? 0) !== cached.authVersion) {
+        throw new UnauthorizedException('登录状态已失效，请重新登录')
+      }
+      authUser = cached.user
+    } else {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { userRoles: { include: { role: true } } },
+      })
+      if (!user || user.status !== 'ACTIVE') {
+        throw new UnauthorizedException('用户不存在或已被禁用')
+      }
+      if (jwtCredential && (jwtAuthVersion ?? 0) !== user.authVersion) {
+        throw new UnauthorizedException('登录状态已失效，请重新登录')
+      }
+      authUser = toAuthUser(user)
+      await this.authCache.set(userId, user.authVersion, authUser)
     }
-    if (jwtCredential && (jwtAuthVersion ?? 0) !== user.authVersion) {
-      throw new UnauthorizedException('登录状态已失效，请重新登录')
-    }
-
-    const authUser = toAuthUser(user)
     request.user = authUser
 
     const required =

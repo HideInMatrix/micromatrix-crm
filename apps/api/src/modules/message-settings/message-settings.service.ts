@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import {
   MESSAGE_TASK_DEFINITIONS,
   defaultMessageTaskConfig,
@@ -12,14 +12,34 @@ import {
   type MessageTaskSettingVO,
   type UpdateMessageTaskSettingInput,
 } from '@micromatrix/shared'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma, type MessageTaskSetting } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 
+const CACHE_NAMESPACE = 'message-settings'
+const CACHE_TTL_SECONDS = 5 * 60
+
 @Injectable()
 export class MessageSettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
+  ) {}
 
   async list(tenantId: string): Promise<MessageTaskGroupVO[]> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId,
+        namespace: CACHE_NAMESPACE,
+        key: 'list',
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: () => this.loadList(tenantId),
+      })
+    }
+    return this.loadList(tenantId)
+  }
+
+  private async loadList(tenantId: string): Promise<MessageTaskGroupVO[]> {
     const rows = await this.prisma.messageTaskSetting.findMany({ where: { tenantId } })
     const rowMap = new Map(rows.map((row) => [row.event, row]))
     const groups = new Map<MessageTaskModule, MessageTaskGroupVO>()
@@ -39,14 +59,27 @@ export class MessageSettingsService {
   async getConfig(tenantId: string, event: string): Promise<MessageTaskConfig | null> {
     const definition = this.definition(event)
     if (!definition.configurable) return null
-    const row = await this.prisma.messageTaskSetting.findFirst({
-      where: { tenantId, module: definition.module, event: definition.event },
-    })
-    return this.configFrom(row?.config, definition.event)
+    return (await this.getEffectiveSetting(tenantId, event)).config
   }
 
   async getEffectiveSetting(tenantId: string, event: string): Promise<MessageTaskSettingVO> {
     const definition = this.definition(event)
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId,
+        namespace: CACHE_NAMESPACE,
+        key: `event:${definition.event}`,
+        ttlSeconds: CACHE_TTL_SECONDS,
+        loader: () => this.loadEffectiveSetting(tenantId, definition),
+      })
+    }
+    return this.loadEffectiveSetting(tenantId, definition)
+  }
+
+  private async loadEffectiveSetting(
+    tenantId: string,
+    definition: MessageTaskDefinition,
+  ): Promise<MessageTaskSettingVO> {
     const row = await this.prisma.messageTaskSetting.findFirst({
       where: { tenantId, module: definition.module, event: definition.event },
     })
@@ -159,6 +192,7 @@ export class MessageSettingsService {
             : (input.config as unknown as Prisma.InputJsonValue),
       },
     })
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.toVO(definition, row)
   }
 
@@ -200,25 +234,16 @@ export class MessageSettingsService {
         }),
       ),
     )
+    await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.list(tenantId)
   }
 
   async isSystemEnabled(tenantId: string, event: MessageTaskEvent): Promise<boolean> {
-    const definition = this.definition(event)
-    const row = await this.prisma.messageTaskSetting.findFirst({
-      where: { tenantId, module: definition.module, event: definition.event },
-      select: { systemEnabled: true },
-    })
-    return row?.systemEnabled ?? definition.defaultSystemEnabled
+    return (await this.getEffectiveSetting(tenantId, event)).systemEnabled
   }
 
   async isWeComEnabled(tenantId: string, event: MessageTaskEvent): Promise<boolean> {
-    const definition = this.definition(event)
-    const row = await this.prisma.messageTaskSetting.findFirst({
-      where: { tenantId, module: definition.module, event: definition.event },
-      select: { weComEnabled: true },
-    })
-    return row?.weComEnabled ?? false
+    return (await this.getEffectiveSetting(tenantId, event)).weComEnabled
   }
 
   async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {

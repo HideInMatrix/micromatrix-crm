@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { homeCacheUserContext } from './home-cache-context'
 
 function monthStart(offset = 0): Date {
   const now = new Date()
@@ -14,10 +16,31 @@ export class HomeOverviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
+  summary(user: AuthUser) {
+    return this.remember(user, 'summary', () => this.loadSummary(user))
+  }
+
+  funnel(user: AuthUser) {
+    return this.remember(user, 'funnel', () => this.loadFunnel(user))
+  }
+
+  ranking(user: AuthUser) {
+    return this.remember(user, 'ranking', () => this.loadRanking(user))
+  }
+
+  trend(user: AuthUser) {
+    return this.remember(user, 'trend', () => this.loadTrend(user))
+  }
+
+  conversion(user: AuthUser) {
+    return this.remember(user, 'conversion', () => this.loadConversion(user))
+  }
+
   /** 销售简报 + 待办（按数据范围统计） */
-  async summary(user: AuthUser) {
+  private async loadSummary(user: AuthUser) {
     const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const opportunityScope = directScope as Prisma.OpportunityWhereInput
     const paymentRecordScope = directScope as Prisma.ContractPaymentRecordWhereInput
@@ -107,7 +130,7 @@ export class HomeOverviewService {
   }
 
   /** 商机漏斗（按阶段） */
-  async funnel(user: AuthUser) {
+  private async loadFunnel(user: AuthUser) {
     const scope = (await this.dataScope.directOwnerFilter(
       user,
       'menu:dashboard',
@@ -135,7 +158,7 @@ export class HomeOverviewService {
   }
 
   /** 本月业绩排行（赢单金额 / 回款金额 TOP10） */
-  async ranking(user: AuthUser) {
+  private async loadRanking(user: AuthUser) {
     const since = monthStart()
     const directScope = await this.dataScope.directOwnerFilter(
       user,
@@ -198,7 +221,7 @@ export class HomeOverviewService {
   }
 
   /** 近 6 个月趋势：赢单金额 / 回款金额 */
-  async trend(user: AuthUser) {
+  private async loadTrend(user: AuthUser) {
     const since = monthStart(-5)
     const directScope = await this.dataScope.directOwnerFilter(
       user,
@@ -257,7 +280,7 @@ export class HomeOverviewService {
   }
 
   /** 线索转化与输单原因 */
-  async conversion(user: AuthUser) {
+  private async loadConversion(user: AuthUser) {
     const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const opportunityScope = directScope as Prisma.OpportunityWhereInput
     const since = monthStart(-5)
@@ -299,5 +322,18 @@ export class HomeOverviewService {
         count: g._count._all,
       })),
     }
+  }
+
+  private remember<T>(user: AuthUser, method: string, loader: () => Promise<T>): Promise<T> {
+    if (!this.cache) return loader()
+    const key = this.cache.fingerprint({ method, user: homeCacheUserContext(user) })
+    return this.cache.remember({
+      tenantId: user.tenantId,
+      namespace: 'home-overview',
+      key,
+      ttlSeconds: 30,
+      versioned: false,
+      loader,
+    })
   }
 }

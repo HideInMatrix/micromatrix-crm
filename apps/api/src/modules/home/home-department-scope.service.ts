@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import { hasPermission, type HomeDepartmentNode, type HomeSearchType } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
+import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { homeCacheUserContext } from './home-cache-context'
 
 export interface HomeResolvedScope {
   all: boolean
@@ -16,9 +18,23 @@ export class HomeDepartmentScopeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
+    @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
   async tree(user: AuthUser): Promise<HomeDepartmentNode[]> {
+    if (this.cache) {
+      return this.cache.remember({
+        tenantId: user.tenantId,
+        namespace: 'directory',
+        key: `home-department-tree:${this.cache.fingerprint(homeCacheUserContext(user))}`,
+        ttlSeconds: 3 * 60,
+        loader: () => this.loadTree(user),
+      })
+    }
+    return this.loadTree(user)
+  }
+
+  private async loadTree(user: AuthUser): Promise<HomeDepartmentNode[]> {
     const relevantRoles = user.roles.filter(
       (role) =>
         hasPermission(role.permissions, 'menu:lead') ||

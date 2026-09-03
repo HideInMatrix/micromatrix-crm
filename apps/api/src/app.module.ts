@@ -40,12 +40,14 @@ import { RolesModule } from './modules/roles/roles.module'
 import { UserViewsModule } from './modules/user-views/user-views.module'
 import { WeComSsoModule } from './modules/wecom-sso/wecom-sso.module'
 import { PrismaModule } from './prisma/prisma.module'
+import { RedisModule } from './redis/redis.module'
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    RedisModule,
     CommonModule,
     AuthModule,
     NotificationsModule,

@@ -14,6 +14,27 @@ services:
       timeout: 3s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--requirepass',
+        '${REDIS_PASSWORD:?REDIS_PASSWORD is required}',
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - release_redisdata:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   migrate:
     image: ${MIGRATE_IMAGE:-ghcr.io/hideinmatrix/micromatrix-crm-migrate:${APP_VERSION:-latest}}
     restart: 'no'
@@ -40,6 +61,10 @@ services:
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:8080}
       UPLOAD_DIR: /app/uploads
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_DB: ${REDIS_DB:-0}
     volumes:
       - release_uploads:/app/uploads
     depends_on:
@@ -70,4 +95,5 @@ services:
 
 volumes:
   release_pgdata:
+  release_redisdata:
   release_uploads:
