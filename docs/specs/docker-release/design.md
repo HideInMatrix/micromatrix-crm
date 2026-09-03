@@ -30,7 +30,7 @@ Nginx 配置使用官方 `/etc/nginx/templates/*.template` 运行时 envsubst：
 
 因此同一个 Web 镜像可以在不同部署环境指向不同 API，不需要重新执行 Vite build。
 
-## 2. Release Compose
+## 2. 生产 Compose
 
 当前生产 `docker-compose.yml` 的启动顺序为：
 

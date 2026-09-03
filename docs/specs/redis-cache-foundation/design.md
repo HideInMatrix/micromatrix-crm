@@ -116,7 +116,7 @@ notifications:unread:<tenantId>:<userId>:v<version>
 
 ## 5. Compose 设计
 
-开发与 release Compose 均增加：
+生产根 `docker-compose.yml` 提供：
 
 ```text
 redis:7-alpine

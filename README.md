@@ -38,8 +38,7 @@ micromatrix-crm/
 ├── packages/shared/  # 前后端共享类型、权限树、公式求值器
 ├── docker/           # API/Migration/Web 独立生产镜像与 Nginx runtime 配置
 ├── scripts/          # 全链路、企业设置与 Docker release Smoke
-├── docker-compose.yml         # 当前生产 Compose：PostgreSQL/Redis/Migration/API/Worker/Web
-└── docker-compose.release.yml # 旧 release compose 兼容文件，不再作为文档部署入口
+└── docker-compose.yml         # 唯一生产 Compose：PostgreSQL/Redis/Migration/API/Worker/Web
 ```
 
 ## 快速开始

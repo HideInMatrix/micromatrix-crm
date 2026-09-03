@@ -1287,3 +1287,11 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 自动化最终基线：ASYNC 专项 **10/10 PASS**；完整 Rules **172/172 PASS**；API typecheck/build PASS；`git diff --check` PASS。新增 `pnpm --filter @micromatrix/api smoke:async-export`，从零创建隔离 PostgreSQL/Redis，应用 **69/69 migrations + bootstrap** 后验证 producer PENDING、missing-job recovery、xlsx download、worker-stop PENDING、worker restart completion 和 queue worker observability，最终 7 项断言全部为 true。
 - 本轮没有伪称重新执行完整 Docker 三镜像 release Smoke；最近一次完整镜像 Smoke 仍是 CACHE-001 阶段的 **68/68 migrations** 历史基线。ASYNC-001 的新增运行证据由 69 migration 的真实 API/worker/Redis/PostgreSQL Smoke 与 Compose config 提供。
 - `ASYNC-001 A1～A8` 全部关闭，状态切换为 **`VERIFIED`**。当前没有新的正式执行单元处于 `IN_PROGRESS`；后续如继续 SEQ-001、验证码或其它重任务队列化，必须重新独立立项，不复用 ASYNC-001 的失败语义直接外推。
+
+---
+
+## 72. Docker Compose 单一真相源收口（2026-09-03）
+
+- 删除历史 `docker-compose.release.yml`，后续生产部署、Compose config 验证、运行拓扑维护统一只使用仓库根 `docker-compose.yml`。
+- 该决策用于消除两份 Compose 长期并存导致的服务、环境变量、依赖关系和 volume 配置漂移；今后不得再以“release 兼容文件”名义维护第二份平行 Compose。
+- 历史 alignment 记录中“当时新增过 `docker-compose.release.yml`”继续保留，作为历史事实，不回写篡改。

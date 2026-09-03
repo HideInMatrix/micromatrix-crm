@@ -46,7 +46,7 @@ git push origin v0.0.1
 
 ### R5 可复现部署与验收
 
-- 根 `docker-compose.yml` 作为当前生产部署入口，并提供无真实密钥的 release 环境变量示例；历史 `docker-compose.release.yml` 不再作为文档部署入口。
+- 根 `docker-compose.yml` 是唯一生产 Compose 真相源，并提供无真实密钥的 release 环境变量示例；仓库不再保留第二份 release Compose，禁止重新建立平行 Compose 文件，避免部署契约漂移。
 - Redis 作为 API cache runtime 时必须启用密码、内部网络、volume 与 healthcheck，默认不得发布宿主机端口；Redis 不得成为 API 冷启动硬依赖，Migration 也不依赖 Redis。
 - migration 成功后 API 才启动；Redis 未就绪时 API 仍按数据库路径启动，Redis 恢复后缓存客户端自动重连；ASYNC-001 的独立 Export Worker 复用 API 镜像、共享 `release_uploads`、等待 migration 完成与 Redis healthy，且不发布 HTTP 端口；API 健康后 Web 才启动。
 - 提供 `pnpm smoke:docker-release`：真实构建三个镜像、启动隔离 PostgreSQL/Redis、执行全部 migration、启动 API/Web，并验证 Redis 缓存集成、健康检查、SPA fallback 与 `/api` proxy。
