@@ -63,6 +63,7 @@ pnpm smoke:docker-release
 - Web Docker build。
 - API/Migration/Web Dockerfile workspace scope 与多架构构建策略防回归检查。
 - API runtime 不包含 Prisma CLI；Migration 镜像独立执行 `prisma migrate deploy`。
+- API runtime 同时包含 `dist/main.js` 与 `dist/worker.js`，并真实以 worker command 启动验证；缺失 worker 入口时 release smoke 必须直接失败。
 - Redis 使用密码认证；API 实际写入认证上下文与通知缓存 key，并验证修改密码后认证缓存主动失效。
 - `/api/health`。
 - Nginx `/healthz`。
@@ -98,6 +99,8 @@ docker compose \
   --env-file docker/.env.release \
   up -d
 ```
+
+升级时不能只执行 `up -d` 并依赖本机已有的可变 `latest` 缓存；必须先确认目标 tag 的 Release Docker workflow 成功、GHCR 中对应镜像已实际发布，再执行 `pull`，并优先把 `APP_VERSION` 固定到本次发布 tag。若 worker 日志出现 `Cannot find module '/app/dist/worker.js'`，先检查镜像标签和 OCI revision；若 GHCR `latest` 仍落后于代码 tag，说明较新的 release workflow 没有完成 publish，不能靠反复 `pull` 修复，应先解决 CI 失败并重新发布新 tag。
 
 根目录 `docker-compose.yml` 是当前生产部署入口。
 

@@ -1,0 +1,41 @@
+name: micromatrix-crm-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DEV_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DEV_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${DEV_POSTGRES_DB:-default}
+    ports:
+      - '127.0.0.1:${DEV_POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - dev_pgdata:/var/lib/postgresql
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${DEV_POSTGRES_USER:-postgres} -d ${DEV_POSTGRES_DB:-default}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      ['redis-server', '--appendonly', 'yes', '--requirepass', '${DEV_REDIS_PASSWORD:-redis}']
+    environment:
+      REDIS_PASSWORD: ${DEV_REDIS_PASSWORD:-redis}
+    ports:
+      - '127.0.0.1:${DEV_REDIS_PORT:-6379}:6379'
+    volumes:
+      - dev_redisdata:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  dev_pgdata:
+  dev_redisdata:

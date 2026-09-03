@@ -227,3 +227,5 @@ API 仍只硬依赖 migrate，不改为依赖 Redis health，从而维持 CACHE-
 3. real runtime：PostgreSQL + Redis + 独立 worker，证明 enqueue 返回 PENDING 后异步转 SUCCESS。
 4. restart：worker 停止时 PENDING 保留，重新启动后自动恢复。
 5. Compose config + API/worker build + diff check。
+
+API 与 worker 复用同一镜像，因此发布镜像本身必须同时满足两个入口：`dist/main.js` 与 `dist/worker.js`。Dockerfile 在生产 deploy 产物生成后直接校验两个文件；release smoke 还要以 worker command 启动同一 API 镜像并确认进程进入 ready 状态，避免 Compose 已升级但部署端仍复用旧 API 镜像时直到生产环境才暴露 `MODULE_NOT_FOUND`。

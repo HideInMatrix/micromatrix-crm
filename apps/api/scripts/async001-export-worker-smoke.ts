@@ -12,8 +12,9 @@ const apiBase = `http://127.0.0.1:${apiPort}/api`
 const uploadDir = `/tmp/mmx-async001-uploads-${process.pid}`
 const apiRoot = new URL('..', import.meta.url).pathname
 const pnpmExecPath = process.env['npm_execpath']
-const dockerBin = process.env['DOCKER_BIN']
-  ?? (existsSync('/usr/local/bin/docker') ? '/usr/local/bin/docker' : 'docker')
+const dockerBin =
+  process.env['DOCKER_BIN'] ??
+  (existsSync('/usr/local/bin/docker') ? '/usr/local/bin/docker' : 'docker')
 
 let api: ChildProcess | null = null
 let worker: ChildProcess | null = null
@@ -114,8 +115,15 @@ async function createCustomerExport(token: string, fileName: string) {
 
 async function taskStatus(container: string, id: string) {
   return docker([
-    'exec', container, 'psql', '-U', 'postgres', '-d', 'default', '-Atc',
-    `select status||'|'||attempts||'|'||(\"startedAt\" is not null)::text||'|'||(\"completedAt\" is not null)::text from export_tasks where id='${id}'`,
+    'exec',
+    container,
+    'psql',
+    '-U',
+    'postgres',
+    '-d',
+    'default',
+    '-Atc',
+    `select status||'|'||attempts||'|'||("startedAt" is not null)::text||'|'||("completedAt" is not null)::text from export_tasks where id='${id}'`,
   ])
 }
 
@@ -125,14 +133,33 @@ async function main() {
 
   try {
     docker([
-      'run', '-d', '--name', pgName,
-      '-e', 'POSTGRES_USER=postgres', '-e', `POSTGRES_PASSWORD=${password}`, '-e', 'POSTGRES_DB=default',
-      '-p', '127.0.0.1::5432', 'postgres:18-alpine',
+      'run',
+      '-d',
+      '--name',
+      pgName,
+      '-e',
+      'POSTGRES_USER=postgres',
+      '-e',
+      `POSTGRES_PASSWORD=${password}`,
+      '-e',
+      'POSTGRES_DB=default',
+      '-p',
+      '127.0.0.1::5432',
+      'postgres:18-alpine',
     ])
     docker([
-      'run', '-d', '--name', redisName,
-      '-p', '127.0.0.1::6379', 'redis:7-alpine',
-      'redis-server', '--appendonly', 'yes', '--requirepass', password,
+      'run',
+      '-d',
+      '--name',
+      redisName,
+      '-p',
+      '127.0.0.1::6379',
+      'redis:7-alpine',
+      'redis-server',
+      '--appendonly',
+      'yes',
+      '--requirepass',
+      password,
     ])
 
     await waitUntil(
@@ -236,15 +263,21 @@ async function main() {
     assert.equal(health.asyncJobs?.queue?.ready, true)
     assert.ok((health.asyncJobs?.queue?.workers ?? 0) >= 1)
 
-    console.log(JSON.stringify({
-      migrationsAndBootstrap: true,
-      producerReturnsPending: true,
-      missingJobRecovered: true,
-      xlsxDownloadVerified: true,
-      workerStoppedKeepsPending: true,
-      workerRestartCompletes: true,
-      queueWorkerObservable: true,
-    }, null, 2))
+    console.log(
+      JSON.stringify(
+        {
+          migrationsAndBootstrap: true,
+          producerReturnsPending: true,
+          missingJobRecovered: true,
+          xlsxDownloadVerified: true,
+          workerStoppedKeepsPending: true,
+          workerRestartCompletes: true,
+          queueWorkerObservable: true,
+        },
+        null,
+        2,
+      ),
+    )
   } finally {
     await queue?.close().catch(() => undefined)
     await stop(worker)

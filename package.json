@@ -7,6 +7,9 @@
   },
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
+    "dev:setup": "node scripts/dev-setup.mjs",
+    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
+    "dev:infra:down": "docker compose -f docker-compose.dev.yml down",
     "build": "pnpm --filter @micromatrix/shared build && pnpm --filter @micromatrix/api build && pnpm --filter @micromatrix/web build",
     "typecheck": "pnpm --filter @micromatrix/shared build && pnpm --filter @micromatrix/shared typecheck && pnpm --filter @micromatrix/api typecheck && pnpm --filter @micromatrix/web typecheck",
     "lint": "eslint .",

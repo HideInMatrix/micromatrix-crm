@@ -96,6 +96,7 @@ ExportTask 增加执行恢复所需字段：
 - 真实 Redis + PostgreSQL + worker smoke：HTTP/producer 创建任务后立即得到 PENDING，worker 异步生成文件，最终 SUCCESS 可下载；停止 worker 后任务保持 PENDING，重启 worker 后恢复完成。
 - API typecheck、worker build、完整 Rules、`git diff --check` 全绿。
 - 根 `docker-compose.yml` config 验证 worker 与 API 共享 uploads，worker 依赖 migrate + redis health，不对外暴露端口。
+- API release 镜像必须把 `dist/worker.js` 作为运行时契约的一部分；Docker build 与 release smoke 都要显式断言该入口存在，并至少真实启动一次 `node dist/worker.js`，禁止只验证 HTTP API 后就发布镜像。
 
 ## 4. 非本批范围
 

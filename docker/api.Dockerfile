@@ -32,6 +32,8 @@ RUN --mount=type=cache,id=pnpm-api,target=/pnpm/store \
   pnpm --filter @micromatrix/shared build \
   && pnpm --filter @micromatrix/api build \
   && pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod --no-optional deploy /opt/micromatrix-api \
+  && test -f /opt/micromatrix-api/dist/main.js \
+  && test -f /opt/micromatrix-api/dist/worker.js \
   && rm -f /opt/micromatrix-api/.env
 
 FROM base AS runtime

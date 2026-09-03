@@ -18,8 +18,8 @@
 
 ### R2 部署与安全边界
 
-- 生产部署由根 `docker-compose.yml` 提供 `redis:7-alpine` 服务，并启用密码认证、持久化 volume 与 healthcheck；本地开发按需单独准备 Redis，不维护第二份 Compose。
-- Redis 默认只存在于 Compose 内部网络，不发布宿主机端口。
+- 生产部署由根 `docker-compose.yml` 提供 `redis:7-alpine` 服务，并启用密码认证、持久化 volume 与 healthcheck；本地开发由 `docker-compose.dev.yml` 提供独立 PostgreSQL/Redis 基础设施，仅用于宿主机 `pnpm dev`，不得复制生产 migrate/API/worker/web 拓扑。
+- 生产 Redis 默认只存在于 Compose 内部网络，不发布宿主机端口；开发 Compose 允许发布 `6379` 供宿主机 API 连接。
 - API 通过内部 service name 连接 Redis；生产密码来自环境变量，不写入镜像和仓库真实配置。
 - Redis healthcheck 用于运维可观测与容器状态判断，但不得成为 API 冷启动的硬依赖；Redis 未就绪时 API 必须仍可启动并直接走 PostgreSQL，待 Redis 恢复后客户端自动重新连接。
 - `migrate` 不依赖 Redis；数据库 migration 仍只依赖 PostgreSQL。

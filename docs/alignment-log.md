@@ -1295,3 +1295,21 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 删除历史 `docker-compose.release.yml`，后续生产部署、Compose config 验证、运行拓扑维护统一只使用仓库根 `docker-compose.yml`。
 - 该决策用于消除两份 Compose 长期并存导致的服务、环境变量、依赖关系和 volume 配置漂移；今后不得再以“release 兼容文件”名义维护第二份平行 Compose。
 - 历史 alignment 记录中“当时新增过 `docker-compose.release.yml`”继续保留，作为历史事实，不回写篡改。
+
+---
+
+## 73. 本地开发基础设施 Compose（2026-09-03）
+
+- 新增 `docker-compose.dev.yml`，职责严格限定为本地开发 PostgreSQL 18 + Redis 7 基础设施，不包含 migrate、API、worker、web，不构成第二份生产 Compose。
+- 开发容器向宿主机发布 PostgreSQL `5432` 与 Redis `6379`，使 `apps/api/.env` 使用 `localhost` 即可由 `pnpm dev` 连接；生产 `docker-compose.yml` 继续保持内部网络拓扑和生产部署唯一真相源。
+- 开发 PostgreSQL/Redis 使用独立 `dev_*` volume，避免与生产 Compose volume 复用；开发 Redis 保留密码认证和 healthcheck，默认凭据只用于本地开发示例。
+- 新增 `pnpm dev:setup` 首次初始化入口：等待开发 PostgreSQL/Redis healthy 后执行已有 Prisma migration，再以 `SEED_MODE=bootstrap` 初始化空库；若检测到已有用户则 seed 跳过，禁止因开发基础设施重启而重置已有数据或密码。
+
+---
+
+## 74. Worker Release 镜像入口防回归（2026-09-03）
+
+- 现场发现生产 `worker` 使用 `node dist/worker.js` 启动时出现 `/app/dist/worker.js` 不存在。当前源码本地 TypeScript build 与重新构建的 API runtime 镜像均确认存在该文件；进一步核验 GHCR 后确认 `latest` 仍指向 `v0.0.8 / a69e763`，镜像内部只有 `dist/main.js`、没有 `dist/worker.js`。
+- GitHub Actions 记录证明 `v0.0.9` 与 `v0.0.10` 两次 Release Docker workflow 都在 `Verify source / Lint` 阶段失败，后续 Docker runtime、镜像构建与 GHCR publish 全部被跳过；`v0.0.10` 的阻断错误来自 `apps/api/scripts/async001-export-worker-smoke.ts` 中 SQL 模板字符串的无效双引号转义。因此问题不是 worker command 写错，而是新 Compose 已引用 worker 入口、实际可拉取的 `latest` 却仍停留在 ASYNC-001 之前。
+- 发布契约补强为同一 API 镜像必须同时携带 `dist/main.js` 与 `dist/worker.js`；Docker build 直接断言两个入口存在，release Docker smoke 使用真实 PostgreSQL/Redis 环境启动 worker 并检查 ready 日志，禁止只验证 HTTP API 后发布。
+- 生产升级继续要求先确认目标 tag 的 Release Docker workflow 已成功并且 GHCR 中真实存在对应镜像，再执行 `docker compose pull` 与 `up -d`；推荐 `APP_VERSION` 固定到明确 tag。出现 worker 入口缺失时禁止通过修改 Compose command 掩盖镜像版本漂移。

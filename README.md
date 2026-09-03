@@ -38,6 +38,7 @@ micromatrix-crm/
 ├── packages/shared/  # 前后端共享类型、权限树、公式求值器
 ├── docker/           # API/Migration/Web 独立生产镜像与 Nginx runtime 配置
 ├── scripts/          # 全链路、企业设置与 Docker release Smoke
+├── docker-compose.dev.yml     # 本地开发基础设施：PostgreSQL/Redis
 └── docker-compose.yml         # 唯一生产 Compose：PostgreSQL/Redis/Migration/API/Worker/Web
 ```
 
@@ -48,14 +49,16 @@ micromatrix-crm/
 ```bash
 pnpm install
 cp apps/api/.env.example apps/api/.env              # 首次
+pnpm dev:setup                                      # 首次/空库：启动基础设施 + migration + bootstrap seed
 pnpm --filter @micromatrix/shared build
 pnpm prisma:generate                                # 生成与 schema 一致的 Prisma Client
-pnpm db:migrate:dev                                 # 本地开发：应用/生成 Prisma migration
-pnpm --filter @micromatrix/api run db:seed          # 演示数据
+pnpm db:migrate:dev                                 # 仅在开发 schema 变更时应用/生成 Prisma migration
 pnpm dev                                            # api:3000 / web:5173 / mobile:5174
 ```
 
-> 根 `docker-compose.yml` 已是完整生产拓扑，不再用于“只启动本地 PostgreSQL + Redis”。本地开发请先准备可访问的 PostgreSQL 18 与 Redis 7，并在 `apps/api/.env` 中配置连接信息；生产部署使用根 Compose。
+> 根 `docker-compose.yml` 只负责完整生产拓扑；本地开发使用 `docker-compose.dev.yml` 单独启动 PostgreSQL 18 与 Redis 7，并通过宿主机 `localhost:5432/6379` 供 `pnpm dev` 连接。开发 Compose 不包含 migrate/API/worker/web，避免本地调试时重复启动整套服务。
+
+> `pnpm dev:setup` 会等待 PostgreSQL/Redis 健康后执行已有 migration，并以 `SEED_MODE=bootstrap` 初始化首个管理员。已有用户时 bootstrap seed 会直接跳过，因此不会重置现有开发账号、密码或业务数据。日常只需保持基础设施运行并执行 `pnpm dev`；如基础设施被停止，可用 `pnpm dev:infra` 单独重新启动。
 
 > API 的 `dev / build / typecheck / test:rules` 已内置 `prisma generate`。如果 Prisma schema 新增了字段或模型，正常执行 `pnpm dev` 会先刷新生成客户端；数据库结构变更仍需执行 `pnpm db:migrate:dev`（部署环境使用 `pnpm db:migrate`）。
 

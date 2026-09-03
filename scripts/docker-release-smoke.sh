@@ -9,6 +9,7 @@ NETWORK="mmx-release-smoke-${SUFFIX}"
 POSTGRES_CONTAINER="mmx-release-postgres-${SUFFIX}"
 REDIS_CONTAINER="mmx-release-redis-${SUFFIX}"
 API_CONTAINER="mmx-release-api-${SUFFIX}"
+WORKER_CONTAINER="mmx-release-worker-${SUFFIX}"
 WEB_CONTAINER="mmx-release-web-${SUFFIX}"
 API_IMAGE="micromatrix-crm-api:release-smoke"
 MIGRATE_IMAGE="micromatrix-crm-migrate:release-smoke"
@@ -16,7 +17,7 @@ WEB_IMAGE="micromatrix-crm-web:release-smoke"
 REDIS_PASSWORD="release_smoke_redis_password"
 
 cleanup() {
-  docker rm -f "$WEB_CONTAINER" "$API_CONTAINER" "$REDIS_CONTAINER" "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+  docker rm -f "$WEB_CONTAINER" "$WORKER_CONTAINER" "$API_CONTAINER" "$REDIS_CONTAINER" "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -91,8 +92,8 @@ docker exec "$REDIS_CONTAINER" redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null |
 
 DATABASE_URL="postgresql://postgres:postgres@${POSTGRES_CONTAINER}:5432/default?schema=public"
 
-echo '[docker-release] validating API runtime excludes build/migration tooling'
-docker run --rm "$API_IMAGE" sh -c 'test ! -f /app/.env && test ! -e /app/node_modules/.bin/prisma'
+echo '[docker-release] validating API runtime excludes build/migration tooling and includes both runtime entries'
+docker run --rm --entrypoint sh "$API_IMAGE" -c 'test ! -f /app/.env && test ! -e /app/node_modules/.bin/prisma && test -f /app/dist/main.js && test -f /app/dist/worker.js'
 
 echo '[docker-release] applying Prisma migrations and bootstrap data from initialization image'
 docker run --rm --entrypoint sh "$MIGRATE_IMAGE" -c 'test ! -f /app/.env && test -x /app/node_modules/.bin/prisma && test -x /app/node_modules/.bin/tsx'
@@ -101,6 +102,35 @@ docker run --rm \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
   "$MIGRATE_IMAGE"
+
+echo '[docker-release] starting worker entry from API image'
+docker run -d \
+  --name "$WORKER_CONTAINER" \
+  --network "$NETWORK" \
+  -e NODE_ENV=production \
+  -e DATABASE_URL="$DATABASE_URL" \
+  -e JWT_ACCESS_SECRET=release_smoke_access_secret_change_me \
+  -e JWT_REFRESH_SECRET=release_smoke_refresh_secret_change_me \
+  -e INTEGRATION_CREDENTIALS_KEY=release_smoke_integration_credentials_key_32_chars \
+  -e WEB_PUBLIC_URL=http://localhost \
+  -e REDIS_HOST="$REDIS_CONTAINER" \
+  -e REDIS_PORT=6379 \
+  -e REDIS_PASSWORD="$REDIS_PASSWORD" \
+  -e REDIS_DB=0 \
+  "$API_IMAGE" node dist/worker.js >/dev/null
+
+for _ in $(seq 1 30); do
+  if docker logs "$WORKER_CONTAINER" 2>&1 | grep -q 'MicroMatrix async export worker ready'; then
+    break
+  fi
+  if [ "$(docker inspect -f '{{.State.Running}}' "$WORKER_CONTAINER")" != 'true' ]; then
+    docker logs "$WORKER_CONTAINER" >&2
+    exit 1
+  fi
+  sleep 1
+done
+docker logs "$WORKER_CONTAINER" 2>&1 | grep -q 'MicroMatrix async export worker ready'
+test "$(docker inspect -f '{{.State.Running}}' "$WORKER_CONTAINER")" = 'true'
 
 echo '[docker-release] starting API image'
 docker run -d \
@@ -162,4 +192,4 @@ docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/healthz | grep -q '^ok'
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/api/health | grep -q 'ok'
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/login | grep -q '<div id="app">'
 
-echo '[docker-release] PASS: slim API runtime, Redis cache integration, automatic bootstrap initialization, Nginx SPA fallback and /api proxy are healthy'
+echo '[docker-release] PASS: slim API/worker runtime, Redis cache integration, automatic bootstrap initialization, Nginx SPA fallback and /api proxy are healthy'
