@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import type { Opportunity, OpportunityRule, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { resolveScopeUserIds } from '../pool-rules/pool-repository.helpers'
@@ -14,7 +15,10 @@ type ScopeName = { id: string; name: string }
 
 @Injectable()
 export class OpportunityRuleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly coordinator?: DistributedCoordinatorService,
+  ) {}
 
   async page(organizationId: string, dto: OpportunityRulePageDto) {
     const current = dto.current ?? 1
@@ -101,7 +105,10 @@ export class OpportunityRuleService {
   /** Cordys TaskCleanupJob 同频：每天 03:00 执行自动商机关闭。 */
   @Cron('0 0 3 * * *')
   async scheduledAutoClose() {
-    await this.executeAutoClose()
+    if (!this.coordinator) return void (await this.executeAutoClose())
+    await this.coordinator.runScheduledOnce('opportunity-auto-close', 'DAILY', () =>
+      this.executeAutoClose(),
+    )
   }
 
   async executeAutoClose(now = new Date(), onlyRuleIds?: string[]) {

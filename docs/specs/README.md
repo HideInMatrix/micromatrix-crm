@@ -22,3 +22,5 @@
 | CACHE-001 Redis 平台缓存第一批 | [requirements](./redis-cache-foundation/requirements.md)           | [design](./redis-cache-foundation/design.md)               | [tasks（已完成 / VERIFIED）](./redis-cache-foundation/tasks.md)         |
 | CACHE-002 租户读模型与首页统计缓存 | [requirements](./redis-cache-read-models/requirements.md)      | [design](./redis-cache-read-models/design.md)              | [tasks（已完成 / VERIFIED）](./redis-cache-read-models/tasks.md)        |
 | EVENT-001 Redis Pub/Sub 与多实例 SSE | [requirements](./redis-pubsub-sse/requirements.md)            | [design](./redis-pubsub-sse/design.md)                     | [tasks（已完成 / VERIFIED）](./redis-pubsub-sse/tasks.md)               |
+| COORD-001 Redis 组织同步与 Cron 协调 | [requirements](./redis-coordination/requirements.md)           | [design](./redis-coordination/design.md)                  | [tasks（已完成 / VERIFIED）](./redis-coordination/tasks.md)                    |
+| ASYNC-001 BullMQ 异步导出中心 | [requirements](./bullmq-export-center/requirements.md)             | [design](./bullmq-export-center/design.md)                | [tasks（已完成 / VERIFIED）](./bullmq-export-center/tasks.md)                  |

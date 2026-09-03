@@ -1,0 +1,4 @@
+ALTER TABLE "export_tasks"
+ADD COLUMN "payload" JSONB,
+ADD COLUMN "startedAt" TIMESTAMP(3),
+ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0;

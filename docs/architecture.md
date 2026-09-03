@@ -21,7 +21,7 @@ flowchart LR
     Notify[NotificationsService<br/>站内信 + SSE]
   end
   DB[(PostgreSQL 18<br/>Prisma 7)]
-  Redis[(Redis<br/>CACHE-001/002 缓存 + EVENT-001 Pub/Sub)]
+  Redis[(Redis<br/>缓存 + Pub/Sub + COORD-001 协调)]
 
   PC -->|/api 代理| Guard
   Mobile -->|/api 代理| Guard
@@ -34,6 +34,7 @@ flowchart LR
   Biz --> DB
   Notify --> Redis
   Redis --> Notify
+  Cron --> Redis
   Cron --> DB
   Cron --> Notify
 ```
@@ -128,7 +129,8 @@ flowchart LR
 ### ADR-7 定时任务：@nestjs/schedule 而非 BullMQ
 
 - 内部规模下 cron 足够（公海回收 2:30 / 标讯抓取 8:00 / 回款提醒 9:00），零额外基础设施
-- Redis 已在 compose 就绪，大批量导入导出等重任务时引入 BullMQ
+- BullMQ 不替代 Scheduler：`ASYNC-001` 起仅用于需要 durable delivery / retry / 独立 worker 的重任务；首个落地点是异步导出中心。HTTP API 只创建 PostgreSQL `ExportTask` 并 enqueue `taskId`，Excel 构建由独立 `dist/worker.js` 消费完成。
+- PostgreSQL `ExportTask` 是任务状态与执行参数真相源，BullMQ 只承担 durable delivery。worker 启动时会扫描有效 `PENDING` task：Redis job 已存在则保留，job 丢失则重新入队，因此 Redis queue metadata 丢失不等于业务任务丢失。
 
 ### ADR-8 CordysCRM：功能基准 + 语义迁移
 
@@ -139,18 +141,19 @@ flowchart LR
 - 对已有 MicroMatrix 实现优先做差异重构，不重复建立第二套平行模块。
 - 迁移完成标准是业务一致性和自动化测试通过，不是代码行数或文件数量一致。
 
-### ADR-9 Redis：派生缓存与非持久实时事件，不作为业务真相源
+### ADR-9 Redis：派生缓存、非持久实时事件与低成本协调，不作为业务真相源
 
 - `CACHE-001` 起 Redis 从“预留基础设施”进入实际 API runtime；`CACHE-002` 继续扩展为租户配置、目录读模型与首页聚合结果的派生缓存。PostgreSQL 始终是认证资料、角色权限、通知、企业配置、元数据和 CRM 业务记录的唯一真相源。
 - API 通过全局 `RedisService` 统一访问 Redis；业务模块不得自行创建客户端或私有连接池。
 - 第一批只缓存 AuthGuard 的活动用户/角色/权限上下文和通知未读数/分页结果；认证上下文 60 秒、通知结果 30 秒，并配合写路径主动失效。
 - `CACHE-002` 通过 `TenantDerivedCacheService` 统一租户派生缓存 key、稳定参数摘要、版本号主动失效和进程内 hit/miss/bypass/write 指标。ModuleConfig/TopNavigation、MessageSettings、Enterprise UI、Metadata 使用 5～10 分钟 TTL + DB 写后版本失效；部门树/成员 options 使用 3 分钟 TTL + 组织成员写后版本失效。
 - 首页 statistic/overview 只使用 30 秒短 TTL，key 同时包含 user/DataScope 上下文与筛选参数摘要；客户、线索、商机、合同等高频写路径不维护统计缓存失效矩阵，由短 TTL 自然收敛。
-- `/health` 可观察 Redis enabled/ready 与 CACHE-002 namespace 累计指标，但不得暴露 Redis host/password/URL、业务 key 或缓存内容。
+- `/health` 可观察 Redis enabled/ready、CACHE-002 namespace、EVENT-001 Pub/Sub 以及 COORD-001 coordination 累计指标，但不得暴露 Redis host/password/URL、业务 key、lease token 或缓存/消息内容。
 - Redis 未配置或暂时故障时缓存调用必须 fail-open 到 PostgreSQL，不能阻断登录、权限判断和通知读取；缓存写失败不得回滚业务数据库写入。
 - `EVENT-001` 起 Redis 同时承担通知实时 Pub/Sub，但只传播已落库通知的 CREATED / STATE_CHANGED 信号，不承担持久消息队列。每个 API 实例使用独立 subscriber 连接接收 `micromatrix-crm:event:*`，来源实例本地直推并通过 `sourceInstanceId` 忽略自身 Redis 回环；Redis 故障时仅跨实例实时性降级，Notification 数据不会丢失。
 - SSE 新通知继续使用默认 `message = NotificationVO`，已读变化使用命名 `refresh`，另有 15 秒 `heartbeat`；`/health` 同时暴露 Pub/Sub readiness 与 transport 计数，但不暴露消息正文。
-- API Key Secret、密码、JWT、企业集成凭据等敏感认证材料不进入 Redis payload。验证码、分布式锁、序列号、BullMQ 仍需要独立需求与一致性设计后才能扩展。
+- `COORD-001` 起 Redis 还承担低成本前置协调：组织同步使用 token lease + 自动续租 + token 绑定运行态，6 个 Scheduler 使用 UTC day/minute 时间槽 `SET NX` claim。Redis unavailable 时 Cron 才使用 PostgreSQL `pg_try_advisory_xact_lock` fallback；组织同步直接回退现有 active-batch partial unique、状态机和 apply advisory lock。Redis lease 不是最终业务锁，现有数据库唯一约束、CAS、事务锁均不得删除。
+- API Key Secret、密码、JWT、企业集成凭据等敏感认证材料不进入 Redis payload。`ASYNC-001` 的 BullMQ job 只携带 `taskId`，真实查询参数、字段选择与资源范围持久化 PostgreSQL；验证码与业务流水号仍需要独立需求与一致性设计后才能扩展，资源最终一致性锁继续留在 PostgreSQL。
 
 ## 踩坑记录（环境与版本）
 

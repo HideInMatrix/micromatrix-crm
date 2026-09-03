@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
   BiddingInfoVO,
@@ -7,6 +7,7 @@ import {
   PaginatedResult,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
+import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { BiddingInfo, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
@@ -24,6 +25,7 @@ export class BiddingService {
     private readonly prisma: PrismaService,
     private readonly fieldValues: ResourceFieldValueService,
     demoProvider: DemoBiddingProvider,
+    @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {
     this.providers = new Map([[demoProvider.key, demoProvider]])
   }
@@ -124,6 +126,11 @@ export class BiddingService {
 
   /** 每天早上 8 点自动抓取全部租户 */
   @Cron('0 0 8 * * *')
+  async scheduledFetchAllTenants() {
+    if (!this.coordinator) return void (await this.fetchAllTenants())
+    await this.coordinator.runScheduledOnce('bidding-fetch', 'DAILY', () => this.fetchAllTenants())
+  }
+
   async fetchAllTenants() {
     const sources = await this.prisma.biddingSource.findMany({ where: { enabled: true } })
     const tenantIds = [...new Set(sources.map((s) => s.tenantId))]

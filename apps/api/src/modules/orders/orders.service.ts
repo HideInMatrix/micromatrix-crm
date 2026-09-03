@@ -13,7 +13,11 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import { ApprovalsService } from '../approvals/approvals.service'
 import {
   type ParsedSubTableSpreadsheetRow,
@@ -550,6 +554,32 @@ export class OrdersService {
     headList: string[],
     ids?: string[],
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'order',
+      fileName,
+      payload: { version: 1, query, input: { headList, ids } },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    const input = payload.input as { headList: string[]; ids?: string[] }
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<OrderPageDto>,
+      input.headList,
+      input.ids,
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<OrderPageDto>,
+    headList: string[],
+    ids?: string[],
+  ): Promise<ExportBuildResult> {
     const [items, fields] = await Promise.all([
       this.collectExportItems(user, query, ids),
       this.moduleForms.listFields(user.tenantId, FORM_KEY),
@@ -614,12 +644,10 @@ export class OrdersService {
       )
     })
     if (!subColumns.length) {
-      return this.exportTasks.create(user, {
-        module: 'order',
-        fileName,
-        columns: mainColumns,
-        rows: mainRows,
-      })
+      return {
+        data: await this.spreadsheet.buildExportWorkbook(mainColumns, mainRows),
+        rowCount: items.length,
+      }
     }
     const groups = items.map((item, index) => ({
       values: mainRows[index] ?? {},
@@ -637,12 +665,7 @@ export class OrdersService {
       groups,
       parent.label,
     )
-    return this.exportTasks.createFromBuffer(user, {
-      module: 'order',
-      fileName,
-      data,
-      rowCount: items.length,
-    })
+    return { data, rowCount: items.length }
   }
 
   private async collectExportItems(

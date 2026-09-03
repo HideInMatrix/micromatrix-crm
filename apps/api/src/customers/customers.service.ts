@@ -31,7 +31,11 @@ import { MetadataService } from '../modules/metadata/metadata.service'
 import { ModuleFormsService } from '../modules/metadata/module-forms.service'
 import { ResourceFieldValueService } from '../modules/metadata/resource-field-value.service'
 import { DictionariesService } from '../modules/dictionaries/dictionaries.service'
-import { ExportTasksService } from '../modules/import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../modules/import-export/export-tasks.service'
 import type { ImportType } from '../modules/import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../modules/import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
@@ -2801,6 +2805,33 @@ export class CustomersService {
     query: QueryCustomersDto,
     input: { fileName: string; headList: string[]; ids?: string[]; poolId?: string },
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: input.poolId ? 'customer_pool' : 'customer',
+      fileName: input.fileName,
+      payload: {
+        version: 1,
+        query,
+        input: { headList: input.headList, ids: input.ids, poolId: input.poolId },
+      },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    return this.buildExportXlsx(
+      user,
+      payload.query as QueryCustomersDto,
+      payload.input as { headList: string[]; ids?: string[]; poolId?: string },
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: QueryCustomersDto,
+    input: { headList: string[]; ids?: string[]; poolId?: string },
+  ): Promise<ExportBuildResult> {
     const poolMode = Boolean(input.poolId)
     if (poolMode) await this.pools.assertPoolMember(user, 'customer', input.poolId as string)
     const effectiveQuery: QueryCustomersDto = {
@@ -2833,12 +2864,10 @@ export class CustomersService {
         }),
       )
     })
-    return this.exportTasks.create(user, {
-      module: poolMode ? 'customer_pool' : 'customer',
-      fileName: input.fileName,
-      columns,
-      rows,
-    })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   /** 批量导入（前端解析 CSV 后传结构化行） */

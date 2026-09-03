@@ -668,7 +668,7 @@ Pool/Sea 除功能权限外还必须通过 ResourcePool `scopeIds + managerIds` 
 
 导出 body 中的 `headList` 是字段 key 的有序数组；服务端会重新与 Metadata 白名单核对，未知/隐藏字段不能借由请求直接导出。`export/all` 继承当前 keyword / filters / viewId / data scope；`export/select` 严格限制在 `ids` 且仍执行资源可见性检查。
 
-导出不会直接返回文件，而是创建 `ExportTask`。当前实现同步生成 xlsx 后立即进入 `SUCCESS/FAILED`；以后可把执行器替换为 BullMQ 而不改变接口：
+导出不会直接返回文件，而是创建 `ExportTask` 并立即返回 `PENDING`。API 只持久化轻量执行参数并向 BullMQ enqueue `taskId`；独立 worker 从 PostgreSQL 重新加载任务、当前用户/角色、DataScope 与 Metadata 规则后生成 xlsx，并把任务收敛为 `SUCCESS/FAILED`。worker 停机时任务继续保持 `PENDING`，恢复后会保留现存 job 或重建丢失 job：
 
 ```text
 GET    /export-tasks
@@ -676,6 +676,6 @@ GET    /export-tasks/{id}/download
 DELETE /export-tasks/{id}
 ```
 
-任务只对创建者可见、可下载/清理，默认保留 24 小时。Web 顶栏“导出任务”抽屉用于查看和下载。
+任务只对创建者可见、可下载/取消/清理，默认保留 24 小时。同一用户最多允许 10 个 `PENDING` 任务，并阻止同一 module 重复堆积。Web 顶栏“导出任务”抽屉用于查看和下载。
 
 与 Cordys 仍存在一个明确差异：Cordys 字段配置支持 `rules.unique` 并在导入 ADD/UPDATE 时统一校验；MicroMatrix 当前 Metadata 尚无同构字段级 unique 契约。Customer 继续使用现有业务查重，Lead 不人为把名称设为唯一，后续应在元数据唯一约束能力中一次性覆盖 CRUD + import。

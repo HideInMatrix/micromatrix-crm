@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common'
 import type {
@@ -27,6 +28,7 @@ import type {
   QueryOrganizationSyncItemsDto,
   ResolveOrganizationSyncDto,
 } from './dto/organization-sync.dto'
+import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
 import { OrganizationSyncPlanner, type OrganizationSyncPlanItem } from './organization-sync.planner'
 
 const PROVIDER = 'WECOM' as const
@@ -47,20 +49,44 @@ export class OrganizationSyncService {
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly weComClient: WeComClient,
     private readonly planner: OrganizationSyncPlanner,
+    @Optional() private readonly coordination?: OrganizationSyncCoordinationService,
   ) {}
 
   async gate(tenantId: string): Promise<OrganizationSyncGateVO> {
-    const [integration, active, latest] = await Promise.all([
-      this.integrations.getWeCom(tenantId),
-      this.prisma.organizationSyncBatch.findFirst({
-        where: { tenantId, provider: PROVIDER, status: { in: ['FETCHING', 'APPLYING'] } },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.organizationSyncBatch.findFirst({
+    const runtime = await this.coordination?.runtimeStatus(tenantId)
+    const integration = await this.integrations.getWeCom(tenantId)
+    let active: OrganizationSyncBatch | null = null
+    let latest: OrganizationSyncBatch | null = null
+
+    if (runtime?.batchId) {
+      const runtimeBatch = await this.prisma.organizationSyncBatch.findFirst({
+        where: { id: runtime.batchId, tenantId, provider: PROVIDER },
+      })
+      if (runtimeBatch && (runtimeBatch.status === 'FETCHING' || runtimeBatch.status === 'APPLYING')) {
+        active = runtimeBatch
+        latest = runtimeBatch
+      }
+    }
+    if (!latest && runtime) {
+      latest = await this.prisma.organizationSyncBatch.findFirst({
         where: { tenantId, provider: PROVIDER },
         orderBy: { createdAt: 'desc' },
-      }),
-    ])
+      })
+    }
+    if (!runtime) {
+      ;[active, latest] = await Promise.all([
+        this.prisma.organizationSyncBatch.findFirst({
+          where: { tenantId, provider: PROVIDER, status: { in: ['FETCHING', 'APPLYING'] } },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.organizationSyncBatch.findFirst({
+          where: { tenantId, provider: PROVIDER },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ])
+    }
+
+    const runningPhase = runtime?.phase ?? active?.status
     const disabledReason = !integration.configured
       ? '请先配置企业微信'
       : integration.lastTestSucceeded !== true
@@ -69,9 +95,9 @@ export class OrganizationSyncService {
           ? '请先在企业设置中开启同步组织架构'
           : !integration.syncDefaultRoleId
             ? '请选择新成员默认角色'
-            : active?.status === 'FETCHING'
+            : runningPhase === 'FETCHING'
               ? '正在获取企业微信组织数据'
-              : active?.status === 'APPLYING'
+              : runningPhase === 'APPLYING'
                 ? '正在应用组织同步'
                 : null
     return {
@@ -88,6 +114,23 @@ export class OrganizationSyncService {
   async createPreview(
     user: AuthUser,
     dto: CreateOrganizationSyncPreviewDto,
+  ): Promise<OrganizationSyncBatchVO> {
+    if (!this.coordination) return this.createPreviewCore(user, dto)
+    const result = await this.coordination.run(
+      user.tenantId,
+      user.id,
+      'FETCHING',
+      null,
+      (runtime) => this.createPreviewCore(user, dto, runtime),
+    )
+    if (!result.executed) throw new ConflictException('当前正在执行组织同步任务')
+    return result.value
+  }
+
+  private async createPreviewCore(
+    user: AuthUser,
+    dto: CreateOrganizationSyncPreviewDto,
+    runtime?: { setBatchId(batchId: string): Promise<void> },
   ): Promise<OrganizationSyncBatchVO> {
     const { integration, credentials } = await this.integrations.getWeComSyncContext(user.tenantId)
     await this.assertDefaultRole(user.tenantId, integration.syncDefaultRoleId)
@@ -142,6 +185,7 @@ export class OrganizationSyncService {
       }
       throw error
     }
+    await runtime?.setBatchId(batch.id)
 
     try {
       const snapshot = await this.weComClient.getOrganizationSnapshot(credentials)

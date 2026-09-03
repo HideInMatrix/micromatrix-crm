@@ -38,8 +38,8 @@ micromatrix-crm/
 ├── packages/shared/  # 前后端共享类型、权限树、公式求值器
 ├── docker/           # API/Migration/Web 独立生产镜像与 Nginx runtime 配置
 ├── scripts/          # 全链路、企业设置与 Docker release Smoke
-├── docker-compose.yml
-└── docker-compose.release.yml
+├── docker-compose.yml         # 当前生产 Compose：PostgreSQL/Redis/Migration/API/Worker/Web
+└── docker-compose.release.yml # 旧 release compose 兼容文件，不再作为文档部署入口
 ```
 
 ## 快速开始
@@ -48,7 +48,6 @@ micromatrix-crm/
 
 ```bash
 pnpm install
-docker compose up -d                                # PostgreSQL 18 + Redis
 cp apps/api/.env.example apps/api/.env              # 首次
 pnpm --filter @micromatrix/shared build
 pnpm prisma:generate                                # 生成与 schema 一致的 Prisma Client
@@ -56,6 +55,8 @@ pnpm db:migrate:dev                                 # 本地开发：应用/生�
 pnpm --filter @micromatrix/api run db:seed          # 演示数据
 pnpm dev                                            # api:3000 / web:5173 / mobile:5174
 ```
+
+> 根 `docker-compose.yml` 已是完整生产拓扑，不再用于“只启动本地 PostgreSQL + Redis”。本地开发请先准备可访问的 PostgreSQL 18 与 Redis 7，并在 `apps/api/.env` 中配置连接信息；生产部署使用根 Compose。
 
 > API 的 `dev / build / typecheck / test:rules` 已内置 `prisma generate`。如果 Prisma schema 新增了字段或模型，正常执行 `pnpm dev` 会先刷新生成客户端；数据库结构变更仍需执行 `pnpm db:migrate:dev`（部署环境使用 `pnpm db:migrate`）。
 
@@ -70,12 +71,13 @@ pnpm dev
 ```
 
 - Web（桌面/Mobile 自适应） http://localhost:5173 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（当前 **219/219**，需 API 已启动）
-- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **114/114**）
+- 全链路冒烟：`pnpm smoke`（最近完整基线 **227/227**，需 API 已启动）
+- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **172/172**）
+- 异步导出真实 Smoke：`pnpm --filter @micromatrix/api smoke:async-export`（隔离 PostgreSQL/Redis + 独立 worker）
 
 ## Docker Release
 
-生产镜像前后端分离：API 使用 Node 24，Web 使用 Nginx；Web 在运行时通过 `API_UPSTREAM` 转发 `/api`，无需为不同 API 地址重新构建前端。
+生产镜像职责分离：API 使用 Node 24，Migration 独立执行 Prisma migration，Web 使用 Nginx；异步导出 worker 复用 API 镜像执行 `node dist/worker.js`。Web 在运行时通过 `API_UPSTREAM` 转发 `/api`，无需为不同 API 地址重新构建前端。
 
 本地完整打包验收：
 
@@ -83,14 +85,14 @@ pnpm dev
 pnpm smoke:docker-release
 ```
 
-创建并推送 Git tag 后，GitHub Actions 自动构建并发布 API/Web 两个 `linux/amd64` + `linux/arm64` GHCR 镜像：
+创建并推送 Git tag 后，GitHub Actions 自动构建并发布 API/Migration/Web 三个 `linux/amd64` + `linux/arm64` GHCR 镜像；worker 直接复用 API 镜像：
 
 ```bash
 git tag v0.0.1
 git push origin v0.0.1
 ```
 
-部署说明、release compose 和镜像标签见 [`docs/docker-release.md`](./docs/docker-release.md)。
+部署说明、生产 Compose 和镜像标签见 [`docs/docker-release.md`](./docs/docker-release.md)。
 
 ### 默认/演示账号
 

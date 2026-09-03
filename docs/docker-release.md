@@ -1,6 +1,6 @@
 # Docker 发布与 Git Tag 打包
 
-MicroMatrix CRM 的生产发布使用三个职责隔离的镜像：
+MicroMatrix CRM 的生产发布使用三个职责隔离的镜像；异步导出 worker 复用 API 镜像，不额外发布第四个应用镜像：
 
 - API：`ghcr.io/hideinmatrix/micromatrix-crm-api`
 - Migration：`ghcr.io/hideinmatrix/micromatrix-crm-migrate`
@@ -69,7 +69,15 @@ pnpm smoke:docker-release
 - Nginx `/api` 反向代理。
 - Vue Router `/login` history fallback。
 
-## 3. 使用 release compose 部署
+ASYNC-001 另提供真实异步链路 Smoke：
+
+```bash
+pnpm --filter @micromatrix/api smoke:async-export
+```
+
+该脚本会创建隔离 PostgreSQL/Redis，应用当前全部 migration 与 bootstrap，启动真实 `dist/main.js` / `dist/worker.js`，验证缺失 BullMQ job recovery、worker 停机/重启和 xlsx 下载后自动清理现场。
+
+## 3. 使用生产 Compose 部署
 
 安装流程保持与 Cordys CRM 相同的思路：部署者只负责准备配置并启动容器，不需要手工执行数据库 migration 或 seed。
 
@@ -84,21 +92,22 @@ cp docker/.env.release.example docker/.env.release
 ```bash
 docker compose \
   --env-file docker/.env.release \
-  -f docker-compose.release.yml \
   pull
 
 docker compose \
   --env-file docker/.env.release \
-  -f docker-compose.release.yml \
   up -d
 ```
+
+根目录 `docker-compose.yml` 是当前生产部署入口。
 
 Compose 内部会自动完成以下启动顺序：
 
 1. PostgreSQL 与 Redis 作为独立基础服务启动；Redis 只存在于 Compose 内部网络，不发布宿主机端口，并保留 healthcheck 供运行状态观测；
 2. 内部初始化服务只依赖 PostgreSQL，自动执行数据库 migration，并在首次安装时创建系统基础数据和默认管理员；
-3. Migration 成功后启动 API；API 不把 Redis healthy 作为启动硬门槛，Redis 尚未就绪时缓存调用直接按 miss 回退 PostgreSQL，恢复后客户端自动重新连接；
-4. API 健康后启动 Web。
+3. Migration 成功后启动 API；API 不把 Redis healthy 作为整体冷启动硬门槛，缓存/实时事件能力可按既有策略降级，但异步导出 producer 在 Redis/BullMQ 不可用时会 fail-closed 返回 503，不会把任务伪装为已排队；
+4. 独立 `worker` 复用 API 镜像，以 `node dist/worker.js` 启动，只消费导出 queue。worker 依赖 migration 完成与 Redis healthy，并与 API 共享 `release_uploads`；
+5. API 健康后启动 Web。
 
 `migrate` 是内部一次性服务，作用等同于 Cordys CRM 启动时自动执行的 Flyway migration，部署者不需要直接运行它。
 
@@ -113,7 +122,7 @@ Compose 内部会自动完成以下启动顺序：
 
 默认 Web 暴露在 `8080`，可通过 `WEB_PORT` 修改。
 
-启动顺序由 Compose 负责：PostgreSQL 健康 → migration 成功 → API 健康 → Web；Redis 独立运行并提供可降级缓存，不阻断 API 冷启动。
+启动顺序由 Compose 负责：PostgreSQL/Redis 基础服务 → migration 成功 → API + worker → API 健康 → Web。Redis 不阻断 API 的普通数据库业务冷启动，但 worker 必须等待 Redis healthy；异步导出在 queue 不可用时明确返回 503。
 
 ## 4. 数据持久化
 
@@ -121,7 +130,7 @@ Compose 内部会自动完成以下启动顺序：
 - Redis AOF：`release_redisdata`
 - API 附件/导出文件：`release_uploads` → `/app/uploads`
 
-升级应用镜像不会删除这些 volume。Redis 只保存可丢弃派生缓存，即使 Redis volume 被清空，业务数据仍以 PostgreSQL 为准。
+升级应用镜像不会删除这些 volume。Redis 保存派生缓存、非持久实时事件协调信息以及 BullMQ delivery metadata，但 PostgreSQL 仍是业务与 `ExportTask` 的真相源。若 Redis queue metadata 丢失，worker 启动会扫描有效 `PENDING` ExportTask：已有 job 保留，缺失 job 重新入队；因此不得把 Redis 当成导出任务唯一状态库。
 
 生产环境若使用外部 PostgreSQL，只需把 `DATABASE_URL` 指向外部数据库；是否保留 compose 内 PostgreSQL 可根据部署环境进一步裁剪。
 

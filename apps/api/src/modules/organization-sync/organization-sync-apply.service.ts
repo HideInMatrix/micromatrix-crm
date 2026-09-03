@@ -1,12 +1,24 @@
 import { randomBytes } from 'node:crypto'
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { Prisma, type OrganizationSyncItem } from '../../generated/prisma/client'
+import {
+  Prisma,
+  type OrganizationSyncBatch,
+  type OrganizationSyncItem,
+} from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
 import { NotificationsService } from '../notifications/notifications.service'
+import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
 
 const PROVIDER = 'WECOM' as const
 
@@ -19,6 +31,7 @@ export class OrganizationSyncApplyService {
     private readonly notifications: NotificationsService,
     @Optional() private readonly authCache?: AuthContextCacheService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
+    @Optional() private readonly coordination?: OrganizationSyncCoordinationService,
   ) {}
 
   async apply(user: AuthUser, batchId: string): Promise<void> {
@@ -28,7 +41,23 @@ export class OrganizationSyncApplyService {
     if (!initial) throw new NotFoundException('同步批次不存在')
     if (initial.status === 'SUCCEEDED') return
     if (initial.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
+    if (!this.coordination) return this.applyCore(user, batchId, initial)
 
+    const result = await this.coordination.run(
+      user.tenantId,
+      user.id,
+      'APPLYING',
+      batchId,
+      () => this.applyCore(user, batchId, initial),
+    )
+    if (!result.executed) throw new ConflictException('当前正在执行组织同步任务')
+  }
+
+  private async applyCore(
+    user: AuthUser,
+    batchId: string,
+    initial: OrganizationSyncBatch,
+  ): Promise<void> {
     const disabledUserIds = (
       await this.prisma.organizationSyncItem.findMany({
         where: {

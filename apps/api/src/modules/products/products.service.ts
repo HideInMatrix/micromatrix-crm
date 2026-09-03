@@ -10,7 +10,11 @@ import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
 import { Product, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
@@ -333,6 +337,33 @@ export class ProductsService {
     query: Partial<ProductPageDto>,
     input: { fileName: string; headList: string[]; ids?: string[] },
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'product',
+      fileName: input.fileName,
+      payload: {
+        version: 1,
+        query,
+        input: { headList: input.headList, ids: input.ids },
+      },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<ProductPageDto>,
+      payload.input as { headList: string[]; ids?: string[] },
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<ProductPageDto>,
+    input: { headList: string[]; ids?: string[] },
+  ): Promise<ExportBuildResult> {
     const items = await this.collectExportItems(user, query, input.ids)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const fieldMap = new Map(
@@ -362,7 +393,10 @@ export class ProductsService {
         }),
       )
     })
-    return this.exportTasks.create(user, { module: 'product', fileName: input.fileName, columns, rows })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   private async collectExportItems(

@@ -32,7 +32,11 @@ import { HomeFilterService } from '../home/home-filter.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
@@ -1797,6 +1801,33 @@ export class LeadsService {
     query: LeadQueryInput,
     input: { fileName: string; headList: string[]; ids?: string[]; poolId?: string },
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: input.poolId ? 'lead_pool' : 'lead',
+      fileName: input.fileName,
+      payload: {
+        version: 1,
+        query,
+        input: { headList: input.headList, ids: input.ids, poolId: input.poolId },
+      },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    return this.buildExportXlsx(
+      user,
+      payload.query as LeadQueryInput,
+      payload.input as { headList: string[]; ids?: string[]; poolId?: string },
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: LeadQueryInput,
+    input: { headList: string[]; ids?: string[]; poolId?: string },
+  ): Promise<ExportBuildResult> {
     const poolMode = Boolean(input.poolId)
     if (poolMode) {
       const poolId = input.poolId as string
@@ -1843,12 +1874,10 @@ export class LeadsService {
         }),
       )
     })
-    return this.exportTasks.create(user, {
-      module: poolMode ? 'lead_pool' : 'lead',
-      fileName: input.fileName,
-      columns,
-      rows,
-    })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   /** 批量导入 */

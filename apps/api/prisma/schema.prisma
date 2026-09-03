@@ -2782,6 +2782,9 @@ model ExportTask {
   rowCount     Int       @default(0)
   fileSize     Int?
   errorMessage String?
+  payload      Json?
+  startedAt    DateTime?
+  attempts     Int       @default(0)
   completedAt  DateTime?
   expiresAt    DateTime
   createdAt    DateTime  @default(now())

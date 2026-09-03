@@ -11,7 +11,11 @@ import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
 import { Prisma, ProductPrice } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import {
   SpreadsheetService,
@@ -388,6 +392,33 @@ export class ProductPriceService {
     query: Partial<ProductPricePageDto>,
     input: { fileName: string; headList: string[]; ids?: string[] },
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'price',
+      fileName: input.fileName,
+      payload: {
+        version: 1,
+        query,
+        input: { headList: input.headList, ids: input.ids },
+      },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<ProductPricePageDto>,
+      payload.input as { headList: string[]; ids?: string[] },
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<ProductPricePageDto>,
+    input: { headList: string[]; ids?: string[] },
+  ): Promise<ExportBuildResult> {
     const items = await this.collectExportItems(user, query, input.ids)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const { parent } = this.spreadsheetFields(fields)
@@ -426,12 +457,10 @@ export class ProductPriceService {
       )
     })
     if (!subColumns.length) {
-      return this.exportTasks.create(user, {
-        module: 'price',
-        fileName: input.fileName,
-        columns: mainColumns,
-        rows: mainRows,
-      })
+      return {
+        data: await this.spreadsheet.buildExportWorkbook(mainColumns, mainRows),
+        rowCount: items.length,
+      }
     }
 
     const productsMap = await this.productFields.loadProductsBatch(
@@ -453,12 +482,7 @@ export class ProductPriceService {
       groups,
       parent.label,
     )
-    return this.exportTasks.createFromBuffer(user, {
-      module: 'price',
-      fileName: input.fileName,
-      data,
-      rowCount: items.length,
-    })
+    return { data, rowCount: items.length }
   }
 
   private async collectExportItems(

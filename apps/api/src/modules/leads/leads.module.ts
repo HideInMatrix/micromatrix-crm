@@ -32,5 +32,6 @@ import { LeadsService } from './leads.service'
     ClueOwnerHistoryController,
   ],
   providers: [LeadsService, CluePoolConfigService],
+  exports: [LeadsService],
 })
 export class LeadsModule {}

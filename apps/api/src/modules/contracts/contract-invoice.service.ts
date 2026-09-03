@@ -15,7 +15,11 @@ import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { UserViewsService } from '../user-views/user-views.service'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { ApprovalsService } from '../approvals/approvals.service'
@@ -558,6 +562,32 @@ export class ContractInvoiceService {
     headList: string[],
     ids?: string[],
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'contractInvoice',
+      fileName,
+      payload: { version: 1, query, input: { headList, ids } },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    const input = payload.input as { headList: string[]; ids?: string[] }
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<ContractInvoicePageDto>,
+      input.headList,
+      input.ids,
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<ContractInvoicePageDto>,
+    headList: string[],
+    ids?: string[],
+  ): Promise<ExportBuildResult> {
     const [items, fields] = await Promise.all([
       this.collectItems(user, query, ids),
       this.forms.listFields(user.tenantId, FORM_KEY),
@@ -582,7 +612,10 @@ export class ContractInvoiceService {
         return [key, field ? formatForExport(field, source) : source[key] ?? '']
       }))
     })
-    return this.exportTasks.create(user, { module: 'contractInvoice', fileName, columns, rows })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   private async collectItems(user: AuthUser, query: Partial<ContractInvoicePageDto>, ids?: string[]) {

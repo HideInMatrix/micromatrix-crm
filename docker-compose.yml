@@ -82,6 +82,34 @@ services:
       timeout: 5s
       retries: 10
 
+  worker:
+    image: ${API_IMAGE:-ghcr.io/hideinmatrix/micromatrix-crm-api:${APP_VERSION:-latest}}
+    restart: unless-stopped
+    command: ['node', 'dist/worker.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      INTEGRATION_CREDENTIALS_KEY: ${INTEGRATION_CREDENTIALS_KEY:?INTEGRATION_CREDENTIALS_KEY is required}
+      WECOM_DEFAULT_TENANT_SLUG: ${WECOM_DEFAULT_TENANT_SLUG:-demo}
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:8080}
+      UPLOAD_DIR: /app/uploads
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_DB: ${REDIS_DB:-0}
+      ASYNC_EXPORT_CONCURRENCY: ${ASYNC_EXPORT_CONCURRENCY:-2}
+    volumes:
+      - release_uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
   web:
     image: ${WEB_IMAGE:-ghcr.io/hideinmatrix/micromatrix-crm-web:${APP_VERSION:-latest}}
     restart: unless-stopped

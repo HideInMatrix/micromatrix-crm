@@ -1233,3 +1233,57 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 真实 `redis:7-alpine` Smoke PASS：command JSON round-trip 正常；首次 Pub/Sub 消息送达；通过 Redis `CLIENT KILL` 主动断开专用 subscriber 后 ioredis 自动重连并重新订阅，第二条消息继续送达且前后各一次，subscriber `subscribeErrors=0`、`handlerErrors=0`。临时容器已清理。
 - 最终质量批次整体 exit 0：API typecheck、Web typecheck、Web production build **4145 modules transformed**、Rules **153/153**、`git diff --check` 全绿。EVENT-001 未修改数据库 migration 或 Compose 拓扑，因此未重复执行完整 Docker 三镜像 release Smoke。
 - `EVENT-001 E1～E7` 全部关闭，状态切换为 **`VERIFIED`**。后续 Redis 候选仍按独立单元推进：COORD-001（组织同步/Cron 协调）、ASYNC-001（BullMQ 异步任务）、SEQ-001（原子业务编号）。
+
+---
+
+## 68. COORD-001 Redis 组织同步与 Cron 分布式协调立项（2026-09-03）
+
+- EVENT-001 本地封板后按既定 Redis 平台路线进入 `COORD-001`；规格已先落在 `docs/specs/redis-coordination/requirements.md`、`design.md`、`tasks.md`，继续保持“先文档后实现”。
+- Cordys `ThirdDepartmentService` 已复核：按组织使用 Redisson `RLock.tryLock()` 阻止并发同步，同时写入 `org_sync_status:<orgId>` 一小时 TTL 运行态；同步结束 finally 删除状态并释放锁。
+- MicroMatrix 当前数据库最终保护也已复核：`organization_sync_batches_active_key` partial unique 限制同租户/provider 的 FETCHING/APPLYING；apply transaction 内仍有 `pg_advisory_xact_lock(hashtextextended(tenant:provider))`。COORD-001 明确只在这些保护之前增加 Redis 低成本协调，不删除数据库约束或锁。
+- 当前 API 共发现 6 个 Scheduler：公海回收 02:30、商机自动关闭 03:00、标讯抓取 08:00、到期消息 08:00、跟进计划提醒 09:00、企微投递每分钟。多实例下均会重复触发；其中部分已有业务 CAS/unique，但仍会重复扫描，消息到期更会产生重复通知，因此统一纳入时间槽 claim。
+- Cron 设计冻结为：Redis 正常时 `SET NX` claim UTC day/minute slot 且 marker 不提前删除；Redis unavailable 时才使用 PostgreSQL `pg_try_advisory_xact_lock` 覆盖 callback 生命周期。正常路径不增加 DB coordination 成本，业务原有幂等/CAS 继续保留。
+- 当前状态 `IN_PROGRESS`，K1 已关闭。**下一执行指针：COORD-001 K2 Redis coordination 原语。**
+
+---
+
+## 69. COORD-001 Redis 组织同步与 Cron 分布式协调最终验收（2026-09-03）
+
+- Redis 平台层新增 token ownership lease：`SET NX PX` 获取，Lua compare-and-PEXPIRE 续租，Lua compare-and-DEL 安全释放；另提供不可提前释放的 `claimOnce` 时间槽。真实 Redis 负向验证确认错误 token 无法删除现 owner lease，随后 renew/correct release/reacquire 均正常。
+- `DistributedCoordinatorService` 统一组织同步与 Scheduler 协调语义。组织同步使用 `runExclusive` 自动续租；测试以 1 秒初始 TTL 运行超过 1200ms，观察至少 2 次 renew 后第二实例仍为 BUSY。Scheduler 使用 UTC DAILY/MINUTE slot，正常 Redis 路径不创建 PostgreSQL coordination transaction。
+- Redis unavailable 时 Scheduler 使用 `pg_try_advisory_xact_lock(hashtextextended(slotKey,0))` 的 PostgreSQL transaction fallback；组织同步则不叠加外层 DB 锁，直接继续现有数据库路径，由 `organization_sync_batches_active_key` partial unique、状态机和 apply transaction 内原 `pg_advisory_xact_lock` 最终兜底。原数据库保护均已静态复核仍存在。
+- OrganizationSync preview/apply 已共用 `organization-sync:WECOM:<tenant>` lease；运行态按 lease token 保存 1h TTL 的 FETCHING/APPLYING/operator/batch 摘要。lease 消失后残留状态不可达；busy 在企微/DB 核心路径前直接冲突；Redis unavailable 继续原 createPreview core。gate 在 runtime 已有 active batchId 时只读取该批次一次并复用 latest。
+- 6 个 Scheduler 全部完成 wrapper 协调：公海回收、商机自动关闭、标讯抓取、到期消息、跟进计划提醒使用 DAILY，企微投递使用 MINUTE。原 `recycleAll/fetchAllTenants/run/processDueDeliveries` 等 core 继续可直接调用，已有 FollowPlan/MessageDelivery CAS、Bidding unique、公海事务保护等业务幂等未删除。
+- `/health` 已增加 coordination snapshot，覆盖 exclusive/slot/PG fallback 与 Redis lease 指标，不暴露连接秘密或 ownership token。
+- 真实 `redis:7-alpine` Smoke 最终复验 PASS：mutual exclusion、wrong-token safe release、renew、correct release、reacquire、slot claim 全部通过，`renewFailures=0`；临时容器已清理。
+- 最终质量批次：API typecheck PASS、完整 Rules **162/162 PASS**、`git diff --check` PASS。COORD-001 没有修改数据库 migration 或 Compose 拓扑，因此未重复执行完整 Docker 三镜像 release Smoke。
+- `COORD-001 K1～K7` 全部关闭，状态切换为 **`VERIFIED`**。后续 Redis 平台候选继续独立立项，优先为 ASYNC-001（BullMQ 异步任务中心）与 SEQ-001（原子业务编号），不得混入本单元。
+
+---
+
+## 70. ASYNC-001 BullMQ 异步导出中心立项（2026-09-03）
+
+- COORD-001 封板后按既定路线进入 `ASYNC-001`，规格先落在 `docs/specs/bullmq-export-center/{requirements,design,tasks}.md`，继续执行“先文档、后代码”。
+- MicroMatrix 现场已确认：`ExportTask`、任务抽屉、下载/取消和 24h 保留契约已经存在，但 `ExportTasksService.create/createFromBuffer` 在 HTTP 请求内同步完成全量数据收集、ExcelJS build 和 writeFile；前端提示“任务已创建”时实际上重任务已经结束。
+- 当前导出调用面共覆盖 customer/customer_pool/contact/lead/lead_pool/opportunity/product/price/businessTitle/contractInvoice/contractPaymentPlan/contractPaymentRecord/order；其中 price/order 的子表导出还会在请求线程直接构建 Buffer，因此本批不能只异步 writeFile。
+- Cordys `BaseExportService.asyncExport` 已复核：先创建 PREPARED task 立即返回，后台线程再分批取数/写文件；`ExportTaskService` 限制用户最多 10 个 PREPARED 且同 resourceType 防重复；ExportTaskCenter 支持取消和 24h 清理。MicroMatrix 首批迁移这些核心语义，但使用 BullMQ durable worker 替代进程内线程。
+- 失败语义冻结：缓存/PubSub 可 fail-open，但“已受理异步任务”不能假成功。Queue enqueue 失败返回 503 并清理刚创建的 PENDING task；成功入队后 Redis/BullMQ 负责 delivery，PostgreSQL ExportTask 继续作为用户可见状态真相源。
+- 运行拓扑冻结为独立 worker：API 只创建 DB task + enqueue；worker 使用同一 API image 的 `dist/worker.js`，与 API 共享 release_uploads 卷。BullMQ job 只携带 taskId，真实 query/headList/ids/poolId 持久化 PostgreSQL，worker 重新读取当前用户/角色并执行 DataScope/Metadata 规则。
+- Cron、MessageDelivery outbox、同步导入、EnterpriseGlobalTask 执行器与 SEQ-001 明确不进入本批。
+- 当前状态 `IN_PROGRESS`，A1 已关闭。**下一执行指针：ASYNC-001 A2 BullMQ 平台层。**
+
+---
+
+## 71. ASYNC-001 BullMQ 异步导出中心最终验收（2026-09-03）
+
+- BullMQ 平台层已落地为全局 `AsyncJobsModule/AsyncJobsService`。producer 使用显式 ioredis connection lifecycle，连接 ready 后再创建 Queue；HTTP enqueue 关闭 offline queue，Redis/BullMQ 不可用时 fail-closed 返回 503，并由 `ExportTasksService` 删除刚创建且仍为 `PENDING` 的任务，避免出现“任务看似受理但实际上未入队”。
+- `20260903131500_async_export_queue` 将数据库基线推进到 **69 migrations**，`ExportTask` 增加 durable payload、`startedAt` 与 `attempts`；创建路径在用户级 PostgreSQL advisory transaction 内限制每用户最多 10 个 `PENDING` 且同 module 不重复堆积。BullMQ job 只携带 `taskId`，查询条件、headList、ids、poolId 等真实执行参数继续持久化 PostgreSQL。
+- 13 个导出 module 已全部切换为 worker handler：customer/customer_pool/contact/lead/lead_pool/opportunity/product/price/businessTitle/contractInvoice/contractPaymentPlan/contractPaymentRecord/order。HTTP 请求路径不再执行全量 collect、ExcelJS workbook build 或文件写入。
+- 独立 `WorkerAppModule + dist/worker.js` 已通过正式 build 产物启动验证；worker 不启动 HTTP server，并重新读取 task、用户/角色、DataScope/Metadata 上下文后执行导出。瞬时错误由 BullMQ retry/backoff 处理，确定性错误使用 unrecoverable 语义，最终失败才写 `FAILED`。
+- PostgreSQL `ExportTask` 是恢复真相源。真实验收中主动删除 Redis waiting job 后启动 worker，日志得到 `recovered=1` 并最终 `SUCCESS`；worker 停机时新任务保持 `PENDING|attempts=0` 且 job 为 waiting，重启时得到 `kept=1` 后成功完成。生成文件通过下载接口返回 HTTP 200，xlsx ZIP 签名为 `504b0304`。
+- 取消竞态采用 `PENDING` CAS 收口：如果 worker 在用户取消后才完成 workbook，`complete()` 更新失败并删除刚生成文件，晚到 worker 不能覆盖取消状态。
+- `/health.asyncJobs` 已升级为队列级观测：除了本进程累计 enqueue/recovery/cancel/worker 指标，还读取 BullMQ 实际 workers 与 waiting/active/delayed/completed/failed 计数，因此独立 worker 架构下不会把“API 本机没有 worker”误判为系统没有 worker。
+- 生产 Compose 已增加 `redis` 与独立 `worker` service；worker 复用 API image，以 `node dist/worker.js` 启动，与 API 共享 `release_uploads`，依赖 migration 完成与 Redis healthy，不发布外部端口。`docker compose --env-file docker/.env.release.example config` PASS。
+- 自动化最终基线：ASYNC 专项 **10/10 PASS**；完整 Rules **172/172 PASS**；API typecheck/build PASS；`git diff --check` PASS。新增 `pnpm --filter @micromatrix/api smoke:async-export`，从零创建隔离 PostgreSQL/Redis，应用 **69/69 migrations + bootstrap** 后验证 producer PENDING、missing-job recovery、xlsx download、worker-stop PENDING、worker restart completion 和 queue worker observability，最终 7 项断言全部为 true。
+- 本轮没有伪称重新执行完整 Docker 三镜像 release Smoke；最近一次完整镜像 Smoke 仍是 CACHE-001 阶段的 **68/68 migrations** 历史基线。ASYNC-001 的新增运行证据由 69 migration 的真实 API/worker/Redis/PostgreSQL Smoke 与 Compose config 提供。
+- `ASYNC-001 A1～A8` 全部关闭，状态切换为 **`VERIFIED`**。当前没有新的正式执行单元处于 `IN_PROGRESS`；后续如继续 SEQ-001、验证码或其它重任务队列化，必须重新独立立项，不复用 ASYNC-001 的失败语义直接外推。

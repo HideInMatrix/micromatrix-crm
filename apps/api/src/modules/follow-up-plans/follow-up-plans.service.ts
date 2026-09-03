@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
@@ -18,6 +19,7 @@ import {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
+import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
 import { FollowUpPlan, FollowUpPlanStatus, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -51,6 +53,7 @@ export class FollowUpPlansService {
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
 
   form(user: AuthUser) {
@@ -264,7 +267,11 @@ export class FollowUpPlansService {
   /** 每日 09:00 扫描当天到期的未结束计划。 */
   @Cron('0 0 9 * * *')
   async scheduledReminder(): Promise<void> {
-    await this.runDueReminders(new Date())
+    const now = new Date()
+    if (!this.coordinator) return void (await this.runDueReminders(now))
+    await this.coordinator.runScheduledOnce('follow-plan-reminder', 'DAILY', () =>
+      this.runDueReminders(now),
+    )
   }
 
   async runDueReminders(now: Date): Promise<number> {

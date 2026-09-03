@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import type { Clue, Customer } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
@@ -19,9 +20,15 @@ export class PoolRecycleService {
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
     private readonly evaluator: ResourceRecycleConditionEvaluator,
+    @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
 
   @Cron('0 30 2 * * *')
+  async scheduledRecycleAll() {
+    if (!this.coordinator) return void (await this.recycleAll())
+    await this.coordinator.runScheduledOnce('pool-recycle', 'DAILY', () => this.recycleAll())
+  }
+
   async recycleAll() {
     const [clueOrganizations, customerOrganizations] = await Promise.all([
       this.prisma.cluePool.findMany({

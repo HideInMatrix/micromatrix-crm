@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
   MESSAGE_TASK_DEFINITIONS,
   type MessageDeliveryVO,
   type MessageTaskEvent,
 } from '@micromatrix/shared'
+import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import type { MessageDelivery, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
@@ -35,6 +36,7 @@ export class MessageDeliveryService {
     private readonly messageSettings: MessageSettingsService,
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly weComClient: WeComClient,
+    @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
 
   async enqueue(input: EnqueueWeComMessageInput): Promise<number> {
@@ -154,6 +156,13 @@ export class MessageDeliveryService {
   }
 
   @Cron('0 * * * * *')
+  async scheduledProcessDueDeliveries(): Promise<void> {
+    if (!this.coordinator) return void (await this.processDueDeliveries())
+    await this.coordinator.runScheduledOnce('message-delivery', 'MINUTE', () =>
+      this.processDueDeliveries(),
+    )
+  }
+
   async processDueDeliveries(): Promise<number> {
     await this.prisma.messageDelivery.updateMany({
       where: {

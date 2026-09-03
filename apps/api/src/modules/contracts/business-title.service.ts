@@ -5,7 +5,11 @@ import { formatForExport } from '../../common/export-format'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import {
   BusinessTitleAddDto,
@@ -405,6 +409,32 @@ export class BusinessTitleService {
     headList: string[],
     ids?: string[],
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'businessTitle',
+      fileName,
+      payload: { version: 1, query, input: { headList, ids } },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    const input = payload.input as { headList: string[]; ids?: string[] }
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<BusinessTitlePageDto>,
+      input.headList,
+      input.ids,
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<BusinessTitlePageDto>,
+    headList: string[],
+    ids?: string[],
+  ): Promise<ExportBuildResult> {
     const items = await this.collectItems(user, query, ids)
     const fieldMap = new Map(BUSINESS_TITLE_FIELDS.map((field) => [field.key, field]))
     const columns = headList.map((key) => {
@@ -417,7 +447,10 @@ export class BusinessTitleService {
         columns.map(({ key }) => [key, formatForExport(fieldMap.get(key) as FieldVO, item as Record<string, unknown>)]),
       ),
     )
-    return this.exportTasks.create(user, { module: 'businessTitle', fileName, columns, rows })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   private async collectItems(user: AuthUser, query: Partial<BusinessTitlePageDto>, ids?: string[]) {

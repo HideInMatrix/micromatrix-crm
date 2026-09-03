@@ -18,7 +18,11 @@ import { Opportunity, OpportunityStageConfig, Prisma } from '../../generated/pri
 import { PrismaService } from '../../prisma/prisma.service'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
@@ -1078,6 +1082,33 @@ export class OpportunitiesService {
     query: Partial<OpportunityPageDto>,
     input: { fileName: string; headList: string[]; ids?: string[] },
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'opportunity',
+      fileName: input.fileName,
+      payload: {
+        version: 1,
+        query,
+        input: { headList: input.headList, ids: input.ids },
+      },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<OpportunityPageDto>,
+      payload.input as { headList: string[]; ids?: string[] },
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<OpportunityPageDto>,
+    input: { headList: string[]; ids?: string[] },
+  ): Promise<ExportBuildResult> {
     const items = await this.collectExportItems(user, query, input.ids)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const fieldMap = new Map(
@@ -1105,12 +1136,10 @@ export class OpportunitiesService {
         }),
       )
     })
-    return this.exportTasks.create(user, {
-      module: 'opportunity',
-      fileName: input.fileName,
-      columns,
-      rows,
-    })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   private async collectExportItems(

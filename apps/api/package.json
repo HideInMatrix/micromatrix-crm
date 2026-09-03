@@ -7,7 +7,7 @@
     "build": "prisma generate && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",
-    "test:rules": "prisma generate && node --import tsx --test src/common/services/*.test.ts src/modules/pool-rules/*.test.ts src/modules/module-configs/*.test.ts src/modules/metadata/*.test.ts src/modules/user-views/*.test.ts src/modules/follow-up-plans/*.test.ts src/modules/message-settings/*.test.ts src/modules/notifications/*.test.ts src/modules/approvals/*.test.ts src/modules/home/*.test.ts src/modules/enterprise-integrations/*.test.ts src/modules/enterprise-settings/*.test.ts src/modules/organization-sync/*.test.ts src/modules/wecom-sso/*.test.ts",
+    "test:rules": "prisma generate && node --import tsx --test src/async-jobs/*.test.ts src/common/services/*.test.ts src/modules/import-export/*.test.ts src/modules/pool-rules/*.test.ts src/modules/module-configs/*.test.ts src/modules/metadata/*.test.ts src/modules/user-views/*.test.ts src/modules/follow-up-plans/*.test.ts src/modules/message-settings/*.test.ts src/modules/notifications/*.test.ts src/modules/approvals/*.test.ts src/modules/home/*.test.ts src/modules/enterprise-integrations/*.test.ts src/modules/enterprise-settings/*.test.ts src/modules/organization-sync/*.test.ts src/modules/wecom-sso/*.test.ts src/workers/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -38,7 +38,9 @@
     "smoke:w370-db012-post-field": "node scripts/w370-db012-post-field-http-smoke.mjs",
     "smoke:w370-db012-webhook": "node scripts/w370-db012-webhook-http-smoke.mjs",
     "smoke:event001-redis-pubsub": "tsx scripts/event001-redis-pubsub-smoke.ts",
-    "smoke:db021-follow-plan-runtime": "tsx scripts/db021-follow-plan-runtime-smoke.ts"
+    "smoke:db021-follow-plan-runtime": "tsx scripts/db021-follow-plan-runtime-smoke.ts",
+    "smoke:coord001-redis": "tsx scripts/coord001-redis-coordination-smoke.ts",
+    "smoke:async-export": "pnpm build && tsx scripts/async001-export-worker-smoke.ts"
   },
   "dependencies": {
     "@micromatrix/shared": "workspace:*",
@@ -52,6 +54,7 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^6.3.4",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.2",

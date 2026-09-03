@@ -20,7 +20,11 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
 import { Prisma, type CustomerContact } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { MetadataService } from '../metadata/metadata.service'
@@ -620,6 +624,33 @@ export class ContactsService {
     query: QueryContactsDto,
     input: { fileName: string; headList: string[]; ids?: string[] },
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: MODULE,
+      fileName: input.fileName,
+      payload: {
+        version: 1,
+        query,
+        input: { headList: input.headList, ids: input.ids },
+      },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    return this.buildExportXlsx(
+      user,
+      payload.query as QueryContactsDto,
+      payload.input as { headList: string[]; ids?: string[] },
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: QueryContactsDto,
+    input: { headList: string[]; ids?: string[] },
+  ): Promise<ExportBuildResult> {
     if (!hasPermission(user.permissions, 'contact:export'))
       throw new ForbiddenException('无联系人导出权限')
     const items = await this.collectExportItems(user, query, input.ids)
@@ -650,12 +681,10 @@ export class ContactsService {
         }),
       )
     })
-    return this.exportTasks.create(user, {
-      module: MODULE,
-      fileName: input.fileName,
-      columns,
-      rows,
-    })
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
   }
 
   private async prepareImportRow(

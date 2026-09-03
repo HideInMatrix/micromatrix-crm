@@ -12,7 +12,11 @@ import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
-import { ExportTasksService } from '../import-export/export-tasks.service'
+import {
+  ExportTasksService,
+  type ExportBuildResult,
+  type QueuedExportTaskPayload,
+} from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
@@ -457,6 +461,32 @@ export class ContractPaymentPlanService {
     headList: string[],
     ids?: string[],
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'contractPaymentPlan',
+      fileName,
+      payload: { version: 1, query, input: { headList, ids } },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    const input = payload.input as { headList: string[]; ids?: string[] }
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<ContractPaymentPageDto>,
+      input.headList,
+      input.ids,
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<ContractPaymentPageDto>,
+    headList: string[],
+    ids?: string[],
+  ): Promise<ExportBuildResult> {
     const [items, fields] = await Promise.all([
       this.collectExportItems(user, query, ids),
       this.moduleForms.listFields(user.tenantId, PLAN_FORM_KEY),
@@ -480,8 +510,11 @@ export class ContractPaymentPlanService {
         return [column.key, field ? formatForExport(field, source) : source[column.key] ?? '']
       }))
     })
-    return this.exportTasks.create(user, { module: 'contractPaymentPlan', fileName, columns, rows })
-  }
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
+    }
 
   private async collectExportItems(
     user: AuthUser,
@@ -1022,6 +1055,32 @@ export class ContractPaymentRecordService {
     headList: string[],
     ids?: string[],
   ) {
+    return this.exportTasks.enqueue(user, {
+      module: 'contractPaymentRecord',
+      fileName,
+      payload: { version: 1, query, input: { headList, ids } },
+    })
+  }
+
+  async buildQueuedExport(
+    user: AuthUser,
+    payload: QueuedExportTaskPayload,
+  ): Promise<ExportBuildResult> {
+    const input = payload.input as { headList: string[]; ids?: string[] }
+    return this.buildExportXlsx(
+      user,
+      payload.query as Partial<ContractPaymentPageDto>,
+      input.headList,
+      input.ids,
+    )
+  }
+
+  private async buildExportXlsx(
+    user: AuthUser,
+    query: Partial<ContractPaymentPageDto>,
+    headList: string[],
+    ids?: string[],
+  ): Promise<ExportBuildResult> {
     const [items, fields] = await Promise.all([
       this.collectExportItems(user, query, ids),
       this.moduleForms.listFields(user.tenantId, RECORD_FORM_KEY),
@@ -1045,8 +1104,11 @@ export class ContractPaymentRecordService {
         return [column.key, field ? formatForExport(field, source) : source[column.key] ?? '']
       }))
     })
-    return this.exportTasks.create(user, { module: 'contractPaymentRecord', fileName, columns, rows })
-  }
+    return {
+      data: await this.spreadsheet.buildExportWorkbook(columns, rows),
+      rowCount: items.length,
+    }
+    }
 
   private async collectExportItems(
     user: AuthUser,

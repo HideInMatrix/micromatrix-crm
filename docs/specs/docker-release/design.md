@@ -32,19 +32,19 @@ Nginx 配置使用官方 `/etc/nginx/templates/*.template` 运行时 envsubst：
 
 ## 2. Release Compose
 
-`docker-compose.release.yml` 的启动顺序为：
+当前生产 `docker-compose.yml` 的启动顺序为：
 
 ```text
-postgres healthy
-    ↓
-migrate (Migration image / prisma migrate deploy)
-    ↓ success
-api healthy <------ redis cache（非启动硬依赖）
-    ↓
-web
+postgres healthy -------------------┐
+    ↓                               │
+migrate (Migration image)           │
+    ↓ success                       │
+api healthy <------ redis ----------┼----> worker (dist/worker.js)
+    ↓                 ↑             │
+web                   └-- queue ----┘
 ```
 
-附件数据存放在 `release_uploads` volume，PostgreSQL 数据存放在 `release_pgdata`，Redis AOF 存放在 `release_redisdata`。Redis 使用密码认证且不发布宿主机端口；Migration 与 Redis 无依赖，API 也不等待 Redis healthy，Redis 冷启动或运行时故障时内部缓存逻辑直接降级 PostgreSQL。
+附件与导出文件存放在 API/worker 共享的 `release_uploads` volume，PostgreSQL 数据存放在 `release_pgdata`，Redis AOF 存放在 `release_redisdata`。Redis 使用密码认证且不发布宿主机端口；Migration 与 Redis 无依赖，API 也不等待 Redis healthy，Redis 冷启动或运行时故障时普通缓存逻辑直接降级 PostgreSQL。Export Worker 必须等待 Redis healthy；异步导出 producer 在 queue 不可用时 fail-closed 返回 503。PostgreSQL `ExportTask` 是任务真相源，worker 启动负责保留已有 job 或恢复缺失 job。
 
 ## 3. GitHub Actions
 

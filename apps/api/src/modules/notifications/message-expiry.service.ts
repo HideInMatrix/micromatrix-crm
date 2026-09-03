@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { MessageTaskEvent } from '@micromatrix/shared'
+import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { BusinessNotificationsService } from './business-notifications.service'
@@ -21,9 +22,16 @@ export class MessageExpiryService {
     private readonly prisma: PrismaService,
     private readonly settings: MessageSettingsService,
     private readonly notifications: BusinessNotificationsService,
+    @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
 
   @Cron('0 0 8 * * *')
+  async scheduledRunDaily(): Promise<void> {
+    const now = new Date()
+    if (!this.coordinator) return void (await this.run(now))
+    await this.coordinator.runScheduledOnce('message-expiry', 'DAILY', () => this.run(now))
+  }
+
   async runDaily(): Promise<void> {
     await this.run(new Date())
   }
