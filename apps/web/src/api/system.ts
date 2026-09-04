@@ -15,6 +15,7 @@ import type {
   ModuleConfigVO,
   NavigationModuleKey,
   NotificationVO,
+  OperationLogClearResultVO,
   OperationLogCleanupResultVO,
   OperationLogDetailVO,
   OperationLogSettingVO,
@@ -375,6 +376,7 @@ export const logApi = {
   updateSettings: (data: UpdateOperationLogSettingInput) =>
     http.put<OperationLogSettingVO>('/logs/settings', data),
   cleanup: () => http.post<OperationLogCleanupResultVO>('/logs/cleanup'),
+  clearAll: () => http.post<OperationLogClearResultVO>('/logs/clear-all'),
   logins: (params: PageQuery) => http.get<PaginatedResult<LoginLogVO>>('/logs/logins', { params }),
 }
 

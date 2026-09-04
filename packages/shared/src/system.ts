@@ -82,6 +82,10 @@ export interface OperationLogCleanupResultVO {
   setting: OperationLogSettingVO
 }
 
+export interface OperationLogClearResultVO {
+  deleted: number
+}
+
 export interface LoginLogVO {
   id: string
   email: string

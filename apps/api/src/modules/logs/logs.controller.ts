@@ -55,6 +55,13 @@ export class LogsController {
     return this.logCleanup.cleanupTenant(user.tenantId)
   }
 
+  @Post('clear-all')
+  @RequirePermissions('system:log:update')
+  @ApiOperation({ summary: '清空当前租户全部操作日志' })
+  clearAll(@CurrentUser() user: AuthUser) {
+    return this.logCleanup.clearTenant(user.tenantId)
+  }
+
   @Get('logins')
   @ApiOperation({ summary: '登录日志' })
   logins(@CurrentUser() user: AuthUser, @Query() query: QueryLoginLogsDto) {

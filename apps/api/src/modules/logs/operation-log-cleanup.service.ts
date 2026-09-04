@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import type { OperationLogCleanupResultVO } from '@micromatrix/shared'
+import type { OperationLogCleanupResultVO, OperationLogClearResultVO } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { OperationLogCleanupSource } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -94,5 +94,12 @@ export class OperationLogCleanupService {
       )
     }
     return { skipped: false, deleted, cutoff: cutoff.toISOString(), setting }
+  }
+
+  /** 高风险人工操作：清空当前租户全部操作日志，不计入 retention 清理状态。 */
+  async clearTenant(tenantId: string): Promise<OperationLogClearResultVO> {
+    const result = await this.prisma.operationLog.deleteMany({ where: { tenantId } })
+    this.logger.warn(`当前租户操作日志已全部清空: tenantId=${tenantId}, deleted=${result.count}`)
+    return { deleted: result.count }
   }
 }

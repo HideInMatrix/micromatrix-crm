@@ -197,3 +197,23 @@ test('自动清理逐租户执行且单租户失败不阻断其他租户', async
     true,
   )
 })
+
+test('全量清空只删除当前租户全部操作日志并返回真实数量', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const prisma = {
+    operationLog: {
+      deleteMany: async (args: Record<string, unknown>) => {
+        calls.push(args)
+        return { count: 37 }
+      },
+    },
+  } as unknown as PrismaService
+  const { settings, records } = settingsMock(180)
+  const service = new OperationLogCleanupService(prisma, settings)
+
+  const result = await service.clearTenant('tenant-a')
+
+  assert.deepEqual(result, { deleted: 37 })
+  assert.deepEqual(calls, [{ where: { tenantId: 'tenant-a' } }])
+  assert.equal(records.length, 0)
+})

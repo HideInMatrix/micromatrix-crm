@@ -38,6 +38,7 @@ const policyVisible = ref(false)
 const policyLoading = ref(false)
 const policySaving = ref(false)
 const cleanupRunning = ref(false)
+const clearAllRunning = ref(false)
 const policy = ref<OperationLogSettingVO | null>(null)
 const policyForm = reactive({ permanent: false, retentionDays: 180 })
 
@@ -148,7 +149,7 @@ async function runCleanup() {
   try {
     await ElMessageBox.confirm(
       `将立即删除当前组织超过 ${policy.value?.retentionDays ?? policyForm.retentionDays} 天的操作日志，单次清理仍受系统批次上限保护。是否继续？`,
-      '立即清理操作日志',
+      '清理过期日志',
       { confirmButtonText: '开始清理', cancelButtonText: '取消', type: 'warning' },
     )
   } catch {
@@ -168,6 +169,39 @@ async function runCleanup() {
     ElMessage.error(extractErrorMessage(error))
   } finally {
     cleanupRunning.value = false
+  }
+}
+
+async function clearAllOperations() {
+  try {
+    await ElMessageBox.prompt(
+      `将永久删除当前组织全部操作日志。当前查询结果显示 ${opTotal.value} 条，但实际会删除当前组织全部操作日志，最终数量以服务端返回为准。此操作不可恢复，也不会影响登录日志。请输入“清空”确认。`,
+      '清空全部操作日志',
+      {
+        confirmButtonText: '确认清空',
+        cancelButtonText: '取消',
+        type: 'error',
+        inputPlaceholder: '请输入：清空',
+        inputPattern: /^清空$/,
+        inputErrorMessage: '请输入“清空”后才能继续',
+      },
+    )
+  } catch {
+    return
+  }
+
+  clearAllRunning.value = true
+  try {
+    const { data } = await logApi.clearAll()
+    ElMessage.success(`已清空 ${data.deleted} 条操作日志`)
+    opQuery.page = 1
+    detailVisible.value = false
+    operationDetail.value = null
+    await Promise.all([loadOperations(), loadPolicy()])
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    clearAllRunning.value = false
   }
 }
 
@@ -404,16 +438,31 @@ onMounted(loadOperations)
           />
 
           <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <el-button
+                type="warning"
+                plain
+                :disabled="policy.permanent || clearAllRunning"
+                :loading="cleanupRunning"
+                @click="runCleanup"
+              >
+                清理过期日志
+              </el-button>
+              <el-button
+                type="danger"
+                plain
+                :disabled="cleanupRunning"
+                :loading="clearAllRunning"
+                @click="clearAllOperations"
+              >
+                清空全部操作日志
+              </el-button>
+            </div>
             <el-button
-              type="danger"
-              plain
-              :disabled="policy.permanent"
-              :loading="cleanupRunning"
-              @click="runCleanup"
-            >
-              立即清理
-            </el-button>
-            <el-button type="primary" :loading="policySaving" @click="savePolicy"
+              type="primary"
+              :disabled="cleanupRunning || clearAllRunning"
+              :loading="policySaving"
+              @click="savePolicy"
               >保存策略</el-button
             >
           </div>

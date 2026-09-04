@@ -1354,3 +1354,22 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `/system/logs` 已增加操作日志详情 Drawer 与日志策略 Drawer，展示字段级 before/after、最近清理时间/数量/来源，并提供保存与“立即清理”；`system:log` 保持只读，新增 `system:log:update` 专门控制策略与手工清理，永久保留和立即清理均有风险提示。
 - 自动化最终基线：API Rules **190/190 PASS**，其中新增直接断言证明业务字段 diff 只写 Blob；全仓 `pnpm typecheck` PASS，`pnpm lint` **0 error / 8 个既有 warning**，全仓 production build PASS、Web **4145 modules transformed**，Prisma validate/generate/status、Prettier 与 `git diff --check` 全绿。`LOG-002 G1～G7` 全部关闭，状态为 **`VERIFIED`**。
 - 新增独立 `system:log:update` 写权限；读取日志/详情/策略继续使用 `system:log`。日志页面增加详情懒加载和策略 Drawer，不新增左侧菜单；规格与最终验收均已归档在 `docs/specs/operation-log-management/{requirements,design,tasks}.md`。
+
+---
+
+## 79. LOG-003 操作日志全量清空立项（2026-09-04）
+
+- LOG-002 的 `POST /logs/cleanup` 语义确认是“立即执行 retention 清理”，只删除早于当前保留策略 cutoff 的操作日志；因此新产生或仍在保留周期内的日志不会消失。这一行为本身正确，但页面“立即清理”文案容易被理解成清空全部。
+- LOG-003 冻结两个独立动作：原入口改名“清理过期日志”；新增当前租户“清空全部操作日志”，不受 retentionDays 影响，只要求 `system:log:update`，且必须输入 `清空` 完成危险确认。
+- clear-all API 必须携带 `tenantId` 条件并返回真实删除数量；不得影响 `login_logs` 或其它租户。接口本身故意不使用 `@LogOperation`，否则清空成功后 interceptor 会再写入一条日志，破坏“全部清空”契约。
+- 立项后执行指针为 C2 API；最终实施与验收结果见下一节。
+
+---
+
+## 80. LOG-003 操作日志全量清空最终验收（2026-09-04）
+
+- 新增 `POST /logs/clear-all`，继续使用 `system:log:update`，Service 只执行 `operationLog.deleteMany({ where: { tenantId } })` 并返回真实 `deleted` 数量；不修改 retention setting，也不影响 `login_logs`。现有 `operation_logs -> operation_log_blobs` FK cascade 负责同步删除详情。
+- clear-all endpoint 明确不使用 `@LogOperation`，专项 metadata 测试验证清空成功后不会由 interceptor 重新写入一条 `systemLog` 日志；租户删除测试验证 where 条件只有当前 `tenantId`，不会退化为无条件全表删除。
+- `/system/logs` 将原“立即清理”改名“清理过期日志”，另增“清空全部操作日志”危险按钮；必须输入“清空”才能提交，确认文案明确当前查询数量仅供参考、实际删除当前组织全部操作日志且不可恢复。成功后显示服务端真实删除数并刷新列表/策略。
+- 当前本地 API 已实际加载新路由，未认证 `POST /api/logs/clear-all` 返回 HTTP 401。无需新增 Prisma migration，数据库基线保持 **71 migrations**。
+- 最终验证：API Rules **192/192 PASS**；root `pnpm typecheck` PASS；`pnpm lint` **0 error / 8 个既有 warning**；production build PASS、Web **4145 modules transformed**；Prettier 与 `git diff --check` PASS。`LOG-003 C1～C4` 全部关闭，状态为 **`VERIFIED`**。
