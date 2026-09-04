@@ -1,4 +1,5 @@
-const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5174'
+const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
+const mobileOrigin = process.env.MOBILE_ORIGIN ?? 'http://127.0.0.1:5174'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
 
 let passed = 0
@@ -55,11 +56,16 @@ class Cdp {
         return
       }
       if (message.method === 'Network.requestWillBeSent') {
-        this.requests.push({ method: message.params.request.method, url: message.params.request.url })
+        this.requests.push({
+          method: message.params.request.method,
+          url: message.params.request.url,
+        })
       }
       if (message.method === 'Runtime.exceptionThrown') {
         const details = message.params.exceptionDetails
-        this.exceptions.push(details?.exception?.description ?? details?.text ?? 'Runtime exception')
+        this.exceptions.push(
+          details?.exception?.description ?? details?.text ?? 'Runtime exception',
+        )
       }
       if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
         this.consoleErrors.push(
@@ -104,6 +110,11 @@ class Cdp {
   async navigate(path) {
     await this.send('Page.navigate', { url: `${webBase}${path}` })
     await this.wait(`document.readyState === 'complete'`, 15000, `页面加载 ${path}`)
+  }
+
+  async navigateUrl(url) {
+    await this.send('Page.navigate', { url })
+    await this.wait(`document.readyState === 'complete'`, 15000, `页面加载 ${url}`)
   }
 
   resetNetwork() {
@@ -162,10 +173,18 @@ async function clickSelector(cdp, selector) {
   if (!point) return false
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
   await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1,
+    type: 'mousePressed',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1,
   })
   await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1,
+    type: 'mouseReleased',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1,
   })
   return true
 }
@@ -216,7 +235,24 @@ async function loginDesktop(cdp) {
     cdp.send('Network.clearBrowserCookies'),
   ])
   await cdp.navigate('/login')
-  await cdp.wait(`document.querySelector('input[placeholder="请输入邮箱"]') !== null`, 10000, '桌面登录页')
+  await cdp.wait(
+    `document.querySelector('input[placeholder="请输入邮箱"]') !== null`,
+    10000,
+    '桌面登录页',
+  )
+  await cdp.eval(`(() => {
+    const setValue=(selector,value)=>{
+      const el=document.querySelector(selector);
+      if(!el) return false;
+      const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+      setter?.call(el,value);
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+      return true;
+    };
+    return setValue('input[placeholder="请输入邮箱"]','admin@demo.com') &&
+      setValue('input[placeholder="请输入密码"]','admin123');
+  })()`)
   await cdp.eval(`(() => {
     const button=[...document.querySelectorAll('button')].find((x)=>x.textContent?.replace(/\\s/g,'').includes('登录'));
     button?.click(); return Boolean(button);
@@ -231,7 +267,11 @@ async function main() {
   await cdp.connect()
   try {
     await loginDesktop(cdp)
-    await cdp.wait(`document.querySelector('[data-testid="personal-menu-trigger"]') !== null`, 10000, '用户菜单入口')
+    await cdp.wait(
+      `document.querySelector('[data-testid="personal-menu-trigger"]') !== null`,
+      10000,
+      '用户菜单入口',
+    )
 
     const triggerPosition = await cdp.eval(`(() => {
       const el=document.querySelector('[data-testid="personal-menu-trigger"]');
@@ -240,12 +280,60 @@ async function main() {
     })()`)
     check(
       '桌面用户入口位于左侧菜单底部而不是 Header',
-      triggerPosition && triggerPosition.x < 220 && triggerPosition.bottom > triggerPosition.height - 100,
+      triggerPosition &&
+        triggerPosition.x < 220 &&
+        triggerPosition.bottom > triggerPosition.height - 100,
       JSON.stringify(triggerPosition),
     )
     check(
       '顶部 Header 不再展示用户名',
       await cdp.eval(`!document.querySelector('header')?.innerText.includes('系统管理员')`),
+    )
+
+    const expandedSidebarMetrics = await cdp.eval(`(() => {
+      const aside=document.querySelector('.crm-layout-sider');
+      const dropdown=document.querySelector('.crm-layout-sider .el-dropdown');
+      const trigger=document.querySelector('[data-testid="personal-menu-trigger"]');
+      const collapse=document.querySelector('button[aria-label="收起菜单"]');
+      return {
+        asideWidth: aside?.getBoundingClientRect().width ?? 0,
+        dropdownWidth: dropdown?.getBoundingClientRect().width ?? 0,
+        triggerWidth: trigger?.getBoundingClientRect().width ?? 0,
+        collapseText: collapse?.textContent?.trim() ?? null,
+      };
+    })()`)
+    check(
+      'Sidebar 用户 el-dropdown 占满可用宽度',
+      expandedSidebarMetrics.asideWidth === 180 &&
+        expandedSidebarMetrics.dropdownWidth === expandedSidebarMetrics.triggerWidth &&
+        expandedSidebarMetrics.dropdownWidth >= 160,
+      JSON.stringify(expandedSidebarMetrics),
+    )
+    check(
+      'Sidebar 折叠按钮只保留图标不展示“收起菜单”文案',
+      expandedSidebarMetrics.collapseText === '',
+      JSON.stringify(expandedSidebarMetrics),
+    )
+
+    await clickSelector(cdp, 'button[aria-label="收起菜单"]')
+    await cdp.wait(
+      `document.querySelector('.crm-layout-sider')?.getBoundingClientRect().width === 56`,
+      3000,
+      'Sidebar 折叠',
+    )
+    const collapsedBrandPadding = await cdp.eval(
+      `getComputedStyle(document.querySelector('.crm-layout-brand')).paddingLeft`,
+    )
+    check(
+      'Sidebar 折叠态品牌区取消水平 padding',
+      collapsedBrandPadding === '0px',
+      collapsedBrandPadding,
+    )
+    await clickSelector(cdp, 'button[aria-label="展开菜单"]')
+    await cdp.wait(
+      `document.querySelector('.crm-layout-sider')?.getBoundingClientRect().width === 180`,
+      3000,
+      'Sidebar 展开恢复',
     )
 
     await openPersonalMenu(cdp)
@@ -260,18 +348,29 @@ async function main() {
 
     cdp.resetNetwork()
     await clickVisibleText(cdp, '个人信息', '.el-dropdown-menu__item')
-    await cdp.wait(`document.querySelector('[data-testid="personal-center-drawer"]')?.getBoundingClientRect().width > 0`, 5000, '个人中心 Drawer')
+    await cdp.wait(
+      `document.querySelector('[data-testid="personal-center-drawer"]')?.getBoundingClientRect().width > 0`,
+      5000,
+      '个人中心 Drawer',
+    )
     await cdp.wait(`document.body.innerText.includes('基本信息')`, 10000, '个人信息加载')
-    check('个人信息 Drawer 打开时只请求一次详情', cdp.count('/api/personal/center/info', 'GET') === 1)
+    check(
+      '个人信息 Drawer 打开时只请求一次详情',
+      cdp.count('/api/personal/center/info', 'GET') === 1,
+    )
     check(
       '个人中心展示姓名/角色/手机号/邮箱/部门与修改密码',
-      await cdp.eval(`['系统管理员','手机号','邮箱','部门','修改密码'].every((x)=>document.body.innerText.includes(x))`),
+      await cdp.eval(
+        `['系统管理员','手机号','邮箱','部门','修改密码'].every((x)=>document.body.innerText.includes(x))`,
+      ),
     )
     await clickVisibleContainerButton(cdp, '[data-testid="personal-center-drawer"]', '编辑')
     await cdp.wait(`document.body.innerText.includes('编辑个人信息')`, 3000, '编辑个人信息 Dialog')
     check(
       '个人信息编辑只暴露手机号和邮箱',
-      await cdp.eval(`document.body.innerText.includes('手机号') && document.body.innerText.includes('邮箱')`),
+      await cdp.eval(
+        `document.body.innerText.includes('手机号') && document.body.innerText.includes('邮箱')`,
+      ),
     )
     await clickVisibleContainerButton(cdp, '.el-dialog', '取消')
 
@@ -283,7 +382,9 @@ async function main() {
     )
     check(
       '桌面修改密码 Dialog 字段完整',
-      await cdp.eval(`['当前密码','新密码','确认新密码'].every((x)=>document.body.innerText.includes(x))`),
+      await cdp.eval(
+        `['当前密码','新密码','确认新密码'].every((x)=>document.body.innerText.includes(x))`,
+      ),
     )
     await clickVisibleContainerButton(cdp, '.el-dialog', '取消')
 
@@ -294,7 +395,11 @@ async function main() {
       '我的计划',
       '.el-tabs__item',
     )
-    await cdp.wait(`document.body.innerText.includes('暂无跟进计划') || document.querySelector('.el-table__body-wrapper tbody tr') !== null`, 10000, '我的计划列表')
+    await cdp.wait(
+      `document.body.innerText.includes('暂无跟进计划') || document.querySelector('.el-table__body-wrapper tbody tr') !== null`,
+      10000,
+      '我的计划列表',
+    )
     check(
       '个人中心我的计划走 Cordys facade',
       cdp.count('/api/personal/center/follow/plan/list', 'POST') === 1,
@@ -326,10 +431,14 @@ async function main() {
     check('API Key Tab 首次进入只请求一次列表', cdp.count('/api/user/api/key/list', 'GET') === 1)
     check(
       'API Key Panel 展示 Cordys 管理字段和 5 个上限说明',
-      await cdp.eval(`['API Key','X-Access-Key / X-Secret-Key','每个用户最多 5 个','新建'].every((x)=>document.body.innerText.includes(x))`),
+      await cdp.eval(
+        `['API Key','X-Access-Key / X-Secret-Key','每个用户最多 5 个','新建'].every((x)=>document.body.innerText.includes(x))`,
+      ),
     )
 
-    const apiKeyBefore = await cdp.eval(`document.querySelectorAll('[data-testid="personal-api-key-card"]').length`)
+    const apiKeyBefore = await cdp.eval(
+      `document.querySelectorAll('[data-testid="personal-api-key-card"]').length`,
+    )
     let createdBrowserKey = false
     cdp.resetNetwork()
     if (apiKeyBefore < 5) {
@@ -342,12 +451,15 @@ async function main() {
       createdBrowserKey = true
       check(
         'API Key Panel 可通过真实 UI 新建并刷新列表',
-        cdp.count('/api/user/api/key/add', 'GET') === 1 && cdp.count('/api/user/api/key/list', 'GET') === 1,
+        cdp.count('/api/user/api/key/add', 'GET') === 1 &&
+          cdp.count('/api/user/api/key/list', 'GET') === 1,
       )
     } else {
       check(
         'API Key 达到 5 个时新建按钮禁用',
-        await cdp.eval(`document.querySelector('[data-testid="personal-api-key-add"]')?.disabled === true`),
+        await cdp.eval(
+          `document.querySelector('[data-testid="personal-api-key-add"]')?.disabled === true`,
+        ),
       )
     }
 
@@ -371,12 +483,21 @@ async function main() {
       )
       check('Browser 新建的 API Key 可从 UI 删除并恢复原数量', true)
     } else {
-      check('API Key 有效期/描述入口在满额状态仍可用', await cdp.eval(`document.body.innerText.includes('有效期/描述')`))
+      check(
+        'API Key 有效期/描述入口在满额状态仍可用',
+        await cdp.eval(`document.body.innerText.includes('有效期/描述')`),
+      )
       check('满额状态不修改已有 API Key 数据', true)
     }
 
-    await cdp.eval(`document.querySelector('[data-testid="personal-center-drawer"] .el-drawer__close-btn')?.click()`)
-    await cdp.wait(`(document.querySelector('[data-testid="personal-center-drawer"]')?.getBoundingClientRect().width ?? 0) === 0`, 3000, '关闭个人中心')
+    await cdp.eval(
+      `document.querySelector('[data-testid="personal-center-drawer"] .el-drawer__close-btn')?.click()`,
+    )
+    await cdp.wait(
+      `(document.querySelector('[data-testid="personal-center-drawer"]')?.getBoundingClientRect().width ?? 0) === 0`,
+      3000,
+      '关闭个人中心',
+    )
 
     cdp.resetNetwork()
     await selectPersonalMenu(cdp, '我的计划')
@@ -394,14 +515,26 @@ async function main() {
       '左下用户菜单“我的计划”直接打开计划 Tab',
       cdp.count('/api/personal/center/follow/plan/list', 'POST') === 1,
     )
-    await cdp.eval(`document.querySelector('[data-testid="personal-center-drawer"] .el-drawer__close-btn')?.click()`)
-    await cdp.wait(`(document.querySelector('[data-testid="personal-center-drawer"]')?.getBoundingClientRect().width ?? 0) === 0`, 3000, '再次关闭个人中心')
+    await cdp.eval(
+      `document.querySelector('[data-testid="personal-center-drawer"] .el-drawer__close-btn')?.click()`,
+    )
+    await cdp.wait(
+      `(document.querySelector('[data-testid="personal-center-drawer"]')?.getBoundingClientRect().width ?? 0) === 0`,
+      3000,
+      '再次关闭个人中心',
+    )
 
     cdp.resetNetwork()
     await selectPersonalMenu(cdp, '我的导出')
-    await cdp.wait(`document.body.innerText.includes('导出任务') && document.body.innerText.includes('导出任务仅保留 24 小时')`, 5000, '我的导出 Drawer')
+    await cdp.wait(
+      `document.body.innerText.includes('导出任务') && document.body.innerText.includes('导出任务仅保留 24 小时')`,
+      5000,
+      '我的导出 Drawer',
+    )
     check('我的导出复用本人导出任务 API', cdp.count('/api/export-tasks', 'GET') === 1)
-    await cdp.eval(`[...document.querySelectorAll('.el-drawer__close-btn')].find((x)=>x.getBoundingClientRect().width>0)?.click()`)
+    await cdp.eval(
+      `[...document.querySelectorAll('.el-drawer__close-btn')].find((x)=>x.getBoundingClientRect().width>0)?.click()`,
+    )
 
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 390,
@@ -409,14 +542,57 @@ async function main() {
       deviceScaleFactor: 1,
       mobile: true,
     })
+    await cdp.send('Emulation.setUserAgentOverride', {
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      platform: 'iPhone',
+    })
+    await cdp.send('Storage.clearDataForOrigin', {
+      origin: mobileOrigin,
+      storageTypes: 'all',
+    })
     cdp.resetNetwork()
-    await cdp.navigate('/mine')
-    await cdp.wait(`document.documentElement.classList.contains('mobile-client')`, 10000, 'Mobile 模式')
-    await cdp.wait(`['手机号','邮箱','修改密码','退出登录'].every((x)=>document.body.innerText.includes(x))`, 10000, 'Mobile 我的页')
-    check('Mobile 我的页读取个人中心详情 API', cdp.count('/api/personal/center/info', 'GET') === 1)
+    await cdp.navigateUrl(`${mobileOrigin}/mobile/login`)
+    await cdp.wait(
+      `document.querySelector('input[placeholder="请输入邮箱"]') !== null`,
+      10000,
+      'Mobile 登录页',
+    )
+    await cdp.eval(`(() => {
+      const setValue=(selector,value)=>{
+        const el=document.querySelector(selector);
+        if(!el) return false;
+        const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+        setter?.call(el,value);
+        el.dispatchEvent(new Event('input',{bubbles:true}));
+        el.dispatchEvent(new Event('change',{bubbles:true}));
+        return true;
+      };
+      return setValue('input[placeholder="请输入邮箱"]','admin@demo.com') &&
+        setValue('input[placeholder="请输入密码"]','admin123');
+    })()`)
+    await cdp.eval(`(() => {
+      const button=[...document.querySelectorAll('button')].find((x)=>x.textContent?.replace(/\\s/g,'').includes('登录'));
+      button?.click(); return Boolean(button);
+    })()`)
+    await cdp.wait(`location.pathname === '/mobile/home'`, 10000, 'Mobile 登录')
+    cdp.resetNetwork()
+    await cdp.navigateUrl(`${mobileOrigin}/mobile/mine`)
+    await cdp.wait(
+      `['手机号','邮箱','修改密码','退出登录'].every((x)=>document.body.innerText.includes(x))`,
+      10000,
+      'Mobile 我的页',
+    )
+    check(
+      'Mobile 我的页读取个人中心详情 API',
+      cdp.count('/api/personal/center/info', 'GET') === 1,
+      `count=${cdp.count('/api/personal/center/info', 'GET')}`,
+    )
     check(
       'Mobile 我的页展示手机号/邮箱/修改密码/退出登录',
-      await cdp.eval(`['手机号','邮箱','修改密码','退出登录'].every((x)=>document.body.innerText.includes(x))`),
+      await cdp.eval(
+        `['手机号','邮箱','修改密码','退出登录'].every((x)=>document.body.innerText.includes(x))`,
+      ),
     )
     await clickVisibleText(cdp, '手机号')
     await cdp.wait(`document.body.innerText.includes('编辑个人信息')`, 3000, 'Mobile 编辑个人信息')
@@ -429,18 +605,38 @@ async function main() {
       deviceScaleFactor: 1,
       mobile: false,
     })
+    await cdp.send('Emulation.setUserAgentOverride', {
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
+      platform: 'MacIntel',
+    })
 
     await cdp.navigate('/system/settings')
-    await cdp.wait(`document.body.innerText.includes('界面设置') && document.body.innerText.includes('第三方')`, 10000, '企业设置')
-    await clickVisibleContainerText(cdp, 'body', '第三方', '.el-tabs__item')
+    await cdp.wait(
+      `document.body.innerText.includes('界面设置') && document.body.innerText.includes('第三方')`,
+      10000,
+      '企业设置',
+    )
+    await clickVisibleText(cdp, '第三方', '.el-tabs__item')
+    await cdp.wait(
+      `[...document.querySelectorAll('.el-tabs__item')].some((x)=>x.textContent?.trim()==='第三方' && x.classList.contains('is-active'))`,
+      5000,
+      '企业设置第三方 Tab 激活',
+    )
     await cdp.wait(`document.body.innerText.includes('企业微信')`, 5000, '企业第三方设置')
     check(
       '企业第三方设置不再保留重复的开放 API / 365 天令牌入口',
-      await cdp.eval(`!document.body.innerText.includes('生成 365 天令牌') && !document.body.innerText.includes('开放 API')`),
+      await cdp.eval(
+        `!document.body.innerText.includes('生成 365 天令牌') && !document.body.innerText.includes('开放 API')`,
+      ),
     )
 
     await cdp.navigate('/dashboard')
-    await cdp.wait(`document.querySelector('[data-testid="personal-menu-trigger"]') !== null`, 10000, '桌面用户菜单恢复')
+    await cdp.wait(
+      `document.querySelector('[data-testid="personal-menu-trigger"]') !== null`,
+      10000,
+      '桌面用户菜单恢复',
+    )
     await selectPersonalMenu(cdp, '退出系统')
     await cdp.wait(`location.pathname === '/login'`, 5000, '退出系统回登录页')
     check('左下用户菜单“退出系统”清理登录态并返回登录页', true)
@@ -448,8 +644,16 @@ async function main() {
     const relevantConsoleErrors = cdp.consoleErrors.filter(
       (item) => !item.includes('Failed to load resource') && !item.includes('favicon'),
     )
-    check('个人中心 Browser 无 Runtime exception', cdp.exceptions.length === 0, cdp.exceptions.join(' | '))
-    check('个人中心 Browser 无业务 Console error', relevantConsoleErrors.length === 0, relevantConsoleErrors.join(' | '))
+    check(
+      '个人中心 Browser 无 Runtime exception',
+      cdp.exceptions.length === 0,
+      cdp.exceptions.join(' | '),
+    )
+    check(
+      '个人中心 Browser 无业务 Console error',
+      relevantConsoleErrors.length === 0,
+      relevantConsoleErrors.join(' | '),
+    )
   } catch (error) {
     check('个人中心 Browser 执行异常', false, String(error?.stack ?? error))
   } finally {

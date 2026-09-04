@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { type DepartmentVO, type FieldVO, type FilterCondition } from '@micromatrix/shared'
+import { Funnel } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import type { MemberOption } from '@/api/system'
 import FilterConditionEditor from './FilterConditionEditor.vue'
@@ -51,7 +52,17 @@ function reset() {
   <el-popover v-model:visible="visible" placement="bottom-start" width="640" trigger="click">
     <template #reference>
       <el-badge :value="activeCount" :hidden="activeCount === 0" type="primary">
-        <el-button>高级筛选</el-button>
+        <el-tooltip content="高级筛选" placement="top">
+          <el-button
+            class="!h-8 !w-8 !p-0"
+            :type="activeCount > 0 ? 'primary' : 'default'"
+            :plain="activeCount > 0"
+            aria-label="高级筛选"
+            data-table-tool="filter"
+          >
+            <Funnel :size="16" :stroke-width="1.8" aria-hidden="true" />
+          </el-button>
+        </el-tooltip>
       </el-badge>
     </template>
 

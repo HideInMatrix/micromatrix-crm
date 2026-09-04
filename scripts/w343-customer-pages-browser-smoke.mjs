@@ -1,4 +1,4 @@
-const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5174'
+const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
 
@@ -120,7 +120,8 @@ class CdpClient {
       awaitPromise: true,
       returnByValue: true,
     })
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text ?? '浏览器表达式执行失败')
+    if (result.exceptionDetails)
+      throw new Error(result.exceptionDetails.text ?? '浏览器表达式执行失败')
     return result.result?.value
   }
 
@@ -431,10 +432,7 @@ async function main() {
       textIncludes('客户 360'),
       '普通客户 360',
     )
-    check(
-      '客户 query 深链直接打开客户 360',
-      await cdp.evaluate(textIncludes(names.normal1)),
-    )
+    check('客户 query 深链直接打开客户 360', await cdp.evaluate(textIncludes(names.normal1)))
     check(
       '普通客户 360 保留联系人/计划/关系等业务 Tab',
       await cdp.evaluate(
@@ -448,10 +446,7 @@ async function main() {
       textIncludes('公海客户详情'),
       '公海客户详情',
     )
-    check(
-      '公海 query 深链直接打开独立详情',
-      await cdp.evaluate(textIncludes(names.pool1)),
-    )
+    check('公海 query 深链直接打开独立详情', await cdp.evaluate(textIncludes(names.pool1)))
     check(
       '公海详情只保留跟进记录与负责人记录',
       await cdp.evaluate(`(() => {

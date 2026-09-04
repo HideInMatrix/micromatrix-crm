@@ -14,7 +14,8 @@ import { contactApi, resourcePoolApi } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
@@ -29,11 +30,17 @@ const router = useRouter()
 const route = useRoute()
 const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const fields = ref<FieldVO[]>([])
 const customerOptions = ref<CustomerOptionVO[]>([])
 const tabConfig = ref({ all: false, dept: false })
 const scopeView = ref<'SELF' | 'DEPT' | 'ALL'>('SELF')
+const contactSystemViews = computed(() => [
+  { id: 'SELF', label: '我的联系人' },
+  ...(tabConfig.value.dept ? [{ id: 'DEPT', label: '部门联系人' }] : []),
+  ...(tabConfig.value.all ? [{ id: 'ALL', label: '全部联系人' }] : []),
+])
 const activeSavedViewId = ref('')
 const filters = ref<FilterCondition[]>([])
 const visibleColumnKeys = ref<string[]>([])
@@ -155,6 +162,11 @@ function handleScopeChange(value: 'SELF' | 'DEPT' | 'ALL') {
   query.page = 1
   selectedRows.value = []
   loadData()
+}
+
+function handleSystemViewChange(value?: string) {
+  if (!value || !['SELF', 'DEPT', 'ALL'].includes(value)) return
+  handleScopeChange(value as 'SELF' | 'DEPT' | 'ALL')
 }
 
 function handleSavedViewChange(viewId?: string) {
@@ -392,10 +404,11 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never">
-    <CustomerModuleNav active="contact" />
-
-    <div class="flex-between gap-4 mb-4">
-      <div class="flex items-center gap-2 flex-wrap">
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
+      <div class="flex flex-wrap items-center gap-2">
         <el-button v-if="auth.hasPerm('contact:create')" type="primary" @click="openCreate">
           新增联系人
         </el-button>
@@ -409,7 +422,6 @@ onMounted(async () => {
         >
           导出全部
         </el-button>
-
         <template v-if="selectedRows.length">
           <el-divider direction="vertical" />
           <el-button v-if="auth.hasPerm('contact:export')" @click="openExport('selected')">
@@ -421,16 +433,12 @@ onMounted(async () => {
         </template>
       </div>
 
-      <div class="flex items-center gap-2">
-        <el-input
+      <div class="flex flex-wrap items-center gap-2">
+        <CrmSearchInput
           v-model="query.keyword"
-          clearable
           placeholder="搜索联系人姓名、电话"
-          class="!w-[240px]"
-          @keyup.enter="handleSearch"
-          @clear="handleSearch"
+          @search="handleSearch"
         />
-        <el-button @click="handleSearch">搜索</el-button>
         <AdvancedFilter
           v-model="filters"
           :fields="uiFields"
@@ -438,46 +446,26 @@ onMounted(async () => {
           :dept-tree="fieldRefs.deptTree.value"
           @apply="handleSearch"
         />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
       </div>
     </div>
 
-    <div class="flex items-center gap-2 mb-3">
-      <el-button
-        :type="scopeView === 'SELF' ? 'primary' : 'default'"
-        :plain="scopeView !== 'SELF'"
-        size="small"
-        @click="handleScopeChange('SELF')"
-      >
-        我的联系人
-      </el-button>
-      <el-button
-        v-if="tabConfig.dept"
-        :type="scopeView === 'DEPT' ? 'primary' : 'default'"
-        :plain="scopeView !== 'DEPT'"
-        size="small"
-        @click="handleScopeChange('DEPT')"
-      >
-        部门联系人
-      </el-button>
-      <el-button
-        v-if="tabConfig.all"
-        :type="scopeView === 'ALL' ? 'primary' : 'default'"
-        :plain="scopeView !== 'ALL'"
-        size="small"
-        @click="handleScopeChange('ALL')"
-      >
-        全部联系人
-      </el-button>
-    </div>
-
     <SavedViewBar
+      ref="savedViewBarRef"
       module="contact"
       :fields="uiFields"
       :members="fieldRefs.members.value"
       :dept-tree="fieldRefs.deptTree.value"
       :current-filters="filters"
       :default-column-keys="defaultColumnKeys"
+      :system-views="contactSystemViews"
+      :system-view="scopeView"
       @change="handleSavedViewChange"
+      @system-view-change="handleSystemViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
       @ready="handleSavedViewReady"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DepartmentVO, FieldVO, FilterCondition } from '@micromatrix/shared'
+import { Plus } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import {
   userViewConditionsToFilters,
@@ -52,6 +53,14 @@ const selectedColumnKeys = ref<string[]>([])
 
 const enabledViews = computed(() => views.value.filter((view) => view.enable))
 const fixedViews = computed(() => enabledViews.value.filter((view) => view.fixed))
+const selectedViewKey = computed(() => {
+  if (activeViewId.value) return `user:${activeViewId.value}`
+  if (props.systemViews?.length) {
+    const systemId = props.systemView || props.systemViews[0]?.id
+    if (systemId) return `system:${systemId}`
+  }
+  return 'default'
+})
 const columnOptions = computed(() =>
   props.fields
     .filter((field) => !field.hidden)
@@ -111,6 +120,18 @@ function selectSystemView(viewId: string) {
   loadColumnPreference()
   emit('change', undefined)
   emit('systemViewChange', viewId)
+}
+
+function selectAnyView(value: string) {
+  if (value === 'default') {
+    selectView('')
+    return
+  }
+  if (value.startsWith('system:')) {
+    selectSystemView(value.slice('system:'.length))
+    return
+  }
+  if (value.startsWith('user:')) selectView(value.slice('user:'.length))
 }
 
 function openCreate(useCurrentFilters = true) {
@@ -330,6 +351,19 @@ function columnLabel(key: string) {
   return columnOptions.value.find((column) => column.key === key)?.label ?? key
 }
 
+function openColumnSettings() {
+  columnsVisible.value = true
+}
+
+function openManageViews() {
+  manageVisible.value = true
+}
+
+defineExpose({
+  openColumnSettings,
+  openManageViews,
+})
+
 watch(
   () => props.module,
   () => loadViews(),
@@ -344,7 +378,11 @@ watch(
 </script>
 
 <template>
-  <div v-loading="loading" class="flex-between gap-3 flex-wrap mb-3">
+  <div
+    v-loading="loading"
+    class="crm-saved-view-bar flex-between gap-3 flex-wrap mb-4"
+    data-testid="saved-view-bar"
+  >
     <div class="flex items-center gap-2 flex-wrap min-w-0">
       <el-button
         v-if="!systemViews?.length"
@@ -375,29 +413,48 @@ watch(
       >
         {{ view.name }}
       </el-button>
-      <el-button size="small" link type="primary" @click="openCreate(true)">
-        + 保存当前筛选
+      <el-button size="small" class="!px-3" @click="openCreate(true)">
+        <Plus :size="14" :stroke-width="1.8" aria-hidden="true" />
+        新建视图
       </el-button>
     </div>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2" data-testid="saved-view-actions">
+      <span class="whitespace-nowrap text-sm text-[var(--el-text-color-secondary)]">视图</span>
       <el-select
-        :model-value="activeViewId"
-        clearable
+        :model-value="selectedViewKey"
         filterable
-        placeholder="全部个人视图"
-        class="!w-48"
-        @update:model-value="(value) => selectView(value ?? '')"
+        placeholder="选择视图"
+        class="!w-[200px]"
+        @update:model-value="(value) => selectAnyView(value)"
       >
-        <el-option
-          v-for="view in enabledViews"
-          :key="view.id"
-          :label="view.name"
-          :value="view.id"
-        />
+        <el-option v-if="!systemViews?.length" label="默认视图" value="default" />
+        <el-option-group v-if="systemViews?.length" label="系统视图">
+          <el-option
+            v-for="view in systemViews"
+            :key="view.id"
+            :label="view.label"
+            :value="`system:${view.id}`"
+          />
+        </el-option-group>
+        <el-option-group v-if="enabledViews.length" label="个人视图">
+          <el-option
+            v-for="view in enabledViews"
+            :key="view.id"
+            :label="view.name"
+            :value="`user:${view.id}`"
+          />
+        </el-option-group>
+        <template #header>
+          <el-button link type="primary" @click.stop="openCreate(true)">
+            <Plus :size="14" :stroke-width="1.8" aria-hidden="true" />
+            新建视图
+          </el-button>
+        </template>
+        <template #footer>
+          <el-button link type="primary" @click.stop="openManageViews">管理视图</el-button>
+        </template>
       </el-select>
-      <el-button size="small" @click="columnsVisible = true">列设置</el-button>
-      <el-button size="small" @click="manageVisible = true">管理视图</el-button>
     </div>
   </div>
 

@@ -8,6 +8,15 @@ interface EnterpriseUiThemeSetting {
 }
 
 const PRIMARY_VARS = [
+  '--primary-0',
+  '--primary-1',
+  '--primary-2',
+  '--primary-3',
+  '--primary-4',
+  '--primary-5',
+  '--primary-6',
+  '--primary-7',
+  '--primary-8',
   '--el-color-primary',
   '--el-color-primary-light-3',
   '--el-color-primary-light-5',
@@ -35,6 +44,15 @@ export function useEnterpriseUiTheme() {
     if (!primary) {
       PRIMARY_VARS.forEach((name) => root.style.removeProperty(name))
     } else {
+      root.style.setProperty('--primary-0', mix(primary, '#000000', 0.15))
+      root.style.setProperty('--primary-1', mix(primary, '#ffffff', 0.15))
+      root.style.setProperty('--primary-2', mix(primary, '#ffffff', 0.3))
+      root.style.setProperty('--primary-3', mix(primary, '#ffffff', 0.4))
+      root.style.setProperty('--primary-4', mix(primary, '#ffffff', 0.7))
+      root.style.setProperty('--primary-5', mix(primary, '#ffffff', 0.8))
+      root.style.setProperty('--primary-6', mix(primary, '#ffffff', 0.9))
+      root.style.setProperty('--primary-7', mix(primary, '#ffffff', 0.95))
+      root.style.setProperty('--primary-8', primary)
       root.style.setProperty('--el-color-primary', primary)
       root.style.setProperty('--el-color-primary-light-3', mix(primary, '#ffffff', 0.3))
       root.style.setProperty('--el-color-primary-light-5', mix(primary, '#ffffff', 0.5))

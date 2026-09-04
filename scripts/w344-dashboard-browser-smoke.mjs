@@ -1,4 +1,4 @@
-const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5174'
+const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
 
@@ -99,7 +99,10 @@ class CdpClient {
         )
       }
       if (message.method === 'Network.requestWillBeSent') {
-        this.requests.push({ method: message.params.request.method, url: message.params.request.url })
+        this.requests.push({
+          method: message.params.request.method,
+          url: message.params.request.url,
+        })
       }
     })
     await Promise.all([
@@ -129,7 +132,8 @@ class CdpClient {
       awaitPromise: true,
       returnByValue: true,
     })
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text ?? '浏览器表达式执行失败')
+    if (result.exceptionDetails)
+      throw new Error(result.exceptionDetails.text ?? '浏览器表达式执行失败')
     return result.result?.value
   }
 
@@ -197,7 +201,11 @@ async function loginBrowser(cdp, email, password) {
     cdp.send('Network.clearBrowserCookies'),
   ])
   await cdp.navigate('/login')
-  await cdp.waitFor(`document.querySelector('input[placeholder="请输入邮箱"]') !== null`, 10000, '登录表单')
+  await cdp.waitFor(
+    `document.querySelector('input[placeholder="请输入邮箱"]') !== null`,
+    10000,
+    '登录表单',
+  )
   await fillInput(cdp, 'input[placeholder="请输入邮箱"]', email)
   await fillInput(cdp, 'input[placeholder="请输入密码"]', password)
   await cdp.evaluate(`(() => {
@@ -267,10 +275,15 @@ async function openRowMore(cdp, name, action) {
 }
 
 async function seed() {
-  const login = await apiRequest('POST', '/auth/login', {
-    email: 'admin@demo.com',
-    password: 'admin123',
-  }, '')
+  const login = await apiRequest(
+    'POST',
+    '/auth/login',
+    {
+      email: 'admin@demo.com',
+      password: 'admin123',
+    },
+    '',
+  )
   if (!login.response.ok || !login.data?.accessToken) throw new Error('管理员登录失败')
   adminToken = login.data.accessToken
 
@@ -320,20 +333,36 @@ try {
   await loginBrowser(cdp, 'admin@demo.com', 'admin123')
   cdp.resetNetwork()
   await cdp.navigate('/reports')
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-page"]') !== null`, 10000, '仪表板页面')
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-page"]') !== null`,
+    10000,
+    '仪表板页面',
+  )
   await cdp.waitFor(textIncludes(fixture.dashboardName), 10000, '仪表板列表加载')
 
   check('旧固定销售报表页面已移除', !(await cdp.evaluate(textIncludes('近 6 个月业绩趋势'))))
-  check('左侧固定“全部 / 我的收藏”入口存在',
+  check(
+    '左侧固定“全部 / 我的收藏”入口存在',
     (await cdp.evaluate(`document.querySelector('[data-testid="dashboard-all-node"]') !== null`)) &&
-      (await cdp.evaluate(`document.querySelector('[data-testid="dashboard-favorite-node"]') !== null`)))
-  check('Cordys 多级目录树展示真实 DashboardModule', await cdp.evaluate(textIncludes(fixture.moduleName)))
+      (await cdp.evaluate(
+        `document.querySelector('[data-testid="dashboard-favorite-node"]') !== null`,
+      )),
+  )
+  check(
+    'Cordys 多级目录树展示真实 DashboardModule',
+    await cdp.evaluate(textIncludes(fixture.moduleName)),
+  )
   check('默认全部列表展示真实 Dashboard', await cdp.evaluate(textIncludes(fixture.dashboardName)))
-  check('首次进入 Dashboard page 请求不重复', cdp.requestCount('/api/dashboard/page', 'POST') === 1,
-    `实际 ${cdp.requestCount('/api/dashboard/page', 'POST')} 次`)
-  check('首次进入目录 tree/count 各请求一次',
+  check(
+    '首次进入 Dashboard page 请求不重复',
+    cdp.requestCount('/api/dashboard/page', 'POST') === 1,
+    `实际 ${cdp.requestCount('/api/dashboard/page', 'POST')} 次`,
+  )
+  check(
+    '首次进入目录 tree/count 各请求一次',
     cdp.requestCount('/api/dashboard/module/tree', 'GET') === 1 &&
-      cdp.requestCount('/api/dashboard/module/count', 'GET') === 1)
+      cdp.requestCount('/api/dashboard/module/count', 'GET') === 1,
+  )
 
   const clickedFavorite = await clickRowFavorite(cdp, fixture.dashboardName)
   check('列表星标可触发收藏', clickedFavorite)
@@ -355,12 +384,18 @@ try {
   await cdp.waitFor(textIncludes(fixture.dashboardName), 10000, '目录资源列表')
   const createOpened = await clickExact(cdp, '新建仪表板')
   check('文件夹上下文可打开新建仪表板表单', createOpened)
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-form-dialog"]') !== null`, 5000, 'Dashboard 表单')
-  check('Dashboard 表单包含名称/URL/文件夹/成员范围/描述',
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-form-dialog"]') !== null`,
+    5000,
+    'Dashboard 表单',
+  )
+  check(
+    'Dashboard 表单包含名称/URL/文件夹/成员范围/描述',
     (await cdp.evaluate(textIncludes('仪表板名称'))) &&
       (await cdp.evaluate(textIncludes('仪表板 URL'))) &&
       (await cdp.evaluate(textIncludes('成员范围'))) &&
-      (await cdp.evaluate(textIncludes('描述'))))
+      (await cdp.evaluate(textIncludes('描述'))),
+  )
 
   const uiName = `BrowserUI仪表板-${fixture.stamp}`
   const dialogInputs = await cdp.evaluate(`(() => {
@@ -368,10 +403,14 @@ try {
     const inputs=[...(dialog?.querySelectorAll('input')??[])].filter((el)=>!el.readOnly && el.getBoundingClientRect().width>0);
     return inputs.map((el)=>el.getAttribute('placeholder')||'');
   })()`)
-  check('新建表单已自动带入当前文件夹', await cdp.evaluate(`(() => {
+  check(
+    '新建表单已自动带入当前文件夹',
+    await cdp.evaluate(`(() => {
     const dialog=document.querySelector('[data-testid="dashboard-form-dialog"]');
     return [...(dialog?.querySelectorAll('.el-select__selected-item')??[])].some((el)=>el.textContent?.includes(${JSON.stringify(fixture.moduleName)}));
-  })()`), JSON.stringify(dialogInputs))
+  })()`),
+    JSON.stringify(dialogInputs),
+  )
   await fillInput(cdp, '[data-testid="dashboard-form-dialog"] input[maxlength="255"]', uiName)
   await fillInput(
     cdp,
@@ -379,7 +418,11 @@ try {
     `https://example.com/ui-${fixture.stamp}`,
   )
   await clickExact(cdp, '保存')
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-form-dialog"]') === null`, 10000, '表单保存关闭')
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-form-dialog"]') === null`,
+    10000,
+    '表单保存关闭',
+  )
   await cdp.waitFor(textIncludes(uiName), 10000, 'UI 新建资源刷新')
   const uiCreated = await mustApi('POST', '/dashboard/page', {
     current: 1,
@@ -392,35 +435,66 @@ try {
 
   const selectedDashboard = await clickTreeNode(cdp, fixture.dashboardName)
   check('点击 Dashboard 节点进入右侧预览', selectedDashboard)
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-preview"]') !== null`, 5000, 'Dashboard Preview')
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-iframe"]') !== null`, 10000, 'Dashboard iframe')
-  check('预览只通过 embed policy 使用安全 URL',
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-preview"]') !== null`,
+    5000,
+    'Dashboard Preview',
+  )
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-iframe"]') !== null`,
+    10000,
+    'Dashboard iframe',
+  )
+  check(
+    '预览只通过 embed policy 使用安全 URL',
     cdp.requestCount(`/api/dashboard/embed/policy/${fixture.dashboard.id}`, 'GET') === 1 &&
-      (await cdp.evaluate(`document.querySelector('[data-testid="dashboard-iframe"]')?.getAttribute('src')?.startsWith('https://example.com/') === true`)))
-  check('iframe 安全属性不含通配 origin', await cdp.evaluate(`(() => {
+      (await cdp.evaluate(
+        `document.querySelector('[data-testid="dashboard-iframe"]')?.getAttribute('src')?.startsWith('https://example.com/') === true`,
+      )),
+  )
+  check(
+    'iframe 安全属性不含通配 origin',
+    await cdp.evaluate(`(() => {
     const frame=document.querySelector('[data-testid="dashboard-iframe"]');
     return !frame?.getAttribute('csp')?.includes('*') && Boolean(frame?.getAttribute('sandbox'));
-  })()`))
-  check('预览提供收藏/编辑/新窗口/全屏操作',
+  })()`),
+  )
+  check(
+    '预览提供收藏/编辑/新窗口/全屏操作',
     (await cdp.evaluate(textIncludes('编辑'))) &&
       (await cdp.evaluate(textIncludes('新窗口'))) &&
-      (await cdp.evaluate(textIncludes('全屏'))))
+      (await cdp.evaluate(textIncludes('全屏'))),
+  )
 
   const previewEdit = await clickExact(cdp, '编辑')
   check('预览编辑打开真实编辑表单', previewEdit)
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-form-dialog"]') !== null`, 5000, '编辑表单')
-  check('编辑表单加载 Dashboard detail', cdp.requestCount(`/api/dashboard/detail/${fixture.dashboard.id}`, 'GET') >= 1)
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-form-dialog"]') !== null`,
+    5000,
+    '编辑表单',
+  )
+  check(
+    '编辑表单加载 Dashboard detail',
+    cdp.requestCount(`/api/dashboard/detail/${fixture.dashboard.id}`, 'GET') >= 1,
+  )
   await clickExact(cdp, '取消')
 
   cdp.resetNetwork()
-  const dragToTargetStarted = await dragTreeNode(cdp, fixture.dashboardName, fixture.targetModuleName)
+  const dragToTargetStarted = await dragTreeNode(
+    cdp,
+    fixture.dashboardName,
+    fixture.targetModuleName,
+  )
   check('Dashboard 树节点可拖入另一个文件夹', dragToTargetStarted)
   await cdp.waitFor(
     `fetch(${JSON.stringify(`${apiBase}/dashboard/detail/${fixture.dashboard.id}`)},{headers:{Authorization:'Bearer ${adminToken}'}}).then(r=>r.json()).then(x=>x.dashboardModuleId===${JSON.stringify(fixture.targetModule.id)})`,
     10000,
     'Dashboard UI 拖拽到目标文件夹',
   )
-  check('Dashboard UI 拖拽真实调用资源移动契约', cdp.requestCount('/api/dashboard/edit/pos', 'POST') >= 1)
+  check(
+    'Dashboard UI 拖拽真实调用资源移动契约',
+    cdp.requestCount('/api/dashboard/edit/pos', 'POST') >= 1,
+  )
   const dragBackStarted = await dragTreeNode(cdp, fixture.dashboardName, fixture.moduleName)
   check('Dashboard 可通过 UI 拖回原文件夹', dragBackStarted)
   await cdp.waitFor(
@@ -462,22 +536,43 @@ try {
 
   await loginBrowser(cdp, 'lina@demo.com', 'demo123')
   await cdp.navigate('/reports')
-  await cdp.waitFor(`document.querySelector('[data-testid="dashboard-page"]') !== null`, 10000, '只读用户仪表板页面')
+  await cdp.waitFor(
+    `document.querySelector('[data-testid="dashboard-page"]') !== null`,
+    10000,
+    '只读用户仪表板页面',
+  )
   await cdp.waitFor(textIncludes(fixture.dashboardName), 10000, '只读用户可见空 Scope 仪表板')
-  check('dashboard:read 用户不显示新建/编辑/删除管理动作',
+  check(
+    'dashboard:read 用户不显示新建/编辑/删除管理动作',
     !(await cdp.evaluate(visibleText('新建仪表板'))) &&
       !(await cdp.evaluate(visibleText('编辑'))) &&
-      !(await cdp.evaluate(visibleText('删除'))))
-  check('只读用户仍可使用收藏入口', await cdp.evaluate(`document.querySelector('[data-testid="dashboard-favorite-node"]') !== null`))
+      !(await cdp.evaluate(visibleText('删除'))),
+  )
+  check(
+    '只读用户仍可使用收藏入口',
+    await cdp.evaluate(
+      `document.querySelector('[data-testid="dashboard-favorite-node"]') !== null`,
+    ),
+  )
 
   const relevantConsoleErrors = cdp.consoleErrors.filter(
     (item) => !item.includes('Failed to load resource') && !item.includes('favicon'),
   )
-  check('Dashboard 页面无 Runtime exception', cdp.exceptions.length === 0, cdp.exceptions.join(' | '))
-  check('Dashboard 页面无业务 Console error', relevantConsoleErrors.length === 0, relevantConsoleErrors.join(' | '))
+  check(
+    'Dashboard 页面无 Runtime exception',
+    cdp.exceptions.length === 0,
+    cdp.exceptions.join(' | '),
+  )
+  check(
+    'Dashboard 页面无业务 Console error',
+    relevantConsoleErrors.length === 0,
+    relevantConsoleErrors.join(' | '),
+  )
 } catch (error) {
   failed += 1
-  console.error(`  ✗ Browser Smoke 执行异常：${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+  console.error(
+    `  ✗ Browser Smoke 执行异常：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+  )
 } finally {
   cdp?.close()
   await cleanup().catch((error) => console.error(`  ! 清理失败：${error}`))

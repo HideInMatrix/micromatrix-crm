@@ -1,4 +1,4 @@
-const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5174'
+const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
 
@@ -284,7 +284,9 @@ async function main() {
       poolId,
     })
     if (!moved.response.ok) {
-      throw new Error(`Browser Pool 线索移池失败: status=${moved.response.status} body=${moved.raw}`)
+      throw new Error(
+        `Browser Pool 线索移池失败: status=${moved.response.status} body=${moved.raw}`,
+      )
     }
     createdPoolLeads.push({ id: result.data.id, poolId })
     return result.data
@@ -522,7 +524,11 @@ async function main() {
       `实际 ${secondPoolPageCount} 次`,
     )
 
-    check('页面运行期间无未捕获 Runtime 异常', cdp.exceptions.length === 0, cdp.exceptions.join('；'))
+    check(
+      '页面运行期间无未捕获 Runtime 异常',
+      cdp.exceptions.length === 0,
+      cdp.exceptions.join('；'),
+    )
   } finally {
     cdp.close()
   }
@@ -532,7 +538,9 @@ try {
   await main()
 } catch (error) {
   failed += 1
-  console.error(`  ✗ Browser Smoke 执行失败：${error instanceof Error ? error.message : String(error)}`)
+  console.error(
+    `  ✗ Browser Smoke 执行失败：${error instanceof Error ? error.message : String(error)}`,
+  )
 } finally {
   try {
     const login = await apiRequest('POST', '/auth/login', undefined, {
@@ -555,7 +563,9 @@ try {
       }
     }
   } catch (error) {
-    console.error(`  · Browser Smoke 清理失败：${error instanceof Error ? error.message : String(error)}`)
+    console.error(
+      `  · Browser Smoke 清理失败：${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 

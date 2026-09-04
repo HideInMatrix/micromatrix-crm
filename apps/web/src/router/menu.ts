@@ -24,27 +24,7 @@ export const MENUS: MenuItem[] = [
   },
   { path: '/products', title: '产品', moduleKey: 'product', perm: 'menu:product' },
   { path: '/reports', title: '仪表板', moduleKey: 'dashboard', perm: 'menu:dashboard' },
-  {
-    path: '/contract',
-    title: '合同',
-    moduleKey: 'contract',
-    perm: 'menu:contract',
-    children: [
-      { path: '/contracts', title: '合同', moduleKey: 'contract', perm: 'menu:contract' },
-      {
-        path: '/contract/contractInvoice',
-        title: '发票',
-        moduleKey: 'contract',
-        perm: 'CONTRACT_INVOICE:READ',
-      },
-      {
-        path: '/contract/contractBusinessName',
-        title: '工商抬头',
-        moduleKey: 'contract',
-        perm: 'CONTRACT_BUSINESS_TITLE:READ',
-      },
-    ],
-  },
+  { path: '/contracts', title: '合同', moduleKey: 'contract', perm: 'menu:contract' },
   {
     path: '/custom-forms',
     title: '自定义表单',

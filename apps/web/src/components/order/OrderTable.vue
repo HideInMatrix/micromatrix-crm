@@ -10,6 +10,9 @@ import { formatFieldValue } from '@/components/form-engine/field-display'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
+import CrmDisplayModeSwitch from '@/components/CrmDisplayModeSwitch.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import ExportTaskButton from '@/components/ExportTaskButton.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -47,6 +50,7 @@ const emit = defineEmits<{ changed: [] }>()
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 const homeQuickCreate = useHomeQuickCreate()
 
 const fields = ref<FieldVO[]>([])
@@ -114,7 +118,9 @@ const visibleColumns = computed(() => {
 })
 const productMap = computed(() => new Map(products.value.map((item) => [item.id, item])))
 const filteredContracts = computed(() =>
-  contracts.value.filter((item) => !formCustomerId.value || item.customerId === formCustomerId.value),
+  contracts.value.filter(
+    (item) => !formCustomerId.value || item.customerId === formCustomerId.value,
+  ),
 )
 const boardRows = computed(() => {
   const grouped = new Map(stages.value.map((stage) => [stage.id, [] as OrderVO[]]))
@@ -154,11 +160,16 @@ function displayRow(row: OrderVO) {
 }
 
 function defaultDynamicModel() {
-  return Object.fromEntries(dynamicFields.value.map((field) => [field.key, field.config?.defaultValue]))
+  return Object.fromEntries(
+    dynamicFields.value.map((field) => [field.key, field.config?.defaultValue]),
+  )
 }
 
 function moduleFieldsPayload() {
-  return dynamicFields.value.map((field) => ({ fieldId: field.id, fieldValue: formModel.value[field.key] }))
+  return dynamicFields.value.map((field) => ({
+    fieldId: field.id,
+    fieldValue: formModel.value[field.key],
+  }))
 }
 
 function productPayload(row: OrderProductEdit) {
@@ -219,7 +230,7 @@ async function loadData() {
       current: query.current,
       pageSize: query.pageSize,
       keyword: query.keyword.trim() || undefined,
-      viewId: props.standalone ? activeViewId.value ?? activeSystemView.value : undefined,
+      viewId: props.standalone ? (activeViewId.value ?? activeSystemView.value) : undefined,
       filters: props.standalone && filters.value.length ? filters.value : undefined,
       board: props.standalone && displayMode.value === 'board',
       customerId: props.customerId,
@@ -347,7 +358,10 @@ async function openEdit(row: OrderVO) {
 }
 
 function onCustomerChange() {
-  if (formContractId.value && !filteredContracts.value.some((item) => item.id === formContractId.value)) {
+  if (
+    formContractId.value &&
+    !filteredContracts.value.some((item) => item.id === formContractId.value)
+  ) {
     formContractId.value = null
   }
 }
@@ -358,20 +372,25 @@ function addProductRow() {
 
 function onProductChange(row: OrderProductEdit) {
   const product = productMap.value.get(row.product)
-  if (product?.price !== null && product?.price !== undefined) row.productPrice = Number(product.price)
+  if (product?.price !== null && product?.price !== undefined)
+    row.productPrice = Number(product.price)
   updateProductAmount(row)
 }
 
 function updateProductAmount(row: OrderProductEdit) {
-  row.amount = Math.round(Number(row.productPrice || 0) * Number(row.productNumber || 0) * 100) / 100
-  orderAmount.value = Math.round(orderProducts.value.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) * 100) / 100
+  row.amount =
+    Math.round(Number(row.productPrice || 0) * Number(row.productNumber || 0) * 100) / 100
+  orderAmount.value =
+    Math.round(orderProducts.value.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) * 100) /
+    100
 }
 
 async function saveOrder() {
   if (!orderName.value.trim()) return void ElMessage.warning('请输入订单名称')
   if (!formCustomerId.value) return void ElMessage.warning('请选择客户')
   if (!ownerId.value) return void ElMessage.warning('请选择负责人')
-  if (orderProducts.value.some((item) => !item.product)) return void ElMessage.warning('请补完整产品信息')
+  if (orderProducts.value.some((item) => !item.product))
+    return void ElMessage.warning('请补完整产品信息')
   if (!(await formRef.value?.validate())) return
   formSaving.value = true
   try {
@@ -444,7 +463,10 @@ async function review(row: OrderVO) {
 }
 
 async function revoke(row: OrderVO) {
-  const confirmed = await ElMessageBox.confirm(`撤回订单「${row.name}」当前审批？`, '撤回审批').catch(() => false)
+  const confirmed = await ElMessageBox.confirm(
+    `撤回订单「${row.name}」当前审批？`,
+    '撤回审批',
+  ).catch(() => false)
   if (!confirmed) return
   try {
     await orderApi.approvalRevoke(row.id)
@@ -502,7 +524,11 @@ async function dropToStage(stage: OrderStage, event?: DragEvent) {
   if (!row) return
   try {
     if (row.stage === stage.id) {
-      await orderApi.sort({ id: row.id, stage: stage.id, pos: boardRows.value.get(stage.id)?.length ?? 1 })
+      await orderApi.sort({
+        id: row.id,
+        stage: stage.id,
+        pos: boardRows.value.get(stage.id)?.length ?? 1,
+      })
       await loadData()
       return
     }
@@ -575,8 +601,61 @@ watch(
 
 <template>
   <div>
+    <div
+      v-if="standalone"
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <el-button v-if="auth.hasPerm('ORDER:ADD')" type="primary" @click="openCreate"
+          >新建订单</el-button
+        >
+        <el-button v-if="auth.hasPerm('ORDER:IMPORT')" @click="importVisible = true"
+          >导入</el-button
+        >
+        <el-button v-if="auth.hasPerm('ORDER:EXPORT') && rows.length" @click="openExport('all')"
+          >导出全部</el-button
+        >
+        <ExportTaskButton />
+        <template v-if="selectedIds.length">
+          <el-button v-if="auth.hasPerm('ORDER:UPDATE')" @click="batchEditVisible = true"
+            >批量修改</el-button
+          >
+          <el-button v-if="auth.hasPerm('ORDER:EXPORT')" @click="openExport('selected')"
+            >导出选中</el-button
+          >
+        </template>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <CrmSearchInput
+          v-model="query.keyword"
+          placeholder="通过订单名称 / 编号 / 客户 / 合同搜索"
+          width-class="!w-80"
+          @search="((query.current = 1), loadData())"
+        />
+        <AdvancedFilter
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          @apply="onFilterApply"
+        />
+        <CrmDisplayModeSwitch
+          v-model="displayMode"
+          list-value="table"
+          board-value="board"
+          @update:model-value="onDisplayModeChange"
+        />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
+      </div>
+    </div>
+
     <SavedViewBar
       v-if="standalone"
+      ref="savedViewBarRef"
       module="order"
       :fields="fields"
       :members="fieldRefs.members.value"
@@ -591,40 +670,6 @@ watch(
       @columns-change="(keys) => (visibleColumnKeys = keys)"
       @ready="onSavedViewReady"
     />
-
-    <div v-if="standalone" class="flex-between flex-wrap gap-3 mb-4">
-      <div class="flex items-center gap-2">
-        <el-input
-          v-model="query.keyword"
-          placeholder="通过订单名称 / 编号 / 客户 / 合同搜索"
-          clearable
-          class="!w-80"
-          @keyup.enter="((query.current = 1), loadData())"
-          @clear="((query.current = 1), loadData())"
-        />
-        <AdvancedFilter
-          :fields="fields"
-          :members="fieldRefs.members.value"
-          :dept-tree="fieldRefs.deptTree.value"
-          @apply="onFilterApply"
-        />
-        <el-segmented
-          v-model="displayMode"
-          :options="[{ label: '列表', value: 'table' }, { label: '看板', value: 'board' }]"
-          @change="onDisplayModeChange"
-        />
-      </div>
-      <div class="flex items-center gap-2">
-        <ExportTaskButton />
-        <el-button v-if="auth.hasPerm('ORDER:IMPORT')" @click="importVisible = true">导入</el-button>
-        <el-button v-if="auth.hasPerm('ORDER:EXPORT') && rows.length" @click="openExport('all')">导出全部</el-button>
-        <template v-if="selectedIds.length">
-          <el-button v-if="auth.hasPerm('ORDER:UPDATE')" @click="batchEditVisible = true">批量修改</el-button>
-          <el-button v-if="auth.hasPerm('ORDER:EXPORT')" @click="openExport('selected')">导出选中</el-button>
-        </template>
-        <el-button v-if="auth.hasPerm('ORDER:ADD')" type="primary" @click="openCreate">新建订单</el-button>
-      </div>
-    </div>
 
     <el-table
       v-if="displayMode === 'table' || !standalone"
@@ -643,16 +688,28 @@ watch(
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          <el-button v-if="column.key === 'name'" link type="primary" @click="openDetail(row as OrderVO)">
+          <el-button
+            v-if="column.key === 'name'"
+            link
+            type="primary"
+            @click="openDetail(row as OrderVO)"
+          >
             {{ row.name }}
           </el-button>
-          <template v-else-if="column.key === 'amount'">¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</template>
+          <template v-else-if="column.key === 'amount'"
+            >¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</template
+          >
           <template v-else-if="column.key === 'customerId'">{{ row.customerName ?? '-' }}</template>
           <template v-else-if="column.key === 'contractId'">{{ row.contractName ?? '-' }}</template>
           <template v-else-if="column.key === 'owner'">{{ row.ownerName ?? '-' }}</template>
           <template v-else-if="column.key === 'stage'">{{ row.stageName ?? row.stage }}</template>
           <template v-else>
-            {{ formatFieldValue(column, displayRow(row as OrderVO), { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}
+            {{
+              formatFieldValue(column, displayRow(row as OrderVO), {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}
           </template>
         </template>
       </el-table-column>
@@ -660,11 +717,21 @@ watch(
         <template #default="{ row }">
           <el-popover trigger="click" width="340" @show="loadApprovalSummary(row.id)">
             <template #reference>
-              <el-tag :type="approvalTagType(row.approvalStatus)" size="small" class="cursor-pointer">
+              <el-tag
+                :type="approvalTagType(row.approvalStatus)"
+                size="small"
+                class="cursor-pointer"
+              >
                 {{ approvalLabels[row.approvalStatus] ?? row.approvalStatus }}
               </el-tag>
             </template>
-            <pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(approvalSummaries[row.id] ?? { approveStatus: row.approvalStatus }, null, 2) }}</pre>
+            <pre class="whitespace-pre-wrap break-all text-xs">{{
+              JSON.stringify(
+                approvalSummaries[row.id] ?? { approveStatus: row.approvalStatus },
+                null,
+                2,
+              )
+            }}</pre>
           </el-popover>
         </template>
       </el-table-column>
@@ -676,7 +743,12 @@ watch(
             :disabled="row.approvalStatus === 'APPROVING'"
             @change="(value: string) => moveStage(row as OrderVO, value)"
           >
-            <el-option v-for="stage in stages" :key="stage.id" :label="stage.name" :value="stage.id" />
+            <el-option
+              v-for="stage in stages"
+              :key="stage.id"
+              :label="stage.name"
+              :value="stage.id"
+            />
           </el-select>
         </template>
       </el-table-column>
@@ -687,24 +759,32 @@ watch(
             v-if="standalone && auth.hasPerm('ORDER:UPDATE') && row.approvalStatus !== 'APPROVING'"
             link
             @click="openEdit(row as OrderVO)"
-          >编辑</el-button>
+            >编辑</el-button
+          >
           <el-button
-            v-if="standalone && auth.hasPerm('ORDER:UPDATE') && ['NONE', 'UNAPPROVED', 'REVOKED'].includes(row.approvalStatus)"
+            v-if="
+              standalone &&
+              auth.hasPerm('ORDER:UPDATE') &&
+              ['NONE', 'UNAPPROVED', 'REVOKED'].includes(row.approvalStatus)
+            "
             link
             type="success"
             @click="review(row as OrderVO)"
-          >提交审批</el-button>
+            >提交审批</el-button
+          >
           <el-button
             v-if="standalone && auth.hasPerm('ORDER:UPDATE') && row.approvalStatus === 'APPROVING'"
             link
             @click="revoke(row as OrderVO)"
-          >撤回</el-button>
+            >撤回</el-button
+          >
           <el-button
             v-if="standalone && auth.hasPerm('ORDER:DELETE')"
             link
             type="danger"
             @click="removeOrder(row as OrderVO)"
-          >删除</el-button>
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -723,7 +803,9 @@ watch(
       >
         <div class="flex-between px-3 py-2 border-b border-[var(--el-border-color)]">
           <strong>{{ stage.name }}</strong>
-          <span class="text-xs text-[var(--el-text-color-secondary)]">{{ boardRows.get(stage.id)?.length ?? 0 }}</span>
+          <span class="text-xs text-[var(--el-text-color-secondary)]">{{
+            boardRows.get(stage.id)?.length ?? 0
+          }}</span>
         </div>
         <div class="p-2 space-y-2">
           <article
@@ -733,9 +815,13 @@ watch(
             class="rounded bg-[var(--el-bg-color)] border border-[var(--el-border-color-lighter)] p-3 cursor-move"
             @dragstart="startDrag(row, $event)"
           >
-            <el-button link type="primary" class="!p-0" @click="openDetail(row)">{{ row.name }}</el-button>
+            <el-button link type="primary" class="!p-0" @click="openDetail(row)">{{
+              row.name
+            }}</el-button>
             <div class="text-sm mt-2">{{ row.customerName ?? '-' }}</div>
-            <div class="text-xs text-[var(--el-text-color-secondary)] mt-1">{{ row.contractName ?? '未关联合同' }}</div>
+            <div class="text-xs text-[var(--el-text-color-secondary)] mt-1">
+              {{ row.contractName ?? '未关联合同' }}
+            </div>
             <div class="flex-between text-xs text-[var(--el-text-color-secondary)] mt-2">
               <span>{{ row.ownerName ?? '-' }}</span>
               <span>¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</span>
@@ -758,19 +844,41 @@ watch(
     </div>
   </div>
 
-  <el-drawer v-model="formVisible" :title="editingId ? '编辑订单' : '新建订单'" size="800px" destroy-on-close>
+  <el-drawer
+    v-model="formVisible"
+    :title="editingId ? '编辑订单' : '新建订单'"
+    size="800px"
+    destroy-on-close
+  >
     <el-form label-position="top">
       <el-form-item label="订单名称" required>
         <el-input v-model="orderName" maxlength="255" show-word-limit />
       </el-form-item>
       <div class="grid grid-cols-2 gap-3">
         <el-form-item label="客户" required>
-          <el-select v-model="formCustomerId" filterable class="w-full" :disabled="Boolean(props.customerId)" @change="onCustomerChange">
-            <el-option v-for="item in customers" :key="item.id" :label="item.name" :value="item.id" />
+          <el-select
+            v-model="formCustomerId"
+            filterable
+            class="w-full"
+            :disabled="Boolean(props.customerId)"
+            @change="onCustomerChange"
+          >
+            <el-option
+              v-for="item in customers"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="合同">
-          <el-select v-model="formContractId" clearable filterable class="w-full" :disabled="Boolean(props.contractId)">
+          <el-select
+            v-model="formContractId"
+            clearable
+            filterable
+            class="w-full"
+            :disabled="Boolean(props.contractId)"
+          >
             <el-option
               v-for="item in filteredContracts"
               :key="item.id"
@@ -783,7 +891,12 @@ watch(
       <div class="grid grid-cols-2 gap-3">
         <el-form-item label="负责人" required>
           <el-select v-model="ownerId" filterable class="w-full">
-            <el-option v-for="member in fieldRefs.members.value" :key="member.id" :label="member.name" :value="member.id" />
+            <el-option
+              v-for="member in fieldRefs.members.value"
+              :key="member.id"
+              :label="member.name"
+              :value="member.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="订单编号">
@@ -798,7 +911,14 @@ watch(
         :dept-tree="fieldRefs.deptTree.value"
       />
       <el-form-item label="订单金额">
-        <el-input-number v-model="orderAmount" :min="0" :max="9999999999" :precision="2" :controls="false" class="!w-full" />
+        <el-input-number
+          v-model="orderAmount"
+          :min="0"
+          :max="9999999999"
+          :precision="2"
+          :controls="false"
+          class="!w-full"
+        />
       </el-form-item>
     </el-form>
 
@@ -809,23 +929,49 @@ watch(
     <el-table :data="orderProducts" border>
       <el-table-column label="产品" min-width="180">
         <template #default="{ row }">
-          <el-select v-model="row.product" filterable class="w-full" @change="onProductChange(row as OrderProductEdit)">
-            <el-option v-for="item in products" :key="item.id" :label="item.name" :value="item.id" />
+          <el-select
+            v-model="row.product"
+            filterable
+            class="w-full"
+            @change="onProductChange(row as OrderProductEdit)"
+          >
+            <el-option
+              v-for="item in products"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
           </el-select>
         </template>
       </el-table-column>
       <el-table-column label="单价" width="140">
         <template #default="{ row }">
-          <el-input-number v-model="row.productPrice" :min="0" :precision="2" :controls="false" class="!w-full" @change="updateProductAmount(row as OrderProductEdit)" />
+          <el-input-number
+            v-model="row.productPrice"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            class="!w-full"
+            @change="updateProductAmount(row as OrderProductEdit)"
+          />
         </template>
       </el-table-column>
       <el-table-column label="数量" width="120">
         <template #default="{ row }">
-          <el-input-number v-model="row.productNumber" :min="0" :precision="2" :controls="false" class="!w-full" @change="updateProductAmount(row as OrderProductEdit)" />
+          <el-input-number
+            v-model="row.productNumber"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            class="!w-full"
+            @change="updateProductAmount(row as OrderProductEdit)"
+          />
         </template>
       </el-table-column>
       <el-table-column label="金额" width="130">
-        <template #default="{ row }">¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</template>
+        <template #default="{ row }"
+          >¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</template
+        >
       </el-table-column>
       <el-table-column width="60">
         <template #default="{ $index }">
@@ -839,47 +985,104 @@ watch(
     </template>
   </el-drawer>
 
-  <el-drawer v-model="detailVisible" :title="detail ? `${detail.name}（${detail.number}）` : '订单详情'" size="780px" destroy-on-close>
+  <el-drawer
+    v-model="detailVisible"
+    :title="detail ? `${detail.name}（${detail.number}）` : '订单详情'"
+    size="780px"
+    destroy-on-close
+  >
     <div v-loading="detailLoading">
       <template v-if="detail">
         <div class="flex items-center gap-2 mb-4">
-          <el-tag :type="approvalTagType(detail.approvalStatus)">{{ approvalLabels[detail.approvalStatus] ?? detail.approvalStatus }}</el-tag>
+          <el-tag :type="approvalTagType(detail.approvalStatus)">{{
+            approvalLabels[detail.approvalStatus] ?? detail.approvalStatus
+          }}</el-tag>
           <el-tag v-if="detail.approved" type="success">历史已通过</el-tag>
         </div>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="订单名称">{{ detail.name }}</el-descriptions-item>
-          <el-descriptions-item label="阶段">{{ detail.stageName ?? detail.stage }}</el-descriptions-item>
-          <el-descriptions-item label="客户">{{ detail.customerName ?? detail.customerId ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="合同">{{ detail.contractName ?? detail.contractId ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="负责人">{{ detail.ownerName ?? detail.owner ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="订单金额">¥{{ Number(detail.amount ?? 0).toLocaleString('zh-CN') }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ new Date(detail.createTime).toLocaleString('zh-CN') }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ new Date(detail.updateTime).toLocaleString('zh-CN') }}</el-descriptions-item>
+          <el-descriptions-item label="阶段">{{
+            detail.stageName ?? detail.stage
+          }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{
+            detail.customerName ?? detail.customerId ?? '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="合同">{{
+            detail.contractName ?? detail.contractId ?? '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="负责人">{{
+            detail.ownerName ?? detail.owner ?? '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="订单金额"
+            >¥{{ Number(detail.amount ?? 0).toLocaleString('zh-CN') }}</el-descriptions-item
+          >
+          <el-descriptions-item label="创建时间">{{
+            new Date(detail.createTime).toLocaleString('zh-CN')
+          }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{
+            new Date(detail.updateTime).toLocaleString('zh-CN')
+          }}</el-descriptions-item>
         </el-descriptions>
         <el-table :data="detail.products" size="small" class="mt-4">
           <el-table-column prop="productName" label="产品" min-width="180" />
-          <el-table-column label="单价" width="120"><template #default="{ row }">¥{{ Number(row.productPrice).toLocaleString('zh-CN') }}</template></el-table-column>
+          <el-table-column label="单价" width="120"
+            ><template #default="{ row }"
+              >¥{{ Number(row.productPrice).toLocaleString('zh-CN') }}</template
+            ></el-table-column
+          >
           <el-table-column prop="productNumber" label="数量" width="90" />
-          <el-table-column label="金额" width="120"><template #default="{ row }">¥{{ Number(row.amount).toLocaleString('zh-CN') }}</template></el-table-column>
+          <el-table-column label="金额" width="120"
+            ><template #default="{ row }"
+              >¥{{ Number(row.amount).toLocaleString('zh-CN') }}</template
+            ></el-table-column
+          >
         </el-table>
         <el-collapse class="mt-4">
           <el-collapse-item title="审批详情" name="approval">
-            <pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(detailApproval, null, 2) }}</pre>
+            <pre class="whitespace-pre-wrap break-all text-xs">{{
+              JSON.stringify(detailApproval, null, 2)
+            }}</pre>
           </el-collapse-item>
           <el-collapse-item title="订单冻结快照" name="snapshot">
-            <pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(detailSnapshot, null, 2) }}</pre>
+            <pre class="whitespace-pre-wrap break-all text-xs">{{
+              JSON.stringify(detailSnapshot, null, 2)
+            }}</pre>
           </el-collapse-item>
           <el-collapse-item title="表单配置快照" name="form-snapshot">
-            <pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(detailSnapshotForm, null, 2) }}</pre>
+            <pre class="whitespace-pre-wrap break-all text-xs">{{
+              JSON.stringify(detailSnapshotForm, null, 2)
+            }}</pre>
           </el-collapse-item>
         </el-collapse>
       </template>
     </div>
     <template v-if="detail && standalone" #footer>
-      <el-button v-if="auth.hasPerm('ORDER:UPDATE') && detail.approvalStatus !== 'APPROVING'" @click="openEdit(detail)">编辑</el-button>
-      <el-button v-if="auth.hasPerm('ORDER:UPDATE') && ['NONE', 'UNAPPROVED', 'REVOKED'].includes(detail.approvalStatus)" type="primary" @click="review(detail)">提交审批</el-button>
-      <el-button v-if="auth.hasPerm('ORDER:UPDATE') && detail.approvalStatus === 'APPROVING'" @click="revoke(detail)">撤回</el-button>
-      <el-button v-if="auth.hasPerm('ORDER:DELETE')" type="danger" plain @click="removeOrder(detail)">删除</el-button>
+      <el-button
+        v-if="auth.hasPerm('ORDER:UPDATE') && detail.approvalStatus !== 'APPROVING'"
+        @click="openEdit(detail)"
+        >编辑</el-button
+      >
+      <el-button
+        v-if="
+          auth.hasPerm('ORDER:UPDATE') &&
+          ['NONE', 'UNAPPROVED', 'REVOKED'].includes(detail.approvalStatus)
+        "
+        type="primary"
+        @click="review(detail)"
+        >提交审批</el-button
+      >
+      <el-button
+        v-if="auth.hasPerm('ORDER:UPDATE') && detail.approvalStatus === 'APPROVING'"
+        @click="revoke(detail)"
+        >撤回</el-button
+      >
+      <el-button
+        v-if="auth.hasPerm('ORDER:DELETE')"
+        type="danger"
+        plain
+        @click="removeOrder(detail)"
+        >删除</el-button
+      >
     </template>
   </el-drawer>
 

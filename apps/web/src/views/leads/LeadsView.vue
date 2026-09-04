@@ -14,6 +14,8 @@ import { metadataApi } from '@/api/metadata'
 import { leadApi, type LeadListParams, type ResourcePoolVO } from '@/api/sales'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
@@ -24,7 +26,6 @@ import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
-import LeadModuleNav from '@/components/leads/LeadModuleNav.vue'
 import LeadOverviewDrawer from '@/components/leads/LeadOverviewDrawer.vue'
 import LeadPoolQuickSettingDrawer from '@/components/leads/LeadPoolQuickSettingDrawer.vue'
 import LeadMoveToPoolDialog from '@/components/leads/LeadMoveToPoolDialog.vue'
@@ -37,6 +38,7 @@ const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
 const route = useRoute()
 const router = useRouter()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const isPoolMode = computed(() => route.name === 'lead-pool')
 const pools = ref<ResourcePoolVO[]>([])
@@ -107,9 +109,7 @@ const defaultColumnKeys = computed(() =>
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
   const fieldMap = new Map(contextFields.value.map((field) => [field.key, field]))
-  const ordered = keys
-    .map((key) => fieldMap.get(key))
-    .filter((field): field is FieldVO => !!field)
+  const ordered = keys.map((key) => fieldMap.get(key)).filter((field): field is FieldVO => !!field)
   const nameField = fieldMap.get('name')
   if (isPoolMode.value && nameField && !ordered.some((field) => field.key === 'name')) {
     ordered.unshift(nameField)
@@ -315,11 +315,7 @@ async function confirmMoveToPool(reasonId?: string) {
       if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
       else ElMessage.success(`已将 ${data.success} 条线索移入线索池`)
     } else if (moveToPoolTarget.value) {
-      await leadApi.toPool(
-        moveToPoolTarget.value.id,
-        selectedPoolId.value || undefined,
-        reasonId,
-      )
+      await leadApi.toPool(moveToPoolTarget.value.id, selectedPoolId.value || undefined, reasonId)
       ElMessage.success('已退回线索池')
     }
     moveToPoolVisible.value = false
@@ -469,10 +465,14 @@ function handleToPool(row: LeadVO) {
 }
 
 async function handleDelete(row: LeadVO) {
-  const confirmed = await ElMessageBox.confirm(`确定删除「${row.name}」？此操作不可恢复。`, '删除线索', {
-    type: 'warning',
-    confirmButtonText: '删除',
-  }).catch(() => false)
+  const confirmed = await ElMessageBox.confirm(
+    `确定删除「${row.name}」？此操作不可恢复。`,
+    '删除线索',
+    {
+      type: 'warning',
+      confirmButtonText: '删除',
+    },
+  ).catch(() => false)
   if (!confirmed) return
   try {
     if (isPoolMode.value) {
@@ -716,8 +716,6 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never">
-    <LeadModuleNav :active="isPoolMode ? 'pool' : 'lead'" />
-
     <el-alert
       v-if="activeHomeFilter"
       :title="homeFilterSummary"
@@ -727,19 +725,10 @@ onMounted(async () => {
       @close="clearHomeFilter"
     />
 
-    <SavedViewBar
-      :module="savedViewModule"
-      :fields="contextFields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      @change="handleSavedViewChange"
-      @clear-filters="clearTemporaryFilters"
-      @columns-change="handleSavedColumns"
-    />
-
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
       <div class="flex flex-wrap items-center gap-2">
         <template v-if="!isPoolMode">
           <el-button v-if="auth.hasPerm('lead:create')" type="primary" @click="openCreate">
@@ -776,13 +765,10 @@ onMounted(async () => {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <el-input
+        <CrmSearchInput
           v-model="query.keyword"
           placeholder="搜索名称 / 联系人 / 电话"
-          clearable
-          class="!w-60"
-          @keyup.enter="handleSearch"
-          @clear="handleSearch"
+          @search="handleSearch"
         />
         <el-select
           v-model="query.status"
@@ -805,8 +791,26 @@ onMounted(async () => {
           :dept-tree="fieldRefs.deptTree.value"
           @apply="(c) => ((filters = c), handleSearch())"
         />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
       </div>
     </div>
+
+    <SavedViewBar
+      ref="savedViewBarRef"
+      :module="savedViewModule"
+      :fields="contextFields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+      :current-filters="filters"
+      :default-column-keys="defaultColumnKeys"
+      @change="handleSavedViewChange"
+      @clear-filters="clearTemporaryFilters"
+      @columns-change="handleSavedColumns"
+    />
 
     <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
       <el-button v-if="canExport" @click="openExport('selected')">
@@ -840,7 +844,9 @@ onMounted(async () => {
       </template>
 
       <template v-else>
-        <el-button v-if="auth.hasPerm('leadPool:pick')" @click="handleBatchPick">批量领取</el-button>
+        <el-button v-if="auth.hasPerm('leadPool:pick')" @click="handleBatchPick"
+          >批量领取</el-button
+        >
         <el-button v-if="auth.hasPerm('leadPool:assign')" @click="openBatchPoolAssign">
           批量分配
         </el-button>
@@ -984,7 +990,10 @@ onMounted(async () => {
               <el-button link>更多</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="auth.hasPerm('lead:recycle')" @click="handleToPool(row as LeadVO)">
+                  <el-dropdown-item
+                    v-if="auth.hasPerm('lead:recycle')"
+                    @click="handleToPool(row as LeadVO)"
+                  >
                     移入线索池
                   </el-dropdown-item>
                   <el-dropdown-item
@@ -1119,27 +1128,15 @@ onMounted(async () => {
       v-model="importVisible"
       :module-label="isPoolMode ? '线索池' : '线索'"
       :download-template="
-        (type) =>
-          leadApi.importTemplate(
-            type,
-            isPoolMode ? selectedPoolId || undefined : undefined,
-          )
+        (type) => leadApi.importTemplate(type, isPoolMode ? selectedPoolId || undefined : undefined)
       "
       :precheck="
         (file, type) =>
-          leadApi.importPrecheck(
-            file,
-            type,
-            isPoolMode ? selectedPoolId || undefined : undefined,
-          )
+          leadApi.importPrecheck(file, type, isPoolMode ? selectedPoolId || undefined : undefined)
       "
       :execute="
         (file, type) =>
-          leadApi.importXlsx(
-            file,
-            type,
-            isPoolMode ? selectedPoolId || undefined : undefined,
-          )
+          leadApi.importXlsx(file, type, isPoolMode ? selectedPoolId || undefined : undefined)
       "
       @success="loadData"
     />
@@ -1170,6 +1167,5 @@ onMounted(async () => {
       :selected-count="selectedRows.length"
       @confirm="handleBatchEdit"
     />
-
   </el-card>
 </template>

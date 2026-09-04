@@ -27,6 +27,8 @@ cd "$ROOT_DIR"
 echo '[docker-release] validating Web multi-platform build strategy'
 grep -Fq 'FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder' docker/web.Dockerfile
 grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/web...' docker/web.Dockerfile
+grep -Fq -- '--filter @micromatrix/mobile...' docker/web.Dockerfile
+grep -Fq 'COPY --from=builder /workspace/apps/mobile/dist /usr/share/nginx/html/mobile' docker/web.Dockerfile
 if grep -Fq 'COPY apps/api/package.json apps/api/package.json' docker/web.Dockerfile; then
   echo '[docker-release] Web image must not install API workspace dependencies' >&2
   exit 1
@@ -191,5 +193,7 @@ done
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/healthz | grep -q '^ok'
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/api/health | grep -q 'ok'
 docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/login | grep -q '<div id="app">'
+docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/mobile/ | grep -q '<div id="app">'
+docker exec "$WEB_CONTAINER" wget -qO- http://127.0.0.1/mobile/customers/detail | grep -q '<div id="app">'
 
-echo '[docker-release] PASS: slim API/worker runtime, Redis cache integration, automatic bootstrap initialization, Nginx SPA fallback and /api proxy are healthy'
+echo '[docker-release] PASS: slim API/worker runtime, Redis cache integration, automatic bootstrap initialization, PC/Mobile SPA fallback and /api proxy are healthy'

@@ -26,7 +26,8 @@ import { customerExtraApi } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
@@ -44,6 +45,7 @@ import { confirmIfDuplicates } from '@/utils/duplicate'
 const auth = useAuthStore()
 const route = useRoute()
 const fieldRefs = useFieldRefs()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 const homeQuickCreate = useHomeQuickCreate()
 
 type CustomerSystemView = 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
@@ -247,7 +249,10 @@ function openBatchTransfer() {
 async function handleBatchTransferConfirm(userId: string) {
   if (!selectedRows.value.length) return
   try {
-    const { data } = await batchTransferCustomers(selectedRows.value.map((row) => row.id), userId)
+    const { data } = await batchTransferCustomers(
+      selectedRows.value.map((row) => row.id),
+      userId,
+    )
     if (data.fail > 0) ElMessage.warning(`转移完成：成功 ${data.success} 个，失败 ${data.fail} 个`)
     else ElMessage.success(`已转移 ${data.success} 个客户`)
     batchTransferVisible.value = false
@@ -260,7 +265,7 @@ async function handleBatchTransferConfirm(userId: string) {
 function openMoveToPool(rows: CustomerVO[]) {
   if (!rows.length) return
   moveToPoolIds.value = rows.map((row) => row.id)
-  moveToPoolName.value = rows.length === 1 ? rows[0]?.name ?? '' : ''
+  moveToPoolName.value = rows.length === 1 ? (rows[0]?.name ?? '') : ''
   moveToPoolVisible.value = true
 }
 
@@ -445,44 +450,11 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never">
-    <CustomerModuleNav active="customer" />
-
-    <SavedViewBar
-      :module="savedViewModule"
-      :fields="fields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      :system-views="systemViews"
-      :system-view="activeSystemView"
-      @change="handleSavedViewChange"
-      @system-view-change="handleSystemViewChange"
-      @clear-filters="clearTemporaryFilters"
-      @columns-change="handleSavedColumns"
-      @ready="handleSavedViewReady"
-    />
-
-    <div class="flex-between flex-wrap gap-3 mb-4">
-      <div class="flex gap-2 items-center">
-        <el-input
-          v-model="query.keyword"
-          placeholder="搜索名称 / 电话 / 邮箱"
-          clearable
-          class="!w-64"
-          @keyup.enter="handleSearch"
-          @clear="handleSearch"
-        />
-        <el-button @click="handleSearch">搜索</el-button>
-        <AdvancedFilter
-          v-model="filters"
-          :fields="fields"
-          :members="fieldRefs.members.value"
-          :dept-tree="fieldRefs.deptTree.value"
-          @apply="(c) => ((filters = c), handleSearch())"
-        />
-      </div>
-      <div class="flex gap-2">
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
+      <div class="flex flex-wrap items-center gap-2">
         <template v-if="!isCollaborationView && selectedRows.length > 0">
           <el-button v-if="canExport" @click="openExport('selected')">
             导出选中（{{ selectedRows.length }}）
@@ -490,10 +462,7 @@ onMounted(async () => {
           <el-button v-if="auth.hasPerm('customer:transfer')" @click="openBatchTransfer">
             批量转移
           </el-button>
-          <el-button
-            v-if="auth.hasPerm('customer:recycle')"
-            @click="openMoveToPool(selectedRows)"
-          >
+          <el-button v-if="auth.hasPerm('customer:recycle')" @click="openMoveToPool(selectedRows)">
             批量移入公海
           </el-button>
           <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true">
@@ -522,14 +491,49 @@ onMounted(async () => {
         >
           新建客户
         </el-button>
-        <template v-if="canImport">
-          <el-button @click="importVisible = true">导入</el-button>
-        </template>
-        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')"
-          >导出全部</el-button
-        >
+        <el-button v-if="canImport" @click="importVisible = true">导入</el-button>
+        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">
+          导出全部
+        </el-button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <CrmSearchInput
+          v-model="query.keyword"
+          placeholder="搜索名称 / 电话 / 邮箱"
+          @search="handleSearch"
+        />
+        <AdvancedFilter
+          v-model="filters"
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          @apply="(c) => ((filters = c), handleSearch())"
+        />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
       </div>
     </div>
+
+    <SavedViewBar
+      ref="savedViewBarRef"
+      :module="savedViewModule"
+      :fields="fields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+      :current-filters="filters"
+      :default-column-keys="defaultColumnKeys"
+      :system-views="systemViews"
+      :system-view="activeSystemView"
+      @change="handleSavedViewChange"
+      @system-view-change="handleSystemViewChange"
+      @clear-filters="clearTemporaryFilters"
+      @columns-change="handleSavedColumns"
+      @ready="handleSavedViewReady"
+    />
 
     <el-table
       v-loading="loading"

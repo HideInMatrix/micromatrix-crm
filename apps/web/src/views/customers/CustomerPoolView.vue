@@ -17,7 +17,8 @@ import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sa
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CustomerModuleNav from '@/components/CustomerModuleNav.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
@@ -29,6 +30,7 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 const route = useRoute()
 const fieldRefs = useFieldRefs()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
@@ -58,7 +60,9 @@ let activeListRequestKey = ''
 let activeListRequest: Promise<void> | null = null
 let listRequestGeneration = 0
 
-const currentPool = computed(() => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null)
+const currentPool = computed(
+  () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
+)
 const canImport = computed(() => auth.hasPerm('customerPool:import'))
 const canExport = computed(() => auth.hasPerm('customerPool:export'))
 const defaultColumnKeys = computed(() =>
@@ -66,11 +70,15 @@ const defaultColumnKeys = computed(() =>
 )
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
-  const fieldMap = new Map(fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]))
+  const fieldMap = new Map(
+    fields.value.filter((field) => !field.hidden).map((field) => [field.key, field]),
+  )
   const hiddenIds = new Set(currentPool.value?.hiddenFieldIds ?? [])
   const ordered = keys
     .map((key) => fieldMap.get(key))
-    .filter((field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)))
+    .filter(
+      (field): field is FieldVO => !!field && (field.key === 'name' || !hiddenIds.has(field.id)),
+    )
   const nameField = fieldMap.get('name')
   if (nameField && !ordered.some((field) => field.key === 'name')) ordered.unshift(nameField)
   return ordered
@@ -235,7 +243,10 @@ async function handleBatchClaim() {
 async function handleBatchAssignConfirm(userId: string) {
   if (!selectedRows.value.length) return
   try {
-    const { data } = await poolBatchAssignCustomers(selectedRows.value.map((row) => row.id), userId)
+    const { data } = await poolBatchAssignCustomers(
+      selectedRows.value.map((row) => row.id),
+      userId,
+    )
     if (data.fail > 0) ElMessage.warning(`分配完成：成功 ${data.success} 个，失败 ${data.fail} 个`)
     else ElMessage.success(`已分配 ${data.success} 个客户`)
     batchAssignVisible.value = false
@@ -359,9 +370,54 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never">
-    <CustomerModuleNav active="sea" />
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <el-select
+          v-model="selectedPoolId"
+          class="!w-[200px]"
+          placeholder="选择客户公海"
+          @change="handleSearch"
+        >
+          <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
+        </el-select>
+        <el-button v-if="canImport" :disabled="!selectedPoolId" @click="importVisible = true">
+          导入
+        </el-button>
+        <el-button
+          v-if="canExport"
+          :disabled="items.length === 0 || !selectedPoolId"
+          @click="openExport('all')"
+        >
+          导出全部
+        </el-button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <CrmSearchInput
+          v-model="query.keyword"
+          placeholder="搜索名称 / 电话 / 邮箱"
+          @search="handleSearch"
+        />
+        <AdvancedFilter
+          v-model="filters"
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          @apply="(conditions) => ((filters = conditions), handleSearch())"
+        />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
+      </div>
+    </div>
 
     <SavedViewBar
+      ref="savedViewBarRef"
       module="customer_pool"
       :fields="fields"
       :members="fieldRefs.members.value"
@@ -374,61 +430,27 @@ onMounted(async () => {
       @ready="handleSavedViewReady"
     />
 
-    <div class="flex-between flex-wrap gap-3 mb-4">
-      <div class="flex gap-2 items-center">
-        <el-select
-          v-model="selectedPoolId"
-          class="!w-44"
-          placeholder="选择客户公海"
-          @change="handleSearch"
-        >
-          <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
-        </el-select>
-        <el-input
-          v-model="query.keyword"
-          placeholder="搜索名称 / 电话 / 邮箱"
-          clearable
-          class="!w-64"
-          @keyup.enter="handleSearch"
-          @clear="handleSearch"
-        />
-        <el-button @click="handleSearch">搜索</el-button>
-        <AdvancedFilter
-          v-model="filters"
-          :fields="fields"
-          :members="fieldRefs.members.value"
-          :dept-tree="fieldRefs.deptTree.value"
-          @apply="(conditions) => ((filters = conditions), handleSearch())"
-        />
-      </div>
-      <div class="flex gap-2">
-        <template v-if="selectedRows.length > 0">
-          <el-button v-if="canExport" @click="openExport('selected')">
-            导出选中（{{ selectedRows.length }}）
-          </el-button>
-          <el-button v-if="auth.hasPerm('customerPool:pick')" @click="handleBatchClaim">
-            批量领取
-          </el-button>
-          <el-button v-if="auth.hasPerm('customerPool:assign')" @click="batchAssignVisible = true">
-            批量分配
-          </el-button>
-          <el-button v-if="auth.hasPerm('customerPool:update')" @click="batchEditVisible = true">
-            批量修改（{{ selectedRows.length }}）
-          </el-button>
-          <el-button
-            v-if="auth.hasPerm('customerPool:delete')"
-            type="danger"
-            plain
-            @click="handleBatchDelete"
-          >
-            批量删除
-          </el-button>
-        </template>
-        <el-button v-if="canImport" :disabled="!selectedPoolId" @click="importVisible = true">导入</el-button>
-        <el-button v-if="canExport" :disabled="items.length === 0 || !selectedPoolId" @click="openExport('all')">
-          导出全部
-        </el-button>
-      </div>
+    <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
+      <el-button v-if="canExport" @click="openExport('selected')">
+        导出选中（{{ selectedRows.length }}）
+      </el-button>
+      <el-button v-if="auth.hasPerm('customerPool:pick')" @click="handleBatchClaim">
+        批量领取
+      </el-button>
+      <el-button v-if="auth.hasPerm('customerPool:assign')" @click="batchAssignVisible = true">
+        批量分配
+      </el-button>
+      <el-button v-if="auth.hasPerm('customerPool:update')" @click="batchEditVisible = true">
+        批量修改（{{ selectedRows.length }}）
+      </el-button>
+      <el-button
+        v-if="auth.hasPerm('customerPool:delete')"
+        type="danger"
+        plain
+        @click="handleBatchDelete"
+      >
+        批量删除
+      </el-button>
     </div>
 
     <el-table
@@ -464,7 +486,12 @@ onMounted(async () => {
             type="primary"
             @click="openDetail(row as CustomerVO)"
           >
-            {{ formatFieldValue(column, row, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}
+            {{
+              formatFieldValue(column, row, {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}
           </el-button>
           <template v-else>
             {{
@@ -478,11 +505,17 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="操作" width="190" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="auth.hasPerm('customerPool:pick')" link type="primary" @click="handleClaim(row as CustomerVO)">领取</el-button>
+          <el-button
+            v-if="auth.hasPerm('customerPool:pick')"
+            link
+            type="primary"
+            @click="handleClaim(row as CustomerVO)"
+            >领取</el-button
+          >
           <el-button
             v-if="auth.hasPerm('customerPool:assign')"
             link
-            @click="assignTarget = row as CustomerVO, assignVisible = true"
+            @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
           >
             分配
           </el-button>
@@ -537,9 +570,15 @@ onMounted(async () => {
     <CrmImportDialog
       v-model="importVisible"
       module-label="客户公海"
-      :download-template="(type) => customerTransferApi.importTemplate(type, selectedPoolId || undefined)"
-      :precheck="(file, type) => customerTransferApi.importPrecheck(file, type, selectedPoolId || undefined)"
-      :execute="(file, type) => customerTransferApi.importXlsx(file, type, selectedPoolId || undefined)"
+      :download-template="
+        (type) => customerTransferApi.importTemplate(type, selectedPoolId || undefined)
+      "
+      :precheck="
+        (file, type) => customerTransferApi.importPrecheck(file, type, selectedPoolId || undefined)
+      "
+      :execute="
+        (file, type) => customerTransferApi.importXlsx(file, type, selectedPoolId || undefined)
+      "
       @success="loadData"
     />
 

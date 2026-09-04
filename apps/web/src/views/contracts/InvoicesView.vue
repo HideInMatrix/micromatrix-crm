@@ -16,6 +16,8 @@ import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import ExportTaskButton from '@/components/ExportTaskButton.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -23,6 +25,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const fields = ref<FieldVO[]>([])
 const rows = ref<ContractInvoiceVO[]>([])
@@ -110,22 +113,28 @@ function displayRow(row: ContractInvoiceVO) {
 }
 
 function defaultDynamicModel() {
-  return Object.fromEntries(dynamicFields.value.map((field) => [field.key, field.config?.defaultValue]))
+  return Object.fromEntries(
+    dynamicFields.value.map((field) => [field.key, field.config?.defaultValue]),
+  )
 }
 
 function moduleFieldsPayload() {
-  return dynamicFields.value.map((field) => ({ fieldId: field.id, fieldValue: formModel.value[field.key] }))
+  return dynamicFields.value.map((field) => ({
+    fieldId: field.id,
+    fieldValue: formModel.value[field.key],
+  }))
 }
 
 async function loadMeta() {
   try {
-    const [{ data: config }, { data: tab }, { data: contractPage }, { data: titleOptions }] = await Promise.all([
-      contractInvoiceApi.moduleForm(),
-      contractInvoiceApi.tab(),
-      contractApi.page({ current: 1, pageSize: 500 }),
-      businessTitleApi.options(),
-      fieldRefs.load(),
-    ])
+    const [{ data: config }, { data: tab }, { data: contractPage }, { data: titleOptions }] =
+      await Promise.all([
+        contractInvoiceApi.moduleForm(),
+        contractInvoiceApi.tab(),
+        contractApi.page({ current: 1, pageSize: 500 }),
+        businessTitleApi.options(),
+        fieldRefs.load(),
+      ])
     fields.value = (config.fields ?? []) as FieldVO[]
     contracts.value = contractPage.list
     titles.value = titleOptions
@@ -224,7 +233,9 @@ async function openEdit(row: ContractInvoiceVO) {
     taxRate.value = Number(data.taxRate ?? 0)
     businessTitleId.value = data.businessTitleId ?? ''
     const byId = new Map(data.moduleFields.map((item) => [item.fieldId, item.fieldValue]))
-    formModel.value = Object.fromEntries(dynamicFields.value.map((field) => [field.key, byId.get(field.id)]))
+    formModel.value = Object.fromEntries(
+      dynamicFields.value.map((field) => [field.key, byId.get(field.id)]),
+    )
     formVisible.value = true
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -303,7 +314,9 @@ async function revoke(row: ContractInvoiceVO) {
 }
 
 async function removeInvoice(row: ContractInvoiceVO) {
-  const confirmed = await ElMessageBox.confirm(`删除发票「${row.name}」？`, '删除确认', { type: 'warning' }).catch(() => false)
+  const confirmed = await ElMessageBox.confirm(`删除发票「${row.name}」？`, '删除确认', {
+    type: 'warning',
+  }).catch(() => false)
   if (!confirmed) return
   try {
     await contractInvoiceApi.remove(row.id)
@@ -317,7 +330,11 @@ async function removeInvoice(row: ContractInvoiceVO) {
 
 async function batchDelete() {
   if (!selectedIds.value.length) return
-  const confirmed = await ElMessageBox.confirm(`删除选中的 ${selectedIds.value.length} 条发票？`, '批量删除', { type: 'warning' }).catch(() => false)
+  const confirmed = await ElMessageBox.confirm(
+    `删除选中的 ${selectedIds.value.length} 条发票？`,
+    '批量删除',
+    { type: 'warning' },
+  ).catch(() => false)
   if (!confirmed) return
   try {
     await contractInvoiceApi.batchDelete(selectedIds.value)
@@ -366,7 +383,62 @@ onMounted(() => {
 
 <template>
   <el-card shadow="never">
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:ADD')" type="primary" @click="openCreate">
+          新建发票
+        </el-button>
+        <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:IMPORT')" @click="importVisible = true">
+          导入
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('CONTRACT_INVOICE:EXPORT')"
+          :disabled="!rows.length"
+          @click="openExport('all')"
+        >
+          导出全部
+        </el-button>
+        <ExportTaskButton />
+        <template v-if="selectedIds.length">
+          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:EXPORT')" @click="openExport('selected')">
+            导出选中
+          </el-button>
+          <el-button
+            v-if="auth.hasPerm('CONTRACT_INVOICE:DELETE')"
+            type="danger"
+            plain
+            @click="batchDelete"
+          >
+            批量删除
+          </el-button>
+        </template>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <CrmSearchInput
+          v-model="query.keyword"
+          placeholder="通过发票名称 / 合同搜索"
+          width-class="!w-72"
+          @search="((query.current = 1), loadData())"
+        />
+        <AdvancedFilter
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          @apply="onFilterApply"
+        />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
+      </div>
+    </div>
+
     <SavedViewBar
+      ref="savedViewBarRef"
       module="invoice"
       :fields="fields"
       :members="fieldRefs.members.value"
@@ -382,41 +454,14 @@ onMounted(() => {
       @ready="onSavedViewReady"
     />
 
-    <div class="flex-between flex-wrap gap-3 mb-4">
-      <div class="flex items-center gap-2">
-        <el-input
-          v-model="query.keyword"
-          placeholder="通过发票名称 / 合同搜索"
-          clearable
-          class="!w-72"
-          @keyup.enter="((query.current = 1), loadData())"
-          @clear="((query.current = 1), loadData())"
-        />
-        <AdvancedFilter
-          :fields="fields"
-          :members="fieldRefs.members.value"
-          :dept-tree="fieldRefs.deptTree.value"
-          @apply="onFilterApply"
-        />
-      </div>
-      <div class="flex items-center gap-2">
-        <ExportTaskButton />
-        <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:IMPORT')" @click="importVisible = true">导入</el-button>
-        <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:EXPORT')" :disabled="!rows.length" @click="openExport('all')">导出全部</el-button>
-        <template v-if="selectedIds.length">
-          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:EXPORT')" @click="openExport('selected')">导出选中</el-button>
-          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:DELETE')" type="danger" plain @click="batchDelete">批量删除</el-button>
-        </template>
-        <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:ADD')" type="primary" @click="openCreate">新建发票</el-button>
-      </div>
-    </div>
-
     <el-table
       v-loading="loading"
       :data="rows"
       stripe
       class="w-full"
-      @selection-change="(selected: ContractInvoiceVO[]) => (selectedIds = selected.map((row) => row.id))"
+      @selection-change="
+        (selected: ContractInvoiceVO[]) => (selectedIds = selected.map((row) => row.id))
+      "
     >
       <el-table-column type="selection" width="48" />
       <el-table-column
@@ -427,16 +472,35 @@ onMounted(() => {
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          <el-button v-if="column.key === 'name'" link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-button>
-          <template v-else-if="column.key === 'amount'">¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</template>
-          <template v-else-if="column.key === 'taxRate'">{{ row.taxRate == null ? '-' : `${row.taxRate}%` }}</template>
-          <el-tag v-else-if="column.key === 'approvalStatus'" :type="approvalTagType(asInvoice(row).approvalStatus)" size="small">
+          <el-button v-if="column.key === 'name'" link type="primary" @click="openDetail(row.id)">{{
+            row.name
+          }}</el-button>
+          <template v-else-if="column.key === 'amount'"
+            >¥{{ Number(row.amount ?? 0).toLocaleString('zh-CN') }}</template
+          >
+          <template v-else-if="column.key === 'taxRate'">{{
+            row.taxRate == null ? '-' : `${row.taxRate}%`
+          }}</template>
+          <el-tag
+            v-else-if="column.key === 'approvalStatus'"
+            :type="approvalTagType(asInvoice(row).approvalStatus)"
+            size="small"
+          >
             {{ approvalLabel(asInvoice(row).approvalStatus) }}
           </el-tag>
-          <template v-else>{{ formatFieldValue(column, displayRow(row as ContractInvoiceVO), { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}</template>
+          <template v-else>{{
+            formatFieldValue(column, displayRow(row as ContractInvoiceVO), {
+              memberMap: fieldRefs.memberMap.value,
+              deptMap: fieldRefs.deptMap.value,
+            })
+          }}</template>
         </template>
       </el-table-column>
-      <el-table-column v-if="!visibleColumns.some((column) => column.key === 'approvalStatus')" label="审批状态" width="110">
+      <el-table-column
+        v-if="!visibleColumns.some((column) => column.key === 'approvalStatus')"
+        label="审批状态"
+        width="110"
+      >
         <template #default="{ row }">
           <el-tag :type="approvalTagType(asInvoice(row).approvalStatus)" size="small">
             {{ approvalLabel(asInvoice(row).approvalStatus) }}
@@ -446,10 +510,42 @@ onMounted(() => {
       <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
           <el-button link @click="openDetail(row.id)">详情</el-button>
-          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && asInvoice(row).approvalStatus !== 'APPROVING'" link type="primary" @click="openEdit(asInvoice(row))">编辑</el-button>
-          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && ['NONE', 'UNAPPROVED', 'REVOKED'].includes(asInvoice(row).approvalStatus ?? 'NONE')" link type="success" @click="review(asInvoice(row))">提交审批</el-button>
-          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && asInvoice(row).approvalStatus === 'APPROVING'" link @click="revoke(asInvoice(row))">撤回</el-button>
-          <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:DELETE')" link type="danger" @click="removeInvoice(asInvoice(row))">删除</el-button>
+          <el-button
+            v-if="
+              auth.hasPerm('CONTRACT_INVOICE:UPDATE') &&
+              asInvoice(row).approvalStatus !== 'APPROVING'
+            "
+            link
+            type="primary"
+            @click="openEdit(asInvoice(row))"
+            >编辑</el-button
+          >
+          <el-button
+            v-if="
+              auth.hasPerm('CONTRACT_INVOICE:UPDATE') &&
+              ['NONE', 'UNAPPROVED', 'REVOKED'].includes(asInvoice(row).approvalStatus ?? 'NONE')
+            "
+            link
+            type="success"
+            @click="review(asInvoice(row))"
+            >提交审批</el-button
+          >
+          <el-button
+            v-if="
+              auth.hasPerm('CONTRACT_INVOICE:UPDATE') &&
+              asInvoice(row).approvalStatus === 'APPROVING'
+            "
+            link
+            @click="revoke(asInvoice(row))"
+            >撤回</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('CONTRACT_INVOICE:DELETE')"
+            link
+            type="danger"
+            @click="removeInvoice(asInvoice(row))"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -467,28 +563,61 @@ onMounted(() => {
     </div>
   </el-card>
 
-  <el-drawer v-model="formVisible" :title="editingId ? '编辑发票' : '新建发票'" size="680px" destroy-on-close>
+  <el-drawer
+    v-model="formVisible"
+    :title="editingId ? '编辑发票' : '新建发票'"
+    size="680px"
+    destroy-on-close
+  >
     <el-form label-position="top">
-      <el-form-item label="发票名称" required><el-input v-model="invoiceName" maxlength="255" show-word-limit /></el-form-item>
+      <el-form-item label="发票名称" required
+        ><el-input v-model="invoiceName" maxlength="255" show-word-limit
+      /></el-form-item>
       <div class="grid grid-cols-2 gap-3">
         <el-form-item label="合同" required>
           <el-select v-model="contractId" filterable class="w-full">
-            <el-option v-for="item in contracts" :key="item.id" :label="item.name" :value="item.id" />
+            <el-option
+              v-for="item in contracts"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="负责人" required>
           <el-select v-model="ownerId" filterable class="w-full">
-            <el-option v-for="member in fieldRefs.members.value" :key="member.id" :label="member.name" :value="member.id" />
+            <el-option
+              v-for="member in fieldRefs.members.value"
+              :key="member.id"
+              :label="member.name"
+              :value="member.id"
+            />
           </el-select>
         </el-form-item>
       </div>
       <div class="grid grid-cols-2 gap-3">
-        <el-form-item label="开票金额" required><el-input-number v-model="amount" :min="0.01" :precision="2" :controls="false" class="!w-full" /></el-form-item>
-        <el-form-item label="税率"><el-input-number v-model="taxRate" :min="0" :precision="2" :controls="false" class="!w-full" /></el-form-item>
+        <el-form-item label="开票金额" required
+          ><el-input-number
+            v-model="amount"
+            :min="0.01"
+            :precision="2"
+            :controls="false"
+            class="!w-full"
+        /></el-form-item>
+        <el-form-item label="税率"
+          ><el-input-number
+            v-model="taxRate"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            class="!w-full"
+        /></el-form-item>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <el-form-item label="发票类型">
-          <el-select v-model="invoiceType" class="w-full"><el-option v-for="item in INVOICE_TYPES" :key="item" :label="item" :value="item" /></el-select>
+          <el-select v-model="invoiceType" class="w-full"
+            ><el-option v-for="item in INVOICE_TYPES" :key="item" :label="item" :value="item"
+          /></el-select>
         </el-form-item>
         <el-form-item label="工商抬头">
           <el-select v-model="businessTitleId" clearable filterable class="w-full">
@@ -496,39 +625,103 @@ onMounted(() => {
           </el-select>
         </el-form-item>
       </div>
-      <DynamicForm ref="formRef" v-model="formModel" :fields="dynamicFields" :members="fieldRefs.members.value" :dept-tree="fieldRefs.deptTree.value" />
+      <DynamicForm
+        ref="formRef"
+        v-model="formModel"
+        :fields="dynamicFields"
+        :members="fieldRefs.members.value"
+        :dept-tree="fieldRefs.deptTree.value"
+      />
     </el-form>
-    <template #footer><el-button @click="formVisible = false">取消</el-button><el-button type="primary" :loading="formSaving" @click="saveInvoice">保存</el-button></template>
+    <template #footer
+      ><el-button @click="formVisible = false">取消</el-button
+      ><el-button type="primary" :loading="formSaving" @click="saveInvoice"
+        >保存</el-button
+      ></template
+    >
   </el-drawer>
 
-  <el-drawer v-model="detailVisible" :title="detail?.name || '发票详情'" size="760px" destroy-on-close>
+  <el-drawer
+    v-model="detailVisible"
+    :title="detail?.name || '发票详情'"
+    size="760px"
+    destroy-on-close
+  >
     <div v-loading="detailLoading">
       <template v-if="detail">
         <div class="flex items-center gap-2 mb-4">
-          <el-tag :type="approvalTagType(detail.approvalStatus)">{{ detail.approvalStatus ? CONTRACT_INVOICE_APPROVAL_STATUS_LABELS[detail.approvalStatus] : '-' }}</el-tag>
+          <el-tag :type="approvalTagType(detail.approvalStatus)">{{
+            detail.approvalStatus
+              ? CONTRACT_INVOICE_APPROVAL_STATUS_LABELS[detail.approvalStatus]
+              : '-'
+          }}</el-tag>
           <el-tag v-if="detail.approved" type="success">历史已通过</el-tag>
         </div>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="发票名称">{{ detail.name }}</el-descriptions-item>
-          <el-descriptions-item label="合同">{{ detail.contractName ?? detail.contractId }}</el-descriptions-item>
-          <el-descriptions-item label="负责人">{{ detail.ownerName ?? detail.owner }}</el-descriptions-item>
-          <el-descriptions-item label="工商抬头">{{ detail.businessTitleName ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="开票金额">¥{{ Number(detail.amount ?? 0).toLocaleString('zh-CN') }}</el-descriptions-item>
-          <el-descriptions-item label="发票类型">{{ detail.invoiceType ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="税率">{{ detail.taxRate == null ? '-' : `${detail.taxRate}%` }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ new Date(detail.updateTime).toLocaleString('zh-CN') }}</el-descriptions-item>
+          <el-descriptions-item label="合同">{{
+            detail.contractName ?? detail.contractId
+          }}</el-descriptions-item>
+          <el-descriptions-item label="负责人">{{
+            detail.ownerName ?? detail.owner
+          }}</el-descriptions-item>
+          <el-descriptions-item label="工商抬头">{{
+            detail.businessTitleName ?? '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="开票金额"
+            >¥{{ Number(detail.amount ?? 0).toLocaleString('zh-CN') }}</el-descriptions-item
+          >
+          <el-descriptions-item label="发票类型">{{
+            detail.invoiceType ?? '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="税率">{{
+            detail.taxRate == null ? '-' : `${detail.taxRate}%`
+          }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{
+            new Date(detail.updateTime).toLocaleString('zh-CN')
+          }}</el-descriptions-item>
         </el-descriptions>
         <el-collapse class="mt-4">
-          <el-collapse-item title="审批详情" name="approval"><pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(approvalDetail, null, 2) }}</pre></el-collapse-item>
-          <el-collapse-item title="审批冻结快照" name="snapshot"><pre class="whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(detailSnapshot, null, 2) }}</pre></el-collapse-item>
+          <el-collapse-item title="审批详情" name="approval">
+            <pre class="whitespace-pre-wrap break-all text-xs">{{
+              JSON.stringify(approvalDetail, null, 2)
+            }}</pre>
+          </el-collapse-item>
+          <el-collapse-item title="审批冻结快照" name="snapshot">
+            <pre class="whitespace-pre-wrap break-all text-xs">{{
+              JSON.stringify(detailSnapshot, null, 2)
+            }}</pre>
+          </el-collapse-item>
         </el-collapse>
       </template>
     </div>
     <template v-if="detail" #footer>
-      <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && detail.approvalStatus !== 'APPROVING'" @click="openEdit(detail)">编辑</el-button>
-      <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && ['NONE', 'UNAPPROVED', 'REVOKED'].includes(detail.approvalStatus ?? 'NONE')" type="primary" @click="review(detail)">提交审批</el-button>
-      <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && detail.approvalStatus === 'APPROVING'" @click="revoke(detail)">撤回</el-button>
-      <el-button v-if="auth.hasPerm('CONTRACT_INVOICE:DELETE')" type="danger" plain @click="removeInvoice(detail)">删除</el-button>
+      <el-button
+        v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && detail.approvalStatus !== 'APPROVING'"
+        @click="openEdit(detail)"
+        >编辑</el-button
+      >
+      <el-button
+        v-if="
+          auth.hasPerm('CONTRACT_INVOICE:UPDATE') &&
+          ['NONE', 'UNAPPROVED', 'REVOKED'].includes(detail.approvalStatus ?? 'NONE')
+        "
+        type="primary"
+        @click="review(detail)"
+        >提交审批</el-button
+      >
+      <el-button
+        v-if="auth.hasPerm('CONTRACT_INVOICE:UPDATE') && detail.approvalStatus === 'APPROVING'"
+        @click="revoke(detail)"
+        >撤回</el-button
+      >
+      <el-button
+        v-if="auth.hasPerm('CONTRACT_INVOICE:DELETE')"
+        type="danger"
+        plain
+        @click="removeInvoice(detail)"
+        >删除</el-button
+      >
     </template>
   </el-drawer>
 

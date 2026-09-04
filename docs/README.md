@@ -6,6 +6,7 @@
 | [cordys-wave2-execution-plan.md](./cordys-wave2-execution-plan.md)   | Wave 2 执行记录；W2.1-W2.5 已验收，含流程设置版本底座与 Vue Flow 设计器        |
 | [cordys-graph-completion-plan.md](./cordys-graph-completion-plan.md) | 用户功能图收口计划；W3.4.0～W3.4.5 已全部验收，当前功能图状态为 `VERIFIED`     |
 | [cordys-menu-parity.md](./cordys-menu-parity.md)                     | 当前 Cordys 实例经模块开关与角色权限过滤后的实际左侧菜单基线                   |
+| [cordys-ui-design-guide.md](./cordys-ui-design-guide.md)             | CordysCRM PC / Mobile 视觉、布局、交互与 Vant 4 移动重构设计基线               |
 | [alignment-log.md](./alignment-log.md)                               | 对齐探测与实施证据：公共底座、Wave 2、W3.1～W3.7 与 Docker 发布演进            |
 | [architecture.md](./architecture.md)                                 | 架构设计与关键技术决策记录（含踩坑记录）                                       |
 | [conventions.md](./conventions.md)                                   | 开发约定：新增业务对象的标准接入手册                                           |

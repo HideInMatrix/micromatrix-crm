@@ -16,6 +16,9 @@ import { metadataApi } from '@/api/metadata'
 import { listCustomers } from '@/api/customers'
 import { contactApi, opportunityApi } from '@/api/sales'
 import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
+import CrmDisplayModeSwitch from '@/components/CrmDisplayModeSwitch.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import OpportunityDetailDrawer from '@/components/opportunities/OpportunityDetailDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
@@ -32,6 +35,7 @@ const route = useRoute()
 const router = useRouter()
 const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
+const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const viewMode = ref<'list' | 'kanban'>('list')
 const fields = ref<FieldVO[]>([])
@@ -90,20 +94,19 @@ const defaultColumnKeys = computed(() =>
 )
 const listColumns = computed(() => {
   const allowed = visibleColumnKeys.value.length ? new Set(visibleColumnKeys.value) : null
-  return fields.value.filter(
-    (f) => f.showInList && !f.hidden && (!allowed || allowed.has(f.key)),
-  )
+  return fields.value.filter((f) => f.showInList && !f.hidden && (!allowed || allowed.has(f.key)))
 })
 const customFormFields = computed(() => fields.value.filter((field) => !field.system))
 const selectedStage = computed(() => stages.value.find((s) => s.id === stageForm.stageId))
 
 async function loadMeta() {
-  const [{ data: fieldData }, { data: stageData }, { data: reasonConfig }, { data: products }] = await Promise.all([
-    metadataApi.fields('opportunity'),
-    opportunityApi.stages(),
-    dictionaryApi.config('OPPORTUNITY_FAIL_RS'),
-    productApi.options(),
-  ])
+  const [{ data: fieldData }, { data: stageData }, { data: reasonConfig }, { data: products }] =
+    await Promise.all([
+      metadataApi.fields('opportunity'),
+      opportunityApi.stages(),
+      dictionaryApi.config('OPPORTUNITY_FAIL_RS'),
+      productApi.options(),
+    ])
   fields.value = fieldData
   stages.value = stageData
   failureReasonEnabled.value = reasonConfig.enable
@@ -200,10 +203,7 @@ async function openEdit(row: OpportunityVO) {
     formModel.value = Object.fromEntries(
       customFormFields.value
         .filter((f) => f.type !== 'formula')
-        .map((f) => [
-          f.key,
-          isCustomFieldKey(f.key) ? data.customData[f.key] : undefined,
-        ]),
+        .map((f) => [f.key, isCustomFieldKey(f.key) ? data.customData[f.key] : undefined]),
     )
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -228,7 +228,9 @@ async function handleSave() {
       possible: businessForm.possible,
       products: businessForm.products,
       owner: businessForm.owner || undefined,
-      expectedEndTime: businessForm.expectedEndTime ? Number(businessForm.expectedEndTime) : undefined,
+      expectedEndTime: businessForm.expectedEndTime
+        ? Number(businessForm.expectedEndTime)
+        : undefined,
     }
     for (const [key, value] of Object.entries(formModel.value)) {
       if (value === undefined || value === '') continue
@@ -336,7 +338,11 @@ async function handleBatchTransfer() {
 
 async function handleBatchDelete() {
   if (!selectedIds.value.length) return
-  const ok = await ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.length} 个商机吗？`, '批量删除', { type: 'warning' }).catch(() => false)
+  const ok = await ElMessageBox.confirm(
+    `确定删除选中的 ${selectedIds.value.length} 个商机吗？`,
+    '批量删除',
+    { type: 'warning' },
+  ).catch(() => false)
   if (!ok) return
   try {
     await opportunityApi.batchDelete(selectedIds.value)
@@ -452,32 +458,35 @@ onMounted(async () => {
       @close="clearHomeFilter"
     />
 
-    <SavedViewBar
-      module="opportunity"
-      :fields="fields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      @change="onSavedViewChange"
-      @clear-filters="((filters = []), (query.page = 1), loadData())"
-      @columns-change="onColumnsChange"
-    />
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3"
+      data-testid="crm-table-primary-toolbar"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <template v-if="viewMode === 'list' && selectedIds.length">
+          <el-button v-if="auth.hasPerm('opportunity:update')" @click="openBatchTransfer">
+            批量转移
+          </el-button>
+          <el-button
+            v-if="auth.hasPerm('opportunity:delete')"
+            type="danger"
+            plain
+            @click="handleBatchDelete"
+          >
+            批量删除
+          </el-button>
+        </template>
+        <el-button v-if="auth.hasPerm('opportunity:create')" type="primary" @click="openCreate">
+          新建商机
+        </el-button>
+      </div>
 
-    <div class="flex-between flex-wrap gap-3 mb-4">
-      <div class="flex gap-2 items-center">
-        <el-radio-group v-model="viewMode" @change="loadData">
-          <el-radio-button value="list">列表</el-radio-button>
-          <el-radio-button value="kanban">看板</el-radio-button>
-        </el-radio-group>
+      <div class="flex flex-wrap items-center gap-2">
         <template v-if="viewMode === 'list'">
-          <el-input
+          <CrmSearchInput
             v-model="query.keyword"
             placeholder="搜索商机名称"
-            clearable
-            class="!w-52"
-            @keyup.enter="((query.page = 1), loadData())"
-            @clear="((query.page = 1), loadData())"
+            @search="((query.page = 1), loadData())"
           />
           <el-select
             v-model="query.stageId"
@@ -495,21 +504,41 @@ onMounted(async () => {
             @apply="(c) => ((filters = c), (query.page = 1), loadData())"
           />
         </template>
-      </div>
-      <div class="flex items-center gap-2">
-        <template v-if="viewMode === 'list' && selectedIds.length">
-          <el-button v-if="auth.hasPerm('opportunity:update')" @click="openBatchTransfer">批量转移</el-button>
-          <el-button v-if="auth.hasPerm('opportunity:delete')" type="danger" plain @click="handleBatchDelete">批量删除</el-button>
-        </template>
-        <el-button v-if="auth.hasPerm('opportunity:create')" type="primary" @click="openCreate">
-          新建商机
-        </el-button>
+        <CrmDisplayModeSwitch
+          v-model="viewMode"
+          board-value="kanban"
+          @update:model-value="loadData"
+        />
+        <CrmTableUtilityActions
+          :refreshing="loading"
+          @columns="savedViewBarRef?.openColumnSettings()"
+          @refresh="loadData"
+        />
       </div>
     </div>
 
+    <SavedViewBar
+      ref="savedViewBarRef"
+      module="opportunity"
+      :fields="fields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+      :current-filters="filters"
+      :default-column-keys="defaultColumnKeys"
+      @change="onSavedViewChange"
+      @clear-filters="((filters = []), (query.page = 1), loadData())"
+      @columns-change="onColumnsChange"
+    />
+
     <!-- 列表视图 -->
     <template v-if="viewMode === 'list'">
-      <el-table v-loading="loading" :data="items" stripe class="w-full" @selection-change="handleSelectionChange">
+      <el-table
+        v-loading="loading"
+        :data="items"
+        stripe
+        class="w-full"
+        @selection-change="handleSelectionChange"
+      >
         <el-table-column type="selection" width="48" />
         <el-table-column
           v-for="column in listColumns"
@@ -588,7 +617,7 @@ onMounted(async () => {
       <div
         v-for="stage in kanbanStages"
         :key="stage.id"
-        class="w-64 shrink-0 rounded-lg bg-[var(--el-fill-color-light)] p-2"
+        class="w-64 shrink-0 rounded-[var(--border-radius-medium)] bg-[var(--el-fill-color-light)] p-2"
       >
         <div class="flex-between px-1 py-2">
           <span class="text-sm font-medium">
@@ -644,7 +673,12 @@ onMounted(async () => {
           </el-form-item>
           <el-form-item label="负责人" required>
             <el-select v-model="businessForm.owner" filterable class="w-full">
-              <el-option v-for="member in fieldRefs.members.value" :key="member.id" :label="member.name" :value="member.id" />
+              <el-option
+                v-for="member in fieldRefs.members.value"
+                :key="member.id"
+                :label="member.name"
+                :value="member.id"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="关联客户">
@@ -656,29 +690,64 @@ onMounted(async () => {
               :remote-method="searchCustomers"
               placeholder="搜索并选择客户"
               class="w-full"
-              @change="((businessForm.contactId = ''), loadContacts(businessForm.customerId || undefined))"
+              @change="
+                ((businessForm.contactId = ''), loadContacts(businessForm.customerId || undefined))
+              "
             >
               <el-option v-for="c in customerOptions" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="联系人">
-            <el-select v-model="businessForm.contactId" clearable filterable :disabled="!businessForm.customerId" class="w-full">
-              <el-option v-for="contact in contactOptions" :key="contact.id" :label="contact.name" :value="contact.id" />
+            <el-select
+              v-model="businessForm.contactId"
+              clearable
+              filterable
+              :disabled="!businessForm.customerId"
+              class="w-full"
+            >
+              <el-option
+                v-for="contact in contactOptions"
+                :key="contact.id"
+                :label="contact.name"
+                :value="contact.id"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="商机金额">
-            <el-input-number v-model="businessForm.amount" :min="0" :precision="2" class="!w-full" />
+            <el-input-number
+              v-model="businessForm.amount"
+              :min="0"
+              :precision="2"
+              class="!w-full"
+            />
           </el-form-item>
           <el-form-item label="可能性">
-            <el-input-number v-model="businessForm.possible" :min="0" :max="100" :precision="2" class="!w-full" />
+            <el-input-number
+              v-model="businessForm.possible"
+              :min="0"
+              :max="100"
+              :precision="2"
+              class="!w-full"
+            />
           </el-form-item>
           <el-form-item label="意向产品">
             <el-select v-model="businessForm.products" multiple filterable clearable class="w-full">
-              <el-option v-for="product in productOptions" :key="product.id" :label="product.name" :value="product.id" />
+              <el-option
+                v-for="product in productOptions"
+                :key="product.id"
+                :label="product.name"
+                :value="product.id"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="结束时间">
-            <el-date-picker v-model="businessForm.expectedEndTime" type="date" value-format="x" clearable class="!w-full" />
+            <el-date-picker
+              v-model="businessForm.expectedEndTime"
+              type="date"
+              value-format="x"
+              clearable
+              class="!w-full"
+            />
           </el-form-item>
         </div>
       </el-form>
@@ -714,7 +783,12 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item v-if="selectedStage?.isLost && failureReasonEnabled" label="失败原因">
           <el-select v-model="stageForm.failureReason" class="w-full" placeholder="请选择失败原因">
-            <el-option v-for="reason in failureReasons" :key="reason.id" :label="reason.name" :value="reason.id" />
+            <el-option
+              v-for="reason in failureReasons"
+              :key="reason.id"
+              :label="reason.name"
+              :value="reason.id"
+            />
           </el-select>
         </el-form-item>
       </el-form>

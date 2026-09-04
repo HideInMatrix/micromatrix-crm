@@ -1373,3 +1373,39 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `/system/logs` 将原“立即清理”改名“清理过期日志”，另增“清空全部操作日志”危险按钮；必须输入“清空”才能提交，确认文案明确当前查询数量仅供参考、实际删除当前组织全部操作日志且不可恢复。成功后显示服务端真实删除数并刷新列表/策略。
 - 当前本地 API 已实际加载新路由，未认证 `POST /api/logs/clear-all` 返回 HTTP 401。无需新增 Prisma migration，数据库基线保持 **71 migrations**。
 - 最终验证：API Rules **192/192 PASS**；root `pnpm typecheck` PASS；`pnpm lint` **0 error / 8 个既有 warning**；production build PASS、Web **4145 modules transformed**；Prettier 与 `git diff --check` PASS。`LOG-003 C1～C4` 全部关闭，状态为 **`VERIFIED`**。
+
+---
+
+## 81. UI-001 PC / Mobile 双应用与 Cordys UI 基线重构最终验收（2026-09-04）
+
+- 终端架构由原 `apps/web` 单应用内混合 PC/Mobile View 正式拆分为 `apps/web` 与 `apps/mobile` 两个独立 Vue/Vite 应用；新增 browser-only `@micromatrix/frontend-shared`，统一 device detection、token storage、HTTP refresh 与可共享 API Client，不把浏览器依赖继续塞入前后端共用的 `@micromatrix/shared`。
+- PC 继续固定 Element Plus，Mobile 固定 Vant `4.10.2`；`apps/web` 已移除 Vant、Vant Resolver、Touch Emulator、Mobile Layout、`views/**/mobile` 与 Mobile 专属组件，`apps/mobile` 独立承载登录、工作台、线索/转换、客户/公海/联系人/详情、商机详情、审批、跟进计划和“我的”。
+- 生产部署保持同域：PC 产物位于 `/`，Mobile 产物位于 `/mobile/`，Nginx 为 `/mobile/*` 提供独立 SPA fallback；Web Docker 同时构建并复制两端产物。开发态冻结为 PC `5173`、Mobile `5174/mobile`：Chrome Device Toolbar 切换 Mobile UA 时从 5173 自动进入 5174，关闭设备模拟后 Desktop UA 从 5174 自动回到 5173；生产态仍为同域 `/ <-> /mobile` 双向校验。
+- 共享 Cordys Design Tokens 已落到 `frontend-shared`，PC Shell 对齐 56px Header、180/56 Sidebar、16px Page Padding、24/32/40 控件密度、6px Card、浅层 Table/Drawer/Dialog；企业自定义主题继续即时生效，并补齐 P0～P8 动态色阶，避免浅背景/选中态仍残留默认青色。
+- Mobile Vant 基线已统一 Safe Area、48px NavBar、轻量 Tabbar、16px 页面外距、20px Card 内距、6px Card、表单/Popup/ActionSheet/Picker；路由引入 depth 层级，一级模块 `depth=1` 保留 Tabbar，同级切换无动画，详情/转换/跟进等 `depth=2` 隐藏 Tabbar并使用前进/返回滑动过渡。
+- 发布验收 `smoke:docker-release` PASS，真实覆盖 `/login`、`/mobile/`、`/mobile/customers/detail`、API Proxy、71 migrations、Redis、API/Worker runtime。Browser Smoke：Mobile **14/14 PASS**、PC 全图导航 **29/29 PASS**、个人中心跨 PC/Mobile **23/23 PASS**，均无 Runtime exception / 业务 Console error。
+- 最终工程门槛：root `pnpm typecheck` PASS；root `pnpm build` PASS；root `pnpm lint` **0 error / 8 个既有 warning**；UI-001 实际修改的 Prettier 可解析文件 PASS；`git diff --check` PASS。全仓 `prettier --check .` 仍会命中本任务未修改的历史格式化债务与 3 个旧 Vue 文件的 Prettier parser 报错，本次未为通过 UI-001 而批量改写无关业务文件。
+- `docs/cordys-ui-design-guide.md` 与 `docs/specs/frontend-dual-app-refactor/{requirements,design,tasks}.md` 已作为双应用、PC/Mobile UI 与验收基线。`UI-001 T1～T9` 全部关闭，状态为 **`VERIFIED`**。
+
+---
+
+## 82. UI-001 T10 终态 UI 复核修正（2026-09-04）
+
+- 开发态终端分流补齐 Vite `base=/mobile/` 的尾斜杠契约：Web Mobile UA 目标由 `/mobile` 改为 `/mobile/`；Mobile Vite dev server 额外对直接访问 `/mobile` 返回 HTTP 302 到 `/mobile/`。真实 `curl` 已确认 `Location: /mobile/`，Device Toolbar smoke 证明 `5173 -> 5174/mobile/` 不再出现 “The server is configured with a public base URL of /mobile/” 中间提示页。
+- 对照 CordysCRM `customer.ts meta.isTopMenu + crm-top-menu`，PC 客户模块的“客户 / 联系人 / 客户公海”从三个业务页面内部 `el-tabs` 移到全局 Header 左侧横向 Top Menu；菜单项固定 32px 高、左右 16px padding、浅主色选中态，客户详情继续保持“客户”选中语义。
+- 对照 CordysCRM `layout-header.vue`，PC Header 右侧动作收口为 16px 图标、8px padding 的 32×32 点击区，动作之间 8px；审批待办、消息、跟进计划、关于、帮助均统一 hover/圆角语义。Browser 实测新增断言确认可见动作按钮均为 32×32，首组间距 8px。
+- Sidebar 底部用户入口的 Element Plus `el-dropdown` 增加 `w-full`，与内部用户按钮同宽；折叠控制移除“收起菜单”可见文字，仅保留 16px 图标和 aria-label；`crm-layout-brand` 在 56px 折叠态切换为 `px-0`，展开态继续 `px-4`。个人中心 browser smoke **26/26 PASS**，含上述三个新增 DOM/尺寸断言。
+- 本轮验证：root `pnpm typecheck` PASS；Web/Mobile production build PASS；root lint **0 error / 8 个既有 warning**；Mobile browser smoke **15/15 PASS**；`git diff --check` PASS。PC 全图导航 smoke 中 T10 新增的客户 Top Menu、页面内 Tabs 移除、顶部动作尺寸/间距断言全部 PASS；脚本随后在既有“跟进计划深链 Dialog”处因详情 API 失败后移除 `id` 而超时，该问题与本轮 Header/Sidebar/终端分流无代码依赖，本批没有跨范围修改跟进计划业务。
+- `UI-001 T10` 状态为 **`VERIFIED`**。
+
+---
+
+## 83. UI-001 T11 PC 模块级 Top Menu 全局治理（2026-09-04）
+
+- 将 T10 的客户模块 Header 导航从特例提升为 PC 全局信息架构规则：Sidebar 只承担一级业务模块；同一一级模块下改变业务路由语义的并列页面统一进入 Header Top Menu；同一路由内部的数据集、详情分区、配置分区继续使用 Tabs / Segmented / Filter。规则已写入 `docs/cordys-ui-design-guide.md` 与 UI-001 requirements/design。
+- 全仓审计确认需要迁移的五组为线索、客户、商机/报价、产品/价格表、合同/发票/工商抬头；订单只有一个主路由，系统设置属于不同设置域的 Sidebar 二级信息架构，首页/仪表板属于两个独立 NavigationModule，均不强行合并 Top Menu。最终剩余 12 处 `el-tabs` 均属于详情 Drawer 或同路由内部视图，没有跨路由遗漏。
+- 新增通用 `PcTopMenu.vue`，由 Router Meta `topMenuGroup / topMenuLabel / topMenuOrder / topMenuActivePath` + 当前用户权限生成菜单；`DefaultLayout` 不再硬编码客户模块。`CustomerModuleNav.vue`、`LeadModuleNav.vue` 和自动生成类型残留已删除，`git grep ModuleNav -- apps/web/src` 无结果。
+- 线索迁为 `线索 / 线索池`，客户迁为 `客户 / 联系人 / 客户公海`，商机迁为 `商机 / 报价`；合同 Sidebar 从旧 SubMenu 收口为单一一级“合同”，Header 提供 `合同 / 发票 / 工商抬头`。产品原单路由 Tabs 拆成 `/products` 与 `/products/prices`，Header 提供 `产品 / 价格表`。
+- 产品拆路由后同时收口初始化边界：`/products` 只读取产品字段和产品列表，不再预加载 `/api/price/page`；进入 `/products/prices` 后才加载价格表字段、列表与产品 options。独立 Chrome CDP Network 抓包确认价格表切换实际发出 `/api/metadata/price/fields`、`/api/price/page`、`/api/product/list/option`。本批顺带消除了 `ProductsView.vue` 模板内 `Record<string, unknown>` 泛型断言造成的 Prettier Vue parser 阻断，该文件现已可正常格式化。
+- 用户将相关 NavigationModule 全部开启后重新执行专项 Browser Smoke，`pnpm smoke:ui001-pc-top-menu` **40/40 PASS**：五组 Header Top Menu、一级 Sidebar 稳定态显示/高亮、子路由切换后高亮保持、产品 Card 内模块 Tabs 清理、合同 Sidebar 去 SubMenu 全绿。最终 root `pnpm typecheck` PASS，Web production build PASS，root lint **0 error / 8 个既有 warning**，`git diff --check` PASS。
+- `UI-001 T11` 状态为 **`VERIFIED`**。

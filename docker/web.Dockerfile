@@ -14,16 +14,20 @@ WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/web/package.json apps/web/package.json
+COPY apps/mobile/package.json apps/mobile/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/frontend-shared/package.json packages/frontend-shared/package.json
 
-# Web 只需要自身及 workspace 依赖（shared）。不要安装 API/Prisma 依赖，
+# PC/Mobile 只需要前端自身及 workspace 依赖。不要安装 API/Prisma 依赖，
 # 可明显降低 CI 下载量与多架构构建缓存体积。
-RUN pnpm install --frozen-lockfile --filter @micromatrix/web...
+RUN pnpm install --frozen-lockfile --filter @micromatrix/web... --filter @micromatrix/mobile...
 
 COPY packages/shared packages/shared
+COPY packages/frontend-shared packages/frontend-shared
 COPY apps/web apps/web
+COPY apps/mobile apps/mobile
 
-RUN pnpm --filter @micromatrix/web build
+RUN pnpm --filter @micromatrix/web build && pnpm --filter @micromatrix/mobile build
 
 FROM nginx:1.29-alpine AS runtime
 
@@ -31,6 +35,7 @@ ENV API_UPSTREAM=http://api:3000
 
 COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /workspace/apps/web/dist /usr/share/nginx/html
+COPY --from=builder /workspace/apps/mobile/dist /usr/share/nginx/html/mobile
 
 EXPOSE 80
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FieldVO, ProductPriceItemVO, ProductPriceVO, ProductVO } from '@micromatrix/shared'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import draggable from 'vuedraggable'
 import { productApi, productPriceApi } from '@/api/deal'
 import { extractErrorMessage } from '@/api/http'
@@ -8,6 +9,8 @@ import { metadataApi } from '@/api/metadata'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmImportDialog from '@/components/CrmImportDialog.vue'
+import CrmSearchInput from '@/components/CrmSearchInput.vue'
+import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import ExportTaskButton from '@/components/ExportTaskButton.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -18,8 +21,11 @@ import { useAuthStore } from '@/stores/auth'
 type TabKey = 'product' | 'price'
 
 const auth = useAuthStore()
+const route = useRoute()
 const fieldRefs = useFieldRefs()
-const activeTab = ref<TabKey>('product')
+const activeTab = computed<TabKey>(() => (route.path === '/products/prices' ? 'price' : 'product'))
+const productInitialized = ref(false)
+const priceInitialized = ref(false)
 const productFields = ref<FieldVO[]>([])
 const priceFields = ref<FieldVO[]>([])
 const productOptions = ref<Array<{ id: string; name: string }>>([])
@@ -27,7 +33,12 @@ const productOptions = ref<Array<{ id: string; name: string }>>([])
 const productItems = ref<ProductVO[]>([])
 const productTotal = ref(0)
 const productLoading = ref(false)
-const productQuery = reactive<{ current: number; pageSize: number; keyword: string; status: '' | '1' | '2' }>({
+const productQuery = reactive<{
+  current: number
+  pageSize: number
+  keyword: string
+  status: '' | '1' | '2'
+}>({
   current: 1,
   pageSize: 10,
   keyword: '',
@@ -38,7 +49,12 @@ const selectedProductIds = ref<string[]>([])
 const priceItems = ref<ProductPriceVO[]>([])
 const priceTotal = ref(0)
 const priceLoading = ref(false)
-const priceQuery = reactive<{ current: number; pageSize: number; keyword: string; status: '' | '1' | '2' }>({
+const priceQuery = reactive<{
+  current: number
+  pageSize: number
+  keyword: string
+  status: '' | '1' | '2'
+}>({
   current: 1,
   pageSize: 10,
   keyword: '',
@@ -85,11 +101,21 @@ const sortVisible = ref(false)
 const sortKind = ref<TabKey>('product')
 const sortRows = ref<Array<{ id: string; name: string }>>([])
 
-const productColumns = computed(() => productFields.value.filter((field) => field.showInList && !field.hidden))
-const priceColumns = computed(() => priceFields.value.filter((field) => field.showInList && !field.hidden))
-const productFormFields = computed(() => productFields.value.filter((field) => !field.hidden && field.type !== 'formula'))
-const priceFormFields = computed(() => priceFields.value.filter((field) => !field.hidden && field.type !== 'formula'))
-const currentExportFields = computed(() => (exportKind.value === 'product' ? productFields.value : priceFields.value))
+const productColumns = computed(() =>
+  productFields.value.filter((field) => field.showInList && !field.hidden),
+)
+const priceColumns = computed(() =>
+  priceFields.value.filter((field) => field.showInList && !field.hidden),
+)
+const productFormFields = computed(() =>
+  productFields.value.filter((field) => !field.hidden && field.type !== 'formula'),
+)
+const priceFormFields = computed(() =>
+  priceFields.value.filter((field) => !field.hidden && field.type !== 'formula'),
+)
+const currentExportFields = computed(() =>
+  exportKind.value === 'product' ? productFields.value : priceFields.value,
+)
 const currentExportDisplayFields = computed(() => {
   if (exportKind.value !== 'price') return []
   const order = ['product', 'priceProductSku', 'amount', 'priceProductTax']
@@ -204,7 +230,12 @@ async function saveProduct() {
 }
 
 async function removeProduct(row: ProductVO) {
-  if (!(await ElMessageBox.confirm(`确定删除产品「${row.name}」吗？`, '删除确认', { type: 'warning' }).catch(() => false))) return
+  if (
+    !(await ElMessageBox.confirm(`确定删除产品「${row.name}」吗？`, '删除确认', {
+      type: 'warning',
+    }).catch(() => false))
+  )
+    return
   try {
     await productApi.remove(row.id)
     ElMessage.success('产品已删除')
@@ -216,7 +247,14 @@ async function removeProduct(row: ProductVO) {
 
 async function batchDeleteProducts() {
   if (!selectedProductIds.value.length) return
-  if (!(await ElMessageBox.confirm(`确定删除选中的 ${selectedProductIds.value.length} 个产品吗？`, '批量删除', { type: 'warning' }).catch(() => false))) return
+  if (
+    !(await ElMessageBox.confirm(
+      `确定删除选中的 ${selectedProductIds.value.length} 个产品吗？`,
+      '批量删除',
+      { type: 'warning' },
+    ).catch(() => false))
+  )
+    return
   try {
     await productApi.batchDelete(selectedProductIds.value)
     selectedProductIds.value = []
@@ -295,7 +333,12 @@ async function copyPrice(row: ProductPriceVO) {
 }
 
 async function removePrice(row: ProductPriceVO) {
-  if (!(await ElMessageBox.confirm(`确定删除价格表「${row.name}」吗？`, '删除确认', { type: 'warning' }).catch(() => false))) return
+  if (
+    !(await ElMessageBox.confirm(`确定删除价格表「${row.name}」吗？`, '删除确认', {
+      type: 'warning',
+    }).catch(() => false))
+  )
+    return
   try {
     await productPriceApi.remove(row.id)
     ElMessage.success('价格表已删除')
@@ -425,186 +468,525 @@ function selectedIds(rows: Array<ProductVO | ProductPriceVO>) {
 }
 
 function productName(item: ProductPriceItemVO) {
-  return item.productName ?? productOptions.value.find((product) => product.id === item.productId)?.name ?? item.productId
+  return (
+    item.productName ??
+    productOptions.value.find((product) => product.id === item.productId)?.name ??
+    item.productId
+  )
 }
 
-onMounted(async () => {
+function formatProductDetailField(field: FieldVO) {
+  if (!productDetail.value) return '-'
+  return formatFieldValue(field, productDetail.value as unknown as Record<string, unknown>, {
+    memberMap: fieldRefs.memberMap.value,
+    deptMap: fieldRefs.deptMap.value,
+  })
+}
+
+function formatPriceDetailField(field: FieldVO) {
+  if (!priceDetail.value) return '-'
+  return formatFieldValue(field, priceDetail.value as unknown as Record<string, unknown>, {
+    memberMap: fieldRefs.memberMap.value,
+    deptMap: fieldRefs.deptMap.value,
+  })
+}
+
+async function ensureTabInitialized(tab: TabKey) {
   try {
-    const [{ data: pf }, { data: prf }] = await Promise.all([
-      metadataApi.fields('product'),
-      metadataApi.fields('price'),
-      fieldRefs.load(),
-    ])
-    productFields.value = pf
-    priceFields.value = prf
-    await Promise.all([loadProducts(), loadPrices(), reloadOptions()])
+    if (tab === 'product') {
+      if (productInitialized.value) return
+      const [{ data: fields }] = await Promise.all([
+        metadataApi.fields('product'),
+        fieldRefs.load(),
+      ])
+      productFields.value = fields
+      await loadProducts()
+      productInitialized.value = true
+      return
+    }
+
+    if (priceInitialized.value) return
+    const [{ data: fields }] = await Promise.all([metadataApi.fields('price'), fieldRefs.load()])
+    priceFields.value = fields
+    await Promise.all([loadPrices(), reloadOptions()])
+    priceInitialized.value = true
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
+}
+
+onMounted(() => {
+  void ensureTabInitialized(activeTab.value)
+})
+
+watch(activeTab, (tab) => {
+  void ensureTabInitialized(tab)
 })
 </script>
 
 <template>
   <el-card shadow="never" class="product-page-card">
-    <el-tabs v-model="activeTab" class="crm-tabs">
-      <el-tab-pane label="产品" name="product">
-        <div class="flex-between flex-wrap gap-3 mb-4">
-          <div class="flex flex-wrap gap-2">
-            <el-button v-if="auth.hasPerm('product:create')" type="primary" @click="openProductCreate">新建产品</el-button>
-            <el-button v-if="auth.hasPerm('product:import')" @click="productImportVisible = true">导入</el-button>
-            <el-button v-if="auth.hasPerm('product:export')" @click="openExport('product', 'all')">导出全部</el-button>
-            <el-button v-if="auth.hasPerm('product:update')" @click="openSort('product')">调整排序</el-button>
+    <template v-if="activeTab === 'product'">
+      <div class="flex-between flex-wrap gap-3 mb-4" data-testid="crm-table-primary-toolbar">
+        <div class="flex flex-wrap gap-2">
+          <el-button v-if="auth.hasPerm('product:create')" type="primary" @click="openProductCreate"
+            >新建产品</el-button
+          >
+          <el-button v-if="auth.hasPerm('product:import')" @click="productImportVisible = true"
+            >导入</el-button
+          >
+          <el-button v-if="auth.hasPerm('product:export')" @click="openExport('product', 'all')"
+            >导出全部</el-button
+          >
+          <el-button v-if="auth.hasPerm('product:update')" @click="openSort('product')"
+            >调整排序</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('product:update')"
+            :disabled="!selectedProductIds.length"
+            @click="productBatchEditVisible = true"
+            >批量编辑</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('product:delete')"
+            :disabled="!selectedProductIds.length"
+            type="danger"
+            plain
+            @click="batchDeleteProducts"
+            >批量删除</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('product:export')"
+            :disabled="!selectedProductIds.length"
+            @click="openExport('product', 'selected')"
+            >导出选中</el-button
+          >
+          <ExportTaskButton />
+        </div>
+        <div class="flex gap-2">
+          <el-select
+            v-model="productQuery.status"
+            clearable
+            placeholder="状态"
+            class="!w-28"
+            @change="((productQuery.current = 1), loadProducts())"
+          >
+            <el-option label="上架" value="1" />
+            <el-option label="下架" value="2" />
+          </el-select>
+          <CrmSearchInput
+            v-model="productQuery.keyword"
+            placeholder="搜索产品名称"
+            @search="((productQuery.current = 1), loadProducts())"
+          />
+          <CrmTableUtilityActions
+            :show-columns="false"
+            :refreshing="productLoading"
+            @refresh="loadProducts"
+          />
+        </div>
+      </div>
+
+      <el-table
+        v-loading="productLoading"
+        :data="productItems"
+        row-key="id"
+        @selection-change="(rows) => (selectedProductIds = selectedIds(rows))"
+      >
+        <el-table-column type="selection" width="44" />
+        <el-table-column
+          v-for="column in productColumns"
+          :key="column.key"
+          :label="column.label"
+          :min-width="column.listWidth ?? 140"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <el-button
+              v-if="column.key === 'name'"
+              link
+              type="primary"
+              @click="openDetail('product', row.id)"
+              >{{ row.name }}</el-button
+            >
+            <template v-else>{{
+              formatFieldValue(column, row, {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}</template>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="{ row }">
             <el-button
               v-if="auth.hasPerm('product:update')"
-              :disabled="!selectedProductIds.length"
-              @click="productBatchEditVisible = true"
-            >批量编辑</el-button>
+              link
+              type="primary"
+              @click="openProductEdit(row as ProductVO)"
+              >编辑</el-button
+            >
             <el-button
               v-if="auth.hasPerm('product:delete')"
-              :disabled="!selectedProductIds.length"
+              link
               type="danger"
-              plain
-              @click="batchDeleteProducts"
-            >批量删除</el-button>
+              @click="removeProduct(row as ProductVO)"
+              >删除</el-button
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="flex justify-end mt-4">
+        <el-pagination
+          v-model:current-page="productQuery.current"
+          v-model:page-size="productQuery.pageSize"
+          :total="productTotal"
+          layout="total, sizes, prev, pager, next"
+          @current-change="loadProducts"
+          @size-change="((productQuery.current = 1), loadProducts())"
+        />
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="flex-between flex-wrap gap-3 mb-4" data-testid="crm-table-primary-toolbar">
+        <div class="flex flex-wrap gap-2">
+          <el-button v-if="auth.hasPerm('price:add')" type="primary" @click="openPriceCreate"
+            >新建价格表</el-button
+          >
+          <el-button v-if="auth.hasPerm('price:import')" @click="priceImportVisible = true"
+            >导入</el-button
+          >
+          <el-button v-if="auth.hasPerm('price:export')" @click="openExport('price', 'all')"
+            >导出全部</el-button
+          >
+          <el-button v-if="auth.hasPerm('price:update')" @click="openSort('price')"
+            >调整排序</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('price:update')"
+            :disabled="!selectedPriceIds.length"
+            @click="priceBatchEditVisible = true"
+            >批量编辑</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('price:export')"
+            :disabled="!selectedPriceIds.length"
+            @click="openExport('price', 'selected')"
+            >导出选中</el-button
+          >
+          <ExportTaskButton />
+        </div>
+        <div class="flex gap-2">
+          <el-select
+            v-model="priceQuery.status"
+            clearable
+            placeholder="状态"
+            class="!w-28"
+            @change="((priceQuery.current = 1), loadPrices())"
+          >
+            <el-option label="启用" value="1" />
+            <el-option label="禁用" value="2" />
+          </el-select>
+          <CrmSearchInput
+            v-model="priceQuery.keyword"
+            placeholder="搜索价格表名称"
+            @search="((priceQuery.current = 1), loadPrices())"
+          />
+          <CrmTableUtilityActions
+            :show-columns="false"
+            :refreshing="priceLoading"
+            @refresh="loadPrices"
+          />
+        </div>
+      </div>
+
+      <el-table
+        v-loading="priceLoading"
+        :data="priceItems"
+        row-key="id"
+        @selection-change="(rows) => (selectedPriceIds = selectedIds(rows))"
+      >
+        <el-table-column type="selection" width="44" />
+        <el-table-column
+          v-for="column in priceColumns"
+          :key="column.key"
+          :label="column.label"
+          :min-width="column.listWidth ?? 140"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
             <el-button
-              v-if="auth.hasPerm('product:export')"
-              :disabled="!selectedProductIds.length"
-              @click="openExport('product', 'selected')"
-            >导出选中</el-button>
-            <ExportTaskButton />
-          </div>
-          <div class="flex gap-2">
-            <el-select v-model="productQuery.status" clearable placeholder="状态" class="!w-28" @change="((productQuery.current = 1), loadProducts())">
-              <el-option label="上架" value="1" />
-              <el-option label="下架" value="2" />
-            </el-select>
-            <el-input v-model="productQuery.keyword" clearable placeholder="搜索产品名称" class="!w-60" @keyup.enter="((productQuery.current = 1), loadProducts())" @clear="((productQuery.current = 1), loadProducts())" />
-          </div>
-        </div>
-
-        <el-table v-loading="productLoading" :data="productItems" row-key="id" @selection-change="(rows) => (selectedProductIds = selectedIds(rows))">
-          <el-table-column type="selection" width="44" />
-          <el-table-column v-for="column in productColumns" :key="column.key" :label="column.label" :min-width="column.listWidth ?? 140" show-overflow-tooltip>
-            <template #default="{ row }">
-              <el-button v-if="column.key === 'name'" link type="primary" @click="openDetail('product', row.id)">{{ row.name }}</el-button>
-              <template v-else>{{ formatFieldValue(column, row, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}</template>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="130" fixed="right">
-            <template #default="{ row }">
-              <el-button v-if="auth.hasPerm('product:update')" link type="primary" @click="openProductEdit(row as ProductVO)">编辑</el-button>
-              <el-button v-if="auth.hasPerm('product:delete')" link type="danger" @click="removeProduct(row as ProductVO)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div class="flex justify-end mt-4">
-          <el-pagination v-model:current-page="productQuery.current" v-model:page-size="productQuery.pageSize" :total="productTotal" layout="total, sizes, prev, pager, next" @current-change="loadProducts" @size-change="((productQuery.current = 1), loadProducts())" />
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="价格表" name="price">
-        <div class="flex-between flex-wrap gap-3 mb-4">
-          <div class="flex flex-wrap gap-2">
-            <el-button v-if="auth.hasPerm('price:add')" type="primary" @click="openPriceCreate">新建价格表</el-button>
-            <el-button v-if="auth.hasPerm('price:import')" @click="priceImportVisible = true">导入</el-button>
-            <el-button v-if="auth.hasPerm('price:export')" @click="openExport('price', 'all')">导出全部</el-button>
-            <el-button v-if="auth.hasPerm('price:update')" @click="openSort('price')">调整排序</el-button>
-            <el-button v-if="auth.hasPerm('price:update')" :disabled="!selectedPriceIds.length" @click="priceBatchEditVisible = true">批量编辑</el-button>
-            <el-button v-if="auth.hasPerm('price:export')" :disabled="!selectedPriceIds.length" @click="openExport('price', 'selected')">导出选中</el-button>
-            <ExportTaskButton />
-          </div>
-          <div class="flex gap-2">
-            <el-select v-model="priceQuery.status" clearable placeholder="状态" class="!w-28" @change="((priceQuery.current = 1), loadPrices())">
-              <el-option label="启用" value="1" />
-              <el-option label="禁用" value="2" />
-            </el-select>
-            <el-input v-model="priceQuery.keyword" clearable placeholder="搜索价格表名称" class="!w-60" @keyup.enter="((priceQuery.current = 1), loadPrices())" @clear="((priceQuery.current = 1), loadPrices())" />
-          </div>
-        </div>
-
-        <el-table v-loading="priceLoading" :data="priceItems" row-key="id" @selection-change="(rows) => (selectedPriceIds = selectedIds(rows))">
-          <el-table-column type="selection" width="44" />
-          <el-table-column v-for="column in priceColumns" :key="column.key" :label="column.label" :min-width="column.listWidth ?? 140" show-overflow-tooltip>
-            <template #default="{ row }">
-              <el-button v-if="column.key === 'name'" link type="primary" @click="openDetail('price', row.id)">{{ row.name }}</el-button>
-              <template v-else>{{ formatFieldValue(column, row, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}</template>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="190" fixed="right">
-            <template #default="{ row }">
-              <el-button v-if="auth.hasPerm('price:update')" link type="primary" @click="openPriceEdit(row as ProductPriceVO)">编辑</el-button>
-              <el-button v-if="auth.hasPerm('price:add')" link @click="copyPrice(row as ProductPriceVO)">复制</el-button>
-              <el-button v-if="auth.hasPerm('price:delete')" link type="danger" @click="removePrice(row as ProductPriceVO)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div class="flex justify-end mt-4">
-          <el-pagination v-model:current-page="priceQuery.current" v-model:page-size="priceQuery.pageSize" :total="priceTotal" layout="total, sizes, prev, pager, next" @current-change="loadPrices" @size-change="((priceQuery.current = 1), loadPrices())" />
-        </div>
-      </el-tab-pane>
-    </el-tabs>
+              v-if="column.key === 'name'"
+              link
+              type="primary"
+              @click="openDetail('price', row.id)"
+              >{{ row.name }}</el-button
+            >
+            <template v-else>{{
+              formatFieldValue(column, row, {
+                memberMap: fieldRefs.memberMap.value,
+                deptMap: fieldRefs.deptMap.value,
+              })
+            }}</template>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="190" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="auth.hasPerm('price:update')"
+              link
+              type="primary"
+              @click="openPriceEdit(row as ProductPriceVO)"
+              >编辑</el-button
+            >
+            <el-button
+              v-if="auth.hasPerm('price:add')"
+              link
+              @click="copyPrice(row as ProductPriceVO)"
+              >复制</el-button
+            >
+            <el-button
+              v-if="auth.hasPerm('price:delete')"
+              link
+              type="danger"
+              @click="removePrice(row as ProductPriceVO)"
+              >删除</el-button
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="flex justify-end mt-4">
+        <el-pagination
+          v-model:current-page="priceQuery.current"
+          v-model:page-size="priceQuery.pageSize"
+          :total="priceTotal"
+          layout="total, sizes, prev, pager, next"
+          @current-change="loadPrices"
+          @size-change="((priceQuery.current = 1), loadPrices())"
+        />
+      </div>
+    </template>
   </el-card>
 
-  <el-dialog v-model="productDialog" :title="productEditingId ? '编辑产品' : '新建产品'" width="680px" destroy-on-close>
-    <DynamicForm ref="productFormRef" v-model="productForm" :fields="productFormFields" :members="fieldRefs.members.value" :dept-tree="fieldRefs.deptTree.value" />
-    <template #footer><el-button @click="productDialog = false">取消</el-button><el-button type="primary" :loading="productSaving" @click="saveProduct">保存</el-button></template>
+  <el-dialog
+    v-model="productDialog"
+    :title="productEditingId ? '编辑产品' : '新建产品'"
+    width="680px"
+    destroy-on-close
+  >
+    <DynamicForm
+      ref="productFormRef"
+      v-model="productForm"
+      :fields="productFormFields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+    />
+    <template #footer
+      ><el-button @click="productDialog = false">取消</el-button
+      ><el-button type="primary" :loading="productSaving" @click="saveProduct"
+        >保存</el-button
+      ></template
+    >
   </el-dialog>
 
-  <el-dialog v-model="priceDialog" :title="priceEditingId ? '编辑价格表' : '新建价格表'" width="820px" destroy-on-close>
-    <DynamicForm ref="priceFormRef" v-model="priceForm" :fields="priceFormFields" :members="fieldRefs.members.value" :dept-tree="fieldRefs.deptTree.value" />
-    <div class="flex-between mt-4 mb-2"><span class="font-medium">产品信息</span><el-button type="primary" plain size="small" @click="addPriceProduct">添加产品</el-button></div>
+  <el-dialog
+    v-model="priceDialog"
+    :title="priceEditingId ? '编辑价格表' : '新建价格表'"
+    width="820px"
+    destroy-on-close
+  >
+    <DynamicForm
+      ref="priceFormRef"
+      v-model="priceForm"
+      :fields="priceFormFields"
+      :members="fieldRefs.members.value"
+      :dept-tree="fieldRefs.deptTree.value"
+    />
+    <div class="flex-between mt-4 mb-2">
+      <span class="font-medium">产品信息</span
+      ><el-button type="primary" plain size="small" @click="addPriceProduct">添加产品</el-button>
+    </div>
     <el-table :data="priceProducts" border>
       <el-table-column label="产品" min-width="240">
-        <template #default="{ row }"><el-select v-model="row.product" filterable class="!w-full"><el-option v-for="item in productOptions" :key="item.id" :label="item.name" :value="item.id" /></el-select></template>
+        <template #default="{ row }"
+          ><el-select v-model="row.product" filterable class="!w-full"
+            ><el-option
+              v-for="item in productOptions"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id" /></el-select
+        ></template>
       </el-table-column>
-      <el-table-column label="产品定价" width="180"><template #default="{ row }"><el-input-number v-model="row.amount" :min="0" :precision="2" :controls="false" class="!w-full" /></template></el-table-column>
-      <el-table-column label="产品SKU" min-width="160"><template #default="{ row }"><el-input v-model="row.values.priceProductSku" /></template></el-table-column>
-      <el-table-column label="税点" width="150"><template #default="{ row }"><el-input-number v-model="row.values.priceProductTax" :min="0" :precision="2" :controls="false" class="!w-full" /></template></el-table-column>
-      <el-table-column label="操作" width="90"><template #default="{ $index }"><el-button link type="danger" @click="priceProducts.splice($index, 1)">删除</el-button></template></el-table-column>
+      <el-table-column label="产品定价" width="180"
+        ><template #default="{ row }"
+          ><el-input-number
+            v-model="row.amount"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            class="!w-full" /></template
+      ></el-table-column>
+      <el-table-column label="产品SKU" min-width="160"
+        ><template #default="{ row }"><el-input v-model="row.values.priceProductSku" /></template
+      ></el-table-column>
+      <el-table-column label="税点" width="150"
+        ><template #default="{ row }"
+          ><el-input-number
+            v-model="row.values.priceProductTax"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            class="!w-full" /></template
+      ></el-table-column>
+      <el-table-column label="操作" width="90"
+        ><template #default="{ $index }"
+          ><el-button link type="danger" @click="priceProducts.splice($index, 1)"
+            >删除</el-button
+          ></template
+        ></el-table-column
+      >
     </el-table>
-    <template #footer><el-button @click="priceDialog = false">取消</el-button><el-button type="primary" :loading="priceSaving" @click="savePrice">保存</el-button></template>
+    <template #footer
+      ><el-button @click="priceDialog = false">取消</el-button
+      ><el-button type="primary" :loading="priceSaving" @click="savePrice"
+        >保存</el-button
+      ></template
+    >
   </el-dialog>
 
-  <el-drawer v-model="detailVisible" :title="detailKind === 'product' ? '产品详情' : '价格表详情'" size="720px">
+  <el-drawer
+    v-model="detailVisible"
+    :title="detailKind === 'product' ? '产品详情' : '价格表详情'"
+    size="720px"
+  >
     <template v-if="detailKind === 'product' && productDetail">
       <el-descriptions :column="2" border>
-        <el-descriptions-item v-for="field in productFormFields" :key="field.id" :label="field.label">
+        <el-descriptions-item
+          v-for="field in productFormFields"
+          :key="field.id"
+          :label="field.label"
+        >
           <PictureFieldInput
             v-if="field.type === 'picture'"
             :model-value="(productDetail.customData[field.key] as string[] | undefined) ?? []"
             readonly
           />
-          <template v-else>{{ formatFieldValue(field, productDetail as unknown as Record<string, unknown>, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}</template>
+          <span v-else>{{ formatProductDetailField(field) }}</span>
         </el-descriptions-item>
       </el-descriptions>
     </template>
     <template v-if="detailKind === 'price' && priceDetail">
       <el-descriptions :column="2" border>
-        <el-descriptions-item v-for="field in priceFormFields" :key="field.id" :label="field.label">{{ formatFieldValue(field, priceDetail as unknown as Record<string, unknown>, { memberMap: fieldRefs.memberMap.value, deptMap: fieldRefs.deptMap.value }) }}</el-descriptions-item>
+        <el-descriptions-item
+          v-for="field in priceFormFields"
+          :key="field.id"
+          :label="field.label"
+          >{{ formatPriceDetailField(field) }}</el-descriptions-item
+        >
       </el-descriptions>
       <div class="font-medium mt-5 mb-2">产品信息</div>
-      <el-table :data="priceDetail.products" border><el-table-column label="产品" min-width="220"><template #default="{ row }">{{ productName(row as ProductPriceItemVO) }}</template></el-table-column><el-table-column prop="amount" label="产品定价" width="160" /><el-table-column label="产品SKU" min-width="150"><template #default="{ row }">{{ (row as ProductPriceItemVO).values.priceProductSku ?? '-' }}</template></el-table-column><el-table-column label="税点" width="120"><template #default="{ row }">{{ (row as ProductPriceItemVO).values.priceProductTax ?? '-' }}</template></el-table-column></el-table>
+      <el-table :data="priceDetail.products" border
+        ><el-table-column label="产品" min-width="220"
+          ><template #default="{ row }">{{
+            productName(row as ProductPriceItemVO)
+          }}</template></el-table-column
+        ><el-table-column prop="amount" label="产品定价" width="160" /><el-table-column
+          label="产品SKU"
+          min-width="150"
+          ><template #default="{ row }">{{
+            (row as ProductPriceItemVO).values.priceProductSku ?? '-'
+          }}</template></el-table-column
+        ><el-table-column label="税点" width="120"
+          ><template #default="{ row }">{{
+            (row as ProductPriceItemVO).values.priceProductTax ?? '-'
+          }}</template></el-table-column
+        ></el-table
+      >
     </template>
   </el-drawer>
 
-  <BatchFieldEditDialog v-model="productBatchEditVisible" title="批量编辑产品" :fields="productFields" :members="fieldRefs.members.value" :dept-tree="fieldRefs.deptTree.value" :selected-count="selectedProductIds.length" @confirm="submitProductBatch" />
-  <BatchFieldEditDialog v-model="priceBatchEditVisible" title="批量编辑价格表" :fields="priceFields.filter((field) => !field.hidden)" :members="fieldRefs.members.value" :dept-tree="fieldRefs.deptTree.value" :selected-count="selectedPriceIds.length" @confirm="submitPriceBatch" />
+  <BatchFieldEditDialog
+    v-model="productBatchEditVisible"
+    title="批量编辑产品"
+    :fields="productFields"
+    :members="fieldRefs.members.value"
+    :dept-tree="fieldRefs.deptTree.value"
+    :selected-count="selectedProductIds.length"
+    @confirm="submitProductBatch"
+  />
+  <BatchFieldEditDialog
+    v-model="priceBatchEditVisible"
+    title="批量编辑价格表"
+    :fields="priceFields.filter((field) => !field.hidden)"
+    :members="fieldRefs.members.value"
+    :dept-tree="fieldRefs.deptTree.value"
+    :selected-count="selectedPriceIds.length"
+    @confirm="submitPriceBatch"
+  />
 
-  <CrmImportDialog v-model="productImportVisible" module-label="产品" :download-template="productApi.downloadTemplate" :precheck="productApi.precheckImport" :execute="productApi.importXlsx" @success="() => { loadProducts(); reloadOptions() }" />
-  <CrmImportDialog v-model="priceImportVisible" module-label="价格表" :download-template="productPriceApi.downloadTemplate" :precheck="productPriceApi.precheckImport" :execute="productPriceApi.importXlsx" @success="loadPrices" />
-  <CrmExportDrawer v-model="exportVisible" :module-label="exportKind === 'product' ? '产品' : '价格表'" :cache-key="`w361-${exportKind}`" :fields="currentExportFields" :display-fields="currentExportDisplayFields" :mode="exportMode" :selected-count="currentSelectedCount" :loading="exportLoading" @confirm="submitExport" />
+  <CrmImportDialog
+    v-model="productImportVisible"
+    module-label="产品"
+    :download-template="productApi.downloadTemplate"
+    :precheck="productApi.precheckImport"
+    :execute="productApi.importXlsx"
+    @success="
+      () => {
+        loadProducts()
+        reloadOptions()
+      }
+    "
+  />
+  <CrmImportDialog
+    v-model="priceImportVisible"
+    module-label="价格表"
+    :download-template="productPriceApi.downloadTemplate"
+    :precheck="productPriceApi.precheckImport"
+    :execute="productPriceApi.importXlsx"
+    @success="loadPrices"
+  />
+  <CrmExportDrawer
+    v-model="exportVisible"
+    :module-label="exportKind === 'product' ? '产品' : '价格表'"
+    :cache-key="`w361-${exportKind}`"
+    :fields="currentExportFields"
+    :display-fields="currentExportDisplayFields"
+    :mode="exportMode"
+    :selected-count="currentSelectedCount"
+    :loading="exportLoading"
+    @confirm="submitExport"
+  />
 
-  <el-drawer v-model="sortVisible" :title="sortKind === 'product' ? '产品排序' : '价格表排序'" size="480px">
+  <el-drawer
+    v-model="sortVisible"
+    :title="sortKind === 'product' ? '产品排序' : '价格表排序'"
+    size="480px"
+  >
     <div class="text-sm text-[var(--el-text-color-secondary)] mb-3">拖动后立即保存排序。</div>
     <draggable v-model="sortRows" item-key="id" handle=".sort-handle" @end="handleSortEnd">
-      <template #item="{ element }"><div class="sort-row"><span class="sort-handle">⋮⋮</span><span>{{ element.name }}</span></div></template>
+      <template #item="{ element }"
+        ><div class="sort-row">
+          <span class="sort-handle">⋮⋮</span><span>{{ element.name }}</span>
+        </div></template
+      >
     </draggable>
   </el-drawer>
 </template>
 
 <style scoped>
-.product-page-card :deep(.el-card__body) { padding: 0 16px 16px; }
-.crm-tabs :deep(.el-tabs__header) { margin-bottom: 16px; }
-.sort-row { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: var(--el-bg-color); }
-.sort-handle { cursor: move; color: var(--el-text-color-secondary); }
+.sort-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: var(--el-bg-color);
+}
+.sort-handle {
+  cursor: move;
+  color: var(--el-text-color-secondary);
+}
 </style>

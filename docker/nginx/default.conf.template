@@ -22,6 +22,15 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    location = /mobile {
+        return 302 /mobile/;
+    }
+
+    # Mobile 是独立 SPA，不能回退到 PC index.html。
+    location /mobile/ {
+        try_files $uri $uri/ /mobile/index.html;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

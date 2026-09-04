@@ -1,0 +1,100 @@
+:root {
+  --el-color-primary: var(--primary-8);
+  --el-color-primary-light-3: var(--primary-2);
+  --el-color-primary-light-5: var(--primary-4);
+  --el-color-primary-light-7: var(--primary-5);
+  --el-color-primary-light-8: var(--primary-6);
+  --el-color-primary-light-9: var(--primary-7);
+  --el-color-primary-dark-2: var(--primary-0);
+  --el-color-success: var(--success-green);
+  --el-color-warning: var(--warning-yellow);
+  --el-color-danger: var(--error-red);
+  --el-color-error: var(--error-red);
+  --el-color-info: var(--info-blue);
+  --el-border-radius-base: var(--border-radius-small);
+  --el-border-radius-small: var(--border-radius-mini);
+  --el-border-radius-round: 20px;
+  --el-component-size-small: 24px;
+  --el-component-size: 32px;
+  --el-component-size-large: 40px;
+}
+
+html:not(.dark) {
+  --el-bg-color: var(--text-n10);
+  --el-bg-color-page: var(--text-n9);
+  --el-bg-color-overlay: var(--text-n10);
+  --el-text-color-primary: var(--text-n1);
+  --el-text-color-regular: var(--text-n2);
+  --el-text-color-secondary: var(--text-n4);
+  --el-text-color-placeholder: var(--text-n5);
+  --el-text-color-disabled: var(--text-n6);
+  --el-border-color: var(--text-n7);
+  --el-border-color-light: var(--text-n8);
+  --el-border-color-lighter: var(--text-n8);
+  --el-border-color-extra-light: var(--text-n9);
+  --el-fill-color: var(--text-n8);
+  --el-fill-color-light: var(--text-n9);
+  --el-fill-color-lighter: var(--primary-7);
+  --el-fill-color-extra-light: var(--text-n9);
+  --el-fill-color-blank: var(--text-n10);
+}
+
+.el-card {
+  --el-card-border-radius: var(--border-radius-medium);
+  --el-card-border-color: var(--el-border-color-light);
+  border-radius: var(--border-radius-medium);
+}
+
+.el-card__header {
+  padding: 16px 24px;
+}
+
+.el-card__body {
+  padding: 24px;
+}
+
+.el-table {
+  --el-table-header-bg-color: var(--el-fill-color-light);
+  --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+  --el-table-border-color: var(--el-border-color-light);
+  --el-table-header-text-color: var(--el-text-color-regular);
+  --el-table-text-color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 500;
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.el-drawer__title {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--el-text-color-primary);
+}
+
+.el-drawer__body {
+  padding: 24px;
+}
+
+.el-dialog {
+  border-radius: var(--border-radius-medium);
+}
+
+.el-dialog__header {
+  padding: 16px 24px;
+}
+
+.el-dialog__body {
+  padding: 8px 24px 24px;
+}
+
+.el-dialog__footer {
+  padding: 0 24px 24px;
+}

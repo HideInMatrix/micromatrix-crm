@@ -39,7 +39,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex items-center gap-4" data-testid="top-navigation-actions">
+  <div class="flex items-center gap-2" data-testid="top-navigation-actions">
     <template v-for="action in actions" :key="action.key">
       <el-tooltip v-if="action.key === 'task'" content="审批待办" placement="bottom">
         <el-badge
@@ -50,7 +50,13 @@ onMounted(() => {
           data-top-navigation-key="task"
           @click="router.push('/approvals')"
         >
-          <ListTodo :size="20" :stroke-width="1.8" aria-hidden="true" />
+          <button
+            type="button"
+            class="h-8 w-8 flex-center border-0 rounded-[var(--border-radius-small)] bg-transparent p-2 text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[var(--el-fill-color-light)]"
+            aria-label="审批待办"
+          >
+            <ListTodo :size="16" :stroke-width="1.8" aria-hidden="true" />
+          </button>
         </el-badge>
       </el-tooltip>
 
@@ -65,12 +71,12 @@ onMounted(() => {
       <el-tooltip v-else-if="action.key === 'event'" content="跟进计划" placement="bottom">
         <button
           type="button"
-          class="border-0 bg-transparent p-0 leading-none cursor-pointer"
+          class="h-8 w-8 flex-center border-0 rounded-[var(--border-radius-small)] bg-transparent p-2 leading-none text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[var(--el-fill-color-light)]"
           data-top-navigation-key="event"
           aria-label="跟进计划"
           @click="router.push('/follow-plans')"
         >
-          <CalendarClock :size="20" :stroke-width="1.8" aria-hidden="true" />
+          <CalendarClock :size="16" :stroke-width="1.8" aria-hidden="true" />
         </button>
       </el-tooltip>
 
@@ -83,11 +89,11 @@ onMounted(() => {
         <template #reference>
           <button
             type="button"
-            class="border-0 bg-transparent p-0 text-lg leading-none cursor-pointer"
+            class="h-8 w-8 flex-center border-0 rounded-[var(--border-radius-small)] bg-transparent p-2 leading-none text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[var(--el-fill-color-light)]"
             data-top-navigation-key="about"
             aria-label="关于"
           >
-            <Info :size="20" :stroke-width="1.8" aria-hidden="true" />
+            <Info :size="16" :stroke-width="1.8" aria-hidden="true" />
           </button>
         </template>
         <div class="font-medium">微矩阵 CRM</div>
@@ -99,12 +105,12 @@ onMounted(() => {
       <el-tooltip v-else-if="action.key === 'help'" content="API 文档" placement="bottom">
         <button
           type="button"
-          class="border-0 bg-transparent p-0 text-lg leading-none cursor-pointer"
+          class="h-8 w-8 flex-center border-0 rounded-[var(--border-radius-small)] bg-transparent p-2 leading-none text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[var(--el-fill-color-light)]"
           data-top-navigation-key="help"
           aria-label="帮助中心"
           @click="openHelp"
         >
-          <CircleHelp :size="20" :stroke-width="1.8" aria-hidden="true" />
+          <CircleHelp :size="16" :stroke-width="1.8" aria-hidden="true" />
         </button>
       </el-tooltip>
     </template>

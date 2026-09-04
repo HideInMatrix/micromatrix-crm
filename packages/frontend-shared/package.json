@@ -1,0 +1,24 @@
+{
+  "name": "@micromatrix/frontend-shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api/*": "./src/api/*.ts",
+    "./device": "./src/device.ts",
+    "./http": "./src/http.ts",
+    "./styles/tokens.css": "./src/styles/tokens.css",
+    "./token-storage": "./src/token-storage.ts"
+  },
+  "dependencies": {
+    "@micromatrix/shared": "workspace:*",
+    "axios": "^1.19.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

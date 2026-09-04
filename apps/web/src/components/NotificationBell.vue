@@ -65,7 +65,13 @@ onBeforeUnmount(() => {
   <el-popover placement="bottom-end" width="340" trigger="click">
     <template #reference>
       <el-badge :value="unread" :hidden="unread === 0" :max="99" class="cursor-pointer">
-        <Bell :size="20" :stroke-width="1.8" aria-hidden="true" />
+        <button
+          type="button"
+          class="h-8 w-8 flex-center border-0 rounded-[var(--border-radius-small)] bg-transparent p-2 text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[var(--el-fill-color-light)]"
+          aria-label="消息中心"
+        >
+          <Bell :size="16" :stroke-width="1.8" aria-hidden="true" />
+        </button>
       </el-badge>
     </template>
 

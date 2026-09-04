@@ -1,4 +1,4 @@
-const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5174'
+const webBase = process.env.WEB_BASE ?? 'http://127.0.0.1:5173'
 const apiBase = process.env.API_BASE ?? 'http://127.0.0.1:3000/api'
 const debugBase = process.env.CHROME_DEBUG_URL ?? 'http://127.0.0.1:9223'
 
@@ -82,10 +82,16 @@ class CdpClient {
         this.exceptions.push(message.params.exceptionDetails?.text ?? 'Runtime exception')
       }
       if (message.method === 'Network.requestWillBeSent') {
-        this.requests.push({ method: message.params.request.method, url: message.params.request.url })
+        this.requests.push({
+          method: message.params.request.method,
+          url: message.params.request.url,
+        })
       }
       if (message.method === 'Network.responseReceived') {
-        this.responses.push({ status: message.params.response.status, url: message.params.response.url })
+        this.responses.push({
+          status: message.params.response.status,
+          url: message.params.response.url,
+        })
       }
     })
     await Promise.all([
@@ -263,7 +269,11 @@ async function main() {
     })()`)
     await cdp.waitFor(`location.pathname === '/dashboard'`, 10000, '登录成功')
     await cdp.navigate('/system/modules')
-    await cdp.waitFor(`document.querySelector('[data-module-config-key="customer"]') !== null`, 10000, '客户模块设置卡片')
+    await cdp.waitFor(
+      `document.querySelector('[data-module-config-key="customer"]') !== null`,
+      10000,
+      '客户模块设置卡片',
+    )
 
     check(
       '客户卡片公海入口和更多菜单可点击',
@@ -303,7 +313,11 @@ async function main() {
     check('新增客户公海管理员已写入表单', (await selectedCountForLabel(cdp, '公海管理员')) > 0)
     check('新增客户公海成员已写入表单', (await selectedCountForLabel(cdp, '成员')) > 0)
     cdp.resetNetwork()
-    const saveClicked = await clickTextIn(cdp, '[data-testid="customer-pool-config-drawer"]', '确定')
+    const saveClicked = await clickTextIn(
+      cdp,
+      '[data-testid="customer-pool-config-drawer"]',
+      '确定',
+    )
     check('新增客户公海确定按钮可触发', saveClicked)
     const requestStartedAt = Date.now()
     while (
