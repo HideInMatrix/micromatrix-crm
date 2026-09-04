@@ -1313,3 +1313,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - GitHub Actions 记录证明 `v0.0.9` 与 `v0.0.10` 两次 Release Docker workflow 都在 `Verify source / Lint` 阶段失败，后续 Docker runtime、镜像构建与 GHCR publish 全部被跳过；`v0.0.10` 的阻断错误来自 `apps/api/scripts/async001-export-worker-smoke.ts` 中 SQL 模板字符串的无效双引号转义。因此问题不是 worker command 写错，而是新 Compose 已引用 worker 入口、实际可拉取的 `latest` 却仍停留在 ASYNC-001 之前。
 - 发布契约补强为同一 API 镜像必须同时携带 `dist/main.js` 与 `dist/worker.js`；Docker build 直接断言两个入口存在，release Docker smoke 使用真实 PostgreSQL/Redis 环境启动 worker 并检查 ready 日志，禁止只验证 HTTP API 后发布。
 - 生产升级继续要求先确认目标 tag 的 Release Docker workflow 已成功并且 GHCR 中真实存在对应镜像，再执行 `docker compose pull` 与 `up -d`；推荐 `APP_VERSION` 固定到明确 tag。出现 worker 入口缺失时禁止通过修改 Compose command 掩盖镜像版本漂移。
+
+---
+
+## 75. LOG-001 操作日志与运行日志治理（2026-09-04）
+
+- 生产网络现场确认仍为 `client -> web/Nginx -> api` 单层反向代理。API 新增受控 `TRUST_PROXY_HOPS`：本地默认关闭，生产 Compose 默认 `1`；Nest/Express 负责从可信 hop 计算 `request.ip` / `@Ip()`，业务代码不直接解析 forwarding header。密码登录、企微登录与 `OperationLog` 统一把 `::ffff:x.x.x.x` 规范化为 IPv4 文本，后续局域网访问不再把 Docker bridge 地址作为最终客户端地址。
+- `OperationLog` 生命周期冻结为默认 180 天，通过 `OPERATION_LOG_RETENTION_DAYS` 可调；每天 04:15 使用已有 `DistributedCoordinatorService` 的 DAILY slot 执行一次。清理按 `createdAt` 先取最多 1000 个主键再 `deleteMany`，默认单轮最多 20 批，避免历史积压形成无界大 DELETE；Redis unavailable 时继续沿用现有 PostgreSQL advisory fallback。
+- Prisma 增加 `operation_logs(createdAt)` 独立索引，避免跨租户 retention 扫描依赖 `(tenantId, createdAt)` 前缀。`20260904093000_operation_log_retention_index` 已在本地开发 PostgreSQL 实际执行，当前数据库基线为 **70 migrations**；没有 reset、truncate、历史 IP 回写或其它日志数据修改。
+- 根生产 `docker-compose.yml` 为 PostgreSQL、Redis、API、worker、web 统一增加 Docker `json-file` 轮转，默认 `20m × 5`；该限制针对各容器 stdout/stderr 文件，数据库业务数据和 volume 不受影响。一次性 migrate 容器不纳入长期日志轮转要求。
+- 本批明确不删除 `login_logs`，也不引入 Loki/ELK/Fluent Bit 等外部采集平台；登录日志生命周期如需治理必须后续独立评估合规与保留要求。
+- 新增 `common/http` 与 `modules/logs` 测试已纳入标准 API `test:rules` glob，避免后续 CI 只跑 Rules 时漏掉 LOG-001 回归。最终验收：LOG-001 专项 **8/8 PASS**、API Rules **179/179 PASS**、全仓 `pnpm typecheck` PASS、lint **0 error / 8 个既有 warning**、生产 Compose config PASS、`git diff --check` PASS。`LOG-001 L1～L6` 全部关闭，状态为 **`VERIFIED`**。

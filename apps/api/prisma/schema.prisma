@@ -2239,6 +2239,7 @@ model OperationLog {
   ip         String?
   createdAt  DateTime @default(now())
 
+  @@index([createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, module])
   @@map("operation_logs")

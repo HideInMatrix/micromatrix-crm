@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { Public } from '../../common/decorators/public.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
+import { normalizeClientIp } from '../../common/http/client-ip'
 import {
   StartWeComLoginDto,
   WeComDiscoveryQueryDto,
@@ -81,7 +82,7 @@ export class WeComSsoController {
     const browserNonce = this.readCookie(request.headers.cookie, QR_NONCE_COOKIE)
     response.clearCookie(QR_NONCE_COOKIE, { path: OAUTH_COOKIE_PATH })
     return this.service.callback(dto, browserNonce, {
-      ip,
+      ip: normalizeClientIp(ip),
       userAgent: request.headers['user-agent'],
     })
   }
@@ -98,7 +99,7 @@ export class WeComSsoController {
     const browserNonce = this.readCookie(request.headers.cookie, WORKBENCH_NONCE_COOKIE)
     response.clearCookie(WORKBENCH_NONCE_COOKIE, { path: OAUTH_COOKIE_PATH })
     return this.service.callbackWorkbench(dto, browserNonce, {
-      ip,
+      ip: normalizeClientIp(ip),
       userAgent: request.headers['user-agent'],
     })
   }

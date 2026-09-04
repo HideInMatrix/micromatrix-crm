@@ -4,6 +4,7 @@ import type { Request } from 'express'
 import type { AuthUser } from '../common/auth-user'
 import { CurrentUser } from '../common/decorators/current-user.decorator'
 import { Public } from '../common/decorators/public.decorator'
+import { normalizeClientIp } from '../common/http/client-ip'
 import { AuthService } from './auth.service'
 import { ChangePasswordDto } from './dto/change-password.dto'
 import { LoginDto } from './dto/login.dto'
@@ -27,7 +28,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '登录' })
   login(@Body() dto: LoginDto, @Ip() ip: string, @Req() req: Request) {
-    return this.authService.login(dto, { ip, userAgent: req.headers['user-agent'] })
+    return this.authService.login(dto, {
+      ip: normalizeClientIp(ip),
+      userAgent: req.headers['user-agent'],
+    })
   }
 
   @Public()
@@ -52,5 +56,4 @@ export class AuthController {
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.id, dto.oldPassword, dto.newPassword)
   }
-
 }

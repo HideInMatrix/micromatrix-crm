@@ -7,15 +7,12 @@ import { BiddingService } from '../../modules/bidding/bidding.service'
 import { FollowUpPlansService } from '../../modules/follow-up-plans/follow-up-plans.service'
 import { MessageExpiryService } from '../../modules/notifications/message-expiry.service'
 import { MessageDeliveryService } from '../../modules/notifications/message-delivery.service'
+import { OperationLogCleanupService } from '../../modules/logs/operation-log-cleanup.service'
 
 function coordinatorSpy() {
   const calls: Array<{ job: string; slot: string }> = []
   const coordinator = {
-    runScheduledOnce: async (
-      job: string,
-      slot: string,
-      task: () => Promise<unknown>,
-    ) => {
+    runScheduledOnce: async (job: string, slot: string, task: () => Promise<unknown>) => {
       calls.push({ job, slot })
       return { executed: true, source: 'REDIS', value: await task() }
     },
@@ -23,7 +20,7 @@ function coordinatorSpy() {
   return { coordinator, calls }
 }
 
-test('6 个 Cron wrapper 全部通过统一时间槽协调且只调用原 core 方法', async () => {
+test('7 个 Cron wrapper 全部通过统一时间槽协调且只调用原 core 方法', async () => {
   const { coordinator, calls } = coordinatorSpy()
   const executed: string[] = []
 
@@ -88,12 +85,19 @@ test('6 个 Cron wrapper 全部通过统一时间槽协调且只调用原 core �
     return 0
   }
 
+  const operationLogCleanup = new OperationLogCleanupService({} as never, coordinator)
+  operationLogCleanup.cleanup = async () => {
+    executed.push('operation-log-cleanup')
+    return 0
+  }
+
   await opportunity.scheduledAutoClose()
   await pool.scheduledRecycleAll()
   await bidding.scheduledFetchAllTenants()
   await follow.scheduledReminder()
   await expiry.scheduledRunDaily()
   await delivery.scheduledProcessDueDeliveries()
+  await operationLogCleanup.scheduledCleanup()
 
   assert.deepEqual(calls, [
     { job: 'opportunity-auto-close', slot: 'DAILY' },
@@ -102,6 +106,10 @@ test('6 个 Cron wrapper 全部通过统一时间槽协调且只调用原 core �
     { job: 'follow-plan-reminder', slot: 'DAILY' },
     { job: 'message-expiry', slot: 'DAILY' },
     { job: 'message-delivery', slot: 'MINUTE' },
+    { job: 'operation-log-cleanup', slot: 'DAILY' },
   ])
-  assert.deepEqual(executed, calls.map(({ job }) => job))
+  assert.deepEqual(
+    executed,
+    calls.map(({ job }) => job),
+  )
 })

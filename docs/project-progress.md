@@ -13,29 +13,29 @@
 
 ## 2. 已关闭主里程碑
 
-| 阶段 | 范围 | 当前结论 |
-| --- | --- | --- |
-| W2.1～W2.5 | 公共底座、RBAC、导航、跟进计划、消息设置/触发、流程设置基础版本图 | 已完成 |
-| W3.1～W3.3 | 企业微信配置、组织同步、统一登录与消息渠道 | `VERIFIED` |
-| W3.4-D | API/Web Docker release、Prisma migration、Nginx runtime proxy、Tag→GHCR | `VERIFIED`，并已完成 v0.0.8 发布链路/镜像与初始化流程基线 |
-| W3.4 | 首页、线索/线索池、客户/联系人/公海、Dashboard 与全图导航 | `VERIFIED` |
-| W3.5 | 个人中心与 API Key | `VERIFIED` |
-| W3.6 | 商机→报价→合同→回款/发票→订单完整交易链 | 已完成最终验收 |
-| DB-021 | FollowUpPlan 独立 Field/Blob 与动态字段运行时 | `VERIFIED` |
-| W3.7-9.2 / DB-010 | 通用审批资源快照与 UPDATE/DELETE 变更上下文 | `VERIFIED` |
-| W3.7-9.3 / DB-011 | ApprovalRecord、加签、节点退回、ReturnBackRecord、nodeRound、审批人任务撤回、requireComment、ApprovalInstanceAttachment | `VERIFIED` |
-| W3.7-9.4A / DB-012 子单元 | Condition/DEFAULT、条件 DTO、link.sort 分支与 `updateFields` runtime | 已完成 |
-| W3.7-9.4B / DB-012 子单元 | empty/fallback/sameSubmitter、动态方向、多级审批人与 duplicate runtime | 已完成 |
-| W3.7-9.4C / DB-012 子单元 | 节点 HIDDEN/VIEW/EDIT 字段权限、审批详情与审批态字段写入 gate | 已完成 |
-| W3.7-9.4D / DB-012 子单元 | pass/reject 后置字段更新、冻结配置、UPDATE reject restore→post 最终顺序 | 已完成 |
-| W3.7-9.4E / DB-012 子单元 | Webhook 安全 client、测试连接、运行时发送、SSRF/超时/响应限制与 delivery 审计 | 已完成 |
-| W3.7-9.4F / DB-012 子单元 | Vue Flow 高级条件图、节点高级配置、统一 `nodes + links` 写契约与旧线性兼容清理 | 已完成；DB-012 `VERIFIED` |
-| W3.7-9.5 | DB-010/011/012 最终专项、Browser、空库、Root/Rules、workspace 与 legacy scan | 已完成；W3.7 正式封板 |
-| CACHE-001 | Redis 可降级公共基座、AuthGuard 认证上下文缓存、通知未读/分页缓存 | `VERIFIED` |
-| CACHE-002 | 租户配置/Metadata/Directory 版本缓存、首页 statistic/overview 30 秒聚合缓存、缓存指标 | `VERIFIED` |
-| EVENT-001 | Redis Pub/Sub 实时事件总线、通知多实例 SSE 与多标签页状态同步 | `VERIFIED` |
-| COORD-001 | Redis 组织同步 lease、运行态与 6 个 Cron 多实例时间槽协调 | `VERIFIED` |
-| ASYNC-001 | BullMQ durable queue、独立 worker 与真实异步导出中心 | `VERIFIED` |
+| 阶段                      | 范围                                                                                                                    | 当前结论                                                  |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| W2.1～W2.5                | 公共底座、RBAC、导航、跟进计划、消息设置/触发、流程设置基础版本图                                                       | 已完成                                                    |
+| W3.1～W3.3                | 企业微信配置、组织同步、统一登录与消息渠道                                                                              | `VERIFIED`                                                |
+| W3.4-D                    | API/Web Docker release、Prisma migration、Nginx runtime proxy、Tag→GHCR                                                 | `VERIFIED`，并已完成 v0.0.8 发布链路/镜像与初始化流程基线 |
+| W3.4                      | 首页、线索/线索池、客户/联系人/公海、Dashboard 与全图导航                                                               | `VERIFIED`                                                |
+| W3.5                      | 个人中心与 API Key                                                                                                      | `VERIFIED`                                                |
+| W3.6                      | 商机→报价→合同→回款/发票→订单完整交易链                                                                                 | 已完成最终验收                                            |
+| DB-021                    | FollowUpPlan 独立 Field/Blob 与动态字段运行时                                                                           | `VERIFIED`                                                |
+| W3.7-9.2 / DB-010         | 通用审批资源快照与 UPDATE/DELETE 变更上下文                                                                             | `VERIFIED`                                                |
+| W3.7-9.3 / DB-011         | ApprovalRecord、加签、节点退回、ReturnBackRecord、nodeRound、审批人任务撤回、requireComment、ApprovalInstanceAttachment | `VERIFIED`                                                |
+| W3.7-9.4A / DB-012 子单元 | Condition/DEFAULT、条件 DTO、link.sort 分支与 `updateFields` runtime                                                    | 已完成                                                    |
+| W3.7-9.4B / DB-012 子单元 | empty/fallback/sameSubmitter、动态方向、多级审批人与 duplicate runtime                                                  | 已完成                                                    |
+| W3.7-9.4C / DB-012 子单元 | 节点 HIDDEN/VIEW/EDIT 字段权限、审批详情与审批态字段写入 gate                                                           | 已完成                                                    |
+| W3.7-9.4D / DB-012 子单元 | pass/reject 后置字段更新、冻结配置、UPDATE reject restore→post 最终顺序                                                 | 已完成                                                    |
+| W3.7-9.4E / DB-012 子单元 | Webhook 安全 client、测试连接、运行时发送、SSRF/超时/响应限制与 delivery 审计                                           | 已完成                                                    |
+| W3.7-9.4F / DB-012 子单元 | Vue Flow 高级条件图、节点高级配置、统一 `nodes + links` 写契约与旧线性兼容清理                                          | 已完成；DB-012 `VERIFIED`                                 |
+| W3.7-9.5                  | DB-010/011/012 最终专项、Browser、空库、Root/Rules、workspace 与 legacy scan                                            | 已完成；W3.7 正式封板                                     |
+| CACHE-001                 | Redis 可降级公共基座、AuthGuard 认证上下文缓存、通知未读/分页缓存                                                       | `VERIFIED`                                                |
+| CACHE-002                 | 租户配置/Metadata/Directory 版本缓存、首页 statistic/overview 30 秒聚合缓存、缓存指标                                   | `VERIFIED`                                                |
+| EVENT-001                 | Redis Pub/Sub 实时事件总线、通知多实例 SSE 与多标签页状态同步                                                           | `VERIFIED`                                                |
+| COORD-001                 | Redis 组织同步 lease、运行态与 6 个 Cron 多实例时间槽协调                                                               | `VERIFIED`                                                |
+| ASYNC-001                 | BullMQ durable queue、独立 worker 与真实异步导出中心                                                                    | `VERIFIED`                                                |
 
 ## 3. 当前执行指针
 
@@ -43,19 +43,20 @@
 
 > **W3.7、CACHE-001、CACHE-002、EVENT-001、COORD-001 与 ASYNC-001 均已完成。当前没有新的正式执行单元处于 `IN_PROGRESS`；下一单元需要重新从 parity/backlog 现场冻结，不自动把候选项视为已立项。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001` 与 `ASYNC-001` 均已在各自 tasks 文档完成封板。ASYNC-001 只处理 durable queue + 异步导出中心；流水号或验证码仍未纳入，若后续实施必须重新独立立项。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001` 与 `LOG-001` 均已在各自 tasks 文档完成封板。ASYNC-001 只处理 durable queue + 异步导出中心；流水号或验证码仍未纳入，若后续实施必须重新独立立项。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
-- 当前 schema 新鲜空库：ASYNC-001 真实 Smoke 已从零应用 **69/69 migrations + bootstrap** 并完成 API/worker 导出链路。W3.7 最终验收的 **68/68 + 双 Seed** 是当时历史基线，继续保留在对应验收文档中。
+- 当前 Prisma migration 基线已推进到 **70 migrations**；`20260904093000_operation_log_retention_index` 已在本地开发 PostgreSQL 实际 deploy。最近一次“从零新鲜空库 + bootstrap + API/worker”完整 Smoke 仍是 ASYNC-001 的 **69/69 migrations + bootstrap**，历史验收基线继续保留在对应文档中，不把本次单索引 deploy 伪称为新一轮完整空库 Smoke。
 - Root Smoke：**227/227**。
-- Rules：**172/172**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调与 ASYNC-001 durable export 测试保持全绿。
+- Rules：**179/179**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export 与 LOG-001 IP/retention 回归保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。
 - ASYNC-001 专项：新增/相邻专项 **10/10 PASS**；完整 Rules **172/172 PASS**；`smoke:async-export` 在隔离 PostgreSQL/Redis 下执行 **69/69 migrations + bootstrap**，验证 producer PENDING、缺失 BullMQ job `recovered=1`、XLSX HTTP 200、worker 停机保持 PENDING、重启 `kept=1` 后 SUCCESS、queue worker health 可观测，7 项断言全部为 true；Compose config 与 `git diff --check` PASS。
+- LOG-001 专项：IP/config + retention **8/8 PASS**；标准 Rules **179/179 PASS**；全仓 `pnpm typecheck` PASS；生产 Compose 确认 `TRUST_PROXY_HOPS=1`、OperationLog 默认 `180 天 / 1000 条每批 / 20 批每轮`，长期容器启用 Docker `json-file` 默认 `20m × 5` 轮转；lint 0 error、Compose config 与 `git diff --check` PASS。
 - W3.7-9.5 最终专项链：DB-010、DB-011 9.3A～E、DB-012 9.4A～E 全部重新执行 exit 0；Prisma generate/validate、default DB 68 migrations status/deploy、空库双 Seed、workspace typecheck/lint/build 与 `git diff --check` 全绿。
 - W3.7-9.4F Advanced Designer Browser：**25/25**；Vue Flow 高级图、字段权限、后置字段、Webhook 安全测试、duplicate rule、统一 PUT 图契约和完整 round-trip 全绿，API 非预期 5xx=0、Runtime exception=0。
 - W3.7-9.4E Webhook HTTP Smoke：PASS（68 migrations）；连接测试 GET/POST、private target/危险 header/redirect/response limit/timeout gate、审计脱敏、冻结版本、field-before-webhook、reject placeholder、ALL 单次、AUTO_PASS 及 runtime failure non-blocking 全部真实验证。

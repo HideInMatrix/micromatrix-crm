@@ -1,10 +1,13 @@
 import { ValidationPipe } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
+import type { NestExpressApplication } from '@nestjs/platform-express'
 import { AppModule } from './app.module'
+import { parseTrustProxyHops } from './common/http/client-ip'
 import { setupSwagger } from './swagger'
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule)
+  app.set('trust proxy', parseTrustProxyHops(process.env.TRUST_PROXY_HOPS))
 
   app.setGlobalPrefix('api')
   app.enableCors()

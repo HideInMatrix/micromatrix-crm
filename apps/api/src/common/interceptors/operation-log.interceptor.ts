@@ -3,10 +3,8 @@ import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { Observable, tap } from 'rxjs'
 import { PrismaService } from '../../prisma/prisma.service'
-import {
-  LOG_OPERATION_KEY,
-  LogOperationMeta,
-} from '../decorators/log-operation.decorator'
+import { LOG_OPERATION_KEY, LogOperationMeta } from '../decorators/log-operation.decorator'
+import { normalizeClientIp } from '../http/client-ip'
 
 /** 全局操作日志：仅记录被 @LogOperation 标记的接口，成功后异步落库 */
 @Injectable()
@@ -47,7 +45,7 @@ export class OperationLogInterceptor implements NestInterceptor {
                   : typeof target.title === 'string'
                     ? target.title
                     : undefined,
-              ip: request.ip,
+              ip: normalizeClientIp(request.ip),
             },
           })
           .catch((e) => this.logger.warn(`操作日志写入失败: ${e.message}`))
