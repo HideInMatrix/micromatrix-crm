@@ -18,7 +18,7 @@ const qrDialogVisible = ref(false)
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
 )
-const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
+const form = reactive({ email: '', password: '' })
 const { enterpriseUi, loginPageStyle } = useLoginBranding(tenantSlug, () => form.email)
 const returnPath = computed(() =>
   typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
@@ -115,10 +115,6 @@ async function handleSubmit() {
           />
         </el-tooltip>
       </div>
-
-      <p class="text-xs text-[var(--el-text-color-secondary)] mt-4 text-center">
-        演示账号：admin@demo.com / admin123
-      </p>
     </el-card>
 
     <el-dialog

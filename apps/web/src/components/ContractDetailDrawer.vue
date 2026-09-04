@@ -296,8 +296,8 @@ async function convertToOrder() {
         <el-descriptions-item label="客户">{{ detail.customerName }}</el-descriptions-item>
         <el-descriptions-item label="阶段">{{ detail.stageName ?? detail.stage }}</el-descriptions-item>
         <el-descriptions-item label="审批状态">{{ detail.approvalStatus }}</el-descriptions-item>
-        <el-descriptions-item label="开始时间">{{ formatDate(detail.startTime) }}</el-descriptions-item>
-        <el-descriptions-item label="结束时间">{{ formatDate(detail.endTime) }}</el-descriptions-item>
+        <el-descriptions-item label="开始时间">{{ formatDate(detail?.startTime) }}</el-descriptions-item>
+        <el-descriptions-item label="结束时间">{{ formatDate(detail?.endTime) }}</el-descriptions-item>
         <el-descriptions-item label="合同金额">
           ¥{{ detail.amount.toLocaleString('zh-CN') }}
         </el-descriptions-item>
