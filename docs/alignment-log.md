@@ -1324,3 +1324,13 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 根生产 `docker-compose.yml` 为 PostgreSQL、Redis、API、worker、web 统一增加 Docker `json-file` 轮转，默认 `20m × 5`；该限制针对各容器 stdout/stderr 文件，数据库业务数据和 volume 不受影响。一次性 migrate 容器不纳入长期日志轮转要求。
 - 本批明确不删除 `login_logs`，也不引入 Loki/ELK/Fluent Bit 等外部采集平台；登录日志生命周期如需治理必须后续独立评估合规与保留要求。
 - 新增 `common/http` 与 `modules/logs` 测试已纳入标准 API `test:rules` glob，避免后续 CI 只跑 Rules 时漏掉 LOG-001 回归。最终验收：LOG-001 专项 **8/8 PASS**、API Rules **179/179 PASS**、全仓 `pnpm typecheck` PASS、lint **0 error / 8 个既有 warning**、生产 Compose config PASS、`git diff --check` PASS。`LOG-001 L1～L6` 全部关闭，状态为 **`VERIFIED`**。
+
+---
+
+## 76. TOOLCHAIN-001 pnpm 11 工具链迁移立项（2026-09-04）
+
+- GitHub Actions Release Docker 的 `verify / Setup pnpm` 现场日志出现 `added 1 package in 6m`。耗时发生在 `pnpm/action-setup@v6` self-installer，而不是项目依赖安装；随后 action 又从 bootstrap pnpm 11.19.0 切换回项目锁定的 pnpm 10.30.3，形成 npm bootstrap + pnpm downgrade 的冗余链路。
+- pnpm 11 官方要求 Node 22+；当前项目 engines 已是 `>=22`，CI/Docker builder 为 Node 24，因此不需要为了 pnpm 11 再升级 Node。目标固定为当前 pnpm 11 稳定线 `11.25.0`，不在同一单元跨到 pnpm 12。
+- 迁移范围冻结为 packageManager、`pnpm-workspace.yaml`、`.npmrc`、lockfile、Release workflow 与 API/Migration/Web 三个 Docker builder。`onlyBuiltDependencies` 按 pnpm 11 契约迁到 `allowBuilds`，pnpm-specific 网络重试设置移出 `.npmrc`；pnpm 11 的供应链安全默认值保持启用。
+- Release `verify` 计划改用 `pnpm/setup@v2`，直接下载 pnpm 11 自包含二进制并准备 Node 24/cache，禁止 action 隐式 install，继续由独立步骤执行 `pnpm install --frozen-lockfile`。Docker 继续沿用已验证的 Node 24 Alpine + Corepack builder，只统一 pnpm 版本，不在本批同时重构 Docker bootstrap。
+- 当前状态 `IN_PROGRESS`。**下一执行指针：TOOLCHAIN-001 T2 workspace 配置与 lockfile。**

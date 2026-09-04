@@ -4,7 +4,7 @@
   - 前后端独立镜像、Prisma migration、Nginx runtime proxy、GHCR 与 tag 触发边界已确定。
 
 - [x] D2 实现 API/Web multi-stage Dockerfile
-  - API：Node 24 + pnpm 10.30.3 + OpenSSL，production deploy，非 root 运行，uploads volume 与 healthcheck。
+  - API：Node 24 + pnpm 11.25.0 + OpenSSL，production deploy，非 root 运行，uploads volume 与 healthcheck。
   - Web：Vite builder + Nginx Alpine，SPA fallback、SSE-safe `/api` proxy 与 healthcheck。
 
 - [x] D3 实现 release compose
@@ -14,7 +14,7 @@
 - [x] D4 实现 GitHub tag release workflow
   - `v*.*.*` tag push 触发。
   - SemVer 校验、shared → API/Web 依赖有序 typecheck/lint、真实 Docker Smoke 门禁。
-  - GitHub Actions 升级到 Node 24 runtime 兼容版本：`actions/checkout@v7`、`actions/setup-node@v7`、`pnpm/action-setup@v6`。
+  - GitHub Actions 当前使用 `actions/checkout@v7`；verify 工具链由 `pnpm/setup@v2.1.0` 统一准备 pnpm 11.25.0 + Node 24 + pnpm store cache，不再依赖 `actions/setup-node` / `pnpm/action-setup` 双 setup。
   - API/Web 独立构建并发布 GHCR `linux/amd64` + `linux/arm64` 镜像。
 
 - [x] D5 增加 Docker release Smoke

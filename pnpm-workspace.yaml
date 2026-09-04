@@ -2,12 +2,19 @@ packages:
   - apps/*
   - packages/*
 
-# pnpm 10 默认禁止依赖执行构建脚本，这里放行必要的
-onlyBuiltDependencies:
-  - '@nestjs/core'
-  - '@prisma/client'
-  - '@prisma/engines'
-  - '@swc/core'
-  - esbuild
-  - prisma
-  - unrs-resolver
+# pnpm 11 默认严格拦截未经允许的依赖构建脚本，这里只放行项目已审计的必要依赖。
+allowBuilds:
+  '@nestjs/core': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  '@swc/core': true
+  esbuild: true
+  msgpackr-extract: false
+  prisma: true
+  unrs-resolver: true
+  vue-demi: false
+
+# 弱网重试。pnpm 11 的 pnpm-specific 配置不再放在 .npmrc。
+fetchRetries: 5
+fetchRetryMaxtimeout: 120000

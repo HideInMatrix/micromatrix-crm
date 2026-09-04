@@ -7,7 +7,7 @@
 `docker/api.Dockerfile` 使用 multi-stage build：
 
 1. Node 24 Alpine `base` 安装 OpenSSL 与 CA，builder/runtime 复用同一基础层。
-2. builder 固定 pnpm `10.30.3`，只安装 `@micromatrix/migrate` 与 `@micromatrix/api...`（Prisma 构建工具 + API + shared），不再把 Web/Vite 或根目录 ESLint 工具链拉入 API builder。
+2. builder 固定 pnpm `11.25.0`，只安装 `@micromatrix/migrate` 与 `@micromatrix/api...`（Prisma 构建工具 + API + shared），不再把 Web/Vite 或根目录 ESLint 工具链拉入 API builder。
 3. pnpm store 使用 BuildKit cache mount；构建 `@micromatrix/shared`，随后执行 API 的 Prisma generate + TypeScript build。
 4. 使用 pnpm modern deploy：`--config.inject-workspace-packages=true --filter @micromatrix/api --prod --no-optional deploy`。runtime 不携带 `prisma` CLI、Studio、TypeScript/PGlite 等 optional peer 工具链。
 5. runtime 只复制 deploy 结果，并以非 root `node` 用户执行 `node dist/main.js`。
@@ -59,7 +59,7 @@ on:
 
 流水线分为四层：
 
-1. `verify`：校验 SemVer tag，固定 Node 24/pnpm 10.30.3，执行全仓 typecheck 和 lint。
+1. `verify`：校验 SemVer tag，使用 `pnpm/setup@v2` 直接准备 Node 24/pnpm 11.25.0 与 pnpm store cache，显式执行 frozen install、全仓 typecheck 和 lint；不再经过 npm bootstrap + pnpm self-update。
 2. `docker-smoke`：从 tag 对应源码真实构建 API/Migration/Web 镜像，并用隔离 PostgreSQL/Redis 验证 migration、Redis cache runtime、API/Web runtime 与 proxy。
 3. `api-images`：amd64 使用 `ubuntu-latest` 原生构建，arm64 使用 `ubuntu-24.04-arm` 原生构建 API 与 Migration，各自推送临时架构 tag；不通过 QEMU 执行 Prisma/TypeScript/pnpm deploy。
 4. `api-manifest` 分别合并 API/Migration 两套架构镜像为正式 multi-arch tags；`web-image` 在 x64 runner 原生构建一次静态 dist，再组装 `linux/amd64,linux/arm64` Nginx 镜像。
