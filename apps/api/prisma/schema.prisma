@@ -105,6 +105,11 @@ enum DataScope {
   CUSTOM // 自定义部门
 }
 
+enum OperationLogCleanupSource {
+  AUTO
+  MANUAL
+}
+
 model Tenant {
   id        String       @id @default(cuid())
   name      String
@@ -137,6 +142,7 @@ model Tenant {
   externalOAuthStates        ExternalOAuthState[]
   messageDeliveries          MessageDelivery[]
   organizationSyncBatches    OrganizationSyncBatch[]
+  operationLogSetting        OperationLogSetting?
 
   @@map("tenants")
 }
@@ -999,24 +1005,24 @@ model ProductPriceFieldBlob {
 // ============ 报价（Cordys 直接模型） ============
 
 model OpportunityQuotation {
-  id             String   @id @default(cuid()) @db.VarChar(32)
-  name           String   @db.VarChar(255)
-  opportunityId  String   @map("opportunity_id") @db.VarChar(32)
-  untilTime      BigInt   @map("until_time")
-  amount         Decimal  @default(0) @db.Decimal(14, 2)
-  approvalStatus String   @default("NONE") @map("approval_status") @db.VarChar(50)
-  invalid        Boolean  @default(false)
-  organizationId String   @map("organization_id") @db.VarChar(32)
-  createTime     BigInt   @map("create_time")
-  updateTime     BigInt   @map("update_time")
-  createUser     String   @map("create_user") @db.VarChar(32)
-  updateUser     String   @map("update_user") @db.VarChar(32)
-  approved       Boolean  @default(false)
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  name           String  @db.VarChar(255)
+  opportunityId  String  @map("opportunity_id") @db.VarChar(32)
+  untilTime      BigInt  @map("until_time")
+  amount         Decimal @default(0) @db.Decimal(14, 2)
+  approvalStatus String  @default("NONE") @map("approval_status") @db.VarChar(50)
+  invalid        Boolean @default(false)
+  organizationId String  @map("organization_id") @db.VarChar(32)
+  createTime     BigInt  @map("create_time")
+  updateTime     BigInt  @map("update_time")
+  createUser     String  @map("create_user") @db.VarChar(32)
+  updateUser     String  @map("update_user") @db.VarChar(32)
+  approved       Boolean @default(false)
 
-  opportunity    Opportunity                    @relation(fields: [opportunityId], references: [id])
-  fieldValues    OpportunityQuotationField[]
+  opportunity     Opportunity                     @relation(fields: [opportunityId], references: [id])
+  fieldValues     OpportunityQuotationField[]
   fieldBlobValues OpportunityQuotationFieldBlob[]
-  snapshots      OpportunityQuotationSnapshot[]
+  snapshots       OpportunityQuotationSnapshot[]
 
   @@index([opportunityId])
   @@index([organizationId])
@@ -1074,33 +1080,33 @@ model OpportunityQuotationSnapshot {
 // ============ 合同（Cordys 直接模型）与回款 ============
 
 model Contract {
-  id             String   @id @default(cuid()) @db.VarChar(32)
-  name           String   @db.VarChar(255)
-  customerId     String   @map("customer_id") @db.VarChar(32)
-  owner          String   @db.VarChar(32)
-  amount         Decimal  @default(0) @db.Decimal(14, 2)
-  number         String   @db.VarChar(50)
-  approvalStatus String   @default("NONE") @map("approval_status") @db.VarChar(50)
-  stage          String   @db.VarChar(32)
-  startTime      BigInt?  @map("start_time")
-  endTime        BigInt?  @map("end_time")
-  voidReason     String?  @map("void_reason") @db.VarChar(255)
-  organizationId String   @map("organization_id") @db.VarChar(32)
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  name           String  @db.VarChar(255)
+  customerId     String  @map("customer_id") @db.VarChar(32)
+  owner          String  @db.VarChar(32)
+  amount         Decimal @default(0) @db.Decimal(14, 2)
+  number         String  @db.VarChar(50)
+  approvalStatus String  @default("NONE") @map("approval_status") @db.VarChar(50)
+  stage          String  @db.VarChar(32)
+  startTime      BigInt? @map("start_time")
+  endTime        BigInt? @map("end_time")
+  voidReason     String? @map("void_reason") @db.VarChar(255)
+  organizationId String  @map("organization_id") @db.VarChar(32)
   pos            BigInt?
-  approved       Boolean  @default(false)
-  createTime     BigInt   @map("create_time")
-  updateTime     BigInt   @map("update_time")
-  createUser     String   @map("create_user") @db.VarChar(32)
-  updateUser     String   @map("update_user") @db.VarChar(32)
+  approved       Boolean @default(false)
+  createTime     BigInt  @map("create_time")
+  updateTime     BigInt  @map("update_time")
+  createUser     String  @map("create_user") @db.VarChar(32)
+  updateUser     String  @map("update_user") @db.VarChar(32)
 
-  customer          Customer            @relation(fields: [customerId], references: [id])
-  fieldValues       ContractField[]
-  fieldBlobValues   ContractFieldBlob[]
-  snapshots         ContractSnapshot[]
-  paymentPlans         ContractPaymentPlan[]
-  paymentRecords       ContractPaymentRecord[]
-  contractInvoices     ContractInvoice[]
-  orders            Order[]
+  customer         Customer                @relation(fields: [customerId], references: [id])
+  fieldValues      ContractField[]
+  fieldBlobValues  ContractFieldBlob[]
+  snapshots        ContractSnapshot[]
+  paymentPlans     ContractPaymentPlan[]
+  paymentRecords   ContractPaymentRecord[]
+  contractInvoices ContractInvoice[]
+  orders           Order[]
 
   @@index([name])
   @@index([customerId])
@@ -1197,20 +1203,20 @@ model StageAdvancedConfig {
 }
 
 model ContractPaymentPlan {
-  id             String  @id @default(cuid()) @db.VarChar(32)
-  name           String  @db.VarChar(255)
-  contractId     String  @map("contract_id") @db.VarChar(32)
-  owner          String  @db.VarChar(32)
+  id             String   @id @default(cuid()) @db.VarChar(32)
+  name           String   @db.VarChar(255)
+  contractId     String   @map("contract_id") @db.VarChar(32)
+  owner          String   @db.VarChar(32)
   planStatus     String   @default("PENDING") @map("plan_status") @db.VarChar(32)
   planAmount     Decimal? @map("plan_amount") @db.Decimal(20, 10)
   planEndTime    BigInt?  @map("plan_end_time")
-  organizationId String  @map("organization_id") @db.VarChar(32)
-  createTime     BigInt  @map("create_time")
-  updateTime     BigInt  @map("update_time")
-  createUser     String  @map("create_user") @db.VarChar(32)
-  updateUser     String  @map("update_user") @db.VarChar(32)
+  organizationId String   @map("organization_id") @db.VarChar(32)
+  createTime     BigInt   @map("create_time")
+  updateTime     BigInt   @map("update_time")
+  createUser     String   @map("create_user") @db.VarChar(32)
+  updateUser     String   @map("update_user") @db.VarChar(32)
 
-  contract        Contract                   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract        Contract                       @relation(fields: [contractId], references: [id], onDelete: Cascade)
   paymentRecords  ContractPaymentRecord[]
   fieldValues     ContractPaymentPlanField[]
   fieldBlobValues ContractPaymentPlanFieldBlob[]
@@ -1681,8 +1687,8 @@ model ApprovalFlowVersion {
   createdById String?
   createdAt   DateTime @default(now())
 
-  flow            ApprovalFlow       @relation("FlowVersions", fields: [flowId], references: [id], onDelete: Restrict)
-  currentForFlows ApprovalFlow[]     @relation("CurrentFlowVersion")
+  flow            ApprovalFlow            @relation("FlowVersions", fields: [flowId], references: [id], onDelete: Restrict)
+  currentForFlows ApprovalFlow[]          @relation("CurrentFlowVersion")
   nodes           ApprovalNode[]
   links           ApprovalNodeLink[]
   conditions      ApprovalNodeCondition[]
@@ -1702,11 +1708,11 @@ model ApprovalNode {
   executeTiming ApprovalExecuteTiming @default(CREATE)
   sort          Int                   @default(0)
 
-  flowVersion   ApprovalFlowVersion   @relation(fields: [flowVersionId], references: [id], onDelete: Restrict)
+  flowVersion   ApprovalFlowVersion    @relation(fields: [flowVersionId], references: [id], onDelete: Restrict)
   approver      ApprovalNodeApprover?
   condition     ApprovalNodeCondition?
-  outgoingLinks ApprovalNodeLink[]    @relation("ApprovalNodeOutgoing")
-  incomingLinks ApprovalNodeLink[]    @relation("ApprovalNodeIncoming")
+  outgoingLinks ApprovalNodeLink[]     @relation("ApprovalNodeOutgoing")
+  incomingLinks ApprovalNodeLink[]     @relation("ApprovalNodeIncoming")
 
   @@unique([flowVersionId, number])
   @@index([flowVersionId, executeTiming, sort])
@@ -1782,20 +1788,20 @@ model ApprovalInstance {
   // Cordys approval_instance.comment：实例级提交说明，不等同于任务审批意见。
   comment          String?
   // Cordys approval_instance.update_fields：JSON 字符串形式的本次编辑字段 ID 列表。
-  updateFields     String?                @db.VarChar(2000) @map("update_fields")
+  updateFields     String?                @map("update_fields") @db.VarChar(2000)
   submitterId      String
   submitterName    String
   finishedAt       DateTime?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  flow        ApprovalFlow?        @relation(fields: [flowId], references: [id], onDelete: SetNull)
-  flowVersion ApprovalFlowVersion? @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
-  tasks       ApprovalTask[]
-  records     ApprovalRecord[]
-  addSignTasks ApprovalAddSignTask[]
+  flow              ApprovalFlow?                @relation(fields: [flowId], references: [id], onDelete: SetNull)
+  flowVersion       ApprovalFlowVersion?         @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
+  tasks             ApprovalTask[]
+  records           ApprovalRecord[]
+  addSignTasks      ApprovalAddSignTask[]
   returnBackRecords ApprovalReturnBackRecord[]
-  attachments ApprovalInstanceAttachment[]
+  attachments       ApprovalInstanceAttachment[]
   webhookDeliveries ApprovalWebhookDelivery[]
 
   @@index([tenantId, status])
@@ -1807,15 +1813,15 @@ model ApprovalInstance {
 }
 
 model ApprovalResourceSnapshot {
-  id          String           @id @default(cuid())
-  tenantId    String
-  formType    ApprovalFormType
-  resourceId  String
-  snapshotData Json            @map("snapshot_data")
-  createdById String?          @map("created_by_id")
-  updatedById String?          @map("updated_by_id")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id           String           @id @default(cuid())
+  tenantId     String
+  formType     ApprovalFormType
+  resourceId   String
+  snapshotData Json             @map("snapshot_data")
+  createdById  String?          @map("created_by_id")
+  updatedById  String?          @map("updated_by_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
 
   @@unique([tenantId, formType, resourceId])
   @@index([tenantId, formType])
@@ -1838,10 +1844,10 @@ model ApprovalTask {
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
 
-  instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  records  ApprovalRecord[]
-  addSignTask ApprovalAddSignTask? @relation("AddSignCreatedTask")
-  signedByTasks ApprovalAddSignTask[] @relation("AddSignSourceTask")
+  instance          ApprovalInstance           @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  records           ApprovalRecord[]
+  addSignTask       ApprovalAddSignTask?       @relation("AddSignCreatedTask")
+  signedByTasks     ApprovalAddSignTask[]      @relation("AddSignSourceTask")
   returnBackRecords ApprovalReturnBackRecord[]
 
   @@index([tenantId, approverId, status])
@@ -1951,8 +1957,8 @@ model ApprovalWebhookDelivery {
   httpStatus    Int?                          @map("http_status")
   responseBytes Int?                          @map("response_bytes")
   durationMs    Int?                          @map("duration_ms")
-  errorCode     String?                       @db.VarChar(64) @map("error_code")
-  errorMessage  String?                       @db.VarChar(500) @map("error_message")
+  errorCode     String?                       @map("error_code") @db.VarChar(64)
+  errorMessage  String?                       @map("error_message") @db.VarChar(500)
   createdById   String?                       @map("created_by_id")
   startedAt     DateTime?                     @map("started_at")
   finishedAt    DateTime?                     @map("finished_at")
@@ -2235,14 +2241,37 @@ model OperationLog {
   action     String
   targetId   String?
   targetName String?
-  detail     Json?
   ip         String?
   createdAt  DateTime @default(now())
+
+  blob OperationLogBlob?
 
   @@index([createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, module])
   @@map("operation_logs")
+}
+
+model OperationLogBlob {
+  operationLogId String @id
+  detail         Json
+
+  operationLog OperationLog @relation(fields: [operationLogId], references: [id], onDelete: Cascade)
+
+  @@map("operation_log_blobs")
+}
+
+model OperationLogSetting {
+  tenantId           String                     @id
+  retentionDays      Int?
+  lastCleanupAt      DateTime?
+  lastCleanupDeleted Int                        @default(0)
+  lastCleanupSource  OperationLogCleanupSource?
+  updatedAt          DateTime                   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("operation_log_settings")
 }
 
 model LoginLog {
@@ -2309,7 +2338,7 @@ model EnterpriseUiSetting {
   customStyle              String   @default("#f9fbfb")
   title                    String   @default("MicroMatrix CRM")
   slogan                   String   @default("让客户关系更清晰，让销售协作更高效")
-  helpDoc                   String   @default("")
+  helpDoc                  String   @default("")
   iconAttachmentId         String?
   loginLogoAttachmentId    String?
   loginImageAttachmentId   String?
@@ -2369,7 +2398,7 @@ model EnterpriseAiModel {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   taskBindings EnterpriseGlobalTask[]
 
   @@unique([tenantId, displayName])
@@ -2434,15 +2463,15 @@ model EnterpriseTerm {
 }
 
 model EnterpriseTermDiscovery {
-  id          String   @id @default(cuid())
-  tenantId    String
-  discovered  String
-  source      String   @default("")
-  context     String   @default("")
-  status      String   @default("PENDING")
+  id            String   @id @default(cuid())
+  tenantId      String
+  discovered    String
+  source        String   @default("")
+  context       String   @default("")
+  status        String   @default("PENDING")
   adoptedTermId String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2451,19 +2480,19 @@ model EnterpriseTermDiscovery {
 }
 
 model EnterpriseGlobalTask {
-  id                String   @id @default(cuid())
-  tenantId          String
-  name              String
-  triggerType       String   @default("manual")
-  executionCondition String  @default("")
-  executionAction   String   @default("")
-  confirmationLevel String   @default("ask")
-  applicableModelId String?
-  enable            Boolean  @default(true)
-  createdById       String
-  updatedById       String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  tenantId           String
+  name               String
+  triggerType        String   @default("manual")
+  executionCondition String   @default("")
+  executionAction    String   @default("")
+  confirmationLevel  String   @default("ask")
+  applicableModelId  String?
+  enable             Boolean  @default(true)
+  createdById        String
+  updatedById        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   tenant          Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   applicableModel EnterpriseAiModel?              @relation(fields: [applicableModelId], references: [id], onDelete: SetNull)
@@ -2476,17 +2505,17 @@ model EnterpriseGlobalTask {
 }
 
 model EnterpriseGlobalTaskExecution {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
   taskId       String
-  status       String   @default("PENDING")
+  status       String    @default("PENDING")
   input        Json?
   output       Json?
   errorMessage String?
   startedAt    DateTime?
   finishedAt   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   tenant Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   task   EnterpriseGlobalTask @relation(fields: [taskId], references: [id], onDelete: Cascade)

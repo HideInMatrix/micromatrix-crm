@@ -106,7 +106,7 @@ docker compose \
 
 当前 Compose 的 HTTP 拓扑固定为浏览器/客户端 → `web` Nginx → `api`，因此 API 默认设置 `TRUST_PROXY_HOPS=1`。Nest/Express 只信任最近一跳代理后再计算 `request.ip` / `@Ip()`，业务代码不直接解析原始 forwarding header。若未来在 Nginx 前新增 CDN、LB 或其它受控代理，必须按真实代理层数显式调整 `TRUST_PROXY_HOPS` 并重新验证客户端 IP；本地直接 `pnpm dev` 时默认不配置该变量，即不信任代理头。
 
-`OperationLog` 默认保留 180 天。API 每天 04:15 进入一次分布式协调清理，默认每批最多 1000 条、单轮最多 20 批；可使用 `OPERATION_LOG_RETENTION_DAYS`、`OPERATION_LOG_CLEANUP_BATCH_SIZE`、`OPERATION_LOG_CLEANUP_MAX_BATCHES` 调整。清理只作用于操作日志，不删除登录日志。
+`OperationLog` 未保存租户策略时默认保留 180 天，`OPERATION_LOG_RETENTION_DAYS` 现在只作为未配置租户的部署默认值；管理员可在 `/system/logs` 为当前租户设置 30～3650 天或永久保留，无需重启 API。API 每天 04:15 进入一次分布式协调清理，默认每租户每批最多 1000 条、单轮最多 20 批；`OPERATION_LOG_CLEANUP_BATCH_SIZE`、`OPERATION_LOG_CLEANUP_MAX_BATCHES` 继续属于运维安全参数，不在网页开放。清理只作用于操作日志，不删除登录日志。
 
 PostgreSQL、Redis、API、worker、web 的 Docker stdout/stderr 默认使用 `json-file` 轮转，`max-size=20m`、`max-file=5`。可使用 `DOCKER_LOG_MAX_SIZE` / `DOCKER_LOG_MAX_FILE` 调整；该上限按单容器日志文件计算，不是整个 Compose 项目的总磁盘硬上限。
 

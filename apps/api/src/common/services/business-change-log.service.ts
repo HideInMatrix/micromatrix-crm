@@ -61,11 +61,17 @@ export class BusinessChangeLogService {
           action: input.action ?? 'change',
           targetId: input.targetId,
           targetName: input.targetName ?? undefined,
-          detail: { changes } as unknown as Prisma.InputJsonValue,
+          blob: {
+            create: {
+              detail: { changes } as unknown as Prisma.InputJsonValue,
+            },
+          },
         },
       })
     } catch (error) {
-      this.logger.warn(`业务变更日志写入失败: ${error instanceof Error ? error.message : String(error)}`)
+      this.logger.warn(
+        `业务变更日志写入失败: ${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
 

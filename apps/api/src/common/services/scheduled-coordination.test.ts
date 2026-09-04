@@ -85,8 +85,8 @@ test('7 个 Cron wrapper 全部通过统一时间槽协调且只调用原 core �
     return 0
   }
 
-  const operationLogCleanup = new OperationLogCleanupService({} as never, coordinator)
-  operationLogCleanup.cleanup = async () => {
+  const operationLogCleanup = new OperationLogCleanupService({} as never, {} as never, coordinator)
+  operationLogCleanup.cleanupAllTenants = async () => {
     executed.push('operation-log-cleanup')
     return 0
   }

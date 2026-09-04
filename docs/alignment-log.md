@@ -1334,3 +1334,23 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 迁移范围冻结为 packageManager、`pnpm-workspace.yaml`、`.npmrc`、lockfile、Release workflow 与 API/Migration/Web 三个 Docker builder。`onlyBuiltDependencies` 按 pnpm 11 契约迁到 `allowBuilds`，pnpm-specific 网络重试设置移出 `.npmrc`；pnpm 11 的供应链安全默认值保持启用。
 - Release `verify` 计划改用 `pnpm/setup@v2`，直接下载 pnpm 11 自包含二进制并准备 Node 24/cache，禁止 action 隐式 install，继续由独立步骤执行 `pnpm install --frozen-lockfile`。Docker 继续沿用已验证的 Node 24 Alpine + Corepack builder，只统一 pnpm 版本，不在本批同时重构 Docker bootstrap。
 - 当前状态 `IN_PROGRESS`。**下一执行指针：TOOLCHAIN-001 T2 workspace 配置与 lockfile。**
+
+---
+
+## 77. LOG-002 操作日志详情与生命周期管理立项（2026-09-04）
+
+- 继续审计 CordysCRM 日志源码后确认：Cordys 操作日志具备 AOP/异步记录、列表、详情，并使用 `sys_operation_log + sys_operation_log_blob` 把修改前后等大字段从列表主表拆开；当前源码没有发现 retention 配置、自动删除任务或网页“清理日志”入口。MicroMatrix 因此不撤回 LOG-001 的 180 天自动治理，而是把它作为生产增强继续保留。
+- MicroMatrix 当前 `operation_logs.detail` 是真实运行字段：`BusinessChangeLogService` 保存字段级 `before/after` diff，组织同步失败等场景也会写 detail；`LogsService.operationLogs()` 当前无显式 select，列表查询会读取该 JSON。LOG-002 冻结为“轻量主表 + 一对一 `operation_log_blobs` + 列表/详情分离”。
+- 用户明确确认项目**尚未正式上线，不存在需要迁移的旧数据**。因此第 71 个 migration 将直接删除 `operation_logs.detail` 并建立目标 Blob/setting 表，不做回填、双写、deprecated 字段或 compatibility read。
+- retention 从“全局环境变量真值”升级为“租户级数据库策略 + 环境变量默认值”：未配置租户默认 180 天，可在 `/system/logs` 设置 30～3650 天或永久保留；`batchSize/maxBatches/Cron` 继续属于运维参数。自动任务仍复用 DAILY distributed coordination，手工清理只作用于当前租户并受同一批量上限保护。
+
+---
+
+## 78. LOG-002 操作日志详情与生命周期管理最终验收（2026-09-04）
+
+- 第 71 个 migration `20260904130000_operation_log_detail_and_settings` 已在本地 PostgreSQL 实际 deploy：`operation_logs.detail` 直接删除，新建一对一 `operation_log_blobs` 和租户唯一 `operation_log_settings`；项目尚未上线，因此没有旧字段回填、双写或 compatibility read。`prisma migrate status` 确认 **71/71 migrations** up to date。
+- `BusinessChangeLogService` 与组织同步显式详情写入已迁到 nested Blob；列表 API 使用显式轻量 select，不读取详情 JSON，`GET /logs/operations/:id` 按 `tenantId + id` 懒加载 Blob。真实 PostgreSQL 事务 Smoke 验证删除主日志后 Blob 从 `1` 级联到 `0`。
+- retention 已改为租户策略 + env 默认：未配置租户继承 180 天，可设置 30～3650 天或永久保留；自动任务逐租户执行，永久保留只记录检查状态，单租户失败不会阻断其它租户，仍复用 `operation-log-cleanup` DAILY coordination 与 1000 × 20 默认有界删除。
+- `/system/logs` 已增加操作日志详情 Drawer 与日志策略 Drawer，展示字段级 before/after、最近清理时间/数量/来源，并提供保存与“立即清理”；`system:log` 保持只读，新增 `system:log:update` 专门控制策略与手工清理，永久保留和立即清理均有风险提示。
+- 自动化最终基线：API Rules **190/190 PASS**，其中新增直接断言证明业务字段 diff 只写 Blob；全仓 `pnpm typecheck` PASS，`pnpm lint` **0 error / 8 个既有 warning**，全仓 production build PASS、Web **4145 modules transformed**，Prisma validate/generate/status、Prettier 与 `git diff --check` 全绿。`LOG-002 G1～G7` 全部关闭，状态为 **`VERIFIED`**。
+- 新增独立 `system:log:update` 写权限；读取日志/详情/策略继续使用 `system:log`。日志页面增加详情懒加载和策略 Drawer，不新增左侧菜单；规格与最终验收均已归档在 `docs/specs/operation-log-management/{requirements,design,tasks}.md`。

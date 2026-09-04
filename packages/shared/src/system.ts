@@ -49,9 +49,37 @@ export interface OperationLogVO {
   module: string
   action: string
   targetName: string | null
-  detail: unknown
   ip: string | null
   createdAt: string
+}
+
+export interface OperationLogDetailVO extends OperationLogVO {
+  targetId: string | null
+  detail: unknown | null
+}
+
+export type OperationLogCleanupSource = 'AUTO' | 'MANUAL'
+
+export interface OperationLogSettingVO {
+  configured: boolean
+  retentionDays: number | null
+  defaultRetentionDays: number
+  permanent: boolean
+  lastCleanupAt: string | null
+  lastCleanupDeleted: number
+  lastCleanupSource: OperationLogCleanupSource | null
+}
+
+export interface UpdateOperationLogSettingInput {
+  /** null 表示永久保留；数字必须位于 30～3650。 */
+  retentionDays: number | null
+}
+
+export interface OperationLogCleanupResultVO {
+  skipped: boolean
+  deleted: number
+  cutoff: string | null
+  setting: OperationLogSettingVO
 }
 
 export interface LoginLogVO {

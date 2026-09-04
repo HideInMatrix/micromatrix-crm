@@ -43,12 +43,8 @@ export class OrganizationSyncApplyService {
     if (initial.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
     if (!this.coordination) return this.applyCore(user, batchId, initial)
 
-    const result = await this.coordination.run(
-      user.tenantId,
-      user.id,
-      'APPLYING',
-      batchId,
-      () => this.applyCore(user, batchId, initial),
+    const result = await this.coordination.run(user.tenantId, user.id, 'APPLYING', batchId, () =>
+      this.applyCore(user, batchId, initial),
     )
     if (!result.executed) throw new ConflictException('当前正在执行组织同步任务')
   }
@@ -185,7 +181,7 @@ export class OrganizationSyncApplyService {
             module: 'organizationSync',
             action: 'applyWeComFailed',
             targetId: batchId,
-            detail: { errorCode: 'APPLY_FAILED' },
+            blob: { create: { detail: { errorCode: 'APPLY_FAILED' } } },
           },
         })
       }
@@ -202,14 +198,10 @@ export class OrganizationSyncApplyService {
       },
       select: { localId: true },
     })
-    await this.authCache?.invalidateMany(
-      [
-        ...affectedUsers
-          .map(({ localId }) => localId)
-          .filter((id): id is string => Boolean(id)),
-        ...subordinateIds,
-      ],
-    )
+    await this.authCache?.invalidateMany([
+      ...affectedUsers.map(({ localId }) => localId).filter((id): id is string => Boolean(id)),
+      ...subordinateIds,
+    ])
     await this.cache?.invalidate(user.tenantId, 'directory')
 
     try {

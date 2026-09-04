@@ -1,15 +1,15 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-03。
+最近对齐：2026-09-04。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
 ## 1. 当前代码现场
 
 - 分支：`master`
-- 当前发布标签：`v0.0.8`
+- 当前发布标签：`v0.0.13`
 - W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
-- 当前数据库基线：**69 migrations**；第 69 个 migration 为 `20260903131500_async_export_queue`。
+- 当前数据库基线：**70 migrations**；第 70 个 migration 为 `20260904093000_operation_log_retention_index`。
 
 ## 2. 已关闭主里程碑
 
@@ -36,27 +36,30 @@
 | EVENT-001                 | Redis Pub/Sub 实时事件总线、通知多实例 SSE 与多标签页状态同步                                                           | `VERIFIED`                                                |
 | COORD-001                 | Redis 组织同步 lease、运行态与 6 个 Cron 多实例时间槽协调                                                               | `VERIFIED`                                                |
 | ASYNC-001                 | BullMQ durable queue、独立 worker 与真实异步导出中心                                                                    | `VERIFIED`                                                |
+| LOG-001                   | 真实客户端 IP、操作日志 180 天默认 retention、分布式清理、Docker 日志轮转                                               | `VERIFIED`                                                |
+| LOG-002                   | 操作日志主表/Blob、列表/详情分离、租户 retention 网页策略、手工清理                                                     | `VERIFIED`                                                |
 
 ## 3. 当前执行指针
 
 当前执行状态：
 
-> **W3.7、CACHE-001、CACHE-002、EVENT-001、COORD-001 与 ASYNC-001 均已完成。当前没有新的正式执行单元处于 `IN_PROGRESS`；下一单元需要重新从 parity/backlog 现场冻结，不自动把候选项视为已立项。**
+> **LOG-002 / 操作日志详情与生命周期管理已完成并封板为 `VERIFIED`。Cordys 的轻量主表 + Blob、列表 + 详情分离已落地；MicroMatrix 额外保留租户 retention 网页策略、永久保留、立即清理和分布式自动清理。项目尚未正式上线，因此本轮直接采用目标 schema，没有旧 detail 回填或兼容读取。当前没有新的正式执行单元处于 `IN_PROGRESS`。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001` 与 `LOG-001` 均已在各自 tasks 文档完成封板。ASYNC-001 只处理 durable queue + 异步导出中心；流水号或验证码仍未纳入，若后续实施必须重新独立立项。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001` 与 `LOG-002` 均已在各自 tasks 文档完成封板。LOG-002 最终基线为 71 migrations、Rules 190/190、全仓 typecheck/build 与 Prisma/Prettier/diff 全绿。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入 LOG-002。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
-- 当前 Prisma migration 基线已推进到 **70 migrations**；`20260904093000_operation_log_retention_index` 已在本地开发 PostgreSQL 实际 deploy。最近一次“从零新鲜空库 + bootstrap + API/worker”完整 Smoke 仍是 ASYNC-001 的 **69/69 migrations + bootstrap**，历史验收基线继续保留在对应文档中，不把本次单索引 deploy 伪称为新一轮完整空库 Smoke。
+- 当前 Prisma migration 基线已推进到 **71 migrations**；`20260904130000_operation_log_detail_and_settings` 已在本地开发 PostgreSQL 实际 deploy，`prisma migrate status` 确认数据库 up to date。最近一次“从零新鲜空库 + bootstrap + API/worker”完整 Smoke 仍是 ASYNC-001 的 **69/69 migrations + bootstrap**，历史验收基线继续保留在对应文档中，不把本次日志 schema deploy 伪称为新一轮完整空库 Smoke。
 - Root Smoke：**227/227**。
-- Rules：**179/179**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export 与 LOG-001 IP/retention 回归保持全绿。
+- Rules：**190/190**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export、LOG-001 IP/retention 与 LOG-002 Blob/租户策略回归保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。
 - ASYNC-001 专项：新增/相邻专项 **10/10 PASS**；完整 Rules **172/172 PASS**；`smoke:async-export` 在隔离 PostgreSQL/Redis 下执行 **69/69 migrations + bootstrap**，验证 producer PENDING、缺失 BullMQ job `recovered=1`、XLSX HTTP 200、worker 停机保持 PENDING、重启 `kept=1` 后 SUCCESS、queue worker health 可观测，7 项断言全部为 true；Compose config 与 `git diff --check` PASS。
 - LOG-001 专项：IP/config + retention **8/8 PASS**；标准 Rules **179/179 PASS**；全仓 `pnpm typecheck` PASS；生产 Compose 确认 `TRUST_PROXY_HOPS=1`、OperationLog 默认 `180 天 / 1000 条每批 / 20 批每轮`，长期容器启用 Docker `json-file` 默认 `20m × 5` 轮转；lint 0 error、Compose config 与 `git diff --check` PASS。
+- LOG-002：主表 `detail` 已退出运行模型，新增一对一 `operation_log_blobs` 与租户级 `operation_log_settings`；列表轻量 select、详情懒加载、30～3650 天/永久保留、最近清理状态与立即清理均已落地。最终 Rules **190/190 PASS**、全仓 typecheck/build PASS、Web **4145 modules transformed**、lint **0 error / 8 个既有 warning**、Prisma 71/71 up to date、Prettier 与 `git diff --check` PASS。
 - W3.7-9.5 最终专项链：DB-010、DB-011 9.3A～E、DB-012 9.4A～E 全部重新执行 exit 0；Prisma generate/validate、default DB 68 migrations status/deploy、空库双 Seed、workspace typecheck/lint/build 与 `git diff --check` 全绿。
 - W3.7-9.4F Advanced Designer Browser：**25/25**；Vue Flow 高级图、字段权限、后置字段、Webhook 安全测试、duplicate rule、统一 PUT 图契约和完整 round-trip 全绿，API 非预期 5xx=0、Runtime exception=0。
 - W3.7-9.4E Webhook HTTP Smoke：PASS（68 migrations）；连接测试 GET/POST、private target/危险 header/redirect/response limit/timeout gate、审计脱敏、冻结版本、field-before-webhook、reject placeholder、ALL 单次、AUTO_PASS 及 runtime failure non-blocking 全部真实验证。
@@ -97,7 +100,7 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 ### C. 审计、导入导出与平台管理补齐
 
-- 操作日志：继续扩业务对象和时间线 UI。
+- 操作日志：LOG-002 已完成主表/Blob 拆分、列表/详情分离、租户级 retention 网页配置和立即清理；后续差异只剩继续扩业务对象和时间线 UI。
 - 登录日志：补完整筛选和审计维度。
 - 导入导出：补 `.xls` 与更完整字段规则。
 - 成员：工作城市、入职日期、会话失效、多部门。

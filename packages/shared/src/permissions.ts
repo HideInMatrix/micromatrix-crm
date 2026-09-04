@@ -254,7 +254,11 @@ export const PERMISSION_TREE: PermissionNode[] = [
         ],
       },
       { code: 'system:pool', label: '公海/线索池设置' },
-      { code: 'system:log', label: '系统日志' },
+      {
+        code: 'system:log',
+        label: '系统日志',
+        children: [{ code: 'system:log:update', label: '编辑日志策略' }],
+      },
       {
         code: 'system:setting',
         label: '企业设置',

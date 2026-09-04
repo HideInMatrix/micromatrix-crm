@@ -1,5 +1,10 @@
-import { Injectable } from '@nestjs/common'
-import { LoginLogVO, OperationLogVO, PaginatedResult } from '@micromatrix/shared'
+import { Injectable, NotFoundException } from '@nestjs/common'
+import {
+  LoginLogVO,
+  OperationLogDetailVO,
+  OperationLogVO,
+  PaginatedResult,
+} from '@micromatrix/shared'
 import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { QueryLoginLogsDto, QueryOperationLogsDto } from './dto/query-logs.dto'
@@ -32,6 +37,15 @@ export class LogsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        select: {
+          id: true,
+          userName: true,
+          module: true,
+          action: true,
+          targetName: true,
+          ip: true,
+          createdAt: true,
+        },
       }),
       this.prisma.operationLog.count({ where }),
     ])
@@ -43,13 +57,42 @@ export class LogsService {
         module: log.module,
         action: log.action,
         targetName: log.targetName,
-        detail: log.detail,
         ip: log.ip,
         createdAt: log.createdAt.toISOString(),
       })),
       total,
       page,
       pageSize,
+    }
+  }
+
+  async operationLogDetail(tenantId: string, id: string): Promise<OperationLogDetailVO> {
+    const log = await this.prisma.operationLog.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        userName: true,
+        module: true,
+        action: true,
+        targetId: true,
+        targetName: true,
+        ip: true,
+        createdAt: true,
+        blob: { select: { detail: true } },
+      },
+    })
+    if (!log) throw new NotFoundException('操作日志不存在')
+
+    return {
+      id: log.id,
+      userName: log.userName,
+      module: log.module,
+      action: log.action,
+      targetId: log.targetId,
+      targetName: log.targetName,
+      detail: log.blob?.detail ?? null,
+      ip: log.ip,
+      createdAt: log.createdAt.toISOString(),
     }
   }
 

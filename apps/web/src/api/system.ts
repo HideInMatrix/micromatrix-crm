@@ -15,6 +15,9 @@ import type {
   ModuleConfigVO,
   NavigationModuleKey,
   NotificationVO,
+  OperationLogCleanupResultVO,
+  OperationLogDetailVO,
+  OperationLogSettingVO,
   OperationLogVO,
   OrganizationSyncBatchVO,
   CreateOrganizationSyncPreviewInput,
@@ -26,6 +29,7 @@ import type {
   TopNavigationConfigVO,
   TopNavigationKey,
   UpdateMessageTaskSettingInput,
+  UpdateOperationLogSettingInput,
   SaveWeComIntegrationInput,
   WeComIntegrationSecretVO,
   WeComConnectionTestVO,
@@ -157,8 +161,7 @@ export interface DictionaryConfigVO {
 
 export const dictionaryApi = {
   list: (module: DictionaryModule) => http.get<DictionaryItemVO[]>(`/dict/get/${module}`),
-  config: (module: DictionaryModule) =>
-    http.get<DictionaryConfigVO>(`/dict/config/${module}`),
+  config: (module: DictionaryModule) => http.get<DictionaryConfigVO>(`/dict/config/${module}`),
   add: (module: DictionaryModule, name: string) =>
     http.post<DictionaryItemVO>('/dict/add', { module, name }),
   update: (id: string, name: string) => http.post<DictionaryItemVO>('/dict/update', { id, name }),
@@ -240,12 +243,8 @@ export interface ContractStageConfigVO {
 
 export const contractStageSettingsApi = {
   get: () => http.get<ContractStageConfigVO>('/contract/stage/get'),
-  add: (data: {
-    name: string
-    type?: 'AFOOT' | 'END'
-    targetId?: string
-    dropPosition?: number
-  }) => http.post<string>('/contract/stage/add', data),
+  add: (data: { name: string; type?: 'AFOOT' | 'END'; targetId?: string; dropPosition?: number }) =>
+    http.post<string>('/contract/stage/add', data),
   update: (data: { id: string; name?: string }) => http.post('/contract/stage/update', data),
   remove: (id: string) => http.get(`/contract/stage/delete/${id}`),
   updateRollback: (data: { afootRollBack: boolean; endRollBack: boolean }) =>
@@ -295,12 +294,8 @@ export interface OrderStageConfigVO {
 
 export const orderStageSettingsApi = {
   get: () => http.get<OrderStageConfigVO>('/order/stage/get'),
-  add: (data: {
-    name: string
-    type?: 'AFOOT' | 'END'
-    targetId?: string
-    dropPosition?: number
-  }) => http.post<string>('/order/stage/add', data),
+  add: (data: { name: string; type?: 'AFOOT' | 'END'; targetId?: string; dropPosition?: number }) =>
+    http.post<string>('/order/stage/add', data),
   update: (data: { id: string; name?: string }) => http.post('/order/stage/update', data),
   remove: (id: string) => http.get(`/order/stage/delete/${id}`),
   updateRollback: (data: { afootRollBack: boolean; endRollBack: boolean }) =>
@@ -362,7 +357,8 @@ export const opportunityRuleApi = {
       '/opportunity-rule/page',
       { current, pageSize, keyword },
     ),
-  add: (data: OpportunityRulePayload) => http.post<OpportunityRuleVO>('/opportunity-rule/add', data),
+  add: (data: OpportunityRulePayload) =>
+    http.post<OpportunityRuleVO>('/opportunity-rule/add', data),
   update: (id: string, data: OpportunityRulePayload) =>
     http.post<OpportunityRuleVO>('/opportunity-rule/update', { id, ...data }),
   remove: (id: string) => http.get(`/opportunity-rule/delete/${id}`),
@@ -374,6 +370,11 @@ export const opportunityRuleApi = {
 export const logApi = {
   operations: (params: PageQuery & { module?: string }) =>
     http.get<PaginatedResult<OperationLogVO>>('/logs/operations', { params }),
+  operationDetail: (id: string) => http.get<OperationLogDetailVO>(`/logs/operations/${id}`),
+  settings: () => http.get<OperationLogSettingVO>('/logs/settings'),
+  updateSettings: (data: UpdateOperationLogSettingInput) =>
+    http.put<OperationLogSettingVO>('/logs/settings', data),
+  cleanup: () => http.post<OperationLogCleanupResultVO>('/logs/cleanup'),
   logins: (params: PageQuery) => http.get<PaginatedResult<LoginLogVO>>('/logs/logins', { params }),
 }
 
