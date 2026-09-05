@@ -76,8 +76,8 @@ onBeforeUnmount(() => instance?.unmount())
 </script>
 
 <template>
-  <div v-loading="loading || loggingIn" class="wecom-login-panel">
-    <div id="micromatrix-wecom-login" class="wecom-login-frame" />
+  <div v-loading="loading || loggingIn" class="min-h-[388px]">
+    <div id="micromatrix-wecom-login" class="min-h-[350px] flex justify-center" />
     <el-alert
       v-if="errorMessage"
       :title="errorMessage"
@@ -93,14 +93,3 @@ onBeforeUnmount(() => instance?.unmount())
     </div>
   </div>
 </template>
-
-<style scoped>
-.wecom-login-panel {
-  min-height: 388px;
-}
-.wecom-login-frame {
-  min-height: 350px;
-  display: flex;
-  justify-content: center;
-}
-</style>

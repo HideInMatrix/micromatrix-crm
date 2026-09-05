@@ -192,10 +192,15 @@ watch(
   () => {
     const known = new Set(Object.keys(positions.value))
     const current = new Set(nodesModel.value.map((node) => node.clientId!).filter(Boolean))
-    if (!current.size || [...current].some((id) => !known.has(id)) || [...known].some((id) => !current.has(id))) {
+    if (
+      !current.size ||
+      [...current].some((id) => !known.has(id)) ||
+      [...known].some((id) => !current.has(id))
+    ) {
       calculateLayout()
     }
-    if (selectedClientId.value && !current.has(selectedClientId.value)) selectedClientId.value = null
+    if (selectedClientId.value && !current.has(selectedClientId.value))
+      selectedClientId.value = null
   },
   { immediate: true },
 )
@@ -235,7 +240,11 @@ const graphEdges = computed<Edge[]>(() => {
       source: link.fromNodeId,
       target: link.toNodeId,
       markerEnd: MarkerType.ArrowClosed,
-      label: sourceBranches ? (targetType === 'DEFAULT' ? '默认' : `条件 ${(link.sort ?? 0) + 1}`) : undefined,
+      label: sourceBranches
+        ? targetType === 'DEFAULT'
+          ? '默认'
+          : `条件 ${(link.sort ?? 0) + 1}`
+        : undefined,
     }
   })
 })
@@ -278,11 +287,13 @@ function addNode(type: 'APPROVER' | 'CONDITION' | 'DEFAULT') {
       name: '条件分支',
       conditionConfig: {
         searchMode: 'AND',
-        conditions: [{
-          name: props.fields[0] ? approvalConditionFieldName(props.fields[0]) : '',
-          operator: 'EQUALS',
-          value: '',
-        }],
+        conditions: [
+          {
+            name: props.fields[0] ? approvalConditionFieldName(props.fields[0]) : '',
+            operator: 'EQUALS',
+            value: '',
+          },
+        ],
       },
     }
   } else {
@@ -349,7 +360,10 @@ function handleConnect(connection: Connection) {
       return ElMessage.warning('同一条件组只能有一个默认分支')
     }
   }
-  linksModel.value = [...linksModel.value, { fromNodeId: source, toNodeId: target, sort: outgoing.length }]
+  linksModel.value = [
+    ...linksModel.value,
+    { fromNodeId: source, toNodeId: target, sort: outgoing.length },
+  ]
   normalizeOutgoingSort(source)
   calculateLayout()
 }
@@ -369,7 +383,9 @@ function removeSelected() {
   if (type === 'START' || type === 'END') return ElMessage.warning('开始/结束节点不能删除')
   const id = node.clientId!
   nodesModel.value = nodesModel.value.filter((item) => item.clientId !== id)
-  linksModel.value = linksModel.value.filter((link) => link.fromNodeId !== id && link.toNodeId !== id)
+  linksModel.value = linksModel.value.filter(
+    (link) => link.fromNodeId !== id && link.toNodeId !== id,
+  )
   selectedClientId.value = null
   calculateLayout()
 }
@@ -393,11 +409,16 @@ function changeHierarchyLevel(value: number) {
 
 function fieldPermission(field: FieldVO): ApprovalFieldPermissionMode {
   if (field.hidden) return 'HIDDEN'
-  return selectedNode.value?.fieldPermissions?.find((item) => item.fieldId === field.id)?.permissionType ?? 'VIEW'
+  return (
+    selectedNode.value?.fieldPermissions?.find((item) => item.fieldId === field.id)
+      ?.permissionType ?? 'VIEW'
+  )
 }
 
 function setFieldPermission(field: FieldVO, permissionType: ApprovalFieldPermissionMode) {
-  const current = (selectedNode.value?.fieldPermissions ?? []).filter((item) => item.fieldId !== field.id)
+  const current = (selectedNode.value?.fieldPermissions ?? []).filter(
+    (item) => item.fieldId !== field.id,
+  )
   if (permissionType !== 'VIEW' || field.hidden) current.push({ fieldId: field.id, permissionType })
   updateSelected({ fieldPermissions: current })
 }
@@ -429,7 +450,9 @@ function currentPostConfig(action = postAction.value): ApprovalPostConfig {
 
 function setPostConfig(action: PostAction, config: ApprovalPostConfig) {
   const key = postKey(action)
-  updateSelected(key === 'passPostConfig' ? { passPostConfig: config } : { rejectPostConfig: config })
+  updateSelected(
+    key === 'passPostConfig' ? { passPostConfig: config } : { rejectPostConfig: config },
+  )
 }
 
 function addPostField() {
@@ -440,7 +463,10 @@ function addPostField() {
   setPostConfig(postAction.value, config)
 }
 
-function updatePostField(index: number, patch: Partial<ApprovalPostConfig['fieldUpdateConfigs'][number]>) {
+function updatePostField(
+  index: number,
+  patch: Partial<ApprovalPostConfig['fieldUpdateConfigs'][number]>,
+) {
   const config = currentPostConfig()
   config.fieldUpdateConfigs[index] = { ...config.fieldUpdateConfigs[index], ...patch }
   setPostConfig(postAction.value, config)
@@ -492,20 +518,25 @@ function parseConditionValue(fieldName: string, operator: ApprovalConditionOpera
     return trimmed
   }
   if (operator === 'IN' || operator === 'NOT_IN') {
-    return raw.split(',').map(parseScalar).filter((item) => item !== '')
+    return raw
+      .split(',')
+      .map(parseScalar)
+      .filter((item) => item !== '')
   }
   if (operator === 'BETWEEN') return raw.split(',').slice(0, 2).map(parseScalar)
   return parseScalar(raw)
 }
 
 function conditionValueText(value: unknown) {
-  return Array.isArray(value) ? value.join(',') : value === undefined || value === null ? '' : String(value)
+  return Array.isArray(value)
+    ? value.join(',')
+    : value === undefined || value === null
+      ? ''
+      : String(value)
 }
 
 function clonedConditionConfig(): ApprovalConditionConfig {
-  return cloneJson(
-    selectedNode.value?.conditionConfig ?? { searchMode: 'AND', conditions: [] },
-  )
+  return cloneJson(selectedNode.value?.conditionConfig ?? { searchMode: 'AND', conditions: [] })
 }
 
 function updateConditionSearchMode(searchMode: 'AND' | 'OR') {
@@ -514,7 +545,10 @@ function updateConditionSearchMode(searchMode: 'AND' | 'OR') {
   updateSelected({ conditionConfig: config })
 }
 
-function updateCondition(index: number, patch: Partial<{ name: string; operator: ApprovalConditionOperator; value: unknown }>) {
+function updateCondition(
+  index: number,
+  patch: Partial<{ name: string; operator: ApprovalConditionOperator; value: unknown }>,
+) {
   const config = clonedConditionConfig()
   config.conditions[index] = { ...config.conditions[index], ...patch }
   if (patch.operator && noValueOperators.has(patch.operator)) delete config.conditions[index].value
@@ -546,7 +580,12 @@ function removeCondition(index: number) {
 
 function moveBranch(direction: -1 | 1) {
   const node = selectedNode.value
-  if (!node || !['CONDITION', 'DEFAULT'].includes(nodeType(node)) || selectedIncoming.value.length !== 1) return
+  if (
+    !node ||
+    !['CONDITION', 'DEFAULT'].includes(nodeType(node)) ||
+    selectedIncoming.value.length !== 1
+  )
+    return
   const incoming = selectedIncoming.value[0]
   const siblings = linksModel.value
     .filter((link) => link.fromNodeId === incoming.fromNodeId)
@@ -557,7 +596,9 @@ function moveBranch(direction: -1 | 1) {
   ;[siblings[index], siblings[target]] = [siblings[target], siblings[index]]
   const order = new Map(siblings.map((link, sort) => [link.toNodeId, sort]))
   linksModel.value = linksModel.value.map((link) =>
-    link.fromNodeId === incoming.fromNodeId ? { ...link, sort: order.get(link.toNodeId) ?? 0 } : link,
+    link.fromNodeId === incoming.fromNodeId
+      ? { ...link, sort: order.get(link.toNodeId) ?? 0 }
+      : link,
   )
 }
 
@@ -567,23 +608,48 @@ function connectionName(id: string) {
 </script>
 
 <template>
-  <div class="flow-editor" data-testid="approval-flow-canvas">
-    <div class="flow-toolbar">
-      <div>
+  <div
+    class="overflow-hidden rounded-[10px] border border-[var(--el-border-color-lighter)]"
+    data-testid="approval-flow-canvas"
+  >
+    <div
+      class="flex flex-col items-baseline gap-3 border-b border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-extra-light)] px-4 py-[14px]"
+    >
+      <div class="min-w-0">
         <div class="font-medium">审批流程图</div>
         <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
           拖动节点调整布局；从节点底部连接点拖到目标顶部连接点。保存时校验完整可执行图。
         </div>
       </div>
-      <div v-if="!readonly" class="flex flex-wrap gap-2">
-        <el-button :icon="Plus" data-testid="flow-add-approver" @click="addNode('APPROVER')">审批节点</el-button>
-        <el-button :icon="GitFork" data-testid="flow-add-condition" @click="addNode('CONDITION')">条件分支</el-button>
-        <el-button :icon="Route" data-testid="flow-add-default" @click="addNode('DEFAULT')">默认分支</el-button>
-        <el-button :icon="RefreshCw" @click="calculateLayout">自动布局</el-button>
+      <div v-if="!readonly" class="flex min-w-0 flex-nowrap self-start gap-2">
+        <el-button
+          class="!ml-0"
+          :icon="Plus"
+          data-testid="flow-add-approver"
+          @click="addNode('APPROVER')"
+          >审批节点</el-button
+        >
+        <el-button
+          class="!ml-0"
+          :icon="GitFork"
+          data-testid="flow-add-condition"
+          @click="addNode('CONDITION')"
+          >条件分支</el-button
+        >
+        <el-button
+          class="!ml-0"
+          :icon="Route"
+          data-testid="flow-add-default"
+          @click="addNode('DEFAULT')"
+          >默认分支</el-button
+        >
+        <el-button class="!ml-0" :icon="RefreshCw" @click="calculateLayout">自动布局</el-button>
       </div>
     </div>
 
-    <div class="flow-workspace">
+    <div
+      class="grid h-[720px] grid-cols-[minmax(520px,1fr)_390px] max-[1180px]:grid-cols-[minmax(440px,1fr)_340px]"
+    >
       <VueFlow
         :nodes="graphNodes"
         :edges="graphEdges"
@@ -593,7 +659,7 @@ function connectionName(id: string) {
         fit-view-on-init
         :min-zoom="0.35"
         :max-zoom="1.6"
-        class="flow-canvas"
+        class="bg-[#f8fafc]"
         @connect="handleConnect"
         @node-drag-stop="handleNodeDragStop"
       >
@@ -601,13 +667,18 @@ function connectionName(id: string) {
         <Controls :show-interactive="false" position="bottom-left" />
         <template #node-process="{ data }">
           <div
-            class="process-node"
-            :class="[`process-node--${data.kind}`, { 'is-selected': data.clientId === selectedClientId }]"
+            class="process-node relative flex w-[250px] cursor-pointer items-center gap-[11px] rounded-[9px] border border-[#cbd5e1] bg-white px-[14px] py-[13px] text-[var(--el-text-color-primary)] shadow-[0_3px_12px_rgb(15_23_42_/_8%)]"
+            :class="[
+              `process-node--${data.kind}`,
+              { 'is-selected': data.clientId === selectedClientId },
+            ]"
             :data-node-id="data.clientId"
             @click="selectNode(data.clientId)"
           >
             <Handle v-if="data.kind !== 'start'" type="target" :position="Position.Top" />
-            <span class="process-node__icon">
+            <span
+              class="process-node__icon grid h-[30px] flex-[0_0_30px] place-items-center rounded-full bg-[var(--el-color-primary)] text-white"
+            >
               <Play v-if="data.kind === 'start'" :size="16" />
               <GitBranch v-else-if="data.kind === 'approver'" :size="16" />
               <GitFork v-else-if="data.kind === 'condition'" :size="16" />
@@ -615,20 +686,29 @@ function connectionName(id: string) {
               <Square v-else :size="15" />
             </span>
             <span class="min-w-0 text-left">
-              <strong>{{ data.label }}</strong>
-              <small>{{ data.detail }}</small>
+              <strong class="block overflow-hidden text-ellipsis whitespace-nowrap">{{
+                data.label
+              }}</strong>
+              <small
+                class="mt-[3px] block max-w-[175px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-[var(--el-text-color-secondary)]"
+                >{{ data.detail }}</small
+              >
             </span>
             <Handle v-if="data.kind !== 'end'" type="source" :position="Position.Bottom" />
           </div>
         </template>
       </VueFlow>
 
-      <aside class="node-inspector">
+      <aside
+        class="overflow-auto border-l border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-[18px]"
+      >
         <template v-if="selectedNode">
           <div class="flex items-center justify-between gap-2">
             <div>
               <div class="font-medium">节点配置</div>
-              <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">{{ selectedNode.nodeType }}</div>
+              <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+                {{ selectedNode.nodeType }}
+              </div>
             </div>
             <el-button
               v-if="!readonly && !['START', 'END'].includes(selectedNode.nodeType ?? 'APPROVER')"
@@ -643,7 +723,11 @@ function connectionName(id: string) {
           <template v-if="selectedNode.nodeType === 'START' || selectedNode.nodeType === 'END'">
             <el-empty
               :image-size="64"
-              :description="selectedNode.nodeType === 'START' ? '开始节点固定为流程唯一入口' : '结束节点固定为流程唯一出口'"
+              :description="
+                selectedNode.nodeType === 'START'
+                  ? '开始节点固定为流程唯一入口'
+                  : '结束节点固定为流程唯一出口'
+              "
             />
           </template>
 
@@ -667,11 +751,11 @@ function connectionName(id: string) {
                   <el-radio-button value="OR">任一满足</el-radio-button>
                 </el-radio-group>
               </el-form-item>
-              <div class="condition-list">
+              <div class="flex flex-col gap-2">
                 <div
                   v-for="(condition, index) in selectedNode.conditionConfig?.conditions ?? []"
                   :key="index"
-                  class="condition-row"
+                  class="grid grid-cols-2 gap-[7px] rounded-lg border border-[var(--el-border-color-lighter)] p-[9px]"
                 >
                   <el-select
                     :model-value="condition.name"
@@ -689,24 +773,55 @@ function connectionName(id: string) {
                   <el-select
                     :model-value="condition.operator"
                     :disabled="readonly"
-                    @change="(value: ApprovalConditionOperator) => updateCondition(index, { operator: value })"
+                    @change="
+                      (value: ApprovalConditionOperator) =>
+                        updateCondition(index, { operator: value })
+                    "
                   >
-                    <el-option v-for="item in conditionOperatorOptions" :key="item.value" :label="item.label" :value="item.value" />
+                    <el-option
+                      v-for="item in conditionOperatorOptions"
+                      :key="item.value"
+                      :label="item.label"
+                      :value="item.value"
+                    />
                   </el-select>
                   <el-input
                     v-if="!noValueOperators.has(condition.operator)"
+                    class="col-span-2"
                     :model-value="conditionValueText(condition.value)"
                     :disabled="readonly"
-                    :placeholder="condition.operator === 'BETWEEN' ? '起始值,结束值' : ['IN','NOT_IN'].includes(condition.operator) ? '多个值用逗号分隔' : '比较值'"
+                    :placeholder="
+                      condition.operator === 'BETWEEN'
+                        ? '起始值,结束值'
+                        : ['IN', 'NOT_IN'].includes(condition.operator)
+                          ? '多个值用逗号分隔'
+                          : '比较值'
+                    "
                     @update:model-value="(value: string) => updateConditionValue(index, value)"
                   />
-                  <el-button v-if="!readonly" type="danger" text :icon="Trash2" @click="removeCondition(index)" />
+                  <el-button
+                    v-if="!readonly"
+                    type="danger"
+                    text
+                    :icon="Trash2"
+                    @click="removeCondition(index)"
+                  />
                 </div>
               </div>
-              <el-button v-if="!readonly" class="mt-2" :icon="Plus" @click="addCondition">添加条件</el-button>
-              <div v-if="selectedIncoming.length === 1" class="mt-4 flex items-center gap-2 text-sm">
+              <el-button v-if="!readonly" class="mt-2" :icon="Plus" @click="addCondition"
+                >添加条件</el-button
+              >
+              <div
+                v-if="selectedIncoming.length === 1"
+                class="mt-4 flex items-center gap-2 text-sm"
+              >
                 <span>分支优先级：{{ (selectedIncoming[0].sort ?? 0) + 1 }}</span>
-                <el-button size="small" :disabled="readonly || (selectedIncoming[0].sort ?? 0) === 0" @click="moveBranch(-1)">上移</el-button>
+                <el-button
+                  size="small"
+                  :disabled="readonly || (selectedIncoming[0].sort ?? 0) === 0"
+                  @click="moveBranch(-1)"
+                  >上移</el-button
+                >
                 <el-button size="small" :disabled="readonly" @click="moveBranch(1)">下移</el-button>
               </div>
             </el-form>
@@ -728,9 +843,17 @@ function connectionName(id: string) {
                 title="默认分支没有条件"
                 description="同级 CONDITION 均不命中时进入该分支；同一条件组必须且只能存在一个 DEFAULT。"
               />
-              <div v-if="selectedIncoming.length === 1" class="mt-4 flex items-center gap-2 text-sm">
+              <div
+                v-if="selectedIncoming.length === 1"
+                class="mt-4 flex items-center gap-2 text-sm"
+              >
                 <span>分支优先级：{{ (selectedIncoming[0].sort ?? 0) + 1 }}</span>
-                <el-button size="small" :disabled="readonly || (selectedIncoming[0].sort ?? 0) === 0" @click="moveBranch(-1)">上移</el-button>
+                <el-button
+                  size="small"
+                  :disabled="readonly || (selectedIncoming[0].sort ?? 0) === 0"
+                  @click="moveBranch(-1)"
+                  >上移</el-button
+                >
                 <el-button size="small" :disabled="readonly" @click="moveBranch(1)">下移</el-button>
               </div>
             </el-form>
@@ -747,8 +870,18 @@ function connectionName(id: string) {
                 />
               </el-form-item>
               <el-form-item label="审批人类型">
-                <el-select :model-value="selectedNode.approverType" :disabled="readonly" class="w-full" @change="changeApproverType">
-                  <el-option v-for="(label, value) in APPROVER_TYPE_LABELS" :key="value" :label="label" :value="value" />
+                <el-select
+                  :model-value="selectedNode.approverType"
+                  :disabled="readonly"
+                  class="w-full"
+                  @change="changeApproverType"
+                >
+                  <el-option
+                    v-for="(label, value) in APPROVER_TYPE_LABELS"
+                    :key="value"
+                    :label="label"
+                    :value="value"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item v-if="selectedNode.approverType === 'USER'" label="指定成员">
@@ -760,7 +893,12 @@ function connectionName(id: string) {
                   class="w-full"
                   @update:model-value="(value: string[]) => updateSelected({ approverIds: value })"
                 >
-                  <el-option v-for="item in members" :key="item.id" :label="item.name" :value="item.id" />
+                  <el-option
+                    v-for="item in members"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item v-else-if="selectedNode.approverType === 'ROLE'" label="指定角色">
@@ -771,16 +909,27 @@ function connectionName(id: string) {
                   class="w-full"
                   @update:model-value="(value: string[]) => updateSelected({ approverIds: value })"
                 >
-                  <el-option v-for="item in roles" :key="item.id" :label="item.name" :value="item.id" />
+                  <el-option
+                    v-for="item in roles"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  />
                 </el-select>
               </el-form-item>
-              <template v-else-if="selectedNode.approverType && hierarchyTypes.has(selectedNode.approverType)">
+              <template
+                v-else-if="
+                  selectedNode.approverType && hierarchyTypes.has(selectedNode.approverType)
+                "
+              >
                 <div class="grid grid-cols-2 gap-2">
                   <el-form-item label="审批方向">
                     <el-select
                       :model-value="selectedNode.approverDirection ?? 'BOTTOM_UP'"
                       :disabled="readonly"
-                      @change="(value: ApproverDirection) => updateSelected({ approverDirection: value })"
+                      @change="
+                        (value: ApproverDirection) => updateSelected({ approverDirection: value })
+                      "
                     >
                       <el-option label="由近到远" value="BOTTOM_UP" />
                       <el-option label="由远到近" value="TOP_DOWN" />
@@ -792,14 +941,29 @@ function connectionName(id: string) {
                       :disabled="readonly"
                       @change="changeHierarchyLevel"
                     >
-                      <el-option v-for="level in 10" :key="level" :label="`${level} 级`" :value="level" />
+                      <el-option
+                        v-for="level in 10"
+                        :key="level"
+                        :label="`${level} 级`"
+                        :value="level"
+                      />
                     </el-select>
                   </el-form-item>
                 </div>
               </template>
               <el-form-item label="多人审批方式">
-                <el-select :model-value="selectedNode.mode ?? 'ANY'" :disabled="readonly" class="w-full" @change="changeMode">
-                  <el-option v-for="(label, value) in APPROVAL_MODE_LABELS" :key="value" :label="label" :value="value" />
+                <el-select
+                  :model-value="selectedNode.mode ?? 'ANY'"
+                  :disabled="readonly"
+                  class="w-full"
+                  @change="changeMode"
+                >
+                  <el-option
+                    v-for="(label, value) in APPROVAL_MODE_LABELS"
+                    :key="value"
+                    :label="label"
+                    :value="value"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="抄送成员">
@@ -812,7 +976,12 @@ function connectionName(id: string) {
                   class="w-full"
                   @update:model-value="(value: string[]) => updateSelected({ ccUserIds: value })"
                 >
-                  <el-option v-for="item in members" :key="item.id" :label="item.name" :value="item.id" />
+                  <el-option
+                    v-for="item in members"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="审批人为空时">
@@ -820,22 +989,38 @@ function connectionName(id: string) {
                   :model-value="selectedNode.emptyApproverAction ?? 'AUTO_PASS'"
                   :disabled="readonly"
                   class="w-full"
-                  @change="(value: EmptyApproverAction) => updateSelected({ emptyApproverAction: value, ...(value === 'AUTO_PASS' ? { fallbackApprover: null } : {}) })"
+                  @change="
+                    (value: EmptyApproverAction) =>
+                      updateSelected({
+                        emptyApproverAction: value,
+                        ...(value === 'AUTO_PASS' ? { fallbackApprover: null } : {}),
+                      })
+                  "
                 >
                   <el-option label="自动通过" value="AUTO_PASS" />
                   <el-option label="转指定成员" value="ASSIGN_SPECIFIC" />
                   <el-option label="转指定管理员" value="ASSIGN_ADMIN" />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="(selectedNode.emptyApproverAction ?? 'AUTO_PASS') !== 'AUTO_PASS'" label="兜底成员">
+              <el-form-item
+                v-if="(selectedNode.emptyApproverAction ?? 'AUTO_PASS') !== 'AUTO_PASS'"
+                label="兜底成员"
+              >
                 <el-select
                   :model-value="selectedNode.fallbackApprover"
                   :disabled="readonly"
                   filterable
                   class="w-full"
-                  @update:model-value="(value: string) => updateSelected({ fallbackApprover: value })"
+                  @update:model-value="
+                    (value: string) => updateSelected({ fallbackApprover: value })
+                  "
                 >
-                  <el-option v-for="item in members" :key="item.id" :label="item.name" :value="item.id" />
+                  <el-option
+                    v-for="item in members"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="审批人与提交人相同时">
@@ -843,7 +1028,9 @@ function connectionName(id: string) {
                   :model-value="selectedNode.sameSubmitterAction ?? 'SKIP'"
                   :disabled="readonly"
                   class="w-full"
-                  @change="(value: SameSubmitterAction) => updateSelected({ sameSubmitterAction: value })"
+                  @change="
+                    (value: SameSubmitterAction) => updateSelected({ sameSubmitterAction: value })
+                  "
                 >
                   <el-option label="自动通过" value="SKIP" />
                   <el-option label="允许本人审批" value="ALLOW" />
@@ -852,41 +1039,69 @@ function connectionName(id: string) {
               </el-form-item>
             </el-form>
 
-            <div class="inspector-section-title">字段权限</div>
-            <div class="field-permission-list">
-              <div v-for="field in fields" :key="field.id" class="field-permission-row">
+            <div class="border-t border-[var(--el-border-color-lighter)] pt-3 font-semibold">
+              字段权限
+            </div>
+            <div class="flex max-h-[260px] flex-col gap-2 overflow-auto">
+              <div
+                v-for="field in fields"
+                :key="field.id"
+                class="flex items-center justify-between gap-2 border-b border-[var(--el-border-color-lighter)] py-2"
+              >
                 <div class="min-w-0">
-                  <strong>{{ field.label }}</strong><small>{{ field.key }}</small>
+                  <strong>{{ field.label }}</strong>
+                  <small class="block text-[11px] text-[var(--el-text-color-secondary)]">{{
+                    field.key
+                  }}</small>
                 </div>
                 <el-radio-group
                   :model-value="fieldPermission(field)"
                   :disabled="readonly"
                   size="small"
-                  @update:model-value="(value) => setFieldPermission(field, value as ApprovalFieldPermissionMode)"
+                  @update:model-value="
+                    (value) => setFieldPermission(field, value as ApprovalFieldPermissionMode)
+                  "
                 >
                   <el-radio-button value="HIDDEN">隐藏</el-radio-button>
                   <el-radio-button value="VIEW" :disabled="field.hidden">只读</el-radio-button>
-                  <el-radio-button value="EDIT" :disabled="!isApprovalEditableField(formType, field)">编辑</el-radio-button>
+                  <el-radio-button
+                    value="EDIT"
+                    :disabled="!isApprovalEditableField(formType, field)"
+                    >编辑</el-radio-button
+                  >
                 </el-radio-group>
               </div>
             </div>
 
-            <div class="inspector-section-title mt-5">审批后动作</div>
+            <div class="mt-5 border-t border-[var(--el-border-color-lighter)] pt-3 font-semibold">
+              审批后动作
+            </div>
             <el-segmented
               v-model="postAction"
-              :options="[{ label: '通过后', value: 'pass' }, { label: '驳回后', value: 'reject' }]"
+              :options="[
+                { label: '通过后', value: 'pass' },
+                { label: '驳回后', value: 'reject' },
+              ]"
               class="w-full"
             />
             <div class="mt-4 flex items-center justify-between">
               <span class="text-sm font-medium">字段更新</span>
-              <el-button v-if="!readonly" size="small" :icon="Plus" @click="addPostField">添加</el-button>
+              <el-button v-if="!readonly" size="small" :icon="Plus" @click="addPostField"
+                >添加</el-button
+              >
             </div>
-            <div class="post-field-list mt-2">
-              <div v-for="(item, index) in currentPostConfig().fieldUpdateConfigs" :key="index" class="post-field-row">
+            <div class="mt-2 flex flex-col gap-2">
+              <div
+                v-for="(item, index) in currentPostConfig().fieldUpdateConfigs"
+                :key="index"
+                class="grid grid-cols-[auto_minmax(120px,1fr)_minmax(100px,1fr)_auto] items-center gap-1.5"
+              >
                 <el-switch
                   :model-value="item.enable"
                   :disabled="readonly"
-                  @update:model-value="(value) => updatePostField(index, { enable: Boolean(value) })"
+                  @update:model-value="
+                    (value) => updatePostField(index, { enable: Boolean(value) })
+                  "
                 />
                 <el-select
                   :model-value="item.fieldId"
@@ -895,7 +1110,9 @@ function connectionName(id: string) {
                   @change="(value: string) => updatePostField(index, { fieldId: value })"
                 >
                   <el-option
-                    v-for="field in fields.filter((field) => isApprovalEditableField(formType, field))"
+                    v-for="field in fields.filter((field) =>
+                      isApprovalEditableField(formType, field),
+                    )"
                     :key="field.id"
                     :label="field.label"
                     :value="field.id"
@@ -905,15 +1122,29 @@ function connectionName(id: string) {
                   :model-value="item.fieldValue == null ? '' : String(item.fieldValue)"
                   :disabled="readonly"
                   placeholder="更新值"
-                  @update:model-value="(value: string) => updatePostField(index, { fieldValue: value })"
+                  @update:model-value="
+                    (value: string) => updatePostField(index, { fieldValue: value })
+                  "
                 />
-                <el-button v-if="!readonly" type="danger" text :icon="Trash2" @click="removePostField(index)" />
+                <el-button
+                  v-if="!readonly"
+                  type="danger"
+                  text
+                  :icon="Trash2"
+                  @click="removePostField(index)"
+                />
               </div>
-              <el-empty v-if="currentPostConfig().fieldUpdateConfigs.length === 0" :image-size="48" description="未配置字段更新" />
+              <el-empty
+                v-if="currentPostConfig().fieldUpdateConfigs.length === 0"
+                :image-size="48"
+                description="未配置字段更新"
+              />
             </div>
 
             <div class="mt-5 flex items-center justify-between">
-              <span class="flex items-center gap-2 text-sm font-medium"><Webhook :size="15" />Webhook</span>
+              <span class="flex items-center gap-2 text-sm font-medium"
+                ><Webhook :size="15" />Webhook</span
+              >
               <el-switch
                 :model-value="webhookConfig().webHookEnable"
                 :disabled="readonly"
@@ -968,19 +1199,43 @@ function connectionName(id: string) {
                   @update:model-value="(value: string) => updateWebhook({ webHookDescribe: value })"
                 />
               </el-form-item>
-              <el-button v-if="!readonly" :loading="testingWebhook" @click="testWebhook">测试连接</el-button>
+              <el-button v-if="!readonly" :loading="testingWebhook" @click="testWebhook"
+                >测试连接</el-button
+              >
             </el-form>
           </template>
 
-          <div class="inspector-section-title mt-5">连接</div>
-          <div class="connection-list">
-            <div v-for="link in selectedIncoming" :key="`in-${link.fromNodeId}`" class="connection-row">
+          <div class="mt-5 border-t border-[var(--el-border-color-lighter)] pt-3 font-semibold">
+            连接
+          </div>
+          <div class="flex flex-col gap-2">
+            <div
+              v-for="link in selectedIncoming"
+              :key="`in-${link.fromNodeId}`"
+              class="flex items-center justify-between gap-2 rounded-[6px] bg-[var(--el-fill-color-light)] px-2 py-[5px] text-xs"
+            >
               <span>来自：{{ connectionName(link.fromNodeId) }}</span>
-              <el-button v-if="!readonly" text type="danger" :icon="Link2Off" @click="deleteLink(link)" />
+              <el-button
+                v-if="!readonly"
+                text
+                type="danger"
+                :icon="Link2Off"
+                @click="deleteLink(link)"
+              />
             </div>
-            <div v-for="link in selectedOutgoing" :key="`out-${link.toNodeId}`" class="connection-row">
+            <div
+              v-for="link in selectedOutgoing"
+              :key="`out-${link.toNodeId}`"
+              class="flex items-center justify-between gap-2 rounded-[6px] bg-[var(--el-fill-color-light)] px-2 py-[5px] text-xs"
+            >
               <span>前往：{{ connectionName(link.toNodeId) }}</span>
-              <el-button v-if="!readonly" text type="danger" :icon="Link2Off" @click="deleteLink(link)" />
+              <el-button
+                v-if="!readonly"
+                text
+                type="danger"
+                :icon="Link2Off"
+                @click="deleteLink(link)"
+              />
             </div>
           </div>
         </template>
@@ -991,54 +1246,6 @@ function connectionName(id: string) {
 </template>
 
 <style scoped>
-.flow-editor {
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-}
-
-.flow-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-extra-light);
-}
-
-.flow-workspace {
-  display: grid;
-  grid-template-columns: minmax(520px, 1fr) 390px;
-  height: 720px;
-}
-
-.flow-canvas {
-  background: #f8fafc;
-}
-
-.node-inspector {
-  overflow: auto;
-  padding: 18px;
-  border-left: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
-}
-
-.process-node {
-  position: relative;
-  display: flex;
-  width: 250px;
-  align-items: center;
-  gap: 11px;
-  padding: 13px 14px;
-  color: var(--el-text-color-primary);
-  border: 1px solid #cbd5e1;
-  border-radius: 9px;
-  background: white;
-  box-shadow: 0 3px 12px rgb(15 23 42 / 8%);
-  cursor: pointer;
-}
-
 .process-node:hover,
 .process-node.is-selected {
   border-color: var(--el-color-primary);
@@ -1058,16 +1265,6 @@ function connectionName(id: string) {
   border-style: dashed;
 }
 
-.process-node__icon {
-  display: grid;
-  flex: 0 0 30px;
-  height: 30px;
-  place-items: center;
-  color: white;
-  border-radius: 50%;
-  background: var(--el-color-primary);
-}
-
 .process-node--start .process-node__icon,
 .process-node--end .process-node__icon {
   background: #64748b;
@@ -1079,92 +1276,5 @@ function connectionName(id: string) {
 
 .process-node--default .process-node__icon {
   background: #7c3aed;
-}
-
-.process-node strong,
-.process-node small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.process-node small {
-  max-width: 175px;
-  margin-top: 3px;
-  color: var(--el-text-color-secondary);
-  font-size: 11px;
-}
-
-.condition-list,
-.post-field-list,
-.field-permission-list,
-.connection-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.condition-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-  padding: 9px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-}
-
-.condition-row > :nth-child(3) {
-  grid-column: 1 / -1;
-}
-
-.field-permission-list {
-  max-height: 260px;
-  overflow: auto;
-}
-
-.field-permission-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-
-.field-permission-row small {
-  display: block;
-  color: var(--el-text-color-secondary);
-  font-size: 11px;
-}
-
-.post-field-row {
-  display: grid;
-  grid-template-columns: auto minmax(120px, 1fr) minmax(100px, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.connection-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
-  font-size: 12px;
-}
-
-.inspector-section-title {
-  padding-top: 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  font-weight: 600;
-}
-
-@media (max-width: 1180px) {
-  .flow-workspace {
-    grid-template-columns: minmax(440px, 1fr) 340px;
-  }
 }
 </style>

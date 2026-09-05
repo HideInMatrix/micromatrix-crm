@@ -32,8 +32,9 @@ import {
   ShoppingCart,
   Target,
 } from 'lucide-vue-next'
+import { ElButton } from 'element-plus'
 import type { Component } from 'vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { changePassword } from '@/api/auth'
@@ -565,10 +566,37 @@ async function openNotification(item: NotificationVO) {
 
 // ===== 默认密码 =====
 
-const showDefaultPwdAlert = ref(true)
 const passwordDialogVisible = ref(false)
 const passwordSaving = ref(false)
 const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+let defaultPasswordMessage: { close: () => void } | null = null
+
+function showDefaultPasswordMessage() {
+  if (!auth.user?.defaultPwd || defaultPasswordMessage) return
+  defaultPasswordMessage = ElMessage({
+    type: 'warning',
+    showClose: true,
+    duration: 0,
+    message: h('span', { class: 'flex items-center' }, [
+      '当前账号仍在使用默认密码，建议尽快修改以保护账号安全。',
+      h(
+        ElButton,
+        {
+          link: true,
+          type: 'primary',
+          class: '!ml-2',
+          onClick: () => {
+            passwordDialogVisible.value = true
+          },
+        },
+        () => '修改密码',
+      ),
+    ]),
+    onClose: () => {
+      defaultPasswordMessage = null
+    },
+  })
+}
 
 async function savePassword() {
   if (passwordForm.newPassword.length < 6) {
@@ -590,6 +618,7 @@ async function savePassword() {
     passwordForm.oldPassword = ''
     passwordForm.newPassword = ''
     passwordForm.confirmPassword = ''
+    defaultPasswordMessage?.close()
     ElMessage.success('密码修改成功')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -719,6 +748,7 @@ const pageLoading = ref(true)
 
 onMounted(async () => {
   loadOverviewConfig()
+  showDefaultPasswordMessage()
   try {
     await Promise.all([
       moduleConfig.load(),
@@ -733,27 +763,14 @@ onMounted(async () => {
     pageLoading.value = false
   }
 })
+
+onBeforeUnmount(() => {
+  defaultPasswordMessage?.close()
+})
 </script>
 
 <template>
   <div v-loading="pageLoading" class="home-page min-w-[1000px]" data-testid="home-page">
-    <el-alert
-      v-if="auth.user?.defaultPwd && showDefaultPwdAlert"
-      title="当前账号仍在使用默认密码，建议尽快修改以保护账号安全。"
-      type="warning"
-      show-icon
-      closable
-      class="mb-4"
-      @close="showDefaultPwdAlert = false"
-    >
-      <template #default>
-        <span>当前账号仍在使用默认密码，建议尽快修改以保护账号安全。</span>
-        <el-button link type="primary" class="ml-2" @click="passwordDialogVisible = true"
-          >修改密码</el-button
-        >
-      </template>
-    </el-alert>
-
     <el-card shadow="never" class="mb-4 home-card">
       <div class="flex items-center justify-between gap-4 mb-4">
         <div class="font-semibold text-base">数据概览</div>
@@ -768,7 +785,7 @@ onMounted(async () => {
           />
           <el-popover placement="bottom-end" trigger="click" :width="330">
             <template #reference>
-              <el-button data-testid="home-overview-settings"
+              <el-button class="!ml-0" data-testid="home-overview-settings"
                 ><Settings2 :size="16" aria-hidden="true"
               /></el-button>
             </template>
@@ -819,6 +836,7 @@ onMounted(async () => {
             </el-tabs>
           </el-popover>
           <el-button
+            class="!ml-0"
             data-testid="home-overview-refresh"
             :loading="statisticLoading"
             @click="loadStatistics"

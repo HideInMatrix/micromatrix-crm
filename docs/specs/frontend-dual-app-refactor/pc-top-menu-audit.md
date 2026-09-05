@@ -117,3 +117,21 @@ interface RouteMeta {
 所有相关模块开启后的专项验收 `pnpm smoke:ui001-pc-top-menu` 为 **40/40 PASS**。验收覆盖五组 Header Top Menu、模块配置启用态、一级 Sidebar 稳定态显示与高亮、并列子路由切换后高亮保持、产品页面模块 Tabs 移除、合同 Sidebar 去 SubMenu。
 
 T11 状态：**VERIFIED**。
+
+## 7. T13 设置域页面级 Tabs 上移补充（2026-09-05）
+
+T11 首轮审计时，`/system/*` 继续由 Sidebar 二级菜单区分“组织 / 角色 / 模块 / 流程 / 消息 / 日志 / 企业设置”等不同设置域，这条结论继续保持；本轮只调整**某个设置域内部已经承担页面级功能切换的 Tabs**，不把所有系统菜单合并成一个 Top Menu。
+
+用户终态确认：企业设置与系统日志内部的一级 Tabs 属于页面级功能域，不继续放在业务 Card 内，改成真实 sibling routes 并复用通用 `PcTopMenu`：
+
+| Sidebar 设置域 | Header Top Menu                                               | 路由约定                               |
+| -------------- | ------------------------------------------------------------- | -------------------------------------- |
+| 企业设置       | 界面设置 / 第三方 / 邮件设置 / 模型设置 / 术语设置 / 全局任务 | `/system/settings` 及其 sibling 子路径 |
+| 系统日志       | 操作日志 / 登录日志                                           | `/system/logs`、`/system/logs/login`   |
+
+约束：
+
+- Sidebar 仍分别高亮“企业设置”和“系统日志”，不能把两个设置域合并；
+- 页面级 Tabs 删除后，由 route path 决定当前面板，浏览器前进/后退可恢复对应设置页；
+- `GlobalTaskSettingsPanel` 等子面板内部用于同一路由内部数据分区的 Tabs 继续保留，不向 Header 继续提升；
+- 不新增企业设置或日志专用导航组件，继续使用 Router Meta + `PcTopMenu`。

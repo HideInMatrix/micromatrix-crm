@@ -46,7 +46,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
   <div class="flex items-center gap-2" data-testid="crm-table-utility-actions">
     <el-tooltip v-if="showColumns" content="列设置" placement="top">
       <el-button
-        class="!h-8 !w-8 !p-0"
+        class="!ml-0 !h-8 !w-8 !p-0"
         aria-label="列设置"
         data-table-tool="columns"
         @click="emit('columns')"
@@ -57,7 +57,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 
     <el-tooltip v-if="showFullscreen" :content="fullscreen ? '退出全屏' : '全屏'" placement="top">
       <el-button
-        class="!h-8 !w-8 !p-0"
+        class="!ml-0 !h-8 !w-8 !p-0"
         :aria-label="fullscreen ? '退出全屏' : '全屏'"
         data-table-tool="fullscreen"
         @click="toggleFullscreen"
@@ -69,7 +69,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 
     <el-tooltip v-if="showRefresh" content="刷新" placement="top">
       <el-button
-        class="!h-8 !w-8 !p-0"
+        class="!ml-0 !h-8 !w-8 !p-0"
         :loading="refreshing"
         aria-label="刷新"
         data-table-tool="refresh"

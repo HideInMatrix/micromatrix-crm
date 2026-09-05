@@ -67,8 +67,9 @@ html:not(.dark) {
 }
 
 .el-drawer__header {
-  margin-bottom: 0;
+  margin-bottom: 0 !important;
   padding: 16px 24px;
+  padding-bottom: var(--el-drawer-padding-primary) !important;
   border-bottom: 1px solid var(--el-border-color-light);
 }
 

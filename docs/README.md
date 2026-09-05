@@ -10,6 +10,7 @@
 | [alignment-log.md](./alignment-log.md)                               | 对齐探测与实施证据：公共底座、Wave 2、W3.1～W3.7 与 Docker 发布演进            |
 | [architecture.md](./architecture.md)                                 | 架构设计与关键技术决策记录（含踩坑记录）                                       |
 | [conventions.md](./conventions.md)                                   | 开发约定：新增业务对象的标准接入手册                                           |
+| [prisma-migration-policy.md](./prisma-migration-policy.md)           | Prisma 开发期单 baseline 合并与正式发布后 forward-only 迁移规范                |
 | [api.md](./api.md)                                                   | 接口文档（Swagger）使用指南与导入方式                                          |
 | [docker-release.md](./docker-release.md)                             | API/Migration/Web 镜像、生产 Compose、独立导出 worker 与 `v*.*.*` Tag 自动发布 |
 | [cordys-deferred-backlog.md](./cordys-deferred-backlog.md)           | 已发现但暂缓实施的 Cordys 能力与数据模型缺口长期台账                           |
@@ -19,9 +20,9 @@
 ## 快速上下文
 
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
-- 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/冒烟脚本）
-- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链、**W3.7 高级审批深化**以及独立工程化单元 **CACHE-001**、**CACHE-002**、**EVENT-001**、**COORD-001**、**ASYNC-001**、**LOG-001**、**LOG-002**、**LOG-003**均已完成。LOG-003 已把“清理过期日志”和“清空全部操作日志”拆成两个明确动作，并为全量清空增加 `system:log:update`、输入“清空”强确认和 tenantId 删除边界。
-- 当前数据库基线：**71 migrations**；当前日志治理封板基线为 API Rules **192/192**、全仓 typecheck PASS、lint **0 error / 8 个既有 warning**、production build PASS、Web **4145 modules transformed**、Prisma status 与 Prettier/`git diff --check` 全绿。
+- 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/本地验收）
+- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链、**W3.7 高级审批深化**、独立工程化单元 **CACHE-001**、**CACHE-002**、**EVENT-001**、**COORD-001**、**ASYNC-001**、**LOG-001**、**LOG-002**、**LOG-003**以及 **UI-001 PC/Mobile UI 重构 T1～T13** 均已完成。UI-001 最新 T13 已将企业设置/系统日志页面级 Tabs 迁到 Header Top Menu，并收口首页 Element Plus 按钮间距。
+- 当前数据库基线：**1 个 pre-release baseline migration**（`20260905084900_baseline`）。项目正式发布前，每次数据库结构提交都重新合并为单 baseline；正式发布后停止 squash 并切换为 forward-only migrations。历史文档中的 30/56/68/71 等 migration 数量只表示对应历史验收节点，不再代表当前目录数量。
 - 当前发布基线：`v0.0.13` 指向 `63e846f`；项目 packageManager 已切换 pnpm 11.25.0，Release/Docker 工具链整改由 TOOLCHAIN-001 文档单独追踪，不与 LOG-002 的业务日志改造混为同一验收单元。
 - 整体剩余范围与完成标准见 [project-progress.md](./project-progress.md)；DataEase provider/token 继续由 DB-023 deferred，AI/License/MCP/商业标讯等明确排除项不计入当前 CRM 核心完成标准。
 - 数据模型唯一真相：`apps/api/prisma/schema.prisma`；不维护会随迁移快速失真的手写数据模型快照

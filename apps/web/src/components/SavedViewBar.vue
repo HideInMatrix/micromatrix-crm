@@ -419,8 +419,7 @@ watch(
       </el-button>
     </div>
 
-    <div class="flex items-center gap-2" data-testid="saved-view-actions">
-      <span class="whitespace-nowrap text-sm text-[var(--el-text-color-secondary)]">视图</span>
+    <div class="flex items-center" data-testid="saved-view-actions">
       <el-select
         :model-value="selectedViewKey"
         filterable
@@ -429,31 +428,18 @@ watch(
         @update:model-value="(value) => selectAnyView(value)"
       >
         <el-option v-if="!systemViews?.length" label="默认视图" value="default" />
-        <el-option-group v-if="systemViews?.length" label="系统视图">
-          <el-option
-            v-for="view in systemViews"
-            :key="view.id"
-            :label="view.label"
-            :value="`system:${view.id}`"
-          />
-        </el-option-group>
-        <el-option-group v-if="enabledViews.length" label="个人视图">
-          <el-option
-            v-for="view in enabledViews"
-            :key="view.id"
-            :label="view.name"
-            :value="`user:${view.id}`"
-          />
-        </el-option-group>
-        <template #header>
-          <el-button link type="primary" @click.stop="openCreate(true)">
-            <Plus :size="14" :stroke-width="1.8" aria-hidden="true" />
-            新建视图
-          </el-button>
-        </template>
-        <template #footer>
-          <el-button link type="primary" @click.stop="openManageViews">管理视图</el-button>
-        </template>
+        <el-option
+          v-for="view in systemViews ?? []"
+          :key="`system:${view.id}`"
+          :label="view.label"
+          :value="`system:${view.id}`"
+        />
+        <el-option
+          v-for="view in enabledViews"
+          :key="`user:${view.id}`"
+          :label="view.name"
+          :value="`user:${view.id}`"
+        />
       </el-select>
     </div>
   </div>

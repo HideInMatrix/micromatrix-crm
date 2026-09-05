@@ -1,6 +1,6 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-04。
+最近对齐：2026-09-05。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
@@ -9,7 +9,8 @@
 - 分支：`master`
 - 当前发布标签：`v0.0.13`
 - W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
-- 当前数据库基线：**70 migrations**；第 70 个 migration 为 `20260904093000_operation_log_retention_index`。
+- UI-001 PC/Mobile UI 重构已推进到 **T12 VERIFIED**：PC 模块级 Header Top Menu、产品/价格表独立路由、列表两层工具区、Saved View 职责、32×32 图标动作以及产品/价格表 Card 顶部留白均已按 Cordys 规则收口。
+- 当前数据库基线：**1 个 pre-release baseline migration**：`20260905084900_baseline`。正式发布前数据库结构变更统一重新合并该 baseline；正式发布后切换为 forward-only migration 历史。
 
 ## 2. 已关闭主里程碑
 
@@ -39,20 +40,22 @@
 | LOG-001                   | 真实客户端 IP、操作日志 180 天默认 retention、分布式清理、Docker 日志轮转                                               | `VERIFIED`                                                |
 | LOG-002                   | 操作日志主表/Blob、列表/详情分离、租户 retention 网页策略、手工清理                                                     | `VERIFIED`                                                |
 | LOG-003                   | 操作日志“清理过期”与“清空全部”语义拆分、租户级危险清空入口                                                              | `VERIFIED`                                                |
+| UI-001                    | PC/Mobile 双应用 UI、Header Top Menu、PC 列表工具区与 Saved View Cordys 对齐                                            | T1～T13 `VERIFIED`                                        |
 
 ## 3. 当前执行指针
 
 当前执行状态：
 
-> **LOG-003 / 操作日志全量清空已完成并封板为 `VERIFIED`。retention “清理过期日志”与危险“清空全部操作日志”已拆成两个独立动作，clear-all 严格按当前 tenantId 删除且不会通过 `@LogOperation` 写回自身日志。当前没有新的正式执行单元处于 `IN_PROGRESS`。**
+> **LOG-003 与 UI-001 T12 均已完成并封板为 `VERIFIED`。UI-001 最新状态为 PC 列表工具区 / 视图操作 Cordys 对齐完成；当前没有新的正式执行单元处于 `IN_PROGRESS`。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002` 与 `LOG-003` 均已在各自 tasks 文档完成封板。当前数据库仍为 71 migrations；LOG-003 将 Rules 基线推进到 192/192，全仓 typecheck/build 与 Prettier/diff 保持全绿。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入 LOG-002。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002` 与 `LOG-003` 均已在各自 tasks 文档完成封板。数据库迁移历史已按未发布阶段策略从 71 个开发 migration 合并为 1 个 `20260905084900_baseline`；LOG-003 将 Rules 基线推进到 192/192。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入 LOG-002。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
-- 当前 Prisma migration 基线已推进到 **71 migrations**；`20260904130000_operation_log_detail_and_settings` 已在本地开发 PostgreSQL 实际 deploy，`prisma migrate status` 确认数据库 up to date。最近一次“从零新鲜空库 + bootstrap + API/worker”完整 Smoke 仍是 ASYNC-001 的 **69/69 migrations + bootstrap**，历史验收基线继续保留在对应文档中，不把本次日志 schema deploy 伪称为新一轮完整空库 Smoke。
+- 当前 Prisma migration 基线为 **1 个 `20260905084900_baseline`**。该 baseline 已在全新空 PostgreSQL 上通过 `prisma migrate deploy` 与 Seed，随后 `prisma migrate diff` 返回 `No difference detected.`；两条 Prisma Schema 无法表达的 partial unique index 也已在数据库中逐条确认存在。此前 30/56/68/69/70/71 migration 的验收数字继续作为历史阶段证据保留，不再代表当前 migration 目录结构。
+- UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
 - Root Smoke：**227/227**。
 - Rules：**192/192**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export、LOG-001 IP/retention、LOG-002 Blob/租户策略与 LOG-003 clear-all 回归保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。

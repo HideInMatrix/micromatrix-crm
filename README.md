@@ -23,7 +23,7 @@
 | Web 管理端 | Vue 3 + TypeScript + Vite + Element Plus + UnoCSS（presetWind4）+ ECharts |
 | 移动端 H5  | Vue 3 + Vant 4 + UnoCSS                                                   |
 | 后端 API   | NestJS 11 + Prisma 7（驱动适配器）+ PostgreSQL 18 + Redis                 |
-| 认证       | JWT（access + refresh）+ 个人 API Key（AK/SK）+ RBAC + 数据范围             |
+| 认证       | JWT（access + refresh）+ 个人 API Key（AK/SK）+ RBAC + 数据范围           |
 | 工程       | pnpm workspace monorepo + TypeScript 6 + ESLint 9                         |
 
 > UnoCSS 使用 `presetWind4`（Tailwind v4 兼容语法），无需也不应同时安装 `tailwindcss`。
@@ -37,7 +37,6 @@ micromatrix-crm/
 │   └── web/          # Vue 单前端：桌面/Mobile 路由页面按 views/<模块>/ 分域
 ├── packages/shared/  # 前后端共享类型、权限树、公式求值器
 ├── docker/           # API/Migration/Web 独立生产镜像与 Nginx runtime 配置
-├── scripts/          # 全链路、企业设置与 Docker release Smoke
 ├── docker-compose.dev.yml     # 本地开发基础设施：PostgreSQL/Redis
 └── docker-compose.yml         # 唯一生产 Compose：PostgreSQL/Redis/Migration/API/Worker/Web
 ```
@@ -49,18 +48,38 @@ micromatrix-crm/
 ```bash
 pnpm install
 cp apps/api/.env.example apps/api/.env              # 首次
-pnpm dev:setup                                      # 首次/空库：启动基础设施 + migration + bootstrap seed
 pnpm --filter @micromatrix/shared build
 pnpm prisma:generate                                # 生成与 schema 一致的 Prisma Client
-pnpm db:migrate:dev                                 # 仅在开发 schema 变更时应用/生成 Prisma migration
-pnpm dev                                            # api:3000 / web:5173 / mobile:5174
 ```
+
+### 本地开发
+
+首次初始化开发环境、切换到新的 Prisma baseline 后重建空库，或本地 PostgreSQL/Redis 被清理后，按顺序执行下面 3 个步骤：
+
+```bash
+# 1. 启动本地 PostgreSQL 18 与 Redis 7，并等待健康检查通过
+docker compose -f docker-compose.dev.yml up -d --wait
+
+# 2. 应用当前仓库中的 Prisma migration baseline
+pnpm db:migrate
+
+# 3. 仅在空库中初始化管理员和基础数据；已有用户时 bootstrap 会跳过
+SEED_MODE=bootstrap pnpm --filter @micromatrix/api run db:seed
+```
+
+完成基础设施初始化后启动开发服务：
+
+```bash
+pnpm dev
+```
+
+默认端口：API `3000`、Web `5173`、Mobile `5174`。
 
 > 根 `docker-compose.yml` 只负责完整生产拓扑；本地开发使用 `docker-compose.dev.yml` 单独启动 PostgreSQL 18 与 Redis 7，并通过宿主机 `localhost:5432/6379` 供 `pnpm dev` 连接。开发 Compose 不包含 migrate/API/worker/web，避免本地调试时重复启动整套服务。
 
-> `pnpm dev:setup` 会等待 PostgreSQL/Redis 健康后执行已有 migration，并以 `SEED_MODE=bootstrap` 初始化首个管理员。已有用户时 bootstrap seed 会直接跳过，因此不会重置现有开发账号、密码或业务数据。日常只需保持基础设施运行并执行 `pnpm dev`；如基础设施被停止，可用 `pnpm dev:infra` 单独重新启动。
+> 日常开发只需保持 PostgreSQL/Redis 运行并执行 `pnpm dev`。数据库结构变更遵循 [`docs/prisma-migration-policy.md`](./docs/prisma-migration-policy.md)：正式发布前提交时始终压缩为单一 baseline，不在 Git 中累积开发期 migration 历史。
 
-> API 的 `dev / build / typecheck / test:rules` 已内置 `prisma generate`。如果 Prisma schema 新增了字段或模型，正常执行 `pnpm dev` 会先刷新生成客户端；数据库结构变更仍需执行 `pnpm db:migrate:dev`（部署环境使用 `pnpm db:migrate`）。
+> API 的 `dev / build / typecheck / test:rules` 已内置 `prisma generate`。如果 Prisma schema 新增字段或模型，正常执行 `pnpm dev` 会先刷新生成客户端；数据库结构的提交方式以 Prisma migration policy 为准。
 
 ### Prisma 类型大量报“字段不存在”
 
@@ -68,24 +87,16 @@ pnpm dev                                            # api:3000 / web:5173 / mobi
 
 ```bash
 pnpm prisma:generate
-pnpm db:migrate:dev
+pnpm db:migrate
 pnpm dev
 ```
 
 - Web（桌面/Mobile 自适应） http://localhost:5173 · API 文档 http://localhost:3000/api/docs
-- 全链路冒烟：`pnpm smoke`（最近完整基线 **227/227**，需 API 已启动）
 - 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **172/172**）
-- 异步导出真实 Smoke：`pnpm --filter @micromatrix/api smoke:async-export`（隔离 PostgreSQL/Redis + 独立 worker）
 
 ## Docker Release
 
 生产镜像职责分离：API 使用 Node 24，Migration 独立执行 Prisma migration，Web 使用 Nginx；异步导出 worker 复用 API 镜像执行 `node dist/worker.js`。Web 在运行时通过 `API_UPSTREAM` 转发 `/api`，无需为不同 API 地址重新构建前端。
-
-本地完整打包验收：
-
-```bash
-pnpm smoke:docker-release
-```
 
 创建并推送 Git tag 后，GitHub Actions 自动构建并发布 API/Migration/Web 三个 `linux/amd64` + `linux/arm64` GHCR 镜像；worker 直接复用 API 镜像：
 

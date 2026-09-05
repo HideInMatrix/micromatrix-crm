@@ -12,6 +12,9 @@ export default tseslint.config(
       '**/*.d.ts',
       '**/*.tsbuildinfo',
       'apps/api/src/generated/**',
+      // scripts/ 与 apps/api/scripts/ 仅用于本地临时开发/验收，不纳入 Git，也不参与正式 lint。
+      'scripts/**',
+      'apps/api/scripts/**',
       // CordysCRM/ 是只读上游参考源码，不属于 MicroMatrix 的 lint 范围。
       'CordysCRM/**',
     ],

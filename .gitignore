@@ -33,3 +33,7 @@ pnpm-debug.log*
 CordysCRM/
 
 bugs/
+
+# 本地脚本目录：允许开发/验收时临时使用，但整个目录不纳入 Git
+/scripts/
+/apps/api/scripts/

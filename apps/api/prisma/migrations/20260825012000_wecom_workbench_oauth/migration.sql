@@ -1,1 +1,0 @@
-ALTER TYPE "ExternalOAuthFlow" ADD VALUE 'WECOM';

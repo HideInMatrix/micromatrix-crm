@@ -1,2 +1,0 @@
-ALTER TABLE "users"
-ADD COLUMN "default_pwd" BOOLEAN NOT NULL DEFAULT false;

@@ -1409,3 +1409,37 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 产品拆路由后同时收口初始化边界：`/products` 只读取产品字段和产品列表，不再预加载 `/api/price/page`；进入 `/products/prices` 后才加载价格表字段、列表与产品 options。独立 Chrome CDP Network 抓包确认价格表切换实际发出 `/api/metadata/price/fields`、`/api/price/page`、`/api/product/list/option`。本批顺带消除了 `ProductsView.vue` 模板内 `Record<string, unknown>` 泛型断言造成的 Prettier Vue parser 阻断，该文件现已可正常格式化。
 - 用户将相关 NavigationModule 全部开启后重新执行专项 Browser Smoke，`pnpm smoke:ui001-pc-top-menu` **40/40 PASS**：五组 Header Top Menu、一级 Sidebar 稳定态显示/高亮、子路由切换后高亮保持、产品 Card 内模块 Tabs 清理、合同 Sidebar 去 SubMenu 全绿。最终 root `pnpm typecheck` PASS，Web production build PASS，root lint **0 error / 8 个既有 warning**，`git diff --check` PASS。
 - `UI-001 T11` 状态为 **`VERIFIED`**。
+
+---
+
+## 84. 开发期 Prisma 单 baseline 与本地验收脚本仓库治理（2026-09-05）
+
+- 本地脚本治理最终调整为“整个目录本地使用、Git 不追踪”：根 `package.json` 与 `apps/api/package.json` 已删除全部 `smoke` / `smoke:*` 指令；根 `scripts/` 与 `apps/api/scripts/` 整体从 Git index 移除并写入 `.gitignore`，同时从根 ESLint 正式扫描范围排除。原 `scripts/dev-setup.mjs` 同样退出仓库并删除本地文件；其“启动 PostgreSQL/Redis → `pnpm db:migrate` → bootstrap seed”三步操作已直接写入根 `README.md` 的本地开发章节。
+- Prisma migration 策略按项目“尚未正式发布、旧开发数据无需兼容”的事实调整为 pre-release single baseline。原 71 个开发期 migration 不再逐条保留，当前 `schema.prisma` 重新通过 `prisma migrate diff --from-empty --to-schema=prisma/schema.prisma --script` 生成 `20260905084900_baseline`；仓库目标结构为单一 baseline migration + `migration_lock.toml`。
+- 合并前审计全部历史 migration 的原生 SQL：旧 `INSERT/UPDATE/DELETE` 均属于开发期数据升级/回填，不进入空库 baseline；未发现函数、触发器、View、Extension、GIN/GIST/BRIN、自定义 CHECK 等额外结构。Prisma Schema 无法表达的两条 partial unique index `approval_flows_active_form_type_key` 与 `organization_sync_batches_active_key` 已显式追加到 baseline，并登记到 `docs/prisma-migration-policy.md`。
+- 使用全新 PostgreSQL 空库只执行当前 1 个 baseline，`prisma migrate deploy` PASS；随后 `seed.ts` PASS；数据库到 `schema.prisma` 的 `prisma migrate diff --exit-code` 返回 `No difference detected.`；数据库系统目录查询确认两条 partial unique index 均真实存在。
+- 规则冻结：正式发布前，每次提交数据库结构变更都重新生成并替换单一 baseline，同时复核 Prisma 无法表达的原生结构并执行空库 deploy/seed/diff；首个正式生产发布后立即停止 squash，已发布 migration 成为不可修改历史，后续仅允许新增 forward-only migration。独立 Migration 镜像和 `prisma migrate deploy` 发布架构保持不变。
+
+---
+
+## 85. UI-001 T12 PC 列表工具区 / 视图操作 Cordys 对齐（2026-09-05）
+
+- 对照 Cordys `CrmTable`、`CrmAdvanceFilter`、`CrmViewSelect` 完成 PC 列表页第二轮审计，冻结“两层工具区”职责：第一层承载新建/导入/导出等业务动作以及搜索、筛选、列设置、模式、全屏、刷新等表格工具；第二层承载系统/固定视图、新建视图和视图选择。列设置不再放在视图行。
+- `/products` 与 `/products/prices` 删除独有的 Card body 顶部零 padding，恢复 PC 全局 Card 留白；产品和价格表按 Cordys 保持无 Saved View 第二行结构。新增 `CrmSearchInput`、`CrmTableUtilityActions`、`CrmDisplayModeSwitch` 作为共享基座，搜索图标进入 Input 后缀，表格工具和列表/看板切换统一使用 32×32 图标按钮。
+- `SavedViewBar` 完成职责收口：整体下移到业务动作行之后；“+ 保存当前筛选”改为“+ 新建视图”；列设置由第一层 Settings 图标触发且仍打开原列偏好 Dialog。随后按用户实际验收反馈继续精简右侧视图选择器：移除选择器左侧“视图”前缀，下拉只保留真实视图项，不再展示“+ 新建视图 / 系统视图 / 个人视图 / 管理视图”等蓝色辅助文案；该点作为项目确认后的视觉覆盖规则，不再机械复刻 Cordys `CrmViewSelect` 的 header/action/group label。
+- 右侧列设置/全屏/刷新共用 `CrmTableUtilityActions`，已显式消除 Element Plus `.el-button + .el-button` 默认 `margin-left`，工具按钮间距只由父级 8px `gap` 控制。该修正通过共享组件同时覆盖产品、价格表、线索、线索池、客户、联系人、客户公海、商机、报价、合同、发票、订单对应工具区。
+- 用户本地开发数据库完成初始化并启动 API/Web 后，以 `127.0.0.1:3000/5173` 真实运行环境执行本地 CDP Browser 验收。原 `/contacts` 假失败最终定位为 Vite dev `document.readyState === complete` 不稳定门槛；改为目标路由 + `#app` 已渲染后，联系人及后续页面均正常。首次完整验收 **79/79 PASS**；本轮追加工具按钮真实像素间距、视图前缀和下拉文案断言后最终 **111/111 PASS**，12 页工具区层级、32px 图标动作、8px 间距、纯视图项下拉、列设置功能和商机/合同/订单模式切换全部通过。
+- T12 本地 Browser 验收脚本继续只存在于被忽略的 `scripts/` 本地目录，不恢复任何 Git 跟踪或 `package.json` smoke 指令。`UI-001 T12` 状态更新为 **`VERIFIED`**。
+- 最终工程门槛重新执行：root `pnpm typecheck` PASS；root `pnpm build` PASS；root `pnpm lint` **0 error / 8 个既有 warning**；相关文档与 ESLint 配置 Prettier PASS；staged + unstaged `git diff --check` PASS。
+
+---
+
+## 86. UI-001 T13 首页按钮间距与设置域 Header Top Menu（2026-09-05）
+
+- 首页数据概览右侧设置/刷新按钮沿用 `gap-2`，但 Element Plus `.el-button + .el-button` 默认 `margin-left` 会叠加额外间距；本轮在两个按钮上显式清零 sibling margin，不改全局 Element Plus 样式。真实 Browser DOM 测得两按钮间距稳定为 **8px**。
+- 企业设置原 `SettingsView.vue` 的 6 个页面级 Tabs 删除，改为 `/system/settings`、`/system/settings/third-party`、`/system/settings/mail`、`/system/settings/models`、`/system/settings/terms`、`/system/settings/global-tasks` 六个真实 sibling routes；统一通过 Router Meta + `PcTopMenu` 在 Header 显示“界面设置 / 第三方 / 邮件设置 / 模型设置 / 术语设置 / 全局任务”，子路由通过 `activeMenu=/system/settings` 保持 Sidebar“企业设置”高亮。
+- 系统日志原 `LogsView.vue` 的“操作日志 / 登录日志”一级 Tabs 删除，拆为 `/system/logs` 与 `/system/logs/login`；`LogsView` 改为根据当前 route 只加载对应日志数据，两个路由共用 Header Top Menu，并通过 `activeMenu` 保持 Sidebar“系统日志”高亮。页面内部详情 Drawer、日志策略以及全局任务组件内部同路由 Tabs 均不受影响。
+- 设置域规则在 T11 基础上补充：`/system/*` 各设置域仍由 Sidebar 二级菜单区分，只把某个设置域内部承担页面级功能切换的 Tabs 提升为该设置域自己的 Header Top Menu，不把企业设置与系统日志合并成一个导航组。
+- 基于用户现有 `127.0.0.1:3000/5173` 运行环境执行本地 CDP Browser 验收，最终 **34/34 PASS**：首页按钮 8px 间距、企业设置 6 路由、系统日志 2 路由、Top Menu 完整文案/当前项/独立 URL、Sidebar 高亮、一级 Tabs 移除以及全局任务内部 Tabs 保留全部通过。
+- Dashboard 默认密码提醒从占据页面布局的 `el-alert` 改为 Element Plus `ElMessage` warning：进入首页立即出现、`duration=0` 持续显示、提供关闭按钮，并继续保留“修改密码”快捷入口；修改成功或离开 Dashboard 时主动关闭。浏览器专项验证确认旧 Alert 已消失、Message 可手动关闭且“修改密码”仍可打开原 Dialog。
+- 最终工程门槛：root `pnpm typecheck` PASS；root `pnpm build` PASS（Web **3788 modules transformed**、Mobile **2216 modules transformed**）；root `pnpm lint` **0 error / 8 个既有 warning**；staged + unstaged `git diff --check` PASS。`UI-001 T13` 状态为 **`VERIFIED`**。

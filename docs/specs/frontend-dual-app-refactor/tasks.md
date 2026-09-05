@@ -90,15 +90,54 @@
 
 - [x] 对照 Cordys `CrmTable`、`CrmAdvanceFilter`、`CrmViewSelect` 完成全仓审计；见 `pc-table-toolbar-audit.md`。
 - [x] 冻结“两层工具区”规则：第一层业务动作 + 图标表格工具，第二层视图操作。
-- [ ] 修复 `/products`、`/products/prices` Card 顶部 padding 特例。
-- [ ] 建立通用搜索输入、图标工具按钮与表格工具区基座。
-- [ ] 重构 `SavedViewBar`：下移至业务动作后；移出列设置；管理视图收进选择器；“+ 保存当前筛选”改为“+ 新建视图”。
-- [ ] 迁移线索 / 线索池 / 客户 / 联系人 / 客户公海。
-- [ ] 迁移商机 / 报价 / 合同 / 发票 / 订单。
-- [ ] 对齐产品 / 价格表无视图行的 Cordys 结构。
-- [ ] Browser Smoke + typecheck/build/lint/diff-check 封板。
+- [x] 修复 `/products`、`/products/prices` Card 顶部 padding 特例。
+- [x] 建立通用搜索输入、图标工具按钮与表格工具区基座。
+- [x] 重构 `SavedViewBar`：下移至业务动作后；移出列设置；“+ 保存当前筛选”改为“+ 新建视图”；右侧选择器按用户确认收口为无“视图”前缀、无新增/管理/分组蓝色辅助文案的纯视图选项下拉。
+- [x] 迁移线索 / 线索池 / 客户 / 联系人 / 客户公海。
+- [x] 迁移商机 / 报价 / 合同 / 发票 / 订单。
+- [x] 对齐产品 / 价格表无视图行的 Cordys 结构。
+- [x] Browser + typecheck/build/lint/diff-check 封板。
 
-当前扩展任务状态：**T12 IN_PROGRESS**。
+当前扩展任务状态：**T12 VERIFIED**。
+
+### T12 验收记录
+
+- `/products` 与 `/products/prices` 已删除 Card body 顶部 `padding: 0` 特例，恢复与 PC 全局 Card 一致的顶部留白；产品/价格表按 Cordys 保持单层业务工具区，不额外增加 Saved View 行。
+- 新增通用 `CrmSearchInput`、`CrmTableUtilityActions`、`CrmDisplayModeSwitch`：搜索动作收进 Input 后缀；筛选/列设置/全屏/刷新使用图标语义；表格工具点击区统一为 32×32，商机/合同/订单的列表/看板切换改为 32×32 图标切换。
+- `SavedViewBar` 已统一位于新建/导入/导出等业务操作行之后；列设置移回第一层表格工具区；新增动作统一为“+ 新建视图”；右侧选择器只展示真实视图项，不再显示左侧“视图”前缀及下拉中的“+ 新建视图 / 系统视图 / 个人视图 / 管理视图”等辅助文案。线索、线索池、客户、联系人、客户公海、商机、报价、合同、发票、订单均完成迁移。
+- `CrmTableUtilityActions` 显式清除 Element Plus `.el-button + .el-button` 的相邻按钮 `margin-left`，统一只由父级 8px `gap` 控制工具按钮间距，避免列设置/全屏/刷新三按钮出现叠加间距。
+- 本地 CDP Browser 验收脚本（仅本地使用，不纳入 Git）最终 **111/111 PASS**，覆盖上述 12 个页面的工具区层级、32px 图标按钮、工具按钮 8px 间距、搜索/列设置/管理视图文字按钮清理、无“视图”前缀、下拉只保留真实视图项、新建视图、列设置功能保持，以及三处列表/看板图标切换。
+- 最终工程门槛：root `pnpm typecheck` PASS；root `pnpm build` PASS；root `pnpm lint` **0 error / 8 个既有 warning**；T12/当前治理文档与 ESLint 配置 Prettier PASS；staged + unstaged `git diff --check` PASS。
+
+## T13 首页按钮间距 + 设置域页面级 Top Menu
+
+- [x] 复核首页与设置域现状，确认首页按钮间距仍受 Element Plus `.el-button + .el-button` 影响；企业设置 6 个 Tabs、系统日志 2 个 Tabs 属于页面级功能切换。
+- [x] 在 `pc-top-menu-audit.md` 冻结设置域内部页面级 Tabs 上移规则，不改变 `/system/*` 各设置域仍由 Sidebar 二级菜单承载的整体信息架构。
+- [x] 修复首页相关按钮组的相邻按钮默认 `margin-left`，统一只使用 8px gap。
+- [x] 将企业设置拆为 6 个 sibling routes，并由通用 `PcTopMenu` 渲染 Header 导航；删除页面内一级 Tabs。
+- [x] 将系统日志拆为操作日志 / 登录日志 sibling routes，并由通用 `PcTopMenu` 渲染 Header 导航；删除页面内一级 Tabs。
+- [x] Browser + typecheck/build/lint/diff-check 封板。
+
+当前扩展任务状态：**T13 VERIFIED**。
+
+### T13 验收记录
+
+- 首页数据概览右侧设置/刷新按钮显式清除 Element Plus 相邻按钮默认 `margin-left`；真实 Browser DOM 测得两按钮边界间距为 **8px**。
+- 企业设置拆为 6 个真实 sibling routes：`/system/settings`、`/system/settings/third-party`、`/system/settings/mail`、`/system/settings/models`、`/system/settings/terms`、`/system/settings/global-tasks`。Header 统一显示“界面设置 / 第三方 / 邮件设置 / 模型设置 / 术语设置 / 全局任务”，页面内原一级 Tabs 已删除，所有子路由继续高亮 Sidebar“企业设置”。
+- 系统日志拆为 `/system/logs` 与 `/system/logs/login` 两个真实 sibling routes；Header 显示“操作日志 / 登录日志”，页面内原一级 Tabs 已删除，两个路由均继续高亮 Sidebar“系统日志”。`GlobalTaskSettingsPanel` 内部同路由 Tabs 保持不变。
+- 本地 CDP Browser 验收脚本仅用于本地、继续被 `/scripts/` 忽略，最终 **34/34 PASS**；覆盖首页 8px 间距、8 个设置/日志路由的 Top Menu 文案、独立 URL、当前项高亮、Sidebar 高亮、一级 Tabs 清理及全局任务内部 Tabs 保留。
+- root `pnpm typecheck` PASS；root `pnpm build` PASS（Web **3788 modules transformed**，Mobile **2216 modules transformed**）；root `pnpm lint` **0 error / 8 个既有 warning**；staged + unstaged `git diff --check` PASS。
+
+## T14 PC Drawer Header 间距基线
+
+- [x] 冻结 Drawer Header / Body 垂直节奏：`.el-drawer__header` 强制 `margin-bottom: 0`，`padding-bottom` 使用 `var(--el-drawer-padding-primary)`；Body 默认保持 24px 内容内距。
+- [x] Drawer 宽度继续保留各页面现有 `size` 配置，不做全局统一；审批流程 Drawer 作为复杂编辑特例使用 `size="50%" + min-width:1080px`。
+- [x] 审批流程图工具区拆为两行：标题/说明独占第一行，审批节点/条件分支/默认分支/自动布局独占第二行并禁止按钮换行。
+- [x] 审批流程 UI 按 `docs/conventions.md` 的 UnoCSS + presetWind4 规则收口：`flow-toolbar` 使用 `items-baseline`；`ApprovalFlowDrawer.vue` 普通布局全部迁入 utility 并删除 `<style scoped>`；`ApprovalFlowCanvas.vue` 普通布局迁入 utility，scoped CSS 只保留节点 hover/selected/节点类型状态选择器。
+- [x] Web typecheck / Web production build / root lint / staged+unstaged diff-check 通过；lint 仍为 0 error / 8 个既有 warning。
+- [ ] Browser 视觉验收封板。
+
+当前扩展任务状态：**T14 IN_PROGRESS**。
 
 ### T11 验收记录
 

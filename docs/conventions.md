@@ -2,7 +2,7 @@
 
 - `CordysCRM/` 是只读业务与交互参考源码，不进入 MicroMatrix Git 版本库。
 - CordysCRM 源代码是当前复刻工作的第一事实来源。现有 MicroMatrix 页面、接口和业务规则只在与 Cordys 源码一致时保留；发生冲突时允许直接删除、替换或重构旧实现，不以“兼容旧页面/旧接口”为优先目标。
-- 数据库表与 Prisma 模型必须先读取 Cordys Domain、DDL、Mapper 后设计；字段、枚举、关系、可空性、默认值和约束以 Cordys 为准。当前项目未发布，发现旧模型偏差时直接修改模型与既有迁移并重建开发库，不新增为旧结构保留的兼容字段、占位数据或双写逻辑；仅允许 PostgreSQL/Prisma 所需的技术性命名适配。
+- 数据库表与 Prisma 模型必须先读取 Cordys Domain、DDL、Mapper 后设计；字段、枚举、关系、可空性、默认值和约束以 Cordys 为准。当前项目尚未正式发布，发现旧模型偏差时直接修改 `schema.prisma`，并在提交数据库结构变更前重新生成**单一 pre-release baseline migration**；不为旧开发数据增加兼容字段、占位数据、回填或双写逻辑。正式发布并产生需要持续保留的数据后，立即停止 baseline squash，切换为历史 migration 不可修改的 forward-only 模式。
 - 新增/调整页面时，必须分别阅读 CordysCRM 对应 PC / Mobile 前端源码；页面结构、布局、字段顺序、操作入口、按钮位置、弹窗/抽屉流程、批量交互与功能显隐以 Cordys 源码为准，不再以旧 MicroMatrix 页面作为视觉基准。
 - 禁止直接复制 CordysCRM 的图标、图片、iconfont 等静态资源。
 - Web 图标统一使用 `lucide-vue-next`，按需导入组件；禁止新增 emoji、Unicode 符号、Element Plus Icons、Vant 内置图标或复制 Cordys 图标资源。无法可靠对应时使用文字按钮/文字标签。
@@ -37,10 +37,11 @@
 ## 工程约定
 
 - **包管理**：pnpm workspace；新依赖用 `pnpm --filter <pkg> add`；根级工具链依赖加 `-w`
+- **本地脚本**：根 `scripts/` 与 `apps/api/scripts/` 仅允许作为本地临时开发/验收目录，整个目录不纳入 Git。可长期复用的启动、迁移、Seed 等操作必须写入根 `README.md` 或正式 `package.json` 命令，不以仓库内脚本文件承载。
 - **TypeScript**：全仓固定 `~6.0.x`（typescript-eslint 生态上限 <6.1）；API 为 CJS（module NodeNext），前端为 ESM（moduleResolution Bundler）
 - **共享代码**：跨端类型/常量/纯函数一律放 `packages/shared/src`；`apps/web` 通过 Vite alias 引用源码，API 引用 CJS 产物（改动后需 `pnpm --filter @micromatrix/shared build` 供 API 使用）
-- **提交前自检**：`pnpm build && pnpm typecheck && pnpm lint`；功能回归 `pnpm smoke`（API 需运行）
-- **数据库变更**：先对照 Cordys Domain/DDL/Mapper，再改 `schema.prisma` 与迁移；未发布阶段允许直接修正既有迁移并重建开发库，不为错误旧模型增加兼容迁移。完成后必须手动 `prisma generate`（Prisma 7 不自动生成）并提交 migration 目录
+- **提交前自检**：`pnpm build && pnpm typecheck && pnpm lint`。专项验收脚本只允许本地临时维护，不纳入 Git，也不在各级 `package.json` 注册 `smoke` 指令
+- **数据库变更**：先对照 Cordys Domain/DDL/Mapper，再改 `schema.prisma`。项目正式发布前，每次准备提交数据库结构变更时都重新从空模型生成一个完整 baseline，只允许 `prisma/migrations/` 保留 **1 个 baseline 目录 + `migration_lock.toml`**；生成后必须审计并补回 Prisma Schema 无法表达的 PostgreSQL 原生结构，再使用全新空 PostgreSQL 执行 `prisma migrate deploy + seed`，并用 `prisma migrate diff` 确认数据库与 `schema.prisma` 无结构差异。完成后手动 `prisma generate`（Prisma 7 不自动生成）。正式发布后禁止继续 squash，所有新变更改用独立 forward-only migration，历史 migration 不再修改。详细流程见 [Prisma Migration 管理规范](./prisma-migration-policy.md)
 - **代码风格**：Prettier（无分号/单引号/100 列）；未使用变量以 `_` 前缀豁免；注释只写"为什么"
 
 ## 后端约定（NestJS）

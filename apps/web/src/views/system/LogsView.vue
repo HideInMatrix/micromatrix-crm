@@ -5,7 +5,8 @@ import type {
   OperationLogSettingVO,
   OperationLogVO,
 } from '@micromatrix/shared'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { logApi } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
@@ -18,7 +19,8 @@ interface ChangeRow {
 
 const auth = useAuthStore()
 const canManagePolicy = computed(() => auth.hasPerm('system:log:update'))
-const activeTab = ref('operations')
+const route = useRoute()
+const showOperations = computed(() => route.path !== '/system/logs/login')
 
 const opLoading = ref(false)
 const opItems = ref<OperationLogVO[]>([])
@@ -205,9 +207,9 @@ async function clearAllOperations() {
   }
 }
 
-function handleTabChange() {
-  if (activeTab.value === 'operations') loadOperations()
-  else loadLogins()
+function loadCurrentLogPage() {
+  if (showOperations.value) void loadOperations()
+  else void loadLogins()
 }
 
 function formatTime(value: string | null | undefined) {
@@ -226,113 +228,112 @@ function cleanupSourceLabel(source: OperationLogSettingVO['lastCleanupSource']) 
   return '-'
 }
 
-onMounted(loadOperations)
+onMounted(loadCurrentLogPage)
+watch(() => route.path, loadCurrentLogPage)
 </script>
 
 <template>
   <el-card shadow="never">
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-      <el-tab-pane label="操作日志" name="operations">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <el-input
-            v-model="opQuery.keyword"
-            placeholder="搜索操作人 / 对象名称"
-            clearable
-            class="!w-64"
-            @keyup.enter="((opQuery.page = 1), loadOperations())"
-            @clear="((opQuery.page = 1), loadOperations())"
-          />
-          <el-button @click="openPolicy">日志策略</el-button>
-        </div>
-        <el-table v-loading="opLoading" :data="opItems" stripe>
-          <el-table-column label="操作人" width="120">
-            <template #default="{ row }">{{ row.userName || '-' }}</template>
-          </el-table-column>
-          <el-table-column prop="module" label="模块" width="120" />
-          <el-table-column prop="action" label="动作" width="130" />
-          <el-table-column label="操作对象" min-width="200" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.targetName || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="IP" width="150">
-            <template #default="{ row }">{{ row.ip || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="时间" width="180">
-            <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-          </el-table-column>
-          <el-table-column label="详情" width="90" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="openOperationDetail(row.id)">查看</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div class="mt-4 flex justify-end">
-          <el-pagination
-            v-model:current-page="opQuery.page"
-            :total="opTotal"
-            :page-size="opQuery.pageSize"
-            layout="total, prev, pager, next"
-            @current-change="loadOperations"
-          />
-        </div>
-      </el-tab-pane>
+    <template v-if="showOperations">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <el-input
+          v-model="opQuery.keyword"
+          placeholder="搜索操作人 / 对象名称"
+          clearable
+          class="!w-64"
+          @keyup.enter="((opQuery.page = 1), loadOperations())"
+          @clear="((opQuery.page = 1), loadOperations())"
+        />
+        <el-button @click="openPolicy">日志策略</el-button>
+      </div>
+      <el-table v-loading="opLoading" :data="opItems" stripe>
+        <el-table-column label="操作人" width="120">
+          <template #default="{ row }">{{ row.userName || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="module" label="模块" width="120" />
+        <el-table-column prop="action" label="动作" width="130" />
+        <el-table-column label="操作对象" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.targetName || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="IP" width="150">
+          <template #default="{ row }">{{ row.ip || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="详情" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openOperationDetail(row.id)">查看</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="mt-4 flex justify-end">
+        <el-pagination
+          v-model:current-page="opQuery.page"
+          :total="opTotal"
+          :page-size="opQuery.pageSize"
+          layout="total, prev, pager, next"
+          @current-change="loadOperations"
+        />
+      </div>
+    </template>
 
-      <el-tab-pane label="登录日志" name="logins">
-        <div class="mb-3 flex">
-          <el-input
-            v-model="loginQuery.keyword"
-            placeholder="搜索邮箱"
-            clearable
-            class="!w-64"
-            @keyup.enter="((loginQuery.page = 1), loadLogins())"
-            @clear="((loginQuery.page = 1), loadLogins())"
-          />
-        </div>
-        <el-table v-loading="loginLoading" :data="loginItems" stripe>
-          <el-table-column prop="email" label="账号" min-width="200" />
-          <el-table-column label="登录方式" width="140">
-            <template #default="{ row }">
-              <el-tag :type="row.authType.startsWith('WECOM') ? 'primary' : 'info'" effect="plain">
-                {{
-                  row.authType === 'WECOM_OAUTH2'
-                    ? '企业微信工作台'
-                    : row.authType === 'WECOM'
-                      ? '企业微信扫码'
-                      : '密码'
-                }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="结果" width="100">
-            <template #default="{ row }">
-              <el-tag :type="row.success ? 'success' : 'danger'" size="small">
-                {{ row.success ? '成功' : '失败' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="说明" width="160">
-            <template #default="{ row }">{{ row.message || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="IP" width="150">
-            <template #default="{ row }">{{ row.ip || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="UA" min-width="220" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.userAgent || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="时间" width="180">
-            <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-          </el-table-column>
-        </el-table>
-        <div class="mt-4 flex justify-end">
-          <el-pagination
-            v-model:current-page="loginQuery.page"
-            :total="loginTotal"
-            :page-size="loginQuery.pageSize"
-            layout="total, prev, pager, next"
-            @current-change="loadLogins"
-          />
-        </div>
-      </el-tab-pane>
-    </el-tabs>
+    <template v-else>
+      <div class="mb-3 flex">
+        <el-input
+          v-model="loginQuery.keyword"
+          placeholder="搜索邮箱"
+          clearable
+          class="!w-64"
+          @keyup.enter="((loginQuery.page = 1), loadLogins())"
+          @clear="((loginQuery.page = 1), loadLogins())"
+        />
+      </div>
+      <el-table v-loading="loginLoading" :data="loginItems" stripe>
+        <el-table-column prop="email" label="账号" min-width="200" />
+        <el-table-column label="登录方式" width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.authType.startsWith('WECOM') ? 'primary' : 'info'" effect="plain">
+              {{
+                row.authType === 'WECOM_OAUTH2'
+                  ? '企业微信工作台'
+                  : row.authType === 'WECOM'
+                    ? '企业微信扫码'
+                    : '密码'
+              }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="结果" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.success ? 'success' : 'danger'" size="small">
+              {{ row.success ? '成功' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="说明" width="160">
+          <template #default="{ row }">{{ row.message || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="IP" width="150">
+          <template #default="{ row }">{{ row.ip || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="UA" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.userAgent || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+      </el-table>
+      <div class="mt-4 flex justify-end">
+        <el-pagination
+          v-model:current-page="loginQuery.page"
+          :total="loginTotal"
+          :page-size="loginQuery.pageSize"
+          layout="total, prev, pager, next"
+          @current-change="loadLogins"
+        />
+      </div>
+    </template>
   </el-card>
 
   <el-drawer v-model="detailVisible" title="操作日志详情" size="640px">

@@ -81,16 +81,25 @@ function serializeForm() {
     ...form,
     name: form.name.trim(),
     description: form.description?.trim() || null,
-    createNodes: form.createNodes.map((node) => ({
-      ...node,
-      name: node.name.trim(),
-      approverIds: [...(node.approverIds ?? [])].sort(),
-      ccUserIds: [...(node.ccUserIds ?? [])].sort(),
-      fieldPermissions: [...(node.fieldPermissions ?? [])].sort((a, b) => a.fieldId.localeCompare(b.fieldId)),
-    })).sort((a, b) => (a.clientId ?? '').localeCompare(b.clientId ?? '')),
+    createNodes: form.createNodes
+      .map((node) => ({
+        ...node,
+        name: node.name.trim(),
+        approverIds: [...(node.approverIds ?? [])].sort(),
+        ccUserIds: [...(node.ccUserIds ?? [])].sort(),
+        fieldPermissions: [...(node.fieldPermissions ?? [])].sort((a, b) =>
+          a.fieldId.localeCompare(b.fieldId),
+        ),
+      }))
+      .sort((a, b) => (a.clientId ?? '').localeCompare(b.clientId ?? '')),
     createLinks: form.createLinks
       .map((link) => ({ ...link, sort: link.sort ?? 0 }))
-      .sort((a, b) => a.fromNodeId.localeCompare(b.fromNodeId) || a.sort - b.sort || a.toNodeId.localeCompare(b.toNodeId)),
+      .sort(
+        (a, b) =>
+          a.fromNodeId.localeCompare(b.fromNodeId) ||
+          a.sort - b.sort ||
+          a.toNodeId.localeCompare(b.toNodeId),
+      ),
   })
 }
 
@@ -248,44 +257,77 @@ function formatDate(value?: string | null) {
   <el-drawer
     v-model="visible"
     :title="drawerTitle"
-    size="1080px"
+    size="50%"
+    style="min-width: 1080px"
     :before-close="beforeClose"
     destroy-on-close
     class="approval-flow-drawer"
   >
-    <div v-loading="loading" class="drawer-layout">
-      <nav class="step-nav">
+    <div
+      v-loading="loading"
+      class="grid min-h-[calc(100vh-170px)] grid-cols-[190px_minmax(0,1fr)] max-[900px]:grid-cols-1"
+    >
+      <nav
+        class="border-r border-[var(--el-border-color-lighter)] pr-4 pt-1.5 max-[900px]:mb-[18px] max-[900px]:flex max-[900px]:gap-1.5 max-[900px]:border-r-0 max-[900px]:border-b max-[900px]:pb-3 max-[900px]:pr-0 max-[900px]:pt-0"
+      >
         <button
           type="button"
-          :class="{ active: activeStep === 'basic' }"
+          class="mb-1.5 flex w-full cursor-pointer items-start gap-2.5 rounded-lg border-0 bg-transparent p-3 text-left text-[var(--el-text-color-regular)]"
+          :class="{
+            '!bg-[var(--el-color-primary-light-9)] !text-[var(--el-color-primary)]':
+              activeStep === 'basic',
+          }"
           @click="activeStep = 'basic'"
         >
           <Info :size="18" />
-          <span><strong>基本信息</strong><small>表单与执行时机</small></span>
+          <span>
+            <strong class="block">基本信息</strong>
+            <small class="mt-[3px] block text-[11px] text-[var(--el-text-color-secondary)]"
+              >表单与执行时机</small
+            >
+          </span>
         </button>
         <button
           type="button"
-          :class="{ active: activeStep === 'flow' }"
+          class="mb-1.5 flex w-full cursor-pointer items-start gap-2.5 rounded-lg border-0 bg-transparent p-3 text-left text-[var(--el-text-color-regular)]"
+          :class="{
+            '!bg-[var(--el-color-primary-light-9)] !text-[var(--el-color-primary)]':
+              activeStep === 'flow',
+          }"
           @click="activeStep = 'flow'"
         >
           <GitBranch :size="18" />
-          <span><strong>流程设计</strong><small>审批节点与顺序</small></span>
+          <span>
+            <strong class="block">流程设计</strong>
+            <small class="mt-[3px] block text-[11px] text-[var(--el-text-color-secondary)]"
+              >审批节点与顺序</small
+            >
+          </span>
         </button>
         <button
           type="button"
-          :class="{ active: activeStep === 'settings' }"
+          class="mb-1.5 flex w-full cursor-pointer items-start gap-2.5 rounded-lg border-0 bg-transparent p-3 text-left text-[var(--el-text-color-regular)]"
+          :class="{
+            '!bg-[var(--el-color-primary-light-9)] !text-[var(--el-color-primary)]':
+              activeStep === 'settings',
+          }"
           @click="activeStep = 'settings'"
         >
           <Settings2 :size="18" />
-          <span><strong>审批设置</strong><small>撤回与重复审批</small></span>
+          <span>
+            <strong class="block">审批设置</strong>
+            <small class="mt-[3px] block text-[11px] text-[var(--el-text-color-secondary)]"
+              >撤回与重复审批</small
+            >
+          </span>
         </button>
       </nav>
 
-      <main class="step-content">
+      <main class="min-w-0 pl-[22px] max-[900px]:pl-0">
         <section v-show="activeStep === 'basic'">
-          <div class="section-title">基本信息</div>
-          <el-form label-position="top" class="content-form">
-            <div class="form-grid">
+          <div class="mb-5 text-lg font-semibold">基本信息</div>
+          <el-form label-position="top" class="max-w-[780px]">
+            <div class="grid grid-cols-2 gap-[18px]">
               <el-form-item label="表单类型" required>
                 <el-select
                   :model-value="form.formType"
@@ -333,28 +375,60 @@ function formatDate(value?: string | null) {
                   placeholder="留空则全部"
                 />
                 <span class="text-xs text-[var(--el-text-color-secondary)]">
-                  这是流程入口的兼容金额门槛；复杂业务条件请在“流程设计”中使用 CONDITION / DEFAULT 分支。
+                  这是流程入口的兼容金额门槛；复杂业务条件请在“流程设计”中使用 CONDITION / DEFAULT
+                  分支。
                 </span>
               </div>
             </el-form-item>
 
-            <div class="subsection-title">执行时机</div>
-            <div class="timing-list">
-              <div class="timing-item">
-                <div><strong>新建时执行</strong><small>单据提交确认时触发审批</small></div>
+            <div class="mb-3 mt-2 font-semibold">执行时机</div>
+            <div
+              class="overflow-hidden rounded-[9px] border border-[var(--el-border-color-lighter)]"
+            >
+              <div
+                class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+              >
+                <div>
+                  <strong>新建时执行</strong>
+                  <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                    >单据提交确认时触发审批</small
+                  >
+                </div>
                 <el-switch v-model="form.createExecute" :disabled="readonly" />
               </div>
-              <div class="timing-item" :class="{ 'is-disabled': !supportsExtendedTiming }">
+              <div
+                class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+                :class="{
+                  'bg-[var(--el-fill-color-extra-light)]': !supportsExtendedTiming,
+                }"
+              >
                 <div>
-                  <strong>编辑时执行</strong><small>编辑保存后进入审批，驳回或撤回时恢复编辑前快照</small>
+                  <strong>编辑时执行</strong>
+                  <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                    >编辑保存后进入审批，驳回或撤回时恢复编辑前快照</small
+                  >
                 </div>
-                <el-switch v-model="form.updateExecute" :disabled="readonly || !supportsExtendedTiming" />
+                <el-switch
+                  v-model="form.updateExecute"
+                  :disabled="readonly || !supportsExtendedTiming"
+                />
               </div>
-              <div class="timing-item" :class="{ 'is-disabled': !supportsExtendedTiming }">
+              <div
+                class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+                :class="{
+                  'bg-[var(--el-fill-color-extra-light)]': !supportsExtendedTiming,
+                }"
+              >
                 <div>
-                  <strong>删除时执行</strong><small>命中流程时先进入审批，通过后才真正删除</small>
+                  <strong>删除时执行</strong>
+                  <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                    >命中流程时先进入审批，通过后才真正删除</small
+                  >
                 </div>
-                <el-switch v-model="form.deleteExecute" :disabled="readonly || !supportsExtendedTiming" />
+                <el-switch
+                  v-model="form.deleteExecute"
+                  :disabled="readonly || !supportsExtendedTiming"
+                />
               </div>
             </div>
 
@@ -383,40 +457,71 @@ function formatDate(value?: string | null) {
         </section>
 
         <section v-show="activeStep === 'settings'">
-          <div class="section-title">审批设置</div>
-          <div class="settings-panel">
-            <div class="setting-row">
+          <div class="mb-5 text-lg font-semibold">审批设置</div>
+          <div class="overflow-hidden rounded-[9px] border border-[var(--el-border-color-lighter)]">
+            <div
+              class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+            >
               <div>
-                <strong>允许发起人撤回</strong><small>审批完成前，发起人可撤回自己提交的流程</small>
+                <strong>允许发起人撤回</strong>
+                <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                  >审批完成前，发起人可撤回自己提交的流程</small
+                >
               </div>
               <el-switch v-model="form.submitterCanRevoke" :disabled="readonly" />
             </div>
-            <div class="setting-row is-disabled">
+            <div
+              class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-extra-light)] px-4 py-3 last:border-b-0"
+            >
               <div>
-                <strong>允许批量审批</strong><small>待任务中心批量处理能力接入后开放</small>
+                <strong>允许批量审批</strong>
+                <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                  >待任务中心批量处理能力接入后开放</small
+                >
               </div>
               <el-switch v-model="form.allowBatchProcess" disabled />
             </div>
-            <div class="setting-row">
+            <div
+              class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+            >
               <div>
-                <strong>允许审批人撤回</strong><small>开启后，审批人可撤回自己仍处于可逆路径的已通过任务</small>
+                <strong>允许审批人撤回</strong>
+                <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                  >开启后，审批人可撤回自己仍处于可逆路径的已通过任务</small
+                >
               </div>
               <el-switch v-model="form.allowWithdraw" :disabled="readonly" />
             </div>
-            <div class="setting-row">
+            <div
+              class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+            >
               <div>
-                <strong>允许审批人加签</strong><small>开启后，当前待办审批人可执行前置或后置加签</small>
+                <strong>允许审批人加签</strong>
+                <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                  >开启后，当前待办审批人可执行前置或后置加签</small
+                >
               </div>
               <el-switch v-model="form.allowAddSign" :disabled="readonly" />
             </div>
-            <div class="setting-row">
-              <div><strong>审批意见必填</strong><small>开启后，同意/驳回均要求填写审批意见</small></div>
+            <div
+              class="flex min-h-[66px] items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+            >
+              <div>
+                <strong>审批意见必填</strong>
+                <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                  >开启后，同意/驳回均要求填写审批意见</small
+                >
+              </div>
               <el-switch v-model="form.requireComment" :disabled="readonly" />
             </div>
-            <div class="setting-row setting-row--select">
+            <div
+              class="flex min-h-20 items-center justify-between gap-5 border-b border-[var(--el-border-color-lighter)] px-4 py-3 last:border-b-0"
+            >
               <div>
-                <strong>同一审批人重复出现</strong
-                ><small>决定同一成员在不同审批节点重复出现时的实际处理规则</small>
+                <strong>同一审批人重复出现</strong>
+                <small class="mt-1 block text-xs text-[var(--el-text-color-secondary)]"
+                  >决定同一成员在不同审批节点重复出现时的实际处理规则</small
+                >
               </div>
               <el-select v-model="form.duplicateApproverRule" :disabled="readonly" class="!w-56">
                 <el-option
@@ -474,131 +579,3 @@ function formatDate(value?: string | null) {
     </template>
   </el-drawer>
 </template>
-
-<style scoped>
-.drawer-layout {
-  display: grid;
-  min-height: calc(100vh - 170px);
-  grid-template-columns: 190px minmax(0, 1fr);
-}
-
-.step-nav {
-  padding: 6px 16px 0 0;
-  border-right: 1px solid var(--el-border-color-lighter);
-}
-
-.step-nav button {
-  display: flex;
-  width: 100%;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 6px;
-  padding: 12px;
-  color: var(--el-text-color-regular);
-  text-align: left;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.step-nav button.active {
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-
-.step-nav strong,
-.step-nav small {
-  display: block;
-}
-
-.step-nav small {
-  margin-top: 3px;
-  color: var(--el-text-color-secondary);
-  font-size: 11px;
-}
-
-.step-content {
-  min-width: 0;
-  padding-left: 22px;
-}
-
-.section-title {
-  margin-bottom: 20px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.subsection-title {
-  margin: 8px 0 12px;
-  font-weight: 600;
-}
-
-.content-form {
-  max-width: 780px;
-}
-
-.form-grid {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: 1fr 1fr;
-}
-
-.timing-list,
-.settings-panel {
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 9px;
-}
-
-.timing-item,
-.setting-row {
-  display: flex;
-  min-height: 66px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-
-.timing-item:last-child,
-.setting-row:last-child {
-  border-bottom: 0;
-}
-
-.timing-item small,
-.setting-row small {
-  display: block;
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-
-.is-disabled {
-  background: var(--el-fill-color-extra-light);
-}
-
-.setting-row--select {
-  min-height: 80px;
-}
-
-@media (max-width: 900px) {
-  .drawer-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .step-nav {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 18px;
-    padding: 0 0 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-
-  .step-content {
-    padding-left: 0;
-  }
-}
-</style>
