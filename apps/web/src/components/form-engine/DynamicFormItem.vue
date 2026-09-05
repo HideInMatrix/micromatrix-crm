@@ -1,24 +1,34 @@
 <script setup lang="ts">
-import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
+import type { AttachmentVO, DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed } from 'vue'
 import type { MemberOption } from '@/api/system'
+import AttachmentFieldInput from './AttachmentFieldInput.vue'
+import DataSourceFieldInput from './DataSourceFieldInput.vue'
+import LocationFieldInput from './LocationFieldInput.vue'
 import PictureFieldInput from './PictureFieldInput.vue'
 
 const props = defineProps<{
   field: FieldVO
   members: MemberOption[]
   deptTree: DepartmentVO[]
+  attachmentOptions?: AttachmentVO[]
+  attachmentDownload?: (file: AttachmentVO) => Promise<void>
   /** formula 类型的实时计算结果 */
   formulaValue?: number | null
 }>()
 
 const model = defineModel<unknown>()
 
-const placeholder = computed(
-  () => props.field.config?.placeholder ?? `请输入${props.field.label}`,
+const placeholder = computed(() => props.field.config?.placeholder ?? `请输入${props.field.label}`)
+const precision = computed(
+  () => props.field.config?.precision ?? (props.field.type === 'currency' ? 2 : 0),
 )
-const precision = computed(() =>
-  props.field.config?.precision ?? (props.field.type === 'currency' ? 2 : 0),
+const stringValue = computed(() => (typeof model.value === 'string' ? model.value : undefined))
+const numberValue = computed(() => (typeof model.value === 'number' ? model.value : undefined))
+const stringArrayValue = computed(() =>
+  Array.isArray(model.value)
+    ? model.value.filter((item): item is string => typeof item === 'string')
+    : [],
 )
 </script>
 
@@ -43,7 +53,7 @@ const precision = computed(() =>
   <!-- 数字类 -->
   <el-input-number
     v-else-if="field.type === 'number' || field.type === 'currency'"
-    :model-value="(model as number | undefined)"
+    :model-value="numberValue"
     :precision="precision"
     :min="field.config?.min"
     :max="field.config?.max"
@@ -53,7 +63,7 @@ const precision = computed(() =>
   />
   <div v-else-if="field.type === 'percent'" class="flex items-center gap-2 w-full">
     <el-input-number
-      :model-value="(model as number | undefined)"
+      :model-value="numberValue"
       :precision="precision"
       :min="field.config?.min ?? 0"
       :max="field.config?.max ?? 100"
@@ -67,7 +77,7 @@ const precision = computed(() =>
   <!-- 日期类 -->
   <el-date-picker
     v-else-if="field.type === 'date'"
-    :model-value="(model as string | undefined)"
+    :model-value="stringValue"
     type="date"
     value-format="YYYY-MM-DD"
     :placeholder="placeholder"
@@ -76,7 +86,7 @@ const precision = computed(() =>
   />
   <el-date-picker
     v-else-if="field.type === 'datetime'"
-    :model-value="(model as string | undefined)"
+    :model-value="stringValue"
     type="datetime"
     value-format="YYYY-MM-DD HH:mm:ss"
     :placeholder="placeholder"
@@ -87,7 +97,7 @@ const precision = computed(() =>
   <!-- 选项类 -->
   <el-select
     v-else-if="field.type === 'select'"
-    :model-value="(model as string | undefined)"
+    :model-value="stringValue"
     :placeholder="placeholder"
     clearable
     filterable
@@ -103,7 +113,7 @@ const precision = computed(() =>
   </el-select>
   <el-select
     v-else-if="field.type === 'multiselect'"
-    :model-value="(model as string[] | undefined) ?? []"
+    :model-value="stringArrayValue"
     multiple
     clearable
     filterable
@@ -120,7 +130,7 @@ const precision = computed(() =>
   </el-select>
   <el-radio-group
     v-else-if="field.type === 'radio'"
-    :model-value="(model as string | undefined)"
+    :model-value="stringValue"
     @update:model-value="model = $event"
   >
     <el-radio v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
@@ -129,7 +139,7 @@ const precision = computed(() =>
   </el-radio-group>
   <el-checkbox-group
     v-else-if="field.type === 'checkbox'"
-    :model-value="(model as string[] | undefined) ?? []"
+    :model-value="stringArrayValue"
     @update:model-value="model = $event"
   >
     <el-checkbox v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
@@ -144,16 +154,45 @@ const precision = computed(() =>
 
   <PictureFieldInput
     v-else-if="field.type === 'picture'"
-    :model-value="(model as string[] | undefined) ?? []"
+    :model-value="stringArrayValue"
     :max="field.config?.uploadLimit ?? 10"
     :max-size-mb="field.config?.uploadSizeLimit ?? 20"
+    @update:model-value="model = $event"
+  />
+
+  <LocationFieldInput
+    v-else-if="field.type === 'location'"
+    :model-value="stringValue ?? ''"
+    :scope="field.config?.scope ?? 'ALL'"
+    :location-type="field.config?.locationType ?? 'PCD'"
+    :placeholder="placeholder"
+    @update:model-value="model = $event"
+  />
+
+  <AttachmentFieldInput
+    v-else-if="field.type === 'attachment'"
+    :model-value="stringArrayValue"
+    :initial-options="attachmentOptions ?? []"
+    :only-one="field.config?.onlyOne ?? false"
+    :accept="field.config?.accept ?? ''"
+    :limit-size="field.config?.limitSize ?? ''"
+    :download="attachmentDownload"
+    @update:model-value="model = $event"
+  />
+
+  <DataSourceFieldInput
+    v-else-if="field.type === 'data_source' || field.type === 'data_source_multiple'"
+    :model-value="field.type === 'data_source_multiple' ? stringArrayValue : stringValue"
+    :source-type="field.config?.dataSourceType ?? 'CUSTOMER'"
+    :multiple="field.type === 'data_source_multiple'"
+    :placeholder="`请选择${field.label}`"
     @update:model-value="model = $event"
   />
 
   <!-- 引用类 -->
   <el-select
     v-else-if="field.type === 'member'"
-    :model-value="(model as string | undefined)"
+    :model-value="stringValue"
     clearable
     filterable
     placeholder="选择成员"
@@ -164,7 +203,7 @@ const precision = computed(() =>
   </el-select>
   <el-tree-select
     v-else-if="field.type === 'dept'"
-    :model-value="(model as string | undefined)"
+    :model-value="stringValue"
     :data="deptTree"
     :props="{ label: 'name', children: 'children' }"
     node-key="id"
@@ -176,11 +215,7 @@ const precision = computed(() =>
   />
 
   <!-- 计算字段（只读） -->
-  <el-input
-    v-else-if="field.type === 'formula'"
-    :model-value="formulaValue ?? '-'"
-    disabled
-  >
+  <el-input v-else-if="field.type === 'formula'" :model-value="formulaValue ?? '-'" disabled>
     <template #suffix>
       <el-tooltip :content="`公式：${field.config?.formula ?? ''}`">
         <span class="text-xs">fx</span>

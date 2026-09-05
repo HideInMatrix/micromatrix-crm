@@ -58,10 +58,7 @@ export class ModuleFormsService {
     return this.loadConfig(organizationId, formKey)
   }
 
-  private async loadConfig(
-    organizationId: string,
-    formKey: string,
-  ): Promise<ModuleFormConfigVO> {
+  private async loadConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
     return this.prisma.$transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey)
       const [blob, fields] = await Promise.all([
@@ -196,6 +193,14 @@ export class ModuleFormsService {
         showInList: dto.showInList ?? current.showInList,
         listWidth: dto.listWidth === undefined ? current.listWidth : dto.listWidth,
       }
+      if (
+        ['data_source', 'data_source_multiple'].includes(field.type) &&
+        current.config?.dataSourceType &&
+        next.config?.dataSourceType !== current.config.dataSourceType
+      ) {
+        throw new BadRequestException('已保存的数据源字段不能修改数据源类型，请删除字段后重建')
+      }
+      this.validateFieldSpecificConfig((dto.type ?? field.type) as FieldType, next.config)
       const updated = await tx.sysModuleField.update({
         where: { id },
         data: {
@@ -260,6 +265,10 @@ export class ModuleFormsService {
     })
     await this.invalidateForm(organizationId, formKey)
     return result
+  }
+
+  async invalidateFormCache(organizationId: string, formKey: string): Promise<void> {
+    await this.invalidateForm(organizationId, formKey)
   }
 
   toVO(field: FieldWithBlob, formKey: string): FieldVO {
@@ -410,6 +419,7 @@ export class ModuleFormsService {
 
   private validateFieldInput(dto: Partial<CreateFieldDto>): void {
     if (dto.type === 'formula' || dto.config?.formula) this.validateFormula(dto.config?.formula)
+    if (dto.type) this.validateFieldSpecificConfig(dto.type, dto.config)
     if (dto.options) {
       for (const option of dto.options as unknown[]) {
         if (!this.isRecord(option)) throw new BadRequestException('选项格式不正确')
@@ -424,6 +434,54 @@ export class ModuleFormsService {
       const values = dto.options.map((option) => option.value.trim())
       if (new Set(labels).size !== labels.length || new Set(values).size !== values.length) {
         throw new BadRequestException('同一字段的选项名称和值不能重复')
+      }
+    }
+  }
+
+  private validateFieldSpecificConfig(type: FieldType, config?: FieldConfig | null): void {
+    if (type === 'data_source' || type === 'data_source_multiple') {
+      if (typeof config?.dataSourceType !== 'string' || !config.dataSourceType.trim()) {
+        throw new BadRequestException('数据源字段必须配置数据源类型')
+      }
+    }
+
+    if (type === 'location') {
+      const scope = config?.scope ?? 'ALL'
+      const locationType = config?.locationType ?? 'PCD'
+      if (!['ALL', 'CN'].includes(scope)) throw new BadRequestException('地址范围配置不正确')
+      if (!['C', 'P', 'PC', 'PCD', 'detail'].includes(locationType)) {
+        throw new BadRequestException('地址层级配置不正确')
+      }
+      if (scope === 'CN' && locationType === 'C') {
+        throw new BadRequestException('中国范围的地址字段不支持仅国家层级')
+      }
+    }
+
+    if (type === 'attachment') {
+      if (config?.onlyOne !== undefined && typeof config.onlyOne !== 'boolean') {
+        throw new BadRequestException('附件单文件配置不正确')
+      }
+      if (config?.accept !== undefined && typeof config.accept !== 'string') {
+        throw new BadRequestException('附件类型配置不正确')
+      }
+      if (config?.accept) {
+        const extensions = config.accept
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean)
+        if (extensions.length === 0 || extensions.some((item) => !/^\.[a-z0-9]+$/.test(item))) {
+          throw new BadRequestException('附件类型应使用逗号分隔的扩展名，例如 .pdf,.docx')
+        }
+      }
+      if (config?.limitSize) {
+        const match = config.limitSize.trim().match(/^(\d+(?:\.\d+)?)(KB|MB)$/i)
+        if (!match || Number(match[1]) <= 0) {
+          throw new BadRequestException('附件大小限制格式应为 500KB 或 20MB')
+        }
+        const bytes = Number(match[1]) * (match[2]?.toUpperCase() === 'KB' ? 1024 : 1024 * 1024)
+        if (bytes > 20 * 1024 * 1024) {
+          throw new BadRequestException('附件大小限制不能超过当前平台 20MB 上限')
+        }
       }
     }
   }
@@ -480,6 +538,8 @@ export class ModuleFormsService {
       tx.contractInvoiceFieldBlob.count({ where: { fieldId } }),
       tx.orderField.count({ where: { fieldId } }),
       tx.orderFieldBlob.count({ where: { fieldId } }),
+      tx.customFormDataField.count({ where: { fieldId } }),
+      tx.customFormDataFieldBlob.count({ where: { fieldId } }),
     ])
     return counts.reduce((sum, count) => sum + count, 0)
   }
@@ -510,11 +570,20 @@ export class ModuleFormsService {
       tx.contractInvoiceFieldBlob.deleteMany({ where: { fieldId } }),
       tx.orderField.deleteMany({ where: { fieldId } }),
       tx.orderFieldBlob.deleteMany({ where: { fieldId } }),
+      tx.customFormDataField.deleteMany({ where: { fieldId } }),
+      tx.customFormDataFieldBlob.deleteMany({ where: { fieldId } }),
     ])
   }
 
   private isBlobType(type: FieldType): boolean {
-    return ['textarea', 'multiselect', 'checkbox'].includes(type)
+    return [
+      'textarea',
+      'multiselect',
+      'checkbox',
+      'picture',
+      'attachment',
+      'data_source_multiple',
+    ].includes(type)
   }
 
   private parseObject(value?: string | null): Record<string, unknown> {

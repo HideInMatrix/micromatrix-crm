@@ -1454,3 +1454,62 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 本地创建并执行“本地 AI 全局任务演示”成功，模型返回“条件判断 / 分析结果 / 建议动作”三段中文分析；随后又通过 PC 页面“立即执行”真实触发一次，执行记录于 **2026-09-05 11:32:15** 开始、**11:32:21** 完成并显示“已完成”。
 - 执行记录结果列不再直接铺开模型长文本：成功记录显示“查看结果”，失败记录显示“查看错误”；点击后打开 **720px** 右侧 Drawer，完整展示状态、起止时间、分析正文，并提供“原始输出 / 执行输入”折叠区。真实 Chrome CDP 验收确认表格行不再包含长分析正文，Drawer 宽度为 **720px**，完整正文、原始输出、输入上下文与“已完成”状态均可见。
 - 回归与工程门槛：企业设置所在 T13 Browser Smoke **40/40 PASS**；API Rules **192/192 PASS**；root `pnpm typecheck` PASS；root `pnpm build` PASS（Web **3786 modules transformed**、Mobile **2216 modules transformed**）；root `pnpm lint` **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。`W3.4-S8` 状态为 **`VERIFIED`**。
+
+---
+
+## 88. FORM-001 自定义表单核心闭环与 D 导入导出（2026-09-05）
+
+- 依据 Cordys `customForm` 前后端源码、角色语义与 1.7.1 DDL 建立独立 `FORM-001` 规格，不虚构 W3.8 编号。MicroMatrix 复用既有 `SysModuleForm / SysModuleField` 字段定义底座，新增 CustomForm / Admin / Role / RoleUser / Data / DataField / DataFieldBlob direct model；创建表单时原子建立同 ID ModuleForm、名称/负责人系统字段、三档数据角色和创建人管理员。
+- `/custom-forms` 已退出 PlannedFeatureView，成为真实 PC 双栏页面：左侧表单搜索/新建/启停/删除/设计/成员权限，右侧动态数据表格；设计 Drawer 支持动态字段新增、编辑、排序、必填、列表显示和栅格，成员权限支持管理员及 MANAGE_ALL / VIEW_ALL / MANAGE_OWN，数据新建/编辑复用 DynamicForm。
+- 表单数据 runtime 已覆盖列表/详情/CRUD、租户隔离、停用态、Field/Blob 分表、公式重算和 owner 校验。核心真实 PostgreSQL Smoke 覆盖管理员、三档角色、Field/Blob、公式、停用与跨范围读写；PC Browser Smoke 最终 **20/20 PASS**，包含真实 UI 新建/编辑/删除、导入 Dialog 与导出 Drawer。
+- FORM-001D 复用公共 `SpreadsheetService` 完成 xlsx 模板、ADD/UPDATE 预校验和正式导入；UPDATE 使用“唯一ID”定位且 Excel 未填写字段保持原值。负责人/member/dept 导入按当前租户解析 ID、邮箱/唯一姓名或部门唯一名称，并继续执行 MANAGE_ALL / MANAGE_OWN / VIEW_ALL 权限边界。
+- 导出全部/选中进入现有 `ExportTask + BullMQ worker`，新增 worker module key `customFormData`；worker 消费时重新校验当前用户对目标表单的实时访问权限，避免“入队时有权限、执行时已撤权”绕过。Excel 负责人/member/dept/创建人/更新人统一批量解析可读名称，避免内部 ID 直出和逐行 N+1 查询。
+- `form001-import-export-smoke.mjs` 使用真实 PostgreSQL + Redis + BullMQ 完成模板、ADD/UPDATE 预校验与导入、公式/Blob、VIEW_ALL 拒绝导入、全量/选中异步导出、worker、下载及可读名称断言，最终 `FORM001D_IMPORT_EXPORT_SMOKE_PASS`。
+- 工程门槛：API Rules **192/192 PASS**；root `pnpm typecheck` PASS；root `pnpm build` PASS；root `pnpm lint` **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。FORM-001 的 **A/B/C/D/G 已完成**，但 E SavedView/AdvancedFilter/批量操作与 F 公共 Form Engine 深化仍未关闭，因此整体状态继续保持 **`IN_PROGRESS`**，不宣称完整 Cordys 自定义表单对齐。
+
+---
+
+## 89. FORM-001E 自定义表单列表增强（2026-09-05）
+
+- 自定义表单数据页新增正式 `POST /custom-form/:id/data/page`，在保留旧 GET 兼容的同时承载嵌套 `filters + viewId`；系统字段由 Prisma 条件处理，动态普通值/Blob 使用参数化 SQL 编译，拒绝未知字段、picture 与 formula 高级筛选，避免字符串拼接 SQL。
+- SavedView 不新增表，直接复用 `sys_user_view(_condition)`；每个自定义表单使用 `CUSTOM_FORM:<formId>` 作为资源命名空间，所有 CRUD/固定/启停/排序/详情都先重新验证当前用户对该表单的访问权。删除自定义表单同步清理对应 SavedView，跨表单复用 viewId 实测返回 404。
+- PC `/custom-forms` 接入 `AdvancedFilter + SavedViewBar + CrmTableUtilityActions`：临时高级筛选与 SavedView 条件按 AND 叠加，SavedView 自身继续支持 AND/OR；列设置按当前用户 + formId + viewId 存浏览器偏好，并可从表格工具栏真实打开。
+- 批量修改/删除复用公共 Batch DTO 与 `BatchFieldEditDialog`。主表名称/负责人和动态字段均可批改，动态字段更新后 formula 重新计算；`MANAGE_OWN` 只能操作本人数据且不能转交负责人，`VIEW_ALL` 只读，管理员/MANAGE_ALL 可管理全部数据；单批仍保持 500 条上限。
+- `form001-list-enhancements-smoke.mjs` 在真实 PostgreSQL 验证动态数值筛选、系统负责人筛选、OR SavedView、SavedView + 临时筛选、跨表单隔离、formula SavedView 拒绝、管理员批改/批删、MANAGE_OWN/VIEW_ALL 边界，最终 `FORM001E_LIST_ENHANCEMENTS_SMOKE_PASS`。
+- Chrome CDP 最终 **31/31 PASS**：原 FORM-001 核心/D 回归 20 条继续全绿，并新增高级筛选真实生效、SavedView UI 创建/自动应用/默认视图恢复、动态列设置、UI 批量修改金额后公式 `333 -> 666`、UI 批量删除。
+- 最终门槛：API Rules **192/192 PASS**；root `pnpm typecheck` PASS；root `pnpm build` PASS；root `pnpm lint` exit 0。本批变更文件 Prettier 已格式化；全仓 `prettier --check .` 仍会被两个未改动历史 Vue 文件 `OpportunityDetailDrawer.vue`、`BusinessTitlesView.vue` 的 Prettier parser error 阻断，因此不把该历史问题伪报为 FORM-001E 失败。FORM-001 的 **A/B/C/D/E/G 已完成**，整体只剩 **F 公共 Form Engine 深化**，状态继续保持 `IN_PROGRESS`。
+
+---
+
+## 90. FORM-001F1 LOCATION / ATTACHMENT 公共 Form Engine 深化（2026-09-05）
+
+- 继续按 Cordys 源码而不是自行定义字段语义：LOCATION 保持 `scope = ALL/CN`、`locationType = C/P/PC/PCD/detail` 与 `<regionCode>-<detail>` 值契约；ATTACHMENT 保持 `onlyOne / accept / limitSize`、最多 10 个附件、临时上传后只保存附件 ID 数组的设计。
+- 公共 Metadata / DynamicForm 已新增 `location / attachment`。LOCATION 使用独立地区数据与 Cascader；ATTACHMENT 复用现有 Attachment 服务，不新建附件表，也不把文件内容写入 CustomFormData Blob。
+- CustomFormData 写入新增附件归属与 claim 校验：仅允许当前租户当前用户的未绑定临时附件或当前数据已经绑定的附件；其它用户临时附件、其它业务目标附件不可复用。已绑定 `customFormData` 的附件必须通过表单数据域读取，通用附件下载/删除接口不能绕过 MANAGE_OWN 等业务权限。
+- 附件生命周期已覆盖新建绑定、编辑替换、删除数据、批量删除、删除 ATTACHMENT 字段和删除整个表单；所有这些路径都会清理数据库记录与物理文件，且先完成业务写权限/事务，再 finalize 附件绑定和清理。
+- LOCATION 已接入列表展示、AdvancedFilter 和 xlsx；Excel 文本按 Cordys `RegionUtils` 使用 `-` 分隔，例如 `北京市-市辖区-东城区-东华门`，内部值保持 `110101-东华门`。ATTACHMENT 按 Cordys 明确排除普通列表列、AdvancedFilter、列设置、批量编辑和 Excel 导入导出。
+- `form001-f1-service-smoke.mjs` 使用真实 Nest application context + PostgreSQL + 文件存储 + Redis/BullMQ worker，最终 **26/26 PASS**；覆盖字段配置校验、附件 claim、防业务域绕过、MANAGE_OWN、LOCATION 筛选/xlsx，以及替换/删除数据/删除字段/删除表单的附件清理。
+- `form001-f1-browser-smoke.mjs` 使用隔离 Web 5177（`API_PROXY_TARGET=3101`）+ acceptance API 3101 + Chrome CDP，最终 **16/16 PASS**；覆盖设计器 LOCATION/ATTACHMENT 配置回显、数据 Drawer Cascader/附件上传、LOCATION 高级筛选 Cascader，以及 ATTACHMENT 不进入筛选/列设置/导出候选。原 FORM-001 + E Browser 回归此前已为 **31/31 PASS**。
+- FORM-001F1 至此关闭；FORM-001 整体仍保持 **`IN_PROGRESS`**，下一剩余能力为 F2 DATA_SOURCE、F3 SUB_TABLE / SUB_PRODUCT、F4 显隐/表单联动/字段联动，不宣称完整 Cordys 自定义表单对齐。
+
+---
+
+## 91. FORM-001F1R 自定义表单 PC 组件化 / Composable 结构收口（2026-09-05）
+
+- 在继续 F2 DATA_SOURCE 前先清理前端结构债。原 `apps/web/src/views/custom-forms/CustomFormsView.vue` 随 B～F1 连续扩展已增长到约 1370 行 / 47KB，同时承担表单目录、字段设计、成员权限、数据列表/CRUD、SavedView/AdvancedFilter、导入导出、批量操作与附件编辑生命周期，违反 `docs/conventions.md` 的“路由页只保留页面编排，响应式状态/副作用优先 composable”约束。
+- 路由页现已收口到约 323 行 / 9KB，只负责 composable 组装和跨领域事件串联。领域 UI 拆分为 `CustomFormSidebar`、`CustomFormDataWorkspace`、`CustomFormConfigDrawer`、`CustomFormDesigner`、`CustomFormPermissionPanel`、`CustomFormFieldDialog`、`CustomFormDataDrawer`；业务状态/副作用拆分为 `useCustomForms`、`useCustomFormReferences`、`useCustomFormData`、`useCustomFormViews`、`useCustomFormTransfer`、`useCustomFormDesigner`、`useCustomFormPermissions`、`useCustomFormAttachments`。
+- 重构保持 API、权限、DOM 业务语义和原 Browser fixture 不变，不引入 F2/F3/F4 新能力。期间修正子组件直接修改分页 prop、无效 props 声明，以及 `DynamicFormItem.vue` 模板 union cast 经 Prettier 后触发 `vue/no-deprecated-filter` 的兼容问题。
+- 回归结果：FORM-001 核心 + E Browser **31/31 PASS**；F1 LOCATION / ATTACHMENT Browser **16/16 PASS**；API Rules **192/192 PASS**；root `pnpm typecheck` PASS；root `pnpm build` PASS；root `pnpm lint` **0 error / 8 个既有 warning**；当前未提交变更集 Prettier check 与 `git diff --check` PASS。
+- F1R 至此关闭，并作为 F2 的前置结构门槛。FORM-001 整体仍为 **`IN_PROGRESS`**，下一执行单元恢复为 F2 DATA_SOURCE 与自定义表单作为数据源。
+
+---
+
+## 92. FORM-001F2 DATA_SOURCE 与自定义表单作为数据源（2026-09-05）
+
+- 继续按 Cordys `DataSourceSingle / DataSourceMultiple`、`FieldDataSourceTypeEnum`、自定义表单配置与 `FieldSourceType` 源码冻结语义：新增 `data_source / data_source_multiple`，内置业务对象使用固定 source key，自定义表单不增加伪枚举而是直接保存目标 `customFormId`；已保存字段 source type 锁死，当前表单禁止直接自引用。
+- 公共 Form Engine 新增内置 source registry 与 `DataSourceFieldInput`。内置 CUSTOMER / CONTACT / OPPORTUNITY / PRODUCT / CLUE / PRICE / CONTRACT / QUOTATION / PAYMENT_PLAN / CONTRACT_PAYMENT_RECORD / BUSINESS_TITLE / ORDER / INVOICE 继续调用已有业务 API/DataScope；自定义表单 source page/resolve 复用目标 CustomForm ADMIN / MANAGE_ALL / VIEW_ALL / MANAGE_OWN 权限，无权时返回空候选而不是借消费表单越权读取。
+- 数据存储保持 ID 契约：单选写普通字段表，多选写 Blob JSON；API 直写会重新校验引用记录存在性。列表、编辑回显、AdvancedFilter、批量编辑使用统一数据源解析/远程选择器；源记录删除、停用或当前用户失权时名称解析 fail-safe，页面退化显示原始 ID。
+- xlsx 已完成 DATA_SOURCE 基础往返：导入支持可读名称反查 ID，多选支持多名称数组，导出把内部 ID 批量解析为名称；自定义表单名称反查严格带租户和目标 `customFormId`，同名歧义不静默取第一条。`combineSearch / showFields / refFields / linkFields / childLinkFields` 明确保留给 F4。
+- `form001-f2-service-smoke.mjs` 使用独立 `micromatrix_form001f2_acceptance` PostgreSQL + Redis DB13 + 真实 BullMQ export worker，最终 **23/23 PASS**；覆盖 source 自引用/不存在拒绝、source 锁定、普通/Blob 分表、引用存在性、MANAGE_OWN/无角色数据范围、AdvancedFilter、批量编辑、xlsx 和内置 CUSTOMER source。
+- `form001-f2-browser-smoke.mjs` 最终 **14/14 PASS**：覆盖目标自定义表单候选、已选值解析、列表可读名称、设计器 source 回显/锁定、单/多选编辑回显、远程候选与 AdvancedFilter。原 FORM-001/E Browser **31/31 PASS**、F1 Browser **16/16 PASS** 继续全绿。
+- 最终工程门槛：API Rules **192/192 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**。FORM-001F2 至此关闭，整体仍为 **`IN_PROGRESS`**，当前仅剩 F3 SUB_TABLE / SUB_PRODUCT 与 F4 显隐/表单联动/字段联动。

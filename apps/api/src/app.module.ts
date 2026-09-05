@@ -14,6 +14,7 @@ import { CustomersModule } from './customers/customers.module'
 import { HealthController } from './health/health.controller'
 import { ContactsModule } from './modules/contacts/contacts.module'
 import { ContractsModule } from './modules/contracts/contracts.module'
+import { CustomFormsModule } from './modules/custom-forms/custom-forms.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { DepartmentsModule } from './modules/departments/departments.module'
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module'
@@ -71,6 +72,7 @@ import { RedisModule } from './redis/redis.module'
     ProductsModule,
     QuotesModule,
     ContractsModule,
+    CustomFormsModule,
     OrdersModule,
     BiddingModule,
     DashboardModule,

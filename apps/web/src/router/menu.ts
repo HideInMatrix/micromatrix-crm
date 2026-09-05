@@ -29,7 +29,7 @@ export const MENUS: MenuItem[] = [
     path: '/custom-forms',
     title: '自定义表单',
     moduleKey: 'customForm',
-    perm: 'menu:system',
+    perm: 'menu:customForm',
   },
   { path: '/bidding', title: '标讯', moduleKey: 'bidding', perm: 'menu:bidding' },
   { path: '/order/index', title: '订单', moduleKey: 'order', perm: 'ORDER:READ' },

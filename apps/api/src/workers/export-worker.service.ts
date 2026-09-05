@@ -11,6 +11,7 @@ import { Job, UnrecoverableError } from 'bullmq'
 import { toAuthUser } from '../common/auth-user'
 import { CustomersService } from '../customers/customers.service'
 import { ContactsService } from '../modules/contacts/contacts.service'
+import { CustomFormsService } from '../modules/custom-forms/custom-forms.service'
 import { BusinessTitleService } from '../modules/contracts/business-title.service'
 import { ContractInvoiceService } from '../modules/contracts/contract-invoice.service'
 import {
@@ -49,6 +50,7 @@ export class ExportWorkerService implements OnApplicationBootstrap {
     private readonly paymentPlans: ContractPaymentPlanService,
     private readonly paymentRecords: ContractPaymentRecordService,
     private readonly orders: OrdersService,
+    private readonly customForms: CustomFormsService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -109,6 +111,8 @@ export class ExportWorkerService implements OnApplicationBootstrap {
         return this.paymentRecords.buildQueuedExport(user, payload)
       case 'order':
         return this.orders.buildQueuedExport(user, payload)
+      case 'customFormData':
+        return this.customForms.buildQueuedExport(user, payload)
       default:
         throw new BadRequestException(`不支持的异步导出模块：${module}`)
     }
@@ -130,7 +134,8 @@ export class ExportWorkerService implements OnApplicationBootstrap {
       where: { id: userId },
       include: { userRoles: { include: { role: true } } },
     })
-    if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException('导出任务创建人不存在或已被禁用')
+    if (!user || user.status !== 'ACTIVE')
+      throw new UnauthorizedException('导出任务创建人不存在或已被禁用')
     return toAuthUser(user)
   }
 

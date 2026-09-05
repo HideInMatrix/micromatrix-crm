@@ -9,6 +9,8 @@ import {
 } from '@micromatrix/shared'
 import { computed } from 'vue'
 import type { MemberOption } from '@/api/system'
+import DataSourceFieldInput from './DataSourceFieldInput.vue'
+import LocationFieldInput from './LocationFieldInput.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -84,22 +86,15 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
       </el-radio-group>
     </div>
 
-    <div
-      v-if="conditions.length === 0"
-      class="text-sm text-[var(--el-text-color-secondary)] py-2"
-    >
+    <div v-if="conditions.length === 0" class="text-sm text-[var(--el-text-color-secondary)] py-2">
       暂无筛选条件，点击下方“添加条件”
     </div>
 
-    <div
-      v-for="(condition, index) in conditions"
-      :key="index"
-      class="flex items-center gap-2"
-    >
+    <div v-for="(condition, index) in conditions" :key="index" class="flex items-center gap-2">
       <el-select
         :model-value="condition.key"
         class="!w-40"
-        @update:model-value="(condition.key = $event), handleKeyChange(condition)"
+        @update:model-value="((condition.key = $event), handleKeyChange(condition))"
       >
         <el-option
           v-for="field in filterableFields"
@@ -121,7 +116,12 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
       <template v-if="needValue(condition.op)">
         <template v-if="fieldOf(condition.key)?.type === 'member'">
           <el-select v-model="condition.value as string" filterable class="flex-1">
-            <el-option v-for="member in members" :key="member.id" :label="member.name" :value="member.id" />
+            <el-option
+              v-for="member in members"
+              :key="member.id"
+              :label="member.name"
+              :value="member.id"
+            />
           </el-select>
         </template>
         <template v-else-if="fieldOf(condition.key)?.type === 'dept'">
@@ -132,6 +132,28 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
             node-key="id"
             check-strictly
             class="flex-1"
+          />
+        </template>
+        <template v-else-if="fieldOf(condition.key)?.type === 'location'">
+          <LocationFieldInput
+            v-model="condition.value as string"
+            :scope="fieldOf(condition.key)?.config?.scope ?? 'ALL'"
+            :location-type="fieldOf(condition.key)?.config?.locationType ?? 'PCD'"
+            placeholder="选择地区"
+            class="flex-1"
+          />
+        </template>
+        <template
+          v-else-if="
+            ['data_source', 'data_source_multiple'].includes(fieldOf(condition.key)?.type ?? '')
+          "
+        >
+          <DataSourceFieldInput
+            :model-value="typeof condition.value === 'string' ? condition.value : undefined"
+            :source-type="fieldOf(condition.key)?.config?.dataSourceType ?? 'CUSTOMER'"
+            placeholder="选择数据"
+            class="flex-1"
+            @update:model-value="condition.value = $event"
           />
         </template>
         <template
@@ -151,9 +173,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
           </el-select>
         </template>
         <template
-          v-else-if="
-            ['number', 'currency', 'percent'].includes(fieldOf(condition.key)?.type ?? '')
-          "
+          v-else-if="['number', 'currency', 'percent'].includes(fieldOf(condition.key)?.type ?? '')"
         >
           <el-input-number
             v-model="condition.value as number"

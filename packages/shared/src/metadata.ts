@@ -18,6 +18,10 @@ export type FieldType =
   | 'phone'
   | 'email'
   | 'picture'
+  | 'location'
+  | 'attachment'
+  | 'data_source'
+  | 'data_source_multiple'
   | 'formula'
 
 export interface FieldOption {
@@ -39,6 +43,74 @@ export interface FieldConfig {
   pictureShowType?: 'card' | 'list'
   uploadLimit?: number
   uploadSizeLimit?: number
+  /** Cordys LOCATION 地址范围。 */
+  scope?: 'ALL' | 'CN'
+  /** Cordys LOCATION 地址层级。 */
+  locationType?: 'C' | 'P' | 'PC' | 'PCD' | 'detail'
+  /** Cordys ATTACHMENT 单附件模式。 */
+  onlyOne?: boolean
+  /** Cordys ATTACHMENT 允许扩展名，逗号分隔，如 `.pdf,.docx`。 */
+  accept?: string
+  /** Cordys ATTACHMENT 单文件大小，如 `500KB` / `20MB`。 */
+  limitSize?: string
+  /** Cordys DATA_SOURCE 数据源类型；自定义表单时直接保存目标 customFormId。 */
+  dataSourceType?: DataSourceType
+}
+
+export const BUILTIN_DATA_SOURCE_TYPES = [
+  'CUSTOMER',
+  'CONTACT',
+  'OPPORTUNITY',
+  'PRODUCT',
+  'CLUE',
+  'PRICE',
+  'CONTRACT',
+  'QUOTATION',
+  'PAYMENT_PLAN',
+  'CONTRACT_PAYMENT_RECORD',
+  'BUSINESS_TITLE',
+  'ORDER',
+  'INVOICE',
+] as const
+
+export type BuiltinDataSourceType = (typeof BUILTIN_DATA_SOURCE_TYPES)[number]
+export type DataSourceType = BuiltinDataSourceType | string
+
+export interface DataSourceTypeOption {
+  value: BuiltinDataSourceType
+  label: string
+}
+
+export interface DataSourceOptionVO {
+  id: string
+  name: string
+}
+
+export interface DataSourcePageVO {
+  list: DataSourceOptionVO[]
+  total: number
+  current: number
+  pageSize: number
+}
+
+export const BUILTIN_DATA_SOURCE_OPTIONS: DataSourceTypeOption[] = [
+  { value: 'CUSTOMER', label: '客户' },
+  { value: 'CONTACT', label: '联系人' },
+  { value: 'OPPORTUNITY', label: '商机' },
+  { value: 'PRODUCT', label: '产品' },
+  { value: 'CLUE', label: '线索' },
+  { value: 'PRICE', label: '价格表' },
+  { value: 'CONTRACT', label: '合同' },
+  { value: 'QUOTATION', label: '报价单' },
+  { value: 'PAYMENT_PLAN', label: '回款计划' },
+  { value: 'CONTRACT_PAYMENT_RECORD', label: '回款记录' },
+  { value: 'BUSINESS_TITLE', label: '工商抬头' },
+  { value: 'ORDER', label: '订单' },
+  { value: 'INVOICE', label: '发票' },
+]
+
+export function isBuiltinDataSourceType(value?: string | null): value is BuiltinDataSourceType {
+  return Boolean(value && (BUILTIN_DATA_SOURCE_TYPES as readonly string[]).includes(value))
 }
 
 export interface FieldVO {
@@ -76,6 +148,10 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
   { value: 'phone', label: '电话' },
   { value: 'email', label: '邮箱' },
   { value: 'picture', label: '图片' },
+  { value: 'location', label: '地址' },
+  { value: 'attachment', label: '附件' },
+  { value: 'data_source', label: '数据源（单选）' },
+  { value: 'data_source_multiple', label: '数据源（多选）' },
   { value: 'formula', label: '计算字段' },
 ]
 
@@ -87,15 +163,7 @@ export function isCustomFieldKey(key: string): boolean {
 // ============ 高级筛选 ============
 
 export type FilterOp =
-  | 'eq'
-  | 'ne'
-  | 'contains'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'isEmpty'
-  | 'notEmpty'
+  'eq' | 'ne' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'isEmpty' | 'notEmpty'
 
 export interface FilterCondition {
   key: string
@@ -131,9 +199,14 @@ export function filterOpsForType(type: FieldType): FilterOp[] {
     case 'member':
     case 'dept':
     case 'switch':
+    case 'location':
+    case 'data_source':
       return ['eq', 'ne', 'isEmpty', 'notEmpty']
+    case 'attachment':
+      return ['isEmpty', 'notEmpty']
     case 'multiselect':
     case 'checkbox':
+    case 'data_source_multiple':
       return ['contains', 'isEmpty', 'notEmpty']
     default:
       return ['contains', 'eq', 'ne', 'isEmpty', 'notEmpty']
@@ -143,9 +216,7 @@ export function filterOpsForType(type: FieldType): FilterOp[] {
 // ============ 公式求值（安全的四则运算解析器，不使用 eval） ============
 
 type Token =
-  | { kind: 'num'; value: number }
-  | { kind: 'ident'; name: string }
-  | { kind: 'op'; op: string }
+  { kind: 'num'; value: number } | { kind: 'ident'; name: string } | { kind: 'op'; op: string }
 
 function tokenize(expr: string): Token[] {
   const tokens: Token[] = []
@@ -186,10 +257,7 @@ function tokenize(expr: string): Token[] {
  * 计算公式表达式的值。变量缺失或非数字时返回 null。
  * 仅支持 + - * / 与括号，防注入。
  */
-export function evaluateFormula(
-  expr: string,
-  vars: Record<string, unknown>,
-): number | null {
+export function evaluateFormula(expr: string, vars: Record<string, unknown>): number | null {
   let tokens: Token[]
   try {
     tokens = tokenize(expr)
@@ -270,7 +338,13 @@ export function evaluateFormula(
 /** 提取公式中引用的变量名（用于设计器校验字段引用合法性） */
 export function formulaVariables(expr: string): string[] {
   try {
-    return [...new Set(tokenize(expr).filter((t) => t.kind === 'ident').map((t) => (t as { kind: 'ident'; name: string }).name))]
+    return [
+      ...new Set(
+        tokenize(expr)
+          .filter((t) => t.kind === 'ident')
+          .map((t) => (t as { kind: 'ident'; name: string }).name),
+      ),
+    ]
   } catch {
     return []
   }

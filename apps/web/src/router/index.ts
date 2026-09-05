@@ -248,11 +248,10 @@ const router = createRouter({
         },
         {
           path: 'custom-forms',
-          component: () => import('@/views/custom-forms/PlannedFeatureView.vue'),
+          component: () => import('@/views/custom-forms/CustomFormsView.vue'),
           meta: {
             title: '自定义表单',
-            perm: 'menu:system',
-            plannedFeature: '任意自定义业务表单、数据权限与数据列表',
+            perm: 'menu:customForm',
           },
         },
         {

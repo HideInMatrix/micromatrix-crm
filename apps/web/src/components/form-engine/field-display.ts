@@ -1,8 +1,13 @@
-import type { FieldVO } from '@micromatrix/shared'
+import { formatLocationValue, type FieldVO } from '@micromatrix/shared'
 
 export interface DisplayContext {
   memberMap: Map<string, string>
   deptMap: Map<string, string>
+  dataSourceMap?: Map<string, string>
+}
+
+export function dataSourceDisplayKey(sourceType: string, id: string): string {
+  return `${sourceType}:${id}`
 }
 
 const SYSTEM_FIELD_ALIASES: Record<string, string[]> = {
@@ -68,6 +73,36 @@ export function formatFieldValue(
     }
     case 'datetime':
       return String(value).replace('T', ' ').slice(0, 16)
+    case 'location':
+      return (
+        formatLocationValue(
+          String(value),
+          '/',
+          ' ',
+          field.config?.scope ?? 'ALL',
+          field.config?.locationType ?? 'PCD',
+        ) || '-'
+      )
+    case 'attachment':
+      return Array.isArray(value) && value.length ? `${value.length} 个附件` : '-'
+    case 'data_source': {
+      const sourceType = field.config?.dataSourceType
+      if (!sourceType) return String(value)
+      return (
+        ctx.dataSourceMap?.get(dataSourceDisplayKey(sourceType, String(value))) ?? String(value)
+      )
+    }
+    case 'data_source_multiple': {
+      const sourceType = field.config?.dataSourceType
+      const values = Array.isArray(value) ? value : [value]
+      if (!sourceType) return values.map(String).join('、')
+      return values
+        .map(
+          (item) =>
+            ctx.dataSourceMap?.get(dataSourceDisplayKey(sourceType, String(item))) ?? String(item),
+        )
+        .join('、')
+    }
     default:
       return String(value)
   }

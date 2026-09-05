@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { evaluateFormula, isCustomFieldKey, type FieldVO } from '@micromatrix/shared'
+import {
+  evaluateFormula,
+  isCustomFieldKey,
+  isLocationCodeAllowed,
+  splitLocationValue,
+  type FieldVO,
+} from '@micromatrix/shared'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { ModuleFormsService } from './module-forms.service'
 
@@ -47,15 +53,67 @@ export class MetadataService {
     if (field.required && empty) throw new BadRequestException(`「${field.label}」为必填项`)
     if (empty) return
     if (
-      ['text', 'textarea', 'phone', 'email', 'select', 'radio', 'member', 'dept'].includes(
-        field.type,
-      ) &&
+      [
+        'text',
+        'textarea',
+        'phone',
+        'email',
+        'select',
+        'radio',
+        'member',
+        'dept',
+        'data_source',
+      ].includes(field.type) &&
       typeof value !== 'string'
     ) {
       throw new BadRequestException(`「${field.label}」字段值格式不正确`)
     }
-    if (['multiselect', 'checkbox'].includes(field.type) && !Array.isArray(value)) {
+    if (
+      ['multiselect', 'checkbox', 'data_source_multiple'].includes(field.type) &&
+      !Array.isArray(value)
+    ) {
       throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+    }
+    if (field.type === 'data_source_multiple') {
+      const ids = value as unknown[]
+      if (ids.some((item) => typeof item !== 'string' || !item.trim())) {
+        throw new BadRequestException(`「${field.label}」数据源值格式不正确`)
+      }
+      if (new Set(ids).size !== ids.length) {
+        throw new BadRequestException(`「${field.label}」不能包含重复数据源记录`)
+      }
+    }
+    if (['picture', 'attachment'].includes(field.type) && !Array.isArray(value)) {
+      throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+    }
+    if (field.type === 'attachment') {
+      const ids = value as unknown[]
+      if (ids.some((item) => typeof item !== 'string' || !item.trim())) {
+        throw new BadRequestException(`「${field.label}」附件值格式不正确`)
+      }
+      if (new Set(ids).size !== ids.length) {
+        throw new BadRequestException(`「${field.label}」不能包含重复附件`)
+      }
+      const max = field.config?.onlyOne ? 1 : 10
+      if (ids.length > max)
+        throw new BadRequestException(`「${field.label}」最多上传 ${max} 个附件`)
+    }
+    if (field.type === 'location') {
+      if (typeof value !== 'string') {
+        throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+      }
+      const parsed = splitLocationValue(value)
+      const scope = field.config?.scope ?? 'ALL'
+      const locationType = field.config?.locationType ?? 'PCD'
+      if (!parsed || !isLocationCodeAllowed(parsed.code, scope, locationType)) {
+        throw new BadRequestException(`「${field.label}」地区编码不正确`)
+      }
+      if (locationType !== 'detail' && parsed.detail) {
+        throw new BadRequestException(`「${field.label}」当前地址类型不支持详细地址`)
+      }
+      if (parsed.detail.length > 200) {
+        throw new BadRequestException(`「${field.label}」详细地址不能超过 200 个字符`)
+      }
     }
     if (['number', 'currency', 'percent'].includes(field.type) && !Number.isFinite(Number(value))) {
       throw new BadRequestException(`「${field.label}」必须是有效数字`)

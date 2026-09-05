@@ -33,6 +33,11 @@ const FIELD_TYPES = [
   'dept',
   'phone',
   'email',
+  'picture',
+  'location',
+  'attachment',
+  'data_source',
+  'data_source_multiple',
   'formula',
 ] as const
 

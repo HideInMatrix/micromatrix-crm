@@ -9,7 +9,7 @@ import type {
   UpdateUserViewDto,
   UserViewConditionDto,
 } from './dto/user-view.dto'
-import type { UserViewResourceType } from './user-views.constants'
+import type { UserViewResourceKey } from './user-views.constants'
 
 const POS_STEP = 4096n
 type ConditionValueType = 'ARRAY' | 'STRING' | 'INT' | 'FLOAT' | 'BOOLEAN'
@@ -18,7 +18,7 @@ type ConditionValueType = 'ARRAY' | 'STRING' | 'INT' | 'FLOAT' | 'BOOLEAN'
 export class UserViewsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(user: AuthUser, resourceType: UserViewResourceType) {
+  async list(user: AuthUser, resourceType: UserViewResourceKey) {
     const views = await this.prisma.sysUserView.findMany({
       where: {
         organizationId: user.tenantId,
@@ -31,12 +31,12 @@ export class UserViewsService {
     return views
   }
 
-  async detail(user: AuthUser, id: string, resourceType: UserViewResourceType) {
+  async detail(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedViewWithConditions(user, id, resourceType)
     return this.toDetail(view)
   }
 
-  async resolveFilters(user: AuthUser, id: string, resourceType: UserViewResourceType) {
+  async resolveFilters(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedViewWithConditions(user, id, resourceType)
     if (!view.enable) throw new BadRequestException('该视图已停用')
     return {
@@ -49,7 +49,7 @@ export class UserViewsService {
     }
   }
 
-  async create(user: AuthUser, resourceType: UserViewResourceType, dto: CreateUserViewDto) {
+  async create(user: AuthUser, resourceType: UserViewResourceKey, dto: CreateUserViewDto) {
     this.assertConditions(dto.conditions ?? [])
     const now = BigInt(Date.now())
     const name = dto.name.trim()
@@ -84,7 +84,7 @@ export class UserViewsService {
     }
   }
 
-  async update(user: AuthUser, resourceType: UserViewResourceType, dto: UpdateUserViewDto) {
+  async update(user: AuthUser, resourceType: UserViewResourceKey, dto: UpdateUserViewDto) {
     this.assertConditions(dto.conditions ?? [])
     await this.getOwnedView(user, dto.id, resourceType)
     const now = BigInt(Date.now())
@@ -109,13 +109,13 @@ export class UserViewsService {
     }
   }
 
-  async remove(user: AuthUser, id: string, resourceType: UserViewResourceType) {
+  async remove(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedView(user, id, resourceType)
     await this.prisma.sysUserView.delete({ where: { id } })
     return { id, name: view.name }
   }
 
-  async toggleFixed(user: AuthUser, id: string, resourceType: UserViewResourceType) {
+  async toggleFixed(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedView(user, id, resourceType)
     await this.prisma.sysUserView.update({
       where: { id },
@@ -123,7 +123,7 @@ export class UserViewsService {
     })
   }
 
-  async toggleEnabled(user: AuthUser, id: string, resourceType: UserViewResourceType) {
+  async toggleEnabled(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedView(user, id, resourceType)
     await this.prisma.sysUserView.update({
       where: { id },
@@ -131,7 +131,7 @@ export class UserViewsService {
     })
   }
 
-  async editPos(user: AuthUser, resourceType: UserViewResourceType, dto: EditUserViewPosDto) {
+  async editPos(user: AuthUser, resourceType: UserViewResourceKey, dto: EditUserViewPosDto) {
     if (dto.orgId !== user.tenantId) throw new BadRequestException('组织与当前登录上下文不匹配')
     if (dto.moveId === dto.targetId) throw new BadRequestException('移动视图与目标视图不能相同')
 
@@ -164,7 +164,7 @@ export class UserViewsService {
     )
   }
 
-  private async getOwnedView(user: AuthUser, id: string, resourceType: UserViewResourceType) {
+  private async getOwnedView(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.prisma.sysUserView.findFirst({
       where: { id, organizationId: user.tenantId, userId: user.id, resourceType },
     })
@@ -175,7 +175,7 @@ export class UserViewsService {
   private async getOwnedViewWithConditions(
     user: AuthUser,
     id: string,
-    resourceType: UserViewResourceType,
+    resourceType: UserViewResourceKey,
   ) {
     const view = await this.prisma.sysUserView.findFirst({
       where: { id, organizationId: user.tenantId, userId: user.id, resourceType },

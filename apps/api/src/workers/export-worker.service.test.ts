@@ -65,6 +65,7 @@ function serviceFixture() {
     handler('contractPaymentPlan', calls) as never,
     handler('contractPaymentRecord', calls) as never,
     handler('order', calls) as never,
+    handler('customFormData', calls) as never,
   )
   return { instance, calls, failures, completed, task, tasks }
 }
@@ -72,7 +73,7 @@ function serviceFixture() {
 const payload = { version: 1, query: {}, input: {} } as const
 const user = { id: 'user-a', tenantId: 'tenant-a' } as never
 
-test('13 个导出 module key 全部路由到对应业务 handler', async () => {
+test('14 个导出 module key 全部路由到对应业务 handler', async () => {
   const { instance, calls } = serviceFixture()
   const routes = [
     ['customer', 'customer'],
@@ -88,6 +89,7 @@ test('13 个导出 module key 全部路由到对应业务 handler', async () => 
     ['contractPaymentPlan', 'contractPaymentPlan'],
     ['contractPaymentRecord', 'contractPaymentRecord'],
     ['order', 'order'],
+    ['customFormData', 'customFormData'],
   ] as const
   for (const [module] of routes) await instance.route(module, user, payload)
   assert.deepEqual(
@@ -102,7 +104,10 @@ test('确定性业务错误立即写 FAILED 并转为 UnrecoverableError', async
     throw new BadRequestException('导出字段已失效')
   }
   const job = { data: { taskId: 'task-a' }, opts: { attempts: 3 }, attemptsMade: 0 } as Job<any>
-  await assert.rejects(() => instance.process(job), (error: unknown) => error instanceof UnrecoverableError)
+  await assert.rejects(
+    () => instance.process(job),
+    (error: unknown) => error instanceof UnrecoverableError,
+  )
   assert.deepEqual(failures, ['导出字段已失效'])
 })
 
@@ -112,7 +117,11 @@ test('瞬时错误在最后一次 attempt 前不写 FAILED，最后一次才收�
     throw new Error('temporary db error')
   }
   await assert.rejects(() =>
-    first.instance.process({ data: { taskId: 'task-a' }, opts: { attempts: 3 }, attemptsMade: 0 } as Job<any>),
+    first.instance.process({
+      data: { taskId: 'task-a' },
+      opts: { attempts: 3 },
+      attemptsMade: 0,
+    } as Job<any>),
   )
   assert.equal(first.failures.length, 0)
 
@@ -121,13 +130,21 @@ test('瞬时错误在最后一次 attempt 前不写 FAILED，最后一次才收�
     throw new Error('temporary db error')
   }
   await assert.rejects(() =>
-    last.instance.process({ data: { taskId: 'task-a' }, opts: { attempts: 3 }, attemptsMade: 2 } as Job<any>),
+    last.instance.process({
+      data: { taskId: 'task-a' },
+      opts: { attempts: 3 },
+      attemptsMade: 2,
+    } as Job<any>),
   )
   assert.deepEqual(last.failures, ['temporary db error'])
 })
 
 test('成功构建后统一交给 ExportTasksService 以 PENDING CAS 完成', async () => {
   const { instance, completed } = serviceFixture()
-  await instance.process({ data: { taskId: 'task-a' }, opts: { attempts: 3 }, attemptsMade: 0 } as Job<any>)
+  await instance.process({
+    data: { taskId: 'task-a' },
+    opts: { attempts: 3 },
+    attemptsMade: 0,
+  } as Job<any>)
   assert.deepEqual(completed, ['task-a'])
 })

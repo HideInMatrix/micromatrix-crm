@@ -96,9 +96,9 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 ### B. 元数据、表单与搜索
 
-- 动态字段剩余字段类型：LOCATION、图片、附件、公式、数据源字段等。
+- 动态字段：图片、公式、LOCATION、ATTACHMENT、DATA_SOURCE 已进入公共 Form Engine；剩余重点为子表、显隐/联动及其它高级字段语义。
 - 动态表单：布局、显隐、联动、子表、数据源。
-- 自定义表单：当前尚未实施。
+- 自定义表单：`FORM-001` 已完成核心 direct model、表单设计、管理员/三档成员权限、数据 CRUD、PC 双栏页面、xlsx 导入/异步导出、E AdvancedFilter / SavedView / 列设置 / 批量修改删除、F1 LOCATION / ATTACHMENT 与 F2 DATA_SOURCE；F1R 已将 `CustomFormsView.vue` 从超大单页收口为组件 + composable 编排结构。当前仅剩 F3 子表、F4 显隐/联动，整体状态仍为 `IN_PROGRESS`。
 - 高级搜索：组合条件、数据范围、字段掩码。
 - 全局搜索：跨模块搜索当前尚未实施。
 - 字段脱敏：当前尚未实施。

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { CustomersModule } from '../customers/customers.module'
 import { ContactsModule } from '../modules/contacts/contacts.module'
 import { ContractsModule } from '../modules/contracts/contracts.module'
+import { CustomFormsModule } from '../modules/custom-forms/custom-forms.module'
 import { ImportExportModule } from '../modules/import-export/import-export.module'
 import { LeadsModule } from '../modules/leads/leads.module'
 import { OpportunitiesModule } from '../modules/opportunities/opportunities.module'
@@ -19,6 +20,7 @@ import { ExportWorkerService } from './export-worker.service'
     ProductsModule,
     ContractsModule,
     OrdersModule,
+    CustomFormsModule,
   ],
   providers: [ExportWorkerService],
 })

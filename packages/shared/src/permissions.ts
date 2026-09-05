@@ -192,6 +192,17 @@ export const PERMISSION_TREE: PermissionNode[] = [
     label: '审批中心',
   },
   {
+    code: 'menu:customForm',
+    label: '自定义表单',
+    children: [
+      {
+        code: 'CUSTOM_FORM:READ',
+        label: '查看自定义表单',
+        children: [{ code: 'CUSTOM_FORM:ADD', label: '新建自定义表单' }],
+      },
+    ],
+  },
+  {
     code: 'PERSONAL_API_KEY:READ',
     label: '个人 API Key',
     children: [

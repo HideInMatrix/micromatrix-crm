@@ -57,6 +57,11 @@ const RESOURCE_PATHS: Record<UserViewModule, string> = {
 }
 
 function resourcePath(module: string) {
+  if (module.startsWith('customForm:')) {
+    const formId = module.slice('customForm:'.length).trim()
+    if (!formId) throw new Error('自定义表单视图缺少 formId')
+    return `/custom-form/${encodeURIComponent(formId)}/data/view`
+  }
   const path = RESOURCE_PATHS[module as UserViewModule]
   if (!path) throw new Error(`未配置用户视图资源: ${module}`)
   return path

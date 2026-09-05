@@ -15,6 +15,11 @@ export const USER_VIEW_RESOURCE_TYPES = {
 
 export type UserViewModule = keyof typeof USER_VIEW_RESOURCE_TYPES
 export type UserViewResourceType = (typeof USER_VIEW_RESOURCE_TYPES)[UserViewModule]
+export type UserViewResourceKey = UserViewResourceType | `CUSTOM_FORM:${string}`
+
+export function customFormUserViewResourceType(formId: string): UserViewResourceKey {
+  return `CUSTOM_FORM:${formId}`
+}
 
 export const USER_VIEW_RESOURCE_ROUTES: Array<{
   module: UserViewModule

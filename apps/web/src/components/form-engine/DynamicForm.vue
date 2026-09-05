@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { evaluateFormula, type DepartmentVO, type FieldVO } from '@micromatrix/shared'
+import {
+  evaluateFormula,
+  type AttachmentVO,
+  type DepartmentVO,
+  type FieldVO,
+} from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, ref } from 'vue'
 import type { MemberOption } from '@/api/system'
@@ -9,6 +14,8 @@ const props = defineProps<{
   fields: FieldVO[]
   members: MemberOption[]
   deptTree: DepartmentVO[]
+  attachmentMap?: Record<string, AttachmentVO[]>
+  attachmentDownload?: (file: AttachmentVO) => Promise<void>
 }>()
 
 /** 扁平模型：系统字段键 + cf_* 自定义字段键 */
@@ -61,6 +68,8 @@ defineExpose({ validate })
             :field="field"
             :members="members"
             :dept-tree="deptTree"
+            :attachment-options="attachmentMap?.[field.key] ?? []"
+            :attachment-download="attachmentDownload"
             :formula-value="formulaValues[field.key]"
           />
         </el-form-item>

@@ -9,6 +9,7 @@ import { LocalDiskStorage } from './storage/local-disk.storage'
 import type { StorageProvider } from './storage/storage-provider'
 
 const MAX_SIZE = 20 * 1024 * 1024
+const DOMAIN_GUARDED_TARGETS = new Set(['customFormData'])
 const ALLOWED_EXT = new Set([
   '.jpg',
   '.jpeg',
@@ -66,6 +67,21 @@ export class AttachmentsService {
     return map
   }
 
+  async listByIdsFromTarget(
+    tenantId: string,
+    ids: string[],
+    targetType: string,
+    targetId: string,
+  ): Promise<AttachmentVO[]> {
+    const uniqueIds = [...new Set(ids)]
+    if (!uniqueIds.length) return []
+    const rows = await this.prisma.attachment.findMany({
+      where: { tenantId, id: { in: uniqueIds }, targetType, targetId },
+      orderBy: { createdAt: 'asc' },
+    })
+    return rows.map((row) => this.toVO(row))
+  }
+
   async upload(
     user: AuthUser,
     file: { originalname: string; mimetype: string; size: number; buffer: Buffer } | undefined,
@@ -95,6 +111,9 @@ export class AttachmentsService {
 
   async download(user: AuthUser, id: string): Promise<StreamableFile> {
     const row = await this.ensureOwned(user, id)
+    if (row.targetType && DOMAIN_GUARDED_TARGETS.has(row.targetType)) {
+      throw new BadRequestException('该附件必须通过所属业务数据读取')
+    }
     const abs = this.storage.resolveAbsolute(row.path)
     return new StreamableFile(createReadStream(abs), {
       type: row.mime || 'application/octet-stream',
@@ -104,6 +123,9 @@ export class AttachmentsService {
 
   async remove(user: AuthUser, id: string) {
     const row = await this.ensureOwned(user, id)
+    if (row.targetType && DOMAIN_GUARDED_TARGETS.has(row.targetType)) {
+      throw new BadRequestException('该附件必须通过所属业务数据修改')
+    }
     const isAdmin = user.permissions.includes('*')
     if (!isAdmin && row.uploaderId && row.uploaderId !== user.id) {
       throw new BadRequestException('只能删除自己上传的附件')
@@ -127,6 +149,25 @@ export class AttachmentsService {
     await this.storage.remove(row.path)
     await this.prisma.attachment.delete({ where: { id } })
     return true
+  }
+
+  async removeAllFromTargets(tenantId: string, targetType: string, targetIds: string[]) {
+    const uniqueTargetIds = [...new Set(targetIds.filter(Boolean))]
+    if (!uniqueTargetIds.length) return 0
+    const rows = await this.prisma.attachment.findMany({
+      where: { tenantId, targetType, targetId: { in: uniqueTargetIds } },
+      select: { id: true, path: true },
+    })
+    for (const row of rows) {
+      await this.ensureNotApprovalBound(tenantId, row.id)
+      await this.storage.remove(row.path)
+    }
+    if (rows.length) {
+      await this.prisma.attachment.deleteMany({
+        where: { tenantId, id: { in: rows.map((row) => row.id) } },
+      })
+    }
+    return rows.length
   }
 
   async viewFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {

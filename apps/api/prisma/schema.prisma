@@ -2065,6 +2065,123 @@ model Subscription {
 
 // ============ Cordys 模块表单与动态字段定义 ============
 
+// ============ Cordys 自定义表单（direct model） ============
+
+model CustomForm {
+  id             String  @id @default(cuid()) @db.VarChar(32)
+  name           String  @db.VarChar(255)
+  enable         Boolean @default(true)
+  organizationId String  @map("organization_id") @db.VarChar(32)
+  createTime     BigInt  @map("create_time")
+  updateTime     BigInt  @map("update_time")
+  createUser     String  @map("create_user") @db.VarChar(32)
+  updateUser     String  @map("update_user") @db.VarChar(32)
+
+  admins CustomFormAdmin[]
+  roles  CustomFormRole[]
+  data   CustomFormData[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([organizationId, enable])
+  @@map("custom_form")
+}
+
+model CustomFormAdmin {
+  id           String @id @default(cuid()) @db.VarChar(32)
+  customFormId String @map("custom_form_id") @db.VarChar(32)
+  userId       String @map("user_id") @db.VarChar(32)
+
+  form CustomForm @relation(fields: [customFormId], references: [id], onDelete: Cascade)
+
+  @@unique([customFormId, userId])
+  @@index([userId])
+  @@map("custom_form_admin")
+}
+
+model CustomFormRole {
+  id           String @id @default(cuid()) @db.VarChar(32)
+  name         String @db.VarChar(255)
+  customFormId String @map("custom_form_id") @db.VarChar(32)
+  internalKey  String @map("internal_key") @db.VarChar(50)
+  createTime   BigInt @map("create_time")
+  updateTime   BigInt @map("update_time")
+  createUser   String @map("create_user") @db.VarChar(32)
+  updateUser   String @map("update_user") @db.VarChar(32)
+
+  form  CustomForm           @relation(fields: [customFormId], references: [id], onDelete: Cascade)
+  users CustomFormRoleUser[]
+
+  @@unique([customFormId, internalKey])
+  @@index([customFormId])
+  @@map("custom_form_role")
+}
+
+model CustomFormRoleUser {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  roleId     String @map("role_id") @db.VarChar(32)
+  userId     String @map("user_id") @db.VarChar(32)
+  createTime BigInt @map("create_time")
+  updateTime BigInt @map("update_time")
+  createUser String @map("create_user") @db.VarChar(32)
+  updateUser String @map("update_user") @db.VarChar(32)
+
+  role CustomFormRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, userId])
+  @@index([userId])
+  @@index([createTime(sort: Desc)])
+  @@map("custom_form_role_user")
+}
+
+model CustomFormData {
+  id             String @id @default(cuid()) @db.VarChar(32)
+  customFormId   String @map("custom_form_id") @db.VarChar(32)
+  name           String @db.VarChar(255)
+  ownerId        String @map("owner") @db.VarChar(32)
+  organizationId String @map("organization_id") @db.VarChar(32)
+  createTime     BigInt @map("create_time")
+  updateTime     BigInt @map("update_time")
+  createUser     String @map("create_user") @db.VarChar(32)
+  updateUser     String @map("update_user") @db.VarChar(32)
+
+  form            CustomForm                @relation(fields: [customFormId], references: [id], onDelete: Cascade)
+  fieldValues     CustomFormDataField[]
+  fieldBlobValues CustomFormDataFieldBlob[]
+
+  @@index([customFormId])
+  @@index([organizationId])
+  @@index([customFormId, ownerId])
+  @@index([customFormId, createTime(sort: Desc)])
+  @@map("custom_form_data")
+}
+
+model CustomFormDataField {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id") @db.VarChar(32)
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.VarChar(255)
+
+  resource CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId, fieldId, fieldValue])
+  @@map("custom_form_data_field")
+}
+
+model CustomFormDataFieldBlob {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id") @db.VarChar(32)
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.Text
+
+  resource CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId])
+  @@map("custom_form_data_field_blob")
+}
+
 model SysModuleForm {
   id             String @id @default(cuid()) @db.VarChar(32)
   formKey        String @map("form_key") @db.VarChar(50)

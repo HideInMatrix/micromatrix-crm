@@ -10,6 +10,7 @@ const props = defineProps<{
   deptTree: DepartmentVO[]
   selectedCount: number
   title?: string
+  loading?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -24,7 +25,9 @@ const formRef = ref<InstanceType<typeof DynamicForm>>()
 const editableFields = computed(() =>
   props.fields.filter((field) => !field.hidden && field.type !== 'formula'),
 )
-const selectedField = computed(() => editableFields.value.find((field) => field.id === fieldId.value) ?? null)
+const selectedField = computed(
+  () => editableFields.value.find((field) => field.id === fieldId.value) ?? null,
+)
 const singleField = computed(() => (selectedField.value ? [selectedField.value] : []))
 
 watch(fieldId, () => {
@@ -79,7 +82,9 @@ async function submit() {
     />
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!selectedField" @click="submit">确认修改</el-button>
+      <el-button type="primary" :disabled="!selectedField" :loading="loading" @click="submit">
+        确认修改
+      </el-button>
     </template>
   </el-dialog>
 </template>

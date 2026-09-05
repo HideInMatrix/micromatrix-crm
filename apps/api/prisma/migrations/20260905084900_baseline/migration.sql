@@ -1487,6 +1487,91 @@ CREATE TABLE "subscriptions" (
 );
 
 -- CreateTable
+CREATE TABLE "custom_form" (
+    "id" VARCHAR(32) NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "enable" BOOLEAN NOT NULL DEFAULT true,
+    "organization_id" VARCHAR(32) NOT NULL,
+    "create_time" BIGINT NOT NULL,
+    "update_time" BIGINT NOT NULL,
+    "create_user" VARCHAR(32) NOT NULL,
+    "update_user" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "custom_form_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "custom_form_admin" (
+    "id" VARCHAR(32) NOT NULL,
+    "custom_form_id" VARCHAR(32) NOT NULL,
+    "user_id" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "custom_form_admin_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "custom_form_role" (
+    "id" VARCHAR(32) NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "custom_form_id" VARCHAR(32) NOT NULL,
+    "internal_key" VARCHAR(50) NOT NULL,
+    "create_time" BIGINT NOT NULL,
+    "update_time" BIGINT NOT NULL,
+    "create_user" VARCHAR(32) NOT NULL,
+    "update_user" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "custom_form_role_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "custom_form_role_user" (
+    "id" VARCHAR(32) NOT NULL,
+    "role_id" VARCHAR(32) NOT NULL,
+    "user_id" VARCHAR(32) NOT NULL,
+    "create_time" BIGINT NOT NULL,
+    "update_time" BIGINT NOT NULL,
+    "create_user" VARCHAR(32) NOT NULL,
+    "update_user" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "custom_form_role_user_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "custom_form_data" (
+    "id" VARCHAR(32) NOT NULL,
+    "custom_form_id" VARCHAR(32) NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "owner" VARCHAR(32) NOT NULL,
+    "organization_id" VARCHAR(32) NOT NULL,
+    "create_time" BIGINT NOT NULL,
+    "update_time" BIGINT NOT NULL,
+    "create_user" VARCHAR(32) NOT NULL,
+    "update_user" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "custom_form_data_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "custom_form_data_field" (
+    "id" VARCHAR(32) NOT NULL,
+    "resource_id" VARCHAR(32) NOT NULL,
+    "field_id" VARCHAR(32) NOT NULL,
+    "field_value" VARCHAR(255) NOT NULL,
+
+    CONSTRAINT "custom_form_data_field_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "custom_form_data_field_blob" (
+    "id" VARCHAR(32) NOT NULL,
+    "resource_id" VARCHAR(32) NOT NULL,
+    "field_id" VARCHAR(32) NOT NULL,
+    "field_value" TEXT NOT NULL,
+
+    CONSTRAINT "custom_form_data_field_blob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "sys_module_form" (
     "id" VARCHAR(32) NOT NULL,
     "form_key" VARCHAR(50) NOT NULL,
@@ -2764,6 +2849,60 @@ CREATE UNIQUE INDEX "plans_code_key" ON "plans"("code");
 CREATE INDEX "subscriptions_tenantId_idx" ON "subscriptions"("tenantId");
 
 -- CreateIndex
+CREATE INDEX "custom_form_organization_id_idx" ON "custom_form"("organization_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_organization_id_enable_idx" ON "custom_form"("organization_id", "enable");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_organization_id_name_key" ON "custom_form"("organization_id", "name");
+
+-- CreateIndex
+CREATE INDEX "custom_form_admin_user_id_idx" ON "custom_form_admin"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_admin_custom_form_id_user_id_key" ON "custom_form_admin"("custom_form_id", "user_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_role_custom_form_id_idx" ON "custom_form_role"("custom_form_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_role_custom_form_id_internal_key_key" ON "custom_form_role"("custom_form_id", "internal_key");
+
+-- CreateIndex
+CREATE INDEX "custom_form_role_user_user_id_idx" ON "custom_form_role_user"("user_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_role_user_create_time_idx" ON "custom_form_role_user"("create_time" DESC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_role_user_role_id_user_id_key" ON "custom_form_role_user"("role_id", "user_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_custom_form_id_idx" ON "custom_form_data"("custom_form_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_organization_id_idx" ON "custom_form_data"("organization_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_custom_form_id_owner_idx" ON "custom_form_data"("custom_form_id", "owner");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_custom_form_id_create_time_idx" ON "custom_form_data"("custom_form_id", "create_time" DESC);
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_field_resource_id_field_id_field_value_idx" ON "custom_form_data_field"("resource_id", "field_id", "field_value");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_data_field_resource_id_field_id_key" ON "custom_form_data_field"("resource_id", "field_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_field_blob_resource_id_idx" ON "custom_form_data_field_blob"("resource_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_data_field_blob_resource_id_field_id_key" ON "custom_form_data_field_blob"("resource_id", "field_id");
+
+-- CreateIndex
 CREATE INDEX "sys_module_form_organization_id_idx" ON "sys_module_form"("organization_id");
 
 -- CreateIndex
@@ -3269,6 +3408,24 @@ ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_tenantId_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_planId_fkey" FOREIGN KEY ("planId") REFERENCES "plans"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "custom_form_admin" ADD CONSTRAINT "custom_form_admin_custom_form_id_fkey" FOREIGN KEY ("custom_form_id") REFERENCES "custom_form"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "custom_form_role" ADD CONSTRAINT "custom_form_role_custom_form_id_fkey" FOREIGN KEY ("custom_form_id") REFERENCES "custom_form"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "custom_form_role_user" ADD CONSTRAINT "custom_form_role_user_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "custom_form_role"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "custom_form_data" ADD CONSTRAINT "custom_form_data_custom_form_id_fkey" FOREIGN KEY ("custom_form_id") REFERENCES "custom_form"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "custom_form_data_field" ADD CONSTRAINT "custom_form_data_field_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "custom_form_data"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "custom_form_data_field_blob" ADD CONSTRAINT "custom_form_data_field_blob_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "custom_form_data"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "sys_module_form_blob" ADD CONSTRAINT "sys_module_form_blob_id_fkey" FOREIGN KEY ("id") REFERENCES "sys_module_form"("id") ON DELETE CASCADE ON UPDATE CASCADE;

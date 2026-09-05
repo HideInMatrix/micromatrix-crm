@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
-import type { FieldVO } from '@micromatrix/shared'
+import { parseLocationText, type FieldVO } from '@micromatrix/shared'
 import ExcelJS from 'exceljs'
 import type { ImportType } from './dto/import-export.dto'
 
@@ -46,7 +46,11 @@ export class SpreadsheetService {
     sheet.addRow(headers)
     sheet.views = [{ state: 'frozen', ySplit: 1 }]
     sheet.getRow(1).font = { bold: true }
-    sheet.columns = headers.map((header) => ({ header, key: header, width: Math.max(14, Math.min(28, header.length * 2 + 4)) }))
+    sheet.columns = headers.map((header) => ({
+      header,
+      key: header,
+      width: Math.max(14, Math.min(28, header.length * 2 + 4)),
+    }))
 
     const startColumn = importType === 'UPDATE' ? 2 : 1
     for (const [index, field] of exportableFields.entries()) {
@@ -123,12 +127,17 @@ export class SpreadsheetService {
     const rows: ParsedSpreadsheetRow[] = []
     for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
       const row = sheet.getRow(rowNumber)
-      const hasValue = [...headers.keys()].some((column) => !this.isEmpty(row.getCell(column).value))
+      const hasValue = [...headers.keys()].some(
+        (column) => !this.isEmpty(row.getCell(column).value),
+      )
       if (!hasValue) continue
 
       const values: Record<string, unknown> = {}
       const errors: string[] = []
-      const resourceId = idColumn === null ? undefined : this.cellText(row.getCell(idColumn).value).trim() || undefined
+      const resourceId =
+        idColumn === null
+          ? undefined
+          : this.cellText(row.getCell(idColumn).value).trim() || undefined
       if (importType === 'UPDATE' && !resourceId) errors.push('唯一ID不能为空')
 
       for (const [column, key] of headers.entries()) {
@@ -239,7 +248,10 @@ export class SpreadsheetService {
         continue
       }
       const master =
-        mainByLabel.get(top) ?? mainByKey.get(top) ?? mainByLabel.get(bottom) ?? mainByKey.get(bottom)
+        mainByLabel.get(top) ??
+        mainByKey.get(top) ??
+        mainByLabel.get(bottom) ??
+        mainByKey.get(bottom)
       if (master) {
         columns.set(column, { kind: 'main', key: master.key })
         continue
@@ -263,7 +275,10 @@ export class SpreadsheetService {
       const values: Record<string, unknown> = {}
       const subValues: Record<string, unknown> = {}
       const errors: string[] = []
-      const resourceId = idColumn === null ? undefined : this.cellText(row.getCell(idColumn).value).trim() || undefined
+      const resourceId =
+        idColumn === null
+          ? undefined
+          : this.cellText(row.getCell(idColumn).value).trim() || undefined
 
       for (const [column, meta] of columns) {
         if (meta.kind === 'id') continue
@@ -325,7 +340,9 @@ export class SpreadsheetService {
         let dataColumn = 1
         if (rowNumber === start) {
           for (const item of mainColumns) {
-            sheet.getCell(rowNumber, dataColumn).value = this.exportCellValue(group.values[item.key])
+            sheet.getCell(rowNumber, dataColumn).value = this.exportCellValue(
+              group.values[item.key],
+            )
             dataColumn++
           }
         } else {
@@ -349,7 +366,10 @@ export class SpreadsheetService {
     return Buffer.from(buffer)
   }
 
-  async buildExportWorkbook(columns: SpreadsheetColumn[], rows: Record<string, unknown>[]): Promise<Buffer> {
+  async buildExportWorkbook(
+    columns: SpreadsheetColumn[],
+    rows: Record<string, unknown>[],
+  ): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet('导出数据')
     sheet.columns = columns.map((column) => ({
@@ -360,7 +380,11 @@ export class SpreadsheetService {
     sheet.views = [{ state: 'frozen', ySplit: 1 }]
     sheet.getRow(1).font = { bold: true }
     for (const row of rows) {
-      sheet.addRow(Object.fromEntries(columns.map((column) => [column.key, this.exportCellValue(row[column.key])])))
+      sheet.addRow(
+        Object.fromEntries(
+          columns.map((column) => [column.key, this.exportCellValue(row[column.key])]),
+        ),
+      )
     }
     sheet.autoFilter = { from: 'A1', to: sheet.getRow(1).getCell(columns.length).address }
     const buffer = await workbook.xlsx.writeBuffer()
@@ -374,6 +398,7 @@ export class SpreadsheetService {
         !field.hidden &&
         field.type !== 'formula' &&
         field.type !== 'picture' &&
+        field.type !== 'attachment' &&
         !excluded.has(field.key),
     )
   }
@@ -426,15 +451,22 @@ export class SpreadsheetService {
       }
       case 'select':
       case 'radio': {
-        const option = field.options?.find((item) => item.label === text || String(item.value) === text)
+        const option = field.options?.find(
+          (item) => item.label === text || String(item.value) === text,
+        )
         if (!option && field.options?.length) throw new Error(`${field.label}不是有效选项`)
         return option?.value ?? text
       }
       case 'multiselect': {
-        const values = text.split(/[,，]/).map((item) => item.trim()).filter(Boolean)
+        const values = text
+          .split(/[,，]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
         if (field.options?.length) {
           return values.map((item) => {
-            const option = field.options?.find((candidate) => candidate.label === item || String(candidate.value) === item)
+            const option = field.options?.find(
+              (candidate) => candidate.label === item || String(candidate.value) === item,
+            )
             if (!option) throw new Error(`${field.label}包含无效选项「${item}」`)
             return option.value
           })
@@ -443,9 +475,14 @@ export class SpreadsheetService {
       }
       case 'checkbox': {
         if (field.options?.length) {
-          const values = text.split(/[,，]/).map((item) => item.trim()).filter(Boolean)
+          const values = text
+            .split(/[,，]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
           return values.map((item) => {
-            const option = field.options?.find((candidate) => candidate.label === item || String(candidate.value) === item)
+            const option = field.options?.find(
+              (candidate) => candidate.label === item || String(candidate.value) === item,
+            )
             if (!option) throw new Error(`${field.label}包含无效选项「${item}」`)
             return option.value
           })
@@ -453,8 +490,18 @@ export class SpreadsheetService {
         return text
       }
       case 'email':
-        if (text && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) throw new Error(`${field.label}邮箱格式不正确`)
+        if (text && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text))
+          throw new Error(`${field.label}邮箱格式不正确`)
         return text
+      case 'location': {
+        const parsed = parseLocationText(
+          text,
+          field.config?.scope ?? 'ALL',
+          field.config?.locationType ?? 'PCD',
+        )
+        if (!parsed) throw new Error(`${field.label}地址格式不正确`)
+        return parsed
+      }
       default:
         return text
     }
@@ -466,7 +513,11 @@ export class SpreadsheetService {
     if ('result' in record) return record.result
     if (Array.isArray(record.richText)) {
       return record.richText
-        .map((item) => (typeof item === 'object' && item && 'text' in item ? String((item as { text: unknown }).text) : ''))
+        .map((item) =>
+          typeof item === 'object' && item && 'text' in item
+            ? String((item as { text: unknown }).text)
+            : '',
+        )
         .join('')
     }
     if ('text' in record) return record.text
@@ -488,7 +539,8 @@ export class SpreadsheetService {
   private exportCellValue(value: unknown): string | number | boolean | Date | null {
     if (value === undefined || value === null) return null
     if (value instanceof Date) return value
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+      return value
     if (Array.isArray(value)) return value.join('、')
     return JSON.stringify(value)
   }

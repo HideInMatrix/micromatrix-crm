@@ -16,6 +16,7 @@ import FilterConditionEditor from '@/components/form-engine/FilterConditionEdito
 const props = defineProps<{
   module: string
   fields: FieldVO[]
+  filterFields?: FieldVO[]
   members: MemberOption[]
   deptTree: DepartmentVO[]
   currentFilters: FilterCondition[]
@@ -66,6 +67,7 @@ const columnOptions = computed(() =>
     .filter((field) => !field.hidden)
     .map((field) => ({ key: field.key, label: field.label })),
 )
+const conditionFields = computed(() => props.filterFields ?? props.fields)
 
 function userStorageKey(kind: 'active' | 'columns', viewId?: string) {
   const userId = auth.user?.id ?? 'anonymous'
@@ -166,7 +168,7 @@ function toPayload(): UserViewPayload | null {
     return null
   }
   const valid = formEditorRef.value?.getValidConditions() ?? []
-  const fieldMap = new Map(props.fields.map((field) => [field.key, field]))
+  const fieldMap = new Map(conditionFields.value.map((field) => [field.key, field]))
   return {
     name,
     searchMode: form.searchMode,
@@ -460,7 +462,7 @@ watch(
             ref="formEditorRef"
             v-model="form.conditions"
             v-model:search-mode="form.searchMode"
-            :fields="fields"
+            :fields="conditionFields"
             :members="members"
             :dept-tree="deptTree"
             show-search-mode
