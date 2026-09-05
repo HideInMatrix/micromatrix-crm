@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { EnterpriseAiModelsController } from './enterprise-ai-models.controller'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
+import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
 import { EnterpriseGlobalTasksController } from './enterprise-global-tasks.controller'
 import { EnterpriseGlobalTasksService } from './enterprise-global-tasks.service'
 import { EnterpriseMailSettingsService } from './enterprise-mail-settings.service'
@@ -23,6 +24,7 @@ import { SmtpProbeService } from './smtp-probe.service'
     EnterpriseUiSettingsService,
     EnterpriseMailSettingsService,
     EnterpriseAiModelsService,
+    EnterpriseAiRuntimeService,
     EnterpriseTermsService,
     EnterpriseGlobalTasksService,
     SmtpProbeService,
@@ -31,6 +33,7 @@ import { SmtpProbeService } from './smtp-probe.service'
     EnterpriseUiSettingsService,
     EnterpriseMailSettingsService,
     EnterpriseAiModelsService,
+    EnterpriseAiRuntimeService,
     EnterpriseTermsService,
     EnterpriseGlobalTasksService,
   ],

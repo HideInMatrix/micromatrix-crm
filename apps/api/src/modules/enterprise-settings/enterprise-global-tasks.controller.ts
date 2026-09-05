@@ -55,6 +55,13 @@ export class EnterpriseGlobalTasksController {
     return this.tasks.create(user, input)
   }
 
+  @Post(':id/execute')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterprise-global-task', 'execute')
+  execute(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.tasks.execute(user, id)
+  }
+
   @Put(':id')
   @RequirePermissions('system:setting:update')
   @LogOperation('enterprise-global-task', 'update')

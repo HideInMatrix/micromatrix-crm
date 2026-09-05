@@ -36,6 +36,7 @@ const auth = useAuthStore()
 const canUpdate = computed(() => auth.hasPerm('system:setting:update'))
 const loading = ref(false)
 const saving = ref(false)
+const testingId = ref<string | null>(null)
 const keyword = ref('')
 const models = ref<EnterpriseAiModelVO[]>([])
 const drawerVisible = ref(false)
@@ -171,6 +172,19 @@ async function toggleStatus(rowValue: unknown, enable: boolean) {
   }
 }
 
+async function testModel(rowValue: unknown) {
+  const row = rowValue as EnterpriseAiModelVO
+  testingId.value = row.id
+  try {
+    const { data } = await enterpriseAiModelApi.test(row.id)
+    ElMessage.success(`模型可用 · ${data.latencyMs}ms · ${data.responsePreview}`)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    testingId.value = null
+  }
+}
+
 async function remove(rowValue: unknown) {
   const row = rowValue as EnterpriseAiModelVO
   const confirmed = await ElMessageBox.confirm(`确定删除模型“${row.displayName}”吗？`, '删除模型', {
@@ -278,8 +292,16 @@ onMounted(loadModels)
       <el-table-column label="更新时间" width="170">
         <template #default="{ row }">{{ new Date(row.updatedAt).toLocaleString() }}</template>
       </el-table-column>
-      <el-table-column v-if="canUpdate" label="操作" width="125" fixed="right">
+      <el-table-column v-if="canUpdate" label="操作" width="175" fixed="right">
         <template #default="{ row }">
+          <el-button
+            link
+            type="success"
+            :loading="testingId === row.id"
+            :disabled="!row.enable || !row.apiKeyConfigured"
+            @click="testModel(row)"
+            >测试</el-button
+          >
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>

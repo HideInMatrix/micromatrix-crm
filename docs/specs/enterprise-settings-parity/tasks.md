@@ -62,3 +62,14 @@
 - [x] enterprise-settings smoke。
 - [x] `git diff --check` / Prettier / ESLint。
 - [x] 更新 Cordys parity / alignment / DB tracking。
+
+## W3.4-S8 AI 模型运行时与全局任务手动执行
+
+- [x] AI 模型增加正式运行时调用层，模型测试必须通过后端解密凭证并调用配置的 Provider，不允许前端读取 API Key。
+- [x] 模型设置增加“测试”入口，返回成功状态、耗时和最小响应预览，不回传密钥。
+- [x] 全局任务增加手动执行 API，并为每次执行真实创建 `EnterpriseGlobalTaskExecution`，落 `PENDING/RUNNING/SUCCEEDED/FAILED`、输入、输出、错误与起止时间。
+- [x] 本阶段只闭环 `only_analysis`：将任务条件/动作作为分析指令交给绑定模型并持久化结果；`ask/auto` 的 CRM 数据写操作在 Agent/Tool Runtime 完成前不得伪装为已执行。
+- [x] 全局任务页面增加“立即执行”，执行完成后可直接在“执行记录”查看模型输出。
+- [x] 执行记录的结果列改为 Drawer 详情入口，完整展示长文本分析结果、错误、原始输出与输入上下文，表格本身不承载长结果正文。
+- [x] 使用本地已配置模型完成一次真实模型测试和一次真实全局任务执行；不得通过手工插入成功记录代替运行时。
+- [x] API/Web typecheck、build、lint、diff-check 通过并更新 alignment log。

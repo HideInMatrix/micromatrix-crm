@@ -1,5 +1,6 @@
 import type {
   EnterpriseAiModelOptionVO,
+  EnterpriseAiModelTestVO,
   EnterpriseAiModelVO,
   EnterpriseAiRouteStrategyVO,
   EnterpriseGlobalTaskExecutionVO,
@@ -68,6 +69,10 @@ export const enterpriseAiModelApi = {
   remove: (id: string) => http.delete(`/enterprise-settings/models/${id}`),
   setStatus: (id: string, enable: boolean) =>
     http.patch<EnterpriseAiModelVO>(`/enterprise-settings/models/${id}/status`, { enable }),
+  test: (id: string) =>
+    http.post<EnterpriseAiModelTestVO>(`/enterprise-settings/models/${id}/test`, undefined, {
+      timeout: 35_000,
+    }),
   routeStrategy: () =>
     http.get<EnterpriseAiRouteStrategyVO>('/enterprise-settings/models/route-strategy'),
   updateRouteStrategy: (modelIds: string[]) =>
@@ -119,6 +124,12 @@ export const enterpriseGlobalTaskApi = {
     http.patch<EnterpriseGlobalTaskVO>(`/enterprise-settings/global-tasks/${id}/status`, {
       enable,
     }),
+  execute: (id: string) =>
+    http.post<EnterpriseGlobalTaskExecutionVO>(
+      `/enterprise-settings/global-tasks/${id}/execute`,
+      undefined,
+      { timeout: 35_000 },
+    ),
   executions: (taskId?: string) =>
     http.get<EnterpriseGlobalTaskExecutionVO[]>('/enterprise-settings/global-tasks/executions', {
       params: { taskId },

@@ -23,8 +23,11 @@ const tasks = ref<EnterpriseGlobalTaskVO[]>([])
 const executions = ref<EnterpriseGlobalTaskExecutionVO[]>([])
 const modelOptions = ref<EnterpriseAiModelOptionVO[]>([])
 const drawerVisible = ref(false)
+const resultDrawerVisible = ref(false)
 const saving = ref(false)
+const executingId = ref<string | null>(null)
 const editingId = ref<string | null>(null)
+const selectedExecution = ref<EnterpriseGlobalTaskExecutionVO | null>(null)
 const formRef = ref<FormInstance>()
 
 const form = reactive<SaveEnterpriseGlobalTaskInput>({
@@ -84,7 +87,49 @@ function formatResult(rowValue: unknown) {
   const row = rowValue as EnterpriseGlobalTaskExecutionVO
   if (row.errorMessage) return row.errorMessage
   if (row.output === null || row.output === undefined) return '-'
-  return typeof row.output === 'string' ? row.output : JSON.stringify(row.output)
+  if (typeof row.output === 'object' && row.output !== null && 'analysis' in row.output) {
+    const analysis = (row.output as { analysis?: unknown }).analysis
+    if (typeof analysis === 'string') return analysis
+  }
+  return typeof row.output === 'string' ? row.output : JSON.stringify(row.output, null, 2)
+}
+
+function recordValue(value: unknown, key: string) {
+  if (typeof value !== 'object' || value === null || !(key in value)) return null
+  return (value as Record<string, unknown>)[key]
+}
+
+function formatDetailValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return '-'
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : JSON.stringify(value, null, 2)
+}
+
+function formatLatency(value: unknown) {
+  return typeof value === 'number' ? `${value} ms` : '-'
+}
+
+function formatInputDate(value: unknown) {
+  return typeof value === 'string' ? formatDate(value) : '-'
+}
+
+function formatDate(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : '-'
+}
+
+function hasExecutionResult(rowValue: unknown) {
+  const row = rowValue as EnterpriseGlobalTaskExecutionVO
+  return Boolean(row.errorMessage || (row.output !== null && row.output !== undefined))
+}
+
+function openExecutionResult(rowValue: unknown) {
+  selectedExecution.value = rowValue as EnterpriseGlobalTaskExecutionVO
+  resultDrawerVisible.value = true
+}
+
+function clearExecutionResult() {
+  selectedExecution.value = null
 }
 
 async function loadTasks() {
@@ -203,6 +248,23 @@ async function removeTask(rowValue: unknown) {
   }
 }
 
+async function executeTask(rowValue: unknown) {
+  const row = rowValue as EnterpriseGlobalTaskVO
+  executingId.value = row.id
+  try {
+    const { data } = await enterpriseGlobalTaskApi.execute(row.id)
+    if (data.status === 'SUCCEEDED') ElMessage.success('全局任务分析完成')
+    else ElMessage.error(data.errorMessage || '全局任务执行失败')
+    activeTab.value = 'executions'
+    await loadExecutions()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await loadExecutions()
+  } finally {
+    executingId.value = null
+  }
+}
+
 async function stopExecution(rowValue: unknown) {
   const row = rowValue as EnterpriseGlobalTaskExecutionVO
   const confirmed = await ElMessageBox.confirm(
@@ -300,11 +362,30 @@ onMounted(async () => {
               row.applicableModelName || '-'
             }}</template></el-table-column
           >
-          <el-table-column v-if="canUpdate" label="操作" width="125" fixed="right">
-            <template #default="{ row }"
-              ><el-button link type="primary" @click="openEdit(row)">编辑</el-button
-              ><el-button link type="danger" @click="removeTask(row)">删除</el-button></template
-            >
+          <el-table-column v-if="canUpdate" label="操作" width="190" fixed="right">
+            <template #default="{ row }">
+              <el-tooltip
+                :disabled="row.confirmationLevel === 'only_analysis'"
+                content="当前运行时仅支持“仅分析”任务"
+              >
+                <span>
+                  <el-button
+                    link
+                    type="success"
+                    :loading="executingId === row.id"
+                    :disabled="
+                      !row.enable ||
+                      !row.applicableModelId ||
+                      row.confirmationLevel !== 'only_analysis'
+                    "
+                    @click="executeTask(row)"
+                    >立即执行</el-button
+                  >
+                </span>
+              </el-tooltip>
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="removeTask(row)">删除</el-button>
+            </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -316,7 +397,7 @@ onMounted(async () => {
         <el-table v-loading="executionLoading" :data="executions" border>
           <el-table-column label="执行时间" width="175"
             ><template #default="{ row }">{{
-              new Date(row.startedAt || row.createdAt).toLocaleString()
+              formatDate(row.startedAt || row.createdAt)
             }}</template></el-table-column
           >
           <el-table-column prop="taskName" label="任务名称" min-width="160" show-overflow-tooltip />
@@ -327,12 +408,23 @@ onMounted(async () => {
               }}</el-tag></template
             ></el-table-column
           >
-          <el-table-column label="结果" min-width="260" show-overflow-tooltip
-            ><template #default="{ row }">{{ formatResult(row) }}</template></el-table-column
-          >
+          <el-table-column label="结果" width="110" align="center">
+            <template #default="{ row }">
+              <el-button
+                v-if="hasExecutionResult(row)"
+                link
+                type="primary"
+                data-testid="global-task-result-link"
+                @click="openExecutionResult(row)"
+              >
+                {{ row.errorMessage ? '查看错误' : '查看结果' }}
+              </el-button>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="结束时间" width="175"
             ><template #default="{ row }">{{
-              row.finishedAt ? new Date(row.finishedAt).toLocaleString() : '-'
+              formatDate(row.finishedAt)
             }}</template></el-table-column
           >
           <el-table-column v-if="canUpdate" label="操作" width="100" fixed="right">
@@ -416,6 +508,95 @@ onMounted(async () => {
         ><el-button @click="drawerVisible = false">取消</el-button
         ><el-button type="primary" :loading="saving" @click="saveTask">保存</el-button></template
       >
+    </el-drawer>
+
+    <el-drawer
+      v-model="resultDrawerVisible"
+      :title="selectedExecution ? `执行结果 · ${selectedExecution.taskName}` : '执行结果'"
+      size="720px"
+      destroy-on-close
+      data-testid="global-task-result-drawer"
+      @closed="clearExecutionResult"
+    >
+      <template v-if="selectedExecution">
+        <el-descriptions :column="1" border class="mb-5">
+          <el-descriptions-item label="任务名称">{{
+            selectedExecution.taskName
+          }}</el-descriptions-item>
+          <el-descriptions-item label="执行状态">
+            <el-tag :type="executionStatusType(selectedExecution.status)">
+              {{ executionStatusLabel(selectedExecution.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="开始时间">
+            {{ formatDate(selectedExecution.startedAt || selectedExecution.createdAt) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="结束时间">
+            {{ formatDate(selectedExecution.finishedAt) }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <section>
+          <div class="mb-2 text-sm font-600">执行结果</div>
+          <div
+            class="rounded-1.5 border border-[var(--el-border-color)] bg-[var(--el-fill-color-lighter)] p-4"
+          >
+            <pre class="m-0 whitespace-pre-wrap break-words font-sans text-sm leading-6">{{
+              formatResult(selectedExecution)
+            }}</pre>
+          </div>
+        </section>
+
+        <el-collapse class="mt-5">
+          <el-collapse-item title="原始输出" name="output">
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="显示名称">
+                {{ formatDetailValue(recordValue(selectedExecution.output, 'displayName')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="Provider">
+                {{ formatDetailValue(recordValue(selectedExecution.output, 'provider')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="模型">
+                {{ formatDetailValue(recordValue(selectedExecution.output, 'modelName')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="模型 ID">
+                {{ formatDetailValue(recordValue(selectedExecution.output, 'modelId')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="调用耗时">
+                {{ formatLatency(recordValue(selectedExecution.output, 'latencyMs')) }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-collapse-item>
+          <el-collapse-item title="执行输入" name="input">
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="触发方式">
+                {{ formatDetailValue(recordValue(selectedExecution.input, 'trigger')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="任务名称">
+                {{ formatDetailValue(recordValue(selectedExecution.input, 'taskName')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="执行条件">
+                <div class="whitespace-pre-wrap break-words">
+                  {{
+                    formatDetailValue(recordValue(selectedExecution.input, 'executionCondition'))
+                  }}
+                </div>
+              </el-descriptions-item>
+              <el-descriptions-item label="执行动作">
+                <div class="whitespace-pre-wrap break-words">
+                  {{ formatDetailValue(recordValue(selectedExecution.input, 'executionAction')) }}
+                </div>
+              </el-descriptions-item>
+              <el-descriptions-item label="触发人 ID">
+                {{ formatDetailValue(recordValue(selectedExecution.input, 'requestedById')) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="触发时间">
+                {{ formatInputDate(recordValue(selectedExecution.input, 'requestedAt')) }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-collapse-item>
+        </el-collapse>
+      </template>
     </el-drawer>
   </el-card>
 </template>

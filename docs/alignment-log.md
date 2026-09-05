@@ -1443,3 +1443,14 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - 基于用户现有 `127.0.0.1:3000/5173` 运行环境执行本地 CDP Browser 验收，最终 **34/34 PASS**：首页按钮 8px 间距、企业设置 6 路由、系统日志 2 路由、Top Menu 完整文案/当前项/独立 URL、Sidebar 高亮、一级 Tabs 移除以及全局任务内部 Tabs 保留全部通过。
 - Dashboard 默认密码提醒从占据页面布局的 `el-alert` 改为 Element Plus `ElMessage` warning：进入首页立即出现、`duration=0` 持续显示、提供关闭按钮，并继续保留“修改密码”快捷入口；修改成功或离开 Dashboard 时主动关闭。浏览器专项验证确认旧 Alert 已消失、Message 可手动关闭且“修改密码”仍可打开原 Dialog。
 - 最终工程门槛：root `pnpm typecheck` PASS；root `pnpm build` PASS（Web **3788 modules transformed**、Mobile **2216 modules transformed**）；root `pnpm lint` **0 error / 8 个既有 warning**；staged + unstaged `git diff --check` PASS。`UI-001 T13` 状态为 **`VERIFIED`**。
+
+---
+
+## 87. W3.4-S8 AI 模型运行时与全局任务手动执行（2026-09-05）
+
+- 企业 AI 模型新增正式后端运行时 `EnterpriseAiRuntimeService`：运行时按租户读取启用模型，通过 `CredentialCipherService` 解密 API Key 后按 OpenAI-compatible 协议发起请求；浏览器端只调用模型测试 API，不读取或回显密钥。模型设置增加“测试”入口，返回 Provider、模型名、耗时和最小响应预览。
+- 使用本地已配置模型执行真实连通性测试成功：模型显示名 `Grok`、Provider `OpenAI`、模型 `grok-chat-fast`，返回 `MODEL_OK`，本次实测耗时 **4874ms**。该结果来自真实 Provider 请求，不是模拟成功响应。
+- 全局任务新增真实手动执行链路：只允许启用、已绑定模型且确认级别为 `only_analysis` 的任务进入运行时；执行记录按 `PENDING -> RUNNING -> SUCCEEDED/FAILED` 落库并保存输入、结构化输出、错误与起止时间。`ask/auto` 继续明确等待 Agent/Tool Runtime，不把自然语言动作伪装成 CRM 数据写操作。
+- 本地创建并执行“本地 AI 全局任务演示”成功，模型返回“条件判断 / 分析结果 / 建议动作”三段中文分析；随后又通过 PC 页面“立即执行”真实触发一次，执行记录于 **2026-09-05 11:32:15** 开始、**11:32:21** 完成并显示“已完成”。
+- 执行记录结果列不再直接铺开模型长文本：成功记录显示“查看结果”，失败记录显示“查看错误”；点击后打开 **720px** 右侧 Drawer，完整展示状态、起止时间、分析正文，并提供“原始输出 / 执行输入”折叠区。真实 Chrome CDP 验收确认表格行不再包含长分析正文，Drawer 宽度为 **720px**，完整正文、原始输出、输入上下文与“已完成”状态均可见。
+- 回归与工程门槛：企业设置所在 T13 Browser Smoke **40/40 PASS**；API Rules **192/192 PASS**；root `pnpm typecheck` PASS；root `pnpm build` PASS（Web **3786 modules transformed**、Mobile **2216 modules transformed**）；root `pnpm lint` **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。`W3.4-S8` 状态为 **`VERIFIED`**。

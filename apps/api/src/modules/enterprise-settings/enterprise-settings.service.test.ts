@@ -371,7 +371,11 @@ test('全局任务执行记录必须先停止再删除，且跨租户不可操�
       },
     },
   } as unknown as PrismaService
-  const service = new EnterpriseGlobalTasksService(prisma)
+  const service = new EnterpriseGlobalTasksService(prisma, {
+    complete: async () => {
+      throw new Error('本测试不应调用 AI runtime')
+    },
+  } as never)
 
   await assert.rejects(() => service.removeExecution('tenant-a', 'execution-running'), /请先停止/)
   const stopped = await service.stopExecution('tenant-a', 'execution-running')

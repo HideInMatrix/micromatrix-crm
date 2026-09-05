@@ -55,6 +55,8 @@ System
 
 任务可引用当前租户的 AI 模型。执行记录独立保存状态、输入/输出、错误与起止时间。
 
+执行记录列表保持紧凑展示，结果列不直接铺开长文本。终态记录存在输出或错误时，通过结果入口打开右侧 Drawer；Drawer 展示完整分析结果、执行状态与起止时间，并保留原始输出和输入上下文，避免模型长文本被表格列宽截断。
+
 ## 3. API
 
 统一前缀 `/enterprise-settings`：
@@ -70,6 +72,7 @@ GET/POST /enterprise-settings/models
 PUT      /enterprise-settings/models/:id
 DELETE   /enterprise-settings/models/:id
 PATCH    /enterprise-settings/models/:id/status
+POST     /enterprise-settings/models/:id/test
 GET/PUT  /enterprise-settings/models/route-strategy
 
 GET/POST /enterprise-settings/term-categories
@@ -81,10 +84,15 @@ PATCH    /enterprise-settings/terms/:id/status
 GET/POST /enterprise-settings/global-tasks
 GET/PUT/DELETE /enterprise-settings/global-tasks/:id
 PATCH    /enterprise-settings/global-tasks/:id/status
+POST     /enterprise-settings/global-tasks/:id/execute
 GET      /enterprise-settings/global-tasks/executions
 ```
 
 本阶段按任务顺序逐个闭环，不允许通过 `SettingsService.updateAll()` 代替。
+
+模型调用统一从后端运行时服务进入：运行时读取租户模型、校验启用状态、使用 `CredentialCipherService` 解密 API Key，再按 Provider 协议发起请求。API Key 永远不进入浏览器响应。
+
+全局任务的第一阶段执行能力只承诺 `only_analysis`。手动执行时先创建独立执行记录，再调用任务绑定模型，将 `executionCondition`、`executionAction` 与触发上下文组成分析提示词，成功后把结构化输出写入 `EnterpriseGlobalTaskExecution.output`。`ask/auto` 需要 Agent/Tool Runtime 把自然语言动作安全映射为显式 CRM 工具调用，在该运行时完成之前不得直接把字符串动作解释成数据库写操作。
 
 ## 4. 加密设计
 

@@ -10,12 +10,16 @@ import {
   UpdateEnterpriseAiRouteStrategyDto,
 } from './dto/ai-model.dto'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
+import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
 
 @ApiTags('企业设置 - 模型')
 @ApiBearerAuth()
 @Controller('enterprise-settings/models')
 export class EnterpriseAiModelsController {
-  constructor(private readonly models: EnterpriseAiModelsService) {}
+  constructor(
+    private readonly models: EnterpriseAiModelsService,
+    private readonly runtime: EnterpriseAiRuntimeService,
+  ) {}
 
   @Get()
   @RequirePermissions('system:setting')
@@ -70,6 +74,24 @@ export class EnterpriseAiModelsController {
     @Body() input: UpdateEnterpriseAiModelStatusDto,
   ) {
     return this.models.setStatus(user.tenantId, id, input.enable)
+  }
+
+  @Post(':id/test')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterprise-ai-model', 'test')
+  @ApiOperation({ summary: '测试 AI 模型连接与最小对话' })
+  async test(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const result = await this.runtime.complete(user.tenantId, id, '只回复：MODEL_OK', 16)
+    return {
+      success: true,
+      modelId: result.modelId,
+      modelName: result.modelName,
+      displayName: result.displayName,
+      provider: result.provider,
+      latencyMs: result.latencyMs,
+      responsePreview: result.text.slice(0, 200),
+      testedAt: new Date().toISOString(),
+    }
   }
 
   @Delete(':id')

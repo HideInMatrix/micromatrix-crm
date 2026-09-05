@@ -128,6 +128,17 @@ export interface EnterpriseAiRouteStrategyVO {
   modelIds: string[]
 }
 
+export interface EnterpriseAiModelTestVO {
+  success: boolean
+  modelId: string
+  modelName: string
+  displayName: string
+  provider: EnterpriseAiProvider
+  latencyMs: number
+  responsePreview: string
+  testedAt: string
+}
+
 export interface EnterpriseTermCategoryVO {
   id: string
   name: string
