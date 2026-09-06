@@ -10,6 +10,7 @@ import type { StorageProvider } from './storage/storage-provider'
 
 const MAX_SIZE = 20 * 1024 * 1024
 const DOMAIN_GUARDED_TARGETS = new Set(['customFormData'])
+const RESOURCE_FIELD_TARGET_PREFIX = 'resourceField:'
 const ALLOWED_EXT = new Set([
   '.jpg',
   '.jpeg',
@@ -111,7 +112,7 @@ export class AttachmentsService {
 
   async download(user: AuthUser, id: string): Promise<StreamableFile> {
     const row = await this.ensureOwned(user, id)
-    if (row.targetType && DOMAIN_GUARDED_TARGETS.has(row.targetType)) {
+    if (row.targetType && this.isDomainGuardedTarget(row.targetType)) {
       throw new BadRequestException('该附件必须通过所属业务数据读取')
     }
     const abs = this.storage.resolveAbsolute(row.path)
@@ -123,7 +124,7 @@ export class AttachmentsService {
 
   async remove(user: AuthUser, id: string) {
     const row = await this.ensureOwned(user, id)
-    if (row.targetType && DOMAIN_GUARDED_TARGETS.has(row.targetType)) {
+    if (row.targetType && this.isDomainGuardedTarget(row.targetType)) {
       throw new BadRequestException('该附件必须通过所属业务数据修改')
     }
     const isAdmin = user.permissions.includes('*')
@@ -170,6 +171,17 @@ export class AttachmentsService {
     return rows.length
   }
 
+  async removeTemporary(tenantId: string, id: string): Promise<boolean> {
+    const row = await this.prisma.attachment.findFirst({
+      where: { id, tenantId, targetType: null, targetId: null },
+    })
+    if (!row) return false
+    await this.ensureNotApprovalBound(tenantId, id)
+    await this.storage.remove(row.path)
+    await this.prisma.attachment.delete({ where: { id } })
+    return true
+  }
+
   async viewFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {
     const row = await this.prisma.attachment.findFirst({
       where: { id, tenantId, targetType, targetId },
@@ -188,6 +200,12 @@ export class AttachmentsService {
     })
     if (!row) throw new NotFoundException('附件不存在')
     return row
+  }
+
+  private isDomainGuardedTarget(targetType: string): boolean {
+    return (
+      DOMAIN_GUARDED_TARGETS.has(targetType) || targetType.startsWith(RESOURCE_FIELD_TARGET_PREFIX)
+    )
   }
 
   private async ensureNotApprovalBound(tenantId: string, attachmentId: string) {

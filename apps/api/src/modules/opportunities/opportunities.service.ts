@@ -339,6 +339,7 @@ export class OpportunitiesService {
           await this.moduleFieldsToCustomData(user, dto.fields),
           'update',
           tx,
+          user.id,
         )
       }
     })
@@ -814,6 +815,7 @@ export class OpportunitiesService {
         customData,
         'create',
         tx,
+        user.id,
       )
       return created
     })
@@ -868,7 +870,15 @@ export class OpportunitiesService {
     const opportunity = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.opportunity.update({ where: { id }, data, include: refInclude })
       if (customData !== undefined) {
-        await this.fieldValues.save(user.tenantId, 'opportunity', id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'opportunity',
+          id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
       }
       return updated
     })

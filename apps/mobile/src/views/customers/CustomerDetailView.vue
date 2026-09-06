@@ -26,7 +26,7 @@ import { useFieldRefs } from '@/composables/useFieldRefs'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileFollowUpPlanList from '@/components/MobileFollowUpPlanList.vue'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
-import { fetchFields, getCustomer, listCustomerContacts, listFollowUps } from '@/api/mobile'
+import { fetchFields, getCustomer, listCustomerContacts, pageFollowUps } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
 type DetailTab = 'info' | 'contact' | 'record' | 'plan' | 'header' | 'relation' | 'collaborator'
@@ -166,8 +166,8 @@ async function load() {
         ? listCustomerContacts(customerId.value)
         : Promise.resolve({ data: [] as ContactVO[] }),
       poolSource.value
-        ? Promise.resolve({ data: [] as FollowUpVO[] })
-        : listFollowUps('customer', customerId.value),
+        ? Promise.resolve({ data: { items: [] as FollowUpVO[] } })
+        : pageFollowUps('customer', customerId.value),
       customerExtraApi.ownerHistory(customerId.value),
       poolSource.value
         ? Promise.resolve({ data: [] as CustomerRelationVO[] })
@@ -177,7 +177,7 @@ async function load() {
         : customerExtraApi.teamList(customerId.value),
     ])
     contacts.value = contactRes.data
-    records.value = followRes.data
+    records.value = followRes.data.items
     ownerHistory.value = historyRes.data
     relations.value = relationRes.data
     collaborators.value = teamRes.data
@@ -191,8 +191,8 @@ async function load() {
 
 async function reloadRecords() {
   try {
-    const { data } = await listFollowUps('customer', customerId.value)
-    records.value = data
+    const { data } = await pageFollowUps('customer', customerId.value)
+    records.value = data.items
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
@@ -414,7 +414,7 @@ onMounted(load)
               </div>
               <van-empty v-if="records.length === 0" description="暂无跟进记录" />
               <van-cell-group v-for="record in records" :key="record.id" inset class="!mt-3">
-                <van-cell :title="record.type" :label="record.content">
+                <van-cell :title="record.type ?? '其他'" :label="record.content">
                   <template #value>{{ new Date(record.createdAt).toLocaleDateString() }}</template>
                 </van-cell>
               </van-cell-group>

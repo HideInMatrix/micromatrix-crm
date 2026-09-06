@@ -269,7 +269,14 @@ export interface ResolveOrganizationSyncInput {
 // ============ 通知 ============
 
 export type NotificationBizType =
-  'assign' | 'approval' | 'receivable' | 'pool' | 'follow_plan' | 'system'
+  | 'assign'
+  | 'approval'
+  | 'receivable'
+  | 'pool'
+  | 'follow_plan'
+  | 'follow_plan_comment'
+  | 'follow_record_comment'
+  | 'system'
 
 export type ExportTaskStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
 

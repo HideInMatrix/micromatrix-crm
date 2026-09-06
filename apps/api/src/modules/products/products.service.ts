@@ -85,7 +85,15 @@ export class ProductsService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'product', created.id, customData, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'product',
+        created.id,
+        customData,
+        'create',
+        tx,
+        user.id,
+      )
       return created
     })
     return this.get(user, product.id)
@@ -114,7 +122,15 @@ export class ProductsService {
         },
       })
       if (customData !== undefined) {
-        await this.fieldValues.save(user.tenantId, 'product', existing.id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'product',
+          existing.id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
       }
     })
     return this.get(user, existing.id)

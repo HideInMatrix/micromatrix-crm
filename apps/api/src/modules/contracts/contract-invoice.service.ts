@@ -249,7 +249,15 @@ export class ContractInvoiceService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'invoice', created.id, customData, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'invoice',
+        created.id,
+        customData,
+        'create',
+        tx,
+        user.id,
+      )
       return created
     })
     await this.writeSnapshot(user, row.id)
@@ -300,7 +308,15 @@ export class ContractInvoiceService {
         },
       })
       if (customData)
-        await this.fieldValues.save(user.tenantId, 'invoice', dto.id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'invoice',
+          dto.id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
     })
     await this.writeSnapshot(user, dto.id)
     if (approvalRequired) {

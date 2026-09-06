@@ -11,6 +11,7 @@ import {
   filterOpsForType,
   type FieldVO,
   type FilterCondition,
+  type FollowUpRecordPrefillVO,
   type MessageTaskEvent,
   FollowUpPlanStatus as SharedFollowUpPlanStatus,
   FollowUpPlanVO,
@@ -104,24 +105,32 @@ export class FollowUpPlansService {
   }
 
   async get(user: AuthUser, id: string): Promise<FollowUpPlanVO> {
+    const plan = await this.assertPlanAccess(user, id, false)
+    return (await this.toVOs(user, [plan]))[0]
+  }
+
+  async assertPlanAccess(user: AuthUser, id: string, write = false): Promise<FollowUpPlan> {
     const plan = await this.ensurePlan(user, id)
     const context = await this.assertTargetAccess(
       user,
       plan.targetType as TargetType,
       plan.targetId,
-      false,
+      write,
     )
-    if (context.collaboratorOnly && plan.createdById !== user.id) {
+    if (!write && context.collaboratorOnly && plan.createdById !== user.id) {
       throw new NotFoundException('跟进计划不存在或无权访问')
     }
-    return (await this.toVOs(user, [plan]))[0]
+    return plan
   }
 
   async create(user: AuthUser, dto: CreateFollowUpPlanDto): Promise<FollowUpPlanVO> {
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
     await this.assertContact(user.tenantId, dto.targetType, dto.targetId, dto.contactId)
     const owner = await this.resolveOwner(user, dto.ownerId)
-    const dynamicValues = await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields ?? [])
+    const dynamicValues = await this.moduleFieldsToDynamicValues(
+      user.tenantId,
+      dto.moduleFields ?? [],
+    )
     const plan = await this.prisma.$transaction(async (tx) => {
       const created = await tx.followUpPlan.create({
         data: {
@@ -144,6 +153,7 @@ export class FollowUpPlansService {
         dynamicValues,
         'create',
         tx,
+        user.id,
       )
       return created
     })
@@ -192,6 +202,7 @@ export class FollowUpPlansService {
           dynamicValues,
           'update',
           tx,
+          user.id,
         )
       }
       return updated
@@ -215,47 +226,46 @@ export class FollowUpPlansService {
     return (await this.toVOs(user, [plan]))[0]
   }
 
-  async convert(user: AuthUser, id: string): Promise<FollowUpPlanVO> {
-    const existing = await this.ensureManageablePlan(user, id)
-    if (existing.status !== 'COMPLETED') {
+  async recordPrefill(user: AuthUser, id: string): Promise<FollowUpRecordPrefillVO> {
+    const plan = await this.ensureManageablePlan(user, id)
+    if (plan.status !== 'COMPLETED') {
       throw new BadRequestException('只有已完成计划才能转为跟进记录')
     }
-    if (existing.converted) throw new ConflictException('该计划已转为跟进记录')
-    const owner = await this.prisma.user.findFirst({
-      where: { id: existing.ownerId, tenantId: user.tenantId },
-      select: { name: true },
-    })
-    if (!owner) throw new BadRequestException('计划负责人不存在')
+    if (plan.converted) throw new ConflictException('该计划已转为跟进记录')
+    await this.assertTargetAccess(user, plan.targetType as TargetType, plan.targetId, true)
 
-    const converted = await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.followUpPlan.updateMany({
-        where: {
-          id,
-          tenantId: user.tenantId,
-          status: 'COMPLETED',
-          converted: false,
-        },
-        data: { converted: true },
-      })
-      if (claimed.count !== 1) throw new ConflictException('该计划已转为跟进记录')
-      const record = await tx.followUpRecord.create({
-        data: {
-          tenantId: user.tenantId,
-          targetType: existing.targetType,
-          targetId: existing.targetId,
-          type: existing.method ?? '其他',
-          content: existing.content,
-          ownerId: existing.ownerId,
-          ownerName: owner.name,
-        },
-      })
-      await this.touchTarget(tx, user.tenantId, existing.targetType, existing.targetId)
-      return tx.followUpPlan.update({
-        where: { id },
-        data: { convertedRecordId: record.id },
-      })
-    })
-    return (await this.toVOs(user, [converted]))[0]
+    const [fields, dynamic] = await Promise.all([
+      this.moduleForms.listFields(user.tenantId, 'followPlan'),
+      this.fieldValues.load(user.tenantId, 'followPlan', [plan.id]),
+    ])
+    const sourceDynamic = dynamic.get(plan.id) ?? {}
+    const sourceValues: Record<string, unknown> = {
+      targetType: plan.targetType,
+      targetId: plan.targetId,
+      ownerId: plan.ownerId,
+      contactId: plan.contactId,
+      estimatedAt: plan.estimatedAt?.toISOString() ?? null,
+      content: plan.content,
+      method: plan.method,
+      status: plan.status,
+    }
+    for (const field of fields) {
+      if (field.system) continue
+      if (Object.prototype.hasOwnProperty.call(sourceDynamic, field.key)) {
+        sourceValues[field.key] = sourceDynamic[field.key]
+      }
+    }
+
+    return {
+      sourcePlanId: plan.id,
+      values: await this.moduleForms.resolveFormLink(
+        user.tenantId,
+        'followRecord',
+        'followPlan',
+        'PLAN_TO_RECORD',
+        sourceValues,
+      ),
+    }
   }
 
   async remove(user: AuthUser, id: string) {
@@ -367,7 +377,7 @@ export class FollowUpPlansService {
       if (!lead) throw new NotFoundException('线索不存在')
       if (lead.inSharedPool) {
         const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
-        if (lead.poolId && !poolIds.includes(lead.poolId))
+        if (!lead.poolId || !poolIds.includes(lead.poolId))
           throw new NotFoundException('线索不存在或无权访问')
       } else if (!(await this.dataScope.matchesDirectOwner(user, lead.owner, permission))) {
         throw new NotFoundException('线索不存在或不在你的数据范围内')
@@ -501,16 +511,12 @@ export class FollowUpPlansService {
         ? this.prisma.followUpPlan.findMany({
             where: {
               tenantId,
-              AND: direct.map(({ field, condition }) =>
-                this.systemFilterClause(field, condition),
-              ),
+              AND: direct.map(({ field, condition }) => this.systemFilterClause(field, condition)),
             },
             select: { id: true },
           })
         : null,
-      dynamic.length
-        ? this.fieldValues.filterResourceIds(tenantId, 'followPlan', dynamic)
-        : null,
+      dynamic.length ? this.fieldValues.filterResourceIds(tenantId, 'followPlan', dynamic) : null,
     ])
 
     let selected: string[] | null = directRows?.map((row) => row.id) ?? null
@@ -627,30 +633,6 @@ export class FollowUpPlansService {
     return values
   }
 
-  private async touchTarget(
-    tx: Prisma.TransactionClient,
-    tenantId: string,
-    targetType: string,
-    targetId: string,
-  ): Promise<void> {
-    const now = BigInt(Date.now())
-    if (targetType === 'lead')
-      await tx.clue.updateMany({
-        where: { id: targetId, organizationId: tenantId },
-        data: { followTime: now, updateTime: now },
-      })
-    if (targetType === 'customer')
-      await tx.customer.updateMany({
-        where: { id: targetId, organizationId: tenantId },
-        data: { followTime: now, updateTime: now },
-      })
-    if (targetType === 'opportunity')
-      await tx.opportunity.updateMany({
-        where: { id: targetId, organizationId: tenantId },
-        data: { followTime: now, updateTime: now },
-      })
-  }
-
   private async targetNames(plans: FollowUpPlan[]): Promise<Map<string, string>> {
     const groups = {
       lead: plans.filter((p) => p.targetType === 'lead').map((p) => p.targetId),
@@ -730,6 +712,7 @@ export class FollowUpPlansService {
         status: plan.status,
         converted: plan.converted,
         convertedRecordId: plan.convertedRecordId,
+        commentCount: plan.commentCount,
         ownerId: plan.ownerId,
         ownerName: ownerMap.get(plan.ownerId) ?? '已停用成员',
         createdById: plan.createdById,

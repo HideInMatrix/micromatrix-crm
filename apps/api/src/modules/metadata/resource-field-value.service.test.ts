@@ -283,6 +283,7 @@ test('同一事务保存时普通值和复杂值分别进入 field 与 field_blo
     { cf_required: '短文本', cf_note: '长备注', cf_tags: ['important'], cf_score: 90 },
     'create',
     tx,
+    'user-a',
   )
   assert.deepEqual(normal.map((row) => [row.fieldId, row.fieldValue]).sort(), [
     ['field-required', '短文本'],
@@ -298,12 +299,37 @@ test('唯一字段按组织隔离，更新当前资源时排除自身', async ()
   const { service, tx, normal } = createHarness()
   normal.push({ resourceId: 'customer-b', fieldId: 'field-code', fieldValue: 'C-001' })
   await assert.rejects(
-    () => service.save('tenant-a', 'customer', 'customer-a', { cf_code: 'C-001' }, 'update', tx),
+    () =>
+      service.save(
+        'tenant-a',
+        'customer',
+        'customer-a',
+        { cf_code: 'C-001' },
+        'update',
+        tx,
+        'user-a',
+      ),
     ConflictException,
   )
-  await service.save('tenant-a', 'customer', 'customer-b', { cf_code: 'C-001' }, 'update', tx)
+  await service.save(
+    'tenant-a',
+    'customer',
+    'customer-b',
+    { cf_code: 'C-001' },
+    'update',
+    tx,
+    'user-a',
+  )
   normal.push({ resourceId: 'customer-c', fieldId: 'field-code', fieldValue: 'C-002' })
-  await service.save('tenant-a', 'customer', 'customer-a', { cf_code: 'C-002' }, 'update', tx)
+  await service.save(
+    'tenant-a',
+    'customer',
+    'customer-a',
+    { cf_code: 'C-002' },
+    'update',
+    tx,
+    'user-a',
+  )
 })
 
 test('批量装配只查询普通表和 Blob 表各一次并恢复字段类型', async () => {
@@ -383,6 +409,7 @@ test('字段值写入失败时由调用方同一事务整体回滚', async () =>
           { cf_required: '新值', cf_note: '触发失败' },
           'update',
           tx,
+          'user-a',
         ),
       ),
     /blob insert failed/,
@@ -516,13 +543,17 @@ test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', 
     { cf_short: '短值', cf_note: '长备注' },
     'create',
     prismaRecord as never,
+    'user-a',
   )
   assert.deepEqual(normal, [{ resourceId: 'plan-a', fieldId: 'plan-short', fieldValue: '短值' }])
   assert.deepEqual(blob, [{ resourceId: 'plan-a', fieldId: 'plan-note', fieldValue: '长备注' }])
-  assert.deepEqual(await service.load('tenant-a', 'followPlan', ['plan-a', 'plan-b']), new Map([
-    ['plan-a', { cf_short: '短值', cf_note: '长备注' }],
-    ['plan-b', {}],
-  ]))
+  assert.deepEqual(
+    await service.load('tenant-a', 'followPlan', ['plan-a', 'plan-b']),
+    new Map([
+      ['plan-a', { cf_short: '短值', cf_note: '长备注' }],
+      ['plan-b', {}],
+    ]),
+  )
 
   const query = await service.buildFilter('tenant-a', 'followPlan', [
     { key: 'cf_short', op: 'contains', value: '短' },
@@ -531,4 +562,31 @@ test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', 
   assert.match(query.sql, /follow_up_plan_field/)
   assert.match(query.sql, /"tenantId"/)
   assert.equal(query.values.includes('tenant-a'), true)
+})
+
+test('FollowRecord 资源校验使用 FollowUpRecord tenantId，不得落入 FollowPlan 兜底分支', async () => {
+  let recordChecks = 0
+  const tx = {
+    followUpRecord: {
+      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+        recordChecks += 1
+        return where.id === 'record-a' && where.tenantId === 'tenant-a' ? { id: where.id } : null
+      },
+    },
+    followUpPlan: {
+      findFirst: async () => {
+        throw new Error('FollowRecord 不应落入 FollowPlan 资源校验')
+      },
+    },
+  }
+  const service = new ResourceFieldValueService(
+    {} as PrismaService,
+    { listFieldsInTransaction: async () => [] } as unknown as ModuleFormsService,
+  )
+
+  assert.deepEqual(
+    await service.save('tenant-a', 'followRecord', 'record-a', {}, 'create', tx as never, 'user-a'),
+    {},
+  )
+  assert.equal(recordChecks, 1)
 })

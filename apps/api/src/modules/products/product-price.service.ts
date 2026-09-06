@@ -102,7 +102,15 @@ export class ProductPriceService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'productPrice', price.id, customData, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'productPrice',
+        price.id,
+        customData,
+        'create',
+        tx,
+        user.id,
+      )
       await this.productFields.saveProducts(user.tenantId, price.id, dto.products ?? [], tx)
       return price
     })
@@ -138,6 +146,7 @@ export class ProductPriceService {
           customData,
           'update',
           tx,
+          user.id,
         )
       }
       if (dto.products !== undefined) {

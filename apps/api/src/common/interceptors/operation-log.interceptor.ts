@@ -2,8 +2,14 @@ import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } fr
 import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { Observable, tap } from 'rxjs'
+import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
-import { LOG_OPERATION_KEY, LogOperationMeta } from '../decorators/log-operation.decorator'
+import {
+  LOG_OPERATION_KEY,
+  LogOperationMeta,
+  OPERATION_LOG_RESULT_META,
+  type OperationLogResultMeta,
+} from '../decorators/log-operation.decorator'
 import { normalizeClientIp } from '../http/client-ip'
 
 /** 全局操作日志：仅记录被 @LogOperation 标记的接口，成功后异步落库 */
@@ -29,24 +35,42 @@ export class OperationLogInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap((result) => {
         if (!user) return
-        const target = (result ?? {}) as { id?: unknown; name?: unknown; title?: unknown }
-        void this.prisma.operationLog
-          .create({
-            data: {
-              tenantId: user.tenantId,
-              userId: user.id,
-              userName: user.name,
-              module: meta.module,
-              action: meta.action,
-              targetId: typeof target.id === 'string' ? target.id : undefined,
-              targetName:
-                typeof target.name === 'string'
-                  ? target.name
-                  : typeof target.title === 'string'
-                    ? target.title
-                    : undefined,
-              ip: normalizeClientIp(request.ip),
-            },
+        const target = (result ?? {}) as {
+          id?: unknown
+          name?: unknown
+          title?: unknown
+          [OPERATION_LOG_RESULT_META]?: OperationLogResultMeta
+        }
+        const resultMeta = target[OPERATION_LOG_RESULT_META]
+        void this.prisma
+          .$transaction(async (tx) => {
+            const log = await tx.operationLog.create({
+              data: {
+                tenantId: user.tenantId,
+                userId: user.id,
+                userName: user.name,
+                module: meta.module,
+                action: meta.action,
+                targetId:
+                  resultMeta?.targetId ?? (typeof target.id === 'string' ? target.id : undefined),
+                targetName:
+                  resultMeta?.targetName ??
+                  (typeof target.name === 'string'
+                    ? target.name
+                    : typeof target.title === 'string'
+                      ? target.title
+                      : undefined),
+                ip: normalizeClientIp(request.ip),
+              },
+            })
+            if (resultMeta?.detail) {
+              await tx.operationLogBlob.create({
+                data: {
+                  operationLogId: log.id,
+                  detail: resultMeta.detail as Prisma.InputJsonValue,
+                },
+              })
+            }
           })
           .catch((e) => this.logger.warn(`操作日志写入失败: ${e.message}`))
       }),

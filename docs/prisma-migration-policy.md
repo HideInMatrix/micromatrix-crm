@@ -58,7 +58,7 @@ apps/api/prisma/migrations/
 
 ## 3. 当前必须保留的 PostgreSQL 原生结构
 
-当前 Schema 外还存在两条业务约束所需的 partial unique index，新 baseline 每次重建时都必须保留：
+当前 Schema 外还存在六条业务约束所需的 partial unique index，新 baseline 每次重建时都必须保留：
 
 ```sql
 CREATE UNIQUE INDEX "approval_flows_active_form_type_key"
@@ -68,6 +68,22 @@ WHERE "deletedAt" IS NULL;
 CREATE UNIQUE INDEX "organization_sync_batches_active_key"
 ON "organization_sync_batches"("tenantId", "provider")
 WHERE "status" IN ('FETCHING', 'APPLYING');
+
+CREATE UNIQUE INDEX "custom_form_data_field_top_level_key"
+ON "custom_form_data_field"("resource_id", "field_id")
+WHERE "ref_sub_id" IS NULL;
+
+CREATE UNIQUE INDEX "custom_form_data_field_sub_cell_key"
+ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id", "field_id")
+WHERE "ref_sub_id" IS NOT NULL;
+
+CREATE UNIQUE INDEX "custom_form_data_field_blob_top_level_key"
+ON "custom_form_data_field_blob"("resource_id", "field_id")
+WHERE "ref_sub_id" IS NULL;
+
+CREATE UNIQUE INDEX "custom_form_data_field_blob_sub_cell_key"
+ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id", "field_id")
+WHERE "ref_sub_id" IS NOT NULL;
 ```
 
 这份列表不是永久封闭清单。以后增加任何 Prisma 无法表达的 PostgreSQL 原生结构时，必须同步登记到本节，并纳入 baseline 空库验证。

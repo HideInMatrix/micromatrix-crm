@@ -99,6 +99,36 @@ export interface DataSourceSubFieldLinkField extends DataSourceLinkField {
   childLinks: DataSourceSubFieldLinkField[]
 }
 
+export const FORM_LINK_SCENARIO_KEYS = [
+  'CLUE_TO_CUSTOMER',
+  'CLUE_TO_CONTACT',
+  'CLUE_TO_OPPORTUNITY',
+  'CUSTOMER_TO_OPPORTUNITY',
+  'CLUE_TO_RECORD',
+  'CUSTOMER_TO_RECORD',
+  'OPPORTUNITY_TO_RECORD',
+  'PLAN_TO_RECORD',
+  'CONTRACT_TO_INVOICE',
+  'CONTRACT_TO_ORDER',
+] as const
+
+export type FormLinkScenarioKey = (typeof FORM_LINK_SCENARIO_KEYS)[number]
+
+/** Cordys 表单级联动字段：current 为目标表单字段 ID，link 为来源表单字段 ID。 */
+export interface FormLinkField {
+  current: string
+  link: string
+  enable: boolean
+}
+
+export interface FormLinkScenario {
+  key: FormLinkScenarioKey
+  linkFields: FormLinkField[]
+}
+
+/** key 为来源 formKey；配置保存在目标表单 formProp.linkProp。 */
+export type FormLinkProp = Record<string, FormLinkScenario[]>
+
 export interface FieldConfig {
   placeholder?: string
   defaultValue?: unknown

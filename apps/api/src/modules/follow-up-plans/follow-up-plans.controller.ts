@@ -64,11 +64,10 @@ export class FollowUpPlansController {
     return this.service.updateStatus(user, id, dto.status)
   }
 
-  @Post(':id/convert')
-  @LogOperation('followUpPlan', 'convert')
-  @ApiOperation({ summary: '原子转换为跟进记录' })
-  convert(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.convert(user, id)
+  @Get(':id/record-prefill')
+  @ApiOperation({ summary: '获取计划转跟进记录的表单联动预填数据' })
+  recordPrefill(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.recordPrefill(user, id)
   }
 
   @Delete(':id')

@@ -36,7 +36,7 @@ export interface LeadVO {
 
 // ============ 跟进记录 ============
 
-export type FollowTargetType = 'lead' | 'customer' | 'opportunity' | 'contract'
+export type FollowTargetType = 'lead' | 'customer' | 'opportunity'
 
 export const FOLLOW_UP_TYPES = ['电话', '拜访', '微信', '邮件', '会议', '其他'] as const
 
@@ -55,13 +55,59 @@ export interface FollowUpVO {
   id: string
   targetType: FollowTargetType
   targetId: string
-  type: string
+  targetName?: string
+  customerId?: string | null
+  contactId: string | null
+  contactName?: string | null
+  type: string | null
   content: string
-  nextFollowAt: string | null
+  followedAt: string | null
   ownerId: string
   ownerName: string
+  canManage: boolean
+  commentCount: number
+  moduleFields: Array<{ fieldId: string; fieldValue?: unknown }>
+  attachmentMap?: Record<string, AttachmentVO[]>
   createdAt: string
-  attachments?: AttachmentVO[]
+  updatedAt: string
+}
+
+export interface FollowUpRecordPrefillVO {
+  sourcePlanId: string
+  values: Record<string, unknown>
+}
+
+export interface FollowCommentMentionUserVO {
+  id: string
+  name: string
+  avatar: string | null
+  enabled: boolean
+}
+
+export interface FollowCommentVO {
+  id: string
+  resourceId: string
+  parentId: string | null
+  replyToUserId: string | null
+  replyToUserName: string | null
+  content: string
+  createdById: string
+  createdByName: string
+  createdByAvatar: string | null
+  editable: boolean
+  mentionUsers: FollowCommentMentionUserVO[]
+  replies: FollowCommentVO[]
+  replyCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FollowCommentPageVO {
+  items: FollowCommentVO[]
+  total: number
+  commentCount: number
+  page: number
+  pageSize: number
 }
 
 // ============ 跟进计划 ============
@@ -95,6 +141,7 @@ export interface FollowUpPlanVO {
   status: FollowUpPlanStatus
   converted: boolean
   convertedRecordId: string | null
+  commentCount: number
   ownerId: string
   ownerName: string
   createdById: string

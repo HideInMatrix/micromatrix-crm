@@ -1,6 +1,7 @@
 import type {
   ApprovalInstanceVO,
   FieldVO,
+  FollowTargetType,
   FollowUpVO,
   LeadVO,
   OpportunityVO,
@@ -69,8 +70,13 @@ export function getOpportunity(id: string) {
   return http.get<OpportunityVO>(`/opportunity/get/${id}`)
 }
 
-export function listFollowUps(targetType: string, targetId: string) {
-  return http.get<FollowUpVO[]>('/follow-ups', { params: { targetType, targetId } })
+export function pageFollowUps(targetType: FollowTargetType, targetId: string) {
+  return http.post<PaginatedResult<FollowUpVO>>('/follow-ups/page', {
+    page: 1,
+    pageSize: 100,
+    targetType,
+    targetId,
+  })
 }
 
 export function createFollowUp(data: {

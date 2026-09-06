@@ -13,6 +13,8 @@ import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import MobileFollowCommentSheet from '@/components/MobileFollowCommentSheet.vue'
+import MobileFollowRecordFormSheet from '@/components/MobileFollowRecordFormSheet.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 
 interface TargetOption {
@@ -39,9 +41,12 @@ const status = ref<FollowUpPlanStatus | ''>('')
 const mine = ref(!props.targetId)
 const formShow = ref(false)
 const actionShow = ref(false)
+const commentShow = ref(false)
+const recordFormShow = ref(false)
 const saving = ref(false)
 const editing = ref<FollowUpPlanVO | null>(null)
 const current = ref<FollowUpPlanVO | null>(null)
+const convertingPlan = ref<FollowUpPlanVO | null>(null)
 const targets = ref<TargetOption[]>([])
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
@@ -197,9 +202,21 @@ async function save() {
 }
 
 function openActions(plan: FollowUpPlanVO) {
-  if (!plan.canManage) return
   current.value = plan
   actionShow.value = true
+}
+
+function openComments() {
+  if (!current.value) return
+  actionShow.value = false
+  commentShow.value = true
+}
+
+function handleCommentCount(count: number) {
+  if (!current.value) return
+  current.value.commentCount = count
+  const item = items.value.find((plan) => plan.id === current.value?.id)
+  if (item) item.commentCount = count
 }
 
 async function changeStatus(next: FollowUpPlanStatus) {
@@ -214,16 +231,11 @@ async function changeStatus(next: FollowUpPlanStatus) {
   }
 }
 
-async function convert() {
+function convert() {
   if (!current.value) return
-  try {
-    await followUpPlanApi.convert(current.value.id)
-    showSuccessToast('已转为跟进记录')
-    actionShow.value = false
-    reload()
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
+  convertingPlan.value = current.value
+  actionShow.value = false
+  recordFormShow.value = true
 }
 
 async function remove() {
@@ -297,7 +309,7 @@ onMounted(reload)
           <van-cell
             :title="plan.targetName"
             :label="plan.content"
-            :is-link="plan.canManage"
+            is-link
             @click="openActions(plan)"
           >
             <template #value>
@@ -322,9 +334,10 @@ onMounted(reload)
                 }}
               </span>
             </template>
-            <template #value
-              >{{ plan.ownerName }}<span v-if="plan.converted"> · 已转记录</span></template
-            >
+            <template #value>
+              {{ plan.ownerName }}<span v-if="plan.converted"> · 已转记录</span
+              ><span v-if="plan.commentCount"> · 评论 {{ plan.commentCount }}</span>
+            </template>
           </van-cell>
         </van-cell-group>
       </van-list>
@@ -417,7 +430,10 @@ onMounted(reload)
 
     <van-action-sheet v-model:show="actionShow" title="计划操作">
       <div v-if="current" class="p-4 space-y-3">
-        <div class="grid grid-cols-2 gap-2">
+        <van-button block plain data-testid="mobile-follow-plan-comments" @click="openComments">
+          评论{{ current.commentCount ? ` ${current.commentCount}` : '' }}
+        </van-button>
+        <div v-if="current.canManage" class="grid grid-cols-2 gap-2">
           <van-button
             v-for="(label, key) in FOLLOW_UP_PLAN_STATUS_LABELS"
             :key="key"
@@ -430,15 +446,27 @@ onMounted(reload)
           </van-button>
         </div>
         <van-button
-          v-if="current.status === 'COMPLETED' && !current.converted"
+          v-if="current.canManage && current.status === 'COMPLETED' && !current.converted"
           type="success"
           block
           @click="convert"
           >转跟进记录</van-button
         >
-        <van-button block @click="editCurrent">编辑</van-button>
-        <van-button type="danger" plain block @click="remove">删除</van-button>
+        <van-button v-if="current.canManage" block @click="editCurrent">编辑</van-button>
+        <van-button v-if="current.canManage" type="danger" plain block @click="remove">
+          删除
+        </van-button>
       </div>
     </van-action-sheet>
+
+    <MobileFollowCommentSheet
+      v-if="current"
+      v-model="commentShow"
+      resource-type="plan"
+      :resource-id="current.id"
+      @count-changed="handleCommentCount"
+    />
+
+    <MobileFollowRecordFormSheet v-model="recordFormShow" :plan="convertingPlan" @saved="reload" />
   </div>
 </template>

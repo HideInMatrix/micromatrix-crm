@@ -16,6 +16,7 @@ const props = defineProps<{
   formValues?: Record<string, unknown>
   attachmentOptions?: AttachmentVO[]
   attachmentDownload?: (file: AttachmentVO) => Promise<void>
+  attachmentObjectUrl?: (id: string) => Promise<string>
   /** formula 类型的实时计算结果 */
   formulaValue?: number | null
 }>()
@@ -160,6 +161,7 @@ const fieldOptions = computed(() => {
     :model-value="stringArrayValue"
     :max="field.config?.uploadLimit ?? 10"
     :max-size-mb="field.config?.uploadSizeLimit ?? 20"
+    :object-url="attachmentObjectUrl"
     @update:model-value="model = $event"
   />
 

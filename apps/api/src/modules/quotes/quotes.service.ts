@@ -142,7 +142,15 @@ export class QuotesService {
           approved: false,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'quotation', row.id, customData, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'quotation',
+        row.id,
+        customData,
+        'create',
+        tx,
+        user.id,
+      )
       await this.quotationFields.saveProducts(user.tenantId, row.id, dto.products ?? [], tx)
       await this.writeSnapshot(tx, row.id, dto.moduleFormConfigDTO, {
         id: row.id,
@@ -203,7 +211,15 @@ export class QuotesService {
         },
       })
       if (customData !== undefined)
-        await this.fieldValues.save(user.tenantId, 'quotation', dto.id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'quotation',
+          dto.id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
       if (dto.products !== undefined)
         await this.quotationFields.saveProducts(user.tenantId, dto.id, dto.products, tx)
       await tx.opportunityQuotationSnapshot.deleteMany({ where: { quotationId: dto.id } })

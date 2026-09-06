@@ -709,22 +709,93 @@ model SysDictConfig {
   @@map("sys_dict_config")
 }
 
-// ============ 跟进记录（多态：线索/客户/商机/合同） ============
+// ============ 跟进记录（多态：线索/客户/商机） ============
 
 model FollowUpRecord {
   id           String    @id @default(cuid())
   tenantId     String
   targetType   String
   targetId     String
-  type         String
+  contactId    String?
+  type         String?
   content      String
-  nextFollowAt DateTime?
+  followedAt   DateTime?
   ownerId      String
   ownerName    String
+  deptId       String?
+  createdById  String
+  commentCount Int       @default(0)
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  fields     FollowUpRecordField[]
+  fieldBlobs FollowUpRecordFieldBlob[]
+  comments   FollowUpRecordComment[]
 
   @@index([tenantId, targetType, targetId])
+  @@index([tenantId, ownerId, followedAt])
   @@map("follow_up_records")
+}
+
+model FollowUpRecordField {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id")
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.VarChar(255)
+
+  resource FollowUpRecord @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId, fieldId, fieldValue])
+  @@map("follow_up_record_field")
+}
+
+model FollowUpRecordFieldBlob {
+  id         String @id @default(cuid()) @db.VarChar(32)
+  resourceId String @map("resource_id")
+  fieldId    String @map("field_id") @db.VarChar(32)
+  fieldValue String @map("field_value") @db.Text
+
+  resource FollowUpRecord @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, fieldId])
+  @@index([resourceId])
+  @@map("follow_up_record_field_blob")
+}
+
+model FollowUpRecordComment {
+  id            String   @id @default(cuid()) @db.VarChar(32)
+  resourceId    String   @map("resource_id")
+  parentId      String?  @map("parent_id") @db.VarChar(32)
+  replyToUserId String?  @map("reply_to_user_id") @db.VarChar(32)
+  content       String   @db.VarChar(3000)
+  tenantId      String   @map("organization_id") @db.VarChar(32)
+  createdById   String   @map("create_user") @db.VarChar(32)
+  updatedById   String   @map("update_user") @db.VarChar(32)
+  createdAt     DateTime @default(now()) @map("create_time")
+  updatedAt     DateTime @updatedAt @map("update_time")
+
+  resource FollowUpRecord                 @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  parent   FollowUpRecordComment?         @relation("FollowUpRecordCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  FollowUpRecordComment[]        @relation("FollowUpRecordCommentReplies")
+  mentions FollowUpRecordCommentMention[]
+
+  @@index([tenantId, resourceId, parentId, createdAt], map: "follow_record_comment_page_idx")
+  @@index([parentId])
+  @@map("follow_up_record_comment")
+}
+
+model FollowUpRecordCommentMention {
+  id        String @id @default(cuid()) @db.VarChar(32)
+  commentId String @map("comment_id") @db.VarChar(32)
+  userId    String @map("user_id") @db.VarChar(32)
+
+  comment FollowUpRecordComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@index([userId])
+  @@map("follow_up_record_comment_mention")
 }
 
 enum FollowUpPlanStatus {
@@ -752,12 +823,14 @@ model FollowUpPlan {
   deptId            String?
   createdById       String
   dueNotifiedAt     DateTime?
+  commentCount      Int                @default(0)
   customData        Json?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
   fields     FollowUpPlanField[]
   fieldBlobs FollowUpPlanFieldBlob[]
+  comments   FollowUpPlanComment[]
 
   @@index([tenantId, targetType, targetId])
   @@index([tenantId, ownerId, status])
@@ -789,6 +862,41 @@ model FollowUpPlanFieldBlob {
   @@unique([resourceId, fieldId])
   @@index([resourceId])
   @@map("follow_up_plan_field_blob")
+}
+
+model FollowUpPlanComment {
+  id            String   @id @default(cuid()) @db.VarChar(32)
+  resourceId    String   @map("resource_id")
+  parentId      String?  @map("parent_id") @db.VarChar(32)
+  replyToUserId String?  @map("reply_to_user_id") @db.VarChar(32)
+  content       String   @db.VarChar(3000)
+  tenantId      String   @map("organization_id") @db.VarChar(32)
+  createdById   String   @map("create_user") @db.VarChar(32)
+  updatedById   String   @map("update_user") @db.VarChar(32)
+  createdAt     DateTime @default(now()) @map("create_time")
+  updatedAt     DateTime @updatedAt @map("update_time")
+
+  resource FollowUpPlan                 @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  parent   FollowUpPlanComment?         @relation("FollowUpPlanCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  FollowUpPlanComment[]        @relation("FollowUpPlanCommentReplies")
+  mentions FollowUpPlanCommentMention[]
+
+  @@index([tenantId, resourceId, parentId, createdAt], map: "follow_plan_comment_page_idx")
+  @@index([parentId])
+  @@map("follow_up_plan_comment")
+}
+
+model FollowUpPlanCommentMention {
+  id        String @id @default(cuid()) @db.VarChar(32)
+  commentId String @map("comment_id") @db.VarChar(32)
+  userId    String @map("user_id") @db.VarChar(32)
+
+  comment FollowUpPlanComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@index([userId])
+  @@map("follow_up_plan_comment_mention")
 }
 
 // ============ Cordys 商机直接模型 ============

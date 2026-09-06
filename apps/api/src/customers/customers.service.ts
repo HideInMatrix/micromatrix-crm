@@ -737,13 +737,9 @@ export class CustomersService {
         : Promise.resolve([]),
     ])
 
-    const [ownerMap, attachMap] = await Promise.all([
-      this.userNames([...opportunities.map((o) => o.owner), ...team.map((m) => m.userId)]),
-      this.attachmentMap(
-        user.tenantId,
-        'follow-up',
-        followUps.map((f) => f.id),
-      ),
+    const ownerMap = await this.userNames([
+      ...opportunities.map((o) => o.owner),
+      ...team.map((m) => m.userId),
     ])
 
     const contractRows = contracts.map((c) => {
@@ -788,13 +784,17 @@ export class CustomersService {
         id: r.id,
         targetType: r.targetType as 'customer',
         targetId: r.targetId,
+        contactId: r.contactId,
         type: r.type,
         content: r.content,
-        nextFollowAt: r.nextFollowAt?.toISOString() ?? null,
+        followedAt: r.followedAt?.toISOString() ?? null,
         ownerId: r.ownerId,
         ownerName: r.ownerName,
+        canManage: r.ownerId === user.id || hasPermission(user.permissions, '*'),
+        commentCount: r.commentCount,
+        moduleFields: [],
         createdAt: r.createdAt.toISOString(),
-        attachments: attachMap.get(r.id) ?? [],
+        updatedAt: r.updatedAt.toISOString(),
       })),
       team: team.map((m) => ({
         id: m.id,
@@ -1201,6 +1201,7 @@ export class CustomersService {
       prepared.values,
       'create',
       tx,
+      user.id,
     )
     return created
   }
@@ -1260,7 +1261,15 @@ export class CustomersService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'customer', existing.id, values, 'update', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'customer',
+        existing.id,
+        values,
+        'update',
+        tx,
+        user.id,
+      )
       return updated
     })
     if (owner) {
@@ -2095,6 +2104,10 @@ export class CustomersService {
               where: { tenantId: user.tenantId, contactId: conflict.sourceContactId },
               data: { contactId: targetContactId },
             })
+            await tx.followUpRecord.updateMany({
+              where: { tenantId: user.tenantId, contactId: conflict.sourceContactId },
+              data: { contactId: targetContactId },
+            })
             await tx.attachment.updateMany({
               where: {
                 tenantId: user.tenantId,
@@ -2627,43 +2640,6 @@ export class CustomersService {
     return new Set(rows.map((r) => r.id))
   }
 
-  private async attachmentMap(tenantId: string, targetType: string, targetIds: string[]) {
-    const map = new Map<
-      string,
-      {
-        id: string
-        name: string
-        size: number
-        mime: string | null
-        targetType: string | null
-        targetId: string | null
-        uploaderId: string | null
-        createdAt: string
-      }[]
-    >()
-    if (targetIds.length === 0) return map
-    const rows = await this.prisma.attachment.findMany({
-      where: { tenantId, targetType, targetId: { in: targetIds } },
-      orderBy: { createdAt: 'asc' },
-    })
-    for (const row of rows) {
-      if (!row.targetId) continue
-      const list = map.get(row.targetId) ?? []
-      list.push({
-        id: row.id,
-        name: row.name,
-        size: row.size,
-        mime: row.mime,
-        targetType: row.targetType,
-        targetId: row.targetId,
-        uploaderId: row.uploaderId,
-        createdAt: row.createdAt.toISOString(),
-      })
-      map.set(row.targetId, list)
-    }
-    return map
-  }
-
   /** 导出 CSV（按字段配置的列表列） */
   async exportCsv(
     user: AuthUser,
@@ -3001,7 +2977,15 @@ export class CustomersService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'customer', created.id, values, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'customer',
+        created.id,
+        values,
+        'create',
+        tx,
+        user.id,
+      )
       return created
     })
     return this.toSingleVO(user, customer)

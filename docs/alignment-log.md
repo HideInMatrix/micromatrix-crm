@@ -4,6 +4,23 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-06：PLAN-COMMENT-001 跟进计划评论协同正式封板
+
+- 按 Cordys `FollowUpPlanComment / Mention + BaseCommentService` 语义补齐 FollowPlan `commentCount`、独立 Comment/Mention 物理表、两层回复、@成员、创建人编辑/删除与父评论级联；FollowRecord / FollowPlan 现共用 `FollowCommentServiceBase`，没有复制第二套评论业务内核。
+- FollowUpPlan 通过正式 `assertPlanAccess()` 保持 Customer collaborator、Pool/DataScope、Lead/Opportunity 数据范围边界；Plan Comment page/add/update/delete、OperationLog、负责人通知、Mention/reply 通知与 CUSTOMER/CLUE/OPPORTUNITY 六事件均已落地，MessageSettings Seed 同步补齐且不覆盖租户既有配置。
+- PC `FollowUpPlanPanel` 在计划卡片内显示真实 `commentCount` 并折叠复用 `FollowCommentPanel`；Mobile 通过 `MobileFollowCommentSheet` 覆盖查看、新增、回复、@成员、编辑、删除和实时 count 刷新，Record/Plan 前端 API 继续共用同一 DTO/VO 语义。
+- 最终验收：Plan Comment Service **20/20 PASS**；专项 PC/Mobile Browser **50/50 PASS**；FollowRecord **46/46**、Customer **23/23**、Lead **20/20**、Opportunity **18/18**、FollowPlan PC/Mobile **25/25**；API Rules **222/222**；single baseline reset + seed、Prisma validate/diff、6 条 partial unique index 与 5 条 Plan Comment index 实查 PASS；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。PLAN-COMMENT-001 从 `IN_PROGRESS` 更新为 `VERIFIED`。
+- Cordys CUSTOMER/BUSINESS/CLUE 三套 FollowPlan FormDesign 上下文布局未混入评论模型，继续作为后续独立差异保留。
+
+## 2026-09-06：FOLLOW-001 跟进记录协同闭环正式封板
+
+- 按 Cordys `FollowUpRecord`、Field/Blob、UserView、Comment/Mention、Web `crm-follow-detail + crm-comment` 源码完成正式资源化：MicroMatrix 不再把跟进记录当备注时间线，也不保留旧 `nextFollowAt / contract target / generic follow-up attachment` 兼容模型；`followRecord` ModuleForm、动态 Field/Blob 与 lead/customer/opportunity 三类目标成为唯一真相源。
+- 统一 `POST /follow-ups/page` 已覆盖对象内与全局记录查询，并叠加目标对象 DataScope/线索池/客户公海与协作范围、系统字段和动态字段 AdvancedFilter、`FOLLOW_RECORD` SavedView 与稳定排序；FollowPlan→Record 只执行显式 `PLAN_TO_RECORD` formLink，Lead→Customer 只复制 Record + Field/Blob 且新记录评论从 0 开始。
+- 评论按 Cordys 两层模型落地 Comment/Mention + `commentCount`：支持新增、回复、编辑、删除、@成员，严格校验当前租户 ACTIVE 成员和创建人编辑边界；线索/客户/商机六类 comment-added/comment-mentioned 事件复用现有 Notifications/MessageSettings，评论操作日志继续写现有 OperationLog Blob。
+- PC runtime 收口为 `FollowRecordPanel / FollowRecordFormDrawer / FollowRecordTimeline / FollowCommentPanel / FollowCommentItem / FollowCommentEditor` + composables，客户 360、线索 Overview、商机详情与 `FollowUpDrawer` 复用同一实现。ATTACHMENT/PICTURE 绑定后必须通过 FollowRecord 域接口读取，通用 attachment 下载不可旁路资源权限；资源字段附件 cleanup Cron 通过 DistributedCoordinator 协调执行。
+- 最终审计确认 Cordys 有统一 `/follow/record/page` API 与 `FOLLOW_RECORD` UserView，但 Web `FOLLOW_UP_RECORD` pathMap 仍指向商机路由并带 TODO，未发现完成态独立全局 FollowRecord list View；MicroMatrix 因此不虚构 `/follow-records` 页面。
+- 最终验收：FollowRecord/Comment Service **25/25 PASS**；专项 Browser **46/46 PASS**；Customer **23/23**、Lead **20/20**、Opportunity **18/18**、FollowPlan PC/Mobile **25/25**；API Rules **217/217**；pre-release single baseline reset + seed、Prisma validate/diff、六条 partial unique index 实查 PASS；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；当前 tracked + untracked 变更集 Prettier 与 `git diff --check` PASS。FOLLOW-001 从 `IN_PROGRESS` 更新为 `VERIFIED`。
+
 ## 2026-09-06：FORM-001 F4 与 F 系列正式封板
 
 - 完成 Cordys `showControlRules / linkProp / combineSearch / showFields / linkFields / childLinkFields` 对齐；`HIDDEN` 按 Cordys 语义实现为目标选项范围限制，不误实现为字段隐藏，SELECT/MULTISELECT 联动按标量/完整集合精确命中。

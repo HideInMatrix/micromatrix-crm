@@ -582,7 +582,15 @@ export class LeadsService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'clue', created.id, customData ?? {}, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'clue',
+        created.id,
+        customData ?? {},
+        'create',
+        tx,
+        user.id,
+      )
       return created
     })
     if (owner && owner.id !== user.id) {
@@ -643,7 +651,15 @@ export class LeadsService {
         },
       })
       if (customData) {
-        await this.fieldValues.save(user.tenantId, 'clue', existing.id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'clue',
+          existing.id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
       }
       return updated
     })
@@ -1421,6 +1437,7 @@ export class LeadsService {
             prepared.contactCustomData.get(lead.id) ?? {},
             'create',
             tx,
+            user.id,
           )
           contactId = contact.id
           contactIds.push(contact.id)
@@ -1458,6 +1475,7 @@ export class LeadsService {
           prepared.opportunityCustomData,
           'create',
           tx,
+          user.id,
         )
         opportunityId = opportunity.id
       }
@@ -1510,6 +1528,10 @@ export class LeadsService {
     const sourceRecords = await tx.followUpRecord.findMany({
       where: { tenantId: user.tenantId, targetType: 'lead', targetId: leadId },
       orderBy: { createdAt: 'asc' },
+      include: {
+        fields: { select: { fieldId: true, fieldValue: true } },
+        fieldBlobs: { select: { fieldId: true, fieldValue: true } },
+      },
     })
     const recordIdMap = new Map<string, string>()
     for (const record of sourceRecords) {
@@ -1518,14 +1540,37 @@ export class LeadsService {
           tenantId: record.tenantId,
           targetType: 'customer',
           targetId: customerId,
+          contactId,
           type: record.type,
           content: record.content,
-          nextFollowAt: record.nextFollowAt,
+          followedAt: record.followedAt,
           ownerId: record.ownerId,
           ownerName: record.ownerName,
+          deptId: record.deptId,
+          createdById: record.createdById,
+          commentCount: 0,
           createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
         },
       })
+      if (record.fields.length) {
+        await tx.followUpRecordField.createMany({
+          data: record.fields.map((field) => ({
+            resourceId: copied.id,
+            fieldId: field.fieldId,
+            fieldValue: field.fieldValue,
+          })),
+        })
+      }
+      if (record.fieldBlobs.length) {
+        await tx.followUpRecordFieldBlob.createMany({
+          data: record.fieldBlobs.map((field) => ({
+            resourceId: copied.id,
+            fieldId: field.fieldId,
+            fieldValue: field.fieldValue,
+          })),
+        })
+      }
       recordIdMap.set(record.id, copied.id)
     }
 

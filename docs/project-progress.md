@@ -47,19 +47,19 @@
 
 当前执行状态：
 
-> **LOG-003、UI-001 与 FORM-001 均已完成并封板为 `VERIFIED`。FORM-001 最新完成 F4 显隐/字段联动/DATA_SOURCE 联动与 F1～F3 全量回归；当前没有新的正式执行单元处于 `IN_PROGRESS`。**
+> **LOG-003、UI-001、FORM-001、FOLLOW-001 与 PLAN-COMMENT-001 均已封板为 `VERIFIED`。PLAN-COMMENT-001 已完成 FollowPlan `commentCount`、独立 Comment/Mention、共享评论内核、6 个消息事件、PC/Mobile runtime 与最终验收；专项 Browser 50/50、Service 20/20、API Rules 222/222 全绿。FollowPlan 剩余差异收敛为 CUSTOMER/BUSINESS/CLUE 三套 FormDesign 上下文布局等更大表单设计能力，继续拆为后续独立规格，不与评论模型混合。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003` 与 `FORM-001` 均已在各自 tasks 文档完成封板。数据库迁移历史已按未发布阶段策略从 71 个开发 migration 合并为 1 个 `20260905084900_baseline`；FORM-001 F4 将 Rules 基线推进到 199/199。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入其它执行单元。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`FORM-001`、`FOLLOW-001` 与 `PLAN-COMMENT-001` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；PLAN-COMMENT-001 最终验收将 API Rules 基线推进到 222/222。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入其它执行单元。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
-- 当前 Prisma migration 基线为 **1 个 `20260905084900_baseline`**。该 baseline 已在全新空 PostgreSQL 上通过 `prisma migrate deploy` 与 Seed，随后 `prisma migrate diff` 返回 `No difference detected.`；两条 Prisma Schema 无法表达的 partial unique index 也已在数据库中逐条确认存在。此前 30/56/68/69/70/71 migration 的验收数字继续作为历史阶段证据保留，不再代表当前 migration 目录结构。
+- 当前 Prisma migration 基线为 **1 个 `20260905084900_baseline`**。FOLLOW-001 E7 已再次执行本地开发库 `migrate reset --force` + Seed，`prisma validate` PASS，数据库到 `schema.prisma` 的 diff 返回 `No difference detected.`；迁移策略登记的六条 Prisma Schema 无法表达的 partial unique index 均已在 fresh DB 实查存在。此前 30/56/68/69/70/71 migration 的验收数字继续作为历史阶段证据保留，不再代表当前 migration 目录结构。
 - FORM-001 F4：公共 Form Runtime **7/7 PASS**、F4 Service **16/16 PASS**、F4 Browser **13/13 PASS**；相邻 Browser 原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿，相邻 Service 核心 FORM-001、F1 **26/26**、F2 **23/23**、F3 **23/23** 全绿。pre-release baseline reset + seed、Prisma validate/diff、root typecheck/build、当前变更集 Prettier 与 `git diff --check` PASS，lint **0 error / 8 个既有 warning**。
 - UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
 - Root Smoke：**227/227**。
-- Rules：**199/199**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export、LOG-001 IP/retention、LOG-002 Blob/租户策略、LOG-003 clear-all 与 FORM-001 F4 Form Runtime 回归保持全绿。
+- Rules：**217/217**；FOLLOW-001 已把 FollowRecord filter/sort、Comment/Mention 与 ResourceField attachment cleanup coordinator 等专项规则纳入标准 Rules；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export、LOG-001 IP/retention、LOG-002 Blob/租户策略、LOG-003 clear-all 与 FORM-001 F4 Form Runtime 回归继续保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。
@@ -91,7 +91,6 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 ### A. 协同深度能力
 
-- 跟进记录：评论、@成员、附件、字段、日志、视图。
 - 跟进计划：评论/评论计数，以及 CUSTOMER/BUSINESS/CLUE 三套 FormDesign 上下文布局。
 - 站内通知：邮件及仍未接入的 provider/模板能力。
 - 定时任务：统一任务注册、回收、提醒、清理策略。

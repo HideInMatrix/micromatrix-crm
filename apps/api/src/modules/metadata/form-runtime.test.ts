@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   applyDataSourceRecordLinks,
+  applyFormLinkScenario,
   evaluateFormRuntime,
   type DataSourceRecordVO,
   type FieldVO,
+  type FormLinkScenario,
 } from '@micromatrix/shared'
 
 function field(
@@ -307,4 +309,78 @@ test('DATA_SOURCE childLinkFields 按源 SUB_PRODUCT 行重建目标子表', () 
     { cf_target_qty: 2, cf_target_tag: 'priority' },
     { cf_target_qty: 3, cf_target_tag: 'priority' },
   ])
+})
+
+test('formLink 仅按显式字段 ID 映射并执行选项标签转换', () => {
+  const sourceContent = field({
+    id: 'plan-content',
+    key: 'content',
+    label: '计划内容',
+    type: 'textarea',
+    system: true,
+  })
+  const sourceMethod = field({
+    id: 'plan-method',
+    key: 'method',
+    label: '跟进方式',
+    type: 'select',
+    system: true,
+    options: [{ label: '电话', value: 'PHONE' }],
+  })
+  const sourceIgnored = field({
+    id: 'plan-ignored',
+    key: 'cf_ignored',
+    label: '未映射字段',
+    type: 'text',
+  })
+  const targetContent = field({
+    id: 'record-content',
+    key: 'content',
+    label: '跟进内容',
+    type: 'textarea',
+    system: true,
+  })
+  const targetMethod = field({
+    id: 'record-method',
+    key: 'type',
+    label: '跟进方式',
+    type: 'select',
+    system: true,
+    options: [{ label: '电话', value: '电话' }],
+  })
+  const targetUnmapped = field({
+    id: 'record-unmapped',
+    key: 'cf_unmapped',
+    label: '目标未映射',
+    type: 'text',
+  })
+  const scenario: FormLinkScenario = {
+    key: 'PLAN_TO_RECORD',
+    linkFields: [
+      { current: targetContent.id, link: sourceContent.id, enable: true },
+      { current: targetMethod.id, link: sourceMethod.id, enable: true },
+      { current: targetUnmapped.id, link: sourceIgnored.id, enable: false },
+    ],
+  }
+
+  const result = applyFormLinkScenario(
+    [sourceContent, sourceMethod, sourceIgnored],
+    [targetContent, targetMethod, targetUnmapped],
+    scenario,
+    { content: '计划正文', method: 'PHONE', cf_ignored: '不能自动复制' },
+  )
+  assert.deepEqual(result, { content: '计划正文', type: '电话' })
+})
+
+test('formLink 拒绝不兼容字段，不用同 key 或运行时猜测兜底', () => {
+  const source = field({ id: 'source-date', key: 'same_key', label: '来源日期', type: 'date' })
+  const target = field({ id: 'target-number', key: 'same_key', label: '目标数字', type: 'number' })
+  const scenario: FormLinkScenario = {
+    key: 'PLAN_TO_RECORD',
+    linkFields: [{ current: target.id, link: source.id, enable: true }],
+  }
+  assert.deepEqual(
+    applyFormLinkScenario([source], [target], scenario, { same_key: '2026-09-06' }),
+    {},
+  )
 })

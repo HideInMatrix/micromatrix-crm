@@ -156,3 +156,10 @@ export const OrderUserViewsController = createResourceUserViewsController(
   'ORDER',
   ['ORDER:READ'],
 )
+
+export const FollowRecordUserViewsController = createResourceUserViewsController(
+  'follow/record/view',
+  '跟进记录视图',
+  'FOLLOW_RECORD',
+  [],
+)

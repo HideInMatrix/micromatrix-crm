@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
   BiddingInfoVO,
@@ -255,6 +261,7 @@ export class BiddingService {
         { cf_source: '标讯' },
         'create',
         tx,
+        user.id,
       )
       return created
     })

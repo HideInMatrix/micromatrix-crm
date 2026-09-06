@@ -20,6 +20,7 @@ const props = defineProps<{
   deptTree: DepartmentVO[]
   attachmentMap?: Record<string, AttachmentVO[]>
   attachmentDownload?: (file: AttachmentVO) => Promise<void>
+  attachmentObjectUrl?: (id: string) => Promise<string>
 }>()
 
 /** 扁平模型：系统字段键 + cf_* 自定义字段键 */
@@ -134,6 +135,7 @@ defineExpose({ validate })
             :dept-tree="deptTree"
             :attachment-options="attachmentMap?.[field.key] ?? []"
             :attachment-download="attachmentDownload"
+            :attachment-object-url="attachmentObjectUrl"
             :formula-value="formulaValues[field.key]"
             @data-source-record="applyDataSourceRecord(field, $event)"
           />

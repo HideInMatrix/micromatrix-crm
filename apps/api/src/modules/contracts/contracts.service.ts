@@ -197,7 +197,15 @@ export class ContractsService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'contract', row.id, customData, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'contract',
+        row.id,
+        customData,
+        'create',
+        tx,
+        user.id,
+      )
       await this.contractFields.saveProducts(user.tenantId, row.id, products, tx)
       await this.writeSnapshot(tx, row.id, config, row, customData, products)
       return row
@@ -265,7 +273,15 @@ export class ContractsService {
         },
       })
       if (dto.moduleFields !== undefined) {
-        await this.fieldValues.save(user.tenantId, 'contract', dto.id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'contract',
+          dto.id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
       }
       if (products) await this.contractFields.saveProducts(user.tenantId, dto.id, products, tx)
       const latestProducts =
@@ -496,7 +512,15 @@ export class ContractsService {
         },
       })
       if (dto.fields?.length) {
-        await this.fieldValues.save(user.tenantId, 'contract', dto.id, dynamic, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'contract',
+          dto.id,
+          dynamic,
+          'update',
+          tx,
+          user.id,
+        )
       }
       await tx.contractSnapshot.deleteMany({ where: { contractId: dto.id } })
       await this.writeSnapshot(

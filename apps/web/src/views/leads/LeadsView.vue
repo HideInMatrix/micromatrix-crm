@@ -574,11 +574,6 @@ function handleOverviewEdit(row: LeadVO) {
   openEdit(row)
 }
 
-function handleOverviewFollow(row: LeadVO) {
-  overviewVisible.value = false
-  openFollow(row)
-}
-
 function handleOverviewConvert(row: LeadVO) {
   overviewVisible.value = false
   openConvert(row)
@@ -1055,7 +1050,6 @@ onMounted(async () => {
       :lead="overviewTarget"
       :fields="contextFields"
       @edit="handleOverviewEdit"
-      @follow="handleOverviewFollow"
       @convert="handleOverviewConvert"
       @to-pool="handleOverviewToPool"
       @transfer="handleOverviewTransfer"

@@ -58,16 +58,23 @@ function createService() {
   return { service: new MessageSettingsService(prisma), rows }
 }
 
-test('完整返回 Cordys 五组 35 个事件并合并默认开关', async () => {
+test('完整返回当前 Cordys 事件目录并合并默认开关', async () => {
   const { service } = createService()
 
   const groups = await service.list('tenant-a')
 
   assert.equal(groups.length, 5)
-  assert.equal(groups.flatMap((group) => group.items).length, 35)
-  assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
-  assert.ok(groups.flatMap((group) => group.items).every((item) => !item.emailEnabled))
-  assert.ok(groups.flatMap((group) => group.items).every((item) => !item.weComEnabled))
+  const items = groups.flatMap((group) => group.items)
+  assert.equal(items.length, 47)
+  assert.ok(items.some((item) => item.event === 'CUSTOMER_FOLLOW_UP_PLAN_COMMENT_ADDED'))
+  assert.ok(items.some((item) => item.event === 'CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED'))
+  assert.ok(items.some((item) => item.event === 'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED'))
+  assert.ok(items.some((item) => item.event === 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED'))
+  assert.ok(items.some((item) => item.event === 'CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED'))
+  assert.ok(items.some((item) => item.event === 'OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_ADDED'))
+  assert.ok(items.every((item) => item.systemEnabled))
+  assert.ok(items.every((item) => !item.emailEnabled))
+  assert.ok(items.every((item) => !item.weComEnabled))
 })
 
 test('单项与批量开关按租户持久化', async () => {

@@ -1,6 +1,11 @@
 import type {
   ContactVO,
   FieldVO,
+  FilterCondition,
+  FollowCommentPageVO,
+  FollowCommentVO,
+  FollowTargetType,
+  FollowUpRecordPrefillVO,
   FollowUpPlanStatus,
   FollowUpPlanTargetType,
   FollowUpPlanVO,
@@ -499,16 +504,90 @@ export const leadApi = {
 
 // ===== 跟进 =====
 
+export interface FollowUpRecordPageParams extends PageQuery {
+  targetType?: FollowTargetType
+  targetId?: string
+  mine?: boolean
+  viewId?: string
+  filters?: FilterCondition[]
+  filterMode?: 'AND' | 'OR'
+  sort?: { name: string; type: 'asc' | 'desc' }
+}
+
 export const followUpApi = {
-  list: (targetType: string, targetId: string) =>
-    http.get<FollowUpVO[]>('/follow-ups', { params: { targetType, targetId } }),
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/follow-ups/module/form',
+    ),
+  page: (params: FollowUpRecordPageParams) =>
+    http.post<PaginatedResult<FollowUpVO>>('/follow-ups/page', params),
+  get: (id: string) => http.get<FollowUpVO>(`/follow-ups/${id}`),
+  downloadAttachment: (id: string, attachmentId: string) =>
+    http.get<Blob>(`/follow-ups/${id}/attachments/${attachmentId}/download`, {
+      responseType: 'blob',
+      timeout: 60_000,
+    }),
   create: (data: {
-    targetType: string
+    targetType: FollowTargetType
     targetId: string
-    type: string
+    contactId?: string
+    ownerId?: string
+    type?: string
     content: string
-    nextFollowAt?: string
+    followedAt?: string
+    sourcePlanId?: string
+    moduleFields?: Array<{ fieldId: string; fieldValue?: unknown }>
   }) => http.post<FollowUpVO>('/follow-ups', data),
+  update: (
+    id: string,
+    data: Partial<{
+      targetType: FollowTargetType
+      targetId: string
+      contactId: string | null
+      ownerId: string
+      type: string | null
+      content: string
+      followedAt: string | null
+      moduleFields: Array<{ fieldId: string; fieldValue?: unknown }>
+    }>,
+  ) => http.patch<FollowUpVO>(`/follow-ups/${id}`, data),
+  remove: (id: string) => http.delete<{ id: string }>(`/follow-ups/${id}`),
+}
+
+export interface FollowCommentAddPayload {
+  resourceId: string
+  parentId?: string
+  replyToUserId?: string
+  content: string
+  mentionedUserIds?: string[]
+}
+
+export interface FollowCommentUpdatePayload {
+  id: string
+  content: string
+  mentionedUserIds?: string[]
+}
+
+export const followRecordCommentApi = {
+  page: (resourceId: string, page = 1, pageSize = 10) =>
+    http.post<FollowCommentPageVO>('/follow/record/comment/page', { resourceId, page, pageSize }),
+  add: (data: FollowCommentAddPayload) =>
+    http.post<FollowCommentVO>('/follow/record/comment/add', data),
+  update: (data: FollowCommentUpdatePayload) =>
+    http.post<FollowCommentVO>('/follow/record/comment/update', data),
+  remove: (id: string) =>
+    http.delete<{ id: string; commentCount: number }>(`/follow/record/comment/${id}`),
+}
+
+export const followPlanCommentApi = {
+  page: (resourceId: string, page = 1, pageSize = 10) =>
+    http.post<FollowCommentPageVO>('/follow/plan/comment/page', { resourceId, page, pageSize }),
+  add: (data: FollowCommentAddPayload) =>
+    http.post<FollowCommentVO>('/follow/plan/comment/add', data),
+  update: (data: FollowCommentUpdatePayload) =>
+    http.post<FollowCommentVO>('/follow/plan/comment/update', data),
+  remove: (id: string) =>
+    http.delete<{ id: string; commentCount: number }>(`/follow/plan/comment/${id}`),
 }
 
 export interface FollowUpPlanListParams extends PageQuery {
@@ -542,7 +621,8 @@ export const followUpPlanApi = {
     http.patch<FollowUpPlanVO>(`/follow-up-plans/${id}`, data),
   updateStatus: (id: string, status: FollowUpPlanStatus) =>
     http.post<FollowUpPlanVO>(`/follow-up-plans/${id}/status`, { status }),
-  convert: (id: string) => http.post<FollowUpPlanVO>(`/follow-up-plans/${id}/convert`),
+  recordPrefill: (id: string) =>
+    http.get<FollowUpRecordPrefillVO>(`/follow-up-plans/${id}/record-prefill`),
   remove: (id: string) => http.delete(`/follow-up-plans/${id}`),
 }
 

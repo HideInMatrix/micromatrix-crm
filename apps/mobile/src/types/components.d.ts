@@ -16,6 +16,8 @@ declare module 'vue' {
     MobileCustomerListPane: typeof import('./../components/customer/MobileCustomerListPane.vue')['default']
     MobileCustomerOpenSeaPane: typeof import('./../components/customer/MobileCustomerOpenSeaPane.vue')['default']
     MobileDynamicForm: typeof import('./../components/MobileDynamicForm.vue')['default']
+    MobileFollowCommentSheet: typeof import('./../components/MobileFollowCommentSheet.vue')['default']
+    MobileFollowRecordFormSheet: typeof import('./../components/MobileFollowRecordFormSheet.vue')['default']
     MobileFollowUpPlanList: typeof import('./../components/MobileFollowUpPlanList.vue')['default']
     MobileFollowUpSheet: typeof import('./../components/MobileFollowUpSheet.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

@@ -334,6 +334,7 @@ export class ContactsService {
         customData ?? {},
         'create',
         tx,
+        user.id,
       )
       return created
     })
@@ -381,7 +382,15 @@ export class ContactsService {
         include: contactInclude,
       })
       if (customData) {
-        await this.fieldValues.save(user.tenantId, 'customerContact', id, customData, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'customerContact',
+          id,
+          customData,
+          'update',
+          tx,
+          user.id,
+        )
       }
       return updated
     })

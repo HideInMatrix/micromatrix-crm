@@ -546,14 +546,64 @@ CREATE TABLE "follow_up_records" (
     "tenantId" TEXT NOT NULL,
     "targetType" TEXT NOT NULL,
     "targetId" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
+    "contactId" TEXT,
+    "type" TEXT,
     "content" TEXT NOT NULL,
-    "nextFollowAt" TIMESTAMP(3),
+    "followedAt" TIMESTAMP(3),
     "ownerId" TEXT NOT NULL,
     "ownerName" TEXT NOT NULL,
+    "deptId" TEXT,
+    "createdById" TEXT NOT NULL,
+    "commentCount" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "follow_up_records_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "follow_up_record_field" (
+    "id" VARCHAR(32) NOT NULL,
+    "resource_id" TEXT NOT NULL,
+    "field_id" VARCHAR(32) NOT NULL,
+    "field_value" VARCHAR(255) NOT NULL,
+
+    CONSTRAINT "follow_up_record_field_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "follow_up_record_field_blob" (
+    "id" VARCHAR(32) NOT NULL,
+    "resource_id" TEXT NOT NULL,
+    "field_id" VARCHAR(32) NOT NULL,
+    "field_value" TEXT NOT NULL,
+
+    CONSTRAINT "follow_up_record_field_blob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "follow_up_record_comment" (
+    "id" VARCHAR(32) NOT NULL,
+    "resource_id" TEXT NOT NULL,
+    "parent_id" VARCHAR(32),
+    "reply_to_user_id" VARCHAR(32),
+    "content" VARCHAR(3000) NOT NULL,
+    "organization_id" VARCHAR(32) NOT NULL,
+    "create_user" VARCHAR(32) NOT NULL,
+    "update_user" VARCHAR(32) NOT NULL,
+    "create_time" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "update_time" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "follow_up_record_comment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "follow_up_record_comment_mention" (
+    "id" VARCHAR(32) NOT NULL,
+    "comment_id" VARCHAR(32) NOT NULL,
+    "user_id" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "follow_up_record_comment_mention_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -573,6 +623,7 @@ CREATE TABLE "follow_up_plans" (
     "deptId" TEXT,
     "createdById" TEXT NOT NULL,
     "dueNotifiedAt" TIMESTAMP(3),
+    "commentCount" INTEGER NOT NULL DEFAULT 0,
     "customData" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -598,6 +649,31 @@ CREATE TABLE "follow_up_plan_field_blob" (
     "field_value" TEXT NOT NULL,
 
     CONSTRAINT "follow_up_plan_field_blob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "follow_up_plan_comment" (
+    "id" VARCHAR(32) NOT NULL,
+    "resource_id" TEXT NOT NULL,
+    "parent_id" VARCHAR(32),
+    "reply_to_user_id" VARCHAR(32),
+    "content" VARCHAR(3000) NOT NULL,
+    "organization_id" VARCHAR(32) NOT NULL,
+    "create_user" VARCHAR(32) NOT NULL,
+    "update_user" VARCHAR(32) NOT NULL,
+    "create_time" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "update_time" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "follow_up_plan_comment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "follow_up_plan_comment_mention" (
+    "id" VARCHAR(32) NOT NULL,
+    "comment_id" VARCHAR(32) NOT NULL,
+    "user_id" VARCHAR(32) NOT NULL,
+
+    CONSTRAINT "follow_up_plan_comment_mention_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -2366,6 +2442,36 @@ CREATE INDEX "sys_dict_organization_id_name_idx" ON "sys_dict"("organization_id"
 CREATE INDEX "follow_up_records_tenantId_targetType_targetId_idx" ON "follow_up_records"("tenantId", "targetType", "targetId");
 
 -- CreateIndex
+CREATE INDEX "follow_up_records_tenantId_ownerId_followedAt_idx" ON "follow_up_records"("tenantId", "ownerId", "followedAt");
+
+-- CreateIndex
+CREATE INDEX "follow_up_record_field_resource_id_field_id_field_value_idx" ON "follow_up_record_field"("resource_id", "field_id", "field_value");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "follow_up_record_field_resource_id_field_id_key" ON "follow_up_record_field"("resource_id", "field_id");
+
+-- CreateIndex
+CREATE INDEX "follow_up_record_field_blob_resource_id_idx" ON "follow_up_record_field_blob"("resource_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "follow_up_record_field_blob_resource_id_field_id_key" ON "follow_up_record_field_blob"("resource_id", "field_id");
+
+-- CreateIndex
+CREATE INDEX "follow_record_comment_page_idx" ON "follow_up_record_comment"("organization_id", "resource_id", "parent_id", "create_time");
+
+-- CreateIndex
+CREATE INDEX "follow_up_record_comment_parent_id_idx" ON "follow_up_record_comment"("parent_id");
+
+-- CreateIndex
+CREATE INDEX "follow_up_record_comment_mention_comment_id_idx" ON "follow_up_record_comment_mention"("comment_id");
+
+-- CreateIndex
+CREATE INDEX "follow_up_record_comment_mention_user_id_idx" ON "follow_up_record_comment_mention"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "follow_up_record_comment_mention_comment_id_user_id_key" ON "follow_up_record_comment_mention"("comment_id", "user_id");
+
+-- CreateIndex
 CREATE INDEX "follow_up_plans_tenantId_targetType_targetId_idx" ON "follow_up_plans"("tenantId", "targetType", "targetId");
 
 -- CreateIndex
@@ -2385,6 +2491,21 @@ CREATE INDEX "follow_up_plan_field_blob_resource_id_idx" ON "follow_up_plan_fiel
 
 -- CreateIndex
 CREATE UNIQUE INDEX "follow_up_plan_field_blob_resource_id_field_id_key" ON "follow_up_plan_field_blob"("resource_id", "field_id");
+
+-- CreateIndex
+CREATE INDEX "follow_plan_comment_page_idx" ON "follow_up_plan_comment"("organization_id", "resource_id", "parent_id", "create_time");
+
+-- CreateIndex
+CREATE INDEX "follow_up_plan_comment_parent_id_idx" ON "follow_up_plan_comment"("parent_id");
+
+-- CreateIndex
+CREATE INDEX "follow_up_plan_comment_mention_comment_id_idx" ON "follow_up_plan_comment_mention"("comment_id");
+
+-- CreateIndex
+CREATE INDEX "follow_up_plan_comment_mention_user_id_idx" ON "follow_up_plan_comment_mention"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "follow_up_plan_comment_mention_comment_id_user_id_key" ON "follow_up_plan_comment_mention"("comment_id", "user_id");
 
 -- CreateIndex
 CREATE INDEX "opportunity_stage_config_organization_id_idx" ON "opportunity_stage_config"("organization_id");
@@ -2900,16 +3021,6 @@ CREATE INDEX "custom_form_data_custom_form_id_create_time_idx" ON "custom_form_d
 CREATE INDEX "custom_form_data_field_resource_id_field_id_field_value_idx" ON "custom_form_data_field"("resource_id", "field_id", "field_value");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "custom_form_data_field_top_level_key"
-ON "custom_form_data_field"("resource_id", "field_id")
-WHERE "ref_sub_id" IS NULL;
-
--- CreateIndex
-CREATE UNIQUE INDEX "custom_form_data_field_sub_cell_key"
-ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id", "field_id")
-WHERE "ref_sub_id" IS NOT NULL;
-
--- CreateIndex
 CREATE INDEX "custom_form_data_field_resource_id_ref_sub_id_row_id_idx" ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id");
 
 -- CreateIndex
@@ -2917,16 +3028,6 @@ CREATE INDEX "custom_form_data_field_biz_id_idx" ON "custom_form_data_field"("bi
 
 -- CreateIndex
 CREATE INDEX "custom_form_data_field_blob_resource_id_idx" ON "custom_form_data_field_blob"("resource_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "custom_form_data_field_blob_top_level_key"
-ON "custom_form_data_field_blob"("resource_id", "field_id")
-WHERE "ref_sub_id" IS NULL;
-
--- CreateIndex
-CREATE UNIQUE INDEX "custom_form_data_field_blob_sub_cell_key"
-ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id", "field_id")
-WHERE "ref_sub_id" IS NOT NULL;
 
 -- CreateIndex
 CREATE INDEX "custom_form_data_field_blob_resource_id_ref_sub_id_row_id_idx" ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id");
@@ -3262,10 +3363,34 @@ ALTER TABLE "clue_pool_pick_rule" ADD CONSTRAINT "clue_pool_pick_rule_pool_id_fk
 ALTER TABLE "clue_pool_recycle_rule" ADD CONSTRAINT "clue_pool_recycle_rule_pool_id_fkey" FOREIGN KEY ("pool_id") REFERENCES "clue_pool"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "follow_up_record_field" ADD CONSTRAINT "follow_up_record_field_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "follow_up_records"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_record_field_blob" ADD CONSTRAINT "follow_up_record_field_blob_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "follow_up_records"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_record_comment" ADD CONSTRAINT "follow_up_record_comment_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "follow_up_records"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_record_comment" ADD CONSTRAINT "follow_up_record_comment_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "follow_up_record_comment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_record_comment_mention" ADD CONSTRAINT "follow_up_record_comment_mention_comment_id_fkey" FOREIGN KEY ("comment_id") REFERENCES "follow_up_record_comment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "follow_up_plan_field" ADD CONSTRAINT "follow_up_plan_field_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "follow_up_plans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "follow_up_plan_field_blob" ADD CONSTRAINT "follow_up_plan_field_blob_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "follow_up_plans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_plan_comment" ADD CONSTRAINT "follow_up_plan_comment_resource_id_fkey" FOREIGN KEY ("resource_id") REFERENCES "follow_up_plans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_plan_comment" ADD CONSTRAINT "follow_up_plan_comment_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "follow_up_plan_comment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "follow_up_plan_comment_mention" ADD CONSTRAINT "follow_up_plan_comment_mention_comment_id_fkey" FOREIGN KEY ("comment_id") REFERENCES "follow_up_plan_comment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "opportunity" ADD CONSTRAINT "opportunity_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3588,8 +3713,23 @@ ALTER TABLE "module_configs" ADD CONSTRAINT "module_configs_tenantId_fkey" FOREI
 -- AddForeignKey
 ALTER TABLE "top_navigation_configs" ADD CONSTRAINT "top_navigation_configs_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- MicroMatrix baseline custom indexes
 -- Prisma schema cannot express these PostgreSQL partial unique indexes.
+CREATE UNIQUE INDEX "custom_form_data_field_top_level_key"
+ON "custom_form_data_field"("resource_id", "field_id")
+WHERE "ref_sub_id" IS NULL;
+
+CREATE UNIQUE INDEX "custom_form_data_field_sub_cell_key"
+ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id", "field_id")
+WHERE "ref_sub_id" IS NOT NULL;
+
+CREATE UNIQUE INDEX "custom_form_data_field_blob_top_level_key"
+ON "custom_form_data_field_blob"("resource_id", "field_id")
+WHERE "ref_sub_id" IS NULL;
+
+CREATE UNIQUE INDEX "custom_form_data_field_blob_sub_cell_key"
+ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id", "field_id")
+WHERE "ref_sub_id" IS NOT NULL;
+
 CREATE UNIQUE INDEX "approval_flows_active_form_type_key"
 ON "approval_flows"("tenantId", "formType")
 WHERE "deletedAt" IS NULL;

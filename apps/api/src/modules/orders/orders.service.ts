@@ -211,7 +211,15 @@ export class OrdersService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(user.tenantId, 'order', created.id, dynamicValues, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'order',
+        created.id,
+        dynamicValues,
+        'create',
+        tx,
+        user.id,
+      )
       await this.orderFields.saveProducts(user.tenantId, created.id, products, tx)
       await this.writeSnapshot(tx, user.tenantId, created, config, dynamicValues, products)
       return created
@@ -267,7 +275,15 @@ export class OrdersService {
         },
       })
       if (dto.moduleFields !== undefined) {
-        await this.fieldValues.save(user.tenantId, 'order', dto.id, dynamicValues, 'update', tx)
+        await this.fieldValues.save(
+          user.tenantId,
+          'order',
+          dto.id,
+          dynamicValues,
+          'update',
+          tx,
+          user.id,
+        )
       }
       if (products) await this.orderFields.saveProducts(user.tenantId, dto.id, products, tx)
       const latestProducts =
@@ -400,7 +416,7 @@ export class OrdersService {
         },
       })
       if (stageFields.length) {
-        await this.fieldValues.save(user.tenantId, 'order', dto.id, dynamic, 'update', tx)
+        await this.fieldValues.save(user.tenantId, 'order', dto.id, dynamic, 'update', tx, user.id)
       }
       await tx.orderSnapshot.deleteMany({ where: { orderId: dto.id } })
       await this.writeSnapshot(

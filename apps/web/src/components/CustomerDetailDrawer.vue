@@ -3,8 +3,8 @@ import type { CustomerVO, TeamMemberVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { getCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { customerExtraApi, followUpApi } from '@/api/sales'
-import type { FollowUpVO } from '@micromatrix/shared'
+import { customerExtraApi } from '@/api/sales'
+import FollowRecordPanel from '@/components/follow-records/FollowRecordPanel.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
@@ -23,7 +23,6 @@ const auth = useAuthStore()
 
 const activeTab = ref('contacts')
 const team = ref<TeamMemberVO[]>([])
-const followUps = ref<FollowUpVO[]>([])
 const loading = ref(false)
 const collaborationType = ref<CustomerVO['collaborationType']>(null)
 const resourceCanManageCustomer = ref(false)
@@ -46,20 +45,16 @@ async function loadAll() {
   if (!props.customer) return
   loading.value = true
   try {
-    const [customerRes, teamRes, followRes] = await Promise.all([
+    const [customerRes, teamRes] = await Promise.all([
       getCustomer(props.customer.id, props.pool),
       props.pool
         ? Promise.resolve({ data: [] as TeamMemberVO[] })
         : customerExtraApi.teamList(props.customer.id),
-      props.pool
-        ? Promise.resolve({ data: [] as FollowUpVO[] })
-        : followUpApi.list('customer', props.customer.id),
     ])
     collaborationType.value = customerRes.data.collaborationType ?? null
     resourceCanManageCustomer.value = customerRes.data.canManageCustomer === true
     resourceCanCollaborateWrite.value = customerRes.data.canCollaborateWrite === true
     team.value = teamRes.data
-    followUps.value = followRes.data
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -140,20 +135,14 @@ async function handleTeamRemove(member: TeamMemberVO) {
         </el-tab-pane>
 
         <el-tab-pane label="跟进记录" name="follows">
-          <el-timeline>
-            <el-empty v-if="followUps.length === 0" description="暂无跟进记录" :image-size="60" />
-            <el-timeline-item
-              v-for="record in followUps"
-              :key="record.id"
-              :timestamp="`${new Date(record.createdAt).toLocaleString()} · ${record.ownerName}`"
-              placement="top"
-            >
-              <div class="text-sm">
-                <el-tag size="small" class="mr-1">{{ record.type }}</el-tag>
-                {{ record.content }}
-              </div>
-            </el-timeline-item>
-          </el-timeline>
+          <FollowRecordPanel
+            v-if="customer"
+            target-type="customer"
+            :target-id="customer.id"
+            :target-name="customer.name"
+            :allow-create="resourceCanCollaborateWrite && auth.hasPerm('customer:update')"
+            :allow-manage="resourceCanCollaborateWrite && auth.hasPerm('customer:update')"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="客户关系" name="relations">
@@ -165,11 +154,7 @@ async function handleTeamRemove(member: TeamMemberVO) {
         </el-tab-pane>
 
         <el-tab-pane label="负责人历史" name="owner-history">
-          <OwnerHistoryTimeline
-            v-if="customer"
-            module="customer"
-            :resource-id="customer.id"
-          />
+          <OwnerHistoryTimeline v-if="customer" module="customer" :resource-id="customer.id" />
         </el-tab-pane>
       </el-tabs>
     </div>

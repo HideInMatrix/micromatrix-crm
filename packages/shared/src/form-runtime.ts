@@ -1,4 +1,4 @@
-import type { DataSourceRecordVO, FieldLinkOption, FieldVO } from './metadata'
+import type { DataSourceRecordVO, FieldLinkOption, FieldVO, FormLinkScenario } from './metadata'
 
 export interface FormRuntimeState {
   values: Record<string, unknown>
@@ -149,7 +149,7 @@ function linkedOptionLabels(field: FieldVO, value: unknown): string[] {
   return normalizedOptionValues(value).map((item) => optionMap.get(item) ?? item)
 }
 
-function convertLinkedValue(target: FieldVO, source: FieldVO, value: unknown): unknown {
+export function convertLinkedFieldValue(target: FieldVO, source: FieldVO, value: unknown): unknown {
   if (isEmptyFormValue(value)) return undefined
   if (target.type === 'data_source' || target.type === 'data_source_multiple') {
     if (!['data_source', 'data_source_multiple'].includes(source.type)) return undefined
@@ -183,6 +183,57 @@ function convertLinkedValue(target: FieldVO, source: FieldVO, value: unknown): u
   return undefined
 }
 
+/** Cordys formLink 设计器的字段可选边界；比 DATA_SOURCE 填充更严格。 */
+export function isFormLinkFieldCompatible(target: FieldVO, source: FieldVO): boolean {
+  if (target.type === 'formula' || ['sub_product', 'picture', 'attachment'].includes(target.type)) {
+    return false
+  }
+  if (['sub_product', 'picture', 'attachment'].includes(source.type)) return false
+
+  if (target.type === 'text' || target.type === 'textarea') return true
+
+  if (target.type === 'data_source' || target.type === 'data_source_multiple') {
+    if (!['data_source', 'data_source_multiple'].includes(source.type)) return false
+    if (target.config?.dataSourceType !== source.config?.dataSourceType) return false
+    return target.type === 'data_source_multiple' || source.type === 'data_source'
+  }
+
+  if (target.type === 'select' || target.type === 'radio') {
+    return source.type === 'select' || source.type === 'radio'
+  }
+  if (target.type === 'multiselect' || target.type === 'checkbox') {
+    return ['select', 'radio', 'multiselect', 'checkbox'].includes(source.type)
+  }
+
+  return target.type === source.type
+}
+
+/**
+ * Cordys formLink 场景运行时。sourceValues / 返回值均以字段 key 为键，
+ * 配置本身严格使用字段 ID，避免业务 key 改名后产生隐式映射。
+ */
+export function applyFormLinkScenario(
+  sourceFields: FieldVO[],
+  targetFields: FieldVO[],
+  scenario: FormLinkScenario | undefined,
+  sourceValues: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!scenario) return {}
+  const sourceById = new Map(sourceFields.map((field) => [field.id, field]))
+  const targetById = new Map(targetFields.map((field) => [field.id, field]))
+  const output: Record<string, unknown> = {}
+
+  for (const link of scenario.linkFields) {
+    if (!link.enable) continue
+    const target = targetById.get(link.current)
+    const source = sourceById.get(link.link)
+    if (!target || !source || !isFormLinkFieldCompatible(target, source)) continue
+    const converted = convertLinkedFieldValue(target, source, sourceValues[source.key])
+    if (converted !== undefined) output[target.key] = converted
+  }
+  return output
+}
+
 /**
  * DATA_SOURCE 选中记录后的字段填充。只处理配置允许的顶层字段和 SUB_PRODUCT 行；
  * 权限与引用存在性仍由各数据源 API / 保存 API 负责。
@@ -212,7 +263,7 @@ export function applyDataSourceRecordLinks(
     }
     const source = sourceById.get(link.link)
     if (!source) continue
-    const linked = convertLinkedValue(target, source, record.values[source.id])
+    const linked = convertLinkedFieldValue(target, source, record.values[source.id])
     if (linked === undefined) delete values[target.key]
     else values[target.key] = linked
   }
@@ -244,7 +295,7 @@ export function applyDataSourceRecordLinks(
         const target = targetChildren.get(childLink.current)
         const source = sourceChildren.get(childLink.link)
         if (!target || !source || target.type === 'formula') continue
-        const linked = convertLinkedValue(target, source, sourceRow[source.key])
+        const linked = convertLinkedFieldValue(target, source, sourceRow[source.key])
         if (linked !== undefined) row[target.key] = linked
       }
       return [row]

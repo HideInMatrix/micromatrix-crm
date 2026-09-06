@@ -9,6 +9,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi } from '@/api/sales'
+import FollowRecordFormDrawer from '@/components/follow-records/FollowRecordFormDrawer.vue'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
 
 const loading = ref(false)
@@ -25,6 +26,8 @@ const query = reactive({
 })
 const dialogVisible = ref(false)
 const editing = ref<FollowUpPlanVO | null>(null)
+const converting = ref<FollowUpPlanVO | null>(null)
+const convertVisible = ref(false)
 
 const statusTypes: Record<FollowUpPlanStatus, 'info' | 'primary' | 'success' | 'warning'> = {
   PREPARED: 'info',
@@ -109,18 +112,9 @@ async function updateStatus(plan: FollowUpPlanVO, status: FollowUpPlanStatus) {
   }
 }
 
-async function convert(plan: FollowUpPlanVO) {
-  const confirmed = await ElMessageBox.confirm('确认生成跟进记录？该操作不可重复。', '转跟进记录', {
-    type: 'warning',
-  }).catch(() => false)
-  if (!confirmed) return
-  try {
-    await followUpPlanApi.convert(plan.id)
-    ElMessage.success('已生成跟进记录')
-    await load()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
+function convert(plan: FollowUpPlanVO) {
+  converting.value = plan
+  convertVisible.value = true
 }
 
 async function remove(plan: FollowUpPlanVO) {
@@ -259,5 +253,15 @@ onMounted(async () => {
     </div>
 
     <FollowUpPlanDialog v-model="dialogVisible" :plan="editing" @saved="load" />
+    <FollowRecordFormDrawer
+      v-if="converting"
+      v-model="convertVisible"
+      :target-type="converting.targetType"
+      :target-id="converting.targetId"
+      :target-name="converting.targetName"
+      :customer-id="converting.customerId"
+      :source-plan-id="converting.id"
+      @saved="load"
+    />
   </el-card>
 </template>

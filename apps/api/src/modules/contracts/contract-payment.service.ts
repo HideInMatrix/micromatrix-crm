@@ -310,6 +310,7 @@ export class ContractPaymentPlanService {
         customData,
         'create',
         tx,
+        user.id,
       )
       return row
     })
@@ -351,6 +352,7 @@ export class ContractPaymentPlanService {
           customData,
           'update',
           tx,
+          user.id,
         )
       }
     })
@@ -981,6 +983,7 @@ export class ContractPaymentRecordService {
         customData,
         'create',
         tx,
+        user.id,
       )
       return row
     })
@@ -1025,6 +1028,7 @@ export class ContractPaymentRecordService {
           customData,
           'update',
           tx,
+          user.id,
         )
       }
     })

@@ -1,8 +1,11 @@
 import { randomBytes } from 'node:crypto'
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import {
+  applyFormLinkScenario,
   evaluateFormula,
+  FORM_LINK_SCENARIO_KEYS,
   formulaVariables,
+  isFormLinkFieldCompatible,
   isSubTableFieldType,
   type DataSourceSubFieldLinkField,
   type FieldConfig,
@@ -10,6 +13,9 @@ import {
   type FieldOption,
   type FieldType,
   type FieldVO,
+  type FormLinkProp,
+  type FormLinkScenario,
+  type FormLinkScenarioKey,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import type { Prisma } from '../../generated/prisma/client'
@@ -102,12 +108,31 @@ export class ModuleFormsService {
     return fields.map((field) => this.toVO(field, formKey))
   }
 
+  async resolveFormLink(
+    organizationId: string,
+    targetFormKey: string,
+    sourceFormKey: string,
+    scenarioKey: FormLinkScenarioKey,
+    sourceValues: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const [targetConfig, sourceConfig] = await Promise.all([
+      this.getConfig(organizationId, targetFormKey),
+      this.getConfig(organizationId, sourceFormKey),
+    ])
+    const linkProp = this.parseFormLinkProp(targetConfig.formProp['linkProp'])
+    const scenario = (linkProp[sourceFormKey] ?? []).find((item) => item.key === scenarioKey)
+    if (!scenario) return {}
+    this.validateFormLinkScenario(targetConfig.fields, sourceConfig.fields, scenario)
+    return applyFormLinkScenario(sourceConfig.fields, targetConfig.fields, scenario, sourceValues)
+  }
+
   async saveFormProp(
     organizationId: string,
     formKey: string,
     formProp: Record<string, unknown>,
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
+    await this.validateFormPropLinkage(organizationId, formKey, formProp)
     await this.prisma.$transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const now = BigInt(Date.now())
@@ -1077,6 +1102,10 @@ export class ModuleFormsService {
       tx.contractInvoiceFieldBlob.count({ where: { fieldId } }),
       tx.orderField.count({ where: { fieldId } }),
       tx.orderFieldBlob.count({ where: { fieldId } }),
+      tx.followUpPlanField.count({ where: { fieldId } }),
+      tx.followUpPlanFieldBlob.count({ where: { fieldId } }),
+      tx.followUpRecordField.count({ where: { fieldId } }),
+      tx.followUpRecordFieldBlob.count({ where: { fieldId } }),
       tx.customFormDataField.count({ where: { fieldId } }),
       tx.customFormDataFieldBlob.count({ where: { fieldId } }),
     ])
@@ -1109,6 +1138,10 @@ export class ModuleFormsService {
       tx.contractInvoiceFieldBlob.deleteMany({ where: { fieldId } }),
       tx.orderField.deleteMany({ where: { fieldId } }),
       tx.orderFieldBlob.deleteMany({ where: { fieldId } }),
+      tx.followUpPlanField.deleteMany({ where: { fieldId } }),
+      tx.followUpPlanFieldBlob.deleteMany({ where: { fieldId } }),
+      tx.followUpRecordField.deleteMany({ where: { fieldId } }),
+      tx.followUpRecordFieldBlob.deleteMany({ where: { fieldId } }),
       tx.customFormDataField.deleteMany({ where: { fieldId } }),
       tx.customFormDataFieldBlob.deleteMany({ where: { fieldId } }),
     ])
@@ -1123,6 +1156,88 @@ export class ModuleFormsService {
       'attachment',
       'data_source_multiple',
     ].includes(type)
+  }
+
+  private async validateFormPropLinkage(
+    organizationId: string,
+    targetFormKey: string,
+    formProp: Record<string, unknown>,
+  ): Promise<void> {
+    const linkProp = this.parseFormLinkProp(formProp['linkProp'])
+    const sourceKeys = Object.keys(linkProp)
+    if (!sourceKeys.length) return
+    const targetFields = await this.listFields(organizationId, targetFormKey)
+    for (const sourceFormKey of sourceKeys) {
+      const sourceFields = await this.listFields(organizationId, sourceFormKey)
+      const scenarios = linkProp[sourceFormKey] ?? []
+      if (new Set(scenarios.map((scenario) => scenario.key)).size !== scenarios.length) {
+        throw new BadRequestException(`表单联动场景重复：${sourceFormKey}`)
+      }
+      scenarios.forEach((scenario) =>
+        this.validateFormLinkScenario(targetFields, sourceFields, scenario),
+      )
+    }
+  }
+
+  private validateFormLinkScenario(
+    targetFields: FieldVO[],
+    sourceFields: FieldVO[],
+    scenario: FormLinkScenario,
+  ): void {
+    const targetById = new Map(targetFields.map((field) => [field.id, field]))
+    const sourceById = new Map(sourceFields.map((field) => [field.id, field]))
+    const targetIds = scenario.linkFields.map((link) => link.current)
+    if (new Set(targetIds).size !== targetIds.length) {
+      throw new BadRequestException(`表单联动「${scenario.key}」不能重复填充同一目标字段`)
+    }
+    for (const link of scenario.linkFields) {
+      const target = targetById.get(link.current)
+      const source = sourceById.get(link.link)
+      if (!target) throw new BadRequestException(`表单联动目标字段不存在：${link.current}`)
+      if (!source) throw new BadRequestException(`表单联动来源字段不存在：${link.link}`)
+      if (!isFormLinkFieldCompatible(target, source)) {
+        throw new BadRequestException(`「${source.label}」不能填充到「${target.label}」`)
+      }
+    }
+  }
+
+  private parseFormLinkProp(value: unknown): FormLinkProp {
+    if (value === undefined || value === null) return {}
+    if (!this.isRecord(value)) throw new BadRequestException('表单联动配置格式错误')
+    const result: FormLinkProp = {}
+    for (const [sourceFormKey, rawScenarios] of Object.entries(value)) {
+      if (!sourceFormKey.trim() || !Array.isArray(rawScenarios)) {
+        throw new BadRequestException('表单联动来源表单配置格式错误')
+      }
+      result[sourceFormKey] = rawScenarios.map((rawScenario) => {
+        if (!this.isRecord(rawScenario)) throw new BadRequestException('表单联动场景格式错误')
+        const key = rawScenario['key']
+        const rawLinks = rawScenario['linkFields']
+        if (
+          typeof key !== 'string' ||
+          !(FORM_LINK_SCENARIO_KEYS as readonly string[]).includes(key) ||
+          !Array.isArray(rawLinks)
+        ) {
+          throw new BadRequestException('表单联动场景格式错误')
+        }
+        const linkFields = rawLinks.map((rawLink) => {
+          if (!this.isRecord(rawLink)) throw new BadRequestException('表单联动字段格式错误')
+          const current = rawLink['current']
+          const link = rawLink['link']
+          const enable = rawLink['enable']
+          if (
+            typeof current !== 'string' ||
+            typeof link !== 'string' ||
+            typeof enable !== 'boolean'
+          ) {
+            throw new BadRequestException('表单联动字段格式错误')
+          }
+          return { current, link, enable }
+        })
+        return { key: key as FormLinkScenarioKey, linkFields }
+      })
+    }
+    return result
   }
 
   private parseObject(value?: string | null): Record<string, unknown> {

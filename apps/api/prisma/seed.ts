@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { MESSAGE_TASK_DEFINITIONS } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '../src/generated/prisma/client'
@@ -37,6 +38,29 @@ async function main() {
     update: {},
     create: { name: '微矩阵（演示租户）', slug: 'demo' },
   })
+
+  // ===== 消息任务默认配置 =====
+  // 只补缺失项，不覆盖租户已经调整过的通知开关/配置。
+  for (const definition of MESSAGE_TASK_DEFINITIONS) {
+    await prisma.messageTaskSetting.upsert({
+      where: {
+        tenantId_module_event: {
+          tenantId: tenant.id,
+          module: definition.module,
+          event: definition.event,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        module: definition.module,
+        event: definition.event,
+        systemEnabled: definition.defaultSystemEnabled,
+        emailEnabled: definition.defaultEmailEnabled,
+        weComEnabled: false,
+      },
+    })
+  }
 
   const hasSubscription = await prisma.subscription.findFirst({ where: { tenantId: tenant.id } })
   if (!hasSubscription) {
@@ -317,6 +341,7 @@ async function main() {
       | 'contractPaymentPlan'
       | 'contractPaymentRecord'
       | 'order'
+      | 'followRecord'
       | 'followPlan',
   ) => {
     const form = await prisma.sysModuleForm.upsert({
@@ -394,7 +419,26 @@ async function main() {
   await ensureModuleForm('contractPaymentPlan')
   await ensureModuleForm('contractPaymentRecord')
   await ensureModuleForm('order')
+  const followRecordForm = await ensureModuleForm('followRecord')
   await ensureModuleForm('followPlan')
+
+  const followRecordBlob = await prisma.sysModuleFormBlob.findUnique({
+    where: { id: followRecordForm.id },
+  })
+  const followRecordProp = JSON.parse(followRecordBlob?.prop || '{}') as Record<string, unknown>
+  if (!followRecordProp.linkProp) {
+    followRecordProp.linkProp = {
+      lead: [{ key: 'CLUE_TO_RECORD', linkFields: [] }],
+      customer: [{ key: 'CUSTOMER_TO_RECORD', linkFields: [] }],
+      opportunity: [{ key: 'OPPORTUNITY_TO_RECORD', linkFields: [] }],
+      followPlan: [{ key: 'PLAN_TO_RECORD', linkFields: [] }],
+    }
+    await prisma.sysModuleFormBlob.upsert({
+      where: { id: followRecordForm.id },
+      create: { id: followRecordForm.id, prop: JSON.stringify(followRecordProp) },
+      update: { prop: JSON.stringify(followRecordProp) },
+    })
+  }
 
   const contractStages = [
     ['待签署', 'AFOOT'],

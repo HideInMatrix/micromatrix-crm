@@ -9,8 +9,9 @@ const props = withDefaults(
     max?: number
     maxSizeMb?: number
     readonly?: boolean
+    objectUrl?: (id: string) => Promise<string>
   }>(),
-  { max: 10, maxSizeMb: 20, readonly: false },
+  { max: 10, maxSizeMb: 20, readonly: false, objectUrl: undefined },
 )
 
 const model = defineModel<string[]>({ default: () => [] })
@@ -31,7 +32,9 @@ watch(
       [...wanted].map(async (id) => {
         if (previewUrls.value[id]) return
         try {
-          previewUrls.value[id] = await attachmentApi.objectUrl(id)
+          previewUrls.value[id] = props.objectUrl
+            ? await props.objectUrl(id)
+            : await attachmentApi.objectUrl(id)
         } catch {
           // Keep the key visible even when a previously uploaded image is no longer available.
         }

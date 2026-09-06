@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import {
   filterOpsForType,
+  type AttachmentVO,
   type FieldType,
   type FieldVO,
   type FilterCondition,
@@ -27,8 +28,26 @@ export type ResourceFieldType =
   | 'contractPaymentRecord'
   | 'invoice'
   | 'order'
+  | 'followRecord'
   | 'followPlan'
 export type ResourceFieldSaveMode = 'create' | 'update'
+
+export const RESOURCE_FIELD_TYPES: ResourceFieldType[] = [
+  'clue',
+  'customer',
+  'customerContact',
+  'opportunity',
+  'product',
+  'productPrice',
+  'quotation',
+  'contract',
+  'contractPaymentPlan',
+  'contractPaymentRecord',
+  'invoice',
+  'order',
+  'followRecord',
+  'followPlan',
+]
 
 interface ResourceConfig {
   formKey:
@@ -44,6 +63,7 @@ interface ResourceConfig {
     | 'contractPaymentRecord'
     | 'invoice'
     | 'order'
+    | 'followRecord'
     | 'followPlan'
   resourceTable:
     | 'clue'
@@ -58,6 +78,7 @@ interface ResourceConfig {
     | 'contract_payment_record'
     | 'contract_invoice'
     | 'sales_order'
+    | 'follow_up_records'
     | 'follow_up_plans'
   normalTable:
     | 'clue_field'
@@ -72,6 +93,7 @@ interface ResourceConfig {
     | 'contract_payment_record_field'
     | 'contract_invoice_field'
     | 'sales_order_field'
+    | 'follow_up_record_field'
     | 'follow_up_plan_field'
   blobTable:
     | 'clue_field_blob'
@@ -86,6 +108,7 @@ interface ResourceConfig {
     | 'contract_payment_record_field_blob'
     | 'contract_invoice_field_blob'
     | 'sales_order_field_blob'
+    | 'follow_up_record_field_blob'
     | 'follow_up_plan_field_blob'
   organizationColumn?: 'organization_id' | '"tenantId"'
 }
@@ -95,6 +118,13 @@ interface ValidatedFieldValue {
   value: unknown
   serialized: string | null
   storage: 'normal' | 'blob'
+}
+
+const RESOURCE_FIELD_FILE_TYPES = new Set<FieldType>(['attachment', 'picture'])
+export const RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX = 'resourceField:'
+
+export function resourceFieldAttachmentTarget(resourceType: ResourceFieldType): string {
+  return `${RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX}${resourceType}`
 }
 
 const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
@@ -177,6 +207,13 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     blobTable: 'follow_up_plan_field_blob',
     organizationColumn: '"tenantId"',
   },
+  followRecord: {
+    formKey: 'followRecord',
+    resourceTable: 'follow_up_records',
+    normalTable: 'follow_up_record_field',
+    blobTable: 'follow_up_record_field_blob',
+    organizationColumn: '"tenantId"',
+  },
 }
 
 @Injectable()
@@ -218,6 +255,7 @@ export class ResourceFieldValueService {
     values: Record<string, unknown>,
     mode: ResourceFieldSaveMode,
     tx: Prisma.TransactionClient,
+    actorId: string,
   ): Promise<Record<string, unknown>> {
     await this.assertResource(tx, organizationId, resourceType, resourceId)
     const fields = await this.moduleForms.listFieldsInTransaction(
@@ -232,6 +270,16 @@ export class ResourceFieldValueService {
       fields,
       values,
       { mode, resourceId },
+    )
+
+    await this.claimResourceFieldAttachments(
+      tx,
+      organizationId,
+      resourceType,
+      resourceId,
+      fields,
+      validated,
+      actorId,
     )
 
     for (const item of validated.filter(
@@ -282,6 +330,66 @@ export class ResourceFieldValueService {
       const values = result.get(row.resourceId)
       if (!field || !values) continue
       values[field.key] = this.deserialize(field.type, row.fieldValue)
+    }
+    return result
+  }
+
+  async isAttachmentReferenced(
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    resourceId: string,
+    attachmentId: string,
+  ): Promise<boolean> {
+    const fields = await this.moduleForms.listFields(
+      organizationId,
+      RESOURCE_CONFIG[resourceType].formKey,
+    )
+    const fileFieldIds = new Set(
+      fields.filter((field) => RESOURCE_FIELD_FILE_TYPES.has(field.type)).map((field) => field.id),
+    )
+    if (!fileFieldIds.size) return false
+    const [normal, blob] = await this.findValues(this.prisma, organizationId, resourceType, [
+      resourceId,
+    ])
+    return [...normal, ...blob].some(
+      (row) =>
+        fileFieldIds.has(row.fieldId) && this.decodeFileIds(row.fieldValue).includes(attachmentId),
+    )
+  }
+
+  async buildAttachmentMap(
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    resourceId: string,
+  ): Promise<Record<string, AttachmentVO[]>> {
+    const fields = await this.moduleForms.listFields(
+      organizationId,
+      RESOURCE_CONFIG[resourceType].formKey,
+    )
+    const fileFields = fields.filter((field) => RESOURCE_FIELD_FILE_TYPES.has(field.type))
+    const result: Record<string, AttachmentVO[]> = Object.fromEntries(
+      fileFields.map((field) => [field.key, []]),
+    )
+    if (!fileFields.length) return result
+    const values =
+      (await this.load(organizationId, resourceType, [resourceId])).get(resourceId) ?? {}
+    const ids = fileFields.flatMap((field) => this.fileIds(values[field.key]))
+    if (!ids.length) return result
+    const rows = await this.prisma.attachment.findMany({
+      where: {
+        tenantId: organizationId,
+        targetType: resourceFieldAttachmentTarget(resourceType),
+        targetId: resourceId,
+        id: { in: [...new Set(ids)] },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+    const byId = new Map(rows.map((row) => [row.id, row]))
+    for (const field of fileFields) {
+      result[field.key] = this.fileIds(values[field.key]).flatMap((id) => {
+        const row = byId.get(id)
+        return row ? [this.toAttachmentVO(row)] : []
+      })
     }
     return result
   }
@@ -466,12 +574,25 @@ export class ResourceFieldValueService {
         return String(value)
       case 'multiselect':
       case 'checkbox':
-      case 'picture': {
+      case 'picture':
+      case 'attachment': {
         if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
           throw new BadRequestException(`「${field.label}」必须是字符串数组`)
         }
-        if (field.type !== 'picture') this.assertOptions(field, value)
-        return JSON.stringify(value)
+        const ids = [...new Set(value.map((item) => item.trim()).filter(Boolean))]
+        if (ids.length !== value.length) {
+          throw new BadRequestException(`「${field.label}」包含重复或空的文件 ID`)
+        }
+        if (field.type === 'attachment' && field.config?.onlyOne && ids.length > 1) {
+          throw new BadRequestException(`「${field.label}」仅允许一个附件`)
+        }
+        if (field.type === 'picture') {
+          const limit = Math.max(1, field.config?.uploadLimit ?? 10)
+          if (ids.length > limit)
+            throw new BadRequestException(`「${field.label}」最多上传 ${limit} 张图片`)
+        }
+        if (!RESOURCE_FIELD_FILE_TYPES.has(field.type)) this.assertOptions(field, ids)
+        return JSON.stringify(ids)
       }
       case 'select':
       case 'radio':
@@ -504,7 +625,7 @@ export class ResourceFieldValueService {
   }
 
   private deserialize(type: FieldType, value: string): unknown {
-    if (['multiselect', 'checkbox', 'picture'].includes(type)) {
+    if (['multiselect', 'checkbox', 'picture', 'attachment'].includes(type)) {
       try {
         const parsed: unknown = JSON.parse(value)
         return Array.isArray(parsed) ? parsed : []
@@ -526,8 +647,172 @@ export class ResourceFieldValueService {
   }
 
   private storageFor(type: FieldType, serialized: string | null): 'normal' | 'blob' {
-    if (['textarea', 'multiselect', 'checkbox', 'picture'].includes(type)) return 'blob'
+    if (['textarea', 'multiselect', 'checkbox', 'picture', 'attachment'].includes(type))
+      return 'blob'
     return serialized !== null && serialized.length > 255 ? 'blob' : 'normal'
+  }
+
+  private attachmentLimitBytes(field: FieldVO): number {
+    if (field.type === 'picture')
+      return Math.max(1, field.config?.uploadSizeLimit ?? 20) * 1024 * 1024
+    const configured = field.config?.limitSize?.trim()
+    if (!configured) return 20 * 1024 * 1024
+    const match = configured.match(/^(\d+(?:\.\d+)?)(KB|MB)$/i)
+    if (!match) return 20 * 1024 * 1024
+    return Number(match[1]) * (match[2]?.toUpperCase() === 'KB' ? 1024 : 1024 * 1024)
+  }
+
+  private decodeFileIds(value: string): string[] {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+        : []
+    } catch {
+      return []
+    }
+  }
+
+  private fileIds(value: unknown): string[] {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+      : []
+  }
+
+  private toAttachmentVO(row: {
+    id: string
+    name: string
+    size: number
+    mime: string | null
+    targetType: string | null
+    targetId: string | null
+    uploaderId: string | null
+    createdAt: Date
+  }): AttachmentVO {
+    return {
+      id: row.id,
+      name: row.name,
+      size: row.size,
+      mime: row.mime,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      uploaderId: row.uploaderId,
+      createdAt: row.createdAt.toISOString(),
+    }
+  }
+
+  private async claimResourceFieldAttachments(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    resourceId: string,
+    fields: FieldVO[],
+    validated: ValidatedFieldValue[],
+    actorId: string,
+  ): Promise<void> {
+    const fileItems = validated.filter((item) => RESOURCE_FIELD_FILE_TYPES.has(item.field.type))
+    if (!fileItems.length) return
+
+    const changedFieldIds = new Set(fileItems.map((item) => item.field.id))
+    const fileFieldIds = new Set(
+      fields.filter((field) => RESOURCE_FIELD_FILE_TYPES.has(field.type)).map((field) => field.id),
+    )
+    const [currentNormal, currentBlob] = await this.findValues(tx, organizationId, resourceType, [
+      resourceId,
+    ])
+    const occupiedByUnchangedField = new Set<string>()
+    for (const row of [...currentNormal, ...currentBlob]) {
+      if (!fileFieldIds.has(row.fieldId) || changedFieldIds.has(row.fieldId)) continue
+      for (const id of this.decodeFileIds(row.fieldValue)) occupiedByUnchangedField.add(id)
+    }
+
+    const idsByField = new Map<string, string[]>()
+    const allIds: string[] = []
+    for (const item of fileItems) {
+      const ids = Array.isArray(item.value)
+        ? item.value.filter(
+            (value): value is string => typeof value === 'string' && Boolean(value.trim()),
+          )
+        : []
+      idsByField.set(item.field.id, ids)
+      allIds.push(...ids)
+    }
+    if (new Set(allIds).size !== allIds.length) {
+      throw new BadRequestException('同一个文件不能同时绑定到多个图片或附件字段')
+    }
+    if (allIds.some((id) => occupiedByUnchangedField.has(id))) {
+      throw new BadRequestException('文件已绑定到当前资源的其他字段')
+    }
+    if (!allIds.length) return
+
+    const rows = await tx.attachment.findMany({
+      where: { tenantId: organizationId, id: { in: allIds } },
+      select: {
+        id: true,
+        uploaderId: true,
+        name: true,
+        size: true,
+        mime: true,
+        targetType: true,
+        targetId: true,
+      },
+    })
+    if (rows.length !== allIds.length) throw new BadRequestException('文件包含不存在的记录')
+    const rowMap = new Map(rows.map((row) => [row.id, row]))
+    const targetType = resourceFieldAttachmentTarget(resourceType)
+    const tempIds: string[] = []
+
+    for (const item of fileItems) {
+      const accepted = (item.field.config?.accept ?? '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean)
+      const limitBytes = this.attachmentLimitBytes(item.field)
+      for (const id of idsByField.get(item.field.id) ?? []) {
+        const row = rowMap.get(id)
+        if (!row) throw new BadRequestException('文件不存在')
+        const temporary = row.targetType === null && row.targetId === null
+        const current = row.targetType === targetType && row.targetId === resourceId
+        if (temporary) {
+          if (row.uploaderId !== actorId) {
+            throw new BadRequestException(`「${item.field.label}」包含其他成员上传的临时文件`)
+          }
+          tempIds.push(row.id)
+        } else if (!current) {
+          throw new BadRequestException(`「${item.field.label}」包含已绑定到其他业务对象的文件`)
+        }
+        if (item.field.type === 'picture' && !row.mime?.startsWith('image/')) {
+          throw new BadRequestException(`「${item.field.label}」仅允许图片文件：${row.name}`)
+        }
+        if (
+          item.field.type === 'attachment' &&
+          accepted.length &&
+          !accepted.some((extension) => row.name.toLowerCase().endsWith(extension))
+        ) {
+          throw new BadRequestException(`「${item.field.label}」包含不允许的文件类型：${row.name}`)
+        }
+        if (row.size > limitBytes) {
+          throw new BadRequestException(
+            `「${item.field.label}」文件超出单文件大小限制：${row.name}`,
+          )
+        }
+      }
+    }
+
+    if (!tempIds.length) return
+    const result = await tx.attachment.updateMany({
+      where: {
+        tenantId: organizationId,
+        uploaderId: actorId,
+        id: { in: tempIds },
+        targetType: null,
+        targetId: null,
+      },
+      data: { targetType, targetId: resourceId },
+    })
+    if (result.count !== tempIds.length) {
+      throw new BadRequestException('文件状态已变化，请刷新后重试')
+    }
   }
 
   private async assertResource(
@@ -595,6 +880,11 @@ export class ResourceFieldValueService {
     else if (resourceType === 'order')
       resource = await tx.order.findFirst({
         where: { id: resourceId, organizationId },
+        select: { id: true },
+      })
+    else if (resourceType === 'followRecord')
+      resource = await tx.followUpRecord.findFirst({
+        where: { id: resourceId, tenantId: organizationId },
         select: { id: true },
       })
     else
@@ -675,7 +965,24 @@ export class ResourceFieldValueService {
         item.storage === 'blob'
           ? await client.contractInvoiceFieldBlob.findFirst({ where, select: { id: true } })
           : await client.contractInvoiceField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'followPlan') {
+    else if (resourceType === 'followRecord') {
+      const followRecordWhere = {
+        fieldId: item.field.id,
+        fieldValue: item.serialized,
+        resourceId: excludeResourceId ? { not: excludeResourceId } : undefined,
+        resource: { tenantId: organizationId },
+      }
+      repeated =
+        item.storage === 'blob'
+          ? await client.followUpRecordFieldBlob.findFirst({
+              where: followRecordWhere,
+              select: { id: true },
+            })
+          : await client.followUpRecordField.findFirst({
+              where: followRecordWhere,
+              select: { id: true },
+            })
+    } else if (resourceType === 'followPlan') {
       const followPlanWhere = {
         fieldId: item.field.id,
         fieldValue: item.serialized,
@@ -762,6 +1069,11 @@ export class ResourceFieldValueService {
         tx.contractInvoiceField.deleteMany({ where }),
         tx.contractInvoiceFieldBlob.deleteMany({ where }),
       ])
+    else if (resourceType === 'followRecord')
+      await Promise.all([
+        tx.followUpRecordField.deleteMany({ where }),
+        tx.followUpRecordFieldBlob.deleteMany({ where }),
+      ])
     else if (resourceType === 'followPlan')
       await Promise.all([
         tx.followUpPlanField.deleteMany({ where }),
@@ -824,6 +1136,9 @@ export class ResourceFieldValueService {
     } else if (resourceType === 'invoice') {
       if (normalData.length) await tx.contractInvoiceField.createMany({ data: normalData })
       if (blobData.length) await tx.contractInvoiceFieldBlob.createMany({ data: blobData })
+    } else if (resourceType === 'followRecord') {
+      if (normalData.length) await tx.followUpRecordField.createMany({ data: normalData })
+      if (blobData.length) await tx.followUpRecordFieldBlob.createMany({ data: blobData })
     } else if (resourceType === 'followPlan') {
       if (normalData.length) await tx.followUpPlanField.createMany({ data: normalData })
       if (blobData.length) await tx.followUpPlanFieldBlob.createMany({ data: blobData })
@@ -834,7 +1149,7 @@ export class ResourceFieldValueService {
   }
 
   private async findValues(
-    client: PrismaService,
+    client: PrismaService | Prisma.TransactionClient,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceIds: string[],
@@ -901,6 +1216,16 @@ export class ResourceFieldValueService {
         client.contractInvoiceField.findMany({ where, select }),
         client.contractInvoiceFieldBlob.findMany({ where, select }),
       ])
+    if (resourceType === 'followRecord') {
+      const followRecordWhere = {
+        resourceId: { in: resourceIds },
+        resource: { tenantId: organizationId },
+      }
+      return Promise.all([
+        client.followUpRecordField.findMany({ where: followRecordWhere, select }),
+        client.followUpRecordFieldBlob.findMany({ where: followRecordWhere, select }),
+      ])
+    }
     if (resourceType === 'followPlan') {
       const followPlanWhere = {
         resourceId: { in: resourceIds },

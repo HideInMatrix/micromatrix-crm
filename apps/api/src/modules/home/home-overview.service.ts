@@ -96,11 +96,12 @@ export class HomeOverviewService {
       this.prisma.approvalTask.count({
         where: { tenantId, approverId: user.id, status: 'PENDING' },
       }),
-      this.prisma.followUpRecord.count({
+      this.prisma.followUpPlan.count({
         where: {
           tenantId,
           ownerId: user.id,
-          nextFollowAt: {
+          status: { in: ['PREPARED', 'UNDERWAY'] },
+          estimatedAt: {
             gte: new Date(Date.now() - 24 * 3600 * 1000),
             lte: new Date(Date.now() + 3 * 24 * 3600 * 1000),
           },
@@ -160,10 +161,7 @@ export class HomeOverviewService {
   /** 本月业绩排行（赢单金额 / 回款金额 TOP10） */
   private async loadRanking(user: AuthUser) {
     const since = monthStart()
-    const directScope = await this.dataScope.directOwnerFilter(
-      user,
-      'menu:dashboard',
-    )
+    const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const opportunityScope = directScope as Prisma.OpportunityWhereInput
     const paymentRecordScope = directScope as Prisma.ContractPaymentRecordWhereInput
 
@@ -223,10 +221,7 @@ export class HomeOverviewService {
   /** 近 6 个月趋势：赢单金额 / 回款金额 */
   private async loadTrend(user: AuthUser) {
     const since = monthStart(-5)
-    const directScope = await this.dataScope.directOwnerFilter(
-      user,
-      'menu:dashboard',
-    )
+    const directScope = await this.dataScope.directOwnerFilter(user, 'menu:dashboard')
     const opportunityScope = directScope as Prisma.OpportunityWhereInput
     const paymentRecordScope = directScope as Prisma.ContractPaymentRecordWhereInput
 

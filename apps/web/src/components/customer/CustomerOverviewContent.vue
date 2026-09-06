@@ -11,7 +11,6 @@ import {
   type Customer360Resource,
   type CustomerVO,
   type FieldVO,
-  type FollowUpVO,
   type TeamMemberVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -24,10 +23,10 @@ import {
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
-import { customerExtraApi, followUpApi } from '@/api/sales'
+import { customerExtraApi } from '@/api/sales'
 import ContractDetailDrawer from '@/components/ContractDetailDrawer.vue'
-import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import FollowUpPlanPanel from '@/components/follow-plans/FollowUpPlanPanel.vue'
+import FollowRecordPanel from '@/components/follow-records/FollowRecordPanel.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
@@ -84,15 +83,12 @@ const dynamicFormRef = ref<InstanceType<typeof DynamicForm>>()
 const transferVisible = ref(false)
 const poolAssignVisible = ref(false)
 const moveToPoolVisible = ref(false)
-const followVisible = ref(false)
 const teamDialogVisible = ref(false)
 const teamTypeVisible = ref(false)
 const teamPendingUserId = ref('')
 const teamEditingMember = ref<TeamMemberVO | null>(null)
 const teamCollaborationType = ref<'READ_ONLY' | 'COLLABORATION'>('COLLABORATION')
 
-const followRecords = ref<FollowUpVO[]>([])
-const followLoading = ref(false)
 const teamRows = ref<TeamMemberVO[]>([])
 const teamLoading = ref(false)
 
@@ -273,18 +269,6 @@ async function loadBase() {
     emit('close')
   } finally {
     loading.value = false
-  }
-}
-
-async function loadFollows() {
-  followLoading.value = true
-  try {
-    const { data } = await followUpApi.list('customer', props.customerId)
-    followRecords.value = data
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    followLoading.value = false
   }
 }
 
@@ -551,7 +535,6 @@ function setLayout(value: 'horizontal' | 'vertical') {
 }
 
 watch(activeTab, async (tab) => {
-  if (tab === 'followRecord') await loadFollows()
   if (tab === 'collaborator') await loadTeam()
   const resource = tabResource(tab)
   if (resource) await loadResource(resource)
@@ -565,8 +548,7 @@ watch(
       resourcePage[key as Customer360Resource] = 1
     })
     await loadBase()
-    if (activeTab.value === 'followRecord') await loadFollows()
-    else if (activeTab.value === 'collaborator') await loadTeam()
+    if (activeTab.value === 'collaborator') await loadTeam()
     else {
       const resource = tabResource(activeTab.value)
       if (resource) await loadResource(resource)
@@ -584,8 +566,7 @@ onMounted(async () => {
   }
   await fieldRefs.load()
   await loadBase()
-  if (activeTab.value === 'followRecord') await loadFollows()
-  else if (activeTab.value === 'collaborator') await loadTeam()
+  if (activeTab.value === 'collaborator') await loadTeam()
   else {
     const resource = tabResource(activeTab.value)
     if (resource) await loadResource(resource)
@@ -737,29 +718,13 @@ onMounted(async () => {
             >
               <div class="h-full overflow-auto pb-4">
                 <template v-if="tab.name === 'followRecord'">
-                  <div class="flex justify-end mb-3">
-                    <el-button
-                      v-if="canWrite"
-                      type="primary"
-                      size="small"
-                      @click="followVisible = true"
-                      >写跟进</el-button
-                    >
-                  </div>
-                  <div v-loading="followLoading">
-                    <el-empty v-if="followRecords.length === 0" description="暂无跟进记录" />
-                    <el-timeline v-else>
-                      <el-timeline-item
-                        v-for="record in followRecords"
-                        :key="record.id"
-                        :timestamp="`${new Date(record.createdAt).toLocaleString()} · ${record.ownerName}`"
-                        placement="top"
-                      >
-                        <el-tag size="small" class="mr-2">{{ record.type }}</el-tag>
-                        {{ record.content }}
-                      </el-timeline-item>
-                    </el-timeline>
-                  </div>
+                  <FollowRecordPanel
+                    target-type="customer"
+                    :target-id="customerId"
+                    :target-name="customer.name"
+                    :allow-create="canWrite"
+                    :allow-manage="canWrite"
+                  />
                 </template>
 
                 <FollowUpPlanPanel
@@ -1146,13 +1111,6 @@ onMounted(async () => {
         <el-button type="primary" @click="saveTeamMember">保存</el-button>
       </template>
     </el-dialog>
-    <FollowUpDrawer
-      v-model="followVisible"
-      target-type="customer"
-      :target-id="customerId"
-      :target-name="customer?.name"
-      @followed="loadFollows"
-    />
     <OpportunityDetailDrawer
       v-model="opportunityDetailVisible"
       :opportunity-id="opportunityDetailId"

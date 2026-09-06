@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
-import { getOpportunity, listFollowUps } from '@/api/mobile'
+import { getOpportunity, pageFollowUps } from '@/api/mobile'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,12 +22,12 @@ async function load() {
   }
   loading.value = true
   try {
-    const [{ data: detail }, { data: followList }] = await Promise.all([
+    const [{ data: detail }, { data: followPage }] = await Promise.all([
       getOpportunity(opportunityId.value),
-      listFollowUps('opportunity', opportunityId.value),
+      pageFollowUps('opportunity', opportunityId.value),
     ])
     opportunity.value = detail
-    records.value = followList
+    records.value = followPage.items
   } catch (error) {
     showFailToast(extractErrorMessage(error))
     router.replace('/leads')
@@ -81,7 +81,7 @@ onMounted(load)
       <van-tab title="跟进记录" name="record">
         <van-empty v-if="records.length === 0" description="暂无跟进记录" />
         <van-cell-group v-for="record in records" :key="record.id" inset class="!mt-3">
-          <van-cell :title="record.type" :label="record.content">
+          <van-cell :title="record.type ?? '其他'" :label="record.content">
             <template #value>{{ new Date(record.createdAt).toLocaleDateString() }}</template>
           </van-cell>
         </van-cell-group>

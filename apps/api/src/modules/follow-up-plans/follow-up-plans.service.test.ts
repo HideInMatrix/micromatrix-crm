@@ -34,6 +34,7 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     deptId: 'dept-1',
     createdById: 'creator-2',
     dueNotifiedAt: null,
+    commentCount: 0,
     customData: {},
     createdAt: new Date('2026-08-21T00:00:00.000Z'),
     updatedAt: new Date('2026-08-21T00:00:00.000Z'),
@@ -48,17 +49,22 @@ function dependencies(
     userId: string,
     input: { type: string; event?: string },
   ) => Promise<void> = async () => undefined,
+  options: {
+    customerAccess?: Record<string, unknown>
+    moduleForms?: Record<string, unknown>
+    fieldValues?: Record<string, unknown>
+  } = {},
 ) {
   return new FollowUpPlansService(
     prisma as unknown as PrismaService,
     {} as never,
+    (options.customerAccess ?? {}) as never,
     {} as never,
-    {} as never,
-    { listFields: async () => [] } as never,
-    {
+    (options.moduleForms ?? { listFields: async () => [] }) as never,
+    (options.fieldValues ?? {
       load: async (_tenantId: string, _resourceType: string, ids: string[]) =>
         new Map(ids.map((id) => [id, {}])),
-    } as never,
+    }) as never,
     { notify } as never,
   )
 }
@@ -78,51 +84,70 @@ test('已转换计划拒绝再次修改状态', async () => {
   assert.equal(updated, false)
 })
 
-test('转跟进记录在同一事务内抢占、创建记录并回写记录 ID', async () => {
-  const calls: string[] = []
-  const converted = plan({ converted: true, convertedRecordId: 'record-1' })
-  const tx = {
-    followUpPlan: {
-      updateMany: async () => {
-        calls.push('claim')
-        return { count: 1 }
-      },
-      update: async () => {
-        calls.push('link')
-        return converted
-      },
-    },
-    followUpRecord: {
-      create: async () => {
-        calls.push('record')
-        return { id: 'record-1' }
-      },
-    },
-    customer: { updateMany: async () => calls.push('touch') },
-    clue: { updateMany: async () => undefined },
-    opportunity: { updateMany: async () => undefined },
-  }
+test('计划转记录预填只执行显式 PLAN_TO_RECORD formLink，不产生写入', async () => {
+  let writeCalled = false
+  let capturedSourceValues: Record<string, unknown> | null = null
   const prisma = {
-    followUpPlan: { findFirst: async () => plan() },
-    user: {
-      findFirst: async () => ({ name: '负责人' }),
-      findMany: async () => [{ id: 'owner-1', name: '负责人' }],
+    followUpPlan: {
+      findFirst: async () => plan(),
+      update: async () => {
+        writeCalled = true
+      },
     },
-    customer: {
-      findMany: async () => [{ id: 'customer-1', name: '测试客户' }],
-    },
-    clue: { findMany: async () => [] },
-    opportunity: { findMany: async () => [] },
-    customerContact: { findMany: async () => [] },
-    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
   }
-  const service = dependencies(prisma)
+  const service = dependencies(prisma, undefined, {
+    customerAccess: {
+      assertCollaborateWrite: async () => ({
+        customer: { name: '测试客户' },
+        dataScope: true,
+        collaborationType: null,
+      }),
+    },
+    moduleForms: {
+      listFields: async () => [
+        {
+          id: 'source-custom',
+          key: 'cf_source_custom',
+          label: '来源动态字段',
+          type: 'text',
+          required: false,
+          system: false,
+          hidden: false,
+          options: null,
+          config: null,
+          sort: 0,
+          span: 12,
+          showInList: true,
+          listWidth: null,
+          subFields: null,
+        },
+      ],
+      resolveFormLink: async (
+        _tenantId: string,
+        _targetFormKey: string,
+        _sourceFormKey: string,
+        scenario: string,
+        sourceValues: Record<string, unknown>,
+      ) => {
+        assert.equal(scenario, 'PLAN_TO_RECORD')
+        capturedSourceValues = sourceValues
+        return { content: '联动后的内容', cf_target_custom: '联动值' }
+      },
+    },
+    fieldValues: {
+      load: async () => new Map([['plan-1', { cf_source_custom: '来源动态值' }]]),
+    },
+  })
 
-  const result = await service.convert(user, 'plan-1')
+  const result = await service.recordPrefill(user, 'plan-1')
+  const sourceValues = capturedSourceValues as unknown as Record<string, unknown>
 
-  assert.deepEqual(calls, ['claim', 'record', 'touch', 'link'])
-  assert.equal(result.convertedRecordId, 'record-1')
-  assert.equal(result.targetName, '测试客户')
+  assert.equal(writeCalled, false)
+  assert.equal(result.sourcePlanId, 'plan-1')
+  assert.deepEqual(result.values, { content: '联动后的内容', cf_target_custom: '联动值' })
+  assert.equal(sourceValues.content, '今天完成回访')
+  assert.equal(sourceValues.method, '电话')
+  assert.equal(sourceValues.cf_source_custom, '来源动态值')
 })
 
 test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去重', async () => {

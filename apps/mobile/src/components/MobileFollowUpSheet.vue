@@ -2,7 +2,7 @@
 import { FOLLOW_UP_TYPES, type FollowUpVO } from '@micromatrix/shared'
 import { showFailToast, showSuccessToast } from 'vant'
 import { reactive, ref, watch } from 'vue'
-import { createFollowUp, listFollowUps } from '@/api/mobile'
+import { createFollowUp, pageFollowUps } from '@/api/mobile'
 import { extractErrorMessage } from '@/api/http'
 
 const props = defineProps<{
@@ -27,8 +27,8 @@ async function load() {
   if (!props.targetId) return
   loading.value = true
   try {
-    const { data } = await listFollowUps(props.targetType, props.targetId)
-    records.value = data
+    const { data } = await pageFollowUps(props.targetType, props.targetId)
+    records.value = data.items
   } finally {
     loading.value = false
   }
