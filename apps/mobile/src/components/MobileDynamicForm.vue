@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed, ref } from 'vue'
+import MobileDataSourceFieldInput from './MobileDataSourceFieldInput.vue'
 
 const props = defineProps<{
   fields: FieldVO[]
   members?: Array<{ id: string; name: string }>
   deptTree?: DepartmentVO[]
+  fieldFilter?: (field: FieldVO) => boolean
 }>()
 const model = defineModel<Record<string, unknown>>({ required: true })
 
-const visibleFields = computed(() => props.fields.filter((f) => !f.hidden && f.type !== 'formula'))
+const visibleFields = computed(() =>
+  props.fields.filter(
+    (field) =>
+      !field.hidden &&
+      field.type !== 'formula' &&
+      field.mobile !== false &&
+      (props.fieldFilter?.(field) ?? true),
+  ),
+)
 
 const pickerField = ref<FieldVO | null>(null)
 const showPicker = ref(false)
@@ -89,14 +99,25 @@ function datetimeLocalValue(field: FieldVO) {
 function updateDatetime(field: FieldVO, value: string) {
   model.value[field.key] = value ? `${value.replace('T', ' ')}:00` : undefined
 }
+
+function setFieldValue(field: FieldVO, value: unknown) {
+  model.value[field.key] = value
+}
 </script>
 
 <template>
   <van-cell-group inset class="crm-mobile-form">
     <template v-for="field in visibleFields" :key="field.key">
+      <slot
+        v-if="field.system && $slots['system-field']"
+        name="system-field"
+        :field="field"
+        :value="model[field.key]"
+        :set-value="(value: unknown) => setFieldValue(field, value)"
+      />
       <!-- 选项/日期类：只读点击唤起选择器 -->
       <van-field
-        v-if="['select', 'radio', 'date', 'member', 'dept'].includes(field.type)"
+        v-else-if="['select', 'radio', 'date', 'member', 'dept'].includes(field.type)"
         :model-value="displayValue(field)"
         :label="field.label"
         :placeholder="`请选择${field.label}`"
@@ -175,6 +196,12 @@ function updateDatetime(field: FieldVO, value: string) {
           </van-checkbox-group>
         </template>
       </van-field>
+      <MobileDataSourceFieldInput
+        v-else-if="field.type === 'data_source' || field.type === 'data_source_multiple'"
+        :field="field"
+        :model-value="model[field.key] as string | string[] | undefined"
+        @update:model-value="model[field.key] = $event"
+      />
       <van-field
         v-else
         :model-value="(model[field.key] as string) ?? ''"

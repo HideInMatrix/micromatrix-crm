@@ -150,6 +150,78 @@ test('计划转记录预填只执行显式 PLAN_TO_RECORD formLink，不产生�
   assert.equal(sourceValues.cf_source_custom, '来源动态值')
 })
 
+test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO 原样回读', async () => {
+  let savedValues: Record<string, unknown> = {}
+  const productField = {
+    id: 'plan-product-field',
+    module: 'followPlan',
+    key: 'planProduct',
+    label: '意向产品',
+    type: 'data_source_multiple' as const,
+    required: false,
+    system: false,
+    hidden: false,
+    options: null,
+    config: { dataSourceType: 'PRODUCT' as const },
+    sort: 6,
+    span: 12,
+    showInList: false,
+    listWidth: 180,
+    subFields: null,
+  }
+  const createdPlan = plan({ status: 'PREPARED', converted: false })
+  const prisma = {
+    $transaction: async (operation: (tx: unknown) => Promise<unknown>) => operation(prisma),
+    followUpPlan: {
+      create: async () => createdPlan,
+    },
+    customer: {
+      findMany: async () => [{ id: 'customer-1', name: '测试客户' }],
+    },
+    clue: { findMany: async () => [] },
+    opportunity: { findMany: async () => [] },
+    user: { findMany: async () => [{ id: 'owner-1', name: '负责人' }] },
+    customerContact: { findMany: async () => [] },
+  }
+  const service = dependencies(prisma, undefined, {
+    customerAccess: {
+      assertCollaborateWrite: async () => ({
+        customer: { name: '测试客户' },
+        dataScope: true,
+        collaborationType: null,
+      }),
+    },
+    moduleForms: {
+      listFields: async () => [productField],
+    },
+    fieldValues: {
+      save: async (
+        _tenantId: string,
+        _resourceType: string,
+        _resourceId: string,
+        values: Record<string, unknown>,
+      ) => {
+        savedValues = values
+      },
+      load: async () => new Map([['plan-1', savedValues]]),
+    },
+  })
+
+  const result = await service.create(user, {
+    targetType: 'customer',
+    targetId: 'customer-1',
+    content: '带产品的跟进计划',
+    moduleFields: [
+      { fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] },
+    ],
+  })
+
+  assert.deepEqual(savedValues, { planProduct: ['product-a', 'product-b'] })
+  assert.deepEqual(result.moduleFields, [
+    { fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] },
+  ])
+})
+
 test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去重', async () => {
   const row = plan({ status: 'PREPARED', converted: false })
   let claimed = false

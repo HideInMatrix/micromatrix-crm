@@ -128,6 +128,22 @@ const fields: FieldVO[] = [
     showInList: true,
     listWidth: null,
   },
+  {
+    id: 'field-products',
+    module: 'customer',
+    key: 'cf_products',
+    label: '意向产品',
+    type: 'data_source_multiple',
+    required: false,
+    system: false,
+    hidden: false,
+    options: null,
+    config: { dataSourceType: 'PRODUCT' },
+    sort: 7,
+    span: 12,
+    showInList: false,
+    listWidth: null,
+  },
 ]
 
 function createHarness() {
@@ -293,6 +309,25 @@ test('同一事务保存时普通值和复杂值分别进入 field 与 field_blo
     ['field-note', '长备注'],
     ['field-tags', '["important"]'],
   ])
+})
+
+test('多选数据源按 JSON 数组进入 Blob 并能原样恢复', async () => {
+  const { service, tx, blob } = createHarness()
+  await service.save(
+    'tenant-a',
+    'customer',
+    'customer-a',
+    { cf_required: '有值', cf_products: ['product-a', 'product-b'] },
+    'create',
+    tx,
+    'user-a',
+  )
+  assert.equal(
+    blob.find((row) => row.fieldId === 'field-products')?.fieldValue,
+    '["product-a","product-b"]',
+  )
+  const loaded = await service.load('tenant-a', 'customer', ['customer-a'])
+  assert.deepEqual(loaded.get('customer-a')?.cf_products, ['product-a', 'product-b'])
 })
 
 test('唯一字段按组织隔离，更新当前资源时排除自身', async () => {

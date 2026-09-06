@@ -27,6 +27,7 @@ export interface FieldForm {
   showInList?: boolean
   listWidth?: number
   hidden?: boolean
+  mobile?: boolean
   subFields?: SubFieldForm[]
 }
 

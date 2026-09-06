@@ -115,6 +115,33 @@ export interface FollowCommentPageVO {
 export type FollowUpPlanTargetType = 'lead' | 'customer' | 'opportunity'
 export type FollowUpPlanStatus = 'PREPARED' | 'UNDERWAY' | 'COMPLETED' | 'CANCELLED'
 
+export const FOLLOW_UP_PLAN_SYSTEM_FIELD_KEYS = [
+  'targetType',
+  'targetId',
+  'ownerId',
+  'contactId',
+  'estimatedAt',
+  'content',
+  'method',
+  'status',
+] as const
+
+export type FollowUpPlanSystemFieldKey = (typeof FOLLOW_UP_PLAN_SYSTEM_FIELD_KEYS)[number]
+export type FollowUpPlanCreateContext = 'customer' | 'clue' | 'business'
+
+export const FOLLOW_UP_PLAN_CREATE_CONTEXT_BY_TARGET: Record<
+  FollowUpPlanTargetType,
+  FollowUpPlanCreateContext
+> = {
+  customer: 'customer',
+  lead: 'clue',
+  opportunity: 'business',
+}
+
+export function isFollowUpPlanSystemFieldKey(key: string): key is FollowUpPlanSystemFieldKey {
+  return (FOLLOW_UP_PLAN_SYSTEM_FIELD_KEYS as readonly string[]).includes(key)
+}
+
 export const FOLLOW_UP_PLAN_STATUS_LABELS: Record<FollowUpPlanStatus, string> = {
   PREPARED: '未开始',
   UNDERWAY: '进行中',

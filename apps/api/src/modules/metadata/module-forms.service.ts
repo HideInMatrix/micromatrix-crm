@@ -182,7 +182,7 @@ export class ModuleFormsService {
           internalKey: key,
           name: dto.label.trim(),
           type: dto.type,
-          mobile: false,
+          mobile: dto.mobile ?? true,
           pos: (max._max.pos ?? -1n) + 1n,
           createUser: actorId,
           updateUser: actorId,
@@ -284,6 +284,7 @@ export class ModuleFormsService {
         data: {
           name: dto.label?.trim(),
           type: current.system ? undefined : dto.type,
+          mobile: dto.mobile,
           updateUser: actorId,
           updateTime: BigInt(Date.now()),
           blob: {
@@ -378,6 +379,7 @@ export class ModuleFormsService {
       key: prop.key || field.internalKey || field.id,
       label: field.name,
       type: field.type as FieldType,
+      mobile: field.mobile,
       required: prop.required,
       system: prop.system,
       hidden: prop.hidden,
@@ -445,7 +447,7 @@ export class ModuleFormsService {
           internalKey: template.key,
           name: template.label,
           type: template.type,
-          mobile: false,
+          mobile: template.mobile ?? false,
           pos: BigInt(template.sort),
           createUser: actorId,
           updateUser: actorId,

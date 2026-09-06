@@ -18,6 +18,7 @@ const props = defineProps<{
   fields: FieldVO[]
   members: MemberOption[]
   deptTree: DepartmentVO[]
+  fieldFilter?: (field: FieldVO) => boolean
   attachmentMap?: Record<string, AttachmentVO[]>
   attachmentDownload?: (file: AttachmentVO) => Promise<void>
   attachmentObjectUrl?: (id: string) => Promise<string>
@@ -30,7 +31,10 @@ const formRef = ref<FormInstance>()
 
 const runtime = computed(() => evaluateFormRuntime(props.fields, model.value))
 const visibleFields = computed(() =>
-  props.fields.filter((field) => runtime.value.visibleByFieldId[field.id] !== false),
+  props.fields.filter(
+    (field) =>
+      runtime.value.visibleByFieldId[field.id] !== false && (props.fieldFilter?.(field) ?? true),
+  ),
 )
 
 watch(
@@ -105,6 +109,10 @@ function applyDataSourceRecord(field: FieldVO, record: DataSourceRecordVO | null
   model.value = applyDataSourceRecordLinks(props.fields, field, record, model.value)
 }
 
+function setFieldValue(field: FieldVO, value: unknown) {
+  model.value[field.key] = value
+}
+
 async function validate(): Promise<boolean> {
   return (await formRef.value?.validate().catch(() => false)) ?? false
 }
@@ -117,28 +125,37 @@ defineExpose({ validate })
     <el-row :gutter="16">
       <el-col v-for="field in visibleFields" :key="field.key" :span="field.span">
         <el-form-item :label="field.label" :prop="field.key">
-          <SubTableFieldInput
-            v-if="field.type === 'sub_product'"
-            v-model="model[field.key]"
+          <slot
+            v-if="field.system && $slots['system-field']"
+            name="system-field"
             :field="field"
-            :members="members"
-            :dept-tree="deptTree"
+            :value="model[field.key]"
+            :set-value="(value: unknown) => setFieldValue(field, value)"
           />
-          <DynamicFormItem
-            v-else
-            v-model="model[field.key]"
-            :field="field"
-            :option-range="runtime.optionRangesByFieldId[field.id]"
-            :form-fields="fields"
-            :form-values="model"
-            :members="members"
-            :dept-tree="deptTree"
-            :attachment-options="attachmentMap?.[field.key] ?? []"
-            :attachment-download="attachmentDownload"
-            :attachment-object-url="attachmentObjectUrl"
-            :formula-value="formulaValues[field.key]"
-            @data-source-record="applyDataSourceRecord(field, $event)"
-          />
+          <template v-else>
+            <SubTableFieldInput
+              v-if="field.type === 'sub_product'"
+              v-model="model[field.key]"
+              :field="field"
+              :members="members"
+              :dept-tree="deptTree"
+            />
+            <DynamicFormItem
+              v-else
+              v-model="model[field.key]"
+              :field="field"
+              :option-range="runtime.optionRangesByFieldId[field.id]"
+              :form-fields="fields"
+              :form-values="model"
+              :members="members"
+              :dept-tree="deptTree"
+              :attachment-options="attachmentMap?.[field.key] ?? []"
+              :attachment-download="attachmentDownload"
+              :attachment-object-url="attachmentObjectUrl"
+              :formula-value="formulaValues[field.key]"
+              @data-source-record="applyDataSourceRecord(field, $event)"
+            />
+          </template>
         </el-form-item>
       </el-col>
     </el-row>

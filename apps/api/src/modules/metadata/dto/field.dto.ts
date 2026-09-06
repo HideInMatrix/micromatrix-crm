@@ -169,6 +169,11 @@ export class CreateFieldDto {
   @IsBoolean()
   @IsOptional()
   hidden?: boolean
+
+  @ApiPropertyOptional({ default: true, description: '是否在移动端表单中展示' })
+  @IsBoolean()
+  @IsOptional()
+  mobile?: boolean
 }
 
 export class UpdateFieldDto extends PartialType(CreateFieldDto) {}

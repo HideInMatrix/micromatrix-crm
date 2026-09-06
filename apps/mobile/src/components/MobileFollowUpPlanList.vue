@@ -1,25 +1,29 @@
 <script setup lang="ts">
 import {
   FOLLOW_UP_PLAN_STATUS_LABELS,
+  isFollowUpPlanSystemFieldKey,
   type FieldVO,
   type FollowUpPlanStatus,
   type FollowUpPlanTargetType,
   type FollowUpPlanVO,
 } from '@micromatrix/shared'
 import { CalendarClock, Plus } from 'lucide-vue-next'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
+import { contactApi, followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 import MobileFollowCommentSheet from '@/components/MobileFollowCommentSheet.vue'
 import MobileFollowRecordFormSheet from '@/components/MobileFollowRecordFormSheet.vue'
+import MobileFollowUpPlanSystemField from '@/components/MobileFollowUpPlanSystemField.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useAuthStore } from '@/stores/auth'
 
 interface TargetOption {
   id: string
   name: string
+  customerId?: string
 }
 
 const props = withDefaults(
@@ -32,6 +36,7 @@ const props = withDefaults(
   { targetType: undefined, targetId: undefined, targetName: undefined, canWrite: true },
 )
 
+const auth = useAuthStore()
 const items = ref<FollowUpPlanVO[]>([])
 const page = ref(1)
 const loading = ref(false)
@@ -44,24 +49,45 @@ const actionShow = ref(false)
 const commentShow = ref(false)
 const recordFormShow = ref(false)
 const saving = ref(false)
+const resetting = ref(false)
 const editing = ref<FollowUpPlanVO | null>(null)
 const current = ref<FollowUpPlanVO | null>(null)
 const convertingPlan = ref<FollowUpPlanVO | null>(null)
 const targets = ref<TargetOption[]>([])
+const contacts = ref<{ id: string; name: string }[]>([])
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
 const formModel = ref<Record<string, unknown>>({})
 const metaLoaded = ref(false)
-const form = reactive({
-  targetType: (props.targetType ?? 'customer') as FollowUpPlanTargetType,
-  targetId: props.targetId ?? '',
-  method: '电话',
-  estimatedAt: '',
-  content: '',
+
+const targetLocked = computed(() => Boolean(props.targetType && props.targetId))
+const currentTargetType = computed<FollowUpPlanTargetType>(() => {
+  const value = formModel.value.targetType
+  return value === 'lead' || value === 'opportunity' || value === 'customer' ? value : 'customer'
 })
-const dynamicFields = computed(() =>
-  fields.value.filter((field) => !field.system && !field.hidden && field.type !== 'formula'),
+const currentTargetId = computed(() => stringValue('targetId'))
+const writableDynamicFields = computed(() =>
+  fields.value.filter((field) => !field.system && field.type !== 'formula'),
 )
+const visibleFormFields = computed(() =>
+  fields.value.filter(
+    (field) =>
+      !field.hidden &&
+      field.type !== 'formula' &&
+      field.mobile !== false &&
+      fieldFilter(field),
+  ),
+)
+
+function stringValue(key: string) {
+  const value = formModel.value[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function fieldFilter(field: FieldVO) {
+  if (field.key === 'contactId' && currentTargetType.value === 'lead') return false
+  return true
+}
 
 async function loadMore() {
   loading.value = true
@@ -90,7 +116,7 @@ function reload() {
   page.value = 1
   items.value = []
   finished.value = false
-  loadMore()
+  void loadMore()
 }
 
 async function loadTargets() {
@@ -99,56 +125,88 @@ async function loadTargets() {
     return
   }
   try {
-    if (form.targetType === 'lead') {
+    if (currentTargetType.value === 'lead') {
       const { data } = await leadApi.list({ page: 1, pageSize: 100, scope: 'mine' })
       targets.value = data.items.map((item) => ({ id: item.id, name: item.name }))
-    } else if (form.targetType === 'customer') {
+    } else if (currentTargetType.value === 'customer') {
       const { data } = await listCustomerOptions()
       targets.value = data
     } else {
       const { data } = await opportunityApi.list({ page: 1, pageSize: 100 })
-      targets.value = data.items.map((item) => ({ id: item.id, name: item.name }))
+      targets.value = data.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        customerId: item.customerId,
+      }))
     }
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
 
-function defaultDynamicModel() {
-  return Object.fromEntries(
-    dynamicFields.value.map((field) => [field.key, field.config?.defaultValue]),
-  )
+async function resolveOpportunityCustomerId() {
+  const fromOptions = targets.value.find((item) => item.id === currentTargetId.value)?.customerId
+  if (fromOptions) return fromOptions
+  if (!currentTargetId.value) return ''
+  try {
+    return (await opportunityApi.get(currentTargetId.value)).data.customerId
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+    return ''
+  }
+}
+
+async function loadContacts() {
+  contacts.value = []
+  if (currentTargetType.value === 'lead') return
+  const customerId =
+    currentTargetType.value === 'customer'
+      ? currentTargetId.value
+      : await resolveOpportunityCustomerId()
+  if (!customerId) return
+  try {
+    const { data } = await contactApi.list(customerId)
+    contacts.value = data.map((item) => ({ id: item.id, name: item.name }))
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  }
+}
+
+function defaultFieldModel() {
+  return Object.fromEntries(fields.value.map((field) => [field.key, field.config?.defaultValue]))
 }
 
 function dynamicValues(plan?: FollowUpPlanVO | null) {
   const byId = new Map((plan?.moduleFields ?? []).map((item) => [item.fieldId, item.fieldValue]))
-  return Object.fromEntries(dynamicFields.value.map((field) => [field.key, byId.get(field.id)]))
+  return Object.fromEntries(writableDynamicFields.value.map((field) => [field.key, byId.get(field.id)]))
 }
 
 function moduleFieldsPayload() {
-  return dynamicFields.value.map((field) => ({
+  return writableDynamicFields.value.map((field) => ({
     fieldId: field.id,
     fieldValue: formModel.value[field.key],
   }))
 }
 
-function hasMissingRequiredDynamicField() {
-  return dynamicFields.value.some((field) => {
-    if (!field.required) return false
-    const value = formModel.value[field.key]
-    return (
-      value === undefined ||
-      value === null ||
-      value === '' ||
-      (Array.isArray(value) && !value.length)
-    )
-  })
+function isEmpty(value: unknown) {
+  return (
+    value === undefined ||
+    value === null ||
+    value === '' ||
+    (Array.isArray(value) && value.length === 0)
+  )
+}
+
+function hasMissingRequiredField() {
+  return visibleFormFields.value.some((field) => field.required && isEmpty(formModel.value[field.key]))
 }
 
 async function loadMeta() {
   if (metaLoaded.value) return
   const [{ data }] = await Promise.all([followUpPlanApi.moduleForm(), fieldRefs.load()])
-  fields.value = data.fields
+  fields.value = data.fields.filter(
+    (field) => !field.system || isFollowUpPlanSystemFieldKey(field.key),
+  )
   metaLoaded.value = true
 }
 
@@ -159,34 +217,54 @@ async function openCreate(plan?: FollowUpPlanVO) {
     showFailToast(extractErrorMessage(error))
     return
   }
-  editing.value = plan ?? null
-  form.targetType = props.targetType ?? plan?.targetType ?? 'customer'
-  form.targetId = props.targetId ?? plan?.targetId ?? ''
-  form.method = plan?.method ?? '电话'
-  form.estimatedAt = plan?.estimatedAt ? plan.estimatedAt.slice(0, 16) : ''
-  form.content = plan?.content ?? ''
-  formModel.value = { ...defaultDynamicModel(), ...dynamicValues(plan) }
-  await loadTargets()
-  formShow.value = true
+
+  resetting.value = true
+  try {
+    editing.value = plan ?? null
+    const targetType = props.targetType ?? plan?.targetType ?? 'customer'
+    const targetId = props.targetId ?? plan?.targetId ?? ''
+    formModel.value = {
+      ...defaultFieldModel(),
+      ...dynamicValues(plan),
+      targetType,
+      targetId,
+      contactId: plan?.contactId ?? '',
+      method: plan?.method ?? '电话',
+      estimatedAt: plan?.estimatedAt ?? '',
+      content: plan?.content ?? '',
+      ownerId: plan?.ownerId ?? auth.user?.id ?? '',
+      status: plan?.status ?? 'PREPARED',
+    }
+    await loadTargets()
+    await loadContacts()
+    formShow.value = true
+  } finally {
+    resetting.value = false
+  }
 }
 
 async function save() {
-  if (!form.targetId || !form.content.trim()) {
+  if (hasMissingRequiredField()) {
+    showFailToast('请填写所有必填字段')
+    return
+  }
+  const targetId = currentTargetId.value
+  const content = stringValue('content').trim()
+  if (!targetId || !content) {
     showFailToast('请选择计划对象并填写内容')
     return
   }
-  if (hasMissingRequiredDynamicField()) {
-    showFailToast('请填写必填的自定义字段')
-    return
-  }
+
   saving.value = true
   try {
     const payload = {
-      targetType: form.targetType,
-      targetId: form.targetId,
-      method: form.method || undefined,
-      estimatedAt: form.estimatedAt ? new Date(form.estimatedAt).toISOString() : undefined,
-      content: form.content.trim(),
+      targetType: currentTargetType.value,
+      targetId,
+      contactId: stringValue('contactId') || undefined,
+      method: stringValue('method') || undefined,
+      estimatedAt: stringValue('estimatedAt') || undefined,
+      content,
+      ownerId: stringValue('ownerId') || undefined,
       moduleFields: moduleFieldsPayload(),
     }
     if (editing.value) await followUpPlanApi.update(editing.value.id, payload)
@@ -261,16 +339,24 @@ async function remove() {
 function editCurrent() {
   if (!current.value) return
   actionShow.value = false
-  openCreate(current.value)
+  void openCreate(current.value)
 }
 
 watch(
-  () => form.targetType,
-  () => {
-    if (!props.targetId && formShow.value) {
-      form.targetId = ''
-      loadTargets()
-    }
+  () => formModel.value.targetType,
+  async () => {
+    if (!formShow.value || targetLocked.value || resetting.value) return
+    formModel.value.targetId = ''
+    formModel.value.contactId = ''
+    await loadTargets()
+  },
+)
+watch(
+  () => formModel.value.targetId,
+  async () => {
+    if (!formShow.value || resetting.value) return
+    formModel.value.contactId = ''
+    await loadContacts()
   },
 )
 onMounted(reload)
@@ -289,9 +375,7 @@ onMounted(reload)
           {{ label }}
         </option>
       </select>
-      <van-checkbox v-if="!targetId" v-model="mine" shape="square" @change="reload"
-        >我的</van-checkbox
-      >
+      <van-checkbox v-if="!targetId" v-model="mine" shape="square" @change="reload">我的</van-checkbox>
       <van-button v-if="canWrite !== false" type="primary" size="small" @click="openCreate()">
         <span class="inline-flex items-center gap-1"><Plus :size="15" />新建</span>
       </van-button>
@@ -306,12 +390,7 @@ onMounted(reload)
       >
         <van-empty v-if="finished && items.length === 0" description="暂无跟进计划" />
         <van-cell-group v-for="plan in items" :key="plan.id" inset class="!mt-3">
-          <van-cell
-            :title="plan.targetName"
-            :label="plan.content"
-            is-link
-            @click="openActions(plan)"
-          >
+          <van-cell :title="plan.targetName" :label="plan.content" is-link @click="openActions(plan)">
             <template #value>
               <van-tag
                 :type="
@@ -347,73 +426,33 @@ onMounted(reload)
       v-model:show="formShow"
       position="bottom"
       round
-      :style="{ height: '78%' }"
+      :style="{ height: '82%' }"
       data-testid="mobile-follow-plan-form"
     >
       <div class="h-full flex flex-col">
         <div class="p-4 text-center font-medium">
           {{ editing ? '编辑跟进计划' : '新建跟进计划' }}
         </div>
-        <div class="flex-1 overflow-auto px-4 space-y-3">
-          <template v-if="!targetId">
-            <van-field label="对象类型">
-              <template #input>
-                <select v-model="form.targetType" class="w-full bg-transparent">
-                  <option value="customer">客户</option>
-                  <option value="lead">线索</option>
-                  <option value="opportunity">商机</option>
-                </select>
-              </template>
-            </van-field>
-            <van-field label="计划对象">
-              <template #input>
-                <select v-model="form.targetId" class="w-full bg-transparent">
-                  <option value="">请选择</option>
-                  <option v-for="item in targets" :key="item.id" :value="item.id">
-                    {{ item.name }}
-                  </option>
-                </select>
-              </template>
-            </van-field>
-          </template>
-          <van-field v-else label="计划对象" :model-value="targetName" readonly />
-          <van-field label="跟进方式">
-            <template #input>
-              <select v-model="form.method" class="w-full bg-transparent">
-                <option
-                  v-for="item in ['电话', '拜访', '微信', '邮件', '会议', '其他']"
-                  :key="item"
-                >
-                  {{ item }}
-                </option>
-              </select>
+        <div class="flex-1 overflow-auto py-2" data-testid="mobile-follow-plan-dynamic-fields">
+          <MobileDynamicForm
+            v-model="formModel"
+            :fields="fields"
+            :members="fieldRefs.members.value"
+            :dept-tree="fieldRefs.deptTree.value"
+            :field-filter="fieldFilter"
+          >
+            <template #system-field="{ field, value, setValue }">
+              <MobileFollowUpPlanSystemField
+                :field="field"
+                :model-value="value"
+                :target-locked="targetLocked"
+                :targets="targets"
+                :contacts="contacts"
+                :members="fieldRefs.members.value"
+                @update:model-value="setValue"
+              />
             </template>
-          </van-field>
-          <van-field label="计划时间">
-            <template #input
-              ><input
-                v-model="form.estimatedAt"
-                type="datetime-local"
-                class="w-full bg-transparent"
-            /></template>
-          </van-field>
-          <van-field
-            v-model="form.content"
-            data-testid="mobile-follow-plan-content"
-            label="计划内容"
-            type="textarea"
-            rows="4"
-            maxlength="3000"
-            show-word-limit
-          />
-          <div v-if="dynamicFields.length" data-testid="mobile-follow-plan-dynamic-fields">
-            <MobileDynamicForm
-              v-model="formModel"
-              :fields="dynamicFields"
-              :members="fieldRefs.members.value"
-              :dept-tree="fieldRefs.deptTree.value"
-            />
-          </div>
+          </MobileDynamicForm>
         </div>
         <div class="p-4">
           <van-button
@@ -422,8 +461,9 @@ onMounted(reload)
             block
             :loading="saving"
             @click="save"
-            >保存</van-button
           >
+            保存
+          </van-button>
         </div>
       </div>
     </van-popup>
@@ -450,12 +490,11 @@ onMounted(reload)
           type="success"
           block
           @click="convert"
-          >转跟进记录</van-button
         >
-        <van-button v-if="current.canManage" block @click="editCurrent">编辑</van-button>
-        <van-button v-if="current.canManage" type="danger" plain block @click="remove">
-          删除
+          转跟进记录
         </van-button>
+        <van-button v-if="current.canManage" block @click="editCurrent">编辑</van-button>
+        <van-button v-if="current.canManage" type="danger" plain block @click="remove">删除</van-button>
       </div>
     </van-action-sheet>
 

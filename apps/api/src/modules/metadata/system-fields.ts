@@ -7,6 +7,7 @@ export interface SystemFieldTemplate {
   required?: boolean
   system?: boolean
   hidden?: boolean
+  mobile?: boolean
   options?: FieldOption[]
   config?: FieldConfig
   span?: number
@@ -746,6 +747,7 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '关联类型',
       type: 'select',
       required: true,
+      mobile: true,
       options: [
         { label: '客户', value: 'customer' },
         { label: '线索', value: 'lead' },
@@ -760,6 +762,7 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '关联对象',
       type: 'text',
       required: true,
+      mobile: true,
       span: 12,
       listWidth: 180,
       sort: 1,
@@ -769,15 +772,25 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '负责人',
       type: 'member',
       required: true,
+      mobile: true,
       span: 12,
       listWidth: 110,
       sort: 2,
     },
-    { key: 'contactId', label: '联系人', type: 'text', span: 12, listWidth: 120, sort: 3 },
+    {
+      key: 'contactId',
+      label: '联系人',
+      type: 'text',
+      mobile: true,
+      span: 12,
+      listWidth: 120,
+      sort: 3,
+    },
     {
       key: 'estimatedAt',
       label: '计划时间',
-      type: 'date',
+      type: 'datetime',
+      mobile: true,
       span: 12,
       listWidth: 150,
       sort: 4,
@@ -787,15 +800,45 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '预计沟通内容',
       type: 'textarea',
       required: true,
+      mobile: true,
       span: 24,
       listWidth: 220,
+      sort: 7,
+    },
+    {
+      key: 'method',
+      label: '跟进方式',
+      type: 'select',
+      mobile: true,
+      options: [
+        { label: '电话', value: '电话' },
+        { label: '拜访', value: '拜访' },
+        { label: '微信', value: '微信' },
+        { label: '邮件', value: '邮件' },
+        { label: '会议', value: '会议' },
+        { label: '其他', value: '其他' },
+      ],
+      span: 12,
+      listWidth: 110,
       sort: 5,
     },
-    { key: 'method', label: '跟进方式', type: 'text', span: 12, listWidth: 110, sort: 6 },
+    {
+      key: 'planProduct',
+      label: '意向产品',
+      type: 'data_source_multiple',
+      system: false,
+      mobile: true,
+      config: { dataSourceType: 'PRODUCT' },
+      span: 12,
+      showInList: false,
+      listWidth: 180,
+      sort: 6,
+    },
     {
       key: 'status',
       label: '状态',
       type: 'select',
+      hidden: true,
       options: [
         { label: '未开始', value: 'PREPARED' },
         { label: '进行中', value: 'UNDERWAY' },
@@ -804,7 +847,7 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       ],
       span: 12,
       listWidth: 100,
-      sort: 7,
+      sort: 8,
     },
   ],
   invoice: [

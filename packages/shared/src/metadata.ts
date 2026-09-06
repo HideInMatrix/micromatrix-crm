@@ -261,6 +261,7 @@ export interface FieldVO {
   key: string
   label: string
   type: FieldType
+  mobile?: boolean
   required: boolean
   system: boolean
   hidden: boolean

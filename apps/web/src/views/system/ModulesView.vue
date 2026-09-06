@@ -27,6 +27,7 @@ const AVAILABLE_MODULES: ModuleKey[] = [
   'contractPaymentRecord',
   'invoice',
   'order',
+  'followPlan',
 ]
 
 const route = useRoute()
@@ -52,6 +53,7 @@ const form = reactive<FieldForm & { options: FieldOption[] }>({
   showInList: true,
   listWidth: undefined,
   hidden: false,
+  mobile: true,
 })
 
 const rules: FormRules = {
@@ -121,6 +123,7 @@ function openCreate() {
     showInList: true,
     listWidth: undefined,
     hidden: false,
+    mobile: true,
   })
   drawerVisible.value = true
 }
@@ -138,6 +141,7 @@ function openEdit(field: FieldVO) {
     showInList: field.showInList,
     listWidth: field.listWidth ?? undefined,
     hidden: field.hidden,
+    mobile: field.mobile,
   })
   drawerVisible.value = true
 }
@@ -171,6 +175,7 @@ async function handleSave() {
       showInList: form.showInList,
       listWidth: form.listWidth,
       hidden: form.hidden,
+      mobile: form.mobile,
     }
     if (editingField.value) {
       await metadataApi.updateField(editingField.value.id, payload)
@@ -371,6 +376,9 @@ watch(
           </el-form-item>
           <el-form-item label="隐藏">
             <el-switch v-model="form.hidden" :disabled="Boolean(editingField?.system && editingField.required)" />
+          </el-form-item>
+          <el-form-item label="移动端显示">
+            <el-switch v-model="form.mobile" />
           </el-form-item>
           <el-form-item label="列表显示">
             <el-switch v-model="form.showInList" />

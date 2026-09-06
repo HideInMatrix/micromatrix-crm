@@ -71,6 +71,11 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
     more: [
       { label: '客户库容设置', drawer: 'customer-capacity' },
       { label: '移入公海原因设置', drawer: 'customer-reason' },
+      {
+        label: '跟进计划表单设置',
+        path: '/system/modules/fields',
+        query: { module: 'followPlan' },
+      },
     ],
   },
   contract: {

@@ -574,6 +574,7 @@ export class ResourceFieldValueService {
         return String(value)
       case 'multiselect':
       case 'checkbox':
+      case 'data_source_multiple':
       case 'picture':
       case 'attachment': {
         if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
@@ -581,7 +582,7 @@ export class ResourceFieldValueService {
         }
         const ids = [...new Set(value.map((item) => item.trim()).filter(Boolean))]
         if (ids.length !== value.length) {
-          throw new BadRequestException(`「${field.label}」包含重复或空的文件 ID`)
+          throw new BadRequestException(`「${field.label}」包含重复或空值`)
         }
         if (field.type === 'attachment' && field.config?.onlyOne && ids.length > 1) {
           throw new BadRequestException(`「${field.label}」仅允许一个附件`)
@@ -625,7 +626,7 @@ export class ResourceFieldValueService {
   }
 
   private deserialize(type: FieldType, value: string): unknown {
-    if (['multiselect', 'checkbox', 'picture', 'attachment'].includes(type)) {
+    if (['multiselect', 'checkbox', 'data_source_multiple', 'picture', 'attachment'].includes(type)) {
       try {
         const parsed: unknown = JSON.parse(value)
         return Array.isArray(parsed) ? parsed : []
@@ -647,7 +648,11 @@ export class ResourceFieldValueService {
   }
 
   private storageFor(type: FieldType, serialized: string | null): 'normal' | 'blob' {
-    if (['textarea', 'multiselect', 'checkbox', 'picture', 'attachment'].includes(type))
+    if (
+      ['textarea', 'multiselect', 'checkbox', 'data_source_multiple', 'picture', 'attachment'].includes(
+        type,
+      )
+    )
       return 'blob'
     return serialized !== null && serialized.length > 255 ? 'blob' : 'normal'
   }
