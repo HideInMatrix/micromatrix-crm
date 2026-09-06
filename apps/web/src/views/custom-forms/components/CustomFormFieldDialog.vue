@@ -3,6 +3,7 @@ import {
   BUILTIN_DATA_SOURCE_OPTIONS,
   FIELD_TYPE_OPTIONS,
   type DataSourceType,
+  type FieldConfig,
   type FieldOption,
   type FieldVO,
 } from '@micromatrix/shared'
@@ -10,11 +11,16 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { computed, reactive, ref, watch } from 'vue'
 import { customFormApi } from '@/api/custom-form'
 import { extractErrorMessage } from '@/api/http'
-import type { FieldForm } from '@/api/metadata'
+import type { FieldForm, SubFieldForm } from '@/api/metadata'
+import CustomFormDataSourceFilterDesigner from './CustomFormDataSourceFilterDesigner.vue'
+import CustomFormDataSourceLinkageDesigner from './CustomFormDataSourceLinkageDesigner.vue'
+import CustomFormFieldLinkageDesigner from './CustomFormFieldLinkageDesigner.vue'
+import CustomFormSubTableDesigner from './CustomFormSubTableDesigner.vue'
 
 const props = defineProps<{
   currentFormId: string
   editingField: FieldVO | null
+  fields: FieldVO[]
   saving: boolean
 }>()
 
@@ -24,7 +30,7 @@ const emit = defineEmits<{ save: [payload: FieldForm] }>()
 const formRef = ref<FormInstance>()
 const customDataSources = ref<Array<{ id: string; name: string }>>([])
 const sourceLoading = ref(false)
-const form = reactive<FieldForm & { options: FieldOption[] }>({
+const form = reactive<FieldForm & { options: FieldOption[]; subFields: SubFieldForm[] }>({
   label: '',
   type: 'text',
   required: false,
@@ -34,10 +40,24 @@ const form = reactive<FieldForm & { options: FieldOption[] }>({
   showInList: true,
   listWidth: undefined,
   hidden: false,
+  subFields: [],
 })
 
 const rules: FormRules = {
   label: [{ required: true, message: '请输入字段名称', trigger: 'blur' }],
+}
+
+const formConfig = computed<FieldConfig>({
+  get: () => form.config ?? {},
+  set: (value) => {
+    form.config = value
+  },
+})
+
+const subTableConfig = formConfig
+
+function cloneConfig(config?: FieldConfig | null): FieldConfig {
+  return JSON.parse(JSON.stringify(config ?? {})) as FieldConfig
 }
 
 function reset() {
@@ -51,6 +71,7 @@ function reset() {
     showInList: true,
     listWidth: undefined,
     hidden: false,
+    subFields: [],
   })
 }
 
@@ -63,11 +84,20 @@ function loadEditingField() {
     type: field.type,
     required: field.required,
     options: (field.options ?? []).map((option) => ({ ...option })),
-    config: { ...(field.config ?? {}) },
+    config: cloneConfig(field.config),
     span: field.span,
     showInList: field.showInList,
     listWidth: field.listWidth ?? undefined,
     hidden: field.hidden,
+    subFields: (field.subFields ?? []).map((subField) => ({
+      id: subField.id,
+      key: subField.key,
+      label: subField.label,
+      type: subField.type as SubFieldForm['type'],
+      required: subField.required,
+      options: (subField.options ?? []).map((option) => ({ ...option })),
+      config: cloneConfig(subField.config),
+    })),
   })
 }
 
@@ -79,13 +109,22 @@ watch(visible, (open) => {
 })
 
 function handleTypeChange(type: FieldVO['type']) {
+  form.config = {}
+  if (type !== 'sub_product') form.subFields = []
   if (type === 'location') {
-    form.config = { ...(form.config ?? {}), scope: 'ALL', locationType: 'PCD' }
+    form.config = { scope: 'ALL', locationType: 'PCD' }
   } else if (type === 'attachment') {
-    form.config = { ...(form.config ?? {}), onlyOne: false, accept: '', limitSize: '' }
+    form.config = { onlyOne: false, accept: '', limitSize: '' }
     form.showInList = false
   } else if (type === 'data_source' || type === 'data_source_multiple') {
-    form.config = { ...(form.config ?? {}), dataSourceType: 'CUSTOMER' }
+    form.config = { dataSourceType: 'CUSTOMER' }
+  } else if (type === 'sub_product') {
+    form.config = { fixedColumn: 1, sumColumns: [] }
+    form.subFields = []
+    form.required = false
+    form.span = 24
+    form.showInList = false
+    form.listWidth = undefined
   }
 }
 
@@ -114,8 +153,15 @@ async function loadCustomDataSources() {
 }
 
 function updateDataSourceType(value: string) {
-  if (!form.config) form.config = {}
-  form.config.dataSourceType = value as DataSourceType
+  const current = form.config ?? {}
+  const {
+    combineSearch: _combineSearch,
+    showFields: _showFields,
+    linkFields: _linkFields,
+    childLinkFields: _childLinkFields,
+    ...rest
+  } = current
+  form.config = { ...rest, dataSourceType: value as DataSourceType }
 }
 
 function needsOptions() {
@@ -142,6 +188,10 @@ async function submit() {
     ElMessage.warning('请选择数据源')
     return
   }
+  if (form.type === 'sub_product' && !form.subFields.length) {
+    ElMessage.warning('请至少配置一个子字段')
+    return
+  }
   emit('save', {
     label: form.label.trim(),
     type: form.type,
@@ -152,6 +202,7 @@ async function submit() {
     showInList: form.showInList,
     listWidth: form.listWidth,
     hidden: props.editingField?.system ? false : form.hidden,
+    subFields: form.type === 'sub_product' ? form.subFields : undefined,
   })
 }
 </script>
@@ -160,7 +211,19 @@ async function submit() {
   <el-dialog
     v-model="visible"
     :title="editingField ? `编辑字段 · ${editingField.label}` : '新增字段'"
-    width="560px"
+    :width="
+      [
+        'sub_product',
+        'data_source',
+        'data_source_multiple',
+        'select',
+        'multiselect',
+        'radio',
+        'checkbox',
+      ].includes(form.type)
+        ? '920px'
+        : '560px'
+    "
     destroy-on-close
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
@@ -196,6 +259,18 @@ async function submit() {
         </div>
       </el-form-item>
 
+      <CustomFormFieldLinkageDesigner
+        v-if="
+          !editingField?.system &&
+          ['select', 'multiselect', 'radio', 'checkbox'].includes(form.type)
+        "
+        v-model="formConfig"
+        :field-type="form.type"
+        :field-options="form.options"
+        :fields="fields"
+        :current-field-id="editingField?.id"
+      />
+
       <el-form-item v-if="isDataSourceField" label="数据源">
         <el-select
           :model-value="form.config?.dataSourceType"
@@ -229,6 +304,23 @@ async function submit() {
           数据源类型保存后不可修改；如需切换，请删除字段后重新创建。
         </div>
       </el-form-item>
+
+      <CustomFormDataSourceFilterDesigner
+        v-if="isDataSourceField"
+        v-model="formConfig"
+        :source-type="form.config?.dataSourceType"
+        :fields="fields"
+        :current-field-id="editingField?.id"
+      />
+
+      <CustomFormDataSourceLinkageDesigner
+        v-if="isDataSourceField"
+        v-model="formConfig"
+        :source-type="form.config?.dataSourceType"
+        :fields="fields"
+        :current-field-id="editingField?.id"
+        :multiple="form.type === 'data_source_multiple'"
+      />
 
       <el-form-item v-if="form.type === 'formula'" label="公式表达式">
         <el-input v-model="form.config!.formula" placeholder="例如：cf_amount * cf_rate / 100" />
@@ -268,7 +360,14 @@ async function submit() {
         </div>
       </el-form-item>
 
-      <div class="grid grid-cols-2 gap-4">
+      <CustomFormSubTableDesigner
+        v-if="form.type === 'sub_product'"
+        v-model:sub-fields="form.subFields"
+        v-model:config="subTableConfig"
+        :custom-data-sources="customDataSources"
+      />
+
+      <div v-if="form.type !== 'sub_product'" class="grid grid-cols-2 gap-4">
         <el-form-item label="栅格宽度">
           <el-select v-model="form.span" class="w-full">
             <el-option :value="6" label="1/4" />
@@ -282,7 +381,7 @@ async function submit() {
         </el-form-item>
       </div>
 
-      <div class="grid grid-cols-3 gap-4">
+      <div v-if="form.type !== 'sub_product'" class="grid grid-cols-3 gap-4">
         <el-form-item label="必填">
           <el-switch v-model="form.required" :disabled="Boolean(editingField?.system)" />
         </el-form-item>

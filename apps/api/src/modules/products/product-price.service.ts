@@ -1,10 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import type {
-  FieldVO,
-  FilterCondition,
-  ImportResultVO,
-  ProductPriceVO,
-} from '@micromatrix/shared'
+import type { FieldVO, FilterCondition, ImportResultVO, ProductPriceVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
@@ -107,14 +102,7 @@ export class ProductPriceService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(
-        user.tenantId,
-        'productPrice',
-        price.id,
-        customData,
-        'create',
-        tx,
-      )
+      await this.fieldValues.save(user.tenantId, 'productPrice', price.id, customData, 'create', tx)
       await this.productFields.saveProducts(user.tenantId, price.id, dto.products ?? [], tx)
       return price
     })
@@ -269,7 +257,11 @@ export class ProductPriceService {
   }
 
   async exportSelected(user: AuthUser, dto: ProductPriceExportSelectDto) {
-    return this.exportXlsx(user, {}, { fileName: dto.fileName, headList: dto.headList, ids: dto.ids })
+    return this.exportXlsx(
+      user,
+      {},
+      { fileName: dto.fileName, headList: dto.headList, ids: dto.ids },
+    )
   }
 
   async importTemplate(user: AuthUser, importType: ImportType) {
@@ -357,7 +349,7 @@ export class ProductPriceService {
     const pageSize = dto.pageSize ?? 10
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const filteredIds = dto.filters?.length
-      ? await this.filterIds(user.tenantId, fields, dto.filters)
+      ? await this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
       : null
     const where: Prisma.ProductPriceWhereInput = {
       organizationId: user.tenantId,
@@ -601,7 +593,11 @@ export class ProductPriceService {
           ([key, value]) => !['product', 'amount'].includes(key) && value !== undefined,
         ),
       )
-      products.push({ product: product.id, amount, ...(Object.keys(values).length ? { values } : {}) })
+      products.push({
+        product: product.id,
+        amount,
+        ...(Object.keys(values).length ? { values } : {}),
+      })
     }
     prepared.add.products = products
     if (group.subRows.length > 0) prepared.update.products = products
@@ -635,7 +631,8 @@ export class ProductPriceService {
     if (importType === 'ADD' && !name) throw new BadRequestException('价格表名称不能为空')
     const rawStatus = values['status']
     const status = rawStatus === undefined || rawStatus === '' ? undefined : String(rawStatus)
-    if (status !== undefined && !['1', '2'].includes(status)) throw new BadRequestException('价格表状态无效')
+    if (status !== undefined && !['1', '2'].includes(status))
+      throw new BadRequestException('价格表状态无效')
     const add: ProductPriceAddDto = {
       name: name ?? '',
       status: (status ?? '1') as '1' | '2',
@@ -695,7 +692,12 @@ export class ProductPriceService {
     throw new BadRequestException(`字段「${key}」不支持批量修改`)
   }
 
-  private async filterIds(organizationId: string, fields: FieldVO[], conditions: FilterCondition[]) {
+  private async filterIds(
+    organizationId: string,
+    fields: FieldVO[],
+    conditions: FilterCondition[],
+    searchMode: 'AND' | 'OR' = 'AND',
+  ) {
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
     const sets = await Promise.all(
       conditions.map(async (condition) => {
@@ -716,26 +718,37 @@ export class ProductPriceService {
       }),
     )
     if (!sets.length) return []
+    if (searchMode === 'OR') return [...new Set(sets.flatMap((set) => [...set]))]
     return [
       ...sets
         .slice(1)
-        .reduce(
-          (result, set) => new Set([...result].filter((id) => set.has(id))),
-          sets[0]!,
-        ),
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
   }
 
   private systemFilterClause(condition: FilterCondition): Prisma.ProductPriceWhereInput | null {
     const key = condition.key as 'name' | 'status'
     if (!['name', 'status'].includes(key)) return null
-    if (condition.op === 'eq') return { [key]: { equals: condition.value as never } } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'ne') return { NOT: { [key]: { equals: condition.value as never } } } as Prisma.ProductPriceWhereInput
+    const listValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+    if (condition.op === 'eq')
+      return { [key]: { equals: condition.value as never } } as Prisma.ProductPriceWhereInput
+    if (condition.op === 'ne')
+      return {
+        NOT: { [key]: { equals: condition.value as never } },
+      } as Prisma.ProductPriceWhereInput
+    if (condition.op === 'in')
+      return { [key]: { in: listValues as never[] } } as Prisma.ProductPriceWhereInput
+    if (condition.op === 'notIn')
+      return { [key]: { notIn: listValues as never[] } } as Prisma.ProductPriceWhereInput
     if (condition.op === 'contains' && key === 'name') {
       return { name: { contains: String(condition.value), mode: 'insensitive' } }
     }
+    if (condition.op === 'notContains' && key === 'name') {
+      return { NOT: { name: { contains: String(condition.value), mode: 'insensitive' } } }
+    }
     if (condition.op === 'isEmpty') return { [key]: null } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'notEmpty') return { NOT: { [key]: null } } as Prisma.ProductPriceWhereInput
+    if (condition.op === 'notEmpty')
+      return { NOT: { [key]: null } } as Prisma.ProductPriceWhereInput
     return null
   }
 

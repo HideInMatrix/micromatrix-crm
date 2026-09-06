@@ -67,6 +67,11 @@ export class AccountPageDto {
   @IsOptional()
   filters?: FilterCondition[]
 
+  @ApiPropertyOptional({ enum: ['AND', 'OR'], default: 'AND', description: '筛选条件组合方式' })
+  @IsIn(['AND', 'OR'])
+  @IsOptional()
+  filterMode?: 'AND' | 'OR'
+
   @ApiPropertyOptional({ enum: ['ALL', 'SELF', 'DEPARTMENT', 'COLLABORATION'] })
   @IsIn(['ALL', 'SELF', 'DEPARTMENT', 'COLLABORATION'])
   @IsOptional()

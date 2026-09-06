@@ -17,7 +17,11 @@ import { BusinessNotificationsService } from '../notifications/business-notifica
 import { QuotationFieldsService } from '../quotes/quotation-fields.service'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
-import { ContractFieldsService, type ContractProductInput, type ContractProductValue } from './contract-fields.service'
+import {
+  ContractFieldsService,
+  type ContractProductInput,
+  type ContractProductValue,
+} from './contract-fields.service'
 import { ContractStageService } from './contract-stage.service'
 import {
   ContractAddDto,
@@ -65,14 +69,17 @@ export class ContractsService {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
     const fields = await this.moduleForms.listFields(user.tenantId, FORM_KEY)
-    const saved = dto.viewId && !['ALL', 'DEPARTMENT'].includes(dto.viewId)
-      ? await this.userViews.resolveFilters(user, dto.viewId, USER_VIEW_RESOURCE_TYPES.contract)
-      : null
+    const saved =
+      dto.viewId && !['ALL', 'DEPARTMENT'].includes(dto.viewId)
+        ? await this.userViews.resolveFilters(user, dto.viewId, USER_VIEW_RESOURCE_TYPES.contract)
+        : null
     const [savedIds, adHocIds] = await Promise.all([
       saved?.conditions.length
         ? this.filterIds(user.tenantId, fields, saved.conditions, saved.searchMode)
         : null,
-      dto.filters?.length ? this.filterIds(user.tenantId, fields, dto.filters, 'AND') : null,
+      dto.filters?.length
+        ? this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
+        : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
     const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
@@ -109,8 +116,15 @@ export class ContractsService {
       }),
     ])
     const [dynamic, products, ownerMap] = await Promise.all([
-      this.fieldValues.load(user.tenantId, 'contract', rows.map((row) => row.id)),
-      this.contractFields.loadProductsBatch(user.tenantId, rows.map((row) => row.id)),
+      this.fieldValues.load(
+        user.tenantId,
+        'contract',
+        rows.map((row) => row.id),
+      ),
+      this.contractFields.loadProductsBatch(
+        user.tenantId,
+        rows.map((row) => row.id),
+      ),
       this.userNames(rows.map((row) => row.owner)),
     ])
     const stageMap = new Map(stageConfigs.map((stage) => [stage.id, stage.name]))
@@ -142,7 +156,8 @@ export class ContractsService {
   async addDirect(user: AuthUser, dto: ContractAddDto) {
     await this.ensureCustomer(user, dto.customerId)
     const owner = await this.resolveOwner(user, dto.owner)
-    const config = dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
+    const config =
+      dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const customData = await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields ?? [])
     const products = dto.products?.length
       ? dto.products.map((item) => ({
@@ -217,11 +232,13 @@ export class ContractsService {
     const preUpdateSnapshot = approvalRequired
       ? await this.approvals.capturePreUpdateSnapshot(user, 'contract', dto.id)
       : null
-    const config = dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
+    const config =
+      dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const currentDynamic = await this.fieldValues.load(user.tenantId, 'contract', [dto.id])
-    const customData = dto.moduleFields === undefined
-      ? currentDynamic.get(dto.id) ?? {}
-      : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
+    const customData =
+      dto.moduleFields === undefined
+        ? (currentDynamic.get(dto.id) ?? {})
+        : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
     await this.prisma.$transaction(async (tx) => {
       const row = await tx.contract.update({
         where: { id: dto.id },
@@ -231,8 +248,18 @@ export class ContractsService {
           owner: owner?.id,
           amount: new Prisma.Decimal(amount),
           number: dto.number?.trim(),
-          startTime: dto.startTime === undefined ? undefined : dto.startTime === null ? null : BigInt(dto.startTime),
-          endTime: dto.endTime === undefined ? undefined : dto.endTime === null ? null : BigInt(dto.endTime),
+          startTime:
+            dto.startTime === undefined
+              ? undefined
+              : dto.startTime === null
+                ? null
+                : BigInt(dto.startTime),
+          endTime:
+            dto.endTime === undefined
+              ? undefined
+              : dto.endTime === null
+                ? null
+                : BigInt(dto.endTime),
           updateTime: BigInt(Date.now()),
           updateUser: user.id,
         },
@@ -241,15 +268,17 @@ export class ContractsService {
         await this.fieldValues.save(user.tenantId, 'contract', dto.id, customData, 'update', tx)
       }
       if (products) await this.contractFields.saveProducts(user.tenantId, dto.id, products, tx)
-      const latestProducts = products ?? (await this.contractFields.loadProducts(user.tenantId, dto.id)).map((item) => ({
-        product: item.productId,
-        productAmount: item.productAmount,
-        productNumber: item.productNumber,
-        amount: item.amount,
-        rowId: item.rowId,
-        bizId: item.bizId,
-        values: item.values,
-      }))
+      const latestProducts =
+        products ??
+        (await this.contractFields.loadProducts(user.tenantId, dto.id)).map((item) => ({
+          product: item.productId,
+          productAmount: item.productAmount,
+          productNumber: item.productNumber,
+          amount: item.amount,
+          rowId: item.rowId,
+          bizId: item.bizId,
+          values: item.values,
+        }))
       await tx.contractSnapshot.deleteMany({ where: { contractId: dto.id } })
       await this.writeSnapshot(tx, dto.id, config, row, customData, latestProducts)
     })
@@ -293,7 +322,10 @@ export class ContractsService {
         await this.approvals.handleTargetApproval(user, 'contract', id, dto.approvalStatus)
         success++
       } catch (error) {
-        if (error instanceof BadRequestException && /没有审批中的申请|没有该单据的待审批任务/.test(error.message)) {
+        if (
+          error instanceof BadRequestException &&
+          /没有审批中的申请|没有该单据的待审批任务/.test(error.message)
+        ) {
           skip++
         } else {
           fail++
@@ -393,7 +425,9 @@ export class ContractsService {
       this.fieldValues.load(user.tenantId, 'contract', [id]),
       this.contractFields.loadProducts(user.tenantId, id),
       this.userNames([row.owner]),
-      this.prisma.contractStageConfig.findFirst({ where: { id: row.stage, organizationId: user.tenantId } }),
+      this.prisma.contractStageConfig.findFirst({
+        where: { id: row.stage, organizationId: user.tenantId },
+      }),
     ])
     return this.toVO(
       full,
@@ -436,7 +470,12 @@ export class ContractsService {
     const dynamic = { ...(existingDynamic.get(dto.id) ?? {}) }
     if (dto.fields?.length) {
       const fields = await this.moduleForms.listFields(user.tenantId, FORM_KEY)
-      const map = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+      const map = new Map(
+        fields.flatMap((field) => [
+          [field.id, field],
+          [field.key, field],
+        ]),
+      )
       for (const item of dto.fields) {
         const field = map.get(item.fieldId)
         if (!field) throw new BadRequestException(`合同字段不存在：${item.fieldId}`)
@@ -477,11 +516,12 @@ export class ContractsService {
         })),
       )
     })
-    const stageEvent = target.name === '作废'
-      ? 'CONTRACT_VOID'
-      : target.name === '合同完结'
-        ? 'CONTRACT_ARCHIVED'
-        : null
+    const stageEvent =
+      target.name === '作废'
+        ? 'CONTRACT_VOID'
+        : target.name === '合同完结'
+          ? 'CONTRACT_ARCHIVED'
+          : null
     if (stageEvent) {
       await this.businessNotifications.sendConfigured({
         tenantId: user.tenantId,
@@ -500,7 +540,9 @@ export class ContractsService {
   async remove(user: AuthUser, id: string) {
     const row = await this.ensureInScope(user, id, 'contract:delete')
     await this.assertDeletable(id)
-    if (await this.approvals.flowRequired(user.tenantId, 'contract', Number(row.amount), 'DELETE')) {
+    if (
+      await this.approvals.flowRequired(user.tenantId, 'contract', Number(row.amount), 'DELETE')
+    ) {
       const approval = await this.approvals.submit(user, 'contract', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
@@ -567,7 +609,18 @@ export class ContractsService {
     customData: Record<string, unknown>,
     products: ContractProductInput[],
   ) {
-    const fields = await this.moduleForms.listFieldsInTransaction(tx, row.id ? (await tx.contract.findUniqueOrThrow({ where: { id: row.id }, select: { organizationId: true } })).organizationId : '', FORM_KEY)
+    const fields = await this.moduleForms.listFieldsInTransaction(
+      tx,
+      row.id
+        ? (
+            await tx.contract.findUniqueOrThrow({
+              where: { id: row.id },
+              select: { organizationId: true },
+            })
+          ).organizationId
+        : '',
+      FORM_KEY,
+    )
     await tx.contractSnapshot.create({
       data: {
         contractId,
@@ -603,7 +656,12 @@ export class ContractsService {
     moduleFields: Array<{ fieldId: string; fieldValue?: unknown }> = [],
   ) {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
-    const map = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const map = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
     const result: Record<string, unknown> = {}
     for (const item of moduleFields) {
       const field = map.get(item.fieldId)
@@ -689,7 +747,8 @@ export class ContractsService {
         if (!field || field.system || (isCustomFieldKey(condition.key) === false && field.hidden)) {
           return new Set<string>()
         }
-        const normalized = field.key === condition.key ? condition : { ...condition, key: field.key }
+        const normalized =
+          field.key === condition.key ? condition : { ...condition, key: field.key }
         return new Set(
           await this.fieldValues.filterResourceIds(organizationId, 'contract', [normalized]),
         )
@@ -700,10 +759,7 @@ export class ContractsService {
     return [
       ...sets
         .slice(1)
-        .reduce(
-          (result, set) => new Set([...result].filter((id) => set.has(id))),
-          sets[0]!,
-        ),
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
   }
 
@@ -711,15 +767,29 @@ export class ContractsService {
     key: string,
     condition: FilterCondition,
   ): Prisma.ContractWhereInput | null {
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const matches = values.map((value) =>
+        this.contractSystemFilterClause(key, { ...condition, op: 'eq', value }),
+      )
+      if (!matches.length || matches.some((match) => !match)) return null
+      const OR = matches as Prisma.ContractWhereInput[]
+      return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
+    }
+    if (condition.op === 'notContains') {
+      const match = this.contractSystemFilterClause(key, { ...condition, op: 'contains' })
+      return match ? { NOT: match } : null
+    }
     const dateKeys = new Set(['startTime', 'endTime', 'createTime', 'updateTime'])
     const numberKeys = new Set(['amount'])
     const boolKeys = new Set(['approved'])
     let rawValue: unknown = condition.value
     if (dateKeys.has(key)) {
       const direct = Number(condition.value)
-      const millis = Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
-        ? direct
-        : new Date(String(condition.value)).getTime()
+      const millis =
+        Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
+          ? direct
+          : new Date(String(condition.value)).getTime()
       if (!Number.isFinite(millis)) return null
       rawValue = BigInt(Math.trunc(millis))
     } else if (numberKeys.has(key)) {
@@ -805,12 +875,14 @@ export class ContractsService {
   }
 
   private totalAmount(products: ContractProductInput[]) {
-    return Math.round(
-      products.reduce(
-        (sum, item) => sum + (item.amount ?? item.productAmount * (item.productNumber ?? 1)),
-        0,
-      ) * 100,
-    ) / 100
+    return (
+      Math.round(
+        products.reduce(
+          (sum, item) => sum + (item.amount ?? item.productAmount * (item.productNumber ?? 1)),
+          0,
+        ) * 100,
+      ) / 100
+    )
   }
 
   private assertAmount(amount: number) {
@@ -866,7 +938,10 @@ export class ContractsService {
   private async userNames(ids: string[]) {
     const unique = [...new Set(ids)]
     const users = unique.length
-      ? await this.prisma.user.findMany({ where: { id: { in: unique } }, select: { id: true, name: true } })
+      ? await this.prisma.user.findMany({
+          where: { id: { in: unique } },
+          select: { id: true, name: true },
+        })
       : []
     return new Map(users.map((item) => [item.id, item.name]))
   }
@@ -879,14 +954,16 @@ export class ContractsService {
     ownerMap: Map<string, string>,
     stageMap: Map<string, string>,
   ): ContractVO {
-    const paidAmount = Math.round(
-      row.paymentRecords.reduce((sum, item) => sum + Number(item.recordAmount ?? 0), 0) * 100,
-    ) / 100
-    const invoicedAmount = Math.round(
-      row.contractInvoices
-        .filter((item) => item.approvalStatus === 'APPROVED')
-        .reduce((sum, item) => sum + Number(item.amount), 0) * 100,
-    ) / 100
+    const paidAmount =
+      Math.round(
+        row.paymentRecords.reduce((sum, item) => sum + Number(item.recordAmount ?? 0), 0) * 100,
+      ) / 100
+    const invoicedAmount =
+      Math.round(
+        row.contractInvoices
+          .filter((item) => item.approvalStatus === 'APPROVED')
+          .reduce((sum, item) => sum + Number(item.amount), 0) * 100,
+      ) / 100
     return {
       id: row.id,
       name: row.name,

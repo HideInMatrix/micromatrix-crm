@@ -57,8 +57,16 @@ export const customFormApi = {
       viewId?: string
     },
   ) => http.post<CustomFormDataPageVO>(`/custom-form/${id}/data/page`, data ?? {}),
-  dataSourcePage: (id: string, data?: { current?: number; pageSize?: number; keyword?: string }) =>
-    http.post<DataSourcePageVO>(`/custom-form/${id}/data/source-options`, data ?? {}),
+  dataSourcePage: (
+    id: string,
+    data?: {
+      current?: number
+      pageSize?: number
+      keyword?: string
+      filters?: FilterCondition[]
+      filterMode?: 'AND' | 'OR'
+    },
+  ) => http.post<DataSourcePageVO>(`/custom-form/${id}/data/source-options`, data ?? {}),
   dataSourceResolve: (id: string, ids: string[]) =>
     http.post<DataSourceOptionVO[]>(`/custom-form/${id}/data/source-resolve`, { ids }),
   dataDetail: (id: string, dataId: string) =>

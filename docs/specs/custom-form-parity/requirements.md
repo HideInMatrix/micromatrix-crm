@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-FORM-001 立项时 `/custom-forms` 仅为占位页面，而 CordysCRM 已具备完整的自定义表单定义、表单级管理员/成员权限、动态字段、数据 CRUD、批量操作、导入导出与数据源能力。当前 MicroMatrix 已完成自定义表单核心 runtime、PC 页面、xlsx 导入/异步导出，以及 AdvancedFilter、SavedView、列设置和批量修改/删除；本规格当前只剩 F 公共 Form Engine 深化未关闭。
+FORM-001 立项时 `/custom-forms` 仅为占位页面，而 CordysCRM 已具备完整的自定义表单定义、表单级管理员/成员权限、动态字段、数据 CRUD、批量操作、导入导出与数据源能力。当前 MicroMatrix 已完成自定义表单核心 runtime、PC 页面、xlsx 导入/异步导出、AdvancedFilter、SavedView、列设置、批量修改/删除，以及 F1～F4 公共 Form Engine 深化；本规格已完成最终验收并封板为 `VERIFIED`。
 
 本执行单元把自定义表单从“菜单存在但无真实能力”推进为可独立承载业务数据的正式模块，并复用项目已经完成的 `sys_module_form / sys_module_field` 元数据底座，不再创建第二套字段定义引擎。
 
@@ -73,9 +73,9 @@ W3.7 之后尚未冻结新的 W3.x 编号，因此本单元固定使用独立编
 
 1. `FORM-001D`：xlsx 导入预检查、正式导入、全量/选中导出，复用现有 `SpreadsheetService / ExportTask`。**已完成并验收。**
 2. `FORM-001E`：AdvancedFilter / SavedView / 列设置 / 批量编辑与批量删除。**已完成并验收。**
-3. `FORM-001F`：补齐公共 Form Engine 的附件、LOCATION、数据源、子表、显隐/字段联动，再开放自定义表单对应设计能力。**F1 附件 / LOCATION、F2 DATA_SOURCE 已完成并验收；F3～F4 待实施。**
+3. `FORM-001F`：补齐公共 Form Engine 的附件、LOCATION、数据源、子表、显隐/字段联动，再开放自定义表单对应设计能力。**F1 附件 / LOCATION、F2 DATA_SOURCE、F3 SUB_TABLE / SUB_PRODUCT、F4 显隐/表单联动/字段联动均已完成并验收。**
 
-F 能力在实现和验收完成前必须保持未完成状态，不能仅因为 A～E 已关闭就把整个 FORM-001 标记为 100% Cordys parity。
+F1～F4 已完成实现、专项 Smoke、Browser 回归、空库 baseline/seed/diff 与 root gates，FORM-001 当前正式状态为 `VERIFIED`。后续若继续扩展 SERIAL_NUMBER、DIVIDER 或其它公共 Metadata 高级语义，应建立新的独立执行单元，不重新打开 FORM-001 已完成范围。
 
 ## 5. 验收
 

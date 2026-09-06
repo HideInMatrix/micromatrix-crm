@@ -11,11 +11,14 @@ export function useCustomFormViews(
   const visibleColumnKeys = ref<string[]>([])
 
   const displayFields = computed(() =>
-    dataPage.value.fields.filter((field) => field.showInList && field.type !== 'attachment'),
+    dataPage.value.fields.filter(
+      (field) => field.showInList && !['attachment', 'sub_product'].includes(field.type),
+    ),
   )
   const filterableFields = computed(() =>
     dataPage.value.fields.filter(
-      (field) => !field.hidden && !['formula', 'picture', 'attachment'].includes(field.type),
+      (field) =>
+        !field.hidden && !['formula', 'picture', 'attachment', 'sub_product'].includes(field.type),
     ),
   )
   const defaultColumnKeys = computed(() => displayFields.value.map((field) => field.key))
@@ -23,19 +26,22 @@ export function useCustomFormViews(
     if (!visibleColumnKeys.value.length) return displayFields.value
     const visible = new Set(visibleColumnKeys.value)
     return dataPage.value.fields.filter(
-      (field) => !field.hidden && field.type !== 'attachment' && visible.has(field.key),
+      (field) =>
+        !field.hidden &&
+        !['attachment', 'sub_product'].includes(field.type) &&
+        visible.has(field.key),
     )
   })
   const savedViewModule = computed(() =>
     activeFormId.value ? `customForm:${activeFormId.value}` : '',
   )
   const savedViewFields = computed(() =>
-    dataPage.value.fields.filter((field) => field.type !== 'attachment'),
+    dataPage.value.fields.filter((field) => !['attachment', 'sub_product'].includes(field.type)),
   )
   const customDataFields = computed(() => dataPage.value.fields.filter((field) => !field.system))
   const batchEditableFields = computed(() =>
     dataPage.value.fields.filter(
-      (field) => !['attachment', 'picture', 'formula'].includes(field.type),
+      (field) => !['attachment', 'picture', 'formula', 'sub_product'].includes(field.type),
     ),
   )
   const exportFields = computed(() =>

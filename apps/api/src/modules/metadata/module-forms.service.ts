@@ -3,7 +3,10 @@ import { BadRequestException, Injectable, NotFoundException, Optional } from '@n
 import {
   evaluateFormula,
   formulaVariables,
+  isSubTableFieldType,
+  type DataSourceSubFieldLinkField,
   type FieldConfig,
+  type FieldLinkOption,
   type FieldOption,
   type FieldType,
   type FieldVO,
@@ -30,6 +33,18 @@ interface StoredFieldProp {
   span: number
   showInList: boolean
   listWidth: number | null
+  subFields: StoredSubFieldProp[] | null
+}
+
+interface StoredSubFieldProp {
+  id: string
+  key: string
+  label: string
+  type: FieldType
+  required: boolean
+  options: FieldOption[] | null
+  config: FieldConfig | null
+  sort: number
 }
 
 export interface ModuleFormConfigVO {
@@ -131,6 +146,11 @@ export class ModuleFormsService {
       })
       const key = `cf_${randomBytes(6).toString('hex')}`
       const now = BigInt(Date.now())
+      const storedProp = this.dtoToProp(key, dto, false)
+      if (dto.type === 'sub_product') {
+        this.validateStoredSubFields(storedProp.subFields ?? [])
+        this.validateSubTableColumns(storedProp.config, storedProp.subFields ?? [])
+      }
       const created = await tx.sysModuleField.create({
         data: {
           formId: form.id,
@@ -143,11 +163,14 @@ export class ModuleFormsService {
           updateUser: actorId,
           createTime: now,
           updateTime: now,
-          blob: { create: { prop: JSON.stringify(this.dtoToProp(key, dto, false)) } },
+          blob: { create: { prop: JSON.stringify(storedProp) } },
         },
         include: { blob: true },
       })
-      return this.toVO(created, formKey)
+      const result = this.toVO(created, formKey)
+      const allFields = (await this.findFields(tx, form.id)).map((item) => this.toVO(item, formKey))
+      this.validateFormLinkage(allFields)
+      return result
     })
     await this.invalidateForm(organizationId, formKey)
     return result
@@ -183,6 +206,19 @@ export class ModuleFormsService {
         if (count > 0) throw new BadRequestException('字段已有数据，不能切换普通值与大字段存储类型')
       }
 
+      const nextType = (dto.type ?? field.type) as FieldType
+      if (dto.type && dto.type !== field.type && dto.type === 'sub_product') {
+        const count = await this.countFieldValues(tx, id)
+        if (count > 0) throw new BadRequestException('字段已有数据，不能切换为子表格类型')
+      }
+      if (dto.type && dto.type !== field.type && field.type === 'sub_product') {
+        const subIds = current.subFields?.map((subField) => subField.id) ?? []
+        const counts = await Promise.all(subIds.map((subId) => this.countFieldValues(tx, subId)))
+        if (counts.some((count) => count > 0)) {
+          throw new BadRequestException('子表格已有数据，不能修改父字段类型')
+        }
+      }
+
       const next: StoredFieldProp = {
         ...current,
         required: dto.required ?? current.required,
@@ -192,6 +228,16 @@ export class ModuleFormsService {
         span: dto.span ?? current.span,
         showInList: dto.showInList ?? current.showInList,
         listWidth: dto.listWidth === undefined ? current.listWidth : dto.listWidth,
+        subFields:
+          dto.subFields === undefined
+            ? current.subFields
+            : this.normalizeSubFields(dto.subFields, current.subFields),
+      }
+      if ((dto.type ?? field.type) === 'sub_product') {
+        next.required = false
+        next.span = 24
+        next.showInList = false
+        next.listWidth = null
       }
       if (
         ['data_source', 'data_source_multiple'].includes(field.type) &&
@@ -200,7 +246,14 @@ export class ModuleFormsService {
       ) {
         throw new BadRequestException('已保存的数据源字段不能修改数据源类型，请删除字段后重建')
       }
-      this.validateFieldSpecificConfig((dto.type ?? field.type) as FieldType, next.config)
+      this.validateFieldSpecificConfig(nextType, next.config)
+      if (nextType === 'sub_product') {
+        this.validateStoredSubFields(next.subFields ?? [])
+        this.validateSubTableColumns(next.config, next.subFields ?? [])
+        await this.reconcileSubFieldValues(tx, current.subFields ?? [], next.subFields ?? [])
+      } else {
+        next.subFields = null
+      }
       const updated = await tx.sysModuleField.update({
         where: { id },
         data: {
@@ -217,7 +270,12 @@ export class ModuleFormsService {
         },
         include: { blob: true },
       })
-      return this.toVO(updated, field.form.formKey)
+      const result = this.toVO(updated, field.form.formKey)
+      const allFields = (await this.findFields(tx, field.formId)).map((item) =>
+        this.toVO(item, field.form.formKey),
+      )
+      this.validateFormLinkage(allFields)
+      return result
     })
     await this.invalidateForm(organizationId, result.module)
     return result
@@ -226,7 +284,23 @@ export class ModuleFormsService {
   async deleteField(organizationId: string, id: string): Promise<{ id: string; name: string }> {
     const deleted = await this.prisma.$transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
-      if (this.parseProp(field).system) throw new BadRequestException('系统字段不可删除')
+      const prop = this.parseProp(field)
+      if (prop.system) throw new BadRequestException('系统字段不可删除')
+      if (field.type === 'sub_product') {
+        const childIds = prop.subFields?.map((subField) => subField.id) ?? []
+        await Promise.all([
+          tx.customFormDataField.deleteMany({
+            where: {
+              OR: [{ refSubId: id }, ...(childIds.length ? [{ fieldId: { in: childIds } }] : [])],
+            },
+          }),
+          tx.customFormDataFieldBlob.deleteMany({
+            where: {
+              OR: [{ refSubId: id }, ...(childIds.length ? [{ fieldId: { in: childIds } }] : [])],
+            },
+          }),
+        ])
+      }
       await this.deleteFieldValues(tx, id)
       await tx.sysModuleField.delete({ where: { id } })
       return { result: { id, name: field.name }, formKey: field.form.formKey }
@@ -288,6 +362,7 @@ export class ModuleFormsService {
       span: prop.span,
       showInList: prop.showInList,
       listWidth: prop.listWidth,
+      subFields: prop.subFields?.map((subField) => this.subFieldToVO(subField, formKey)) ?? null,
     }
   }
 
@@ -386,6 +461,7 @@ export class ModuleFormsService {
       span: typeof raw['span'] === 'number' ? raw['span'] : 12,
       showInList: raw['showInList'] !== false,
       listWidth: typeof raw['listWidth'] === 'number' ? raw['listWidth'] : null,
+      subFields: this.parseStoredSubFields(raw['subFields']),
     }
   }
 
@@ -400,26 +476,32 @@ export class ModuleFormsService {
       span: template.span ?? 12,
       showInList: template.showInList ?? true,
       listWidth: template.listWidth ?? null,
+      subFields: null,
     }
   }
 
   private dtoToProp(key: string, dto: CreateFieldDto, system: boolean): StoredFieldProp {
     return {
       key,
-      required: dto.required ?? false,
+      required: dto.type === 'sub_product' ? false : (dto.required ?? false),
       system,
       hidden: dto.hidden ?? false,
       options: dto.options ?? null,
       config: dto.config ?? null,
-      span: dto.span ?? 12,
-      showInList: dto.showInList ?? true,
-      listWidth: dto.listWidth ?? null,
+      span: dto.type === 'sub_product' ? 24 : (dto.span ?? 12),
+      showInList: dto.type === 'sub_product' ? false : (dto.showInList ?? true),
+      listWidth: dto.type === 'sub_product' ? null : (dto.listWidth ?? null),
+      subFields: this.normalizeSubFields(dto.subFields),
     }
   }
 
   private validateFieldInput(dto: Partial<CreateFieldDto>): void {
     if (dto.type === 'formula' || dto.config?.formula) this.validateFormula(dto.config?.formula)
     if (dto.type) this.validateFieldSpecificConfig(dto.type, dto.config)
+    if (dto.subFields !== undefined && dto.type !== undefined && dto.type !== 'sub_product') {
+      throw new BadRequestException('只有子表格字段可以配置子字段')
+    }
+    if (dto.type === 'sub_product') this.validateSubFields(dto.subFields ?? [])
     if (dto.options) {
       for (const option of dto.options as unknown[]) {
         if (!this.isRecord(option)) throw new BadRequestException('选项格式不正确')
@@ -442,6 +524,81 @@ export class ModuleFormsService {
     if (type === 'data_source' || type === 'data_source_multiple') {
       if (typeof config?.dataSourceType !== 'string' || !config.dataSourceType.trim()) {
         throw new BadRequestException('数据源字段必须配置数据源类型')
+      }
+      this.validateDataSourceFilterConfig(config)
+      if (config?.showFields !== undefined) {
+        if (type !== 'data_source') {
+          throw new BadRequestException('只有单选数据源字段支持派生显示字段')
+        }
+        this.validateStringIds(config.showFields, '数据源显示字段')
+      }
+      if (config?.linkFields !== undefined) {
+        if (type !== 'data_source') {
+          throw new BadRequestException('只有单选数据源字段支持字段填充')
+        }
+        this.validateDataSourceLinkFields(config.linkFields, false)
+      }
+      if (config?.childLinkFields !== undefined) {
+        if (type !== 'data_source') {
+          throw new BadRequestException('只有单选数据源字段支持子表填充')
+        }
+        this.validateDataSourceLinkFields(config.childLinkFields, true)
+      }
+    } else if (
+      config?.combineSearch !== undefined ||
+      config?.showFields !== undefined ||
+      config?.linkFields !== undefined ||
+      config?.childLinkFields !== undefined
+    ) {
+      throw new BadRequestException('只有数据源字段可以配置数据源过滤、显示和填充规则')
+    }
+
+    if (config?.showControlRules !== undefined) {
+      if (!['select', 'multiselect', 'radio', 'checkbox'].includes(type)) {
+        throw new BadRequestException('只有选择类字段可以配置显隐规则')
+      }
+      if (!Array.isArray(config.showControlRules)) {
+        throw new BadRequestException('字段显隐规则格式不正确')
+      }
+      for (const rule of config.showControlRules) {
+        if (!rule || typeof rule !== 'object' || !Array.isArray(rule.fieldIds)) {
+          throw new BadRequestException('字段显隐规则格式不正确')
+        }
+        this.validateStringIds(rule.fieldIds, '显隐目标字段')
+        if (
+          rule.value !== undefined &&
+          !['string', 'number', 'boolean'].includes(typeof rule.value)
+        ) {
+          throw new BadRequestException('字段显隐规则值格式不正确')
+        }
+      }
+    }
+
+    if (config?.linkProp !== undefined) {
+      if (!['select', 'multiselect'].includes(type)) {
+        throw new BadRequestException('只有单选/多选下拉字段可以配置字段联动')
+      }
+      const link = config.linkProp
+      if (
+        !link ||
+        typeof link !== 'object' ||
+        typeof link.targetField !== 'string' ||
+        !link.targetField.trim() ||
+        !Array.isArray(link.linkOptions) ||
+        !link.linkOptions.length
+      ) {
+        throw new BadRequestException('字段联动配置不正确')
+      }
+      for (const option of link.linkOptions) this.validateFieldLinkOption(option)
+    }
+
+    if (type === 'sub_product') {
+      const fixedColumn = config?.fixedColumn ?? 1
+      if (![1, 2, 3].includes(fixedColumn)) {
+        throw new BadRequestException('子表固定列数量只能为 1、2 或 3')
+      }
+      if (config?.sumColumns !== undefined && !Array.isArray(config.sumColumns)) {
+        throw new BadRequestException('子表汇总列配置不正确')
       }
     }
 
@@ -483,6 +640,388 @@ export class ModuleFormsService {
           throw new BadRequestException('附件大小限制不能超过当前平台 20MB 上限')
         }
       }
+    }
+  }
+
+  private validateFieldLinkOption(option: FieldLinkOption): void {
+    if (!option || typeof option !== 'object') {
+      throw new BadRequestException('字段联动选项格式不正确')
+    }
+    const current = Array.isArray(option.current) ? option.current : [option.current]
+    if (!current.length) {
+      throw new BadRequestException('字段联动触发值不能为空')
+    }
+    this.validateStringIds(current, '字段联动触发值')
+    if (!['AUTO', 'HIDDEN'].includes(option.method)) {
+      throw new BadRequestException('字段联动方式不正确')
+    }
+    const target = Array.isArray(option.target) ? option.target : [option.target]
+    this.validateStringIds(target, '字段联动目标值')
+  }
+
+  private validateDataSourceFilterConfig(config?: FieldConfig | null): void {
+    const combine = config?.combineSearch
+    if (combine === undefined) return
+    if (
+      !combine ||
+      typeof combine !== 'object' ||
+      !['AND', 'OR'].includes(combine.searchMode) ||
+      !Array.isArray(combine.conditions)
+    ) {
+      throw new BadRequestException('数据源过滤配置不正确')
+    }
+    for (const condition of combine.conditions) {
+      if (
+        !condition ||
+        typeof condition !== 'object' ||
+        typeof condition.leftFieldId !== 'string' ||
+        !condition.leftFieldId.trim() ||
+        ![
+          'EQUALS',
+          'NOT_EQUALS',
+          'IN',
+          'NOT_IN',
+          'CONTAINS',
+          'NOT_CONTAINS',
+          'GT',
+          'GE',
+          'LT',
+          'LE',
+          'EMPTY',
+          'NOT_EMPTY',
+        ].includes(condition.operator)
+      ) {
+        throw new BadRequestException('数据源过滤条件格式不正确')
+      }
+      if (!['MATCH_FIELD', 'MATCH_VALUE'].includes(condition.matchType)) {
+        throw new BadRequestException('数据源过滤匹配方式不正确')
+      }
+      if (
+        condition.matchType === 'MATCH_FIELD' &&
+        (typeof condition.rightFieldId !== 'string' || !condition.rightFieldId.trim())
+      ) {
+        throw new BadRequestException('数据源动态过滤必须选择当前表单字段')
+      }
+    }
+  }
+
+  private validateDataSourceLinkFields(
+    links: DataSourceSubFieldLinkField[] | NonNullable<FieldConfig['linkFields']>,
+    childMode: boolean,
+  ): void {
+    if (!Array.isArray(links)) throw new BadRequestException('数据源字段填充配置不正确')
+    const currents = new Set<string>()
+    for (const link of links) {
+      if (
+        !link ||
+        typeof link !== 'object' ||
+        typeof link.current !== 'string' ||
+        !link.current.trim() ||
+        typeof link.link !== 'string' ||
+        !link.link.trim() ||
+        link.method !== 'fill' ||
+        typeof link.enable !== 'boolean'
+      ) {
+        throw new BadRequestException('数据源字段填充配置不正确')
+      }
+      if (currents.has(link.current))
+        throw new BadRequestException('同一字段不能重复配置数据源填充')
+      currents.add(link.current)
+      if (childMode) {
+        const childLinks = (link as DataSourceSubFieldLinkField).childLinks
+        if (!Array.isArray(childLinks)) throw new BadRequestException('数据源子表填充配置不正确')
+        this.validateDataSourceLinkFields(childLinks, false)
+      } else if ('childLinks' in link && (link as DataSourceSubFieldLinkField).childLinks?.length) {
+        throw new BadRequestException('数据源子字段填充不能继续嵌套')
+      }
+    }
+  }
+
+  private validateStringIds(values: string[], label: string): void {
+    if (values.some((value) => typeof value !== 'string' || !value.trim())) {
+      throw new BadRequestException(`${label}不能为空`)
+    }
+    if (new Set(values).size !== values.length) {
+      throw new BadRequestException(`${label}不能重复`)
+    }
+  }
+
+  private validateFormLinkage(fields: FieldVO[]): void {
+    const byId = new Map(fields.map((field) => [field.id, field]))
+
+    for (const field of fields) {
+      const sourceOptions = new Set((field.options ?? []).map((option) => option.value))
+      for (const rule of field.config?.showControlRules ?? []) {
+        if (rule.value !== undefined && !sourceOptions.has(String(rule.value))) {
+          throw new BadRequestException(`「${field.label}」显隐规则包含不存在的选项值`)
+        }
+        for (const targetId of rule.fieldIds) {
+          if (targetId === field.id) throw new BadRequestException('字段不能控制自身显隐')
+          if (!byId.has(targetId)) throw new BadRequestException('显隐规则引用的目标字段不存在')
+        }
+      }
+
+      const link = field.config?.linkProp
+      if (link) {
+        const target = byId.get(link.targetField)
+        if (!target) throw new BadRequestException('字段联动引用的目标字段不存在')
+        if (target.id === field.id) throw new BadRequestException('字段不能联动自身')
+        if (!['select', 'multiselect'].includes(target.type)) {
+          throw new BadRequestException('字段联动目标必须是单选或多选下拉字段')
+        }
+        const targetOptions = new Set((target.options ?? []).map((option) => option.value))
+        for (const option of link.linkOptions) {
+          const current = Array.isArray(option.current) ? option.current : [option.current]
+          if (current.some((value) => !sourceOptions.has(value))) {
+            throw new BadRequestException(`「${field.label}」字段联动包含不存在的触发选项`)
+          }
+          const targetValues = Array.isArray(option.target) ? option.target : [option.target]
+          if (targetValues.some((value) => !targetOptions.has(value))) {
+            throw new BadRequestException(`「${target.label}」字段联动包含不存在的目标选项`)
+          }
+        }
+      }
+
+      for (const condition of field.config?.combineSearch?.conditions ?? []) {
+        if (condition.matchType !== 'MATCH_FIELD') continue
+        if (!condition.rightFieldId || !byId.has(condition.rightFieldId)) {
+          throw new BadRequestException('数据源过滤引用的当前表单字段不存在')
+        }
+      }
+
+      for (const item of field.config?.linkFields ?? []) {
+        const target = byId.get(item.current)
+        if (!target) throw new BadRequestException('数据源填充引用的当前表单字段不存在')
+        if (target.type === 'formula' || target.type === 'sub_product') {
+          throw new BadRequestException('数据源顶层填充不能直接写入公式或子表字段')
+        }
+      }
+
+      for (const parentLink of field.config?.childLinkFields ?? []) {
+        const parent = byId.get(parentLink.current)
+        if (!parent || parent.type !== 'sub_product') {
+          throw new BadRequestException('数据源子表填充必须指向当前表单的子表字段')
+        }
+        const childIds = new Set((parent.subFields ?? []).map((subField) => subField.id))
+        for (const childLink of parentLink.childLinks) {
+          if (!childIds.has(childLink.current)) {
+            throw new BadRequestException('数据源子表填充引用的当前子字段不存在')
+          }
+          const target = parent.subFields?.find((subField) => subField.id === childLink.current)
+          if (target?.type === 'formula') {
+            throw new BadRequestException('数据源子表填充不能直接写入公式字段')
+          }
+        }
+      }
+    }
+
+    this.validateFieldLinkCycles(fields)
+  }
+
+  private validateFieldLinkCycles(fields: FieldVO[]): void {
+    const edges = new Map<string, string>()
+    for (const field of fields) {
+      if (field.config?.linkProp) edges.set(field.id, field.config.linkProp.targetField)
+    }
+    const visiting = new Set<string>()
+    const visited = new Set<string>()
+    const visit = (id: string) => {
+      if (visited.has(id)) return
+      if (visiting.has(id)) throw new BadRequestException('字段联动不能形成循环')
+      visiting.add(id)
+      const target = edges.get(id)
+      if (target) visit(target)
+      visiting.delete(id)
+      visited.add(id)
+    }
+    for (const id of edges.keys()) visit(id)
+  }
+
+  private validateSubFields(subFields: NonNullable<CreateFieldDto['subFields']>): void {
+    const labels = new Set<string>()
+    const ids = new Set<string>()
+    const keys = new Set<string>()
+    for (const subField of subFields) {
+      const label = subField.label.trim()
+      if (!label) throw new BadRequestException('子字段名称不能为空')
+      if (labels.has(label)) throw new BadRequestException(`子字段名称「${label}」不能重复`)
+      labels.add(label)
+      if (!isSubTableFieldType(subField.type)) {
+        throw new BadRequestException(`「${label}」不是子表支持的字段类型`)
+      }
+      if (subField.id) {
+        if (ids.has(subField.id)) throw new BadRequestException('子字段 ID 不能重复')
+        ids.add(subField.id)
+      }
+      if (subField.key) {
+        if (keys.has(subField.key)) throw new BadRequestException('子字段 key 不能重复')
+        keys.add(subField.key)
+      }
+      this.validateSubFieldLinkageConfig(subField.config)
+      this.validateFieldSpecificConfig(subField.type, subField.config)
+      if (subField.type === 'formula') this.validateFormula(subField.config?.formula)
+      if (subField.options) this.validateOptions(subField.options)
+    }
+  }
+
+  private validateStoredSubFields(subFields: StoredSubFieldProp[]): void {
+    const labels = new Set<string>()
+    const ids = new Set<string>()
+    const keys = new Set<string>()
+    for (const subField of subFields) {
+      if (labels.has(subField.label)) throw new BadRequestException('子字段名称不能重复')
+      if (ids.has(subField.id)) throw new BadRequestException('子字段 ID 不能重复')
+      if (keys.has(subField.key)) throw new BadRequestException('子字段 key 不能重复')
+      labels.add(subField.label)
+      ids.add(subField.id)
+      keys.add(subField.key)
+      if (!isSubTableFieldType(subField.type)) {
+        throw new BadRequestException(`「${subField.label}」不是子表支持的字段类型`)
+      }
+      this.validateSubFieldLinkageConfig(subField.config)
+      this.validateFieldSpecificConfig(subField.type, subField.config)
+      if (subField.type === 'formula') this.validateFormula(subField.config?.formula)
+    }
+  }
+
+  private validateSubFieldLinkageConfig(config?: FieldConfig | null): void {
+    if (
+      config?.showControlRules !== undefined ||
+      config?.linkProp !== undefined ||
+      config?.combineSearch !== undefined ||
+      config?.showFields !== undefined ||
+      config?.linkFields !== undefined ||
+      config?.childLinkFields !== undefined
+    ) {
+      throw new BadRequestException('子表子字段暂不支持显隐、字段联动或数据源联动配置')
+    }
+  }
+
+  private validateSubTableColumns(
+    config: FieldConfig | null,
+    subFields: StoredSubFieldProp[],
+  ): void {
+    const sumColumns = config?.sumColumns ?? []
+    if (!sumColumns.length) return
+    const sumCandidates = new Set(
+      subFields
+        .filter((field) => ['number', 'currency', 'percent', 'formula'].includes(field.type))
+        .map((field) => field.id),
+    )
+    if (new Set(sumColumns).size !== sumColumns.length) {
+      throw new BadRequestException('子表汇总列不能重复')
+    }
+    const invalid = sumColumns.find((id) => !sumCandidates.has(id))
+    if (invalid) throw new BadRequestException('子表汇总列必须选择数值或计算字段')
+  }
+
+  private async reconcileSubFieldValues(
+    tx: DatabaseClient,
+    current: StoredSubFieldProp[],
+    next: StoredSubFieldProp[],
+  ): Promise<void> {
+    const currentById = new Map(current.map((field) => [field.id, field]))
+    const nextById = new Map(next.map((field) => [field.id, field]))
+    for (const [id, oldField] of currentById) {
+      const nextField = nextById.get(id)
+      if (!nextField) {
+        await this.deleteFieldValues(tx, id)
+        continue
+      }
+      if (nextField.type !== oldField.type) {
+        const count = await this.countFieldValues(tx, id)
+        if (count > 0) {
+          throw new BadRequestException(`子字段「${oldField.label}」已有数据，不能修改字段类型`)
+        }
+      }
+    }
+  }
+
+  private normalizeSubFields(
+    input: CreateFieldDto['subFields'],
+    current: StoredSubFieldProp[] | null = null,
+  ): StoredSubFieldProp[] | null {
+    if (!input) return null
+    const currentById = new Map((current ?? []).map((field) => [field.id, field]))
+    const result = input.map((field, index) => {
+      const existing = field.id ? currentById.get(field.id) : undefined
+      return {
+        id: existing?.id ?? field.id ?? `sf_${randomBytes(8).toString('hex')}`,
+        key: existing?.key ?? field.key ?? `cf_${randomBytes(6).toString('hex')}`,
+        label: field.label.trim(),
+        type: field.type,
+        required: field.type === 'formula' ? false : (field.required ?? false),
+        options: field.options ?? null,
+        config: field.config ?? null,
+        sort: index,
+      }
+    })
+    this.validateStoredSubFields(result)
+    return result
+  }
+
+  private parseStoredSubFields(value: unknown): StoredSubFieldProp[] | null {
+    if (!Array.isArray(value)) return null
+    const result = value.flatMap((item, index) => {
+      if (!this.isRecord(item)) return []
+      const id = item['id']
+      const key = item['key']
+      const label = item['label']
+      const type = item['type']
+      if (
+        typeof id !== 'string' ||
+        typeof key !== 'string' ||
+        typeof label !== 'string' ||
+        typeof type !== 'string'
+      ) {
+        return []
+      }
+      const fieldType = type as FieldType
+      if (!isSubTableFieldType(fieldType)) return []
+      return [
+        {
+          id,
+          key,
+          label,
+          type: fieldType,
+          required: item['required'] === true,
+          options: this.parseFieldOptions(item['options']),
+          config: this.isRecord(item['config']) ? (item['config'] as FieldConfig) : null,
+          sort: typeof item['sort'] === 'number' ? item['sort'] : index,
+        },
+      ]
+    })
+    return result.length ? result.sort((a, b) => a.sort - b.sort) : []
+  }
+
+  private subFieldToVO(subField: StoredSubFieldProp, formKey: string): FieldVO {
+    return {
+      id: subField.id,
+      module: formKey,
+      key: subField.key,
+      label: subField.label,
+      type: subField.type,
+      required: subField.required,
+      system: false,
+      hidden: false,
+      options: subField.options,
+      config: subField.config,
+      sort: subField.sort,
+      span: 24,
+      showInList: true,
+      listWidth: null,
+      subFields: null,
+    }
+  }
+
+  private validateOptions(options: FieldOption[]): void {
+    const labels = options.map((option) => option.label.trim())
+    const values = options.map((option) => option.value.trim())
+    if (labels.some((label) => !label) || values.some((value) => !value)) {
+      throw new BadRequestException('选项名称和值不能为空')
+    }
+    if (new Set(labels).size !== labels.length || new Set(values).size !== values.length) {
+      throw new BadRequestException('同一字段的选项名称和值不能重复')
     }
   }
 

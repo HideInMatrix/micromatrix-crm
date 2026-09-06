@@ -1557,6 +1557,9 @@ CREATE TABLE "custom_form_data_field" (
     "resource_id" VARCHAR(32) NOT NULL,
     "field_id" VARCHAR(32) NOT NULL,
     "field_value" VARCHAR(255) NOT NULL,
+    "ref_sub_id" VARCHAR(32),
+    "row_id" INTEGER,
+    "biz_id" VARCHAR(32),
 
     CONSTRAINT "custom_form_data_field_pkey" PRIMARY KEY ("id")
 );
@@ -1567,6 +1570,9 @@ CREATE TABLE "custom_form_data_field_blob" (
     "resource_id" VARCHAR(32) NOT NULL,
     "field_id" VARCHAR(32) NOT NULL,
     "field_value" TEXT NOT NULL,
+    "ref_sub_id" VARCHAR(32),
+    "row_id" INTEGER,
+    "biz_id" VARCHAR(32),
 
     CONSTRAINT "custom_form_data_field_blob_pkey" PRIMARY KEY ("id")
 );
@@ -2894,13 +2900,39 @@ CREATE INDEX "custom_form_data_custom_form_id_create_time_idx" ON "custom_form_d
 CREATE INDEX "custom_form_data_field_resource_id_field_id_field_value_idx" ON "custom_form_data_field"("resource_id", "field_id", "field_value");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "custom_form_data_field_resource_id_field_id_key" ON "custom_form_data_field"("resource_id", "field_id");
+CREATE UNIQUE INDEX "custom_form_data_field_top_level_key"
+ON "custom_form_data_field"("resource_id", "field_id")
+WHERE "ref_sub_id" IS NULL;
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_data_field_sub_cell_key"
+ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id", "field_id")
+WHERE "ref_sub_id" IS NOT NULL;
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_field_resource_id_ref_sub_id_row_id_idx" ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_field_biz_id_idx" ON "custom_form_data_field"("biz_id");
 
 -- CreateIndex
 CREATE INDEX "custom_form_data_field_blob_resource_id_idx" ON "custom_form_data_field_blob"("resource_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "custom_form_data_field_blob_resource_id_field_id_key" ON "custom_form_data_field_blob"("resource_id", "field_id");
+CREATE UNIQUE INDEX "custom_form_data_field_blob_top_level_key"
+ON "custom_form_data_field_blob"("resource_id", "field_id")
+WHERE "ref_sub_id" IS NULL;
+
+-- CreateIndex
+CREATE UNIQUE INDEX "custom_form_data_field_blob_sub_cell_key"
+ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id", "field_id")
+WHERE "ref_sub_id" IS NOT NULL;
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_field_blob_resource_id_ref_sub_id_row_id_idx" ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id");
+
+-- CreateIndex
+CREATE INDEX "custom_form_data_field_blob_biz_id_idx" ON "custom_form_data_field_blob"("biz_id");
 
 -- CreateIndex
 CREATE INDEX "sys_module_form_organization_id_idx" ON "sys_module_form"("organization_id");

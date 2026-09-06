@@ -22,12 +22,81 @@ export type FieldType =
   | 'attachment'
   | 'data_source'
   | 'data_source_multiple'
+  | 'sub_product'
   | 'formula'
 
 export interface FieldOption {
   label: string
   value: string
   color?: string
+}
+
+/** Cordys showControlRules：配置在控制字段上，命中任一规则时显示目标字段。 */
+export interface FieldShowControlRule {
+  value?: string | number | boolean
+  fieldIds: string[]
+}
+
+export interface FieldLinkOption {
+  /** Cordys：SELECT 为标量，SELECT_MULTIPLE 为数组。 */
+  current: string | string[]
+  method: 'AUTO' | 'HIDDEN'
+  target: string | string[]
+}
+
+/** Cordys 普通选择字段联动；HIDDEN 表示限制目标选项范围，不是隐藏字段。 */
+export interface FieldLinkProp {
+  targetField: string
+  linkOptions: FieldLinkOption[]
+}
+
+export type DataSourceFilterSearchMode = 'AND' | 'OR'
+export type DataSourceFilterMatchType = 'MATCH_FIELD' | 'MATCH_VALUE'
+export type DataSourceFilterOperator =
+  | 'EQUALS'
+  | 'NOT_EQUALS'
+  | 'IN'
+  | 'NOT_IN'
+  | 'CONTAINS'
+  | 'NOT_CONTAINS'
+  | 'GT'
+  | 'GE'
+  | 'LT'
+  | 'LE'
+  | 'EMPTY'
+  | 'NOT_EMPTY'
+
+export interface DataSourceFilterItem {
+  /** 数据源侧字段 ID。 */
+  leftFieldId: string
+  leftFieldType: FieldType
+  operator: DataSourceFilterOperator
+  matchType: DataSourceFilterMatchType
+  /** MATCH_FIELD 时引用当前表单字段 ID。 */
+  rightFieldId?: string
+  /** MATCH_VALUE / Cordys rightFieldCustom 时使用固定值。 */
+  rightFieldCustom?: boolean
+  rightFieldCustomValue?: unknown
+  rightFieldType?: FieldType
+}
+
+export interface DataSourceFilterCombine {
+  searchMode: DataSourceFilterSearchMode
+  conditions: DataSourceFilterItem[]
+}
+
+export interface DataSourceLinkField {
+  /** 当前表单被填充字段 ID。 */
+  current: string
+  /** 数据源侧字段 ID。 */
+  link: string
+  method: 'fill'
+  enable: boolean
+}
+
+export interface DataSourceSubFieldLinkField extends DataSourceLinkField {
+  /** 父级映射时存当前/来源 SUB_PRODUCT ID；childLinks 存子字段映射。 */
+  childLinks: DataSourceSubFieldLinkField[]
 }
 
 export interface FieldConfig {
@@ -55,6 +124,43 @@ export interface FieldConfig {
   limitSize?: string
   /** Cordys DATA_SOURCE 数据源类型；自定义表单时直接保存目标 customFormId。 */
   dataSourceType?: DataSourceType
+  /** Cordys 字段显隐规则，配置在控制字段上。 */
+  showControlRules?: FieldShowControlRule[]
+  /** Cordys SELECT / MULTISELECT 普通字段联动。 */
+  linkProp?: FieldLinkProp
+  /** Cordys DATA_SOURCE 候选动态过滤。 */
+  combineSearch?: DataSourceFilterCombine
+  /** Cordys DATA_SOURCE 选中后只读派生展示字段，值为数据源字段 ID。 */
+  showFields?: string[]
+  /** Cordys DATA_SOURCE -> 当前表单字段填充。 */
+  linkFields?: DataSourceLinkField[]
+  /** Cordys DATA_SOURCE -> SUB_PRODUCT 行填充。 */
+  childLinkFields?: DataSourceSubFieldLinkField[]
+  /** Cordys SUB_PRODUCT 固定左侧列数量。 */
+  fixedColumn?: 1 | 2 | 3
+  /** Cordys SUB_PRODUCT 汇总列，值为子字段 ID。 */
+  sumColumns?: string[]
+}
+
+export const SUB_TABLE_FIELD_TYPES = [
+  'text',
+  'number',
+  'currency',
+  'percent',
+  'select',
+  'multiselect',
+  'data_source',
+  'formula',
+  'picture',
+  'datetime',
+  'member',
+  'dept',
+] as const satisfies readonly FieldType[]
+
+export type SubTableFieldType = (typeof SUB_TABLE_FIELD_TYPES)[number]
+
+export function isSubTableFieldType(type: FieldType): type is SubTableFieldType {
+  return (SUB_TABLE_FIELD_TYPES as readonly string[]).includes(type)
 }
 
 export const BUILTIN_DATA_SOURCE_TYPES = [
@@ -84,6 +190,12 @@ export interface DataSourceTypeOption {
 export interface DataSourceOptionVO {
   id: string
   name: string
+}
+
+/** DATA_SOURCE 选中记录的统一运行时快照；values 以源字段 ID 为 key。 */
+export interface DataSourceRecordVO extends DataSourceOptionVO {
+  values: Record<string, unknown>
+  fields: FieldVO[]
 }
 
 export interface DataSourcePageVO {
@@ -128,6 +240,8 @@ export interface FieldVO {
   span: number
   showInList: boolean
   listWidth: number | null
+  /** Cordys SUB_PRODUCT 嵌套子列；子列本身禁止再次包含 subFields。 */
+  subFields?: FieldVO[] | null
 }
 
 export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
@@ -152,6 +266,7 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
   { value: 'attachment', label: '附件' },
   { value: 'data_source', label: '数据源（单选）' },
   { value: 'data_source_multiple', label: '数据源（多选）' },
+  { value: 'sub_product', label: '子表格' },
   { value: 'formula', label: '计算字段' },
 ]
 
@@ -163,7 +278,18 @@ export function isCustomFieldKey(key: string): boolean {
 // ============ 高级筛选 ============
 
 export type FilterOp =
-  'eq' | 'ne' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'isEmpty' | 'notEmpty'
+  | 'eq'
+  | 'ne'
+  | 'in'
+  | 'notIn'
+  | 'contains'
+  | 'notContains'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'isEmpty'
+  | 'notEmpty'
 
 export interface FilterCondition {
   key: string
@@ -174,7 +300,10 @@ export interface FilterCondition {
 export const FILTER_OP_LABELS: Record<FilterOp, string> = {
   eq: '等于',
   ne: '不等于',
+  in: '属于',
+  notIn: '不属于',
   contains: '包含',
+  notContains: '不包含',
   gt: '大于',
   gte: '大于等于',
   lt: '小于',
@@ -190,7 +319,7 @@ export function filterOpsForType(type: FieldType): FilterOp[] {
     case 'currency':
     case 'percent':
     case 'formula':
-      return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'isEmpty', 'notEmpty']
+      return ['eq', 'ne', 'in', 'notIn', 'gt', 'gte', 'lt', 'lte', 'isEmpty', 'notEmpty']
     case 'date':
     case 'datetime':
       return ['gte', 'lte', 'isEmpty', 'notEmpty']
@@ -201,15 +330,17 @@ export function filterOpsForType(type: FieldType): FilterOp[] {
     case 'switch':
     case 'location':
     case 'data_source':
-      return ['eq', 'ne', 'isEmpty', 'notEmpty']
+      return ['eq', 'ne', 'in', 'notIn', 'isEmpty', 'notEmpty']
     case 'attachment':
       return ['isEmpty', 'notEmpty']
+    case 'sub_product':
+      return []
     case 'multiselect':
     case 'checkbox':
     case 'data_source_multiple':
-      return ['contains', 'isEmpty', 'notEmpty']
+      return ['contains', 'notContains', 'in', 'notIn', 'isEmpty', 'notEmpty']
     default:
-      return ['contains', 'eq', 'ne', 'isEmpty', 'notEmpty']
+      return ['contains', 'notContains', 'eq', 'ne', 'in', 'notIn', 'isEmpty', 'notEmpty']
   }
 }
 

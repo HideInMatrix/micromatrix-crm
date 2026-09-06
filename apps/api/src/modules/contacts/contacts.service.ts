@@ -81,6 +81,7 @@ export class ContactsService {
         viewId: dto.viewId,
         scopeView: dto.scopeView,
         filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+        filterMode: dto.filterMode,
       },
       dto.sort,
     )
@@ -134,7 +135,7 @@ export class ContactsService {
       saved?.conditions.length
         ? this.filterIds(user.tenantId, saved.conditions, saved.searchMode)
         : null,
-      adHoc.length ? this.filterIds(user.tenantId, adHoc, 'AND') : null,
+      adHoc.length ? this.filterIds(user.tenantId, adHoc, query.filterMode ?? 'AND') : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
     const scope = await this.resolveListScope(user, builtInView)
@@ -231,9 +232,7 @@ export class ContactsService {
     const buckets = new Map<string, Bucket>()
     for (const item of items) {
       const category = this.chartFieldValue(item, categoryField.key)
-      const subCategory = subCategoryField
-        ? this.chartFieldValue(item, subCategoryField.key)
-        : null
+      const subCategory = subCategoryField ? this.chartFieldValue(item, subCategoryField.key) : null
       const key = JSON.stringify([category, subCategory])
       const bucket = buckets.get(key) ?? {
         category,
@@ -919,7 +918,12 @@ export class ContactsService {
   ): Promise<Record<string, unknown>> {
     if (!moduleFields?.length) return {}
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const byIdentity = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const byIdentity = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
     const result: Record<string, unknown> = {}
     for (const item of moduleFields) {
       const field = byIdentity.get(item.fieldId)

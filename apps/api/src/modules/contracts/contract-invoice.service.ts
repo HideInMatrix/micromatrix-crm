@@ -42,6 +42,17 @@ function intersectIds(left: string[] | null, right: string[] | null): string[] |
 }
 
 function directClause(key: string, condition: FilterCondition): Record<string, unknown> | null {
+  if (condition.op === 'in' || condition.op === 'notIn') {
+    const values = Array.isArray(condition.value) ? condition.value : [condition.value]
+    const matches = values.map((value) => directClause(key, { ...condition, op: 'eq', value }))
+    if (!matches.length || matches.some((match) => !match)) return null
+    const OR = matches as Record<string, unknown>[]
+    return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
+  }
+  if (condition.op === 'notContains') {
+    const match = directClause(key, { ...condition, op: 'contains' })
+    return match ? { NOT: match } : null
+  }
   let value: unknown = condition.value
   if (['amount', 'taxRate'].includes(key)) {
     const number = Number(condition.value)
@@ -49,16 +60,18 @@ function directClause(key: string, condition: FilterCondition): Record<string, u
     value = number
   } else if (['createTime', 'updateTime'].includes(key)) {
     const direct = Number(condition.value)
-    const millis = Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
-      ? direct
-      : new Date(String(condition.value)).getTime()
+    const millis =
+      Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
+        ? direct
+        : new Date(String(condition.value)).getTime()
     if (!Number.isFinite(millis)) return null
     value = BigInt(Math.trunc(millis))
   }
   const v = value as never
   if (condition.op === 'eq') return { [key]: { equals: v } }
   if (condition.op === 'ne') return { NOT: { [key]: { equals: v } } }
-  if (condition.op === 'contains') return { [key]: { contains: String(value ?? ''), mode: 'insensitive' } }
+  if (condition.op === 'contains')
+    return { [key]: { contains: String(value ?? ''), mode: 'insensitive' } }
   if (condition.op === 'gt') return { [key]: { gt: v } }
   if (condition.op === 'gte') return { [key]: { gte: v } }
   if (condition.op === 'lt') return { [key]: { lt: v } }
@@ -97,12 +110,17 @@ export class ContractInvoiceService {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
     const fields = await this.forms.listFields(user.tenantId, FORM_KEY)
-    const saved = dto.viewId && !['ALL', 'DEPARTMENT'].includes(dto.viewId)
-      ? await this.userViews.resolveFilters(user, dto.viewId, USER_VIEW_RESOURCE_TYPES.invoice)
-      : null
+    const saved =
+      dto.viewId && !['ALL', 'DEPARTMENT'].includes(dto.viewId)
+        ? await this.userViews.resolveFilters(user, dto.viewId, USER_VIEW_RESOURCE_TYPES.invoice)
+        : null
     const [savedIds, adHocIds] = await Promise.all([
-      saved?.conditions.length ? this.filterIds(user.tenantId, fields, saved.conditions, saved.searchMode) : null,
-      dto.filters?.length ? this.filterIds(user.tenantId, fields, dto.filters, 'AND') : null,
+      saved?.conditions.length
+        ? this.filterIds(user.tenantId, fields, saved.conditions, saved.searchMode)
+        : null,
+      dto.filters?.length
+        ? this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
+        : null,
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
     const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
@@ -112,11 +130,15 @@ export class ContractInvoiceService {
       ...(filteredIds ? { id: { in: filteredIds } } : {}),
       ...(dto.contractId ? { contractId: dto.contractId } : {}),
       ...(dto.customerId ? { contract: { customerId: dto.customerId } } : {}),
-      ...(dto.keyword ? { OR: [
-        { name: { contains: dto.keyword, mode: 'insensitive' } },
-        { contract: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-        { businessTitle: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-      ] } : {}),
+      ...(dto.keyword
+        ? {
+            OR: [
+              { name: { contains: dto.keyword, mode: 'insensitive' } },
+              { contract: { name: { contains: dto.keyword, mode: 'insensitive' } } },
+              { businessTitle: { name: { contains: dto.keyword, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
     }
     const [rows, total] = await Promise.all([
       this.prisma.contractInvoice.findMany({
@@ -131,7 +153,11 @@ export class ContractInvoiceService {
       }),
       this.prisma.contractInvoice.count({ where }),
     ])
-    const dynamic = await this.fieldValues.load(user.tenantId, 'invoice', rows.map((row) => row.id))
+    const dynamic = await this.fieldValues.load(
+      user.tenantId,
+      'invoice',
+      rows.map((row) => row.id),
+    )
     return {
       list: rows.map((row) => ({
         id: row.id,
@@ -150,8 +176,15 @@ export class ContractInvoiceService {
         createTime: Number(row.createTime),
         updateTime: Number(row.updateTime),
         moduleFields: fields
-          .filter((field) => !field.system && Object.prototype.hasOwnProperty.call(dynamic.get(row.id) ?? {}, field.key))
-          .map((field) => ({ fieldId: field.id, fieldValue: (dynamic.get(row.id) ?? {})[field.key] })),
+          .filter(
+            (field) =>
+              !field.system &&
+              Object.prototype.hasOwnProperty.call(dynamic.get(row.id) ?? {}, field.key),
+          )
+          .map((field) => ({
+            fieldId: field.id,
+            fieldValue: (dynamic.get(row.id) ?? {})[field.key],
+          })),
       })),
       total,
       current,
@@ -229,9 +262,13 @@ export class ContractInvoiceService {
   async update(user: AuthUser, dto: ContractInvoiceUpdateDto) {
     const current = await this.ensureInvoice(user, dto.id, 'CONTRACT_INVOICE:UPDATE')
     const contractId = dto.contractId ?? current.contractId
-    if (dto.contractId && dto.contractId !== current.contractId) await this.contracts.ensureInScope(user, dto.contractId)
+    if (dto.contractId && dto.contractId !== current.contractId)
+      await this.contracts.ensureInScope(user, dto.contractId)
     const owner = dto.owner ? await this.resolveOwner(user, dto.owner) : undefined
-    const titleId = dto.businessTitleId === undefined ? undefined : await this.resolveTitle(user, dto.businessTitleId)
+    const titleId =
+      dto.businessTitleId === undefined
+        ? undefined
+        : await this.resolveTitle(user, dto.businessTitleId)
     const amount = dto.amount ?? Number(current.amount ?? 0)
     await this.assertAmount(user, contractId, amount, dto.id)
     const approvalRequired = await this.approvals.flowRequired(
@@ -243,7 +280,10 @@ export class ContractInvoiceService {
     const preUpdateSnapshot = approvalRequired
       ? await this.approvals.capturePreUpdateSnapshot(user, 'invoice', dto.id)
       : null
-    const customData = dto.moduleFields === undefined ? null : await this.toCustomData(user.tenantId, dto.moduleFields)
+    const customData =
+      dto.moduleFields === undefined
+        ? null
+        : await this.toCustomData(user.tenantId, dto.moduleFields)
     await this.prisma.$transaction(async (tx) => {
       await tx.contractInvoice.update({
         where: { id: dto.id },
@@ -259,7 +299,8 @@ export class ContractInvoiceService {
           updateUser: user.id,
         },
       })
-      if (customData) await this.fieldValues.save(user.tenantId, 'invoice', dto.id, customData, 'update', tx)
+      if (customData)
+        await this.fieldValues.save(user.tenantId, 'invoice', dto.id, customData, 'update', tx)
     })
     await this.writeSnapshot(user, dto.id)
     if (approvalRequired) {
@@ -276,7 +317,9 @@ export class ContractInvoiceService {
     if (['PENDING', 'APPROVING'].includes(row.approvalStatus ?? '')) {
       throw new BadRequestException('审批中的发票不能直接删除')
     }
-    if (await this.approvals.flowRequired(user.tenantId, 'invoice', Number(row.amount ?? 0), 'DELETE')) {
+    if (
+      await this.approvals.flowRequired(user.tenantId, 'invoice', Number(row.amount ?? 0), 'DELETE')
+    ) {
       const approval = await this.approvals.submit(user, 'invoice', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
@@ -301,7 +344,14 @@ export class ContractInvoiceService {
     }
     const directDeleteIds: string[] = []
     for (const row of rows) {
-      if (await this.approvals.flowRequired(user.tenantId, 'invoice', Number(row.amount ?? 0), 'DELETE')) {
+      if (
+        await this.approvals.flowRequired(
+          user.tenantId,
+          'invoice',
+          Number(row.amount ?? 0),
+          'DELETE',
+        )
+      ) {
         await this.approvals.submit(user, 'invoice', row.id, 'DELETE')
       } else {
         directDeleteIds.push(row.id)
@@ -331,12 +381,13 @@ export class ContractInvoiceService {
     return {
       resourceId: id,
       approveStatus: invoice.approvalStatus,
-      approveUserList: instance?.tasks.map((task) => ({
-        userId: task.approverId,
-        userName: task.approverName ?? null,
-        status: task.status,
-        comment: task.comment ?? null,
-      })) ?? [],
+      approveUserList:
+        instance?.tasks.map((task) => ({
+          userId: task.approverId,
+          userName: task.approverName ?? null,
+          status: task.status,
+          comment: task.comment ?? null,
+        })) ?? [],
     }
   }
 
@@ -363,7 +414,11 @@ export class ContractInvoiceService {
     })
     const contractAmount = Number(contract.amount ?? 0)
     const invoicedAmount = Number(aggregate._sum.amount ?? 0)
-    return { contractAmount, invoicedAmount, uninvoicedAmount: Math.max(0, contractAmount - invoicedAmount) }
+    return {
+      contractAmount,
+      invoicedAmount,
+      uninvoicedAmount: Math.max(0, contractAmount - invoicedAmount),
+    }
   }
 
   async importTemplate(user: AuthUser, importType: ImportType) {
@@ -372,7 +427,11 @@ export class ContractInvoiceService {
     return { filename: `发票${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`, data }
   }
 
-  async precheckImportXlsx(user: AuthUser, file: Buffer, importType: ImportType): Promise<ImportResultVO> {
+  async precheckImportXlsx(
+    user: AuthUser,
+    file: Buffer,
+    importType: ImportType,
+  ): Promise<ImportResultVO> {
     const fields = await this.forms.listFields(user.tenantId, FORM_KEY)
     const rows = await this.spreadsheet.parseImport(file, fields, importType)
     return this.runImport(user, rows, fields, importType, false)
@@ -457,7 +516,12 @@ export class ContractInvoiceService {
     return title.id
   }
 
-  private async assertAmount(user: AuthUser, contractId: string, amount: number, excludeId?: string) {
+  private async assertAmount(
+    user: AuthUser,
+    contractId: string,
+    amount: number,
+    excludeId?: string,
+  ) {
     const contract = await this.contracts.ensureInScope(user, contractId)
     const aggregate = await this.prisma.contractInvoice.aggregate({
       where: {
@@ -489,7 +553,12 @@ export class ContractInvoiceService {
 
   private async runImport(
     user: AuthUser,
-    rows: Array<{ rowNum: number; resourceId?: string; values: Record<string, unknown>; errors: string[] }>,
+    rows: Array<{
+      rowNum: number
+      resourceId?: string
+      values: Record<string, unknown>
+      errors: string[]
+    }>,
     fields: FieldVO[],
     importType: ImportType,
     persist: boolean,
@@ -509,7 +578,8 @@ export class ContractInvoiceService {
             }
           } else if (importType === 'ADD') {
             await this.contracts.ensureInScope(user, prepared.add.contractId)
-            if (prepared.add.businessTitleId) await this.resolveTitle(user, prepared.add.businessTitleId)
+            if (prepared.add.businessTitleId)
+              await this.resolveTitle(user, prepared.add.businessTitleId)
             await this.assertAmount(user, prepared.add.contractId, prepared.add.amount)
           } else if (row.resourceId) {
             await this.ensureInvoice(user, row.resourceId, 'CONTRACT_INVOICE:UPDATE')
@@ -535,24 +605,36 @@ export class ContractInvoiceService {
       .filter((field) => !field.system && values[field.key] !== undefined)
       .map((field) => ({ fieldId: field.id, fieldValue: values[field.key] }))
     const name = values.name === undefined ? undefined : String(values.name).trim()
-    const contractId = values.contractId === undefined ? undefined : String(values.contractId).trim()
+    const contractId =
+      values.contractId === undefined ? undefined : String(values.contractId).trim()
     const owner = values.owner === undefined ? undefined : String(values.owner).trim() || undefined
     const amount = importNumber(values, 'amount', '开票金额')
     const taxRate = importNumber(values, 'taxRate', '税率')
-    const invoiceType = values.invoiceType === undefined ? undefined : String(values.invoiceType).trim()
-    const businessTitleId = values.businessTitleId === undefined ? undefined : String(values.businessTitleId).trim() || null
+    const invoiceType =
+      values.invoiceType === undefined ? undefined : String(values.invoiceType).trim()
+    const businessTitleId =
+      values.businessTitleId === undefined
+        ? undefined
+        : String(values.businessTitleId).trim() || null
     if (importType === 'ADD') {
       if (!name) throw new BadRequestException('发票名称不能为空')
       if (!contractId) throw new BadRequestException('合同不能为空')
       if (amount === undefined) throw new BadRequestException('开票金额不能为空')
     }
     const common = {
-      ...(name !== undefined ? { name } : {}), ...(contractId !== undefined ? { contractId } : {}),
-      ...(owner !== undefined ? { owner } : {}), ...(amount !== undefined ? { amount } : {}),
-      ...(invoiceType !== undefined ? { invoiceType } : {}), ...(taxRate !== undefined ? { taxRate } : {}),
-      ...(businessTitleId !== undefined ? { businessTitleId } : {}), ...(dynamic.length ? { moduleFields: dynamic } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(contractId !== undefined ? { contractId } : {}),
+      ...(owner !== undefined ? { owner } : {}),
+      ...(amount !== undefined ? { amount } : {}),
+      ...(invoiceType !== undefined ? { invoiceType } : {}),
+      ...(taxRate !== undefined ? { taxRate } : {}),
+      ...(businessTitleId !== undefined ? { businessTitleId } : {}),
+      ...(dynamic.length ? { moduleFields: dynamic } : {}),
     }
-    return { add: common as ContractInvoiceAddDto, update: common as Omit<ContractInvoiceUpdateDto, 'id'> }
+    return {
+      add: common as ContractInvoiceAddDto,
+      update: common as Omit<ContractInvoiceUpdateDto, 'id'>,
+    }
   }
 
   private async exportXlsx(
@@ -592,10 +674,16 @@ export class ContractInvoiceService {
       this.collectItems(user, query, ids),
       this.forms.listFields(user.tenantId, FORM_KEY),
     ])
-    const fieldMap = new Map(fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+    const fieldMap = new Map(
+      fields.filter((field) => !field.hidden).map((field) => [field.key, field]),
+    )
     const extras = new Map([
-      ['contractName', '合同名称'], ['businessTitleName', '工商抬头'], ['approvalStatus', '审批状态'],
-      ['approved', '历史审批通过'], ['createTime', '创建时间'], ['updateTime', '更新时间'],
+      ['contractName', '合同名称'],
+      ['businessTitleName', '工商抬头'],
+      ['approvalStatus', '审批状态'],
+      ['approved', '历史审批通过'],
+      ['createTime', '创建时间'],
+      ['updateTime', '更新时间'],
     ])
     const columns = headList.map((key) => {
       const field = fieldMap.get(key)
@@ -607,10 +695,12 @@ export class ContractInvoiceService {
       const source: Record<string, unknown> = { ...item }
       const custom = new Map(item.moduleFields.map((field) => [field.fieldId, field.fieldValue]))
       for (const field of fields) if (!field.system) source[field.key] = custom.get(field.id)
-      return Object.fromEntries(columns.map(({ key }) => {
-        const field = fieldMap.get(key)
-        return [key, field ? formatForExport(field, source) : source[key] ?? '']
-      }))
+      return Object.fromEntries(
+        columns.map(({ key }) => {
+          const field = fieldMap.get(key)
+          return [key, field ? formatForExport(field, source) : (source[key] ?? '')]
+        }),
+      )
     })
     return {
       data: await this.spreadsheet.buildExportWorkbook(columns, rows),
@@ -618,7 +708,11 @@ export class ContractInvoiceService {
     }
   }
 
-  private async collectItems(user: AuthUser, query: Partial<ContractInvoicePageDto>, ids?: string[]) {
+  private async collectItems(
+    user: AuthUser,
+    query: Partial<ContractInvoicePageDto>,
+    ids?: string[],
+  ) {
     const all: Awaited<ReturnType<ContractInvoiceService['page']>>['list'] = []
     let current = 1
     while (true) {
@@ -630,7 +724,8 @@ export class ContractInvoiceService {
     if (!ids?.length) return all
     const wanted = new Set(ids)
     const selected = all.filter((item) => wanted.has(item.id))
-    if (selected.length !== wanted.size) throw new BadRequestException('选中数据包含不存在或无权导出的发票')
+    if (selected.length !== wanted.size)
+      throw new BadRequestException('选中数据包含不存在或无权导出的发票')
     return selected
   }
 
@@ -641,45 +736,68 @@ export class ContractInvoiceService {
     mode: 'AND' | 'OR',
   ) {
     const directKeys = new Set([
-      'name', 'contractId', 'owner', 'amount', 'invoiceType', 'taxRate', 'businessTitleId',
-      'approvalStatus', 'createUser', 'updateUser', 'createTime', 'updateTime',
+      'name',
+      'contractId',
+      'owner',
+      'amount',
+      'invoiceType',
+      'taxRate',
+      'businessTitleId',
+      'approvalStatus',
+      'createUser',
+      'updateUser',
+      'createTime',
+      'updateTime',
     ])
-    const fieldMap = new Map(fields.flatMap((field) => [[field.key, field], [field.id, field]]))
-    const sets = await Promise.all(conditions.map(async (condition) => {
-      if (condition.key === 'departmentId') {
-        const users = await this.prisma.user.findMany({
-          where: { tenantId: organizationId, deptId: String(condition.value ?? '') },
-          select: { id: true },
-        })
-        const ownerIds = users.map((item) => item.id)
-        const rows = await this.prisma.contractInvoice.findMany({
-          where: condition.op === 'ne'
-            ? { organizationId, NOT: { owner: { in: ownerIds } } }
-            : { organizationId, owner: { in: ownerIds } },
-          select: { id: true },
-        })
-        return new Set(rows.map((row) => row.id))
-      }
-      if (directKeys.has(condition.key)) {
-        const clause = directClause(condition.key, condition)
-        if (!clause) return new Set<string>()
-        const rows = await this.prisma.contractInvoice.findMany({
-          where: { organizationId, AND: [clause] } as Prisma.ContractInvoiceWhereInput,
-          select: { id: true },
-        })
-        return new Set(rows.map((row) => row.id))
-      }
-      const field = fieldMap.get(condition.key)
-      if (!field || field.system || (!isCustomFieldKey(condition.key) && field.hidden)) return new Set<string>()
-      const normalized = field.key === condition.key ? condition : { ...condition, key: field.key }
-      return new Set(await this.fieldValues.filterResourceIds(organizationId, 'invoice', [normalized]))
-    }))
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.key, field],
+        [field.id, field],
+      ]),
+    )
+    const sets = await Promise.all(
+      conditions.map(async (condition) => {
+        if (condition.key === 'departmentId') {
+          const users = await this.prisma.user.findMany({
+            where: { tenantId: organizationId, deptId: String(condition.value ?? '') },
+            select: { id: true },
+          })
+          const ownerIds = users.map((item) => item.id)
+          const rows = await this.prisma.contractInvoice.findMany({
+            where:
+              condition.op === 'ne'
+                ? { organizationId, NOT: { owner: { in: ownerIds } } }
+                : { organizationId, owner: { in: ownerIds } },
+            select: { id: true },
+          })
+          return new Set(rows.map((row) => row.id))
+        }
+        if (directKeys.has(condition.key)) {
+          const clause = directClause(condition.key, condition)
+          if (!clause) return new Set<string>()
+          const rows = await this.prisma.contractInvoice.findMany({
+            where: { organizationId, AND: [clause] } as Prisma.ContractInvoiceWhereInput,
+            select: { id: true },
+          })
+          return new Set(rows.map((row) => row.id))
+        }
+        const field = fieldMap.get(condition.key)
+        if (!field || field.system || (!isCustomFieldKey(condition.key) && field.hidden))
+          return new Set<string>()
+        const normalized =
+          field.key === condition.key ? condition : { ...condition, key: field.key }
+        return new Set(
+          await this.fieldValues.filterResourceIds(organizationId, 'invoice', [normalized]),
+        )
+      }),
+    )
     if (!sets.length) return []
     if (mode === 'OR') return [...new Set(sets.flatMap((set) => [...set]))]
-    return [...sets.slice(1).reduce(
-      (result, set) => new Set([...result].filter((id) => set.has(id))),
-      sets[0]!,
-    )]
+    return [
+      ...sets
+        .slice(1)
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
+    ]
   }
 
   private async toCustomData(
@@ -687,7 +805,12 @@ export class ContractInvoiceService {
     values: Array<{ fieldId: string; fieldValue?: unknown }> = [],
   ) {
     const fields = await this.forms.listFields(organizationId, FORM_KEY)
-    const map = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const map = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
     const result: Record<string, unknown> = {}
     for (const item of values) {
       const field = map.get(item.fieldId)

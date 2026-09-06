@@ -8,6 +8,7 @@ import type {
   Customer360Resource,
   CustomerVO,
   DuplicateHitVO,
+  FieldVO,
   PageQuery,
   PaginatedResult,
 } from '@micromatrix/shared'
@@ -23,6 +24,7 @@ import {
 export interface CustomerListParams extends PageQuery {
   /** FilterCondition[] 的 JSON 字符串 */
   filters?: string
+  filterMode?: 'AND' | 'OR'
   /** sea=客户公海；普通客户页使用 view */
   scope?: 'sea'
   /** Cordys 客户系统视图；ALL 仍受角色数据权限约束 */
@@ -118,6 +120,7 @@ function customerPageBody(params: CustomerListParams) {
     view: params.view,
     viewId: params.viewId,
     filters: parseCustomerFilters(params.filters),
+    filterMode: params.filterMode,
   }
 }
 
@@ -161,6 +164,12 @@ export function getCustomerTabs() {
 
 export function getCustomer(id: string, pool = false) {
   return http.get<CustomerVO>(pool ? `/pool/account/get/${id}` : `/account/get/${id}`)
+}
+
+export function getCustomerModuleForm() {
+  return http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+    '/account/module/form',
+  )
 }
 
 export function batchTransferCustomers(ids: string[], owner: string) {

@@ -93,6 +93,11 @@ export class ProductPageDto {
   @IsArray()
   @IsOptional()
   filters?: FilterCondition[]
+
+  @ApiPropertyOptional({ enum: ['AND', 'OR'], default: 'AND', description: '筛选条件组合方式' })
+  @IsIn(['AND', 'OR'])
+  @IsOptional()
+  filterMode?: 'AND' | 'OR'
 }
 
 export class ProductExportDto extends ProductPageDto {

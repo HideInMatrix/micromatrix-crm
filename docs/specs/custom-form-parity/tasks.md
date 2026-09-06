@@ -1,6 +1,6 @@
 # FORM-001 自定义表单对齐任务
 
-状态：`IN_PROGRESS`
+状态：`VERIFIED`
 
 ## A. 源码与设计
 
@@ -78,8 +78,29 @@
   - [x] F2.5 DATA_SOURCE 接入列表展示、AdvancedFilter、批量编辑与 xlsx 名称往返。
   - [x] F2.6 PostgreSQL/API/Browser Smoke + root gates + 文档封板。
   - 验收证据：`form001-f2-service-smoke.mjs` **23/23 PASS**；`form001-f2-browser-smoke.mjs` **14/14 PASS**；原 FORM-001 + E Browser **31/31 PASS**；F1 Browser **16/16 PASS**；API Rules **192/192 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**。
-- [ ] F3 SUB_TABLE / SUB_PRODUCT 同类行模型抽象。
-- [ ] F4 显隐规则、表单联动、字段联动。
+- [x] F3 SUB_TABLE / SUB_PRODUCT 同类行模型抽象。
+  - [x] F3.1 审计 Cordys `SubField / SUB_PRODUCT / SUB_PRICE`、子列菜单、Field/Blob 行存储、Excel 与运行时边界。
+  - [x] F3.2 shared/Metadata 增加 `sub_product`、嵌套 `subFields`、`fixedColumn / sumColumns` 与子列配置校验。
+  - [x] F3.3 CustomFormData Field/Blob 增加 `refSubId / rowId / bizId` 通用行维度，完成行数组创建/编辑/读取/删除。
+  - [x] F3.4 DynamicForm / FieldDialog 增加子表设计和行编辑器，子列复用已有字段组件。
+  - [x] F3.5 明确列表/AdvancedFilter/批量修改边界，并完成 SpreadsheetService 双层子表头导入导出。
+  - [x] F3.6 PostgreSQL/API/Browser Smoke + baseline/seed/diff + root gates + 文档封板。
+  - `form001-f3-service-smoke.mjs`：真实 Nest application context + PostgreSQL，最终 **23/23 PASS**；覆盖 Metadata、行存储、Blob、稳定 `bizId`、当前行公式、必填、DATA_SOURCE、筛选/批改边界、双层 Excel 导入导出与子字段删除清理。
+  - `form001-f3-browser-smoke.mjs`：隔离 Web 5176 + API 3101 + Chrome CDP，最终 **12/12 PASS**；覆盖子表设计器、固定列/汇总列、数据 Drawer 行编辑、公式实时展示、列表/筛选边界与导出字段。
+  - 本地开发库按 pre-release single baseline 规则 reset + seed PASS；`prisma validate`、数据库 -> schema `prisma migrate diff --exit-code` PASS；API Rules **192/192 PASS**；root build/typecheck PASS；lint **0 error / 8 个既有 warning**。
+- [x] F4 显隐规则、表单联动、字段联动。
+  - [x] F4.1 审计 Cordys `showControlRules / linkProp / combineSearch / showFields / linkFields / childLinkFields / formLink` 设计与运行时边界。
+  - [x] F4.2 shared/Metadata 增加显隐、普通字段联动、DATA_SOURCE 过滤/派生/填充配置与服务端结构校验。
+  - [x] F4.3 建立公共 Form Runtime：计算可见字段、必填边界、AUTO/范围联动，并同时供 Web 与服务端保存校验复用。
+  - [x] F4.4 DATA_SOURCE 查询接入动态 combineSearch，resolve 支持 showFields，并实现顶层 linkFields 填充。
+  - [x] F4.5 SUB_PRODUCT 接入 childLinkFields，填充后继续执行子字段校验、DATA_SOURCE 校验与当前行公式重算。
+  - [x] F4.6 FieldDialog/DynamicForm 增加显隐与联动配置 UI，保持 CustomFormsView 仅做页面编排。
+  - [x] F4.7 PostgreSQL/API/Browser Smoke + F1/F2/F3 回归 + root gates + 文档封板。
+  - `form-runtime.test.ts`：公共 Form Runtime **7/7 PASS**；覆盖显隐 OR、AUTO 级联、HIDDEN 可选范围、MULTISELECT 精确集合命中、DATA_SOURCE 顶层填充/选项映射与 `childLinkFields` 子表重建。
+  - `form001-f4-service-smoke.mjs`：真实 Nest application context + PostgreSQL，最终 **16/16 PASS**；覆盖显隐必填/隐藏值丢弃、AUTO/HIDDEN、AND/OR、`IN / NOT_IN / NOT_CONTAINS`、DATA_SOURCE source-options OR 透传、源字段引用与 PATCH 校验。
+  - `form001-f4-browser-smoke.mjs`：隔离 Web 5176 + API 3101 + Chrome CDP，最终 **13/13 PASS**；覆盖显隐/联动设计器、AUTO/HIDDEN、combineSearch、showFields、linkFields 与 childLinkFields。相邻 Browser 回归继续保持原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿。
+  - Service 回归继续保持核心 FORM-001 PASS、F1 **26/26**、F2 **23/23**、F3 **23/23**；API Rules 已推进到 **199/199 PASS**。
+  - 本地开发库按 pre-release single baseline 规则 reset + seed PASS；`prisma validate`、数据库 -> schema `prisma migrate diff --exit-code` 均 PASS；root build/typecheck PASS；lint **0 error / 8 个既有 warning**；当前变更集 Prettier 与 `git diff --check` PASS。
 
 ## G. 验收
 
@@ -88,6 +109,6 @@
 - [x] G3 Browser Smoke：PC 核心 + D/E 完整往返最终 31/31 PASS；含导入/导出、UI CRUD、公式、高级筛选、SavedView、列设置、批量修改/删除。
 - [x] G4 Prisma baseline 空库 deploy/seed/diff，并确认两条 PostgreSQL partial unique index 保留。
 - [x] G5 API Rules、typecheck、lint、build、Prettier、`git diff --check`。
-  - API Rules `192/192 PASS`；root typecheck/build PASS；lint `0 error / 8 个既有 warning`；Prettier 与 diff check PASS。
+  - API Rules `199/199 PASS`；root typecheck/build PASS；lint `0 error / 8 个既有 warning`；当前变更集 Prettier 与 diff check PASS。
 - [x] G6 更新 `cordys-parity / project-progress / cordys-menu-parity / alignment-log` 并完成文档过期扫描。
-  - 已清理“占位页 / 尚未实施 / 正在替换占位页”等过期描述；FORM-001 目前只剩 F 公共 Form Engine 深化，整体仍保持 `IN_PROGRESS`。
+  - 已清理“占位页 / 尚未实施 / 正在替换占位页 / F4 未完成”等过期描述；F1～F4 公共 Form Engine 深化全部验收完成，FORM-001 正式封板为 `VERIFIED`。

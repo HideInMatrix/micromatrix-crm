@@ -1,9 +1,5 @@
 import { BadRequestException } from '@nestjs/common'
-import {
-  isCustomFieldKey,
-  type FieldVO,
-  type FilterCondition,
-} from '@micromatrix/shared'
+import { isCustomFieldKey, type FieldVO, type FilterCondition } from '@micromatrix/shared'
 import { Prisma } from '../generated/prisma/client'
 
 /** 解析前端传来的 filters JSON 字符串 */
@@ -55,6 +51,9 @@ function columnClause(c: FilterCondition, field: FieldVO): Record<string, unknow
   const key = c.key
   const isDate = field.type === 'date' || field.type === 'datetime'
   const value = isDate ? new Date(String(c.value)) : castValue(field, c.value)
+  const listValues = (Array.isArray(c.value) ? c.value : [c.value]).map((item) =>
+    isDate ? new Date(String(item)) : castValue(field, item),
+  )
   const emptyClauses = [
     ...(!field.required ? [{ [key]: null }] : []),
     ...(field.type === 'text' ? [{ [key]: '' }] : []),
@@ -65,8 +64,14 @@ function columnClause(c: FilterCondition, field: FieldVO): Record<string, unknow
       return { [key]: { equals: value } }
     case 'ne':
       return { NOT: { [key]: { equals: value } } }
+    case 'in':
+      return { [key]: { in: listValues } }
+    case 'notIn':
+      return { [key]: { notIn: listValues } }
     case 'contains':
       return { [key]: { contains: String(c.value), mode: 'insensitive' } }
+    case 'notContains':
+      return { NOT: { [key]: { contains: String(c.value), mode: 'insensitive' } } }
     case 'gt':
       return { [key]: { gt: value } }
     case 'gte':
@@ -90,17 +95,43 @@ function columnClause(c: FilterCondition, field: FieldVO): Record<string, unknow
 function customClause(c: FilterCondition, field: FieldVO): Record<string, unknown> | null {
   const path = [c.key]
   const value = castValue(field, c.value)
+  const values = (Array.isArray(c.value) ? c.value : [c.value]).map((item) =>
+    castValue(field, item),
+  )
 
   switch (c.op) {
     case 'eq':
       return { customData: { path, equals: value as Prisma.InputJsonValue } }
     case 'ne':
       return { NOT: { customData: { path, equals: value as Prisma.InputJsonValue } } }
+    case 'in': {
+      const matches = values.map((item) =>
+        field.type === 'multiselect' || field.type === 'checkbox'
+          ? { customData: { path, array_contains: [item] as Prisma.InputJsonValue } }
+          : { customData: { path, equals: item as Prisma.InputJsonValue } },
+      )
+      return { OR: matches }
+    }
+    case 'notIn': {
+      const matches = values.map((item) =>
+        field.type === 'multiselect' || field.type === 'checkbox'
+          ? { customData: { path, array_contains: [item] as Prisma.InputJsonValue } }
+          : { customData: { path, equals: item as Prisma.InputJsonValue } },
+      )
+      return { NOT: { OR: matches } }
+    }
     case 'contains':
       // 多选类型匹配数组元素；文本类型匹配子串
       return field.type === 'multiselect' || field.type === 'checkbox'
         ? { customData: { path, array_contains: [c.value] as Prisma.InputJsonValue } }
         : { customData: { path, string_contains: String(c.value) } }
+    case 'notContains':
+      return {
+        NOT:
+          field.type === 'multiselect' || field.type === 'checkbox'
+            ? { customData: { path, array_contains: [c.value] as Prisma.InputJsonValue } }
+            : { customData: { path, string_contains: String(c.value) } },
+      }
     case 'gt':
       return { customData: { path, gt: value as number } }
     case 'gte':

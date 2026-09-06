@@ -72,10 +72,15 @@ export class CustomFormDataPageDto {
   @IsOptional()
   keyword?: string
 
-  @ApiPropertyOptional({ type: [Object], description: '当前临时高级筛选，条件按 AND 合并' })
+  @ApiPropertyOptional({ type: [Object], description: '当前临时高级筛选' })
   @IsArray()
   @IsOptional()
   filters?: FilterCondition[]
+
+  @ApiPropertyOptional({ enum: ['AND', 'OR'], default: 'AND', description: '筛选条件组合方式' })
+  @IsIn(['AND', 'OR'])
+  @IsOptional()
+  filterMode?: 'AND' | 'OR'
 
   @ApiPropertyOptional({ description: '当前用户在该自定义表单下保存的视图 ID' })
   @IsString()

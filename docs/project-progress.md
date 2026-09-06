@@ -1,6 +1,6 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-05。
+最近对齐：2026-09-06。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
@@ -41,23 +41,25 @@
 | LOG-002                   | 操作日志主表/Blob、列表/详情分离、租户 retention 网页策略、手工清理                                                     | `VERIFIED`                                                |
 | LOG-003                   | 操作日志“清理过期”与“清空全部”语义拆分、租户级危险清空入口                                                              | `VERIFIED`                                                |
 | UI-001                    | PC/Mobile 双应用 UI、Header Top Menu、PC 列表工具区与 Saved View Cordys 对齐                                            | T1～T13 `VERIFIED`                                        |
+| FORM-001                  | 自定义表单核心、导入导出、列表增强，以及 F1 LOCATION/ATTACHMENT、F2 DATA_SOURCE、F3 SUB_PRODUCT、F4 显隐/联动           | `VERIFIED`                                                |
 
 ## 3. 当前执行指针
 
 当前执行状态：
 
-> **LOG-003 与 UI-001 T12 均已完成并封板为 `VERIFIED`。UI-001 最新状态为 PC 列表工具区 / 视图操作 Cordys 对齐完成；当前没有新的正式执行单元处于 `IN_PROGRESS`。**
+> **LOG-003、UI-001 与 FORM-001 均已完成并封板为 `VERIFIED`。FORM-001 最新完成 F4 显隐/字段联动/DATA_SOURCE 联动与 F1～F3 全量回归；当前没有新的正式执行单元处于 `IN_PROGRESS`。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002` 与 `LOG-003` 均已在各自 tasks 文档完成封板。数据库迁移历史已按未发布阶段策略从 71 个开发 migration 合并为 1 个 `20260905084900_baseline`；LOG-003 将 Rules 基线推进到 192/192。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入 LOG-002。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003` 与 `FORM-001` 均已在各自 tasks 文档完成封板。数据库迁移历史已按未发布阶段策略从 71 个开发 migration 合并为 1 个 `20260905084900_baseline`；FORM-001 F4 将 Rules 基线推进到 199/199。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入其它执行单元。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
 - 当前 Prisma migration 基线为 **1 个 `20260905084900_baseline`**。该 baseline 已在全新空 PostgreSQL 上通过 `prisma migrate deploy` 与 Seed，随后 `prisma migrate diff` 返回 `No difference detected.`；两条 Prisma Schema 无法表达的 partial unique index 也已在数据库中逐条确认存在。此前 30/56/68/69/70/71 migration 的验收数字继续作为历史阶段证据保留，不再代表当前 migration 目录结构。
+- FORM-001 F4：公共 Form Runtime **7/7 PASS**、F4 Service **16/16 PASS**、F4 Browser **13/13 PASS**；相邻 Browser 原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿，相邻 Service 核心 FORM-001、F1 **26/26**、F2 **23/23**、F3 **23/23** 全绿。pre-release baseline reset + seed、Prisma validate/diff、root typecheck/build、当前变更集 Prettier 与 `git diff --check` PASS，lint **0 error / 8 个既有 warning**。
 - UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
 - Root Smoke：**227/227**。
-- Rules：**192/192**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export、LOG-001 IP/retention、LOG-002 Blob/租户策略与 LOG-003 clear-all 回归保持全绿。
+- Rules：**199/199**；CACHE-001/002 缓存、EVENT-001 多实例通知、COORD-001 lease/Cron/组织同步协调、ASYNC-001 durable export、LOG-001 IP/retention、LOG-002 Blob/租户策略、LOG-003 clear-all 与 FORM-001 F4 Form Runtime 回归保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。
@@ -96,9 +98,9 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 ### B. 元数据、表单与搜索
 
-- 动态字段：图片、公式、LOCATION、ATTACHMENT、DATA_SOURCE 已进入公共 Form Engine；剩余重点为子表、显隐/联动及其它高级字段语义。
-- 动态表单：布局、显隐、联动、子表、数据源。
-- 自定义表单：`FORM-001` 已完成核心 direct model、表单设计、管理员/三档成员权限、数据 CRUD、PC 双栏页面、xlsx 导入/异步导出、E AdvancedFilter / SavedView / 列设置 / 批量修改删除、F1 LOCATION / ATTACHMENT 与 F2 DATA_SOURCE；F1R 已将 `CustomFormsView.vue` 从超大单页收口为组件 + composable 编排结构。当前仅剩 F3 子表、F4 显隐/联动，整体状态仍为 `IN_PROGRESS`。
+- 动态字段：图片、公式、LOCATION、ATTACHMENT、DATA_SOURCE、SUB_PRODUCT 子表，以及 `showControlRules / linkProp / combineSearch / showFields / linkFields / childLinkFields` 已进入公共 Form Engine；剩余差异主要是 SERIAL_NUMBER、DIVIDER 等其它高级字段语义。
+- 动态表单：F4 已补齐字段显隐、AUTO/HIDDEN 联动、DATA_SOURCE 动态候选/派生/填充与子表填充；后续差异主要是布局深化和 FORM-001 明确未虚构入口的跨业务 `formLink` 场景。
+- 自定义表单：`FORM-001` 已完成核心 direct model、表单设计、管理员/三档成员权限、数据 CRUD、PC 双栏页面、xlsx 导入/异步导出、E AdvancedFilter / SavedView / 列设置 / 批量修改删除，以及 F1 LOCATION / ATTACHMENT、F2 DATA_SOURCE、F3 SUB_PRODUCT、F4 显隐/字段联动/DATA_SOURCE 联动；F1R 已将 `CustomFormsView.vue` 从超大单页收口为组件 + composable 编排结构。FORM-001 当前状态为 `VERIFIED`。
 - 高级搜索：组合条件、数据范围、字段掩码。
 - 全局搜索：跨模块搜索当前尚未实施。
 - 字段脱敏：当前尚未实施。

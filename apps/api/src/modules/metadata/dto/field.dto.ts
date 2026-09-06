@@ -38,7 +38,23 @@ const FIELD_TYPES = [
   'attachment',
   'data_source',
   'data_source_multiple',
+  'sub_product',
   'formula',
+] as const
+
+const SUB_FIELD_TYPES = [
+  'text',
+  'number',
+  'currency',
+  'percent',
+  'select',
+  'multiselect',
+  'data_source',
+  'formula',
+  'picture',
+  'datetime',
+  'member',
+  'dept',
 ] as const
 
 export class FieldOptionDto {
@@ -56,6 +72,45 @@ export class FieldOptionDto {
   @IsString()
   @IsOptional()
   color?: string
+}
+
+export class SubFieldDto {
+  @ApiPropertyOptional({ description: '既有子字段 ID；新建时可省略，由服务端生成' })
+  @IsString()
+  @IsOptional()
+  id?: string
+
+  @ApiPropertyOptional({ description: '既有子字段 key；新建时可省略，由服务端生成' })
+  @IsString()
+  @IsOptional()
+  key?: string
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty({ message: '子字段名称不能为空' })
+  @MaxLength(30)
+  label!: string
+
+  @ApiProperty({ enum: SUB_FIELD_TYPES })
+  @IsIn(SUB_FIELD_TYPES)
+  type!: (typeof SUB_FIELD_TYPES)[number]
+
+  @ApiPropertyOptional({ default: false })
+  @IsBoolean()
+  @IsOptional()
+  required?: boolean
+
+  @ApiPropertyOptional({ type: [FieldOptionDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FieldOptionDto)
+  @IsOptional()
+  options?: FieldOptionDto[]
+
+  @ApiPropertyOptional()
+  @IsObject()
+  @IsOptional()
+  config?: FieldConfig
 }
 
 export class CreateFieldDto {
@@ -85,6 +140,13 @@ export class CreateFieldDto {
   @IsObject()
   @IsOptional()
   config?: FieldConfig
+
+  @ApiPropertyOptional({ description: 'SUB_PRODUCT 子列', type: [SubFieldDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SubFieldDto)
+  @IsOptional()
+  subFields?: SubFieldDto[]
 
   @ApiPropertyOptional({ default: 12, description: '表单栅格宽度（24 制）' })
   @IsInt()

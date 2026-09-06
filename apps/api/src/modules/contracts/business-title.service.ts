@@ -95,9 +95,21 @@ const BUSINESS_TITLE_FIELDS: FieldVO[] = [
 ]
 
 const BUSINESS_TITLE_IMPORT_KEYS = new Set([
-  'name', 'type', 'identificationNumber', 'openingBank', 'bankAccount', 'registrationAddress',
-  'phoneNumber', 'registeredCapital', 'companySize', 'registrationNumber', 'province', 'city',
-  'scale', 'industry', 'remark',
+  'name',
+  'type',
+  'identificationNumber',
+  'openingBank',
+  'bankAccount',
+  'registrationAddress',
+  'phoneNumber',
+  'registeredCapital',
+  'companySize',
+  'registrationNumber',
+  'province',
+  'city',
+  'scale',
+  'industry',
+  'remark',
 ])
 
 @Injectable()
@@ -135,11 +147,19 @@ export class BusinessTitleService {
       .filter((condition): condition is Prisma.BusinessTitleWhereInput => Boolean(condition))
     const where: Prisma.BusinessTitleWhereInput = {
       organizationId: user.tenantId,
-      ...(dto.keyword ? { OR: [
-        { name: { contains: dto.keyword, mode: 'insensitive' } },
-        { identificationNumber: { contains: dto.keyword, mode: 'insensitive' } },
-      ] } : {}),
-      ...(conditions.length ? { AND: conditions } : {}),
+      ...(dto.keyword
+        ? {
+            OR: [
+              { name: { contains: dto.keyword, mode: 'insensitive' } },
+              { identificationNumber: { contains: dto.keyword, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      ...(conditions.length
+        ? dto.filterMode === 'OR'
+          ? { OR: conditions }
+          : { AND: conditions }
+        : {}),
     }
     const [rows, total] = await Promise.all([
       this.prisma.businessTitle.findMany({
@@ -243,7 +263,8 @@ export class BusinessTitleService {
 
   async remove(user: AuthUser, id: string) {
     const row = await this.ensure(user, id)
-    if (await this.hasInvoice(user, id)) throw new BadRequestException('该工商抬头已被发票引用，无法删除')
+    if (await this.hasInvoice(user, id))
+      throw new BadRequestException('该工商抬头已被发票引用，无法删除')
     await this.prisma.businessTitle.delete({ where: { id } })
     return { id, name: row.name }
   }
@@ -286,7 +307,10 @@ export class BusinessTitleService {
       where: { id, organizationId: user.tenantId },
     })
     if (!row) throw new NotFoundException('工商抬头配置不存在')
-    return this.prisma.businessTitleConfig.update({ where: { id }, data: { required: !row.required } })
+    return this.prisma.businessTitleConfig.update({
+      where: { id },
+      data: { required: !row.required },
+    })
   }
 
   private async ensure(user: AuthUser, id: string) {
@@ -327,14 +351,20 @@ export class BusinessTitleService {
     return {
       name: dto.name?.trim(),
       type: dto.type,
-      identificationNumber: dto.identificationNumber === undefined ? undefined : dto.identificationNumber?.trim() || null,
+      identificationNumber:
+        dto.identificationNumber === undefined
+          ? undefined
+          : dto.identificationNumber?.trim() || null,
       openingBank: dto.openingBank === undefined ? undefined : dto.openingBank?.trim() || null,
       bankAccount: dto.bankAccount === undefined ? undefined : dto.bankAccount?.trim() || null,
-      registrationAddress: dto.registrationAddress === undefined ? undefined : dto.registrationAddress?.trim() || null,
+      registrationAddress:
+        dto.registrationAddress === undefined ? undefined : dto.registrationAddress?.trim() || null,
       phoneNumber: dto.phoneNumber === undefined ? undefined : dto.phoneNumber?.trim() || null,
-      registeredCapital: dto.registeredCapital === undefined ? undefined : dto.registeredCapital?.trim() || null,
+      registeredCapital:
+        dto.registeredCapital === undefined ? undefined : dto.registeredCapital?.trim() || null,
       companySize: dto.companySize === undefined ? undefined : dto.companySize?.trim() || null,
-      registrationNumber: dto.registrationNumber === undefined ? undefined : dto.registrationNumber?.trim() || null,
+      registrationNumber:
+        dto.registrationNumber === undefined ? undefined : dto.registrationNumber?.trim() || null,
       province: dto.province === undefined ? undefined : dto.province?.trim() || null,
       city: dto.city === undefined ? undefined : dto.city?.trim() || null,
       scale: dto.scale === undefined ? undefined : dto.scale?.trim() || null,
@@ -350,7 +380,12 @@ export class BusinessTitleService {
 
   private async runImport(
     user: AuthUser,
-    rows: Array<{ rowNum: number; resourceId?: string; values: Record<string, unknown>; errors: string[] }>,
+    rows: Array<{
+      rowNum: number
+      resourceId?: string
+      values: Record<string, unknown>
+      errors: string[]
+    }>,
     importType: ImportType,
     persist: boolean,
   ): Promise<ImportResultVO> {
@@ -393,7 +428,8 @@ export class BusinessTitleService {
       if (values[key] === undefined) continue
       if (key === 'type') {
         const value = String(values[key]).trim()
-        if (!['CUSTOM', 'THIRD_PARTY'].includes(value)) throw new BadRequestException('抬头类型不正确')
+        if (!['CUSTOM', 'THIRD_PARTY'].includes(value))
+          throw new BadRequestException('抬头类型不正确')
         result[key] = value
       } else {
         result[key] = String(values[key]).trim()
@@ -444,7 +480,10 @@ export class BusinessTitleService {
     })
     const rows = items.map((item) =>
       Object.fromEntries(
-        columns.map(({ key }) => [key, formatForExport(fieldMap.get(key) as FieldVO, item as Record<string, unknown>)]),
+        columns.map(({ key }) => [
+          key,
+          formatForExport(fieldMap.get(key) as FieldVO, item as Record<string, unknown>),
+        ]),
       ),
     )
     return {
@@ -474,16 +513,34 @@ export class BusinessTitleService {
   private directCondition(condition: FilterCondition): Prisma.BusinessTitleWhereInput | null {
     const key = condition.key
     if (!BUSINESS_TITLE_FIELDS.some((field) => field.key === key) || key === 'id') return null
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const matches = values.map((value) => this.directCondition({ ...condition, op: 'eq', value }))
+      if (!matches.length || matches.some((match) => !match)) return null
+      const OR = matches as Prisma.BusinessTitleWhereInput[]
+      return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
+    }
+    if (condition.op === 'notContains') {
+      const match = this.directCondition({ ...condition, op: 'contains' })
+      return match ? { NOT: match } : null
+    }
     if (condition.op === 'isEmpty') return { [key]: null } as Prisma.BusinessTitleWhereInput
-    if (condition.op === 'notEmpty') return { NOT: { [key]: null } } as Prisma.BusinessTitleWhereInput
+    if (condition.op === 'notEmpty')
+      return { NOT: { [key]: null } } as Prisma.BusinessTitleWhereInput
     let raw: unknown = condition.value
     if (key === 'companyNumber') raw = BigInt(Number(condition.value))
     if (key === 'createTime' || key === 'updateTime') raw = BigInt(Number(condition.value))
     const value = raw as never
     if (condition.op === 'eq') return { [key]: { equals: value } } as Prisma.BusinessTitleWhereInput
-    if (condition.op === 'ne') return { NOT: { [key]: { equals: value } } } as Prisma.BusinessTitleWhereInput
-    if (condition.op === 'contains' && !['companyNumber', 'createTime', 'updateTime'].includes(key)) {
-      return { [key]: { contains: String(condition.value ?? ''), mode: 'insensitive' } } as Prisma.BusinessTitleWhereInput
+    if (condition.op === 'ne')
+      return { NOT: { [key]: { equals: value } } } as Prisma.BusinessTitleWhereInput
+    if (
+      condition.op === 'contains' &&
+      !['companyNumber', 'createTime', 'updateTime'].includes(key)
+    ) {
+      return {
+        [key]: { contains: String(condition.value ?? ''), mode: 'insensitive' },
+      } as Prisma.BusinessTitleWhereInput
     }
     if (condition.op === 'gt') return { [key]: { gt: value } } as Prisma.BusinessTitleWhereInput
     if (condition.op === 'gte') return { [key]: { gte: value } } as Prisma.BusinessTitleWhereInput

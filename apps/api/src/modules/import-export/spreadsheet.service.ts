@@ -28,6 +28,31 @@ export interface SubTableExportGroup {
   subRows: Record<string, unknown>[]
 }
 
+export interface SpreadsheetSubTableGroup {
+  key: string
+  label: string
+  fields: FieldVO[]
+}
+
+export interface ParsedMultiSubTableSpreadsheetRow {
+  rowNum: number
+  resourceId?: string
+  values: Record<string, unknown>
+  subValues: Record<string, Record<string, unknown>>
+  errors: string[]
+}
+
+export interface MultiSubTableExportColumnGroup {
+  key: string
+  label: string
+  columns: SpreadsheetColumn[]
+}
+
+export interface MultiSubTableExportGroup {
+  values: Record<string, unknown>
+  subRows: Record<string, Record<string, unknown>[]>
+}
+
 @Injectable()
 export class SpreadsheetService {
   async buildImportTemplate(
@@ -366,6 +391,249 @@ export class SpreadsheetService {
     return Buffer.from(buffer)
   }
 
+  async buildMultiSubTableImportTemplate(
+    mainFields: FieldVO[],
+    groups: SpreadsheetSubTableGroup[],
+    importType: ImportType,
+  ): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('导入模板')
+    const masters = this.importFields(mainFields)
+    let column = 1
+
+    if (importType === 'UPDATE') {
+      sheet.mergeCells(1, column, 2, column)
+      sheet.getCell(1, column).value = '唯一ID'
+      sheet.getColumn(column).width = 24
+      column++
+    }
+
+    for (const field of masters) {
+      sheet.mergeCells(1, column, 2, column)
+      sheet.getCell(1, column).value = field.label
+      sheet.getColumn(column).width = Math.max(14, Math.min(28, field.label.length * 2 + 4))
+      this.applyDataValidation(sheet, field, column, 3)
+      column++
+    }
+
+    for (const group of groups) {
+      const children = group.fields.filter((field) => !['formula', 'picture'].includes(field.type))
+      if (!children.length) continue
+      const start = column
+      for (const field of children) {
+        sheet.getCell(2, column).value = field.label
+        sheet.getColumn(column).width = Math.max(14, Math.min(28, field.label.length * 2 + 4))
+        this.applyDataValidation(sheet, field, column, 3)
+        column++
+      }
+      sheet.mergeCells(1, start, 1, column - 1)
+      sheet.getCell(1, start).value = group.label
+    }
+
+    sheet.views = [{ state: 'frozen', ySplit: 2 }]
+    for (const rowNumber of [1, 2]) {
+      const row = sheet.getRow(rowNumber)
+      row.font = { bold: true }
+      row.alignment = { vertical: 'middle', horizontal: 'center' }
+    }
+    const buffer = await workbook.xlsx.writeBuffer()
+    return Buffer.from(buffer)
+  }
+
+  async parseMultiSubTableImport(
+    buffer: Buffer,
+    mainFields: FieldVO[],
+    groups: SpreadsheetSubTableGroup[],
+    importType: ImportType,
+  ): Promise<ParsedMultiSubTableSpreadsheetRow[]> {
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0])
+    const sheet = workbook.worksheets[0]
+    if (!sheet) throw new BadRequestException('Excel 文件中没有可读取的工作表')
+
+    const masters = this.importFields(mainFields)
+    const mainByLabel = new Map(masters.map((field) => [field.label.trim(), field]))
+    const mainByKey = new Map(masters.map((field) => [field.key, field]))
+    const groupByLabel = new Map(groups.map((group) => [group.label.trim(), group]))
+    const groupByKey = new Map(groups.map((group) => [group.key, group]))
+    const subMaps = new Map(
+      groups.map((group) => [
+        group.key,
+        {
+          byLabel: new Map(
+            group.fields
+              .filter((field) => !['formula', 'picture'].includes(field.type))
+              .map((field) => [field.label.trim(), field]),
+          ),
+          byKey: new Map(
+            group.fields
+              .filter((field) => !['formula', 'picture'].includes(field.type))
+              .map((field) => [field.key, field]),
+          ),
+        },
+      ]),
+    )
+    const columns = new Map<
+      number,
+      { kind: 'id' | 'main' | 'sub'; key: string; parentKey?: string }
+    >()
+    const unknownHeaders = new Set<string>()
+    let idColumn: number | null = null
+
+    for (let column = 1; column <= sheet.columnCount; column++) {
+      const top = this.cellText(sheet.getCell(1, column).value).trim()
+      const bottom = this.cellText(sheet.getCell(2, column).value).trim()
+      if (top === '唯一ID' || bottom === '唯一ID') {
+        idColumn = column
+        columns.set(column, { kind: 'id', key: '唯一ID' })
+        continue
+      }
+      const parent = groupByLabel.get(top) ?? groupByKey.get(top)
+      if (parent) {
+        const maps = subMaps.get(parent.key)
+        const child = maps?.byLabel.get(bottom) ?? maps?.byKey.get(bottom)
+        if (child) {
+          columns.set(column, { kind: 'sub', key: child.key, parentKey: parent.key })
+          continue
+        }
+      }
+      const master =
+        mainByLabel.get(top) ??
+        mainByKey.get(top) ??
+        mainByLabel.get(bottom) ??
+        mainByKey.get(bottom)
+      if (master) {
+        columns.set(column, { kind: 'main', key: master.key })
+        continue
+      }
+      for (const header of [top, bottom]) {
+        if (header && !groupByLabel.has(header) && !groupByKey.has(header))
+          unknownHeaders.add(header)
+      }
+    }
+
+    if (unknownHeaders.size > 0) {
+      throw new BadRequestException(`存在无法识别的表头：${[...unknownHeaders].join('、')}`)
+    }
+    if (importType === 'UPDATE' && idColumn === null) {
+      throw new BadRequestException('导入更新必须包含「唯一ID」列')
+    }
+
+    const rows: ParsedMultiSubTableSpreadsheetRow[] = []
+    for (let rowNumber = 3; rowNumber <= sheet.rowCount; rowNumber++) {
+      const row = sheet.getRow(rowNumber)
+      if (![...columns.keys()].some((item) => !this.isEmpty(row.getCell(item).value))) continue
+      const values: Record<string, unknown> = {}
+      const subValues: Record<string, Record<string, unknown>> = {}
+      const errors: string[] = []
+      const resourceId =
+        idColumn === null
+          ? undefined
+          : this.cellText(row.getCell(idColumn).value).trim() || undefined
+
+      for (const [column, meta] of columns) {
+        if (meta.kind === 'id') continue
+        const raw = row.getCell(column).value
+        if (this.isEmpty(raw)) continue
+        if (meta.kind === 'main') {
+          const field = mainByKey.get(meta.key)
+          if (!field) continue
+          try {
+            values[field.key] = this.parseFieldValue(field, raw)
+          } catch (error) {
+            errors.push(error instanceof Error ? error.message : `${field.label}格式不正确`)
+          }
+          continue
+        }
+        const parentKey = meta.parentKey
+        if (!parentKey) continue
+        const field = subMaps.get(parentKey)?.byKey.get(meta.key)
+        if (!field) continue
+        try {
+          subValues[parentKey] ??= {}
+          subValues[parentKey]![field.key] = this.parseFieldValue(field, raw)
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : `${field.label}格式不正确`)
+        }
+      }
+      rows.push({ rowNum: rowNumber, resourceId, values, subValues, errors })
+    }
+    if (!rows.length) throw new BadRequestException('Excel 文件没有可导入的数据行')
+    return rows
+  }
+
+  async buildMultiSubTableExportWorkbook(
+    mainColumns: SpreadsheetColumn[],
+    subGroups: MultiSubTableExportColumnGroup[],
+    groups: MultiSubTableExportGroup[],
+  ): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('导出数据')
+    let column = 1
+    for (const item of mainColumns) {
+      sheet.mergeCells(1, column, 2, column)
+      sheet.getCell(1, column).value = item.label
+      sheet.getColumn(column).width = Math.max(14, Math.min(32, item.label.length * 2 + 6))
+      column++
+    }
+    for (const group of subGroups) {
+      if (!group.columns.length) continue
+      const start = column
+      for (const item of group.columns) {
+        sheet.getCell(2, column).value = item.label
+        sheet.getColumn(column).width = Math.max(14, Math.min(32, item.label.length * 2 + 6))
+        column++
+      }
+      sheet.mergeCells(1, start, 1, column - 1)
+      sheet.getCell(1, start).value = group.label
+    }
+    sheet.views = [{ state: 'frozen', ySplit: 2 }]
+    for (const rowNumber of [1, 2]) {
+      const row = sheet.getRow(rowNumber)
+      row.font = { bold: true }
+      row.alignment = { vertical: 'middle', horizontal: 'center' }
+    }
+
+    let rowNumber = 3
+    for (const group of groups) {
+      const rowCount = Math.max(
+        1,
+        ...subGroups.map((subGroup) => group.subRows[subGroup.key]?.length ?? 0),
+      )
+      const start = rowNumber
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+        let dataColumn = 1
+        if (rowIndex === 0) {
+          for (const item of mainColumns) {
+            sheet.getCell(rowNumber, dataColumn).value = this.exportCellValue(
+              group.values[item.key],
+            )
+            dataColumn++
+          }
+        } else {
+          dataColumn += mainColumns.length
+        }
+        for (const subGroup of subGroups) {
+          const subRow = group.subRows[subGroup.key]?.[rowIndex] ?? {}
+          for (const item of subGroup.columns) {
+            sheet.getCell(rowNumber, dataColumn).value = this.exportCellValue(subRow[item.key])
+            dataColumn++
+          }
+        }
+        rowNumber++
+      }
+      if (rowCount > 1) {
+        const end = rowNumber - 1
+        for (let mainColumn = 1; mainColumn <= mainColumns.length; mainColumn++) {
+          sheet.mergeCells(start, mainColumn, end, mainColumn)
+          sheet.getCell(start, mainColumn).alignment = { vertical: 'middle' }
+        }
+      }
+    }
+    const buffer = await workbook.xlsx.writeBuffer()
+    return Buffer.from(buffer)
+  }
+
   async buildExportWorkbook(
     columns: SpreadsheetColumn[],
     rows: Record<string, unknown>[],
@@ -459,7 +727,7 @@ export class SpreadsheetService {
       }
       case 'multiselect': {
         const values = text
-          .split(/[,，]/)
+          .split(/[,，、]/)
           .map((item) => item.trim())
           .filter(Boolean)
         if (field.options?.length) {
@@ -476,7 +744,7 @@ export class SpreadsheetService {
       case 'checkbox': {
         if (field.options?.length) {
           const values = text
-            .split(/[,，]/)
+            .split(/[,，、]/)
             .map((item) => item.trim())
             .filter(Boolean)
           return values.map((item) => {

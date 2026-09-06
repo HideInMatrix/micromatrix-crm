@@ -32,6 +32,7 @@ export interface LeadListParams extends PageQuery {
   poolId?: string
   status?: string
   filters?: string
+  filterMode?: 'AND' | 'OR'
   viewId?: string
   homeFilter?: string
 }
@@ -64,6 +65,7 @@ function cluePageBody(params: LeadListParams) {
     viewId: params.viewId,
     homeFilter: params.homeFilter,
     filters,
+    filterMode: params.filterMode,
   }
 }
 
@@ -353,6 +355,10 @@ export const resourceCapacityApi = {
 }
 
 export const leadApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/lead/module/form',
+    ),
   list: (params: LeadListParams) => clueListRequest(params),
   get: (id: string, pool = false) =>
     http.get<LeadVO>(pool ? `/pool/lead/get/${id}` : `/lead/get/${id}`),
@@ -547,6 +553,7 @@ export interface OpportunityListParams extends PageQuery {
   customerId?: string
   viewId?: string
   filters?: string
+  filterMode?: 'AND' | 'OR'
   homeFilter?: string
 }
 
@@ -585,6 +592,7 @@ function opportunityPageBody(params: OpportunityListParams, board = false) {
     viewId: params.viewId,
     homeFilter: params.homeFilter,
     filters,
+    filterMode: params.filterMode,
     board,
   }
 }
@@ -662,6 +670,10 @@ async function opportunityStagesRequest(): Promise<AxiosResponse<OpportunityStag
 }
 
 export const opportunityApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/opportunity/module/form',
+    ),
   list: opportunityListRequest,
   get: (id: string) => http.get<OpportunityVO>(`/opportunity/get/${id}`),
   kanban: async (params: OpportunityListParams = {}) => {
@@ -730,6 +742,7 @@ export interface ContactListParams extends PageQuery {
   customerId?: string
   enable?: 'true' | 'false'
   filters?: string
+  filterMode?: 'AND' | 'OR'
   viewId?: string
   scopeView?: 'SELF' | 'DEPT' | 'ALL'
 }
@@ -752,6 +765,7 @@ function contactPageBody(params: ContactListParams) {
     viewId: params.viewId,
     scopeView: params.scopeView,
     filters: parseContactFilters(params.filters),
+    filterMode: params.filterMode,
   }
 }
 
@@ -770,6 +784,10 @@ function toContactPayload(data: Partial<ContactVO> & { name?: string }) {
 }
 
 export const contactApi = {
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/account/contact/module/form',
+    ),
   list: async (customerId: string): Promise<AxiosResponse<ContactVO[]>> => {
     const response = await http.get<{ list: ContactVO[] }>(`/account/contact/list/${customerId}`)
     return { ...response, data: response.data.list }

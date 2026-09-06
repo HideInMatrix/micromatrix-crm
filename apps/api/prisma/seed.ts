@@ -79,6 +79,8 @@ async function main() {
   const salesPerms = [
     'menu:dashboard',
     'dashboard:read',
+    'menu:customForm',
+    'CUSTOM_FORM:READ',
     'menu:lead',
     'lead:create',
     'lead:update',
@@ -229,9 +231,7 @@ async function main() {
       existing && seedMode === 'bootstrap'
         ? undefined
         : await bcrypt.hash(
-            ['admin@demo.com', 'zhangwei@demo.com'].includes(input.email)
-              ? 'admin123'
-              : 'demo123',
+            ['admin@demo.com', 'zhangwei@demo.com'].includes(input.email) ? 'admin123' : 'demo123',
             10,
           )
     const user = existing

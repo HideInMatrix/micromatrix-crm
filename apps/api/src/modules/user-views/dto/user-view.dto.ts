@@ -16,7 +16,10 @@ import {
 const FILTER_OPERATORS: FilterOp[] = [
   'eq',
   'ne',
+  'in',
+  'notIn',
   'contains',
+  'notContains',
   'gt',
   'gte',
   'lt',

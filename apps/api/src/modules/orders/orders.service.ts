@@ -97,7 +97,9 @@ export class OrdersService {
       saved?.conditions.length
         ? this.filterIds(user.tenantId, fields, saved.conditions, saved.searchMode)
         : null,
-      dto.filters?.length ? this.filterIds(user.tenantId, fields, dto.filters, 'AND') : null,
+      dto.filters?.length
+        ? this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
+        : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
     const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
@@ -136,8 +138,15 @@ export class OrdersService {
       }),
     ])
     const [dynamic, products, ownerMap] = await Promise.all([
-      this.fieldValues.load(user.tenantId, 'order', rows.map((row) => row.id)),
-      this.orderFields.loadProductsBatch(user.tenantId, rows.map((row) => row.id)),
+      this.fieldValues.load(
+        user.tenantId,
+        'order',
+        rows.map((row) => row.id),
+      ),
+      this.orderFields.loadProductsBatch(
+        user.tenantId,
+        rows.map((row) => row.id),
+      ),
       this.userNames(rows.map((row) => row.owner)),
     ])
     const stageMap = new Map(stages.map((stage) => [stage.id, stage.name]))
@@ -175,8 +184,12 @@ export class OrdersService {
     this.assertAmount(amount)
     const stage = await this.defaultStage(user.tenantId)
     const now = BigInt(Date.now())
-    const dynamicValues = await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields ?? [])
-    const config = dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
+    const dynamicValues = await this.moduleFieldsToDynamicValues(
+      user.tenantId,
+      dto.moduleFields ?? [],
+    )
+    const config =
+      dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const pos = await this.nextPos(user.tenantId, stage.id)
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
@@ -220,7 +233,8 @@ export class OrdersService {
     }
     const owner = dto.owner ? await this.resolveOwner(user, dto.owner) : null
     const products = dto.products === undefined ? undefined : this.normalizeProducts(dto.products)
-    const amount = dto.amount ?? (products ? this.totalAmount(products) : Number(current.amount ?? 0))
+    const amount =
+      dto.amount ?? (products ? this.totalAmount(products) : Number(current.amount ?? 0))
     this.assertAmount(amount)
     const approvalRequired = await this.approvals.flowRequired(
       user.tenantId,
@@ -231,11 +245,12 @@ export class OrdersService {
     const preUpdateSnapshot = approvalRequired
       ? await this.approvals.capturePreUpdateSnapshot(user, 'order', dto.id)
       : null
-    const config = dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
+    const config =
+      dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const existingDynamic = await this.fieldValues.load(user.tenantId, 'order', [dto.id])
     const dynamicValues =
       dto.moduleFields === undefined
-        ? existingDynamic.get(dto.id) ?? {}
+        ? (existingDynamic.get(dto.id) ?? {})
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
     await this.prisma.$transaction(async (tx) => {
       const row = await tx.order.update({
@@ -322,7 +337,10 @@ export class OrdersService {
       dto.stage,
     )
     const effectiveFields = new Map(
-      (dto.fields ?? []).map((item) => [item.fieldId, { fieldId: item.fieldId, fieldValue: item.fieldValue }]),
+      (dto.fields ?? []).map((item) => [
+        item.fieldId,
+        { fieldId: item.fieldId, fieldValue: item.fieldValue },
+      ]),
     )
     for (const config of requiredFields) {
       if (!config || typeof config !== 'object') continue
@@ -358,7 +376,12 @@ export class OrdersService {
     const dynamic = { ...(currentDynamic.get(dto.id) ?? {}) }
     if (stageFields.length) {
       const fields = await this.moduleForms.listFields(user.tenantId, FORM_KEY)
-      const map = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+      const map = new Map(
+        fields.flatMap((field) => [
+          [field.id, field],
+          [field.key, field],
+        ]),
+      )
       for (const item of stageFields) {
         const field = map.get(item.fieldId)
         if (!field) throw new BadRequestException(`订单字段不存在：${item.fieldId}`)
@@ -453,9 +476,8 @@ export class OrdersService {
     return {
       count: result.total,
       amount:
-        Math.round(
-          result.list.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) * 100,
-        ) / 100,
+        Math.round(result.list.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) * 100) /
+        100,
     }
   }
 
@@ -639,7 +661,7 @@ export class OrdersService {
       return Object.fromEntries(
         mainColumns.map((column) => {
           const field = fieldMap.get(column.key)
-          return [column.key, field ? formatForExport(field, source) : source[column.key] ?? '']
+          return [column.key, field ? formatForExport(field, source) : (source[column.key] ?? '')]
         }),
       )
     })
@@ -773,7 +795,8 @@ export class OrdersService {
       const priceValue = row.values['orderProductPrice']
       const numberValue = row.values['orderProductNumber']
       const productPrice = priceValue === undefined || priceValue === '' ? 0 : Number(priceValue)
-      const productNumber = numberValue === undefined || numberValue === '' ? 1 : Number(numberValue)
+      const productNumber =
+        numberValue === undefined || numberValue === '' ? 1 : Number(numberValue)
       if (!Number.isFinite(productPrice) || productPrice < 0) {
         throw new BadRequestException(`第 ${row.rowNum} 行：产品单价必须是大于等于 0 的数字`)
       }
@@ -782,7 +805,8 @@ export class OrdersService {
       }
       const values = Object.fromEntries(
         Object.entries(row.values).filter(
-          ([key, value]) => !ORDER_SUB_KEYS.includes(key as (typeof ORDER_SUB_KEYS)[number]) && value !== undefined,
+          ([key, value]) =>
+            !ORDER_SUB_KEYS.includes(key as (typeof ORDER_SUB_KEYS)[number]) && value !== undefined,
         ),
       )
       products.push({
@@ -807,19 +831,18 @@ export class OrdersService {
   ) {
     if (importType === 'UPDATE' && !resourceId) throw new BadRequestException('唯一ID不能为空')
     const moduleFields = fields
-      .filter(
-        (field) =>
-          !field.system &&
-          !field.hidden &&
-          values[field.key] !== undefined,
-      )
+      .filter((field) => !field.system && !field.hidden && values[field.key] !== undefined)
       .map((field) => ({ fieldId: field.id, fieldValue: values[field.key] }))
     const name = values['name'] === undefined ? undefined : String(values['name']).trim()
-    const customerRef = values['customerId'] === undefined ? undefined : String(values['customerId']).trim()
-    const contractRef = values['contractId'] === undefined ? undefined : String(values['contractId']).trim()
+    const customerRef =
+      values['customerId'] === undefined ? undefined : String(values['customerId']).trim()
+    const contractRef =
+      values['contractId'] === undefined ? undefined : String(values['contractId']).trim()
     const ownerRef = values['owner'] === undefined ? undefined : String(values['owner']).trim()
     const current = resourceId ? await this.ensureInScope(user, resourceId, 'ORDER:UPDATE') : null
-    const customer = customerRef ? await this.resolveImportedCustomer(user.tenantId, customerRef) : null
+    const customer = customerRef
+      ? await this.resolveImportedCustomer(user.tenantId, customerRef)
+      : null
     const customerId = customer?.id
     const effectiveCustomerId = customerId ?? current?.customerId ?? null
     const contractId =
@@ -828,7 +851,9 @@ export class OrdersService {
         : contractRef
           ? (await this.resolveImportedContract(user.tenantId, contractRef, effectiveCustomerId)).id
           : null
-    const owner = ownerRef ? (await this.resolveImportedOwner(user.tenantId, ownerRef)).id : undefined
+    const owner = ownerRef
+      ? (await this.resolveImportedOwner(user.tenantId, ownerRef)).id
+      : undefined
     if (importType === 'ADD') {
       if (!name) throw new BadRequestException('订单名称不能为空')
       if (!customerRef || !customerId) throw new BadRequestException('关联客户不能为空')
@@ -870,7 +895,9 @@ export class OrdersService {
 
   async remove(user: AuthUser, id: string) {
     const row = await this.ensureInScope(user, id, 'ORDER:DELETE')
-    if (await this.approvals.flowRequired(user.tenantId, 'order', Number(row.amount ?? 0), 'DELETE')) {
+    if (
+      await this.approvals.flowRequired(user.tenantId, 'order', Number(row.amount ?? 0), 'DELETE')
+    ) {
       const approval = await this.approvals.submit(user, 'order', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
@@ -984,7 +1011,10 @@ export class OrdersService {
           approved: row.approved,
           pos: row.pos === null ? null : Number(row.pos),
           moduleFields: fields
-            .filter((field) => !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key))
+            .filter(
+              (field) =>
+                !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key),
+            )
             .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
           products,
         }),
@@ -997,7 +1027,12 @@ export class OrdersService {
     moduleFields: Array<{ fieldId: string; fieldValue?: unknown }> = [],
   ) {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
-    const map = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const map = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
     const result: Record<string, unknown> = {}
     for (const item of moduleFields) {
       const field = map.get(item.fieldId)
@@ -1028,7 +1063,12 @@ export class OrdersService {
     conditions: FilterCondition[],
     mode: 'AND' | 'OR',
   ): Promise<string[]> {
-    const fieldMap = new Map(fields.flatMap((field) => [[field.key, field], [field.id, field]]))
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.key, field],
+        [field.id, field],
+      ]),
+    )
     const directKeys = new Set([
       'number',
       'name',
@@ -1089,14 +1129,27 @@ export class OrdersService {
     return [
       ...sets
         .slice(1)
-        .reduce(
-          (result, set) => new Set([...result].filter((id) => set.has(id))),
-          sets[0]!,
-        ),
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
   }
 
-  private systemFilterClause(key: string, condition: FilterCondition): Prisma.OrderWhereInput | null {
+  private systemFilterClause(
+    key: string,
+    condition: FilterCondition,
+  ): Prisma.OrderWhereInput | null {
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const matches = values.map((value) =>
+        this.systemFilterClause(key, { ...condition, op: 'eq', value }),
+      )
+      if (!matches.length || matches.some((match) => !match)) return null
+      const OR = matches as Prisma.OrderWhereInput[]
+      return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
+    }
+    if (condition.op === 'notContains') {
+      const match = this.systemFilterClause(key, { ...condition, op: 'contains' })
+      return match ? { NOT: match } : null
+    }
     const dateKeys = new Set(['createTime', 'updateTime'])
     const numberKeys = new Set(['amount'])
     const boolKeys = new Set(['approved'])
@@ -1296,12 +1349,14 @@ export class OrdersService {
   }
 
   private totalAmount(products: OrderProductInput[]) {
-    return Math.round(
-      products.reduce(
-        (sum, item) => sum + (item.amount ?? item.productPrice * (item.productNumber ?? 1)),
-        0,
-      ) * 100,
-    ) / 100
+    return (
+      Math.round(
+        products.reduce(
+          (sum, item) => sum + (item.amount ?? item.productPrice * (item.productNumber ?? 1)),
+          0,
+        ) * 100,
+      ) / 100
+    )
   }
 
   private parseObject(value: string): Record<string, unknown> {
@@ -1332,7 +1387,7 @@ export class OrdersService {
       contractId: row.contractId,
       contractName: row.contract?.name ?? null,
       owner: row.owner,
-      ownerName: row.owner ? ownerMap.get(row.owner) ?? null : null,
+      ownerName: row.owner ? (ownerMap.get(row.owner) ?? null) : null,
       amount: row.amount === null ? null : Number(row.amount),
       stage: row.stage,
       stageName: stageMap.get(row.stage) ?? null,
@@ -1340,7 +1395,10 @@ export class OrdersService {
       approved: row.approved,
       pos: row.pos === null ? null : Number(row.pos),
       moduleFields: fields
-        .filter((field) => !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key))
+        .filter(
+          (field) =>
+            !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key),
+        )
         .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
       products,
       createTime: Number(row.createTime),

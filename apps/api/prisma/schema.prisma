@@ -2157,28 +2157,36 @@ model CustomFormData {
 }
 
 model CustomFormDataField {
-  id         String @id @default(cuid()) @db.VarChar(32)
-  resourceId String @map("resource_id") @db.VarChar(32)
-  fieldId    String @map("field_id") @db.VarChar(32)
-  fieldValue String @map("field_value") @db.VarChar(255)
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.VarChar(255)
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      Int?    @map("row_id")
+  bizId      String? @map("biz_id") @db.VarChar(32)
 
   resource CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@unique([resourceId, fieldId])
   @@index([resourceId, fieldId, fieldValue])
+  @@index([resourceId, refSubId, rowId])
+  @@index([bizId])
   @@map("custom_form_data_field")
 }
 
 model CustomFormDataFieldBlob {
-  id         String @id @default(cuid()) @db.VarChar(32)
-  resourceId String @map("resource_id") @db.VarChar(32)
-  fieldId    String @map("field_id") @db.VarChar(32)
-  fieldValue String @map("field_value") @db.Text
+  id         String  @id @default(cuid()) @db.VarChar(32)
+  resourceId String  @map("resource_id") @db.VarChar(32)
+  fieldId    String  @map("field_id") @db.VarChar(32)
+  fieldValue String  @map("field_value") @db.Text
+  refSubId   String? @map("ref_sub_id") @db.VarChar(32)
+  rowId      Int?    @map("row_id")
+  bizId      String? @map("biz_id") @db.VarChar(32)
 
   resource CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@unique([resourceId, fieldId])
   @@index([resourceId])
+  @@index([resourceId, refSubId, rowId])
+  @@index([bizId])
   @@map("custom_form_data_field_blob")
 }
 

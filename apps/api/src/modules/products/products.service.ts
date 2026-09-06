@@ -1,10 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import type {
-  FieldVO,
-  FilterCondition,
-  ImportResultVO,
-  ProductVO,
-} from '@micromatrix/shared'
+import type { FieldVO, FilterCondition, ImportResultVO, ProductVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
@@ -90,14 +85,7 @@ export class ProductsService {
           updateUser: user.id,
         },
       })
-      await this.fieldValues.save(
-        user.tenantId,
-        'product',
-        created.id,
-        customData,
-        'create',
-        tx,
-      )
+      await this.fieldValues.save(user.tenantId, 'product', created.id, customData, 'create', tx)
       return created
     })
     return this.get(user, product.id)
@@ -126,14 +114,7 @@ export class ProductsService {
         },
       })
       if (customData !== undefined) {
-        await this.fieldValues.save(
-          user.tenantId,
-          'product',
-          existing.id,
-          customData,
-          'update',
-          tx,
-        )
+        await this.fieldValues.save(user.tenantId, 'product', existing.id, customData, 'update', tx)
       }
     })
     return this.get(user, existing.id)
@@ -153,14 +134,7 @@ export class ProductsService {
     }
     if (!field.system) {
       return this.prisma.$transaction((tx) =>
-        this.fieldValues.saveBatch(
-          user.tenantId,
-          'product',
-          ids,
-          field.id,
-          dto.fieldValue,
-          tx,
-        ),
+        this.fieldValues.saveBatch(user.tenantId, 'product', ids, field.id, dto.fieldValue, tx),
       )
     }
     const data = await this.systemBatchUpdateData(user, field.key, dto.fieldValue, ids)
@@ -230,7 +204,11 @@ export class ProductsService {
   }
 
   async exportSelected(user: AuthUser, dto: ProductExportSelectDto) {
-    return this.exportXlsx(user, {}, { fileName: dto.fileName, headList: dto.headList, ids: dto.ids })
+    return this.exportXlsx(
+      user,
+      {},
+      { fileName: dto.fileName, headList: dto.headList, ids: dto.ids },
+    )
   }
 
   async importTemplate(user: AuthUser, importType: ImportType) {
@@ -302,7 +280,7 @@ export class ProductsService {
     const pageSize = dto.pageSize ?? 10
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const filteredIds = dto.filters?.length
-      ? await this.filterIds(user.tenantId, fields, dto.filters)
+      ? await this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
       : null
     const where: Prisma.ProductWhereInput = {
       organizationId: user.tenantId,
@@ -399,11 +377,7 @@ export class ProductsService {
     }
   }
 
-  private async collectExportItems(
-    user: AuthUser,
-    query: Partial<ProductPageDto>,
-    ids?: string[],
-  ) {
+  private async collectExportItems(user: AuthUser, query: Partial<ProductPageDto>, ids?: string[]) {
     const all: ProductVO[] = []
     let current = 1
     const pageSize = 500
@@ -443,7 +417,8 @@ export class ProductsService {
     }
     const rawStatus = values['status']
     const status = rawStatus === undefined || rawStatus === '' ? undefined : String(rawStatus)
-    if (status !== undefined && !['1', '2'].includes(status)) throw new BadRequestException('产品状态无效')
+    if (status !== undefined && !['1', '2'].includes(status))
+      throw new BadRequestException('产品状态无效')
     const add: ProductAddDto = {
       name: name ?? '',
       price,
@@ -510,14 +485,21 @@ export class ProductsService {
     throw new BadRequestException(`字段「${key}」不支持批量修改`)
   }
 
-  private async filterIds(organizationId: string, fields: FieldVO[], conditions: FilterCondition[]) {
+  private async filterIds(
+    organizationId: string,
+    fields: FieldVO[],
+    conditions: FilterCondition[],
+    searchMode: 'AND' | 'OR' = 'AND',
+  ) {
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         const field = fieldMap.get(condition.key)
         if (!field) return new Set<string>()
         if (!field.system) {
-          return new Set(await this.fieldValues.filterResourceIds(organizationId, 'product', [condition]))
+          return new Set(
+            await this.fieldValues.filterResourceIds(organizationId, 'product', [condition]),
+          )
         }
         const clause = this.systemFilterClause(field, condition)
         if (!clause) return new Set<string>()
@@ -529,29 +511,47 @@ export class ProductsService {
       }),
     )
     if (!sets.length) return []
+    if (searchMode === 'OR') return [...new Set(sets.flatMap((set) => [...set]))]
     return [
       ...sets
         .slice(1)
-        .reduce(
-          (result, set) => new Set([...result].filter((id) => set.has(id))),
-          sets[0]!,
-        ),
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
   }
 
-  private systemFilterClause(field: FieldVO, condition: FilterCondition): Prisma.ProductWhereInput | null {
+  private systemFilterClause(
+    field: FieldVO,
+    condition: FilterCondition,
+  ): Prisma.ProductWhereInput | null {
     const key = condition.key as 'name' | 'price' | 'status'
     if (!['name', 'price', 'status'].includes(key)) return null
-    const value = field.type === 'currency' || field.type === 'number' ? Number(condition.value) : condition.value
-    if (condition.op === 'eq') return { [key]: { equals: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'ne') return { NOT: { [key]: { equals: value as never } } } as Prisma.ProductWhereInput
+    const value =
+      field.type === 'currency' || field.type === 'number'
+        ? Number(condition.value)
+        : condition.value
+    const listValues = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (item) => (field.type === 'currency' || field.type === 'number' ? Number(item) : item),
+    )
+    if (condition.op === 'eq')
+      return { [key]: { equals: value as never } } as Prisma.ProductWhereInput
+    if (condition.op === 'ne')
+      return { NOT: { [key]: { equals: value as never } } } as Prisma.ProductWhereInput
+    if (condition.op === 'in')
+      return { [key]: { in: listValues as never[] } } as Prisma.ProductWhereInput
+    if (condition.op === 'notIn')
+      return { [key]: { notIn: listValues as never[] } } as Prisma.ProductWhereInput
     if (condition.op === 'contains' && key === 'name') {
       return { name: { contains: String(condition.value), mode: 'insensitive' } }
     }
+    if (condition.op === 'notContains' && key === 'name') {
+      return { NOT: { name: { contains: String(condition.value), mode: 'insensitive' } } }
+    }
     if (condition.op === 'gt') return { [key]: { gt: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'gte') return { [key]: { gte: value as never } } as Prisma.ProductWhereInput
+    if (condition.op === 'gte')
+      return { [key]: { gte: value as never } } as Prisma.ProductWhereInput
     if (condition.op === 'lt') return { [key]: { lt: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'lte') return { [key]: { lte: value as never } } as Prisma.ProductWhereInput
+    if (condition.op === 'lte')
+      return { [key]: { lte: value as never } } as Prisma.ProductWhereInput
     if (condition.op === 'isEmpty') return { [key]: null } as Prisma.ProductWhereInput
     if (condition.op === 'notEmpty') return { NOT: { [key]: null } } as Prisma.ProductWhereInput
     return null
@@ -586,7 +586,11 @@ export class ProductsService {
     return product
   }
 
-  private toVO(product: Product, fields: FieldVO[], customData: Record<string, unknown>): ProductVO {
+  private toVO(
+    product: Product,
+    fields: FieldVO[],
+    customData: Record<string, unknown>,
+  ): ProductVO {
     const record: Record<string, unknown> = {
       name: product.name,
       price: product.price === null ? null : Number(product.price),

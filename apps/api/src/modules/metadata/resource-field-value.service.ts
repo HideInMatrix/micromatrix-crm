@@ -692,8 +692,7 @@ export class ResourceFieldValueService {
               where: followPlanWhere,
               select: { id: true },
             })
-    }
-    else
+    } else
       repeated =
         item.storage === 'blob'
           ? await client.orderFieldBlob.findFirst({ where, select: { id: true } })
@@ -892,10 +891,11 @@ export class ResourceFieldValueService {
         client.contractPaymentPlanField.findMany({ where, select }),
         client.contractPaymentPlanFieldBlob.findMany({ where, select }),
       ])
-    if (resourceType === 'contractPaymentRecord') return Promise.all([
-      client.contractPaymentRecordField.findMany({ where, select }),
-      client.contractPaymentRecordFieldBlob.findMany({ where, select }),
-    ])
+    if (resourceType === 'contractPaymentRecord')
+      return Promise.all([
+        client.contractPaymentRecordField.findMany({ where, select }),
+        client.contractPaymentRecordFieldBlob.findMany({ where, select }),
+      ])
     if (resourceType === 'invoice')
       return Promise.all([
         client.contractInvoiceField.findMany({ where, select }),
@@ -931,23 +931,54 @@ export class ResourceFieldValueService {
     if (condition.op === 'notEmpty')
       return Prisma.sql`(${exists(normalTable)}) OR (${exists(blobTable)})`
 
-    if (condition.op === 'contains' && ['multiselect', 'checkbox'].includes(field.type)) {
+    if (
+      (condition.op === 'contains' || condition.op === 'notContains') &&
+      ['multiselect', 'checkbox', 'data_source_multiple'].includes(field.type)
+    ) {
       if (typeof condition.value !== 'string')
         throw new BadRequestException('多选字段筛选值格式不正确')
       this.assertOptions(field, [condition.value])
       const match = Prisma.sql`field_value.field_value::jsonb @> ${JSON.stringify([condition.value])}::jsonb`
-      return exists(blobTable, match)
+      const matched = exists(blobTable, match)
+      return condition.op === 'notContains' ? Prisma.sql`NOT (${matched})` : matched
+    }
+
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      if (!rawValues.length || rawValues.some((value) => this.isEmpty(value))) {
+        throw new BadRequestException('筛选值不能为空')
+      }
+      if (['multiselect', 'checkbox', 'data_source_multiple'].includes(field.type)) {
+        const values = rawValues.map(String)
+        this.assertOptions(field, values)
+        const matched = exists(
+          blobTable,
+          Prisma.sql`jsonb_exists_any(field_value.field_value::jsonb, ${values}::text[])`,
+        )
+        return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
+      }
+      const serializedValues = rawValues.map((value) => this.serialize(field, value))
+      if (serializedValues.some((value) => value === null)) {
+        throw new BadRequestException('筛选值不能为空')
+      }
+      const storage = this.storageFor(field.type, serializedValues[0] as string)
+      const table = storage === 'blob' ? blobTable : normalTable
+      const matched = exists(
+        table,
+        Prisma.sql`field_value.field_value IN (${Prisma.join(serializedValues as string[])})`,
+      )
+      return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
     }
 
     const serialized =
-      condition.op === 'contains'
+      condition.op === 'contains' || condition.op === 'notContains'
         ? this.serializeContainsValue(field, condition.value)
         : this.serialize(field, condition.value)
     if (serialized === null) throw new BadRequestException('筛选值不能为空')
     const storage = this.storageFor(field.type, serialized)
     const table = storage === 'blob' ? blobTable : normalTable
     let match: Prisma.Sql
-    if (condition.op === 'contains') {
+    if (condition.op === 'contains' || condition.op === 'notContains') {
       match = Prisma.sql`field_value.field_value LIKE ${`%${serialized}%`}`
     } else if (['gt', 'gte', 'lt', 'lte'].includes(condition.op)) {
       const operator = { gt: '>', gte: '>=', lt: '<', lte: '<=' }[
@@ -958,7 +989,9 @@ export class ResourceFieldValueService {
       match = Prisma.sql`field_value.field_value = ${serialized}`
     }
     const matched = exists(table, match)
-    return condition.op === 'ne' ? Prisma.sql`NOT (${matched})` : matched
+    return condition.op === 'ne' || condition.op === 'notContains'
+      ? Prisma.sql`NOT (${matched})`
+      : matched
   }
 
   private serializeContainsValue(field: FieldVO, value: unknown): string | null {

@@ -98,7 +98,11 @@ export class OpportunitiesService {
   async page(user: AuthUser, dto: OpportunityPageDto) {
     if (dto.board) {
       const result = await this.kanban(user)
-      return { list: result.items, stages: result.stages, total: Object.values(result.items).flat().length }
+      return {
+        list: result.items,
+        stages: result.stages,
+        total: Object.values(result.items).flat().length,
+      }
     }
     const result = await this.findAll(user, {
       page: dto.current,
@@ -106,6 +110,7 @@ export class OpportunitiesService {
       keyword: dto.keyword,
       viewId: dto.viewId,
       filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      filterMode: dto.filterMode,
       homeFilter: dto.homeFilter,
     })
     return {
@@ -125,6 +130,7 @@ export class OpportunitiesService {
       customerId: dto.customerId,
       viewId: dto.viewId,
       filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      filterMode: dto.filterMode,
       homeFilter: dto.homeFilter,
     })
     const amount = result.items.reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
@@ -384,11 +390,7 @@ export class OpportunitiesService {
     return { successCount, failCount: errorMessages.length, errorMessages }
   }
 
-  async importXlsx(
-    user: AuthUser,
-    file: Buffer,
-    importType: ImportType,
-  ): Promise<ImportResultVO> {
+  async importXlsx(user: AuthUser, file: Buffer, importType: ImportType): Promise<ImportResultVO> {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const rows = await this.spreadsheet.parseImport(file, fields, importType)
     const errorMessages: ImportResultVO['errorMessages'] = []
@@ -461,9 +463,7 @@ export class OpportunitiesService {
     const buckets = new Map<string, Bucket>()
     for (const item of items) {
       const category = this.chartFieldValue(item, categoryField.key)
-      const subCategory = subCategoryField
-        ? this.chartFieldValue(item, subCategoryField.key)
-        : null
+      const subCategory = subCategoryField ? this.chartFieldValue(item, subCategoryField.key) : null
       const key = JSON.stringify([category, subCategory])
       const bucket = buckets.get(key) ?? {
         category,
@@ -549,12 +549,9 @@ export class OpportunitiesService {
     }
     const targetIndex = dto.targetId ? stages.findIndex((stage) => stage.id === dto.targetId) : -1
     const firstEndIndex = stages.findIndex((stage) => stage.type === 'END')
-    const defaultInsertAt =
-      type === 'AFOOT' && firstEndIndex >= 0 ? firstEndIndex : stages.length
+    const defaultInsertAt = type === 'AFOOT' && firstEndIndex >= 0 ? firstEndIndex : stages.length
     const insertAt =
-      targetIndex < 0
-        ? defaultInsertAt
-        : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
+      targetIndex < 0 ? defaultInsertAt : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     const first = stages[0]
     const now = BigInt(Date.now())
     const created = await this.prisma.opportunityStageConfig.create({
@@ -617,7 +614,11 @@ export class OpportunitiesService {
       select: { id: true },
     })
     const current = new Set(stages.map((stage) => stage.id))
-    if (ids.length !== current.size || new Set(ids).size !== current.size || ids.some((id) => !current.has(id))) {
+    if (
+      ids.length !== current.size ||
+      new Set(ids).size !== current.size ||
+      ids.some((id) => !current.has(id))
+    ) {
       throw new BadRequestException('阶段排序必须包含当前全部阶段且不能重复')
     }
     const now = BigInt(Date.now())
@@ -655,13 +656,19 @@ export class OpportunitiesService {
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const conditions = parseFilters(query.filters)
     const saved = query.viewId
-      ? await this.userViews.resolveFilters(user, query.viewId, USER_VIEW_RESOURCE_TYPES.opportunity)
+      ? await this.userViews.resolveFilters(
+          user,
+          query.viewId,
+          USER_VIEW_RESOURCE_TYPES.opportunity,
+        )
       : null
     const [savedIds, adHocIds] = await Promise.all([
       saved?.conditions.length
         ? this.filterIds(user.tenantId, fields, saved.conditions, saved.searchMode)
         : null,
-      conditions.length ? this.filterIds(user.tenantId, fields, conditions, 'AND') : null,
+      conditions.length
+        ? this.filterIds(user.tenantId, fields, conditions, query.filterMode ?? 'AND')
+        : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
     const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
@@ -670,10 +677,7 @@ export class OpportunitiesService {
 
     const where: Prisma.OpportunityWhereInput = {
       organizationId: user.tenantId,
-      AND: [
-        scope as Prisma.OpportunityWhereInput,
-        ...(homeClause ? [homeClause] : []),
-      ],
+      AND: [scope as Prisma.OpportunityWhereInput, ...(homeClause ? [homeClause] : [])],
       ...(filteredIds ? { id: { in: filteredIds } } : {}),
       ...(stageId ? { stage: stageId } : {}),
       ...(customerId ? { customerId } : {}),
@@ -692,7 +696,11 @@ export class OpportunitiesService {
     ])
     const [ownerMap, values, reasonMap] = await Promise.all([
       this.ownerNames(rows.map((row) => row.owner)),
-      this.fieldValues.load(user.tenantId, 'opportunity', rows.map((row) => row.id)),
+      this.fieldValues.load(
+        user.tenantId,
+        'opportunity',
+        rows.map((row) => row.id),
+      ),
       this.failureReasonNames(user.tenantId),
     ])
     return {
@@ -732,16 +740,18 @@ export class OpportunitiesService {
     })
     const [ownerMap, values, reasonMap] = await Promise.all([
       this.ownerNames(rows.map((row) => row.owner)),
-      this.fieldValues.load(user.tenantId, 'opportunity', rows.map((row) => row.id)),
+      this.fieldValues.load(
+        user.tenantId,
+        'opportunity',
+        rows.map((row) => row.id),
+      ),
       this.failureReasonNames(user.tenantId),
     ])
     const items: Record<string, OpportunityVO[]> = Object.fromEntries(
       stages.map((stage) => [stage.id, []]),
     )
     for (const row of rows) {
-      items[row.stage]?.push(
-        this.toVO(row, fields, ownerMap, values.get(row.id) ?? {}, reasonMap),
-      )
+      items[row.stage]?.push(this.toVO(row, fields, ownerMap, values.get(row.id) ?? {}, reasonMap))
     }
     return {
       stages: stages.map((stage) => ({
@@ -788,14 +798,23 @@ export class OpportunitiesService {
           createTime: now,
           updateTime: now,
           createUser: user.id,
-          expectedEndTime: dto.expectedCloseAt ? BigInt(new Date(dto.expectedCloseAt).getTime()) : null,
+          expectedEndTime: dto.expectedCloseAt
+            ? BigInt(new Date(dto.expectedCloseAt).getTime())
+            : null,
           actualEndTime: stage.type === 'END' ? now : null,
           failureReason: null,
           pos,
         },
         include: refInclude,
       })
-      await this.fieldValues.save(user.tenantId, 'opportunity', created.id, customData, 'create', tx)
+      await this.fieldValues.save(
+        user.tenantId,
+        'opportunity',
+        created.id,
+        customData,
+        'create',
+        tx,
+      )
       return created
     })
 
@@ -837,7 +856,11 @@ export class OpportunitiesService {
       ...(owner ? { owner: owner.id } : {}),
       ...(productIds ? { products: productIds.length ? JSON.stringify(productIds) : null } : {}),
       ...(dto.expectedCloseAt !== undefined
-        ? { expectedEndTime: dto.expectedCloseAt ? BigInt(new Date(dto.expectedCloseAt).getTime()) : null }
+        ? {
+            expectedEndTime: dto.expectedCloseAt
+              ? BigInt(new Date(dto.expectedCloseAt).getTime())
+              : null,
+          }
         : {}),
       updateTime: now,
       updateUser: user.id,
@@ -968,7 +991,9 @@ export class OpportunitiesService {
   }
 
   private async ensureStage(organizationId: string, id: string) {
-    const stage = await this.prisma.opportunityStageConfig.findFirst({ where: { id, organizationId } })
+    const stage = await this.prisma.opportunityStageConfig.findFirst({
+      where: { id, organizationId },
+    })
     if (!stage) throw new NotFoundException('商机阶段不存在')
     return stage
   }
@@ -1193,13 +1218,18 @@ export class OpportunitiesService {
     const numberValue = (key: string) => {
       if (values[key] === undefined || values[key] === null || values[key] === '') return undefined
       const number = Number(values[key])
-      if (!Number.isFinite(number)) throw new BadRequestException(`「${fieldMap.get(key)?.label ?? key}」格式不正确`)
+      if (!Number.isFinite(number))
+        throw new BadRequestException(`「${fieldMap.get(key)?.label ?? key}」格式不正确`)
       return number
     }
     const common = {
       ...(name !== undefined ? { name } : {}),
-      ...(values['customerId'] !== undefined ? { customerId: String(values['customerId'] || '') } : {}),
-      ...(values['contactId'] !== undefined ? { contactId: String(values['contactId'] || '') } : {}),
+      ...(values['customerId'] !== undefined
+        ? { customerId: String(values['customerId'] || '') }
+        : {}),
+      ...(values['contactId'] !== undefined
+        ? { contactId: String(values['contactId'] || '') }
+        : {}),
       ...(values['owner'] !== undefined ? { owner: String(values['owner'] || '') } : {}),
       ...(values['amount'] !== undefined ? { amount: numberValue('amount') } : {}),
       ...(values['possible'] !== undefined ? { possible: numberValue('possible') } : {}),
@@ -1228,7 +1258,14 @@ export class OpportunitiesService {
     } catch {
       // 非 JSON 时按逗号、顿号或分号分隔产品 ID。
     }
-    return [...new Set(text.split(/[,，、;；]/).map((item) => item.trim()).filter(Boolean))]
+    return [
+      ...new Set(
+        text
+          .split(/[,，、;；]/)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ]
   }
 
   private normalizeImportedMillis(value: unknown): number | undefined {
@@ -1291,7 +1328,10 @@ export class OpportunitiesService {
     return new Map(config.dictList.map((item) => [item.id, item.name]))
   }
 
-  private async toSingleVO(user: AuthUser, opportunity: OpportunityWithRefs): Promise<OpportunityVO> {
+  private async toSingleVO(
+    user: AuthUser,
+    opportunity: OpportunityWithRefs,
+  ): Promise<OpportunityVO> {
     const [fields, ownerMap, values, reasonMap] = await Promise.all([
       this.metadata.listFields(user.tenantId, MODULE),
       this.ownerNames([opportunity.owner]),
@@ -1408,16 +1448,22 @@ export class OpportunitiesService {
     if (!contact) throw new BadRequestException('联系人不存在或不属于当前客户')
   }
 
-  private productIdsFromItems(items: CreateOpportunityDto['items'] | UpdateOpportunityDto['items']) {
+  private productIdsFromItems(
+    items: CreateOpportunityDto['items'] | UpdateOpportunityDto['items'],
+  ) {
     if (!items?.length) return []
-    return [...new Set(items.map((item) => item.productId).filter((id): id is string => Boolean(id)))]
+    return [
+      ...new Set(items.map((item) => item.productId).filter((id): id is string => Boolean(id))),
+    ]
   }
 
   private parseProductIds(value: string | null): string[] {
     if (!value) return []
     try {
       const parsed = JSON.parse(value)
-      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : []
     } catch {
       return []
     }
@@ -1462,10 +1508,29 @@ export class OpportunitiesService {
         ? Number(condition.value)
         : condition.value
     const value = rawValue as never
+    const listValues = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (item) =>
+        (isDate
+          ? BigInt(new Date(String(item)).getTime())
+          : isNumeric
+            ? Number(item)
+            : item) as never,
+    )
     if (condition.op === 'eq') return { [key]: { equals: value } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'ne') return { NOT: { [key]: { equals: value } } } as Prisma.OpportunityWhereInput
+    if (condition.op === 'ne')
+      return { NOT: { [key]: { equals: value } } } as Prisma.OpportunityWhereInput
+    if (condition.op === 'in') return { [key]: { in: listValues } } as Prisma.OpportunityWhereInput
+    if (condition.op === 'notIn')
+      return { [key]: { notIn: listValues } } as Prisma.OpportunityWhereInput
     if (condition.op === 'contains') {
-      return { [key]: { contains: String(condition.value), mode: 'insensitive' } } as Prisma.OpportunityWhereInput
+      return {
+        [key]: { contains: String(condition.value), mode: 'insensitive' },
+      } as Prisma.OpportunityWhereInput
+    }
+    if (condition.op === 'notContains') {
+      return {
+        NOT: { [key]: { contains: String(condition.value), mode: 'insensitive' } },
+      } as Prisma.OpportunityWhereInput
     }
     if (condition.op === 'gt') return { [key]: { gt: value } } as Prisma.OpportunityWhereInput
     if (condition.op === 'gte') return { [key]: { gte: value } } as Prisma.OpportunityWhereInput
@@ -1493,10 +1558,19 @@ export class OpportunitiesService {
         const normalized = condition.key === 'ownerId' ? { ...condition, key: 'owner' } : condition
         if (normalized.key === 'stage') {
           const value = String(normalized.value ?? '')
+          const values = (
+            Array.isArray(normalized.value) ? normalized.value : [normalized.value]
+          ).map(String)
           const rows = await this.prisma.opportunity.findMany({
             where: {
               organizationId,
-              ...(normalized.op === 'ne' ? { NOT: { stage: value } } : { stage: value }),
+              ...(normalized.op === 'ne'
+                ? { NOT: { stage: value } }
+                : normalized.op === 'in'
+                  ? { stage: { in: values } }
+                  : normalized.op === 'notIn'
+                    ? { stage: { notIn: values } }
+                    : { stage: value }),
             },
             select: { id: true },
           })
@@ -1520,7 +1594,11 @@ export class OpportunitiesService {
     )
     if (!sets.length) return []
     if (mode === 'OR') return [...new Set(sets.flatMap((set) => [...set]))]
-    return [...sets.slice(1).reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!)]
+    return [
+      ...sets
+        .slice(1)
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
+    ]
   }
 
   private intersectIds(left: string[] | null, right: string[] | null): string[] | null {

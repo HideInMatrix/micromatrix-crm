@@ -116,6 +116,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SavedViewBar: typeof import('./../components/SavedViewBar.vue')['default']
+    SubTableFieldInput: typeof import('./../components/form-engine/SubTableFieldInput.vue')['default']
     TopNavigationActions: typeof import('./../components/TopNavigationActions.vue')['default']
     WeComLoginPanel: typeof import('./../components/auth/WeComLoginPanel.vue')['default']
   }

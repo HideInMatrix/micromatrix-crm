@@ -1,5 +1,21 @@
-import type { FieldConfig, FieldOption, FieldType, FieldVO } from '@micromatrix/shared'
+import type {
+  FieldConfig,
+  FieldOption,
+  FieldType,
+  FieldVO,
+  SubTableFieldType,
+} from '@micromatrix/shared'
 import { http } from '../http'
+
+export interface SubFieldForm {
+  id?: string
+  key?: string
+  label: string
+  type: SubTableFieldType
+  required?: boolean
+  options?: FieldOption[]
+  config?: FieldConfig
+}
 
 export interface FieldForm {
   label: string
@@ -11,6 +27,7 @@ export interface FieldForm {
   showInList?: boolean
   listWidth?: number
   hidden?: boolean
+  subFields?: SubFieldForm[]
 }
 
 export const metadataApi = {

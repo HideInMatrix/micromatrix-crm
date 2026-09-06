@@ -5,6 +5,7 @@ import type {
   ContractPaymentPlanVO,
   ContractPaymentRecordVO,
   ContractVO,
+  FieldVO,
   ImportResultVO,
   OrderVO,
   ProductPriceVO,
@@ -16,13 +17,17 @@ import { http } from '../http'
 // ===== 产品 =====
 
 export const productApi = {
-  moduleForm: () => http.get('/product/module/form'),
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/product/module/form',
+    ),
   page: (data: {
     current?: number
     pageSize?: number
     keyword?: string
     status?: '1' | '2'
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
   }) =>
     http.post<{
       list: ProductVO[]
@@ -60,13 +65,17 @@ export const productApi = {
 }
 
 export const productPriceApi = {
-  moduleForm: () => http.get('/price/module/form'),
+  moduleForm: () =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      '/price/module/form',
+    ),
   page: (data: {
     current?: number
     pageSize?: number
     keyword?: string
     status?: '1' | '2'
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
   }) =>
     http.post<{
       list: ProductPriceVO[]
@@ -106,7 +115,7 @@ export const productPriceApi = {
 
 export const quoteApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/opportunity/quotation/module/form',
     ),
   page: (data: {
@@ -116,6 +125,7 @@ export const quoteApi = {
     opportunityId?: string
     viewId?: string
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
   }) =>
     http.post<{ list: QuoteVO[]; total: number; current: number; pageSize: number }>(
       '/opportunity/quotation/page',
@@ -158,7 +168,7 @@ export const quoteApi = {
 
 export const contractApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/contract/module/form',
     ),
   page: (data: {
@@ -167,6 +177,7 @@ export const contractApi = {
     keyword?: string
     viewId?: string
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
     board?: boolean
     stage?: string
     customerId?: string
@@ -232,7 +243,7 @@ export const contractApi = {
 
 export const contractInvoiceApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/invoice/module/form',
     ),
   page: (data: {
@@ -241,6 +252,7 @@ export const contractInvoiceApi = {
     keyword?: string
     viewId?: string
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
     contractId?: string
     customerId?: string
   }) =>
@@ -292,10 +304,16 @@ export const contractInvoiceApi = {
 
 export const businessTitleApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/contract/business-title/module/form',
     ),
-  page: (data: { current?: number; pageSize?: number; keyword?: string; filters?: unknown[] }) =>
+  page: (data: {
+    current?: number
+    pageSize?: number
+    keyword?: string
+    filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
+  }) =>
     http.post<{ list: BusinessTitleVO[]; total: number; current: number; pageSize: number }>(
       '/contract/business-title/page',
       data,
@@ -341,7 +359,7 @@ export const businessTitleApi = {
 
 export const contractPaymentPlanApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/contract/payment-plan/module/form',
     ),
   page: (data: {
@@ -350,6 +368,7 @@ export const contractPaymentPlanApi = {
     keyword?: string
     viewId?: string
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
     contractId?: string
     customerId?: string
   }) =>
@@ -371,7 +390,7 @@ export const contractPaymentPlanApi = {
 
 export const contractPaymentRecordApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/contract/payment-record/module/form',
     ),
   page: (data: {
@@ -380,6 +399,7 @@ export const contractPaymentRecordApi = {
     keyword?: string
     viewId?: string
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
     contractId?: string
     customerId?: string
   }) =>
@@ -405,7 +425,7 @@ export const contractPaymentRecordApi = {
 
 export const orderApi = {
   moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: unknown[] }>(
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       '/order/module/form',
     ),
   page: (data: {
@@ -414,6 +434,7 @@ export const orderApi = {
     keyword?: string
     viewId?: string
     filters?: unknown[]
+    filterMode?: 'AND' | 'OR'
     board?: boolean
     stage?: string
     customerId?: string

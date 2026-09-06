@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import {
   BadRequestException,
   ForbiddenException,
@@ -10,6 +11,7 @@ import {
   isBuiltinDataSourceType,
   splitLocationValue,
   type BuiltinDataSourceType,
+  type FieldConfig,
   type FieldVO,
   type FilterCondition,
   type ImportResultVO,
@@ -25,7 +27,10 @@ import {
   type QueuedExportTaskPayload,
 } from '../import-export/export-tasks.service'
 import type { ImportType } from '../import-export/dto/import-export.dto'
-import { SpreadsheetService } from '../import-export/spreadsheet.service'
+import {
+  SpreadsheetService,
+  type ParsedMultiSubTableSpreadsheetRow,
+} from '../import-export/spreadsheet.service'
 import { CreateFieldDto, ReorderFieldsDto, UpdateFieldDto } from '../metadata/dto/field.dto'
 import { MetadataService } from '../metadata/metadata.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -74,6 +79,20 @@ const BUILTIN_DATA_SOURCE_TABLES: Record<BuiltinDataSourceType, string> = {
   ORDER: 'sales_order',
   INVOICE: 'contract_invoice',
 }
+const BUILTIN_DATA_SOURCE_FORM_KEYS: Partial<Record<BuiltinDataSourceType, string>> = {
+  CUSTOMER: 'customer',
+  CONTACT: 'contact',
+  OPPORTUNITY: 'opportunity',
+  PRODUCT: 'product',
+  CLUE: 'lead',
+  PRICE: 'price',
+  CONTRACT: 'contract',
+  QUOTATION: 'quote',
+  PAYMENT_PLAN: 'contractPaymentPlan',
+  CONTRACT_PAYMENT_RECORD: 'contractPaymentRecord',
+  ORDER: 'order',
+  INVOICE: 'invoice',
+}
 
 function dataSourceReferenceKey(sourceType: string, id: string): string {
   return `${sourceType}:${id}`
@@ -97,8 +116,20 @@ interface DataRow {
   updateTime: bigint
   createUser: string
   updateUser: string
-  fieldValues: Array<{ fieldId: string; fieldValue: string }>
-  fieldBlobValues: Array<{ fieldId: string; fieldValue: string }>
+  fieldValues: Array<{
+    fieldId: string
+    fieldValue: string
+    refSubId: string | null
+    rowId: number | null
+    bizId: string | null
+  }>
+  fieldBlobValues: Array<{
+    fieldId: string
+    fieldValue: string
+    refSubId: string | null
+    rowId: number | null
+    bizId: string | null
+  }>
 }
 
 interface DataExportRow {
@@ -118,6 +149,15 @@ interface ExportReferenceMaps {
   users: Map<string, string>
   departments: Map<string, string>
   dataSources: Map<string, string>
+}
+
+interface CustomFormSubTableImportGroup {
+  key: string
+  rowNum: number
+  resourceId?: string
+  values: Record<string, unknown>
+  subRows: Record<string, Record<string, unknown>[]>
+  errors: string[]
 }
 
 @Injectable()
@@ -402,8 +442,23 @@ export class CustomFormsService {
 
   async updateField(user: AuthUser, id: string, fieldId: string, input: UpdateFieldDto) {
     await this.requireAdmin(user, id)
-    await this.validateDataSourceConfig(user, id, input)
     const field = await this.requireField(id, user.tenantId, fieldId)
+    await this.validateDataSourceConfig(user, id, {
+      type: input.type ?? field.type,
+      config: input.config === undefined ? (field.config ?? undefined) : input.config,
+      subFields:
+        input.subFields === undefined
+          ? (field.subFields?.map((subField) => ({
+              id: subField.id,
+              key: subField.key,
+              label: subField.label,
+              type: subField.type,
+              required: subField.required,
+              options: subField.options ?? undefined,
+              config: subField.config ?? undefined,
+            })) as CreateFieldDto['subFields'])
+          : input.subFields,
+    })
     if (field.system && (input.required === false || input.hidden === true)) {
       throw new BadRequestException('名称和负责人系统字段必须保持必填且可见')
     }
@@ -453,7 +508,7 @@ export class CustomFormsService {
         ? this.filterDataIds(user.tenantId, id, fields, saved.conditions, saved.searchMode)
         : null,
       input.filters?.length
-        ? this.filterDataIds(user.tenantId, id, fields, input.filters, 'AND')
+        ? this.filterDataIds(user.tenantId, id, fields, input.filters, input.filterMode ?? 'AND')
         : null,
     ])
     const filteredIds = this.intersectFilterIds(savedIds, adHocIds)
@@ -490,6 +545,8 @@ export class CustomFormsService {
         current: input.current,
         pageSize: input.pageSize,
         keyword: input.keyword,
+        filters: input.filters,
+        filterMode: input.filterMode,
       })
       return {
         list: page.list.map((row) => ({ id: row.id, name: row.name })),
@@ -628,7 +685,7 @@ export class CustomFormsService {
     for (const row of rows) this.assertWritableData(access, user.id, row.ownerId)
 
     const field = await this.metadata.resolveEditableField(user.tenantId, id, input.fieldId)
-    if (['attachment', 'picture'].includes(field.type)) {
+    if (['attachment', 'picture', 'sub_product'].includes(field.type)) {
       throw new BadRequestException(`「${field.label}」不支持批量修改`)
     }
     this.metadata.validateBatchFieldValue(field, input.fieldValue)
@@ -749,9 +806,12 @@ export class CustomFormsService {
     const { form, access } = await this.resolveAccess(user, id, { requireEnabled: true })
     this.assertImportAccess(access, importType)
     const fields = await this.metadata.listFields(user.tenantId, id)
+    const { mainFields, groups } = this.subTableSpreadsheetConfig(fields)
     return {
       filename: `${form.name}${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`,
-      data: await this.spreadsheet.buildImportTemplate(fields, importType),
+      data: groups.length
+        ? await this.spreadsheet.buildMultiSubTableImportTemplate(mainFields, groups, importType)
+        : await this.spreadsheet.buildImportTemplate(fields, importType),
     }
   }
 
@@ -764,22 +824,14 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     this.assertImportAccess(access, importType)
     const fields = await this.metadata.listFields(user.tenantId, id)
-    const rows = await this.spreadsheet.parseImport(file, fields, importType)
+    const rows = await this.parseCustomFormImportGroups(file, fields, importType)
     const errorMessages: ImportResultVO['errorMessages'] = []
     let successCount = 0
     for (const row of rows) {
       const errors = [...row.errors]
       if (!errors.length) {
         try {
-          await this.prepareImportData(
-            user,
-            id,
-            row.values,
-            fields,
-            access,
-            importType,
-            row.resourceId,
-          )
+          await this.prepareImportGroup(user, id, row, fields, access, importType)
         } catch (error) {
           errors.push(error instanceof Error ? error.message : '数据校验失败')
         }
@@ -799,22 +851,14 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     this.assertImportAccess(access, importType)
     const fields = await this.metadata.listFields(user.tenantId, id)
-    const rows = await this.spreadsheet.parseImport(file, fields, importType)
+    const rows = await this.parseCustomFormImportGroups(file, fields, importType)
     const errorMessages: ImportResultVO['errorMessages'] = []
     let successCount = 0
     for (const row of rows) {
       const errors = [...row.errors]
       if (!errors.length) {
         try {
-          const prepared = await this.prepareImportData(
-            user,
-            id,
-            row.values,
-            fields,
-            access,
-            importType,
-            row.resourceId,
-          )
+          const prepared = await this.prepareImportGroup(user, id, row, fields, access, importType)
           if (importType === 'ADD') await this.createData(user, id, prepared)
           else {
             if (!row.resourceId) throw new BadRequestException('唯一ID不能为空')
@@ -919,7 +963,7 @@ export class CustomFormsService {
     const predicates = conditions.map((condition) => {
       const field = fieldMap.get(condition.key)
       if (!field) throw new BadRequestException(`筛选字段不存在：${condition.key}`)
-      if (['formula', 'picture', 'attachment'].includes(field.type)) {
+      if (['formula', 'picture', 'attachment', 'sub_product'].includes(field.type)) {
         throw new BadRequestException(`「${field.label}」暂不支持高级筛选`)
       }
       if (!filterOpsForType(field.type).includes(condition.op)) {
@@ -947,9 +991,17 @@ export class CustomFormsService {
     const column = field.key === 'name' ? Prisma.raw('resource.name') : Prisma.raw('resource.owner')
     if (condition.op === 'isEmpty') return Prisma.sql`${column} = ''`
     if (condition.op === 'notEmpty') return Prisma.sql`${column} <> ''`
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values = rawValues.map((value) => this.requiredFilterText(field, value))
+      const matched = Prisma.sql`${column} IN (${Prisma.join(values)})`
+      return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
+    }
     const value = this.requiredFilterText(field, condition.value)
-    if (condition.op === 'contains' && field.key === 'name')
-      return Prisma.sql`${column} ILIKE ${`%${value}%`}`
+    if ((condition.op === 'contains' || condition.op === 'notContains') && field.key === 'name') {
+      const matched = Prisma.sql`${column} ILIKE ${`%${value}%`}`
+      return condition.op === 'notContains' ? Prisma.sql`NOT (${matched})` : matched
+    }
     if (condition.op === 'eq') return Prisma.sql`${column} = ${value}`
     if (condition.op === 'ne') return Prisma.sql`${column} <> ${value}`
     throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
@@ -966,12 +1018,41 @@ export class CustomFormsService {
       return Prisma.sql`(${exists(normalTable)}) OR (${exists(blobTable)})`
 
     if (
-      condition.op === 'contains' &&
+      (condition.op === 'contains' || condition.op === 'notContains') &&
       ['multiselect', 'checkbox', 'data_source_multiple'].includes(field.type)
     ) {
       const value = this.requiredFilterText(field, condition.value)
       const match = Prisma.sql`field_value.field_value::jsonb @> ${JSON.stringify([value])}::jsonb`
-      return exists(blobTable, match)
+      const matched = exists(blobTable, match)
+      return condition.op === 'notContains' ? Prisma.sql`NOT (${matched})` : matched
+    }
+
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      if (!rawValues.length) throw new BadRequestException(`「${field.label}」筛选值不能为空`)
+      if (['multiselect', 'checkbox', 'data_source_multiple'].includes(field.type)) {
+        const values = rawValues.map((value) => this.requiredFilterText(field, value))
+        const matched = exists(
+          blobTable,
+          Prisma.sql`jsonb_exists_any(field_value.field_value::jsonb, ${values}::text[])`,
+        )
+        return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
+      }
+      if (['number', 'currency', 'percent'].includes(field.type)) {
+        const values = rawValues.map(Number)
+        if (values.some((value) => !Number.isFinite(value))) {
+          throw new BadRequestException(`「${field.label}」筛选值必须是数字`)
+        }
+        const matched = exists(
+          normalTable,
+          Prisma.sql`field_value.field_value::numeric IN (${Prisma.join(values)})`,
+        )
+        return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
+      }
+      const values = rawValues.map((value) => this.serializeFilterScalar(field, value))
+      const table = BLOB_FIELD_TYPES.has(field.type) ? blobTable : normalTable
+      const matched = exists(table, Prisma.sql`field_value.field_value IN (${Prisma.join(values)})`)
+      return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
     }
 
     if (['number', 'currency', 'percent'].includes(field.type)) {
@@ -1032,10 +1113,10 @@ export class CustomFormsService {
     const value = this.serializeFilterScalar(field, condition.value)
     const table = BLOB_FIELD_TYPES.has(field.type) ? blobTable : normalTable
     const matched =
-      condition.op === 'contains'
+      condition.op === 'contains' || condition.op === 'notContains'
         ? exists(table, Prisma.sql`field_value.field_value ILIKE ${`%${value}%`}`)
         : exists(table, Prisma.sql`field_value.field_value = ${value}`)
-    if (condition.op === 'ne') return Prisma.sql`NOT (${matched})`
+    if (condition.op === 'ne' || condition.op === 'notContains') return Prisma.sql`NOT (${matched})`
     if (condition.op === 'eq' || condition.op === 'contains') return matched
     throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
   }
@@ -1133,29 +1214,68 @@ export class CustomFormsService {
       ['createUser', '创建人'],
       ['updateUser', '更新人'],
     ])
-    const columns = input.headList.map((key) => {
+    const selectedSubTables: FieldVO[] = []
+    const columns: Array<{ key: string; label: string }> = []
+    for (const key of input.headList) {
       const field = fieldMap.get(key)
       const label = extraColumns.get(key)
       if (!field && !label) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
-      return { key, label: field?.label ?? (label as string) }
-    })
+      if (field?.type === 'sub_product') {
+        selectedSubTables.push(field)
+        continue
+      }
+      columns.push({ key, label: field?.label ?? (label as string) })
+    }
+    const valueForColumn = (item: DataExportRow, key: string) => {
+      const field = fieldMap.get(key)
+      if (field) return this.exportFieldValue(field, item, references)
+      if (key === 'createTime') return new Date(item.createTime).toISOString()
+      if (key === 'updateTime') return new Date(item.updateTime).toISOString()
+      if (key === 'createUser') return references.users.get(item.createUser) ?? item.createUser
+      if (key === 'updateUser') return references.users.get(item.updateUser) ?? item.updateUser
+      return ''
+    }
     const rows = items.map((item) =>
-      Object.fromEntries(
-        columns.map((column) => {
-          const field = fieldMap.get(column.key)
-          if (field) return [column.key, this.exportFieldValue(field, item, references)]
-          if (column.key === 'createTime')
-            return [column.key, new Date(item.createTime).toISOString()]
-          if (column.key === 'updateTime')
-            return [column.key, new Date(item.updateTime).toISOString()]
-          if (column.key === 'createUser')
-            return [column.key, references.users.get(item.createUser) ?? item.createUser]
-          if (column.key === 'updateUser')
-            return [column.key, references.users.get(item.updateUser) ?? item.updateUser]
-          return [column.key, '']
-        }),
-      ),
+      Object.fromEntries(columns.map((column) => [column.key, valueForColumn(item, column.key)])),
     )
+    if (selectedSubTables.length) {
+      const subGroups = selectedSubTables.map((parent) => ({
+        key: parent.key,
+        label: parent.label,
+        columns: (parent.subFields ?? [])
+          .filter((field) => field.type !== 'picture')
+          .map((field) => ({ key: field.key, label: field.label })),
+      }))
+      const groups = items.map((item, itemIndex) => ({
+        values: rows[itemIndex] ?? {},
+        subRows: Object.fromEntries(
+          selectedSubTables.map((parent) => {
+            const rawValue = item.values[parent.key]
+            const rawRows: unknown[] = Array.isArray(rawValue) ? rawValue : []
+            const childMap = new Map((parent.subFields ?? []).map((field) => [field.key, field]))
+            const exportRows = rawRows.flatMap((rawRow) => {
+              if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) return []
+              const row = rawRow as Record<string, unknown>
+              return [
+                Object.fromEntries(
+                  [...childMap.entries()]
+                    .filter(([, field]) => field.type !== 'picture')
+                    .map(([key, field]) => [
+                      key,
+                      this.formatFieldExportValue(field, row[key], references),
+                    ]),
+                ),
+              ]
+            })
+            return [parent.key, exportRows]
+          }),
+        ),
+      }))
+      return {
+        data: await this.spreadsheet.buildMultiSubTableExportWorkbook(columns, subGroups, groups),
+        rowCount: items.length,
+      }
+    }
     return {
       data: await this.spreadsheet.buildExportWorkbook(columns, rows),
       rowCount: items.length,
@@ -1174,6 +1294,14 @@ export class CustomFormsService {
           ? item.ownerId
           : undefined
       : item.values[field.key]
+    return this.formatFieldExportValue(field, value, references)
+  }
+
+  private formatFieldExportValue(
+    field: FieldVO,
+    value: unknown,
+    references: ExportReferenceMaps,
+  ): unknown {
     if (value === undefined || value === null || value === '') return ''
     if (field.type === 'member') return references.users.get(String(value)) ?? String(value)
     if (field.type === 'dept') return references.departments.get(String(value)) ?? String(value)
@@ -1220,42 +1348,41 @@ export class CustomFormsService {
   ): Promise<ExportReferenceMaps> {
     const userIds = new Set<string>()
     const departmentIds = new Set<string>()
-    const memberKeys = fields
-      .filter((field) => !field.system && field.type === 'member')
-      .map((field) => field.key)
-    const departmentKeys = fields
-      .filter((field) => !field.system && field.type === 'dept')
-      .map((field) => field.key)
-    const dataSourceFields = fields.filter(
-      (field) =>
-        !field.system &&
-        ['data_source', 'data_source_multiple'].includes(field.type) &&
-        Boolean(field.config?.dataSourceType),
-    )
     const dataSourceIds = new Map<string, Set<string>>()
+
+    const collectReference = (field: FieldVO, value: unknown) => {
+      if (field.type === 'member' && typeof value === 'string' && value) userIds.add(value)
+      if (field.type === 'dept' && typeof value === 'string' && value) departmentIds.add(value)
+      if (!['data_source', 'data_source_multiple'].includes(field.type)) return
+      const sourceType = field.config?.dataSourceType
+      if (!sourceType) return
+      const ids = dataSourceIds.get(sourceType) ?? new Set<string>()
+      const values = Array.isArray(value) ? value : value ? [value] : []
+      for (const current of values) {
+        if (typeof current === 'string' && current) ids.add(current)
+      }
+      dataSourceIds.set(sourceType, ids)
+    }
 
     for (const item of items) {
       userIds.add(item.ownerId)
       userIds.add(item.createUser)
       userIds.add(item.updateUser)
-      for (const key of memberKeys) {
-        const value = item.values[key]
-        if (typeof value === 'string' && value) userIds.add(value)
-      }
-      for (const key of departmentKeys) {
-        const value = item.values[key]
-        if (typeof value === 'string' && value) departmentIds.add(value)
-      }
-      for (const field of dataSourceFields) {
-        const sourceType = field.config?.dataSourceType
-        if (!sourceType) continue
-        const ids = dataSourceIds.get(sourceType) ?? new Set<string>()
-        const value = item.values[field.key]
-        const values = Array.isArray(value) ? value : value ? [value] : []
-        for (const current of values) {
-          if (typeof current === 'string' && current) ids.add(current)
+      for (const field of fields) {
+        if (field.system) continue
+        if (field.type !== 'sub_product') {
+          collectReference(field, item.values[field.key])
+          continue
         }
-        dataSourceIds.set(sourceType, ids)
+        const rawValue = item.values[field.key]
+        const rows: unknown[] = Array.isArray(rawValue) ? rawValue : []
+        for (const row of rows) {
+          if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+          const rowValues = row as Record<string, unknown>
+          for (const subField of field.subFields ?? []) {
+            collectReference(subField, rowValues[subField.key])
+          }
+        }
       }
     }
 
@@ -1301,6 +1428,142 @@ export class CustomFormsService {
     if (importType === 'UPDATE' && !access.canManageAll && !access.canManageOwn) {
       throw new ForbiddenException('当前成员没有导入更新表单数据的权限')
     }
+  }
+
+  private subTableSpreadsheetConfig(fields: FieldVO[]) {
+    const parents = fields.filter((field) => field.type === 'sub_product' && !field.hidden)
+    return {
+      mainFields: fields.filter((field) => field.type !== 'sub_product'),
+      groups: parents.map((field) => ({
+        key: field.key,
+        label: field.label,
+        fields: field.subFields ?? [],
+      })),
+      parents,
+    }
+  }
+
+  private async parseCustomFormImportGroups(
+    file: Buffer,
+    fields: FieldVO[],
+    importType: ImportType,
+  ): Promise<CustomFormSubTableImportGroup[]> {
+    const { mainFields, groups } = this.subTableSpreadsheetConfig(fields)
+    if (!groups.length) {
+      const rows = await this.spreadsheet.parseImport(file, fields, importType)
+      return rows.map((row) => ({
+        key: `row:${row.rowNum}`,
+        rowNum: row.rowNum,
+        resourceId: row.resourceId,
+        values: row.values,
+        subRows: {},
+        errors: row.errors,
+      }))
+    }
+    const rows = await this.spreadsheet.parseMultiSubTableImport(
+      file,
+      mainFields,
+      groups,
+      importType,
+    )
+    return this.groupSubTableImportRows(rows, importType)
+  }
+
+  private groupSubTableImportRows(
+    rows: ParsedMultiSubTableSpreadsheetRow[],
+    importType: ImportType,
+  ): CustomFormSubTableImportGroup[] {
+    const groups: CustomFormSubTableImportGroup[] = []
+    let current: CustomFormSubTableImportGroup | undefined
+    for (const row of rows) {
+      const rawKey = importType === 'UPDATE' ? row.resourceId : row.values['name']
+      const explicitKey = rawKey === undefined || rawKey === null ? '' : String(rawKey).trim()
+      if (explicitKey && (!current || current.key !== explicitKey)) {
+        current = {
+          key: explicitKey,
+          rowNum: row.rowNum,
+          ...(importType === 'UPDATE' ? { resourceId: explicitKey } : {}),
+          values: {},
+          subRows: {},
+          errors: [],
+        }
+        groups.push(current)
+      } else if (!current) {
+        current = {
+          key: `row:${row.rowNum}`,
+          rowNum: row.rowNum,
+          values: {},
+          subRows: {},
+          errors: [importType === 'UPDATE' ? '唯一ID不能为空' : '名称不能为空'],
+        }
+        groups.push(current)
+      }
+      if (importType === 'UPDATE' && row.resourceId && !current.resourceId) {
+        current.resourceId = row.resourceId
+      }
+      for (const [key, value] of Object.entries(row.values)) {
+        const existing = current.values[key]
+        if (existing === undefined) {
+          current.values[key] = value
+          continue
+        }
+        if (JSON.stringify(existing) !== JSON.stringify(value)) {
+          current.errors.push(`第 ${row.rowNum} 行主字段「${key}」与前序行不一致`)
+        }
+      }
+      for (const [parentKey, subRow] of Object.entries(row.subValues)) {
+        if (!Object.keys(subRow).length) continue
+        current.subRows[parentKey] ??= []
+        current.subRows[parentKey]!.push(subRow)
+      }
+      current.errors.push(...row.errors.map((error) => `第 ${row.rowNum} 行：${error}`))
+    }
+    return groups
+  }
+
+  private async prepareImportGroup(
+    user: AuthUser,
+    formId: string,
+    group: CustomFormSubTableImportGroup,
+    fields: FieldVO[],
+    access: AccessState,
+    importType: ImportType,
+  ) {
+    const input = { ...group.values }
+    for (const parent of fields.filter((field) => field.type === 'sub_product')) {
+      const rows = group.subRows[parent.key]
+      if (!rows?.length) continue
+      input[parent.key] = await this.resolveImportSubTableRows(user, parent, rows)
+    }
+    return this.prepareImportData(user, formId, input, fields, access, importType, group.resourceId)
+  }
+
+  private async resolveImportSubTableRows(
+    user: AuthUser,
+    parent: FieldVO,
+    rows: Record<string, unknown>[],
+  ) {
+    const subFields = parent.subFields ?? []
+    const byKey = new Map(subFields.map((field) => [field.key, field]))
+    return Promise.all(
+      rows.map(async (row) => {
+        const output: Record<string, unknown> = {}
+        for (const [key, rawValue] of Object.entries(row)) {
+          const field = byKey.get(key)
+          if (!field || field.type === 'formula') continue
+          let value = rawValue
+          if (field.type === 'member')
+            value = await this.resolveImportUser(user, String(rawValue ?? ''))
+          if (field.type === 'dept')
+            value = await this.resolveImportDepartment(user, String(rawValue ?? ''))
+          if (field.type === 'data_source') {
+            value = await this.resolveImportDataSource(user, field, String(rawValue ?? ''))
+          }
+          output[key] = value
+        }
+        return output
+      }),
+    )
   }
 
   private async prepareImportData(
@@ -1576,10 +1839,30 @@ export class CustomFormsService {
   private async validateDataSourceConfig(
     user: AuthUser,
     currentFormId: string,
-    input: Pick<CreateFieldDto, 'type' | 'config'> | Pick<UpdateFieldDto, 'type' | 'config'>,
+    input:
+      | Pick<CreateFieldDto, 'type' | 'config' | 'subFields'>
+      | Pick<UpdateFieldDto, 'type' | 'config' | 'subFields'>,
   ) {
-    if (!['data_source', 'data_source_multiple'].includes(input.type ?? '')) return
-    const sourceType = input.config?.dataSourceType?.trim()
+    if (['data_source', 'data_source_multiple'].includes(input.type ?? '')) {
+      await this.validateSingleDataSourceConfig(user, currentFormId, input.config?.dataSourceType)
+      await this.validateDataSourceLinkageConfig(user, currentFormId, input.config)
+    }
+    for (const subField of input.subFields ?? []) {
+      if (!['data_source', 'data_source_multiple'].includes(subField.type)) continue
+      await this.validateSingleDataSourceConfig(
+        user,
+        currentFormId,
+        subField.config?.dataSourceType,
+      )
+    }
+  }
+
+  private async validateSingleDataSourceConfig(
+    user: AuthUser,
+    currentFormId: string,
+    rawSourceType?: string,
+  ) {
+    const sourceType = rawSourceType?.trim()
     if (!sourceType) throw new BadRequestException('数据源字段必须配置数据源类型')
     if (isBuiltinDataSourceType(sourceType)) return
     if (sourceType === currentFormId)
@@ -1589,6 +1872,102 @@ export class CustomFormsService {
       select: { id: true },
     })
     if (!target) throw new BadRequestException('自定义表单数据源不存在')
+  }
+
+  private async dataSourceConfigFields(
+    user: AuthUser,
+    sourceType: string,
+  ): Promise<FieldVO[] | null> {
+    if (!isBuiltinDataSourceType(sourceType)) {
+      return this.metadata.listFields(user.tenantId, sourceType)
+    }
+    const formKey = BUILTIN_DATA_SOURCE_FORM_KEYS[sourceType]
+    // BUSINESS_TITLE 使用独立静态表单元数据，不在 SysModuleForm 重复维护。
+    if (!formKey) return null
+    return this.metadata.listFields(user.tenantId, formKey)
+  }
+
+  private dataSourceLinkCompatible(target: FieldVO, source: FieldVO): boolean {
+    if (target.type === 'text' || target.type === 'textarea') {
+      return !['sub_product', 'picture', 'attachment'].includes(source.type)
+    }
+    if (['number', 'currency', 'percent'].includes(target.type)) {
+      return ['number', 'currency', 'percent', 'formula'].includes(source.type)
+    }
+    if (['select', 'multiselect'].includes(target.type)) {
+      return ['select', 'multiselect', 'radio', 'checkbox'].includes(source.type)
+    }
+    if (['data_source', 'data_source_multiple'].includes(target.type)) {
+      return (
+        ['data_source', 'data_source_multiple'].includes(source.type) &&
+        target.config?.dataSourceType === source.config?.dataSourceType
+      )
+    }
+    return target.type === source.type
+  }
+
+  private async validateDataSourceLinkageConfig(
+    user: AuthUser,
+    currentFormId: string,
+    config?: FieldConfig | null,
+  ) {
+    const sourceType = config?.dataSourceType?.trim()
+    if (!sourceType) return
+    const sourceFields = await this.dataSourceConfigFields(user, sourceType)
+    if (!sourceFields) return
+    const currentFields = await this.metadata.listFields(user.tenantId, currentFormId)
+    const sourceById = new Map(sourceFields.map((field) => [field.id, field]))
+    const currentById = new Map(currentFields.map((field) => [field.id, field]))
+
+    for (const id of config?.showFields ?? []) {
+      if (!sourceById.has(id)) throw new BadRequestException('数据源派生显示字段不存在')
+    }
+    for (const condition of config?.combineSearch?.conditions ?? []) {
+      const source = sourceById.get(condition.leftFieldId)
+      if (!source) throw new BadRequestException('数据源过滤引用的源字段不存在')
+      if (condition.leftFieldType !== source.type) {
+        throw new BadRequestException('数据源过滤字段类型与当前源表单不一致')
+      }
+      if (condition.matchType === 'MATCH_FIELD') {
+        const current = condition.rightFieldId ? currentById.get(condition.rightFieldId) : undefined
+        if (!current) throw new BadRequestException('数据源过滤引用的当前字段不存在')
+        if (condition.rightFieldType && condition.rightFieldType !== current.type) {
+          throw new BadRequestException('数据源过滤右侧字段类型与当前表单不一致')
+        }
+      }
+    }
+    for (const link of config?.linkFields ?? []) {
+      const current = currentById.get(link.current)
+      const source = sourceById.get(link.link)
+      if (!current) throw new BadRequestException('数据源填充引用的当前字段不存在')
+      if (!source) throw new BadRequestException('数据源填充引用的源字段不存在')
+      if (!this.dataSourceLinkCompatible(current, source)) {
+        throw new BadRequestException(`「${source.label}」不能填充到「${current.label}」`)
+      }
+    }
+    for (const parentLink of config?.childLinkFields ?? []) {
+      const currentParent = currentById.get(parentLink.current)
+      const sourceParent = sourceById.get(parentLink.link)
+      if (currentParent?.type !== 'sub_product' || sourceParent?.type !== 'sub_product') {
+        throw new BadRequestException('数据源子表填充引用的源/目标子表不存在')
+      }
+      const currentChildren = new Map(
+        (currentParent.subFields ?? []).map((field) => [field.id, field]),
+      )
+      const sourceChildren = new Map(
+        (sourceParent.subFields ?? []).map((field) => [field.id, field]),
+      )
+      for (const childLink of parentLink.childLinks) {
+        const current = currentChildren.get(childLink.current)
+        const source = sourceChildren.get(childLink.link)
+        if (!current || !source) {
+          throw new BadRequestException('数据源子表填充引用的子字段不存在')
+        }
+        if (!this.dataSourceLinkCompatible(current, source)) {
+          throw new BadRequestException(`「${source.label}」不能填充到「${current.label}」`)
+        }
+      }
+    }
   }
 
   private async findData(organizationId: string, formId: string, dataId: string): Promise<DataRow> {
@@ -1810,6 +2189,21 @@ export class CustomFormsService {
     values: Record<string, unknown>,
   ) {
     for (const field of fields) {
+      if (field.type === 'sub_product') {
+        const rows = values[field.key]
+        if (!Array.isArray(rows)) continue
+        for (const row of rows) {
+          if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+          const record = row as Record<string, unknown>
+          for (const subField of field.subFields ?? []) {
+            if (!['data_source', 'data_source_multiple'].includes(subField.type)) continue
+            const value = record[subField.key]
+            if (this.isEmptyValue(value)) continue
+            await this.validateDataSourceFieldValue(tenantId, subField, value)
+          }
+        }
+        continue
+      }
       if (!['data_source', 'data_source_multiple'].includes(field.type)) continue
       const value = values[field.key]
       if (this.isEmptyValue(value)) continue
@@ -1834,9 +2228,14 @@ export class CustomFormsService {
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
     const values: Record<string, unknown> = {}
     for (const stored of [...row.fieldValues, ...row.fieldBlobValues]) {
+      if (stored.refSubId) continue
       const field = fieldMap.get(stored.fieldId)
       if (!field) continue
       values[field.key] = this.decodeValue(field, stored.fieldValue)
+    }
+    for (const field of fields) {
+      if (field.type !== 'sub_product') continue
+      values[field.key] = this.decodeSubTableRows(row, field)
     }
     Object.assign(
       values,
@@ -1877,6 +2276,31 @@ export class CustomFormsService {
     return value
   }
 
+  private decodeSubTableRows(row: DataRow, field: FieldVO): Array<Record<string, unknown>> {
+    const subFields = field.subFields ?? []
+    const subFieldMap = new Map(subFields.map((subField) => [subField.id, subField]))
+    const grouped = new Map<number, Record<string, unknown>>()
+    const cells = [...row.fieldValues, ...row.fieldBlobValues]
+      .filter((stored) => stored.refSubId === field.id && stored.rowId !== null)
+      .sort((a, b) => (a.rowId ?? 0) - (b.rowId ?? 0))
+    for (const stored of cells) {
+      const rowId = stored.rowId
+      if (rowId === null) continue
+      const subField = subFieldMap.get(stored.fieldId)
+      if (!subField) continue
+      if (!grouped.has(rowId)) grouped.set(rowId, { id: stored.bizId ?? undefined })
+      const output = grouped.get(rowId)!
+      if (!output['id'] && stored.bizId) output['id'] = stored.bizId
+      output[subField.key] = this.decodeValue(subField, stored.fieldValue)
+    }
+    return [...grouped.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, output]) => {
+        Object.assign(output, this.metadata.computeFormulas(subFields, {}, output))
+        return output
+      })
+  }
+
   private encodeValue(value: unknown): string {
     if (Array.isArray(value) || (value !== null && typeof value === 'object')) {
       return JSON.stringify(value)
@@ -1895,17 +2319,83 @@ export class CustomFormsService {
       tx.customFormDataFieldBlob.deleteMany({ where: { resourceId } }),
     ])
     const byKey = new Map(fields.map((field) => [field.key, field]))
-    const normal: Array<{ resourceId: string; fieldId: string; fieldValue: string }> = []
-    const blob: Array<{ resourceId: string; fieldId: string; fieldValue: string }> = []
+    const normal: Array<{
+      resourceId: string
+      fieldId: string
+      fieldValue: string
+      refSubId?: string
+      rowId?: number
+      bizId?: string
+    }> = []
+    const blob: Array<{
+      resourceId: string
+      fieldId: string
+      fieldValue: string
+      refSubId?: string
+      rowId?: number
+      bizId?: string
+    }> = []
     for (const [key, value] of Object.entries(values)) {
       if (value === undefined || value === null || value === '') continue
       const field = byKey.get(key)
       if (!field || field.type === 'formula') continue
+      if (field.type === 'sub_product') {
+        this.appendSubTableValues(resourceId, field, value, normal, blob)
+        continue
+      }
       const target = BLOB_FIELD_TYPES.has(field.type) ? blob : normal
       target.push({ resourceId, fieldId: field.id, fieldValue: this.encodeValue(value) })
     }
     if (normal.length) await tx.customFormDataField.createMany({ data: normal })
     if (blob.length) await tx.customFormDataFieldBlob.createMany({ data: blob })
+  }
+
+  private appendSubTableValues(
+    resourceId: string,
+    field: FieldVO,
+    value: unknown,
+    normal: Array<{
+      resourceId: string
+      fieldId: string
+      fieldValue: string
+      refSubId?: string
+      rowId?: number
+      bizId?: string
+    }>,
+    blob: Array<{
+      resourceId: string
+      fieldId: string
+      fieldValue: string
+      refSubId?: string
+      rowId?: number
+      bizId?: string
+    }>,
+  ) {
+    if (!Array.isArray(value)) return
+    const subFields = new Map((field.subFields ?? []).map((subField) => [subField.key, subField]))
+    value.forEach((rawRow, index) => {
+      if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) return
+      const row = rawRow as Record<string, unknown>
+      const rowId = index + 1
+      const bizId =
+        typeof row['id'] === 'string' && row['id'].trim()
+          ? row['id'].trim()
+          : `sr_${randomBytes(10).toString('hex')}`
+      for (const [key, cellValue] of Object.entries(row)) {
+        if (key === 'id' || this.isEmptyValue(cellValue)) continue
+        const subField = subFields.get(key)
+        if (!subField || subField.type === 'formula') continue
+        const target = BLOB_FIELD_TYPES.has(subField.type) ? blob : normal
+        target.push({
+          resourceId,
+          fieldId: subField.id,
+          fieldValue: this.encodeValue(cellValue),
+          refSubId: field.id,
+          rowId,
+          bizId,
+        })
+      }
+    })
   }
 
   private createSystemField(

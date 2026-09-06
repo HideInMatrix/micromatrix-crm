@@ -299,6 +299,7 @@ onMounted(async () => {
       v-model="fieldDialogVisible"
       :current-form-id="configDetail?.id ?? ''"
       :editing-field="editingField"
+      :fields="configFields"
       :saving="fieldSaving"
       @save="saveField"
     />

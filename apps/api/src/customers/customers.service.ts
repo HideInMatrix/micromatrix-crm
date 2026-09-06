@@ -92,6 +92,7 @@ export class CustomersService {
       viewId: dto.viewId,
       view: dto.view,
       filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      filterMode: dto.filterMode,
     })
     return {
       list: result.items,
@@ -110,6 +111,7 @@ export class CustomersService {
       keyword: dto.keyword,
       viewId: dto.viewId,
       filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      filterMode: dto.filterMode,
       scope: 'sea',
       poolId,
     })
@@ -211,9 +213,7 @@ export class CustomersService {
     const buckets = new Map<string, Bucket>()
     for (const item of items) {
       const category = this.chartFieldValue(item, categoryField.key)
-      const subCategory = subCategoryField
-        ? this.chartFieldValue(item, subCategoryField.key)
-        : null
+      const subCategory = subCategoryField ? this.chartFieldValue(item, subCategoryField.key) : null
       const key = JSON.stringify([category, subCategory])
       const bucket = buckets.get(key) ?? {
         category,
@@ -248,7 +248,12 @@ export class CustomersService {
   ): Promise<Record<string, unknown>> {
     if (!moduleFields?.length) return {}
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const byIdentity = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const byIdentity = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
     const result: Record<string, unknown> = {}
     for (const item of moduleFields) {
       const field = byIdentity.get(item.fieldId)
@@ -307,7 +312,9 @@ export class CustomersService {
       saved?.conditions.length
         ? this.filterCustomerIds(user.tenantId, saved.conditions, saved.searchMode)
         : null,
-      adHocConditions.length ? this.filterCustomerIds(user.tenantId, adHocConditions, 'AND') : null,
+      adHocConditions.length
+        ? this.filterCustomerIds(user.tenantId, adHocConditions, query.filterMode ?? 'AND')
+        : null,
       keyword ? this.keywordCustomerIds(user.tenantId, keyword) : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
@@ -680,7 +687,9 @@ export class CustomersService {
       canReadOpportunities
         ? this.dataScope.directOwnerFilter(user, 'menu:opportunity')
         : Promise.resolve(null),
-      canReadContracts ? this.dataScope.directOwnerFilter(user, 'menu:contract') : Promise.resolve(null),
+      canReadContracts
+        ? this.dataScope.directOwnerFilter(user, 'menu:contract')
+        : Promise.resolve(null),
     ])
     const [contacts, opportunities, contracts, followUps, team] = await Promise.all([
       canReadContacts
@@ -1382,12 +1391,7 @@ export class CustomersService {
     ])
     const changed = customers.filter((customer) => customer.owner !== owner.id)
     if (changed.length) {
-      await this.pools.assertCapacityForOwner(
-        user.tenantId,
-        'customer',
-        owner.id,
-        changed.length,
-      )
+      await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id, changed.length)
     }
     for (const customer of changed) {
       await this.assignOwnerExisting(user, customer, owner.id, true)
@@ -2393,9 +2397,9 @@ export class CustomersService {
       ? 'menu:opportunity'
       : resource === 'invoices'
         ? 'CONTRACT_INVOICE:READ'
-      : resource === 'orders'
-        ? 'ORDER:READ'
-        : 'menu:contract'
+        : resource === 'orders'
+          ? 'ORDER:READ'
+          : 'menu:contract'
   }
 
   private async buildCustomerRelation(
@@ -3052,7 +3056,9 @@ export class CustomersService {
       this.prisma.customerContact.count({
         where: { organizationId: tenantId, customerId: { in: ids } },
       }),
-      this.prisma.opportunity.count({ where: { organizationId: tenantId, customerId: { in: ids } } }),
+      this.prisma.opportunity.count({
+        where: { organizationId: tenantId, customerId: { in: ids } },
+      }),
       this.prisma.opportunityQuotation.count({
         where: { organizationId: tenantId, opportunity: { customerId: { in: ids } } },
       }),

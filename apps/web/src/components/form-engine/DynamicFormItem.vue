@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AttachmentVO, DepartmentVO, FieldVO } from '@micromatrix/shared'
+import type { AttachmentVO, DataSourceRecordVO, DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed } from 'vue'
 import type { MemberOption } from '@/api/system'
 import AttachmentFieldInput from './AttachmentFieldInput.vue'
@@ -11,10 +11,17 @@ const props = defineProps<{
   field: FieldVO
   members: MemberOption[]
   deptTree: DepartmentVO[]
+  optionRange?: string[]
+  formFields?: FieldVO[]
+  formValues?: Record<string, unknown>
   attachmentOptions?: AttachmentVO[]
   attachmentDownload?: (file: AttachmentVO) => Promise<void>
   /** formula 类型的实时计算结果 */
   formulaValue?: number | null
+}>()
+
+const emit = defineEmits<{
+  dataSourceRecord: [record: DataSourceRecordVO | null]
 }>()
 
 const model = defineModel<unknown>()
@@ -30,6 +37,12 @@ const stringArrayValue = computed(() =>
     ? model.value.filter((item): item is string => typeof item === 'string')
     : [],
 )
+const fieldOptions = computed(() => {
+  const options = props.field.options ?? []
+  if (!props.optionRange) return options
+  const range = new Set(props.optionRange)
+  return options.filter((option) => range.has(option.value))
+})
 </script>
 
 <template>
@@ -104,12 +117,7 @@ const stringArrayValue = computed(() =>
     class="w-full"
     @update:model-value="model = $event"
   >
-    <el-option
-      v-for="opt in field.options ?? []"
-      :key="opt.value"
-      :label="opt.label"
-      :value="opt.value"
-    />
+    <el-option v-for="opt in fieldOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
   </el-select>
   <el-select
     v-else-if="field.type === 'multiselect'"
@@ -121,19 +129,14 @@ const stringArrayValue = computed(() =>
     class="w-full"
     @update:model-value="model = $event"
   >
-    <el-option
-      v-for="opt in field.options ?? []"
-      :key="opt.value"
-      :label="opt.label"
-      :value="opt.value"
-    />
+    <el-option v-for="opt in fieldOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
   </el-select>
   <el-radio-group
     v-else-if="field.type === 'radio'"
     :model-value="stringValue"
     @update:model-value="model = $event"
   >
-    <el-radio v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
+    <el-radio v-for="opt in fieldOptions" :key="opt.value" :value="opt.value">
       {{ opt.label }}
     </el-radio>
   </el-radio-group>
@@ -142,7 +145,7 @@ const stringArrayValue = computed(() =>
     :model-value="stringArrayValue"
     @update:model-value="model = $event"
   >
-    <el-checkbox v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
+    <el-checkbox v-for="opt in fieldOptions" :key="opt.value" :value="opt.value">
       {{ opt.label }}
     </el-checkbox>
   </el-checkbox-group>
@@ -185,7 +188,11 @@ const stringArrayValue = computed(() =>
     :model-value="field.type === 'data_source_multiple' ? stringArrayValue : stringValue"
     :source-type="field.config?.dataSourceType ?? 'CUSTOMER'"
     :multiple="field.type === 'data_source_multiple'"
+    :field="field"
+    :form-fields="formFields"
+    :form-values="formValues"
     :placeholder="`请选择${field.label}`"
+    @record="emit('dataSourceRecord', $event)"
     @update:model-value="model = $event"
   />
 

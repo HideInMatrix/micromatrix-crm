@@ -81,6 +81,7 @@ interface LeadQueryInput {
   poolId?: string
   status?: 'NEW' | 'FOLLOWING' | 'INTERESTED' | 'SUCCESS' | 'FAIL'
   filters?: string | FilterCondition[]
+  filterMode?: 'AND' | 'OR'
   viewId?: string
   homeFilter?: string
   sort?: { fieldId: string; direction: 'asc' | 'desc' | 'ASC' | 'DESC' }
@@ -131,6 +132,7 @@ export class LeadsService {
       pageSize: dto.pageSize,
       keyword: dto.keyword,
       filters: dto.filters,
+      filterMode: dto.filterMode,
       viewId: dto.viewId,
       homeFilter: dto.homeFilter,
       sort: dto.sort,
@@ -152,6 +154,7 @@ export class LeadsService {
       pageSize: dto.pageSize,
       keyword: dto.keyword,
       filters: dto.filters,
+      filterMode: dto.filterMode,
       viewId: dto.viewId,
       sort: dto.sort,
       scope: 'pool',
@@ -269,9 +272,7 @@ export class LeadsService {
     const buckets = new Map<string, AggregateBucket>()
     for (const item of items) {
       const category = this.chartFieldValue(item, categoryField.key)
-      const subCategory = subCategoryField
-        ? this.chartFieldValue(item, subCategoryField.key)
-        : null
+      const subCategory = subCategoryField ? this.chartFieldValue(item, subCategoryField.key) : null
       const key = JSON.stringify([category, subCategory])
       const bucket = buckets.get(key) ?? {
         category,
@@ -360,7 +361,9 @@ export class LeadsService {
   async findAll(user: AuthUser, query: LeadQueryInput): Promise<PaginatedResult<LeadVO>> {
     const { page = 1, pageSize = 10, keyword, scope = 'mine', status } = query
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const adHocConditions = Array.isArray(query.filters) ? query.filters : parseFilters(query.filters)
+    const adHocConditions = Array.isArray(query.filters)
+      ? query.filters
+      : parseFilters(query.filters)
     const homeFilter = this.homeFilters.parse(query.homeFilter, 'lead')
     const viewResourceType =
       scope === 'pool' ? USER_VIEW_RESOURCE_TYPES.lead_pool : USER_VIEW_RESOURCE_TYPES.lead
@@ -371,7 +374,9 @@ export class LeadsService {
       saved?.conditions.length
         ? this.filterIds(user.tenantId, saved.conditions, saved.searchMode)
         : null,
-      adHocConditions.length ? this.filterIds(user.tenantId, adHocConditions, 'AND') : null,
+      adHocConditions.length
+        ? this.filterIds(user.tenantId, adHocConditions, query.filterMode ?? 'AND')
+        : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
 
@@ -514,11 +519,7 @@ export class LeadsService {
     }
   }
 
-  private compareClueSortValues(
-    left: unknown,
-    right: unknown,
-    direction: 'asc' | 'desc',
-  ): number {
+  private compareClueSortValues(left: unknown, right: unknown, direction: 'asc' | 'desc'): number {
     const multiplier = direction === 'asc' ? 1 : -1
     const leftEmpty = left === null || left === undefined || left === ''
     const rightEmpty = right === null || right === undefined || right === ''
@@ -754,11 +755,7 @@ export class LeadsService {
     return { id: claimed.id, name: claimed.name }
   }
 
-  async poolBatchClaim(
-    user: AuthUser,
-    ids: string[],
-    poolId: string,
-  ): Promise<BatchAffectResult> {
+  async poolBatchClaim(user: AuthUser, ids: string[], poolId: string): Promise<BatchAffectResult> {
     const leads = await this.assertPoolBatchResources(user, ids, poolId)
     for (const lead of leads) await this.poolClaim(user, lead.id, poolId)
     return { success: leads.length, fail: 0, failedIds: [] }
@@ -1466,13 +1463,7 @@ export class LeadsService {
       }
 
       if (options.copyFollowArtifacts) {
-        await this.copyLeadFollowArtifactsInTransaction(
-          tx,
-          user,
-          lead.id,
-          customerId,
-          contactId,
-        )
+        await this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId, contactId)
       }
 
       if (lead.followTime && (!newestFollowedAt || lead.followTime > newestFollowedAt)) {

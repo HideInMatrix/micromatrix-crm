@@ -28,6 +28,11 @@ export class QueryCustomersDto {
   @IsOptional()
   filters?: string
 
+  @ApiPropertyOptional({ enum: ['AND', 'OR'], default: 'AND', description: '筛选条件组合方式' })
+  @IsIn(['AND', 'OR'])
+  @IsOptional()
+  filterMode?: 'AND' | 'OR'
+
   @ApiPropertyOptional({ description: '保存的用户视图 ID' })
   @IsString()
   @IsOptional()

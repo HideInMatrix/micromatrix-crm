@@ -382,6 +382,63 @@ FieldDialog 只负责 source type 配置；内置源与启用自定义表单在�
 
 F2 只实现引用目标本身。Cordys 的 `combineSearch / showFields / refFields / linkFields / childLinkFields` 会把数据源和当前字段状态产生联动，统一在 F4 实施，避免 F2 同时承担字段联动引擎。
 
+## 13. F3 SUB_TABLE / SUB_PRODUCT
+
+### 13.1 字段模型
+
+MicroMatrix 对外增加 `sub_product`，对应 Cordys 自定义表单可用的 `SUB_PRODUCT`。不增加可配置的 `sub_price`，因为 Cordys 自定义表单设计器也明确排除 `SUB_PRICE`。
+
+父字段在 `SysModuleFieldBlob.prop` 中保存嵌套 `subFields`，子列不是独立顶层 `SysModuleField`。运行时需要平铺时通过 helper 临时生成带父字段上下文的子列定义。
+
+父字段配置增加：
+
+- `fixedColumn: 1 | 2 | 3`，默认 1。
+- `sumColumns: string[]`，只允许指向当前子表中的 number/currency/percent 类列。
+
+### 13.2 行值模型
+
+沿用 `custom_form_data_field / custom_form_data_field_blob`，不新建“一张子表一个实体表”。两张表增加 nullable：
+
+- `ref_sub_id`：父字段 ID；顶层字段保持 null。
+- `row_id`：当前父字段的顺序号；顶层字段保持 null。
+- `biz_id`：行稳定 ID；顶层字段保持 null。
+
+顶层字段仍维持 `resourceId + fieldId` 唯一；子表单元格则使用 `resourceId + refSubId + rowId + fieldId` 唯一。现有顶层 unique index 需要改成 PostgreSQL partial unique index，避免 nullable 行维度破坏顶层唯一语义。
+
+读取时先处理 `refSubId IS NULL` 的顶层字段，再把有 `refSubId` 的记录按父字段和 `rowId` 聚合成：
+
+```ts
+;[{ id: rowBizId, [subFieldKey]: value }]
+```
+
+### 13.3 子列复用
+
+子列仍使用现有 FieldVO 语义，但禁止递归子表。首批允许：text、number/currency/percent、select/multiselect、data_source、formula、picture、datetime、member、dept。
+
+子列校验、值编解码、DATA_SOURCE 校验和公式计算优先抽成共享 helper，顶层和子表都调用同一逻辑，避免在 CustomFormsService 形成第二套 switch。
+
+### 13.4 PC
+
+设计器中的 `SUB_PRODUCT` 以独占一行字段展示；FieldDialog 提供子列新增/编辑/复制/删除/拖拽、固定列数量、汇总列。
+
+数据 Drawer 使用独立 `SubTableFieldInput` 表格组件，行新增时生成临时 row id，保存成功后以服务端返回的稳定 `bizId` 为准。子表单元格复用 DynamicFormItem；公式列只读并按当前行实时计算。
+
+### 13.5 列表与筛选
+
+父 `sub_product` 不进入普通数据列表列、SavedView 列设置、顶层 AdvancedFilter、批量修改。F4 如需支持 `parent.subField` 条件，将建立独立的子字段条件编译，不在 F3 用 JSON contains 代替真实行语义。
+
+### 13.6 Excel
+
+SpreadsheetService 增加 grouped/sub-table column 描述，支持双层表头与行展开。CustomForm 只提供字段和值映射，不自己操作 ExcelJS 子表结构。
+
+### 13.7 实施与验收结果
+
+- Shared/Metadata 已增加 `sub_product`、嵌套 `subFields`、`fixedColumn / sumColumns`，子字段禁止继续嵌套子表；已有数据的子字段类型修改和父字段类型切换按数据存在性 fail-closed。
+- `custom_form_data_field / custom_form_data_field_blob` 已增加 `refSubId / rowId / bizId` 行维度；顶层值与子表单元格分别使用 PostgreSQL partial unique index 保持唯一语义。读取按父字段 + `rowId` 重组成稳定行数组，写入保留已有 `bizId` 并对当前行公式重算。
+- Web 已增加 `CustomFormSubTableDesigner` 与 `SubTableFieldInput`，支持子列配置、固定列、汇总列、行新增/删除、必填与当前行公式；父 `sub_product` 不进入普通列表列、SavedView 列设置、顶层 AdvancedFilter 与批量修改。
+- SpreadsheetService 已提供公共双层表头导入/导出能力；主记录可展开多条子表行，子字段继续复用选项、成员、部门与 DATA_SOURCE 名称解析。
+- `form001-f3-service-smoke.mjs` 最终 **23/23 PASS**；`form001-f3-browser-smoke.mjs` 最终 **12/12 PASS**。本地开发库按 single baseline 规则 reset + seed PASS，Prisma validate/diff、API Rules **192/192**、root build/typecheck 全绿，lint 保持 **0 error / 8 个既有 warning**。
+
 ### 12.6 实施与验收结果
 
 - Shared/Metadata 已增加 `data_source / data_source_multiple`、内置 source registry 与动态 `customFormId` source type；单值进入普通字段表，多值进入 Blob JSON。
@@ -390,3 +447,57 @@ F2 只实现引用目标本身。Cordys 的 `combineSearch / showFields / refFie
 - Excel 已完成名称 -> ID 导入、ID -> 名称导出；自定义表单名称反查保持 `organizationId + customFormId` 边界，歧义名称 fail-closed。
 - `form001-f2-service-smoke.mjs` 在独立 PostgreSQL acceptance 库 + Redis DB13 + BullMQ worker 上最终 **23/23 PASS**；`form001-f2-browser-smoke.mjs` 最终 **14/14 PASS**。
 - 回归继续保持原 FORM-001/E Browser **31/31 PASS**、F1 LOCATION/ATTACHMENT Browser **16/16 PASS**；API Rules **192/192 PASS**，root typecheck/build PASS，lint **0 error / 8 个既有 warning**。
+
+## 14. F4 显隐规则、表单联动与字段联动
+
+详细源码证据与 Cordys 边界见 [f4-linkage-audit.md](./f4-linkage-audit.md)。F4 不建立一套新的脚本规则引擎，而是按 Cordys 的分层语义分别处理字段显隐、普通选择字段联动和 DATA_SOURCE 联动。
+
+### 14.1 Shared / Metadata 契约
+
+- `showControlRules` 保存在控制字段 config 上，目标字段跨多个控制字段按 OR 语义决定最终可见性。
+- `linkProp` 只用于选择类字段；SELECT 的 `current` 为标量，MULTISELECT 为完整数组，运行时按 Cordys 精确值/精确集合命中。
+- `AUTO` 直接赋值目标字段；`HIDDEN` 只限制目标字段可选范围，不改变字段可见性。
+- DATA_SOURCE 配置增加 `combineSearch / showFields / linkFields / childLinkFields`。Metadata 保存时校验当前表单字段、源字段、父/子表引用、选项值与类型兼容，并拒绝循环或不存在的引用。
+- `formLink` 只冻结跨业务表单场景的模型边界；FORM-001 没有对应跨业务创建入口，因此 F4 不伪造额外业务入口。
+
+### 14.2 公共 Form Runtime
+
+公共 `packages/shared/src/form-runtime.ts` 同时供 Web 和 API 使用，负责：
+
+- 计算最终可见字段集合；隐藏字段不参与 required，并在服务端保存时丢弃客户端伪造值；
+- 执行 AUTO 联动并允许级联收敛；
+- 计算 HIDDEN 的目标选项范围并在服务端再次校验范围外值；
+- DATA_SOURCE 顶层 `linkFields` 类型安全填充与 select/multiselect label 映射；
+- `childLinkFields` 把源 SUB_PRODUCT 行重建为目标子表行，后续继续进入 F3 子字段校验、DATA_SOURCE 校验和当前行公式计算。
+
+纯运行时测试最终 **7/7 PASS**。
+
+### 14.3 DATA_SOURCE 动态候选与源记录快照
+
+- frontend-shared 数据源适配层统一提供 source fields、page、resolve 与 record snapshot，不在 DynamicForm 内为 13 个业务源复制查询分支。
+- `combineSearch.searchMode` 显式透传 `AND / OR`；动态条件右值为空时不进入请求。
+- 公共 `FilterOp` 增加真实 `in / notIn / notContains`，动态 Field/Blob SQL 与业务系统字段均执行真实集合/否定语义，不再用 `eq/ne` 近似代替。
+- CustomForm 作为数据源时同样透传 `filterMode` 并继续复用目标表单 AccessState；动态过滤不会扩大 F2 已冻结的数据权限。
+- `showFields` 使用源记录快照临时生成只读派生展示，不创建真实 SysModuleField，也不写入当前表单数据。
+- DATA_SOURCE 选中记录请求与已选 ID 名称补全使用独立 request sequence，避免 model watcher 抢占 record request 导致 `linkFields / childLinkFields` 被误判为过期。
+
+### 14.4 PC 设计器
+
+F4 配置继续遵守 F1R 组件化边界，`CustomFormsView.vue` 不承载规则细节。字段 Dialog 组合三个领域组件：
+
+- `CustomFormFieldLinkageDesigner`：字段显隐与普通 AUTO/HIDDEN 联动；
+- `CustomFormDataSourceFilterDesigner`：DATA_SOURCE combineSearch；
+- `CustomFormDataSourceLinkageDesigner`：showFields、linkFields 与 childLinkFields。
+
+编辑字段时 config 使用非 Proxy 深拷贝，避免 Vue reactive Proxy 直接进入 `structuredClone` 导致编辑 Dialog 异常；字段类型或 dataSourceType 切换时同步清理不再适用的旧联动配置。
+
+### 14.5 F4 验收结果
+
+- `form001-f4-service-smoke.mjs`：**16/16 PASS**。
+- `form001-f4-browser-smoke.mjs`：**13/13 PASS**。
+- 相邻 Browser：原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全部 PASS。
+- 相邻 Service：核心 FORM-001 PASS、F1 **26/26**、F2 **23/23**、F3 **23/23** 全部 PASS。
+- API Rules **199/199 PASS**；pre-release single baseline reset + seed PASS；`prisma validate` 与数据库 -> schema `migrate diff --exit-code` PASS。
+- root typecheck/build PASS；lint **0 error / 8 个既有 warning**；当前变更集 Prettier 与 `git diff --check` PASS。
+
+至此 FORM-001 的 F1～F4 公共 Form Engine 深化全部关闭，FORM-001 正式封板为 `VERIFIED`。

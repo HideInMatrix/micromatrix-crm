@@ -45,7 +45,10 @@ export class QuotesService {
     return this.moduleForms.getConfig(user.tenantId, FORM_KEY)
   }
 
-  async list(user: AuthUser, dto: QuotationPageDto): Promise<{
+  async list(
+    user: AuthUser,
+    dto: QuotationPageDto,
+  ): Promise<{
     list: QuoteVO[]
     total: number
     current: number
@@ -61,7 +64,9 @@ export class QuotesService {
       saved?.conditions.length
         ? this.filterIds(user.tenantId, fields, saved.conditions, saved.searchMode)
         : null,
-      dto.filters?.length ? this.filterIds(user.tenantId, fields, dto.filters, 'AND') : null,
+      dto.filters?.length
+        ? this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
+        : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
     const where: Prisma.OpportunityQuotationWhereInput = {
@@ -89,12 +94,25 @@ export class QuotesService {
       this.prisma.opportunityQuotation.count({ where }),
     ])
     const [dynamic, products] = await Promise.all([
-      this.fieldValues.load(user.tenantId, 'quotation', rows.map((row) => row.id)),
-      this.quotationFields.loadProductsBatch(user.tenantId, rows.map((row) => row.id)),
+      this.fieldValues.load(
+        user.tenantId,
+        'quotation',
+        rows.map((row) => row.id),
+      ),
+      this.quotationFields.loadProductsBatch(
+        user.tenantId,
+        rows.map((row) => row.id),
+      ),
     ])
     return {
       list: rows.map((row) =>
-        this.toVO(row, row.opportunity.name, fields, dynamic.get(row.id) ?? {}, products.get(row.id) ?? []),
+        this.toVO(
+          row,
+          row.opportunity.name,
+          fields,
+          dynamic.get(row.id) ?? {},
+          products.get(row.id) ?? [],
+        ),
       ),
       total,
       current,
@@ -140,7 +158,9 @@ export class QuotesService {
       })
       return row
     })
-    if (await this.approvals.flowRequired(user.tenantId, 'quote', Number(created.amount), 'CREATE')) {
+    if (
+      await this.approvals.flowRequired(user.tenantId, 'quote', Number(created.amount), 'CREATE')
+    ) {
       await this.approvals.submit(user, 'quote', created.id, 'CREATE')
     }
     return this.get(user, created.id)
@@ -149,13 +169,16 @@ export class QuotesService {
   async update(user: AuthUser, dto: QuotationUpdateDto): Promise<QuoteVO> {
     const current = await this.ensureWritable(user, dto.id)
     if (dto.opportunityId) await this.assertOpportunity(user.tenantId, dto.opportunityId)
-    if (dto.name && dto.name.trim() !== current.name) await this.assertNameUnique(user.tenantId, dto.name, dto.id)
-    const customData = dto.moduleFields === undefined
-      ? undefined
-      : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
-    const config = dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
+    if (dto.name && dto.name.trim() !== current.name)
+      await this.assertNameUnique(user.tenantId, dto.name, dto.id)
+    const customData =
+      dto.moduleFields === undefined
+        ? undefined
+        : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
+    const config =
+      dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     // Cordys: 从未审批通过过的报价，编辑仍按 CREATE 时机；历史审批通过后才按 UPDATE 时机。
-    const executeTiming = current.approved ? 'UPDATE' as const : 'CREATE' as const
+    const executeTiming = current.approved ? ('UPDATE' as const) : ('CREATE' as const)
     const nextAmount = dto.amount === undefined ? Number(current.amount) : dto.amount
     const approvalRequired = await this.approvals.flowRequired(
       user.tenantId,
@@ -179,8 +202,10 @@ export class QuotesService {
           updateUser: user.id,
         },
       })
-      if (customData !== undefined) await this.fieldValues.save(user.tenantId, 'quotation', dto.id, customData, 'update', tx)
-      if (dto.products !== undefined) await this.quotationFields.saveProducts(user.tenantId, dto.id, dto.products, tx)
+      if (customData !== undefined)
+        await this.fieldValues.save(user.tenantId, 'quotation', dto.id, customData, 'update', tx)
+      if (dto.products !== undefined)
+        await this.quotationFields.saveProducts(user.tenantId, dto.id, dto.products, tx)
       await tx.opportunityQuotationSnapshot.deleteMany({ where: { quotationId: dto.id } })
       await this.writeSnapshot(tx, dto.id, config, {
         id: row.id,
@@ -255,12 +280,14 @@ export class QuotesService {
     })
     const allowed: string[] = []
     for (const row of rows) {
-      if (await this.dataScope.matchesDirectCreator(user, row.createUser, 'quote:update')) allowed.push(row.id)
+      if (await this.dataScope.matchesDirectCreator(user, row.createUser, 'quote:update'))
+        allowed.push(row.id)
     }
     if (!allowed.length) return { count: 0 }
     const fields = await this.moduleForms.listFields(user.tenantId, FORM_KEY)
     const field = fields.find((item) => item.id === dto.fieldId || item.key === dto.fieldId)
-    if (!field || field.hidden || field.key === 'products') throw new BadRequestException('字段不存在或不支持批量编辑')
+    if (!field || field.hidden || field.key === 'products')
+      throw new BadRequestException('字段不存在或不支持批量编辑')
     const now = BigInt(Date.now())
     if (field.system) {
       const data: Prisma.OpportunityQuotationUncheckedUpdateManyInput = {
@@ -278,7 +305,14 @@ export class QuotesService {
       await this.prisma.opportunityQuotation.updateMany({ where: { id: { in: allowed } }, data })
     } else {
       await this.prisma.$transaction(async (tx) => {
-        await this.fieldValues.saveBatch(user.tenantId, 'quotation', allowed, field.id, dto.fieldValue, tx)
+        await this.fieldValues.saveBatch(
+          user.tenantId,
+          'quotation',
+          allowed,
+          field.id,
+          dto.fieldValue,
+          tx,
+        )
         await tx.opportunityQuotation.updateMany({
           where: { id: { in: allowed } },
           data: { updateTime: now, updateUser: user.id },
@@ -399,7 +433,12 @@ export class QuotesService {
     moduleFields: Array<{ fieldId: string; fieldValue?: unknown }> = [],
   ) {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
-    const map = new Map(fields.flatMap((field) => [[field.id, field], [field.key, field]]))
+    const map = new Map(
+      fields.flatMap((field) => [
+        [field.id, field],
+        [field.key, field],
+      ]),
+    )
     const result: Record<string, unknown> = {}
     for (const item of moduleFields) {
       const field = map.get(item.fieldId)
@@ -438,7 +477,6 @@ export class QuotesService {
     })
     if (exists) throw new BadRequestException('报价名称不能重复')
   }
-
 
   private async ensureWritable(user: AuthUser, id: string) {
     const row = await this.prisma.opportunityQuotation.findFirst({
@@ -508,10 +546,11 @@ export class QuotesService {
           return new Set(rows.map((row) => row.id))
         }
         const field = fieldMap.get(condition.key)
-        if (!field || field.system || isCustomFieldKey(condition.key) === false && field.hidden) {
+        if (!field || field.system || (isCustomFieldKey(condition.key) === false && field.hidden)) {
           return new Set<string>()
         }
-        const normalized = field.key === condition.key ? condition : { ...condition, key: field.key }
+        const normalized =
+          field.key === condition.key ? condition : { ...condition, key: field.key }
         return new Set(
           await this.fieldValues.filterResourceIds(organizationId, 'quotation', [normalized]),
         )
@@ -522,10 +561,7 @@ export class QuotesService {
     return [
       ...sets
         .slice(1)
-        .reduce(
-          (result, set) => new Set([...result].filter((id) => set.has(id))),
-          sets[0]!,
-        ),
+        .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
   }
 
@@ -533,15 +569,29 @@ export class QuotesService {
     key: string,
     condition: FilterCondition,
   ): Prisma.OpportunityQuotationWhereInput | null {
+    if (condition.op === 'in' || condition.op === 'notIn') {
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const matches = values.map((value) =>
+        this.quotationSystemFilterClause(key, { ...condition, op: 'eq', value }),
+      )
+      if (!matches.length || matches.some((match) => !match)) return null
+      const OR = matches as Prisma.OpportunityQuotationWhereInput[]
+      return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
+    }
+    if (condition.op === 'notContains') {
+      const match = this.quotationSystemFilterClause(key, { ...condition, op: 'contains' })
+      return match ? { NOT: match } : null
+    }
     const dateKeys = new Set(['untilTime', 'createTime', 'updateTime'])
     const numberKeys = new Set(['amount'])
     const boolKeys = new Set(['invalid', 'approved'])
     let rawValue: unknown = condition.value
     if (dateKeys.has(key)) {
       const direct = Number(condition.value)
-      const millis = Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
-        ? direct
-        : new Date(String(condition.value)).getTime()
+      const millis =
+        Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
+          ? direct
+          : new Date(String(condition.value)).getTime()
       if (!Number.isFinite(millis)) return null
       rawValue = BigInt(Math.trunc(millis))
     } else if (numberKeys.has(key)) {
@@ -565,11 +615,16 @@ export class QuotesService {
         [fieldKey]: { contains: String(condition.value ?? ''), mode: 'insensitive' },
       } as Prisma.OpportunityQuotationWhereInput
     }
-    if (condition.op === 'gt') return { [fieldKey]: { gt: value } } as Prisma.OpportunityQuotationWhereInput
-    if (condition.op === 'gte') return { [fieldKey]: { gte: value } } as Prisma.OpportunityQuotationWhereInput
-    if (condition.op === 'lt') return { [fieldKey]: { lt: value } } as Prisma.OpportunityQuotationWhereInput
-    if (condition.op === 'lte') return { [fieldKey]: { lte: value } } as Prisma.OpportunityQuotationWhereInput
-    if (condition.op === 'isEmpty') return { [fieldKey]: null } as Prisma.OpportunityQuotationWhereInput
+    if (condition.op === 'gt')
+      return { [fieldKey]: { gt: value } } as Prisma.OpportunityQuotationWhereInput
+    if (condition.op === 'gte')
+      return { [fieldKey]: { gte: value } } as Prisma.OpportunityQuotationWhereInput
+    if (condition.op === 'lt')
+      return { [fieldKey]: { lt: value } } as Prisma.OpportunityQuotationWhereInput
+    if (condition.op === 'lte')
+      return { [fieldKey]: { lte: value } } as Prisma.OpportunityQuotationWhereInput
+    if (condition.op === 'isEmpty')
+      return { [fieldKey]: null } as Prisma.OpportunityQuotationWhereInput
     if (condition.op === 'notEmpty') {
       return { NOT: { [fieldKey]: null } } as Prisma.OpportunityQuotationWhereInput
     }

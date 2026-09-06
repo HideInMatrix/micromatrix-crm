@@ -4,6 +4,15 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-06：FORM-001 F4 与 F 系列正式封板
+
+- 完成 Cordys `showControlRules / linkProp / combineSearch / showFields / linkFields / childLinkFields` 对齐；`HIDDEN` 按 Cordys 语义实现为目标选项范围限制，不误实现为字段隐藏，SELECT/MULTISELECT 联动按标量/完整集合精确命中。
+- 新增 shared Form Runtime，Web 与 API 共同执行显隐、required/隐藏值写入边界、AUTO/HIDDEN 和 DATA_SOURCE 顶层/子表填充；DATA_SOURCE 动态过滤支持 AND/OR 与真实 `IN / NOT_IN / NOT_CONTAINS`。
+- F4 PC 配置继续拆为独立显隐/普通联动、DATA_SOURCE 候选过滤、DATA_SOURCE 展示/填充组件，`CustomFormsView.vue` 保持页面编排职责；同时修复 Vue Proxy 深拷贝字段编辑异常和 DATA_SOURCE record/resolve 请求序号竞态。
+- 验收：Form Runtime **7/7**、F4 Service **16/16**、F4 Browser **13/13**；原 FORM-001 + E Browser **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12**，F1/F2/F3 Service **26/26、23/23、23/23** 与核心 FORM-001 Service 全部 PASS。
+- 演示销售角色 seed 补齐 `menu:customForm + CUSTOM_FORM:READ`，使已分配 MANAGE_OWN/VIEW_ALL 的表单成员能够通过模块入口权限后继续由表单级角色决定数据边界；核心 Service Smoke 重新验证 MANAGE_OWN/VIEW_ALL 与停用表单边界 PASS。
+- pre-release single baseline reset + seed、Prisma validate/diff、API Rules **199/199**、root typecheck/build、lint **0 error / 8 个既有 warning**、当前变更集 Prettier 与 `git diff --check` 全绿。FORM-001 的 F1～F4 全部关闭，状态从 `IN_PROGRESS` 更新为 `VERIFIED`。
+
 ## 2026-08-21：对齐顺序校正
 
 - 每个模块先打开 Cordys 真实页面，再根据页面请求定位接口，并沿接口核对后端 Controller、Service、Domain、DTO、Mapper XML 与跨模块副作用。
@@ -1513,3 +1522,15 @@ Cordys 默认表单与跟进记录几乎同构，差别是「预计开始时间 
 - `form001-f2-service-smoke.mjs` 使用独立 `micromatrix_form001f2_acceptance` PostgreSQL + Redis DB13 + 真实 BullMQ export worker，最终 **23/23 PASS**；覆盖 source 自引用/不存在拒绝、source 锁定、普通/Blob 分表、引用存在性、MANAGE_OWN/无角色数据范围、AdvancedFilter、批量编辑、xlsx 和内置 CUSTOMER source。
 - `form001-f2-browser-smoke.mjs` 最终 **14/14 PASS**：覆盖目标自定义表单候选、已选值解析、列表可读名称、设计器 source 回显/锁定、单/多选编辑回显、远程候选与 AdvancedFilter。原 FORM-001/E Browser **31/31 PASS**、F1 Browser **16/16 PASS** 继续全绿。
 - 最终工程门槛：API Rules **192/192 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**。FORM-001F2 至此关闭，整体仍为 **`IN_PROGRESS`**，当前仅剩 F3 SUB_TABLE / SUB_PRODUCT 与 F4 显隐/表单联动/字段联动。
+
+---
+
+## 93. FORM-001F3 SUB_TABLE / SUB_PRODUCT 同类行模型（2026-09-05）
+
+- 按 Cordys `SubField / SUB_PRODUCT / SUB_PRICE` 源码冻结边界：自定义表单仅开放 `SUB_PRODUCT`，不开放业务专用 `SUB_PRICE`；父字段在 ModuleField Blob 中保存嵌套 `subFields`，子列首批支持 text、number/currency/percent、select/multiselect、DATA_SOURCE、formula、picture、datetime、member、dept，禁止递归子表。
+- Shared/Metadata 新增 `sub_product`、`fixedColumn / sumColumns` 与子字段 VO/DTO；服务端校验子字段名称/ID/key 唯一、字段类型、选项、DATA_SOURCE、公式与汇总列。已有数据的子字段类型修改和父字段类型切换 fail-closed；删除子字段/父字段同步清理历史单元格。
+- `custom_form_data_field / custom_form_data_field_blob` 增加 `ref_sub_id / row_id / biz_id`，继续复用现有 Field/Blob 表，不为每个子表创建实体表。顶层字段与子表单元格分别使用 partial unique index；读取时按父字段和 `rowId` 聚合为行数组，编辑保留稳定 `bizId`，当前行公式实时重算。
+- Web 新增 `CustomFormSubTableDesigner` 和公共 Form Engine `SubTableFieldInput`：支持子列新增/删除/排序、固定列、汇总列、数据 Drawer 行新增/删除、必填与当前行公式。父 `SUB_PRODUCT` 按冻结边界不进入普通列表列、SavedView 列设置、顶层 AdvancedFilter 和批量修改。
+- SpreadsheetService 扩展公共双层表头能力，支持多个 SUB_PRODUCT 父字段的模板、解析和导出；子表行展开后重建行数组，成员/部门/DATA_SOURCE 继续使用现有可读名称解析，公式列不进入导入列但导出计算结果。
+- `form001-f3-service-smoke.mjs` 最终 **23/23 PASS**；`form001-f3-browser-smoke.mjs` 使用 Web 5176 + API 3101 + Chrome CDP 最终 **12/12 PASS**。本地开发库按 pre-release single baseline 规则 reset + seed PASS；Prisma validate 与数据库 -> schema diff PASS；API Rules **192/192 PASS**；root build/typecheck PASS；lint **0 error / 8 个既有 warning**。
+- FORM-001F3 至此关闭；FORM-001 整体继续保持 **`IN_PROGRESS`**，当前唯一剩余执行单元为 F4 显隐规则、表单联动与字段联动。

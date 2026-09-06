@@ -1,9 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import {
+  evaluateFormRuntime,
   evaluateFormula,
   isCustomFieldKey,
+  isEmptyFormValue,
   isLocationCodeAllowed,
   splitLocationValue,
+  valueWithinOptionRange,
   type FieldVO,
 } from '@micromatrix/shared'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
@@ -41,6 +44,7 @@ export class MetadataService {
     if (!field) throw new NotFoundException('字段不存在')
     if (field.hidden) throw new BadRequestException(`「${field.label}」当前不可编辑`)
     if (field.type === 'formula') throw new BadRequestException('计算字段不支持批量修改')
+    if (field.type === 'sub_product') throw new BadRequestException('子表格不支持批量修改')
     return field
   }
 
@@ -159,30 +163,80 @@ export class MetadataService {
     input: Record<string, unknown> | undefined,
     options: { requireAll: boolean },
   ): Promise<Record<string, unknown>> {
-    const fields = await this.fieldsMap(organizationId, module)
+    const fieldList = await this.listFields(organizationId, module)
+    const fields = new Map(fieldList.map((field) => [field.key, field]))
+    const runtime = evaluateFormRuntime(fieldList, input ?? {})
     const result: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(input ?? {})) {
+    for (const [key, value] of Object.entries(runtime.values)) {
       const field = fields.get(key)
       if (!field || !isCustomFieldKey(key) || field.type === 'formula') continue
+      if (runtime.visibleByFieldId[field.id] === false) continue
+      if (!valueWithinOptionRange(value, runtime.optionRangesByFieldId[field.id])) {
+        throw new BadRequestException(`「${field.label}」当前值不在字段联动允许范围内`)
+      }
+      if (field.type === 'sub_product') {
+        result[key] = this.validateSubTableRows(field, value)
+        continue
+      }
       this.validateBatchFieldValue(field, value)
       result[key] = value
     }
     if (options.requireAll) {
       for (const field of fields.values()) {
-        if (!isCustomFieldKey(field.key) || field.system || !field.required || field.hidden)
+        if (
+          !isCustomFieldKey(field.key) ||
+          field.system ||
+          !field.required ||
+          runtime.visibleByFieldId[field.id] === false
+        )
           continue
         const value = result[field.key]
-        if (
-          value === undefined ||
-          value === null ||
-          value === '' ||
-          (Array.isArray(value) && value.length === 0)
-        ) {
+        if (isEmptyFormValue(value)) {
           throw new BadRequestException(`「${field.label}」为必填项`)
         }
       }
     }
     return result
+  }
+
+  private validateSubTableRows(field: FieldVO, value: unknown): Array<Record<string, unknown>> {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException(`「${field.label}」字段值格式不正确`)
+    }
+    const subFields = field.subFields ?? []
+    const byKey = new Map(subFields.map((subField) => [subField.key, subField]))
+    return value.map((rawRow, rowIndex) => {
+      if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) {
+        throw new BadRequestException(`「${field.label}」第 ${rowIndex + 1} 行格式不正确`)
+      }
+      const inputRow = rawRow as Record<string, unknown>
+      const row: Record<string, unknown> = {}
+      if (typeof inputRow['id'] === 'string' && inputRow['id'].trim()) {
+        row['id'] = inputRow['id'].trim()
+      }
+      for (const subField of subFields) {
+        if (subField.type === 'formula') continue
+        const cellValue = inputRow[subField.key]
+        const empty =
+          cellValue === undefined ||
+          cellValue === null ||
+          cellValue === '' ||
+          (Array.isArray(cellValue) && cellValue.length === 0)
+        if (subField.required && empty) {
+          throw new BadRequestException(
+            `「${field.label}」第 ${rowIndex + 1} 行「${subField.label}」为必填项`,
+          )
+        }
+        if (empty) continue
+        this.validateBatchFieldValue(subField, cellValue)
+        row[subField.key] = cellValue
+      }
+      for (const key of Object.keys(inputRow)) {
+        if (key === 'id' || byKey.has(key)) continue
+        throw new BadRequestException(`「${field.label}」包含未知子字段「${key}」`)
+      }
+      return row
+    })
   }
 
   computeFormulas(
