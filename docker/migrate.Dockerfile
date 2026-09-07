@@ -14,19 +14,24 @@ RUN corepack enable \
 
 WORKDIR /workspace
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/migrate/package.json packages/migrate/package.json
+COPY packages/shared/package.json packages/shared/package.json
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
-  pnpm install --frozen-lockfile --filter @micromatrix/migrate --filter @micromatrix/api... \
-  && pnpm --config.inject-workspace-packages=true --filter @micromatrix/migrate --prod deploy /opt/micromatrix-migrate
+  pnpm install --frozen-lockfile --filter @micromatrix/migrate... --filter @micromatrix/api...
+
+COPY packages/shared packages/shared
 
 COPY apps/api/prisma apps/api/prisma
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
 COPY apps/api/src/modules/metadata/system-fields.ts apps/api/src/modules/metadata/system-fields.ts
 
-RUN export PATH=/workspace/packages/migrate/node_modules/.bin:$PATH \
+RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
+  pnpm --filter @micromatrix/shared build \
+  && pnpm --config.inject-workspace-packages=true --filter @micromatrix/migrate --prod deploy /opt/micromatrix-migrate \
+  && export PATH=/workspace/packages/migrate/node_modules/.bin:$PATH \
   && cd apps/api \
   && prisma generate
 

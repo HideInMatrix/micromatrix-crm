@@ -4,6 +4,12 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-07：Docker Migration Seed runtime 依赖回归修复
+
+- GitHub tag Docker Smoke 已推进到独立 Migration runtime：baseline migration 成功后，`tsx prisma/seed.ts` 因运行时无法解析 `@micromatrix/shared` 退出。源码核对确认 Seed 通过 shared 的 `MESSAGE_TASK_DEFINITIONS` 写消息任务默认配置，但 `@micromatrix/migrate` 生产依赖和 `docker/migrate.Dockerfile` 都未把 shared 放入最终 deploy。
+- 修复后 `@micromatrix/migrate` 正式依赖 shared，Migration builder COPY/build shared 并使用 pnpm 11 injected workspace production deploy；release smoke 同步断言 Migration Dockerfile 必须执行 shared build，不再依赖 API 镜像或开发机残留 workspace link。
+- 验收：宿主机独立 migrate deploy 可直接加载 `@micromatrix/shared`，`MESSAGE_TASK_DEFINITIONS=47`；`docker/migrate.Dockerfile` 实建 PASS；隔离 PostgreSQL 上 Migration 镜像默认 `init` 成功执行唯一 baseline migration 与 bootstrap Seed，数据库实查 `message_task_settings=47`。原 `Cannot find module '@micromatrix/shared'` 已关闭。
+
 ## 2026-09-07：Docker release Smoke CI 入口回归修复
 
 - GitHub tag release 的 `docker-smoke` job 仍执行 `bash scripts/docker-release-smoke.sh`，但根 `.gitignore` 已忽略 `/scripts/`，且 `f8c3bea` 已删除此前 tracked 的该脚本，导致 Runner checkout 后稳定报 `No such file or directory`。

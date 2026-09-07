@@ -51,3 +51,9 @@
   - 从删除前最后版本恢复完整 Docker release Smoke 到可跟踪的 `docker/release-smoke.sh`；不解除 `/scripts/` 忽略规则，避免本地 Browser/Service Smoke 被误提交。
   - GitHub `docker-smoke` job 直接执行 `bash docker/release-smoke.sh`，不依赖该 job 未安装的 pnpm；根 `package.json` 同时恢复 `pnpm smoke:docker-release` 作为本地统一入口。
   - `bash -n`、workflow/path、当前 API/Web/Migration Dockerfile 契约断言均 PASS。本地真实镜像构建已启动到 Docker BuildKit 解析 `docker/dockerfile:1.7`，但 Docker Hub 解析在项目构建前持续阻塞，人工终止；该外部拉取阻塞不作为项目 Smoke PASS 证据，下一次 tag Runner 继续执行完整 runtime 门禁。
+
+- [x] D11 Migration Seed shared runtime 依赖修复（2026-09-07）
+  - GitHub Docker Smoke 已成功构建并启动 Migration 镜像，但 `prisma migrate deploy` 后执行 `tsx prisma/seed.ts` 报 `Cannot find module '@micromatrix/shared'`；根因是 Seed 已运行时引用 `MESSAGE_TASK_DEFINITIONS`，而 `@micromatrix/migrate` production dependency 与镜像 deploy 均未包含 shared。
+  - `packages/migrate` 正式声明 `@micromatrix/shared: workspace:*`；Migration Docker builder 增加 shared package/source、执行 `@micromatrix/shared build`，再通过 pnpm 11 injected workspace production deploy 输出完整 runtime 依赖。
+  - 宿主机 production deploy 实查 `@micromatrix/shared` 可解析，`MESSAGE_TASK_DEFINITIONS=47`；Migration 镜像独立构建 PASS。
+  - 隔离 PostgreSQL 下以新 Migration 镜像执行默认 `init`，baseline migration + bootstrap Seed 均 PASS，并实查 `message_task_settings=47`，证明 shared 常量已真实参与 Seed 执行。
