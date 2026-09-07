@@ -15,11 +15,13 @@
 
 ### Migration
 
-`docker/migrate.Dockerfile` 使用 Node 24 Alpine，仅部署 `@micromatrix/migrate`（`prisma + dotenv`）以及 `apps/api/prisma` schema/migrations/config。它以 `./node_modules/.bin/prisma` 为 ENTRYPOINT，默认执行 `migrate deploy`。Migration 镜像只在升级时短暂运行，API 常驻镜像不再承担数据库迁移工具链。
+`docker/migrate.Dockerfile` 使用 Node 24 Alpine，部署 `@micromatrix/migrate` 及其 production workspace 依赖 `@micromatrix/shared`，并复制 `apps/api/prisma` schema/migrations/config、生成后的 Prisma Client 与 Seed 依赖的 metadata system-field 模板。builder 必须先构建 shared，再执行 pnpm 11 dedicated production deploy，保证 `tsx prisma/seed.ts` 的 `@micromatrix/shared` 运行时 import 在发布镜像内真实可解析。
+
+Migration runtime 以 `docker/release-init.sh` 为 ENTRYPOINT：默认 `init` 顺序执行 `prisma migrate deploy` + `SEED_MODE=bootstrap` Seed；重复执行时 bootstrap 只补空安装，不覆盖已有管理员数据。Migration 镜像只在升级/初始化时短暂运行，API 常驻镜像不再承担 Prisma CLI、migration 或 Seed 工具链。
 
 ### Web
 
-`docker/web.Dockerfile` 在 `BUILDPLATFORM` 的 Node 24 builder 内运行 Vite build，最终仅把与 CPU 架构无关的 `apps/web/dist` 放入 Nginx Alpine。多架构发布时不会在 QEMU arm64 Node 下重复执行 Vite。
+`docker/web.Dockerfile` 在 `BUILDPLATFORM` 的 Node 24 builder 内同时构建 PC `apps/web` 与 Mobile `apps/mobile`，最终把两份与 CPU 架构无关的静态产物分别放到 Nginx `/` 与 `/mobile/`。多架构发布时不会在 QEMU arm64 Node 下重复执行 Vite。
 
 Nginx 配置使用官方 `/etc/nginx/templates/*.template` 运行时 envsubst：
 
@@ -60,7 +62,7 @@ on:
 流水线分为四层：
 
 1. `verify`：校验 SemVer tag，使用 `pnpm/setup@v2` 直接准备 Node 24/pnpm 11.25.0 与 pnpm store cache，显式执行 frozen install、全仓 typecheck 和 lint；不再经过 npm bootstrap + pnpm self-update。
-2. `docker-smoke`：从 tag 对应源码真实构建 API/Migration/Web 镜像，并用隔离 PostgreSQL/Redis 验证 migration、Redis cache runtime、API/Web runtime 与 proxy。
+2. `docker-smoke`：从 tag 对应源码执行 tracked `docker/release-smoke.sh`，真实构建 API/Migration/Web 镜像，并用隔离 PostgreSQL/Redis 验证 migration + bootstrap Seed、Redis cache runtime、Worker/API/Web runtime、PC/Mobile SPA fallback 与 proxy。
 3. `api-images`：amd64 使用 `ubuntu-latest` 原生构建，arm64 使用 `ubuntu-24.04-arm` 原生构建 API 与 Migration，各自推送临时架构 tag；不通过 QEMU 执行 Prisma/TypeScript/pnpm deploy。
 4. `api-manifest` 分别合并 API/Migration 两套架构镜像为正式 multi-arch tags；`web-image` 在 x64 runner 原生构建一次静态 dist，再组装 `linux/amd64,linux/arm64` Nginx 镜像。
 

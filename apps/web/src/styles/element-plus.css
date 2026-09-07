@@ -81,7 +81,7 @@ html:not(.dark) {
 }
 
 .el-drawer__body {
-  padding: 24px;
+  padding: 24px !important;
 }
 
 .el-dialog {

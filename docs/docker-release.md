@@ -25,6 +25,8 @@ git push origin v0.0.1
 
 `.github/workflows/release-docker.yml` 只监听 `v*.*.*` tag。普通 `git push origin master` 不会触发 Docker release。
 
+当前发布工具链固定为 **Node 24 + pnpm 11.25.0**。根 `packageManager`、GitHub Actions `pnpm/setup@v2.1.0`、API/Migration/Web Docker builder 使用同一 pnpm 版本；CI setup 只准备 runtime/cache，依赖安装仍由独立 `pnpm install --frozen-lockfile` 步骤完成。
+
 流水线依次执行：
 
 1. SemVer tag 校验。
@@ -36,7 +38,9 @@ git push origin v0.0.1
 
 `@micromatrix/shared` 的 `main` / `types` 都指向 `packages/shared/dist`。GitHub Runner 是全新 checkout，不存在开发机残留的 `dist`，因此源码校验必须先生成 shared 构建产物再校验 API/Web。根 `pnpm typecheck` 和 `pnpm build` 均按 `shared → api → web` 的依赖顺序执行，避免本地缓存掩盖 workspace 跨包问题。
 
-镜像构建阶段继续收窄 workspace 依赖：API builder 只安装 `@micromatrix/migrate` 与 `@micromatrix/api...`（Prisma 构建工具 + API + shared），Web builder 只安装 `@micromatrix/web...`（Web + shared）。API runtime 使用 Alpine + pnpm dedicated-lockfile `--prod --no-optional` deploy，不再携带 Prisma CLI、Studio、TypeScript 等构建/迁移工具；数据库 migration 由独立 Migration 镜像执行。
+镜像构建阶段继续收窄 workspace 依赖：API builder 安装 `@micromatrix/migrate` 与 `@micromatrix/api...` 所需依赖；Migration builder 以 `@micromatrix/migrate...` 带入 shared，并先构建 `@micromatrix/shared` 后执行 production deploy；Web builder 只安装 PC/Mobile + frontend-shared/shared 依赖。API runtime 使用 Alpine + pnpm dedicated-lockfile `--prod --no-optional` deploy，不再携带 Prisma CLI、Studio、TypeScript 等构建/迁移工具。
+
+独立 Migration 镜像负责 `prisma migrate deploy + bootstrap Seed`。Seed 当前复用 shared 的消息任务定义，因此 `@micromatrix/migrate` 必须显式依赖 `@micromatrix/shared`；Docker builder 也必须 COPY/build shared，禁止依赖开发机残留的 `packages/shared/dist`。
 
 以 `v0.0.1` 为例，至少可使用：
 
@@ -54,7 +58,7 @@ ghcr.io/hideinmatrix/micromatrix-crm-web:v0.0.1
 pnpm smoke:docker-release
 ```
 
-脚本不会使用当前开发数据库。它会创建临时 Docker network/PostgreSQL/Redis，通过独立 Migration 镜像执行全部 Prisma migration，再启动 API/Web，完成验证后自动清理临时容器和网络。
+脚本不会使用当前开发数据库。它会创建临时 Docker network/PostgreSQL/Redis，通过独立 Migration 镜像执行全部 Prisma migration + bootstrap Seed，再启动 Worker/API/Web，完成验证后自动清理临时容器和网络。
 
 验证内容：
 
@@ -62,13 +66,16 @@ pnpm smoke:docker-release
 - Migration Docker build。
 - Web Docker build。
 - API/Migration/Web Dockerfile workspace scope 与多架构构建策略防回归检查。
-- API runtime 不包含 Prisma CLI；Migration 镜像独立执行 `prisma migrate deploy`。
+- API runtime 不包含 Prisma CLI；Migration 镜像独立执行 `prisma migrate deploy` 与 bootstrap Seed，并验证 production runtime 能解析 Seed 所需的 shared workspace 包。
 - API runtime 同时包含 `dist/main.js` 与 `dist/worker.js`，并真实以 worker command 启动验证；缺失 worker 入口时 release smoke 必须直接失败。
 - Redis 使用密码认证；API 实际写入认证上下文与通知缓存 key，并验证修改密码后认证缓存主动失效。
 - `/api/health`。
 - Nginx `/healthz`。
 - Nginx `/api` 反向代理。
 - Vue Router `/login` history fallback。
+- Mobile `/mobile/` 与深层 `/mobile/customers/detail` SPA fallback。
+
+2026-09-07 TOOLCHAIN-001 最终验收中，`pnpm smoke:docker-release` 已在 pnpm `11.25.0` 下重新完整执行并 PASS：API/Migration/Web 三镜像实建，fresh PostgreSQL 应用唯一 `20260905084900_baseline`，bootstrap Seed、Worker、Redis cache、管理员改密缓存失效、重复初始化、API/Nginx health、PC/Mobile SPA fallback 与 `/api` proxy 全绿。
 
 ASYNC-001 另提供真实异步链路 Smoke：
 

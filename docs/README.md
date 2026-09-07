@@ -21,9 +21,9 @@
 
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/本地验收）
-- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链、**W3.7 高级审批深化**、独立工程化单元 **CACHE-001**、**CACHE-002**、**EVENT-001**、**COORD-001**、**ASYNC-001**、**LOG-001**、**LOG-002**、**LOG-003**以及 **UI-001 PC/Mobile UI 重构 T1～T13** 均已完成。UI-001 最新 T13 已将企业设置/系统日志页面级 Tabs 迁到 Header Top Menu，并收口首页 Element Plus 按钮间距。
+- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链、**W3.7 高级审批深化**、独立工程化单元 **CACHE-001**、**CACHE-002**、**EVENT-001**、**COORD-001**、**ASYNC-001**、**LOG-001**、**LOG-002**、**LOG-003**、**TOOLCHAIN-001 pnpm 11 工具链迁移**以及 **UI-001 PC/Mobile UI 重构 T1～T14** 均已完成。当前没有 `IN_PROGRESS` / `PLANNED` 的正式执行单元，后续仅保留已登记的 DISCOVERED / DEFERRED backlog。
 - 当前数据库基线：**1 个 pre-release baseline migration**（`20260905084900_baseline`）。项目正式发布前，每次数据库结构提交都重新合并为单 baseline；正式发布后停止 squash 并切换为 forward-only migrations。历史文档中的 30/56/68/71 等 migration 数量只表示对应历史验收节点，不再代表当前目录数量。
-- 当前发布基线：`v0.0.13` 指向 `63e846f`；项目 packageManager 已切换 pnpm 11.25.0，Release/Docker 工具链整改由 TOOLCHAIN-001 文档单独追踪，不与 LOG-002 的业务日志改造混为同一验收单元。
+- 当前发布基线：`v0.0.13` 指向 `63e846f`；项目 packageManager 已统一为 pnpm 11.25.0，TOOLCHAIN-001 已完成本地/CI/Docker 三端迁移与完整 Docker release smoke，并正式封板为 `VERIFIED`。
 - 整体剩余范围与完成标准见 [project-progress.md](./project-progress.md)；DataEase provider/token 继续由 DB-023 deferred，AI/License/MCP/商业标讯等明确排除项不计入当前 CRM 核心完成标准。
 - 数据模型唯一真相：`apps/api/prisma/schema.prisma`；不维护会随迁移快速失真的手写数据模型快照
 - 启动方式与演示账号见根目录 [README.md](../README.md)

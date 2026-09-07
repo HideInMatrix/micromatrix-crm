@@ -4,6 +4,21 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-07：UI-001 T14 Drawer Header / 审批流程工具区正式封板
+
+- T14 最终使用真实 API/Web + headless Chrome CDP 做视觉 DOM 验收。首次测量确认 `.el-drawer__header` 已为 `margin-bottom:0` 且 Header/Body 无额外 gap，但 `.el-drawer__body` 实际计算仍是 20px，说明普通 `padding:24px` 被 Element Plus 组件样式覆盖；全局基线因此收口为 `padding:24px !important`，不在各 Drawer 逐个打补丁。
+- 修正后普通 Metadata 440px Drawer 实测保持页面原 `size`，Header `margin-bottom:0`、Body top/left padding 均 24px；审批流程复杂 Drawer 在 1440px 视口实测 1080px、2560px 视口保持 50%，验证 `size="50%" + min-width:1080px`，没有把全局 Drawer 宽度错误统一。
+- 流程设计工具区实测 `flex-direction:column + align-items:baseline`；标题/说明第一行，审批节点/条件分支/默认分支/自动布局第二行，按钮 `nowrap + self-start`、同一 top 基线且无水平溢出。
+- gitignored `scripts/ui001-t14-drawer-browser-smoke.mjs` 最终 **28/28 PASS**，API 5xx=0、Runtime exception=0。T14 Browser 视觉验收关闭后，`UI-001 T1～T14` 全部 `VERIFIED`。
+
+## 2026-09-07：TOOLCHAIN-001 pnpm 11 工具链迁移正式封板
+
+- 迁移原因保持原始审计结论：旧 GitHub Release verify 使用 `pnpm/action-setup@v6` 时会先通过 npm/self-installer 自举新 pnpm，再按项目 pnpm 10 基线回切，现场曾出现 setup 单步约 6 分钟的无效 bootstrap/self-update；最终选择统一工具链而不是长期回退 Action。
+- 本地/仓库基线现统一为 Node 24 主线 + pnpm `11.25.0`：根 `packageManager`、`pnpm-workspace.yaml allowBuilds`、pnpm-specific retry settings、GitHub `pnpm/setup@v2.1.0` 与 API/Migration/Web Docker builder 全部完成迁移；`.npmrc` 只保留本地 npmmirror，GitHub verify 通过 `pnpm_config_registry` 使用官方 npm registry。
+- pnpm 11 strict install 对 `@scarf/scarf / msgpackr-extract / vue-demi` 的历史未执行语义使用显式 deny，不开启 `dangerouslyAllowAllBuilds`；frozen install 与 production deploy 保持供应链检查开启。
+- Docker release 链路在封板前连续修复两个真实回归：被 `.gitignore` 忽略的旧 `scripts/docker-release-smoke.sh` 迁到 tracked `docker/release-smoke.sh`；Migration Seed 引入 shared 消息任务定义后，`@micromatrix/migrate` 正式补齐 `@micromatrix/shared` runtime dependency 并在镜像内 build/deploy shared，不复制消息任务定义或创建第二真相源。
+- 最终 T5：pnpm `11.25.0`、frozen install PASS、root typecheck/build PASS、lint **0 error / 8 个既有 warning**、API Rules **227/227 PASS**；完整 `pnpm smoke:docker-release` **PASS**，真实构建 API/Migration/Web 三镜像，fresh PostgreSQL 应用唯一 `20260905084900_baseline`，bootstrap Seed、Worker、Redis cache、管理员改密缓存失效、重复初始化保护、API/Nginx、PC `/login`、Mobile `/mobile/` 与深层 SPA fallback、`/api` proxy 全绿；Prettier、Shell syntax 与 `git diff --check` PASS。TOOLCHAIN-001 从 `IN_PROGRESS` 更新为 `VERIFIED`。
+
 ## 2026-09-07：Docker Migration Seed runtime 依赖回归修复
 
 - GitHub tag Docker Smoke 已推进到独立 Migration runtime：baseline migration 成功后，`tsx prisma/seed.ts` 因运行时无法解析 `@micromatrix/shared` 退出。源码核对确认 Seed 通过 shared 的 `MESSAGE_TASK_DEFINITIONS` 写消息任务默认配置，但 `@micromatrix/migrate` 生产依赖和 `docker/migrate.Dockerfile` 都未把 shared 放入最终 deploy。

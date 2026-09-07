@@ -9,7 +9,7 @@
 - 分支：`master`
 - 当前发布标签：`v0.0.13`
 - W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
-- UI-001 PC/Mobile UI 重构已推进到 **T12 VERIFIED**：PC 模块级 Header Top Menu、产品/价格表独立路由、列表两层工具区、Saved View 职责、32×32 图标动作以及产品/价格表 Card 顶部留白均已按 Cordys 规则收口。
+- UI-001 PC/Mobile UI 重构 **T1～T14 均已 VERIFIED**：Header Top Menu、列表工具区、设置域页面级导航、首页按钮间距、全局 Drawer Header/Body 节奏以及审批流程复杂 Drawer/工具区均已完成 Browser 与工程门禁封板。
 - 当前数据库基线：**1 个 pre-release baseline migration**：`20260905084900_baseline`。正式发布前数据库结构变更统一重新合并该 baseline；正式发布后切换为 forward-only migration 历史。
 
 ## 2. 已关闭主里程碑
@@ -40,7 +40,8 @@
 | LOG-001                   | 真实客户端 IP、操作日志 180 天默认 retention、分布式清理、Docker 日志轮转                                               | `VERIFIED`                                                |
 | LOG-002                   | 操作日志主表/Blob、列表/详情分离、租户 retention 网页策略、手工清理                                                     | `VERIFIED`                                                |
 | LOG-003                   | 操作日志“清理过期”与“清空全部”语义拆分、租户级危险清空入口                                                              | `VERIFIED`                                                |
-| UI-001                    | PC/Mobile 双应用 UI、Header Top Menu、PC 列表工具区与 Saved View Cordys 对齐                                            | T1～T13 `VERIFIED`                                        |
+| TOOLCHAIN-001             | pnpm 11.25.0 workspace / CI / API-Migration-Web Docker builder 与完整 release smoke                                     | `VERIFIED`                                                |
+| UI-001                    | PC/Mobile 双应用 UI、Header Top Menu、PC 列表工具区、设置域导航与 Drawer Header 治理                                    | T1～T14 `VERIFIED`                                        |
 | FORM-001                  | 自定义表单核心、导入导出、列表增强，以及 F1 LOCATION/ATTACHMENT、F2 DATA_SOURCE、F3 SUB_PRODUCT、F4 显隐/联动           | `VERIFIED`                                                |
 | PLAN-FORM-001             | FollowPlan 单一 ModuleForm、完整 system/custom FormDesign、planProduct、PC/Mobile create context 与 formProp            | `VERIFIED`                                                |
 
@@ -48,17 +49,19 @@
 
 当前执行状态：
 
-> **LOG-003、UI-001、FORM-001、FOLLOW-001、PLAN-COMMENT-001 与 PLAN-FORM-001 均已封板为 `VERIFIED`。PLAN-FORM-001 已关闭 FollowPlan 最后一组 FormDesign 主差异：单一 `followPlan` ModuleForm 同时驱动 PC/Mobile system+custom 字段、Customer/Lead/Opportunity create context、`planProduct` 多选 Field/Blob 与 `labelPos/viewSize` formProp；专项 Browser 54/54、相邻 Lead/Opportunity/FollowRecord Browser 19/19、API Rules 227/227 全绿。**
+> **TOOLCHAIN-001 与 UI-001 T14 均已正式封板为 `VERIFIED`。当前没有仍处于 `IN_PROGRESS` / `PLANNED` 的正式执行单元；LOG-003、FORM-001、FOLLOW-001、PLAN-COMMENT-001 与 PLAN-FORM-001 继续保持 `VERIFIED`。后续只剩已登记的 DISCOVERED / DEFERRED backlog，必须单独立项后再进入实现。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001` 与 `PLAN-FORM-001` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；PLAN-FORM-001 最终验收将 API Rules 基线推进到 227/227。TOOLCHAIN-001 的工具链状态继续由其独立文档追踪，不把历史验收结论混入其它执行单元。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001` 与 `PLAN-FORM-001` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；当前 API Rules 基线为 227/227。
 
 当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
+- TOOLCHAIN-001：Node `v24.5.0` / pnpm `11.25.0`；`pnpm install --frozen-lockfile` PASS；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；API Rules **227/227 PASS**；完整 `pnpm smoke:docker-release` PASS，真实构建 API/Migration/Web 三镜像并验证唯一 baseline migration、bootstrap Seed、Redis cache、Worker/API/Web、管理员改密缓存失效、重复初始化保护、PC/Mobile SPA fallback 与 `/api` proxy；相关 Prettier、Shell syntax、`git diff --check` PASS。
 - 当前 Prisma migration 基线为 **1 个 `20260905084900_baseline`**。FOLLOW-001 E7 已再次执行本地开发库 `migrate reset --force` + Seed，`prisma validate` PASS，数据库到 `schema.prisma` 的 diff 返回 `No difference detected.`；迁移策略登记的六条 Prisma Schema 无法表达的 partial unique index 均已在 fresh DB 实查存在。此前 30/56/68/69/70/71 migration 的验收数字继续作为历史阶段证据保留，不再代表当前 migration 目录结构。
 - FORM-001 F4：公共 Form Runtime **7/7 PASS**、F4 Service **16/16 PASS**、F4 Browser **13/13 PASS**；相邻 Browser 原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿，相邻 Service 核心 FORM-001、F1 **26/26**、F2 **23/23**、F3 **23/23** 全绿。pre-release baseline reset + seed、Prisma validate/diff、root typecheck/build、当前变更集 Prettier 与 `git diff --check` PASS，lint **0 error / 8 个既有 warning**。
 - PLAN-FORM-001：PC/Mobile 专项 Browser **54/54 PASS**，真实覆盖 FollowPlan 表单属性 `labelPos/viewSize`、完整 ModuleForm system/custom 混排、`planProduct` 多选保存/编辑回显和配置恢复；Lead/Opportunity/FollowRecord 相邻 Browser **19/19 PASS**，Customer 创建链路由专项 Smoke 同轮覆盖；fresh baseline reset + seed、Prisma validate/diff=`No difference detected.`、FollowPlan mobile metadata 与 6 条 partial unique index 实查 PASS；API Rules **227/227**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。
+- UI-001 T14：本地真实 API/Web + headless CDP Browser **28/28 PASS**；普通 440px Drawer 实测 Header `margin-bottom:0`、Body 24px，审批流程 Drawer 实测 1440px 视口 min-width=1080px、2560px 视口 width=50%，流程工具区两行/baseline/nowrap/无溢出全绿；API 5xx=0、Runtime exception=0。首次验收发现 Body 仍被 Element Plus 覆盖为 20px，已通过全局 `padding:24px !important` 修正并复验。
 - UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
 - Root Smoke：**227/227**。
 - Rules：**227/227**；FOLLOW-001 的 FollowRecord filter/sort、PLAN-COMMENT-001 评论协同、PLAN-FORM-001 formProp 合并与 FollowPlan FormDesign 规则，以及 CACHE-001/002、EVENT-001、COORD-001、ASYNC-001、LOG-001/002/003、FORM-001 F4 回归均保持全绿。

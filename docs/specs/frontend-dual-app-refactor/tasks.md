@@ -64,7 +64,7 @@
   - [x] 更新项目进度、alignment log 和 UI 设计基线。
   - [x] 全绿后标记 `UI-001 VERIFIED`。
 
-当前状态：**`UI-001 T1～T10 VERIFIED，T11 IN_PROGRESS`**。
+当前状态：**`UI-001 T1～T14 VERIFIED`**。
 
 ## T10 终态 UI 复核修正
 
@@ -135,9 +135,16 @@
 - [x] 审批流程图工具区拆为两行：标题/说明独占第一行，审批节点/条件分支/默认分支/自动布局独占第二行并禁止按钮换行。
 - [x] 审批流程 UI 按 `docs/conventions.md` 的 UnoCSS + presetWind4 规则收口：`flow-toolbar` 使用 `items-baseline`；`ApprovalFlowDrawer.vue` 普通布局全部迁入 utility 并删除 `<style scoped>`；`ApprovalFlowCanvas.vue` 普通布局迁入 utility，scoped CSS 只保留节点 hover/selected/节点类型状态选择器。
 - [x] Web typecheck / Web production build / root lint / staged+unstaged diff-check 通过；lint 仍为 0 error / 8 个既有 warning。
-- [ ] Browser 视觉验收封板。
+- [x] Browser 视觉验收封板。
 
-当前扩展任务状态：**T14 IN_PROGRESS**。
+当前扩展任务状态：**T14 VERIFIED**。
+
+### T14 验收记录
+
+- 首次真实 Browser DOM 验收发现 Element Plus 运行时 `.el-drawer__body` 仍计算为 `20px`，说明原 `padding: 24px` 被组件样式覆盖；全局基线改为 `padding: 24px !important` 后重新验收，普通 Metadata 440px Drawer 与审批流程 Drawer 的 Header/Body 均稳定为 Header `margin-bottom:0`、Body 24px 内容内距，Header/Body 之间无额外 margin gap。
+- 审批流程复杂 Drawer 在 1440px 视口实测宽度 **1080px**，验证 `min-width:1080px`；切换到 2560px 视口实测保持 **50%** 宽度，不把普通 Drawer 的页面级 `size` 强行统一。
+- 流程设计工具区真实 DOM 验证为纵向两行：标题/说明独占第一行，审批节点/条件分支/默认分支/自动布局四按钮处于同一视觉行；`align-items: baseline`、`flex-wrap: nowrap`、`self-start` 均生效且无水平溢出。
+- 本地 gitignored CDP Smoke `scripts/ui001-t14-drawer-browser-smoke.mjs` 最终 **28/28 PASS**；API 非预期 5xx=0、Runtime exception=0。
 
 ### T11 验收记录
 

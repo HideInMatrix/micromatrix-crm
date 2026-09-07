@@ -1,5 +1,7 @@
 # TOOLCHAIN-001 pnpm 11 工具链迁移需求
 
+状态：`VERIFIED`
+
 ## 1. 目标
 
 将 MicroMatrix CRM 的包管理器从 pnpm `10.30.3` 统一迁移到 pnpm `11.25.0`，消除 GitHub Actions `pnpm/action-setup@v6` 先通过 npm 自举 pnpm 11、再切换回 pnpm 10 的冗余路径，同时保持本地开发、GitHub Actions、Docker builder 与 lockfile 使用同一 pnpm 主版本。
@@ -68,4 +70,3 @@
 - 升级 Prisma/Nest/Vite/TypeScript 或重新生成业务 migration。
 - 清空 lockfile 后全量重新解析依赖版本。
 - 关闭 pnpm 11 的供应链安全默认值来换取“安装能过”。
-

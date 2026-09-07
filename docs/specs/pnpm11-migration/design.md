@@ -1,5 +1,7 @@
 # TOOLCHAIN-001 pnpm 11 工具链迁移设计
 
+状态：`VERIFIED`
+
 ## 1. 迁移原因
 
 当前 Release Docker workflow 的 `verify` job 使用：
@@ -171,3 +173,8 @@ GitHub Actions
 
 不能只把 CI action 改回去而留下 pnpm 11 lockfile，也不能只恢复 packageManager 而让 Docker builder 保持 pnpm 11。
 
+## 8. 最终验收结论
+
+2026-09-07 最终封板时，Node/pnpm 基线实查为 Node `v24.5.0`、pnpm `11.25.0`，根 `packageManager`、GitHub Actions 与 API/Migration/Web 三类 Docker builder 均固定 pnpm `11.25.0`。
+
+最终 T5 真实执行结果：`pnpm install --frozen-lockfile` PASS；root typecheck/build PASS；lint `0 error / 8 个既有 warning`；API Rules `227/227 PASS`；`pnpm smoke:docker-release` PASS，真实构建 API/Migration/Web 三镜像并完成 single baseline migration、bootstrap Seed、Redis cache、Worker/API/Web runtime、重复初始化保护、PC/Mobile SPA fallback 与 `/api` proxy 验收；TOOLCHAIN-001 文档与相关发布文档 Prettier、Shell syntax、`git diff --check` 均 PASS。
