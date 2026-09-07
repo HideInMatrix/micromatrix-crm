@@ -4,6 +4,13 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-07：Docker release Smoke CI 入口回归修复
+
+- GitHub tag release 的 `docker-smoke` job 仍执行 `bash scripts/docker-release-smoke.sh`，但根 `.gitignore` 已忽略 `/scripts/`，且 `f8c3bea` 已删除此前 tracked 的该脚本，导致 Runner checkout 后稳定报 `No such file or directory`。
+- 保持本地 `/scripts/` 忽略策略不变，将删除前最后一版完整 release Smoke 恢复为 tracked `docker/release-smoke.sh`；workflow 改为直接执行该文件，根 `package.json` 恢复 `pnpm smoke:docker-release` 供本地使用。
+- 恢复脚本继续覆盖 API/Migration/Web 三镜像、PostgreSQL、Redis、Worker、bootstrap、认证/通知缓存、改密失效、重复初始化、PC/Mobile SPA fallback 与 `/api` proxy，不降级为仅检查文件存在的伪 Smoke。
+- `bash -n`、workflow/path 与 Dockerfile 结构契约检查均 PASS；本地完整构建在 BuildKit 拉取 `docker/dockerfile:1.7` 前端镜像阶段受 Docker Hub 解析阻塞，尚未进入项目镜像构建，人工终止后仅返回 `context canceled`，因此不把本机网络阻塞记录为 release runtime PASS。
+
 ## 2026-09-07：PLAN-FORM-001 跟进计划完整 FormDesign 正式封板
 
 - 源码审计确认 Cordys `FOLLOW_PLAN_CUSTOMER / FOLLOW_PLAN_CLUE / FOLLOW_PLAN_BUSINESS` 只是创建上下文 key，后端真实 FormDesign 真相源仍只有 `FormKey.FOLLOW_PLAN = plan`；MicroMatrix 因此继续使用单一 `followPlan` ModuleForm，不新增 planClue/planBusiness 表、Service 或双写兼容层。

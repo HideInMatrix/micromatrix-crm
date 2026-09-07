@@ -67,7 +67,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build and smoke test separated images
-        run: bash scripts/docker-release-smoke.sh
+        run: bash docker/release-smoke.sh
 
   api-images:
     name: Build backend ${{ matrix.arch }} images

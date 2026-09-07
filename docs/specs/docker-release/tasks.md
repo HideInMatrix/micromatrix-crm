@@ -45,3 +45,9 @@
   - `pnpm smoke:docker-release` 增加真实 Redis 容器，登录后验证 AuthGuard cache key、通知 unread cache key，并在修改管理员密码后断言认证缓存被主动删除。
   - 当前源码三镜像重新实建，隔离 PostgreSQL **68/68 migrations**、Redis cache integration、重复初始化保护、API/Nginx health、`/api` proxy 与 SPA fallback 全部 PASS。
   - 另以相同 release API/Migration 镜像完成 Redis 缺席冷启动：不启动 Redis 时 API health、登录、AuthGuard protected endpoint 与通知未读接口仍全部 200，确认 cache runtime 不是业务单点。
+
+- [x] D10 GitHub Docker Smoke 入口回归修复（2026-09-07）
+  - 确认根 `.gitignore` 长期忽略 `/scripts/`，而 `f8c3bea` 清理本地脚本时删除了此前 tracked 的 `scripts/docker-release-smoke.sh`，`.github/workflows/release-docker.yml` 却仍引用旧路径，导致 tag workflow 在 GitHub Runner 报 `No such file or directory`。
+  - 从删除前最后版本恢复完整 Docker release Smoke 到可跟踪的 `docker/release-smoke.sh`；不解除 `/scripts/` 忽略规则，避免本地 Browser/Service Smoke 被误提交。
+  - GitHub `docker-smoke` job 直接执行 `bash docker/release-smoke.sh`，不依赖该 job 未安装的 pnpm；根 `package.json` 同时恢复 `pnpm smoke:docker-release` 作为本地统一入口。
+  - `bash -n`、workflow/path、当前 API/Web/Migration Dockerfile 契约断言均 PASS。本地真实镜像构建已启动到 Docker BuildKit 解析 `docker/dockerfile:1.7`，但 Docker Hub 解析在项目构建前持续阻塞，人工终止；该外部拉取阻塞不作为项目 Smoke PASS 证据，下一次 tag Runner 继续执行完整 runtime 门禁。
