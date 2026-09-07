@@ -103,6 +103,14 @@ function updateDatetime(field: FieldVO, value: string) {
 function setFieldValue(field: FieldVO, value: unknown) {
   model.value[field.key] = value
 }
+
+function isDataSourceField(field: FieldVO) {
+  return ['data_source', 'data_source_multiple'].includes(field.type)
+}
+
+function dataSourceValue(field: FieldVO): string | string[] | undefined {
+  return model.value[field.key] as string | string[] | undefined
+}
 </script>
 
 <template>
@@ -197,9 +205,9 @@ function setFieldValue(field: FieldVO, value: unknown) {
         </template>
       </van-field>
       <MobileDataSourceFieldInput
-        v-else-if="field.type === 'data_source' || field.type === 'data_source_multiple'"
+        v-else-if="isDataSourceField(field)"
         :field="field"
-        :model-value="model[field.key] as string | string[] | undefined"
+        :model-value="dataSourceValue(field)"
         @update:model-value="model[field.key] = $event"
       />
       <van-field

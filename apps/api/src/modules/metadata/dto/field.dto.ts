@@ -184,3 +184,15 @@ export class ReorderFieldsDto {
   @IsString({ each: true })
   orderedIds!: string[]
 }
+
+export class UpdateFormPropDto {
+  @ApiPropertyOptional({ enum: ['top', 'left'], description: 'PC 表单字段标题位置' })
+  @IsIn(['top', 'left'])
+  @IsOptional()
+  labelPos?: 'top' | 'left'
+
+  @ApiPropertyOptional({ enum: ['small', 'medium', 'large'], description: 'PC 表单容器尺寸' })
+  @IsIn(['small', 'medium', 'large'])
+  @IsOptional()
+  viewSize?: 'small' | 'medium' | 'large'
+}

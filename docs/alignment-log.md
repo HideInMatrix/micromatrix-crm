@@ -4,6 +4,15 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-07：PLAN-FORM-001 跟进计划完整 FormDesign 正式封板
+
+- 源码审计确认 Cordys `FOLLOW_PLAN_CUSTOMER / FOLLOW_PLAN_CLUE / FOLLOW_PLAN_BUSINESS` 只是创建上下文 key，后端真实 FormDesign 真相源仍只有 `FormKey.FOLLOW_PLAN = plan`；MicroMatrix 因此继续使用单一 `followPlan` ModuleForm，不新增 planClue/planBusiness 表、Service 或双写兼容层。
+- PC `FollowUpPlanDialog` 与 Mobile FollowPlan runtime 已按同一 ModuleForm `fields[]` 顺序混排 system/custom 字段，真实消费 hidden/required/span/mobile；Customer/Lead/Opportunity context 只负责 target 初始化/锁定，system field 继续使用专用业务 adapter，不把关联对象、联系人等控件降级为普通文本输入。
+- `planProduct` 按 Cordys `DATA_SOURCE_MULTIPLE(PRODUCT)` 语义成为稳定标准扩展 ModuleField，复用 `follow_up_plan_field / follow_up_plan_field_blob` 唯一真相源；PC/Mobile 均已真实验证产品多选、保存和编辑回显。通用 `data_source_multiple` Field/Blob 数组序列化同步收口。
+- formProp 审计后只实现当前有真实运行时语义的 `labelPos` 与 `viewSize`：Metadata 提供通用读取/PATCH，PATCH 与旧 formProp 合并并保留 `linkProp`/未知扩展键；`layout` 不另造第二套状态，字段 `span` 继续作为唯一栅格真相源，`inputWidth/optBtn*` 也不伪造尚不存在的业务语义。
+- Browser Smoke 同时发现并修复 ModuleForm Seed 将 system field `mobile` 强制写为 false 的通用根因；fresh reset + seed 后实查 FollowPlan 8 个创建字段 `mobile=true`、隐藏 status `mobile=false`。
+- 最终验收：PLAN-FORM-001 PC/Mobile Browser **54/54 PASS**；Lead/Opportunity/FollowRecord 相邻 Browser **19/19 PASS**，Customer 创建链路由专项 Browser 同轮覆盖；API Rules **227/227 PASS**；fresh single baseline reset + seed、Prisma validate/diff=`No difference detected.`、6 条 partial unique index 与 FollowPlan mobile metadata 实查 PASS；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。PLAN-FORM-001 从 `IN_PROGRESS` 更新为 `VERIFIED`。
+
 ## 2026-09-06：PLAN-COMMENT-001 跟进计划评论协同正式封板
 
 - 按 Cordys `FollowUpPlanComment / Mention + BaseCommentService` 语义补齐 FollowPlan `commentCount`、独立 Comment/Mention 物理表、两层回复、@成员、创建人编辑/删除与父评论级联；FollowRecord / FollowPlan 现共用 `FollowCommentServiceBase`，没有复制第二套评论业务内核。

@@ -5,6 +5,7 @@ import {
   formulaVariables,
   type FieldOption,
   type FieldVO,
+  type ModuleFormProp,
   type ModuleKey,
 } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -38,6 +39,12 @@ const routeModule = () =>
 const activeModule = ref<ModuleKey>(routeModule())
 const loading = ref(false)
 const fields = ref<FieldVO[]>([])
+const formPropDrawerVisible = ref(false)
+const formPropSaving = ref(false)
+const formProp = reactive<Pick<ModuleFormProp, 'labelPos' | 'viewSize'>>({
+  labelPos: 'top',
+  viewSize: 'small',
+})
 
 const drawerVisible = ref(false)
 const editingField = ref<FieldVO | null>(null)
@@ -81,8 +88,7 @@ const numericFieldKeys = computed(() =>
     .map((f) => `${f.key}（${f.label}）`),
 )
 
-const typeLabel = (type: string) =>
-  FIELD_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
+const typeLabel = (type: string) => FIELD_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
 
 function normalizeFieldOptions(options: FieldOption[] | null | undefined): FieldOption[] {
   return ((options ?? []) as unknown[]).flatMap((option) => {
@@ -108,6 +114,32 @@ async function loadFields() {
     ElMessage.error(extractErrorMessage(error))
   } finally {
     loading.value = false
+  }
+}
+
+async function openFormProp() {
+  try {
+    const { data } = await metadataApi.formConfig(activeModule.value)
+    formProp.labelPos = data.formProp.labelPos === 'left' ? 'left' : 'top'
+    formProp.viewSize = ['small', 'medium', 'large'].includes(String(data.formProp.viewSize))
+      ? (data.formProp.viewSize as 'small' | 'medium' | 'large')
+      : 'small'
+    formPropDrawerVisible.value = true
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function saveFormProp() {
+  formPropSaving.value = true
+  try {
+    await metadataApi.updateFormProp(activeModule.value, { ...formProp })
+    ElMessage.success('表单属性已更新')
+    formPropDrawerVisible.value = false
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    formPropSaving.value = false
   }
 }
 
@@ -243,7 +275,10 @@ watch(
           {{ MODULE_LABELS[m] }}
         </el-radio-button>
       </el-radio-group>
-      <el-button type="primary" @click="openCreate">新增自定义字段</el-button>
+      <div class="flex gap-2">
+        <el-button v-if="activeModule === 'followPlan'" @click="openFormProp">表单属性</el-button>
+        <el-button type="primary" @click="openCreate">新增自定义字段</el-button>
+      </div>
     </div>
 
     <div v-loading="loading">
@@ -260,12 +295,7 @@ watch(
         <span>操作</span>
       </div>
 
-      <draggable
-        v-model="fields"
-        item-key="id"
-        handle=".drag-handle"
-        @end="handleDragEnd"
-      >
+      <draggable v-model="fields" item-key="id" handle=".drag-handle" @end="handleDragEnd">
         <template #item="{ element: field }">
           <div
             class="grid grid-cols-[24px_1fr_110px_70px_70px_70px_60px_140px] gap-2 items-center px-3 py-2.5 border-b border-[var(--el-border-color-lighter)] hover:bg-[var(--el-fill-color-light)] text-sm"
@@ -273,7 +303,9 @@ watch(
             <span class="drag-handle cursor-move text-[var(--el-text-color-placeholder)]">⠿</span>
             <span>
               {{ field.label }}
-              <span class="text-xs text-[var(--el-text-color-placeholder)] ml-1">{{ field.key }}</span>
+              <span class="text-xs text-[var(--el-text-color-placeholder)] ml-1">{{
+                field.key
+              }}</span>
             </span>
             <span>{{ typeLabel(field.type) }}</span>
             <span>
@@ -312,11 +344,7 @@ watch(
           <el-input v-model="form.label" />
         </el-form-item>
         <el-form-item label="字段类型">
-          <el-select
-            v-model="form.type"
-            :disabled="Boolean(editingField?.system)"
-            class="w-full"
-          >
+          <el-select v-model="form.type" :disabled="Boolean(editingField?.system)" class="w-full">
             <el-option
               v-for="opt in FIELD_TYPE_OPTIONS"
               :key="opt.value"
@@ -324,7 +352,10 @@ watch(
               :value="opt.value"
             />
           </el-select>
-          <div v-if="editingField?.system" class="text-xs text-[var(--el-text-color-placeholder)] mt-1">
+          <div
+            v-if="editingField?.system"
+            class="text-xs text-[var(--el-text-color-placeholder)] mt-1"
+          >
             系统字段不可修改类型
           </div>
         </el-form-item>
@@ -369,13 +400,13 @@ watch(
             <el-switch v-model="form.required" :disabled="form.type === 'formula'" />
           </el-form-item>
           <el-form-item label="唯一值">
-            <el-switch
-              v-model="form.config!.unique"
-              :disabled="!supportsUnique"
-            />
+            <el-switch v-model="form.config!.unique" :disabled="!supportsUnique" />
           </el-form-item>
           <el-form-item label="隐藏">
-            <el-switch v-model="form.hidden" :disabled="Boolean(editingField?.system && editingField.required)" />
+            <el-switch
+              v-model="form.hidden"
+              :disabled="Boolean(editingField?.system && editingField.required)"
+            />
           </el-form-item>
           <el-form-item label="移动端显示">
             <el-switch v-model="form.mobile" />
@@ -398,6 +429,31 @@ watch(
       <template #footer>
         <el-button @click="drawerVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      </template>
+    </el-drawer>
+
+    <el-drawer v-model="formPropDrawerVisible" title="表单属性" size="400px" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item label="字段标题位置">
+          <el-radio-group v-model="formProp.labelPos">
+            <el-radio-button value="top">上下</el-radio-button>
+            <el-radio-button value="left">左右</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="PC 表单尺寸">
+          <el-radio-group v-model="formProp.viewSize">
+            <el-radio-button value="small">小</el-radio-button>
+            <el-radio-button value="medium">中</el-radio-button>
+            <el-radio-button value="large">大</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <div class="text-xs leading-5 text-[var(--el-text-color-secondary)]">
+          字段栅格宽度继续由每个字段的 span 配置控制；移动端显示由字段级“移动端显示”控制。
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="formPropDrawerVisible = false">取消</el-button>
+        <el-button type="primary" :loading="formPropSaving" @click="saveFormProp">保存</el-button>
       </template>
     </el-drawer>
   </el-card>

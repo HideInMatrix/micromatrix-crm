@@ -4,6 +4,7 @@ import {
   type FieldVO,
   type FollowUpPlanTargetType,
   type FollowUpPlanVO,
+  type ModuleFormProp,
 } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { listCustomerOptions } from '@/api/customers'
@@ -41,11 +42,23 @@ const targets = ref<TargetOption[]>([])
 const contacts = ref<{ id: string; name: string }[]>([])
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
 const formModel = ref<Record<string, unknown>>({})
 const formRef = ref<InstanceType<typeof DynamicForm>>()
 const metaLoadFailed = ref(false)
 
 const title = computed(() => (props.plan ? '编辑跟进计划' : '新建跟进计划'))
+const dialogWidth = computed(() => {
+  switch (formProp.value.viewSize) {
+    case 'large':
+      return '1080px'
+    case 'medium':
+      return '840px'
+    case 'small':
+    default:
+      return '640px'
+  }
+})
 const targetLocked = computed(() => Boolean(props.fixedTargetType && props.fixedTargetId))
 const readonly = computed(() => Boolean(props.plan && !props.plan.canManage))
 const writableCustomFields = computed(() =>
@@ -125,7 +138,9 @@ function defaultFieldModel() {
 
 function customValues(plan?: FollowUpPlanVO | null) {
   const byId = new Map((plan?.moduleFields ?? []).map((item) => [item.fieldId, item.fieldValue]))
-  return Object.fromEntries(writableCustomFields.value.map((field) => [field.key, byId.get(field.id)]))
+  return Object.fromEntries(
+    writableCustomFields.value.map((field) => [field.key, byId.get(field.id)]),
+  )
 }
 
 function moduleFieldsPayload() {
@@ -138,6 +153,7 @@ function moduleFieldsPayload() {
 async function loadMeta() {
   try {
     const [configRes] = await Promise.all([followUpPlanApi.moduleForm(), fieldRefs.load()])
+    formProp.value = configRes.data.formProp
     fields.value = configRes.data.fields.filter(
       (field) => !field.system || isFollowUpPlanSystemFieldKey(field.key),
     )
@@ -242,7 +258,7 @@ watch(
   <el-dialog
     v-model="visible"
     :title="title"
-    width="640px"
+    :width="dialogWidth"
     destroy-on-close
     data-testid="follow-plan-dialog"
   >
@@ -254,6 +270,7 @@ watch(
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
         :field-filter="fieldFilter"
+        :form-prop="formProp"
       >
         <template #system-field="{ field, value, setValue }">
           <FollowUpPlanSystemField

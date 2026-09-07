@@ -7,6 +7,7 @@ import {
   type DataSourceRecordVO,
   type DepartmentVO,
   type FieldVO,
+  type ModuleFormProp,
 } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, ref, watch } from 'vue'
@@ -19,6 +20,7 @@ const props = defineProps<{
   members: MemberOption[]
   deptTree: DepartmentVO[]
   fieldFilter?: (field: FieldVO) => boolean
+  formProp?: ModuleFormProp
   attachmentMap?: Record<string, AttachmentVO[]>
   attachmentDownload?: (file: AttachmentVO) => Promise<void>
   attachmentObjectUrl?: (id: string) => Promise<string>
@@ -121,7 +123,13 @@ defineExpose({ validate })
 </script>
 
 <template>
-  <el-form ref="formRef" :model="model" :rules="rules" label-position="top">
+  <el-form
+    ref="formRef"
+    :model="model"
+    :rules="rules"
+    :label-position="formProp?.labelPos === 'left' ? 'left' : 'top'"
+    :label-width="formProp?.labelPos === 'left' ? 'auto' : undefined"
+  >
     <el-row :gutter="16">
       <el-col v-for="field in visibleFields" :key="field.key" :span="field.span">
         <el-form-item :label="field.label" :prop="field.key">

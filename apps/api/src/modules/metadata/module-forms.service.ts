@@ -16,6 +16,7 @@ import {
   type FormLinkProp,
   type FormLinkScenario,
   type FormLinkScenarioKey,
+  type ModuleFormProp,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import type { Prisma } from '../../generated/prisma/client'
@@ -55,7 +56,7 @@ interface StoredSubFieldProp {
 
 export interface ModuleFormConfigVO {
   formKey: string
-  formProp: Record<string, unknown>
+  formProp: ModuleFormProp
   fields: FieldVO[]
 }
 
@@ -129,7 +130,7 @@ export class ModuleFormsService {
   async saveFormProp(
     organizationId: string,
     formKey: string,
-    formProp: Record<string, unknown>,
+    formProp: ModuleFormProp,
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     await this.validateFormPropLinkage(organizationId, formKey, formProp)

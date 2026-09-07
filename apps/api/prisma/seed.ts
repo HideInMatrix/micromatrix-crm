@@ -379,6 +379,7 @@ async function main() {
           data: {
             name: template.label,
             type: template.type,
+            mobile: template.mobile ?? false,
             pos: BigInt(template.sort),
             updateTime: now,
             updateUser: admin.id,
@@ -397,7 +398,7 @@ async function main() {
             internalKey: template.key,
             name: template.label,
             type: template.type,
-            mobile: false,
+            mobile: template.mobile ?? false,
             pos: BigInt(template.sort),
             createUser: admin.id,
             updateUser: admin.id,

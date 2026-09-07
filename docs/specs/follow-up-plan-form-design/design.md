@@ -1,6 +1,6 @@
 # PLAN-FORM-001 跟进计划完整 FormDesign 与创建上下文设计
 
-状态：`IN_PROGRESS`
+状态：`VERIFIED`
 
 ## 1. 运行时结构
 
@@ -48,3 +48,14 @@ FollowPlan form renderer 负责：读取完整 `fields[]`；过滤 hidden，Mobi
 - Customer/Lead/Opportunity fixed context 不被 FormDesign 覆盖；
 - 全局创建仍能切 targetType；
 - Field/Blob、评论和转记录回归不变。
+
+## 7. formProp 收口
+
+PLAN-FORM-001 只实现当前运行时真正需要的两项通用表单属性：
+
+- `labelPos: 'top' | 'left'`：PC `DynamicForm` 直接消费；默认 `top`。
+- `viewSize: 'small' | 'medium' | 'large'`：PC FollowPlan 容器映射为小/中/大三档；默认 `small`。Mobile 不消费 PC 容器宽度。
+
+Metadata 使用通用 formProp PATCH，而不是 FollowPlan 专属接口。PATCH 只修改提交的受支持属性，并与原 `formProp` 合并，必须保留既有 `linkProp` 或未来扩展键。
+
+本单元不重复存储 `layout`：字段 `span` 是 MicroMatrix 唯一栅格布局真相源。`inputWidth`、操作按钮内容/位置和 `linkProp` 设计器 UI 也不在 FollowPlan 内创建专属实现；其中 `linkProp` 后端既有能力保持不变。

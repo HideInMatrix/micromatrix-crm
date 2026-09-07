@@ -8,6 +8,7 @@ import {
   splitLocationValue,
   valueWithinOptionRange,
   type FieldVO,
+  type ModuleFormProp,
 } from '@micromatrix/shared'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { ModuleFormsService } from './module-forms.service'
@@ -22,6 +23,25 @@ export class MetadataService {
 
   listFields(organizationId: string, module: string): Promise<FieldVO[]> {
     return this.moduleForms.listFields(organizationId, module)
+  }
+
+  getFormConfig(organizationId: string, module: string) {
+    return this.moduleForms.getConfig(organizationId, module)
+  }
+
+  async updateFormProp(
+    organizationId: string,
+    module: string,
+    patch: Pick<ModuleFormProp, 'labelPos' | 'viewSize'>,
+    actorId: string,
+  ) {
+    const current = await this.moduleForms.getConfig(organizationId, module)
+    return this.moduleForms.saveFormProp(
+      organizationId,
+      module,
+      { ...current.formProp, ...patch },
+      actorId,
+    )
   }
 
   async fieldsMap(organizationId: string, module: string): Promise<Map<string, FieldVO>> {

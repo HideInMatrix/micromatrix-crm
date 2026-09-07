@@ -129,6 +129,16 @@ export interface FormLinkScenario {
 /** key 为来源 formKey；配置保存在目标表单 formProp.linkProp。 */
 export type FormLinkProp = Record<string, FormLinkScenario[]>
 
+/** MicroMatrix 当前正式消费的表单级 FormDesign 属性。 */
+export interface ModuleFormProp {
+  labelPos?: 'top' | 'left'
+  viewSize?: 'small' | 'medium' | 'large'
+  /** 既有跨表单联动配置；PLAN-FORM-001 不新增其设计器 UI。 */
+  linkProp?: FormLinkProp
+  /** 保留未识别扩展键，避免局部 PATCH 覆盖其它 formProp 能力。 */
+  [key: string]: unknown
+}
+
 export interface FieldConfig {
   placeholder?: string
   defaultValue?: unknown

@@ -1,6 +1,6 @@
 # PLAN-FORM-001 跟进计划完整 FormDesign 与创建上下文需求
 
-状态：`IN_PROGRESS`
+状态：`VERIFIED`
 
 ## 1. 目标
 
@@ -39,8 +39,8 @@ MicroMatrix 已有 `followPlan` ModuleForm + Field/Blob，但 PC/Mobile 仍把 s
 - Cordys `FollowUpPlanAddRequest / FollowUpPlanUpdateRequest` 没有 `productIds / products` 核心属性，产品值随 `moduleFields` 保存；`BusinessModuleField` 也没有 `planProduct` 核心映射。因此该字段属于 FollowPlan 标准扩展 ModuleField，不是独立业务列。
 - MicroMatrix 按同一边界实现：`planProduct` 使用稳定 key、`data_source_multiple`、`dataSourceType=PRODUCT`，值进入 `follow_up_plan_field_blob`；不得新增 `FollowUpPlanProduct` 关系表，也不得塞进 `customData`。
 - PC/Mobile 必须都能选择、回显多个产品；保存、编辑、列表/详情读取以及筛选所使用的 Field/Blob 真相源保持一致。
-- 本项暂不阻塞 PLAN-FORM-001 其它 FormDesign runtime 收口，但在用户确认产品需要前不得实现。
-- 若后续确认需要，必须先补正式数据模型、DTO/API、权限与读写语义，再把该字段纳入 FollowPlan FormDesign；禁止让 FormDesign 层承担缺失数据模型的兼容职责。
+- `planProduct` 已按该边界实现并通过 PC/Mobile 真实选择、保存与编辑回显验收；继续使用 FollowUpPlan Field/Blob 作为唯一真相源。
+- 本单元未新增产品关系表、兼容 DTO 或双写层，FormDesign 只负责字段配置和运行时渲染。
 
 ## 6. 验收
 

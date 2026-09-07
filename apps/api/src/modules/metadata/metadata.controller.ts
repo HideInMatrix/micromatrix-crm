@@ -4,7 +4,12 @@ import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
-import { CreateFieldDto, ReorderFieldsDto, UpdateFieldDto } from './dto/field.dto'
+import {
+  CreateFieldDto,
+  ReorderFieldsDto,
+  UpdateFieldDto,
+  UpdateFormPropDto,
+} from './dto/field.dto'
 import { MetadataService } from './metadata.service'
 
 @ApiTags('模块设置（元数据）')
@@ -12,6 +17,24 @@ import { MetadataService } from './metadata.service'
 @Controller('metadata')
 export class MetadataController {
   constructor(private readonly metadataService: MetadataService) {}
+
+  @Get(':module/form')
+  @ApiOperation({ summary: '模块表单配置（字段 + formProp）' })
+  formConfig(@CurrentUser() user: AuthUser, @Param('module') module: string) {
+    return this.metadataService.getFormConfig(user.tenantId, module)
+  }
+
+  @Patch(':module/form-prop')
+  @RequirePermissions('system:module')
+  @LogOperation('metadata', 'updateFormProp')
+  @ApiOperation({ summary: '更新模块表单属性' })
+  updateFormProp(
+    @CurrentUser() user: AuthUser,
+    @Param('module') module: string,
+    @Body() dto: UpdateFormPropDto,
+  ) {
+    return this.metadataService.updateFormProp(user.tenantId, module, dto, user.id)
+  }
 
   @Get(':module/fields')
   @ApiOperation({ summary: '模块字段定义（驱动动态表单/列表）' })

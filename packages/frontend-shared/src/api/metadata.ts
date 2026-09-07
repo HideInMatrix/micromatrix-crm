@@ -3,6 +3,7 @@ import type {
   FieldOption,
   FieldType,
   FieldVO,
+  ModuleFormProp,
   SubTableFieldType,
 } from '@micromatrix/shared'
 import { http } from '../http'
@@ -31,7 +32,16 @@ export interface FieldForm {
   subFields?: SubFieldForm[]
 }
 
+export interface ModuleFormConfigVO {
+  formKey: string
+  formProp: ModuleFormProp
+  fields: FieldVO[]
+}
+
 export const metadataApi = {
+  formConfig: (module: string) => http.get<ModuleFormConfigVO>(`/metadata/${module}/form`),
+  updateFormProp: (module: string, data: Pick<ModuleFormProp, 'labelPos' | 'viewSize'>) =>
+    http.patch<ModuleFormConfigVO>(`/metadata/${module}/form-prop`, data),
   fields: (module: string) => http.get<FieldVO[]>(`/metadata/${module}/fields`),
   createField: (module: string, data: FieldForm) =>
     http.post<FieldVO>(`/metadata/${module}/fields`, data),
