@@ -33,7 +33,14 @@ async function openItem(item: NotificationVO) {
     await notificationApi.markRead(item.id)
     item.readAt = new Date().toISOString()
   }
-  if (item.link) router.push(item.link)
+  if (item.link) {
+    if (/^https?:\/\//i.test(item.link)) window.open(item.link, '_blank', 'noopener,noreferrer')
+    else router.push(item.link)
+  }
+}
+
+function typeLabel(type: NotificationVO['type']) {
+  return type === 'announcement' ? '公告' : type
 }
 
 async function markAll() {
@@ -67,10 +74,13 @@ onMounted(loadData)
         <div class="flex items-center gap-2">
           <el-badge v-if="!item.readAt" is-dot />
           <span class="font-medium text-sm">{{ item.title }}</span>
-          <el-tag size="small" class="ml-auto">{{ item.type }}</el-tag>
+          <el-tag size="small" class="ml-auto">{{ typeLabel(item.type) }}</el-tag>
         </div>
         <div v-if="item.content" class="text-sm text-[var(--el-text-color-secondary)] mt-1">
           {{ item.content }}
+        </div>
+        <div v-if="item.link" class="mt-1 text-sm text-[var(--el-color-primary)]">
+          {{ item.linkLabel || item.link }}
         </div>
         <div class="text-xs text-[var(--el-text-color-placeholder)] mt-1">
           {{ new Date(item.createdAt).toLocaleString() }}

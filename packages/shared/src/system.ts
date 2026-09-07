@@ -276,7 +276,45 @@ export type NotificationBizType =
   | 'follow_plan'
   | 'follow_plan_comment'
   | 'follow_record_comment'
+  | 'announcement'
   | 'system'
+
+export interface AnnouncementReceiverVO {
+  id: string
+  name: string
+}
+
+export interface AnnouncementVO {
+  id: string
+  subject: string
+  content: string
+  startAt: string
+  endAt: string
+  url: string | null
+  linkName: string | null
+  notice: boolean
+  departmentIds: string[]
+  userIds: string[]
+  departments: AnnouncementReceiverVO[]
+  users: AnnouncementReceiverVO[]
+  createUserId: string
+  createUserName: string | null
+  updateUserId: string
+  updateUserName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveAnnouncementInput {
+  subject: string
+  content: string
+  startAt: string
+  endAt: string
+  url?: string | null
+  linkName?: string | null
+  departmentIds: string[]
+  userIds: string[]
+}
 
 export type ExportTaskStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
 
@@ -310,6 +348,7 @@ export interface NotificationVO {
   title: string
   content: string | null
   link: string | null
+  linkLabel: string | null
   readAt: string | null
   createdAt: string
 }

@@ -4,6 +4,15 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-07：DB-007 公告能力正式封板
+
+- 按 Cordys `views/system/message/index.vue` 公告入口、`AnnouncementService` 与 `NotifyOnJob` 收敛正式范围：公告复用 Notification 已读状态，不新增公告读取表；Cordys 当前公告表单没有附件组件，因此撤销发现阶段“公告附件关系”假设，不新增附件模型。
+- 唯一 `20260905084900_baseline` 已加入 `Announcement` direct model；保存时同时保留管理员实际选择的 `departmentIds/userIds`，并递归展开子部门、过滤当前租户 ACTIVE 成员后冻结 `receiverUserIds`，避免后续组织结构变化改写历史接收范围。Notification 新增 `linkLabel/sourceType/sourceId` 与 `(tenantId,userId,sourceType,sourceId)` 唯一约束。
+- Announcement runtime 已完成租户隔离 CRUD、关键字分页、http/https 链接校验、当前有效公告即时派发、未来公告每 5 分钟扫描发布，以及 `DistributedCoordinatorService` 多实例时间槽去重。source-aware Notification 派发支持幂等补发；编辑先清理旧 source 通知再按新范围重建，删除同步清理全部 source 通知，并逐用户失效通知缓存与发送 SSE/Redis refresh。
+- PC `/system/messages` 新增“消息通知 / 公告”页面级入口；公告页提供搜索、分页、新建/编辑 720px Drawer、发布时间、部门/成员范围和预览。消息中心将 `announcement` 显示为“公告”，保留正文及可命名外链，点击继续使用现有已读逻辑。
+- 专项验收：Announcement Service **5/5 PASS**；Notification source **7/7 PASS**；API Rules **234/234 PASS**。fresh PostgreSQL 从零成功 deploy 唯一 baseline 并执行 Seed；Redis/PubSub/Coordination health ready。最终真实 API/Web + headless Chrome CDP Browser **38/38 PASS**，覆盖登录、UI 创建/编辑/删除、成员接收范围、立即生效通知、公告类型/正文/链接名称/已读/source 删除清理，API 5xx=0、Runtime exception=0。
+- 工程门槛：root typecheck/build PASS，lint **0 error / 8 个既有 warning**，相关 Prettier 与 `git diff --check` PASS。DB-007 从 `IN_PROGRESS` 正式更新为 **`VERIFIED`**；deferred backlog 现为 20 VERIFIED、DB-008/015 DISCOVERED、DB-023 DEFERRED。
+
 ## 2026-09-07：UI-001 T14 Drawer Header / 审批流程工具区正式封板
 
 - T14 最终使用真实 API/Web + headless Chrome CDP 做视觉 DOM 验收。首次测量确认 `.el-drawer__header` 已为 `margin-bottom:0` 且 Header/Body 无额外 gap，但 `.el-drawer__body` 实际计算仍是 20px，说明普通 `padding:24px` 被 Element Plus 组件样式覆盖；全局基线因此收口为 `padding:24px !important`，不在各 Drawer 逐个打补丁。

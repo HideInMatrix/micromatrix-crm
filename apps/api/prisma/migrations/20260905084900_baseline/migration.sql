@@ -1846,10 +1846,35 @@ CREATE TABLE "notifications" (
     "title" TEXT NOT NULL,
     "content" TEXT,
     "link" TEXT,
+    "linkLabel" TEXT,
+    "sourceType" TEXT,
+    "sourceId" TEXT,
     "readAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "notifications_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "announcements" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "startAt" TIMESTAMP(3) NOT NULL,
+    "endAt" TIMESTAMP(3) NOT NULL,
+    "url" TEXT,
+    "linkName" TEXT,
+    "departmentIds" JSONB NOT NULL,
+    "userIds" JSONB NOT NULL,
+    "receiverUserIds" JSONB NOT NULL,
+    "notice" BOOLEAN NOT NULL DEFAULT false,
+    "createUserId" TEXT NOT NULL,
+    "updateUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "announcements_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -3109,6 +3134,18 @@ CREATE INDEX "login_logs_tenantId_authType_createdAt_idx" ON "login_logs"("tenan
 
 -- CreateIndex
 CREATE INDEX "notifications_tenantId_userId_readAt_idx" ON "notifications"("tenantId", "userId", "readAt");
+
+-- CreateIndex
+CREATE INDEX "notifications_tenantId_sourceType_sourceId_idx" ON "notifications"("tenantId", "sourceType", "sourceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "notifications_tenantId_userId_sourceType_sourceId_key" ON "notifications"("tenantId", "userId", "sourceType", "sourceId");
+
+-- CreateIndex
+CREATE INDEX "announcements_tenantId_createdAt_idx" ON "announcements"("tenantId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "announcements_tenantId_notice_startAt_endAt_idx" ON "announcements"("tenantId", "notice", "startAt", "endAt");
 
 -- CreateIndex
 CREATE INDEX "message_task_settings_tenantId_module_idx" ON "message_task_settings"("tenantId", "module");

@@ -44,16 +44,17 @@
 | UI-001                    | PC/Mobile 双应用 UI、Header Top Menu、PC 列表工具区、设置域导航与 Drawer Header 治理                                    | T1～T14 `VERIFIED`                                        |
 | FORM-001                  | 自定义表单核心、导入导出、列表增强，以及 F1 LOCATION/ATTACHMENT、F2 DATA_SOURCE、F3 SUB_PRODUCT、F4 显隐/联动           | `VERIFIED`                                                |
 | PLAN-FORM-001             | FollowPlan 单一 ModuleForm、完整 system/custom FormDesign、planProduct、PC/Mobile create context 与 formProp            | `VERIFIED`                                                |
+| DB-007                    | 公告 direct model、部门/成员接收范围、即时/定时发布、Notification source 与 PC 公告管理                                 | `VERIFIED`                                                |
 
 ## 3. 当前执行指针
 
 当前执行状态：
 
-> **TOOLCHAIN-001 与 UI-001 T14 均已正式封板为 `VERIFIED`。当前没有仍处于 `IN_PROGRESS` / `PLANNED` 的正式执行单元；LOG-003、FORM-001、FOLLOW-001、PLAN-COMMENT-001 与 PLAN-FORM-001 继续保持 `VERIFIED`。后续只剩已登记的 DISCOVERED / DEFERRED backlog，必须单独立项后再进入实现。**
+> **DB-007 公告能力已正式封板为 `VERIFIED`。当前没有仍处于 `IN_PROGRESS` / `PLANNED` 的正式执行单元；TOOLCHAIN-001、UI-001 T14、LOG-003、FORM-001、FOLLOW-001、PLAN-COMMENT-001 与 PLAN-FORM-001 继续保持 `VERIFIED`。后续只剩已登记的 DISCOVERED / DEFERRED backlog，必须单独立项后再进入实现。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001` 与 `PLAN-FORM-001` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；当前 API Rules 基线为 227/227。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001` 与 `DB-007` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；当前 API Rules 基线为 234/234。
 
-当前 deferred backlog 共 23 项：**19 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、3 项 DISCOVERED（DB-007/008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
+当前 deferred backlog 共 23 项：**20 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、2 项 DISCOVERED（DB-008/015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
 
 ## 4. 当前质量基线
 
@@ -62,9 +63,10 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 - FORM-001 F4：公共 Form Runtime **7/7 PASS**、F4 Service **16/16 PASS**、F4 Browser **13/13 PASS**；相邻 Browser 原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿，相邻 Service 核心 FORM-001、F1 **26/26**、F2 **23/23**、F3 **23/23** 全绿。pre-release baseline reset + seed、Prisma validate/diff、root typecheck/build、当前变更集 Prettier 与 `git diff --check` PASS，lint **0 error / 8 个既有 warning**。
 - PLAN-FORM-001：PC/Mobile 专项 Browser **54/54 PASS**，真实覆盖 FollowPlan 表单属性 `labelPos/viewSize`、完整 ModuleForm system/custom 混排、`planProduct` 多选保存/编辑回显和配置恢复；Lead/Opportunity/FollowRecord 相邻 Browser **19/19 PASS**，Customer 创建链路由专项 Smoke 同轮覆盖；fresh baseline reset + seed、Prisma validate/diff=`No difference detected.`、FollowPlan mobile metadata 与 6 条 partial unique index 实查 PASS；API Rules **227/227**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。
 - UI-001 T14：本地真实 API/Web + headless CDP Browser **28/28 PASS**；普通 440px Drawer 实测 Header `margin-bottom:0`、Body 24px，审批流程 Drawer 实测 1440px 视口 min-width=1080px、2560px 视口 width=50%，流程工具区两行/baseline/nowrap/无溢出全绿；API 5xx=0、Runtime exception=0。首次验收发现 Body 仍被 Element Plus 覆盖为 20px，已通过全局 `padding:24px !important` 修正并复验。
+- DB-007：Announcement Service **5/5 PASS**、Notification source **7/7 PASS**、API Rules **234/234 PASS**；fresh PostgreSQL 从零应用唯一 `20260905084900_baseline` + Seed PASS；真实 API/Web/Redis + headless CDP Browser **38/38 PASS**，覆盖公告 UI 新建/编辑/删除、接收成员、立即生效 Notification、公告类型/正文/链接名称/已读/source 删除清理，API 5xx=0、Runtime exception=0；root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prettier 与 `git diff --check` PASS。
 - UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
-- Root Smoke：**227/227**。
-- Rules：**227/227**；FOLLOW-001 的 FollowRecord filter/sort、PLAN-COMMENT-001 评论协同、PLAN-FORM-001 formProp 合并与 FollowPlan FormDesign 规则，以及 CACHE-001/002、EVENT-001、COORD-001、ASYNC-001、LOG-001/002/003、FORM-001 F4 回归均保持全绿。
+- Root Smoke：最近既有基线 **227/227**；DB-007 未修改该独立 Smoke 脚本集合。
+- Rules：当前 **234/234**；在既有 227 条基础上新增 Announcement 与 Notification source 回归，FOLLOW-001 的 FollowRecord filter/sort、PLAN-COMMENT-001 评论协同、PLAN-FORM-001 formProp 合并与 FollowPlan FormDesign 规则，以及 CACHE-001/002、EVENT-001、COORD-001、ASYNC-001、LOG-001/002/003、FORM-001 F4 回归均保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。
@@ -116,7 +118,7 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 - 导入导出：补 `.xls` 与更完整字段规则。
 - 成员：工作城市、入职日期、会话失效、多部门。
 - 用户视图、模块配置、数据字典：当前主业务已覆盖，剩余随未迁移模块扩展。
-- 公告、消息模板/多语言：分别由 DB-007、DB-008 跟踪。
+- 公告已由 DB-007 封板；消息模板/多语言继续由 DB-008 跟踪。
 
 ### D. 第三方 provider 与产品决策项
 

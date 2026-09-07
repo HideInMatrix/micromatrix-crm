@@ -6,9 +6,11 @@ import type {
 } from '@micromatrix/shared'
 import { Settings } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { messageSettingApi } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
+import AnnouncementList from './components/AnnouncementList.vue'
 import MessageConfigDrawer from './components/MessageConfigDrawer.vue'
 import MessageDeliveryDrawer from './components/MessageDeliveryDrawer.vue'
 
@@ -17,6 +19,11 @@ interface MessageTableRow extends MessageTaskSettingVO {
 }
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
+const activeSection = ref<'notify' | 'announcement'>(
+  route.query.tab === 'announcement' ? 'announcement' : 'notify',
+)
 const loading = ref(false)
 const saving = ref(false)
 const groups = ref<MessageTaskGroupVO[]>([])
@@ -162,11 +169,45 @@ function tableSpan({ row, columnIndex }: { row: MessageTableRow; columnIndex: nu
     : { rowspan: 0, colspan: 0 }
 }
 
-onMounted(load)
+function switchSection(section: 'notify' | 'announcement') {
+  activeSection.value = section
+  void router.replace({
+    query: {
+      ...route.query,
+      ...(section === 'announcement' ? { tab: 'announcement' } : { tab: undefined }),
+    },
+  })
+  if (section === 'notify' && groups.value.length === 0) void load()
+}
+
+onMounted(() => {
+  if (activeSection.value === 'notify') void load()
+})
 </script>
 
 <template>
-  <el-card v-loading="loading" shadow="never" body-class="!p-0" class="message-settings-card">
+  <div class="mb-4 flex items-center gap-2" data-testid="message-page-menu">
+    <el-button
+      :type="activeSection === 'notify' ? 'primary' : 'default'"
+      @click="switchSection('notify')"
+    >
+      消息通知
+    </el-button>
+    <el-button
+      :type="activeSection === 'announcement' ? 'primary' : 'default'"
+      @click="switchSection('announcement')"
+    >
+      公告
+    </el-button>
+  </div>
+
+  <el-card
+    v-if="activeSection === 'notify'"
+    v-loading="loading"
+    shadow="never"
+    body-class="!p-0"
+    class="message-settings-card"
+  >
     <div
       class="flex items-center justify-between border-b border-[var(--el-border-color-lighter)] px-6 py-4"
     >
@@ -288,6 +329,8 @@ onMounted(load)
       </el-table-column>
     </el-table>
   </el-card>
+
+  <AnnouncementList v-else />
 
   <MessageConfigDrawer v-model="configVisible" :item="activeItem" @saved="load" />
   <MessageDeliveryDrawer v-model="deliveryVisible" />

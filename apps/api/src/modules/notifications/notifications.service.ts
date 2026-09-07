@@ -25,7 +25,10 @@ export interface NotifyInput {
   title: string
   content?: string
   link?: string
+  linkLabel?: string
   event?: MessageTaskEvent
+  sourceType?: string
+  sourceId?: string
 }
 
 const NOTIFICATION_CACHE_TTL_SECONDS = 30
@@ -63,8 +66,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!this.redis) return
-    this.unsubscribeRealtime = await this.redis.subscribe(NOTIFICATION_REALTIME_CHANNEL, (message) =>
-      this.consumeRealtimeMessage(message),
+    this.unsubscribeRealtime = await this.redis.subscribe(
+      NOTIFICATION_REALTIME_CHANNEL,
+      (message) => this.consumeRealtimeMessage(message),
     )
   }
 
@@ -76,7 +80,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   realtimeSnapshot() {
     return {
       localUsers: this.streams.size,
-      localConnections: [...this.streams.values()].reduce((sum, subjects) => sum + subjects.size, 0),
+      localConnections: [...this.streams.values()].reduce(
+        (sum, subjects) => sum + subjects.size,
+        0,
+      ),
       ...this.realtimeMetrics,
     }
   }
@@ -88,12 +95,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     this.streams.set(userId, set)
 
     const heartbeat = interval(SSE_HEARTBEAT_MS).pipe(
-      map(
-        (): MessageEvent => ({
-          type: 'heartbeat',
-          data: { time: new Date().toISOString() },
-        }),
-      ),
+      map((): MessageEvent => ({
+        type: 'heartbeat',
+        data: { time: new Date().toISOString() },
+      })),
     )
     return merge(subject.asObservable(), heartbeat).pipe(
       finalize(() => {
@@ -138,6 +143,67 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (input.event && !(await this.messageSettings.isSystemEnabled(tenantId, input.event))) return
     const unique = [...new Set(userIds)]
     await Promise.all(unique.map((userId) => this.notifyUnchecked(tenantId, userId, input)))
+  }
+
+  /**
+   * 为一个稳定来源资源派发通知。source 唯一键保证公告定时任务重试时不会重复落库。
+   * 公告不读取 MessageTaskSetting，因为它是管理员主动发布内容，不属于业务事件通知开关。
+   */
+  async notifyManyFromSource(
+    tenantId: string,
+    userIds: string[],
+    sourceType: string,
+    sourceId: string,
+    input: Omit<NotifyInput, 'event' | 'sourceType' | 'sourceId'>,
+  ): Promise<number> {
+    const unique = [...new Set(userIds)]
+    if (unique.length === 0) return 0
+
+    const existing = await this.prisma.notification.findMany({
+      where: { tenantId, sourceType, sourceId, userId: { in: unique } },
+      select: { userId: true },
+    })
+    const existingUsers = new Set(existing.map((item) => item.userId))
+    const missing = unique.filter((userId) => !existingUsers.has(userId))
+
+    let created = 0
+    for (let offset = 0; offset < missing.length; offset += 50) {
+      const results = await Promise.all(
+        missing.slice(offset, offset + 50).map(async (userId) => {
+          try {
+            await this.notifyUnchecked(tenantId, userId, { ...input, sourceType, sourceId })
+            return 1
+          } catch (error) {
+            // 多实例极端竞态下，source 唯一键已经由另一实例写入时视为幂等成功。
+            if ((error as { code?: string } | null)?.code === 'P2002') return 0
+            throw error
+          }
+        }),
+      )
+      created += results.reduce<number>((sum, value) => sum + value, 0)
+    }
+    return created
+  }
+
+  /** 删除一个来源资源产生的全部通知，并主动失效相关用户缓存/SSE。 */
+  async removeBySource(tenantId: string, sourceType: string, sourceId: string): Promise<number> {
+    const affected = await this.prisma.notification.findMany({
+      where: { tenantId, sourceType, sourceId },
+      distinct: ['userId'],
+      select: { userId: true },
+    })
+    const result = await this.prisma.notification.deleteMany({
+      where: { tenantId, sourceType, sourceId },
+    })
+    if (result.count === 0) return 0
+
+    for (const { userId } of affected) {
+      await this.bumpCacheVersion(tenantId, userId)
+      const event = this.stateChangedEvent(tenantId, userId)
+      this.deliverRealtimeEvent(event)
+      await this.publishRealtimeEvent(event)
+    }
+    return result.count
   }
 
   async list(
@@ -258,7 +324,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async publishRealtimeEvent(event: NotificationRealtimeEvent): Promise<void> {
-    const delivered = await this.redis?.publish(NOTIFICATION_REALTIME_CHANNEL, JSON.stringify(event))
+    const delivered = await this.redis?.publish(
+      NOTIFICATION_REALTIME_CHANNEL,
+      JSON.stringify(event),
+    )
     if (delivered === null || delivered === undefined || delivered === 0) {
       this.realtimeMetrics.publishFailures += 1
       return
@@ -341,6 +410,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       title: n.title,
       content: n.content,
       link: n.link,
+      linkLabel: n.linkLabel ?? null,
       readAt: n.readAt?.toISOString() ?? null,
       createdAt: n.createdAt.toISOString(),
     }

@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule'
 import { AuthModule } from './auth/auth.module'
 import { CommonModule } from './common/common.module'
 import { ApprovalsModule } from './modules/approvals/approvals.module'
+import { AnnouncementsModule } from './modules/announcements/announcements.module'
 import { AttachmentsModule } from './modules/attachments/attachments.module'
 import { ImportExportModule } from './modules/import-export/import-export.module'
 import { BiddingModule } from './modules/bidding/bidding.module'
@@ -52,6 +53,7 @@ import { RedisModule } from './redis/redis.module'
     CommonModule,
     AuthModule,
     NotificationsModule,
+    AnnouncementsModule,
     ModuleFormsModule,
     ModuleConfigsModule,
     ApprovalsModule,

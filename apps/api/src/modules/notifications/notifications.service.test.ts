@@ -167,7 +167,11 @@ test('Redis Pub/Sub 将新通知跨 API 实例送达且来源实例不重复', a
   const createPrisma = () =>
     ({
       notification: {
-        create: async ({ data }: { data: { tenantId: string; userId: string; title: string } }) => ({
+        create: async ({
+          data,
+        }: {
+          data: { tenantId: string; userId: string; title: string }
+        }) => ({
           id: `notification-${++sequence}`,
           tenantId: data.tenantId,
           userId: data.userId,
@@ -316,4 +320,165 @@ test('Redis 发布不可用时仍保持本实例 SSE，非法事件不影响后�
 
   subscription.unsubscribe()
   await service.onModuleDestroy()
+})
+
+test('来源通知按 tenant/user/source 幂等派发，重复调用只补缺失接收人', async () => {
+  const rows: Array<{
+    id: string
+    tenantId: string
+    userId: string
+    sourceType: string | null
+    sourceId: string | null
+    type: string
+    title: string
+    content: string | null
+    link: string | null
+    linkLabel: string | null
+    readAt: Date | null
+    createdAt: Date
+  }> = []
+  let sequence = 0
+  const prisma = {
+    notification: {
+      findMany: async ({
+        where,
+      }: {
+        where: { tenantId: string; sourceType: string; sourceId: string; userId: { in: string[] } }
+      }) =>
+        rows
+          .filter(
+            (row) =>
+              row.tenantId === where.tenantId &&
+              row.sourceType === where.sourceType &&
+              row.sourceId === where.sourceId &&
+              where.userId.in.includes(row.userId),
+          )
+          .map((row) => ({ userId: row.userId })),
+      create: async ({
+        data,
+      }: {
+        data: Omit<(typeof rows)[number], 'id' | 'readAt' | 'createdAt'>
+      }) => {
+        if (
+          rows.some(
+            (row) =>
+              row.tenantId === data.tenantId &&
+              row.userId === data.userId &&
+              row.sourceType === data.sourceType &&
+              row.sourceId === data.sourceId,
+          )
+        ) {
+          throw Object.assign(new Error('duplicate'), { code: 'P2002' })
+        }
+        const row = {
+          ...data,
+          id: `source-notification-${++sequence}`,
+          content: data.content ?? null,
+          link: data.link ?? null,
+          linkLabel: data.linkLabel ?? null,
+          sourceType: data.sourceType ?? null,
+          sourceId: data.sourceId ?? null,
+          readAt: null,
+          createdAt: new Date('2026-09-07T06:00:00.000Z'),
+        }
+        rows.push(row)
+        return row
+      },
+    },
+  } as unknown as PrismaService
+  const service = new NotificationsService(prisma, {} as MessageSettingsService)
+
+  assert.equal(
+    await service.notifyManyFromSource('tenant-a', ['user-a', 'user-b'], 'announcement', 'a-1', {
+      type: 'announcement',
+      title: '公告',
+      content: '内容',
+      link: 'https://example.com',
+      linkLabel: '详情',
+    }),
+    2,
+  )
+  assert.equal(
+    await service.notifyManyFromSource(
+      'tenant-a',
+      ['user-a', 'user-b', 'user-c'],
+      'announcement',
+      'a-1',
+      {
+        type: 'announcement',
+        title: '公告',
+      },
+    ),
+    1,
+  )
+  assert.equal(rows.length, 3)
+  assert.deepEqual(rows.map((row) => row.userId).sort(), ['user-a', 'user-b', 'user-c'])
+  assert.equal(rows[0]?.linkLabel, '详情')
+})
+
+test('删除来源通知会清理全部 source 行并逐用户失效通知缓存', async () => {
+  const versions = new Map<string, number>()
+  const published: string[] = []
+  const rows = [
+    { tenantId: 'tenant-a', userId: 'user-a', sourceType: 'announcement', sourceId: 'a-1' },
+    { tenantId: 'tenant-a', userId: 'user-b', sourceType: 'announcement', sourceId: 'a-1' },
+    { tenantId: 'tenant-a', userId: 'user-a', sourceType: 'announcement', sourceId: 'a-2' },
+  ]
+  const prisma = {
+    notification: {
+      findMany: async ({
+        where,
+      }: {
+        where: { tenantId: string; sourceType: string; sourceId: string }
+      }) =>
+        [
+          ...new Set(
+            rows
+              .filter(
+                (row) =>
+                  row.tenantId === where.tenantId &&
+                  row.sourceType === where.sourceType &&
+                  row.sourceId === where.sourceId,
+              )
+              .map((row) => row.userId),
+          ),
+        ].map((userId) => ({ userId })),
+      deleteMany: async ({
+        where,
+      }: {
+        where: { tenantId: string; sourceType: string; sourceId: string }
+      }) => {
+        const before = rows.length
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          const row = rows[index]!
+          if (
+            row.tenantId === where.tenantId &&
+            row.sourceType === where.sourceType &&
+            row.sourceId === where.sourceId
+          ) {
+            rows.splice(index, 1)
+          }
+        }
+        return { count: before - rows.length }
+      },
+    },
+  } as unknown as PrismaService
+  const redis = {
+    increment: async (key: string) => {
+      const next = (versions.get(key) ?? 0) + 1
+      versions.set(key, next)
+      return next
+    },
+    publish: async (_channel: string, payload: string) => {
+      published.push(payload)
+      return 1
+    },
+  } as unknown as RedisService
+  const service = new NotificationsService(prisma, {} as MessageSettingsService, redis)
+
+  assert.equal(await service.removeBySource('tenant-a', 'announcement', 'a-1'), 2)
+  assert.equal(rows.length, 1)
+  assert.equal(versions.get('notifications:version:tenant-a:user-a'), 1)
+  assert.equal(versions.get('notifications:version:tenant-a:user-b'), 1)
+  assert.equal(published.length, 2)
 })

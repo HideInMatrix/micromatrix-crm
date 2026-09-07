@@ -1,4 +1,5 @@
 import type {
+  AnnouncementVO,
   BatchUpdateMessageTaskSettingInput,
   DataScope,
   DepartmentVO,
@@ -36,6 +37,7 @@ import type {
   WeComConnectionTestVO,
   UpdateWeComSyncInput,
   ResolveOrganizationSyncInput,
+  SaveAnnouncementInput,
 } from '@micromatrix/shared'
 import { http } from '../http'
 
@@ -388,6 +390,18 @@ export const notificationApi = {
   unreadCount: () => http.get<{ count: number }>('/notifications/unread-count'),
   markRead: (id: string) => http.post(`/notifications/${id}/read`),
   markAllRead: () => http.post('/notifications/read-all'),
+}
+
+// ===== 公告 =====
+
+export const announcementApi = {
+  list: (params: PageQuery & { keyword?: string }) =>
+    http.get<PaginatedResult<AnnouncementVO>>('/announcements', { params }),
+  detail: (id: string) => http.get<AnnouncementVO>(`/announcements/${id}`),
+  create: (data: SaveAnnouncementInput) => http.post<AnnouncementVO>('/announcements', data),
+  update: (id: string, data: SaveAnnouncementInput) =>
+    http.patch<AnnouncementVO>(`/announcements/${id}`, data),
+  remove: (id: string) => http.delete<{ id: string }>(`/announcements/${id}`),
 }
 
 // ===== 消息设置 =====

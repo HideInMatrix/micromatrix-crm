@@ -2527,20 +2527,51 @@ model LoginLog {
 }
 
 model Notification {
-  id        String    @id @default(cuid())
-  tenantId  String
-  userId    String
+  id         String    @id @default(cuid())
+  tenantId   String
+  userId     String
   // 业务类型：assign / approval / receivable / pool / follow_plan / system
-  type      String
-  title     String
-  content   String?
+  type       String
+  title      String
+  content    String?
   // 前端跳转路由
-  link      String?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  link       String?
+  linkLabel  String?
+  // 来源资源。公告使用 announcement + announcementId，支持编辑/删除时精确重建通知。
+  sourceType String?
+  sourceId   String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
 
+  @@unique([tenantId, userId, sourceType, sourceId])
   @@index([tenantId, userId, readAt])
+  @@index([tenantId, sourceType, sourceId])
   @@map("notifications")
+}
+
+model Announcement {
+  id              String   @id @default(cuid())
+  tenantId        String
+  subject         String
+  content         String
+  startAt         DateTime
+  endAt           DateTime
+  url             String?
+  linkName        String?
+  // Cordys receiveType：保留用户实际选择，供列表展示与编辑回显。
+  departmentIds   Json
+  userIds         Json
+  // Cordys receiver：保存时解析并冻结最终接收成员集合，避免组织结构变化改写历史范围。
+  receiverUserIds Json
+  notice          Boolean  @default(false)
+  createUserId    String
+  updateUserId    String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, notice, startAt, endAt])
+  @@map("announcements")
 }
 
 model MessageTaskSetting {
