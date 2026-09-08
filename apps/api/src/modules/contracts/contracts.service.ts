@@ -547,6 +547,10 @@ export class ContractsService {
           ? 'CONTRACT_ARCHIVED'
           : null
     if (stageEvent) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: current.customerId, organizationId: user.tenantId },
+        select: { name: true },
+      })
       await this.businessNotifications.sendConfigured({
         tenantId: user.tenantId,
         event: stageEvent,
@@ -554,8 +558,7 @@ export class ContractsService {
         ownerId: current.owner,
         createUserId: current.createUser,
         type: 'system',
-        title: stageEvent === 'CONTRACT_VOID' ? '合同已作废' : '合同已归档',
-        content: current.name,
+        templateContext: { customerName: customer?.name ?? current.name },
       })
     }
     return this.findOne(user, dto.id)

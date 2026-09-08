@@ -345,10 +345,11 @@ export class ContactsService {
       recipientIds: [contact.customer?.owner],
       excludeSelf: true,
       type: 'system',
-      title: '客户新增联系人',
-      content: contact.customer
-        ? `${user.name} 为客户「${contact.customer.name}」新增联系人「${contact.name}」`
-        : `${user.name} 新增联系人「${contact.name}」`,
+      templateContext: {
+        operator: user.name,
+        cName: contact.name,
+        name: contact.customer?.name ?? '',
+      },
       link: '/contacts',
     })
     return this.toSingleVO(user, contact)

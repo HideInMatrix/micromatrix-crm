@@ -3,6 +3,7 @@ import { MessageSettingsModule } from '../message-settings/message-settings.modu
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import { BusinessNotificationsService } from './business-notifications.service'
 import { MessageExpiryService } from './message-expiry.service'
+import { MessageTemplateService } from './message-template.service'
 import { NotificationsController } from './notifications.controller'
 import { NotificationsService } from './notifications.service'
 import { MessageDeliveriesController } from './message-deliveries.controller'
@@ -16,9 +17,15 @@ import { MessageDeliveryService } from './message-delivery.service'
   providers: [
     NotificationsService,
     BusinessNotificationsService,
+    MessageTemplateService,
     MessageExpiryService,
     MessageDeliveryService,
   ],
-  exports: [NotificationsService, BusinessNotificationsService, MessageDeliveryService],
+  exports: [
+    NotificationsService,
+    BusinessNotificationsService,
+    MessageDeliveryService,
+    MessageTemplateService,
+  ],
 })
 export class NotificationsModule {}

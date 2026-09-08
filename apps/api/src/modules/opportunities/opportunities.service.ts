@@ -827,8 +827,7 @@ export class OpportunitiesService {
       recipientIds: [owner.id],
       excludeSelf: true,
       type: 'system',
-      title: '新建商机',
-      content: `${user.name} 新建了商机「${opportunity.name}」并将你设为负责人`,
+      templateContext: { name: opportunity.name },
       link: `/opportunities?id=${opportunity.id}`,
     })
     return this.toSingleVO(user, opportunity)
@@ -890,8 +889,7 @@ export class OpportunitiesService {
         recipientIds: [owner.id],
         excludeSelf: true,
         type: 'assign',
-        title: '商机已转移给你',
-        content: `${user.name} 将商机「${opportunity.name}」转移给你`,
+        templateContext: { name: opportunity.name },
         link: `/opportunities?id=${opportunity.id}`,
       })
     }
@@ -955,8 +953,7 @@ export class OpportunitiesService {
       recipientIds: [opportunity.owner],
       excludeSelf: true,
       type: 'system',
-      title: '商机已删除',
-      content: `${user.name} 删除了商机「${opportunity.name}」`,
+      templateContext: { name: opportunity.name },
       link: '/opportunities',
     })
     return { id, name: opportunity.name }

@@ -60,15 +60,17 @@ export class ApprovalsService {
   async moduleApprovalEnabled(tenantId: string, module: ApprovalModule): Promise<boolean> {
     const formType = MODULE_TO_FORM_TYPE[module]
     if (!formType) return false
-    return (await this.prisma.approvalFlow.count({
-      where: {
-        tenantId,
-        formType: toDbFormType(formType),
-        enabled: true,
-        deletedAt: null,
-        currentVersionId: { not: null },
-      },
-    })) > 0
+    return (
+      (await this.prisma.approvalFlow.count({
+        where: {
+          tenantId,
+          formType: toDbFormType(formType),
+          enabled: true,
+          deletedAt: null,
+          currentVersionId: { not: null },
+        },
+      })) > 0
+    )
   }
 
   /** Cordys UPDATE 审批命中前保存编辑前业务快照。 */
@@ -190,7 +192,8 @@ export class ApprovalsService {
       fieldId: field.fieldId.trim(),
       value: field.value,
     }))
-    if (normalized.some((field) => !field.fieldId)) throw new BadRequestException('审批字段 ID 不能为空')
+    if (normalized.some((field) => !field.fieldId))
+      throw new BadRequestException('审批字段 ID 不能为空')
     if (new Set(normalized.map((field) => field.fieldId)).size !== normalized.length) {
       throw new BadRequestException('审批字段不能重复提交')
     }
@@ -335,7 +338,8 @@ export class ApprovalsService {
     if (sourceTask.taskType !== 'APPROVAL') {
       throw new BadRequestException('加签任务不能直接执行节点退回')
     }
-    if (!sourceTask.nodeId) throw new BadRequestException('当前任务缺少稳定节点 ID，不能执行节点退回')
+    if (!sourceTask.nodeId)
+      throw new BadRequestException('当前任务缺少稳定节点 ID，不能执行节点退回')
 
     const instance = await this.prisma.approvalInstance.findFirst({
       where: { id: sourceTask.instanceId, tenantId: user.tenantId, status: 'PENDING' },
@@ -344,7 +348,8 @@ export class ApprovalsService {
     const snapshot = instance.nodesSnapshot as unknown as ApprovalNodeConfig[]
     const targetIndex = snapshot.findIndex((node) => node.nodeId === dto.returnToNodeId)
     if (targetIndex < 0) throw new BadRequestException('退回目标不属于当前审批实例的冻结流程版本')
-    if (targetIndex >= sourceTask.nodeIndex) throw new BadRequestException('只能退回到当前节点之前的历史审批节点')
+    if (targetIndex >= sourceTask.nodeIndex)
+      throw new BadRequestException('只能退回到当前节点之前的历史审批节点')
     const targetNode = snapshot[targetIndex]
     if (!targetNode?.nodeId) throw new BadRequestException('退回目标缺少稳定节点 ID')
     const targetNodeId = targetNode.nodeId
@@ -620,7 +625,7 @@ export class ApprovalsService {
     )
     await this.restorePreUpdateSnapshot(instance, user.id)
     await this.applyNodePostFieldUpdates(instance, task.nodeIndex, 'REJECT', user.id)
-    await this.sendApprovalResult(instance, user.id, {
+    await this.sendApprovalResult(instance, user.id, 'UNAPPROVED', {
       title: '审批被驳回',
       content: `「${instance.targetName}」被 ${user.name} 驳回：${normalizedComment}`,
     })
@@ -649,7 +654,10 @@ export class ApprovalsService {
       instance.tenantId,
       instance.module as ApprovalModule,
       instance.targetId,
-      instance.module === 'quote' || instance.module === 'contract' || instance.module === 'invoice' || instance.module === 'order'
+      instance.module === 'quote' ||
+        instance.module === 'contract' ||
+        instance.module === 'invoice' ||
+        instance.module === 'order'
         ? 'REVOKED'
         : 'NONE',
     )
@@ -771,10 +779,7 @@ export class ApprovalsService {
       tenantId: user.tenantId,
       approverId: user.id,
       taskType: { in: ['APPROVAL', 'SIGN'] },
-      OR: [
-        { status: { in: ['APPROVED', 'REJECTED'] } },
-        { status: 'PENDING', action: 'BACK' },
-      ],
+      OR: [{ status: { in: ['APPROVED', 'REJECTED'] } }, { status: 'PENDING', action: 'BACK' }],
     }
     const [tasks, total] = await this.prisma.$transaction([
       this.prisma.approvalTask.findMany({
@@ -969,10 +974,7 @@ export class ApprovalsService {
       const ccUserIds = [...new Set(node.ccUserIds ?? [])].filter(
         (userId) => userId !== instance.submitterId,
       )
-      const nodeRound = await this.nextApprovalNodeRound(
-        instance.id,
-        node.nodeId ?? null,
-      )
+      const nodeRound = await this.nextApprovalNodeRound(instance.id, node.nodeId ?? null)
       const handledAt = new Date()
       const skippedFacts = [...skippedApprovers.entries()].map(([approverId, comment]) => ({
         taskId: randomUUID(),
@@ -1140,7 +1142,7 @@ export class ApprovalsService {
       'APPROVED',
     )
     await this.resources.effectApproved(instance)
-    await this.sendApprovalResult(instance, operatorId, {
+    await this.sendApprovalResult(instance, operatorId, 'APPROVED', {
       title: '审批已通过',
       content: `「${instance.targetName}」已审批通过`,
     })
@@ -1157,6 +1159,7 @@ export class ApprovalsService {
   private async sendApprovalResult(
     instance: ApprovalInstance,
     operatorId: string | undefined,
+    state: 'APPROVED' | 'UNAPPROVED',
     message: { title: string; content: string },
   ) {
     const event = this.approvalResultEvent(instance.module)
@@ -1168,7 +1171,11 @@ export class ApprovalsService {
         recipientIds: [instance.submitterId],
         excludeSelf: true,
         type: 'approval',
-        ...message,
+        templateContext: {
+          type: instance.module === 'quote' ? 'quotation' : instance.module,
+          name: instance.targetName,
+          state,
+        },
         link: '/approvals',
       })
       return
@@ -1206,22 +1213,42 @@ export class ApprovalsService {
       }
       case 'DEPT_LEADER': {
         const chain = await this.departmentLeaderChain(tenantId, submitterDeptId)
-        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, false)
+        ids = this.selectHierarchyApprovers(
+          chain,
+          this.approverLevel(node),
+          node.approverDirection,
+          false,
+        )
         break
       }
       case 'MULTIPLE_DEPT_LEADER': {
         const chain = await this.departmentLeaderChain(tenantId, submitterDeptId)
-        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, true)
+        ids = this.selectHierarchyApprovers(
+          chain,
+          this.approverLevel(node),
+          node.approverDirection,
+          true,
+        )
         break
       }
       case 'DIRECT_LEADER': {
         const chain = await this.directLeaderChain(tenantId, submitterId, submitterLeaderId)
-        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, false)
+        ids = this.selectHierarchyApprovers(
+          chain,
+          this.approverLevel(node),
+          node.approverDirection,
+          false,
+        )
         break
       }
       case 'MULTIPLE_DIRECT_LEADER': {
         const chain = await this.directLeaderChain(tenantId, submitterId, submitterLeaderId)
-        ids = this.selectHierarchyApprovers(chain, this.approverLevel(node), node.approverDirection, true)
+        ids = this.selectHierarchyApprovers(
+          chain,
+          this.approverLevel(node),
+          node.approverDirection,
+          true,
+        )
         break
       }
     }
@@ -1314,7 +1341,9 @@ export class ApprovalsService {
           instanceId: instance.id,
           status: 'APPROVED',
           taskType: { in: ['APPROVAL', 'SIGN'] },
-          ...(nodeId ? { OR: [{ nodeId: null }, { nodeId: { not: nodeId } }] } : { nodeIndex: { not: nodeIndex } }),
+          ...(nodeId
+            ? { OR: [{ nodeId: null }, { nodeId: { not: nodeId } }] }
+            : { nodeIndex: { not: nodeIndex } }),
         },
         select: { approverId: true },
       })
@@ -1394,7 +1423,8 @@ export class ApprovalsService {
             continue
           }
           if (target.nodeType !== 'CONDITION') continue
-          const config = target.condition?.conditionConfig as unknown as ApprovalConditionConfig | null
+          const config = target.condition
+            ?.conditionConfig as unknown as ApprovalConditionConfig | null
           if (this.matchCondition(config, fieldValues, updateFields)) {
             next = target
             break
@@ -1408,7 +1438,8 @@ export class ApprovalsService {
 
       current = next
       if (current.nodeType === 'APPROVER') {
-        if (!current.approver) throw new BadRequestException(`审批节点「${current.name}」缺少审批人配置`)
+        if (!current.approver)
+          throw new BadRequestException(`审批节点「${current.name}」缺少审批人配置`)
         path.push(this.toFrozenApproverNode(current))
       }
     }
@@ -1431,9 +1462,11 @@ export class ApprovalsService {
       fieldPermissions:
         (node.approver.fieldPermissions as unknown as ApprovalNodeConfig['fieldPermissions']) ?? [],
       passPostConfig:
-        (node.approver.passPostConfig as unknown as ApprovalNodeConfig['passPostConfig']) ?? undefined,
+        (node.approver.passPostConfig as unknown as ApprovalNodeConfig['passPostConfig']) ??
+        undefined,
       rejectPostConfig:
-        (node.approver.rejectPostConfig as unknown as ApprovalNodeConfig['rejectPostConfig']) ?? undefined,
+        (node.approver.rejectPostConfig as unknown as ApprovalNodeConfig['rejectPostConfig']) ??
+        undefined,
     }
   }
 
@@ -1442,7 +1475,8 @@ export class ApprovalsService {
     fieldValues: Record<string, unknown>,
     updateFields: Set<string>,
   ) {
-    const conditions = config?.conditions?.filter((condition) => this.validCondition(condition)) ?? []
+    const conditions =
+      config?.conditions?.filter((condition) => this.validCondition(condition)) ?? []
     if (!conditions.length) return false
     if ((config?.searchMode ?? 'AND') === 'AND') {
       return conditions.every((condition) =>
@@ -1542,7 +1576,9 @@ export class ApprovalsService {
   private conditionIn(actualValue: unknown, expectedValue: unknown) {
     if (!Array.isArray(expectedValue)) return false
     if (Array.isArray(actualValue)) {
-      return actualValue.some((item) => expectedValue.some((expected) => this.conditionEquals(item, expected)))
+      return actualValue.some((item) =>
+        expectedValue.some((expected) => this.conditionEquals(item, expected)),
+      )
     }
     return expectedValue.some((expected) => this.conditionEquals(actualValue, expected))
   }
@@ -1587,12 +1623,15 @@ export class ApprovalsService {
       }
     }
     const range = this.dynamicDateRange(parts[0])
-    return range ? { operator: 'BETWEEN', value: range } : { operator: 'DYNAMICS', value: condition.value }
+    return range
+      ? { operator: 'BETWEEN', value: range }
+      : { operator: 'DYNAMICS', value: condition.value }
   }
 
   private dynamicDateRange(key: string): [number, number] | null {
     const now = new Date()
-    const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+    const startOfDay = (date: Date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
     const endOfDay = (date: Date) =>
       new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999).getTime()
     const daysRange = (from: number, to: number): [number, number] => {
@@ -1852,7 +1891,9 @@ export class ApprovalsService {
     if (task.action === 'SIGN') throw new BadRequestException('当前任务正在等待前置加签完成')
     if (task.action === 'BACK') throw new BadRequestException('当前任务已经执行节点退回')
     if (task.taskType === 'SIGN') {
-      const relation = await this.prisma.approvalAddSignTask.findUnique({ where: { taskId: task.id } })
+      const relation = await this.prisma.approvalAddSignTask.findUnique({
+        where: { taskId: task.id },
+      })
       if (!relation) throw new BadRequestException('加签任务缺少链路关系')
       const earlier = await this.prisma.approvalAddSignTask.findFirst({
         where: {
@@ -2068,30 +2109,31 @@ export class ApprovalsService {
         })
       : []
     const nameMap = new Map(users.map((u) => [u.id, u.name]))
-    const [records, addSignTasks, returnBackRecords, attachmentRelations, flowCapability] = await Promise.all([
-      this.prisma.approvalRecord.findMany({
-        where: { tenantId: instance.tenantId, instanceId: instance.id },
-        orderBy: { createdAt: 'asc' },
-      }),
-      this.prisma.approvalAddSignTask.findMany({
-        where: { tenantId: instance.tenantId, instanceId: instance.id },
-        orderBy: [{ rootTaskId: 'asc' }, { sort: 'asc' }, { createdAt: 'asc' }],
-      }),
-      this.prisma.approvalReturnBackRecord.findMany({
-        where: { tenantId: instance.tenantId, instanceId: instance.id },
-        orderBy: { createdAt: 'asc' },
-      }),
-      this.prisma.approvalInstanceAttachment.findMany({
-        where: { tenantId: instance.tenantId, instanceId: instance.id },
-        orderBy: { createdAt: 'asc' },
-      }),
-      instance.flowId
-        ? this.prisma.approvalFlow.findFirst({
-            where: { id: instance.flowId, tenantId: instance.tenantId, deletedAt: null },
-            select: { allowAddSign: true, allowWithdraw: true, requireComment: true },
-          })
-        : Promise.resolve(null),
-    ])
+    const [records, addSignTasks, returnBackRecords, attachmentRelations, flowCapability] =
+      await Promise.all([
+        this.prisma.approvalRecord.findMany({
+          where: { tenantId: instance.tenantId, instanceId: instance.id },
+          orderBy: { createdAt: 'asc' },
+        }),
+        this.prisma.approvalAddSignTask.findMany({
+          where: { tenantId: instance.tenantId, instanceId: instance.id },
+          orderBy: [{ rootTaskId: 'asc' }, { sort: 'asc' }, { createdAt: 'asc' }],
+        }),
+        this.prisma.approvalReturnBackRecord.findMany({
+          where: { tenantId: instance.tenantId, instanceId: instance.id },
+          orderBy: { createdAt: 'asc' },
+        }),
+        this.prisma.approvalInstanceAttachment.findMany({
+          where: { tenantId: instance.tenantId, instanceId: instance.id },
+          orderBy: { createdAt: 'asc' },
+        }),
+        instance.flowId
+          ? this.prisma.approvalFlow.findFirst({
+              where: { id: instance.flowId, tenantId: instance.tenantId, deletedAt: null },
+              select: { allowAddSign: true, allowWithdraw: true, requireComment: true },
+            })
+          : Promise.resolve(null),
+      ])
     const attachmentIds = [...new Set(attachmentRelations.map((relation) => relation.attachmentId))]
     const attachmentRows = attachmentIds.length
       ? await this.prisma.attachment.findMany({
@@ -2152,29 +2194,36 @@ export class ApprovalsService {
           myPending?.taskType === 'SIGN',
         )
       : []
-    const returnBackTargets = myPending?.taskType === 'APPROVAL'
-      ? [...new Set(records.map((record) => record.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)))]
-          .map((nodeId) => ({
-            nodeId,
-            nodeIndex: frozenNodes.findIndex((node) => node.nodeId === nodeId),
-          }))
-          .filter(({ nodeIndex }) => nodeIndex >= 0 && nodeIndex < myPending.nodeIndex)
-          .map(({ nodeId, nodeIndex }) => {
-            const maxTaskRound = tasks
-              .filter((task) => task.nodeId === nodeId)
-              .reduce((max, task) => Math.max(max, task.nodeRound), 0)
-            const maxRecordRound = records
-              .filter((record) => record.nodeId === nodeId)
-              .reduce((max, record) => Math.max(max, record.nodeRound), 0)
-            return {
+    const returnBackTargets =
+      myPending?.taskType === 'APPROVAL'
+        ? [
+            ...new Set(
+              records
+                .map((record) => record.nodeId)
+                .filter((nodeId): nodeId is string => Boolean(nodeId)),
+            ),
+          ]
+            .map((nodeId) => ({
               nodeId,
-              nodeIndex,
-              nodeName: frozenNodes[nodeIndex]?.name ?? '历史审批节点',
-              nextRound: Math.max(maxTaskRound, maxRecordRound) + 1,
-            }
-          })
-          .sort((a, b) => a.nodeIndex - b.nodeIndex)
-      : []
+              nodeIndex: frozenNodes.findIndex((node) => node.nodeId === nodeId),
+            }))
+            .filter(({ nodeIndex }) => nodeIndex >= 0 && nodeIndex < myPending.nodeIndex)
+            .map(({ nodeId, nodeIndex }) => {
+              const maxTaskRound = tasks
+                .filter((task) => task.nodeId === nodeId)
+                .reduce((max, task) => Math.max(max, task.nodeRound), 0)
+              const maxRecordRound = records
+                .filter((record) => record.nodeId === nodeId)
+                .reduce((max, record) => Math.max(max, record.nodeRound), 0)
+              return {
+                nodeId,
+                nodeIndex,
+                nodeName: frozenNodes[nodeIndex]?.name ?? '历史审批节点',
+                nextRound: Math.max(maxTaskRound, maxRecordRound) + 1,
+              }
+            })
+            .sort((a, b) => a.nodeIndex - b.nodeIndex)
+        : []
 
     return {
       id: instance.id,
@@ -2244,20 +2293,22 @@ export class ApprovalsService {
       approvalAttachments: attachmentRelations.flatMap((relation) => {
         const attachment = attachmentMap.get(relation.attachmentId)
         if (!attachment) return []
-        return [{
-          id: relation.id,
-          elementId: relation.elementId,
-          attachment: {
-            id: attachment.id,
-            name: attachment.name,
-            size: attachment.size,
-            mime: attachment.mime,
-            targetType: attachment.targetType,
-            targetId: attachment.targetId,
-            uploaderId: attachment.uploaderId,
-            createdAt: attachment.createdAt.toISOString(),
+        return [
+          {
+            id: relation.id,
+            elementId: relation.elementId,
+            attachment: {
+              id: attachment.id,
+              name: attachment.name,
+              size: attachment.size,
+              mime: attachment.mime,
+              targetType: attachment.targetType,
+              targetId: attachment.targetId,
+              uploaderId: attachment.uploaderId,
+              createdAt: attachment.createdAt.toISOString(),
+            },
           },
-        }]
+        ]
       }),
       currentNodeFieldPermissions,
       resourceFields,

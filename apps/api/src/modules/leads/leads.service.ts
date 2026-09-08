@@ -703,8 +703,7 @@ export class LeadsService {
       recipientIds: [lead.owner],
       excludeSelf: true,
       type: 'pool',
-      title: '线索已移入线索池',
-      content: `${user.name} 将线索「${lead.name}」移入线索池`,
+      templateContext: { name: lead.name },
       link: '/leads',
     })
     return { id, name: lead.name, poolId: pool.id }
@@ -1643,8 +1642,7 @@ export class LeadsService {
         recipientIds: [lead.owner],
         excludeSelf: true,
         type: 'system',
-        title: '线索已转换为客户',
-        content: `线索「${lead.name}」已完成客户关联`,
+        templateContext: { name: lead.name },
         link: `/customers/${customerId}`,
       })
       if (opportunityId && opportunityName) {
@@ -1655,8 +1653,7 @@ export class LeadsService {
           recipientIds: [lead.owner],
           excludeSelf: true,
           type: 'system',
-          title: '线索已转换为商机',
-          content: `线索「${lead.name}」已创建商机「${opportunityName}」`,
+          templateContext: { name: lead.name },
           link: `/opportunities?id=${opportunityId}`,
         })
       }
@@ -2081,8 +2078,7 @@ export class LeadsService {
         recipientIds: [lead.owner],
         excludeSelf: true,
         type: 'system',
-        title: '线索已删除',
-        content: `${user.name} 删除了线索「${lead.name}」`,
+        templateContext: { name: lead.name },
         link: '/leads',
       })
     }
@@ -2102,8 +2098,7 @@ export class LeadsService {
       recipientIds: [ownerId],
       excludeSelf: true,
       type: 'assign',
-      title: event === 'CLUE_ADD' ? '新建线索' : '线索已分配给你',
-      content: `${user.name} 将线索「${leadName}」分配给你`,
+      templateContext: { name: leadName },
       link: `/leads?id=${leadId}`,
     })
   }

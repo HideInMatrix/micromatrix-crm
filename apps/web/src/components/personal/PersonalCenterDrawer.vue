@@ -25,7 +25,7 @@ const editVisible = ref(false)
 const passwordVisible = ref(false)
 const saving = ref(false)
 const passwordSaving = ref(false)
-const editForm = reactive({ phone: '', email: '' })
+const editForm = reactive({ phone: '', email: '', language: 'zh-CN' as 'zh-CN' | 'en-US' })
 const passwordForm = reactive({ originPassword: '', password: '', confirmPassword: '' })
 
 const plans = ref<FollowUpPlanVO[]>([])
@@ -64,6 +64,7 @@ async function loadPlans() {
 function openEdit() {
   editForm.phone = info.value?.phone ?? ''
   editForm.email = info.value?.email ?? ''
+  editForm.language = info.value?.language ?? 'zh-CN'
   editVisible.value = true
 }
 
@@ -74,7 +75,7 @@ async function saveInfo() {
   if (!/^\S+@\S+\.\S+$/.test(email)) return ElMessage.warning('请输入正确的邮箱')
   saving.value = true
   try {
-    const { data } = await updatePersonalInfo({ phone, email })
+    const { data } = await updatePersonalInfo({ phone, email, language: editForm.language })
     info.value = data
     await auth.fetchMe(true)
     editVisible.value = false
@@ -130,7 +131,9 @@ function formatTime(value?: string | null) {
 }
 
 function statusLabel(status: FollowUpPlanVO['status']) {
-  return { PREPARED: '待开始', UNDERWAY: '进行中', COMPLETED: '已完成', CANCELLED: '已取消' }[status]
+  return { PREPARED: '待开始', UNDERWAY: '进行中', COMPLETED: '已完成', CANCELLED: '已取消' }[
+    status
+  ]
 }
 
 watch([visible, activeTab], ([show, tab]) => {
@@ -171,10 +174,23 @@ watch([visible, activeTab], ([show, tab]) => {
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-4 rounded-md bg-[var(--el-fill-color-light)] p-6 mt-4">
-          <div><span class="text-[var(--el-text-color-secondary)]">手机号</span><span class="ml-3">{{ info?.phone || '-' }}</span></div>
-          <div><span class="text-[var(--el-text-color-secondary)]">邮箱</span><span class="ml-3">{{ info?.email || '-' }}</span></div>
-          <div><span class="text-[var(--el-text-color-secondary)]">部门</span><span class="ml-3">{{ info?.departmentName || '-' }}</span></div>
+        <div class="grid grid-cols-4 gap-4 rounded-md bg-[var(--el-fill-color-light)] p-6 mt-4">
+          <div>
+            <span class="text-[var(--el-text-color-secondary)]">手机号</span
+            ><span class="ml-3">{{ info?.phone || '-' }}</span>
+          </div>
+          <div>
+            <span class="text-[var(--el-text-color-secondary)]">邮箱</span
+            ><span class="ml-3">{{ info?.email || '-' }}</span>
+          </div>
+          <div>
+            <span class="text-[var(--el-text-color-secondary)]">部门</span
+            ><span class="ml-3">{{ info?.departmentName || '-' }}</span>
+          </div>
+          <div>
+            <span class="text-[var(--el-text-color-secondary)]">通知语言</span
+            ><span class="ml-3">{{ info?.language === 'en-US' ? 'English' : '简体中文' }}</span>
+          </div>
         </div>
 
         <div class="mt-6 flex gap-3">
@@ -203,7 +219,9 @@ watch([visible, activeTab], ([show, tab]) => {
           </el-table-column>
           <el-table-column label="操作" width="90" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openPlan(row as FollowUpPlanVO)">查看</el-button>
+              <el-button link type="primary" @click="openPlan(row as FollowUpPlanVO)"
+                >查看</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -223,8 +241,16 @@ watch([visible, activeTab], ([show, tab]) => {
 
     <el-dialog v-model="editVisible" title="编辑个人信息" width="460px" append-to-body>
       <el-form label-width="80px">
-        <el-form-item label="手机号" required><el-input v-model="editForm.phone" maxlength="11" /></el-form-item>
+        <el-form-item label="手机号" required
+          ><el-input v-model="editForm.phone" maxlength="11"
+        /></el-form-item>
         <el-form-item label="邮箱" required><el-input v-model="editForm.email" /></el-form-item>
+        <el-form-item label="通知语言" required>
+          <el-select v-model="editForm.language" class="w-full">
+            <el-option label="简体中文" value="zh-CN" />
+            <el-option label="English" value="en-US" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
@@ -234,9 +260,15 @@ watch([visible, activeTab], ([show, tab]) => {
 
     <el-dialog v-model="passwordVisible" title="修改密码" width="460px" append-to-body>
       <el-form label-width="100px">
-        <el-form-item label="当前密码" required><el-input v-model="passwordForm.originPassword" type="password" show-password /></el-form-item>
-        <el-form-item label="新密码" required><el-input v-model="passwordForm.password" type="password" show-password /></el-form-item>
-        <el-form-item label="确认新密码" required><el-input v-model="passwordForm.confirmPassword" type="password" show-password /></el-form-item>
+        <el-form-item label="当前密码" required
+          ><el-input v-model="passwordForm.originPassword" type="password" show-password
+        /></el-form-item>
+        <el-form-item label="新密码" required
+          ><el-input v-model="passwordForm.password" type="password" show-password
+        /></el-form-item>
+        <el-form-item label="确认新密码" required
+          ><el-input v-model="passwordForm.confirmPassword" type="password" show-password
+        /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="passwordVisible = false">取消</el-button>

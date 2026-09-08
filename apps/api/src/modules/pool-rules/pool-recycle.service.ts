@@ -97,8 +97,7 @@ export class PoolRecycleService {
         event: 'CLUE_AUTOMATIC_MOVE_POOL',
         recipientIds: [ownerId],
         type: 'pool',
-        title: '线索已被回收进线索池',
-        content: `线索「${clue.name}」符合自动回收规则，已自动回收`,
+        templateContext: { name: clue.name },
         link: '/leads',
       })
       count++
@@ -134,8 +133,7 @@ export class PoolRecycleService {
         event: 'CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS',
         recipientIds: [ownerId],
         type: 'pool',
-        title: '客户已被回收进公海',
-        content: `客户「${customer.name}」符合自动回收规则，已自动回收`,
+        templateContext: { name: customer.name },
         link: '/customers',
       })
       count++

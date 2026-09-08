@@ -36,6 +36,7 @@ export class PersonalCenterService {
       userName: current.name,
       phone: current.phone ?? '',
       email: current.email ?? '',
+      language: current.language,
       departmentId: current.deptId,
       departmentName: current.dept?.name ?? '',
       avatarUrl: current.extension?.avatar ?? null,
@@ -47,10 +48,11 @@ export class PersonalCenterService {
   async update(user: AuthUser, dto: UpdatePersonalInfoDto) {
     const phone = dto.phone.trim()
     const email = dto.email.trim().toLowerCase()
+    const language = dto.language
     const [current, phoneExists, emailExists] = await Promise.all([
       this.prisma.user.findFirst({
         where: { id: user.id, tenantId: user.tenantId },
-        select: { id: true, name: true, phone: true, email: true },
+        select: { id: true, name: true, phone: true, email: true, language: true },
       }),
       this.prisma.user.findFirst({
         // Cordys ExtUserMapper.countByPhone 不带 organizationId：手机号是全局唯一。
@@ -69,7 +71,7 @@ export class PersonalCenterService {
 
     await this.prisma.user.updateMany({
       where: { id: user.id, tenantId: user.tenantId },
-      data: { phone, email },
+      data: { phone, email, language },
     })
     await this.authCache.invalidate(user.id)
     const result = await this.info(user)
@@ -78,8 +80,12 @@ export class PersonalCenterService {
       action: 'update',
       targetId: user.id,
       targetName: current.name,
-      before: { phone: current.phone ?? '', email: current.email ?? '' },
-      after: { phone, email },
+      before: {
+        phone: current.phone ?? '',
+        email: current.email ?? '',
+        language: current.language,
+      },
+      after: { phone, email, language },
     })
     return result
   }

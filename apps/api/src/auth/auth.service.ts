@@ -323,6 +323,7 @@ export class AuthService {
       phone: user.phone,
       name: user.name,
       gender: user.gender,
+      language: user.language as CurrentUser['language'],
       avatarUrl: user.extension?.avatar ?? null,
       defaultPwd: user.defaultPwd,
       roles: user.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),

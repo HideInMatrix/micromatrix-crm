@@ -18,6 +18,7 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
                 name: '年度报价',
                 createUser: 'owner-a',
                 untilTime: BigInt(new Date(2026, 7, 27).getTime()),
+                opportunity: { customer: { name: '示例客户' } },
               },
             ]
           : [],
@@ -33,7 +34,7 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
                 owner: 'owner-a',
                 planStatus: 'PENDING',
                 planEndTime: BigInt(new Date(2026, 7, 24).getTime()),
-                contract: { name: '年度合同' },
+                contract: { name: '年度合同', customer: { name: '示例客户' } },
               },
             ]
           : [],
@@ -103,12 +104,18 @@ test('到期执行器严格保持 Cordys 六个事件且不增加发票到期分
     'CONTRACT_PAYMENT_EXPIRING',
     'CONTRACT_PAYMENT_EXPIRED',
   ])
-  assert.equal(events.some((event) => event.includes('INVOICE')), false)
+  assert.equal(
+    events.some((event) => event.includes('INVOICE')),
+    false,
+  )
 })
 
 test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合同', async () => {
   const windows: Array<{ day: number; excludedStages: string[] }> = []
-  const delivered: Array<{ event: string; title: string; content?: string }> = []
+  const delivered: Array<{
+    event: string
+    templateContext?: Record<string, unknown>
+  }> = []
   const prisma = {
     opportunityQuotation: { findMany: async () => [] },
     contractPaymentPlan: { findMany: async () => [] },
@@ -131,6 +138,7 @@ test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合�
             name: `合同-${new Date(Number(where.endTime.gte)).getDate()}`,
             owner: 'owner-a',
             endTime: where.endTime.gte,
+            customer: { name: '示例客户' },
           },
         ]
       },
@@ -151,7 +159,7 @@ test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合�
     }),
   } as unknown as MessageSettingsService
   const notifications = {
-    sendConfigured: async (input: { event: string; title: string; content?: string }) => {
+    sendConfigured: async (input: { event: string; templateContext?: Record<string, unknown> }) => {
       delivered.push(input)
       return 1
     },
@@ -168,9 +176,21 @@ test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合�
     delivered.map((item) => item.event),
     ['CONTRACT_EXPIRING', 'CONTRACT_EXPIRING', 'CONTRACT_EXPIRED'],
   )
-  assert.match(delivered[0].content ?? '', /3 天后/)
-  assert.match(delivered[1].content ?? '', /7 天后/)
-  assert.equal(delivered[2].title, '合同已到期')
+  assert.deepEqual(delivered[0]?.templateContext, {
+    customerName: '示例客户',
+    name: '示例客户',
+    expireDays: 3,
+  })
+  assert.deepEqual(delivered[1]?.templateContext, {
+    customerName: '示例客户',
+    name: '示例客户',
+    expireDays: 7,
+  })
+  assert.deepEqual(delivered[2]?.templateContext, {
+    customerName: '示例客户',
+    name: '示例客户',
+    expireDays: 0,
+  })
 })
 
 test('报价/合同/回款计划到期通知携带 direct createUser，且回款计划使用独立负责人', async () => {
@@ -187,6 +207,7 @@ test('报价/合同/回款计划到期通知携带 direct createUser，且回款
           name: '报价A',
           createUser: 'quote-creator',
           untilTime: where.untilTime.gte,
+          opportunity: { customer: { name: '客户A' } },
         },
       ],
     },
@@ -198,7 +219,7 @@ test('报价/合同/回款计划到期通知携带 direct createUser，且回款
           owner: 'plan-owner',
           createUser: 'plan-creator',
           planEndTime: where.planEndTime.gte,
-          contract: { name: '合同A' },
+          contract: { name: '合同A', customer: { name: '客户A' } },
         },
       ],
     },
@@ -211,6 +232,7 @@ test('报价/合同/回款计划到期通知携带 direct createUser，且回款
           owner: 'contract-owner',
           createUser: 'contract-creator',
           endTime: where.endTime.gte,
+          customer: { name: '客户A' },
         },
       ],
     },

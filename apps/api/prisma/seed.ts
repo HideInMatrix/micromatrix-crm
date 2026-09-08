@@ -1,12 +1,12 @@
 import 'dotenv/config'
-import { PrismaPg } from '@prisma/adapter-pg'
 import { MESSAGE_TASK_DEFINITIONS } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '../src/generated/prisma/client'
 import { MODULE_SYSTEM_FIELDS } from '../src/modules/metadata/system-fields'
+import { createPrismaPgAdapter } from '../src/prisma/prisma-adapter'
 
-const adapter = new PrismaPg({ connectionString: process.env['DATABASE_URL']! })
+const adapter = createPrismaPgAdapter(process.env['DATABASE_URL']!)
 const prisma = new PrismaClient({ adapter })
 
 async function main() {

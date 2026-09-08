@@ -1,5 +1,7 @@
 export type MessageTaskModule = 'CUSTOMER' | 'CLUE' | 'OPPORTUNITY' | 'ORDER' | 'CONTRACT'
 
+export type MessageLanguage = 'zh-CN' | 'en-US'
+
 export type MessageTaskEvent =
   | 'CUSTOMER_ADD'
   | 'CUSTOMER_CONCAT_ADD'

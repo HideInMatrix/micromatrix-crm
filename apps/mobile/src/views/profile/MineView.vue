@@ -18,7 +18,7 @@ const loading = ref(false)
 const editVisible = ref(false)
 const passwordVisible = ref(false)
 const saving = ref(false)
-const editForm = reactive({ phone: '', email: '' })
+const editForm = reactive({ phone: '', email: '', language: 'zh-CN' as 'zh-CN' | 'en-US' })
 const passwordForm = reactive({ originPassword: '', password: '', confirmPassword: '' })
 
 async function loadInfo() {
@@ -36,6 +36,7 @@ async function loadInfo() {
 function openEdit() {
   editForm.phone = info.value?.phone ?? ''
   editForm.email = info.value?.email ?? ''
+  editForm.language = info.value?.language ?? 'zh-CN'
   editVisible.value = true
 }
 
@@ -49,6 +50,7 @@ async function saveInfo() {
     const { data } = await updatePersonalInfo({
       phone: editForm.phone.trim(),
       email: editForm.email.trim(),
+      language: editForm.language,
     })
     info.value = data
     await auth.fetchMe(true)
@@ -126,6 +128,12 @@ onMounted(loadInfo)
     <van-cell-group inset>
       <van-cell title="手机号" :value="info?.phone || '-'" is-link @click="openEdit" />
       <van-cell title="邮箱" :value="info?.email || '-'" is-link @click="openEdit" />
+      <van-cell
+        title="通知语言"
+        :value="info?.language === 'en-US' ? 'English' : '简体中文'"
+        is-link
+        @click="openEdit"
+      />
     </van-cell-group>
 
     <van-cell-group v-if="info?.passwordLoginEnabled !== false" inset class="mt-3">
@@ -147,6 +155,14 @@ onMounted(loadInfo)
             placeholder="请输入手机号"
           />
           <van-field v-model="editForm.email" label="邮箱" placeholder="请输入邮箱" />
+          <van-field label="通知语言" readonly>
+            <template #input>
+              <van-radio-group v-model="editForm.language" direction="horizontal">
+                <van-radio name="zh-CN">简体中文</van-radio>
+                <van-radio name="en-US">English</van-radio>
+              </van-radio-group>
+            </template>
+          </van-field>
         </van-cell-group>
         <div class="mt-4 flex gap-3">
           <van-button block @click="editVisible = false">取消</van-button>

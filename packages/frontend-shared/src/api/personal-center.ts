@@ -1,4 +1,4 @@
-import type { FollowUpPlanVO } from '@micromatrix/shared'
+import type { FollowUpPlanVO, MessageLanguage } from '@micromatrix/shared'
 import { http } from '../http'
 
 export interface PersonalCenterVO {
@@ -6,6 +6,7 @@ export interface PersonalCenterVO {
   userName: string
   phone: string
   email: string
+  language: MessageLanguage
   departmentId: string | null
   departmentName: string
   avatarUrl: string | null
@@ -37,7 +38,11 @@ export function getPersonalInfo() {
   return http.get<PersonalCenterVO>('/personal/center/info')
 }
 
-export function updatePersonalInfo(payload: { phone: string; email: string }) {
+export function updatePersonalInfo(payload: {
+  phone: string
+  email: string
+  language: MessageLanguage
+}) {
   return http.post<PersonalCenterVO>('/personal/center/update', payload)
 }
 

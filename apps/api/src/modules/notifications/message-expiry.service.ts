@@ -101,7 +101,13 @@ export class MessageExpiryService {
           invalid: false,
           untilTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
         },
-        select: { id: true, name: true, createUser: true, untilTime: true },
+        select: {
+          id: true,
+          name: true,
+          createUser: true,
+          untilTime: true,
+          opportunity: { select: { customer: { select: { name: true } } } },
+        },
       })
       return this.sendRows(
         tenantId,
@@ -109,6 +115,7 @@ export class MessageExpiryService {
         days,
         quotes.map((quote) => ({
           name: quote.name,
+          customerName: quote.opportunity.customer?.name ?? quote.name,
           ownerId: quote.createUser,
           createUserId: quote.createUser,
           dueDate: new Date(Number(quote.untilTime)),
@@ -124,7 +131,9 @@ export class MessageExpiryService {
           planStatus: { not: 'COMPLETED' },
           planEndTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
         },
-        include: { contract: { select: { name: true } } },
+        include: {
+          contract: { select: { name: true, customer: { select: { name: true } } } },
+        },
       })
       return this.sendRows(
         tenantId,
@@ -132,6 +141,7 @@ export class MessageExpiryService {
         days,
         plans.map((plan) => ({
           name: plan.name || `${plan.contract.name}回款计划`,
+          customerName: plan.contract.customer.name,
           ownerId: plan.owner,
           createUserId: plan.createUser,
           dueDate: new Date(Number(plan.planEndTime!)),
@@ -151,7 +161,14 @@ export class MessageExpiryService {
         ...(endStages.length ? { stage: { notIn: endStages.map((item) => item.id) } } : {}),
         endTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
       },
-      select: { id: true, name: true, owner: true, createUser: true, endTime: true },
+      select: {
+        id: true,
+        name: true,
+        owner: true,
+        createUser: true,
+        endTime: true,
+        customer: { select: { name: true } },
+      },
     })
     return this.sendRows(
       tenantId,
@@ -159,6 +176,7 @@ export class MessageExpiryService {
       days,
       contracts.map((contract) => ({
         name: contract.name,
+        customerName: contract.customer.name,
         ownerId: contract.owner,
         createUserId: contract.createUser,
         dueDate: new Date(Number(contract.endTime!)),
@@ -174,6 +192,7 @@ export class MessageExpiryService {
     days: number,
     rows: Array<{
       name: string
+      customerName: string
       ownerId: string | null
       createUserId?: string | null
       dueDate: Date
@@ -182,7 +201,6 @@ export class MessageExpiryService {
     }>,
   ): Promise<number> {
     let delivered = 0
-    const expiring = event.endsWith('_EXPIRING')
     for (const row of rows) {
       delivered += await this.notifications.sendConfigured({
         tenantId,
@@ -190,10 +208,11 @@ export class MessageExpiryService {
         ownerId: row.ownerId,
         createUserId: row.createUserId,
         type: row.label === '回款计划' ? 'receivable' : 'system',
-        title: `${row.label}${expiring ? '即将到期' : '已到期'}`,
-        content: `${row.label}「${row.name}」将于 ${this.dateLabel(row.dueDate)}${
-          expiring ? `（${days} 天后）` : ''
-        }到期`,
+        templateContext: {
+          customerName: row.customerName,
+          name: row.customerName,
+          expireDays: days,
+        },
         link: row.link,
       })
     }
@@ -207,12 +226,5 @@ export class MessageExpiryService {
     const end = new Date(start)
     end.setDate(end.getDate() + 1)
     return { start, end }
-  }
-
-  private dateLabel(value: Date): string {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    const day = String(value.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
   }
 }

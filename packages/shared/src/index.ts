@@ -14,6 +14,7 @@ export * from './system'
 
 import type { FollowUpVO, TeamMemberVO } from './sales'
 import type { ContractInvoiceApprovalStatus, ContractPaymentPlanStatus } from './deal'
+import type { MessageLanguage } from './message-settings'
 
 // ============ 通用分页 ============
 
@@ -47,6 +48,8 @@ export interface CurrentUser {
   name: string
   /** Cordys sys_user.gender：false=男，true=女。 */
   gender: boolean
+  /** Cordys sys_user.language：当前用于消息模板语言。 */
+  language: MessageLanguage
   avatarUrl: string | null
   /** Cordys 默认密码提醒标记；修改密码成功后由服务端清除。 */
   defaultPwd: boolean

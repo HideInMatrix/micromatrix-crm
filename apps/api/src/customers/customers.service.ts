@@ -1214,8 +1214,7 @@ export class CustomersService {
       recipientIds: [ownerId],
       excludeSelf: true,
       type: 'system',
-      title: '新建客户',
-      content: `${user.name} 新建了客户「${customer.name}」并将你设为负责人`,
+      templateContext: { name: customer.name },
       link: `/customers/${customer.id}`,
     })
   }
@@ -1280,8 +1279,7 @@ export class CustomersService {
         recipientIds: [owner.id],
         excludeSelf: true,
         type: 'assign',
-        title: '客户已转移给你',
-        content: `${user.name} 将客户「${customer.name}」转移给你`,
+        templateContext: { name: customer.name },
         link: `/customers/${customer.id}`,
       })
     }
@@ -1327,8 +1325,7 @@ export class CustomersService {
       recipientIds: [customer.owner],
       excludeSelf: true,
       type: 'pool',
-      title: '客户已移入公海',
-      content: `${user.name} 将客户「${customer.name}」移入公海`,
+      templateContext: { name: customer.name },
       link: '/customers',
     })
     return { id, name: customer.name, poolId: pool.id }
@@ -1441,8 +1438,7 @@ export class CustomersService {
       recipientIds: [owner.id],
       excludeSelf: true,
       type: 'assign',
-      title: customer.inSharedPool ? '公海客户已分配给你' : '客户已转移给你',
-      content: `${user.name} 将客户「${customer.name}」分配给你`,
+      templateContext: { name: customer.name },
       link: `/customers/${customer.id}`,
     })
     return { id: customer.id, name: customer.name }
@@ -1724,8 +1720,11 @@ export class CustomersService {
       recipientIds: [customer.owner],
       excludeSelf: true,
       type: 'system',
-      title: '客户新增协作人',
-      content: `${user.name} 为客户「${customer.name}」添加协作成员「${member.name}」`,
+      templateContext: {
+        operator: user.name,
+        uName: member.name,
+        name: customer.name,
+      },
       link: `/customers/${customerId}`,
     })
     return { id: customerId, name: customer.name }
@@ -2227,8 +2226,7 @@ export class CustomersService {
         recipientIds: [newOwner.id],
         excludeSelf: true,
         type: 'assign',
-        title: '客户已转移给你',
-        content: `${user.name} 将合并后的客户「${target.name}」分配给你`,
+        templateContext: { name: target.name },
         link: `/customers/${target.id}`,
       })
     }
@@ -3098,8 +3096,7 @@ export class CustomersService {
         recipientIds: [customer.owner],
         excludeSelf: true,
         type: 'system',
-        title: '客户已删除',
-        content: `${user.name} 删除了客户「${customer.name}」`,
+        templateContext: { name: customer.name },
         link: '/customers',
       })
     }

@@ -191,7 +191,11 @@ test('queue add 失败时删除刚创建的 PENDING task 并向上返回 503', a
 })
 
 test('取消竞态下 complete 的 PENDING CAS 失败后删除刚生成的文件', async () => {
-  const uploadRoot = `/tmp/mmx-export-cancel-race-${process.pid}-${Date.now()}`
+  const uploadRoot = path.join(
+    process.cwd(),
+    'scripts',
+    `.tmp-export-cancel-race-${process.pid}-${Date.now()}`,
+  )
   const prisma = {
     exportTask: {
       updateMany: async () => ({ count: 0 }),

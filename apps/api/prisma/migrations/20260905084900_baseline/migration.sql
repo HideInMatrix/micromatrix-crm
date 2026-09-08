@@ -136,6 +136,7 @@ CREATE TABLE "users" (
     "position" TEXT,
     "phone" TEXT,
     "gender" BOOLEAN NOT NULL DEFAULT false,
+    "language" TEXT NOT NULL DEFAULT 'zh-CN',
     "passwordLoginEnabled" BOOLEAN NOT NULL DEFAULT true,
     "default_pwd" BOOLEAN NOT NULL DEFAULT false,
     "auth_version" INTEGER NOT NULL DEFAULT 0,

@@ -1,9 +1,14 @@
 import { Injectable, Logger, Optional } from '@nestjs/common'
-import { type MessageTaskEvent, type NotificationBizType } from '@micromatrix/shared'
+import {
+  type MessageLanguage,
+  type MessageTaskEvent,
+  type NotificationBizType,
+} from '@micromatrix/shared'
 import { PrismaService } from '../../prisma/prisma.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
 import { MessageDeliveryService } from './message-delivery.service'
+import { MessageTemplateService } from './message-template.service'
 
 export interface BusinessNotificationInput {
   tenantId: string
@@ -12,9 +17,11 @@ export interface BusinessNotificationInput {
   recipientIds: Array<string | null | undefined>
   excludeSelf?: boolean
   type: NotificationBizType
-  title: string
+  title?: string
   content?: string
   link?: string
+  templateContext?: Record<string, unknown>
+  language?: MessageLanguage
 }
 
 export interface ConfiguredBusinessNotificationInput extends Omit<
@@ -34,6 +41,7 @@ export class BusinessNotificationsService {
     private readonly notifications: NotificationsService,
     private readonly messageSettings: MessageSettingsService,
     @Optional() private readonly deliveries?: MessageDeliveryService,
+    private readonly templates?: MessageTemplateService,
   ) {}
 
   async send(input: BusinessNotificationInput): Promise<number> {
@@ -46,21 +54,46 @@ export class BusinessNotificationsService {
         ),
       ]
       if (candidateIds.length === 0) return 0
-      const users = await this.prisma.user.findMany({
-        where: {
-          tenantId: input.tenantId,
-          status: 'ACTIVE',
-          id: { in: candidateIds },
-        },
-        select: { id: true },
-      })
+      const [users, operator] = await Promise.all([
+        this.prisma.user.findMany({
+          where: {
+            tenantId: input.tenantId,
+            status: 'ACTIVE',
+            id: { in: candidateIds },
+          },
+          select: { id: true },
+        }),
+        input.operatorId
+          ? this.prisma.user.findFirst({
+              where: { id: input.operatorId, tenantId: input.tenantId },
+              select: { name: true, language: true },
+            })
+          : null,
+      ])
       const userIds = users.map((user) => user.id)
       if (userIds.length === 0) return 0
+      const templateContext = {
+        ...(operator?.name && !('OPERATOR' in (input.templateContext ?? {}))
+          ? { OPERATOR: operator.name }
+          : {}),
+        ...(input.templateContext ?? {}),
+      }
+      const rendered = this.templates
+        ? await this.templates.render(
+            input.tenantId,
+            input.event,
+            templateContext,
+            input.language ?? operator?.language ?? 'zh-CN',
+          )
+        : null
+      const title = input.title ?? rendered?.title
+      const content = input.content ?? rendered?.content
+      if (!title) throw new Error(`消息事件 ${input.event} 缺少标题模板`)
       await this.notifications.notifyMany(input.tenantId, userIds, {
         event: input.event,
         type: input.type,
-        title: input.title,
-        content: input.content,
+        title,
+        content,
         link: input.link,
       })
       if (input.event && this.deliveries) {
@@ -69,8 +102,8 @@ export class BusinessNotificationsService {
             tenantId: input.tenantId,
             event: input.event,
             recipientIds: userIds,
-            title: input.title,
-            content: input.content,
+            title,
+            content,
             link: input.link,
           })
           .catch((error) =>

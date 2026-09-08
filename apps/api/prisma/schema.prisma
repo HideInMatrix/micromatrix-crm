@@ -182,6 +182,8 @@ model User {
   phone                String?
   // Cordys sys_user.gender：false=男，true=女。
   gender               Boolean    @default(false)
+  // Cordys sys_user.language：通知模板语言偏好；当前支持 zh-CN / en-US。
+  language             String     @default("zh-CN")
   // 企业微信等外部来源成员在建立统一登录前禁止使用普通密码登录
   passwordLoginEnabled Boolean    @default(true)
   // Cordys 首页默认密码提醒；用户完成密码修改后置 false。

@@ -4,6 +4,15 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-08：DB-008 消息模板与多语言资源正式封板
+
+- 按 Cordys `MessageTemplateUtils / Translator / NotificationConstants`、双语 properties 与 `User.language` 收敛真实边界：消息模板继续使用代码/资源注册表，不新增租户 MessageTemplate 表或模板管理 UI；本轮只处理通知内容 locale，不扩张为整站 UI 国际化。
+- `users.language` 已进入唯一 `20260905084900_baseline`，默认 `zh-CN`，PC/Mobile 个人中心均支持 `zh-CN / en-US` 修改；`/auth/me` 与 PersonalCenterVO 同步返回当前偏好。业务通知按 Cordys 规则使用操作者 language 一次渲染，系统/Cron 无操作者时回退 `zh-CN`。
+- 新增双语 MessageTaskEvent 资源与 `MessageTemplateService`，支持 `${param}`、null、`*Time`、`*User`、locale fallback 与“事件名 + Notification/通知”标题；BusinessNotifications 统一负责 renderer，站内 Notification 与外部 MessageDelivery 复用同一 title/content。客户、线索、商机、联系人、池回收、跟进评论、报价/合同/回款到期、合同归档/作废以及 Quote/Contract/Order/Invoice 审批结果均已从手写中文正文迁移到事件模板上下文。
+- fresh-schema 验收额外发现 Prisma CLI 与 `@prisma/adapter-pg` 对 `DATABASE_URL?schema=` 的语义不一致：CLI 会使用目标 schema，Seed/API 之前仍落 public。现通过 `createPrismaPgAdapter()` 显式把 schema 传给 adapter options，migration / Seed / API 对同一连接串保持一致；未指定 schema 的默认部署不受影响。
+- 验收：MessageTemplate / BusinessNotifications / 到期 / 审批专项 **21/21 PASS**；完整 API Rules **238/238 PASS**；fresh baseline + Seed PASS，Prisma validate 与 database→schema diff=`No difference detected.`。PC/Mobile + 真实 API + headless Chrome CDP Browser **52/52 PASS**，覆盖 PC 中英双向语言偏好、真实 `CUSTOMER_ADD` 英文/中文 Notification、Mobile 双向保存，API 5xx=0、Runtime exception=0。
+- 工程门槛：root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prettier 与 `git diff --check` PASS。DB-008 正式更新为 **`VERIFIED`**；deferred backlog 现为 21 VERIFIED、DB-015 DISCOVERED、DB-023 DEFERRED，当前无正式 `IN_PROGRESS / PLANNED` 执行单元。
+
 ## 2026-09-07：DB-007 公告能力正式封板
 
 - 按 Cordys `views/system/message/index.vue` 公告入口、`AnnouncementService` 与 `NotifyOnJob` 收敛正式范围：公告复用 Notification 已读状态，不新增公告读取表；Cordys 当前公告表单没有附件组件，因此撤销发现阶段“公告附件关系”假设，不新增附件模型。

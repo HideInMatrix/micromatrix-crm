@@ -361,8 +361,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         recipientIds: [resource.ownerId],
         excludeSelf: true,
         type: this.notificationType,
-        title: `${this.notificationTitle}评论提醒`,
-        content: `${operator.name} 给「${targetName}」的${this.notificationTitle}添加了评论`,
+        templateContext: { name: targetName },
         link,
       })
     }
@@ -374,8 +373,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         recipientIds: mentioned,
         excludeSelf: true,
         type: this.notificationType,
-        title: `${this.notificationTitle}评论@提醒`,
-        content: `${operator.name} 在「${targetName}」的${this.notificationTitle}评论中提到了你`,
+        templateContext: { name: targetName },
         link,
       })
     }

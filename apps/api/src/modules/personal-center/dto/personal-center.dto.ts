@@ -1,5 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
+import {
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator'
 
 export class UpdatePersonalInfoDto {
   @ApiProperty({ description: '手机号', maxLength: 11 })
@@ -12,6 +22,10 @@ export class UpdatePersonalInfoDto {
   @IsEmail({}, { message: '邮箱格式不正确' })
   @IsNotEmpty()
   email!: string
+
+  @ApiProperty({ enum: ['zh-CN', 'en-US'], description: '通知语言' })
+  @IsIn(['zh-CN', 'en-US'])
+  language!: 'zh-CN' | 'en-US'
 }
 
 export class ResetPersonalPasswordDto {
