@@ -81,6 +81,8 @@ pnpm dev
 
 > API 的 `dev / build / typecheck / test:rules` 已内置 `prisma generate`。如果 Prisma schema 新增字段或模型，正常执行 `pnpm dev` 会先刷新生成客户端；数据库结构的提交方式以 Prisma migration policy 为准。
 
+> 注意：pre-release 阶段会持续重写同一个 baseline。已经执行过旧 baseline 的本地开发库不会自动重放它，因此即使 `prisma migrate status` 显示 `up to date`，仍应在 baseline 变更后执行 database → schema drift 检查，并按 [`docs/prisma-migration-policy.md`](./docs/prisma-migration-policy.md#21-本地开发数据库如何跟随被重写的-baseline) 使用 `prisma db push` 或 `migrate reset --force + seed` 对齐本地库。
+
 ### Prisma 类型大量报“字段不存在”
 
 如果同时出现 `poolId / collectedAt / collaborationType` 不存在，或 `resourcePool / savedView / customerRelation` 不存在于 `PrismaService`，通常不是这些业务字段真的缺失，而是 `apps/api/src/generated/prisma` 仍是旧生成结果。按顺序执行：

@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
+import { SaveDingTalkIntegrationDto, UpdateDingTalkSyncDto } from './dto/dingtalk-integration.dto'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 
 @ApiTags('企业集成')
@@ -51,5 +52,45 @@ export class EnterpriseIntegrationsController {
   @ApiOperation({ summary: '启停企业微信组织同步并设置新成员默认角色' })
   updateWeComSync(@CurrentUser() user: AuthUser, @Body() dto: UpdateWeComSyncDto) {
     return this.integrations.updateWeComSync(user, dto)
+  }
+
+  @Get('dingtalk')
+  @RequirePermissions('system:setting')
+  @ApiOperation({ summary: '获取钉钉配置状态（不返回密钥）' })
+  getDingTalk(@CurrentUser() user: AuthUser) {
+    return this.integrations.getDingTalk(user.tenantId)
+  }
+
+  @Get('dingtalk/secret')
+  @Header('Cache-Control', 'no-store')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'viewDingTalkSecret')
+  @ApiOperation({ summary: '查看钉钉应用 Secret（仅配置管理员）' })
+  getDingTalkSecret(@CurrentUser() user: AuthUser) {
+    return this.integrations.getDingTalkSecret(user.tenantId)
+  }
+
+  @Put('dingtalk')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'updateDingTalk')
+  @ApiOperation({ summary: '保存钉钉配置' })
+  saveDingTalk(@CurrentUser() user: AuthUser, @Body() dto: SaveDingTalkIntegrationDto) {
+    return this.integrations.saveDingTalk(user, dto)
+  }
+
+  @Post('dingtalk/test')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'testDingTalk')
+  @ApiOperation({ summary: '测试并保存钉钉配置状态' })
+  testDingTalk(@CurrentUser() user: AuthUser, @Body() dto: SaveDingTalkIntegrationDto) {
+    return this.integrations.testDingTalk(user, dto)
+  }
+
+  @Put('dingtalk/sync')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'updateDingTalkSync')
+  @ApiOperation({ summary: '启停钉钉组织同步并设置新成员默认角色' })
+  updateDingTalkSync(@CurrentUser() user: AuthUser, @Body() dto: UpdateDingTalkSyncDto) {
+    return this.integrations.updateDingTalkSync(user, dto)
   }
 }

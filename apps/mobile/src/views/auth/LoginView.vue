@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { showSuccessToast, showFailToast } from 'vant'
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { startDingTalkWorkbenchLogin } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import { useLoginBranding } from '@/composables/useLoginBranding'
 import { useAuthStore } from '@/stores/auth'
+import { isDingTalkWorkbenchBrowser } from '@/utils/dingtalk'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
 const loading = ref(false)
+const thirdPartyLoading = ref(false)
 const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
@@ -29,6 +32,21 @@ async function handleSubmit() {
     loading.value = false
   }
 }
+
+onMounted(async () => {
+  if (!isDingTalkWorkbenchBrowser() || route.query.manual === '1') return
+  thirdPartyLoading.value = true
+  try {
+    const { data } = await startDingTalkWorkbenchLogin({
+      tenantSlug: tenantSlug.value,
+      returnPath: '/mobile/home',
+    })
+    window.location.replace(data.authorizationUrl)
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+    thirdPartyLoading.value = false
+  }
+})
 </script>
 
 <template>
@@ -66,7 +84,13 @@ async function handleSubmit() {
         />
       </van-cell-group>
       <div class="mt-6 px-4">
-        <van-button round block type="primary" native-type="submit" :loading="loading">
+        <van-button
+          round
+          block
+          type="primary"
+          native-type="submit"
+          :loading="loading || thirdPartyLoading"
+        >
           登录
         </van-button>
       </div>

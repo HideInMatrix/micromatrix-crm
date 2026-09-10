@@ -153,6 +153,7 @@ export class MessageSettingsService {
       input.systemEnabled === undefined &&
       input.emailEnabled === undefined &&
       input.weComEnabled === undefined &&
+      input.dingTalkEnabled === undefined &&
       input.config === undefined
     ) {
       throw new BadRequestException('至少提供一项要更新的消息设置')
@@ -162,6 +163,7 @@ export class MessageSettingsService {
       await this.validateConfig(tenantId, definition, input.config)
     }
     if (input.weComEnabled === true) await this.assertWeComAvailable(tenantId)
+    if (input.dingTalkEnabled === true) await this.assertDingTalkAvailable(tenantId)
 
     const row = await this.prisma.messageTaskSetting.upsert({
       where: {
@@ -175,6 +177,7 @@ export class MessageSettingsService {
         ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
         ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
         ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
+        ...(input.dingTalkEnabled === undefined ? {} : { dingTalkEnabled: input.dingTalkEnabled }),
         ...(input.config === undefined
           ? {}
           : { config: input.config as unknown as Prisma.InputJsonValue }),
@@ -186,6 +189,7 @@ export class MessageSettingsService {
         systemEnabled: input.systemEnabled ?? definition.defaultSystemEnabled,
         emailEnabled: input.emailEnabled ?? definition.defaultEmailEnabled,
         weComEnabled: input.weComEnabled ?? false,
+        dingTalkEnabled: input.dingTalkEnabled ?? false,
         config:
           input.config === undefined
             ? undefined
@@ -203,11 +207,13 @@ export class MessageSettingsService {
     if (
       input.systemEnabled === undefined &&
       input.emailEnabled === undefined &&
-      input.weComEnabled === undefined
+      input.weComEnabled === undefined &&
+      input.dingTalkEnabled === undefined
     ) {
       throw new BadRequestException('至少提供一个渠道开关')
     }
     if (input.weComEnabled === true) await this.assertWeComAvailable(tenantId)
+    if (input.dingTalkEnabled === true) await this.assertDingTalkAvailable(tenantId)
     await this.prisma.$transaction(
       MESSAGE_TASK_DEFINITIONS.map((definition) =>
         this.prisma.messageTaskSetting.upsert({
@@ -222,6 +228,9 @@ export class MessageSettingsService {
             ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
             ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
             ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
+            ...(input.dingTalkEnabled === undefined
+              ? {}
+              : { dingTalkEnabled: input.dingTalkEnabled }),
           },
           create: {
             tenantId,
@@ -230,6 +239,7 @@ export class MessageSettingsService {
             systemEnabled: input.systemEnabled ?? definition.defaultSystemEnabled,
             emailEnabled: input.emailEnabled ?? definition.defaultEmailEnabled,
             weComEnabled: input.weComEnabled ?? false,
+            dingTalkEnabled: input.dingTalkEnabled ?? false,
           },
         }),
       ),
@@ -246,6 +256,10 @@ export class MessageSettingsService {
     return (await this.getEffectiveSetting(tenantId, event)).weComEnabled
   }
 
+  async isDingTalkEnabled(tenantId: string, event: MessageTaskEvent): Promise<boolean> {
+    return (await this.getEffectiveSetting(tenantId, event)).dingTalkEnabled
+  }
+
   async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const integration = await this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId, provider: 'WECOM' } },
@@ -259,6 +273,27 @@ export class MessageSettingsService {
           : null
     return {
       channel: 'WECOM',
+      configured: Boolean(integration),
+      verified: integration?.lastTestSucceeded === true,
+      enabled: integration?.syncEnabled === true,
+      available: reason === null,
+      reason,
+    }
+  }
+
+  async getDingTalkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
+    const integration = await this.prisma.enterpriseIntegration.findUnique({
+      where: { tenantId_provider: { tenantId, provider: 'DINGTALK' } },
+    })
+    const reason = !integration
+      ? '请先配置钉钉'
+      : integration.lastTestSucceeded !== true
+        ? '请先完成钉钉连接测试'
+        : !integration.syncEnabled
+          ? '请先开启钉钉组织同步'
+          : null
+    return {
+      channel: 'DINGTALK',
       configured: Boolean(integration),
       verified: integration?.lastTestSucceeded === true,
       enabled: integration?.syncEnabled === true,
@@ -307,13 +342,17 @@ export class MessageSettingsService {
 
   private toVO(
     definition: MessageTaskDefinition,
-    row?: Pick<MessageTaskSetting, 'systemEnabled' | 'emailEnabled' | 'weComEnabled' | 'config'>,
+    row?: Pick<
+      MessageTaskSetting,
+      'systemEnabled' | 'emailEnabled' | 'weComEnabled' | 'dingTalkEnabled' | 'config'
+    >,
   ): MessageTaskSettingVO {
     return {
       ...definition,
       systemEnabled: row?.systemEnabled ?? definition.defaultSystemEnabled,
       emailEnabled: row?.emailEnabled ?? definition.defaultEmailEnabled,
       weComEnabled: row?.weComEnabled ?? false,
+      dingTalkEnabled: row?.dingTalkEnabled ?? false,
       config: this.configFrom(row?.config, definition.event),
     }
   }
@@ -331,5 +370,10 @@ export class MessageSettingsService {
   private async assertWeComAvailable(tenantId: string): Promise<void> {
     const gate = await this.getWeComChannelGate(tenantId)
     if (!gate.available) throw new BadRequestException(gate.reason ?? '企业微信消息渠道不可用')
+  }
+
+  private async assertDingTalkAvailable(tenantId: string): Promise<void> {
+    const gate = await this.getDingTalkChannelGate(tenantId)
+    if (!gate.available) throw new BadRequestException(gate.reason ?? '钉钉消息渠道不可用')
   }
 }

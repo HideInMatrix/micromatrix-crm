@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus'
-import { MessagesSquare } from 'lucide-vue-next'
+import { MessageCircleMore, MessagesSquare } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { startDingTalkLogin } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import WeComLoginPanel from '@/components/auth/WeComLoginPanel.vue'
 import { useLoginBranding } from '@/composables/useLoginBranding'
@@ -15,6 +16,7 @@ const auth = useAuthStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const qrDialogVisible = ref(false)
+const dingTalkLoading = ref(false)
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
 )
@@ -44,6 +46,20 @@ async function handleWeComSuccess(path: string) {
   qrDialogVisible.value = false
   ElMessage.success('企业微信登录成功')
   await router.replace(path || '/')
+}
+
+async function openDingTalkLogin() {
+  dingTalkLoading.value = true
+  try {
+    const { data } = await startDingTalkLogin({
+      tenantSlug: tenantSlug.value,
+      returnPath: returnPath.value,
+    })
+    window.location.assign(data.authorizationUrl)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    dingTalkLoading.value = false
+  }
 }
 
 async function handleSubmit() {
@@ -103,7 +119,7 @@ async function handleSubmit() {
       </el-form>
 
       <el-divider>其他登录方式</el-divider>
-      <div class="flex justify-center">
+      <div class="flex justify-center gap-3">
         <el-tooltip content="企业微信扫码登录">
           <el-button
             circle
@@ -112,6 +128,17 @@ async function handleSubmit() {
             aria-label="企业微信扫码登录"
             data-testid="wecom-login-entry"
             @click="openWeComLogin"
+          />
+        </el-tooltip>
+        <el-tooltip content="钉钉登录">
+          <el-button
+            circle
+            size="large"
+            :icon="MessageCircleMore"
+            :loading="dingTalkLoading"
+            aria-label="钉钉登录"
+            data-testid="dingtalk-login-entry"
+            @click="openDingTalkLogin"
           />
         </el-tooltip>
       </div>

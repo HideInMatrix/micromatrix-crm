@@ -7,6 +7,12 @@ import { messageDeliveryApi } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
 const model = defineModel<boolean>({ required: true })
+const props = withDefaults(
+  defineProps<{
+    channel?: 'WECOM' | 'DINGTALK'
+  }>(),
+  { channel: 'WECOM' },
+)
 const auth = useAuthStore()
 const loading = ref(false)
 const retryingId = ref('')
@@ -41,6 +47,7 @@ async function load() {
     const { data } = await messageDeliveryApi.list({
       page: query.page,
       pageSize: query.pageSize,
+      channel: props.channel,
       keyword: query.keyword.trim() || undefined,
       status: query.status || undefined,
       event: query.event || undefined,
@@ -79,10 +86,22 @@ function formatDate(value: string | null) {
 watch(model, (visible) => {
   if (visible) void load()
 })
+watch(
+  () => props.channel,
+  () => {
+    query.page = 1
+    if (model.value) void load()
+  },
+)
 </script>
 
 <template>
-  <el-drawer v-model="model" title="企业微信投递记录" size="76%" destroy-on-close>
+  <el-drawer
+    v-model="model"
+    :title="`${props.channel === 'DINGTALK' ? '钉钉' : '企业微信'}投递记录`"
+    size="76%"
+    destroy-on-close
+  >
     <div class="mb-4 flex flex-wrap gap-2">
       <el-input
         v-model="query.keyword"
@@ -120,7 +139,7 @@ watch(model, (visible) => {
         <template #default="{ row }">
           <div>{{ row.userName || '-' }}</div>
           <div class="text-xs text-[var(--el-text-color-secondary)]">
-            {{ row.externalSubject || '无企微映射' }}
+            {{ row.externalSubject || `无${props.channel === 'DINGTALK' ? '钉钉' : '企微'}映射` }}
           </div>
         </template>
       </el-table-column>

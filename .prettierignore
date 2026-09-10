@@ -2,5 +2,7 @@ dist
 node_modules
 pnpm-lock.yaml
 apps/api/src/generated
+.micromatrix-workbench
+.tmp
 packages/shared/src/location-data/options.ts
 packages/shared/src/location-data/region-data.ts

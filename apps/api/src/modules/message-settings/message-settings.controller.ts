@@ -38,6 +38,13 @@ export class MessageSettingsController {
     return this.messageSettings.getWeComChannelGate(user.tenantId)
   }
 
+  @Get('channels/dingtalk/status')
+  @RequirePermissions('system:message')
+  @ApiOperation({ summary: '获取钉钉消息渠道门槛状态' })
+  dingTalkStatus(@CurrentUser() user: AuthUser) {
+    return this.messageSettings.getDingTalkChannelGate(user.tenantId)
+  }
+
   @Get(':event/config')
   @RequirePermissions('system:message')
   @ApiOperation({ summary: '获取事件范围配置' })

@@ -32,9 +32,13 @@ import type {
   TopNavigationKey,
   UpdateMessageTaskSettingInput,
   UpdateOperationLogSettingInput,
+  SaveDingTalkIntegrationInput,
   SaveWeComIntegrationInput,
+  DingTalkIntegrationSecretVO,
+  DingTalkConnectionTestVO,
   WeComIntegrationSecretVO,
   WeComConnectionTestVO,
+  UpdateDingTalkSyncInput,
   UpdateWeComSyncInput,
   ResolveOrganizationSyncInput,
   SaveAnnouncementInput,
@@ -101,6 +105,12 @@ export const externalIdentityApi = {
     http.post<ExternalIdentityVO>(`/external-identities/wecom/users/${userId}/bind`),
   unbindWeCom: (userId: string) =>
     http.post<ExternalIdentityVO>(`/external-identities/wecom/users/${userId}/unbind`),
+  getDingTalk: (userId: string) =>
+    http.get<ExternalIdentityVO>(`/external-identities/dingtalk/users/${userId}`),
+  bindDingTalk: (userId: string) =>
+    http.post<ExternalIdentityVO>(`/external-identities/dingtalk/users/${userId}/bind`),
+  unbindDingTalk: (userId: string) =>
+    http.post<ExternalIdentityVO>(`/external-identities/dingtalk/users/${userId}/unbind`),
 }
 
 // ===== 角色 =====
@@ -409,6 +419,8 @@ export const announcementApi = {
 export const messageSettingApi = {
   list: () => http.get<MessageTaskGroupVO[]>('/message-settings'),
   weComStatus: () => http.get<MessageChannelGateVO>('/message-settings/channels/wecom/status'),
+  dingTalkStatus: () =>
+    http.get<MessageChannelGateVO>('/message-settings/channels/dingtalk/status'),
   update: (event: string, data: UpdateMessageTaskSettingInput) =>
     http.patch<MessageTaskSettingVO>(`/message-settings/${event}`, data),
   batchUpdate: (data: BatchUpdateMessageTaskSettingInput) =>
@@ -420,6 +432,7 @@ export const messageSettingApi = {
 export const messageDeliveryApi = {
   list: (
     params: PageQuery & {
+      channel?: 'WECOM' | 'DINGTALK'
       status?: MessageDeliveryStatus
       event?: string
     },
@@ -436,6 +449,15 @@ export const enterpriseIntegrationApi = {
     http.post<WeComConnectionTestVO>('/enterprise-integrations/wecom/test', data),
   updateWeComSync: (data: UpdateWeComSyncInput) =>
     http.put<EnterpriseIntegrationVO>('/enterprise-integrations/wecom/sync', data),
+  getDingTalk: () => http.get<EnterpriseIntegrationVO>('/enterprise-integrations/dingtalk'),
+  getDingTalkSecret: () =>
+    http.get<DingTalkIntegrationSecretVO>('/enterprise-integrations/dingtalk/secret'),
+  saveDingTalk: (data: SaveDingTalkIntegrationInput) =>
+    http.put<EnterpriseIntegrationVO>('/enterprise-integrations/dingtalk', data),
+  testDingTalk: (data: SaveDingTalkIntegrationInput) =>
+    http.post<DingTalkConnectionTestVO>('/enterprise-integrations/dingtalk/test', data),
+  updateDingTalkSync: (data: UpdateDingTalkSyncInput) =>
+    http.put<EnterpriseIntegrationVO>('/enterprise-integrations/dingtalk/sync', data),
 }
 
 export const organizationSyncApi = {
@@ -460,4 +482,31 @@ export const organizationSyncApi = {
     http.put<OrganizationSyncBatchVO>(`/organization-sync/wecom/batches/${id}/resolutions`, data),
   apply: (id: string) =>
     http.post<OrganizationSyncBatchVO>(`/organization-sync/wecom/batches/${id}/apply`),
+}
+
+export const dingTalkOrganizationSyncApi = {
+  status: () => http.get<OrganizationSyncGateVO>('/organization-sync/dingtalk/status'),
+  preview: (data: CreateOrganizationSyncPreviewInput) =>
+    http.post<OrganizationSyncBatchVO>('/organization-sync/dingtalk/previews', data),
+  batches: (params?: PageQuery & { status?: string }) =>
+    http.get<PaginatedResult<OrganizationSyncBatchVO>>('/organization-sync/dingtalk/batches', {
+      params,
+    }),
+  batch: (id: string) =>
+    http.get<OrganizationSyncBatchVO>(`/organization-sync/dingtalk/batches/${id}`),
+  items: (
+    id: string,
+    params?: PageQuery & { resourceType?: string; action?: string; keyword?: string },
+  ) =>
+    http.get<PaginatedResult<OrganizationSyncItemVO>>(
+      `/organization-sync/dingtalk/batches/${id}/items`,
+      { params },
+    ),
+  resolve: (id: string, data: ResolveOrganizationSyncInput) =>
+    http.put<OrganizationSyncBatchVO>(
+      `/organization-sync/dingtalk/batches/${id}/resolutions`,
+      data,
+    ),
+  apply: (id: string) =>
+    http.post<OrganizationSyncBatchVO>(`/organization-sync/dingtalk/batches/${id}/apply`),
 }

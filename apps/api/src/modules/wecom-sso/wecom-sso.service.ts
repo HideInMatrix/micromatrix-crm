@@ -394,7 +394,16 @@ export class WeComSsoService {
     operatorId: string,
   ): Promise<ExternalIdentityVO> {
     const user = await this.requireUser(tenantId, userId)
-    if (!user.passwordLoginEnabled) {
+    const otherActiveIdentity = await this.prisma.externalIdentity.findFirst({
+      where: {
+        tenantId,
+        userId,
+        provider: { not: PROVIDER },
+        status: 'ACTIVE',
+      },
+      select: { id: true },
+    })
+    if (!user.passwordLoginEnabled && !otherActiveIdentity) {
       throw new BadRequestException('该成员未启用密码登录，不能移除最后一个登录方式')
     }
     const [mapping, identity] = await Promise.all([

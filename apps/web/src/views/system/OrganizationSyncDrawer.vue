@@ -9,12 +9,19 @@ import type {
 } from '@micromatrix/shared'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
-import { deptApi, memberApi, organizationSyncApi, type MemberOption } from '@/api/system'
+import {
+  deptApi,
+  dingTalkOrganizationSyncApi,
+  memberApi,
+  organizationSyncApi,
+  type MemberOption,
+} from '@/api/system'
 
 const props = defineProps<{
   modelValue: boolean
   targetDepartmentId: string
   targetDepartmentName: string
+  provider?: 'WECOM' | 'DINGTALK'
 }>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
@@ -41,6 +48,12 @@ const resolutions = reactive<
   Record<string, { resolution: OrganizationSyncResolution | ''; localId: string }>
 >({})
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const provider = computed(() => props.provider ?? 'WECOM')
+const providerName = computed(() => (provider.value === 'DINGTALK' ? '钉钉' : '企业微信'))
+const syncApi = computed(() =>
+  provider.value === 'DINGTALK' ? dingTalkOrganizationSyncApi : organizationSyncApi,
+)
 
 const flatDepartments = computed(() => {
   const result: DepartmentVO[] = []
@@ -71,9 +84,7 @@ const canPreview = computed(
     !applying.value,
 )
 const previewTargetMatches = computed(
-  () =>
-    !currentBatch.value ||
-    currentBatch.value.targetDepartmentId === props.targetDepartmentId,
+  () => !currentBatch.value || currentBatch.value.targetDepartmentId === props.targetDepartmentId,
 )
 const canApply = computed(
   () =>
@@ -172,8 +183,8 @@ async function loadBase() {
   loading.value = true
   try {
     const [gateResponse, batchResponse, deptResponse, memberResponse] = await Promise.all([
-      organizationSyncApi.status(),
-      organizationSyncApi.batches({ page: 1, pageSize: 10 }),
+      syncApi.value.status(),
+      syncApi.value.batches({ page: 1, pageSize: 10 }),
       deptApi.tree(),
       memberApi.options(),
     ])
@@ -200,7 +211,7 @@ async function loadBase() {
 
 async function loadItems() {
   if (!currentBatch.value) return
-  const { data } = await organizationSyncApi.items(currentBatch.value.id, {
+  const { data } = await syncApi.value.items(currentBatch.value.id, {
     page: page.value,
     pageSize,
     resourceType: resourceType.value || undefined,
@@ -218,7 +229,7 @@ async function loadItems() {
 }
 
 async function selectBatch(id: string) {
-  const { data } = await organizationSyncApi.batch(id)
+  const { data } = await syncApi.value.batch(id)
   currentBatch.value = data
   page.value = 1
   await loadItems()
@@ -236,7 +247,7 @@ async function createPreview() {
       ElMessage.warning('请先在左侧部门树选择同步目标部门')
       return
     }
-    const { data } = await organizationSyncApi.preview({
+    const { data } = await syncApi.value.preview({
       targetDepartmentId: props.targetDepartmentId,
     })
     currentBatch.value = data
@@ -262,7 +273,7 @@ async function saveResolution(item: OrganizationSyncItemVO) {
   }
   resolvingId.value = item.id
   try {
-    const { data } = await organizationSyncApi.resolve(currentBatch.value!.id, {
+    const { data } = await syncApi.value.resolve(currentBatch.value!.id, {
       items: [
         {
           itemId: item.id,
@@ -286,15 +297,15 @@ async function applyPreview() {
   const counts = currentBatch.value.counts
   const confirmed = await ElMessageBox.confirm(
     `本次将新增 ${counts.create} 项、更新 ${counts.update} 项、禁用 ${counts.disable} 项。确认按当前预览应用吗？`,
-    '应用企业微信组织同步',
+    `应用${providerName.value}组织同步`,
     { type: 'warning', confirmButtonText: '确认应用' },
   ).catch(() => false)
   if (!confirmed) return
   applying.value = true
   try {
-    const { data } = await organizationSyncApi.apply(currentBatch.value.id)
+    const { data } = await syncApi.value.apply(currentBatch.value.id)
     currentBatch.value = data
-    ElMessage.success('企业微信组织架构同步完成')
+    ElMessage.success(`${providerName.value}组织架构同步完成`)
     emit('synced')
     await loadBase()
   } catch (error) {
@@ -308,7 +319,7 @@ async function applyPreview() {
 async function pollStatus() {
   if (!props.modelValue) return
   try {
-    const { data } = await organizationSyncApi.status()
+    const { data } = await syncApi.value.status()
     gate.value = data
     const next = data.activeBatch ?? data.latestBatch
     if (next && next.id === currentBatch.value?.id && next.status !== currentBatch.value.status) {
@@ -350,7 +361,7 @@ onBeforeUnmount(stopPolling)
 <template>
   <el-drawer
     :model-value="modelValue"
-    title="企业微信同步"
+    :title="`${providerName}同步`"
     size="min(760px, 92vw)"
     destroy-on-close
     @update:model-value="emit('update:modelValue', $event)"
@@ -368,7 +379,7 @@ onBeforeUnmount(stopPolling)
       <el-alert
         v-else
         :title="`同步到：${targetDepartmentName || '未选择部门'}`"
-        description="企业微信可见范围的顶层部门将在该部门下新增或更新，其下级组织按原层级同步；选中部门本身不会被改名、移动或修改排序。"
+        :description="`${providerName}可见范围的顶层部门将在该部门下新增或更新，其下级组织按原层级同步；选中部门本身不会被改名、移动或修改排序。`"
         type="info"
         :closable="false"
         show-icon

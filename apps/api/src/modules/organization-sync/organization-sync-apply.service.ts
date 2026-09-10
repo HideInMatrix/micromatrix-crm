@@ -19,8 +19,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
-
-const PROVIDER = 'WECOM' as const
+import type { OrganizationSyncProvider } from './organization-sync.service'
 
 @Injectable()
 export class OrganizationSyncApplyService {
@@ -34,17 +33,26 @@ export class OrganizationSyncApplyService {
     @Optional() private readonly coordination?: OrganizationSyncCoordinationService,
   ) {}
 
-  async apply(user: AuthUser, batchId: string): Promise<void> {
+  async apply(
+    user: AuthUser,
+    batchId: string,
+    provider: OrganizationSyncProvider = 'WECOM',
+  ): Promise<void> {
     const initial = await this.prisma.organizationSyncBatch.findFirst({
-      where: { id: batchId, tenantId: user.tenantId, provider: PROVIDER },
+      where: { id: batchId, tenantId: user.tenantId, provider },
     })
     if (!initial) throw new NotFoundException('同步批次不存在')
     if (initial.status === 'SUCCEEDED') return
     if (initial.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
-    if (!this.coordination) return this.applyCore(user, batchId, initial)
+    if (!this.coordination) return this.applyCore(user, batchId, initial, provider)
 
-    const result = await this.coordination.run(user.tenantId, user.id, 'APPLYING', batchId, () =>
-      this.applyCore(user, batchId, initial),
+    const result = await this.coordination.run(
+      user.tenantId,
+      user.id,
+      'APPLYING',
+      batchId,
+      () => this.applyCore(user, batchId, initial, provider),
+      provider,
     )
     if (!result.executed) throw new ConflictException('当前正在执行组织同步任务')
   }
@@ -53,7 +61,9 @@ export class OrganizationSyncApplyService {
     user: AuthUser,
     batchId: string,
     initial: OrganizationSyncBatch,
+    provider: OrganizationSyncProvider,
   ): Promise<void> {
+    const providerName = provider === 'DINGTALK' ? '钉钉' : '企业微信'
     const disabledUserIds = (
       await this.prisma.organizationSyncItem.findMany({
         where: {
@@ -81,22 +91,22 @@ export class OrganizationSyncApplyService {
     try {
       await this.prisma.$transaction(
         async (tx) => {
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${user.tenantId}:${PROVIDER}`}, 0))::text AS lock`
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${user.tenantId}:${provider}`}, 0))::text AS lock`
           const batch = await tx.organizationSyncBatch.findFirst({
-            where: { id: batchId, tenantId: user.tenantId, provider: PROVIDER },
+            where: { id: batchId, tenantId: user.tenantId, provider },
           })
           if (!batch) throw new NotFoundException('同步批次不存在')
           if (batch.status === 'SUCCEEDED') return
           if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
 
           const integration = await tx.enterpriseIntegration.findFirst({
-            where: { id: batch.integrationId, tenantId: user.tenantId, provider: PROVIDER },
+            where: { id: batch.integrationId, tenantId: user.tenantId, provider },
           })
           if (!integration?.syncEnabled || integration.lastTestSucceeded !== true) {
-            throw new BadRequestException('企业微信同步配置当前不可用')
+            throw new BadRequestException(`${providerName}同步配置当前不可用`)
           }
           if (integration.credentialVersion !== batch.credentialVersion) {
-            throw new BadRequestException('企业微信配置已变化，请重新生成同步预览')
+            throw new BadRequestException(`${providerName}配置已变化，请重新生成同步预览`)
           }
           if (!integration.syncDefaultRoleId) throw new BadRequestException('请选择新成员默认角色')
           const role = await tx.role.findFirst({
@@ -126,8 +136,17 @@ export class OrganizationSyncApplyService {
             batchId,
             batch.targetDepartmentId,
             departmentItems,
+            provider,
           )
-          await this.applyUsers(tx, user.tenantId, batchId, role.id, userItems, departmentIds)
+          await this.applyUsers(
+            tx,
+            user.tenantId,
+            batchId,
+            role.id,
+            userItems,
+            departmentIds,
+            provider,
+          )
 
           const finishedAt = new Date()
           await tx.organizationSyncBatch.update({
@@ -143,7 +162,7 @@ export class OrganizationSyncApplyService {
             where: { id: integration.id },
             data: {
               lastSyncStatus: 'SUCCEEDED',
-              lastSyncMessage: '企业微信组织架构同步成功',
+              lastSyncMessage: `${providerName}组织架构同步成功`,
               lastSyncedAt: finishedAt,
               updatedById: user.id,
             },
@@ -179,7 +198,7 @@ export class OrganizationSyncApplyService {
             userId: user.id,
             userName: user.name,
             module: 'organizationSync',
-            action: 'applyWeComFailed',
+            action: provider === 'DINGTALK' ? 'applyDingTalkFailed' : 'applyWeComFailed',
             targetId: batchId,
             blob: { create: { detail: { errorCode: 'APPLY_FAILED' } } },
           },
@@ -207,7 +226,7 @@ export class OrganizationSyncApplyService {
     try {
       await this.notifications.notify(user.tenantId, user.id, {
         type: 'system',
-        title: '企业微信组织架构同步完成',
+        title: `${providerName}组织架构同步完成`,
         content: '部门和成员数据已按预览结果更新。',
         link: '/system/departments',
       })
@@ -224,10 +243,11 @@ export class OrganizationSyncApplyService {
     batchId: string,
     targetDepartmentId: string,
     items: OrganizationSyncItem[],
+    provider: OrganizationSyncProvider,
   ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>()
     const existingMappings = await tx.externalDepartmentMapping.findMany({
-      where: { tenantId, provider: PROVIDER },
+      where: { tenantId, provider },
     })
     for (const mapping of existingMappings) resolved.set(mapping.externalKey, mapping.departmentId)
 
@@ -238,7 +258,7 @@ export class OrganizationSyncApplyService {
       }
       if (item.action === 'DISABLE') {
         await tx.externalDepartmentMapping.updateMany({
-          where: { tenantId, provider: PROVIDER, externalKey: item.externalKey },
+          where: { tenantId, provider, externalKey: item.externalKey },
           data: { active: false },
         })
         await this.markItem(tx, item.id, 'APPLIED')
@@ -280,13 +300,13 @@ export class OrganizationSyncApplyService {
         where: {
           tenantId_provider_externalKey: {
             tenantId,
-            provider: PROVIDER,
+            provider,
             externalKey: item.externalKey,
           },
         },
         create: {
           tenantId,
-          provider: PROVIDER,
+          provider,
           externalId: item.externalId,
           externalKey: item.externalKey,
           departmentId: departmentId!,
@@ -313,6 +333,7 @@ export class OrganizationSyncApplyService {
     defaultRoleId: string,
     items: OrganizationSyncItem[],
     departmentIds: Map<string, string>,
+    provider: OrganizationSyncProvider,
   ): Promise<void> {
     const leaderByDepartment = new Map<string, string>()
     const departmentsWithLeaderData = new Set<string>()
@@ -340,7 +361,7 @@ export class OrganizationSyncApplyService {
           ])
         }
         await tx.externalUserMapping.updateMany({
-          where: { tenantId, provider: PROVIDER, externalKey: item.externalKey },
+          where: { tenantId, provider, externalKey: item.externalKey },
           data: { active: false },
         })
         await this.markItem(tx, item.id, 'APPLIED')
@@ -388,13 +409,13 @@ export class OrganizationSyncApplyService {
         where: {
           tenantId_provider_externalKey: {
             tenantId,
-            provider: PROVIDER,
+            provider,
             externalKey: item.externalKey,
           },
         },
         create: {
           tenantId,
-          provider: PROVIDER,
+          provider,
           externalId: item.externalId,
           externalKey: item.externalKey,
           userId: userId!,

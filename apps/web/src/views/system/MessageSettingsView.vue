@@ -30,7 +30,9 @@ const groups = ref<MessageTaskGroupVO[]>([])
 const configVisible = ref(false)
 const activeItem = ref<MessageTaskSettingVO | null>(null)
 const deliveryVisible = ref(false)
+const deliveryChannel = ref<'WECOM' | 'DINGTALK'>('WECOM')
 const weComGate = ref<MessageChannelGateVO | null>(null)
+const dingTalkGate = ref<MessageChannelGateVO | null>(null)
 const canUpdate = computed(() => auth.hasPerm('system:message:update'))
 const rows = computed<MessageTableRow[]>(() =>
   groups.value.flatMap((group) =>
@@ -49,16 +51,21 @@ const allEmailEnabled = computed(
 const allWeComEnabled = computed(
   () => rows.value.length > 0 && rows.value.every((item) => item.weComEnabled),
 )
+const allDingTalkEnabled = computed(
+  () => rows.value.length > 0 && rows.value.every((item) => item.dingTalkEnabled),
+)
 
 async function load() {
   loading.value = true
   try {
-    const [{ data: settings }, { data: gate }] = await Promise.all([
+    const [{ data: settings }, { data: gate }, { data: dingTalk }] = await Promise.all([
       messageSettingApi.list(),
       messageSettingApi.weComStatus(),
+      messageSettingApi.dingTalkStatus(),
     ])
     groups.value = settings
     weComGate.value = gate
+    dingTalkGate.value = dingTalk
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -157,6 +164,45 @@ async function toggleAllWeCom(value: boolean | string | number) {
   }
 }
 
+async function toggleDingTalk(rowValue: unknown, value: boolean | string | number) {
+  if (typeof value !== 'boolean') return
+  const row = asMessageRow(rowValue)
+  saving.value = true
+  try {
+    await messageSettingApi.update(row.event, {
+      module: row.module,
+      dingTalkEnabled: value,
+    })
+    ElMessage.success('钉钉消息设置已保存')
+    await load()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await load()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function toggleAllDingTalk(value: boolean | string | number) {
+  if (typeof value !== 'boolean') return
+  saving.value = true
+  try {
+    const { data } = await messageSettingApi.batchUpdate({ dingTalkEnabled: value })
+    groups.value = data
+    ElMessage.success('全部钉钉消息设置已保存')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await load()
+  } finally {
+    saving.value = false
+  }
+}
+
+function openDeliveries(channel: 'WECOM' | 'DINGTALK') {
+  deliveryChannel.value = channel
+  deliveryVisible.value = true
+}
+
 function openConfig(row: unknown) {
   activeItem.value = asMessageRow(row)
   configVisible.value = true
@@ -217,9 +263,14 @@ onMounted(() => {
           按业务事件控制消息渠道；配置对当前企业内所有成员生效
         </div>
       </div>
-      <el-button v-if="weComGate?.configured" @click="deliveryVisible = true">
-        企业微信投递记录
-      </el-button>
+      <div class="flex gap-2">
+        <el-button v-if="weComGate?.configured" @click="openDeliveries('WECOM')">
+          企业微信投递记录
+        </el-button>
+        <el-button v-if="dingTalkGate?.configured" @click="openDeliveries('DINGTALK')">
+          钉钉投递记录
+        </el-button>
+      </div>
     </div>
 
     <el-alert class="m-4 !w-auto" type="info" :closable="false" show-icon>
@@ -233,6 +284,15 @@ onMounted(() => {
       :closable="false"
       show-icon
       :title="weComGate.reason || '企业微信消息通道暂不可用'"
+    />
+
+    <el-alert
+      v-if="dingTalkGate?.configured && !dingTalkGate.available"
+      class="m-4 !w-auto"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="dingTalkGate.reason || '钉钉消息通道暂不可用'"
     />
 
     <el-table
@@ -312,6 +372,33 @@ onMounted(() => {
           />
         </template>
       </el-table-column>
+      <el-table-column v-if="dingTalkGate?.configured" width="220" align="center">
+        <template #header>
+          <div class="channel-header">
+            <span>钉钉</span>
+            <el-tooltip :disabled="dingTalkGate.available" :content="dingTalkGate.reason || ''">
+              <span>
+                <el-switch
+                  :model-value="allDingTalkEnabled"
+                  :loading="saving"
+                  :disabled="!canUpdate || !dingTalkGate.available"
+                  data-testid="message-dingtalk-toggle-all"
+                  @change="toggleAllDingTalk"
+                />
+              </span>
+            </el-tooltip>
+          </div>
+        </template>
+        <template #default="{ row }">
+          <el-switch
+            :model-value="row.dingTalkEnabled"
+            :loading="saving"
+            :disabled="!canUpdate || !dingTalkGate.available"
+            :data-event-dingtalk-toggle="row.event"
+            @change="(value: boolean | string | number) => toggleDingTalk(row, value)"
+          />
+        </template>
+      </el-table-column>
       <el-table-column width="220" align="center">
         <template #header>
           <div class="channel-header">
@@ -333,7 +420,7 @@ onMounted(() => {
   <AnnouncementList v-else />
 
   <MessageConfigDrawer v-model="configVisible" :item="activeItem" @saved="load" />
-  <MessageDeliveryDrawer v-model="deliveryVisible" />
+  <MessageDeliveryDrawer v-model="deliveryVisible" :channel="deliveryChannel" />
 </template>
 
 <style scoped>

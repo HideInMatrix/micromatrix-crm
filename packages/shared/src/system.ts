@@ -89,7 +89,7 @@ export interface OperationLogClearResultVO {
 export interface LoginLogVO {
   id: string
   email: string
-  authType: 'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2'
+  authType: 'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2' | 'DINGTALK' | 'DINGTALK_OAUTH2'
   externalSubject: string | null
   ip: string | null
   userAgent: string | null
@@ -109,6 +109,7 @@ export interface EnterpriseIntegrationVO {
   provider: EnterpriseIntegrationProvider
   configured: boolean
   corpId: string
+  clientId?: string | null
   agentId: string
   secretConfigured: boolean
   credentialVersion: number
@@ -128,6 +129,52 @@ export interface SaveWeComIntegrationInput {
   corpId: string
   agentId: string
   appSecret?: string
+}
+
+export interface SaveDingTalkIntegrationInput {
+  corpId: string
+  clientId: string
+  agentId: string
+  appSecret?: string
+}
+
+export interface DingTalkLoginDiscoveryVO {
+  tenantSlug: string
+  tenantName: string
+  available: boolean
+  reason: string | null
+  corpId: string | null
+  clientId: string | null
+  loginPath: string
+}
+
+export interface DingTalkLoginStartInput {
+  tenantSlug?: string
+  returnPath?: string
+}
+
+export interface DingTalkLoginStartVO {
+  authorizationUrl: string
+  clientId: string
+  redirectUri: string
+  state: string
+  expiresAt: string
+}
+
+export interface DingTalkIntegrationSecretVO {
+  appSecret: string
+}
+
+export interface DingTalkConnectionTestVO {
+  success: boolean
+  message: string
+  providerCode: number | null
+  integration: EnterpriseIntegrationVO
+}
+
+export interface UpdateDingTalkSyncInput {
+  enabled: boolean
+  defaultRoleId?: string
 }
 
 export interface WeComIntegrationSecretVO {
@@ -177,10 +224,15 @@ export interface WeComLoginCallbackInput {
   state: string
 }
 
+export interface DingTalkLoginCallbackInput {
+  code: string
+  state: string
+}
+
 export type ExternalIdentityStatus = 'ACTIVE' | 'REVOKED'
 
 export interface ExternalIdentityVO {
-  provider: 'WECOM'
+  provider: EnterpriseIntegrationProvider
   mapped: boolean
   externalSubject: string | null
   status: ExternalIdentityStatus | null

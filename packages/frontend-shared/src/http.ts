@@ -7,6 +7,17 @@ export interface FrontendHttpOptions {
   loginPath: string | (() => string)
 }
 
+export function shouldAttemptAuthRefresh(input: {
+  status?: number
+  url?: string
+  retried?: boolean
+}): boolean {
+  if (input.status !== 401 || input.retried) return false
+  const isAuthApi = input.url?.includes('/auth/') ?? false
+  const isSessionRestore = input.url?.includes('/auth/me') ?? false
+  return !isAuthApi || isSessionRestore
+}
+
 export function createFrontendHttp(options: FrontendHttpOptions): AxiosInstance {
   const http = axios.create({
     baseURL: options.baseURL ?? '/api',
@@ -41,10 +52,17 @@ export function createFrontendHttp(options: FrontendHttpOptions): AxiosInstance 
     async (error: AxiosError) => {
       const config = error.config as
         (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined
-      const is401 = error.response?.status === 401
-      const isAuthApi = config?.url?.includes('/auth/')
-
-      if (is401 && config && !config._retried && !isAuthApi) {
+      // 页面刷新时会通过 /auth/me 恢复当前用户。该请求同样可能因为 access token
+      // 过期返回 401，因此必须允许它使用 refresh token 自愈；其余认证接口仍排除，
+      // 避免登录、refresh、OAuth callback 等认证流程发生递归刷新。
+      if (
+        config &&
+        shouldAttemptAuthRefresh({
+          status: error.response?.status,
+          url: config.url,
+          retried: config._retried,
+        })
+      ) {
         refreshing ??= tryRefreshToken().finally(() => {
           refreshing = null
         })

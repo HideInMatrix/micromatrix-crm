@@ -4,6 +4,23 @@
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
 
+## 2026-09-10：DB-015A DingTalk Provider 正式封板
+
+- 新版 Workbench Host Browser 已通过 `desktop_chromium_cdp` 建立隔离 Chrome profile，真实完成 PC 登录页 DingTalk 入口、第三方设置配置/连接测试、组织架构同步结果、重复预览幂等、DingTalk OAuth callback→JWT→Dashboard、消息设置与 DingTalk 投递记录验收；投递记录真实显示 `新建客户通知 / 已送达 / 1/3`。
+- 组织同步在已同步状态再次生成预览得到 `新增 0 / 更新 0 / 禁用 0 / 不变 3`，部门 `钉钉示例企业 → 钉钉销售部` 与成员 `钉钉测试成员 / ding.user@example.com` 均真实可见，没有重复创建。Mobile Workbench OAuth 后端继续由 33/33 runtime 覆盖，Mobile production build/typecheck PASS。
+- Browser 验收期间发现页面刷新恢复登录态时 `/auth/me` 401 被错误排除在 refresh-token 自愈之外；现仅放开 `/auth/me` 进入既有 refresh 重试逻辑，login/refresh/OAuth callback 等认证接口仍禁止递归刷新，frontend-shared 专项 **4/4 PASS**。
+- 最终门禁：DB-015A/邻接专项 **26/26 PASS**、Outbox **8/8 PASS**、完整 API Rules **250/250 PASS**、fresh baseline + Seed PASS、DB→Schema=`No difference detected.`、真实 API/mock Provider **33/33 PASS**、root typecheck/build PASS、lint **0 error / 8 个既有 warning**、Prisma format/validate、Prettier 与 `git diff --check` PASS。DB-015A 正式更新为 **`VERIFIED`**；下一执行单元为 DB-015B Lark。
+- 完成核心 Browser 证据后，Desktop Host browser broker 在再次创建/关闭 session 时出现统一 timeout；该现象属于 Workbench Host capability 运行期异常，不影响此前已成功返回 snapshot/click/navigate 结果的验收事实。
+
+## 2026-09-09：DB-015A DingTalk Provider 实现与 API runtime 收口，Browser gate 阶段性受阻（已于 09-10 解除）
+
+- 按 Cordys 钉钉配置、`DingTalkDepartmentService`、OAuth/扫码/容器登录和工作通知链路正式拆出 DB-015A；DB-015B Lark 保持独立后续单元。DingTalk 不复制企微数据表，而是复用 provider-scoped `EnterpriseIntegration / ExternalUserMapping / ExternalIdentity / OrganizationSync* / MessageDelivery`，新增 `EnterpriseIntegration.clientId`、`ExternalOAuthFlow.QR_DINGTALK/DINGTALK` 与 `MessageTaskSetting.dingTalkEnabled` 并并入唯一 pre-release baseline。
+- `DingTalkClient` 已覆盖企业 access token、递归部门/成员分页、Cordys `dept_id_list` 第一项主部门语义、OAuth user token/profile、unionId→userid 以及 `asyncsend_v2` 工作通知；配置层区分 CorpId / AppKey(clientId) / AgentId / AppSecret，Secret 继续 AES-GCM 加密，credentialVersion 变化会关闭同步并使旧预览失效。
+- OrganizationSync 已从 WECOM-only 收敛为 provider-aware runtime：WECOM/DINGTALK 共用 Planner/Batch/Apply，但映射、查询与 coordination key 严格按 provider 隔离；PC 成员页新增钉钉同步入口，通用 Drawer 根据 provider 调用对应 API。DingTalk SSO 复用已验证的 state hash + browser nonce + TTL + 单次消费模型，QR/Workbench 使用独立 flow/cookie，真实完成 unionId→userid→mapping→ExternalIdentity→JWT；多 provider 场景下，解绑当前身份仅在它会移除用户最后一个登录方式时才 fail-closed。
+- MessageTask 新增真实 `dingTalkEnabled` channel gate；MessageDelivery enqueue/worker/retry 支持 WECOM/DINGTALK 双 provider，DingTalk 独立使用 DINGTALK mapping、provider task_id、`DINGTALK_*` 错误码与同一 outbox 状态机。PC 第三方设置、登录页/callback/workbench、成员身份、消息设置/投递记录以及 Mobile DingTalk 容器登录均已接入。
+- 验收：DB-015A/邻接专项 **26/26 PASS**，Outbox **8/8 PASS**，完整 API Rules **250/250 PASS**；fresh PostgreSQL 隔离 schema 从零应用唯一 baseline + Seed PASS，DB→Schema=`No difference detected.`；root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prisma format/validate PASS。真实 Nest + fresh PostgreSQL + local DingTalk mock Provider API smoke **33/33 PASS**，覆盖配置、同步、mapping、QR/Workbench OAuth、replay fail-closed、ExternalIdentity、真实 `CUSTOMER_ADD` DingTalk outbox 与 provider task_id；PC/Mobile UI source reachability **12/12**、Vite routes **7/7**。
+- 当日最终真实 Chrome/CDP gate 未被虚报：当时 MCP safe sandbox 阻止 `Google Chrome Framework` `dlopen`，随后对 `privileged_executable` 的一次性受控权限申请又被客户端拒绝，因此 DB-015A 当日暂保持 `IN_PROGRESS / BLOCKED_BY_MCP_SANDBOX`。该阻断已在 2026-09-10 通过新版 Workbench Host Browser 调用链解除，最终封板证据见上节。
+
 ## 2026-09-08：DB-008 消息模板与多语言资源正式封板
 
 - 按 Cordys `MessageTemplateUtils / Translator / NotificationConstants`、双语 properties 与 `User.language` 收敛真实边界：消息模板继续使用代码/资源注册表，不新增租户 MessageTemplate 表或模板管理 UI；本轮只处理通知内容 locale，不扩张为整站 UI 国际化。

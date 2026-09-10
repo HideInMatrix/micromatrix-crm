@@ -1,5 +1,11 @@
 import { Injectable, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import {
+  OrganizationSnapshotError,
+  type OrganizationDepartmentSnapshot,
+  type OrganizationSnapshot,
+  type OrganizationUserSnapshot,
+} from './organization-snapshot'
 
 export interface WeComConnectionInput {
   corpId: string
@@ -14,32 +20,9 @@ export interface WeComConnectionResult {
   transient?: boolean
 }
 
-export interface WeComDepartmentSnapshot {
-  id: string
-  externalKey: string
-  name: string
-  parentId: string
-  parentExternalKey: string
-  order: number
-  isRoot: boolean
-}
-
-export interface WeComUserSnapshot {
-  userId: string
-  externalKey: string
-  name: string
-  email: string | null
-  mobile: string | null
-  position: string | null
-  mainDepartmentId: string
-  mainDepartmentExternalKey: string
-  isLeader: boolean
-}
-
-export interface WeComOrganizationSnapshot {
-  departments: WeComDepartmentSnapshot[]
-  users: WeComUserSnapshot[]
-}
+export type WeComDepartmentSnapshot = OrganizationDepartmentSnapshot
+export type WeComUserSnapshot = OrganizationUserSnapshot
+export type WeComOrganizationSnapshot = OrganizationSnapshot
 
 export interface WeComLoginIdentity {
   userId: string
@@ -73,12 +56,9 @@ interface WeComResponse {
   accessToken: string | null
 }
 
-export class WeComSnapshotError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message)
+export class WeComSnapshotError extends OrganizationSnapshotError {
+  constructor(code: string, message: string) {
+    super(code, message)
     this.name = 'WeComSnapshotError'
   }
 }

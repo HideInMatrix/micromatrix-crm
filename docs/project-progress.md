@@ -51,11 +51,11 @@
 
 当前执行状态：
 
-> **DB-008 消息模板与多语言资源已正式封板为 `VERIFIED`。当前没有正式 `IN_PROGRESS / PLANNED` 执行单元；TOOLCHAIN-001、UI-001 T14、LOG-003、FORM-001、FOLLOW-001、PLAN-COMMENT-001、PLAN-FORM-001、DB-007 与 DB-008 均保持 `VERIFIED`。后续只剩 DB-015 `DISCOVERED` 与 DB-023 `DEFERRED`。**
+> **DB-015A DingTalk Provider 已正式封板为 `VERIFIED`。新版 Workbench Host Browser 已取得真实 DingTalk 配置、组织同步、OAuth 登录与消息投递页面证据；下一执行单元切换为 DB-015B Lark。DB-015 作为父 backlog 在 015B 完成前继续保持 `IN_PROGRESS`，DB-023 继续 `DEFERRED`。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001`、`DB-007` 与 `DB-008` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；当前 API Rules 基线为 238/238。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001`、`DB-007`、`DB-008` 与 `DB-015A` 均已在各自 tasks 文档完成封板。数据库迁移历史继续保持唯一 `20260905084900_baseline`；当前完整 API Rules 基线为 **250/250 PASS**，另有 frontend-shared `/auth/me` refresh 专项 **4/4 PASS**。
 
-当前 deferred backlog 共 23 项：**21 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、1 项 DISCOVERED（DB-015）、1 项 DEFERRED（DB-023）**。这个数字只用于说明缺口去向，不把不同工作量的 DB 条目简单换算成“完成百分比”。
+当前 deferred backlog 共 23 项：**21 项 VERIFIED、1 项 IN_PROGRESS（DB-015；015A 已 VERIFIED，当前进入 015B）、0 项 PLANNED、0 项 DISCOVERED、1 项 DEFERRED（DB-023）**。DB-015A/015B 属于 DB-015 内部分拆，不额外增加 backlog 总数。
 
 ## 4. 当前质量基线
 
@@ -66,9 +66,10 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 - UI-001 T14：本地真实 API/Web + headless CDP Browser **28/28 PASS**；普通 440px Drawer 实测 Header `margin-bottom:0`、Body 24px，审批流程 Drawer 实测 1440px 视口 min-width=1080px、2560px 视口 width=50%，流程工具区两行/baseline/nowrap/无溢出全绿；API 5xx=0、Runtime exception=0。首次验收发现 Body 仍被 Element Plus 覆盖为 20px，已通过全局 `padding:24px !important` 修正并复验。
 - DB-007：Announcement Service **5/5 PASS**、Notification source **7/7 PASS**、API Rules **234/234 PASS**；fresh PostgreSQL 从零应用唯一 `20260905084900_baseline` + Seed PASS；真实 API/Web/Redis + headless CDP Browser **38/38 PASS**，覆盖公告 UI 新建/编辑/删除、接收成员、立即生效 Notification、公告类型/正文/链接名称/已读/source 删除清理，API 5xx=0、Runtime exception=0；root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prettier 与 `git diff --check` PASS。
 - DB-008：MessageTemplate / BusinessNotifications / 到期 / 审批专项 **21/21 PASS**；API Rules **238/238 PASS**；fresh PostgreSQL 唯一 baseline + Seed、Prisma validate、database→schema diff=`No difference detected.`；真实 PC/Mobile/API + headless CDP Browser **52/52 PASS**，覆盖 PC `zh-CN ↔ en-US`、真实 `CUSTOMER_ADD` 中英文 Notification、Mobile 双向语言保存、API 5xx=0、Runtime exception=0；root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prettier 与 `git diff --check` PASS。
+- DB-015A：**VERIFIED**。DingTalk/邻接专项 **26/26 PASS**，其中 MessageDelivery 双 provider outbox **8/8 PASS**；完整 API Rules **250/250 PASS**，frontend-shared `/auth/me` refresh 专项 **4/4 PASS**。fresh PostgreSQL 隔离 schema 从零应用唯一 baseline + Seed PASS，database→schema diff=`No difference detected.`。真实 Nest + fresh PostgreSQL + local DingTalk mock Provider API smoke **33/33 PASS**，覆盖配置/Secret/连接测试、组织 snapshot→preview→apply、DINGTALK mapping、QR/Workbench OAuth state/nonce/replay fail-closed、unionId→userid→ExternalIdentity、`CUSTOMER_ADD` DingTalk channel、outbox/task_id/retry 审计。新版 Workbench Host Browser（`desktop_chromium_cdp`）真实验证 DingTalk 登录入口、配置/连接成功、组织树/成员、重复同步预览 `新增0/更新0/禁用0/不变3`、OAuth callback→JWT→Dashboard、消息设置与“已送达”投递记录；Mobile workbench OAuth 后端由 33/33 runtime 覆盖，Mobile typecheck/production build PASS。最终 root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prisma format/validate、Prettier 与 `git diff --check` PASS。
 - UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
 - Root Smoke：最近既有基线 **227/227**；DB-007 未修改该独立 Smoke 脚本集合。
-- Rules：当前 **238/238**；在 DB-007 的 234 条基础上新增 MessageTemplate renderer 与 BusinessNotifications 双语同文回归，Announcement/Notification source、FOLLOW-001、PLAN-COMMENT-001、PLAN-FORM-001、CACHE-001/002、EVENT-001、COORD-001、ASYNC-001、LOG-001/002/003、FORM-001 F4 回归均保持全绿。
+- Rules：当前 **250/250 PASS**；另有 frontend-shared `/auth/me` refresh **4/4 PASS**。DB-015A 新增 DingTalk Client、配置生命周期、SSO state/identity 与双 provider outbox 回归后，Announcement/Notification source、DB-008 模板、FOLLOW-001、PLAN-COMMENT-001、PLAN-FORM-001、CACHE-001/002、EVENT-001、COORD-001、ASYNC-001、LOG-001/002/003、FORM-001 F4 回归均保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。
@@ -124,7 +125,7 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 
 ### D. 第三方 provider 与产品决策项
 
-- DB-015 钉钉/飞书：配置、组织映射、SSO、消息 sender 仍未迁移；当前产品决策是暂不做，因此不应阻塞近期核心主线。
+- DB-015 钉钉/飞书：已按用户最新决策正式启动，拆为 DB-015A DingTalk 与 DB-015B Lark；当前执行 015A，覆盖配置、组织映射、SSO 与消息 provider。
 - DB-023 DataEase：明确 deferred，不阻塞 Dashboard `VERIFIED`。
 - Cordys License、AI/MaxKB/SQLBot、Cordys MCP/Skills、商业标讯 API：明确不纳入当前 CRM 核心复刻完成标准。
 

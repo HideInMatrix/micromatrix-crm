@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common'
 import type { OrganizationSyncCounts } from '@micromatrix/shared'
 import type {
-  WeComDepartmentSnapshot,
-  WeComOrganizationSnapshot,
-  WeComUserSnapshot,
-} from '../enterprise-integrations/wecom.client'
+  OrganizationDepartmentSnapshot,
+  OrganizationSnapshot,
+  OrganizationUserSnapshot,
+} from '../enterprise-integrations/organization-snapshot'
 
 export interface PlannerDepartment {
   id: string
@@ -59,7 +59,7 @@ export interface OrganizationSyncPlan {
 export interface OrganizationSyncPlannerInput {
   tenantId: string
   targetDepartmentId: string
-  snapshot: WeComOrganizationSnapshot
+  snapshot: OrganizationSnapshot
   departments: PlannerDepartment[]
   users: PlannerUser[]
   departmentMappings: PlannerDepartmentMapping[]
@@ -260,7 +260,7 @@ export class OrganizationSyncPlanner {
 
   private departmentChanges(
     local: PlannerDepartment,
-    source: WeComDepartmentSnapshot,
+    source: OrganizationDepartmentSnapshot,
     parentLocalId: string | null,
   ): Record<string, { before: unknown; after: unknown }> | null {
     const changes: Record<string, { before: unknown; after: unknown }> = {}
@@ -274,7 +274,7 @@ export class OrganizationSyncPlanner {
 
   private userChanges(
     local: PlannerUser,
-    source: WeComUserSnapshot,
+    source: OrganizationUserSnapshot,
     targetDepartmentId: string | null,
   ): Record<string, { before: unknown; after: unknown }> | null {
     const changes: Record<string, { before: unknown; after: unknown }> = {}
@@ -293,10 +293,12 @@ export class OrganizationSyncPlanner {
     return Object.keys(changes).length ? changes : null
   }
 
-  private sortDepartments(departments: WeComDepartmentSnapshot[]): WeComDepartmentSnapshot[] {
+  private sortDepartments(
+    departments: OrganizationDepartmentSnapshot[],
+  ): OrganizationDepartmentSnapshot[] {
     const byKey = new Map(departments.map((department) => [department.externalKey, department]))
     const depthCache = new Map<string, number>()
-    const depth = (department: WeComDepartmentSnapshot): number => {
+    const depth = (department: OrganizationDepartmentSnapshot): number => {
       const cached = depthCache.get(department.externalKey)
       if (cached !== undefined) return cached
       const value = department.isRoot ? 0 : 1 + depth(byKey.get(department.parentExternalKey)!)

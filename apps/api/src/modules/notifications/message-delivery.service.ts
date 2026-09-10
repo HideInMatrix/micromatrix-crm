@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import {
   MESSAGE_TASK_DEFINITIONS,
@@ -6,14 +12,15 @@ import {
   type MessageTaskEvent,
 } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { MessageDelivery, Prisma } from '../../generated/prisma/client'
+import type { MessageDelivery, MessageDeliveryChannel, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { DingTalkClient } from '../enterprise-integrations/dingtalk.client'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import { WeComClient } from '../enterprise-integrations/wecom.client'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { QueryMessageDeliveriesDto } from './dto/message-delivery.dto'
 
-export interface EnqueueWeComMessageInput {
+export interface EnqueueMessageInput {
   tenantId: string
   event: MessageTaskEvent
   recipientIds: string[]
@@ -21,6 +28,8 @@ export interface EnqueueWeComMessageInput {
   content?: string
   link?: string
 }
+
+type SupportedDeliveryChannel = Extract<MessageDeliveryChannel, 'WECOM' | 'DINGTALK'>
 
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000]
 const STALE_SENDING_MS = 5 * 60_000
@@ -37,14 +46,43 @@ export class MessageDeliveryService {
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly weComClient: WeComClient,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
+    @Optional() private readonly dingTalkClient?: DingTalkClient,
   ) {}
 
-  async enqueue(input: EnqueueWeComMessageInput): Promise<number> {
-    if (!(await this.messageSettings.isWeComEnabled(input.tenantId, input.event))) return 0
-    const gate = await this.messageSettings.getWeComChannelGate(input.tenantId)
+  async enqueue(input: EnqueueMessageInput): Promise<number> {
+    const results = await Promise.allSettled([
+      this.enqueueChannel('WECOM', input),
+      this.enqueueChannel('DINGTALK', input),
+    ])
+    let count = 0
+    for (const [index, result] of results.entries()) {
+      const channel: SupportedDeliveryChannel = index === 0 ? 'WECOM' : 'DINGTALK'
+      if (result.status === 'fulfilled') count += result.value
+      else {
+        this.logger.warn(
+          `${this.channelName(channel)}消息入队失败: ${this.errorMessage(result.reason)}`,
+        )
+      }
+    }
+    return count
+  }
+
+  private async enqueueChannel(
+    channel: SupportedDeliveryChannel,
+    input: EnqueueMessageInput,
+  ): Promise<number> {
+    const enabled =
+      channel === 'DINGTALK'
+        ? await this.messageSettings.isDingTalkEnabled(input.tenantId, input.event)
+        : await this.messageSettings.isWeComEnabled(input.tenantId, input.event)
+    if (!enabled) return 0
+    const gate =
+      channel === 'DINGTALK'
+        ? await this.messageSettings.getDingTalkChannelGate(input.tenantId)
+        : await this.messageSettings.getWeComChannelGate(input.tenantId)
     if (!gate.available) return 0
     const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId: input.tenantId, provider: 'WECOM' } },
+      where: { tenantId_provider: { tenantId: input.tenantId, provider: channel } },
     })
     if (!integration) return 0
 
@@ -53,7 +91,7 @@ export class MessageDeliveryService {
     const mappings = await this.prisma.externalUserMapping.findMany({
       where: {
         tenantId: input.tenantId,
-        provider: 'WECOM',
+        provider: channel,
         active: true,
         userId: { in: userIds },
       },
@@ -66,7 +104,7 @@ export class MessageDeliveryService {
           data: {
             tenantId: input.tenantId,
             integrationId: integration.id,
-            channel: 'WECOM',
+            channel,
             event: input.event,
             userId,
             externalSubject: mapping?.externalId,
@@ -75,7 +113,7 @@ export class MessageDeliveryService {
             link: input.link?.slice(0, 1_000),
             status: mapping ? 'PENDING' : 'DEAD',
             errorCode: mapping ? null : 'EXTERNAL_USER_NOT_MAPPED',
-            errorMessage: mapping ? null : '接收人没有有效的企业微信成员映射',
+            errorMessage: mapping ? null : `接收人没有有效的${this.channelName(channel)}成员映射`,
           },
         })
       }),
@@ -83,7 +121,9 @@ export class MessageDeliveryService {
     const pendingIds = created.filter((item) => item.status === 'PENDING').map((item) => item.id)
     if (pendingIds.length > 0) {
       void this.processIds(pendingIds).catch((error) =>
-        this.logger.warn(`企微投递即时处理失败: ${this.errorMessage(error)}`),
+        this.logger.warn(
+          `${this.channelName(channel)}投递即时处理失败: ${this.errorMessage(error)}`,
+        ),
       )
     }
     return created.length
@@ -95,7 +135,7 @@ export class MessageDeliveryService {
     const keyword = query.keyword?.trim()
     const where: Prisma.MessageDeliveryWhereInput = {
       tenantId,
-      channel: 'WECOM',
+      channel: query.channel ?? 'WECOM',
       ...(query.status ? { status: query.status } : {}),
       ...(query.event ? { event: query.event } : {}),
       ...(keyword
@@ -129,10 +169,14 @@ export class MessageDeliveryService {
 
   async retry(tenantId: string, id: string): Promise<MessageDeliveryVO> {
     const delivery = await this.prisma.messageDelivery.findFirst({
-      where: { id, tenantId, channel: 'WECOM' },
+      where: { id, tenantId },
       include: { user: { select: { name: true } } },
     })
     if (!delivery) throw new NotFoundException('投递记录不存在')
+    if (!this.isSupportedChannel(delivery.channel)) {
+      throw new BadRequestException('当前投递渠道暂不支持手工重试')
+    }
+    const channel = delivery.channel
     if (!['FAILED', 'DEAD'].includes(delivery.status)) {
       throw new BadRequestException('只有失败或已终止的投递可以重试')
     }
@@ -150,7 +194,7 @@ export class MessageDeliveryService {
       include: { user: { select: { name: true } } },
     })
     void this.processIds([id]).catch((error) =>
-      this.logger.warn(`企微投递手工重试失败: ${this.errorMessage(error)}`),
+      this.logger.warn(`${this.channelName(channel)}投递手工重试失败: ${this.errorMessage(error)}`),
     )
     return this.toVO(updated, updated.user?.name ?? null)
   }
@@ -166,6 +210,7 @@ export class MessageDeliveryService {
   async processDueDeliveries(): Promise<number> {
     await this.prisma.messageDelivery.updateMany({
       where: {
+        channel: { in: ['WECOM', 'DINGTALK'] },
         status: 'SENDING',
         updatedAt: { lt: new Date(Date.now() - STALE_SENDING_MS) },
       },
@@ -178,7 +223,7 @@ export class MessageDeliveryService {
     })
     const due = await this.prisma.messageDelivery.findMany({
       where: {
-        channel: 'WECOM',
+        channel: { in: ['WECOM', 'DINGTALK'] },
         status: { in: ['PENDING', 'FAILED'] },
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
       },
@@ -219,26 +264,22 @@ export class MessageDeliveryService {
     if (claimed.count !== 1) return
     const delivery = await this.prisma.messageDelivery.findUnique({ where: { id } })
     if (!delivery) return
+    if (!this.isSupportedChannel(delivery.channel)) {
+      await this.fail(delivery, 'UNSUPPORTED_CHANNEL', '当前投递渠道暂未实现', false)
+      return
+    }
+    const channel = delivery.channel
     if (!delivery.externalSubject) {
       await this.fail(
         delivery,
         'EXTERNAL_USER_NOT_MAPPED',
-        '接收人没有有效的企业微信成员映射',
+        `接收人没有有效的${this.channelName(channel)}成员映射`,
         false,
       )
       return
     }
     try {
-      const runtime = await this.integrations.getWeComRuntimeContext(delivery.tenantId)
-      if (delivery.integrationId && delivery.integrationId !== runtime.integration.id) {
-        await this.fail(delivery, 'INTEGRATION_CHANGED', '企业微信配置已变化，请手工重试', false)
-        return
-      }
-      const result = await this.weComClient.sendTextMessage({
-        ...runtime.credentials,
-        toUser: delivery.externalSubject,
-        content: this.buildContent(delivery),
-      })
+      const result = await this.sendByChannel(channel, delivery)
       if (result.success) {
         await this.prisma.messageDelivery.update({
           where: { id },
@@ -254,13 +295,60 @@ export class MessageDeliveryService {
       }
       await this.fail(
         delivery,
-        result.providerCode === null ? 'WECOM_UNAVAILABLE' : `WECOM_${result.providerCode}`,
+        result.providerCode === null
+          ? `${channel}_UNAVAILABLE`
+          : `${channel}_${result.providerCode}`,
         result.message,
-        result.transient,
+        Boolean(result.transient),
       )
     } catch (error) {
       await this.fail(delivery, 'CHANNEL_UNAVAILABLE', this.errorMessage(error), true)
     }
+  }
+
+  private async sendByChannel(channel: SupportedDeliveryChannel, delivery: MessageDelivery) {
+    if (channel === 'DINGTALK') {
+      if (!this.dingTalkClient) {
+        return {
+          success: false,
+          transient: false,
+          providerCode: null,
+          providerMessageId: null,
+          message: '钉钉 Provider 未加载',
+        }
+      }
+      const runtime = await this.integrations.getDingTalkRuntimeContext(delivery.tenantId)
+      if (delivery.integrationId && delivery.integrationId !== runtime.integration.id) {
+        return {
+          success: false,
+          transient: false,
+          providerCode: null,
+          providerMessageId: null,
+          message: '钉钉配置已变化，请手工重试',
+        }
+      }
+      return this.dingTalkClient.sendTextMessage({
+        ...runtime.credentials,
+        toUser: delivery.externalSubject!,
+        content: this.buildContent(delivery),
+      })
+    }
+
+    const runtime = await this.integrations.getWeComRuntimeContext(delivery.tenantId)
+    if (delivery.integrationId && delivery.integrationId !== runtime.integration.id) {
+      return {
+        success: false,
+        transient: false,
+        providerCode: null,
+        providerMessageId: null,
+        message: '企业微信配置已变化，请手工重试',
+      }
+    }
+    return this.weComClient.sendTextMessage({
+      ...runtime.credentials,
+      toUser: delivery.externalSubject!,
+      content: this.buildContent(delivery),
+    })
   }
 
   private async fail(
@@ -290,9 +378,12 @@ export class MessageDeliveryService {
   }
 
   private toVO(delivery: MessageDelivery, userName: string | null): MessageDeliveryVO {
+    if (!this.isSupportedChannel(delivery.channel)) {
+      throw new Error(`不支持的消息投递渠道：${delivery.channel}`)
+    }
     return {
       id: delivery.id,
-      channel: 'WECOM',
+      channel: delivery.channel,
       event: delivery.event,
       eventName:
         MESSAGE_TASK_DEFINITIONS.find((definition) => definition.event === delivery.event)
@@ -314,6 +405,14 @@ export class MessageDeliveryService {
       createdAt: delivery.createdAt.toISOString(),
       updatedAt: delivery.updatedAt.toISOString(),
     }
+  }
+
+  private isSupportedChannel(channel: MessageDeliveryChannel): channel is SupportedDeliveryChannel {
+    return channel === 'WECOM' || channel === 'DINGTALK'
+  }
+
+  private channelName(channel: SupportedDeliveryChannel): string {
+    return channel === 'DINGTALK' ? '钉钉' : '企业微信'
   }
 
   private errorMessage(error: unknown): string {

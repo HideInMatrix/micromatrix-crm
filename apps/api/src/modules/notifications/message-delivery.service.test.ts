@@ -2,18 +2,26 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { MessageDelivery } from '../../generated/prisma/client'
 import type { PrismaService } from '../../prisma/prisma.service'
+import type {
+  DingTalkClient,
+  DingTalkMessageResult,
+} from '../enterprise-integrations/dingtalk.client'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { WeComClient, WeComMessageResult } from '../enterprise-integrations/wecom.client'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { MessageDeliveryService } from './message-delivery.service'
 
-function delivery(id: string, externalSubject: string | null): MessageDelivery {
+function delivery(
+  id: string,
+  externalSubject: string | null,
+  channel: 'WECOM' | 'DINGTALK' = 'WECOM',
+): MessageDelivery {
   const now = new Date()
   return {
     id,
     tenantId: 'tenant-a',
     integrationId: 'integration-a',
-    channel: 'WECOM',
+    channel,
     event: 'CUSTOMER_ADD',
     userId: 'user-a',
     externalSubject,
@@ -93,6 +101,7 @@ test('企微 outbox 对缺失成员映射保留 DEAD 审计', async () => {
   } as unknown as PrismaService
   const settings = {
     isWeComEnabled: async () => true,
+    isDingTalkEnabled: async () => false,
     getWeComChannelGate: async () => ({ available: true }),
   } as unknown as MessageSettingsService
   const service = new MessageDeliveryService(
@@ -146,5 +155,142 @@ test('企微 outbox 条件认领并记录成功或退避结果', async (t) => {
     assert.equal(row?.attempts, 1)
     assert.ok(row?.nextAttemptAt instanceof Date)
     assert.equal(row?.errorCode, 'WECOM_45009')
+  })
+})
+
+test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', async (t) => {
+  await t.test('只开启钉钉时生成 DINGTALK 投递记录', async () => {
+    const rows: MessageDelivery[] = []
+    const prisma = {
+      enterpriseIntegration: {
+        findUnique: async ({ where }: { where: { tenantId_provider: { provider: string } } }) =>
+          where.tenantId_provider.provider === 'DINGTALK' ? { id: 'ding-integration' } : null,
+      },
+      externalUserMapping: {
+        findMany: async () => [{ userId: 'user-a', externalId: 'ding-user-a' }],
+      },
+      messageDelivery: {
+        updateMany: async () => ({ count: 0 }),
+        create: async ({ data }: { data: Partial<MessageDelivery> }) => {
+          const row = {
+            ...delivery(`ding-${rows.length + 1}`, 'ding-user-a', 'DINGTALK'),
+            ...data,
+          }
+          rows.push(row)
+          return row
+        },
+      },
+      $transaction: async (operations: Array<Promise<MessageDelivery>>) => Promise.all(operations),
+    } as unknown as PrismaService
+    const settings = {
+      isWeComEnabled: async () => false,
+      isDingTalkEnabled: async () => true,
+      getDingTalkChannelGate: async () => ({ available: true }),
+    } as unknown as MessageSettingsService
+    const service = new MessageDeliveryService(
+      prisma,
+      settings,
+      {} as EnterpriseIntegrationsService,
+      {} as WeComClient,
+    )
+    const count = await service.enqueue({
+      tenantId: 'tenant-a',
+      event: 'CUSTOMER_ADD',
+      recipientIds: ['user-a'],
+      title: '新客户已分配',
+    })
+    assert.equal(count, 1)
+    assert.equal(rows[0]?.channel, 'DINGTALK')
+    assert.equal(rows[0]?.externalSubject, 'ding-user-a')
+  })
+
+  function createDingTalkWorker(result: DingTalkMessageResult) {
+    const rows = new Map<string, MessageDelivery>()
+    const messageDelivery = {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id?: string }
+        data: Record<string, unknown>
+      }) => {
+        const row = where.id ? rows.get(where.id) : undefined
+        if (!row || !['PENDING', 'FAILED'].includes(row.status)) return { count: 0 }
+        Object.assign(row, data, {
+          attempts:
+            typeof data['attempts'] === 'object' && data['attempts']
+              ? row.attempts + 1
+              : row.attempts,
+          updatedAt: new Date(),
+        })
+        return { count: 1 }
+      },
+      findUnique: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string }
+        data: Partial<MessageDelivery>
+      }) => {
+        const row = rows.get(where.id)
+        assert.ok(row)
+        Object.assign(row, data, { updatedAt: new Date() })
+        return row
+      },
+    }
+    const prisma = { messageDelivery } as unknown as PrismaService
+    const integrations = {
+      getDingTalkRuntimeContext: async () => ({
+        integration: { id: 'integration-a' },
+        credentials: {
+          corpId: 'ding-corp',
+          clientId: 'app-key',
+          agentId: '10001',
+          appSecret: 'secret',
+        },
+      }),
+    } as unknown as EnterpriseIntegrationsService
+    const client = { sendTextMessage: async () => result } as unknown as DingTalkClient
+    return {
+      rows,
+      service: new MessageDeliveryService(
+        prisma,
+        {} as MessageSettingsService,
+        integrations,
+        {} as WeComClient,
+        undefined,
+        client,
+      ),
+    }
+  }
+
+  await t.test('发送成功记录 task_id', async () => {
+    const { rows, service } = createDingTalkWorker({
+      success: true,
+      transient: false,
+      providerCode: 0,
+      providerMessageId: '9988',
+      message: 'ok',
+    })
+    rows.set('success', delivery('success', 'ding-user', 'DINGTALK'))
+    await service.processIds(['success'])
+    assert.equal(rows.get('success')?.status, 'SUCCEEDED')
+    assert.equal(rows.get('success')?.providerMessageId, '9988')
+  })
+
+  await t.test('临时错误进入 FAILED 并使用 DINGTALK 错误码', async () => {
+    const { rows, service } = createDingTalkWorker({
+      success: false,
+      transient: true,
+      providerCode: 88,
+      providerMessageId: null,
+      message: 'system busy',
+    })
+    rows.set('retry', delivery('retry', 'ding-user', 'DINGTALK'))
+    await service.processIds(['retry'])
+    assert.equal(rows.get('retry')?.status, 'FAILED')
+    assert.equal(rows.get('retry')?.errorCode, 'DINGTALK_88')
+    assert.ok(rows.get('retry')?.nextAttemptAt instanceof Date)
   })
 })

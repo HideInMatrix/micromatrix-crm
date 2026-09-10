@@ -15,6 +15,9 @@ export default tseslint.config(
       // scripts/ 与 apps/api/scripts/ 仅用于本地临时开发/验收，不纳入 Git，也不参与正式 lint。
       'scripts/**',
       'apps/api/scripts/**',
+      // Workbench / Browser 验收会生成本地 runtime、截图和浏览器二进制，不属于源码。
+      '.micromatrix-workbench/**',
+      '.tmp/**',
       // CordysCRM/ 是只读上游参考源码，不属于 MicroMatrix 的 lint 范围。
       'CordysCRM/**',
     ],

@@ -56,6 +56,45 @@ apps/api/prisma/migrations/
 
 7. 对 Prisma 无法表达的原生结构执行数据库级查询确认，不能只依赖第 6 步，因为 Prisma diff 不会把所有原生结构纳入比较。
 
+### 2.1 本地开发数据库如何跟随被重写的 baseline
+
+pre-release single baseline 有一个容易误判的点：如果本地数据库已经执行过 `20260905084900_baseline`，之后仓库继续修改同一个 `migration.sql`，`prisma migrate status` 仍可能显示 `Database schema is up to date!`。这只代表 migration 记录已经存在，**不代表当前数据库结构一定和 `schema.prisma` 一致**。
+
+因此每次 baseline 被重写后，正在使用的本地开发库必须先执行结构 drift 检查：
+
+```bash
+cd apps/api
+pnpm exec prisma migrate diff \
+  --from-config-datasource \
+  --to-schema=prisma/schema.prisma \
+  --script
+```
+
+- 如果 diff 只有新增表、列、索引、枚举值等明确的非破坏性变化，可以执行：
+
+  ```bash
+  pnpm exec prisma db push
+  ```
+
+  如果 Prisma 仅因为新增唯一约束给出理论 data-loss warning，必须先审计实际数据是否会冲突；确认安全后才允许显式使用 `--accept-data-loss`。
+
+- 如果 diff 包含删除列、缩窄类型、重建表等破坏性变化，当前项目没有需要保留的 pre-release 旧数据，应直接重建开发库：
+
+  ```bash
+  pnpm exec prisma migrate reset --force
+  pnpm run db:seed
+  ```
+
+完成后必须再次执行：
+
+```bash
+pnpm exec prisma migrate diff \
+  --from-config-datasource \
+  --to-schema=prisma/schema.prisma
+```
+
+预期结果必须为 `No difference detected.`。不要仅凭 `prisma migrate status` 判断本地数据库已经跟上当前 baseline。
+
 ## 3. 当前必须保留的 PostgreSQL 原生结构
 
 当前 Schema 外还存在六条业务约束所需的 partial unique index，新 baseline 每次重建时都必须保留：

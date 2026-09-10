@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
+import { isDingTalkWorkbenchBrowser } from '@/utils/dingtalk'
 import { isWeComWorkbenchBrowser } from '@/utils/wecom'
 
 declare module 'vue-router' {
@@ -45,6 +46,18 @@ const router = createRouter({
       name: 'wecom-workbench-login',
       component: () => import('@/views/auth/WeComWorkbenchLoginView.vue'),
       meta: { public: true, title: '企业微信工作台登录' },
+    },
+    {
+      path: '/login/dingtalk/callback',
+      name: 'dingtalk-login-callback',
+      component: () => import('@/views/auth/DingTalkCallbackView.vue'),
+      meta: { public: true, title: '钉钉登录' },
+    },
+    {
+      path: '/login/dingtalk/workbench',
+      name: 'dingtalk-workbench-login',
+      component: () => import('@/views/auth/DingTalkWorkbenchLoginView.vue'),
+      meta: { public: true, title: '钉钉工作台登录' },
     },
     {
       path: '/',
@@ -424,6 +437,20 @@ router.beforeEach(async (to) => {
       .catch(() => undefined)
   } else if (!auth.isAuthenticated && requestedTenant) {
     await enterpriseUi.load(requestedTenant).catch(() => undefined)
+  }
+  if (
+    to.name === 'login' &&
+    !auth.isAuthenticated &&
+    isDingTalkWorkbenchBrowser() &&
+    to.query.manual !== '1'
+  ) {
+    return {
+      name: 'dingtalk-workbench-login',
+      query: {
+        ...(typeof to.query.redirect === 'string' ? { redirect: to.query.redirect } : {}),
+        ...(typeof to.query.tenant === 'string' ? { tenant: to.query.tenant } : {}),
+      },
+    }
   }
   if (
     to.name === 'login' &&

@@ -14,6 +14,7 @@ import type {
   PaginatedResult,
 } from '@micromatrix/shared'
 import {
+  type EnterpriseIntegration,
   type OrganizationSyncBatch,
   type OrganizationSyncItem,
   Prisma,
@@ -21,7 +22,15 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
-import { WeComClient, WeComSnapshotError } from '../enterprise-integrations/wecom.client'
+import {
+  DingTalkClient,
+  type DingTalkConnectionInput,
+} from '../enterprise-integrations/dingtalk.client'
+import {
+  OrganizationSnapshotError,
+  type OrganizationSnapshot,
+} from '../enterprise-integrations/organization-snapshot'
+import { WeComClient, type WeComConnectionInput } from '../enterprise-integrations/wecom.client'
 import type {
   CreateOrganizationSyncPreviewDto,
   QueryOrganizationSyncBatchesDto,
@@ -31,7 +40,20 @@ import type {
 import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
 import { OrganizationSyncPlanner, type OrganizationSyncPlanItem } from './organization-sync.planner'
 
-const PROVIDER = 'WECOM' as const
+export type OrganizationSyncProvider = 'WECOM' | 'DINGTALK'
+
+type ProviderSyncContext =
+  | {
+      provider: 'WECOM'
+      integration: EnterpriseIntegration
+      credentials: WeComConnectionInput
+    }
+  | {
+      provider: 'DINGTALK'
+      integration: EnterpriseIntegration
+      credentials: DingTalkConnectionInput
+    }
+
 const EMPTY_COUNTS: OrganizationSyncCounts = {
   create: 0,
   update: 0,
@@ -50,37 +72,48 @@ export class OrganizationSyncService {
     private readonly weComClient: WeComClient,
     private readonly planner: OrganizationSyncPlanner,
     @Optional() private readonly coordination?: OrganizationSyncCoordinationService,
+    @Optional() private readonly dingTalkClient?: DingTalkClient,
   ) {}
 
-  async gate(tenantId: string): Promise<OrganizationSyncGateVO> {
-    const runtime = await this.coordination?.runtimeStatus(tenantId)
-    const integration = await this.integrations.getWeCom(tenantId)
+  async gate(
+    tenantId: string,
+    provider: OrganizationSyncProvider = 'WECOM',
+  ): Promise<OrganizationSyncGateVO> {
+    const runtime = await this.coordination?.runtimeStatus(tenantId, provider)
+    const integration =
+      provider === 'DINGTALK'
+        ? await this.integrations.getDingTalk(tenantId)
+        : await this.integrations.getWeCom(tenantId)
+    const providerName = this.providerName(provider)
     let active: OrganizationSyncBatch | null = null
     let latest: OrganizationSyncBatch | null = null
 
     if (runtime?.batchId) {
       const runtimeBatch = await this.prisma.organizationSyncBatch.findFirst({
-        where: { id: runtime.batchId, tenantId, provider: PROVIDER },
+        where: { id: runtime.batchId, tenantId, provider },
       })
-      if (runtimeBatch && (runtimeBatch.status === 'FETCHING' || runtimeBatch.status === 'APPLYING')) {
+      if (
+        runtimeBatch &&
+        (runtimeBatch.status === 'FETCHING' || runtimeBatch.status === 'APPLYING')
+      ) {
         active = runtimeBatch
         latest = runtimeBatch
       }
     }
     if (!latest && runtime) {
       latest = await this.prisma.organizationSyncBatch.findFirst({
-        where: { tenantId, provider: PROVIDER },
+        where: { tenantId, provider },
         orderBy: { createdAt: 'desc' },
       })
     }
     if (!runtime) {
       ;[active, latest] = await Promise.all([
         this.prisma.organizationSyncBatch.findFirst({
-          where: { tenantId, provider: PROVIDER, status: { in: ['FETCHING', 'APPLYING'] } },
+          where: { tenantId, provider, status: { in: ['FETCHING', 'APPLYING'] } },
           orderBy: { createdAt: 'desc' },
         }),
         this.prisma.organizationSyncBatch.findFirst({
-          where: { tenantId, provider: PROVIDER },
+          where: { tenantId, provider },
           orderBy: { createdAt: 'desc' },
         }),
       ])
@@ -88,15 +121,15 @@ export class OrganizationSyncService {
 
     const runningPhase = runtime?.phase ?? active?.status
     const disabledReason = !integration.configured
-      ? '请先配置企业微信'
+      ? `请先配置${providerName}`
       : integration.lastTestSucceeded !== true
-        ? '请先完成企业微信连接测试'
+        ? `请先完成${providerName}连接测试`
         : !integration.syncEnabled
           ? '请先在企业设置中开启同步组织架构'
           : !integration.syncDefaultRoleId
             ? '请选择新成员默认角色'
             : runningPhase === 'FETCHING'
-              ? '正在获取企业微信组织数据'
+              ? `正在获取${providerName}组织数据`
               : runningPhase === 'APPLYING'
                 ? '正在应用组织同步'
                 : null
@@ -114,14 +147,16 @@ export class OrganizationSyncService {
   async createPreview(
     user: AuthUser,
     dto: CreateOrganizationSyncPreviewDto,
+    provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<OrganizationSyncBatchVO> {
-    if (!this.coordination) return this.createPreviewCore(user, dto)
+    if (!this.coordination) return this.createPreviewCore(user, dto, undefined, provider)
     const result = await this.coordination.run(
       user.tenantId,
       user.id,
       'FETCHING',
       null,
-      (runtime) => this.createPreviewCore(user, dto, runtime),
+      (runtime) => this.createPreviewCore(user, dto, runtime, provider),
+      provider,
     )
     if (!result.executed) throw new ConflictException('当前正在执行组织同步任务')
     return result.value
@@ -131,8 +166,10 @@ export class OrganizationSyncService {
     user: AuthUser,
     dto: CreateOrganizationSyncPreviewDto,
     runtime?: { setBatchId(batchId: string): Promise<void> },
+    provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<OrganizationSyncBatchVO> {
-    const { integration, credentials } = await this.integrations.getWeComSyncContext(user.tenantId)
+    const context = await this.getProviderSyncContext(user.tenantId, provider)
+    const { integration } = context
     await this.assertDefaultRole(user.tenantId, integration.syncDefaultRoleId)
     const targetDepartment = await this.prisma.department.findFirst({
       where: { id: dto.targetDepartmentId, tenantId: user.tenantId },
@@ -143,7 +180,7 @@ export class OrganizationSyncService {
     await this.prisma.organizationSyncBatch.updateMany({
       where: {
         tenantId: user.tenantId,
-        provider: PROVIDER,
+        provider,
         status: 'FETCHING',
         updatedAt: { lt: staleBefore },
       },
@@ -155,7 +192,7 @@ export class OrganizationSyncService {
       },
     })
     await this.prisma.organizationSyncBatch.updateMany({
-      where: { tenantId: user.tenantId, provider: PROVIDER, status: 'PREVIEW_READY' },
+      where: { tenantId: user.tenantId, provider, status: 'PREVIEW_READY' },
       data: {
         status: 'INVALIDATED',
         errorCode: 'NEW_PREVIEW_CREATED',
@@ -170,7 +207,7 @@ export class OrganizationSyncService {
         data: {
           tenantId: user.tenantId,
           integrationId: integration.id,
-          provider: PROVIDER,
+          provider,
           status: 'FETCHING',
           targetDepartmentId: targetDepartment.id,
           credentialVersion: integration.credentialVersion,
@@ -188,15 +225,15 @@ export class OrganizationSyncService {
     await runtime?.setBatchId(batch.id)
 
     try {
-      const snapshot = await this.weComClient.getOrganizationSnapshot(credentials)
+      const snapshot = await this.getProviderSnapshot(context)
       const [departments, users, departmentMappings, userMappings] = await Promise.all([
         this.prisma.department.findMany({ where: { tenantId: user.tenantId } }),
         this.prisma.user.findMany({ where: { tenantId: user.tenantId } }),
         this.prisma.externalDepartmentMapping.findMany({
-          where: { tenantId: user.tenantId, provider: PROVIDER },
+          where: { tenantId: user.tenantId, provider },
         }),
         this.prisma.externalUserMapping.findMany({
-          where: { tenantId: user.tenantId, provider: PROVIDER },
+          where: { tenantId: user.tenantId, provider },
         }),
       ])
       const snapshotRoot = snapshot.departments.find((department) => department.isRoot)!
@@ -205,6 +242,7 @@ export class OrganizationSyncService {
         snapshotRoot.externalKey,
         departments,
         departmentMappings,
+        provider,
       )
       const plan = this.planner.plan({
         tenantId: user.tenantId,
@@ -230,7 +268,7 @@ export class OrganizationSyncService {
           data: {
             status: 'INVALIDATED',
             errorCode: 'CREDENTIALS_CHANGED',
-            errorMessage: '企业微信配置已变化，请重新生成同步预览',
+            errorMessage: `${this.providerName(provider)}配置已变化，请重新生成同步预览`,
             finishedAt: new Date(),
           },
         })
@@ -256,9 +294,9 @@ export class OrganizationSyncService {
       })
       return this.toBatchVO(batch)
     } catch (error) {
-      const code = error instanceof WeComSnapshotError ? error.code : 'PREVIEW_FAILED'
+      const code = error instanceof OrganizationSnapshotError ? error.code : 'PREVIEW_FAILED'
       const message =
-        error instanceof WeComSnapshotError
+        error instanceof OrganizationSnapshotError
           ? error.message.slice(0, 500)
           : '生成组织同步预览失败，请稍后重试'
       await this.prisma.organizationSyncBatch.updateMany({
@@ -272,12 +310,13 @@ export class OrganizationSyncService {
   async batches(
     tenantId: string,
     query: QueryOrganizationSyncBatchesDto,
+    provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<PaginatedResult<OrganizationSyncBatchVO>> {
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 10
     const where = {
       tenantId,
-      provider: PROVIDER,
+      provider,
       ...(query.status ? { status: query.status } : {}),
     }
     const [items, total] = await this.prisma.$transaction([
@@ -292,16 +331,21 @@ export class OrganizationSyncService {
     return { items: items.map((item) => this.toBatchVO(item)), total, page, pageSize }
   }
 
-  async batch(tenantId: string, id: string): Promise<OrganizationSyncBatchVO> {
-    return this.toBatchVO(await this.ensureBatch(tenantId, id))
+  async batch(
+    tenantId: string,
+    id: string,
+    provider: OrganizationSyncProvider = 'WECOM',
+  ): Promise<OrganizationSyncBatchVO> {
+    return this.toBatchVO(await this.ensureBatch(tenantId, id, provider))
   }
 
   async items(
     tenantId: string,
     batchId: string,
     query: QueryOrganizationSyncItemsDto,
+    provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<PaginatedResult<OrganizationSyncItemVO>> {
-    await this.ensureBatch(tenantId, batchId)
+    await this.ensureBatch(tenantId, batchId, provider)
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 10
     const keyword = query.keyword?.trim()
@@ -336,8 +380,9 @@ export class OrganizationSyncService {
     user: AuthUser,
     batchId: string,
     dto: ResolveOrganizationSyncDto,
+    provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<OrganizationSyncBatchVO> {
-    const batch = await this.ensureBatch(user.tenantId, batchId)
+    const batch = await this.ensureBatch(user.tenantId, batchId, provider)
     if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能处理冲突')
     const ids = [...new Set(dto.items.map(({ itemId }) => itemId))]
     if (ids.length !== dto.items.length) throw new BadRequestException('冲突项不能重复提交')
@@ -353,7 +398,7 @@ export class OrganizationSyncService {
         const row = rowMap.get(input.itemId)!
         if (input.resolution === 'BIND') {
           if (!input.localId) throw new BadRequestException('绑定现有资源时必须选择目标')
-          await this.assertBindingAvailable(tx, user.tenantId, row, input.localId)
+          await this.assertBindingAvailable(tx, user.tenantId, row, input.localId, provider)
         }
         await tx.organizationSyncItem.update({
           where: { id: row.id },
@@ -417,7 +462,7 @@ export class OrganizationSyncService {
         },
       })
     })
-    return this.batch(user.tenantId, batchId)
+    return this.batch(user.tenantId, batchId, provider)
   }
 
   private async assertBindingAvailable(
@@ -425,6 +470,7 @@ export class OrganizationSyncService {
     tenantId: string,
     item: OrganizationSyncItem,
     localId: string,
+    provider: OrganizationSyncProvider,
   ): Promise<void> {
     if (item.resourceType === 'DEPARTMENT') {
       const [local, occupied] = await Promise.all([
@@ -432,7 +478,7 @@ export class OrganizationSyncService {
         tx.externalDepartmentMapping.findFirst({
           where: {
             tenantId,
-            provider: PROVIDER,
+            provider,
             departmentId: localId,
             externalKey: { not: item.externalKey },
           },
@@ -440,7 +486,8 @@ export class OrganizationSyncService {
         }),
       ])
       if (!local) throw new BadRequestException('绑定部门不存在或不属于当前企业')
-      if (occupied) throw new ConflictException('该部门已绑定其他企业微信部门')
+      if (occupied)
+        throw new ConflictException(`该部门已绑定其他${this.providerName(provider)}部门`)
       return
     }
     const [local, occupied] = await Promise.all([
@@ -448,7 +495,7 @@ export class OrganizationSyncService {
       tx.externalUserMapping.findFirst({
         where: {
           tenantId,
-          provider: PROVIDER,
+          provider,
           userId: localId,
           externalKey: { not: item.externalKey },
         },
@@ -456,7 +503,7 @@ export class OrganizationSyncService {
       }),
     ])
     if (!local) throw new BadRequestException('绑定成员不存在或不属于当前企业')
-    if (occupied) throw new ConflictException('该成员已绑定其他企业微信成员')
+    if (occupied) throw new ConflictException(`该成员已绑定其他${this.providerName(provider)}成员`)
   }
 
   private async assertDefaultRole(tenantId: string, roleId: string | null): Promise<void> {
@@ -473,30 +520,61 @@ export class OrganizationSyncService {
     rootExternalKey: string,
     departments: Array<{ id: string; parentId: string | null }>,
     mappings: Array<{ externalKey: string; departmentId: string }>,
+    provider: OrganizationSyncProvider,
   ): void {
     const mappedRootId = mappings.find(
       (mapping) => mapping.externalKey === rootExternalKey,
     )?.departmentId
     if (!mappedRootId) return
-    const parentById = new Map(departments.map((department) => [department.id, department.parentId]))
+    const parentById = new Map(
+      departments.map((department) => [department.id, department.parentId]),
+    )
     let cursor: string | null | undefined = targetDepartmentId
     while (cursor) {
       if (cursor === mappedRootId) {
-        throw new WeComSnapshotError(
+        throw new OrganizationSnapshotError(
           'INVALID_TARGET_DEPARTMENT',
-          '同步目标不能选择已同步企微根部门或其下级部门',
+          `同步目标不能选择已同步${this.providerName(provider)}根部门或其下级部门`,
         )
       }
       cursor = parentById.get(cursor)
     }
   }
 
-  private async ensureBatch(tenantId: string, id: string): Promise<OrganizationSyncBatch> {
+  private async ensureBatch(
+    tenantId: string,
+    id: string,
+    provider: OrganizationSyncProvider,
+  ): Promise<OrganizationSyncBatch> {
     const row = await this.prisma.organizationSyncBatch.findFirst({
-      where: { id, tenantId, provider: PROVIDER },
+      where: { id, tenantId, provider },
     })
     if (!row) throw new NotFoundException('同步批次不存在')
     return row
+  }
+
+  private async getProviderSyncContext(
+    tenantId: string,
+    provider: OrganizationSyncProvider,
+  ): Promise<ProviderSyncContext> {
+    if (provider === 'DINGTALK') {
+      const context = await this.integrations.getDingTalkSyncContext(tenantId)
+      return { provider, integration: context.integration, credentials: context.credentials }
+    }
+    const context = await this.integrations.getWeComSyncContext(tenantId)
+    return { provider, integration: context.integration, credentials: context.credentials }
+  }
+
+  private async getProviderSnapshot(context: ProviderSyncContext): Promise<OrganizationSnapshot> {
+    if (context.provider === 'DINGTALK') {
+      if (!this.dingTalkClient) throw new BadRequestException('钉钉 Provider 未加载')
+      return this.dingTalkClient.getOrganizationSnapshot(context.credentials)
+    }
+    return this.weComClient.getOrganizationSnapshot(context.credentials)
+  }
+
+  private providerName(provider: OrganizationSyncProvider): string {
+    return provider === 'DINGTALK' ? '钉钉' : '企业微信'
   }
 
   private toItemCreate(

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common'
-import { DistributedCoordinatorService, type CoordinationRunResult } from '../../common/services/distributed-coordinator.service'
+import {
+  DistributedCoordinatorService,
+  type CoordinationRunResult,
+} from '../../common/services/distributed-coordinator.service'
+import type { EnterpriseIntegrationProvider } from '../../generated/prisma/client'
 import { RedisService } from '../../redis/redis.service'
 
 export type OrganizationSyncRuntimePhase = 'FETCHING' | 'APPLYING'
@@ -32,16 +36,22 @@ export class OrganizationSyncCoordinationService {
     phase: OrganizationSyncRuntimePhase,
     batchId: string | null,
     task: (context: OrganizationSyncRuntimeContext) => Promise<T>,
+    provider: EnterpriseIntegrationProvider = 'WECOM',
   ): Promise<CoordinationRunResult<T>> {
     const startedAt = new Date().toISOString()
     return this.coordinator.runExclusive(
-      this.logicalKey(tenantId),
+      this.logicalKey(tenantId, provider),
       async ({ token }) => {
         const writeStatus = async (nextBatchId: string | null) => {
           if (!token) return
           await this.redis.setJson(
-            this.statusKey(tenantId, token),
-            { phase, operatorId, batchId: nextBatchId, startedAt } satisfies OrganizationSyncRuntimeStatus,
+            this.statusKey(tenantId, provider, token),
+            {
+              phase,
+              operatorId,
+              batchId: nextBatchId,
+              startedAt,
+            } satisfies OrganizationSyncRuntimeStatus,
             STATUS_TTL_SECONDS,
           )
         }
@@ -52,19 +62,26 @@ export class OrganizationSyncCoordinationService {
     )
   }
 
-  async runtimeStatus(tenantId: string): Promise<OrganizationSyncRuntimeStatus | null> {
-    const token = await this.coordinator.currentLeaseToken(this.logicalKey(tenantId))
+  async runtimeStatus(
+    tenantId: string,
+    provider: EnterpriseIntegrationProvider = 'WECOM',
+  ): Promise<OrganizationSyncRuntimeStatus | null> {
+    const token = await this.coordinator.currentLeaseToken(this.logicalKey(tenantId, provider))
     if (!token) return null
-    const status = await this.redis.getJson<unknown>(this.statusKey(tenantId, token))
+    const status = await this.redis.getJson<unknown>(this.statusKey(tenantId, provider, token))
     return this.parseStatus(status)
   }
 
-  private logicalKey(tenantId: string): string {
-    return `organization-sync:WECOM:${tenantId}`
+  private logicalKey(tenantId: string, provider: EnterpriseIntegrationProvider): string {
+    return `organization-sync:${provider}:${tenantId}`
   }
 
-  private statusKey(tenantId: string, token: string): string {
-    return `coord:organization-sync:status:${tenantId}:${token}`
+  private statusKey(
+    tenantId: string,
+    provider: EnterpriseIntegrationProvider,
+    token: string,
+  ): string {
+    return `coord:organization-sync:status:${provider}:${tenantId}:${token}`
   }
 
   private parseStatus(value: unknown): OrganizationSyncRuntimeStatus | null {

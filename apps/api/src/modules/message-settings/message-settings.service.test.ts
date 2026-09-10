@@ -38,6 +38,7 @@ function createService() {
         systemEnabled: create.systemEnabled ?? true,
         emailEnabled: create.emailEnabled ?? false,
         weComEnabled: create.weComEnabled ?? false,
+        dingTalkEnabled: create.dingTalkEnabled ?? false,
         config: create.config ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),

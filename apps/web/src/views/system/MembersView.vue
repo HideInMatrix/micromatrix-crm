@@ -10,6 +10,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import {
   deptApi,
+  dingTalkOrganizationSyncApi,
   externalIdentityApi,
   memberApi,
   organizationSyncApi,
@@ -34,7 +35,9 @@ const roles = ref<RoleOption[]>([])
 const memberOptions = ref<MemberOption[]>([])
 const syncDrawerVisible = ref(false)
 const syncGateLoading = ref(false)
-const syncGate = ref<OrganizationSyncGateVO | null>(null)
+const syncProvider = ref<'WECOM' | 'DINGTALK'>('WECOM')
+const weComSyncGate = ref<OrganizationSyncGateVO | null>(null)
+const dingTalkSyncGate = ref<OrganizationSyncGateVO | null>(null)
 const canSync = computed(() => auth.hasPerm('system:dept:sync'))
 const selectedDepartment = ref<DepartmentVO | null>(null)
 const syncTargetDepartment = computed(() => selectedDepartment.value ?? deptTree.value[0] ?? null)
@@ -44,6 +47,7 @@ const identityLoading = ref(false)
 const identitySaving = ref(false)
 const identityMember = ref<MemberVO | null>(null)
 const externalIdentity = ref<ExternalIdentityVO | null>(null)
+const identityProvider = ref<'WECOM' | 'DINGTALK'>('WECOM')
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -131,13 +135,22 @@ async function loadSyncGate() {
   if (!canSync.value) return
   syncGateLoading.value = true
   try {
-    const { data } = await organizationSyncApi.status()
-    syncGate.value = data
+    const [weComResponse, dingTalkResponse] = await Promise.all([
+      organizationSyncApi.status(),
+      dingTalkOrganizationSyncApi.status(),
+    ])
+    weComSyncGate.value = weComResponse.data
+    dingTalkSyncGate.value = dingTalkResponse.data
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
     syncGateLoading.value = false
   }
+}
+
+function openSync(provider: 'WECOM' | 'DINGTALK') {
+  syncProvider.value = provider
+  syncDrawerVisible.value = true
 }
 
 async function handleSyncCompleted() {
@@ -330,27 +343,48 @@ async function handleDelete(row: MemberVO) {
 
 async function openIdentity(row: MemberVO) {
   identityMember.value = row
+  identityProvider.value = 'WECOM'
   externalIdentity.value = null
   identityDialogVisible.value = true
+  await loadIdentity()
+}
+
+async function loadIdentity() {
+  if (!identityMember.value) return
   identityLoading.value = true
   try {
-    const { data } = await externalIdentityApi.getWeCom(row.id)
+    const { data } =
+      identityProvider.value === 'DINGTALK'
+        ? await externalIdentityApi.getDingTalk(identityMember.value.id)
+        : await externalIdentityApi.getWeCom(identityMember.value.id)
     externalIdentity.value = data
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
-    identityDialogVisible.value = false
   } finally {
     identityLoading.value = false
   }
+}
+
+async function changeIdentityProvider(provider: 'WECOM' | 'DINGTALK') {
+  identityProvider.value = provider
+  externalIdentity.value = null
+  await loadIdentity()
 }
 
 async function bindIdentity() {
   if (!identityMember.value) return
   identitySaving.value = true
   try {
-    const { data } = await externalIdentityApi.bindWeCom(identityMember.value.id)
+    const { data } =
+      identityProvider.value === 'DINGTALK'
+        ? await externalIdentityApi.bindDingTalk(identityMember.value.id)
+        : await externalIdentityApi.bindWeCom(identityMember.value.id)
     externalIdentity.value = data
-    ElMessage.success(data.status === 'ACTIVE' ? '企业微信登录身份已绑定' : '操作已完成')
+    ElMessage.success(
+      data.status === 'ACTIVE'
+        ? `${identityProvider.value === 'DINGTALK' ? '钉钉' : '企业微信'}登录身份已绑定`
+        : '操作已完成',
+    )
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -360,17 +394,21 @@ async function bindIdentity() {
 
 async function unbindIdentity() {
   if (!identityMember.value) return
+  const providerName = identityProvider.value === 'DINGTALK' ? '钉钉' : '企业微信'
   const confirmed = await ElMessageBox.confirm(
-    `解绑后，「${identityMember.value.name}」将不能再使用企业微信扫码登录。确定继续？`,
-    '解绑企业微信身份',
+    `解绑后，「${identityMember.value.name}」将不能再使用${providerName}登录。确定继续？`,
+    `解绑${providerName}身份`,
     { type: 'warning' },
   ).catch(() => false)
   if (!confirmed) return
   identitySaving.value = true
   try {
-    const { data } = await externalIdentityApi.unbindWeCom(identityMember.value.id)
+    const { data } =
+      identityProvider.value === 'DINGTALK'
+        ? await externalIdentityApi.unbindDingTalk(identityMember.value.id)
+        : await externalIdentityApi.unbindWeCom(identityMember.value.id)
     externalIdentity.value = data
-    ElMessage.success('企业微信登录身份已解绑')
+    ElMessage.success(`${providerName}登录身份已解绑`)
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -471,17 +509,33 @@ onMounted(() => {
         <div class="flex gap-2">
           <el-tooltip
             v-if="canSync"
-            :disabled="!syncGate?.disabledReason"
-            :content="syncGate?.disabledReason || ''"
+            :disabled="!weComSyncGate?.disabledReason"
+            :content="weComSyncGate?.disabledReason || ''"
             placement="top"
           >
             <span>
               <el-button
-                :disabled="Boolean(syncGate?.disabledReason)"
+                :disabled="Boolean(weComSyncGate?.disabledReason)"
                 :loading="syncGateLoading"
-                @click="syncDrawerVisible = true"
+                @click="openSync('WECOM')"
               >
                 企业微信同步
+              </el-button>
+            </span>
+          </el-tooltip>
+          <el-tooltip
+            v-if="canSync"
+            :disabled="!dingTalkSyncGate?.disabledReason"
+            :content="dingTalkSyncGate?.disabledReason || ''"
+            placement="top"
+          >
+            <span>
+              <el-button
+                :disabled="Boolean(dingTalkSyncGate?.disabledReason)"
+                :loading="syncGateLoading"
+                @click="openSync('DINGTALK')"
+              >
+                钉钉同步
               </el-button>
             </span>
           </el-tooltip>
@@ -632,19 +686,31 @@ onMounted(() => {
 
     <el-dialog
       v-model="identityDialogVisible"
-      title="企业微信登录身份"
+      title="第三方登录身份"
       width="520px"
       destroy-on-close
     >
       <div v-loading="identityLoading" class="min-h-44">
+        <el-radio-group
+          :model-value="identityProvider"
+          class="mb-4"
+          @change="changeIdentityProvider($event as 'WECOM' | 'DINGTALK')"
+        >
+          <el-radio-button value="WECOM">企业微信</el-radio-button>
+          <el-radio-button value="DINGTALK">钉钉</el-radio-button>
+        </el-radio-group>
         <el-alert type="info" :closable="false" show-icon class="mb-4">
           <template #title>
-            身份来自企业微信组织同步。绑定后，成员可在登录页使用企业微信扫码登录。
+            身份来自{{
+              identityProvider === 'DINGTALK' ? '钉钉' : '企业微信'
+            }}组织同步。绑定后，成员可在登录页使用对应第三方账号登录。
           </template>
         </el-alert>
         <el-descriptions v-if="externalIdentity && identityMember" :column="1" border>
           <el-descriptions-item label="本地成员">{{ identityMember.name }}</el-descriptions-item>
-          <el-descriptions-item label="企业微信 UserID">
+          <el-descriptions-item
+            :label="identityProvider === 'DINGTALK' ? '钉钉 UserID' : '企业微信 UserID'"
+          >
             {{ externalIdentity.externalSubject || '尚未发现成员映射' }}
           </el-descriptions-item>
           <el-descriptions-item label="登录状态">
@@ -748,6 +814,7 @@ onMounted(() => {
   <OrganizationSyncDrawer
     v-if="canSync"
     v-model="syncDrawerVisible"
+    :provider="syncProvider"
     :target-department-id="syncTargetDepartment?.id ?? ''"
     :target-department-name="syncTargetDepartment?.name ?? ''"
     @synced="handleSyncCompleted"

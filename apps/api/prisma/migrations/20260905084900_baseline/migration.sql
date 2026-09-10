@@ -17,7 +17,7 @@ CREATE TYPE "EnterpriseIntegrationProvider" AS ENUM ('WECOM', 'DINGTALK', 'LARK'
 CREATE TYPE "ExternalIdentityStatus" AS ENUM ('ACTIVE', 'REVOKED');
 
 -- CreateEnum
-CREATE TYPE "ExternalOAuthFlow" AS ENUM ('QR_WECOM', 'WECOM');
+CREATE TYPE "ExternalOAuthFlow" AS ENUM ('QR_WECOM', 'WECOM', 'QR_DINGTALK', 'DINGTALK');
 
 -- CreateEnum
 CREATE TYPE "MessageDeliveryChannel" AS ENUM ('WECOM', 'DINGTALK', 'LARK', 'EMAIL');
@@ -1887,6 +1887,7 @@ CREATE TABLE "message_task_settings" (
     "systemEnabled" BOOLEAN NOT NULL DEFAULT true,
     "emailEnabled" BOOLEAN NOT NULL DEFAULT false,
     "weComEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "dingTalkEnabled" BOOLEAN NOT NULL DEFAULT false,
     "config" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -2065,6 +2066,7 @@ CREATE TABLE "enterprise_integrations" (
     "tenantId" TEXT NOT NULL,
     "provider" "EnterpriseIntegrationProvider" NOT NULL,
     "corpId" TEXT NOT NULL,
+    "clientId" TEXT,
     "agentId" TEXT NOT NULL,
     "secretCiphertext" TEXT NOT NULL,
     "secretIv" TEXT NOT NULL,

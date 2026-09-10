@@ -43,6 +43,8 @@ enum ExternalIdentityStatus {
 enum ExternalOAuthFlow {
   QR_WECOM
   WECOM
+  QR_DINGTALK
+  DINGTALK
 }
 
 enum MessageDeliveryChannel {
@@ -2577,16 +2579,17 @@ model Announcement {
 }
 
 model MessageTaskSetting {
-  id            String   @id @default(cuid())
-  tenantId      String
-  module        String
-  event         String
-  systemEnabled Boolean  @default(true)
-  emailEnabled  Boolean  @default(false)
-  weComEnabled  Boolean  @default(false)
-  config        Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  tenantId        String
+  module          String
+  event           String
+  systemEnabled   Boolean  @default(true)
+  emailEnabled    Boolean  @default(false)
+  weComEnabled    Boolean  @default(false)
+  dingTalkEnabled Boolean  @default(false)
+  config          Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2796,6 +2799,7 @@ model EnterpriseIntegration {
   tenantId          String
   provider          EnterpriseIntegrationProvider
   corpId            String
+  clientId          String?
   agentId           String
   secretCiphertext  String
   secretIv          String

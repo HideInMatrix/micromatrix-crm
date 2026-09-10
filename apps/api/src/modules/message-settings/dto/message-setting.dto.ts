@@ -68,6 +68,10 @@ export class UpdateMessageTaskSettingDto {
   weComEnabled?: boolean
 
   @IsOptional()
+  @IsBoolean()
+  dingTalkEnabled?: boolean
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => MessageTaskConfigDto)
   config?: MessageTaskConfigDto
@@ -85,4 +89,8 @@ export class BatchUpdateMessageTaskSettingDto {
   @IsOptional()
   @IsBoolean()
   weComEnabled?: boolean
+
+  @IsOptional()
+  @IsBoolean()
+  dingTalkEnabled?: boolean
 }

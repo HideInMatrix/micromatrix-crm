@@ -1,5 +1,9 @@
 import type {
   CurrentUser,
+  DingTalkLoginCallbackInput,
+  DingTalkLoginDiscoveryVO,
+  DingTalkLoginStartInput,
+  DingTalkLoginStartVO,
   LoginResult,
   WeComLoginCallbackInput,
   WeComLoginDiscoveryVO,
@@ -45,4 +49,29 @@ export function callbackWeCom(payload: WeComLoginCallbackInput) {
 
 export function callbackWeComWorkbench(payload: WeComLoginCallbackInput) {
   return http.post<LoginResult & { returnPath: string }>('/auth/wecom/workbench/callback', payload)
+}
+
+export function discoverDingTalk(tenantSlug?: string) {
+  return http.get<DingTalkLoginDiscoveryVO>('/auth/dingtalk/discovery', {
+    params: tenantSlug ? { tenant: tenantSlug } : undefined,
+  })
+}
+
+export function startDingTalkLogin(payload: DingTalkLoginStartInput) {
+  return http.post<DingTalkLoginStartVO>('/auth/dingtalk/start', payload)
+}
+
+export function startDingTalkWorkbenchLogin(payload: DingTalkLoginStartInput) {
+  return http.post<DingTalkLoginStartVO>('/auth/dingtalk/workbench/start', payload)
+}
+
+export function callbackDingTalk(payload: DingTalkLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>('/auth/dingtalk/callback', payload)
+}
+
+export function callbackDingTalkWorkbench(payload: DingTalkLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>(
+    '/auth/dingtalk/workbench/callback',
+    payload,
+  )
 }
