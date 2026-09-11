@@ -51,6 +51,7 @@ echo '[docker-release] validating migration image isolation'
 grep -Fq 'FROM node:24-alpine AS base' docker/migrate.Dockerfile
 grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate... --filter @micromatrix/api...' docker/migrate.Dockerfile
 grep -Fq 'pnpm --filter @micromatrix/shared build' docker/migrate.Dockerfile
+grep -Fq 'COPY --from=builder --chown=node:node /workspace/apps/api/src/prisma/prisma-adapter.ts ./src/prisma/prisma-adapter.ts' docker/migrate.Dockerfile
 grep -Fq 'ENTRYPOINT ["./release-init.sh"]' docker/migrate.Dockerfile
 
 echo '[docker-release] building API image'

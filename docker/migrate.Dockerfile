@@ -27,6 +27,7 @@ COPY packages/shared packages/shared
 COPY apps/api/prisma apps/api/prisma
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
 COPY apps/api/src/modules/metadata/system-fields.ts apps/api/src/modules/metadata/system-fields.ts
+COPY apps/api/src/prisma/prisma-adapter.ts apps/api/src/prisma/prisma-adapter.ts
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
   pnpm --filter @micromatrix/shared build \
@@ -46,6 +47,7 @@ COPY --from=builder --chown=node:node /workspace/apps/api/prisma ./prisma
 COPY --from=builder --chown=node:node /workspace/apps/api/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=node:node /workspace/apps/api/src/generated ./src/generated
 COPY --from=builder --chown=node:node /workspace/apps/api/src/modules/metadata/system-fields.ts ./src/modules/metadata/system-fields.ts
+COPY --from=builder --chown=node:node /workspace/apps/api/src/prisma/prisma-adapter.ts ./src/prisma/prisma-adapter.ts
 COPY --chown=node:node --chmod=755 docker/release-init.sh ./release-init.sh
 
 USER node
