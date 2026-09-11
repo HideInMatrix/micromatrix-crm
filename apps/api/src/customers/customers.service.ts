@@ -2715,7 +2715,7 @@ export class CustomersService {
             poolId,
           )
           if (importType === 'ADD') {
-            const fingerprint = `${prepared.dto.name?.trim().toLowerCase() ?? ''}|${prepared.dto.phone?.trim() ?? ''}`
+            const fingerprint = prepared.dto.name?.trim().toLowerCase() ?? ''
             if (seen.has(fingerprint)) throw new BadRequestException('导入文件内存在重复客户')
             seen.add(fingerprint)
           }
@@ -2756,7 +2756,7 @@ export class CustomersService {
             poolId,
           )
           if (importType === 'ADD') {
-            const fingerprint = `${prepared.dto.name?.trim().toLowerCase() ?? ''}|${prepared.dto.phone?.trim() ?? ''}`
+            const fingerprint = prepared.dto.name?.trim().toLowerCase() ?? ''
             if (seen.has(fingerprint)) throw new BadRequestException('导入文件内存在重复客户')
             seen.add(fingerprint)
             if (poolId) await this.createInSea(user, prepared.dto, poolId)
@@ -2909,11 +2909,10 @@ export class CustomersService {
       if (key === 'owner' || key === 'ownerId') {
         dto.ownerId = await this.resolveImportOwner(user, String(value))
       } else if (key.startsWith('cf_')) {
+        // cf_* 仅表示当前租户表单里的动态字段 key，语义/类型都允许被重新配置。
+        // 导入必须原样写入 customData，不能再把 cf_industry/cf_phone/cf_email 等
+        // 硬解释为行业/电话/邮箱，否则字段改造后会污染查重与业务 DTO。
         customData[key] = value
-        if (key === 'cf_industry') dto.industry = String(value ?? '')
-        if (key === 'cf_phone') dto.phone = String(value ?? '')
-        if (key === 'cf_email') dto.email = String(value ?? '')
-        if (key === 'cf_remark') dto.remark = String(value ?? '')
       } else {
         ;(dto as Record<string, unknown>)[key] = value
       }
@@ -2927,7 +2926,10 @@ export class CustomersService {
     if (importType === 'ADD') {
       const name = typeof dto.name === 'string' ? dto.name.trim() : ''
       if (!name) throw new BadRequestException('客户名称不能为空')
-      const duplicate = await this.findExactCustomerDuplicate(user, name, dto.phone)
+      // Customer 本身只有 name 等系统字段；电话等业务字段属于动态 moduleFields。
+      // 自定义字段唯一性由 ResourceFieldValueService 按字段配置校验，不能固定拿
+      // 某个 cf_* key 当作电话号码参与客户重复判断。
+      const duplicate = await this.findExactCustomerDuplicate(user, name)
       if (duplicate) throw new BadRequestException(`与已有客户「${duplicate.name}」重复`)
       if (!poolId)
         await this.pools.assertCapacityForOwner(user.tenantId, 'customer', dto.ownerId ?? user.id)
@@ -3169,17 +3171,11 @@ export class CustomersService {
   }
 
   private customerFieldInput(dto: UpdateCustomerDto): Record<string, unknown> {
-    const values: Record<string, unknown> = { ...(dto.customData ?? {}) }
-    const aliases = [
-      ['cf_industry', dto.industry],
-      ['cf_phone', dto.phone],
-      ['cf_email', dto.email],
-      ['cf_remark', dto.remark],
-    ] as const
-    for (const [key, value] of aliases) {
-      if (value !== undefined) values[key] = value
-    }
-    return values
+    // Cordys 的 CustomerAdd/Update 只持久化显式 moduleFields。
+    // cf_* 是可被租户重新配置类型/语义的动态字段，不能把 legacy DTO 的
+    // industry/phone/email/remark 隐式写入固定 key，否则字段被改造后会发生
+    // 例如 phone -> “线索来源”select 的错误类型写入。
+    return { ...(dto.customData ?? {}) }
   }
 
   private async toSingleVO(user: AuthUser, customer: Customer): Promise<CustomerVO> {

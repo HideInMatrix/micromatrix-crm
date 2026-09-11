@@ -1068,7 +1068,6 @@ export class LeadsService {
     const customerCreateDto = !matchedCustomer
       ? {
           name: lead.name,
-          phone: lead.phone ?? undefined,
           ownerId: lead.owner,
           customData: await this.mapLeadCustomData(user.tenantId, 'customer', lead, true),
         }
@@ -1685,9 +1684,32 @@ export class LeadsService {
     _requireAll: boolean,
   ) {
     const values = await this.fieldValues.load(tenantId, 'clue', [lead.id])
+    const sourceValues: Record<string, unknown> = {
+      name: lead.name,
+      contact: lead.contact,
+      phone: lead.phone,
+      owner: lead.owner,
+      ...(values.get(lead.id) ?? {}),
+    }
+    const scenario =
+      module === 'customer'
+        ? 'CLUE_TO_CUSTOMER'
+        : module === 'contact'
+          ? 'CLUE_TO_CONTACT'
+          : 'CLUE_TO_OPPORTUNITY'
+    const linkedValues = await this.moduleForms.resolveFormLink(
+      tenantId,
+      module,
+      'lead',
+      scenario,
+      sourceValues,
+    )
     const targetFields = await this.metadata.fieldsMap(tenantId, module)
     return Object.fromEntries(
-      Object.entries(values.get(lead.id) ?? {}).filter(([key]) => targetFields.has(key)),
+      Object.entries(linkedValues).filter(([key]) => {
+        const field = targetFields.get(key)
+        return Boolean(field && !field.system && field.type !== 'formula')
+      }),
     )
   }
 

@@ -129,7 +129,7 @@ onBeforeUnmount(stopCountdown)
         <div>转换后会创建客户和联系人，并保留原线索数据。</div>
         <div v-if="form.withOpportunity">本次还会创建商机，并自动关联本次生成的联系人。</div>
         <div v-else>线索跟进记录会复制到新客户，原线索跟进记录不会删除。</div>
-        <div>同名自定义字段会按当前元数据迁移；联系人姓名为空时不会创建联系人。</div>
+        <div>自定义字段仅按表单联动配置迁移；联系人姓名为空时不会创建联系人。</div>
         <div v-if="auth.hasPerm('system:module')" class="mt-1 flex gap-4">
           <el-button link type="primary" @click="openSettings">
             {{ form.withOpportunity ? '商机表单设置' : '客户表单设置' }}
@@ -165,7 +165,9 @@ onBeforeUnmount(stopCountdown)
     :close-on-press-escape="false"
   >
     <div class="py-3 text-center">
-      <div class="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-[var(--el-color-success)] text-white">
+      <div
+        class="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-[var(--el-color-success)] text-white"
+      >
         ✓
       </div>
       <div class="mt-2 text-xl font-medium">转换成功</div>
