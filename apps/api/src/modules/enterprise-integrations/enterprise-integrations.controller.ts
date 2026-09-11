@@ -6,6 +6,7 @@ import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
 import { SaveDingTalkIntegrationDto, UpdateDingTalkSyncDto } from './dto/dingtalk-integration.dto'
+import { SaveLarkIntegrationDto, UpdateLarkSyncDto } from './dto/lark-integration.dto'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 
 @ApiTags('企业集成')
@@ -92,5 +93,45 @@ export class EnterpriseIntegrationsController {
   @ApiOperation({ summary: '启停钉钉组织同步并设置新成员默认角色' })
   updateDingTalkSync(@CurrentUser() user: AuthUser, @Body() dto: UpdateDingTalkSyncDto) {
     return this.integrations.updateDingTalkSync(user, dto)
+  }
+
+  @Get('lark')
+  @RequirePermissions('system:setting')
+  @ApiOperation({ summary: '获取飞书配置状态（不返回密钥）' })
+  getLark(@CurrentUser() user: AuthUser) {
+    return this.integrations.getLark(user.tenantId)
+  }
+
+  @Get('lark/secret')
+  @Header('Cache-Control', 'no-store')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'viewLarkSecret')
+  @ApiOperation({ summary: '查看飞书应用 Secret（仅配置管理员）' })
+  getLarkSecret(@CurrentUser() user: AuthUser) {
+    return this.integrations.getLarkSecret(user.tenantId)
+  }
+
+  @Put('lark')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'updateLark')
+  @ApiOperation({ summary: '保存飞书配置' })
+  saveLark(@CurrentUser() user: AuthUser, @Body() dto: SaveLarkIntegrationDto) {
+    return this.integrations.saveLark(user, dto)
+  }
+
+  @Post('lark/test')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'testLark')
+  @ApiOperation({ summary: '测试并保存飞书配置状态' })
+  testLark(@CurrentUser() user: AuthUser, @Body() dto: SaveLarkIntegrationDto) {
+    return this.integrations.testLark(user, dto)
+  }
+
+  @Put('lark/sync')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'updateLarkSync')
+  @ApiOperation({ summary: '启停飞书组织同步并设置新成员默认角色' })
+  updateLarkSync(@CurrentUser() user: AuthUser, @Body() dto: UpdateLarkSyncDto) {
+    return this.integrations.updateLarkSync(user, dto)
   }
 }

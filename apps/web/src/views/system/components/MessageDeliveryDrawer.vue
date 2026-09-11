@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 const model = defineModel<boolean>({ required: true })
 const props = withDefaults(
   defineProps<{
-    channel?: 'WECOM' | 'DINGTALK'
+    channel?: 'WECOM' | 'DINGTALK' | 'LARK'
   }>(),
   { channel: 'WECOM' },
 )
@@ -29,6 +29,14 @@ const query = reactive<{
 const eventOptions = computed(() =>
   MESSAGE_TASK_DEFINITIONS.map((item) => ({ label: item.eventName, value: item.event })),
 )
+
+const channelName = computed(() => {
+  if (props.channel === 'DINGTALK') return '钉钉'
+  if (props.channel === 'LARK') return '飞书'
+  return '企业微信'
+})
+
+const externalIdName = computed(() => (props.channel === 'LARK' ? 'Open ID' : 'UserID'))
 
 const statusMeta: Record<
   MessageDeliveryStatus,
@@ -96,16 +104,11 @@ watch(
 </script>
 
 <template>
-  <el-drawer
-    v-model="model"
-    :title="`${props.channel === 'DINGTALK' ? '钉钉' : '企业微信'}投递记录`"
-    size="76%"
-    destroy-on-close
-  >
+  <el-drawer v-model="model" :title="`${channelName}投递记录`" size="76%" destroy-on-close>
     <div class="mb-4 flex flex-wrap gap-2">
       <el-input
         v-model="query.keyword"
-        placeholder="接收人 / UserID / 错误信息"
+        :placeholder="`接收人 / ${externalIdName} / 错误信息`"
         clearable
         class="!w-64"
         @keyup.enter="search"
@@ -139,7 +142,7 @@ watch(
         <template #default="{ row }">
           <div>{{ row.userName || '-' }}</div>
           <div class="text-xs text-[var(--el-text-color-secondary)]">
-            {{ row.externalSubject || `无${props.channel === 'DINGTALK' ? '钉钉' : '企微'}映射` }}
+            {{ row.externalSubject || `无${channelName}映射` }}
           </div>
         </template>
       </el-table-column>

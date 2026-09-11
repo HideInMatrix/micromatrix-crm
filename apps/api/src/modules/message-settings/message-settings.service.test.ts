@@ -39,6 +39,7 @@ function createService() {
         emailEnabled: create.emailEnabled ?? false,
         weComEnabled: create.weComEnabled ?? false,
         dingTalkEnabled: create.dingTalkEnabled ?? false,
+        larkEnabled: create.larkEnabled ?? false,
         config: create.config ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -76,6 +77,8 @@ test('完整返回当前 Cordys 事件目录并合并默认开关', async () => 
   assert.ok(items.every((item) => item.systemEnabled))
   assert.ok(items.every((item) => !item.emailEnabled))
   assert.ok(items.every((item) => !item.weComEnabled))
+  assert.ok(items.every((item) => !item.dingTalkEnabled))
+  assert.ok(items.every((item) => !item.larkEnabled))
 })
 
 test('单项与批量开关按租户持久化', async () => {
@@ -93,6 +96,12 @@ test('单项与批量开关按租户持久化', async () => {
     weComEnabled: true,
   })
   assert.equal(await service.isWeComEnabled('tenant-a', 'CUSTOMER_ADD'), true)
+
+  await service.update('tenant-a', 'CUSTOMER_ADD', {
+    module: 'CUSTOMER',
+    larkEnabled: true,
+  })
+  assert.equal(await service.isLarkEnabled('tenant-a', 'CUSTOMER_ADD'), true)
 
   const groups = await service.batchUpdate('tenant-a', { systemEnabled: true })
   assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
@@ -112,6 +121,22 @@ test('企业微信开关由配置、连接测试和同步开关共同控制', as
   assert.equal((await service.getWeComChannelGate('tenant-a')).reason, '请先开启企业微信组织同步')
   integration = { lastTestSucceeded: true, syncEnabled: true }
   assert.equal((await service.getWeComChannelGate('tenant-a')).available, true)
+})
+
+test('飞书开关由配置、连接测试和同步开关共同控制', async () => {
+  let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = null
+  const prisma = {
+    enterpriseIntegration: { findUnique: async () => integration },
+  } as unknown as PrismaService
+  const service = new MessageSettingsService(prisma)
+
+  assert.equal((await service.getLarkChannelGate('tenant-a')).reason, '请先配置飞书')
+  integration = { lastTestSucceeded: false, syncEnabled: false }
+  assert.equal((await service.getLarkChannelGate('tenant-a')).available, false)
+  integration = { lastTestSucceeded: true, syncEnabled: false }
+  assert.equal((await service.getLarkChannelGate('tenant-a')).reason, '请先开启飞书组织同步')
+  integration = { lastTestSucceeded: true, syncEnabled: true }
+  assert.equal((await service.getLarkChannelGate('tenant-a')).available, true)
 })
 
 test('到期配置校验模块、时间重复和固定负责人', async () => {

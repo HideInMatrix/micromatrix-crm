@@ -7,6 +7,7 @@ import type {
   DingTalkMessageResult,
 } from '../enterprise-integrations/dingtalk.client'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
+import type { LarkClient, LarkMessageResult } from '../enterprise-integrations/lark.client'
 import type { WeComClient, WeComMessageResult } from '../enterprise-integrations/wecom.client'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { MessageDeliveryService } from './message-delivery.service'
@@ -14,7 +15,7 @@ import { MessageDeliveryService } from './message-delivery.service'
 function delivery(
   id: string,
   externalSubject: string | null,
-  channel: 'WECOM' | 'DINGTALK' = 'WECOM',
+  channel: 'WECOM' | 'DINGTALK' | 'LARK' = 'WECOM',
 ): MessageDelivery {
   const now = new Date()
   return {
@@ -102,6 +103,7 @@ test('企微 outbox 对缺失成员映射保留 DEAD 审计', async () => {
   const settings = {
     isWeComEnabled: async () => true,
     isDingTalkEnabled: async () => false,
+    isLarkEnabled: async () => false,
     getWeComChannelGate: async () => ({ available: true }),
   } as unknown as MessageSettingsService
   const service = new MessageDeliveryService(
@@ -185,6 +187,7 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
     const settings = {
       isWeComEnabled: async () => false,
       isDingTalkEnabled: async () => true,
+      isLarkEnabled: async () => false,
       getDingTalkChannelGate: async () => ({ available: true }),
     } as unknown as MessageSettingsService
     const service = new MessageDeliveryService(
@@ -291,6 +294,145 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
     await service.processIds(['retry'])
     assert.equal(rows.get('retry')?.status, 'FAILED')
     assert.equal(rows.get('retry')?.errorCode, 'DINGTALK_88')
+    assert.ok(rows.get('retry')?.nextAttemptAt instanceof Date)
+  })
+})
+
+test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机', async (t) => {
+  await t.test('只开启飞书时生成 LARK 投递记录', async () => {
+    const rows: MessageDelivery[] = []
+    const prisma = {
+      enterpriseIntegration: {
+        findUnique: async ({ where }: { where: { tenantId_provider: { provider: string } } }) =>
+          where.tenantId_provider.provider === 'LARK' ? { id: 'lark-integration' } : null,
+      },
+      externalUserMapping: {
+        findMany: async () => [{ userId: 'user-a', externalId: 'ou_user_a' }],
+      },
+      messageDelivery: {
+        updateMany: async () => ({ count: 0 }),
+        create: async ({ data }: { data: Partial<MessageDelivery> }) => {
+          const row = {
+            ...delivery(`lark-${rows.length + 1}`, 'ou_user_a', 'LARK'),
+            ...data,
+          }
+          rows.push(row)
+          return row
+        },
+      },
+      $transaction: async (operations: Array<Promise<MessageDelivery>>) => Promise.all(operations),
+    } as unknown as PrismaService
+    const settings = {
+      isWeComEnabled: async () => false,
+      isDingTalkEnabled: async () => false,
+      isLarkEnabled: async () => true,
+      getLarkChannelGate: async () => ({ available: true }),
+    } as unknown as MessageSettingsService
+    const service = new MessageDeliveryService(
+      prisma,
+      settings,
+      {} as EnterpriseIntegrationsService,
+      {} as WeComClient,
+    )
+    const count = await service.enqueue({
+      tenantId: 'tenant-a',
+      event: 'CUSTOMER_ADD',
+      recipientIds: ['user-a'],
+      title: '新客户已分配',
+    })
+    assert.equal(count, 1)
+    assert.equal(rows[0]?.channel, 'LARK')
+    assert.equal(rows[0]?.externalSubject, 'ou_user_a')
+  })
+
+  function createLarkWorker(result: LarkMessageResult) {
+    const rows = new Map<string, MessageDelivery>()
+    const messageDelivery = {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id?: string }
+        data: Record<string, unknown>
+      }) => {
+        const row = where.id ? rows.get(where.id) : undefined
+        if (!row || !['PENDING', 'FAILED'].includes(row.status)) return { count: 0 }
+        Object.assign(row, data, {
+          attempts:
+            typeof data['attempts'] === 'object' && data['attempts']
+              ? row.attempts + 1
+              : row.attempts,
+          updatedAt: new Date(),
+        })
+        return { count: 1 }
+      },
+      findUnique: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string }
+        data: Partial<MessageDelivery>
+      }) => {
+        const row = rows.get(where.id)
+        assert.ok(row)
+        Object.assign(row, data, { updatedAt: new Date() })
+        return row
+      },
+    }
+    const prisma = { messageDelivery } as unknown as PrismaService
+    const integrations = {
+      getLarkRuntimeContext: async () => ({
+        integration: { id: 'integration-a' },
+        credentials: {
+          corpId: 'tenant-key',
+          agentId: 'cli_aabbcc',
+          appSecret: 'secret',
+          redirectUrl: 'https://crm.example.com/login/lark/callback',
+        },
+      }),
+    } as unknown as EnterpriseIntegrationsService
+    const client = { sendTextMessage: async () => result } as unknown as LarkClient
+    return {
+      rows,
+      service: new MessageDeliveryService(
+        prisma,
+        {} as MessageSettingsService,
+        integrations,
+        {} as WeComClient,
+        undefined,
+        undefined,
+        client,
+      ),
+    }
+  }
+
+  await t.test('发送成功记录 message_id', async () => {
+    const { rows, service } = createLarkWorker({
+      success: true,
+      transient: false,
+      providerCode: 0,
+      providerMessageId: 'om_message_1',
+      message: 'ok',
+    })
+    rows.set('success', delivery('success', 'ou_user_a', 'LARK'))
+    await service.processIds(['success'])
+    assert.equal(rows.get('success')?.status, 'SUCCEEDED')
+    assert.equal(rows.get('success')?.providerMessageId, 'om_message_1')
+  })
+
+  await t.test('临时错误进入 FAILED 并使用 LARK 错误码', async () => {
+    const { rows, service } = createLarkWorker({
+      success: false,
+      transient: true,
+      providerCode: 99991400,
+      providerMessageId: null,
+      message: 'system busy',
+    })
+    rows.set('retry', delivery('retry', 'ou_user_a', 'LARK'))
+    await service.processIds(['retry'])
+    assert.equal(rows.get('retry')?.status, 'FAILED')
+    assert.equal(rows.get('retry')?.errorCode, 'LARK_99991400')
     assert.ok(rows.get('retry')?.nextAttemptAt instanceof Date)
   })
 })

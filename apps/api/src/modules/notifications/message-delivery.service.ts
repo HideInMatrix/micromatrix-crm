@@ -16,6 +16,7 @@ import type { MessageDelivery, MessageDeliveryChannel, Prisma } from '../../gene
 import { PrismaService } from '../../prisma/prisma.service'
 import { DingTalkClient } from '../enterprise-integrations/dingtalk.client'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
+import { LarkClient } from '../enterprise-integrations/lark.client'
 import { WeComClient } from '../enterprise-integrations/wecom.client'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { QueryMessageDeliveriesDto } from './dto/message-delivery.dto'
@@ -29,7 +30,9 @@ export interface EnqueueMessageInput {
   link?: string
 }
 
-type SupportedDeliveryChannel = Extract<MessageDeliveryChannel, 'WECOM' | 'DINGTALK'>
+type SupportedDeliveryChannel = Extract<MessageDeliveryChannel, 'WECOM' | 'DINGTALK' | 'LARK'>
+
+const SUPPORTED_CHANNELS: SupportedDeliveryChannel[] = ['WECOM', 'DINGTALK', 'LARK']
 
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000]
 const STALE_SENDING_MS = 5 * 60_000
@@ -47,16 +50,16 @@ export class MessageDeliveryService {
     private readonly weComClient: WeComClient,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
     @Optional() private readonly dingTalkClient?: DingTalkClient,
+    @Optional() private readonly larkClient?: LarkClient,
   ) {}
 
   async enqueue(input: EnqueueMessageInput): Promise<number> {
-    const results = await Promise.allSettled([
-      this.enqueueChannel('WECOM', input),
-      this.enqueueChannel('DINGTALK', input),
-    ])
+    const results = await Promise.allSettled(
+      SUPPORTED_CHANNELS.map((channel) => this.enqueueChannel(channel, input)),
+    )
     let count = 0
     for (const [index, result] of results.entries()) {
-      const channel: SupportedDeliveryChannel = index === 0 ? 'WECOM' : 'DINGTALK'
+      const channel = SUPPORTED_CHANNELS[index]!
       if (result.status === 'fulfilled') count += result.value
       else {
         this.logger.warn(
@@ -74,12 +77,16 @@ export class MessageDeliveryService {
     const enabled =
       channel === 'DINGTALK'
         ? await this.messageSettings.isDingTalkEnabled(input.tenantId, input.event)
-        : await this.messageSettings.isWeComEnabled(input.tenantId, input.event)
+        : channel === 'LARK'
+          ? await this.messageSettings.isLarkEnabled(input.tenantId, input.event)
+          : await this.messageSettings.isWeComEnabled(input.tenantId, input.event)
     if (!enabled) return 0
     const gate =
       channel === 'DINGTALK'
         ? await this.messageSettings.getDingTalkChannelGate(input.tenantId)
-        : await this.messageSettings.getWeComChannelGate(input.tenantId)
+        : channel === 'LARK'
+          ? await this.messageSettings.getLarkChannelGate(input.tenantId)
+          : await this.messageSettings.getWeComChannelGate(input.tenantId)
     if (!gate.available) return 0
     const integration = await this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId: input.tenantId, provider: channel } },
@@ -210,7 +217,7 @@ export class MessageDeliveryService {
   async processDueDeliveries(): Promise<number> {
     await this.prisma.messageDelivery.updateMany({
       where: {
-        channel: { in: ['WECOM', 'DINGTALK'] },
+        channel: { in: SUPPORTED_CHANNELS },
         status: 'SENDING',
         updatedAt: { lt: new Date(Date.now() - STALE_SENDING_MS) },
       },
@@ -223,7 +230,7 @@ export class MessageDeliveryService {
     })
     const due = await this.prisma.messageDelivery.findMany({
       where: {
-        channel: { in: ['WECOM', 'DINGTALK'] },
+        channel: { in: SUPPORTED_CHANNELS },
         status: { in: ['PENDING', 'FAILED'] },
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
       },
@@ -334,6 +341,33 @@ export class MessageDeliveryService {
       })
     }
 
+    if (channel === 'LARK') {
+      if (!this.larkClient) {
+        return {
+          success: false,
+          transient: false,
+          providerCode: null,
+          providerMessageId: null,
+          message: '飞书 Provider 未加载',
+        }
+      }
+      const runtime = await this.integrations.getLarkRuntimeContext(delivery.tenantId)
+      if (delivery.integrationId && delivery.integrationId !== runtime.integration.id) {
+        return {
+          success: false,
+          transient: false,
+          providerCode: null,
+          providerMessageId: null,
+          message: '飞书配置已变化，请手工重试',
+        }
+      }
+      return this.larkClient.sendTextMessage({
+        ...runtime.credentials,
+        toUser: delivery.externalSubject!,
+        content: this.buildContent(delivery),
+      })
+    }
+
     const runtime = await this.integrations.getWeComRuntimeContext(delivery.tenantId)
     if (delivery.integrationId && delivery.integrationId !== runtime.integration.id) {
       return {
@@ -408,11 +442,11 @@ export class MessageDeliveryService {
   }
 
   private isSupportedChannel(channel: MessageDeliveryChannel): channel is SupportedDeliveryChannel {
-    return channel === 'WECOM' || channel === 'DINGTALK'
+    return channel === 'WECOM' || channel === 'DINGTALK' || channel === 'LARK'
   }
 
   private channelName(channel: SupportedDeliveryChannel): string {
-    return channel === 'DINGTALK' ? '钉钉' : '企业微信'
+    return channel === 'DINGTALK' ? '钉钉' : channel === 'LARK' ? '飞书' : '企业微信'
   }
 
   private errorMessage(error: unknown): string {

@@ -12,6 +12,7 @@ import { extractErrorMessage } from '@/api/http'
 import {
   deptApi,
   dingTalkOrganizationSyncApi,
+  larkOrganizationSyncApi,
   memberApi,
   organizationSyncApi,
   type MemberOption,
@@ -21,7 +22,7 @@ const props = defineProps<{
   modelValue: boolean
   targetDepartmentId: string
   targetDepartmentName: string
-  provider?: 'WECOM' | 'DINGTALK'
+  provider?: 'WECOM' | 'DINGTALK' | 'LARK'
 }>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
@@ -50,9 +51,17 @@ const resolutions = reactive<
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const provider = computed(() => props.provider ?? 'WECOM')
-const providerName = computed(() => (provider.value === 'DINGTALK' ? '钉钉' : '企业微信'))
+const providerName = computed(() => {
+  if (provider.value === 'DINGTALK') return '钉钉'
+  if (provider.value === 'LARK') return '飞书'
+  return '企业微信'
+})
 const syncApi = computed(() =>
-  provider.value === 'DINGTALK' ? dingTalkOrganizationSyncApi : organizationSyncApi,
+  provider.value === 'DINGTALK'
+    ? dingTalkOrganizationSyncApi
+    : provider.value === 'LARK'
+      ? larkOrganizationSyncApi
+      : organizationSyncApi,
 )
 
 const flatDepartments = computed(() => {
@@ -558,7 +567,7 @@ onBeforeUnmount(stopPolling)
         />
       </template>
 
-      <el-empty v-else description="尚未生成企业微信组织同步预览" :image-size="72" />
+      <el-empty v-else :description="`尚未生成${providerName}组织同步预览`" :image-size="72" />
     </div>
 
     <template #footer>

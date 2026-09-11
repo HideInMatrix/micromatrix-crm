@@ -45,6 +45,9 @@ enum ExternalOAuthFlow {
   WECOM
   QR_DINGTALK
   DINGTALK
+  QR_LARK
+  LARK
+  LARK_MOBILE
 }
 
 enum MessageDeliveryChannel {
@@ -2587,6 +2590,7 @@ model MessageTaskSetting {
   emailEnabled    Boolean  @default(false)
   weComEnabled    Boolean  @default(false)
   dingTalkEnabled Boolean  @default(false)
+  larkEnabled     Boolean  @default(false)
   config          Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -2801,6 +2805,7 @@ model EnterpriseIntegration {
   corpId            String
   clientId          String?
   agentId           String
+  redirectUrl       String?
   secretCiphertext  String
   secretIv          String
   secretAuthTag     String

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DingTalkIntegrationCard from './DingTalkIntegrationCard.vue'
+import LarkIntegrationCard from './LarkIntegrationCard.vue'
 import WeComIntegrationCard from './WeComIntegrationCard.vue'
 </script>
 
@@ -7,5 +8,6 @@ import WeComIntegrationCard from './WeComIntegrationCard.vue'
   <div class="flex flex-col gap-4">
     <WeComIntegrationCard />
     <DingTalkIntegrationCard />
+    <LarkIntegrationCard />
   </div>
 </template>

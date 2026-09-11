@@ -83,6 +83,7 @@ export interface MessageTaskSettingVO extends MessageTaskDefinition {
   emailEnabled: boolean
   weComEnabled: boolean
   dingTalkEnabled: boolean
+  larkEnabled: boolean
   config: MessageTaskConfig | null
 }
 
@@ -98,6 +99,7 @@ export interface UpdateMessageTaskSettingInput {
   emailEnabled?: boolean
   weComEnabled?: boolean
   dingTalkEnabled?: boolean
+  larkEnabled?: boolean
   config?: MessageTaskConfig
 }
 
@@ -106,10 +108,11 @@ export interface BatchUpdateMessageTaskSettingInput {
   emailEnabled?: boolean
   weComEnabled?: boolean
   dingTalkEnabled?: boolean
+  larkEnabled?: boolean
 }
 
 export interface MessageChannelGateVO {
-  channel: 'WECOM' | 'DINGTALK'
+  channel: 'WECOM' | 'DINGTALK' | 'LARK'
   configured: boolean
   verified: boolean
   enabled: boolean
@@ -121,7 +124,7 @@ export type MessageDeliveryStatus = 'PENDING' | 'SENDING' | 'SUCCEEDED' | 'FAILE
 
 export interface MessageDeliveryVO {
   id: string
-  channel: 'WECOM' | 'DINGTALK'
+  channel: 'WECOM' | 'DINGTALK' | 'LARK'
   event: string
   eventName: string
   userId: string | null

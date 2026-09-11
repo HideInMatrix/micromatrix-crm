@@ -4,6 +4,10 @@ import type {
   DingTalkLoginDiscoveryVO,
   DingTalkLoginStartInput,
   DingTalkLoginStartVO,
+  LarkLoginCallbackInput,
+  LarkLoginDiscoveryVO,
+  LarkLoginStartInput,
+  LarkLoginStartVO,
   LoginResult,
   WeComLoginCallbackInput,
   WeComLoginDiscoveryVO,
@@ -74,4 +78,34 @@ export function callbackDingTalkWorkbench(payload: DingTalkLoginCallbackInput) {
     '/auth/dingtalk/workbench/callback',
     payload,
   )
+}
+
+export function discoverLark(tenantSlug?: string) {
+  return http.get<LarkLoginDiscoveryVO>('/auth/lark/discovery', {
+    params: tenantSlug ? { tenant: tenantSlug } : undefined,
+  })
+}
+
+export function startLarkLogin(payload: LarkLoginStartInput) {
+  return http.post<LarkLoginStartVO>('/auth/lark/start', payload)
+}
+
+export function startLarkOauthLogin(payload: LarkLoginStartInput) {
+  return http.post<LarkLoginStartVO>('/auth/lark/oauth/start', payload)
+}
+
+export function startLarkMobileLogin(payload: LarkLoginStartInput) {
+  return http.post<LarkLoginStartVO>('/auth/lark/mobile/start', payload)
+}
+
+export function callbackLark(payload: LarkLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>('/auth/lark/callback', payload)
+}
+
+export function callbackLarkOauth(payload: LarkLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>('/auth/lark/oauth/callback', payload)
+}
+
+export function callbackLarkMobile(payload: LarkLoginCallbackInput) {
+  return http.post<LoginResult & { returnPath: string }>('/auth/lark/mobile/callback', payload)
 }

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 import { isDingTalkWorkbenchBrowser } from '@/utils/dingtalk'
+import { isLarkBrowser } from '@/utils/lark'
 import { isWeComWorkbenchBrowser } from '@/utils/wecom'
 
 declare module 'vue-router' {
@@ -58,6 +59,18 @@ const router = createRouter({
       name: 'dingtalk-workbench-login',
       component: () => import('@/views/auth/DingTalkWorkbenchLoginView.vue'),
       meta: { public: true, title: '钉钉工作台登录' },
+    },
+    {
+      path: '/login/lark/callback',
+      name: 'lark-login-callback',
+      component: () => import('@/views/auth/LarkCallbackView.vue'),
+      meta: { public: true, title: '飞书登录' },
+    },
+    {
+      path: '/login/lark/oauth',
+      name: 'lark-oauth-login',
+      component: () => import('@/views/auth/LarkOauthLoginView.vue'),
+      meta: { public: true, title: '飞书 OAuth 登录' },
     },
     {
       path: '/',
@@ -437,6 +450,15 @@ router.beforeEach(async (to) => {
       .catch(() => undefined)
   } else if (!auth.isAuthenticated && requestedTenant) {
     await enterpriseUi.load(requestedTenant).catch(() => undefined)
+  }
+  if (to.name === 'login' && !auth.isAuthenticated && isLarkBrowser() && to.query.manual !== '1') {
+    return {
+      name: 'lark-oauth-login',
+      query: {
+        ...(typeof to.query.redirect === 'string' ? { redirect: to.query.redirect } : {}),
+        ...(typeof to.query.tenant === 'string' ? { tenant: to.query.tenant } : {}),
+      },
+    }
   }
   if (
     to.name === 'login' &&

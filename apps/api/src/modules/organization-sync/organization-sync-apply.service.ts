@@ -63,7 +63,8 @@ export class OrganizationSyncApplyService {
     initial: OrganizationSyncBatch,
     provider: OrganizationSyncProvider,
   ): Promise<void> {
-    const providerName = provider === 'DINGTALK' ? '钉钉' : '企业微信'
+    const providerName =
+      provider === 'DINGTALK' ? '钉钉' : provider === 'LARK' ? '飞书' : '企业微信'
     const disabledUserIds = (
       await this.prisma.organizationSyncItem.findMany({
         where: {
@@ -198,7 +199,12 @@ export class OrganizationSyncApplyService {
             userId: user.id,
             userName: user.name,
             module: 'organizationSync',
-            action: provider === 'DINGTALK' ? 'applyDingTalkFailed' : 'applyWeComFailed',
+            action:
+              provider === 'DINGTALK'
+                ? 'applyDingTalkFailed'
+                : provider === 'LARK'
+                  ? 'applyLarkFailed'
+                  : 'applyWeComFailed',
             targetId: batchId,
             blob: { create: { detail: { errorCode: 'APPLY_FAILED' } } },
           },

@@ -2,11 +2,12 @@
 import { showSuccessToast, showFailToast } from 'vant'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { startDingTalkWorkbenchLogin } from '@/api/auth'
+import { startDingTalkWorkbenchLogin, startLarkMobileLogin } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import { useLoginBranding } from '@/composables/useLoginBranding'
 import { useAuthStore } from '@/stores/auth'
 import { isDingTalkWorkbenchBrowser } from '@/utils/dingtalk'
+import { isLarkBrowser } from '@/utils/lark'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,13 +35,21 @@ async function handleSubmit() {
 }
 
 onMounted(async () => {
-  if (!isDingTalkWorkbenchBrowser() || route.query.manual === '1') return
+  if (route.query.manual === '1') return
+  const lark = isLarkBrowser()
+  const dingTalk = isDingTalkWorkbenchBrowser()
+  if (!lark && !dingTalk) return
   thirdPartyLoading.value = true
   try {
-    const { data } = await startDingTalkWorkbenchLogin({
-      tenantSlug: tenantSlug.value,
-      returnPath: '/mobile/home',
-    })
+    const { data } = lark
+      ? await startLarkMobileLogin({
+          tenantSlug: tenantSlug.value,
+          returnPath: '/mobile/home',
+        })
+      : await startDingTalkWorkbenchLogin({
+          tenantSlug: tenantSlug.value,
+          returnPath: '/mobile/home',
+        })
     window.location.replace(data.authorizationUrl)
   } catch (error) {
     showFailToast(extractErrorMessage(error))

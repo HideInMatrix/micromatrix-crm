@@ -40,7 +40,7 @@ export interface ExternalLoginAudit {
   tenantId?: string
   userId?: string
   email: string
-  authType: 'WECOM' | 'WECOM_OAUTH2' | 'DINGTALK' | 'DINGTALK_OAUTH2'
+  authType: 'WECOM' | 'WECOM_OAUTH2' | 'DINGTALK' | 'DINGTALK_OAUTH2' | 'LARK' | 'LARK_OAUTH2'
   externalSubject?: string
   externalIdentityId?: string
 }
@@ -262,7 +262,14 @@ export class AuthService {
     context: LoginContext,
     user?: UserWithRelations | null,
     audit: {
-      authType: 'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2' | 'DINGTALK' | 'DINGTALK_OAUTH2'
+      authType:
+        | 'PASSWORD'
+        | 'WECOM'
+        | 'WECOM_OAUTH2'
+        | 'DINGTALK'
+        | 'DINGTALK_OAUTH2'
+        | 'LARK'
+        | 'LARK_OAUTH2'
       externalSubject?: string
       externalIdentityId?: string
     } = { authType: 'PASSWORD' },

@@ -30,9 +30,10 @@ const groups = ref<MessageTaskGroupVO[]>([])
 const configVisible = ref(false)
 const activeItem = ref<MessageTaskSettingVO | null>(null)
 const deliveryVisible = ref(false)
-const deliveryChannel = ref<'WECOM' | 'DINGTALK'>('WECOM')
+const deliveryChannel = ref<'WECOM' | 'DINGTALK' | 'LARK'>('WECOM')
 const weComGate = ref<MessageChannelGateVO | null>(null)
 const dingTalkGate = ref<MessageChannelGateVO | null>(null)
+const larkGate = ref<MessageChannelGateVO | null>(null)
 const canUpdate = computed(() => auth.hasPerm('system:message:update'))
 const rows = computed<MessageTableRow[]>(() =>
   groups.value.flatMap((group) =>
@@ -54,18 +55,24 @@ const allWeComEnabled = computed(
 const allDingTalkEnabled = computed(
   () => rows.value.length > 0 && rows.value.every((item) => item.dingTalkEnabled),
 )
+const allLarkEnabled = computed(
+  () => rows.value.length > 0 && rows.value.every((item) => item.larkEnabled),
+)
 
 async function load() {
   loading.value = true
   try {
-    const [{ data: settings }, { data: gate }, { data: dingTalk }] = await Promise.all([
-      messageSettingApi.list(),
-      messageSettingApi.weComStatus(),
-      messageSettingApi.dingTalkStatus(),
-    ])
+    const [{ data: settings }, { data: gate }, { data: dingTalk }, { data: lark }] =
+      await Promise.all([
+        messageSettingApi.list(),
+        messageSettingApi.weComStatus(),
+        messageSettingApi.dingTalkStatus(),
+        messageSettingApi.larkStatus(),
+      ])
     groups.value = settings
     weComGate.value = gate
     dingTalkGate.value = dingTalk
+    larkGate.value = lark
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -198,7 +205,41 @@ async function toggleAllDingTalk(value: boolean | string | number) {
   }
 }
 
-function openDeliveries(channel: 'WECOM' | 'DINGTALK') {
+async function toggleLark(rowValue: unknown, value: boolean | string | number) {
+  if (typeof value !== 'boolean') return
+  const row = asMessageRow(rowValue)
+  saving.value = true
+  try {
+    await messageSettingApi.update(row.event, {
+      module: row.module,
+      larkEnabled: value,
+    })
+    ElMessage.success('飞书消息设置已保存')
+    await load()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await load()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function toggleAllLark(value: boolean | string | number) {
+  if (typeof value !== 'boolean') return
+  saving.value = true
+  try {
+    const { data } = await messageSettingApi.batchUpdate({ larkEnabled: value })
+    groups.value = data
+    ElMessage.success('全部飞书消息设置已保存')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    await load()
+  } finally {
+    saving.value = false
+  }
+}
+
+function openDeliveries(channel: 'WECOM' | 'DINGTALK' | 'LARK') {
   deliveryChannel.value = channel
   deliveryVisible.value = true
 }
@@ -270,6 +311,9 @@ onMounted(() => {
         <el-button v-if="dingTalkGate?.configured" @click="openDeliveries('DINGTALK')">
           钉钉投递记录
         </el-button>
+        <el-button v-if="larkGate?.configured" @click="openDeliveries('LARK')">
+          飞书投递记录
+        </el-button>
       </div>
     </div>
 
@@ -293,6 +337,15 @@ onMounted(() => {
       :closable="false"
       show-icon
       :title="dingTalkGate.reason || '钉钉消息通道暂不可用'"
+    />
+
+    <el-alert
+      v-if="larkGate?.configured && !larkGate.available"
+      class="m-4 !w-auto"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="larkGate.reason || '飞书消息通道暂不可用'"
     />
 
     <el-table
@@ -396,6 +449,33 @@ onMounted(() => {
             :disabled="!canUpdate || !dingTalkGate.available"
             :data-event-dingtalk-toggle="row.event"
             @change="(value: boolean | string | number) => toggleDingTalk(row, value)"
+          />
+        </template>
+      </el-table-column>
+      <el-table-column v-if="larkGate?.configured" width="220" align="center">
+        <template #header>
+          <div class="channel-header">
+            <span>飞书</span>
+            <el-tooltip :disabled="larkGate.available" :content="larkGate.reason || ''">
+              <span>
+                <el-switch
+                  :model-value="allLarkEnabled"
+                  :loading="saving"
+                  :disabled="!canUpdate || !larkGate.available"
+                  data-testid="message-lark-toggle-all"
+                  @change="toggleAllLark"
+                />
+              </span>
+            </el-tooltip>
+          </div>
+        </template>
+        <template #default="{ row }">
+          <el-switch
+            :model-value="row.larkEnabled"
+            :loading="saving"
+            :disabled="!canUpdate || !larkGate.available"
+            :data-event-lark-toggle="row.event"
+            @change="(value: boolean | string | number) => toggleLark(row, value)"
           />
         </template>
       </el-table-column>

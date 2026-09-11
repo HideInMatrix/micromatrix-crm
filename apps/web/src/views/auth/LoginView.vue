@@ -3,7 +3,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { MessageCircleMore, MessagesSquare } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { startDingTalkLogin } from '@/api/auth'
+import { startDingTalkLogin, startLarkLogin } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import WeComLoginPanel from '@/components/auth/WeComLoginPanel.vue'
 import { useLoginBranding } from '@/composables/useLoginBranding'
@@ -17,6 +17,7 @@ const formRef = ref<FormInstance>()
 const loading = ref(false)
 const qrDialogVisible = ref(false)
 const dingTalkLoading = ref(false)
+const larkLoading = ref(false)
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
 )
@@ -59,6 +60,20 @@ async function openDingTalkLogin() {
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
     dingTalkLoading.value = false
+  }
+}
+
+async function openLarkLogin() {
+  larkLoading.value = true
+  try {
+    const { data } = await startLarkLogin({
+      tenantSlug: tenantSlug.value,
+      returnPath: returnPath.value,
+    })
+    window.location.assign(data.authorizationUrl)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+    larkLoading.value = false
   }
 }
 
@@ -139,6 +154,17 @@ async function handleSubmit() {
             aria-label="钉钉登录"
             data-testid="dingtalk-login-entry"
             @click="openDingTalkLogin"
+          />
+        </el-tooltip>
+        <el-tooltip content="飞书登录">
+          <el-button
+            circle
+            size="large"
+            :icon="MessageCircleMore"
+            :loading="larkLoading"
+            aria-label="飞书登录"
+            data-testid="lark-login-entry"
+            @click="openLarkLogin"
           />
         </el-tooltip>
       </div>

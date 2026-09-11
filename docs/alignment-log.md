@@ -1,3 +1,10 @@
+# 2026-09-11：DB-015B Lark Provider 正式封板
+
+- 修正数据库升级模型：不再修改已执行的 `20260905084900_baseline`，新增 `20260911153000_lark_provider_schema` 增量 migration，补齐 `ExternalOAuthFlow.QR_LARK/LARK/LARK_MOBILE`、`enterprise_integrations.redirectUrl` 与 `message_task_settings.larkEnabled`。当前开发库 deploy 后 DB→Schema=`No difference detected.`；隔离 fresh DB 从两条 migration 顺序 deploy + Seed 后同样 no diff。
+- Lark Provider runtime 已完成企业 ID/App ID/App Secret/redirectUrl、tenant token/tenant info、open_department_id/open_id 组织同步、QR/Web/Mobile OAuth、ExternalIdentity、`larkEnabled` channel gate 与 MessageDelivery outbox/message_id。完整 API Rules **263/263 PASS**，local Lark mock + 真实 Nest/PostgreSQL/HTTP smoke **36/36 PASS**。
+- Workbench Host Browser 真实验收：第三方设置连接测试成功；组织同步幂等预览 `新增0/更新0/禁用0/不变3` 并实际 apply 到 `SUCCEEDED`；成员飞书身份显示 `ou_lark_user_1`、绑定/最近登录时间；消息设置真实显示 LARK gate 与“新建客户 → 飞书测试成员 → 已送达 → 1/3”投递记录。
+- 工程门禁：root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prisma validate、当前 DB/fresh DB schema diff、当前变更集 Prettier 与 `git diff --check` PASS。DB-015B 更新为 **`VERIFIED`**，父 backlog DB-015 同步关闭；DB-023 继续 `DEFERRED`。
+
 # 功能对齐记录
 
 > 对照实例：本地 CordysCRM 社区版（`http://localhost:8081`，账号 `admin` / `CordysCRM`）。

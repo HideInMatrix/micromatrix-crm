@@ -12,6 +12,12 @@ const router = createRouter({
       meta: { public: true, title: '登录', depth: 0 },
     },
     {
+      path: '/lark/callback',
+      name: 'mobile-lark-callback',
+      component: () => import('@/views/auth/LarkCallbackView.vue'),
+      meta: { public: true, title: '飞书登录', depth: 0 },
+    },
+    {
       path: '/',
       component: () => import('@/layouts/MobileTabbarLayout.vue'),
       redirect: '/home',

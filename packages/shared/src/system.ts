@@ -89,7 +89,8 @@ export interface OperationLogClearResultVO {
 export interface LoginLogVO {
   id: string
   email: string
-  authType: 'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2' | 'DINGTALK' | 'DINGTALK_OAUTH2'
+  authType:
+    'PASSWORD' | 'WECOM' | 'WECOM_OAUTH2' | 'DINGTALK' | 'DINGTALK_OAUTH2' | 'LARK' | 'LARK_OAUTH2'
   externalSubject: string | null
   ip: string | null
   userAgent: string | null
@@ -111,6 +112,7 @@ export interface EnterpriseIntegrationVO {
   corpId: string
   clientId?: string | null
   agentId: string
+  redirectUrl?: string | null
   secretConfigured: boolean
   credentialVersion: number
   syncEnabled: boolean
@@ -175,6 +177,58 @@ export interface DingTalkConnectionTestVO {
 export interface UpdateDingTalkSyncInput {
   enabled: boolean
   defaultRoleId?: string
+}
+
+export interface SaveLarkIntegrationInput {
+  corpId: string
+  agentId: string
+  redirectUrl: string
+  appSecret?: string
+}
+
+export interface LarkIntegrationSecretVO {
+  appSecret: string
+}
+
+export interface LarkConnectionTestVO {
+  success: boolean
+  message: string
+  providerCode: number | null
+  integration: EnterpriseIntegrationVO
+}
+
+export interface UpdateLarkSyncInput {
+  enabled: boolean
+  defaultRoleId?: string
+}
+
+export interface LarkLoginDiscoveryVO {
+  tenantSlug: string
+  tenantName: string
+  available: boolean
+  reason: string | null
+  corpId: string | null
+  appId: string | null
+  redirectUrl: string | null
+  loginPath: string
+}
+
+export interface LarkLoginStartInput {
+  tenantSlug?: string
+  returnPath?: string
+}
+
+export interface LarkLoginStartVO {
+  authorizationUrl: string
+  appId: string
+  redirectUri: string
+  state: string
+  expiresAt: string
+}
+
+export interface LarkLoginCallbackInput {
+  code: string
+  state: string
 }
 
 export interface WeComIntegrationSecretVO {

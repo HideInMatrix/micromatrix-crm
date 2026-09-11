@@ -33,12 +33,16 @@ import type {
   UpdateMessageTaskSettingInput,
   UpdateOperationLogSettingInput,
   SaveDingTalkIntegrationInput,
+  SaveLarkIntegrationInput,
   SaveWeComIntegrationInput,
   DingTalkIntegrationSecretVO,
   DingTalkConnectionTestVO,
+  LarkIntegrationSecretVO,
+  LarkConnectionTestVO,
   WeComIntegrationSecretVO,
   WeComConnectionTestVO,
   UpdateDingTalkSyncInput,
+  UpdateLarkSyncInput,
   UpdateWeComSyncInput,
   ResolveOrganizationSyncInput,
   SaveAnnouncementInput,
@@ -111,6 +115,12 @@ export const externalIdentityApi = {
     http.post<ExternalIdentityVO>(`/external-identities/dingtalk/users/${userId}/bind`),
   unbindDingTalk: (userId: string) =>
     http.post<ExternalIdentityVO>(`/external-identities/dingtalk/users/${userId}/unbind`),
+  getLark: (userId: string) =>
+    http.get<ExternalIdentityVO>(`/external-identities/lark/users/${userId}`),
+  bindLark: (userId: string) =>
+    http.post<ExternalIdentityVO>(`/external-identities/lark/users/${userId}/bind`),
+  unbindLark: (userId: string) =>
+    http.post<ExternalIdentityVO>(`/external-identities/lark/users/${userId}/unbind`),
 }
 
 // ===== 角色 =====
@@ -421,6 +431,7 @@ export const messageSettingApi = {
   weComStatus: () => http.get<MessageChannelGateVO>('/message-settings/channels/wecom/status'),
   dingTalkStatus: () =>
     http.get<MessageChannelGateVO>('/message-settings/channels/dingtalk/status'),
+  larkStatus: () => http.get<MessageChannelGateVO>('/message-settings/channels/lark/status'),
   update: (event: string, data: UpdateMessageTaskSettingInput) =>
     http.patch<MessageTaskSettingVO>(`/message-settings/${event}`, data),
   batchUpdate: (data: BatchUpdateMessageTaskSettingInput) =>
@@ -432,7 +443,7 @@ export const messageSettingApi = {
 export const messageDeliveryApi = {
   list: (
     params: PageQuery & {
-      channel?: 'WECOM' | 'DINGTALK'
+      channel?: 'WECOM' | 'DINGTALK' | 'LARK'
       status?: MessageDeliveryStatus
       event?: string
     },
@@ -458,6 +469,14 @@ export const enterpriseIntegrationApi = {
     http.post<DingTalkConnectionTestVO>('/enterprise-integrations/dingtalk/test', data),
   updateDingTalkSync: (data: UpdateDingTalkSyncInput) =>
     http.put<EnterpriseIntegrationVO>('/enterprise-integrations/dingtalk/sync', data),
+  getLark: () => http.get<EnterpriseIntegrationVO>('/enterprise-integrations/lark'),
+  getLarkSecret: () => http.get<LarkIntegrationSecretVO>('/enterprise-integrations/lark/secret'),
+  saveLark: (data: SaveLarkIntegrationInput) =>
+    http.put<EnterpriseIntegrationVO>('/enterprise-integrations/lark', data),
+  testLark: (data: SaveLarkIntegrationInput) =>
+    http.post<LarkConnectionTestVO>('/enterprise-integrations/lark/test', data),
+  updateLarkSync: (data: UpdateLarkSyncInput) =>
+    http.put<EnterpriseIntegrationVO>('/enterprise-integrations/lark/sync', data),
 }
 
 export const organizationSyncApi = {
@@ -509,4 +528,29 @@ export const dingTalkOrganizationSyncApi = {
     ),
   apply: (id: string) =>
     http.post<OrganizationSyncBatchVO>(`/organization-sync/dingtalk/batches/${id}/apply`),
+}
+
+export const larkOrganizationSyncApi = {
+  status: () => http.get<OrganizationSyncGateVO>('/organization-sync/lark/status'),
+  preview: (data: CreateOrganizationSyncPreviewInput) =>
+    http.post<OrganizationSyncBatchVO>('/organization-sync/lark/previews', data),
+  batches: (params?: PageQuery & { status?: string }) =>
+    http.get<PaginatedResult<OrganizationSyncBatchVO>>('/organization-sync/lark/batches', {
+      params,
+    }),
+  batch: (id: string) => http.get<OrganizationSyncBatchVO>(`/organization-sync/lark/batches/${id}`),
+  items: (
+    id: string,
+    params?: PageQuery & { resourceType?: string; action?: string; keyword?: string },
+  ) =>
+    http.get<PaginatedResult<OrganizationSyncItemVO>>(
+      `/organization-sync/lark/batches/${id}/items`,
+      {
+        params,
+      },
+    ),
+  resolve: (id: string, data: ResolveOrganizationSyncInput) =>
+    http.put<OrganizationSyncBatchVO>(`/organization-sync/lark/batches/${id}/resolutions`, data),
+  apply: (id: string) =>
+    http.post<OrganizationSyncBatchVO>(`/organization-sync/lark/batches/${id}/apply`),
 }

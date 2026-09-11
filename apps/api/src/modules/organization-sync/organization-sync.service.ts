@@ -26,6 +26,7 @@ import {
   DingTalkClient,
   type DingTalkConnectionInput,
 } from '../enterprise-integrations/dingtalk.client'
+import { LarkClient, type LarkConnectionInput } from '../enterprise-integrations/lark.client'
 import {
   OrganizationSnapshotError,
   type OrganizationSnapshot,
@@ -40,7 +41,7 @@ import type {
 import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
 import { OrganizationSyncPlanner, type OrganizationSyncPlanItem } from './organization-sync.planner'
 
-export type OrganizationSyncProvider = 'WECOM' | 'DINGTALK'
+export type OrganizationSyncProvider = 'WECOM' | 'DINGTALK' | 'LARK'
 
 type ProviderSyncContext =
   | {
@@ -52,6 +53,11 @@ type ProviderSyncContext =
       provider: 'DINGTALK'
       integration: EnterpriseIntegration
       credentials: DingTalkConnectionInput
+    }
+  | {
+      provider: 'LARK'
+      integration: EnterpriseIntegration
+      credentials: LarkConnectionInput
     }
 
 const EMPTY_COUNTS: OrganizationSyncCounts = {
@@ -73,6 +79,7 @@ export class OrganizationSyncService {
     private readonly planner: OrganizationSyncPlanner,
     @Optional() private readonly coordination?: OrganizationSyncCoordinationService,
     @Optional() private readonly dingTalkClient?: DingTalkClient,
+    @Optional() private readonly larkClient?: LarkClient,
   ) {}
 
   async gate(
@@ -83,7 +90,9 @@ export class OrganizationSyncService {
     const integration =
       provider === 'DINGTALK'
         ? await this.integrations.getDingTalk(tenantId)
-        : await this.integrations.getWeCom(tenantId)
+        : provider === 'LARK'
+          ? await this.integrations.getLark(tenantId)
+          : await this.integrations.getWeCom(tenantId)
     const providerName = this.providerName(provider)
     let active: OrganizationSyncBatch | null = null
     let latest: OrganizationSyncBatch | null = null
@@ -561,6 +570,10 @@ export class OrganizationSyncService {
       const context = await this.integrations.getDingTalkSyncContext(tenantId)
       return { provider, integration: context.integration, credentials: context.credentials }
     }
+    if (provider === 'LARK') {
+      const context = await this.integrations.getLarkSyncContext(tenantId)
+      return { provider, integration: context.integration, credentials: context.credentials }
+    }
     const context = await this.integrations.getWeComSyncContext(tenantId)
     return { provider, integration: context.integration, credentials: context.credentials }
   }
@@ -570,11 +583,15 @@ export class OrganizationSyncService {
       if (!this.dingTalkClient) throw new BadRequestException('钉钉 Provider 未加载')
       return this.dingTalkClient.getOrganizationSnapshot(context.credentials)
     }
+    if (context.provider === 'LARK') {
+      if (!this.larkClient) throw new BadRequestException('飞书 Provider 未加载')
+      return this.larkClient.getOrganizationSnapshot(context.credentials)
+    }
     return this.weComClient.getOrganizationSnapshot(context.credentials)
   }
 
   private providerName(provider: OrganizationSyncProvider): string {
-    return provider === 'DINGTALK' ? '钉钉' : '企业微信'
+    return provider === 'DINGTALK' ? '钉钉' : provider === 'LARK' ? '飞书' : '企业微信'
   }
 
   private toItemCreate(

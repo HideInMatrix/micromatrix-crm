@@ -3,6 +3,8 @@ import type {
   DingTalkConnectionTestVO,
   DingTalkIntegrationSecretVO,
   EnterpriseIntegrationVO,
+  LarkConnectionTestVO,
+  LarkIntegrationSecretVO,
   WeComConnectionTestVO,
   WeComIntegrationSecretVO,
 } from '@micromatrix/shared'
@@ -15,7 +17,9 @@ import type {
   SaveDingTalkIntegrationDto,
   UpdateDingTalkSyncDto,
 } from './dto/dingtalk-integration.dto'
+import type { SaveLarkIntegrationDto, UpdateLarkSyncDto } from './dto/lark-integration.dto'
 import { DingTalkClient } from './dingtalk.client'
+import { LarkClient } from './lark.client'
 import { WeComClient } from './wecom.client'
 
 const PROVIDER = 'WECOM' as const
@@ -34,6 +38,13 @@ export interface DingTalkSyncContext {
 
 export type DingTalkRuntimeContext = DingTalkSyncContext
 
+export interface LarkSyncContext {
+  integration: EnterpriseIntegration
+  credentials: { corpId: string; agentId: string; appSecret: string; redirectUrl: string }
+}
+
+export type LarkRuntimeContext = LarkSyncContext
+
 @Injectable()
 export class EnterpriseIntegrationsService {
   constructor(
@@ -41,6 +52,7 @@ export class EnterpriseIntegrationsService {
     private readonly cipher: CredentialCipherService,
     private readonly weComClient: WeComClient,
     @Optional() private readonly dingTalkClient?: DingTalkClient,
+    @Optional() private readonly larkClient?: LarkClient,
   ) {}
 
   async getWeCom(tenantId: string): Promise<EnterpriseIntegrationVO> {
@@ -560,9 +572,252 @@ export class EnterpriseIntegrationsService {
     return context
   }
 
+  async getLark(tenantId: string): Promise<EnterpriseIntegrationVO> {
+    return this.toVO(await this.findLark(tenantId), 'LARK')
+  }
+
+  async getLarkSecret(tenantId: string): Promise<LarkIntegrationSecretVO> {
+    const row = await this.findLark(tenantId)
+    if (!row) throw new BadRequestException('请先配置飞书')
+    return { appSecret: this.decryptSecret(row) }
+  }
+
+  async saveLark(user: AuthUser, input: SaveLarkIntegrationDto): Promise<EnterpriseIntegrationVO> {
+    const existing = await this.findLark(user.tenantId)
+    const submittedSecret = input.appSecret?.trim() || null
+    if (!existing && !submittedSecret) throw new BadRequestException('首次配置必须填写应用 Secret')
+    const existingSecret = existing ? this.decryptSecret(existing) : null
+    const appSecret = submittedSecret ?? existingSecret
+    if (!appSecret) throw new BadRequestException('首次配置必须填写应用 Secret')
+    const credentialsChanged =
+      !existing ||
+      existing.corpId !== input.corpId ||
+      existing.agentId !== input.agentId ||
+      existing.redirectUrl !== input.redirectUrl ||
+      (submittedSecret !== null && submittedSecret !== existingSecret)
+    const encrypted = submittedSecret ? this.cipher.encrypt(submittedSecret) : null
+    const credential = encrypted ?? {
+      ciphertext: existing!.secretCiphertext,
+      iv: existing!.secretIv,
+      authTag: existing!.secretAuthTag,
+      keyVersion: existing!.secretKeyVersion,
+    }
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.enterpriseIntegration.upsert({
+        where: { tenantId_provider: { tenantId: user.tenantId, provider: 'LARK' } },
+        update: {
+          corpId: input.corpId,
+          agentId: input.agentId,
+          redirectUrl: input.redirectUrl,
+          ...(encrypted
+            ? {
+                secretCiphertext: encrypted.ciphertext,
+                secretIv: encrypted.iv,
+                secretAuthTag: encrypted.authTag,
+                secretKeyVersion: encrypted.keyVersion,
+              }
+            : {}),
+          ...(credentialsChanged
+            ? {
+                credentialVersion: { increment: 1 },
+                syncEnabled: false,
+                lastTestSucceeded: null,
+                lastTestMessage: null,
+                lastTestedAt: null,
+              }
+            : {}),
+          updatedById: user.id,
+        },
+        create: {
+          tenantId: user.tenantId,
+          provider: 'LARK',
+          corpId: input.corpId,
+          agentId: input.agentId,
+          redirectUrl: input.redirectUrl,
+          secretCiphertext: credential.ciphertext,
+          secretIv: credential.iv,
+          secretAuthTag: credential.authTag,
+          secretKeyVersion: credential.keyVersion,
+          credentialVersion: 1,
+          syncEnabled: false,
+          createdById: user.id,
+          updatedById: user.id,
+        },
+      })
+      if (existing && credentialsChanged) {
+        await tx.organizationSyncBatch.updateMany({
+          where: { integrationId: saved.id, status: 'PREVIEW_READY' },
+          data: {
+            status: 'INVALIDATED',
+            errorCode: 'CREDENTIALS_CHANGED',
+            errorMessage: '飞书配置已变化，请重新生成同步预览',
+            finishedAt: new Date(),
+          },
+        })
+      }
+      return saved
+    })
+    return this.toVO(row)
+  }
+
+  async testLark(user: AuthUser, input: SaveLarkIntegrationDto): Promise<LarkConnectionTestVO> {
+    const existing = await this.findLark(user.tenantId)
+    const submittedSecret = input.appSecret?.trim() || null
+    if (!existing && !submittedSecret) throw new BadRequestException('首次测试必须填写应用 Secret')
+    const existingSecret = existing ? this.decryptSecret(existing) : null
+    if (
+      existing &&
+      (existing.corpId !== input.corpId ||
+        existing.agentId !== input.agentId ||
+        existing.redirectUrl !== input.redirectUrl) &&
+      !submittedSecret
+    ) {
+      throw new BadRequestException('企业 ID、应用 ID 或回调地址变化时必须重新填写应用 Secret')
+    }
+    const appSecret = submittedSecret ?? existingSecret
+    if (!appSecret) throw new BadRequestException('首次测试必须填写应用 Secret')
+    if (!this.larkClient) throw new BadRequestException('飞书 Provider 未加载')
+    const result = await this.larkClient.testConnection({
+      corpId: input.corpId,
+      agentId: input.agentId,
+      appSecret,
+      redirectUrl: input.redirectUrl,
+    })
+    const encrypted = submittedSecret ? this.cipher.encrypt(submittedSecret) : null
+    const credential = encrypted ?? {
+      ciphertext: existing!.secretCiphertext,
+      iv: existing!.secretIv,
+      authTag: existing!.secretAuthTag,
+      keyVersion: existing!.secretKeyVersion,
+    }
+    const credentialsChanged =
+      !existing ||
+      existing.corpId !== input.corpId ||
+      existing.agentId !== input.agentId ||
+      existing.redirectUrl !== input.redirectUrl ||
+      (submittedSecret !== null && submittedSecret !== existingSecret)
+    const testedAt = new Date()
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.enterpriseIntegration.upsert({
+        where: { tenantId_provider: { tenantId: user.tenantId, provider: 'LARK' } },
+        update: {
+          corpId: input.corpId,
+          agentId: input.agentId,
+          redirectUrl: input.redirectUrl,
+          ...(encrypted
+            ? {
+                secretCiphertext: encrypted.ciphertext,
+                secretIv: encrypted.iv,
+                secretAuthTag: encrypted.authTag,
+                secretKeyVersion: encrypted.keyVersion,
+              }
+            : {}),
+          ...(credentialsChanged
+            ? { credentialVersion: { increment: 1 }, syncEnabled: false }
+            : {}),
+          lastTestSucceeded: result.success,
+          lastTestMessage: result.message.slice(0, 500),
+          lastTestedAt: testedAt,
+          updatedById: user.id,
+        },
+        create: {
+          tenantId: user.tenantId,
+          provider: 'LARK',
+          corpId: input.corpId,
+          agentId: input.agentId,
+          redirectUrl: input.redirectUrl,
+          secretCiphertext: credential.ciphertext,
+          secretIv: credential.iv,
+          secretAuthTag: credential.authTag,
+          secretKeyVersion: credential.keyVersion,
+          credentialVersion: 1,
+          syncEnabled: false,
+          lastTestSucceeded: result.success,
+          lastTestMessage: result.message.slice(0, 500),
+          lastTestedAt: testedAt,
+          createdById: user.id,
+          updatedById: user.id,
+        },
+      })
+      if (existing && credentialsChanged) {
+        await tx.organizationSyncBatch.updateMany({
+          where: { integrationId: saved.id, status: 'PREVIEW_READY' },
+          data: {
+            status: 'INVALIDATED',
+            errorCode: 'CREDENTIALS_CHANGED',
+            errorMessage: '飞书配置已变化，请重新生成同步预览',
+            finishedAt: testedAt,
+          },
+        })
+      }
+      return saved
+    })
+    return { ...result, integration: this.toVO(row) }
+  }
+
+  async updateLarkSync(user: AuthUser, input: UpdateLarkSyncDto): Promise<EnterpriseIntegrationVO> {
+    const existing = await this.findLark(user.tenantId)
+    if (!existing) throw new BadRequestException('请先配置飞书')
+    if (input.enabled && existing.lastTestSucceeded !== true) {
+      throw new BadRequestException('请先完成飞书连接测试')
+    }
+    const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
+    if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
+    if (roleId) {
+      const role = await this.prisma.role.findFirst({
+        where: { id: roleId, tenantId: user.tenantId },
+        select: { id: true },
+      })
+      if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
+    }
+    return this.toVO(
+      await this.prisma.enterpriseIntegration.update({
+        where: { id: existing.id },
+        data: {
+          syncEnabled: input.enabled,
+          ...(roleId ? { syncDefaultRoleId: roleId } : {}),
+          updatedById: user.id,
+        },
+      }),
+    )
+  }
+
+  async getLarkRuntimeContext(tenantId: string): Promise<LarkRuntimeContext> {
+    const integration = await this.findLark(tenantId)
+    if (!integration) throw new BadRequestException('请先配置飞书')
+    if (integration.lastTestSucceeded !== true)
+      throw new BadRequestException('请先完成飞书连接测试')
+    if (!integration.redirectUrl) throw new BadRequestException('飞书回调地址配置缺失')
+    return {
+      integration,
+      credentials: {
+        corpId: integration.corpId,
+        agentId: integration.agentId,
+        appSecret: this.decryptSecret(integration),
+        redirectUrl: integration.redirectUrl,
+      },
+    }
+  }
+
+  async getLarkSyncContext(tenantId: string): Promise<LarkSyncContext> {
+    const context = await this.getLarkRuntimeContext(tenantId)
+    if (!context.integration.syncEnabled) throw new BadRequestException('请先开启飞书组织同步')
+    if (!context.integration.syncDefaultRoleId)
+      throw new BadRequestException('请选择新成员默认角色')
+    return context
+  }
+
   private findDingTalk(tenantId: string) {
     return this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId, provider: 'DINGTALK' } },
+    })
+  }
+
+  private findLark(tenantId: string) {
+    return this.prisma.enterpriseIntegration.findUnique({
+      where: { tenantId_provider: { tenantId, provider: 'LARK' } },
     })
   }
 
@@ -613,6 +868,7 @@ export class EnterpriseIntegrationsService {
       corpId: row.corpId,
       clientId: row.clientId,
       agentId: row.agentId,
+      redirectUrl: row.redirectUrl,
       secretConfigured: Boolean(row.secretCiphertext && row.secretIv && row.secretAuthTag),
       credentialVersion: row.credentialVersion,
       syncEnabled: row.syncEnabled,

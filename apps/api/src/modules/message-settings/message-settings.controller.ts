@@ -45,6 +45,13 @@ export class MessageSettingsController {
     return this.messageSettings.getDingTalkChannelGate(user.tenantId)
   }
 
+  @Get('channels/lark/status')
+  @RequirePermissions('system:message')
+  @ApiOperation({ summary: '获取飞书消息渠道门槛状态' })
+  larkStatus(@CurrentUser() user: AuthUser) {
+    return this.messageSettings.getLarkChannelGate(user.tenantId)
+  }
+
   @Get(':event/config')
   @RequirePermissions('system:message')
   @ApiOperation({ summary: '获取事件范围配置' })
