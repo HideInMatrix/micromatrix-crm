@@ -107,6 +107,24 @@ docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \
   "$MIGRATE_IMAGE"
 
+echo '[docker-release] validating migrated database matches Prisma schema'
+docker run --rm \
+  --network "$NETWORK" \
+  -e NODE_ENV=production \
+  -e DATABASE_URL="$DATABASE_URL" \
+  "$MIGRATE_IMAGE" \
+  ./node_modules/.bin/prisma migrate diff \
+  --exit-code \
+  --from-config-datasource \
+  --to-schema=prisma/schema.prisma
+
+echo '[docker-release] validating explicit legacy schema sync command'
+docker run --rm \
+  --network "$NETWORK" \
+  -e NODE_ENV=production \
+  -e DATABASE_URL="$DATABASE_URL" \
+  "$MIGRATE_IMAGE" legacy-sync
+
 echo '[docker-release] starting worker entry from API image'
 docker run -d \
   --name "$WORKER_CONTAINER" \

@@ -19,6 +19,10 @@
 
 Migration runtime 以 `docker/release-init.sh` 为 ENTRYPOINT：默认 `init` 顺序执行 `prisma migrate deploy` + `SEED_MODE=bootstrap` Seed；重复执行时 bootstrap 只补空安装，不覆盖已有管理员数据。Migration 镜像只在升级/初始化时短暂运行，API 常驻镜像不再承担 Prisma CLI、migration 或 Seed 工具链。
 
+数据库结构变更必须采用 append-only migration：开发阶段修改 `schema.prisma` 后执行 `pnpm db:migrate:dev -- --name <change>` 生成新的 `prisma/migrations/<timestamp>_<change>/migration.sql`，已发布 migration 不得再次修改。根目录提供 `pnpm db:deploy` / `pnpm db:status` 作为生产 deploy/status 统一入口；`pnpm db:legacy-sync` 仅用于历史环境一次性修复“旧库已记录 migration、但实际 schema 落后”的遗留状态，不属于日常发布流程。
+
+GitHub Actions 在发布前执行 `pnpm db:verify-migrations`，固定已发布 baseline 的 SHA-256，阻止继续改写历史 baseline；Docker smoke 在 fresh PostgreSQL 上执行正常 `migrate deploy` 后立即用 `prisma migrate diff --exit-code` 比较数据库与当前 `schema.prisma`。因此后续如果只改 schema 却没有新增 migration，发布会在镜像构建前失败，而不会再把不完整的 migrate 镜像推到线上。
+
 ### Web
 
 `docker/web.Dockerfile` 在 `BUILDPLATFORM` 的 Node 24 builder 内同时构建 PC `apps/web` 与 Mobile `apps/mobile`，最终把两份与 CPU 架构无关的静态产物分别放到 Nginx `/` 与 `/mobile/`。多架构发布时不会在 QEMU arm64 Node 下重复执行 Vite。

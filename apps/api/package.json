@@ -10,6 +10,9 @@
     "test:rules": "prisma generate && node --import tsx --test src/async-jobs/*.test.ts src/common/http/*.test.ts src/common/services/*.test.ts src/modules/import-export/*.test.ts src/modules/leads/*.test.ts src/modules/logs/*.test.ts src/modules/pool-rules/*.test.ts src/modules/module-configs/*.test.ts src/modules/metadata/*.test.ts src/modules/user-views/*.test.ts src/modules/follow-up-plans/*.test.ts src/modules/follow-ups/*.test.ts src/modules/message-settings/*.test.ts src/modules/notifications/*.test.ts src/modules/announcements/*.test.ts src/modules/approvals/*.test.ts src/modules/home/*.test.ts src/modules/enterprise-integrations/*.test.ts src/modules/enterprise-settings/*.test.ts src/modules/organization-sync/*.test.ts src/modules/wecom-sso/*.test.ts src/modules/dingtalk-sso/*.test.ts src/modules/lark-sso/*.test.ts src/workers/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:status": "prisma migrate status",
+    "prisma:legacy-sync": "prisma db push",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts"
   },

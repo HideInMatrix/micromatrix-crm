@@ -16,8 +16,12 @@
     "format": "prettier --write .",
     "smoke:docker-release": "bash docker/release-smoke.sh",
     "prisma:generate": "pnpm --filter @micromatrix/api prisma:generate",
-    "db:migrate": "pnpm --filter @micromatrix/api exec prisma migrate deploy",
-    "db:migrate:dev": "pnpm --filter @micromatrix/api exec prisma migrate dev"
+    "db:migrate": "pnpm --filter @micromatrix/api prisma:deploy",
+    "db:deploy": "pnpm --filter @micromatrix/api prisma:deploy",
+    "db:migrate:dev": "pnpm --filter @micromatrix/api prisma:migrate",
+    "db:status": "pnpm --filter @micromatrix/api prisma:status",
+    "db:legacy-sync": "pnpm --filter @micromatrix/api prisma:legacy-sync",
+    "db:verify-migrations": "node docker/verify-prisma-migrations.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

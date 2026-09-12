@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify Prisma migration history
+        run: pnpm db:verify-migrations
+
       - name: Build shared workspace package
         run: pnpm --filter @micromatrix/shared build
 
