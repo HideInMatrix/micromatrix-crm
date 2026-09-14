@@ -195,8 +195,8 @@ function handleSelectionChange(rows: CustomerVO[]) {
 }
 
 function openMerge() {
-  if (selectedRows.value.length < 2) {
-    ElMessage.warning('请至少选择 2 个客户')
+  if (selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要合并的客户')
     return
   }
   mergeVisible.value = true
@@ -468,6 +468,9 @@ onMounted(async () => {
           <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true">
             批量修改（{{ selectedRows.length }}）
           </el-button>
+          <el-button v-if="auth.hasPerm('customer:merge')" @click="openMerge">
+            合并客户（{{ selectedRows.length }}）
+          </el-button>
           <el-button
             v-if="auth.hasPerm('customer:delete')"
             type="danger"
@@ -477,13 +480,6 @@ onMounted(async () => {
             批量删除
           </el-button>
         </template>
-        <el-button
-          v-if="!isCollaborationView && auth.hasPerm('customer:merge')"
-          :disabled="selectedRows.length < 2"
-          @click="openMerge"
-        >
-          合并客户<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span>
-        </el-button>
         <el-button
           v-if="!isCollaborationView && auth.hasPerm('customer:create')"
           type="primary"

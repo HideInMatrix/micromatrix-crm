@@ -96,8 +96,12 @@ async function loadOtherCustomers(keyword?: string) {
 }
 
 function payload(): CustomerMergePayload | null {
-  if (props.selectedRows.length < 2) {
-    ElMessage.warning('至少选择 2 个客户进行合并')
+  if (props.selectedRows.length === 0) {
+    ElMessage.warning('请先选择要合并的客户')
+    return null
+  }
+  if (form.targetMode === 'selected' && props.selectedRows.length < 2) {
+    ElMessage.warning('主客户来自已选客户时至少需要选择 2 个客户，也可以合并至其它可见客户')
     return null
   }
   if (!form.toMergeId) {
