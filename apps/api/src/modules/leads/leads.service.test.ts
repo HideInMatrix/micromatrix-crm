@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LeadsService } from './leads.service'
+import { buildLeadKeywordWhere, LeadsService } from './leads.service'
+
+test('线索关键词只搜索名称和手机号', () => {
+  assert.deepEqual(buildLeadKeywordWhere('138'), {
+    OR: [{ name: { contains: '138', mode: 'insensitive' } }, { phone: { contains: '138' } }],
+  })
+})
 
 interface LeadsServiceTestHarness {
   fieldValues: {

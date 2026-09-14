@@ -162,7 +162,7 @@ function handlePersonalCommand(command: string) {
           :collapse="sidebarCollapsed"
           :collapse-transition="false"
           router
-          class="crm-side-menu min-h-0 flex-1 overflow-y-auto"
+          class="crm-side-menu min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <template v-for="menu in visibleMenus" :key="menu.path">
             <el-sub-menu v-if="menu.children?.length" :index="menu.path">

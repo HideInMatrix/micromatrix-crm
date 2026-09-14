@@ -60,6 +60,12 @@ import {
 
 const MODULE = 'lead'
 
+export function buildLeadKeywordWhere(keyword: string): Prisma.ClueWhereInput {
+  return {
+    OR: [{ name: { contains: keyword, mode: 'insensitive' } }, { phone: { contains: keyword } }],
+  }
+}
+
 interface LeadCreateInput {
   name: string
   contactName?: string
@@ -408,15 +414,7 @@ export class LeadsService {
       AND: [scopeClause],
       ...(filteredIds ? { id: { in: filteredIds } } : {}),
       ...(status ? { stage: status } : {}),
-      ...(keyword
-        ? {
-            OR: [
-              { name: { contains: keyword, mode: 'insensitive' } },
-              { contact: { contains: keyword, mode: 'insensitive' } },
-              { phone: { contains: keyword } },
-            ],
-          }
-        : {}),
+      ...(keyword ? buildLeadKeywordWhere(keyword) : {}),
     }
 
     const sort = this.resolveClueSort(fields, query.sort)

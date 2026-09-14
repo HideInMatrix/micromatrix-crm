@@ -22,6 +22,7 @@ declare module 'vue' {
     CrmImportDialog: typeof import('./../components/CrmImportDialog.vue')['default']
     CrmSearchInput: typeof import('./../components/CrmSearchInput.vue')['default']
     CrmTableUtilityActions: typeof import('./../components/CrmTableUtilityActions.vue')['default']
+    CrmViewSelect: typeof import('./../components/CrmViewSelect.vue')['default']
     CsvImportDialog: typeof import('./../components/CsvImportDialog.vue')['default']
     CustomerContactTable: typeof import('./../components/contacts/CustomerContactTable.vue')['default']
     CustomerDetailDrawer: typeof import('./../components/CustomerDetailDrawer.vue')['default']

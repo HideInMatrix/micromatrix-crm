@@ -308,14 +308,13 @@ export class CustomersService {
     const saved = query.viewId
       ? await this.userViews.resolveFilters(user, query.viewId, viewResourceType)
       : null
-    const [savedIds, adHocIds, keywordIds] = await Promise.all([
+    const [savedIds, adHocIds] = await Promise.all([
       saved?.conditions.length
         ? this.filterCustomerIds(user.tenantId, saved.conditions, saved.searchMode)
         : null,
       adHocConditions.length
         ? this.filterCustomerIds(user.tenantId, adHocConditions, query.filterMode ?? 'AND')
         : null,
-      keyword ? this.keywordCustomerIds(user.tenantId, keyword) : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
 
@@ -338,9 +337,7 @@ export class CustomersService {
       organizationId: user.tenantId,
       AND: [scopeClause],
       ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(keywordIds
-        ? { OR: [{ name: { contains: keyword, mode: 'insensitive' } }, { id: { in: keywordIds } }] }
-        : {}),
+      ...(keyword ? { name: { contains: keyword, mode: 'insensitive' } } : {}),
     }
 
     const [items, total] = await this.prisma.$transaction([
@@ -384,9 +381,8 @@ export class CustomersService {
     const { page = 1, pageSize = 10, keyword } = query
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const adHocConditions = parseFilters(query.filters)
-    const [adHocIds, keywordIds, collaborations, poolOptions, directScope] = await Promise.all([
+    const [adHocIds, collaborations, poolOptions, directScope] = await Promise.all([
       adHocConditions.length ? this.filterCustomerIds(user.tenantId, adHocConditions, 'AND') : null,
-      keyword ? this.keywordCustomerIds(user.tenantId, keyword) : null,
       this.prisma.customerCollaboration.findMany({
         where: { userId: user.id, customer: { organizationId: user.tenantId } },
         select: { customerId: true, collaborationType: true },
@@ -408,14 +404,7 @@ export class CustomersService {
         },
       ],
       ...(adHocIds ? { id: { in: adHocIds } } : {}),
-      ...(keywordIds || keyword
-        ? {
-            OR: [
-              ...(keyword ? [{ name: { contains: keyword, mode: 'insensitive' as const } }] : []),
-              ...(keywordIds ? [{ id: { in: keywordIds } }] : []),
-            ],
-          }
-        : {}),
+      ...(keyword ? { name: { contains: keyword, mode: 'insensitive' as const } } : {}),
     }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
@@ -3227,19 +3216,6 @@ export class CustomersService {
         .slice(1)
         .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]),
     ]
-  }
-
-  private async keywordCustomerIds(organizationId: string, keyword: string): Promise<string[]> {
-    const conditions: FilterCondition[] = [
-      { key: 'cf_phone', op: 'contains', value: keyword },
-      { key: 'cf_email', op: 'contains', value: keyword },
-    ]
-    const matches = await Promise.all(
-      conditions.map((condition) =>
-        this.fieldValues.filterResourceIds(organizationId, 'customer', [condition]),
-      ),
-    )
-    return [...new Set(matches.flat())]
   }
 
   private intersectIds(left: string[] | null, right: string[] | null): string[] | null {

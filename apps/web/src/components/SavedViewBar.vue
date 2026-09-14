@@ -11,7 +11,17 @@ import {
 import type { MemberOption } from '@/api/system'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import CrmViewSelect from '@/components/CrmViewSelect.vue'
 import FilterConditionEditor from '@/components/form-engine/FilterConditionEditor.vue'
+
+interface CrmViewSelectItem {
+  id: string
+  label: string
+  fixed?: boolean
+  pinnable?: boolean
+  copyable?: boolean
+  reorderable?: boolean
+}
 
 const props = defineProps<{
   module: string
@@ -62,6 +72,26 @@ const selectedViewKey = computed(() => {
   }
   return 'default'
 })
+const systemSelectViews = computed<CrmViewSelectItem[]>(() => {
+  if (!props.systemViews?.length) {
+    return [{ id: 'default', label: '默认视图', fixed: true }]
+  }
+  return props.systemViews.map((view) => ({
+    id: `system:${view.id}`,
+    label: view.label,
+    fixed: true,
+  }))
+})
+const personalSelectViews = computed<CrmViewSelectItem[]>(() =>
+  enabledViews.value.map((view) => ({
+    id: `user:${view.id}`,
+    label: view.name,
+    fixed: view.fixed,
+    pinnable: true,
+    copyable: true,
+    reorderable: true,
+  })),
+)
 const columnOptions = computed(() =>
   props.fields
     .filter((field) => !field.hidden)
@@ -305,6 +335,44 @@ async function moveView(view: UserViewVO, offset: -1 | 1) {
   }
 }
 
+async function reorderView(payload: {
+  group: 'system' | 'personal'
+  moveId: string
+  targetId: string
+  moveMode: 'BEFORE' | 'AFTER'
+}) {
+  if (payload.group !== 'personal' || !auth.user?.tenantId) return
+  const moveId = payload.moveId.replace(/^user:/, '')
+  const targetId = payload.targetId.replace(/^user:/, '')
+  if (moveId === targetId) return
+  try {
+    await userViewApi.editPos(props.module, {
+      orgId: auth.user.tenantId,
+      moveId,
+      targetId,
+      moveMode: payload.moveMode,
+    })
+    await loadViews(false)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+function selectedPersonalView(item: CrmViewSelectItem) {
+  const viewId = item.id.replace(/^user:/, '')
+  return enabledViews.value.find((view) => view.id === viewId)
+}
+
+function toggleSelectedViewFixed(item: CrmViewSelectItem) {
+  const view = selectedPersonalView(item)
+  if (view) void toggleFixed(view)
+}
+
+function copySelectedView(item: CrmViewSelectItem) {
+  const view = selectedPersonalView(item)
+  if (view) void copyView(view)
+}
+
 function loadColumnPreference() {
   const viewKey = activeViewId.value || '__default__'
   const raw = localStorage.getItem(userStorageKey('columns', viewKey))
@@ -422,27 +490,18 @@ watch(
     </div>
 
     <div class="flex items-center" data-testid="saved-view-actions">
-      <el-select
+      <CrmViewSelect
         :model-value="selectedViewKey"
-        filterable
-        placeholder="选择视图"
-        class="!w-[200px]"
+        :system-views="systemSelectViews"
+        :personal-views="personalSelectViews"
+        :loading="loading"
         @update:model-value="(value) => selectAnyView(value)"
-      >
-        <el-option v-if="!systemViews?.length" label="默认视图" value="default" />
-        <el-option
-          v-for="view in systemViews ?? []"
-          :key="`system:${view.id}`"
-          :label="view.label"
-          :value="`system:${view.id}`"
-        />
-        <el-option
-          v-for="view in enabledViews"
-          :key="`user:${view.id}`"
-          :label="view.name"
-          :value="`user:${view.id}`"
-        />
-      </el-select>
+        @create="openCreate(true)"
+        @manage="openManageViews"
+        @pin="toggleSelectedViewFixed"
+        @copy="copySelectedView"
+        @reorder="reorderView"
+      />
     </div>
   </div>
 

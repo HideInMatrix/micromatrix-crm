@@ -498,11 +498,7 @@ onMounted(async () => {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <CrmSearchInput
-          v-model="query.keyword"
-          placeholder="搜索名称 / 电话 / 邮箱"
-          @search="handleSearch"
-        />
+        <CrmSearchInput v-model="query.keyword" placeholder="搜索客户名称" @search="handleSearch" />
         <AdvancedFilter
           v-model="filters"
           :fields="fields"

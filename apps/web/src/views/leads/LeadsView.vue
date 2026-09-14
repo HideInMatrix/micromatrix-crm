@@ -762,7 +762,7 @@ onMounted(async () => {
       <div class="flex flex-wrap items-center gap-2">
         <CrmSearchInput
           v-model="query.keyword"
-          placeholder="搜索名称 / 联系人 / 电话"
+          placeholder="搜索名称 / 手机号"
           @search="handleSearch"
         />
         <el-select
