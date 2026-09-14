@@ -11,6 +11,7 @@ import {
   StartWeComLoginDto,
   WeComDiscoveryQueryDto,
   WeComLoginCallbackDto,
+  WeComWorkbenchEntryQueryDto,
 } from './dto/wecom-sso.dto'
 import { WeComSsoService } from './wecom-sso.service'
 
@@ -54,6 +55,22 @@ export class WeComSsoController {
     const result = await this.service.startWorkbench(dto, origin)
     this.writeNonceCookie(response, WORKBENCH_NONCE_COOKIE, result)
     return result.value
+  }
+
+  @Public()
+  @Get('workbench/entry')
+  @ApiOperation({ summary: '企业微信应用主页入口：签发工作台 OAuth state 并 302 到企业微信授权页' })
+  async enterWorkbench(
+    @Query() query: WeComWorkbenchEntryQueryDto,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const result = await this.service.startWorkbenchEntry(
+      { tenantSlug: query.tenant, target: query.target },
+      this.requestOrigin(request),
+    )
+    this.writeNonceCookie(response, WORKBENCH_NONCE_COOKIE, result)
+    return response.redirect(302, result.value.authorizationUrl)
   }
 
   private writeNonceCookie(
@@ -110,6 +127,13 @@ export class WeComSsoController {
       if (key === name) return decodeURIComponent(value.join('='))
     }
     return undefined
+  }
+
+  private requestOrigin(request: Request): string | undefined {
+    const origin = request.headers.origin
+    if (typeof origin === 'string' && origin.trim()) return origin
+    const host = request.get('host')
+    return host ? `${request.protocol}://${host}` : undefined
   }
 }
 

@@ -105,6 +105,15 @@ export type EnterpriseIntegrationProvider = 'WECOM' | 'DINGTALK' | 'LARK'
 export type OrganizationSyncStatus =
   'FETCHING' | 'PREVIEW_READY' | 'APPLYING' | 'SUCCEEDED' | 'FAILED' | 'INVALIDATED'
 
+export interface EnterpriseIntegrationPlatformStateVO {
+  syncResource: EnterpriseIntegrationProvider
+  sync: boolean
+}
+
+export interface SwitchEnterpriseIntegrationPlatformInput {
+  provider: EnterpriseIntegrationProvider
+}
+
 export interface EnterpriseIntegrationVO {
   id: string | null
   provider: EnterpriseIntegrationProvider
@@ -131,6 +140,8 @@ export interface SaveWeComIntegrationInput {
   corpId: string
   agentId: string
   appSecret?: string
+  /** 企业微信工作台 H5 OAuth 完成后的回跳页面。 */
+  redirectUrl?: string
 }
 
 export interface SaveDingTalkIntegrationInput {

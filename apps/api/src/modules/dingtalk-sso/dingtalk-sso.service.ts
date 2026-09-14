@@ -56,18 +56,21 @@ export class DingTalkSsoService {
     const integration = await this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId: tenant.id, provider: PROVIDER } },
     })
+    const activePlatform = await this.integrations.getActivePlatform(tenant.id)
     const reason =
       tenant.status !== 'ACTIVE'
         ? '企业账户已停用'
-        : !integration
-          ? '钉钉尚未配置'
-          : integration.lastTestSucceeded !== true
-            ? '钉钉连接尚未验证'
-            : !integration.syncEnabled
-              ? '钉钉统一登录尚未开启'
-              : !integration.clientId
-                ? '钉钉 AppKey 配置缺失'
-                : null
+        : activePlatform.syncResource !== PROVIDER
+          ? '当前企业协同平台不是钉钉'
+          : !integration
+            ? '钉钉尚未配置'
+            : integration.lastTestSucceeded !== true
+              ? '钉钉连接尚未验证'
+              : !integration.syncEnabled
+                ? '钉钉统一登录尚未开启'
+                : !integration.clientId
+                  ? '钉钉 AppKey 配置缺失'
+                  : null
     return {
       tenantSlug: tenant.slug,
       tenantName: tenant.name,

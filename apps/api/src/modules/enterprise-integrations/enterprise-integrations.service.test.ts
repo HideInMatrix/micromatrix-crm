@@ -85,9 +85,14 @@ function createService(
       Object.assign(existing, data, { updatedAt: new Date() })
       return existing
     },
+    updateMany: async () => ({ count: 0 }),
   }
   const prismaMock = {
     enterpriseIntegration,
+    tenant: {
+      findUnique: async () => ({ enterpriseSyncResource: 'WECOM', enterpriseSynced: false }),
+      updateMany: async () => ({ count: 1 }),
+    },
     organizationSyncBatch: { updateMany: async () => ({ count: 0 }) },
     role: {
       findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
@@ -143,8 +148,10 @@ test('首次保存必须提供 Secret，响应不回显秘密材料', async () =
     corpId: 'ww-a',
     agentId: '1000001',
     appSecret: 'plain-secret',
+    redirectUrl: '/teacher',
   })
   assert.equal(value.secretConfigured, true)
+  assert.equal(value.redirectUrl, '/teacher')
   assert.equal('secretCiphertext' in value, false)
   assert.notEqual(rows[0]?.secretCiphertext, 'plain-secret')
   assert.deepEqual(await service.getWeComSecret('tenant-a'), { appSecret: 'plain-secret' })
@@ -210,6 +217,15 @@ test('开启同步后直接测试或提交相同 Secret 不会关闭同步', asy
   })
   await service.updateWeComSync(user, { enabled: true, defaultRoleId: 'role-a' })
   const version = rows[0]?.credentialVersion
+
+  const returnPageChanged = await service.saveWeCom(user, {
+    corpId: 'ww-a',
+    agentId: '1000001',
+    redirectUrl: '/teacher',
+  })
+  assert.equal(returnPageChanged.redirectUrl, '/teacher')
+  assert.equal(returnPageChanged.syncEnabled, true)
+  assert.equal(returnPageChanged.credentialVersion, version)
 
   const direct = await service.testWeCom(user, { corpId: 'ww-a', agentId: '1000001' })
   assert.equal(direct.integration.syncEnabled, true)

@@ -57,16 +57,19 @@ export class WeComSsoService {
     const integration = await this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId: tenant.id, provider: PROVIDER } },
     })
+    const activePlatform = await this.integrations.getActivePlatform(tenant.id)
     const reason =
       tenant.status !== 'ACTIVE'
         ? '企业账户已停用'
-        : !integration
-          ? '企业微信尚未配置'
-          : integration.lastTestSucceeded !== true
-            ? '企业微信连接尚未验证'
-            : !integration.syncEnabled
-              ? '企业微信统一登录尚未开启'
-              : null
+        : activePlatform.syncResource !== PROVIDER
+          ? '当前企业协同平台不是企业微信'
+          : !integration
+            ? '企业微信尚未配置'
+            : integration.lastTestSucceeded !== true
+              ? '企业微信连接尚未验证'
+              : !integration.syncEnabled
+                ? '企业微信统一登录尚未开启'
+                : null
     return {
       tenantSlug: tenant.slug,
       tenantName: tenant.name,
@@ -112,10 +115,23 @@ export class WeComSsoService {
     authorizationUrl.searchParams.set('appid', login.corpId)
     authorizationUrl.searchParams.set('response_type', 'code')
     authorizationUrl.searchParams.set('redirect_uri', login.redirectUri)
-    authorizationUrl.searchParams.set('scope', 'snsapi_privateinfo')
+    authorizationUrl.searchParams.set('scope', 'snsapi_base')
     authorizationUrl.searchParams.set('agentid', login.agentId)
     authorizationUrl.searchParams.set('state', login.state)
     return this.loginStartResult(login, `${authorizationUrl.toString()}#wechat_redirect`)
+  }
+
+  async startWorkbenchEntry(
+    input: { tenantSlug?: string; target?: string },
+    requestOrigin?: string,
+  ): Promise<{ value: WeComLoginStartVO; browserNonce: string; secureCookie: boolean }> {
+    return this.startWorkbench(
+      {
+        tenantSlug: input.tenantSlug,
+        returnPath: this.workbenchReturnPath(input.target, requestOrigin),
+      },
+      requestOrigin,
+    )
   }
 
   private async createLoginState(
@@ -585,6 +601,21 @@ export class WeComSsoService {
       throw new BadRequestException('企业微信回调地址配置无效')
     }
     return url.toString()
+  }
+
+  private workbenchReturnPath(target: string | undefined, requestOrigin?: string): string {
+    const value = target?.trim()
+    if (!value) return '/'
+    if (value.startsWith('/') && !value.startsWith('//')) return value.slice(0, 500)
+
+    const targetUrl = new URL(this.validHttpUrl(value))
+    const publicUrl = this.config.get<string>('WEB_PUBLIC_URL')?.trim() || requestOrigin
+    if (!publicUrl) throw new BadRequestException('无法确认企业微信工作台回跳域名')
+    const publicOrigin = new URL(this.validHttpUrl(publicUrl)).origin
+    if (targetUrl.origin !== publicOrigin) {
+      throw new BadRequestException('企业微信工作台回跳地址必须与 CRM 网页同域')
+    }
+    return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`.slice(0, 500)
   }
 
   private safeReturnPath(value?: string): string {

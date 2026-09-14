@@ -168,6 +168,10 @@ export class OrganizationSyncApplyService {
               updatedById: user.id,
             },
           })
+          await tx.tenant.updateMany({
+            where: { id: user.tenantId, enterpriseSyncResource: provider },
+            data: { enterpriseSynced: true },
+          })
         },
         { maxWait: 10_000, timeout: 60_000 },
       )

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, UnauthorizedException } from '@nestjs/common'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthService } from '../../auth/auth.service'
 import type { ExternalIdentity, ExternalOAuthState } from '../../generated/prisma/client'
@@ -128,6 +128,7 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
       key === 'WEB_PUBLIC_URL' ? 'http://localhost:5173' : key === 'NODE_ENV' ? 'test' : undefined,
   } as unknown as ConfigService
   const integrations = {
+    getActivePlatform: async () => ({ syncResource: 'WECOM', sync: true }),
     getWeComRuntimeContext: async () => ({
       integration,
       credentials: { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
@@ -201,7 +202,7 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
     workbenchUrl.origin + workbenchUrl.pathname,
     'https://open.weixin.qq.com/connect/oauth2/authorize',
   )
-  assert.equal(workbenchUrl.searchParams.get('scope'), 'snsapi_privateinfo')
+  assert.equal(workbenchUrl.searchParams.get('scope'), 'snsapi_base')
 
   await assert.rejects(
     () =>
@@ -224,4 +225,22 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
     gender: true,
   })
   assert.equal(updatedAvatar, 'https://example.com/avatar.png')
+
+  const entry = await service.startWorkbenchEntry(
+    { target: 'http://localhost:5173/teacher?source=wecom#overview' },
+    'http://localhost:5173',
+  )
+  assert.ok(entry.value.authorizationUrl.startsWith('https://open.weixin.qq.com/'))
+  assert.equal(
+    (oauthState as unknown as ExternalOAuthState).returnPath,
+    '/teacher?source=wecom#overview',
+  )
+  await assert.rejects(
+    () =>
+      service.startWorkbenchEntry(
+        { target: 'https://attacker.example/steal' },
+        'http://localhost:5173',
+      ),
+    BadRequestException,
+  )
 })

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { EnterpriseIntegrationVO, SaveLarkIntegrationInput } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
-import { MessageCircleMore, Settings2, ShieldCheck } from 'lucide-vue-next'
+import { MessageCircleMore } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { enterpriseIntegrationApi, roleApi, type RoleOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
+import EnterpriseIntegrationCardShell from './EnterpriseIntegrationCardShell.vue'
 
 const auth = useAuthStore()
 const canUpdate = computed(() => auth.hasPerm('system:setting:update'))
@@ -67,24 +68,6 @@ const status = computed(() => {
     return { label: '验证失败', type: 'danger' as const }
   return { label: '待验证', type: 'warning' as const }
 })
-
-const loginUrl = computed(() =>
-  auth.user?.tenantSlug
-    ? `${window.location.origin}/login?tenant=${encodeURIComponent(auth.user.tenantSlug)}`
-    : '',
-)
-
-function formatTime(value: string | null) {
-  if (!value) return '尚未测试'
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
-}
 
 async function loadData() {
   loading.value = true
@@ -230,116 +213,32 @@ async function enableSync() {
   }
 }
 
-async function copyLoginUrl() {
-  if (!loginUrl.value) return
-  await navigator.clipboard.writeText(loginUrl.value)
-  ElMessage.success('企业登录地址已复制')
-}
-
 onMounted(loadData)
 </script>
 
 <template>
-  <el-card v-loading="loading" shadow="never" class="max-w-270" data-testid="lark-integration-card">
-    <div
-      class="flex items-center justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start"
-    >
-      <div class="flex items-center gap-3.5">
-        <div
-          class="size-11 grid place-items-center rounded-2 bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
-        >
-          <MessageCircleMore :size="24" />
-        </div>
-        <div>
-          <div class="flex items-center gap-2.5 text-base font-semibold">
-            <span>飞书</span>
-            <el-tag :type="status.type" size="small">{{ status.label }}</el-tag>
-          </div>
-          <p class="mt-1.5 text-[13px] text-[var(--el-text-color-secondary)]">
-            对接飞书自建应用，用于组织同步、统一登录与消息通知。
-          </p>
-        </div>
-      </div>
-      <div v-if="canUpdate" class="flex items-center gap-2.5">
-        <el-button :icon="Settings2" @click="openDrawer">配置</el-button>
-        <el-button
-          type="primary"
-          plain
-          :icon="ShieldCheck"
-          :disabled="!integration.configured"
-          :loading="testing"
-          @click="testSaved"
-        >
-          测试连接
-        </el-button>
-      </div>
-    </div>
-
-    <el-divider />
-    <el-descriptions :column="4" border>
-      <el-descriptions-item label="企业 ID">{{
-        integration.corpId || '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="App ID">{{
-        integration.agentId || '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="App Secret">{{
-        integration.secretConfigured ? '已安全配置' : '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="最后测试">{{
-        formatTime(integration.lastTestedAt)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="OAuth 回调" :span="2">{{
-        integration.redirectUrl || '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="测试结果" :span="2">{{
-        integration.lastTestMessage || '尚未执行连接测试'
-      }}</el-descriptions-item>
-    </el-descriptions>
-
-    <div
-      class="mt-4.5 flex items-center justify-between gap-6 rounded-1.5 border border-dashed border-[var(--el-border-color)] bg-[var(--el-fill-color-lighter)] px-4 py-3.5"
-    >
-      <div class="flex flex-col gap-1">
-        <strong>同步组织架构</strong>
-        <span class="text-[13px] text-[var(--el-text-color-secondary)]">
-          {{
-            integration.syncEnabled
-              ? '已开启，可在组织架构页面执行飞书同步。'
-              : '开启后可预览并同步飞书部门和成员。'
-          }}
-        </span>
-      </div>
-      <el-switch
-        :model-value="integration.syncEnabled"
-        :disabled="!canUpdate || integration.lastTestSucceeded !== true"
-        :loading="syncSaving"
-        @change="requestSyncChange(Boolean($event))"
-      />
-    </div>
-
-    <el-descriptions :column="2" border class="mt-3">
-      <el-descriptions-item label="统一登录">
-        <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">{{
-          integration.syncEnabled ? '可用' : '不可用'
-        }}</el-tag>
-      </el-descriptions-item>
-      <el-descriptions-item label="飞书消息">
-        <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">{{
-          integration.syncEnabled ? '可配置' : '不可配置'
-        }}</el-tag>
-      </el-descriptions-item>
-      <el-descriptions-item label="企业登录地址" :span="2">
-        <div class="min-w-0 flex items-center justify-between gap-3">
-          <span class="truncate text-[var(--el-text-color-secondary)]">{{
-            loginUrl || '登录地址暂不可生成'
-          }}</span>
-          <el-button v-if="loginUrl" link type="primary" @click="copyLoginUrl">复制</el-button>
-        </div>
-      </el-descriptions-item>
-    </el-descriptions>
-  </el-card>
-
+  <EnterpriseIntegrationCardShell
+    title="飞书"
+    description="对接飞书自建应用，用于组织同步、统一登录与消息通知"
+    :status-label="status.label"
+    :status-type="status.type"
+    :loading="loading"
+    :can-update="canUpdate"
+    :configured="integration.configured"
+    :testing="testing"
+    :sync-enabled="integration.syncEnabled"
+    :sync-disabled="!canUpdate || integration.lastTestSucceeded !== true"
+    :sync-saving="syncSaving"
+    sync-tip="请先保存配置并完成连接测试"
+    data-testid="lark-integration-card"
+    @configure="openDrawer"
+    @test="testSaved"
+    @sync-change="requestSyncChange"
+  >
+    <template #icon>
+      <MessageCircleMore :size="24" />
+    </template>
+  </EnterpriseIntegrationCardShell>
   <el-drawer v-model="drawerVisible" title="配置飞书" size="520px" destroy-on-close>
     <el-alert
       title="App Secret 在服务端加密保存；App ID 用于 tenant token、OAuth 和消息发送。回调地址需与飞书开放平台配置一致。"

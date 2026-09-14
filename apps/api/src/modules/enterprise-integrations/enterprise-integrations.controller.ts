@@ -7,6 +7,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
 import { SaveDingTalkIntegrationDto, UpdateDingTalkSyncDto } from './dto/dingtalk-integration.dto'
 import { SaveLarkIntegrationDto, UpdateLarkSyncDto } from './dto/lark-integration.dto'
+import { SwitchEnterpriseIntegrationPlatformDto } from './dto/enterprise-integration-platform.dto'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 
 @ApiTags('企业集成')
@@ -14,6 +15,24 @@ import { EnterpriseIntegrationsService } from './enterprise-integrations.service
 @Controller('enterprise-integrations')
 export class EnterpriseIntegrationsController {
   constructor(private readonly integrations: EnterpriseIntegrationsService) {}
+
+  @Get('active-platform')
+  @RequirePermissions('system:setting')
+  @ApiOperation({ summary: '获取当前企业主协同平台及组织同步状态' })
+  getActivePlatform(@CurrentUser() user: AuthUser) {
+    return this.integrations.getActivePlatform(user.tenantId)
+  }
+
+  @Put('active-platform')
+  @RequirePermissions('system:setting:update')
+  @LogOperation('enterpriseIntegration', 'switchActivePlatform')
+  @ApiOperation({ summary: '切换当前企业主协同平台' })
+  switchActivePlatform(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SwitchEnterpriseIntegrationPlatformDto,
+  ) {
+    return this.integrations.switchActivePlatform(user, dto.provider)
+  }
 
   @Get('wecom')
   @RequirePermissions('system:setting')

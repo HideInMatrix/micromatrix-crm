@@ -130,6 +130,7 @@ test('钉钉 OAuth state 绑定浏览器、只消费一次并按 userid 映射�
       key === 'WEB_PUBLIC_URL' ? 'http://localhost:5173' : key === 'NODE_ENV' ? 'test' : undefined,
   } as unknown as ConfigService
   const integrations = {
+    getActivePlatform: async () => ({ syncResource: 'DINGTALK', sync: true }),
     getDingTalkRuntimeContext: async () => ({
       integration,
       credentials: {

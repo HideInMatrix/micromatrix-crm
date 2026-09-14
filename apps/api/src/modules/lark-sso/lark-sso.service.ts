@@ -55,18 +55,21 @@ export class LarkSsoService {
     const integration = await this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId: tenant.id, provider: PROVIDER } },
     })
+    const activePlatform = await this.integrations.getActivePlatform(tenant.id)
     const reason =
       tenant.status !== 'ACTIVE'
         ? '企业账户已停用'
-        : !integration
-          ? '飞书尚未配置'
-          : integration.lastTestSucceeded !== true
-            ? '飞书连接尚未验证'
-            : !integration.syncEnabled
-              ? '飞书统一登录尚未开启'
-              : !integration.redirectUrl
-                ? '飞书回调地址配置缺失'
-                : null
+        : activePlatform.syncResource !== PROVIDER
+          ? '当前企业协同平台不是飞书'
+          : !integration
+            ? '飞书尚未配置'
+            : integration.lastTestSucceeded !== true
+              ? '飞书连接尚未验证'
+              : !integration.syncEnabled
+                ? '飞书统一登录尚未开启'
+                : !integration.redirectUrl
+                  ? '飞书回调地址配置缺失'
+                  : null
     return {
       tenantSlug: tenant.slug,
       tenantName: tenant.name,

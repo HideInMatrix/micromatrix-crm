@@ -103,6 +103,8 @@ CREATE TABLE "tenants" (
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
     "status" "TenantStatus" NOT NULL DEFAULT 'ACTIVE',
+    "enterpriseSyncResource" "EnterpriseIntegrationProvider" NOT NULL DEFAULT 'WECOM',
+    "enterpriseSynced" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -2068,6 +2070,7 @@ CREATE TABLE "enterprise_integrations" (
     "corpId" TEXT NOT NULL,
     "clientId" TEXT,
     "agentId" TEXT NOT NULL,
+    "redirectUrl" TEXT,
     "secretCiphertext" TEXT NOT NULL,
     "secretIv" TEXT NOT NULL,
     "secretAuthTag" TEXT NOT NULL,

@@ -92,9 +92,14 @@ function createService(
       Object.assign(row, data, { updatedAt: new Date() })
       return row
     },
+    updateMany: async () => ({ count: 0 }),
   }
   const prismaRecord: Record<string, unknown> = {
     enterpriseIntegration,
+    tenant: {
+      findUnique: async () => ({ enterpriseSyncResource: 'LARK', enterpriseSynced: false }),
+      updateMany: async () => ({ count: 1 }),
+    },
     organizationSyncBatch: { updateMany: async () => ({ count: 0 }) },
     role: {
       findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>

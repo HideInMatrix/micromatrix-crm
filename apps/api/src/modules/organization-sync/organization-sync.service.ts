@@ -93,6 +93,7 @@ export class OrganizationSyncService {
         : provider === 'LARK'
           ? await this.integrations.getLark(tenantId)
           : await this.integrations.getWeCom(tenantId)
+    const activePlatform = await this.integrations.getActivePlatform(tenantId)
     const providerName = this.providerName(provider)
     let active: OrganizationSyncBatch | null = null
     let latest: OrganizationSyncBatch | null = null
@@ -129,19 +130,22 @@ export class OrganizationSyncService {
     }
 
     const runningPhase = runtime?.phase ?? active?.status
-    const disabledReason = !integration.configured
-      ? `请先配置${providerName}`
-      : integration.lastTestSucceeded !== true
-        ? `请先完成${providerName}连接测试`
-        : !integration.syncEnabled
-          ? '请先在企业设置中开启同步组织架构'
-          : !integration.syncDefaultRoleId
-            ? '请选择新成员默认角色'
-            : runningPhase === 'FETCHING'
-              ? `正在获取${providerName}组织数据`
-              : runningPhase === 'APPLYING'
-                ? '正在应用组织同步'
-                : null
+    const disabledReason =
+      activePlatform.syncResource !== provider
+        ? `当前企业协同平台为${this.providerName(activePlatform.syncResource)}，请先在企业设置中切换平台`
+        : !integration.configured
+          ? `请先配置${providerName}`
+          : integration.lastTestSucceeded !== true
+            ? `请先完成${providerName}连接测试`
+            : !integration.syncEnabled
+              ? '请先在企业设置中开启同步组织架构'
+              : !integration.syncDefaultRoleId
+                ? '请选择新成员默认角色'
+                : runningPhase === 'FETCHING'
+                  ? `正在获取${providerName}组织数据`
+                  : runningPhase === 'APPLYING'
+                    ? '正在应用组织同步'
+                    : null
     return {
       configured: integration.configured,
       verified: integration.lastTestSucceeded === true,

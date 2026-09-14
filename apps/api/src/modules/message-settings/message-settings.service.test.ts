@@ -8,6 +8,7 @@ import { MessageSettingsService } from './message-settings.service'
 
 function createService() {
   const rows: MessageTaskSetting[] = []
+  let activeProvider: 'WECOM' | 'DINGTALK' | 'LARK' = 'WECOM'
   const find = (tenantId: string, module: string, event: string) =>
     rows.find((row) => row.tenantId === tenantId && row.module === module && row.event === event)
   const messageTaskSetting = {
@@ -53,11 +54,18 @@ function createService() {
     enterpriseIntegration: {
       findUnique: async () => ({ lastTestSucceeded: true, syncEnabled: true }),
     },
+    tenant: { findUnique: async () => ({ enterpriseSyncResource: activeProvider }) },
     user: { count: async () => 0 },
     role: { count: async () => 0 },
     $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
   } as unknown as PrismaService
-  return { service: new MessageSettingsService(prisma), rows }
+  return {
+    service: new MessageSettingsService(prisma),
+    rows,
+    setActiveProvider: (provider: 'WECOM' | 'DINGTALK' | 'LARK') => {
+      activeProvider = provider
+    },
+  }
 }
 
 test('完整返回当前 Cordys 事件目录并合并默认开关', async () => {
@@ -82,7 +90,7 @@ test('完整返回当前 Cordys 事件目录并合并默认开关', async () => 
 })
 
 test('单项与批量开关按租户持久化', async () => {
-  const { service } = createService()
+  const { service, setActiveProvider } = createService()
 
   await service.update('tenant-a', 'CUSTOMER_ADD', {
     module: 'CUSTOMER',
@@ -97,6 +105,7 @@ test('单项与批量开关按租户持久化', async () => {
   })
   assert.equal(await service.isWeComEnabled('tenant-a', 'CUSTOMER_ADD'), true)
 
+  setActiveProvider('LARK')
   await service.update('tenant-a', 'CUSTOMER_ADD', {
     module: 'CUSTOMER',
     larkEnabled: true,
@@ -111,6 +120,7 @@ test('企业微信开关由配置、连接测试和同步开关共同控制', as
   let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = null
   const prisma = {
     enterpriseIntegration: { findUnique: async () => integration },
+    tenant: { findUnique: async () => ({ enterpriseSyncResource: 'WECOM' }) },
   } as unknown as PrismaService
   const service = new MessageSettingsService(prisma)
 
@@ -127,6 +137,7 @@ test('飞书开关由配置、连接测试和同步开关共同控制', async ()
   let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = null
   const prisma = {
     enterpriseIntegration: { findUnique: async () => integration },
+    tenant: { findUnique: async () => ({ enterpriseSyncResource: 'LARK' }) },
   } as unknown as PrismaService
   const service = new MessageSettingsService(prisma)
 

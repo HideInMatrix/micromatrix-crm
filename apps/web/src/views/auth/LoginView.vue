@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus'
 import { MessageCircleMore, MessagesSquare } from 'lucide-vue-next'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { startDingTalkLogin, startLarkLogin } from '@/api/auth'
+import {
+  discoverDingTalk,
+  discoverLark,
+  discoverWeCom,
+  startDingTalkLogin,
+  startLarkLogin,
+} from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import WeComLoginPanel from '@/components/auth/WeComLoginPanel.vue'
 import { useLoginBranding } from '@/composables/useLoginBranding'
@@ -18,6 +24,8 @@ const loading = ref(false)
 const qrDialogVisible = ref(false)
 const dingTalkLoading = ref(false)
 const larkLoading = ref(false)
+type CollaborationProvider = 'WECOM' | 'DINGTALK' | 'LARK'
+const collaborationProvider = ref<CollaborationProvider | null>(null)
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
 )
@@ -77,6 +85,22 @@ async function openLarkLogin() {
   }
 }
 
+async function loadCollaborationProvider() {
+  collaborationProvider.value = null
+  const providers: CollaborationProvider[] = ['WECOM', 'DINGTALK', 'LARK']
+  const results = await Promise.allSettled([
+    discoverWeCom(tenantSlug.value),
+    discoverDingTalk(tenantSlug.value),
+    discoverLark(tenantSlug.value),
+  ])
+  const activeIndex = results.findIndex(
+    (result) => result.status === 'fulfilled' && result.value.data.available,
+  )
+  collaborationProvider.value = activeIndex >= 0 ? providers[activeIndex]! : null
+}
+
+watch(tenantSlug, () => void loadCollaborationProvider(), { immediate: true })
+
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -133,41 +157,43 @@ async function handleSubmit() {
         </el-button>
       </el-form>
 
-      <el-divider>其他登录方式</el-divider>
-      <div class="flex justify-center gap-3">
-        <el-tooltip content="企业微信扫码登录">
-          <el-button
-            circle
-            size="large"
-            :icon="MessagesSquare"
-            aria-label="企业微信扫码登录"
-            data-testid="wecom-login-entry"
-            @click="openWeComLogin"
-          />
-        </el-tooltip>
-        <el-tooltip content="钉钉登录">
-          <el-button
-            circle
-            size="large"
-            :icon="MessageCircleMore"
-            :loading="dingTalkLoading"
-            aria-label="钉钉登录"
-            data-testid="dingtalk-login-entry"
-            @click="openDingTalkLogin"
-          />
-        </el-tooltip>
-        <el-tooltip content="飞书登录">
-          <el-button
-            circle
-            size="large"
-            :icon="MessageCircleMore"
-            :loading="larkLoading"
-            aria-label="飞书登录"
-            data-testid="lark-login-entry"
-            @click="openLarkLogin"
-          />
-        </el-tooltip>
-      </div>
+      <template v-if="collaborationProvider">
+        <el-divider>其他登录方式</el-divider>
+        <div class="flex justify-center">
+          <el-tooltip v-if="collaborationProvider === 'WECOM'" content="企业微信扫码登录">
+            <el-button
+              circle
+              size="large"
+              :icon="MessagesSquare"
+              aria-label="企业微信扫码登录"
+              data-testid="wecom-login-entry"
+              @click="openWeComLogin"
+            />
+          </el-tooltip>
+          <el-tooltip v-else-if="collaborationProvider === 'DINGTALK'" content="钉钉登录">
+            <el-button
+              circle
+              size="large"
+              :icon="MessageCircleMore"
+              :loading="dingTalkLoading"
+              aria-label="钉钉登录"
+              data-testid="dingtalk-login-entry"
+              @click="openDingTalkLogin"
+            />
+          </el-tooltip>
+          <el-tooltip v-else content="飞书登录">
+            <el-button
+              circle
+              size="large"
+              :icon="MessageCircleMore"
+              :loading="larkLoading"
+              aria-label="飞书登录"
+              data-testid="lark-login-entry"
+              @click="openLarkLogin"
+            />
+          </el-tooltip>
+        </div>
+      </template>
     </el-card>
 
     <el-dialog

@@ -3,6 +3,7 @@ import type {
   BatchUpdateMessageTaskSettingInput,
   DataScope,
   DepartmentVO,
+  EnterpriseIntegrationPlatformStateVO,
   EnterpriseIntegrationVO,
   ExternalIdentityVO,
   LoginLogVO,
@@ -46,6 +47,7 @@ import type {
   UpdateWeComSyncInput,
   ResolveOrganizationSyncInput,
   SaveAnnouncementInput,
+  SwitchEnterpriseIntegrationPlatformInput,
 } from '@micromatrix/shared'
 import { http } from '../http'
 
@@ -452,6 +454,13 @@ export const messageDeliveryApi = {
 }
 
 export const enterpriseIntegrationApi = {
+  getActivePlatform: () =>
+    http.get<EnterpriseIntegrationPlatformStateVO>('/enterprise-integrations/active-platform'),
+  switchActivePlatform: (data: SwitchEnterpriseIntegrationPlatformInput) =>
+    http.put<EnterpriseIntegrationPlatformStateVO>(
+      '/enterprise-integrations/active-platform',
+      data,
+    ),
   getWeCom: () => http.get<EnterpriseIntegrationVO>('/enterprise-integrations/wecom'),
   getWeComSecret: () => http.get<WeComIntegrationSecretVO>('/enterprise-integrations/wecom/secret'),
   saveWeCom: (data: SaveWeComIntegrationInput) =>

@@ -9,6 +9,24 @@ export class WeComDiscoveryQueryDto {
   tenant?: string
 }
 
+export class WeComWorkbenchEntryQueryDto {
+  @ApiProperty({ required: false, example: 'demo' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  tenant?: string
+
+  @ApiProperty({
+    required: false,
+    example: 'https://crm.example.com/dashboard',
+    description: 'OAuth 完成后的站内回跳页面，可使用同域绝对 URL 或 / 开头的站内路径',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2_048)
+  target?: string
+}
+
 export class StartWeComLoginDto {
   @ApiProperty({ required: false, example: 'demo' })
   @IsOptional()

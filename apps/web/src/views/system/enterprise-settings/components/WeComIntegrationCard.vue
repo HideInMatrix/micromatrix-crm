@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { EnterpriseIntegrationVO, SaveWeComIntegrationInput } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
-import { MessagesSquare, Settings2, ShieldCheck } from 'lucide-vue-next'
+import { MessagesSquare } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { enterpriseIntegrationApi, roleApi, type RoleOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
+import EnterpriseIntegrationCardShell from './EnterpriseIntegrationCardShell.vue'
 
 const auth = useAuthStore()
 const canUpdate = computed(() => auth.hasPerm('system:setting:update'))
@@ -41,7 +42,36 @@ const emptyIntegration = (): EnterpriseIntegrationVO => ({
 })
 
 const integration = ref<EnterpriseIntegrationVO>(emptyIntegration())
-const form = reactive<SaveWeComIntegrationInput>({ corpId: '', agentId: '', appSecret: '' })
+const form = reactive<SaveWeComIntegrationInput>({
+  corpId: '',
+  agentId: '',
+  appSecret: '',
+  redirectUrl: '/',
+})
+
+function resolveWorkbenchTarget(value?: string): URL | null {
+  const target = value?.trim()
+  if (!target) return null
+  try {
+    const url = target.startsWith('/') ? new URL(target, window.location.origin) : new URL(target)
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== window.location.origin) {
+      return null
+    }
+    return url
+  } catch {
+    return null
+  }
+}
+
+const workbenchHomeUrl = computed(() => {
+  const target = resolveWorkbenchTarget(form.redirectUrl)
+  if (!target) return ''
+  const url = new URL('/api/auth/wecom/workbench/entry', window.location.origin)
+  const tenantSlug = auth.user?.tenantSlug
+  if (tenantSlug) url.searchParams.set('tenant', tenantSlug)
+  url.searchParams.set('target', target.toString())
+  return url.toString()
+})
 
 const rules: FormRules<SaveWeComIntegrationInput> = {
   corpId: [
@@ -53,6 +83,16 @@ const rules: FormRules<SaveWeComIntegrationInput> = {
     { pattern: /^\d+$/, message: '应用 ID 必须为数字', trigger: 'blur' },
   ],
   appSecret: [{ required: true, message: '请输入应用 Secret', trigger: 'blur' }],
+  redirectUrl: [
+    { required: true, message: '请输入工作台回跳页面', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (resolveWorkbenchTarget(String(value ?? ''))) callback()
+        else callback(new Error('回跳页面必须是当前 CRM 域名下的 http(s) 地址或 / 开头的站内路径'))
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 const status = computed(() => {
@@ -63,30 +103,6 @@ const status = computed(() => {
     return { label: '验证失败', type: 'danger' as const }
   return { label: '待验证', type: 'warning' as const }
 })
-const loginUrl = computed(() =>
-  auth.user?.tenantSlug
-    ? `${window.location.origin}/login?tenant=${encodeURIComponent(auth.user.tenantSlug)}`
-    : '',
-)
-
-async function copyLoginUrl() {
-  if (!loginUrl.value) return
-  await navigator.clipboard.writeText(loginUrl.value)
-  ElMessage.success('企业微信登录地址已复制')
-}
-
-function formatTime(value: string | null) {
-  if (!value) return '尚未测试'
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
-}
-
 async function loadData() {
   loading.value = true
   try {
@@ -108,6 +124,7 @@ async function openDrawer() {
   form.corpId = integration.value.corpId
   form.agentId = integration.value.agentId
   form.appSecret = ''
+  form.redirectUrl = integration.value.redirectUrl || '/'
   drawerVisible.value = true
   if (!integration.value.secretConfigured) return
   secretLoading.value = true
@@ -131,7 +148,21 @@ function payload(): SaveWeComIntegrationInput {
   return {
     corpId: form.corpId.trim(),
     agentId: form.agentId.trim(),
+    redirectUrl: form.redirectUrl?.trim(),
     ...(appSecret ? { appSecret } : {}),
+  }
+}
+
+async function copyWorkbenchHomeUrl() {
+  if (!workbenchHomeUrl.value) {
+    ElMessage.warning('请先填写有效的工作台回跳页面')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(workbenchHomeUrl.value)
+    ElMessage.success('应用主页地址已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制应用主页地址')
   }
 }
 
@@ -235,132 +266,28 @@ onMounted(loadData)
 </script>
 
 <template>
-  <el-card
-    v-loading="loading"
-    shadow="never"
-    class="max-w-270"
+  <EnterpriseIntegrationCardShell
+    title="企业微信"
+    description="为企业打造的专业办公管理工具"
+    :status-label="status.label"
+    :status-type="status.type"
+    :loading="loading"
+    :can-update="canUpdate"
+    :configured="integration.configured"
+    :testing="testing"
+    :sync-enabled="integration.syncEnabled"
+    :sync-disabled="!canUpdate || integration.lastTestSucceeded !== true"
+    :sync-saving="syncSaving"
+    sync-tip="请先保存配置并完成连接测试"
     data-testid="wecom-integration-card"
+    @configure="openDrawer"
+    @test="testSaved"
+    @sync-change="requestSyncChange"
   >
-    <div
-      class="flex items-center justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start"
-    >
-      <div class="flex items-center gap-3.5">
-        <div
-          class="size-11 grid place-items-center rounded-2 bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
-        >
-          <MessagesSquare :size="24" />
-        </div>
-        <div>
-          <div class="flex items-center gap-2.5 text-base font-semibold">
-            <span>企业微信</span>
-            <el-tag :type="status.type" size="small">{{ status.label }}</el-tag>
-          </div>
-          <p class="mt-1.5 text-[13px] text-[var(--el-text-color-secondary)]">
-            连接企业微信自建应用，为组织同步、统一登录和消息通知提供公共配置。
-          </p>
-        </div>
-      </div>
-      <div
-        v-if="canUpdate"
-        class="flex items-center gap-2.5 max-[900px]:self-stretch max-[900px]:justify-end"
-      >
-        <el-button :icon="Settings2" @click="openDrawer">配置</el-button>
-        <el-button
-          type="primary"
-          plain
-          :icon="ShieldCheck"
-          :disabled="!integration.configured"
-          :loading="testing"
-          @click="testSaved"
-        >
-          测试连接
-        </el-button>
-      </div>
-    </div>
-
-    <el-divider />
-    <el-descriptions :column="3" border>
-      <el-descriptions-item label="企业 ID">{{
-        integration.corpId || '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="应用 ID">{{
-        integration.agentId || '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="应用 Secret">{{
-        integration.secretConfigured ? '已安全配置' : '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="最后测试">{{
-        formatTime(integration.lastTestedAt)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="测试结果" :span="2">{{
-        integration.lastTestMessage || '尚未执行连接测试'
-      }}</el-descriptions-item>
-    </el-descriptions>
-
-    <div
-      class="mt-4.5 flex items-center justify-between gap-6 rounded-1.5 border border-dashed border-[var(--el-border-color)] bg-[var(--el-fill-color-lighter)] px-4 py-3.5"
-    >
-      <div class="flex flex-col gap-1">
-        <strong>同步组织架构</strong>
-        <span class="text-[13px] text-[var(--el-text-color-secondary)]">
-          {{
-            integration.syncEnabled
-              ? '已开启，可在组织架构页面生成差异预览后应用。'
-              : '开启后可从企业微信预览并同步部门和成员。'
-          }}
-        </span>
-      </div>
-      <el-tooltip
-        :disabled="integration.lastTestSucceeded === true"
-        content="请先保存配置并完成连接测试"
-        placement="top"
-      >
-        <el-switch
-          :model-value="integration.syncEnabled"
-          :disabled="!canUpdate || integration.lastTestSucceeded !== true"
-          :loading="syncSaving"
-          @change="requestSyncChange(Boolean($event))"
-        />
-      </el-tooltip>
-    </div>
-    <el-descriptions v-if="integration.syncEnabled" :column="2" border class="mt-3">
-      <el-descriptions-item label="新成员默认角色">
-        {{ roles.find((role) => role.id === integration.syncDefaultRoleId)?.name || '未选择' }}
-      </el-descriptions-item>
-      <el-descriptions-item label="最近同步">
-        {{ integration.lastSyncMessage || '尚未执行组织同步' }}
-      </el-descriptions-item>
-    </el-descriptions>
-    <el-descriptions :column="2" border class="mt-3">
-      <el-descriptions-item label="统一登录">
-        <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">
-          {{ integration.syncEnabled ? '可用' : '不可用' }}
-        </el-tag>
-        <span class="ml-2 text-xs text-[var(--el-text-color-secondary)]">
-          {{
-            integration.syncEnabled ? '已同步成员可使用企微扫码登录' : '需先验证配置并开启组织同步'
-          }}
-        </span>
-      </el-descriptions-item>
-      <el-descriptions-item label="企业微信消息">
-        <el-tag :type="integration.syncEnabled ? 'success' : 'info'" size="small">
-          {{ integration.syncEnabled ? '可配置' : '不可配置' }}
-        </el-tag>
-        <span class="ml-2 text-xs text-[var(--el-text-color-secondary)]"
-          >在消息设置中按事件开启</span
-        >
-      </el-descriptions-item>
-      <el-descriptions-item label="企业登录地址" :span="2">
-        <div class="min-w-0 flex items-center justify-between gap-3">
-          <span class="truncate text-[var(--el-text-color-secondary)]">{{
-            loginUrl || '登录地址暂不可生成'
-          }}</span>
-          <el-button v-if="loginUrl" link type="primary" @click="copyLoginUrl">复制</el-button>
-        </div>
-      </el-descriptions-item>
-    </el-descriptions>
-  </el-card>
-
+    <template #icon>
+      <MessagesSquare :size="24" />
+    </template>
+  </EnterpriseIntegrationCardShell>
   <el-drawer v-model="drawerVisible" title="配置企业微信" size="520px" destroy-on-close>
     <el-alert
       title="连接测试会按 Cordys 规则保存当前配置和测试结果；应用 Secret 在服务端加密保存，仅配置管理员可以查看。"
@@ -404,6 +331,43 @@ onMounted(loadData)
             underline="never"
           >
             查看企业微信官方说明
+          </el-link>
+        </div>
+      </el-form-item>
+      <el-form-item label="工作台回跳页面" prop="redirectUrl">
+        <el-input
+          v-model="form.redirectUrl"
+          placeholder="例如：/dashboard 或 https://crm.example.com/dashboard"
+        />
+        <div class="mt-1.5 text-[13px] leading-5 text-[var(--el-text-color-secondary)]">
+          企业微信 OAuth2 静默登录成功后进入的页面。仅允许当前 CRM 同域地址，推荐填写
+          <code>/dashboard</code> 这类站内路径。
+        </div>
+      </el-form-item>
+      <el-form-item label="企业微信应用主页地址">
+        <el-input
+          :model-value="workbenchHomeUrl"
+          readonly
+          placeholder="请先填写有效的工作台回跳页面"
+        >
+          <template #append>
+            <el-button :disabled="!workbenchHomeUrl" @click="copyWorkbenchHomeUrl">复制</el-button>
+          </template>
+        </el-input>
+        <div
+          class="mt-1.5 flex flex-col items-start gap-1 text-[13px] leading-5 text-[var(--el-text-color-secondary)]"
+        >
+          <span>
+            将此完整地址配置到企业微信自建应用的“应用主页”。成员从企业微信工作台打开后，后端会先 302
+            到企业微信网页授权，完成静默身份识别后自动进入上方回跳页面。
+          </span>
+          <el-link
+            href="https://developer.work.weixin.qq.com/document/path/91335"
+            target="_blank"
+            type="primary"
+            underline="never"
+          >
+            查看企业微信网页授权文档
           </el-link>
         </div>
       </el-form-item>

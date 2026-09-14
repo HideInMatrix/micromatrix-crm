@@ -273,63 +273,90 @@ export class MessageSettingsService {
   }
 
   async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
-    const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId, provider: 'WECOM' } },
-    })
-    const reason = !integration
-      ? '请先配置企业微信'
-      : integration.lastTestSucceeded !== true
-        ? '请先完成企业微信连接测试'
-        : !integration.syncEnabled
-          ? '请先开启企业微信组织同步'
-          : null
+    const [integration, tenant] = await Promise.all([
+      this.prisma.enterpriseIntegration.findUnique({
+        where: { tenantId_provider: { tenantId, provider: 'WECOM' } },
+      }),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { enterpriseSyncResource: true },
+      }),
+    ])
+    const active = tenant?.enterpriseSyncResource === 'WECOM'
+    const reason = !active
+      ? '当前企业协同平台不是企业微信'
+      : !integration
+        ? '请先配置企业微信'
+        : integration.lastTestSucceeded !== true
+          ? '请先完成企业微信连接测试'
+          : !integration.syncEnabled
+            ? '请先开启企业微信组织同步'
+            : null
     return {
       channel: 'WECOM',
       configured: Boolean(integration),
       verified: integration?.lastTestSucceeded === true,
-      enabled: integration?.syncEnabled === true,
+      enabled: active && integration?.syncEnabled === true,
       available: reason === null,
       reason,
     }
   }
 
   async getDingTalkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
-    const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId, provider: 'DINGTALK' } },
-    })
-    const reason = !integration
-      ? '请先配置钉钉'
-      : integration.lastTestSucceeded !== true
-        ? '请先完成钉钉连接测试'
-        : !integration.syncEnabled
-          ? '请先开启钉钉组织同步'
-          : null
+    const [integration, tenant] = await Promise.all([
+      this.prisma.enterpriseIntegration.findUnique({
+        where: { tenantId_provider: { tenantId, provider: 'DINGTALK' } },
+      }),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { enterpriseSyncResource: true },
+      }),
+    ])
+    const active = tenant?.enterpriseSyncResource === 'DINGTALK'
+    const reason = !active
+      ? '当前企业协同平台不是钉钉'
+      : !integration
+        ? '请先配置钉钉'
+        : integration.lastTestSucceeded !== true
+          ? '请先完成钉钉连接测试'
+          : !integration.syncEnabled
+            ? '请先开启钉钉组织同步'
+            : null
     return {
       channel: 'DINGTALK',
       configured: Boolean(integration),
       verified: integration?.lastTestSucceeded === true,
-      enabled: integration?.syncEnabled === true,
+      enabled: active && integration?.syncEnabled === true,
       available: reason === null,
       reason,
     }
   }
 
   async getLarkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
-    const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId, provider: 'LARK' } },
-    })
-    const reason = !integration
-      ? '请先配置飞书'
-      : integration.lastTestSucceeded !== true
-        ? '请先完成飞书连接测试'
-        : !integration.syncEnabled
-          ? '请先开启飞书组织同步'
-          : null
+    const [integration, tenant] = await Promise.all([
+      this.prisma.enterpriseIntegration.findUnique({
+        where: { tenantId_provider: { tenantId, provider: 'LARK' } },
+      }),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { enterpriseSyncResource: true },
+      }),
+    ])
+    const active = tenant?.enterpriseSyncResource === 'LARK'
+    const reason = !active
+      ? '当前企业协同平台不是飞书'
+      : !integration
+        ? '请先配置飞书'
+        : integration.lastTestSucceeded !== true
+          ? '请先完成飞书连接测试'
+          : !integration.syncEnabled
+            ? '请先开启飞书组织同步'
+            : null
     return {
       channel: 'LARK',
       configured: Boolean(integration),
       verified: integration?.lastTestSucceeded === true,
-      enabled: integration?.syncEnabled === true,
+      enabled: active && integration?.syncEnabled === true,
       available: reason === null,
       reason,
     }

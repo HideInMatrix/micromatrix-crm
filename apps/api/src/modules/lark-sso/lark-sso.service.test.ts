@@ -128,6 +128,7 @@ test('飞书 QR/Web/Mobile OAuth state 绑定浏览器、只消费一次并按 o
 
   const config = { get: () => undefined } as unknown as ConfigService
   const integrations = {
+    getActivePlatform: async () => ({ syncResource: 'LARK', sync: true }),
     getLarkRuntimeContext: async () => ({
       integration,
       credentials: {

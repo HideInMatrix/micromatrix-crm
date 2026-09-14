@@ -125,10 +125,9 @@ test('Redis 组织同步 lease busy 时在企业微信和数据库预览路径�
 
   await assert.rejects(
     () =>
-      service.createPreview(
-        { id: 'admin-a', tenantId: 'tenant-a', name: '管理员' } as never,
-        { targetDepartmentId: 'root' },
-      ),
+      service.createPreview({ id: 'admin-a', tenantId: 'tenant-a', name: '管理员' } as never, {
+        targetDepartmentId: 'root',
+      }),
     /当前正在执行组织同步任务/,
   )
   assert.equal(syncContextCalls, 0)
@@ -157,9 +156,11 @@ test('Redis unavailable 时组织同步仍进入原数据库预览核心路径',
     {} as never,
     coordination as never,
   )
-  ;(service as unknown as {
-    createPreviewCore: () => Promise<{ id: string; status: string }>
-  }).createPreviewCore = async () => {
+  ;(
+    service as unknown as {
+      createPreviewCore: () => Promise<{ id: string; status: string }>
+    }
+  ).createPreviewCore = async () => {
     coreCalls += 1
     return { id: 'batch-a', status: 'PREVIEW_READY' }
   }
@@ -189,6 +190,7 @@ test('Redis 运行态包含 active batch 时 gate 只读取该批次一次并复
     },
   }
   const integrations = {
+    getActivePlatform: async () => ({ syncResource: 'WECOM', sync: false }),
     getWeCom: async () => ({
       configured: true,
       lastTestSucceeded: true,
@@ -211,8 +213,9 @@ test('Redis 运行态包含 active batch 时 gate 只读取该批次一次并复
     {} as never,
     coordination as never,
   )
-  ;(service as unknown as { toBatchVO: (row: typeof batch) => { id: string; status: string } }).toBatchVO =
-    (row) => ({ id: row.id, status: row.status })
+  ;(
+    service as unknown as { toBatchVO: (row: typeof batch) => { id: string; status: string } }
+  ).toBatchVO = (row) => ({ id: row.id, status: row.status })
 
   const result = await service.gate('tenant-a')
   assert.equal(batchQueries, 1)

@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, Optional } from '@nestjs/common'
 import type {
   DingTalkConnectionTestVO,
   DingTalkIntegrationSecretVO,
+  EnterpriseIntegrationPlatformStateVO,
+  EnterpriseIntegrationProvider,
   EnterpriseIntegrationVO,
   LarkConnectionTestVO,
   LarkIntegrationSecretVO,
@@ -54,6 +56,52 @@ export class EnterpriseIntegrationsService {
     @Optional() private readonly dingTalkClient?: DingTalkClient,
     @Optional() private readonly larkClient?: LarkClient,
   ) {}
+
+  async getActivePlatform(tenantId: string): Promise<EnterpriseIntegrationPlatformStateVO> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { enterpriseSyncResource: true, enterpriseSynced: true },
+    })
+    if (!tenant) throw new BadRequestException('企业不存在')
+    return {
+      syncResource: tenant.enterpriseSyncResource,
+      sync: tenant.enterpriseSynced,
+    }
+  }
+
+  async switchActivePlatform(
+    user: AuthUser,
+    provider: EnterpriseIntegrationProvider,
+  ): Promise<EnterpriseIntegrationPlatformStateVO> {
+    const current = await this.getActivePlatform(user.tenantId)
+    if (current.syncResource === provider) return current
+
+    const switchedAt = new Date()
+    return this.prisma.$transaction(async (tx) => {
+      await tx.enterpriseIntegration.updateMany({
+        where: { tenantId: user.tenantId, syncEnabled: true },
+        data: { syncEnabled: false, updatedById: user.id },
+      })
+      await tx.organizationSyncBatch.updateMany({
+        where: { tenantId: user.tenantId, status: 'PREVIEW_READY' },
+        data: {
+          status: 'INVALIDATED',
+          errorCode: 'ACTIVE_PROVIDER_CHANGED',
+          errorMessage: '企业协同平台已切换，请重新生成同步预览',
+          finishedAt: switchedAt,
+        },
+      })
+      const tenant = await tx.tenant.update({
+        where: { id: user.tenantId },
+        data: { enterpriseSyncResource: provider, enterpriseSynced: false },
+        select: { enterpriseSyncResource: true, enterpriseSynced: true },
+      })
+      return {
+        syncResource: tenant.enterpriseSyncResource,
+        sync: tenant.enterpriseSynced,
+      }
+    })
+  }
 
   async getWeCom(tenantId: string): Promise<EnterpriseIntegrationVO> {
     const row = await this.findWeCom(tenantId)
@@ -115,6 +163,9 @@ export class EnterpriseIntegrationsService {
         update: {
           corpId: input.corpId,
           agentId: input.agentId,
+          ...(input.redirectUrl !== undefined
+            ? { redirectUrl: input.redirectUrl.trim() || null }
+            : {}),
           ...(encrypted
             ? {
                 secretCiphertext: encrypted.ciphertext,
@@ -139,6 +190,7 @@ export class EnterpriseIntegrationsService {
           provider: PROVIDER,
           corpId: input.corpId,
           agentId: input.agentId,
+          redirectUrl: input.redirectUrl?.trim() || null,
           secretCiphertext: storedCredential.ciphertext,
           secretIv: storedCredential.iv,
           secretAuthTag: storedCredential.authTag,
@@ -158,6 +210,12 @@ export class EnterpriseIntegrationsService {
             errorMessage: '企业微信配置已变化，请重新生成同步预览',
             finishedAt: new Date(),
           },
+        })
+      }
+      if (existing && existing.corpId !== input.corpId) {
+        await tx.tenant.updateMany({
+          where: { id: user.tenantId, enterpriseSyncResource: PROVIDER },
+          data: { enterpriseSynced: false },
         })
       }
       return saved
@@ -215,6 +273,9 @@ export class EnterpriseIntegrationsService {
         update: {
           corpId: input.corpId,
           agentId: input.agentId,
+          ...(input.redirectUrl !== undefined
+            ? { redirectUrl: input.redirectUrl.trim() || null }
+            : {}),
           ...(encrypted
             ? {
                 secretCiphertext: encrypted.ciphertext,
@@ -236,6 +297,7 @@ export class EnterpriseIntegrationsService {
           provider: PROVIDER,
           corpId: input.corpId,
           agentId: input.agentId,
+          redirectUrl: input.redirectUrl?.trim() || null,
           secretCiphertext: storedCredential.ciphertext,
           secretIv: storedCredential.iv,
           secretAuthTag: storedCredential.authTag,
@@ -260,6 +322,12 @@ export class EnterpriseIntegrationsService {
           },
         })
       }
+      if (existing && existing.corpId !== input.corpId) {
+        await tx.tenant.updateMany({
+          where: { id: user.tenantId, enterpriseSyncResource: PROVIDER },
+          data: { enterpriseSynced: false },
+        })
+      }
       return saved
     })
 
@@ -278,6 +346,7 @@ export class EnterpriseIntegrationsService {
     if (input.enabled && existing.lastTestSucceeded !== true) {
       throw new BadRequestException('请先完成企业微信连接测试')
     }
+    if (input.enabled) await this.assertActiveProvider(user.tenantId, 'WECOM')
 
     const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
     if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
@@ -289,13 +358,21 @@ export class EnterpriseIntegrationsService {
       if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
     }
 
-    const row = await this.prisma.enterpriseIntegration.update({
-      where: { id: existing.id },
-      data: {
-        syncEnabled: input.enabled,
-        ...(roleId ? { syncDefaultRoleId: roleId } : {}),
-        updatedById: user.id,
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (input.enabled) {
+        await tx.enterpriseIntegration.updateMany({
+          where: { tenantId: user.tenantId, provider: { not: 'WECOM' }, syncEnabled: true },
+          data: { syncEnabled: false, updatedById: user.id },
+        })
+      }
+      return tx.enterpriseIntegration.update({
+        where: { id: existing.id },
+        data: {
+          syncEnabled: input.enabled,
+          ...(roleId ? { syncDefaultRoleId: roleId } : {}),
+          updatedById: user.id,
+        },
+      })
     })
     return this.toVO(row)
   }
@@ -309,6 +386,7 @@ export class EnterpriseIntegrationsService {
   }
 
   async getWeComRuntimeContext(tenantId: string): Promise<WeComRuntimeContext> {
+    await this.assertActiveProvider(tenantId, 'WECOM')
     const integration = await this.findWeCom(tenantId)
     if (!integration) throw new BadRequestException('请先配置企业微信')
     if (integration.lastTestSucceeded !== true) {
@@ -416,6 +494,12 @@ export class EnterpriseIntegrationsService {
           },
         })
       }
+      if (existing && existing.corpId !== input.corpId) {
+        await tx.tenant.updateMany({
+          where: { id: user.tenantId, enterpriseSyncResource: 'DINGTALK' },
+          data: { enterpriseSynced: false },
+        })
+      }
       return saved
     })
     return this.toVO(row)
@@ -512,6 +596,12 @@ export class EnterpriseIntegrationsService {
           },
         })
       }
+      if (existing && existing.corpId !== input.corpId) {
+        await tx.tenant.updateMany({
+          where: { id: user.tenantId, enterpriseSyncResource: 'DINGTALK' },
+          data: { enterpriseSynced: false },
+        })
+      }
       return saved
     })
     return { ...result, integration: this.toVO(row) }
@@ -526,6 +616,7 @@ export class EnterpriseIntegrationsService {
     if (input.enabled && existing.lastTestSucceeded !== true) {
       throw new BadRequestException('请先完成钉钉连接测试')
     }
+    if (input.enabled) await this.assertActiveProvider(user.tenantId, 'DINGTALK')
     const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
     if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
     if (roleId) {
@@ -535,19 +626,27 @@ export class EnterpriseIntegrationsService {
       })
       if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
     }
-    return this.toVO(
-      await this.prisma.enterpriseIntegration.update({
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (input.enabled) {
+        await tx.enterpriseIntegration.updateMany({
+          where: { tenantId: user.tenantId, provider: { not: 'DINGTALK' }, syncEnabled: true },
+          data: { syncEnabled: false, updatedById: user.id },
+        })
+      }
+      return tx.enterpriseIntegration.update({
         where: { id: existing.id },
         data: {
           syncEnabled: input.enabled,
           ...(roleId ? { syncDefaultRoleId: roleId } : {}),
           updatedById: user.id,
         },
-      }),
-    )
+      })
+    })
+    return this.toVO(row)
   }
 
   async getDingTalkRuntimeContext(tenantId: string): Promise<DingTalkRuntimeContext> {
+    await this.assertActiveProvider(tenantId, 'DINGTALK')
     const integration = await this.findDingTalk(tenantId)
     if (!integration) throw new BadRequestException('请先配置钉钉')
     if (integration.lastTestSucceeded !== true)
@@ -656,6 +755,12 @@ export class EnterpriseIntegrationsService {
           },
         })
       }
+      if (existing && existing.corpId !== input.corpId) {
+        await tx.tenant.updateMany({
+          where: { id: user.tenantId, enterpriseSyncResource: 'LARK' },
+          data: { enterpriseSynced: false },
+        })
+      }
       return saved
     })
     return this.toVO(row)
@@ -752,6 +857,12 @@ export class EnterpriseIntegrationsService {
           },
         })
       }
+      if (existing && existing.corpId !== input.corpId) {
+        await tx.tenant.updateMany({
+          where: { id: user.tenantId, enterpriseSyncResource: 'LARK' },
+          data: { enterpriseSynced: false },
+        })
+      }
       return saved
     })
     return { ...result, integration: this.toVO(row) }
@@ -763,6 +874,7 @@ export class EnterpriseIntegrationsService {
     if (input.enabled && existing.lastTestSucceeded !== true) {
       throw new BadRequestException('请先完成飞书连接测试')
     }
+    if (input.enabled) await this.assertActiveProvider(user.tenantId, 'LARK')
     const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
     if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
     if (roleId) {
@@ -772,19 +884,27 @@ export class EnterpriseIntegrationsService {
       })
       if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
     }
-    return this.toVO(
-      await this.prisma.enterpriseIntegration.update({
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (input.enabled) {
+        await tx.enterpriseIntegration.updateMany({
+          where: { tenantId: user.tenantId, provider: { not: 'LARK' }, syncEnabled: true },
+          data: { syncEnabled: false, updatedById: user.id },
+        })
+      }
+      return tx.enterpriseIntegration.update({
         where: { id: existing.id },
         data: {
           syncEnabled: input.enabled,
           ...(roleId ? { syncDefaultRoleId: roleId } : {}),
           updatedById: user.id,
         },
-      }),
-    )
+      })
+    })
+    return this.toVO(row)
   }
 
   async getLarkRuntimeContext(tenantId: string): Promise<LarkRuntimeContext> {
+    await this.assertActiveProvider(tenantId, 'LARK')
     const integration = await this.findLark(tenantId)
     if (!integration) throw new BadRequestException('请先配置飞书')
     if (integration.lastTestSucceeded !== true)
@@ -834,6 +954,23 @@ export class EnterpriseIntegrationsService {
     return this.prisma.enterpriseIntegration.findUnique({
       where: { tenantId_provider: { tenantId, provider: PROVIDER } },
     })
+  }
+
+  private async assertActiveProvider(
+    tenantId: string,
+    provider: EnterpriseIntegrationProvider,
+  ): Promise<void> {
+    const state = await this.getActivePlatform(tenantId)
+    if (state.syncResource === provider) return
+    throw new BadRequestException(
+      `当前企业协同平台为${this.providerName(state.syncResource)}，请先切换平台`,
+    )
+  }
+
+  private providerName(provider: EnterpriseIntegrationProvider): string {
+    if (provider === 'DINGTALK') return '钉钉'
+    if (provider === 'LARK') return '飞书'
+    return '企业微信'
   }
 
   private toVO(
