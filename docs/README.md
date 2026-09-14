@@ -11,6 +11,7 @@
 | [architecture.md](./architecture.md)                                 | 架构设计与关键技术决策记录（含踩坑记录）                                       |
 | [conventions.md](./conventions.md)                                   | 开发约定：新增业务对象的标准接入手册                                           |
 | [prisma-migration-policy.md](./prisma-migration-policy.md)           | Prisma 开发期单 baseline 合并与正式发布后 forward-only 迁移规范                |
+| [specs/prisma8-migration/](./specs/prisma8-migration/)               | PRISMA8-001：Prisma 7→8 side-by-side 迁移需求、设计、任务与测试计划            |
 | [api.md](./api.md)                                                   | 接口文档（Swagger）使用指南与导入方式                                          |
 | [docker-release.md](./docker-release.md)                             | API/Migration/Web 镜像、生产 Compose、独立导出 worker 与 `v*.*.*` Tag 自动发布 |
 | [cordys-deferred-backlog.md](./cordys-deferred-backlog.md)           | 已发现但暂缓实施的 Cordys 能力与数据模型缺口长期台账                           |
@@ -21,8 +22,8 @@
 
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/本地验收）
-- 当前主线：W3.4 用户确认功能图、W3.5 用户个人中心、W3.6 全交易链、**W3.7 高级审批深化**、独立工程化单元 **CACHE-001**、**CACHE-002**、**EVENT-001**、**COORD-001**、**ASYNC-001**、**LOG-001**、**LOG-002**、**LOG-003**、**TOOLCHAIN-001**、**UI-001 T1～T14**、**DB-007**、**DB-008**、**DB-015A DingTalk Provider**、**DB-015B Lark Provider** 均已完成，父 backlog **DB-015** 已关闭；DB-023 继续 `DEFERRED`。
-- 当前数据库基线：**1 个 pre-release baseline migration**（`20260905084900_baseline`）。项目正式发布前，每次数据库结构提交都重新合并为单 baseline；正式发布后停止 squash 并切换为 forward-only migrations。历史文档中的 30/56/68/71 等 migration 数量只表示对应历史验收节点，不再代表当前目录数量。
+- 当前主线：既有 Cordys 功能主线与 **TOOLCHAIN-001 / UI-001 / DB-007 / DB-008 / DB-015A / DB-015B** 均已完成；新增独立基础设施执行单元 **PRISMA8-001** 正在进行 Prisma 7→8 side-by-side 迁移，DB-023 继续 `DEFERRED`。
+- 当前 Prisma migration 历史为 **3 条**：`20260905084900_baseline`、`20260911153000_lark_provider_schema`、`20260914152000_enterprise_platform_state`。已进入 `verify-prisma-migrations.mjs` immutable 列表的 migration 永不修改，后续数据库变化只新增 forward migration。
 - 当前发布基线：`v0.0.13` 指向 `63e846f`；项目 packageManager 已统一为 pnpm 11.25.0，TOOLCHAIN-001 已完成本地/CI/Docker 三端迁移与完整 Docker release smoke，并正式封板为 `VERIFIED`。
 - 整体剩余范围与完成标准见 [project-progress.md](./project-progress.md)；DataEase provider/token 继续由 DB-023 deferred，AI/License/MCP/商业标讯等明确排除项不计入当前 CRM 核心完成标准。
 - 数据模型唯一真相：`apps/api/prisma/schema.prisma`；不维护会随迁移快速失真的手写数据模型快照

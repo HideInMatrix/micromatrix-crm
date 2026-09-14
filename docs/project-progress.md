@@ -1,6 +1,6 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-07。
+最近对齐：2026-09-14。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
@@ -10,7 +10,8 @@
 - 当前发布标签：`v0.0.13`
 - W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
 - UI-001 PC/Mobile UI 重构 **T1～T14 均已 VERIFIED**：Header Top Menu、列表工具区、设置域页面级导航、首页按钮间距、全局 Drawer Header/Body 节奏以及审批流程复杂 Drawer/工具区均已完成 Browser 与工程门禁封板。
-- 当前数据库基线：**1 个 pre-release baseline migration**：`20260905084900_baseline`。正式发布前数据库结构变更统一重新合并该 baseline；正式发布后切换为 forward-only migration 历史。
+- 当前 Prisma migration 历史为 **3 条 forward-only migration**：`20260905084900_baseline`、`20260911153000_lark_provider_schema`、`20260914152000_enterprise_platform_state`。已发布 migration 由 checksum 门禁保护，禁止重写。
+- `PRISMA8-001`：`IN_PROGRESS`。已建立 requirements/design/testing/tasks 文档，采用官方 PostgreSQL Prisma 7/8 side-by-side 路线；Phase 1～3 继续由 Prisma 7 持有 migration ownership，Phase 4 才执行 Prisma 8 baseline/sign/ref handoff。当前执行指针为 P0 基线审计与 Node 24.11+ 前置条件。
 
 ## 2. 已关闭主里程碑
 
@@ -53,14 +54,14 @@
 
 > **DB-015B Lark Provider 已正式封板为 `VERIFIED`。DB-015A/015B 均已完成，父 backlog DB-015 同步关闭为 `VERIFIED`；DB-023 继续 `DEFERRED`。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001`、`DB-007`、`DB-008`、`DB-015A` 与 `DB-015B` 均已在各自 tasks 文档完成封板。已发布 baseline 保持不可变，当前 migration 历史为 `20260905084900_baseline` + `20260911153000_lark_provider_schema`；完整 API Rules 基线为 **263/263 PASS**。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001`、`DB-007`、`DB-008`、`DB-015A` 与 `DB-015B` 均已在各自 tasks 文档完成封板。已发布 migration 保持不可变，当前 migration 历史为 `20260905084900_baseline` + `20260911153000_lark_provider_schema` + `20260914152000_enterprise_platform_state`；完整 API Rules 基线为 **263/263 PASS**。
 
 当前 deferred backlog 共 23 项：**22 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、0 项 DISCOVERED、1 项 DEFERRED（DB-023）**。DB-015A/015B 属于 DB-015 内部分拆，不额外增加 backlog 总数。
 
 ## 4. 当前质量基线
 
 - TOOLCHAIN-001：Node `v24.5.0` / pnpm `11.25.0`；`pnpm install --frozen-lockfile` PASS；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；API Rules **227/227 PASS**；完整 `pnpm smoke:docker-release` PASS，真实构建 API/Migration/Web 三镜像并验证唯一 baseline migration、bootstrap Seed、Redis cache、Worker/API/Web、管理员改密缓存失效、重复初始化保护、PC/Mobile SPA fallback 与 `/api` proxy；相关 Prettier、Shell syntax、`git diff --check` PASS。
-- 当前 Prisma migration 历史为 **2 条**：`20260905084900_baseline` 与 `20260911153000_lark_provider_schema`。DB-015B 修正了“修改已应用 baseline”的错误升级方式：现有开发库通过增量 migration 升级后 DB→Schema=`No difference detected.`；fresh DB 从两条 migration 顺序 deploy + Seed 后同样 `No difference detected.`。此前 30/56/68/69/70/71 migration 的验收数字继续作为历史阶段证据保留，不再代表当前 migration 目录结构。
+- 当前 Prisma migration 历史为 **3 条**：`20260905084900_baseline`、`20260911153000_lark_provider_schema`、`20260914152000_enterprise_platform_state`。2026-09-14 修复 CI 时恢复了被误改的 immutable baseline，并将 `Tenant.enterpriseSyncResource / enterpriseSynced` 改为独立 forward migration；本地库因结构已提前存在，先确认 DB→Schema diff 为空后仅执行 `migrate resolve --applied` 对齐 ledger。`pnpm db:verify-migrations`、`prisma validate`、`migrate status`、`migrate deploy` 均 PASS。
 - FORM-001 F4：公共 Form Runtime **7/7 PASS**、F4 Service **16/16 PASS**、F4 Browser **13/13 PASS**；相邻 Browser 原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿，相邻 Service 核心 FORM-001、F1 **26/26**、F2 **23/23**、F3 **23/23** 全绿。pre-release baseline reset + seed、Prisma validate/diff、root typecheck/build、当前变更集 Prettier 与 `git diff --check` PASS，lint **0 error / 8 个既有 warning**。
 - PLAN-FORM-001：PC/Mobile 专项 Browser **54/54 PASS**，真实覆盖 FollowPlan 表单属性 `labelPos/viewSize`、完整 ModuleForm system/custom 混排、`planProduct` 多选保存/编辑回显和配置恢复；Lead/Opportunity/FollowRecord 相邻 Browser **19/19 PASS**，Customer 创建链路由专项 Smoke 同轮覆盖；fresh baseline reset + seed、Prisma validate/diff=`No difference detected.`、FollowPlan mobile metadata 与 6 条 partial unique index 实查 PASS；API Rules **227/227**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。
 - UI-001 T14：本地真实 API/Web + headless CDP Browser **28/28 PASS**；普通 440px Drawer 实测 Header `margin-bottom:0`、Body 24px，审批流程 Drawer 实测 1440px 视口 min-width=1080px、2560px 视口 width=50%，流程工具区两行/baseline/nowrap/无溢出全绿；API 5xx=0、Runtime exception=0。首次验收发现 Body 仍被 Element Plus 覆盖为 20px，已通过全局 `padding:24px !important` 修正并复验。

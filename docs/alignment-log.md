@@ -7,6 +7,16 @@
 
 # 功能对齐记录
 
+## 2026-09-14：PRISMA8-001 迁移立项与 P0 启动
+
+- Prisma 8 迁移正式立项为独立基础设施单元 `PRISMA8-001`，先完成 `requirements / design / testing / tasks`，不把 package 版本升级等同于迁移完成。
+- 路线固定为 PostgreSQL side-by-side：Phase 1 隔离 Prisma 7 CLI/config；Phase 2 引入 Prisma 8 contract/runtime；Phase 3 按模块迁移查询；Phase 4 才切换 migration ownership；Phase 5 删除 Prisma 7。
+- 当前开发机 Node `24.5.0` 低于 Prisma 8 在 Node 24 线要求的 `24.11+`，P0 将先统一 Node 基线并完成迁移前 typecheck/lint/build/Rules/Prisma 状态与不兼容 API 扫描。
+- 在 Phase 1～3 中，独立 Migration image 与现有数据库结构仍由 Prisma 7 管理；禁止提前用 Prisma 8 修改正式 schema。
+- 同日先修复 Prisma migration CI 门禁：`20260905084900_baseline` 曾被误加入 `Tenant.enterpriseSyncResource / enterpriseSynced` 及重复的 `enterprise_integrations.redirectUrl`，触发 `published migration was modified`。现已恢复 baseline 发布内容；`redirectUrl` 继续由既有 `20260911153000_lark_provider_schema` 提供，Tenant 两个字段迁入新 `20260914152000_enterprise_platform_state` forward migration。
+- 本地开发库已提前拥有 Tenant 两字段，DB→Schema diff 为 empty migration，因此只对 localhost 开发库执行 `migrate resolve --applied 20260914152000_enterprise_platform_state` 对齐 ledger。最终 `pnpm db:verify-migrations` 显示 `verified 3 migrations; 2 published migrations are immutable`，`prisma validate`、`migrate status` 与 `migrate deploy` 均 PASS。
+
+
 > 对照实例：本地 CordysCRM 社区版（`http://localhost:8081`，账号 `admin` / `CordysCRM`）。
 > 记录原则：先写文档、再改功能。当前功能状态回写 [cordys-parity.md](./cordys-parity.md)，实施顺序以最新阶段执行计划为准。
 > 原始表单快照（本机临时文件，不入库）：`/tmp/cordys-forms.json`。
