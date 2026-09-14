@@ -770,11 +770,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-loading="pageLoading" class="home-page min-w-[1000px]" data-testid="home-page">
-    <el-card shadow="never" class="mb-4 home-card">
+  <div v-loading="pageLoading" class="w-full min-w-[1000px]" data-testid="home-page">
+    <el-card shadow="never" class="mb-4">
       <div class="flex items-center justify-between gap-4 mb-4">
         <div class="font-semibold text-base">数据概览</div>
-        <div class="flex items-center gap-2">
+        <div class="dashboard-overview-actions flex items-center gap-2">
           <el-tree-select
             v-model="activeDeptId"
             :data="departmentOptions"
@@ -785,7 +785,7 @@ onBeforeUnmount(() => {
           />
           <el-popover placement="bottom-end" trigger="click" :width="330">
             <template #reference>
-              <el-button class="!ml-0" data-testid="home-overview-settings"
+              <el-button data-testid="home-overview-settings"
                 ><Settings2 :size="16" aria-hidden="true"
               /></el-button>
             </template>
@@ -836,7 +836,6 @@ onBeforeUnmount(() => {
             </el-tabs>
           </el-popover>
           <el-button
-            class="!ml-0"
             data-testid="home-overview-refresh"
             :loading="statisticLoading"
             @click="loadStatistics"
@@ -846,26 +845,53 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-loading="statisticLoading" class="overview-table">
-        <div class="overview-row overview-header">
-          <div class="overview-category font-semibold">类别</div>
-          <div v-for="period in periods" :key="period.key" class="overview-period font-semibold">
+      <div
+        v-loading="statisticLoading"
+        class="min-w-[1180px] overflow-hidden rounded-[4px] border border-[var(--el-border-color-lighter)]"
+      >
+        <div
+          class="grid min-h-12 grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-light)] last:border-b-0"
+        >
+          <div
+            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
+          >
+            类别
+          </div>
+          <div
+            v-for="period in periods"
+            :key="period.key"
+            class="flex items-center border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
+          >
             {{ period.label }}
           </div>
         </div>
 
-        <div class="overview-row">
-          <div class="overview-category">
-            <div class="category-icon"><Target :size="18" /></div>
+        <div
+          class="grid grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] last:border-b-0"
+        >
+          <div
+            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
+          >
+            <div
+              class="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[4px] bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+            >
+              <Target :size="18" />
+            </div>
             <span>线索</span>
           </div>
-          <div v-for="period in periods" :key="period.key" class="overview-cell">
-            <div class="metric-label">新建线索</div>
+          <div
+            v-for="period in periods"
+            :key="period.key"
+            class="flex items-center gap-1 border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] last:border-r-0"
+          >
+            <div class="text-[13px] text-[var(--el-text-color-secondary)]">新建线索</div>
             <button
               type="button"
-              class="metric-value"
+              class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
               :class="
-                hasLeadRead && overviewConfig.userField === 'OWNER' ? 'is-clickable' : 'is-disabled'
+                hasLeadRead && overviewConfig.userField === 'OWNER'
+                  ? 'cursor-pointer text-[var(--el-color-primary)]'
+                  : 'cursor-default text-[var(--el-text-color-placeholder)]'
               "
               @click="openStatistic('lead', period.key)"
             >
@@ -874,18 +900,34 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="overview-row">
-          <div class="overview-category">
-            <div class="category-icon"><Handshake :size="18" /></div>
+        <div
+          class="grid grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] last:border-b-0"
+        >
+          <div
+            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
+          >
+            <div
+              class="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[4px] bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+            >
+              <Handshake :size="18" />
+            </div>
             <span>商机</span>
           </div>
-          <div v-for="period in periods" :key="period.key" class="overview-cell split-metrics">
+          <div
+            v-for="period in periods"
+            :key="period.key"
+            class="grid grid-cols-2 items-center gap-4 border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] last:border-r-0"
+          >
             <div>
-              <div class="metric-label">商机数</div>
+              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">商机数</div>
               <button
                 type="button"
-                class="metric-value"
-                :class="hasOpportunityRead ? 'is-clickable' : 'is-disabled'"
+                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
+                :class="
+                  hasOpportunityRead
+                    ? 'cursor-pointer text-[var(--el-color-primary)]'
+                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
+                "
                 @click="openStatistic('opportunity', period.key)"
               >
                 {{
@@ -896,8 +938,12 @@ onBeforeUnmount(() => {
               </button>
               <button
                 type="button"
-                class="sub-metric"
-                :class="hasOpportunityRead ? 'is-clickable' : 'is-disabled'"
+                class="mt-1 block border-0 bg-transparent p-0 text-left text-xs"
+                :class="
+                  hasOpportunityRead
+                    ? 'cursor-pointer text-[var(--el-color-primary)]'
+                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
+                "
                 @click="openStatistic('opportunity', period.key, 'AFOOT')"
               >
                 进行中
@@ -909,11 +955,15 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div>
-              <div class="metric-label">金额</div>
+              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">金额</div>
               <button
                 type="button"
-                class="metric-value"
-                :class="hasOpportunityRead ? 'is-clickable' : 'is-disabled'"
+                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
+                :class="
+                  hasOpportunityRead
+                    ? 'cursor-pointer text-[var(--el-color-primary)]'
+                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
+                "
                 @click="openStatistic('opportunity', period.key)"
               >
                 {{
@@ -927,8 +977,12 @@ onBeforeUnmount(() => {
               </button>
               <button
                 type="button"
-                class="sub-metric"
-                :class="hasOpportunityRead ? 'is-clickable' : 'is-disabled'"
+                class="mt-1 block border-0 bg-transparent p-0 text-left text-xs"
+                :class="
+                  hasOpportunityRead
+                    ? 'cursor-pointer text-[var(--el-color-primary)]'
+                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
+                "
                 @click="openStatistic('opportunity', period.key, 'AFOOT')"
               >
                 进行中
@@ -942,18 +996,34 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="overview-row">
-          <div class="overview-category">
-            <div class="category-icon"><CheckCheck :size="18" /></div>
+        <div
+          class="grid grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] last:border-b-0"
+        >
+          <div
+            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
+          >
+            <div
+              class="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[4px] bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+            >
+              <CheckCheck :size="18" />
+            </div>
             <span>赢单</span>
           </div>
-          <div v-for="period in periods" :key="period.key" class="overview-cell split-metrics">
+          <div
+            v-for="period in periods"
+            :key="period.key"
+            class="grid grid-cols-2 items-center gap-4 border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] last:border-r-0"
+          >
             <div>
-              <div class="metric-label">赢单数</div>
+              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">赢单数</div>
               <button
                 type="button"
-                class="metric-value"
-                :class="hasOpportunityRead ? 'is-clickable' : 'is-disabled'"
+                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
+                :class="
+                  hasOpportunityRead
+                    ? 'cursor-pointer text-[var(--el-color-primary)]'
+                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
+                "
                 @click="openStatistic('opportunity', period.key, 'SUCCESS')"
               >
                 {{
@@ -964,18 +1034,22 @@ onBeforeUnmount(() => {
               </button>
               <div
                 v-if="overviewConfig.priorPeriodEnable"
-                class="compare-rate"
+                class="mt-1 text-xs"
                 :class="compareClass(opportunityValue(successStatistic, period.key))"
               >
                 较上期 {{ compareLabel(opportunityValue(successStatistic, period.key)) }}
               </div>
             </div>
             <div>
-              <div class="metric-label">赢单金额</div>
+              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">赢单金额</div>
               <button
                 type="button"
-                class="metric-value"
-                :class="hasOpportunityRead ? 'is-clickable' : 'is-disabled'"
+                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
+                :class="
+                  hasOpportunityRead
+                    ? 'cursor-pointer text-[var(--el-color-primary)]'
+                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
+                "
                 @click="openStatistic('opportunity', period.key, 'SUCCESS')"
               >
                 {{
@@ -986,7 +1060,7 @@ onBeforeUnmount(() => {
               </button>
               <div
                 v-if="overviewConfig.priorPeriodEnable"
-                class="compare-rate"
+                class="mt-1 text-xs"
                 :class="compareClass(opportunityValue(successStatistic, period.key, true))"
               >
                 较上期 {{ compareLabel(opportunityValue(successStatistic, period.key, true)) }}
@@ -997,43 +1071,46 @@ onBeforeUnmount(() => {
       </div>
     </el-card>
 
-    <div class="home-columns">
-      <div class="home-main-column">
-        <el-card v-if="quickAccessCatalog.length" shadow="never" class="mb-4 home-card quick-card">
-          <div class="section-title mb-4">
+    <div class="grid grid-cols-[minmax(0,1fr)_400px] items-stretch gap-4">
+      <div class="min-w-0">
+        <el-card v-if="quickAccessCatalog.length" shadow="never" class="mb-4">
+          <div class="mb-4 flex items-center justify-between font-semibold">
             <span>快捷入口</span>
             <el-button data-testid="home-quick-settings" link @click="openQuickAccessSettings">
               <Settings2 :size="15" aria-hidden="true" />自定义
             </el-button>
           </div>
-          <div class="quick-access-list">
+          <div class="flex min-h-24 items-center justify-around gap-4">
             <button
               v-for="item in displayedQuickAccess"
               :key="item.key"
               type="button"
-              class="quick-access-item"
+              class="flex w-[116px] cursor-pointer flex-col items-center gap-2 border-0 bg-transparent p-2 text-[var(--el-text-color-primary)]"
               :data-testid="`home-quick-${item.key}`"
               @click="handleQuickAccess(item.key)"
             >
-              <span class="quick-access-icon"><component :is="item.icon" :size="28" /></span>
+              <span
+                class="flex h-11 w-11 items-center justify-center rounded-lg bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+                ><component :is="item.icon" :size="28"
+              /></span>
               <span>{{ item.label }}</span>
             </button>
           </div>
         </el-card>
 
-        <el-card shadow="never" class="home-card plan-card">
-          <div class="section-title mb-3">
+        <el-card shadow="never" class="min-h-[330px]">
+          <div class="mb-3 flex items-center justify-between font-semibold">
             <span>我的计划</span>
             <el-button link @click="router.push({ path: '/follow-plans', query: { mine: '1' } })"
               >查看更多</el-button
             >
           </div>
-          <div v-loading="plansLoading" class="plan-list">
+          <div v-loading="plansLoading" class="max-h-[390px] overflow-auto">
             <button
               v-for="plan in plans"
               :key="plan.id"
               type="button"
-              class="plan-item"
+              class="flex w-full cursor-pointer items-center gap-4 border-0 border-b border-[var(--el-border-color-lighter)] bg-transparent py-3 text-[var(--el-text-color-primary)] last:border-b-0"
               @click="router.push({ path: '/follow-plans', query: { id: plan.id, mine: '1' } })"
             >
               <div class="min-w-0 flex-1 text-left">
@@ -1047,7 +1124,9 @@ onBeforeUnmount(() => {
                   {{ plan.content }}
                 </div>
               </div>
-              <div class="plan-time">{{ formatDate(plan.estimatedAt) }}</div>
+              <div class="flex-none text-xs text-[var(--el-text-color-secondary)]">
+                {{ formatDate(plan.estimatedAt) }}
+              </div>
             </button>
             <el-empty
               v-if="!plansLoading && plans.length === 0"
@@ -1058,40 +1137,51 @@ onBeforeUnmount(() => {
         </el-card>
       </div>
 
-      <div class="home-side-column">
-        <el-card v-if="auth.hasPerm('menu:approval')" shadow="never" class="home-card task-card">
-          <div class="section-title mb-4"><span>我的待办</span></div>
-          <div class="approval-grid">
+      <div class="flex min-w-0 flex-col gap-4">
+        <el-card v-if="auth.hasPerm('menu:approval')" shadow="never">
+          <div class="mb-4 flex items-center justify-between font-semibold">
+            <span>我的待办</span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2">
             <button
               v-for="item in approvalItems"
               :key="item.key"
               type="button"
-              class="approval-item"
+              class="flex h-[42px] cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-[var(--el-fill-color-light)] p-2 text-[var(--el-text-color-primary)]"
               :data-testid="`home-approval-${item.key}`"
               @click="openApproval(item.key)"
             >
-              <span class="approval-icon"><component :is="item.icon" :size="16" /></span>
+              <span
+                class="inline-flex h-[25px] w-[25px] items-center justify-center rounded-md bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+                ><component :is="item.icon" :size="16"
+              /></span>
               <span class="flex-1 text-left">{{ item.label }}</span>
-              <strong>{{ item.count }}</strong>
+              <strong class="text-[var(--el-color-primary)]">{{ item.count }}</strong>
             </button>
           </div>
         </el-card>
 
-        <el-card shadow="never" class="home-card notification-card">
-          <div class="section-title mb-2">
+        <el-card shadow="never" class="flex-1">
+          <div class="mb-2 flex items-center justify-between font-semibold">
             <span>消息通知</span>
             <el-button link @click="router.push('/notifications')">查看更多</el-button>
           </div>
-          <div v-loading="notificationsLoading" class="notification-list">
+          <div v-loading="notificationsLoading" class="max-h-[470px] overflow-auto">
             <button
               v-for="item in notifications"
               :key="item.id"
               type="button"
-              class="notification-item"
+              class="relative flex w-full cursor-pointer items-center gap-2 border-0 border-b border-[var(--el-border-color-lighter)] bg-transparent py-[11px] text-[var(--el-text-color-primary)] last:border-b-0"
               @click="openNotification(item)"
             >
-              <span v-if="!item.readAt" class="unread-dot" />
-              <span class="notification-icon"><Bell :size="15" /></span>
+              <span
+                v-if="!item.readAt"
+                class="absolute top-2.5 -left-1.5 h-1.5 w-1.5 rounded-full bg-[var(--el-color-danger)]"
+              />
+              <span
+                class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+                ><Bell :size="15"
+              /></span>
               <span class="min-w-0 flex-1 text-left">
                 <span class="block truncate font-medium">{{ item.title }}</span>
                 <span class="mt-1 block truncate text-xs text-[var(--el-text-color-secondary)]">
@@ -1117,31 +1207,37 @@ onBeforeUnmount(() => {
         至少选择 1 个，最多选择 5 个。
       </div>
       <div class="font-medium mb-3">已选功能</div>
-      <div class="quick-config-grid mb-6">
+      <div class="mb-6 grid grid-cols-4 gap-3">
         <button
           v-for="key in quickAccessDraft"
           :key="key"
           type="button"
-          class="quick-config-item"
+          class="relative flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[4px] border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-2.5 text-[var(--el-text-color-primary)]"
           @click="removeQuickAccess(key)"
         >
           <component :is="quickAccessCatalog.find((item) => item.key === key)?.icon" :size="24" />
           <span>{{ quickAccessCatalog.find((item) => item.key === key)?.label }}</span>
-          <span class="quick-config-action">−</span>
+          <span
+            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--el-color-danger)] text-white"
+            >−</span
+          >
         </button>
       </div>
       <div class="font-medium mb-3">待添加功能</div>
-      <div class="quick-config-grid">
+      <div class="grid grid-cols-4 gap-3">
         <button
           v-for="item in availableQuickAccess"
           :key="item.key"
           type="button"
-          class="quick-config-item"
+          class="relative flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[4px] border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-2.5 text-[var(--el-text-color-primary)]"
           @click="addQuickAccess(item.key)"
         >
           <component :is="item.icon" :size="24" />
           <span>{{ item.label }}</span>
-          <span class="quick-config-action is-add">+</span>
+          <span
+            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--el-color-success)] text-white"
+            >+</span
+          >
         </button>
       </div>
       <template #footer>
@@ -1273,325 +1369,8 @@ onBeforeUnmount(() => {
     </el-dialog>
   </div>
 </template>
-
 <style scoped>
-.home-page {
-  width: 100%;
-}
-
-.home-card {
-  border-radius: 4px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-weight: 600;
-}
-
-.overview-table {
-  min-width: 1180px;
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
-}
-
-.overview-row {
-  display: grid;
-  grid-template-columns: 150px repeat(4, minmax(245px, 1fr));
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-
-.overview-row:last-child {
-  border-bottom: 0;
-}
-
-.overview-header {
-  min-height: 48px;
-  background: var(--el-fill-color-light);
-}
-
-.overview-category,
-.overview-period,
-.overview-cell {
-  display: flex;
-  align-items: center;
-  padding: 14px 16px;
-  border-right: 1px solid var(--el-border-color-lighter);
-}
-
-.overview-row > :last-child {
-  border-right: 0;
-}
-
-.overview-category {
-  gap: 9px;
-  font-weight: 600;
-}
-
-.category-icon {
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border-radius: 4px;
-}
-
-.split-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.metric-label {
-  margin-bottom: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-
-.metric-value,
-.sub-metric {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-}
-
-.metric-value {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 28px;
-}
-
-.sub-metric {
-  display: block;
-  margin-top: 4px;
-  color: var(--el-color-info);
-  font-size: 12px;
-}
-
-.metric-value.is-clickable,
-.sub-metric.is-clickable {
-  color: var(--el-color-primary);
-  cursor: pointer;
-}
-
-.metric-value.is-disabled,
-.sub-metric.is-disabled {
-  color: var(--el-text-color-placeholder);
-  cursor: default;
-}
-
-.compare-rate {
-  margin-top: 4px;
-  font-size: 12px;
-}
-
-.home-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
-  gap: 16px;
-  align-items: stretch;
-}
-
-.home-main-column,
-.home-side-column {
-  min-width: 0;
-}
-
-.home-side-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.quick-access-list {
-  display: flex;
-  min-height: 96px;
-  align-items: center;
-  justify-content: space-around;
-  gap: 16px;
-}
-
-.quick-access-item {
-  display: flex;
-  width: 116px;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-}
-
-.quick-access-icon {
-  display: flex;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border-radius: 8px;
-}
-
-.plan-card {
-  min-height: 330px;
-}
-
-.plan-list {
-  max-height: 390px;
-  overflow: auto;
-}
-
-.plan-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 0;
-  border: 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: transparent;
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-}
-
-.plan-item:last-child {
-  border-bottom: 0;
-}
-
-.plan-time {
-  flex: none;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-
-.approval-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.approval-item {
-  display: flex;
-  height: 42px;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 0;
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-}
-
-.approval-icon {
-  display: inline-flex;
-  width: 25px;
-  height: 25px;
-  align-items: center;
-  justify-content: center;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border-radius: 6px;
-}
-
-.approval-item strong {
-  color: var(--el-color-primary);
-}
-
-.notification-card {
-  flex: 1;
-}
-
-.notification-list {
-  max-height: 470px;
-  overflow: auto;
-}
-
-.notification-item {
-  position: relative;
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 0;
-  border: 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: transparent;
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-}
-
-.notification-item:last-child {
-  border-bottom: 0;
-}
-
-.notification-icon {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border-radius: 50%;
-}
-
-.unread-dot {
-  position: absolute;
-  top: 10px;
-  left: -6px;
-  width: 6px;
-  height: 6px;
-  background: var(--el-color-danger);
-  border-radius: 50%;
-}
-
-.quick-config-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.quick-config-item {
-  position: relative;
-  display: flex;
-  min-height: 92px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-}
-
-.quick-config-action {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  display: flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  background: var(--el-color-danger);
-  border-radius: 50%;
-}
-
-.quick-config-action.is-add {
-  background: var(--el-color-success);
+.dashboard-overview-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 </style>
