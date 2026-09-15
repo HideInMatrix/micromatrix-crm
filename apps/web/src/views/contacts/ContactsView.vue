@@ -50,6 +50,9 @@ const items = ref<ContactVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '' })
 const selectedRows = ref<ContactVO[]>([])
+let listRequestGeneration = 0
+let activeListRequest: Promise<void> | null = null
+let activeListRequestKey = ''
 
 const formVisible = ref(false)
 const formSaving = ref(false)
@@ -133,17 +136,44 @@ async function loadReferenceData() {
 }
 
 async function loadData() {
-  loading.value = true
+  const params = requestParams()
+  const requestKey = JSON.stringify(params)
+  if (activeListRequest && activeListRequestKey === requestKey) return activeListRequest
+
+  const requestGeneration = ++listRequestGeneration
+  const request = (async () => {
+    loading.value = true
+    try {
+      const { data } = await contactApi.page(params)
+      if (requestGeneration !== listRequestGeneration) return
+      items.value = data.items
+      total.value = data.total
+      selectedRows.value = []
+    } catch (error) {
+      if (requestGeneration !== listRequestGeneration) return
+      ElMessage.error(extractErrorMessage(error))
+    } finally {
+      if (requestGeneration === listRequestGeneration) loading.value = false
+    }
+  })()
+
+  activeListRequestKey = requestKey
+  activeListRequest = request
   try {
-    const { data } = await contactApi.page(requestParams())
-    items.value = data.items
-    total.value = data.total
-    selectedRows.value = []
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+    await request
   } finally {
-    loading.value = false
+    if (activeListRequest === request) {
+      activeListRequest = null
+      activeListRequestKey = ''
+    }
   }
+}
+
+function clearListState() {
+  listRequestGeneration += 1
+  items.value = []
+  total.value = 0
+  selectedRows.value = []
 }
 
 function tryInitialLoad() {
@@ -160,7 +190,7 @@ function handleSearch() {
 function handleScopeChange(value: 'SELF' | 'DEPT' | 'ALL') {
   scopeView.value = value
   query.page = 1
-  selectedRows.value = []
+  clearListState()
   loadData()
 }
 
@@ -173,6 +203,7 @@ function handleSavedViewChange(viewId?: string) {
   activeSavedViewId.value = viewId ?? ''
   query.page = 1
   if (!initialLoadDone.value) return
+  clearListState()
   loadData()
 }
 
