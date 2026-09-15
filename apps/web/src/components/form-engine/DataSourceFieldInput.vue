@@ -18,6 +18,7 @@ const props = defineProps<{
   field?: FieldVO
   formFields?: FieldVO[]
   formValues?: Record<string, unknown>
+  teleported?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -153,6 +154,7 @@ function displayValue(field: FieldVO): string {
       :loading="loading"
       :disabled="disabled"
       :placeholder="placeholder ?? '请选择数据'"
+      :teleported="teleported ?? true"
       class="w-full"
       collapse-tags
       collapse-tags-tooltip

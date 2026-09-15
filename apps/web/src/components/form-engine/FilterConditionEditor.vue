@@ -18,8 +18,9 @@ const props = withDefaults(
     members: MemberOption[]
     deptTree: DepartmentVO[]
     showSearchMode?: boolean
+    teleported?: boolean
   }>(),
-  { showSearchMode: false },
+  { showSearchMode: false, teleported: true },
 )
 
 const conditions = defineModel<FilterCondition[]>({ required: true })
@@ -93,6 +94,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
     <div v-for="(condition, index) in conditions" :key="index" class="flex items-center gap-2">
       <el-select
         :model-value="condition.key"
+        :teleported="teleported"
         class="!w-40"
         @update:model-value="((condition.key = $event), handleKeyChange(condition))"
       >
@@ -104,7 +106,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
         />
       </el-select>
 
-      <el-select v-model="condition.op" class="!w-28">
+      <el-select v-model="condition.op" :teleported="teleported" class="!w-28">
         <el-option
           v-for="op in opsOf(condition.key)"
           :key="op"
@@ -115,7 +117,12 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
 
       <template v-if="needValue(condition.op)">
         <template v-if="fieldOf(condition.key)?.type === 'member'">
-          <el-select v-model="condition.value as string" filterable class="flex-1">
+          <el-select
+            v-model="condition.value as string"
+            filterable
+            :teleported="teleported"
+            class="flex-1"
+          >
             <el-option
               v-for="member in members"
               :key="member.id"
@@ -129,6 +136,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
             v-model="condition.value as string"
             :data="deptTree"
             :props="{ label: 'name', children: 'children' }"
+            :teleported="teleported"
             node-key="id"
             check-strictly
             class="flex-1"
@@ -140,6 +148,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
             :scope="fieldOf(condition.key)?.config?.scope ?? 'ALL'"
             :location-type="fieldOf(condition.key)?.config?.locationType ?? 'PCD'"
             placeholder="选择地区"
+            :teleported="teleported"
             class="flex-1"
           />
         </template>
@@ -152,6 +161,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
             :model-value="typeof condition.value === 'string' ? condition.value : undefined"
             :source-type="fieldOf(condition.key)?.config?.dataSourceType ?? 'CUSTOMER'"
             placeholder="选择数据"
+            :teleported="teleported"
             class="flex-1"
             @update:model-value="condition.value = $event"
           />
@@ -163,7 +173,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
             )
           "
         >
-          <el-select v-model="condition.value as string" class="flex-1">
+          <el-select v-model="condition.value as string" :teleported="teleported" class="flex-1">
             <el-option
               v-for="option in fieldOf(condition.key)?.options ?? []"
               :key="option.value"
@@ -175,10 +185,12 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
         <template
           v-else-if="['number', 'currency', 'percent'].includes(fieldOf(condition.key)?.type ?? '')"
         >
-          <el-input-number
-            v-model="condition.value as number"
-            controls-position="right"
+          <el-input
+            :model-value="condition.value == null ? '' : String(condition.value)"
+            type="number"
+            placeholder="筛选值"
             class="flex-1"
+            @update:model-value="condition.value = $event === '' ? '' : Number($event)"
           />
         </template>
         <template v-else-if="['date', 'datetime'].includes(fieldOf(condition.key)?.type ?? '')">
@@ -186,6 +198,7 @@ defineExpose({ getValidConditions, hasIncompleteCondition })
             v-model="condition.value as string"
             type="date"
             value-format="YYYY-MM-DD"
+            :teleported="teleported"
             class="flex-1"
           />
         </template>

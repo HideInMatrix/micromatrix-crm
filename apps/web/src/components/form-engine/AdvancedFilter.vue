@@ -73,6 +73,7 @@ function reset() {
         :fields="fields"
         :members="members"
         :dept-tree="deptTree"
+        :teleported="false"
       />
       <div class="flex-between pt-2 border-t border-[var(--el-border-color-lighter)]">
         <div />

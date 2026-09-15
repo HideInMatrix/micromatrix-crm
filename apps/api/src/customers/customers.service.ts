@@ -61,6 +61,10 @@ import { UpdateCustomerDto } from './dto/update-customer.dto'
 
 const MODULE = 'customer'
 
+type CustomerQueryInput = Omit<QueryCustomersDto, 'filters'> & {
+  filters?: string | FilterCondition[]
+}
+
 @Injectable()
 export class CustomersService {
   constructor(
@@ -91,7 +95,7 @@ export class CustomersService {
       keyword: dto.keyword,
       viewId: dto.viewId,
       view: dto.view,
-      filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      filters: dto.filters,
       filterMode: dto.filterMode,
     })
     return {
@@ -110,7 +114,7 @@ export class CustomersService {
       pageSize: dto.pageSize,
       keyword: dto.keyword,
       viewId: dto.viewId,
-      filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+      filters: dto.filters,
       filterMode: dto.filterMode,
       scope: 'sea',
       poolId,
@@ -297,11 +301,13 @@ export class CustomersService {
     return Math.min(...values)
   }
 
-  async findAll(user: AuthUser, query: QueryCustomersDto): Promise<PaginatedResult<CustomerVO>> {
+  async findAll(user: AuthUser, query: CustomerQueryInput): Promise<PaginatedResult<CustomerVO>> {
     const { page = 1, pageSize = 10, keyword } = query
     const poolMode = query.scope === 'sea'
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const adHocConditions = parseFilters(query.filters)
+    const adHocConditions = Array.isArray(query.filters)
+      ? query.filters
+      : parseFilters(query.filters)
     const viewResourceType = poolMode
       ? USER_VIEW_RESOURCE_TYPES.customer_pool
       : USER_VIEW_RESOURCE_TYPES.customer
