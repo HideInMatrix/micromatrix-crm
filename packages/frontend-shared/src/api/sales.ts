@@ -849,11 +849,20 @@ function contactPageBody(params: ContactListParams) {
   }
 }
 
-function toContactPayload(data: Partial<ContactVO> & { name?: string }) {
+type ContactMutationInput = {
+  customerId?: string
+  /** Cordys 联系人写入协议与动态表单统一使用 owner。 */
+  owner?: string
+  name?: string
+  phone?: string | null
+  customData?: Record<string, unknown>
+}
+
+function toContactPayload(data: ContactMutationInput) {
   const customData = data.customData ?? {}
   return {
     customerId: data.customerId || undefined,
-    owner: data.ownerId || undefined,
+    owner: data.owner || undefined,
     name: data.name,
     phone: data.phone ?? undefined,
     moduleFields: Object.entries(customData).map(([fieldId, fieldValue]) => ({
@@ -888,9 +897,9 @@ export const contactApi = {
     }
   },
   get: (id: string) => http.get<ContactVO>(`/account/contact/get/${id}`),
-  create: (data: Partial<ContactVO> & { name: string; customerId?: string }) =>
+  create: (data: ContactMutationInput & { name: string; customerId?: string }) =>
     http.post<ContactVO>('/account/contact/add', toContactPayload(data)),
-  update: (id: string, data: Partial<ContactVO>) =>
+  update: (id: string, data: ContactMutationInput) =>
     http.post<ContactVO>('/account/contact/update', { id, ...toContactPayload(data) }),
   remove: (id: string) => http.get(`/account/contact/delete/${id}`),
   enable: (id: string) => http.get<ContactVO>(`/account/contact/enable/${id}`),
