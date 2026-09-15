@@ -14,8 +14,15 @@ const props = withDefaults(
     locationType?: LocationType
     placeholder?: string
     readonly?: boolean
+    teleported?: boolean
   }>(),
-  { scope: 'ALL', locationType: 'PCD', placeholder: '请选择地址', readonly: false },
+  {
+    scope: 'ALL',
+    locationType: 'PCD',
+    placeholder: '请选择地址',
+    readonly: false,
+    teleported: true,
+  },
 )
 
 const model = defineModel<string>({ default: '' })
@@ -68,6 +75,7 @@ watch(
       :props="{ emitPath: false }"
       :placeholder="placeholder"
       :disabled="readonly"
+      :teleported="teleported"
       clearable
       filterable
       class="!w-full"
