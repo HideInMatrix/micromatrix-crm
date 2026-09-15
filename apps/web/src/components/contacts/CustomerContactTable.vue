@@ -42,7 +42,7 @@ const listFields = computed(() => {
   const filtered = configured.filter((field) => field.key !== 'customerId')
   return filtered.length
     ? filtered
-    : fields.value.filter((field) => ['name', 'phone', 'ownerId', 'enable'].includes(field.key))
+    : fields.value.filter((field) => ['name', 'phone', 'owner', 'enable'].includes(field.key))
 })
 const filteredRows = computed(() => {
   const text = keyword.value.trim().toLowerCase()
@@ -67,7 +67,8 @@ async function load() {
 
 function rowToModel(row: ContactVO) {
   return {
-    ownerId: row.ownerId ?? undefined,
+    // Cordys 联系人表单业务字段使用 owner；ContactVO 读取模型使用 ownerId。
+    owner: row.ownerId ?? undefined,
     name: row.name,
     phone: row.phone ?? undefined,
     ...row.customData,
@@ -190,7 +191,7 @@ async function remove(row: ContactVO) {
 }
 
 function displayValue(field: FieldVO, row: ContactVO) {
-  if (field.key === 'ownerId') return row.ownerName ?? '-'
+  if (field.key === 'owner') return row.ownerName ?? '-'
   return formatFieldValue(field, row as unknown as Record<string, unknown>, {
     memberMap: fieldRefs.memberMap.value,
     deptMap: fieldRefs.deptMap.value,

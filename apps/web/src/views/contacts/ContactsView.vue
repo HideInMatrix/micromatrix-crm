@@ -97,7 +97,7 @@ const defaultColumnKeys = computed(() => {
   const configured = uiFields.value
     .filter((field) => field.showInList && !field.hidden)
     .map((field) => field.key)
-  return configured.length ? configured : ['name', 'customerId', 'phone', 'ownerId', 'enable']
+  return configured.length ? configured : ['name', 'customerId', 'phone', 'owner', 'enable']
 })
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
@@ -227,7 +227,8 @@ function handleSelectionChange(rows: ContactVO[]) {
 function rowToModel(row: ContactVO) {
   return {
     customerId: row.customerId,
-    ownerId: row.ownerId ?? undefined,
+    // Cordys 联系人表单业务字段使用 owner；ContactVO 读取模型使用 ownerId。
+    owner: row.ownerId ?? undefined,
     name: row.name,
     phone: row.phone ?? undefined,
     ...row.customData,
@@ -398,7 +399,7 @@ async function handleExportConfirm(payload: { fileName: string; headList: string
 
 function displayValue(field: FieldVO, row: ContactVO) {
   if (field.key === 'customerId') return row.customerName ?? '-'
-  if (field.key === 'ownerId') return row.ownerName ?? '-'
+  if (field.key === 'owner') return row.ownerName ?? '-'
   return formatFieldValue(field, row as unknown as Record<string, unknown>, {
     memberMap: fieldRefs.memberMap.value,
     deptMap: fieldRefs.deptMap.value,
