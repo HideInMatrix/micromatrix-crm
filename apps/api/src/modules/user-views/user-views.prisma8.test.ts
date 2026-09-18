@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { UserViewsService } from './user-views.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -15,24 +18,21 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
-    const suffix = randomUUID().replaceAll('-', '')
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 user views ${suffix}`, slug: `p8-user-views-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-user-views')
       tenantId = tenant.id
       const [actor, other] = await Promise.all([
-        fixtureDb.user.create({
-          data: { tenantId: tenant.id, name: 'View Actor', passwordHash: 'not-used' },
+        createPrismaTestUser(prisma8Client, {
+          tenantId: tenant.id,
+          name: 'View Actor',
         }),
-        fixtureDb.user.create({
-          data: { tenantId: tenant.id, name: 'Other View User', passwordHash: 'not-used' },
+        createPrismaTestUser(prisma8Client, {
+          tenantId: tenant.id,
+          name: 'Other View User',
         }),
       ])
       const user = { id: actor.id, tenantId: tenant.id } as AuthUser
@@ -98,7 +98,13 @@ test(
       assert.equal(updated.conditions.length, 1)
       assert.equal(updated.conditions[0]?.name, 'active')
       assert.equal(
-        await fixtureDb.sysUserViewCondition.count({ where: { sysUserViewId: first.id } }),
+        (
+          await prisma8Client.orm.public.SysUserViewCondition.where({
+            sysUserViewId: prisma8Varchar(first.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
         1,
       )
 
@@ -125,22 +131,40 @@ test(
         id: first.id,
         name: '重点线索更新',
       })
-      assert.equal(await fixtureDb.sysUserView.findUnique({ where: { id: first.id } }), null)
       assert.equal(
-        await fixtureDb.sysUserViewCondition.count({ where: { sysUserViewId: first.id } }),
+        await prisma8Client.orm.public.SysUserView.where({
+          id: prisma8Varchar(first.id, 32),
+        })
+          .select('id')
+          .first(),
+        null,
+      )
+      assert.equal(
+        (
+          await prisma8Client.orm.public.SysUserViewCondition.where({
+            sysUserViewId: prisma8Varchar(first.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
     } finally {
       if (tenantId) {
-        await fixtureDb.sysUserViewCondition.deleteMany({
-          where: { view: { organizationId: tenantId } },
-        })
-        await fixtureDb.sysUserView.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        const viewIds = await prisma8Client.orm.public.SysUserView.where({ organizationId })
+          .select('id')
+          .all()
+        if (viewIds.length) {
+          await prisma8Client.orm.public.SysUserViewCondition
+            .where((row) => row.sysUserViewId.in(viewIds.map((item) => item.id)))
+            .deleteAll()
+        }
+        await prisma8Client.orm.public.SysUserView.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

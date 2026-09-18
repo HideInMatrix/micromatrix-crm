@@ -1,47 +1,50 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
 import type { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { RolesService } from './roles.service'
 
 test('Roles 使用 Prisma 8 保持成员装配、唯一角色保护与缓存失效语义', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
-  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-role-${suffix}`, slug: `p8-role-${suffix}` },
+  const suffix = String(Date.now()) + '-' + Math.random().toString(16).slice(2)
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-role')
+  const dept = await createPrismaTestDepartment(prisma8Client, {
+    tenantId: tenant.id,
+    name: '角色部门',
   })
-  const dept = await fixtureDb.department.create({ data: { tenantId: tenant.id, name: '角色部门' } })
-  const leader = await fixtureDb.user.create({
-    data: {
-      tenantId: tenant.id,
-      deptId: dept.id,
-      email: `leader-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: '直属上级',
-    },
+  const leader = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    deptId: dept.id,
+    email: 'leader-' + suffix + '@example.com',
+    passwordHash: 'test-only',
+    name: '直属上级',
   })
-  const member = await fixtureDb.user.create({
-    data: {
-      tenantId: tenant.id,
-      deptId: dept.id,
-      leaderId: leader.id,
-      email: `member-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: '角色成员',
-      phone: '13800000000',
-      position: '销售',
-    },
+  const member = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    deptId: dept.id,
+    email: 'member-' + suffix + '@example.com',
+    passwordHash: 'test-only',
+    name: '角色成员',
+  })
+  await prisma8Client.orm.public.Users.where({ id: member.id }).update({
+    leaderId: leader.id,
+    phone: '13800000000',
+    position: '销售',
+    updatedAt: prisma8Now(),
   })
   const invalidatedMany: string[][] = []
   const invalidatedOne: string[] = []
@@ -86,7 +89,15 @@ test('Roles 使用 Prisma 8 保持成员装配、唯一角色保护与缓存失�
     await service.addMembers(actor, primary.id, [member.id, member.id])
     await service.addMembers(actor, primary.id, [member.id])
     assert.equal(
-      await fixtureDb.userRole.count({ where: { tenantId: tenant.id, roleId: primary.id, userId: member.id } }),
+      (
+        await prisma8Client.orm.public.UserRoles.where({
+          tenantId: tenant.id,
+          roleId: primary.id,
+          userId: member.id,
+        })
+          .select('id')
+          .all()
+      ).length,
       1,
     )
 
@@ -121,16 +132,18 @@ test('Roles 使用 Prisma 8 保持成员装配、唯一角色保护与缓存失�
     assert.deepEqual(invalidatedOne, [member.id])
 
     await service.remove(tenant.id, primary.id)
-    assert.equal(await fixtureDb.role.count({ where: { id: primary.id } }), 0)
+    assert.equal(
+      (await prisma8Client.orm.public.Roles.where({ id: primary.id }).select('id').all()).length,
+      0,
+    )
     const options = await service.options(tenant.id)
     assert.ok(options.some((role) => role.id === secondary.id && role.name === '备用角色'))
   } finally {
-    await fixtureDb.userRole.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.role.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.department.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.UserRoles.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Roles.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Departments.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

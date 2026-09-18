@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { NotificationsService } from '../notifications/notifications.service'
 import { AnnouncementsService } from './announcements.service'
 
@@ -15,47 +18,42 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
-    const suffix = randomUUID().replaceAll('-', '')
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     let tenantId: string | null = null
     const removedSources: string[] = []
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 announcements ${suffix}`, slug: `p8-ann-crud-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-ann-crud')
       tenantId = tenant.id
-      const root = await fixtureDb.department.create({
-        data: { tenantId: tenant.id, name: '总部', sort: 0 },
+      const root = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: '总部',
       })
-      const child = await fixtureDb.department.create({
-        data: { tenantId: tenant.id, name: '销售部', parentId: root.id, sort: 1 },
+      const child = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: '销售部',
+        parentId: root.id,
+        sort: 1,
       })
-      const actor = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: '公告管理员', passwordHash: 'not-used' },
+      const actor = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: '公告管理员',
       })
-      const departmentUser = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: '销售成员',
-          passwordHash: 'not-used',
-          deptId: child.id,
-        },
+      const departmentUser = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: '销售成员',
+        deptId: child.id,
       })
-      const directUser = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: '直属成员', passwordHash: 'not-used' },
+      const directUser = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: '直属成员',
       })
-      await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: '停用成员',
-          passwordHash: 'not-used',
-          deptId: child.id,
-          status: 'DISABLED',
-        },
+      await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: '停用成员',
+        deptId: child.id,
+        status: 'DISABLED',
       })
 
       const notifications = {
@@ -90,13 +88,16 @@ test(
       assert.equal(created.createUserName, '公告管理员')
       assert.ok(!Number.isNaN(Date.parse(created.startAt)))
 
-      const persisted = await fixtureDb.announcement.findUniqueOrThrow({ where: { id: created.id } })
+      const persisted = await prisma8Client.orm.public.Announcements.where({ id: created.id })
+        .select('receiverUserIds', 'startAt', 'updatedAt')
+        .first()
+      assert.ok(persisted)
       assert.deepEqual(
         new Set(persisted.receiverUserIds as string[]),
         new Set([departmentUser.id, directUser.id]),
       )
-      assert.ok(persisted.startAt instanceof Date)
-      assert.ok(persisted.updatedAt instanceof Date)
+      assert.ok(persisted.startAt)
+      assert.ok(persisted.updatedAt)
 
       const listed = await service.list(tenant.id, { page: 1, pageSize: 10, keyword: 'PRISMA 8' })
       assert.equal(listed.total, 1)
@@ -113,22 +114,27 @@ test(
       assert.equal(updated.subject, '更新后的公告')
       assert.deepEqual(updated.departmentIds, [])
       assert.deepEqual(removedSources, [created.id])
-      const updatedRow = await fixtureDb.announcement.findUniqueOrThrow({ where: { id: created.id } })
+      const updatedRow = await prisma8Client.orm.public.Announcements.where({ id: created.id })
+        .select('receiverUserIds', 'notice')
+        .first()
+      assert.ok(updatedRow)
       assert.deepEqual(updatedRow.receiverUserIds, [directUser.id])
       assert.equal(updatedRow.notice, false)
 
       assert.deepEqual(await service.remove(tenant.id, created.id), { id: created.id })
       assert.deepEqual(removedSources, [created.id, created.id])
-      assert.equal(await fixtureDb.announcement.findUnique({ where: { id: created.id } }), null)
+      assert.equal(
+        await prisma8Client.orm.public.Announcements.where({ id: created.id }).select('id').first(),
+        null,
+      )
     } finally {
       if (tenantId) {
-        await fixtureDb.announcement.deleteMany({ where: { tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.department.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.Announcements.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Departments.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

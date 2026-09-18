@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { DictionariesService } from './dictionaries.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,20 +17,15 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
-    const suffix = randomUUID().replaceAll('-', '')
-
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 Dictionary ${suffix}`, slug: `p8-dict-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-dict')
       tenantId = tenant.id
-      const actorRow = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: 'Dictionary User', passwordHash: 'not-used' },
+      const actorRow = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Dictionary User',
       })
       const actor = { id: actorRow.id, tenantId: tenant.id } as AuthUser
       const service = new DictionariesService({ client: prisma8Client } as Prisma8Service)
@@ -67,27 +65,37 @@ test(
       await service.remove(actor, second.id)
       await assert.rejects(() => service.remove(actor, third.id), /原因已启用，至少保留一条原因/)
 
-      const stored = await fixtureDb.sysDict.findMany({
-        where: { organizationId: tenant.id, module: 'CLUE_POOL_RS' },
-        orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
+      const organizationId = prisma8Varchar(tenant.id, 32)
+      const moduleName = prisma8Varchar('CLUE_POOL_RS', 20)
+      const stored = await prisma8Client.orm.public.SysDict.where({
+        organizationId,
+        module: moduleName,
       })
+        .orderBy((row) => row.pos.asc())
+        .orderBy((row) => row.createTime.asc())
+        .select('id', 'pos', '_type')
+        .all()
       assert.equal(stored.length, 1)
       assert.equal(stored[0]?.id, third.id)
       assert.equal(stored[0]?.pos, BigInt(1))
-      assert.equal(stored[0]?.type, 'TEXT')
-      const config = await fixtureDb.sysDictConfig.findUniqueOrThrow({
-        where: { module_organizationId: { module: 'CLUE_POOL_RS', organizationId: tenant.id } },
+      assert.equal(stored[0]?._type, 'TEXT')
+      const config = await prisma8Client.orm.public.SysDictConfig.where({
+        module: moduleName,
+        organizationId,
       })
+        .select('enabled')
+        .first()
+      assert.ok(config)
       assert.equal(config.enabled, true)
     } finally {
       if (tenantId) {
-        await fixtureDb.sysDict.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.sysDictConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        await prisma8Client.orm.public.SysDict.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.SysDictConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )
