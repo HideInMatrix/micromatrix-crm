@@ -70,7 +70,7 @@ P1.2 已继续覆盖 PersonalCenter / PersonalApiKey / MessageSettings / HomeDep
 
 P1.3 已完成 Customers / Leads / Metadata / Pool 共 **7/7** 真实 PostgreSQL gate，API typecheck/build 与 `git diff --check` 全绿。该批测试中的 `VarChar/Numeric/BigInt` storage 继续通过现有 Prisma 8 类型边界 helper 表达，没有把类型治理混入测试 facade 清理。
 
-P1.4 第一批已完成 Announcements CRUD/Cron、Dictionaries、Roles、UserViews 共 **5/5** 真实 PostgreSQL gate，且暴露并消除了旧 fixture 曾隐式补齐 `Announcements.updatedAt` 的兼容行为；native 测试现在直接遵守正式 Prisma 8 contract。
+P1.4 第一批已完成 Announcements CRUD/Cron、Dictionaries、Products/ProductPrice、Roles、UserViews 共 **6/6** 真实 PostgreSQL gate，且暴露并消除了旧 fixture 曾隐式补齐 `Announcements.updatedAt` 的兼容行为；native 测试现在直接遵守正式 Prisma 8 contract。Products 专项同时补齐了 quotation/opportunity/stage 测试数据清理，避免随机组织数据残留。
 
 当前全仓 `createPrismaFixtureClient` 搜索共 **99** 个匹配 / **48** 个文件，其中包含 fixture 实现自身的定义；业务测试实际剩余 **98** 个引用 / **47** 个文件。下一批优先迁移 Notifications / 企业集成，再进入交易链与审批 transaction。
 
