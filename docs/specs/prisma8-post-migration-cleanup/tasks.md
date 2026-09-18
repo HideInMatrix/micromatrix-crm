@@ -66,11 +66,13 @@
 
 P1.2 已继续覆盖 PersonalCenter / PersonalApiKey / MessageSettings / HomeDepartmentScope / HomeOverview / HomeStatistics / DashboardAccess / DashboardModule / DashboardResource / Departments / Logs / OperationLogCleanup。累计 native PostgreSQL gate **20/20 PASS、0 skip**；API typecheck/build exit 0。
 
-通用 fixture facade 的 `createPrismaFixtureClient` 引用已从本阶段开始时的 **155** 降至 **125**，引用文件从 **76** 降至 **61**。
+通用 fixture facade 的 `createPrismaFixtureClient` 引用已从本阶段开始时的 **155** 持续下降。
 
 P1.3 已完成 Customers / Leads / Metadata / Pool 共 **7/7** 真实 PostgreSQL gate，API typecheck/build 与 `git diff --check` 全绿。该批测试中的 `VarChar/Numeric/BigInt` storage 继续通过现有 Prisma 8 类型边界 helper 表达，没有把类型治理混入测试 facade 清理。
 
 P1.4 第一批已完成 Announcements CRUD/Cron、Dictionaries、Products/ProductPrice、Roles、UserViews 共 **6/6** 真实 PostgreSQL gate，且暴露并消除了旧 fixture 曾隐式补齐 `Announcements.updatedAt` 的兼容行为；native 测试现在直接遵守正式 Prisma 8 contract。Products 专项同时补齐了 quotation/opportunity/stage 测试数据清理，避免随机组织数据残留。
 
-当前全仓 `createPrismaFixtureClient` 搜索共 **99** 个匹配 / **48** 个文件，其中包含 fixture 实现自身的定义；业务测试实际剩余 **98** 个引用 / **47** 个文件。下一批优先迁移 Notifications / 企业集成，再进入交易链与审批 transaction。
+P1.4 第二批已完成 Notifications **4/4**、EnterpriseIntegrations / EnterpriseSettings / DingTalk-Lark-WeCom SSO 整批 **16/16**、OrganizationSync preview/apply/rollback **3/3** 真实 PostgreSQL gate；其中组织同步失败用例继续验证主事务回滚、独立失败审计与 OperationLog JSONB。OpportunityRule CRUD / auto-close 也已完成 native 化并通过 **2/2** 真实 PostgreSQL gate。
+
+当前全仓 `createPrismaFixtureClient` 搜索共 **65** 个匹配 / **32** 个文件，其中包含 fixture 实现自身的定义；剩余主要集中在 **12 个 Approval 测试**与**交易链/附件/跟进/导出等测试**。下一步继续 P1.4：先迁移审批低耦合 resource/webhook/flow config，再处理 approvals action/advance/return/revoke 事务测试与交易链。
 

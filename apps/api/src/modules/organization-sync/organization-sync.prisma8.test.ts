@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { WeComClient } from '../enterprise-integrations/wecom.client'
 import { OrganizationSyncPlanner } from './organization-sync.planner'
@@ -12,24 +17,28 @@ import { OrganizationSyncService } from './organization-sync.service'
 test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突级联语义', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-org-sync-${suffix}`, slug: `p8-org-sync-${suffix}` },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-org-sync')
+  const role = await prisma8Client.orm.public.Roles
+    .select('id')
+    .create({
+      tenantId: tenant.id,
+      name: '同步默认角色',
+      permissions: [],
+      dataScope: 'SELF',
+      updatedAt: prisma8Now(),
+    })
+  const target = await createPrismaTestDepartment(prisma8Client, {
+    tenantId: tenant.id,
+    name: '同步目标部门',
   })
-  const role = await fixtureDb.role.create({
-    data: { tenantId: tenant.id, name: '同步默认角色', permissions: [], dataScope: 'SELF' },
-  })
-  const target = await fixtureDb.department.create({
-    data: { tenantId: tenant.id, name: '同步目标部门' },
-  })
-  const integration = await fixtureDb.enterpriseIntegration.create({
-    data: {
+  const integration = await prisma8Client.orm.public.EnterpriseIntegrations
+    .select('id', 'corpId', 'agentId')
+    .create({
       tenantId: tenant.id,
       provider: 'WECOM',
       corpId: `corp-${suffix}`,
@@ -42,7 +51,7 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
       lastTestSucceeded: true,
       createdById: 'admin-a',
       updatedById: 'admin-a',
-    },
+      updatedAt: prisma8Now(),
   })
   const integration8 = await prisma8.client.orm.public.EnterpriseIntegrations.where({
     id: integration.id,
@@ -100,9 +109,10 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
   try {
     const preview = await service.createPreview(actor, { targetDepartmentId: target.id })
     assert.equal(preview.status, 'PREVIEW_READY')
-    const persisted = await fixtureDb.organizationSyncBatch.findUniqueOrThrow({
-      where: { id: preview.id },
-    })
+    const persisted = await prisma8Client.orm.public.OrganizationSyncBatches.where({
+      id: preview.id,
+    }).first()
+    assert.ok(persisted)
     assert.equal(persisted.status, 'PREVIEW_READY')
 
     const searched = await service.items(tenant.id, preview.id, {
@@ -113,8 +123,9 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
     assert.equal(searched.total, 1)
     assert.equal((searched.items[0]?.sourceData as Record<string, unknown>)['name'], '关键搜索部门')
 
-    const conflict = await fixtureDb.organizationSyncItem.create({
-      data: {
+    const conflict = await prisma8Client.orm.public.OrganizationSyncItems
+      .select('id', 'externalKey')
+      .create({
         tenantId: tenant.id,
         batchId: preview.id,
         resourceType: 'DEPARTMENT',
@@ -122,14 +133,14 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
         externalKey: 'conflict-dept',
         parentExternalKey: 'remote-root',
         action: 'CONFLICT',
-        sourceData: { name: '冲突部门' },
+        sourceData: prisma8JsonValue({ name: '冲突部门' }),
         conflictType: 'NAME_CONFLICT',
         conflictMessage: '部门冲突',
         sort: 1000,
-      },
+        updatedAt: prisma8Now(),
     })
-    await fixtureDb.organizationSyncItem.createMany({
-      data: [
+    await prisma8Client.orm.public.OrganizationSyncItems.createAll(
+      [
         {
           tenantId: tenant.id,
           batchId: preview.id,
@@ -138,8 +149,9 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
           externalKey: 'conflict-child',
           parentExternalKey: conflict.externalKey,
           action: 'CREATE',
-          sourceData: { name: '冲突下级部门' },
+          sourceData: prisma8JsonValue({ name: '冲突下级部门' }),
           sort: 1001,
+          updatedAt: prisma8Now(),
         },
         {
           tenantId: tenant.id,
@@ -149,36 +161,36 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
           externalKey: 'conflict-user',
           parentExternalKey: 'conflict-child',
           action: 'CREATE',
-          sourceData: { name: '冲突下级成员' },
+          sourceData: prisma8JsonValue({ name: '冲突下级成员' }),
           sort: 1002,
+          updatedAt: prisma8Now(),
         },
       ],
-    })
+    )
 
     await service.resolve(actor, preview.id, {
       items: [{ itemId: conflict.id, resolution: 'SKIP' }],
     })
-    const cascaded = await fixtureDb.organizationSyncItem.findMany({
-      where: {
-        batchId: preview.id,
-        externalKey: { in: ['conflict-dept', 'conflict-child', 'conflict-user'] },
-      },
-      orderBy: { sort: 'asc' },
+    const cascaded = await prisma8Client.orm.public.OrganizationSyncItems.where({
+      batchId: preview.id,
     })
+      .where((row) => row.externalKey.in(['conflict-dept', 'conflict-child', 'conflict-user']))
+      .orderBy((row) => row.sort.asc())
+      .all()
     assert.deepEqual(cascaded.map((item) => item.action), ['SKIP', 'SKIP', 'SKIP'])
     assert.deepEqual(cascaded.map((item) => item.result), ['RESOLVED', 'RESOLVED', 'RESOLVED'])
-    const resolvedBatch = await fixtureDb.organizationSyncBatch.findUniqueOrThrow({
-      where: { id: preview.id },
-    })
+    const resolvedBatch = await prisma8Client.orm.public.OrganizationSyncBatches.where({
+      id: preview.id,
+    }).first()
+    assert.ok(resolvedBatch)
     assert.ok(Number((resolvedBatch.counts as Record<string, number>)['skip']) >= 3)
   } finally {
-    await fixtureDb.organizationSyncItem.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.organizationSyncBatch.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.department.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.role.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.deleteMany({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.OrganizationSyncItems.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.OrganizationSyncBatches.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Departments.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Roles.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

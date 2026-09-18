@@ -2,49 +2,69 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now, prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { NotificationsService } from '../notifications/notifications.service'
 import { OrganizationSyncApplyService } from './organization-sync-apply.service'
 
 const databaseUrl = process.env['DATABASE_URL']
+
+async function deleteOrganizationSyncFixture(
+  prisma8: Prisma8Service['client'],
+  tenantId: string,
+) {
+  await prisma8.orm.public.OperationLogs.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.ExternalUserMappings.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.ExternalDepartmentMappings.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.OrganizationSyncItems.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.OrganizationSyncBatches.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.UserRoles.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.Users.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.Departments.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.EnterpriseIntegrations.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.Roles.where({ tenantId }).deleteAll()
+  await prisma8.orm.public.Tenants.where({ id: tenantId }).deleteAll()
+}
 
 test(
   '组织同步 apply 由 Prisma 8 transaction 持有 advisory lock 与部门/成员/mapping/batch 收口',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const actorId = `actor-${suffix}`
+    let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: {
-          name: `Prisma8 organization sync ${suffix}`,
-          slug: `p8-org-sync-${suffix}`,
-          enterpriseSyncResource: 'WECOM',
-        },
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-org-sync-apply')
+      tenantId = tenant.id
+      await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).update({
+        enterpriseSyncResource: 'WECOM',
+        updatedAt: prisma8Now(),
       })
-      const targetDepartment = await fixtureDb.department.create({
-        data: {
-          tenantId: tenant.id,
-          name: '本地同步根部门',
-          sort: 1,
-        },
+      const targetDepartment = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: '本地同步根部门',
+        sort: 1,
       })
-      const role = await fixtureDb.role.create({
-        data: {
+      const role = await prisma8Client.orm.public.Roles
+        .select('id')
+        .create({
           tenantId: tenant.id,
           name: `外部成员默认角色-${suffix}`,
-        },
-      })
-      const integration = await fixtureDb.enterpriseIntegration.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const integration = await prisma8Client.orm.public.EnterpriseIntegrations
+        .select('id', 'credentialVersion')
+        .create({
           tenantId: tenant.id,
           provider: 'WECOM',
           corpId: `corp-${suffix}`,
@@ -58,36 +78,39 @@ test(
           lastTestSucceeded: true,
           createdById: actorId,
           updatedById: actorId,
-        },
-      })
-      const batch = await fixtureDb.organizationSyncBatch.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const batch = await prisma8Client.orm.public.OrganizationSyncBatches
+        .select('id')
+        .create({
           tenantId: tenant.id,
           integrationId: integration.id,
           provider: 'WECOM',
           status: 'PREVIEW_READY',
           targetDepartmentId: targetDepartment.id,
           credentialVersion: integration.credentialVersion,
-          counts: { departments: 1, users: 1, conflicts: 0 },
+          counts: prisma8JsonValue({ departments: 1, users: 1, conflicts: 0 }),
           createdById: actorId,
-          previewedAt: new Date(),
-        },
-      })
+          previewedAt: prisma8Now(),
+          updatedAt: prisma8Now(),
+        })
       const departmentKey = `dept-key-${suffix}`
-      const departmentItem = await fixtureDb.organizationSyncItem.create({
-        data: {
+      const departmentItem = await prisma8Client.orm.public.OrganizationSyncItems
+        .select('id')
+        .create({
           tenantId: tenant.id,
           batchId: batch.id,
           resourceType: 'DEPARTMENT',
           externalId: `dept-external-${suffix}`,
           externalKey: departmentKey,
           action: 'CREATE',
-          sourceData: { name: '外部研发部', order: 88 },
+          sourceData: prisma8JsonValue({ name: '外部研发部', order: 88 }),
           sort: 10,
-        },
-      })
-      const userItem = await fixtureDb.organizationSyncItem.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const userItem = await prisma8Client.orm.public.OrganizationSyncItems
+        .select('id')
+        .create({
           tenantId: tenant.id,
           batchId: batch.id,
           resourceType: 'USER',
@@ -95,16 +118,16 @@ test(
           externalKey: `user-key-${suffix}`,
           action: 'CREATE',
           parentExternalKey: departmentKey,
-          sourceData: {
+          sourceData: prisma8JsonValue({
             name: '外部研发负责人',
             proposedEmail: `org-sync-${suffix}@example.test`,
             position: '研发负责人',
             mobile: '13800000000',
             isLeader: true,
-          },
+          }),
           sort: 20,
-        },
-      })
+          updatedAt: prisma8Now(),
+        })
 
       const notifications: Array<{ tenantId: string; userId: string; title: string }> = []
       const service = new OrganizationSyncApplyService(
@@ -127,33 +150,38 @@ test(
 
       await service.apply(user, batch.id, 'WECOM')
 
-      const appliedBatch = await fixtureDb.organizationSyncBatch.findUniqueOrThrow({
-        where: { id: batch.id },
-      })
+      const appliedBatch = await prisma8Client.orm.public.OrganizationSyncBatches.where({
+        id: batch.id,
+      }).first()
+      assert.ok(appliedBatch)
       assert.equal(appliedBatch.status, 'SUCCEEDED')
       assert.equal(appliedBatch.appliedById, actorId)
-      assert.ok(appliedBatch.applyStartedAt instanceof Date)
-      assert.ok(appliedBatch.finishedAt instanceof Date)
+      assert.ok(appliedBatch.applyStartedAt)
+      assert.ok(appliedBatch.finishedAt)
       assert.equal(appliedBatch.errorCode, null)
       assert.equal(appliedBatch.errorMessage, null)
 
-      const persistedDepartmentItem = await fixtureDb.organizationSyncItem.findUniqueOrThrow({
-        where: { id: departmentItem.id },
-      })
-      const persistedUserItem = await fixtureDb.organizationSyncItem.findUniqueOrThrow({
-        where: { id: userItem.id },
-      })
+      const persistedDepartmentItem = await prisma8Client.orm.public.OrganizationSyncItems.where({
+        id: departmentItem.id,
+      }).first()
+      const persistedUserItem = await prisma8Client.orm.public.OrganizationSyncItems.where({
+        id: userItem.id,
+      }).first()
+      assert.ok(persistedDepartmentItem)
+      assert.ok(persistedUserItem)
       assert.equal(persistedDepartmentItem.result, 'APPLIED')
       assert.equal(persistedUserItem.result, 'APPLIED')
       assert.ok(persistedDepartmentItem.localId)
       assert.ok(persistedUserItem.localId)
 
-      const syncedDepartment = await fixtureDb.department.findUniqueOrThrow({
-        where: { id: persistedDepartmentItem.localId! },
-      })
-      const syncedUser = await fixtureDb.user.findUniqueOrThrow({
-        where: { id: persistedUserItem.localId! },
-      })
+      const syncedDepartment = await prisma8Client.orm.public.Departments.where({
+        id: persistedDepartmentItem.localId,
+      }).first()
+      const syncedUser = await prisma8Client.orm.public.Users.where({
+        id: persistedUserItem.localId,
+      }).first()
+      assert.ok(syncedDepartment)
+      assert.ok(syncedUser)
       assert.equal(syncedDepartment.name, '外部研发部')
       assert.equal(syncedDepartment.parentId, targetDepartment.id)
       assert.equal(syncedDepartment.sort, 88)
@@ -165,64 +193,58 @@ test(
       assert.equal(syncedUser.position, '研发负责人')
       assert.equal(syncedUser.phone, '13800000000')
 
-      const userRole = await fixtureDb.userRole.findFirstOrThrow({
-        where: { tenantId: tenant.id, userId: syncedUser.id, roleId: role.id },
-      })
+      const userRole = await prisma8Client.orm.public.UserRoles.where({
+        tenantId: tenant.id,
+        userId: syncedUser.id,
+        roleId: role.id,
+      }).first()
+      assert.ok(userRole)
       assert.equal(userRole.roleId, role.id)
 
-      const departmentMapping = await fixtureDb.externalDepartmentMapping.findFirstOrThrow({
-        where: { tenantId: tenant.id, provider: 'WECOM', externalKey: departmentKey },
-      })
+      const departmentMapping = await prisma8Client.orm.public.ExternalDepartmentMappings.where({
+        tenantId: tenant.id,
+        provider: 'WECOM',
+        externalKey: departmentKey,
+      }).first()
+      assert.ok(departmentMapping)
       assert.equal(departmentMapping.departmentId, syncedDepartment.id)
       assert.equal(departmentMapping.active, true)
       assert.equal(departmentMapping.lastSeenBatchId, batch.id)
 
-      const userMapping = await fixtureDb.externalUserMapping.findFirstOrThrow({
-        where: {
-          tenantId: tenant.id,
-          provider: 'WECOM',
-          externalKey: `user-key-${suffix}`,
-        },
-      })
+      const userMapping = await prisma8Client.orm.public.ExternalUserMappings.where({
+        tenantId: tenant.id,
+        provider: 'WECOM',
+        externalKey: `user-key-${suffix}`,
+      }).first()
+      assert.ok(userMapping)
       assert.equal(userMapping.userId, syncedUser.id)
       assert.equal(userMapping.active, true)
       assert.equal(userMapping.lastSeenBatchId, batch.id)
 
-      const persistedIntegration = await fixtureDb.enterpriseIntegration.findUniqueOrThrow({
-        where: { id: integration.id },
-      })
+      const persistedIntegration = await prisma8Client.orm.public.EnterpriseIntegrations.where({
+        id: integration.id,
+      }).first()
+      assert.ok(persistedIntegration)
       assert.equal(persistedIntegration.lastSyncStatus, 'SUCCEEDED')
       assert.match(persistedIntegration.lastSyncMessage ?? '', /同步成功/)
-      assert.ok(persistedIntegration.lastSyncedAt instanceof Date)
+      assert.ok(persistedIntegration.lastSyncedAt)
       assert.equal(persistedIntegration.updatedById, actorId)
 
-      const persistedTenant = await fixtureDb.tenant.findUniqueOrThrow({ where: { id: tenant.id } })
+      const persistedTenant = await prisma8Client.orm.public.Tenants.where({
+        id: tenant.id,
+      }).first()
+      assert.ok(persistedTenant)
       assert.equal(persistedTenant.enterpriseSynced, true)
-      assert.equal(notifications.length, 1)
-      assert.deepEqual(notifications[0], {
-        tenantId: tenant.id,
-        userId: actorId,
-        title: '企业微信组织架构同步完成',
-      })
+      assert.deepEqual(notifications, [
+        {
+          tenantId: tenant.id,
+          userId: actorId,
+          title: '企业微信组织架构同步完成',
+        },
+      ])
     } finally {
-      const tenant = await fixtureDb.tenant.findUnique({
-        where: { slug: `p8-org-sync-${suffix}` },
-        select: { id: true },
-      })
-      if (tenant) {
-        await fixtureDb.externalUserMapping.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.externalDepartmentMapping.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.organizationSyncItem.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.organizationSyncBatch.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.userRole.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.department.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.role.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-      }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      if (tenantId) await deleteOrganizationSyncFixture(prisma8Client, tenantId)
+      await testDb.close()
     }
   },
 )
@@ -232,29 +254,34 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const actorId = `actor-fail-${suffix}`
+    let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: {
-          name: `Prisma8 organization sync rollback ${suffix}`,
-          slug: `p8-org-sync-rollback-${suffix}`,
-          enterpriseSyncResource: 'WECOM',
-        },
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-org-sync-rollback')
+      tenantId = tenant.id
+      await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).update({
+        enterpriseSyncResource: 'WECOM',
+        updatedAt: prisma8Now(),
       })
-      const targetDepartment = await fixtureDb.department.create({
-        data: { tenantId: tenant.id, name: '本地根部门', sort: 1 },
+      const targetDepartment = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: '本地根部门',
+        sort: 1,
       })
-      const role = await fixtureDb.role.create({
-        data: { tenantId: tenant.id, name: `失败测试默认角色-${suffix}` },
-      })
-      const integration = await fixtureDb.enterpriseIntegration.create({
-        data: {
+      const role = await prisma8Client.orm.public.Roles
+        .select('id')
+        .create({
+          tenantId: tenant.id,
+          name: `失败测试默认角色-${suffix}`,
+          updatedAt: prisma8Now(),
+        })
+      const integration = await prisma8Client.orm.public.EnterpriseIntegrations
+        .select('id', 'credentialVersion')
+        .create({
           tenantId: tenant.id,
           provider: 'WECOM',
           corpId: `corp-fail-${suffix}`,
@@ -268,23 +295,25 @@ test(
           lastTestSucceeded: true,
           createdById: actorId,
           updatedById: actorId,
-        },
-      })
-      const batch = await fixtureDb.organizationSyncBatch.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const batch = await prisma8Client.orm.public.OrganizationSyncBatches
+        .select('id')
+        .create({
           tenantId: tenant.id,
           integrationId: integration.id,
           provider: 'WECOM',
           status: 'PREVIEW_READY',
           targetDepartmentId: targetDepartment.id,
           credentialVersion: integration.credentialVersion,
-          counts: { departments: 0, users: 1, conflicts: 0 },
+          counts: prisma8JsonValue({ departments: 0, users: 1, conflicts: 0 }),
           createdById: actorId,
-          previewedAt: new Date(),
-        },
-      })
-      const item = await fixtureDb.organizationSyncItem.create({
-        data: {
+          previewedAt: prisma8TimestampFromDate(new Date()),
+          updatedAt: prisma8Now(),
+        })
+      const item = await prisma8Client.orm.public.OrganizationSyncItems
+        .select('id')
+        .create({
           tenantId: tenant.id,
           batchId: batch.id,
           resourceType: 'USER',
@@ -292,13 +321,13 @@ test(
           externalKey: `missing-dept-user-key-${suffix}`,
           action: 'CREATE',
           parentExternalKey: `missing-department-${suffix}`,
-          sourceData: {
+          sourceData: prisma8JsonValue({
             name: '无法落库成员',
             proposedEmail: `rollback-${suffix}@example.test`,
-          },
+          }),
           sort: 10,
-        },
-      })
+          updatedAt: prisma8Now(),
+        })
 
       const service = new OrganizationSyncApplyService(
         { client: prisma8Client } as Prisma8Service,
@@ -310,73 +339,62 @@ test(
         name: '失败测试操作人',
       } as AuthUser
 
-      await assert.rejects(
-        service.apply(user, batch.id, 'WECOM'),
-        /同步成员的主部门不存在/,
-      )
+      await assert.rejects(service.apply(user, batch.id, 'WECOM'), /同步成员的主部门不存在/)
 
-      const failedBatch = await fixtureDb.organizationSyncBatch.findUniqueOrThrow({
-        where: { id: batch.id },
-      })
+      const failedBatch = await prisma8Client.orm.public.OrganizationSyncBatches.where({
+        id: batch.id,
+      }).first()
+      assert.ok(failedBatch)
       assert.equal(failedBatch.status, 'FAILED')
       assert.equal(failedBatch.errorCode, 'APPLY_FAILED')
       assert.match(failedBatch.errorMessage ?? '', /所有变更已回滚/)
-      assert.ok(failedBatch.finishedAt instanceof Date)
+      assert.ok(failedBatch.finishedAt)
 
-      const rolledBackItem = await fixtureDb.organizationSyncItem.findUniqueOrThrow({
-        where: { id: item.id },
-      })
+      const rolledBackItem = await prisma8Client.orm.public.OrganizationSyncItems.where({
+        id: item.id,
+      }).first()
+      assert.ok(rolledBackItem)
       assert.equal(rolledBackItem.result, 'PENDING')
       assert.equal(rolledBackItem.localId, null)
 
-      const failedIntegration = await fixtureDb.enterpriseIntegration.findUniqueOrThrow({
-        where: { id: integration.id },
-      })
+      const failedIntegration = await prisma8Client.orm.public.EnterpriseIntegrations.where({
+        id: integration.id,
+      }).first()
+      assert.ok(failedIntegration)
       assert.equal(failedIntegration.lastSyncStatus, 'FAILED')
       assert.match(failedIntegration.lastSyncMessage ?? '', /所有变更已回滚/)
 
-      const createdUser = await fixtureDb.user.findFirst({
-        where: { tenantId: tenant.id, email: `rollback-${suffix}@example.test` },
-      })
+      const createdUser = await prisma8Client.orm.public.Users.where({
+        tenantId: tenant.id,
+        email: `rollback-${suffix}@example.test`,
+      }).first()
       assert.equal(createdUser, null)
       assert.equal(
-        await fixtureDb.externalUserMapping.count({ where: { tenantId: tenant.id } }),
+        (await prisma8Client.orm.public.ExternalUserMappings.where({ tenantId: tenant.id }).select('id').all())
+          .length,
         0,
       )
-      const persistedTenant = await fixtureDb.tenant.findUniqueOrThrow({ where: { id: tenant.id } })
+      const persistedTenant = await prisma8Client.orm.public.Tenants.where({
+        id: tenant.id,
+      }).first()
+      assert.ok(persistedTenant)
       assert.equal(persistedTenant.enterpriseSynced, false)
 
-      const log = await fixtureDb.operationLog.findFirstOrThrow({
-        where: {
-          tenantId: tenant.id,
-          module: 'organizationSync',
-          action: 'applyWeComFailed',
-          targetId: batch.id,
-        },
-        include: { blob: true },
-      })
+      const log = await prisma8Client.orm.public.OperationLogs.where({
+        tenantId: tenant.id,
+        module: 'organizationSync',
+        action: 'applyWeComFailed',
+        targetId: batch.id,
+      }).first()
+      assert.ok(log)
+      const blob = await prisma8Client.orm.public.OperationLogBlobs.where({
+        operationLogId: log.id,
+      }).first()
       assert.equal(log.userId, actorId)
-      assert.deepEqual(log.blob?.detail, { errorCode: 'APPLY_FAILED' })
+      assert.deepEqual(blob?.detail, { errorCode: 'APPLY_FAILED' })
     } finally {
-      const tenant = await fixtureDb.tenant.findUnique({
-        where: { slug: `p8-org-sync-rollback-${suffix}` },
-        select: { id: true },
-      })
-      if (tenant) {
-        await fixtureDb.operationLog.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.externalUserMapping.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.externalDepartmentMapping.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.organizationSyncItem.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.organizationSyncBatch.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.userRole.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.department.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.role.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-      }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      if (tenantId) await deleteOrganizationSyncFixture(prisma8Client, tenantId)
+      await testDb.close()
     }
   },
 )
