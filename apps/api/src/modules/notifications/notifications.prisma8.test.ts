@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
 
@@ -14,8 +13,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const tenantId = `notification-tenant-${suffix}`
     const otherTenantId = `notification-other-${suffix}`
@@ -24,8 +23,6 @@ test(
     const userC = `notification-user-c-${suffix}`
     const sourceId = `announcement-${suffix}`
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
       const service = new NotificationsService(
         { client: prisma8Client } as Prisma8Service,
@@ -77,21 +74,43 @@ test(
       assert.deepEqual(await service.markAllRead(tenantId, userA), { count: 1 })
       assert.deepEqual(await service.unreadCount(tenantId, userA), { count: 0 })
 
-      const directRow = await fixtureDb.notification.findUniqueOrThrow({ where: { id: direct.id } })
-      assert.ok(directRow.readAt instanceof Date)
+      const directRow = await prisma8Client.orm.public.Notifications.where({ id: direct.id })
+        .select('readAt', 'tenantId')
+        .first()
+      assert.ok(directRow)
+      assert.ok(directRow.readAt)
       assert.equal(directRow.tenantId, tenantId)
 
       assert.equal(await service.removeBySource(tenantId, 'announcement', sourceId), 3)
       assert.equal(
-        await fixtureDb.notification.count({ where: { tenantId, sourceType: 'announcement', sourceId } }),
+        (
+          await prisma8Client.orm.public.Notifications.where({
+            tenantId,
+            sourceType: 'announcement',
+            sourceId,
+          })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
-      assert.equal(await fixtureDb.notification.count({ where: { tenantId } }), 1)
-      assert.equal(await fixtureDb.notification.count({ where: { tenantId: otherTenantId } }), 1)
+      assert.equal(
+        (await prisma8Client.orm.public.Notifications.where({ tenantId }).select('id').all()).length,
+        1,
+      )
+      assert.equal(
+        (
+          await prisma8Client.orm.public.Notifications.where({ tenantId: otherTenantId })
+            .select('id')
+            .all()
+        ).length,
+        1,
+      )
     } finally {
-      await fixtureDb.notification.deleteMany({ where: { tenantId: { in: [tenantId, otherTenantId] } } })
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await prisma8Client.orm.public.Notifications
+        .where((row) => row.tenantId.in([tenantId, otherTenantId]))
+        .deleteAll()
+      await testDb.close()
     }
   },
 )

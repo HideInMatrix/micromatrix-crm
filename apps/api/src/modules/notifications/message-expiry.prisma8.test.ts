@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { BusinessNotificationsService } from './business-notifications.service'
 import { MessageExpiryService } from './message-expiry.service'
@@ -15,137 +16,141 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const actor = `u${suffix}`.slice(0, 32)
     const now = new Date(2026, 8, 16, 10, 0, 0, 0)
     const dueAt = BigInt(new Date(2026, 8, 16, 12, 0, 0, 0).getTime())
     const baseTime = BigInt(now.getTime())
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 expiry ${suffix}`, slug: `p8-expiry-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-expiry')
       tenantId = tenant.id
-      const customer = await fixtureDb.customer.create({
-        data: {
-          name: '到期测试客户',
-          organizationId: tenant.id,
+      const organizationId = prisma8Varchar(tenant.id, 32)
+      const actorId = prisma8Varchar(actor, 32)
+      const customer = await prisma8Client.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('到期测试客户', 255),
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      const opportunityStage = await fixtureDb.opportunityStageConfig.create({
-        data: {
-          name: '跟进',
-          type: 'AFOOT',
-          rate: '50',
+      const opportunityStage = await prisma8Client.orm.public.OpportunityStageConfig
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('跟进', 16),
+          _type: prisma8Varchar('AFOOT', 50),
+          rate: prisma8Varchar('50', 10),
           pos: 1n,
-          organizationId: tenant.id,
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      const opportunity = await fixtureDb.opportunity.create({
-        data: {
+      const opportunity = await prisma8Client.orm.public.Opportunity
+        .select('id')
+        .create({
+          id: prisma8Id32(),
           customerId: customer.id,
-          name: '到期测试商机',
-          organizationId: tenant.id,
+          name: prisma8Varchar('到期测试商机', 255),
+          organizationId,
           stage: opportunityStage.id,
-          owner: actor,
+          owner: actorId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      await fixtureDb.opportunityQuotation.create({
-        data: {
-          name: '到期测试报价',
+      await prisma8Client.orm.public.OpportunityQuotation.create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('到期测试报价', 255),
           opportunityId: opportunity.id,
           untilTime: dueAt,
-          organizationId: tenant.id,
+          amount: prisma8Numeric(0, 14, 2),
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
 
-      const activeStage = await fixtureDb.contractStageConfig.create({
-        data: {
-          name: '履约中',
-          type: 'AFOOT',
+      const activeStage = await prisma8Client.orm.public.ContractStageConfig
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('履约中', 255),
+          _type: prisma8Varchar('AFOOT', 50),
           pos: 1n,
-          organizationId: tenant.id,
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      const endStage = await fixtureDb.contractStageConfig.create({
-        data: {
-          name: '已结束',
-          type: 'END',
+      const endStage = await prisma8Client.orm.public.ContractStageConfig
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('已结束', 255),
+          _type: prisma8Varchar('END', 50),
           pos: 2n,
-          organizationId: tenant.id,
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      const contract = await fixtureDb.contract.create({
-        data: {
-          name: '到期测试合同',
+      const contract = await prisma8Client.orm.public.Contract
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('到期测试合同', 255),
           customerId: customer.id,
-          owner: actor,
-          number: `C-${suffix}`.slice(0, 50),
+          owner: actorId,
+          amount: prisma8Numeric(0, 14, 2),
+          number: prisma8Varchar(`C-${suffix}`.slice(0, 50), 50),
           stage: activeStage.id,
           endTime: dueAt,
-          organizationId: tenant.id,
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      await fixtureDb.contract.create({
-        data: {
-          name: '不应通知的结束合同',
+      await prisma8Client.orm.public.Contract.create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('不应通知的结束合同', 255),
           customerId: customer.id,
-          owner: actor,
-          number: `END-${suffix}`.slice(0, 50),
+          owner: actorId,
+          amount: prisma8Numeric(0, 14, 2),
+          number: prisma8Varchar(`END-${suffix}`.slice(0, 50), 50),
           stage: endStage.id,
           endTime: dueAt,
-          organizationId: tenant.id,
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
-      await fixtureDb.contractPaymentPlan.create({
-        data: {
-          name: '到期测试回款计划',
+      await prisma8Client.orm.public.ContractPaymentPlan.create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('到期测试回款计划', 255),
           contractId: contract.id,
-          owner: actor,
+          owner: actorId,
           planEndTime: dueAt,
-          organizationId: tenant.id,
+          organizationId,
           createTime: baseTime,
           updateTime: baseTime,
-          createUser: actor,
-          updateUser: actor,
-        },
+          createUser: actorId,
+          updateUser: actorId,
       })
 
       const delivered: Array<{ event: string; ownerId: string | null | undefined }> = []
@@ -179,17 +184,17 @@ test(
       assert.ok(delivered.every(({ ownerId }) => ownerId === actor))
     } finally {
       if (tenantId) {
-        await fixtureDb.contractPaymentPlan.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.opportunityQuotation.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.contract.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.opportunity.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.contractStageConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.opportunityStageConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.customer.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        await prisma8Client.orm.public.ContractPaymentPlan.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.OpportunityQuotation.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Contract.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Opportunity.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.ContractStageConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

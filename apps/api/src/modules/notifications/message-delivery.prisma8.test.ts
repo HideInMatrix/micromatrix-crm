@@ -4,9 +4,17 @@ import test from 'node:test'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { WeComClient } from '../enterprise-integrations/wecom.client'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToDate,
+} from '../../prisma/prisma8-temporal'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { MessageDeliveryService } from './message-delivery.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -16,34 +24,27 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
-    const prisma8Client2 = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const testDb2 = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
+    const prisma8Client2 = testDb2.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
-    await prisma8Client2.connect()
+    let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 outbox ${suffix}`, slug: `p8-outbox-${suffix}` },
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-outbox')
+      tenantId = tenant.id
+      const mappedUser = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Primary Recipient',
       })
-      const mappedUser = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'Primary Recipient',
-          passwordHash: 'not-used',
-        },
+      const unmappedUser = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Unmapped User',
       })
-      const unmappedUser = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'Unmapped User',
-          passwordHash: 'not-used',
-        },
-      })
-      const integration = await fixtureDb.enterpriseIntegration.create({
-        data: {
+      const integration = await prisma8Client.orm.public.EnterpriseIntegrations
+        .select('id')
+        .create({
           tenantId: tenant.id,
           provider: 'WECOM',
           corpId: `corp-${suffix}`,
@@ -53,16 +54,15 @@ test(
           secretAuthTag: 'tag',
           createdById: mappedUser.id,
           updatedById: mappedUser.id,
-        },
+          updatedAt: prisma8Now(),
       })
-      await fixtureDb.externalUserMapping.create({
-        data: {
+      await prisma8Client.orm.public.ExternalUserMappings.create({
           tenantId: tenant.id,
           provider: 'WECOM',
           externalId: `external-${suffix}`,
           externalKey: `key-${suffix}`,
           userId: mappedUser.id,
-        },
+          updatedAt: prisma8Now(),
       })
 
       const settings = {
@@ -89,10 +89,12 @@ test(
       })
       assert.equal(count, 2)
 
-      const rows = await fixtureDb.messageDelivery.findMany({
-        where: { tenantId: tenant.id, integrationId: integration.id },
-        orderBy: { userId: 'asc' },
+      const rows = await prisma8Client.orm.public.MessageDeliveries.where({
+        tenantId: tenant.id,
+        integrationId: integration.id,
       })
+        .orderBy((row) => row.userId.asc())
+        .all()
       assert.equal(rows.length, 2)
       assert.equal(new Set(rows.map((row) => row.id)).size, 2)
       for (const row of rows) {
@@ -103,8 +105,8 @@ test(
         assert.equal(row.link?.length, 1_000)
         assert.equal(row.attempts, 0)
         assert.equal(row.maxAttempts, 3)
-        assert.ok(row.createdAt instanceof Date)
-        assert.ok(row.updatedAt instanceof Date)
+        assert.ok(row.createdAt)
+        assert.ok(row.updatedAt)
       }
 
       const pending = rows.find((row) => row.userId === mappedUser.id)
@@ -149,82 +151,79 @@ test(
         secondClaim.claimDelivery(pending.id),
       ])
       assert.deepEqual([...competingClaims].sort(), [false, true])
-      const claimedOnce = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const claimedOnce = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id })
+        .first()
+      assert.ok(claimedOnce)
       assert.equal(claimedOnce.status, 'SENDING')
       assert.equal(claimedOnce.attempts, 1)
       assert.equal(claimedOnce.nextAttemptAt, null)
 
-      await fixtureDb.messageDelivery.update({
-        where: { id: pending.id },
-        data: {
+      await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).update({
           status: 'FAILED',
-          nextAttemptAt: new Date(Date.now() - 1_000),
+          nextAttemptAt: prisma8TimestampFromDate(new Date(Date.now() - 1_000)),
           errorCode: 'RETRY',
           errorMessage: 'retry',
-        },
+          updatedAt: prisma8Now(),
       })
       assert.equal(await secondClaim.claimDelivery(pending.id), true)
-      const claimedTwice = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const claimedTwice = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id })
+        .first()
+      assert.ok(claimedTwice)
       assert.equal(claimedTwice.status, 'SENDING')
       assert.equal(claimedTwice.attempts, 2)
       assert.equal(claimedTwice.errorCode, null)
       assert.equal(claimedTwice.errorMessage, null)
 
-      await fixtureDb.messageDelivery.update({
-        where: { id: pending.id },
-        data: {
+      await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).update({
           status: 'FAILED',
-          nextAttemptAt: new Date(Date.now() + 60_000),
-        },
+          nextAttemptAt: prisma8TimestampFromDate(new Date(Date.now() + 60_000)),
+          updatedAt: prisma8Now(),
       })
       assert.equal(await firstClaim.claimDelivery(pending.id), false)
-      const notDue = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const notDue = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id })
+        .first()
+      assert.ok(notDue)
       assert.equal(notDue.status, 'FAILED')
       assert.equal(notDue.attempts, 2)
 
       await firstClaim.completeDelivery(pending.id, 'provider-message-1')
-      const succeeded = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const succeeded = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id })
+        .first()
+      assert.ok(succeeded)
       assert.equal(succeeded.status, 'SUCCEEDED')
       assert.equal(succeeded.providerMessageId, 'provider-message-1')
-      assert.ok(succeeded.sentAt instanceof Date)
+      assert.ok(succeeded.sentAt)
       assert.equal(succeeded.errorCode, null)
       assert.equal(succeeded.errorMessage, null)
 
-      const retrySource = await fixtureDb.messageDelivery.update({
-        where: { id: pending.id },
-        data: {
+      const retrySource = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).update({
           status: 'SENDING',
           attempts: 1,
           providerMessageId: null,
           sentAt: null,
-        },
+          updatedAt: prisma8Now(),
       })
+      assert.ok(retrySource)
       await firstClaim.fail(retrySource, 'WECOM_45009', 'temporary failure', true)
-      const failed = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const failed = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).first()
+      assert.ok(failed)
       assert.equal(failed.status, 'FAILED')
       assert.equal(failed.errorCode, 'WECOM_45009')
       assert.equal(failed.errorMessage, 'temporary failure')
       assert.ok(failed.nextAttemptAt)
-      assert.ok(failed.nextAttemptAt.getTime() > Date.now())
+      assert.ok(prisma8TimestampToDate(failed.nextAttemptAt).getTime() > Date.now())
 
-      const exhaustedSource = await fixtureDb.messageDelivery.update({
-        where: { id: pending.id },
-        data: { status: 'SENDING', attempts: 3, nextAttemptAt: null },
+      const exhaustedSource = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).update({
+        status: 'SENDING',
+        attempts: 3,
+        nextAttemptAt: null,
+        updatedAt: prisma8Now(),
       })
+      assert.ok(exhaustedSource)
       await firstClaim.fail(exhaustedSource, 'WECOM_500', 'permanent after retries', true)
-      const deadAfterRetries = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const deadAfterRetries = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id })
+        .first()
+      assert.ok(deadAfterRetries)
       assert.equal(deadAfterRetries.status, 'DEAD')
       assert.equal(deadAfterRetries.nextAttemptAt, null)
       assert.equal(deadAfterRetries.errorCode, 'WECOM_500')
@@ -237,9 +236,8 @@ test(
       assert.equal(retriedVo.errorMessage, null)
       assert.equal(retriedVo.providerMessageId, null)
       assert.equal(retriedVo.sentAt, null)
-      const retried = await fixtureDb.messageDelivery.findUniqueOrThrow({
-        where: { id: pending.id },
-      })
+      const retried = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).first()
+      assert.ok(retried)
       assert.equal(retried.status, 'PENDING')
       assert.equal(retried.attempts, 0)
       assert.equal(retried.nextAttemptAt, null)
@@ -255,20 +253,15 @@ test(
       assert.equal(dead.errorCode, 'EXTERNAL_USER_NOT_MAPPED')
       assert.match(dead.errorMessage ?? '', /成员映射/)
     } finally {
-      const tenant = await fixtureDb.tenant.findUnique({
-        where: { slug: `p8-outbox-${suffix}` },
-        select: { id: true },
-      })
-      if (tenant) {
-        await fixtureDb.messageDelivery.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.externalUserMapping.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.tenant.delete({ where: { id: tenant.id } })
+      if (tenantId) {
+        await prisma8Client.orm.public.MessageDeliveries.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.ExternalUserMappings.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client2.close()
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb2.close()
+      await testDb.close()
     }
   },
 )
