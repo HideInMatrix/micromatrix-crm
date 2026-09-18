@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill'
-import type { PostgresClient } from '@prisma/orm-postgres/runtime'
+import postgres, { type PostgresClient } from '@prisma/orm-postgres/runtime'
 import contractJson from './generated/contract.json'
 import type { Contract } from './generated/contract.js'
 
@@ -21,9 +21,6 @@ export function ensurePrisma8Temporal() {
 
 export async function createPrisma8Client(connectionString: string): Promise<Prisma8Client> {
   ensurePrisma8Temporal()
-  // The existing Nest API is compiled as CommonJS while Prisma 8 runtime is ESM-only.
-  // Keep the application module format unchanged and cross the boundary with native import().
-  const { default: postgres } = await import('@prisma/orm-postgres/runtime')
   return postgres<Contract>({
     contractJson,
     url: connectionString,
