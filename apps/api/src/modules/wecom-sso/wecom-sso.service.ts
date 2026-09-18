@@ -22,7 +22,7 @@ import { Prisma8Service } from '../../prisma/prisma8.service'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
+  prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import {
@@ -66,9 +66,9 @@ type IdentityRow = {
   externalSubject: string
   userId: string
   status: NonNullable<ExternalIdentityVO['status']>
-  boundAt: Parameters<typeof prisma8TimestampToDate>[0]
-  revokedAt: Parameters<typeof prisma8TimestampToDate>[0] | null
-  lastLoginAt: Parameters<typeof prisma8TimestampToDate>[0] | null
+  boundAt: Parameters<typeof prisma8TimestampToISOString>[0]
+  revokedAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
+  lastLoginAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
 }
 type MappingWithUser = MappingRow & { user: UserRow }
 
@@ -488,7 +488,7 @@ export class WeComSsoService {
       !row ||
       !result.consumed ||
       row.flow !== flow ||
-      prisma8TimestampToDate(row.expiresAt).getTime() < Date.now() ||
+      row.expiresAt.epochMilliseconds < Date.now() ||
       !browserNonce ||
       row.browserNonceHash !== this.hash(browserNonce)
     ) {
@@ -593,10 +593,10 @@ export class WeComSsoService {
       mapped: Boolean(mapping?.active),
       externalSubject: identity?.externalSubject ?? mapping?.externalId ?? null,
       status: identity?.status ?? null,
-      boundAt: identity ? prisma8TimestampToDate(identity.boundAt).toISOString() : null,
-      revokedAt: identity?.revokedAt ? prisma8TimestampToDate(identity.revokedAt).toISOString() : null,
+      boundAt: identity ? prisma8TimestampToISOString(identity.boundAt) : null,
+      revokedAt: identity?.revokedAt ? prisma8TimestampToISOString(identity.revokedAt) : null,
       lastLoginAt: identity?.lastLoginAt
-        ? prisma8TimestampToDate(identity.lastLoginAt).toISOString()
+        ? prisma8TimestampToISOString(identity.lastLoginAt)
         : null,
     }
   }

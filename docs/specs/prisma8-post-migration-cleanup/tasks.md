@@ -22,11 +22,11 @@
 ## P2 时间语义与 API contract
 
 - [x] P2.1 对 126 个 Timestamp 字段按 absolute/local/schedule 分类。
-- [ ] P2.2 建立统一 API 时间 serializer，禁止业务内部 Date/Temporal 往返。
-- [ ] P2.3 前端 Web/Mobile 时间展示统一从 API ISO 值格式化。
+- [x] P2.2 建立统一 API 时间 serializer，禁止业务内部 Date/Temporal 往返。
+- [x] P2.3 前端 Web/Mobile 时间展示统一从 API ISO 值格式化。
 - [x] P2.4 existing DB UTC/时区历史数据 precheck。
 - [x] P2.5 对确认属于 absolute instant 的字段生成 forward migration，并验证旧数据转换。
-- [ ] P2.6 删除无引用的 `prisma8-temporal` compatibility functions。
+- [x] P2.6 删除无引用的 `prisma8-temporal` compatibility functions。
 
 ## P3 VarChar / ID 数据库治理
 
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P2.2 / P2.3 / P2.6**。P1 测试兼容层已完成收口；`src/testing/prisma-test-db.ts` 只保留 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
+当前执行 **P3.1**。P1 测试兼容层与 P2 时间语义/API contract 已完成收口；下一阶段开始对 476 个 `VarChar` 字段按 ID / 枚举协议 / 自由文本分类，并为 existing DB 长度与 ID 格式 precheck 建立清单。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -111,5 +111,11 @@ existing DB 已应用该 migration 并把 `db` ref 前移到 storage hash `07748
 
 fresh PostgreSQL 从空库执行 baseline **672 operations** + forward migration **126 operations**，合计 **798 operations**，随后 bootstrap Seed / `db verify` / `migration status` 全绿，fresh 库同样为 **126 个 timestamptz 列**。API typecheck / production build exit 0；完整 API Rules 在正确清空 Redis 配置的专项环境下 **346/346 PASS、0 fail、0 skip**。
 
-当前继续 **P2.2 / P2.3 / P2.6**：数据库与 ORM 已改成 `Timestamptz(3) / Temporal.Instant`，接下来删除业务内部 Date↔Instant 往返和 Prisma migration-only 时间 helper，并确认 Web/Mobile 只消费 ISO instant 后自行格式化展示。
+P2.2 已完成：Prisma 8 timestamptz runtime 统一以 `Temporal.Instant` 表达；API instant 输出统一走 `prisma8TimestampToISOString`。生产代码中的 `Temporal.Instant -> Date -> ISO/getTime` 往返已清零；DTO ISO 字符串使用 `prisma8TimestampFromISOString`，epoch 窗口使用 `prisma8TimestampFromEpochMilliseconds`，`prisma8TimestampFromDate` 只保留 Cron / Provider / 第三方库 / 已明确 Date 参数等真正边界。源码中 `Temporal.PlainDateTime` 与旧 timestamp raw SQL 的 `AT TIME ZONE 'UTC'` 均为 **0 refs**。
+
+P2.3 已完成：Web/Mobile 时间展示继续由前端消费 API ISO instant 后调用 `Date` / locale formatter 展示；公告等输入提交仍发送 ISO 机器值，不把 locale 展示字符串写回 API。Web typecheck/build 与 Mobile typecheck/build 均 **exit 0**。
+
+P2.6 已完成：`prisma8TimestampToDate` 引用归零并删除；保留的 `prisma8Now / prisma8TimestampFromDate / prisma8TimestampFromISOString / prisma8TimestampFromEpochMilliseconds / prisma8TimestampToISOString` 均有当前正式 runtime 边界用途，不再承担 Prisma 7 `Date` compatibility。
+
+P2 最终门禁：API typecheck/build **exit 0**，完整 API Rules **346/346 PASS、0 fail、0 skip**，时间相关专项 **91/91 PASS**，Web/Mobile typecheck/build 全绿，`git diff --check` PASS。P2 正式完成，执行指针进入 **P3.1**。
 

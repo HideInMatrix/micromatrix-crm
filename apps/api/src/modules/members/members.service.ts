@@ -12,7 +12,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { prisma8Varchar } from '../../prisma/prisma8-varchar'
 import { RolesService } from '../roles/roles.service'
 import { CreateMemberDto, QueryMembersDto, UpdateMemberDto } from './dto/member.dto'
@@ -27,7 +27,7 @@ type MemberRow = {
   position: string | null
   phone: string | null
   passwordLoginEnabled: boolean
-  createdAt: Parameters<typeof prisma8TimestampToDate>[0]
+  createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
 }
 
 const DIRECTORY_CACHE_NAMESPACE = 'directory'
@@ -449,7 +449,7 @@ export class MembersService {
         position: user.position,
         phone: user.phone,
         passwordLoginEnabled: user.passwordLoginEnabled,
-        createdAt: prisma8TimestampToDate(user.createdAt).toISOString(),
+        createdAt: prisma8TimestampToISOString(user.createdAt),
       }
     })
   }

@@ -23,7 +23,8 @@ import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
+  prisma8TimestampFromISOString,
+  prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
 import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
 import { AttachmentsService } from '../attachments/attachments.service'
@@ -59,14 +60,14 @@ export type FollowRecord = {
   contactId: string | null
   type: string | null
   content: string
-  followedAt: Date | null
+  followedAt: ReturnType<typeof prisma8Now> | null
   ownerId: string
   ownerName: string
   deptId: string | null
   createdById: string
   commentCount: number
-  createdAt: Date
-  updatedAt: Date
+  createdAt: ReturnType<typeof prisma8Now>
+  updatedAt: ReturnType<typeof prisma8Now>
 }
 
 type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
@@ -322,9 +323,7 @@ export class FollowUpsService {
         contactId: dto.contactId ?? null,
         _type: dto.type ?? null,
         content: dto.content,
-        followedAt: dto.followedAt
-          ? prisma8TimestampFromDate(new Date(dto.followedAt))
-          : prisma8Now(),
+        followedAt: dto.followedAt ? prisma8TimestampFromISOString(dto.followedAt) : prisma8Now(),
         ownerId: owner.id,
         ownerName: owner.name,
         deptId: owner.deptId,
@@ -415,10 +414,8 @@ export class FollowUpsService {
         followedAt:
           dto.followedAt === undefined
             ? existing.followedAt
-              ? prisma8TimestampFromDate(existing.followedAt)
-              : null
             : dto.followedAt
-              ? prisma8TimestampFromDate(new Date(dto.followedAt))
+              ? prisma8TimestampFromISOString(dto.followedAt)
               : null,
         ...(owner ? { ownerId: owner.id, ownerName: owner.name, deptId: owner.deptId } : {}),
         updatedAt: prisma8Now(),
@@ -903,14 +900,14 @@ export class FollowUpsService {
       contactId: row.contactId,
       type: row._type,
       content: row.content,
-      followedAt: row.followedAt ? prisma8TimestampToDate(row.followedAt) : null,
+      followedAt: row.followedAt,
       ownerId: row.ownerId,
       ownerName: row.ownerName,
       deptId: row.deptId,
       createdById: row.createdById,
       commentCount: row.commentCount,
-      createdAt: prisma8TimestampToDate(row.createdAt),
-      updatedAt: prisma8TimestampToDate(row.updatedAt),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     }
   }
 
@@ -1010,7 +1007,7 @@ export class FollowUpsService {
         contactName: record.contactId ? (contactMap.get(record.contactId) ?? null) : null,
         type: record.type,
         content: record.content,
-        followedAt: record.followedAt?.toISOString() ?? null,
+        followedAt: record.followedAt ? prisma8TimestampToISOString(record.followedAt) : null,
         ownerId: record.ownerId,
         ownerName: record.ownerName,
         canManage: record.ownerId === user.id || hasPermission(user.permissions, '*'),
@@ -1021,8 +1018,8 @@ export class FollowUpsService {
               !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key),
           )
           .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
-        createdAt: record.createdAt.toISOString(),
-        updatedAt: record.updatedAt.toISOString(),
+        createdAt: prisma8TimestampToISOString(record.createdAt),
+        updatedAt: prisma8TimestampToISOString(record.updatedAt),
       }
     })
   }

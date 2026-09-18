@@ -28,7 +28,8 @@ import { Prisma8Service } from '../../prisma/prisma8.service'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
+  prisma8TimestampFromISOString,
+  prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
 import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -55,18 +56,18 @@ export interface FollowUpPlan {
   contactId: string | null
   content: string
   method: string | null
-  estimatedAt: Date | null
+  estimatedAt: ReturnType<typeof prisma8Now> | null
   status: FollowUpPlanStatus
   converted: boolean
   convertedRecordId: string | null
   ownerId: string
   deptId: string | null
   createdById: string
-  dueNotifiedAt: Date | null
+  dueNotifiedAt: ReturnType<typeof prisma8Now> | null
   commentCount: number
   customData: unknown
-  createdAt: Date
-  updatedAt: Date
+  createdAt: ReturnType<typeof prisma8Now>
+  updatedAt: ReturnType<typeof prisma8Now>
 }
 
 interface Prisma8FollowUpPlanRow {
@@ -77,18 +78,18 @@ interface Prisma8FollowUpPlanRow {
   contactId: string | null
   content: string
   method: string | null
-  estimatedAt: ReturnType<typeof prisma8Now> | Date | null
+  estimatedAt: ReturnType<typeof prisma8Now> | null
   status: FollowUpPlanStatus
   converted: boolean
   convertedRecordId: string | null
   ownerId: string
   deptId: string | null
   createdById: string
-  dueNotifiedAt: ReturnType<typeof prisma8Now> | Date | null
+  dueNotifiedAt: ReturnType<typeof prisma8Now> | null
   commentCount: number
   customData: unknown
-  createdAt: ReturnType<typeof prisma8Now> | Date
-  updatedAt: ReturnType<typeof prisma8Now> | Date
+  createdAt: ReturnType<typeof prisma8Now>
+  updatedAt: ReturnType<typeof prisma8Now>
 }
 
 interface TargetContext {
@@ -194,9 +195,7 @@ export class FollowUpPlansService {
         contactId: dto.contactId ?? null,
         content: dto.content,
         method: dto.method ?? null,
-        estimatedAt: dto.estimatedAt
-          ? prisma8TimestampFromDate(new Date(dto.estimatedAt))
-          : null,
+        estimatedAt: dto.estimatedAt ? prisma8TimestampFromISOString(dto.estimatedAt) : null,
         ownerId: owner.id,
         deptId: owner.deptId,
         createdById: user.id,
@@ -229,9 +228,10 @@ export class FollowUpPlansService {
       dto.estimatedAt === undefined
         ? existing.estimatedAt
         : dto.estimatedAt
-          ? new Date(dto.estimatedAt)
+          ? prisma8TimestampFromISOString(dto.estimatedAt)
           : null
-    const dueDateChanged = estimatedAt?.getTime() !== existing.estimatedAt?.getTime()
+    const dueDateChanged =
+      estimatedAt?.epochMilliseconds !== existing.estimatedAt?.epochMilliseconds
     const dynamicValues =
       dto.moduleFields === undefined
         ? null
@@ -244,7 +244,7 @@ export class FollowUpPlansService {
         contactId,
         content: dto.content,
         method: dto.method,
-        estimatedAt: estimatedAt ? prisma8TimestampFromDate(estimatedAt) : null,
+        estimatedAt,
         ...(owner ? { ownerId: owner.id, deptId: owner.deptId } : {}),
         ...(dueDateChanged ? { dueNotifiedAt: null } : {}),
         updatedAt: prisma8Now(),
@@ -301,7 +301,7 @@ export class FollowUpPlansService {
       targetId: plan.targetId,
       ownerId: plan.ownerId,
       contactId: plan.contactId,
-      estimatedAt: plan.estimatedAt?.toISOString() ?? null,
+      estimatedAt: plan.estimatedAt ? prisma8TimestampToISOString(plan.estimatedAt) : null,
       content: plan.content,
       method: plan.method,
       status: plan.status,
@@ -409,7 +409,7 @@ export class FollowUpPlansService {
       .where((plan) => plan.dueNotifiedAt.eq(claimedTemporal))
       .updateAll({
         dueNotifiedAt: null,
-        updatedAt: prisma8TimestampFromDate(new Date()),
+        updatedAt: prisma8Now(),
       })
   }
 
@@ -574,23 +574,19 @@ export class FollowUpPlansService {
       contactId: row.contactId,
       content: row.content,
       method: row.method,
-      estimatedAt: row.estimatedAt ? this.timestampToDate(row.estimatedAt) : null,
+      estimatedAt: row.estimatedAt,
       status: row.status,
       converted: row.converted,
       convertedRecordId: row.convertedRecordId,
       ownerId: row.ownerId,
       deptId: row.deptId,
       createdById: row.createdById,
-      dueNotifiedAt: row.dueNotifiedAt ? this.timestampToDate(row.dueNotifiedAt) : null,
+      dueNotifiedAt: row.dueNotifiedAt,
       commentCount: row.commentCount,
       customData: row.customData,
-      createdAt: this.timestampToDate(row.createdAt),
-      updatedAt: this.timestampToDate(row.updatedAt),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     }
-  }
-
-  private timestampToDate(value: ReturnType<typeof prisma8Now> | Date): Date {
-    return value instanceof Date ? value : prisma8TimestampToDate(value)
   }
 
   private async applyGlobalAccess(
@@ -923,7 +919,7 @@ export class FollowUpPlansService {
         contactName: plan.contactId ? (contactMap.get(plan.contactId) ?? null) : null,
         content: plan.content,
         method: plan.method,
-        estimatedAt: plan.estimatedAt?.toISOString() ?? null,
+        estimatedAt: plan.estimatedAt ? prisma8TimestampToISOString(plan.estimatedAt) : null,
         status: plan.status,
         converted: plan.converted,
         convertedRecordId: plan.convertedRecordId,
@@ -938,8 +934,8 @@ export class FollowUpPlansService {
           )
           .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
         canManage: admin || plan.ownerId === user.id,
-        createdAt: plan.createdAt.toISOString(),
-        updatedAt: plan.updatedAt.toISOString(),
+        createdAt: prisma8TimestampToISOString(plan.createdAt),
+        updatedAt: prisma8TimestampToISOString(plan.updatedAt),
       }
     })
   }

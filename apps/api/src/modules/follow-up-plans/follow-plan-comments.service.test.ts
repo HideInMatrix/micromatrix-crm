@@ -4,6 +4,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { OPERATION_LOG_RESULT_META } from '../../common/decorators/log-operation.decorator'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
 import {
   createFollowCommentPrisma8Harness,
   type HarnessUser,
@@ -11,6 +12,8 @@ import {
 import type { FollowCommentRow as FollowUpPlanComment } from '../follow-ups/follow-comment.service-base'
 import { FollowPlanCommentsService } from './follow-plan-comments.service'
 import type { FollowUpPlan } from './follow-up-plans.service'
+
+const instant = (value: string) => prisma8TimestampFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'user-1',
@@ -32,7 +35,7 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     contactId: null,
     content: '跟进计划',
     method: '电话',
-    estimatedAt: new Date('2026-09-07T03:00:00.000Z'),
+    estimatedAt: instant('2026-09-07T03:00:00.000Z'),
     status: 'PREPARED',
     converted: false,
     convertedRecordId: null,
@@ -42,8 +45,8 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     dueNotifiedAt: null,
     commentCount: 0,
     customData: {},
-    createdAt: new Date('2026-09-06T03:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T03:00:00.000Z'),
+    createdAt: instant('2026-09-06T03:00:00.000Z'),
+    updatedAt: instant('2026-09-06T03:00:00.000Z'),
     ...overrides,
   }
 }
@@ -58,8 +61,8 @@ function comment(overrides: Partial<FollowUpPlanComment> = {}): FollowUpPlanComm
     tenantId: user.tenantId,
     createdById: user.id,
     updatedById: user.id,
-    createdAt: new Date('2026-09-06T04:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T04:00:00.000Z'),
+    createdAt: instant('2026-09-06T04:00:00.000Z'),
+    updatedAt: instant('2026-09-06T04:00:00.000Z'),
     ...overrides,
   }
 }

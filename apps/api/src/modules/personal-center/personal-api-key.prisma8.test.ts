@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -63,7 +63,7 @@ test(
       assert.equal(stored.enable, false)
       assert.equal(stored.forever, false)
       assert.equal(
-        stored.expireTime ? prisma8TimestampToDate(stored.expireTime).toISOString() : null,
+        stored.expireTime ? prisma8TimestampToISOString(stored.expireTime) : null,
         expiresAt.toISOString(),
       )
       assert.equal(stored.description, 'Prisma 8 key')

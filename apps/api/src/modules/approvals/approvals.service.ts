@@ -15,7 +15,6 @@ import type { Prisma8Client } from '../../prisma/prisma8-client.js'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
 import { prisma8JsonValue, prisma8Varchar } from '../../prisma/prisma8-values.js'
@@ -2262,21 +2261,11 @@ export class ApprovalsService {
   }
 
   private toLegacyInstance(row: Prisma8ApprovalInstanceRow): ApprovalInstance {
-    return {
-      ...row,
-      finishedAt: row.finishedAt ? prisma8TimestampToDate(row.finishedAt) : null,
-      createdAt: prisma8TimestampToDate(row.createdAt),
-      updatedAt: prisma8TimestampToDate(row.updatedAt),
-    } as unknown as ApprovalInstance
+    return row as unknown as ApprovalInstance
   }
 
   private toLegacyTask(row: Prisma8ApprovalTaskRow): ApprovalTask {
-    return {
-      ...row,
-      handledAt: row.handledAt ? prisma8TimestampToDate(row.handledAt) : null,
-      createdAt: prisma8TimestampToDate(row.createdAt),
-      updatedAt: prisma8TimestampToDate(row.updatedAt),
-    } as unknown as ApprovalTask
+    return row as unknown as ApprovalTask
   }
 
   private async tasksByInstance(instanceIds: string[]): Promise<Map<string, ApprovalTask[]>> {
@@ -2451,8 +2440,8 @@ export class ApprovalsService {
       )
       .sort(
         (a, b) =>
-          (b.handledAt?.getTime() ?? b.updatedAt.getTime()) -
-          (a.handledAt?.getTime() ?? a.updatedAt.getTime()),
+          (b.handledAt?.epochMilliseconds ?? b.updatedAt.epochMilliseconds) -
+          (a.handledAt?.epochMilliseconds ?? a.updatedAt.epochMilliseconds),
       )[0]
     const myWithdrawTask =
       latestMyApproved &&
@@ -2525,14 +2514,14 @@ export class ApprovalsService {
       nodesSnapshot: instance.nodesSnapshot as unknown as ApprovalNodeConfig[],
       submitterId: instance.submitterId,
       submitterName: instance.submitterName,
-      finishedAt: instance.finishedAt?.toISOString() ?? null,
-      createdAt: instance.createdAt.toISOString(),
+      finishedAt: instance.finishedAt ? prisma8TimestampToISOString(instance.finishedAt) : null,
+      createdAt: prisma8TimestampToISOString(instance.createdAt),
       tasks: approvalTasks
         .sort(
           (a, b) =>
             a.nodeIndex - b.nodeIndex ||
             a.nodeRound - b.nodeRound ||
-            a.createdAt.getTime() - b.createdAt.getTime(),
+            a.createdAt.epochMilliseconds - b.createdAt.epochMilliseconds,
         )
         .map((t) => ({
           id: t.id,
@@ -2547,7 +2536,7 @@ export class ApprovalsService {
           status: t.status,
           action: t.action,
           comment: latestRecordByTaskId.get(t.id)?.comment ?? null,
-          handledAt: t.handledAt?.toISOString() ?? null,
+          handledAt: t.handledAt ? prisma8TimestampToISOString(t.handledAt) : null,
         })),
       records: records.map((record) => ({
         id: record.id,

@@ -12,7 +12,6 @@ import { JwtService } from '@nestjs/jwt'
 import { hasPermission } from '@micromatrix/shared'
 import type { Request } from 'express'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
 import { toAuthUser } from '../auth-user'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
@@ -54,7 +53,7 @@ export class AuthGuard implements CanActivate {
       const apiKey = await this.prisma8.client.orm.public.UserKey.where({ accessKey }).first()
       const expired =
         apiKey?.forever === false &&
-        (!apiKey.expireTime || prisma8TimestampToDate(apiKey.expireTime) <= new Date())
+        (!apiKey.expireTime || apiKey.expireTime.epochMilliseconds <= Date.now())
       if (
         !apiKey ||
         !apiKey.enable ||

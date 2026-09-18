@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { prisma8Varchar } from '../../prisma/prisma8-varchar'
 import {
   createPrismaTestTenant,
@@ -94,7 +94,7 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
     assert.equal(Number(infos[0]?.budget), 123456.78)
     assert.equal(Number(infos[1]?.budget), 98765.43)
     assert.equal(
-      infos[0]?.publishedAt ? prisma8TimestampToDate(infos[0].publishedAt).toISOString() : null,
+      infos[0]?.publishedAt ? prisma8TimestampToISOString(infos[0].publishedAt) : null,
       publishedAt.toISOString(),
     )
 

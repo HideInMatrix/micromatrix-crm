@@ -15,8 +15,12 @@ export function prisma8TimestampFromDate(value: Date): Temporal.Instant {
   return Temporal.Instant.fromEpochMilliseconds(value.getTime())
 }
 
-export function prisma8TimestampToDate(value: Temporal.Instant): Date {
-  return new Date(value.epochMilliseconds)
+export function prisma8TimestampFromISOString(value: string): Temporal.Instant {
+  return Temporal.Instant.from(value)
+}
+
+export function prisma8TimestampFromEpochMilliseconds(value: number): Temporal.Instant {
+  return Temporal.Instant.fromEpochMilliseconds(value)
 }
 
 export function prisma8TimestampToISOString(value: Temporal.Instant): string {

@@ -5,7 +5,7 @@ import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
 import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
@@ -314,8 +314,7 @@ test(
       assert.ok(secondDb)
       assert.equal(secondDb.passwordCiphertext, firstDb.passwordCiphertext)
       assert.equal(
-        prisma8TimestampToDate(secondDb.updatedAt).getTime() >
-          prisma8TimestampToDate(firstDb.updatedAt).getTime(),
+        secondDb.updatedAt.epochMilliseconds > firstDb.updatedAt.epochMilliseconds,
         true,
       )
 
@@ -522,8 +521,7 @@ test(
       assert.ok(updatedDb)
       assert.equal(updatedDb.apiKeyCiphertext, primaryDb.apiKeyCiphertext)
       assert.equal(
-        prisma8TimestampToDate(updatedDb.updatedAt).getTime() >
-          prisma8TimestampToDate(primaryDb.updatedAt).getTime(),
+        updatedDb.updatedAt.epochMilliseconds > primaryDb.updatedAt.epochMilliseconds,
         true,
       )
 

@@ -5,7 +5,6 @@ import { BadGatewayException } from '@nestjs/common'
 import type { ApprovalWebhookConfig } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ApprovalResourceService } from './approval-resource.service'
 import {
@@ -82,8 +81,7 @@ test(
       assert.ok(sent.startedAt)
       assert.ok(sent.finishedAt)
       assert.ok(
-        prisma8TimestampToDate(sent.updatedAt).getTime() >=
-          prisma8TimestampToDate(sent.createdAt).getTime(),
+        sent.updatedAt.epochMilliseconds >= sent.createdAt.epochMilliseconds,
       )
 
       const failedClient = {

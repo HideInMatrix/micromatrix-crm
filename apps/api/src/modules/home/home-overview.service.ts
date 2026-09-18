@@ -3,7 +3,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { prisma8TimestampFromEpochMilliseconds } from '../../prisma/prisma8-temporal'
 import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import { homeCacheUserContext } from './home-cache-context'
 
@@ -97,8 +97,12 @@ export class HomeOverviewService {
           ownerId: user.id,
         })
           .where((row) => row.status.in(['PREPARED', 'UNDERWAY']))
-          .where((row) => row.estimatedAt.gte(prisma8TimestampFromDate(new Date(now - 24 * 3600 * 1000))))
-          .where((row) => row.estimatedAt.lte(prisma8TimestampFromDate(new Date(now + 3 * 24 * 3600 * 1000))))
+          .where((row) =>
+            row.estimatedAt.gte(prisma8TimestampFromEpochMilliseconds(now - 24 * 3600 * 1000)),
+          )
+          .where((row) =>
+            row.estimatedAt.lte(prisma8TimestampFromEpochMilliseconds(now + 3 * 24 * 3600 * 1000)),
+          )
           .aggregate((agg) => ({ count: agg.count() })),
         overdue.aggregate((agg) => ({ count: agg.count() })),
       ])

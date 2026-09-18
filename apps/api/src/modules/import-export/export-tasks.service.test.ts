@@ -5,10 +5,7 @@ import path from 'node:path'
 import { ConfigService } from '@nestjs/config'
 import { ServiceUnavailableException } from '@nestjs/common'
 import type { AsyncJobsService } from '../../async-jobs/async-jobs.service'
-import {
-  prisma8TimestampFromDate,
-  prisma8TimestampToDate,
-} from '../../prisma/prisma8-temporal'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { ExportTasksService } from './export-tasks.service'
 
@@ -24,11 +21,11 @@ type Row = {
   fileSize: number | null
   errorMessage: string | null
   payload: unknown
-  startedAt: Date | null
+  startedAt: ReturnType<typeof prisma8TimestampFromDate> | null
   attempts: number
-  completedAt: Date | null
-  expiresAt: Date
-  createdAt: Date
+  completedAt: ReturnType<typeof prisma8TimestampFromDate> | null
+  expiresAt: ReturnType<typeof prisma8TimestampFromDate>
+  createdAt: ReturnType<typeof prisma8TimestampFromDate>
 }
 
 function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, 'module'>> }) {
@@ -47,8 +44,8 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
     startedAt: null,
     attempts: 0,
     completedAt: null,
-    expiresAt: new Date(Date.now() + 60_000),
-    createdAt: new Date(),
+    expiresAt: prisma8TimestampFromDate(new Date(Date.now() + 60_000)),
+    createdAt: prisma8TimestampFromDate(new Date()),
   }))
   let locks = 0
   let enqueueCalls = 0
@@ -75,7 +72,7 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
       return row ? project(row, fields) : null
     },
     create: async (data: any) => {
-      const createdAt = new Date()
+      const createdAt = prisma8TimestampFromDate(new Date())
       const row: Row = {
         id: `task-${rows.length + 1}`,
         tenantId: data.tenantId,
@@ -91,13 +88,13 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
         startedAt: null,
         attempts: 0,
         completedAt: null,
-        expiresAt: prisma8TimestampToDate(data.expiresAt),
+        expiresAt: data.expiresAt,
         createdAt,
       }
       rows.push(row)
       return {
         ...project(row, fields),
-        createdAt: prisma8TimestampFromDate(createdAt),
+        createdAt,
         completedAt: null,
         expiresAt: data.expiresAt,
       }

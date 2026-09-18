@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
 import type { NotificationsService } from '../notifications/notifications.service'
 import { AnnouncementsService } from './announcements.service'
 
@@ -11,8 +11,8 @@ type Row = {
   tenantId: string
   subject: string
   content: string
-  startAt: Date
-  endAt: Date
+  startAt: ReturnType<typeof prisma8Now>
+  endAt: ReturnType<typeof prisma8Now>
   url: string | null
   linkName: string | null
   departmentIds: string[]
@@ -21,16 +21,16 @@ type Row = {
   notice: boolean
   createUserId: string
   updateUserId: string
-  createdAt: Date
-  updatedAt: Date
+  createdAt: ReturnType<typeof prisma8Now>
+  updatedAt: ReturnType<typeof prisma8Now>
 }
 
 type AnnouncementWhere = {
   id?: string
   tenantId?: string
   notice?: boolean
-  startAt?: { lte?: Date }
-  endAt?: { gte?: Date }
+  startAt?: { lte?: ReturnType<typeof prisma8Now> }
+  endAt?: { gte?: ReturnType<typeof prisma8Now> }
   subject?: { contains?: string }
 }
 
@@ -86,8 +86,14 @@ function createFixture() {
     if (where?.id && row.id !== where.id) return false
     if (where?.tenantId && row.tenantId !== where.tenantId) return false
     if (where?.notice !== undefined && row.notice !== where.notice) return false
-    if (where?.startAt?.lte && row.startAt > where.startAt.lte) return false
-    if (where?.endAt?.gte && row.endAt < where.endAt.gte) return false
+    if (
+      where?.startAt?.lte &&
+      row.startAt.epochMilliseconds > where.startAt.lte.epochMilliseconds
+    ) return false
+    if (
+      where?.endAt?.gte &&
+      row.endAt.epochMilliseconds < where.endAt.gte.epochMilliseconds
+    ) return false
     const contains = where?.subject?.contains
     if (contains && !row.subject.toLowerCase().includes(String(contains).toLowerCase()))
       return false
@@ -103,8 +109,8 @@ function createFixture() {
           departmentIds: [...data.departmentIds],
           userIds: [...data.userIds],
           receiverUserIds: [...data.receiverUserIds],
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: prisma8Now(),
+          updatedAt: prisma8Now(),
         }
         rows.push(row)
         return { ...row }
@@ -128,12 +134,12 @@ function createFixture() {
         rows.filter((row) => matches(row, where)).length,
       update: async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
         const row = rows.find((item) => item.id === where.id)!
-        Object.assign(row, data, { updatedAt: new Date() })
+        Object.assign(row, data, { updatedAt: prisma8Now() })
         return { ...row }
       },
       updateMany: async ({ where, data }: { where: AnnouncementWhere; data: Partial<Row> }) => {
         const targets = rows.filter((row) => matches(row, where))
-        targets.forEach((row) => Object.assign(row, data, { updatedAt: new Date() }))
+        targets.forEach((row) => Object.assign(row, data, { updatedAt: prisma8Now() }))
         return { count: targets.length }
       },
       delete: async ({ where }: { where: { id: string } }) => {
@@ -182,11 +188,13 @@ function createFixture() {
           },
           startAt: {
             lte: (value: unknown) => (row: Row) =>
-              row.startAt <= prisma8TimestampToDate(value as never),
+              row.startAt.epochMilliseconds <=
+              (value as ReturnType<typeof prisma8Now>).epochMilliseconds,
           },
           endAt: {
             gte: (value: unknown) => (row: Row) =>
-              row.endAt >= prisma8TimestampToDate(value as never),
+              row.endAt.epochMilliseconds >=
+              (value as ReturnType<typeof prisma8Now>).epochMilliseconds,
           },
         }
         return announcementCollection([...predicates, next(fields)], offset, limit)
@@ -223,13 +231,13 @@ function createFixture() {
       const row: Row = {
         ...(data as unknown as Row),
         id: `announcement-${++sequence}`,
-        startAt: prisma8TimestampToDate(data['startAt'] as never),
-        endAt: prisma8TimestampToDate(data['endAt'] as never),
+        startAt: data['startAt'] as ReturnType<typeof prisma8Now>,
+        endAt: data['endAt'] as ReturnType<typeof prisma8Now>,
         departmentIds: [...(data['departmentIds'] as string[])],
         userIds: [...(data['userIds'] as string[])],
         receiverUserIds: [...(data['receiverUserIds'] as string[])],
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: prisma8Now(),
+        updatedAt: prisma8Now(),
       }
       rows.push(row)
       return { ...row }
@@ -238,11 +246,9 @@ function createFixture() {
       const row = rows.find((item) => predicates.every((predicate) => predicate(item)))
       if (!row) return null
       const normalized = { ...data } as Record<string, unknown>
-      if (normalized['startAt']) normalized['startAt'] = prisma8TimestampToDate(normalized['startAt'] as never)
-      if (normalized['endAt']) normalized['endAt'] = prisma8TimestampToDate(normalized['endAt'] as never)
       delete normalized['updatedAt']
       Object.assign(row, normalized)
-      row.updatedAt = new Date()
+      row.updatedAt = prisma8Now()
       return { ...row }
     },
     delete: async () => {

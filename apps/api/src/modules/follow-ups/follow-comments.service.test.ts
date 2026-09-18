@@ -3,6 +3,7 @@ import test from 'node:test'
 import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import { OPERATION_LOG_RESULT_META } from '../../common/decorators/log-operation.decorator'
 import type { AuthUser } from '../../common/auth-user'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
 import {
   createFollowCommentPrisma8Harness,
   type HarnessUser,
@@ -10,6 +11,8 @@ import {
 import type { FollowCommentRow as FollowUpRecordComment } from './follow-comment.service-base'
 import { FollowCommentsService } from './follow-comments.service'
 import type { FollowRecord as FollowUpRecord } from './follow-ups.service'
+
+const instant = (value: string) => prisma8TimestampFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'user-1',
@@ -31,14 +34,14 @@ function record(overrides: Partial<FollowUpRecord> = {}): FollowUpRecord {
     contactId: null,
     type: '电话',
     content: '跟进记录',
-    followedAt: new Date('2026-09-06T03:00:00.000Z'),
+    followedAt: instant('2026-09-06T03:00:00.000Z'),
     ownerId: 'owner-1',
     ownerName: '负责人',
     deptId: 'dept-1',
     createdById: user.id,
     commentCount: 0,
-    createdAt: new Date('2026-09-06T03:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T03:00:00.000Z'),
+    createdAt: instant('2026-09-06T03:00:00.000Z'),
+    updatedAt: instant('2026-09-06T03:00:00.000Z'),
     ...overrides,
   }
 }
@@ -53,8 +56,8 @@ function comment(overrides: Partial<FollowUpRecordComment> = {}): FollowUpRecord
     tenantId: user.tenantId,
     createdById: user.id,
     updatedById: user.id,
-    createdAt: new Date('2026-09-06T04:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T04:00:00.000Z'),
+    createdAt: instant('2026-09-06T04:00:00.000Z'),
+    updatedAt: instant('2026-09-06T04:00:00.000Z'),
     ...overrides,
   }
 }

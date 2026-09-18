@@ -17,7 +17,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { CreateRoleDto, QueryRoleMembersDto, UpdateRoleDto } from './dto/role.dto'
 
 type DataScope = CreateRoleDto['dataScope']
@@ -214,7 +214,7 @@ export class RolesService {
         position: user.position,
         phone: user.phone,
         passwordLoginEnabled: user.passwordLoginEnabled,
-        createdAt: prisma8TimestampToDate(user.createdAt).toISOString(),
+        createdAt: prisma8TimestampToISOString(user.createdAt),
       })),
       total: aggregate.count,
       page,

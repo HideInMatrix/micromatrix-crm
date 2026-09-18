@@ -16,6 +16,7 @@ import {
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import {
   prisma8Now,
+  prisma8TimestampFromEpochMilliseconds,
   prisma8TimestampFromDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
@@ -267,7 +268,7 @@ export class MessageDeliveryService {
   async processDueDeliveries(): Promise<number> {
     const now = new Date()
     const nowTemporal = prisma8TimestampFromDate(now)
-    const staleBefore = prisma8TimestampFromDate(new Date(now.getTime() - STALE_SENDING_MS))
+    const staleBefore = prisma8TimestampFromEpochMilliseconds(now.getTime() - STALE_SENDING_MS)
     await this.prisma8.client.orm.public.MessageDeliveries.where({ status: 'SENDING' })
       .where((delivery) => delivery.channel.in(SUPPORTED_CHANNELS))
       .where((delivery) => delivery.updatedAt.lt(staleBefore))
@@ -474,9 +475,7 @@ export class MessageDeliveryService {
       id: delivery.id,
     }).update({
       status: retryable ? 'FAILED' : 'DEAD',
-      nextAttemptAt: retryable
-        ? prisma8TimestampFromDate(new Date(Date.now() + delay))
-        : null,
+      nextAttemptAt: retryable ? prisma8Now().add({ milliseconds: delay }) : null,
       errorCode: errorCode.slice(0, 100),
       errorMessage: errorMessage.slice(0, 500),
       updatedAt,

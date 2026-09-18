@@ -5,7 +5,7 @@ import path from 'node:path'
 import { AttachmentVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { LocalDiskStorage } from './storage/local-disk.storage'
 import type { StorageProvider } from './storage/storage-provider'
 
@@ -225,7 +225,7 @@ export class AttachmentsService {
     targetType: string | null
     targetId: string | null
     uploaderId: string | null
-    createdAt: Parameters<typeof prisma8TimestampToDate>[0]
+    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
   }): AttachmentVO {
     return {
       id: row.id,
@@ -235,7 +235,7 @@ export class AttachmentsService {
       targetType: row.targetType,
       targetId: row.targetId,
       uploaderId: row.uploaderId,
-      createdAt: prisma8TimestampToDate(row.createdAt).toISOString(),
+      createdAt: prisma8TimestampToISOString(row.createdAt),
     }
   }
 }

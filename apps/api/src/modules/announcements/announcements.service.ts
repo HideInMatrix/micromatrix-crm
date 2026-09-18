@@ -13,7 +13,7 @@ import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
+  prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
 import { prisma8JsonValue } from '../../prisma/prisma8-values.js'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -28,14 +28,14 @@ interface ReceiverSnapshot {
   receiverUserIds: string[]
 }
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToDate>[0]
+type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
 type AnnouncementRow = {
   id: string
   tenantId: string
   subject: string
   content: string
-  startAt: Date | Prisma8Timestamp
-  endAt: Date | Prisma8Timestamp
+  startAt: Prisma8Timestamp
+  endAt: Prisma8Timestamp
   url: string | null
   linkName: string | null
   departmentIds: unknown
@@ -44,8 +44,8 @@ type AnnouncementRow = {
   notice: boolean
   createUserId: string
   updateUserId: string
-  createdAt: Date | Prisma8Timestamp
-  updatedAt: Date | Prisma8Timestamp
+  createdAt: Prisma8Timestamp
+  updatedAt: Prisma8Timestamp
 }
 type PublishAnnouncement = {
   id: string
@@ -56,8 +56,8 @@ type PublishAnnouncement = {
   linkName: string | null
   receiverUserIds: unknown
   notice: boolean
-  startAt: Date | Prisma8Timestamp
-  endAt: Date | Prisma8Timestamp
+  startAt: Prisma8Timestamp
+  endAt: Prisma8Timestamp
 }
 
 @Injectable()
@@ -191,9 +191,14 @@ export class AnnouncementsService {
   }
 
   private async publishIfDue(announcement: PublishAnnouncement, now: Date): Promise<boolean> {
-    const startAt = this.announcementTimeToDate(announcement.startAt)
-    const endAt = this.announcementTimeToDate(announcement.endAt)
-    if (announcement.notice || startAt > now || endAt < now) return false
+    const nowMs = now.getTime()
+    if (
+      announcement.notice ||
+      announcement.startAt.epochMilliseconds > nowMs ||
+      announcement.endAt.epochMilliseconds < nowMs
+    ) {
+      return false
+    }
     const receiverUserIds = this.jsonStringArray(announcement.receiverUserIds)
     if (receiverUserIds.length === 0) {
       this.logger.warn(`公告 ${announcement.id} 没有接收成员，跳过发布`)
@@ -360,8 +365,8 @@ export class AnnouncementsService {
         id: item.id,
         subject: item.subject,
         content: item.content,
-        startAt: this.announcementTimeToDate(item.startAt).toISOString(),
-        endAt: this.announcementTimeToDate(item.endAt).toISOString(),
+        startAt: prisma8TimestampToISOString(item.startAt),
+        endAt: prisma8TimestampToISOString(item.endAt),
         url: item.url,
         linkName: item.linkName,
         notice: item.notice,
@@ -376,8 +381,8 @@ export class AnnouncementsService {
         createUserName: userNames.get(item.createUserId) ?? null,
         updateUserId: item.updateUserId,
         updateUserName: userNames.get(item.updateUserId) ?? null,
-        createdAt: this.announcementTimeToDate(item.createdAt).toISOString(),
-        updatedAt: this.announcementTimeToDate(item.updatedAt).toISOString(),
+        createdAt: prisma8TimestampToISOString(item.createdAt),
+        updatedAt: prisma8TimestampToISOString(item.updatedAt),
       }
     })
   }
@@ -386,10 +391,6 @@ export class AnnouncementsService {
     return Array.isArray(value)
       ? value.filter((item): item is string => typeof item === 'string')
       : []
-  }
-
-  private announcementTimeToDate(value: Date | Prisma8Timestamp): Date {
-    return value instanceof Date ? value : prisma8TimestampToDate(value)
   }
 
   private uniqueNonEmpty(values: string[]): string[] {

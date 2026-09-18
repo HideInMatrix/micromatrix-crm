@@ -1,3 +1,5 @@
+import type { Temporal } from '@js-temporal/polyfill'
+
 export type ApprovalJsonValue = unknown
 export type ApprovalInstanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED'
 export type ApprovalExecuteTiming = 'CREATE' | 'UPDATE' | 'DELETE'
@@ -22,9 +24,9 @@ export interface ApprovalInstanceRuntime {
   updateFields: string | null
   submitterId: string
   submitterName: string
-  finishedAt: Date | null
-  createdAt: Date
-  updatedAt: Date
+  finishedAt: Temporal.Instant | null
+  createdAt: Temporal.Instant
+  updatedAt: Temporal.Instant
 }
 
 export interface ApprovalTaskRuntime {
@@ -39,9 +41,9 @@ export interface ApprovalTaskRuntime {
   taskType: ApprovalTaskType
   status: ApprovalTaskStatus
   action: ApprovalTaskAction
-  handledAt: Date | null
-  createdAt: Date
-  updatedAt: Date
+  handledAt: Temporal.Instant | null
+  createdAt: Temporal.Instant
+  updatedAt: Temporal.Instant
 }
 
 export type ApprovalResourceInstance = Pick<

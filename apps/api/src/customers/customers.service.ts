@@ -45,7 +45,7 @@ import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
 import { USER_VIEW_RESOURCE_TYPES } from '../modules/user-views/user-views.constants'
 import { UserViewsService } from '../modules/user-views/user-views.service'
 import type { Prisma8Client } from '../prisma/prisma8-client.js'
-import { prisma8TimestampToDate } from '../prisma/prisma8-temporal.js'
+import { prisma8TimestampToISOString } from '../prisma/prisma8-temporal.js'
 import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../prisma/prisma8-varchar.js'
 import { Prisma8Service } from '../prisma/prisma8.service.js'
 import { CustomerAccessService } from './customer-access.service'
@@ -936,15 +936,15 @@ export class CustomersService {
         type: record._type,
         content: record.content,
         followedAt: record.followedAt
-          ? prisma8TimestampToDate(record.followedAt).toISOString()
+          ? prisma8TimestampToISOString(record.followedAt)
           : null,
         ownerId: record.ownerId,
         ownerName: record.ownerName,
         canManage: record.ownerId === user.id || hasPermission(user.permissions, '*'),
         commentCount: record.commentCount,
         moduleFields: [],
-        createdAt: prisma8TimestampToDate(record.createdAt).toISOString(),
-        updatedAt: prisma8TimestampToDate(record.updatedAt).toISOString(),
+        createdAt: prisma8TimestampToISOString(record.createdAt),
+        updatedAt: prisma8TimestampToISOString(record.updatedAt),
       })),
       team: team.map((member) => ({
         id: String(member.id),

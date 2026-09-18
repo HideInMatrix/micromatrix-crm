@@ -10,7 +10,7 @@ import { BusinessChangeLogService } from '../../common/services/business-change-
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import {
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
+  prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
 import type { UpdatePersonalApiKeyDto } from './dto/personal-api-key.dto'
 
@@ -127,10 +127,10 @@ export class PersonalApiKeyService {
       createUser: row.createUser,
       accessKey: row.accessKey,
       secretKey: row.secretKey,
-      createTime: prisma8TimestampToDate(row.createTime).getTime(),
+      createTime: row.createTime.epochMilliseconds,
       enable: row.enable,
       forever: row.forever,
-      expireTime: row.expireTime ? prisma8TimestampToDate(row.expireTime).getTime() : null,
+      expireTime: row.expireTime ? row.expireTime.epochMilliseconds : null,
       description: row.description ?? '',
     }
   }
@@ -146,7 +146,7 @@ export class PersonalApiKeyService {
       accessKey: row.accessKey,
       enabled: row.enable,
       forever: row.forever,
-      expireAt: row.expireTime ? prisma8TimestampToDate(row.expireTime) : null,
+      expireAt: row.expireTime ? prisma8TimestampToISOString(row.expireTime) : null,
       description: row.description,
     }
   }

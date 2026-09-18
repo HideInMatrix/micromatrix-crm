@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ConflictException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
 import { type FollowUpPlan, FollowUpPlansService } from './follow-up-plans.service'
+
+const instant = (value: string) => prisma8TimestampFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'owner-1',
@@ -24,7 +27,7 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     contactId: null,
     content: '今天完成回访',
     method: '电话',
-    estimatedAt: new Date('2026-08-22T02:00:00.000Z'),
+    estimatedAt: instant('2026-08-22T02:00:00.000Z'),
     status: 'COMPLETED',
     converted: false,
     convertedRecordId: null,
@@ -34,8 +37,8 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     dueNotifiedAt: null,
     commentCount: 0,
     customData: {},
-    createdAt: new Date('2026-08-21T00:00:00.000Z'),
-    updatedAt: new Date('2026-08-21T00:00:00.000Z'),
+    createdAt: instant('2026-08-21T00:00:00.000Z'),
+    updatedAt: instant('2026-08-21T00:00:00.000Z'),
     ...overrides,
   }
 }

@@ -5,7 +5,6 @@ import type { Prisma8Service } from '../../prisma/prisma8.service'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
 } from '../../prisma/prisma8-temporal'
 import { prisma8JsonValue } from '../../prisma/prisma8-values'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
@@ -118,8 +117,7 @@ test(
       assert.equal(storedSource.action, null)
       assert.equal(storedSource.handledAt, null)
       assert.ok(
-        prisma8TimestampToDate(storedSource.updatedAt).getTime() >=
-          prisma8TimestampToDate(sourceTask.updatedAt).getTime(),
+        storedSource.updatedAt.epochMilliseconds >= sourceTask.updatedAt.epochMilliseconds,
       )
 
       const storedDownstream = await prisma8Client.orm.public.ApprovalTasks.where({
@@ -135,8 +133,7 @@ test(
       assert.equal(storedInstance.status, 'PENDING')
       assert.equal(storedInstance.currentNodeIndex, 0)
       assert.ok(
-        prisma8TimestampToDate(storedInstance.updatedAt).getTime() >=
-          prisma8TimestampToDate(instance.updatedAt).getTime(),
+        storedInstance.updatedAt.epochMilliseconds >= instance.updatedAt.epochMilliseconds,
       )
 
       await assert.rejects(

@@ -9,7 +9,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { withOperationLogResult } from '../../common/decorators/log-operation.decorator'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { prisma8Varchar } from '../../prisma/prisma8-varchar'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import type {
@@ -27,8 +27,8 @@ export interface FollowCommentRow {
   tenantId: string
   createdById: string
   updatedById: string
-  createdAt: Date
-  updatedAt: Date
+  createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
+  updatedAt: Parameters<typeof prisma8TimestampToISOString>[0]
 }
 
 export interface FollowCommentResource {
@@ -55,7 +55,7 @@ interface CreateCommentInput {
 }
 
 type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToDate>[0]
+type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
 
 /** FollowRecord / FollowPlan 共用评论业务内核，子类仅提供资源、表和事件差异。 */
 export abstract class FollowCommentServiceBase<TResource extends FollowCommentResource> {
@@ -338,8 +338,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         }),
         replies: [],
         replyCount: 0,
-        createdAt: comment.createdAt.toISOString(),
-        updatedAt: comment.updatedAt.toISOString(),
+        createdAt: prisma8TimestampToISOString(comment.createdAt),
+        updatedAt: prisma8TimestampToISOString(comment.updatedAt),
       }
     }
 
@@ -452,8 +452,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       tenantId: row.organizationId,
       createdById: row.createUser,
       updatedById: row.updateUser,
-      createdAt: prisma8TimestampToDate(row.createTime),
-      updatedAt: prisma8TimestampToDate(row.updateTime),
+      createdAt: row.createTime,
+      updatedAt: row.updateTime,
     }
   }
 

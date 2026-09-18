@@ -4,7 +4,7 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthService } from '../../auth/auth.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampFromDate, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { WeComClient } from '../enterprise-integrations/wecom.client'
 import { WeComSsoService } from './wecom-sso.service'
@@ -55,7 +55,7 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
     first: async () => oauthState && matches(oauthState, where) ? oauthState : null,
     deleteAndCount: async () => {
       if (!oauthState) return 0
-      const expired = prisma8TimestampToDate(oauthState.expiresAt).getTime() < Date.now()
+      const expired = oauthState.expiresAt.epochMilliseconds < Date.now()
       if (oauthState.consumedAt || expired || Object.keys(where).length === 0) { oauthState = null; return 1 }
       return 0
     },

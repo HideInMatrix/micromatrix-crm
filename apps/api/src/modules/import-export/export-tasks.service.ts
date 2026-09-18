@@ -8,8 +8,7 @@ import path from 'node:path'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import {
   prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampToDate,
+  prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
 import { AsyncJobsService } from '../../async-jobs/async-jobs.service'
 
@@ -97,18 +96,13 @@ export class ExportTasksService {
           module: input.module,
           fileName,
           payload,
-          expiresAt: prisma8TimestampFromDate(new Date(Date.now() + DAY_MS)),
+          expiresAt: prisma8Now().add({ milliseconds: DAY_MS }),
         })
     })
 
     try {
       await this.asyncJobs.enqueueExport(task.id)
-      return this.toVO({
-        ...task,
-        createdAt: prisma8TimestampToDate(task.createdAt),
-        completedAt: task.completedAt ? prisma8TimestampToDate(task.completedAt) : null,
-        expiresAt: prisma8TimestampToDate(task.expiresAt),
-      })
+      return this.toVO(task)
     } catch (error) {
       await this.tasks()
         .where({ id: task.id, tenantId: user.tenantId, userId: user.id, status: 'PENDING' })
@@ -124,7 +118,7 @@ export class ExportTasksService {
       if (
         !current ||
         current.status !== 'PENDING' ||
-        prisma8TimestampToDate(current.expiresAt).getTime() <= Date.now()
+        current.expiresAt.epochMilliseconds <= Date.now()
       ) {
         return null
       }
@@ -208,7 +202,7 @@ export class ExportTasksService {
   async download(user: AuthUser, id: string) {
     const task = await this.getOwnTask(user, id)
     if (task.status !== 'SUCCESS' || !task.filePath) throw new BadRequestException('导出文件尚未生成完成')
-    if (prisma8TimestampToDate(task.expiresAt).getTime() <= Date.now()) {
+    if (task.expiresAt.epochMilliseconds <= Date.now()) {
       throw new BadRequestException('导出文件已过期')
     }
     try {
@@ -275,12 +269,10 @@ export class ExportTasksService {
     rowCount: number
     fileSize: number | null
     errorMessage: string | null
-    createdAt: Date | Parameters<typeof prisma8TimestampToDate>[0]
-    completedAt: Date | Parameters<typeof prisma8TimestampToDate>[0] | null
-    expiresAt: Date | Parameters<typeof prisma8TimestampToDate>[0]
+    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
+    completedAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
+    expiresAt: Parameters<typeof prisma8TimestampToISOString>[0]
   }): ExportTaskVO {
-    const toDate = (value: Date | Parameters<typeof prisma8TimestampToDate>[0]) =>
-      value instanceof Date ? value : prisma8TimestampToDate(value)
     return {
       id: task.id,
       module: task.module,
@@ -289,9 +281,9 @@ export class ExportTasksService {
       rowCount: task.rowCount,
       fileSize: task.fileSize,
       errorMessage: task.errorMessage,
-      createdAt: toDate(task.createdAt).toISOString(),
-      completedAt: task.completedAt ? toDate(task.completedAt).toISOString() : null,
-      expiresAt: toDate(task.expiresAt).toISOString(),
+      createdAt: prisma8TimestampToISOString(task.createdAt),
+      completedAt: task.completedAt ? prisma8TimestampToISOString(task.completedAt) : null,
+      expiresAt: prisma8TimestampToISOString(task.expiresAt),
     }
   }
 }

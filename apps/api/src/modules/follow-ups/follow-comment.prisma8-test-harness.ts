@@ -1,5 +1,8 @@
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import {
+  prisma8TimestampFromDate,
+  prisma8TimestampFromISOString,
+} from '../../prisma/prisma8-temporal'
 
 export interface HarnessComment {
   id: string
@@ -10,8 +13,8 @@ export interface HarnessComment {
   tenantId: string
   createdById: string
   updatedById: string
-  createdAt: Date
-  updatedAt: Date
+  createdAt: ReturnType<typeof prisma8TimestampFromDate>
+  updatedAt: ReturnType<typeof prisma8TimestampFromDate>
 }
 
 export interface HarnessUser {
@@ -199,8 +202,8 @@ export function createFollowCommentPrisma8Harness(options: HarnessOptions) {
     organizationId: comment.tenantId,
     createUser: comment.createdById,
     updateUser: comment.updatedById,
-    createTime: prisma8TimestampFromDate(comment.createdAt),
-    updateTime: prisma8TimestampFromDate(comment.updatedAt),
+    createTime: comment.createdAt,
+    updateTime: comment.updatedAt,
   }))
   const mentionRows = mentions.map((mention, index) => ({
     id: `mention-${index + 1}`,
@@ -210,7 +213,7 @@ export function createFollowCommentPrisma8Harness(options: HarnessOptions) {
     id: options.kind === 'record' ? 'record-1' : 'plan-1',
     tenantId: options.tenantId,
     commentCount: comments.length,
-    updatedAt: prisma8TimestampFromDate(new Date('2026-09-06T03:00:00.000Z')),
+    updatedAt: prisma8TimestampFromISOString('2026-09-06T03:00:00.000Z'),
   }]
 
   const commentHooks = {

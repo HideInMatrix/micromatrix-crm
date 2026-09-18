@@ -5,7 +5,6 @@ import type { Prisma8Service } from '../../prisma/prisma8.service'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
 } from '../../prisma/prisma8-temporal'
 import { prisma8JsonValue } from '../../prisma/prisma8-values'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
@@ -110,8 +109,7 @@ test(
       assert.equal(storedInstance.status, 'CANCELED')
       assert.ok(storedInstance.finishedAt)
       assert.ok(
-        prisma8TimestampToDate(storedInstance.updatedAt).getTime() >=
-          prisma8TimestampToDate(instance.updatedAt).getTime(),
+        storedInstance.updatedAt.epochMilliseconds >= instance.updatedAt.epochMilliseconds,
       )
 
       const tasks = await prisma8Client.orm.public.ApprovalTasks.where({

@@ -8,7 +8,6 @@ import type { Prisma8Service } from '../../prisma/prisma8.service'
 import {
   prisma8Now,
   prisma8TimestampFromDate,
-  prisma8TimestampToDate,
 } from '../../prisma/prisma8-temporal'
 import {
   createPrismaTestTenant,
@@ -211,7 +210,7 @@ test(
       assert.equal(failed.errorCode, 'WECOM_45009')
       assert.equal(failed.errorMessage, 'temporary failure')
       assert.ok(failed.nextAttemptAt)
-      assert.ok(prisma8TimestampToDate(failed.nextAttemptAt).getTime() > Date.now())
+      assert.ok(failed.nextAttemptAt.epochMilliseconds > Date.now())
 
       const exhaustedSource = await prisma8Client.orm.public.MessageDeliveries.where({ id: pending.id }).update({
         status: 'SENDING',

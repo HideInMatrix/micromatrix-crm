@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, Optional } from '@n
 import { DepartmentVO } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto'
 
 const CACHE_NAMESPACE = 'directory'
@@ -205,13 +205,13 @@ export class DepartmentsService {
     parentId: string | null
     leaderId: string | null
     sort: number
-    createdAt: Parameters<typeof prisma8TimestampToDate>[0]
-    updatedAt: Parameters<typeof prisma8TimestampToDate>[0]
+    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
+    updatedAt: Parameters<typeof prisma8TimestampToISOString>[0]
   }) {
     return {
       ...row,
-      createdAt: prisma8TimestampToDate(row.createdAt),
-      updatedAt: prisma8TimestampToDate(row.updatedAt),
+      createdAt: prisma8TimestampToISOString(row.createdAt),
+      updatedAt: prisma8TimestampToISOString(row.updatedAt),
     }
   }
 }
