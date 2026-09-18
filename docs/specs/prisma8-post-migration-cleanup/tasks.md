@@ -86,3 +86,7 @@ P1.4 交易链低耦合批次已继续完成 Contacts / BusinessTitle / Contract
 
 当前全仓 `createPrismaFixtureClient` 搜索已降至 **24** 个匹配 / **12** 个文件，其中 fixture 实现自身 1 个文件；业务侧只剩 **11** 个测试文件。
 
+P1.4 合同子域批次已完成 ContractInvoice / ContractPaymentPlan+Record / ProductSubtableRead，共 **3/3** 真实 PostgreSQL PASS；normal/blob 子表合并、跨租户隔离、金额聚合与精确 Numeric contract 均由原生 Prisma 8 测试覆盖。
+
+当前全仓 `createPrismaFixtureClient` 只剩 **18** 个匹配 / **9** 个文件，其中 fixture 实现自身 1 个文件；业务侧剩余 **8** 个测试文件。
+

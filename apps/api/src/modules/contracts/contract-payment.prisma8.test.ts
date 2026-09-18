@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ContractPaymentPlanService, ContractPaymentRecordService } from './contract-payment.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,8 +16,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const prisma8 = { client: prisma8Client } as Prisma8Service
     const suffix = randomUUID().replaceAll('-', '')
     const organizationId = `org-${suffix}`.slice(0, 32)
@@ -52,7 +54,10 @@ test(
     const userViews = { resolveFilters: async () => null }
     const contracts = {
       ensureInScope: async (_user: AuthUser, contractId: string) => {
-        const row = await fixtureDb.contract.findFirst({ where: { id: contractId, organizationId } })
+        const row = await prisma8Client.orm.public.Contract.where({
+          id: prisma8Varchar(contractId, 32),
+          organizationId: prisma8Varchar(organizationId, 32),
+        }).first()
         assert.ok(row)
         return row
       },
@@ -70,47 +75,51 @@ test(
     const planService = new ContractPaymentPlanService(...deps)
     const recordService = new ContractPaymentRecordService(...deps)
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      await fixtureDb.tenant.create({
-        data: { id: organizationId, name: '回款专项租户', slug: `payment-${suffix}` },
+      await prisma8Client.orm.public.Tenants.create({
+        id: organizationId,
+        name: '回款专项租户',
+        slug: `payment-${suffix}`,
+        updatedAt: prisma8Now(),
       })
-      await fixtureDb.user.create({
-        data: {
-          id: actorId,
-          tenantId: organizationId,
-          email: user.email,
-          passwordHash: 'test',
-          name: user.name,
-        },
+      await prisma8Client.orm.public.Users.create({
+        id: actorId,
+        tenantId: organizationId,
+        email: user.email,
+        passwordHash: 'test',
+        name: user.name,
+        updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const customer = await fixtureDb.customer.create({
-        data: {
-          name: '回款专项客户',
-          organizationId,
+      const org = prisma8Varchar(organizationId, 32)
+      const actor = prisma8Varchar(actorId, 32)
+      const customer = await prisma8Client.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('回款专项客户', 255),
+          organizationId: org,
           createTime: now,
           updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
-      const contract = await fixtureDb.contract.create({
-        data: {
-          name: '回款专项合同',
+          createUser: actor,
+          updateUser: actor,
+        })
+      const contract = await prisma8Client.orm.public.Contract
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('回款专项合同', 255),
           customerId: customer.id,
-          owner: actorId,
-          amount: 1000,
-          number: `PAY-${suffix.slice(0, 8)}`,
-          stage: 'stage-a',
-          organizationId,
+          owner: actor,
+          amount: prisma8Numeric(1000, 14, 2),
+          number: prisma8Varchar(`PAY-${suffix.slice(0, 8)}`, 50),
+          stage: prisma8Varchar('stage-a', 32),
+          organizationId: org,
           createTime: now,
           updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
+          createUser: actor,
+          updateUser: actor,
+        })
 
       const planEndTime = Date.now() + 86400000
       const plan = await planService.add(user, {
@@ -143,7 +152,13 @@ test(
       })
       assert.equal((await planService.get(user, plan.id)).planStatus, 'COMPLETED')
       assert.equal(
-        (await fixtureDb.contractPaymentPlan.findUniqueOrThrow({ where: { id: plan.id } })).planStatus,
+        (
+          await prisma8Client.orm.public.ContractPaymentPlan.where({
+            id: prisma8Varchar(plan.id, 32),
+          })
+            .select('planStatus')
+            .first()
+        )?.planStatus,
         'COMPLETED',
       )
 
@@ -182,20 +197,52 @@ test(
       assert.equal(updatedRecord.recordAmount, 180)
       assert.equal(updatedRecord.no, originalNo)
       assert.equal(
-        Number((await fixtureDb.contractPaymentRecord.findUniqueOrThrow({ where: { id: record.id } })).recordAmount),
+        Number(
+          (
+            await prisma8Client.orm.public.ContractPaymentRecord.where({
+              id: prisma8Varchar(record.id, 32),
+            })
+              .select('recordAmount')
+              .first()
+          )?.recordAmount,
+        ),
         180,
       )
 
       const removedRecord = await recordService.remove(user, record.id)
       assert.equal(removedRecord.id, record.id)
-      assert.equal(await fixtureDb.contractPaymentRecord.count({ where: { id: record.id } }), 0)
+      assert.equal(
+        (
+          await prisma8Client.orm.public.ContractPaymentRecord.where({
+            id: prisma8Varchar(record.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
+        0,
+      )
 
       const removedPlan = await planService.remove(user, plan.id)
       assert.equal(removedPlan.id, plan.id)
-      assert.equal(await fixtureDb.contractPaymentPlan.count({ where: { id: plan.id } }), 0)
+      assert.equal(
+        (
+          await prisma8Client.orm.public.ContractPaymentPlan.where({
+            id: prisma8Varchar(plan.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
+        0,
+      )
     } finally {
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      const org = prisma8Varchar(organizationId, 32)
+      await prisma8Client.orm.public.ContractPaymentRecord.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.ContractPaymentPlan.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.Contract.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.Customer.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.Users.where({ tenantId: organizationId }).deleteAll()
+      await prisma8Client.orm.public.Tenants.where({ id: organizationId }).deleteAll()
+      await testDb.close()
     }
   },
 )
