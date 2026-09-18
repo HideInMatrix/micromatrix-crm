@@ -7,9 +7,13 @@ import type { ExecutionContext, Type } from '@nestjs/common'
 import type { Reflector } from '@nestjs/core'
 import type { JwtService } from '@nestjs/jwt'
 import type { Request } from 'express'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now, prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import type { AuthContextCacheService } from '../services/auth-context-cache.service'
 import { AuthGuard } from './auth.guard'
@@ -29,46 +33,45 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
+    let userId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 auth guard ${suffix}`, slug: `p8-auth-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-auth-guard')
       tenantId = tenant.id
-      const user = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'API User',
-          email: `api-${suffix}@example.com`,
-          passwordHash: 'not-used',
-        },
+      const user = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'API User',
+        email: `api-${suffix}@example.com`,
       })
-      const role = await fixtureDb.role.create({
-        data: {
+      userId = user.id
+      const role = await prisma8Client.orm.public.Roles
+        .select('id', 'name', 'permissions', 'dataScope', 'scopeDeptIds')
+        .create({
           tenantId: tenant.id,
           name: `API Role ${suffix}`,
           permissions: ['menu:customer', 'customer:read'],
           dataScope: 'CUSTOM',
           scopeDeptIds: [],
-        },
+          updatedAt: prisma8Now(),
+        })
+      await prisma8Client.orm.public.UserRoles.create({
+        tenantId: tenant.id,
+        userId: user.id,
+        roleId: role.id,
+        updatedAt: prisma8Now(),
       })
-      await fixtureDb.userRole.create({
-        data: { tenantId: tenant.id, userId: user.id, roleId: role.id },
-      })
-      const apiKey = await fixtureDb.userApiKey.create({
-        data: {
-          userId: user.id,
+      const apiKey = await prisma8Client.orm.public.UserKey
+        .select('id', 'accessKey', 'secretKey')
+        .create({
+          createUser: user.id,
           accessKey: `ak_${suffix}`,
           secretKey: `sk_${suffix}`,
           forever: true,
-        },
-      })
+        })
 
       let cachedUserId: string | null = null
       const cache = {
@@ -101,24 +104,23 @@ test(
       assert.deepEqual(request.user?.permissions.sort(), ['customer:read', 'menu:customer'])
       assert.equal(request.user?.roles[0]?.dataScope, 'CUSTOM')
 
-      await fixtureDb.userApiKey.update({
-        where: { id: apiKey.id },
-        data: { forever: false, expireAt: new Date('2020-01-01T00:00:00.000Z') },
+      await prisma8Client.orm.public.UserKey.where({ id: apiKey.id }).update({
+        forever: false,
+        expireTime: prisma8TimestampFromDate(new Date('2020-01-01T00:00:00.000Z')),
       })
       await assert.rejects(
         () => guard.canActivate(executionContext(request)),
         (error) => error instanceof UnauthorizedException,
       )
     } finally {
+      if (userId) await prisma8Client.orm.public.UserKey.where({ createUser: userId }).deleteAll()
       if (tenantId) {
-        await fixtureDb.userApiKey.deleteMany({ where: { user: { tenantId } } })
-        await fixtureDb.userRole.deleteMany({ where: { tenantId } })
-        await fixtureDb.role.deleteMany({ where: { tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.UserRoles.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Roles.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

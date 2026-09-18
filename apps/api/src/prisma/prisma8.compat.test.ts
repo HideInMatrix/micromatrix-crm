@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { ConfigService } from '@nestjs/config'
 import { Temporal } from '@js-temporal/polyfill'
-import { createPrismaFixtureClient } from '../testing/prisma-fixture-client'
-import { createPrisma8Client } from './prisma8-client.js'
+import { openPrismaTestDatabase } from '../testing/prisma-test-db'
 import { Prisma8Service } from './prisma8.service.js'
 import { prisma8Now } from './prisma8-temporal.js'
 
@@ -28,30 +27,28 @@ function testTenantWithoutId(prefix: string) {
 }
 
 test(
-  'Prisma 8 fixture and runtime preserve CRUD and rollback semantics',
+  'Prisma 8 native runtime preserves CRUD and rollback semantics',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
 
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8 = await createPrisma8Client(databaseUrl)
-    const fromFixture = testTenant('fixture_to_p8')
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8 = testDb.client
+    const explicitIdTenant = testTenant('explicit_to_p8')
     const fromPrisma8 = testTenantWithoutId('p8_to_fixture')
     const rollbackTenant = testTenant('p8_rollback')
     let prisma8GeneratedId = ''
 
-    await fixtureDb.$connect()
-    await prisma8.connect()
-
     try {
-      await fixtureDb.tenant.create({
-        data: fromFixture,
+      await prisma8.orm.public.Tenants.create({
+        ...explicitIdTenant,
+        updatedAt: prisma8Now(),
       })
 
-      const prisma8Read = await prisma8.orm.public.Tenants.where({ id: fromFixture.id })
+      const prisma8Read = await prisma8.orm.public.Tenants.where({ id: explicitIdTenant.id })
         .select('id', 'name', 'slug')
         .first()
-      assert.deepEqual(prisma8Read, fromFixture)
+      assert.deepEqual(prisma8Read, explicitIdTenant)
 
       const prisma8Created = await prisma8.orm.public.Tenants
         .select('id', 'name', 'slug', 'updatedAt')
@@ -75,14 +72,13 @@ test(
         Temporal.PlainDateTime.compare(prisma8Updated.updatedAt, prisma8Created.updatedAt) > 0,
       )
 
-      const fixtureRead = await fixtureDb.tenant.findUnique({
-        where: { id: prisma8Created.id },
-        select: { id: true, name: true, slug: true, updatedAt: true },
-      })
-      assert.equal(fixtureRead?.id, prisma8Created.id)
-      assert.equal(fixtureRead?.name, updatedName)
-      assert.equal(fixtureRead?.slug, fromPrisma8.slug)
-      assert.ok(fixtureRead?.updatedAt)
+      const nativeRead = await prisma8.orm.public.Tenants.where({ id: prisma8Created.id })
+        .select('id', 'name', 'slug', 'updatedAt')
+        .first()
+      assert.equal(nativeRead?.id, prisma8Created.id)
+      assert.equal(nativeRead?.name, updatedName)
+      assert.equal(nativeRead?.slug, fromPrisma8.slug)
+      assert.ok(nativeRead?.updatedAt)
 
       await assert.rejects(
         prisma8.transaction(async (tx) => {
@@ -92,18 +88,19 @@ test(
         /prisma8 rollback probe/,
       )
 
-      const rolledBack = await fixtureDb.tenant.findUnique({ where: { id: rollbackTenant.id } })
+      const rolledBack = await prisma8.orm.public.Tenants.where({ id: rollbackTenant.id })
+        .select('id')
+        .first()
       assert.equal(rolledBack, null)
     } finally {
-      await fixtureDb.tenant.deleteMany({
-        where: {
-          id: {
-            in: [fromFixture.id, prisma8GeneratedId, rollbackTenant.id].filter(Boolean),
-          },
-        },
-      })
-      await prisma8.close()
-      await fixtureDb.$disconnect()
+      await prisma8.orm.public.Tenants
+        .where((row) =>
+          row.id.in(
+            [explicitIdTenant.id, prisma8GeneratedId, rollbackTenant.id].filter(Boolean),
+          ),
+        )
+        .deleteAll()
+      await testDb.close()
     }
   },
 )
@@ -114,15 +111,12 @@ test(
   async () => {
     assert.ok(databaseUrl)
 
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8 = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8 = testDb.client
     const tenant = testTenant('p8_raw')
 
-    await fixtureDb.$connect()
-    await prisma8.connect()
-
     try {
-      await fixtureDb.tenant.create({ data: tenant })
+      await prisma8.orm.public.Tenants.create({ ...tenant, updatedAt: prisma8Now() })
 
       const rawQuery = prisma8.raw.sql`
         SELECT id, name
@@ -137,9 +131,8 @@ test(
 
       assert.deepEqual(rows, [{ id: tenant.id, name: tenant.name }])
     } finally {
-      await fixtureDb.tenant.deleteMany({ where: { id: tenant.id } })
-      await prisma8.close()
-      await fixtureDb.$disconnect()
+      await prisma8.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+      await testDb.close()
     }
   },
 )

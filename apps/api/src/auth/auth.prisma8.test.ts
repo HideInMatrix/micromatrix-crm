@@ -4,9 +4,8 @@ import test from 'node:test'
 import type { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { UnauthorizedException } from '@nestjs/common'
-import { createPrismaFixtureClient } from '../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../prisma/prisma8-client'
 import type { Prisma8Service } from '../prisma/prisma8.service'
+import { openPrismaTestDatabase } from '../testing/prisma-test-db'
 import type { AuthContextCacheService } from '../common/services/auth-context-cache.service'
 import { AuthService } from './auth.service'
 
@@ -17,8 +16,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const email = `p8-auth-${suffix}@example.com`
     const tenantName = `Prisma8 Auth ${suffix.slice(0, 8)}`
@@ -50,8 +49,6 @@ test(
       authCache,
     )
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId = ''
     try {
       const registered = await service.register({
@@ -67,13 +64,25 @@ test(
       assert.deepEqual(registered.user.permissions, ['*'])
       assert.equal(registered.user.roles[0]?.name, '管理员')
 
-      const persistedUser = await fixtureDb.user.findUniqueOrThrow({ where: { id: registered.user.id } })
-      const persistedRole = await fixtureDb.userRole.findFirstOrThrow({
-        where: { tenantId, userId: registered.user.id },
-        include: { role: true },
+      const persistedUser = await prisma8Client.orm.public.Users.where({ id: registered.user.id })
+        .select('deptId', 'authVersion', 'defaultPwd')
+        .first()
+      assert.ok(persistedUser)
+      const persistedRoleLink = await prisma8Client.orm.public.UserRoles.where({
+        tenantId,
+        userId: registered.user.id,
       })
-      assert.equal(persistedRole.role.isSystem, true)
-      assert.deepEqual(persistedRole.role.permissions, ['*'])
+        .select('roleId')
+        .first()
+      assert.ok(persistedRoleLink)
+      const persistedRole = await prisma8Client.orm.public.Roles.where({
+        id: persistedRoleLink.roleId,
+      })
+        .select('isSystem', 'permissions')
+        .first()
+      assert.ok(persistedRole)
+      assert.equal(persistedRole.isSystem, true)
+      assert.deepEqual(persistedRole.permissions, ['*'])
       assert.ok(persistedUser.deptId)
 
       const login = await service.login(
@@ -88,10 +97,12 @@ test(
         () => service.login({ email, password: 'wrong-password' }),
         UnauthorizedException,
       )
-      const logs = await fixtureDb.loginLog.findMany({
-        where: { userId: registered.user.id, authType: 'PASSWORD' },
-        orderBy: { createdAt: 'asc' },
+      const logs = await prisma8Client.orm.public.LoginLogs.where({
+        userId: registered.user.id,
+        authType: 'PASSWORD',
       })
+        .select('success', 'message')
+        .all()
       assert.equal(logs.some((item) => item.success), true)
       assert.equal(logs.some((item) => !item.success && item.message === '邮箱或密码错误'), true)
 
@@ -105,19 +116,25 @@ test(
         },
         '外部认证失败',
       )
-      assert.equal(
-        await fixtureDb.loginLog.count({
-          where: { tenantId, userId: registered.user.id, authType: 'WECOM', success: false },
-        }),
-        1,
-      )
+      const externalFailureLogs = await prisma8Client.orm.public.LoginLogs.where({
+        tenantId,
+        userId: registered.user.id,
+        authType: 'WECOM',
+        success: false,
+      })
+        .select('id')
+        .all()
+      assert.equal(externalFailureLogs.length, 1)
 
       await service.changePassword(
         registered.user.id,
         'old-password-123',
         'new-password-456',
       )
-      const changed = await fixtureDb.user.findUniqueOrThrow({ where: { id: registered.user.id } })
+      const changed = await prisma8Client.orm.public.Users.where({ id: registered.user.id })
+        .select('authVersion', 'defaultPwd')
+        .first()
+      assert.ok(changed)
       assert.equal(changed.authVersion, 1)
       assert.equal(changed.defaultPwd, false)
       assert.deepEqual(invalidated, [registered.user.id])
@@ -128,16 +145,15 @@ test(
       assert.equal((await service.refresh(relogin.refreshToken)).user.id, registered.user.id)
     } finally {
       if (tenantId) {
-        await fixtureDb.loginLog.deleteMany({ where: { tenantId } })
-        await fixtureDb.subscription.deleteMany({ where: { tenantId } })
-        await fixtureDb.userRole.deleteMany({ where: { tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.role.deleteMany({ where: { tenantId } })
-        await fixtureDb.department.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.LoginLogs.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Subscriptions.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.UserRoles.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Roles.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Departments.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )
