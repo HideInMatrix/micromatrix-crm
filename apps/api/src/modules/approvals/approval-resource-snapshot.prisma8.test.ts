@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { ApprovalResourceInstance } from './approval-runtime.types'
 import { ApprovalResourceSnapshotService } from './approval-resource-snapshot.service'
 
@@ -15,20 +18,17 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 Snapshot ${suffix}`, slug: `p8-snapshot-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-snapshot')
       tenantId = tenant.id
-      const actor = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: 'Snapshot User', passwordHash: 'not-used' },
+      const actor = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Snapshot User',
       })
       const user = { id: actor.id, tenantId: tenant.id } as AuthUser
       const resourceId = `contract-${suffix}`
@@ -41,15 +41,12 @@ test(
         amount: 100,
         nested: { enabled: true },
       })
-      const first = await fixtureDb.approvalResourceSnapshot.findUniqueOrThrow({
-        where: {
-          tenantId_formType_resourceId: {
-            tenantId: tenant.id,
-            formType: 'CONTRACT',
-            resourceId,
-          },
-        },
-      })
+      const first = await prisma8Client.orm.public.ApprovalResourceSnapshots.where({
+        tenantId: tenant.id,
+        formType: 'CONTRACT',
+        resourceId,
+      }).first()
+      assert.ok(first)
       assert.deepEqual(first.snapshotData, {
         name: '合同 A',
         amount: 100,
@@ -63,9 +60,15 @@ test(
         lines: [{ id: 'line-1', qty: 2 }],
       })
       assert.equal(
-        await fixtureDb.approvalResourceSnapshot.count({
-          where: { tenantId: tenant.id, formType: 'CONTRACT', resourceId },
-        }),
+        (
+          await prisma8Client.orm.public.ApprovalResourceSnapshots.where({
+            tenantId: tenant.id,
+            formType: 'CONTRACT',
+            resourceId,
+          })
+            .select('id')
+            .all()
+        ).length,
         1,
       )
       const instance = {
@@ -82,19 +85,24 @@ test(
 
       await service.clear(instance)
       assert.equal(
-        await fixtureDb.approvalResourceSnapshot.count({
-          where: { tenantId: tenant.id, formType: 'CONTRACT', resourceId },
-        }),
+        (
+          await prisma8Client.orm.public.ApprovalResourceSnapshots.where({
+            tenantId: tenant.id,
+            formType: 'CONTRACT',
+            resourceId,
+          })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
     } finally {
       if (tenantId) {
-        await fixtureDb.approvalResourceSnapshot.deleteMany({ where: { tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.ApprovalResourceSnapshots.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

@@ -1,28 +1,24 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
 import { ApprovalResourceRestoreService } from './approval-resource-restore.service'
 import type { ApprovalJsonValue } from './approval-runtime.types'
 
-const id32 = () => randomUUID().replaceAll('-', '')
+const id32 = () => prisma8Id32()
 
 test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当前审批状态', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
-  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-restore-${suffix}`, slug: `p8-restore-${suffix}` },
-  })
+  const suffix = String(Date.now()) + '-' + Math.random().toString(16).slice(2)
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-restore')
   const actorId = id32()
   const customerId = id32()
   const contractId = id32()
@@ -32,47 +28,50 @@ test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当
   const now = BigInt(Date.now())
 
   try {
-    await fixtureDb.customer.create({
-      data: {
+    const organizationId = prisma8Varchar(tenant.id, 32)
+    const actorVarchar = prisma8Varchar(actorId, 32)
+    await prisma8Client.orm.public.Customer.create({
         id: customerId,
-        name: 'Restore 客户',
-        owner: actorId,
-        organizationId: tenant.id,
+        name: prisma8Varchar('Restore 客户', 255),
+        owner: actorVarchar,
+        organizationId,
         createTime: now,
         updateTime: now,
-        createUser: actorId,
-        updateUser: actorId,
-      },
+        createUser: actorVarchar,
+        updateUser: actorVarchar,
     })
-    await fixtureDb.contract.create({
-      data: {
+    await prisma8Client.orm.public.Contract.create({
         id: contractId,
-        name: '恢复前合同',
+        name: prisma8Varchar('恢复前合同', 255),
         customerId,
-        owner: actorId,
-        amount: 123.45,
-        number: `R-${suffix}`.slice(0, 50),
-        approvalStatus: 'PENDING',
-        stage: 'AFOOT',
+        owner: actorVarchar,
+        amount: prisma8Numeric(123.45, 14, 2),
+        number: prisma8Varchar(`R-${suffix}`.slice(0, 50), 50),
+        approvalStatus: prisma8Varchar('PENDING', 50),
+        stage: prisma8Varchar('AFOOT', 32),
         startTime: now - 10_000n,
         endTime: now + 10_000n,
-        organizationId: tenant.id,
+        organizationId,
         pos: 4096n,
         approved: false,
         createTime: now,
         updateTime: now,
-        createUser: actorId,
-        updateUser: actorId,
-      },
+        createUser: actorVarchar,
+        updateUser: actorVarchar,
     })
-    await fixtureDb.contractField.create({
-      data: { id: id32(), resourceId: contractId, fieldId, fieldValue: 'old-normal' },
+    await prisma8Client.orm.public.ContractField.create({
+      id: id32(),
+      resourceId: contractId,
+      fieldId,
+      fieldValue: prisma8Varchar('old-normal', 255),
     })
-    await fixtureDb.contractFieldBlob.create({
-      data: { id: id32(), resourceId: contractId, fieldId: blobFieldId, fieldValue: 'old-blob' },
+    await prisma8Client.orm.public.ContractFieldBlob.create({
+      id: id32(),
+      resourceId: contractId,
+      fieldId: blobFieldId,
+      fieldValue: 'old-blob',
     })
-    await fixtureDb.contractSnapshot.create({
-      data: {
+    await prisma8Client.orm.public.ContractSnapshot.create({
         id: snapshotId,
         contractId,
         contractProp: 'entity',
@@ -81,7 +80,6 @@ test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当
           approvalStatus: 'PENDING',
           approved: false,
         }),
-      },
     })
 
     const capture = new ApprovalResourceCaptureService(prisma8)
@@ -89,23 +87,22 @@ test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当
     const actor = { id: actorId, tenantId: tenant.id } as never
     const captured = (await capture.capture(actor, 'contract', contractId)) as ApprovalJsonValue
 
-    await fixtureDb.contract.update({
-      where: { id: contractId },
-      data: {
-        name: '恢复中的新值',
-        amount: 999.99,
-        approvalStatus: 'APPROVED',
+    await prisma8Client.orm.public.Contract.where({ id: contractId }).update({
+        name: prisma8Varchar('恢复中的新值', 255),
+        amount: prisma8Numeric(999.99, 14, 2),
+        approvalStatus: prisma8Varchar('APPROVED', 50),
         approved: true,
-        updateUser: 'current-operator',
-      },
+        updateUser: prisma8Varchar('current-operator', 32),
     })
-    await fixtureDb.contractField.deleteMany({ where: { resourceId: contractId } })
-    await fixtureDb.contractField.create({
-      data: { id: id32(), resourceId: contractId, fieldId, fieldValue: 'new-normal' },
+    await prisma8Client.orm.public.ContractField.where({ resourceId: contractId }).deleteAll()
+    await prisma8Client.orm.public.ContractField.create({
+      id: id32(),
+      resourceId: contractId,
+      fieldId,
+      fieldValue: prisma8Varchar('new-normal', 255),
     })
-    await fixtureDb.contractFieldBlob.updateMany({
-      where: { resourceId: contractId },
-      data: { fieldValue: 'new-blob' },
+    await prisma8Client.orm.public.ContractFieldBlob.where({ resourceId: contractId }).update({
+      fieldValue: 'new-blob',
     })
 
     const invalid = structuredClone(captured) as unknown as {
@@ -116,41 +113,47 @@ test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当
       () => restore.restore(tenant.id, 'contract', contractId, invalid as ApprovalJsonValue, actorId),
       /varchar\(255\) value is too long/,
     )
-    const afterFailedRestore = await fixtureDb.contract.findUniqueOrThrow({ where: { id: contractId } })
+    const afterFailedRestore = await prisma8Client.orm.public.Contract.where({ id: contractId }).first()
+    assert.ok(afterFailedRestore)
     assert.equal(afterFailedRestore.name, '恢复中的新值')
     assert.equal(Number(afterFailedRestore.amount), 999.99)
-    assert.equal(
-      await fixtureDb.contractField.findFirstOrThrow({ where: { resourceId: contractId } }).then((row) => row.fieldValue),
-      'new-normal',
-    )
+    const afterFailedField = await prisma8Client.orm.public.ContractField.where({
+      resourceId: contractId,
+    }).first()
+    assert.equal(afterFailedField?.fieldValue, 'new-normal')
 
     await restore.restore(tenant.id, 'contract', contractId, captured, actorId)
 
-    const restored = await fixtureDb.contract.findUniqueOrThrow({ where: { id: contractId } })
+    const restored = await prisma8Client.orm.public.Contract.where({ id: contractId }).first()
+    assert.ok(restored)
     assert.equal(restored.name, '恢复前合同')
     assert.equal(Number(restored.amount), 123.45)
     assert.equal(restored.approvalStatus, 'APPROVED')
     assert.equal(restored.approved, true)
     assert.equal(restored.updateUser, actorId)
 
-    const fields = await fixtureDb.contractField.findMany({ where: { resourceId: contractId } })
-    const blobs = await fixtureDb.contractFieldBlob.findMany({ where: { resourceId: contractId } })
+    const fields = await prisma8Client.orm.public.ContractField.where({ resourceId: contractId }).all()
+    const blobs = await prisma8Client.orm.public.ContractFieldBlob.where({ resourceId: contractId }).all()
     assert.deepEqual(fields.map((row) => row.fieldValue), ['old-normal'])
     assert.deepEqual(blobs.map((row) => row.fieldValue), ['old-blob'])
 
-    const restoredSnapshot = await fixtureDb.contractSnapshot.findUniqueOrThrow({
-      where: { id: snapshotId },
-    })
+    const restoredSnapshot = await prisma8Client.orm.public.ContractSnapshot.where({
+      id: snapshotId,
+    }).first()
+    assert.ok(restoredSnapshot)
     assert.ok(restoredSnapshot.contractValue)
     const snapshotJson = JSON.parse(restoredSnapshot.contractValue) as Record<string, unknown>
     assert.equal(snapshotJson.name, 'snapshot-old')
     assert.equal(snapshotJson.approvalStatus, 'APPROVED')
     assert.equal(snapshotJson.approved, true)
   } finally {
-    await fixtureDb.contract.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.customer.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.Contract.where({
+      organizationId: prisma8Varchar(tenant.id, 32),
+    }).deleteAll()
+    await prisma8Client.orm.public.Customer.where({
+      organizationId: prisma8Varchar(tenant.id, 32),
+    }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

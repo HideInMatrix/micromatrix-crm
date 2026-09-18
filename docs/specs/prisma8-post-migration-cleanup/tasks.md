@@ -74,5 +74,7 @@ P1.4 第一批已完成 Announcements CRUD/Cron、Dictionaries、Products/Produc
 
 P1.4 第二批已完成 Notifications **4/4**、EnterpriseIntegrations / EnterpriseSettings / DingTalk-Lark-WeCom SSO 整批 **16/16**、OrganizationSync preview/apply/rollback **3/3** 真实 PostgreSQL gate；其中组织同步失败用例继续验证主事务回滚、独立失败审计与 OperationLog JSONB。OpportunityRule CRUD / auto-close 也已完成 native 化并通过 **2/2** 真实 PostgreSQL gate。
 
-当前全仓 `createPrismaFixtureClient` 搜索共 **65** 个匹配 / **32** 个文件，其中包含 fixture 实现自身的定义；剩余主要集中在 **12 个 Approval 测试**与**交易链/附件/跟进/导出等测试**。下一步继续 P1.4：先迁移审批低耦合 resource/webhook/flow config，再处理 approvals action/advance/return/revoke 事务测试与交易链。
+P1.4 审批低耦合批次已完成 ApprovalFlowConfig / ApprovalResource / Capture / Restore / Snapshot / Webhook 共 **6/6** 真实 PostgreSQL gate；API typecheck/build 与 `git diff --check` 全绿。
+
+当前全仓 `createPrismaFixtureClient` 搜索共 **53** 个匹配 / **26** 个文件，其中包含 fixture 实现自身的定义。下一步继续 P1.4：处理 approvals reads/action/advance/return/revoke/cancel 事务测试，再进入剩余交易链/附件/跟进/导出测试。
 

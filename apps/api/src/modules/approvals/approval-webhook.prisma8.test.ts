@@ -4,9 +4,9 @@ import test from 'node:test'
 import { BadGatewayException } from '@nestjs/common'
 import type { ApprovalWebhookConfig } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ApprovalResourceService } from './approval-resource.service'
 import {
   ApprovalWebhookClient,
@@ -32,8 +32,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const tenantId = `p8-webhook-${suffix}`
     const user: AuthUser = {
@@ -47,8 +47,6 @@ test(
       permissions: ['*'],
     }
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
       const resources = {} as ApprovalResourceService
       const successClient = {
@@ -67,10 +65,13 @@ test(
         durationMs: 34,
       })
 
-      const sent = await fixtureDb.approvalWebhookDelivery.findFirstOrThrow({
-        where: { tenantId, status: 'SENT' },
-        orderBy: { createdAt: 'asc' },
+      const sent = await prisma8Client.orm.public.ApprovalWebhookDeliveries.where({
+        tenantId,
+        status: 'SENT',
       })
+        .orderBy((row) => row.createdAt.asc())
+        .first()
+      assert.ok(sent)
       assert.equal(sent.source, 'TEST')
       assert.equal(sent.method, 'POST')
       assert.equal(sent.targetOrigin, 'https://hooks.example.com')
@@ -80,7 +81,10 @@ test(
       assert.equal(sent.durationMs, 34)
       assert.ok(sent.startedAt)
       assert.ok(sent.finishedAt)
-      assert.ok(sent.updatedAt.getTime() >= sent.createdAt.getTime())
+      assert.ok(
+        prisma8TimestampToDate(sent.updatedAt).getTime() >=
+          prisma8TimestampToDate(sent.createdAt).getTime(),
+      )
 
       const failedClient = {
         send: async () => {
@@ -97,10 +101,13 @@ test(
       )
 
       await assert.rejects(() => failedService.testConnection(user, config()), BadGatewayException)
-      const failed = await fixtureDb.approvalWebhookDelivery.findFirstOrThrow({
-        where: { tenantId, status: 'FAILED' },
-        orderBy: { createdAt: 'desc' },
+      const failed = await prisma8Client.orm.public.ApprovalWebhookDeliveries.where({
+        tenantId,
+        status: 'FAILED',
       })
+        .orderBy((row) => row.createdAt.desc())
+        .first()
+      assert.ok(failed)
       assert.equal(failed.errorCode, 'NETWORK')
       assert.equal(failed.errorMessage, '模拟网络失败')
       assert.equal(failed.responseBytes, 7)
@@ -108,9 +115,8 @@ test(
       assert.ok(failed.startedAt)
       assert.ok(failed.finishedAt)
     } finally {
-      await fixtureDb.approvalWebhookDelivery.deleteMany({ where: { tenantId } })
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await prisma8Client.orm.public.ApprovalWebhookDeliveries.where({ tenantId }).deleteAll()
+      await testDb.close()
     }
   },
 )

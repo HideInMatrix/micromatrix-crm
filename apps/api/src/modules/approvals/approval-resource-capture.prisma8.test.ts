@@ -1,30 +1,24 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
 
-const id32 = () => randomUUID().replaceAll('-', '')
+const id32 = () => prisma8Id32()
 
 test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租户隔离', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-capture-${suffix}`, slug: `p8-capture-${suffix}` },
-  })
-  const otherTenant = await fixtureDb.tenant.create({
-    data: { name: `p8-capture-other-${suffix}`, slug: `p8-capture-other-${suffix}` },
-  })
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-capture')
+  const otherTenant = await createPrismaTestTenant(prisma8Client, 'p8-capture-other')
   const actorId = id32()
   const now = BigInt(Date.now())
   const customerId = id32()
@@ -44,50 +38,52 @@ test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租�
   }
 
   try {
-    await fixtureDb.customer.create({
-      data: {
+    const organizationId = prisma8Varchar(tenant.id, 32)
+    const actorVarchar = prisma8Varchar(actorId, 32)
+    await prisma8Client.orm.public.Customer.create({
         id: customerId,
-        name: '快照客户',
-        owner: actorId,
-        organizationId: tenant.id,
+        name: prisma8Varchar('快照客户', 255),
+        owner: actorVarchar,
+        organizationId,
         createTime: now,
         updateTime: now,
-        createUser: actorId,
-        updateUser: actorId,
-      },
+        createUser: actorVarchar,
+        updateUser: actorVarchar,
     })
-    await fixtureDb.contract.create({
-      data: {
+    await prisma8Client.orm.public.Contract.create({
         id: contractId,
-        name: 'Prisma 8 快照合同',
+        name: prisma8Varchar('Prisma 8 快照合同', 255),
         customerId,
-        owner: actorId,
-        amount: 123.45,
-        number: `C-${suffix}`.slice(0, 50),
-        stage: 'AFOOT',
+        owner: actorVarchar,
+        amount: prisma8Numeric(123.45, 14, 2),
+        number: prisma8Varchar(`C-${suffix}`.slice(0, 50), 50),
+        stage: prisma8Varchar('AFOOT', 32),
         startTime: now - 1_000n,
         endTime: now + 1_000n,
-        organizationId: tenant.id,
+        organizationId,
         pos: 4096n,
         createTime: now,
         updateTime: now,
-        createUser: actorId,
-        updateUser: actorId,
-      },
+        createUser: actorVarchar,
+        updateUser: actorVarchar,
     })
-    await fixtureDb.contractField.create({
-      data: { id: id32(), resourceId: contractId, fieldId, fieldValue: 'normal-value' },
+    await prisma8Client.orm.public.ContractField.create({
+      id: id32(),
+      resourceId: contractId,
+      fieldId,
+      fieldValue: prisma8Varchar('normal-value', 255),
     })
-    await fixtureDb.contractFieldBlob.create({
-      data: { id: id32(), resourceId: contractId, fieldId: blobFieldId, fieldValue: 'blob-value' },
+    await prisma8Client.orm.public.ContractFieldBlob.create({
+      id: id32(),
+      resourceId: contractId,
+      fieldId: blobFieldId,
+      fieldValue: 'blob-value',
     })
-    await fixtureDb.contractSnapshot.create({
-      data: {
+    await prisma8Client.orm.public.ContractSnapshot.create({
         id: id32(),
         contractId,
         contractProp: 'name',
         contractValue: '历史合同名',
-      },
     })
 
     const service = new ApprovalResourceCaptureService(prisma8)
@@ -114,10 +110,15 @@ test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租�
       /合同不存在/,
     )
   } finally {
-    await fixtureDb.contract.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.customer.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.tenant.deleteMany({ where: { id: { in: [tenant.id, otherTenant.id] } } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.Contract
+      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
+      .deleteAll()
+    await prisma8Client.orm.public.Customer
+      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
+      .deleteAll()
+    await prisma8Client.orm.public.Tenants
+      .where((row) => row.id.in([tenant.id, otherTenant.id]))
+      .deleteAll()
+    await testDb.close()
   }
 })
