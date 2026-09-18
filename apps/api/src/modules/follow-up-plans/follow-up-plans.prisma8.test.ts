@@ -1,64 +1,62 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now, prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { FollowUpPlansService } from './follow-up-plans.service'
 
 test('FollowUpPlans reminder 使用 Prisma 8 扫描/CAS/失败回滚', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
 
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const prisma = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await prisma.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await prisma.tenant.create({
-    data: { name: `p8-follow-plan-${suffix}`, slug: `p8-follow-plan-${suffix}` },
-  })
-  const user = await prisma.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: `owner-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: '提醒负责人',
-      defaultPwd: false,
-    },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-follow-plan')
+  const user = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `owner-${suffix}@example.com`,
+    passwordHash: 'test-only',
+    name: '提醒负责人',
   })
   const nowMs = BigInt(Date.now())
-  const customerId = randomUUID().replaceAll('-', '')
-  await prisma.customer.create({
-    data: {
-      id: customerId,
-      name: 'Prisma 8 提醒客户',
-      owner: user.id,
-      collectionTime: nowMs,
-      createTime: nowMs,
-      updateTime: nowMs,
-      createUser: user.id,
-      updateUser: user.id,
-      inSharedPool: false,
-      organizationId: tenant.id,
-    },
+  const customerId = prisma8Id32()
+  const ownerId = prisma8Varchar(user.id, 32)
+  const organizationId = prisma8Varchar(tenant.id, 32)
+  await prisma8Client.orm.public.Customer.create({
+    id: customerId,
+    name: prisma8Varchar('Prisma 8 提醒客户', 255),
+    owner: ownerId,
+    collectionTime: nowMs,
+    createTime: nowMs,
+    updateTime: nowMs,
+    createUser: ownerId,
+    updateUser: ownerId,
+    inSharedPool: false,
+    organizationId,
   })
 
   const reminderAt = new Date('2026-09-16T10:00:00')
-  const plan = await prisma.followUpPlan.create({
-    data: {
+  const plan = await prisma8Client.orm.public.FollowUpPlans
+    .select('id')
+    .create({
       tenantId: tenant.id,
       targetType: 'customer',
       targetId: customerId,
       content: 'Prisma 8 到期提醒',
-      estimatedAt: reminderAt,
+      estimatedAt: prisma8TimestampFromDate(reminderAt),
       status: 'PREPARED',
       ownerId: user.id,
       createdById: user.id,
-    },
-  })
+      updatedAt: prisma8Now(),
+    })
 
   let notices = 0
   const service = new FollowUpPlansService(
@@ -80,21 +78,22 @@ test('FollowUpPlans reminder 使用 Prisma 8 扫描/CAS/失败回滚', async (t)
     assert.equal(await service.runDueReminders(new Date('2026-09-16T10:05:00')), 0)
     assert.equal(notices, 1)
 
-    const claimed = await prisma.followUpPlan.findUnique({ where: { id: plan.id } })
+    const claimed = await prisma8Client.orm.public.FollowUpPlans.where({ id: plan.id }).first()
     assert.ok(claimed?.dueNotifiedAt)
 
-    const failedPlan = await prisma.followUpPlan.create({
-      data: {
+    const failedPlan = await prisma8Client.orm.public.FollowUpPlans
+      .select('id')
+      .create({
         tenantId: tenant.id,
         targetType: 'customer',
         targetId: customerId,
         content: 'Prisma 8 失败回滚提醒',
-        estimatedAt: reminderAt,
+        estimatedAt: prisma8TimestampFromDate(reminderAt),
         status: 'PREPARED',
         ownerId: user.id,
         createdById: user.id,
-      },
-    })
+        updatedAt: prisma8Now(),
+      })
     const failingService = new FollowUpPlansService(
       prisma8,
       {} as never,
@@ -113,14 +112,13 @@ test('FollowUpPlans reminder 使用 Prisma 8 扫描/CAS/失败回滚', async (t)
       () => failingService.runDueReminders(new Date('2026-09-16T10:10:00')),
       /expected notification failure/,
     )
-    const released = await prisma.followUpPlan.findUnique({ where: { id: failedPlan.id } })
+    const released = await prisma8Client.orm.public.FollowUpPlans.where({ id: failedPlan.id }).first()
     assert.equal(released?.dueNotifiedAt, null)
   } finally {
-    await prisma.followUpPlan.deleteMany({ where: { tenantId: tenant.id } })
-    await prisma.customer.delete({ where: { id: customerId } })
-    await prisma.user.delete({ where: { id: user.id } })
-    await prisma.tenant.delete({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await prisma.$disconnect()
+    await prisma8Client.orm.public.FollowUpPlans.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Customer.where({ id: customerId }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ id: user.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { BiddingService } from './bidding.service'
 import type { DemoBiddingProvider } from './providers/demo.provider'
 
@@ -11,24 +16,17 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
 
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const prisma = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await prisma.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await prisma.tenant.create({
-    data: { name: `p8-bidding-${suffix}`, slug: `p8-bidding-${suffix}` },
-  })
-  const owner = await prisma.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: `p8-bidding-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: 'Bidding Owner',
-      defaultPwd: false,
-    },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-bidding')
+  const owner = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `p8-bidding-${suffix}@example.com`,
+    passwordHash: 'test-only',
+    name: 'Bidding Owner',
   })
   const user = { id: owner.id, tenantId: tenant.id } as AuthUser
 
@@ -89,18 +87,21 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
     assert.deepEqual(await service.fetchTenant(tenant.id), { fetched: 2, inserted: 2 })
     assert.deepEqual(await service.fetchTenant(tenant.id), { fetched: 2, inserted: 0 })
 
-    const infos = await prisma.biddingInfo.findMany({
-      where: { tenantId: tenant.id },
-      orderBy: { title: 'asc' },
-    })
+    const infos = await prisma8Client.orm.public.BiddingInfos.where({ tenantId: tenant.id })
+      .orderBy((row) => row.title.asc())
+      .all()
     assert.equal(infos.length, 2)
     assert.equal(Number(infos[0]?.budget), 123456.78)
     assert.equal(Number(infos[1]?.budget), 98765.43)
-    assert.equal(infos[0]?.publishedAt?.toISOString(), publishedAt.toISOString())
+    assert.equal(
+      infos[0]?.publishedAt ? prisma8TimestampToDate(infos[0].publishedAt).toISOString() : null,
+      publishedAt.toISOString(),
+    )
 
-    const refreshedSource = await prisma.biddingSource.findFirstOrThrow({
-      where: { tenantId: tenant.id },
-    })
+    const refreshedSource = await prisma8Client.orm.public.BiddingSources.where({
+      tenantId: tenant.id,
+    }).first()
+    assert.ok(refreshedSource)
     assert.ok(refreshedSource.lastFetchAt)
     assert.deepEqual(refreshedSource.credentials, { apiKey: 'prisma8-test' })
 
@@ -139,19 +140,24 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
     assert.equal(filtered.items[0]?.budget, 123456.78)
 
     const lead = await service.convertToLead(user, manual.id)
-    const storedLead = await prisma.clue.findUniqueOrThrow({ where: { id: lead.id } })
+    const storedLead = await prisma8Client.orm.public.Clue.where({
+      id: prisma8Varchar(lead.id, 32),
+    }).first()
+    assert.ok(storedLead)
     assert.equal(storedLead.organizationId, tenant.id)
     assert.equal(storedLead.owner, owner.id)
-    const converted = await prisma.biddingInfo.findUniqueOrThrow({ where: { id: manual.id } })
+    const converted = await prisma8Client.orm.public.BiddingInfos.where({ id: manual.id }).first()
+    assert.ok(converted)
     assert.equal(converted.convertedLeadId, lead.id)
   } finally {
-    await prisma.clue.deleteMany({ where: { organizationId: tenant.id } })
-    await prisma.biddingInfo.deleteMany({ where: { tenantId: tenant.id } })
-    await prisma.biddingKeywordSub.deleteMany({ where: { tenantId: tenant.id } })
-    await prisma.biddingSource.deleteMany({ where: { tenantId: tenant.id } })
-    await prisma.user.deleteMany({ where: { tenantId: tenant.id } })
-    await prisma.tenant.delete({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await prisma.$disconnect()
+    await prisma8Client.orm.public.Clue
+      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
+      .deleteAll()
+    await prisma8Client.orm.public.BiddingInfos.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.BiddingKeywordSubs.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.BiddingSources.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

@@ -78,5 +78,7 @@ P1.4 审批低耦合批次已完成 ApprovalFlowConfig / ApprovalResource / Capt
 
 P1.4 审批状态机批次已继续完成 reads / approve-reject / sign / advance / return-back / revoke / cancel，Approval 整组累计 **13/13 PASS、0 skip**；审批测试已不再引用 Prisma 7 fixture facade。
 
-当前全仓 `createPrismaFixtureClient` 搜索共 **40** 个匹配 / **20** 个文件，其中包含 fixture 实现自身的定义；业务侧剩余 **19** 个文件，集中在交易链、附件、跟进、导出、成员与 CustomForms。下一步继续逐批 native 化，直至 P1.5 引用归零。
+P1.4 后续批次已完成 Attachments / Bidding / FollowUpPlans / Members 共 **4/4** 真实 PostgreSQL gate；真实附件磁盘 CRUD、提醒 CAS/失败释放、成员删除保护与标讯转线索语义均保持。
+
+当前全仓 `createPrismaFixtureClient` 搜索共 **32** 个匹配 / **16** 个文件，其中包含 fixture 实现自身的定义；业务侧剩余 **15** 个文件，集中在 Contacts / Contracts / Orders / Quotes / Opportunities / FollowUps / ImportExport / CustomForms。下一步继续逐批 native 化，直至 P1.5 引用归零。
 

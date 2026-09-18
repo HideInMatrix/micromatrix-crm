@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { AttachmentsService } from './attachments.service'
 
 test('Attachments 使用 Prisma 8 保持真实磁盘 CRUD、target scope 与 domain guard 语义', async (t) => {
@@ -21,23 +25,17 @@ test('Attachments 使用 Prisma 8 保持真实磁盘 CRUD、target scope 与 dom
     },
     get: (key: string) => (key === 'UPLOAD_DIR' ? uploadDir : undefined),
   } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-attachment-${suffix}`, slug: `p8-attachment-${suffix}` },
-  })
-  const uploader = await fixtureDb.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: `attachment-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: '附件上传人',
-      defaultPwd: false,
-    },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-attachment')
+  const uploader = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `attachment-${suffix}@example.com`,
+    passwordHash: 'test-only',
+    name: '附件上传人',
   })
   const actor: AuthUser = {
     id: uploader.id,
@@ -77,7 +75,7 @@ test('Attachments 使用 Prisma 8 保持真实磁盘 CRUD、target scope 与 dom
       'customer-1',
     )
 
-    const persisted = await fixtureDb.attachment.findUnique({ where: { id: first.id } })
+    const persisted = await prisma8Client.orm.public.Attachments.where({ id: first.id }).first()
     assert.equal(persisted?.targetId, 'target-a')
     assert.equal(persisted?.uploaderId, uploader.id)
 
@@ -94,18 +92,26 @@ test('Attachments 使用 Prisma 8 保持真实磁盘 CRUD、target scope 与 dom
 
     await assert.rejects(() => service.download(actor, guarded.id), /必须通过所属业务数据读取/)
     assert.equal(await service.removeTemporary(tenant.id, temporary.id), true)
-    assert.equal(await fixtureDb.attachment.findUnique({ where: { id: temporary.id } }), null)
+    assert.equal(
+      await prisma8Client.orm.public.Attachments.where({ id: temporary.id }).select('id').first(),
+      null,
+    )
 
     assert.equal(await service.removeFromTarget(tenant.id, first.id, 'note', 'target-a'), true)
-    assert.equal(await fixtureDb.attachment.findUnique({ where: { id: first.id } }), null)
+    assert.equal(
+      await prisma8Client.orm.public.Attachments.where({ id: first.id }).select('id').first(),
+      null,
+    )
     assert.equal(await service.removeAllFromTargets(tenant.id, 'note', ['target-b']), 1)
-    assert.equal(await fixtureDb.attachment.findUnique({ where: { id: second.id } }), null)
+    assert.equal(
+      await prisma8Client.orm.public.Attachments.where({ id: second.id }).select('id').first(),
+      null,
+    )
   } finally {
-    await fixtureDb.attachment.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.Attachments.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
     await rm(uploadDir, { recursive: true, force: true })
   }
 })
