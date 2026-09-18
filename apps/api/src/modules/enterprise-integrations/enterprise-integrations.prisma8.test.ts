@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
 import test from 'node:test'
 import { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { DingTalkClient } from './dingtalk.client'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 import type { LarkClient } from './lark.client'
@@ -18,26 +25,28 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
     INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',
     JWT_ACCESS_SECRET: 'unused-test-jwt-secret',
   })
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-integrations-${suffix}`, slug: `p8-integrations-${suffix}` },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-integrations')
+  const actor = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `integration-${suffix}@example.test`,
+    passwordHash: 'not-used',
+    name: 'Integration Admin',
   })
-  const actor = await fixtureDb.user.create({
-    data: {
+  const role = await prisma8Client.orm.public.Roles
+    .select('id')
+    .create({
       tenantId: tenant.id,
-      email: `integration-${suffix}@example.test`,
-      passwordHash: 'not-used',
-      name: 'Integration Admin',
-    },
-  })
-  const role = await fixtureDb.role.create({ data: { tenantId: tenant.id, name: `成员-${suffix}` } })
-  const department = await fixtureDb.department.create({
-    data: { tenantId: tenant.id, name: `同步目标-${suffix}` },
+      name: `成员-${suffix}`,
+      updatedAt: prisma8Now(),
+    })
+  const department = await createPrismaTestDepartment(prisma8Client, {
+    tenantId: tenant.id,
+    name: `同步目标-${suffix}`,
   })
   const user: AuthUser = {
     id: actor.id,
@@ -83,21 +92,24 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
     const enabled = await service.updateWeComSync(user, { enabled: true, defaultRoleId: role.id })
     assert.equal(enabled.syncEnabled, true)
 
-    const wecomRow = await fixtureDb.enterpriseIntegration.findUniqueOrThrow({
-      where: { tenantId_provider: { tenantId: tenant.id, provider: 'WECOM' } },
-    })
-    const batch = await fixtureDb.organizationSyncBatch.create({
-      data: {
+    const wecomRow = await prisma8Client.orm.public.EnterpriseIntegrations.where({
+      tenantId: tenant.id,
+      provider: 'WECOM',
+    }).first()
+    assert.ok(wecomRow)
+    const batch = await prisma8Client.orm.public.OrganizationSyncBatches
+      .select('id')
+      .create({
         tenantId: tenant.id,
         integrationId: wecomRow.id,
         provider: 'WECOM',
         status: 'PREVIEW_READY',
         targetDepartmentId: department.id,
         credentialVersion: wecomRow.credentialVersion,
-        counts: { create: 0, update: 0, disable: 0, unchanged: 0, conflict: 0, skip: 0, failed: 0 },
+        counts: prisma8JsonValue({ create: 0, update: 0, disable: 0, unchanged: 0, conflict: 0, skip: 0, failed: 0 }),
         createdById: actor.id,
-      },
-    })
+        updatedAt: prisma8Now(),
+      })
     const changed = await service.saveWeCom(user, {
       corpId: `ww-${suffix}`,
       agentId: '1000002',
@@ -107,7 +119,10 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
     assert.equal(changed.credentialVersion, 2)
     assert.equal(changed.syncEnabled, false)
     assert.equal(changed.lastTestSucceeded, null)
-    const invalidated = await fixtureDb.organizationSyncBatch.findUniqueOrThrow({ where: { id: batch.id } })
+    const invalidated = await prisma8Client.orm.public.OrganizationSyncBatches.where({ id: batch.id })
+      .select('status', 'errorCode', 'finishedAt')
+      .first()
+    assert.ok(invalidated)
     assert.equal(invalidated.status, 'INVALIDATED')
     assert.equal(invalidated.errorCode, 'CREDENTIALS_CHANGED')
     assert.ok(invalidated.finishedAt)
@@ -152,19 +167,20 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
       true,
     )
 
-    const rows = await fixtureDb.enterpriseIntegration.findMany({ where: { tenantId: tenant.id } })
+    const rows = await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id })
+      .select('provider', 'syncEnabled')
+      .all()
     assert.equal(rows.length, 3)
     assert.equal(rows.filter((row) => row.syncEnabled).length, 1)
     assert.equal(rows.find((row) => row.provider === 'LARK')?.syncEnabled, true)
     assert.deepEqual(await service.getLarkSecret(tenant.id), { appSecret: 'lark-secret' })
   } finally {
-    await fixtureDb.organizationSyncBatch.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.role.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.department.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.deleteMany({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.OrganizationSyncBatches.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Roles.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Departments.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

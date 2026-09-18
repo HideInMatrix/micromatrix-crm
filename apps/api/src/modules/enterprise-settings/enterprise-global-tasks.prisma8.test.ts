@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { EnterpriseGlobalTasksService } from './enterprise-global-tasks.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,20 +14,17 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 global task ${suffix}`, slug: `p8-task-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-task')
       tenantId = tenant.id
-      const model = await fixtureDb.enterpriseAiModel.create({
-        data: {
+      const model = await prisma8Client.orm.public.EnterpriseAiModels
+        .select('id', 'displayName', 'modelName', 'provider')
+        .create({
           tenantId: tenant.id,
           displayName: `模型-${suffix}`,
           modelName: 'gpt-test',
@@ -36,7 +33,7 @@ test(
           enable: true,
           createdById: `creator-${suffix}`,
           updatedById: `creator-${suffix}`,
-        },
+          updatedAt: prisma8Now(),
       })
       const user = {
         id: `user-${suffix}`,
@@ -75,9 +72,10 @@ test(
       assert.ok(execution.startedAt)
       assert.ok(execution.finishedAt)
 
-      const stored = await fixtureDb.enterpriseGlobalTaskExecution.findUniqueOrThrow({
-        where: { id: execution.id },
-      })
+      const stored = await prisma8Client.orm.public.EnterpriseGlobalTaskExecutions.where({
+        id: execution.id,
+      }).first()
+      assert.ok(stored)
       assert.equal(stored.status, 'SUCCEEDED')
       assert.equal((stored.input as { taskName: string }).taskName, '每日商机巡检')
       assert.equal((stored.output as { analysis: string }).analysis, '分析完成')
@@ -89,13 +87,12 @@ test(
       assert.equal(history[0]?.taskName, '每日商机巡检')
     } finally {
       if (tenantId) {
-        await fixtureDb.enterpriseGlobalTaskExecution.deleteMany({ where: { tenantId } })
-        await fixtureDb.enterpriseGlobalTask.deleteMany({ where: { tenantId } })
-        await fixtureDb.enterpriseAiModel.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.EnterpriseGlobalTaskExecutions.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseGlobalTasks.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseAiModels.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

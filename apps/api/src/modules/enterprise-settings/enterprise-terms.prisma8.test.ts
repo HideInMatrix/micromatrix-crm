@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { EnterpriseTermsService } from './enterprise-terms.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,17 +14,13 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 terms ${suffix}`, slug: `p8-terms-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-terms')
       tenantId = tenant.id
       const user = { id: `user-${suffix}`, tenantId: tenant.id } as AuthUser
       const service = new EnterpriseTermsService({ client: prisma8Client } as Prisma8Service)
@@ -40,13 +36,14 @@ test(
       assert.equal(gmv.categoryName, '销售指标')
       assert.equal((await service.terms(tenant.id, undefined, '成交')).length, 1)
 
-      const discovery = await fixtureDb.enterpriseTermDiscovery.create({
-        data: {
+      const discovery = await prisma8Client.orm.public.EnterpriseTermDiscoveries
+        .select('id')
+        .create({
           tenantId: tenant.id,
           discovered: 'ARR',
           source: 'AI',
           context: '合同分析',
-        },
+          updatedAt: prisma8Now(),
       })
       const adopted = await service.adoptDiscovery(user, discovery.id, {
         categoryId: category.id,
@@ -60,21 +57,25 @@ test(
       assert.equal(categories.length, 1)
       assert.equal(categories[0]?.termCount, 2)
 
-      const storedDiscovery = await fixtureDb.enterpriseTermDiscovery.findUniqueOrThrow({
-        where: { id: discovery.id },
-      })
+      const storedDiscovery = await prisma8Client.orm.public.EnterpriseTermDiscoveries.where({
+        id: discovery.id,
+      }).first()
+      assert.ok(storedDiscovery)
       assert.equal(storedDiscovery.status, 'ADOPTED')
       assert.equal(storedDiscovery.adoptedTermId, adopted.id)
-      assert.equal(await fixtureDb.enterpriseTerm.count({ where: { tenantId: tenant.id } }), 2)
+      assert.equal(
+        (await prisma8Client.orm.public.EnterpriseTerms.where({ tenantId: tenant.id }).select('id').all())
+          .length,
+        2,
+      )
     } finally {
       if (tenantId) {
-        await fixtureDb.enterpriseTermDiscovery.deleteMany({ where: { tenantId } })
-        await fixtureDb.enterpriseTerm.deleteMany({ where: { tenantId } })
-        await fixtureDb.enterpriseTermCategory.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.EnterpriseTermDiscoveries.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseTerms.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseTermCategories.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

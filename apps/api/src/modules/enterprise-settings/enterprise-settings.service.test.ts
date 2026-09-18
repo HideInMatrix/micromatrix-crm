@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8Now, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
 import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
 import { EnterpriseGlobalTasksService } from './enterprise-global-tasks.service'
@@ -272,14 +270,9 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const prisma8 = { client: prisma8Client } as Prisma8Service
-    const token = randomUUID().replaceAll('-', '')
-    const tenant = {
-      name: `Prisma 8 mail ${token}`,
-      slug: `prisma8-mail-${token}`,
-    }
     let tenantId = ''
     let probedPassword = ''
     const probe = {
@@ -298,10 +291,8 @@ test(
       tls: false,
     }
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const createdTenant = await fixtureDb.tenant.create({ data: tenant })
+      const createdTenant = await createPrismaTestTenant(prisma8Client, 'prisma8-mail')
       tenantId = createdTenant.id
       const integrationUser = { ...user, tenantId }
 
@@ -312,29 +303,36 @@ test(
       assert.equal(first.passwordConfigured, true)
       assert.equal('passwordCiphertext' in first, false)
 
-      const firstDb = await fixtureDb.enterpriseMailSetting.findUnique({ where: { tenantId } })
+      const firstDb = await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
       assert.ok(firstDb)
       assert.ok(firstDb.id)
       assert.equal(firstDb.passwordCiphertext, 'enc:integration-secret')
 
       await new Promise((resolve) => setTimeout(resolve, 20))
       await service.save(integrationUser, { ...base, password: '' })
-      const secondDb = await fixtureDb.enterpriseMailSetting.findUnique({ where: { tenantId } })
-      assert.equal(secondDb?.passwordCiphertext, firstDb.passwordCiphertext)
-      assert.ok(secondDb?.updatedAt)
-      assert.equal(secondDb.updatedAt.getTime() > firstDb.updatedAt.getTime(), true)
+      const secondDb = await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
+      assert.ok(secondDb)
+      assert.equal(secondDb.passwordCiphertext, firstDb.passwordCiphertext)
+      assert.equal(
+        prisma8TimestampToDate(secondDb.updatedAt).getTime() >
+          prisma8TimestampToDate(firstDb.updatedAt).getTime(),
+        true,
+      )
 
       const tested = await service.test(integrationUser, { ...base, password: '' })
       assert.equal(tested.success, true)
       assert.equal(probedPassword, 'integration-secret')
-      const testedDb = await fixtureDb.enterpriseMailSetting.findUnique({ where: { tenantId } })
+      const testedDb = await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
+      assert.ok(testedDb)
       assert.equal(testedDb?.lastTestSucceeded, true)
       assert.equal(testedDb?.lastTestMessage, 'SMTP 连接与认证成功')
       assert.ok(testedDb?.lastTestedAt)
     } finally {
-      if (tenantId) await fixtureDb.tenant.delete({ where: { id: tenantId } })
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      if (tenantId) {
+        await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
+      }
+      await testDb.close()
     }
   },
 )
@@ -467,14 +465,9 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const prisma8 = { client: prisma8Client } as Prisma8Service
-    const token = randomUUID().replaceAll('-', '')
-    const tenant = {
-      name: `Prisma 8 AI models ${token}`,
-      slug: `prisma8-ai-models-${token}`,
-    }
     let tenantId = ''
     const service = new EnterpriseAiModelsService(prisma8, cipher)
     const base = {
@@ -487,10 +480,8 @@ test(
       topP: 0.9,
     }
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const createdTenant = await fixtureDb.tenant.create({ data: tenant })
+      const createdTenant = await createPrismaTestTenant(prisma8Client, 'prisma8-ai-models')
       tenantId = createdTenant.id
       const integrationUser = { ...user, tenantId }
 
@@ -511,7 +502,9 @@ test(
         [secondary.id],
       )
 
-      const primaryDb = await fixtureDb.enterpriseAiModel.findUnique({ where: { id: primary.id } })
+      const primaryDb = await prisma8Client.orm.public.EnterpriseAiModels.where({
+        id: primary.id,
+      }).first()
       assert.ok(primaryDb)
       assert.equal(primaryDb.tenantId, tenantId)
       assert.equal(primaryDb.apiKeyCiphertext, 'enc:integration-secret')
@@ -523,16 +516,21 @@ test(
         displayName: '主模型',
         apiKey: '',
       })
-      const updatedDb = await fixtureDb.enterpriseAiModel.findUnique({ where: { id: primary.id } })
-      assert.equal(updatedDb?.apiKeyCiphertext, primaryDb.apiKeyCiphertext)
-      assert.ok(updatedDb?.updatedAt)
-      assert.equal(updatedDb.updatedAt.getTime() > primaryDb.updatedAt.getTime(), true)
+      const updatedDb = await prisma8Client.orm.public.EnterpriseAiModels.where({
+        id: primary.id,
+      }).first()
+      assert.ok(updatedDb)
+      assert.equal(updatedDb.apiKeyCiphertext, primaryDb.apiKeyCiphertext)
+      assert.equal(
+        prisma8TimestampToDate(updatedDb.updatedAt).getTime() >
+          prisma8TimestampToDate(primaryDb.updatedAt).getTime(),
+        true,
+      )
 
       await service.updateRouteStrategy(tenantId, [secondary.id, primary.id])
-      const routeDb = await fixtureDb.enterpriseAiModelRoute.findMany({
-        where: { tenantId },
-        orderBy: { sort: 'asc' },
-      })
+      const routeDb = await prisma8Client.orm.public.EnterpriseAiModelRoutes.where({ tenantId })
+        .orderBy((row) => row.sort.asc())
+        .all()
       assert.deepEqual(
         routeDb.map((route) => route.modelId),
         [secondary.id, primary.id],
@@ -544,20 +542,26 @@ test(
       })
 
       await service.remove(tenantId, secondary.id)
-      const secondaryDb = await fixtureDb.enterpriseAiModel.findUnique({ where: { id: secondary.id } })
-      const routesAfterRemove = await fixtureDb.enterpriseAiModelRoute.findMany({
-        where: { tenantId },
-        orderBy: { sort: 'asc' },
+      const secondaryDb = await prisma8Client.orm.public.EnterpriseAiModels.where({
+        id: secondary.id,
+      }).first()
+      const routesAfterRemove = await prisma8Client.orm.public.EnterpriseAiModelRoutes.where({
+        tenantId,
       })
+        .orderBy((row) => row.sort.asc())
+        .all()
       assert.equal(secondaryDb, null)
       assert.deepEqual(
         routesAfterRemove.map((route) => route.modelId),
         [primary.id],
       )
     } finally {
-      if (tenantId) await fixtureDb.tenant.delete({ where: { id: tenantId } })
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      if (tenantId) {
+        await prisma8Client.orm.public.EnterpriseAiModelRoutes.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseAiModels.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
+      }
+      await testDb.close()
     }
   },
 )

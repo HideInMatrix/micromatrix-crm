@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthService } from '../../auth/auth.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { LarkClient } from '../enterprise-integrations/lark.client'
 import { LarkSsoService } from './lark-sso.service'
@@ -18,31 +23,26 @@ test('Lark SSO 使用 Prisma 8 保持 discovery、身份绑定与 OAuth state �
     getOrThrow: () => databaseUrl,
     get: () => undefined,
   } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: {
-      name: `p8-lark-${suffix}`,
-      slug: `p8-lark-${suffix}`,
-      enterpriseSyncResource: 'LARK',
-      enterpriseSynced: true,
-    },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-lark')
+  await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).update({
+    enterpriseSyncResource: 'LARK',
+    enterpriseSynced: true,
+    updatedAt: prisma8Now(),
   })
-  const user = await fixtureDb.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: `lark-${suffix}@example.test`,
-      passwordHash: 'not-used',
-      name: 'Lark Prisma8 用户',
-      passwordLoginEnabled: true,
-    },
+  const user = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `lark-${suffix}@example.test`,
+    passwordHash: 'not-used',
+    name: 'Lark Prisma8 用户',
   })
-  const integration = await fixtureDb.enterpriseIntegration.create({
-    data: {
+  const integration = await prisma8Client.orm.public.EnterpriseIntegrations
+    .select('id', 'corpId', 'agentId', 'redirectUrl', 'syncEnabled')
+    .create({
       tenantId: tenant.id,
       provider: 'LARK',
       corpId: `tenant-key-${suffix}`,
@@ -55,17 +55,18 @@ test('Lark SSO 使用 Prisma 8 保持 discovery、身份绑定与 OAuth state �
       lastTestSucceeded: true,
       createdById: user.id,
       updatedById: user.id,
-    },
+      updatedAt: prisma8Now(),
   })
-  const mapping = await fixtureDb.externalUserMapping.create({
-    data: {
+  const mapping = await prisma8Client.orm.public.ExternalUserMappings
+    .select('id', 'externalId')
+    .create({
       tenantId: tenant.id,
       provider: 'LARK',
       externalId: `ou-${suffix}`,
       externalKey: `open-${suffix}`,
       userId: user.id,
       active: true,
-    },
+      updatedAt: prisma8Now(),
   })
 
   const integrations = {
@@ -105,9 +106,14 @@ test('Lark SSO 使用 Prisma 8 保持 discovery、身份绑定与 OAuth state �
     assert.equal(bound.status, 'ACTIVE')
     assert.equal(bound.externalSubject, mapping.externalId)
     assert.ok(bound.boundAt)
-    const persistedIdentity = await fixtureDb.externalIdentity.findUniqueOrThrow({
-      where: { tenantId_provider_userId: { tenantId: tenant.id, provider: 'LARK', userId: user.id } },
+    const persistedIdentity = await prisma8Client.orm.public.ExternalIdentities.where({
+      tenantId: tenant.id,
+      provider: 'LARK',
+      userId: user.id,
     })
+      .select('mappingId', 'integrationId')
+      .first()
+    assert.ok(persistedIdentity)
     assert.equal(persistedIdentity.mappingId, mapping.id)
     assert.equal(persistedIdentity.integrationId, integration.id)
 
@@ -122,9 +128,10 @@ test('Lark SSO 使用 Prisma 8 保持 discovery、身份绑定与 OAuth state �
     assert.ok(started.value.state.startsWith('qr-lark.'))
     assert.equal(started.value.redirectUri, integration.redirectUrl)
     assert.equal(started.value.appId, integration.agentId)
-    const stateRow = await fixtureDb.externalOAuthState.findUniqueOrThrow({
-      where: { stateHash: sha256(started.value.state) },
-    })
+    const stateRow = await prisma8Client.orm.public.ExternalOauthStates.where({
+      stateHash: sha256(started.value.state),
+    }).first()
+    assert.ok(stateRow)
     assert.equal(stateRow.tenantId, tenant.id)
     assert.equal(stateRow.integrationId, integration.id)
     assert.equal(stateRow.flow, 'QR_LARK')
@@ -133,13 +140,12 @@ test('Lark SSO 使用 Prisma 8 保持 discovery、身份绑定与 OAuth state �
     assert.notEqual(stateRow.stateHash, started.value.state)
     assert.notEqual(stateRow.browserNonceHash, started.browserNonce)
   } finally {
-    await fixtureDb.externalOAuthState.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.externalIdentity.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.externalUserMapping.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.deleteMany({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.ExternalOauthStates.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.ExternalIdentities.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.ExternalUserMappings.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

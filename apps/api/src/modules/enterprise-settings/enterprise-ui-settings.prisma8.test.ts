@@ -2,9 +2,8 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { AttachmentsService } from '../attachments/attachments.service'
 import { EnterpriseUiSettingsService } from './enterprise-ui-settings.service'
 
@@ -15,17 +14,13 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 UI ${suffix}`, slug: `p8-ui-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-ui')
       tenantId = tenant.id
       const service = new EnterpriseUiSettingsService(
         { client: prisma8Client } as Prisma8Service,
@@ -48,9 +43,10 @@ test(
       })
       assert.equal(updated.title, 'Prisma 8 品牌')
 
-      const stored = await fixtureDb.enterpriseUiSetting.findUniqueOrThrow({
-        where: { tenantId: tenant.id },
-      })
+      const stored = await prisma8Client.orm.public.EnterpriseUiSettings.where({
+        tenantId: tenant.id,
+      }).first()
+      assert.ok(stored)
       assert.equal(stored.title, 'Prisma 8 品牌')
       assert.ok(stored.updatedAt)
 
@@ -59,11 +55,10 @@ test(
       assert.equal(branding.tenantSlug, tenant.slug)
     } finally {
       if (tenantId) {
-        await fixtureDb.enterpriseUiSetting.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.EnterpriseUiSettings.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )
