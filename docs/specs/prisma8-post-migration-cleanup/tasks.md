@@ -13,7 +13,7 @@
 ## P1 测试兼容层
 
 - [x] P1.1 建立 Prisma 8 原生 test database helper。
-- [ ] P1.2 第一批迁移基础设施/认证/公共服务测试，停止使用通用 Prisma 7 delegate facade。
+- [x] P1.2 第一批迁移基础设施/认证/公共服务测试，停止使用通用 Prisma 7 delegate facade。
 - [ ] P1.3 迁移 Customers / Leads / Metadata / Pool tests。
 - [ ] P1.4 迁移交易链 / 审批 / 通知 / 企业集成 tests。
 - [ ] P1.5 `createPrismaFixtureClient` 引用归零。
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P1.2**。已建立薄层 `src/testing/prisma-test-db.ts`，只负责 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
+当前执行 **P1.3**。已建立薄层 `src/testing/prisma-test-db.ts`，只负责 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -64,5 +64,9 @@
 - `src/common/services/data-scope.prisma8.test.ts`；
 - `src/common/services/scope-resolver.prisma8.test.ts`。
 
-当前 native canary 合计 **8/8 PASS、0 skip**；API typecheck exit 0。通用 fixture facade 的 `createPrismaFixtureClient` 引用已从本阶段开始时的 **155** 降至 **149**，引用文件从 **76** 降至 **73**。下一批继续迁移个人中心 / message settings / home 等低耦合模块，再进入 Customers / Leads / Metadata / Pool。
+P1.2 已继续覆盖 PersonalCenter / PersonalApiKey / MessageSettings / HomeDepartmentScope / HomeOverview / HomeStatistics / DashboardAccess / Departments / Logs / OperationLogCleanup。累计新增 native PostgreSQL gate **18/18 PASS、0 skip**；API typecheck/build exit 0。
+
+通用 fixture facade 的 `createPrismaFixtureClient` 引用已从本阶段开始时的 **155** 降至 **127**，引用文件从 **76** 降至 **62**。
+
+下一步进入 **P1.3 Customers / Leads / Metadata / Pool**。这些模块仍依赖大量 `VarChar/Numeric/BigInt` storage 类型；本阶段只删除 Prisma 7 fixture facade，继续使用现有 Prisma 8 类型边界 helper，数据库类型治理留在 P3/P4 forward migration。
 

@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { HomeStatisticRequest } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
 import type { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomeOpportunityStatisticQuery } from './home-opportunity-statistic.query'
@@ -18,8 +19,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const range = {
       start: new Date('2026-09-01T00:00:00.000Z'),
@@ -28,150 +29,149 @@ test(
       previousEnd: new Date('2026-08-31T23:59:59.999Z'),
     }
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 home ${suffix}`, slug: `p8-home-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-home')
       tenantId = tenant.id
-      const actorId = suffix.slice(0, 32)
+      const actorId = prisma8Varchar(suffix.slice(0, 32), 32)
+      const organizationId = prisma8Varchar(tenant.id, 32)
       const inRange = BigInt(new Date('2026-09-16T08:00:00.000Z').getTime())
       const now = inRange
 
-      await fixtureDb.clue.createMany({
-        data: [
-          {
-            name: 'Visible clue',
-            owner: actorId,
-            stage: 'NEW',
-            organizationId: tenant.id,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            updateUser: actorId,
-            transitionId: null,
-            inSharedPool: false,
-          },
-          {
-            name: 'Transitioned clue',
-            owner: actorId,
-            stage: 'NEW',
-            organizationId: tenant.id,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            updateUser: actorId,
-            transitionId: suffix.slice(0, 32),
-            inSharedPool: false,
-          },
-          {
-            name: 'Pool clue',
-            owner: actorId,
-            stage: 'NEW',
-            organizationId: tenant.id,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            updateUser: actorId,
-            transitionId: '',
-            inSharedPool: true,
-          },
-        ],
-      })
+      await prisma8Client.orm.public.Clue.createAll([
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Visible clue', 255),
+          owner: actorId,
+          stage: prisma8Varchar('NEW', 30),
+          organizationId,
+          createTime: inRange,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+          transitionId: null,
+          inSharedPool: false,
+        },
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Transitioned clue', 255),
+          owner: actorId,
+          stage: prisma8Varchar('NEW', 30),
+          organizationId,
+          createTime: inRange,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+          transitionId: prisma8Varchar(suffix.slice(0, 32), 32),
+          inSharedPool: false,
+        },
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Pool clue', 255),
+          owner: actorId,
+          stage: prisma8Varchar('NEW', 30),
+          organizationId,
+          createTime: inRange,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+          transitionId: prisma8Varchar('', 32),
+          inSharedPool: true,
+        },
+      ])
 
-      const afootStage = await fixtureDb.opportunityStageConfig.create({
-        data: {
-          name: '进行中',
-          type: 'AFOOT',
-          rate: '50',
+      const stageBase = {
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      }
+      const afootStage = await prisma8Client.orm.public.OpportunityStageConfig
+        .select('id')
+        .create({
+          ...stageBase,
+          id: prisma8Id32(),
+          name: prisma8Varchar('进行中', 16),
+          _type: prisma8Varchar('AFOOT', 50),
+          rate: prisma8Varchar('50', 10),
           pos: 1n,
-          organizationId: tenant.id,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
-      const successStage = await fixtureDb.opportunityStageConfig.create({
-        data: {
-          name: '赢单',
-          type: 'END',
-          rate: '100',
+        })
+      const successStage = await prisma8Client.orm.public.OpportunityStageConfig
+        .select('id')
+        .create({
+          ...stageBase,
+          id: prisma8Id32(),
+          name: prisma8Varchar('赢单', 16),
+          _type: prisma8Varchar('END', 50),
+          rate: prisma8Varchar('100', 10),
           pos: 2n,
-          organizationId: tenant.id,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
-      const failedStage = await fixtureDb.opportunityStageConfig.create({
-        data: {
-          name: '输单',
-          type: 'END',
-          rate: '0',
+        })
+      const failedStage = await prisma8Client.orm.public.OpportunityStageConfig
+        .select('id')
+        .create({
+          ...stageBase,
+          id: prisma8Id32(),
+          name: prisma8Varchar('输单', 16),
+          _type: prisma8Varchar('END', 50),
+          rate: prisma8Varchar('0', 10),
           pos: 3n,
-          organizationId: tenant.id,
-          createTime: now,
+        })
+
+      await prisma8Client.orm.public.Opportunity.createAll([
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Underway 1', 255),
+          amount: prisma8Numeric('100.5000000000', 20, 10),
+          organizationId,
+          stage: afootStage.id,
+          owner: actorId,
+          updateUser: actorId,
+          createTime: inRange,
           updateTime: now,
           createUser: actorId,
-          updateUser: actorId,
+          expectedEndTime: inRange,
         },
-      })
-      await fixtureDb.opportunity.createMany({
-        data: [
-          {
-            name: 'Underway 1',
-            amount: '100.5000000000',
-            organizationId: tenant.id,
-            stage: afootStage.id,
-            owner: actorId,
-            updateUser: actorId,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            expectedEndTime: inRange,
-          },
-          {
-            name: 'Underway 2',
-            amount: '49.5000000000',
-            organizationId: tenant.id,
-            stage: afootStage.id,
-            owner: actorId,
-            updateUser: actorId,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            expectedEndTime: inRange,
-          },
-          {
-            name: 'Won',
-            amount: '200.0000000000',
-            organizationId: tenant.id,
-            stage: successStage.id,
-            owner: actorId,
-            updateUser: actorId,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            expectedEndTime: inRange,
-          },
-          {
-            name: 'Lost',
-            amount: '999.0000000000',
-            organizationId: tenant.id,
-            stage: failedStage.id,
-            owner: actorId,
-            updateUser: actorId,
-            createTime: inRange,
-            updateTime: now,
-            createUser: actorId,
-            expectedEndTime: inRange,
-          },
-        ],
-      })
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Underway 2', 255),
+          amount: prisma8Numeric('49.5000000000', 20, 10),
+          organizationId,
+          stage: afootStage.id,
+          owner: actorId,
+          updateUser: actorId,
+          createTime: inRange,
+          updateTime: now,
+          createUser: actorId,
+          expectedEndTime: inRange,
+        },
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Won', 255),
+          amount: prisma8Numeric('200.0000000000', 20, 10),
+          organizationId,
+          stage: successStage.id,
+          owner: actorId,
+          updateUser: actorId,
+          createTime: inRange,
+          updateTime: now,
+          createUser: actorId,
+          expectedEndTime: inRange,
+        },
+        {
+          id: prisma8Id32(),
+          name: prisma8Varchar('Lost', 255),
+          amount: prisma8Numeric('999.0000000000', 20, 10),
+          organizationId,
+          stage: failedStage.id,
+          owner: actorId,
+          updateUser: actorId,
+          createTime: inRange,
+          updateTime: now,
+          createUser: actorId,
+          expectedEndTime: inRange,
+        },
+      ])
 
       const prisma8 = { client: prisma8Client } as Prisma8Service
       const scopes = {
@@ -210,13 +210,13 @@ test(
       assert.equal(success.todayOpportunityAmount.value, 200)
     } finally {
       if (tenantId) {
-        await fixtureDb.opportunity.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.opportunityStageConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.clue.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        await prisma8Client.orm.public.Opportunity.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Clue.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

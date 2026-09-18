@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { MessageTaskConfig } from '@micromatrix/shared'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { MessageSettingsService } from './message-settings.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,36 +14,31 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: {
-          name: `Prisma8 message settings ${suffix}`,
-          slug: `p8-msg-${suffix}`,
-          enterpriseSyncResource: 'WECOM',
-        },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-msg')
       tenantId = tenant.id
-      await fixtureDb.enterpriseIntegration.create({
-        data: {
-          tenantId: tenant.id,
-          provider: 'WECOM',
-          corpId: `corp-${suffix}`,
-          agentId: `agent-${suffix}`,
-          secretCiphertext: 'ciphertext',
-          secretIv: 'iv',
-          secretAuthTag: 'tag',
-          syncEnabled: true,
-          lastTestSucceeded: true,
-          createdById: `creator-${suffix}`,
-          updatedById: `creator-${suffix}`,
-        },
+      await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).update({
+        enterpriseSyncResource: 'WECOM',
+        updatedAt: prisma8Now(),
+      })
+      await prisma8Client.orm.public.EnterpriseIntegrations.create({
+        tenantId: tenant.id,
+        provider: 'WECOM',
+        corpId: `corp-${suffix}`,
+        agentId: `agent-${suffix}`,
+        secretCiphertext: 'ciphertext',
+        secretIv: 'iv',
+        secretAuthTag: 'tag',
+        syncEnabled: true,
+        lastTestSucceeded: true,
+        createdById: `creator-${suffix}`,
+        updatedById: `creator-${suffix}`,
+        updatedAt: prisma8Now(),
       })
 
       const service = new MessageSettingsService({ client: prisma8Client } as Prisma8Service)
@@ -64,15 +59,14 @@ test(
       assert.equal(updated.systemEnabled, false)
       assert.deepEqual(updated.config, config)
 
-      const stored = await fixtureDb.messageTaskSetting.findUniqueOrThrow({
-        where: {
-          tenantId_module_event: {
-            tenantId: tenant.id,
-            module: 'CONTRACT',
-            event: 'CONTRACT_EXPIRING',
-          },
-        },
+      const stored = await prisma8Client.orm.public.MessageTaskSettings.where({
+        tenantId: tenant.id,
+        module: 'CONTRACT',
+        event: 'CONTRACT_EXPIRING',
       })
+        .select('systemEnabled', 'config')
+        .first()
+      assert.ok(stored)
       assert.equal(stored.systemEnabled, false)
       assert.deepEqual(stored.config, config)
 
@@ -83,21 +77,18 @@ test(
       const groups = await service.batchUpdate(tenant.id, { systemEnabled: true })
       assert.equal(groups.flatMap((group) => group.items).length, 47)
       assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
-      assert.equal(await fixtureDb.messageTaskSetting.count({ where: { tenantId: tenant.id } }), 47)
-      assert.equal(
-        await fixtureDb.messageTaskSetting.count({
-          where: { tenantId: tenant.id, systemEnabled: true },
-        }),
-        47,
-      )
+      const allRows = await prisma8Client.orm.public.MessageTaskSettings.where({ tenantId: tenant.id })
+        .select('systemEnabled')
+        .all()
+      assert.equal(allRows.length, 47)
+      assert.equal(allRows.filter((item) => item.systemEnabled).length, 47)
     } finally {
       if (tenantId) {
-        await fixtureDb.messageTaskSetting.deleteMany({ where: { tenantId } })
-        await fixtureDb.enterpriseIntegration.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.MessageTaskSettings.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

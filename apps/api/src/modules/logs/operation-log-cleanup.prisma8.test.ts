@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { OperationLogCleanupService } from './operation-log-cleanup.service'
 import {
   OperationLogCleanupSources,
@@ -17,41 +16,34 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
-    const suffix = randomUUID().replaceAll('-', '')
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const now = new Date('2026-09-16T12:00:00.000Z')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 operation log ${suffix}`, slug: `p8-log-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-log')
       tenantId = tenant.id
-      await fixtureDb.operationLog.createMany({
-        data: [
+      await prisma8Client.orm.public.OperationLogs.createAll([
           {
             tenantId: tenant.id,
             module: 'PRISMA8_TEST',
             action: 'OLD_A',
-            createdAt: new Date('2026-07-01T00:00:00.000Z'),
+            createdAt: prisma8TimestampFromDate(new Date('2026-07-01T00:00:00.000Z')),
           },
           {
             tenantId: tenant.id,
             module: 'PRISMA8_TEST',
             action: 'OLD_B',
-            createdAt: new Date('2026-07-02T00:00:00.000Z'),
+            createdAt: prisma8TimestampFromDate(new Date('2026-07-02T00:00:00.000Z')),
           },
           {
             tenantId: tenant.id,
             module: 'PRISMA8_TEST',
             action: 'RECENT',
-            createdAt: new Date('2026-09-10T00:00:00.000Z'),
+            createdAt: prisma8TimestampFromDate(new Date('2026-09-10T00:00:00.000Z')),
           },
-        ],
-      })
+        ])
 
       const prisma8 = { client: prisma8Client } as Prisma8Service
       const settings = new OperationLogSettingsService(prisma8)
@@ -75,25 +67,24 @@ test(
       assert.equal(result.setting.lastCleanupSource, 'AUTO')
       assert.equal(result.setting.lastCleanupAt, now.toISOString())
 
-      assert.deepEqual(
-        await fixtureDb.operationLog.findMany({
-          where: { tenantId: tenant.id },
-          orderBy: { createdAt: 'asc' },
-          select: { action: true },
-        }),
-        [{ action: 'RECENT' }],
-      )
+      const remaining = await prisma8Client.orm.public.OperationLogs.where({ tenantId: tenant.id })
+        .orderBy((row) => row.createdAt.asc())
+        .select('action')
+        .all()
+      assert.deepEqual(remaining, [{ action: 'RECENT' }])
 
       assert.deepEqual(await cleanup.clearTenant(tenant.id), { deleted: 1 })
-      assert.equal(await fixtureDb.operationLog.count({ where: { tenantId: tenant.id } }), 0)
+      assert.equal(
+        (await prisma8Client.orm.public.OperationLogs.where({ tenantId: tenant.id }).select('id').all()).length,
+        0,
+      )
     } finally {
       if (tenantId) {
-        await fixtureDb.operationLog.deleteMany({ where: { tenantId } })
-        await fixtureDb.operationLogSetting.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.OperationLogs.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.OperationLogSettings.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

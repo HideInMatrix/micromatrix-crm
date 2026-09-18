@@ -4,9 +4,14 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import type { BusinessChangeLogService } from '../../common/services/business-change-log.service'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { AuthService } from '../../auth/auth.service'
 import type { FollowUpPlansService } from '../follow-up-plans/follow-up-plans.service'
 import { PersonalCenterService } from './personal-center.service'
@@ -18,56 +23,59 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     const tenantIds: string[] = []
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 Personal ${suffix}`, slug: `p8-personal-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-personal')
       tenantIds.push(tenant.id)
-      const department = await fixtureDb.department.create({
-        data: { tenantId: tenant.id, name: 'Prisma8 研发部' },
+      const department = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Prisma8 研发部',
       })
-      const role = await fixtureDb.role.create({
-        data: { tenantId: tenant.id, name: `Prisma8 Role ${suffix}` },
-      })
-      const userRow = await fixtureDb.user.create({
-        data: {
+      const role = await prisma8Client.orm.public.Roles
+        .select('id', 'name')
+        .create({
           tenantId: tenant.id,
-          name: 'Personal User',
-          passwordHash: 'not-used',
-          deptId: department.id,
-          phone: `138${suffix.slice(0, 8)}`,
-          email: `personal-${suffix}@example.com`,
-          language: 'zh-CN',
-        },
+          name: `Prisma8 Role ${suffix}`,
+          updatedAt: prisma8Now(),
+        })
+      const userRow = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Personal User',
+        deptId: department.id,
+        email: `personal-${suffix}@example.com`,
       })
-      await fixtureDb.userExtension.create({
-        data: { id: userRow.id, avatar: `https://example.com/${suffix}.png` },
+      await prisma8Client.orm.public.Users.where({ id: userRow.id }).update({
+        phone: `138${suffix.slice(0, 8)}`,
+        language: 'zh-CN',
+        updatedAt: prisma8Now(),
       })
-      await fixtureDb.userRole.create({
-        data: { tenantId: tenant.id, userId: userRow.id, roleId: role.id },
+      await prisma8Client.orm.public.UserExtensions.create({
+        id: userRow.id,
+        avatar: `https://example.com/${suffix}.png`,
+      })
+      await prisma8Client.orm.public.UserRoles.create({
+        tenantId: tenant.id,
+        userId: userRow.id,
+        roleId: role.id,
+        updatedAt: prisma8Now(),
       })
 
-      const otherTenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 Personal Other ${suffix}`, slug: `p8-personal-other-${suffix}` },
-      })
+      const otherTenant = await createPrismaTestTenant(prisma8Client, 'p8-personal-other')
       tenantIds.push(otherTenant.id)
       const conflictPhone = `139${suffix.slice(0, 8)}`
       const conflictEmail = `conflict-${suffix}@example.com`
-      await fixtureDb.user.create({
-        data: {
-          tenantId: otherTenant.id,
-          name: 'Conflict User',
-          passwordHash: 'not-used',
-          phone: conflictPhone,
-          email: conflictEmail,
-        },
+      const conflictUser = await createPrismaTestUser(prisma8Client, {
+        tenantId: otherTenant.id,
+        name: 'Conflict User',
+        email: conflictEmail,
+      })
+      await prisma8Client.orm.public.Users.where({ id: conflictUser.id }).update({
+        phone: conflictPhone,
+        updatedAt: prisma8Now(),
       })
 
       const invalidated: string[] = []
@@ -104,7 +112,10 @@ test(
       assert.equal(updated.departmentName, 'Prisma8 研发部')
       assert.deepEqual(updated.roles, [{ id: role.id, name: role.name }])
 
-      const stored = await fixtureDb.user.findUniqueOrThrow({ where: { id: userRow.id } })
+      const stored = await prisma8Client.orm.public.Users.where({ id: userRow.id })
+        .select('phone', 'email', 'language')
+        .first()
+      assert.ok(stored)
       assert.equal(stored.phone, nextPhone)
       assert.equal(stored.email, nextEmail.toLowerCase())
       assert.equal(stored.language, 'en-US')
@@ -131,15 +142,32 @@ test(
       )
     } finally {
       if (tenantIds.length) {
-        await fixtureDb.userRole.deleteMany({ where: { tenantId: { in: tenantIds } } })
-        await fixtureDb.userExtension.deleteMany({ where: { user: { tenantId: { in: tenantIds } } } })
-        await fixtureDb.user.deleteMany({ where: { tenantId: { in: tenantIds } } })
-        await fixtureDb.role.deleteMany({ where: { tenantId: { in: tenantIds } } })
-        await fixtureDb.department.deleteMany({ where: { tenantId: { in: tenantIds } } })
-        await fixtureDb.tenant.deleteMany({ where: { id: { in: tenantIds } } })
+        const users = await prisma8Client.orm.public.Users
+          .where((row) => row.tenantId.in(tenantIds))
+          .select('id')
+          .all()
+        if (users.length) {
+          await prisma8Client.orm.public.UserExtensions
+            .where((row) => row.id.in(users.map((item) => item.id)))
+            .deleteAll()
+        }
+        await prisma8Client.orm.public.UserRoles
+          .where((row) => row.tenantId.in(tenantIds))
+          .deleteAll()
+        await prisma8Client.orm.public.Users
+          .where((row) => row.tenantId.in(tenantIds))
+          .deleteAll()
+        await prisma8Client.orm.public.Roles
+          .where((row) => row.tenantId.in(tenantIds))
+          .deleteAll()
+        await prisma8Client.orm.public.Departments
+          .where((row) => row.tenantId.in(tenantIds))
+          .deleteAll()
+        await prisma8Client.orm.public.Tenants
+          .where((row) => row.id.in(tenantIds))
+          .deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

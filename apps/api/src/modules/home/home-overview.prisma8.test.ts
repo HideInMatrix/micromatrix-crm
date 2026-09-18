@@ -1,46 +1,37 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
 import type { DataScopeService } from '../../common/services/data-scope.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { HomeOverviewService } from './home-overview.service'
-
-const id32 = () => randomUUID().replaceAll('-', '')
 
 test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、趋势与转化语义', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
 
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
-
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-home-overview-${suffix}`, slug: `p8-home-overview-${suffix}` },
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-home-overview')
+  const owner = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `owner-${suffix}@example.com`,
+    passwordHash: 'test-only',
+    name: '首页负责人',
   })
-  const owner = await fixtureDb.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: `owner-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: '首页负责人',
-      defaultPwd: false,
-    },
-  })
-  const other = await fixtureDb.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: `other-${suffix}@example.com`,
-      passwordHash: 'test-only',
-      name: '其它负责人',
-      defaultPwd: false,
-    },
+  const other = await createPrismaTestUser(prisma8Client, {
+    tenantId: tenant.id,
+    email: `other-${suffix}@example.com`,
+    passwordHash: 'test-only',
+    name: '其它负责人',
   })
   const actor: AuthUser = {
     id: owner.id,
@@ -56,84 +47,165 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const eventAt = BigInt(Math.max(monthStart.getTime() + 60_000, now.getTime() - 60_000))
-  const stageAfoot = id32()
-  const stageWon = id32()
-  const stageLost = id32()
+  const organizationId = prisma8Varchar(tenant.id, 32)
+  const ownerId = prisma8Varchar(owner.id, 32)
+  const otherId = prisma8Varchar(other.id, 32)
+  const stageAfoot = prisma8Id32()
+  const stageWon = prisma8Id32()
+  const stageLost = prisma8Id32()
   const stageBase = {
-    organizationId: tenant.id,
+    organizationId,
     afootRollBack: false,
     endRollBack: false,
     createTime: eventAt,
     updateTime: eventAt,
-    createUser: owner.id,
-    updateUser: owner.id,
+    createUser: ownerId,
+    updateUser: ownerId,
   }
 
   try {
-    await fixtureDb.opportunityStageConfig.createMany({
-      data: [
-        { ...stageBase, id: stageAfoot, name: '推进', type: 'AFOOT', rate: '50', pos: 1n },
-        { ...stageBase, id: stageWon, name: '赢单', type: 'END', rate: '100', pos: 2n },
-        { ...stageBase, id: stageLost, name: '输单', type: 'END', rate: '0', pos: 3n },
-      ],
-    })
+    await prisma8Client.orm.public.OpportunityStageConfig.createAll([
+      {
+        ...stageBase,
+        id: stageAfoot,
+        name: prisma8Varchar('推进', 16),
+        _type: prisma8Varchar('AFOOT', 50),
+        rate: prisma8Varchar('50', 10),
+        pos: 1n,
+      },
+      {
+        ...stageBase,
+        id: stageWon,
+        name: prisma8Varchar('赢单', 16),
+        _type: prisma8Varchar('END', 50),
+        rate: prisma8Varchar('100', 10),
+        pos: 2n,
+      },
+      {
+        ...stageBase,
+        id: stageLost,
+        name: prisma8Varchar('输单', 16),
+        _type: prisma8Varchar('END', 50),
+        rate: prisma8Varchar('0', 10),
+        pos: 3n,
+      },
+    ])
 
-    await fixtureDb.clue.createMany({
-      data: [
-        {
-          id: id32(), name: '线索一', owner: owner.id, stage: 'NEW', organizationId: tenant.id,
-          createTime: eventAt, updateTime: eventAt, createUser: owner.id, updateUser: owner.id,
-          transitionId: id32(),
-        },
-        {
-          id: id32(), name: '线索二', owner: owner.id, stage: 'NEW', organizationId: tenant.id,
-          createTime: eventAt, updateTime: eventAt, createUser: owner.id, updateUser: owner.id,
-        },
-        {
-          id: id32(), name: '跨 scope 线索', owner: other.id, stage: 'NEW', organizationId: tenant.id,
-          createTime: eventAt, updateTime: eventAt, createUser: other.id, updateUser: other.id,
-          transitionId: id32(),
-        },
-      ],
-    })
+    await prisma8Client.orm.public.Clue.createAll([
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('线索一', 255),
+        owner: ownerId,
+        stage: prisma8Varchar('NEW', 30),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        createUser: ownerId,
+        updateUser: ownerId,
+        transitionId: prisma8Id32(),
+      },
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('线索二', 255),
+        owner: ownerId,
+        stage: prisma8Varchar('NEW', 30),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        createUser: ownerId,
+        updateUser: ownerId,
+      },
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('跨 scope 线索', 255),
+        owner: otherId,
+        stage: prisma8Varchar('NEW', 30),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        createUser: otherId,
+        updateUser: otherId,
+        transitionId: prisma8Id32(),
+      },
+    ])
 
-    await fixtureDb.customer.createMany({
-      data: [
-        {
-          id: id32(), name: '客户一', owner: owner.id, organizationId: tenant.id,
-          createTime: eventAt, updateTime: eventAt, createUser: owner.id, updateUser: owner.id,
-        },
-        {
-          id: id32(), name: '跨 scope 客户', owner: other.id, organizationId: tenant.id,
-          createTime: eventAt, updateTime: eventAt, createUser: other.id, updateUser: other.id,
-        },
-      ],
-    })
+    await prisma8Client.orm.public.Customer.createAll([
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('客户一', 255),
+        owner: ownerId,
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        createUser: ownerId,
+        updateUser: ownerId,
+      },
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('跨 scope 客户', 255),
+        owner: otherId,
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        createUser: otherId,
+        updateUser: otherId,
+      },
+    ])
 
-    await fixtureDb.opportunity.createMany({
-      data: [
-        {
-          id: id32(), name: '推进商机', owner: owner.id, stage: stageAfoot, amount: 20,
-          organizationId: tenant.id, createTime: eventAt, updateTime: eventAt,
-          createUser: owner.id, updateUser: owner.id,
-        },
-        {
-          id: id32(), name: '赢单商机', owner: owner.id, stage: stageWon, amount: 100,
-          organizationId: tenant.id, createTime: eventAt, updateTime: eventAt,
-          actualEndTime: eventAt, createUser: owner.id, updateUser: owner.id,
-        },
-        {
-          id: id32(), name: '输单商机', owner: owner.id, stage: stageLost, amount: 50,
-          organizationId: tenant.id, createTime: eventAt, updateTime: eventAt,
-          actualEndTime: eventAt, failureReason: '价格', createUser: owner.id, updateUser: owner.id,
-        },
-        {
-          id: id32(), name: '跨 scope 赢单', owner: other.id, stage: stageWon, amount: 999,
-          organizationId: tenant.id, createTime: eventAt, updateTime: eventAt,
-          actualEndTime: eventAt, createUser: other.id, updateUser: other.id,
-        },
-      ],
-    })
+    await prisma8Client.orm.public.Opportunity.createAll([
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('推进商机', 255),
+        owner: ownerId,
+        stage: stageAfoot,
+        amount: prisma8Numeric(20, 20, 10),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        createUser: ownerId,
+        updateUser: ownerId,
+      },
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('赢单商机', 255),
+        owner: ownerId,
+        stage: stageWon,
+        amount: prisma8Numeric(100, 20, 10),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        actualEndTime: eventAt,
+        createUser: ownerId,
+        updateUser: ownerId,
+      },
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('输单商机', 255),
+        owner: ownerId,
+        stage: stageLost,
+        amount: prisma8Numeric(50, 20, 10),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        actualEndTime: eventAt,
+        failureReason: prisma8Varchar('价格', 50),
+        createUser: ownerId,
+        updateUser: ownerId,
+      },
+      {
+        id: prisma8Id32(),
+        name: prisma8Varchar('跨 scope 赢单', 255),
+        owner: otherId,
+        stage: stageWon,
+        amount: prisma8Numeric(999, 20, 10),
+        organizationId,
+        createTime: eventAt,
+        updateTime: eventAt,
+        actualEndTime: eventAt,
+        createUser: otherId,
+        updateUser: otherId,
+      },
+    ])
 
     const dataScope = {
       directOwnerFilter: async () => ({ owner: owner.id }),
@@ -169,13 +241,12 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
     assert.equal(conversion.conversionRate, 50)
     assert.deepEqual(conversion.lostReasons, [{ reason: '价格', count: 1 }])
   } finally {
-    await fixtureDb.opportunity.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.clue.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.customer.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.opportunityStageConfig.deleteMany({ where: { organizationId: tenant.id } })
-    await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    await prisma8Client.orm.public.Opportunity.where({ organizationId }).deleteAll()
+    await prisma8Client.orm.public.Clue.where({ organizationId }).deleteAll()
+    await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
+    await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })
