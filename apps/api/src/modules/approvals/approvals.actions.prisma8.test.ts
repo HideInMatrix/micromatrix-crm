@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { ApprovalsService } from './approvals.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -13,25 +18,22 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const approverId = `approver-${suffix}`
     const submitterId = `submitter-${suffix}`
+    const tenant = await createPrismaTestTenant(prisma8Client, 'p8-approval-actions')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 approval actions ${suffix}`, slug: `p8-approval-actions-${suffix}` },
-      })
-      const instance = await fixtureDb.approvalInstance.create({
-        data: {
+      const instance = await prisma8Client.orm.public.ApprovalInstances
+        .select('id')
+        .create({
           tenantId: tenant.id,
           module: 'contract',
           targetId: `contract-${suffix}`,
           targetName: 'Prisma 8 approval action contract',
-          nodesSnapshot: [
+          nodesSnapshot: prisma8JsonValue([
             {
               nodeId: `node-${suffix}`,
               name: '审批节点',
@@ -40,13 +42,14 @@ test(
               ccUserIds: [],
               mode: 'ANY',
             },
-          ],
+          ]),
           submitterId,
           submitterName: 'Submitter',
-        },
-      })
-      const task = await fixtureDb.approvalTask.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const task = await prisma8Client.orm.public.ApprovalTasks
+        .select('id')
+        .create({
           tenantId: tenant.id,
           instanceId: instance.id,
           nodeId: `node-${suffix}`,
@@ -54,16 +57,16 @@ test(
           nodeRound: 1,
           nodeName: '审批节点',
           approverId,
-        },
-      })
-      const attachment = await fixtureDb.attachment.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const attachment = await prisma8Client.orm.public.Attachments
+        .select('id')
+        .create({
           tenantId: tenant.id,
           uploaderId: approverId,
           name: 'approval.txt',
           path: `/tmp/${suffix}/approval.txt`,
-        },
-      })
+        })
 
       const resources = { setBizStatus: async () => undefined }
       const service = new ApprovalsService(
@@ -91,50 +94,66 @@ test(
         [attachment.id],
       )
 
-      const approvedTask = await fixtureDb.approvalTask.findUniqueOrThrow({ where: { id: task.id } })
+      const approvedTask = await prisma8Client.orm.public.ApprovalTasks.where({ id: task.id }).first()
+      assert.ok(approvedTask)
       assert.equal(approvedTask.status, 'APPROVED')
       assert.equal(approvedTask.action, 'APPROVE')
-      assert.ok(approvedTask.handledAt instanceof Date)
-      const firstRecords = await fixtureDb.approvalRecord.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id, taskId: task.id },
-      })
+      assert.ok(approvedTask.handledAt)
+      const firstRecords = await prisma8Client.orm.public.ApprovalRecords.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        taskId: task.id,
+      }).all()
       assert.equal(firstRecords.length, 1)
       assert.equal(firstRecords[0]?.result, 'APPROVE')
       assert.equal(firstRecords[0]?.comment, '首次同意')
-      const firstRelations = await fixtureDb.approvalInstanceAttachment.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id },
-      })
+      const firstRelations = await prisma8Client.orm.public.ApprovalInstanceAttachments.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+      }).all()
       assert.equal(firstRelations.length, 1)
       assert.equal(firstRelations[0]?.elementId, firstRecords[0]?.id)
       assert.equal(firstRelations[0]?.attachmentId, attachment.id)
 
-      await fixtureDb.approvalTask.update({
-        where: { id: task.id },
-        data: { status: 'PENDING', action: null, handledAt: null },
+      await prisma8Client.orm.public.ApprovalTasks.where({ id: task.id }).update({
+        status: 'PENDING',
+        action: null,
+        handledAt: null,
+        updatedAt: prisma8Now(),
       })
       await service.approveTask(
         { id: approverId, tenantId: tenant.id, name: 'Approver' } as never,
         task.id,
       )
-      const reusedRecords = await fixtureDb.approvalRecord.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id, taskId: task.id },
-      })
+      const reusedRecords = await prisma8Client.orm.public.ApprovalRecords.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        taskId: task.id,
+      }).all()
       assert.equal(reusedRecords.length, 1)
       assert.equal(reusedRecords[0]?.id, firstRecords[0]?.id)
       assert.equal(reusedRecords[0]?.comment, '首次同意')
       assert.equal(
-        await fixtureDb.approvalInstanceAttachment.count({
-          where: { tenantId: tenant.id, instanceId: instance.id },
-        }),
+        (
+          await prisma8Client.orm.public.ApprovalInstanceAttachments.where({
+            tenantId: tenant.id,
+            instanceId: instance.id,
+          })
+            .select('id')
+            .all()
+        ).length,
         1,
       )
 
-      await fixtureDb.approvalTask.update({
-        where: { id: task.id },
-        data: { status: 'PENDING', action: null, handledAt: null },
+      await prisma8Client.orm.public.ApprovalTasks.where({ id: task.id }).update({
+        status: 'PENDING',
+        action: null,
+        handledAt: null,
+        updatedAt: prisma8Now(),
       })
-      const peerTask = await fixtureDb.approvalTask.create({
-        data: {
+      const peerTask = await prisma8Client.orm.public.ApprovalTasks
+        .select('id')
+        .create({
           tenantId: tenant.id,
           instanceId: instance.id,
           nodeId: `node-${suffix}`,
@@ -142,50 +161,55 @@ test(
           nodeRound: 1,
           nodeName: '审批节点',
           approverId: `peer-${suffix}`,
-        },
-      })
+          updatedAt: prisma8Now(),
+        })
       await service.rejectTask(
         { id: approverId, tenantId: tenant.id, name: 'Approver' } as never,
         task.id,
         '  改为驳回  ',
       )
 
-      const rejectedTask = await fixtureDb.approvalTask.findUniqueOrThrow({ where: { id: task.id } })
+      const rejectedTask = await prisma8Client.orm.public.ApprovalTasks.where({ id: task.id }).first()
+      assert.ok(rejectedTask)
       assert.equal(rejectedTask.status, 'REJECTED')
       assert.equal(rejectedTask.action, 'REJECT')
-      const skippedPeer = await fixtureDb.approvalTask.findUniqueOrThrow({ where: { id: peerTask.id } })
+      const skippedPeer = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: peerTask.id,
+      }).first()
+      assert.ok(skippedPeer)
       assert.equal(skippedPeer.status, 'SKIPPED')
-      const rejectedInstance = await fixtureDb.approvalInstance.findUniqueOrThrow({
-        where: { id: instance.id },
-      })
+      const rejectedInstance = await prisma8Client.orm.public.ApprovalInstances.where({
+        id: instance.id,
+      }).first()
+      assert.ok(rejectedInstance)
       assert.equal(rejectedInstance.status, 'REJECTED')
-      assert.ok(rejectedInstance.finishedAt instanceof Date)
+      assert.ok(rejectedInstance.finishedAt)
 
-      const rejectedRecords = await fixtureDb.approvalRecord.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id, taskId: task.id },
-      })
+      const rejectedRecords = await prisma8Client.orm.public.ApprovalRecords.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        taskId: task.id,
+      }).all()
       assert.equal(rejectedRecords.length, 1)
       assert.notEqual(rejectedRecords[0]?.id, firstRecords[0]?.id)
       assert.equal(rejectedRecords[0]?.result, 'REJECT')
       assert.equal(rejectedRecords[0]?.comment, '改为驳回')
       assert.equal(
-        await fixtureDb.approvalInstanceAttachment.count({
-          where: { tenantId: tenant.id, instanceId: instance.id },
-        }),
+        (
+          await prisma8Client.orm.public.ApprovalInstanceAttachments.where({
+            tenantId: tenant.id,
+            instanceId: instance.id,
+          })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
     } finally {
-      const tenant = await fixtureDb.tenant.findUnique({
-        where: { slug: `p8-approval-actions-${suffix}` },
-        select: { id: true },
-      })
-      if (tenant) {
-        await fixtureDb.approvalInstance.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.attachment.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-      }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await prisma8Client.orm.public.ApprovalInstances.where({ tenantId: tenant.id }).deleteAll()
+      await prisma8Client.orm.public.Attachments.where({ tenantId: tenant.id }).deleteAll()
+      await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+      await testDb.close()
     }
   },
 )
@@ -195,53 +219,46 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
+    const tenant = await createPrismaTestTenant(prisma8Client, 'p8-sign-task')
+    const sourceApprover = await createPrismaTestUser(prisma8Client, {
+      tenantId: tenant.id,
+      name: 'Source Approver',
+    })
+    const signApprover = await createPrismaTestUser(prisma8Client, {
+      tenantId: tenant.id,
+      name: 'Sign Approver',
+    })
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 sign task ${suffix}`, slug: `p8-sign-task-${suffix}` },
-      })
-      const sourceApprover = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'Source Approver',
-          passwordHash: 'not-used',
-        },
-      })
-      const signApprover = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'Sign Approver',
-          passwordHash: 'not-used',
-        },
-      })
-      const flow = await fixtureDb.approvalFlow.create({
-        data: {
+      const flow = await prisma8Client.orm.public.ApprovalFlows
+        .select('id')
+        .create({
           tenantId: tenant.id,
           number: `FLOW-${suffix}`,
           formType: 'CONTRACT',
           name: 'Prisma 8 sign flow',
           allowAddSign: true,
-        },
-      })
-      const instance = await fixtureDb.approvalInstance.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const instance = await prisma8Client.orm.public.ApprovalInstances
+        .select('id')
+        .create({
           tenantId: tenant.id,
           flowId: flow.id,
           module: 'contract',
           targetId: `contract-${suffix}`,
           targetName: 'Prisma 8 sign contract',
-          nodesSnapshot: [],
+          nodesSnapshot: prisma8JsonValue([]),
           submitterId: sourceApprover.id,
           submitterName: sourceApprover.name,
-        },
-      })
-      const beforeSource = await fixtureDb.approvalTask.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const beforeSource = await prisma8Client.orm.public.ApprovalTasks
+        .select('id')
+        .create({
           tenantId: tenant.id,
           instanceId: instance.id,
           nodeId: `node-before-${suffix}`,
@@ -249,10 +266,11 @@ test(
           nodeRound: 1,
           nodeName: 'Before source',
           approverId: sourceApprover.id,
-        },
-      })
-      const afterSource = await fixtureDb.approvalTask.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const afterSource = await prisma8Client.orm.public.ApprovalTasks
+        .select('id')
+        .create({
           tenantId: tenant.id,
           instanceId: instance.id,
           nodeId: `node-after-${suffix}`,
@@ -260,24 +278,24 @@ test(
           nodeRound: 1,
           nodeName: 'After source',
           approverId: sourceApprover.id,
-        },
-      })
-      const beforeAttachment = await fixtureDb.attachment.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const beforeAttachment = await prisma8Client.orm.public.Attachments
+        .select('id')
+        .create({
           tenantId: tenant.id,
           uploaderId: sourceApprover.id,
           name: 'before.txt',
           path: `/tmp/${suffix}/before.txt`,
-        },
-      })
-      const afterAttachment = await fixtureDb.attachment.create({
-        data: {
+        })
+      const afterAttachment = await prisma8Client.orm.public.Attachments
+        .select('id')
+        .create({
           tenantId: tenant.id,
           uploaderId: sourceApprover.id,
           name: 'after.txt',
           path: `/tmp/${suffix}/after.txt`,
-        },
-      })
+        })
 
       const notifications: Array<Record<string, unknown>> = []
       const service = new ApprovalsService(
@@ -306,32 +324,40 @@ test(
           attachmentIds: [beforeAttachment.id],
         },
       )
-      const storedBeforeSource = await fixtureDb.approvalTask.findUniqueOrThrow({
-        where: { id: beforeSource.id },
-      })
+      const storedBeforeSource = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: beforeSource.id,
+      }).first()
+      assert.ok(storedBeforeSource)
       assert.equal(storedBeforeSource.status, 'PENDING')
       assert.equal(storedBeforeSource.action, 'SIGN')
       assert.equal(storedBeforeSource.handledAt, null)
-      const beforeSignTask = await fixtureDb.approvalTask.findUniqueOrThrow({
-        where: { id: beforeResult.id },
-      })
+      const beforeSignTask = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: beforeResult.id,
+      }).first()
+      assert.ok(beforeSignTask)
       assert.equal(beforeSignTask.taskType, 'SIGN')
       assert.equal(beforeSignTask.approverId, signApprover.id)
       assert.equal(beforeSignTask.status, 'PENDING')
-      const beforeRelation = await fixtureDb.approvalAddSignTask.findUniqueOrThrow({
-        where: { taskId: beforeSignTask.id },
-      })
-      assert.equal(beforeRelation.type, 'BEFORE')
+      const beforeRelation = await prisma8Client.orm.public.ApprovalAddSignTasks.where({
+        taskId: beforeSignTask.id,
+      }).first()
+      assert.ok(beforeRelation)
+      assert.equal(beforeRelation._type, 'BEFORE')
       assert.equal(beforeRelation.signTaskId, beforeSource.id)
       assert.equal(beforeRelation.rootTaskId, beforeSource.id)
       assert.equal(beforeRelation.comment, '前置加签')
       assert.equal(
-        await fixtureDb.approvalRecord.count({ where: { taskId: beforeSource.id } }),
+        (
+          await prisma8Client.orm.public.ApprovalRecords.where({ taskId: beforeSource.id })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
-      const beforeRelations = await fixtureDb.approvalInstanceAttachment.findMany({
-        where: { instanceId: instance.id, attachmentId: beforeAttachment.id },
-      })
+      const beforeRelations = await prisma8Client.orm.public.ApprovalInstanceAttachments.where({
+        instanceId: instance.id,
+        attachmentId: beforeAttachment.id,
+      }).all()
       assert.equal(beforeRelations.length, 1)
       assert.equal(beforeRelations[0]?.elementId, beforeRelation.id)
 
@@ -345,34 +371,41 @@ test(
           attachmentIds: [afterAttachment.id],
         },
       )
-      const storedAfterSource = await fixtureDb.approvalTask.findUniqueOrThrow({
-        where: { id: afterSource.id },
-      })
+      const storedAfterSource = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: afterSource.id,
+      }).first()
+      assert.ok(storedAfterSource)
       assert.equal(storedAfterSource.status, 'APPROVED')
       assert.equal(storedAfterSource.action, 'APPROVE')
-      assert.ok(storedAfterSource.handledAt instanceof Date)
-      const afterSignTask = await fixtureDb.approvalTask.findUniqueOrThrow({
-        where: { id: afterResult.id },
-      })
+      assert.ok(storedAfterSource.handledAt)
+      const afterSignTask = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: afterResult.id,
+      }).first()
+      assert.ok(afterSignTask)
       assert.equal(afterSignTask.taskType, 'SIGN')
       assert.equal(afterSignTask.approverId, signApprover.id)
-      const afterRelation = await fixtureDb.approvalAddSignTask.findUniqueOrThrow({
-        where: { taskId: afterSignTask.id },
-      })
-      assert.equal(afterRelation.type, 'AFTER')
+      const afterRelation = await prisma8Client.orm.public.ApprovalAddSignTasks.where({
+        taskId: afterSignTask.id,
+      }).first()
+      assert.ok(afterRelation)
+      assert.equal(afterRelation._type, 'AFTER')
       assert.equal(afterRelation.signTaskId, afterSource.id)
       assert.equal(afterRelation.rootTaskId, afterSource.id)
       assert.equal(afterRelation.comment, '后置加签')
-      const afterRecords = await fixtureDb.approvalRecord.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id, taskId: afterSource.id },
-      })
+      const afterRecords = await prisma8Client.orm.public.ApprovalRecords.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        taskId: afterSource.id,
+      }).all()
       assert.equal(afterRecords.length, 1)
       assert.equal(afterRecords[0]?.result, 'APPROVE')
       assert.equal(afterRecords[0]?.comment, '后置加签')
-      const afterRelations = await fixtureDb.approvalInstanceAttachment.findMany({
-        where: { instanceId: instance.id, attachmentId: afterAttachment.id },
-        orderBy: { elementId: 'asc' },
+      const afterRelations = await prisma8Client.orm.public.ApprovalInstanceAttachments.where({
+        instanceId: instance.id,
+        attachmentId: afterAttachment.id,
       })
+        .orderBy((row) => row.elementId.asc())
+        .all()
       assert.equal(afterRelations.length, 2)
       assert.deepEqual(
         new Set(afterRelations.map((relation) => relation.elementId)),
@@ -380,19 +413,12 @@ test(
       )
       assert.equal(notifications.length, 2)
     } finally {
-      const tenant = await fixtureDb.tenant.findUnique({
-        where: { slug: `p8-sign-task-${suffix}` },
-        select: { id: true },
-      })
-      if (tenant) {
-        await fixtureDb.approvalInstance.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.approvalFlow.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.attachment.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.tenant.delete({ where: { id: tenant.id } })
-      }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await prisma8Client.orm.public.ApprovalInstances.where({ tenantId: tenant.id }).deleteAll()
+      await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id }).deleteAll()
+      await prisma8Client.orm.public.Attachments.where({ tenantId: tenant.id }).deleteAll()
+      await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+      await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+      await testDb.close()
     }
   },
 )

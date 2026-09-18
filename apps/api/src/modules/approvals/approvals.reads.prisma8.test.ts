@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { ModuleFormsService } from '../metadata/module-forms.service'
 import { ApprovalFlowConfigService } from './approval-flow-config.service'
 import { ApprovalsService } from './approvals.service'
@@ -13,25 +18,24 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) return t.skip('DATABASE_URL 未配置')
 
-  const config = { getOrThrow: () => databaseUrl } as unknown as ConfigService
-  const fixtureDb = createPrismaFixtureClient(databaseUrl)
-  const prisma8 = new Prisma8Service(config)
-  await fixtureDb.$connect()
-  await prisma8.onModuleInit()
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prisma8Client = testDb.client
+  const prisma8 = { client: prisma8Client } as Prisma8Service
 
-  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const tenant = await fixtureDb.tenant.create({
-    data: { name: `p8-approval-reads-${suffix}`, slug: `p8-approval-reads-${suffix}` },
-  })
+  const suffix = String(Date.now()) + '-' + Math.random().toString(16).slice(2)
+  const tenant = await createPrismaTestTenant(prisma8Client, 'p8-approval-reads')
   const [submitter, approver, ccUser, signUser] = await Promise.all(
-    ['提交人', '审批人', '抄送人', '加签人'].map((name, index) =>
-      fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          email: `approval-read-${index}-${suffix}@example.test`,
-          passwordHash: 'test',
-          name,
-        },
+    [
+      ['提交人', 0],
+      ['审批人', 1],
+      ['抄送人', 2],
+      ['加签人', 3],
+    ].map(([name, index]) =>
+      createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        email: `approval-read-${index}-${suffix}@example.test`,
+        passwordHash: 'test',
+        name: String(name),
       }),
     ),
   )
@@ -110,13 +114,16 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
   try {
     const createdFlow = await flowService.create(submitterActor, createDto)
     await flowService.updateEnabled(submitterActor, createdFlow.id, true)
-    const flowRow = await fixtureDb.approvalFlow.findUniqueOrThrow({ where: { id: createdFlow.id } })
-    assert.ok(flowRow.currentVersionId)
+    const flowRow = await prisma8Client.orm.public.ApprovalFlows.where({ id: createdFlow.id })
+      .select('currentVersionId')
+      .first()
+    assert.ok(flowRow?.currentVersionId)
 
     const firstNode = createdFlow.createNodes.find((node) => node.name === '一级审批')!
     const secondNode = createdFlow.createNodes.find((node) => node.name === '二级审批')!
-    const instance = await fixtureDb.approvalInstance.create({
-      data: {
+    const instance = await prisma8Client.orm.public.ApprovalInstances
+      .select('id')
+      .create({
         tenantId: tenant.id,
         flowId: createdFlow.id,
         flowVersionId: flowRow.currentVersionId,
@@ -124,7 +131,7 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
         targetId: `contract-${suffix}`,
         targetName: 'Prisma 8 读路径合同',
         currentNodeIndex: 1,
-        nodesSnapshot: [
+        nodesSnapshot: prisma8JsonValue([
           {
             nodeId: firstNode.id,
             name: firstNode.name,
@@ -141,13 +148,14 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
             ccUserIds: [ccUser.id],
             mode: 'ANY',
           },
-        ],
+        ]),
         submitterId: submitter.id,
         submitterName: submitter.name,
-      },
-    })
-    const handledTask = await fixtureDb.approvalTask.create({
-      data: {
+        updatedAt: prisma8Now(),
+      })
+    const handledTask = await prisma8Client.orm.public.ApprovalTasks
+      .select('id')
+      .create({
         tenantId: tenant.id,
         instanceId: instance.id,
         nodeId: firstNode.id,
@@ -157,11 +165,12 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
         approverId: approver.id,
         status: 'APPROVED',
         action: 'APPROVE',
-        handledAt: new Date(),
-      },
-    })
-    const pendingTask = await fixtureDb.approvalTask.create({
-      data: {
+        handledAt: prisma8Now(),
+        updatedAt: prisma8Now(),
+      })
+    const pendingTask = await prisma8Client.orm.public.ApprovalTasks
+      .select('id')
+      .create({
         tenantId: tenant.id,
         instanceId: instance.id,
         nodeId: secondNode.id,
@@ -169,22 +178,22 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
         nodeRound: 1,
         nodeName: secondNode.name,
         approverId: approver.id,
-      },
+        updatedAt: prisma8Now(),
+      })
+    await prisma8Client.orm.public.ApprovalTasks.create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      nodeId: secondNode.id,
+      nodeIndex: 1,
+      nodeRound: 1,
+      nodeName: secondNode.name,
+      approverId: ccUser.id,
+      taskType: 'CC',
+      updatedAt: prisma8Now(),
     })
-    await fixtureDb.approvalTask.create({
-      data: {
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        nodeId: secondNode.id,
-        nodeIndex: 1,
-        nodeRound: 1,
-        nodeName: secondNode.name,
-        approverId: ccUser.id,
-        taskType: 'CC',
-      },
-    })
-    const signTask = await fixtureDb.approvalTask.create({
-      data: {
+    const signTask = await prisma8Client.orm.public.ApprovalTasks
+      .select('id')
+      .create({
         tenantId: tenant.id,
         instanceId: instance.id,
         nodeId: secondNode.id,
@@ -193,10 +202,11 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
         nodeName: secondNode.name,
         approverId: signUser.id,
         taskType: 'SIGN',
-      },
-    })
-    const record = await fixtureDb.approvalRecord.create({
-      data: {
+        updatedAt: prisma8Now(),
+      })
+    const record = await prisma8Client.orm.public.ApprovalRecords
+      .select('id')
+      .create({
         tenantId: tenant.id,
         instanceId: instance.id,
         taskId: handledTask.id,
@@ -205,48 +215,44 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
         result: 'APPROVE',
         comment: '一级审批通过',
         createdById: approver.id,
-      },
+        updatedAt: prisma8Now(),
+      })
+    await prisma8Client.orm.public.ApprovalAddSignTasks.create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      taskId: signTask.id,
+      signTaskId: handledTask.id,
+      _type: 'BEFORE',
+      rootTaskId: handledTask.id,
+      sort: 100n,
+      comment: '前置加签',
+      createdById: approver.id,
+      updatedAt: prisma8Now(),
     })
-    await fixtureDb.approvalAddSignTask.create({
-      data: {
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        taskId: signTask.id,
-        signTaskId: handledTask.id,
-        type: 'BEFORE',
-        rootTaskId: handledTask.id,
-        sort: 100n,
-        comment: '前置加签',
-        createdById: approver.id,
-      },
+    await prisma8Client.orm.public.ApprovalReturnBackRecords.create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      taskId: pendingTask.id,
+      returnToNodeId: firstNode.id,
+      returnReason: '需要补充信息',
+      returnUserId: approver.id,
+      updatedAt: prisma8Now(),
     })
-    await fixtureDb.approvalReturnBackRecord.create({
-      data: {
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        taskId: pendingTask.id,
-        returnToNodeId: firstNode.id,
-        returnReason: '需要补充信息',
-        returnUserId: approver.id,
-      },
-    })
-    const attachment = await fixtureDb.attachment.create({
-      data: {
+    const attachment = await prisma8Client.orm.public.Attachments
+      .select('id')
+      .create({
         tenantId: tenant.id,
         uploaderId: approver.id,
         name: 'approval-read.txt',
         path: `/tmp/${suffix}/approval-read.txt`,
         size: 16,
         mime: 'text/plain',
-      },
-    })
-    await fixtureDb.approvalInstanceAttachment.create({
-      data: {
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        elementId: record.id,
-        attachmentId: attachment.id,
-      },
+      })
+    await prisma8Client.orm.public.ApprovalInstanceAttachments.create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      elementId: record.id,
+      attachmentId: attachment.id,
     })
 
     const resources = { approvalFields: async () => [] }
@@ -305,30 +311,52 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
     assert.equal(detail.resourceFields.length, 0)
     assert.equal(detail.approvalAttachments[0]?.attachment.name, 'approval-read.txt')
   } finally {
-    await fixtureDb.approvalInstance.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.attachment.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.approvalNodeLink.deleteMany({
-      where: { flowVersion: { flow: { tenantId: tenant.id } } },
+    await prisma8Client.orm.public.ApprovalInstances.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Attachments.where({ tenantId: tenant.id }).deleteAll()
+
+    const flows = await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id })
+      .select('id')
+      .all()
+    const versions = flows.length
+      ? await prisma8Client.orm.public.ApprovalFlowVersions
+          .where((row) => row.flowId.in(flows.map((item) => item.id)))
+          .select('id')
+          .all()
+      : []
+    const nodes = versions.length
+      ? await prisma8Client.orm.public.ApprovalNodes
+          .where((row) => row.flowVersionId.in(versions.map((item) => item.id)))
+          .select('id')
+          .all()
+      : []
+    if (versions.length) {
+      const versionIds = versions.map((item) => item.id)
+      await prisma8Client.orm.public.ApprovalNodeLinks
+        .where((row) => row.flowVersionId.in(versionIds))
+        .deleteAll()
+      await prisma8Client.orm.public.ApprovalNodeConditions
+        .where((row) => row.flowVersionId.in(versionIds))
+        .deleteAll()
+    }
+    if (nodes.length) {
+      const nodeIds = nodes.map((item) => item.id)
+      await prisma8Client.orm.public.ApprovalNodeApprovers
+        .where((row) => row.nodeId.in(nodeIds))
+        .deleteAll()
+      await prisma8Client.orm.public.ApprovalNodes.where((row) => row.id.in(nodeIds)).deleteAll()
+    }
+    await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id }).update({
+      currentVersionId: null,
     })
-    await fixtureDb.approvalNodeApprover.deleteMany({
-      where: { node: { flowVersion: { flow: { tenantId: tenant.id } } } },
-    })
-    await fixtureDb.approvalNodeCondition.deleteMany({
-      where: { flowVersion: { flow: { tenantId: tenant.id } } },
-    })
-    await fixtureDb.approvalNode.deleteMany({
-      where: { flowVersion: { flow: { tenantId: tenant.id } } },
-    })
-    await fixtureDb.approvalFlow.updateMany({
-      where: { tenantId: tenant.id },
-      data: { currentVersionId: null },
-    })
-    await fixtureDb.approvalFlowVersion.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.approvalFlow.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.approvalFlowNumberCounter.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-    await fixtureDb.tenant.deleteMany({ where: { id: tenant.id } })
-    await prisma8.onModuleDestroy()
-    await fixtureDb.$disconnect()
+    if (versions.length) {
+      await prisma8Client.orm.public.ApprovalFlowVersions
+        .where((row) => row.id.in(versions.map((item) => item.id)))
+        .deleteAll()
+    }
+    await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.ApprovalFlowNumberCounters.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
+    await testDb.close()
   }
 })

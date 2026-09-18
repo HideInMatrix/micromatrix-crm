@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import {
+  createPrismaTestTenant,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { ApprovalsService } from './approvals.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -13,61 +17,60 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const submitterId = `submitter-${suffix}`
     const approverId = `approver-${suffix}`
     const ccUserId = `cc-${suffix}`
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 approval advance ${suffix}`, slug: `p8-approval-advance-${suffix}` },
-      })
-      await fixtureDb.user.createMany({
-        data: [
-          {
-            id: submitterId,
-            tenantId: tenant.id,
-            name: 'Submitter',
-            passwordHash: 'not-used',
-          },
-          {
-            id: approverId,
-            tenantId: tenant.id,
-            name: 'Approver',
-            passwordHash: 'not-used',
-          },
-          {
-            id: ccUserId,
-            tenantId: tenant.id,
-            name: 'CC User',
-            passwordHash: 'not-used',
-          },
-        ],
-      })
-      const flow = await fixtureDb.approvalFlow.create({
-        data: {
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-approval-advance')
+      await prisma8Client.orm.public.Users.createAll([
+        {
+          id: submitterId,
+          tenantId: tenant.id,
+          name: 'Submitter',
+          passwordHash: 'not-used',
+          updatedAt: prisma8Now(),
+        },
+        {
+          id: approverId,
+          tenantId: tenant.id,
+          name: 'Approver',
+          passwordHash: 'not-used',
+          updatedAt: prisma8Now(),
+        },
+        {
+          id: ccUserId,
+          tenantId: tenant.id,
+          name: 'CC User',
+          passwordHash: 'not-used',
+          updatedAt: prisma8Now(),
+        },
+      ])
+      const flow = await prisma8Client.orm.public.ApprovalFlows
+        .select('id')
+        .create({
           tenantId: tenant.id,
           number: `FLOW-${suffix}`,
           formType: 'CONTRACT',
           name: 'Prisma 8 advance flow',
           duplicateApproverRule: 'EACH',
-        },
+          updatedAt: prisma8Now(),
       })
       const firstNodeId = `node-auto-${suffix}`
       const secondNodeId = `node-manual-${suffix}`
-      const instance = await fixtureDb.approvalInstance.create({
-        data: {
+      const instance = await prisma8Client.orm.public.ApprovalInstances
+        .select('id')
+        .create({
           tenantId: tenant.id,
           flowId: flow.id,
           module: 'contract',
           targetId: `contract-${suffix}`,
           targetName: 'Prisma 8 advance contract',
           currentNodeIndex: -1,
-          nodesSnapshot: [
+          nodesSnapshot: prisma8JsonValue([
             {
               nodeId: firstNodeId,
               name: '提交人自动跳过',
@@ -85,10 +88,10 @@ test(
               ccUserIds: [],
               mode: 'ANY',
             },
-          ],
+          ]),
           submitterId,
           submitterName: 'Submitter',
-        },
+          updatedAt: prisma8Now(),
       })
 
       const notified: Array<{ recipients: string[]; title: string }> = []
@@ -111,15 +114,19 @@ test(
 
       await internals.advance(instance.id, submitterId)
 
-      const persistedInstance = await fixtureDb.approvalInstance.findUniqueOrThrow({
-        where: { id: instance.id },
-      })
+      const persistedInstance = await prisma8Client.orm.public.ApprovalInstances.where({
+        id: instance.id,
+      }).first()
+      assert.ok(persistedInstance)
       assert.equal(persistedInstance.currentNodeIndex, 1)
 
-      const tasks = await fixtureDb.approvalTask.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id },
-        orderBy: [{ nodeIndex: 'asc' }, { taskType: 'asc' }],
+      const tasks = await prisma8Client.orm.public.ApprovalTasks.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
       })
+        .orderBy((row) => row.nodeIndex.asc())
+        .orderBy((row) => row.taskType.asc())
+        .all()
       const skipped = tasks.find(
         (task) => task.nodeId === firstNodeId && task.taskType === 'APPROVAL',
       )
@@ -127,7 +134,7 @@ test(
       assert.equal(skipped.approverId, submitterId)
       assert.equal(skipped.status, 'SKIPPED')
       assert.equal(skipped.action, 'APPROVE')
-      assert.ok(skipped.handledAt instanceof Date)
+      assert.ok(skipped.handledAt)
 
       const ccTask = tasks.find((task) => task.nodeId === firstNodeId && task.taskType === 'CC')
       assert.ok(ccTask)
@@ -141,9 +148,11 @@ test(
       assert.equal(pending.approverId, approverId)
       assert.equal(pending.status, 'PENDING')
 
-      const records = await fixtureDb.approvalRecord.findMany({
-        where: { tenantId: tenant.id, instanceId: instance.id, nodeId: firstNodeId },
-      })
+      const records = await prisma8Client.orm.public.ApprovalRecords.where({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: firstNodeId,
+      }).all()
       assert.equal(records.length, 1)
       assert.equal(records[0]?.taskId, skipped.id)
       assert.equal(records[0]?.result, 'APPROVE')
@@ -153,18 +162,18 @@ test(
         [[ccUserId], [approverId]],
       )
     } finally {
-      const tenant = await fixtureDb.tenant.findUnique({
-        where: { slug: `p8-approval-advance-${suffix}` },
-        select: { id: true },
+      const tenant = await prisma8Client.orm.public.Tenants.where({
+        slug: `p8-approval-advance-${suffix}`,
       })
+        .select('id')
+        .first()
       if (tenant) {
-        await fixtureDb.approvalInstance.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.approvalFlow.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.user.deleteMany({ where: { tenantId: tenant.id } })
-        await fixtureDb.tenant.delete({ where: { id: tenant.id } })
+        await prisma8Client.orm.public.ApprovalInstances.where({ tenantId: tenant.id }).deleteAll()
+        await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

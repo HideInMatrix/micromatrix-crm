@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToDate,
+} from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalsService } from './approvals.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -13,35 +18,35 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const tenantId = `tenant-${suffix}`
     const approverId = `approver-${suffix}`
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const flow = await fixtureDb.approvalFlow.create({
-        data: {
+      const flow = await prisma8Client.orm.public.ApprovalFlows
+        .select('id')
+        .create({
           tenantId,
           number: `AF-${suffix}`,
           formType: 'CONTRACT',
           name: 'Prisma 8 withdraw flow',
           allowWithdraw: true,
-        },
+          updatedAt: prisma8Now(),
       })
       const sourceNodeId = `source-${suffix}`
       const currentNodeId = `current-${suffix}`
-      const instance = await fixtureDb.approvalInstance.create({
-        data: {
+      const instance = await prisma8Client.orm.public.ApprovalInstances
+        .select('id', 'targetName', 'updatedAt')
+        .create({
           tenantId,
           flowId: flow.id,
           module: 'contract',
           targetId: `contract-${suffix}`,
           targetName: 'Prisma 8 withdraw contract',
           currentNodeIndex: 1,
-          nodesSnapshot: [
+          nodesSnapshot: prisma8JsonValue([
             {
               nodeId: sourceNodeId,
               name: 'Source approver',
@@ -56,13 +61,14 @@ test(
               approverIds: [`next-${suffix}`],
               mode: 'ANY',
             },
-          ],
+          ]),
           submitterId: `submitter-${suffix}`,
           submitterName: 'Submitter',
-        },
+          updatedAt: prisma8Now(),
       })
-      const sourceTask = await fixtureDb.approvalTask.create({
-        data: {
+      const sourceTask = await prisma8Client.orm.public.ApprovalTasks
+        .select('id', 'updatedAt')
+        .create({
           tenantId,
           instanceId: instance.id,
           nodeId: sourceNodeId,
@@ -71,18 +77,19 @@ test(
           approverId,
           status: 'APPROVED',
           action: 'APPROVE',
-          handledAt: new Date(Date.now() - 60_000),
-        },
+          handledAt: prisma8TimestampFromDate(new Date(Date.now() - 60_000)),
+          updatedAt: prisma8Now(),
       })
-      const downstreamTask = await fixtureDb.approvalTask.create({
-        data: {
+      const downstreamTask = await prisma8Client.orm.public.ApprovalTasks
+        .select('id')
+        .create({
           tenantId,
           instanceId: instance.id,
           nodeId: currentNodeId,
           nodeIndex: 1,
           nodeName: 'Current approver',
           approverId: `next-${suffix}`,
-        },
+          updatedAt: prisma8Now(),
       })
 
       const service = new ApprovalsService(
@@ -103,25 +110,34 @@ test(
         nodeRound: 1,
       })
 
-      const storedSource = await fixtureDb.approvalTask.findUniqueOrThrow({
-        where: { id: sourceTask.id },
-      })
+      const storedSource = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: sourceTask.id,
+      }).first()
+      assert.ok(storedSource)
       assert.equal(storedSource.status, 'PENDING')
       assert.equal(storedSource.action, null)
       assert.equal(storedSource.handledAt, null)
-      assert.ok(storedSource.updatedAt.getTime() >= sourceTask.updatedAt.getTime())
+      assert.ok(
+        prisma8TimestampToDate(storedSource.updatedAt).getTime() >=
+          prisma8TimestampToDate(sourceTask.updatedAt).getTime(),
+      )
 
-      const storedDownstream = await fixtureDb.approvalTask.findUniqueOrThrow({
-        where: { id: downstreamTask.id },
-      })
+      const storedDownstream = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: downstreamTask.id,
+      }).first()
+      assert.ok(storedDownstream)
       assert.equal(storedDownstream.status, 'SKIPPED')
 
-      const storedInstance = await fixtureDb.approvalInstance.findUniqueOrThrow({
-        where: { id: instance.id },
-      })
+      const storedInstance = await prisma8Client.orm.public.ApprovalInstances.where({
+        id: instance.id,
+      }).first()
+      assert.ok(storedInstance)
       assert.equal(storedInstance.status, 'PENDING')
       assert.equal(storedInstance.currentNodeIndex, 0)
-      assert.ok(storedInstance.updatedAt.getTime() >= instance.updatedAt.getTime())
+      assert.ok(
+        prisma8TimestampToDate(storedInstance.updatedAt).getTime() >=
+          prisma8TimestampToDate(instance.updatedAt).getTime(),
+      )
 
       await assert.rejects(
         () =>
@@ -132,10 +148,9 @@ test(
         /可撤回的已办任务不存在/,
       )
     } finally {
-      await fixtureDb.approvalInstance.deleteMany({ where: { tenantId } })
-      await fixtureDb.approvalFlow.deleteMany({ where: { tenantId } })
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await prisma8Client.orm.public.ApprovalInstances.where({ tenantId }).deleteAll()
+      await prisma8Client.orm.public.ApprovalFlows.where({ tenantId }).deleteAll()
+      await testDb.close()
     }
   },
 )

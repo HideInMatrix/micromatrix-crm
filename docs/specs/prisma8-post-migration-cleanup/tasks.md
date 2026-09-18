@@ -76,5 +76,7 @@ P1.4 第二批已完成 Notifications **4/4**、EnterpriseIntegrations / Enterpr
 
 P1.4 审批低耦合批次已完成 ApprovalFlowConfig / ApprovalResource / Capture / Restore / Snapshot / Webhook 共 **6/6** 真实 PostgreSQL gate；API typecheck/build 与 `git diff --check` 全绿。
 
-当前全仓 `createPrismaFixtureClient` 搜索共 **53** 个匹配 / **26** 个文件，其中包含 fixture 实现自身的定义。下一步继续 P1.4：处理 approvals reads/action/advance/return/revoke/cancel 事务测试，再进入剩余交易链/附件/跟进/导出测试。
+P1.4 审批状态机批次已继续完成 reads / approve-reject / sign / advance / return-back / revoke / cancel，Approval 整组累计 **13/13 PASS、0 skip**；审批测试已不再引用 Prisma 7 fixture facade。
+
+当前全仓 `createPrismaFixtureClient` 搜索共 **40** 个匹配 / **20** 个文件，其中包含 fixture 实现自身的定义；业务侧剩余 **19** 个文件，集中在交易链、附件、跟进、导出、成员与 CustomForms。下一步继续逐批 native 化，直至 P1.5 引用归零。
 
