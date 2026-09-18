@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../common/auth-user'
-import { createPrismaFixtureClient } from '../testing/prisma-fixture-client'
 import type { MetadataService } from '../modules/metadata/metadata.service'
 import type { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
-import { createPrisma8Client } from '../prisma/prisma8-client'
 import type { Prisma8Service } from '../prisma/prisma8.service'
+import { prisma8Id32, prisma8Varchar } from '../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../testing/prisma-test-db'
 import { CustomerPoolConfigService } from './customer-pool-config.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -16,62 +19,61 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
-    const suffix = randomUUID().replaceAll('-', '')
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId: string | null = null
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 customer pool config ${suffix}`, slug: `p8-cpc-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-cpc')
       tenantId = tenant.id
-      const user = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: 'Pool Operator', passwordHash: 'not-used' },
+      const user = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Pool Operator',
       })
       const now = BigInt(Date.now())
-      const pool = await fixtureDb.customerPool.create({
-        data: {
+      const organizationId = prisma8Varchar(tenant.id, 32)
+      const userId = prisma8Varchar(user.id, 32)
+      const pool = await prisma8Client.orm.public.CustomerPool
+        .select('id', 'scopeId', 'organizationId', 'name', 'ownerId', 'enable', 'auto', 'createTime', 'updateTime', 'createUser', 'updateUser')
+        .create({
+          id: prisma8Id32(),
           scopeId: JSON.stringify([user.id]),
-          organizationId: tenant.id,
-          name: 'Shared Pool',
+          organizationId,
+          name: prisma8Varchar('Shared Pool', 255),
           ownerId: JSON.stringify([user.id]),
           enable: true,
           auto: false,
           createTime: now,
           updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+          createUser: userId,
+          updateUser: userId,
+        })
+      await prisma8Client.orm.public.Customer.create({
+        id: prisma8Id32(),
+        name: prisma8Varchar('Pool Customer', 255),
+        owner: null,
+        poolId: pool.id,
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: userId,
+        updateUser: userId,
+        inSharedPool: true,
       })
-      await fixtureDb.customer.create({
-        data: {
-          name: 'Pool Customer',
-          owner: null,
-          poolId: pool.id,
-          organizationId: tenant.id,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-          inSharedPool: true,
-        },
-      })
-      const stage = await fixtureDb.opportunityStageConfig.create({
-        data: {
-          name: '进行中',
-          type: 'AFOOT',
-          rate: '50',
+      const stage = await prisma8Client.orm.public.OpportunityStageConfig
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('进行中', 16),
+          _type: prisma8Varchar('AFOOT', 50),
+          rate: prisma8Varchar('50', 10),
           pos: 1n,
-          organizationId: tenant.id,
+          organizationId,
           createTime: now,
           updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
-      })
+          createUser: userId,
+          updateUser: userId,
+        })
 
       let savedFilters: unknown = null
       const repository = {
@@ -138,14 +140,14 @@ test(
       assert.equal(page.list[0]?.updateUserName, 'Pool Operator')
     } finally {
       if (tenantId) {
-        await fixtureDb.customer.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.customerPool.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.opportunityStageConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.CustomerPool.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

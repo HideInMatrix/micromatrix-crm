@@ -3,9 +3,15 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestDepartment,
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { ResourcePoolsService } from './resource-pools.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -15,63 +21,68 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 resource pools ${suffix}`, slug: `p8-resource-pools-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-resource-pools')
       tenantId = tenant.id
-      const root = await fixtureDb.department.create({
-        data: { tenantId: tenant.id, name: 'Root Department' },
+      const root = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Root Department',
       })
-      const child = await fixtureDb.department.create({
-        data: { tenantId: tenant.id, name: 'Child Department', parentId: root.id },
+      const child = await createPrismaTestDepartment(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Child Department',
+        parentId: root.id,
       })
-      const actor = await fixtureDb.user.create({
-        data: {
+      const actor = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Pool User',
+        deptId: child.id,
+      })
+      const role = await prisma8Client.orm.public.Roles
+        .select('id')
+        .create({
           tenantId: tenant.id,
-          name: 'Pool User',
-          deptId: child.id,
-          passwordHash: 'not-used',
-        },
-      })
-      const role = await fixtureDb.role.create({
-        data: { tenantId: tenant.id, name: `Pool Role ${suffix}` },
-      })
-      await fixtureDb.userRole.create({
-        data: { tenantId: tenant.id, userId: actor.id, roleId: role.id },
+          name: `Pool Role ${suffix}`,
+          updatedAt: prisma8Now(),
+        })
+      await prisma8Client.orm.public.UserRoles.create({
+        tenantId: tenant.id,
+        userId: actor.id,
+        roleId: role.id,
+        updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const clue = await fixtureDb.clue.create({
-        data: {
-          organizationId: tenant.id,
-          name: 'Owned clue',
-          owner: actor.id,
-          stage: 'FOLLOWING',
+      const organizationId = prisma8Varchar(tenant.id, 32)
+      const actorId = prisma8Varchar(actor.id, 32)
+      const clue = await prisma8Client.orm.public.Clue
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          organizationId,
+          name: prisma8Varchar('Owned clue', 255),
+          owner: actorId,
+          stage: prisma8Varchar('FOLLOWING', 30),
           inSharedPool: false,
           createTime: now,
           updateTime: now,
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
-      })
-      await fixtureDb.customer.create({
-        data: {
-          organizationId: tenant.id,
-          name: 'Owned customer',
-          owner: actor.id,
-          inSharedPool: false,
-          createTime: now,
-          updateTime: now,
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
+          createUser: actorId,
+          updateUser: actorId,
+        })
+      await prisma8Client.orm.public.Customer.create({
+        id: prisma8Id32(),
+        organizationId,
+        name: prisma8Varchar('Owned customer', 255),
+        owner: actorId,
+        inSharedPool: false,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
       })
 
       const pool = {
@@ -145,17 +156,22 @@ test(
       assert.equal(history[0]?.reasonId, null)
     } finally {
       if (tenantId) {
-        await fixtureDb.clueOwner.deleteMany({ where: { clue: { organizationId: tenantId } } })
-        await fixtureDb.clue.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.customer.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.userRole.deleteMany({ where: { tenantId } })
-        await fixtureDb.role.deleteMany({ where: { tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.department.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        const clueIds = await prisma8Client.orm.public.Clue.where({ organizationId }).select('id').all()
+        if (clueIds.length) {
+          await prisma8Client.orm.public.ClueOwner
+            .where((row) => row.clueId.in(clueIds.map((item) => item.id)))
+            .deleteAll()
+        }
+        await prisma8Client.orm.public.Clue.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.UserRoles.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Roles.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Departments.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

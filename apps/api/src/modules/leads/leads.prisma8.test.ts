@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { LeadsService } from './leads.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,26 +18,20 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const prisma8 = { client: prisma8Client } as Prisma8Service
     const suffix = randomUUID().replaceAll('-', '')
     let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: 'Leads Prisma8 ' + suffix, slug: 'leads-p8-' + suffix },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'leads-p8')
       tenantId = tenant.id
-      const actor = await fixtureDb.user.create({
-        data: {
-          tenantId: tenant.id,
-          email: suffix + '@example.com',
-          passwordHash: 'test',
-          name: '线索测试成员',
-        },
+      const actor = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        email: suffix + '@example.com',
+        passwordHash: 'test',
+        name: '线索测试成员',
       })
       const user: AuthUser = {
         id: actor.id,
@@ -116,21 +114,36 @@ test(
       const status = await service.updateStatus(user, { id: created.id, stage: 'FOLLOWING' })
       assert.equal(status.stage, 'FOLLOWING')
       assert.equal(status.lastStage, 'NEW')
-      const oracle = await fixtureDb.clue.findUniqueOrThrow({ where: { id: created.id } })
+      const oracle = await prisma8Client.orm.public.Clue.where({
+        id: prisma8Varchar(created.id, 32),
+      })
+        .select('stage', 'lastStage')
+        .first()
+      assert.ok(oracle)
       assert.equal(oracle.stage, 'FOLLOWING')
       assert.equal(oracle.lastStage, 'NEW')
 
       const removed = await service.remove(user, created.id)
       assert.equal(removed.id, created.id)
-      assert.equal(await fixtureDb.clue.count({ where: { id: created.id } }), 0)
+      assert.equal(
+        (
+          await prisma8Client.orm.public.Clue.where({
+            id: prisma8Varchar(created.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
+        0,
+      )
     } finally {
       if (tenantId) {
-        await fixtureDb.clue.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.Clue
+          .where({ organizationId: prisma8Varchar(tenantId, 32) })
+          .deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

@@ -14,7 +14,7 @@
 
 - [x] P1.1 建立 Prisma 8 原生 test database helper。
 - [x] P1.2 第一批迁移基础设施/认证/公共服务测试，停止使用通用 Prisma 7 delegate facade。
-- [ ] P1.3 迁移 Customers / Leads / Metadata / Pool tests。
+- [x] P1.3 迁移 Customers / Leads / Metadata / Pool tests。
 - [ ] P1.4 迁移交易链 / 审批 / 通知 / 企业集成 tests。
 - [ ] P1.5 `createPrismaFixtureClient` 引用归零。
 - [ ] P1.6 删除 `prisma-fixture-client.ts` 与 `prisma-fixture-metadata.ts`。
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P1.3**。已建立薄层 `src/testing/prisma-test-db.ts`，只负责 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
+当前执行 **P1.4**。已建立薄层 `src/testing/prisma-test-db.ts`，只负责 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -64,9 +64,11 @@
 - `src/common/services/data-scope.prisma8.test.ts`；
 - `src/common/services/scope-resolver.prisma8.test.ts`。
 
-P1.2 已继续覆盖 PersonalCenter / PersonalApiKey / MessageSettings / HomeDepartmentScope / HomeOverview / HomeStatistics / DashboardAccess / Departments / Logs / OperationLogCleanup。累计新增 native PostgreSQL gate **18/18 PASS、0 skip**；API typecheck/build exit 0。
+P1.2 已继续覆盖 PersonalCenter / PersonalApiKey / MessageSettings / HomeDepartmentScope / HomeOverview / HomeStatistics / DashboardAccess / DashboardModule / DashboardResource / Departments / Logs / OperationLogCleanup。累计 native PostgreSQL gate **20/20 PASS、0 skip**；API typecheck/build exit 0。
 
-通用 fixture facade 的 `createPrismaFixtureClient` 引用已从本阶段开始时的 **155** 降至 **127**，引用文件从 **76** 降至 **62**。
+通用 fixture facade 的 `createPrismaFixtureClient` 引用已从本阶段开始时的 **155** 降至 **125**，引用文件从 **76** 降至 **61**。
 
-下一步进入 **P1.3 Customers / Leads / Metadata / Pool**。这些模块仍依赖大量 `VarChar/Numeric/BigInt` storage 类型；本阶段只删除 Prisma 7 fixture facade，继续使用现有 Prisma 8 类型边界 helper，数据库类型治理留在 P3/P4 forward migration。
+P1.3 已完成 Customers / Leads / Metadata / Pool 共 **7/7** 真实 PostgreSQL gate，API typecheck/build 与 `git diff --check` 全绿。该批测试中的 `VarChar/Numeric/BigInt` storage 继续通过现有 Prisma 8 类型边界 helper 表达，没有把类型治理混入测试 facade 清理。
+
+当前通用 fixture facade 的 `createPrismaFixtureClient` 剩余 **111** 处引用、分布于 **54** 个文件。下一步进入 **P1.4 交易链 / 审批 / 通知 / 企业集成**，优先迁移低耦合 CRUD / readback 测试，再处理审批 transaction 与组织同步。
 

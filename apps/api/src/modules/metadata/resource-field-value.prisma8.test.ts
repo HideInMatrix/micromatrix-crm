@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { FieldVO } from '@micromatrix/shared'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ModuleFormsService } from './module-forms.service'
 import {
   RESOURCE_FIELD_TYPES,
@@ -76,8 +76,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8 = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8 = testDb.client
     const moduleForms = {
       listFields: async () => filterFields,
     } as unknown as ModuleFormsService
@@ -91,9 +91,6 @@ test(
     const timestamp = BigInt(Date.now())
     const customerIds: string[] = []
 
-    await fixtureDb.$connect()
-    await prisma8.connect()
-
     try {
       for (const resourceType of RESOURCE_FIELD_TYPES) {
         assert.deepEqual(
@@ -103,40 +100,43 @@ test(
         )
       }
 
-      const target = await fixtureDb.customer.create({
-        data: {
-          name: `Prisma8 Metadata ${randomUUID()}`,
-          organizationId,
+      const actor = prisma8Varchar(actorId, 32)
+      const target = await prisma8.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar(`Prisma8 Metadata ${randomUUID()}`, 255),
+          organizationId: prisma8Varchar(organizationId, 32),
           createTime: timestamp,
           updateTime: timestamp,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
-      const lowScore = await fixtureDb.customer.create({
-        data: {
-          name: `Prisma8 Metadata low ${randomUUID()}`,
-          organizationId,
+          createUser: actor,
+          updateUser: actor,
+        })
+      const lowScore = await prisma8.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar(`Prisma8 Metadata low ${randomUUID()}`, 255),
+          organizationId: prisma8Varchar(organizationId, 32),
           createTime: timestamp,
           updateTime: timestamp,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
-      const otherTenant = await fixtureDb.customer.create({
-        data: {
-          name: `Prisma8 Metadata other ${randomUUID()}`,
-          organizationId: otherOrganizationId,
+          createUser: actor,
+          updateUser: actor,
+        })
+      const otherTenant = await prisma8.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar(`Prisma8 Metadata other ${randomUUID()}`, 255),
+          organizationId: prisma8Varchar(otherOrganizationId, 32),
           createTime: timestamp,
           updateTime: timestamp,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
+          createUser: actor,
+          updateUser: actor,
+        })
       customerIds.push(target.id, lowScore.id, otherTenant.id)
 
-      await fixtureDb.customerField.createMany({
-        data: [
+      await prisma8.orm.public.CustomerField.createAll([
           { resourceId: target.id, fieldId: 'p8-field-score', fieldValue: '88' },
           {
             resourceId: target.id,
@@ -155,10 +155,13 @@ test(
             fieldId: 'p8-field-date',
             fieldValue: '2026-09-10T12:00:00.000Z',
           },
-        ],
-      })
-      await fixtureDb.customerFieldBlob.createMany({
-        data: [
+        ].map((item) => ({
+          id: prisma8Id32(),
+          resourceId: item.resourceId,
+          fieldId: prisma8Varchar(item.fieldId, 32),
+          fieldValue: prisma8Varchar(item.fieldValue, 255),
+        })))
+      await prisma8.orm.public.CustomerFieldBlob.createAll([
           {
             resourceId: target.id,
             fieldId: 'p8-field-tags',
@@ -174,8 +177,12 @@ test(
             fieldId: 'p8-field-tags',
             fieldValue: JSON.stringify(['important']),
           },
-        ],
-      })
+        ].map((item) => ({
+          id: prisma8Id32(),
+          resourceId: item.resourceId,
+          fieldId: prisma8Varchar(item.fieldId, 32),
+          fieldValue: item.fieldValue,
+        })))
 
       assert.deepEqual(
         await service.filterResourceIds(organizationId, 'customer', [
@@ -194,10 +201,11 @@ test(
       )
     } finally {
       if (customerIds.length) {
-        await fixtureDb.customer.deleteMany({ where: { id: { in: customerIds } } })
+        await prisma8.orm.public.Customer
+          .where((row) => row.id.in(prisma8Varchars(customerIds, 32)))
+          .deleteAll()
       }
-      await prisma8.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )
