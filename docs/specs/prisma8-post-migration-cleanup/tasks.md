@@ -82,3 +82,7 @@ P1.4 后续批次已完成 Attachments / Bidding / FollowUpPlans / Members 共 *
 
 当前全仓 `createPrismaFixtureClient` 搜索共 **32** 个匹配 / **16** 个文件，其中包含 fixture 实现自身的定义；业务侧剩余 **15** 个文件，集中在 Contacts / Contracts / Orders / Quotes / Opportunities / FollowUps / ImportExport / CustomForms。下一步继续逐批 native 化，直至 P1.5 引用归零。
 
+P1.4 交易链低耦合批次已继续完成 Contacts / BusinessTitle / ContractStage / OrderStage，共 **4/4** 真实 PostgreSQL PASS；原生测试同时暴露并补齐了 Contract `amount` 的正式 Numeric contract 要求。
+
+当前全仓 `createPrismaFixtureClient` 搜索已降至 **24** 个匹配 / **12** 个文件，其中 fixture 实现自身 1 个文件；业务侧只剩 **11** 个测试文件。
+

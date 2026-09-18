@@ -3,9 +3,14 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { BusinessTitleService } from './business-title.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -15,20 +20,17 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 business title ${suffix}`, slug: `p8-business-title-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-business-title')
       tenantId = tenant.id
-      const actor = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: 'Business Title User', passwordHash: 'not-used' },
+      const actor = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Business Title User',
       })
       const user = { id: actor.id, tenantId: tenant.id } as AuthUser
       const service = new BusinessTitleService(
@@ -107,13 +109,16 @@ test(
       assert.equal(renamed.name, 'Beta Services Updated')
       assert.equal(renamed.approvalStatus, 'APPROVING')
 
-      const config = await fixtureDb.businessTitleConfig.create({
-        data: {
-          field: 'identification_number',
+      const organizationId = prisma8Varchar(tenant.id, 32)
+      const actorId = prisma8Varchar(actor.id, 32)
+      const config = await prisma8Client.orm.public.BusinessTitleConfig
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          field: prisma8Varchar('identification_number', 255),
           required: false,
-          organizationId: tenant.id,
-        },
-      })
+          organizationId,
+        })
       const switched = await service.switchRequired(user, config.id)
       assert.ok(switched)
       assert.equal(switched.required, true)
@@ -122,64 +127,73 @@ test(
         BadRequestException,
       )
 
-      const customer = await fixtureDb.customer.create({
-        data: {
-          name: 'Business Title Customer',
-          organizationId: tenant.id,
-          createTime: BigInt(Date.now()),
-          updateTime: BigInt(Date.now()),
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
-      })
-      const contract = await fixtureDb.contract.create({
-        data: {
-          name: 'Business Title Contract',
-          number: `BT-${suffix}`.slice(0, 50),
+      const now = BigInt(Date.now())
+      const customer = await prisma8Client.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('Business Title Customer', 255),
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        })
+      const contract = await prisma8Client.orm.public.Contract
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('Business Title Contract', 255),
+          amount: prisma8Numeric(0, 14, 2),
+          number: prisma8Varchar(`BT-${suffix}`.slice(0, 50), 50),
           customerId: customer.id,
-          owner: actor.id,
-          stage: 'INIT',
-          organizationId: tenant.id,
-          createTime: BigInt(Date.now()),
-          updateTime: BigInt(Date.now()),
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
-      })
-      const invoice = await fixtureDb.contractInvoice.create({
-        data: {
-          name: 'Business Title Invoice',
+          owner: actorId,
+          stage: prisma8Varchar('INIT', 32),
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        })
+      const invoice = await prisma8Client.orm.public.ContractInvoice
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('Business Title Invoice', 255),
           contractId: contract.id,
-          owner: actor.id,
-          businessTitleId: alpha.id,
-          organizationId: tenant.id,
-          createTime: BigInt(Date.now()),
-          updateTime: BigInt(Date.now()),
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
-      })
+          owner: actorId,
+          businessTitleId: prisma8Varchar(alpha.id, 32),
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        })
       assert.equal(await service.hasInvoice(user, alpha.id), true)
       await assert.rejects(() => service.remove(user, alpha.id), BadRequestException)
 
-      await fixtureDb.contractInvoice.delete({ where: { id: invoice.id } })
+      await prisma8Client.orm.public.ContractInvoice.where({ id: invoice.id }).delete()
       assert.deepEqual(await service.remove(user, alpha.id), { id: alpha.id, name: alpha.name })
-      const fixtureReadback = await fixtureDb.businessTitle.findFirst({ where: { id: beta.id } })
+      const fixtureReadback = await prisma8Client.orm.public.BusinessTitle.where({
+        id: prisma8Varchar(beta.id, 32),
+      }).first()
       assert.equal(fixtureReadback?.name, 'Beta Services Updated')
-      assert.equal(fixtureReadback?.type, 'CUSTOM')
+      assert.equal(fixtureReadback?._type, 'CUSTOM')
       assert.equal(fixtureReadback?.approvalStatus, 'APPROVING')
     } finally {
       if (tenantId) {
-        await fixtureDb.contractInvoice.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.contract.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.customer.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.businessTitleConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.businessTitle.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        await prisma8Client.orm.public.ContractInvoice.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Contract.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.BusinessTitleConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.BusinessTitle
+          .where({ organizationId: prisma8Varchar(tenantId, 50) })
+          .deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

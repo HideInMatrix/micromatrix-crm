@@ -3,9 +3,14 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import { ContractStageService } from './contract-stage.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -15,31 +20,32 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     let tenantId: string | null = null
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `Prisma8 contract stage ${suffix}`, slug: `p8-contract-stage-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-contract-stage')
       tenantId = tenant.id
-      const actor = await fixtureDb.user.create({
-        data: { tenantId: tenant.id, name: 'Contract Stage User', passwordHash: 'not-used' },
+      const actor = await createPrismaTestUser(prisma8Client, {
+        tenantId: tenant.id,
+        name: 'Contract Stage User',
       })
-      const customer = await fixtureDb.customer.create({
-        data: {
-          name: 'Contract Stage Customer',
-          organizationId: tenant.id,
-          createTime: BigInt(Date.now()),
-          updateTime: BigInt(Date.now()),
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
-      })
+      const now = BigInt(Date.now())
+      const organizationId = prisma8Varchar(tenant.id, 32)
+      const actorId = prisma8Varchar(actor.id, 32)
+      const customer = await prisma8Client.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('Contract Stage Customer', 255),
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        })
       const user = { id: actor.id, tenantId: tenant.id } as AuthUser
       const service = new ContractStageService({ client: prisma8Client } as Prisma8Service)
 
@@ -61,20 +67,22 @@ test(
       assert.equal(afterAdd.stageConfigList.length, 8)
       assert.equal(afterAdd.stageConfigList[1]?.id, addedId)
 
-      const contract = await fixtureDb.contract.create({
-        data: {
-          name: 'Prisma8 stage contract',
-          number: `C-${suffix}`.slice(0, 50),
+      const contract = await prisma8Client.orm.public.Contract
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('Prisma8 stage contract', 255),
+          number: prisma8Varchar(`C-${suffix}`.slice(0, 50), 50),
           customerId: customer.id,
-          owner: actor.id,
-          stage: addedId,
-          organizationId: tenant.id,
-          createTime: BigInt(Date.now()),
-          updateTime: BigInt(Date.now()),
-          createUser: actor.id,
-          updateUser: actor.id,
-        },
-      })
+          owner: actorId,
+          amount: prisma8Numeric(0, 14, 2),
+          stage: prisma8Varchar(addedId, 32),
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        })
       const withData = await service.get(user)
       assert.equal(withData.stageConfigList.find((stage) => stage.id === addedId)?.stageHasData, true)
       await assert.rejects(() => service.remove(user, addedId), BadRequestException)
@@ -100,25 +108,24 @@ test(
       assert.equal(rollback.afootRollBack, false)
       assert.equal(rollback.endRollBack, true)
 
-      await fixtureDb.contract.delete({ where: { id: contract.id } })
+      await prisma8Client.orm.public.Contract.where({ id: contract.id }).delete()
       assert.deepEqual(await service.remove(user, addedId), { id: addedId, name: '补充阶段' })
-      const remaining = await fixtureDb.contractStageConfig.findMany({
-        where: { organizationId: tenant.id },
-        orderBy: { pos: 'asc' },
-      })
+      const remaining = await prisma8Client.orm.public.ContractStageConfig.where({ organizationId })
+        .orderBy((row) => row.pos.asc())
+        .all()
       assert.equal(remaining.length, 7)
       assert.deepEqual(remaining.map((stage) => Number(stage.pos)), [1, 2, 3, 4, 5, 6, 7])
     } finally {
       if (tenantId) {
-        await fixtureDb.contract.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.stageAdvancedConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.contractStageConfig.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.customer.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        const organizationId = prisma8Varchar(tenantId, 32)
+        await prisma8Client.orm.public.Contract.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.StageAdvancedConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.ContractStageConfig.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )
