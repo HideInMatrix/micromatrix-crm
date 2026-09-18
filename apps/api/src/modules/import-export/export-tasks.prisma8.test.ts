@@ -6,9 +6,10 @@ import path from 'node:path'
 import test from 'node:test'
 import { ConfigService } from '@nestjs/config'
 import type { AsyncJobsService } from '../../async-jobs/async-jobs.service'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ExportTasksService } from './export-tasks.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -18,8 +19,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8 = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8 = testDb.client
     const uploadDir = await mkdtemp(path.join(tmpdir(), 'mmx-export-prisma8-'))
     let enqueueCalls = 0
     const asyncJobs = {
@@ -37,8 +38,6 @@ test(
     const userId = `p8-user-${randomUUID()}`
     const user = { id: userId, tenantId } as never
 
-    await fixtureDb.$connect()
-    await prisma8.connect()
     try {
       const created = await service.enqueue(user, {
         module: 'customer',
@@ -53,7 +52,7 @@ test(
       assert.equal(created.fileName, 'Prisma8 客户导出')
       assert.ok(new Date(created.expiresAt).getTime() > Date.now())
 
-      const fixtureRead = await fixtureDb.exportTask.findUnique({ where: { id: created.id } })
+      const fixtureRead = await prisma8.orm.public.ExportTasks.where({ id: created.id }).first()
       assert.ok(fixtureRead)
       assert.equal(fixtureRead.tenantId, tenantId)
       assert.equal(fixtureRead.userId, userId)
@@ -76,16 +75,16 @@ test(
       )
 
       const now = new Date()
-      await fixtureDb.exportTask.createMany({
-        data: Array.from({ length: 9 }, (_, index) => ({
+      await prisma8.orm.public.ExportTasks.createAll(
+        Array.from({ length: 9 }, (_, index) => ({
           tenantId,
           userId,
           module: `other-${index}`,
           fileName: `other-${index}`,
-          payload: { version: 1 },
-          expiresAt: new Date(now.getTime() + 60_000),
+          payload: prisma8JsonValue({ version: 1 }),
+          expiresAt: prisma8TimestampFromDate(new Date(now.getTime() + 60_000)),
         })),
-      })
+      )
       await assert.rejects(
         () =>
           service.enqueue(user, {
@@ -99,26 +98,26 @@ test(
 
       const attempt = await service.beginAttempt(created.id)
       assert.equal(attempt?.attempts, 1)
-      const attemptedRead = await fixtureDb.exportTask.findUnique({ where: { id: created.id } })
+      const attemptedRead = await prisma8.orm.public.ExportTasks.where({ id: created.id }).first()
       assert.equal(attemptedRead?.attempts, 1)
       assert.ok(attemptedRead?.startedAt)
 
       await service.fail(created.id, 'expected worker failure')
-      const failedRead = await fixtureDb.exportTask.findUnique({ where: { id: created.id } })
+      const failedRead = await prisma8.orm.public.ExportTasks.where({ id: created.id }).first()
       assert.equal(failedRead?.status, 'FAILED')
       assert.equal(failedRead?.errorMessage, 'expected worker failure')
       assert.ok(failedRead?.completedAt)
 
-      const completeTask = await fixtureDb.exportTask.create({
-        data: {
+      const completeTask = await prisma8.orm.public.ExportTasks
+        .select('id')
+        .create({
           tenantId,
           userId,
           module: 'complete-module',
           fileName: '完成任务',
-          payload: { version: 1 },
-          expiresAt: new Date(Date.now() + 60_000),
-        },
-      })
+          payload: prisma8JsonValue({ version: 1 }),
+          expiresAt: prisma8TimestampFromDate(new Date(Date.now() + 60_000)),
+        })
       assert.equal(
         await service.complete(
           completeTask.id,
@@ -127,7 +126,7 @@ test(
         ),
         true,
       )
-      const completedRead = await fixtureDb.exportTask.findUnique({ where: { id: completeTask.id } })
+      const completedRead = await prisma8.orm.public.ExportTasks.where({ id: completeTask.id }).first()
       assert.equal(completedRead?.status, 'SUCCESS')
       assert.equal(completedRead?.rowCount, 3)
       assert.equal(completedRead?.fileSize, Buffer.byteLength('xlsx-content'))
@@ -135,13 +134,12 @@ test(
       assert.ok(completedRead?.filePath)
 
       await service.cancel(user, completeTask.id)
-      const canceledRead = await fixtureDb.exportTask.findUnique({ where: { id: completeTask.id } })
+      const canceledRead = await prisma8.orm.public.ExportTasks.where({ id: completeTask.id }).first()
       assert.equal(canceledRead?.status, 'CANCELED')
       assert.equal(canceledRead?.filePath, null)
     } finally {
-      await fixtureDb.exportTask.deleteMany({ where: { tenantId, userId } })
-      await prisma8.close()
-      await fixtureDb.$disconnect()
+      await prisma8.orm.public.ExportTasks.where({ tenantId, userId }).deleteAll()
+      await testDb.close()
       await rm(uploadDir, { recursive: true, force: true })
     }
   },

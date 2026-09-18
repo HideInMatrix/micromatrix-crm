@@ -2,9 +2,14 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import {
+  createPrismaTestTenant,
+  createPrismaTestUser,
+  openPrismaTestDatabase,
+} from '../../testing/prisma-test-db'
 import type { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { FollowPlanCommentsService } from '../follow-up-plans/follow-plan-comments.service'
 import type { FollowUpPlansService } from '../follow-up-plans/follow-up-plans.service'
@@ -18,42 +23,32 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     let tenantId = ''
     try {
-      const tenant = await fixtureDb.tenant.create({
-        data: { name: `p8-comment-${suffix}`, slug: `p8-comment-${suffix}` },
-      })
+      const tenant = await createPrismaTestTenant(prisma8Client, 'p8-comment')
       tenantId = tenant.id
       const [actorRow, mentionRow, ownerRow] = await Promise.all([
-        fixtureDb.user.create({
-          data: {
-            tenantId,
-            email: `actor-${suffix}@example.com`,
-            passwordHash: 'test-only',
-            name: '评论操作人',
-          },
+        createPrismaTestUser(prisma8Client, {
+          tenantId,
+          email: `actor-${suffix}@example.com`,
+          passwordHash: 'test-only',
+          name: '评论操作人',
         }),
-        fixtureDb.user.create({
-          data: {
-            tenantId,
-            email: `mention-${suffix}@example.com`,
-            passwordHash: 'test-only',
-            name: '被提及成员',
-          },
+        createPrismaTestUser(prisma8Client, {
+          tenantId,
+          email: `mention-${suffix}@example.com`,
+          passwordHash: 'test-only',
+          name: '被提及成员',
         }),
-        fixtureDb.user.create({
-          data: {
-            tenantId,
-            email: `owner-${suffix}@example.com`,
-            passwordHash: 'test-only',
-            name: '资源负责人',
-          },
+        createPrismaTestUser(prisma8Client, {
+          tenantId,
+          email: `owner-${suffix}@example.com`,
+          passwordHash: 'test-only',
+          name: '资源负责人',
         }),
       ])
       const actor: AuthUser = {
@@ -67,20 +62,24 @@ test(
         permissions: ['*'],
       }
       const now = BigInt(Date.now())
-      const customer = await fixtureDb.customer.create({
-        data: {
-          id: randomUUID().replaceAll('-', ''),
-          name: 'Prisma 8 评论客户',
-          owner: ownerRow.id,
+      const organizationId = prisma8Varchar(tenantId, 32)
+      const actorId = prisma8Varchar(actorRow.id, 32)
+      const ownerId = prisma8Varchar(ownerRow.id, 32)
+      const customer = await prisma8Client.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('Prisma 8 评论客户', 255),
+          owner: ownerId,
           createTime: now,
           updateTime: now,
-          createUser: actorRow.id,
-          updateUser: actorRow.id,
-          organizationId: tenantId,
-        },
-      })
-      const record = await fixtureDb.followUpRecord.create({
-        data: {
+          createUser: actorId,
+          updateUser: actorId,
+          organizationId,
+        })
+      const record = await prisma8Client.orm.public.FollowUpRecords
+        .select('id', 'targetType', 'targetId', 'ownerId')
+        .create({
           tenantId,
           targetType: 'customer',
           targetId: customer.id,
@@ -88,10 +87,11 @@ test(
           ownerId: ownerRow.id,
           ownerName: ownerRow.name,
           createdById: actorRow.id,
-        },
-      })
-      const plan = await fixtureDb.followUpPlan.create({
-        data: {
+          updatedAt: prisma8Now(),
+        })
+      const plan = await prisma8Client.orm.public.FollowUpPlans
+        .select('id', 'targetType', 'targetId', 'ownerId')
+        .create({
           tenantId,
           targetType: 'customer',
           targetId: customer.id,
@@ -99,8 +99,8 @@ test(
           status: 'PREPARED',
           ownerId: ownerRow.id,
           createdById: actorRow.id,
-        },
-      })
+          updatedAt: prisma8Now(),
+        })
 
       const prisma8 = { client: prisma8Client } as Prisma8Service
       const notifications = { send: async () => 1 } as unknown as BusinessNotificationsService
@@ -120,17 +120,26 @@ test(
         content: '  记录评论  ',
         mentionedUserIds: [mentionRow.id],
       })
-      const persistedRecordComment = await fixtureDb.followUpRecordComment.findUniqueOrThrow({
-        where: { id: recordComment.id },
-        include: { mentions: true },
-      })
+      const persistedRecordComment = await prisma8Client.orm.public.FollowUpRecordComment.where({
+        id: prisma8Varchar(recordComment.id, 32),
+      }).first()
+      assert.ok(persistedRecordComment)
       assert.equal(persistedRecordComment.content, '记录评论')
+      const recordMentions = await prisma8Client.orm.public.FollowUpRecordCommentMention.where({
+        commentId: prisma8Varchar(recordComment.id, 32),
+      })
+        .select('userId')
+        .all()
       assert.deepEqual(
-        persistedRecordComment.mentions.map((item: { userId: string }) => item.userId),
+        recordMentions.map((item) => item.userId),
         [mentionRow.id],
       )
       assert.equal(
-        (await fixtureDb.followUpRecord.findUniqueOrThrow({ where: { id: record.id } })).commentCount,
+        (
+          await prisma8Client.orm.public.FollowUpRecords.where({ id: record.id })
+            .select('commentCount')
+            .first()
+        )?.commentCount,
         1,
       )
 
@@ -141,7 +150,13 @@ test(
       })
       assert.equal(updatedRecordComment.content, '记录评论已编辑')
       assert.equal(
-        await fixtureDb.followUpRecordCommentMention.count({ where: { commentId: recordComment.id } }),
+        (
+          await prisma8Client.orm.public.FollowUpRecordCommentMention.where({
+            commentId: prisma8Varchar(recordComment.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
       assert.deepEqual(await recordService.remove(actor, recordComment.id), {
@@ -149,7 +164,11 @@ test(
         commentCount: 0,
       })
       assert.equal(
-        (await fixtureDb.followUpRecord.findUniqueOrThrow({ where: { id: record.id } })).commentCount,
+        (
+          await prisma8Client.orm.public.FollowUpRecords.where({ id: record.id })
+            .select('commentCount')
+            .first()
+        )?.commentCount,
         0,
       )
 
@@ -158,17 +177,26 @@ test(
         content: '计划评论',
         mentionedUserIds: [mentionRow.id],
       })
-      const persistedPlanComment = await fixtureDb.followUpPlanComment.findUniqueOrThrow({
-        where: { id: planComment.id },
-        include: { mentions: true },
-      })
+      const persistedPlanComment = await prisma8Client.orm.public.FollowUpPlanComment.where({
+        id: prisma8Varchar(planComment.id, 32),
+      }).first()
+      assert.ok(persistedPlanComment)
       assert.equal(persistedPlanComment.content, '计划评论')
+      const planMentions = await prisma8Client.orm.public.FollowUpPlanCommentMention.where({
+        commentId: prisma8Varchar(planComment.id, 32),
+      })
+        .select('userId')
+        .all()
       assert.deepEqual(
-        persistedPlanComment.mentions.map((item: { userId: string }) => item.userId),
+        planMentions.map((item) => item.userId),
         [mentionRow.id],
       )
       assert.equal(
-        (await fixtureDb.followUpPlan.findUniqueOrThrow({ where: { id: plan.id } })).commentCount,
+        (
+          await prisma8Client.orm.public.FollowUpPlans.where({ id: plan.id })
+            .select('commentCount')
+            .first()
+        )?.commentCount,
         1,
       )
 
@@ -178,7 +206,13 @@ test(
         mentionedUserIds: [],
       })
       assert.equal(
-        await fixtureDb.followUpPlanCommentMention.count({ where: { commentId: planComment.id } }),
+        (
+          await prisma8Client.orm.public.FollowUpPlanCommentMention.where({
+            commentId: prisma8Varchar(planComment.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
       assert.deepEqual(await planService.remove(actor, planComment.id), {
@@ -186,19 +220,24 @@ test(
         commentCount: 0,
       })
       assert.equal(
-        (await fixtureDb.followUpPlan.findUniqueOrThrow({ where: { id: plan.id } })).commentCount,
+        (
+          await prisma8Client.orm.public.FollowUpPlans.where({ id: plan.id })
+            .select('commentCount')
+            .first()
+        )?.commentCount,
         0,
       )
     } finally {
       if (tenantId) {
-        await fixtureDb.followUpRecord.deleteMany({ where: { tenantId } })
-        await fixtureDb.followUpPlan.deleteMany({ where: { tenantId } })
-        await fixtureDb.customer.deleteMany({ where: { organizationId: tenantId } })
-        await fixtureDb.user.deleteMany({ where: { tenantId } })
-        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+        await prisma8Client.orm.public.FollowUpRecords.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.FollowUpPlans.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Customer
+          .where({ organizationId: prisma8Varchar(tenantId, 32) })
+          .deleteAll()
+        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
+        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await testDb.close()
     }
   },
 )

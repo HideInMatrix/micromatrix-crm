@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { QuotesService } from './quotes.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,8 +14,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const prisma8 = { client: prisma8Client } as Prisma8Service
     const suffix = randomUUID().replaceAll('-', '')
     const organizationId = `org-${suffix}`.slice(0, 32)
@@ -68,35 +68,37 @@ test(
       {} as never,
     )
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
       const now = BigInt(Date.now())
-      const stage = await fixtureDb.opportunityStageConfig.create({
-        data: {
-          name: '报价专项阶段',
-          type: 'AFOOT',
-          rate: '50',
+      const org = prisma8Varchar(organizationId, 32)
+      const actor = prisma8Varchar(actorId, 32)
+      const stage = await prisma8Client.orm.public.OpportunityStageConfig
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('报价专项阶段', 16),
+          _type: prisma8Varchar('AFOOT', 50),
+          rate: prisma8Varchar('50', 10),
           pos: 1n,
-          organizationId,
+          organizationId: org,
           createTime: now,
           updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
-      const opportunity = await fixtureDb.opportunity.create({
-        data: {
-          name: '报价专项商机',
-          organizationId,
+          createUser: actor,
+          updateUser: actor,
+        })
+      const opportunity = await prisma8Client.orm.public.Opportunity
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('报价专项商机', 255),
+          organizationId: org,
           stage: stage.id,
-          owner: actorId,
+          owner: actor,
           createTime: now,
           updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
+          createUser: actor,
+          updateUser: actor,
+        })
 
       const created = await service.create(user, {
         name: 'Prisma8 报价',
@@ -124,14 +126,35 @@ test(
 
       const invalid = await service.setInvalid(user, created.id, true)
       assert.equal(invalid.invalid, true)
-      assert.equal((await fixtureDb.opportunityQuotation.findUniqueOrThrow({ where: { id: created.id } })).invalid, true)
+      assert.equal(
+        (
+          await prisma8Client.orm.public.OpportunityQuotation.where({
+            id: prisma8Varchar(created.id, 32),
+          })
+            .select('invalid')
+            .first()
+        )?.invalid,
+        true,
+      )
 
       const removed = await service.remove(user, created.id)
       assert.equal(removed.pendingApproval, false)
-      assert.equal(await fixtureDb.opportunityQuotation.count({ where: { id: created.id } }), 0)
+      assert.equal(
+        (
+          await prisma8Client.orm.public.OpportunityQuotation.where({
+            id: prisma8Varchar(created.id, 32),
+          })
+            .select('id')
+            .all()
+        ).length,
+        0,
+      )
     } finally {
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      const org = prisma8Varchar(organizationId, 32)
+      await prisma8Client.orm.public.OpportunityQuotation.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.Opportunity.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId: org }).deleteAll()
+      await testDb.close()
     }
   },
 )

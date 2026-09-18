@@ -15,9 +15,9 @@
 - [x] P1.1 建立 Prisma 8 原生 test database helper。
 - [x] P1.2 第一批迁移基础设施/认证/公共服务测试，停止使用通用 Prisma 7 delegate facade。
 - [x] P1.3 迁移 Customers / Leads / Metadata / Pool tests。
-- [ ] P1.4 迁移交易链 / 审批 / 通知 / 企业集成 tests。
-- [ ] P1.5 `createPrismaFixtureClient` 引用归零。
-- [ ] P1.6 删除 `prisma-fixture-client.ts` 与 `prisma-fixture-metadata.ts`。
+- [x] P1.4 迁移交易链 / 审批 / 通知 / 企业集成 tests。
+- [x] P1.5 `createPrismaFixtureClient` 引用归零。
+- [x] P1.6 删除 `prisma-fixture-client.ts` 与 `prisma-fixture-metadata.ts`。
 
 ## P2 时间语义与 API contract
 
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P1.4**。已建立薄层 `src/testing/prisma-test-db.ts`，只负责 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
+当前执行 **P2.1**。P1 测试兼容层已完成收口；`src/testing/prisma-test-db.ts` 只保留 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -89,4 +89,17 @@ P1.4 交易链低耦合批次已继续完成 Contacts / BusinessTitle / Contract
 P1.4 合同子域批次已完成 ContractInvoice / ContractPaymentPlan+Record / ProductSubtableRead，共 **3/3** 真实 PostgreSQL PASS；normal/blob 子表合并、跨租户隔离、金额聚合与精确 Numeric contract 均由原生 Prisma 8 测试覆盖。
 
 当前全仓 `createPrismaFixtureClient` 只剩 **18** 个匹配 / **9** 个文件，其中 fixture 实现自身 1 个文件；业务侧剩余 **8** 个测试文件。
+
+P1.4 最终批次已完成 Contracts / Orders / Quotes / Opportunities 主 CRUD、FollowUps / FollowComments、ExportTasks、CustomForms 等剩余业务测试的 native 化；最后业务批次 **5/5 PASS**，主交易链 **4/4 PASS**。
+
+P1.5/P1.6 已完成：
+
+- `apps/api/src` 中 `createPrismaFixtureClient` 业务引用归零；
+- 删除 `src/testing/prisma-fixture-client.ts`（414 行）；
+- 删除 `src/testing/prisma-fixture-metadata.ts`（5523 行）；
+- 源码中 `prisma-fixture-client` / `prisma-fixture-metadata` 引用归零，文档仅保留历史收口记录；
+- 删除后 `prisma contract emit`、API typecheck、API build、`git diff --check` 全绿；
+- API Rules 在保留真实 PostgreSQL、显式清空 Redis 环境以满足“未配置 Redis”专项前提后 **346/346 PASS、0 fail、0 skip**。
+
+P1 正式完成。下一步进入 **P2 时间语义与 API contract**，先对 126 个 Timestamp 字段按 absolute instant / local wall-clock / schedule 分类并生成 existing DB 数据语义 precheck。
 

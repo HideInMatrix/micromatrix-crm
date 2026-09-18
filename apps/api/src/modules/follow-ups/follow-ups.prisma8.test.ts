@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { FollowUpsService } from './follow-ups.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -14,8 +15,8 @@ test(
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const fixtureDb = createPrismaFixtureClient(databaseUrl)
-    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prisma8Client = testDb.client
     const prisma8 = { client: prisma8Client } as Prisma8Service
     const suffix = randomUUID().replaceAll('-', '')
     const organizationId = `org-${suffix}`.slice(0, 32)
@@ -59,33 +60,36 @@ test(
       {} as never,
     )
 
-    await fixtureDb.$connect()
-    await prisma8Client.connect()
     try {
-      await fixtureDb.tenant.create({
-        data: { id: organizationId, name: '跟进专项租户', slug: `follow-${suffix}` },
+      await prisma8Client.orm.public.Tenants.create({
+        id: organizationId,
+        name: '跟进专项租户',
+        slug: `follow-${suffix}`,
+        updatedAt: prisma8Now(),
       })
-      await fixtureDb.user.create({
-        data: {
-          id: actorId,
-          tenantId: organizationId,
-          email: user.email,
-          passwordHash: 'test',
-          name: user.name,
-        },
+      await prisma8Client.orm.public.Users.create({
+        id: actorId,
+        tenantId: organizationId,
+        email: user.email,
+        passwordHash: 'test',
+        name: user.name,
+        updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const customer = await fixtureDb.customer.create({
-        data: {
-          name: '跟进专项客户',
-          owner: actorId,
-          organizationId,
+      const org = prisma8Varchar(organizationId, 32)
+      const actor = prisma8Varchar(actorId, 32)
+      const customer = await prisma8Client.orm.public.Customer
+        .select('id')
+        .create({
+          id: prisma8Id32(),
+          name: prisma8Varchar('跟进专项客户', 255),
+          owner: actor,
+          organizationId: org,
           createTime: now,
           updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        },
-      })
+          createUser: actor,
+          updateUser: actor,
+        })
 
       const created = await service.create(user, {
         targetType: 'customer',
@@ -99,12 +103,18 @@ test(
       assert.equal(created.customerId, customer.id)
       assert.equal(created.content, 'Prisma8 真库首次跟进')
 
-      const oracleCreated = await fixtureDb.followUpRecord.findUniqueOrThrow({ where: { id: created.id } })
+      const oracleCreated = await prisma8Client.orm.public.FollowUpRecords.where({
+        id: created.id,
+      }).first()
+      assert.ok(oracleCreated)
       assert.equal(oracleCreated.tenantId, organizationId)
       assert.equal(oracleCreated.targetType, 'customer')
       assert.equal(oracleCreated.targetId, customer.id)
       assert.equal(oracleCreated.content, 'Prisma8 真库首次跟进')
-      const touchedCustomer = await fixtureDb.customer.findUniqueOrThrow({ where: { id: customer.id } })
+      const touchedCustomer = await prisma8Client.orm.public.Customer.where({
+        id: customer.id,
+      }).first()
+      assert.ok(touchedCustomer)
       assert.equal(touchedCustomer.follower, actorId)
       assert.ok(touchedCustomer.followTime)
 
@@ -129,16 +139,31 @@ test(
       })
       assert.equal(updated.content, 'Prisma8 真库更新跟进')
       assert.equal(updated.type, '微信')
-      const oracleUpdated = await fixtureDb.followUpRecord.findUniqueOrThrow({ where: { id: created.id } })
+      const oracleUpdated = await prisma8Client.orm.public.FollowUpRecords.where({
+        id: created.id,
+      }).first()
+      assert.ok(oracleUpdated)
       assert.equal(oracleUpdated.content, 'Prisma8 真库更新跟进')
-      assert.equal(oracleUpdated.type, '微信')
+      assert.equal(oracleUpdated._type, '微信')
 
       const removed = await service.remove(user, created.id)
       assert.equal(removed.id, created.id)
-      assert.equal(await fixtureDb.followUpRecord.count({ where: { id: created.id } }), 0)
+      assert.equal(
+        (
+          await prisma8Client.orm.public.FollowUpRecords.where({ id: created.id })
+            .select('id')
+            .all()
+        ).length,
+        0,
+      )
     } finally {
-      await prisma8Client.close()
-      await fixtureDb.$disconnect()
+      await prisma8Client.orm.public.FollowUpRecords.where({ tenantId: organizationId }).deleteAll()
+      await prisma8Client.orm.public.Customer
+        .where({ organizationId: prisma8Varchar(organizationId, 32) })
+        .deleteAll()
+      await prisma8Client.orm.public.Users.where({ tenantId: organizationId }).deleteAll()
+      await prisma8Client.orm.public.Tenants.where({ id: organizationId }).deleteAll()
+      await testDb.close()
     }
   },
 )
