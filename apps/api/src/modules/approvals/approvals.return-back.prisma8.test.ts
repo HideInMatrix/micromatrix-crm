@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now, prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -44,52 +44,48 @@ test(
     const sourceNodeId = `node-source-${suffix}`
 
     try {
-      const instance = await prisma8Client.orm.public.ApprovalInstances
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          module: 'contract',
-          targetId: `contract-${suffix}`,
-          targetName: 'Prisma 8 return back contract',
-          currentNodeIndex: 1,
-          nodesSnapshot: prisma8JsonValue([
-            {
-              nodeId: targetNodeId,
-              name: '历史审批节点',
-              approverType: 'USER',
-              approverIds: [targetApprover.id],
-              ccUserIds: [ccUser.id],
-              mode: 'ANY',
-            },
-            {
-              nodeId: sourceNodeId,
-              name: '当前审批节点',
-              approverType: 'USER',
-              approverIds: [sourceApprover.id],
-              ccUserIds: [],
-              mode: 'ANY',
-            },
-          ]),
-          submitterId: submitter.id,
-          submitterName: submitter.name,
-          updatedAt: prisma8Now(),
-        })
+      const instance = await prisma8Client.orm.public.ApprovalInstances.select('id').create({
+        tenantId: tenant.id,
+        module: 'contract',
+        targetId: `contract-${suffix}`,
+        targetName: 'Prisma 8 return back contract',
+        currentNodeIndex: 1,
+        nodesSnapshot: jsonValue([
+          {
+            nodeId: targetNodeId,
+            name: '历史审批节点',
+            approverType: 'USER',
+            approverIds: [targetApprover.id],
+            ccUserIds: [ccUser.id],
+            mode: 'ANY',
+          },
+          {
+            nodeId: sourceNodeId,
+            name: '当前审批节点',
+            approverType: 'USER',
+            approverIds: [sourceApprover.id],
+            ccUserIds: [],
+            mode: 'ANY',
+          },
+        ]),
+        submitterId: submitter.id,
+        submitterName: submitter.name,
+        updatedAt: prisma8Now(),
+      })
 
-      const historicalTask = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: targetNodeId,
-          nodeIndex: 0,
-          nodeRound: 1,
-          nodeName: '历史审批节点',
-          approverId: targetApprover.id,
-          status: 'APPROVED',
-          action: 'APPROVE',
-          handledAt: prisma8TimestampFromDate(new Date(Date.now() - 120_000)),
-          updatedAt: prisma8Now(),
-        })
+      const historicalTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: targetNodeId,
+        nodeIndex: 0,
+        nodeRound: 1,
+        nodeName: '历史审批节点',
+        approverId: targetApprover.id,
+        status: 'APPROVED',
+        action: 'APPROVE',
+        handledAt: prisma8TimestampFromDate(new Date(Date.now() - 120_000)),
+        updatedAt: prisma8Now(),
+      })
       await prisma8Client.orm.public.ApprovalRecords.create({
         tenantId: tenant.id,
         instanceId: instance.id,
@@ -102,59 +98,51 @@ test(
         updatedAt: prisma8Now(),
       })
 
-      const sourceTask = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: sourceNodeId,
-          nodeIndex: 1,
-          nodeRound: 1,
-          nodeName: '当前审批节点',
-          approverId: sourceApprover.id,
-          updatedAt: prisma8Now(),
-        })
-      const peerTask = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: sourceNodeId,
-          nodeIndex: 1,
-          nodeRound: 1,
-          nodeName: '当前审批节点',
-          approverId: `peer-${suffix}`,
-          updatedAt: prisma8Now(),
-        })
+      const sourceTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: sourceNodeId,
+        nodeIndex: 1,
+        nodeRound: 1,
+        nodeName: '当前审批节点',
+        approverId: sourceApprover.id,
+        updatedAt: prisma8Now(),
+      })
+      const peerTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: sourceNodeId,
+        nodeIndex: 1,
+        nodeRound: 1,
+        nodeName: '当前审批节点',
+        approverId: `peer-${suffix}`,
+        updatedAt: prisma8Now(),
+      })
 
-      const oldAttachment = await prisma8Client.orm.public.Attachments
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          uploaderId: sourceApprover.id,
-          name: 'old-return.txt',
-          path: `/tmp/${suffix}/old-return.txt`,
-        })
-      const newAttachment = await prisma8Client.orm.public.Attachments
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          uploaderId: sourceApprover.id,
-          name: 'new-return.txt',
-          path: `/tmp/${suffix}/new-return.txt`,
-        })
+      const oldAttachment = await prisma8Client.orm.public.Attachments.select('id').create({
+        tenantId: tenant.id,
+        uploaderId: sourceApprover.id,
+        name: 'old-return.txt',
+        path: `/tmp/${suffix}/old-return.txt`,
+      })
+      const newAttachment = await prisma8Client.orm.public.Attachments.select('id').create({
+        tenantId: tenant.id,
+        uploaderId: sourceApprover.id,
+        name: 'new-return.txt',
+        path: `/tmp/${suffix}/new-return.txt`,
+      })
 
-      const oldReturn = await prisma8Client.orm.public.ApprovalReturnBackRecords
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          taskId: sourceTask.id,
-          returnToNodeId: targetNodeId,
-          returnReason: '旧退回原因',
-          returnUserId: sourceApprover.id,
-          updatedAt: prisma8Now(),
-        })
+      const oldReturn = await prisma8Client.orm.public.ApprovalReturnBackRecords.select(
+        'id',
+      ).create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        taskId: sourceTask.id,
+        returnToNodeId: targetNodeId,
+        returnReason: '旧退回原因',
+        returnUserId: sourceApprover.id,
+        updatedAt: prisma8Now(),
+      })
       await prisma8Client.orm.public.ApprovalInstanceAttachments.create({
         tenantId: tenant.id,
         instanceId: instance.id,

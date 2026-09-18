@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { FieldVO } from '@micromatrix/shared'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ModuleFormsService } from '../metadata/module-forms.service'
@@ -137,7 +137,7 @@ test(
         name: '合同 A',
         customerId: customer.id,
         owner: actor,
-        amount: prisma8Numeric(200, 14, 2),
+        amount: numericValue(decimalString(200, 14, 2), 14, 2),
         number: `C-${suffix.slice(0, 8)}`,
         stage: 'stage-a',
         organizationId: org,
@@ -151,7 +151,7 @@ test(
         name: '合同 B',
         customerId: foreignCustomer.id,
         owner: actor,
-        amount: prisma8Numeric(100, 14, 2),
+        amount: numericValue(decimalString(100, 14, 2), 14, 2),
         number: `F-${suffix.slice(0, 8)}`,
         stage: 'stage-b',
         organizationId: foreignOrg,
@@ -201,7 +201,7 @@ test(
         name: '报价 A',
         opportunityId: opportunity.id,
         untilTime: now + 86_400_000n,
-        amount: prisma8Numeric(200, 14, 2),
+        amount: numericValue(decimalString(200, 14, 2), 14, 2),
         organizationId: org,
         createTime: now,
         updateTime: now,

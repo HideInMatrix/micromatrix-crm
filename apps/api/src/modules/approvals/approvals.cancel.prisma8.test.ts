@@ -2,11 +2,8 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-} from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { prisma8Now, prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { jsonValue } from '../../prisma/json-value'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalsService } from './approvals.service'
 
@@ -25,55 +22,54 @@ test(
     const resourceCalls: Array<{ action: string; status?: string }> = []
 
     try {
-      const instance = await prisma8Client.orm.public.ApprovalInstances
-        .select('id', 'updatedAt')
-        .create({
-          tenantId,
-          module: 'contract',
-          targetId: `contract-${suffix}`,
-          targetName: 'Prisma 8 cancel contract',
-          nodesSnapshot: prisma8JsonValue([]),
-          submitterId,
-          submitterName: 'Submitter',
-          updatedAt: prisma8Now(),
+      const instance = await prisma8Client.orm.public.ApprovalInstances.select(
+        'id',
+        'updatedAt',
+      ).create({
+        tenantId,
+        module: 'contract',
+        targetId: `contract-${suffix}`,
+        targetName: 'Prisma 8 cancel contract',
+        nodesSnapshot: jsonValue([]),
+        submitterId,
+        submitterName: 'Submitter',
+        updatedAt: prisma8Now(),
       })
       const pendingA = randomUUID()
       const pendingB = randomUUID()
       const approved = randomUUID()
-      await prisma8Client.orm.public.ApprovalTasks.createAll(
-        [
-          {
-            id: pendingA,
-            tenantId,
-            instanceId: instance.id,
-            nodeIndex: 0,
-            nodeName: 'First approver',
-            approverId: `approver-a-${suffix}`,
-            updatedAt: prisma8Now(),
-          },
-          {
-            id: pendingB,
-            tenantId,
-            instanceId: instance.id,
-            nodeIndex: 0,
-            nodeName: 'Second approver',
-            approverId: `approver-b-${suffix}`,
-            updatedAt: prisma8Now(),
-          },
-          {
-            id: approved,
-            tenantId,
-            instanceId: instance.id,
-            nodeIndex: 0,
-            nodeName: 'Historical approver',
-            approverId: `approver-old-${suffix}`,
-            status: 'APPROVED',
-            action: 'APPROVE',
-            handledAt: prisma8TimestampFromDate(new Date(Date.now() - 60_000)),
-            updatedAt: prisma8Now(),
-          },
-        ],
-      )
+      await prisma8Client.orm.public.ApprovalTasks.createAll([
+        {
+          id: pendingA,
+          tenantId,
+          instanceId: instance.id,
+          nodeIndex: 0,
+          nodeName: 'First approver',
+          approverId: `approver-a-${suffix}`,
+          updatedAt: prisma8Now(),
+        },
+        {
+          id: pendingB,
+          tenantId,
+          instanceId: instance.id,
+          nodeIndex: 0,
+          nodeName: 'Second approver',
+          approverId: `approver-b-${suffix}`,
+          updatedAt: prisma8Now(),
+        },
+        {
+          id: approved,
+          tenantId,
+          instanceId: instance.id,
+          nodeIndex: 0,
+          nodeName: 'Historical approver',
+          approverId: `approver-old-${suffix}`,
+          status: 'APPROVED',
+          action: 'APPROVE',
+          handledAt: prisma8TimestampFromDate(new Date(Date.now() - 60_000)),
+          updatedAt: prisma8Now(),
+        },
+      ])
 
       const resources = {
         setBizStatus: async (
@@ -108,9 +104,7 @@ test(
       assert.ok(storedInstance)
       assert.equal(storedInstance.status, 'CANCELED')
       assert.ok(storedInstance.finishedAt)
-      assert.ok(
-        storedInstance.updatedAt.epochMilliseconds >= instance.updatedAt.epochMilliseconds,
-      )
+      assert.ok(storedInstance.updatedAt.epochMilliseconds >= instance.updatedAt.epochMilliseconds)
 
       const tasks = await prisma8Client.orm.public.ApprovalTasks.where({
         instanceId: instance.id,

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 
 import type { ApprovalJsonValue } from './approval-runtime.types'
 
@@ -205,7 +205,7 @@ export class ApprovalResourceRestoreService {
         name: snapshot.quotation.name,
         opportunityId: snapshot.quotation.opportunityId,
         untilTime: BigInt(snapshot.quotation.untilTime),
-        amount: prisma8Numeric(snapshot.quotation.amount, 14, 2),
+        amount: numericValue(decimalString(snapshot.quotation.amount, 14, 2), 14, 2),
         updateTime: BigInt(Date.now()),
         updateUser: operatorId,
       })
@@ -263,7 +263,7 @@ export class ApprovalResourceRestoreService {
         name: snapshot.contract.name,
         customerId: snapshot.contract.customerId,
         owner: snapshot.contract.owner,
-        amount: prisma8Numeric(snapshot.contract.amount, 14, 2),
+        amount: numericValue(decimalString(snapshot.contract.amount, 14, 2), 14, 2),
         number: snapshot.contract.number,
         stage: snapshot.contract.stage,
         startTime:
@@ -325,12 +325,14 @@ export class ApprovalResourceRestoreService {
         contractId: snapshot.invoice.contractId,
         owner: snapshot.invoice.owner,
         amount:
-          snapshot.invoice.amount === null ? null : prisma8Numeric(snapshot.invoice.amount, 20, 10),
+          snapshot.invoice.amount === null
+            ? null
+            : numericValue(decimalString(snapshot.invoice.amount, 20, 10), 20, 10),
         invoiceType: snapshot.invoice.invoiceType === null ? null : snapshot.invoice.invoiceType,
         taxRate:
           snapshot.invoice.taxRate === null
             ? null
-            : prisma8Numeric(snapshot.invoice.taxRate, 20, 10),
+            : numericValue(decimalString(snapshot.invoice.taxRate, 20, 10), 20, 10),
         businessTitleId:
           snapshot.invoice.businessTitleId === null ? null : snapshot.invoice.businessTitleId,
         updateTime: BigInt(Date.now()),
@@ -389,7 +391,9 @@ export class ApprovalResourceRestoreService {
         contractId: snapshot.order.contractId === null ? null : snapshot.order.contractId,
         owner: snapshot.order.owner === null ? null : snapshot.order.owner,
         amount:
-          snapshot.order.amount === null ? null : prisma8Numeric(snapshot.order.amount, 20, 10),
+          snapshot.order.amount === null
+            ? null
+            : numericValue(decimalString(snapshot.order.amount, 20, 10), 20, 10),
         stage: snapshot.order.stage,
         pos: snapshot.order.pos === null ? null : BigInt(snapshot.order.pos),
         updateTime: BigInt(Date.now()),

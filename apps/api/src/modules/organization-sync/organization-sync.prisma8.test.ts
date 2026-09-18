@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -23,35 +23,35 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
 
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
   const tenant = await createPrismaTestTenant(prisma8Client, 'p8-org-sync')
-  const role = await prisma8Client.orm.public.Roles
-    .select('id')
-    .create({
-      tenantId: tenant.id,
-      name: '同步默认角色',
-      permissions: [],
-      dataScope: 'SELF',
-      updatedAt: prisma8Now(),
-    })
+  const role = await prisma8Client.orm.public.Roles.select('id').create({
+    tenantId: tenant.id,
+    name: '同步默认角色',
+    permissions: [],
+    dataScope: 'SELF',
+    updatedAt: prisma8Now(),
+  })
   const target = await createPrismaTestDepartment(prisma8Client, {
     tenantId: tenant.id,
     name: '同步目标部门',
   })
-  const integration = await prisma8Client.orm.public.EnterpriseIntegrations
-    .select('id', 'corpId', 'agentId')
-    .create({
-      tenantId: tenant.id,
-      provider: 'WECOM',
-      corpId: `corp-${suffix}`,
-      agentId: '1000001',
-      secretCiphertext: 'ciphertext',
-      secretIv: 'iv',
-      secretAuthTag: 'tag',
-      syncEnabled: true,
-      syncDefaultRoleId: role.id,
-      lastTestSucceeded: true,
-      createdById: 'admin-a',
-      updatedById: 'admin-a',
-      updatedAt: prisma8Now(),
+  const integration = await prisma8Client.orm.public.EnterpriseIntegrations.select(
+    'id',
+    'corpId',
+    'agentId',
+  ).create({
+    tenantId: tenant.id,
+    provider: 'WECOM',
+    corpId: `corp-${suffix}`,
+    agentId: '1000001',
+    secretCiphertext: 'ciphertext',
+    secretIv: 'iv',
+    secretAuthTag: 'tag',
+    syncEnabled: true,
+    syncDefaultRoleId: role.id,
+    lastTestSucceeded: true,
+    createdById: 'admin-a',
+    updatedById: 'admin-a',
+    updatedAt: prisma8Now(),
   })
   const integration8 = await prisma8.client.orm.public.EnterpriseIntegrations.where({
     id: integration.id,
@@ -61,7 +61,11 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
   const integrations = {
     getWeComSyncContext: async () => ({
       integration: integration8,
-      credentials: { corpId: integration.corpId, agentId: integration.agentId, appSecret: 'secret' },
+      credentials: {
+        corpId: integration.corpId,
+        agentId: integration.agentId,
+        appSecret: 'secret',
+      },
     }),
   } as unknown as EnterpriseIntegrationsService
   const weCom = {
@@ -123,50 +127,49 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
     assert.equal(searched.total, 1)
     assert.equal((searched.items[0]?.sourceData as Record<string, unknown>)['name'], '关键搜索部门')
 
-    const conflict = await prisma8Client.orm.public.OrganizationSyncItems
-      .select('id', 'externalKey')
-      .create({
+    const conflict = await prisma8Client.orm.public.OrganizationSyncItems.select(
+      'id',
+      'externalKey',
+    ).create({
+      tenantId: tenant.id,
+      batchId: preview.id,
+      resourceType: 'DEPARTMENT',
+      externalId: 'conflict-dept',
+      externalKey: 'conflict-dept',
+      parentExternalKey: 'remote-root',
+      action: 'CONFLICT',
+      sourceData: jsonValue({ name: '冲突部门' }),
+      conflictType: 'NAME_CONFLICT',
+      conflictMessage: '部门冲突',
+      sort: 1000,
+      updatedAt: prisma8Now(),
+    })
+    await prisma8Client.orm.public.OrganizationSyncItems.createAll([
+      {
         tenantId: tenant.id,
         batchId: preview.id,
         resourceType: 'DEPARTMENT',
-        externalId: 'conflict-dept',
-        externalKey: 'conflict-dept',
-        parentExternalKey: 'remote-root',
-        action: 'CONFLICT',
-        sourceData: prisma8JsonValue({ name: '冲突部门' }),
-        conflictType: 'NAME_CONFLICT',
-        conflictMessage: '部门冲突',
-        sort: 1000,
+        externalId: 'conflict-child',
+        externalKey: 'conflict-child',
+        parentExternalKey: conflict.externalKey,
+        action: 'CREATE',
+        sourceData: jsonValue({ name: '冲突下级部门' }),
+        sort: 1001,
         updatedAt: prisma8Now(),
-    })
-    await prisma8Client.orm.public.OrganizationSyncItems.createAll(
-      [
-        {
-          tenantId: tenant.id,
-          batchId: preview.id,
-          resourceType: 'DEPARTMENT',
-          externalId: 'conflict-child',
-          externalKey: 'conflict-child',
-          parentExternalKey: conflict.externalKey,
-          action: 'CREATE',
-          sourceData: prisma8JsonValue({ name: '冲突下级部门' }),
-          sort: 1001,
-          updatedAt: prisma8Now(),
-        },
-        {
-          tenantId: tenant.id,
-          batchId: preview.id,
-          resourceType: 'USER',
-          externalId: 'conflict-user',
-          externalKey: 'conflict-user',
-          parentExternalKey: 'conflict-child',
-          action: 'CREATE',
-          sourceData: prisma8JsonValue({ name: '冲突下级成员' }),
-          sort: 1002,
-          updatedAt: prisma8Now(),
-        },
-      ],
-    )
+      },
+      {
+        tenantId: tenant.id,
+        batchId: preview.id,
+        resourceType: 'USER',
+        externalId: 'conflict-user',
+        externalKey: 'conflict-user',
+        parentExternalKey: 'conflict-child',
+        action: 'CREATE',
+        sourceData: jsonValue({ name: '冲突下级成员' }),
+        sort: 1002,
+        updatedAt: prisma8Now(),
+      },
+    ])
 
     await service.resolve(actor, preview.id, {
       items: [{ itemId: conflict.id, resolution: 'SKIP' }],
@@ -177,8 +180,14 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
       .where((row) => row.externalKey.in(['conflict-dept', 'conflict-child', 'conflict-user']))
       .orderBy((row) => row.sort.asc())
       .all()
-    assert.deepEqual(cascaded.map((item) => item.action), ['SKIP', 'SKIP', 'SKIP'])
-    assert.deepEqual(cascaded.map((item) => item.result), ['RESOLVED', 'RESOLVED', 'RESOLVED'])
+    assert.deepEqual(
+      cascaded.map((item) => item.action),
+      ['SKIP', 'SKIP', 'SKIP'],
+    )
+    assert.deepEqual(
+      cascaded.map((item) => item.result),
+      ['RESOLVED', 'RESOLVED', 'RESOLVED'],
+    )
     const resolvedBatch = await prisma8Client.orm.public.OrganizationSyncBatches.where({
       id: preview.id,
     }).first()
@@ -186,7 +195,9 @@ test('OrganizationSync 使用 Prisma 8 保持 preview、JSON 关键词与冲突�
     assert.ok(Number((resolvedBatch.counts as Record<string, number>)['skip']) >= 3)
   } finally {
     await prisma8Client.orm.public.OrganizationSyncItems.where({ tenantId: tenant.id }).deleteAll()
-    await prisma8Client.orm.public.OrganizationSyncBatches.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.OrganizationSyncBatches.where({
+      tenantId: tenant.id,
+    }).deleteAll()
     await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Departments.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Roles.where({ tenantId: tenant.id }).deleteAll()

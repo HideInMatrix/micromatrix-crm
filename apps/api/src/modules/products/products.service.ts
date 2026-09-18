@@ -5,7 +5,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   ExportTasksService,
@@ -90,7 +90,9 @@ export class ProductsService {
         id: createLegacyId32(),
         name: name,
         price:
-          dto.price === undefined || dto.price === null ? null : prisma8Numeric(dto.price, 14, 4),
+          dto.price === undefined || dto.price === null
+            ? null
+            : numericValue(decimalString(dto.price, 14, 4), 14, 4),
         status: dto.status,
         pos,
         organizationId: user.tenantId,
@@ -128,7 +130,10 @@ export class ProductsService {
       await tx.orm.public.Product.where({ id: existing.id }).update({
         ...(name !== undefined ? { name: name } : {}),
         ...(dto.price !== undefined
-          ? { price: dto.price === null ? null : prisma8Numeric(dto.price, 14, 4) }
+          ? {
+              price:
+                dto.price === null ? null : numericValue(decimalString(dto.price, 14, 4), 14, 4),
+            }
           : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         updateTime: BigInt(Date.now()),
@@ -516,9 +521,15 @@ export class ProductsService {
     }
     if (key === 'price') {
       if (value === null || value === '') return { price: null }
-      const price = Number(value)
-      if (!Number.isFinite(price) || price <= 0) throw new BadRequestException('产品价格必须大于 0')
-      return { price: prisma8Numeric(price, 14, 4) }
+      try {
+        const decimal = decimalString(value, 14, 4)
+        if (decimal.startsWith('-') || /^0+(?:\.0+)?$/.test(decimal)) {
+          throw new TypeError('non-positive')
+        }
+        return { price: numericValue(decimal, 14, 4) }
+      } catch {
+        throw new BadRequestException('产品价格必须大于 0')
+      }
     }
     if (key === 'status') {
       const status = String(value ?? '')
@@ -572,7 +583,7 @@ export class ProductsService {
       if (condition.op === 'isEmpty') return collection.where((row) => row.price.isNull())
       if (condition.op === 'notEmpty') return collection.where((row) => row.price.isNotNull())
       const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
-        (item) => prisma8Numeric(Number(item), 14, 4),
+        (item) => numericValue(decimalString(item, 14, 4), 14, 4),
       )
       const value = values[0]!
       if (condition.op === 'eq') return collection.where((row) => row.price.eq(value))

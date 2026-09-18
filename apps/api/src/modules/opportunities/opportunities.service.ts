@@ -15,7 +15,7 @@ import { parseFilters } from '../../common/filter-builder'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { not } from '@prisma/orm-postgres/orm-client'
-import { prisma8Numeric } from '../../prisma/prisma8-values.js'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
@@ -884,8 +884,8 @@ export class OpportunitiesService {
         id: createLegacyId32(),
         customerId: customerId ? customerId : null,
         name: dto.name,
-        amount: dto.amount == null ? null : prisma8Numeric(dto.amount, 20, 10),
-        possible: possible == null ? null : prisma8Numeric(possible, 20, 10),
+        amount: dto.amount == null ? null : numericValue(decimalString(dto.amount, 20, 10), 20, 10),
+        possible: possible == null ? null : numericValue(decimalString(possible, 20, 10), 20, 10),
         products: productIds.length ? JSON.stringify(productIds) : null,
         organizationId: user.tenantId,
         stage: stage.id,
@@ -952,10 +952,16 @@ export class OpportunitiesService {
       const updated = await tx.orm.public.Opportunity.where({ id: id }).update({
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.amount !== undefined
-          ? { amount: dto.amount == null ? null : prisma8Numeric(dto.amount, 20, 10) }
+          ? {
+              amount:
+                dto.amount == null ? null : numericValue(decimalString(dto.amount, 20, 10), 20, 10),
+            }
           : {}),
         ...(possible !== undefined
-          ? { possible: possible == null ? null : prisma8Numeric(possible, 20, 10) }
+          ? {
+              possible:
+                possible == null ? null : numericValue(decimalString(possible, 20, 10), 20, 10),
+            }
           : {}),
         ...(dto.customerId !== undefined ? { customerId: customerId ? customerId : null } : {}),
         ...(dto.contactId !== undefined || dto.customerId !== undefined
@@ -1277,14 +1283,16 @@ export class OpportunitiesService {
     if (data.kind === 'amount') {
       await query.updateAndCount({
         ...common,
-        amount: data.value === null ? null : prisma8Numeric(data.value, 20, 10),
+        amount:
+          data.value === null ? null : numericValue(decimalString(data.value, 20, 10), 20, 10),
       })
       return
     }
     if (data.kind === 'possible') {
       await query.updateAndCount({
         ...common,
-        possible: data.value === null ? null : prisma8Numeric(data.value, 20, 10),
+        possible:
+          data.value === null ? null : numericValue(decimalString(data.value, 20, 10), 20, 10),
       })
       return
     }
@@ -1912,9 +1920,8 @@ export class OpportunitiesService {
     }
 
     if (key === 'amount' || key === 'possible') {
-      const numbers = rawValues.map(Number)
-      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
-      const values = numbers.map((value) => prisma8Numeric(value, 20, 10))
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
       const value = values[0]!
       if (key === 'amount') {
         return collection.where((row) => {

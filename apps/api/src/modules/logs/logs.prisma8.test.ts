@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { LogsService } from './logs.service'
 
@@ -23,59 +23,53 @@ test(
       const tenant = await createPrismaTestTenant(prisma8Client, 'p8-logs')
       tenantId = tenant.id
       const [first, second, foreignModule] = await Promise.all([
-        prisma8Client.orm.public.OperationLogs
-          .select('id')
-          .create({
-            tenantId: tenant.id,
-            userName: 'Alpha Admin',
-            module: 'LEAD',
-            action: 'CREATE',
-            targetId: 'lead-1',
-            targetName: 'First Lead',
-            createdAt: prisma8TimestampFromDate(new Date('2026-09-16T10:00:00.000Z')),
-          }),
-        prisma8Client.orm.public.OperationLogs
-          .select('id')
-          .create({
-            tenantId: tenant.id,
-            userName: 'Beta User',
-            module: 'LEAD',
-            action: 'UPDATE',
-            targetId: 'lead-2',
-            targetName: 'ALPHA Target',
-            createdAt: prisma8TimestampFromDate(new Date('2026-09-16T11:00:00.000Z')),
-          }),
-        prisma8Client.orm.public.OperationLogs
-          .select('id')
-          .create({
-            tenantId: tenant.id,
-            userName: 'Alpha Other',
-            module: 'CUSTOMER',
-            action: 'UPDATE',
-            createdAt: prisma8TimestampFromDate(new Date('2026-09-16T12:00:00.000Z')),
-          }),
+        prisma8Client.orm.public.OperationLogs.select('id').create({
+          tenantId: tenant.id,
+          userName: 'Alpha Admin',
+          module: 'LEAD',
+          action: 'CREATE',
+          targetId: 'lead-1',
+          targetName: 'First Lead',
+          createdAt: prisma8TimestampFromDate(new Date('2026-09-16T10:00:00.000Z')),
+        }),
+        prisma8Client.orm.public.OperationLogs.select('id').create({
+          tenantId: tenant.id,
+          userName: 'Beta User',
+          module: 'LEAD',
+          action: 'UPDATE',
+          targetId: 'lead-2',
+          targetName: 'ALPHA Target',
+          createdAt: prisma8TimestampFromDate(new Date('2026-09-16T11:00:00.000Z')),
+        }),
+        prisma8Client.orm.public.OperationLogs.select('id').create({
+          tenantId: tenant.id,
+          userName: 'Alpha Other',
+          module: 'CUSTOMER',
+          action: 'UPDATE',
+          createdAt: prisma8TimestampFromDate(new Date('2026-09-16T12:00:00.000Z')),
+        }),
       ])
       await prisma8Client.orm.public.OperationLogBlobs.create({
         operationLogId: second.id,
-        detail: prisma8JsonValue({ changes: [{ field: 'name', before: 'A', after: 'B' }] }),
+        detail: jsonValue({ changes: [{ field: 'name', before: 'A', after: 'B' }] }),
       })
       await prisma8Client.orm.public.LoginLogs.createAll([
-          {
-            tenantId: tenant.id,
-            email: 'Alpha.' + suffix + '@example.com',
-            authType: 'PASSWORD',
-            success: true,
-            createdAt: prisma8TimestampFromDate(new Date('2026-09-16T10:30:00.000Z')),
-          },
-          {
-            tenantId: tenant.id,
-            email: 'beta.' + suffix + '@example.com',
-            authType: 'PASSWORD',
-            success: false,
-            message: 'bad password',
-            createdAt: prisma8TimestampFromDate(new Date('2026-09-16T11:30:00.000Z')),
-          },
-        ])
+        {
+          tenantId: tenant.id,
+          email: 'Alpha.' + suffix + '@example.com',
+          authType: 'PASSWORD',
+          success: true,
+          createdAt: prisma8TimestampFromDate(new Date('2026-09-16T10:30:00.000Z')),
+        },
+        {
+          tenantId: tenant.id,
+          email: 'beta.' + suffix + '@example.com',
+          authType: 'PASSWORD',
+          success: false,
+          message: 'bad password',
+          createdAt: prisma8TimestampFromDate(new Date('2026-09-16T11:30:00.000Z')),
+        },
+      ])
 
       const service = new LogsService({ client: prisma8Client } as Prisma8Service)
       const page = await service.operationLogs(tenant.id, {
@@ -95,8 +89,14 @@ test(
         module: 'LEAD',
         keyword: 'alpha',
       })
-      assert.deepEqual(nextPage.items.map((item) => item.id), [first.id])
-      assert.equal(nextPage.items.some((item) => item.id === foreignModule.id), false)
+      assert.deepEqual(
+        nextPage.items.map((item) => item.id),
+        [first.id],
+      )
+      assert.equal(
+        nextPage.items.some((item) => item.id === foreignModule.id),
+        false,
+      )
 
       const detail = await service.operationLogDetail(tenant.id, second.id)
       assert.deepEqual(detail.detail, {
@@ -118,9 +118,9 @@ test(
           .select('id')
           .all()
         if (logIds.length) {
-          await prisma8Client.orm.public.OperationLogBlobs
-            .where((row) => row.operationLogId.in(logIds.map((item) => item.id)))
-            .deleteAll()
+          await prisma8Client.orm.public.OperationLogBlobs.where((row) =>
+            row.operationLogId.in(logIds.map((item) => item.id)),
+          ).deleteAll()
         }
         await prisma8Client.orm.public.OperationLogs.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.LoginLogs.where({ tenantId }).deleteAll()

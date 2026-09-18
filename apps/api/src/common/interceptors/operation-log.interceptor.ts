@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { Observable, tap } from 'rxjs'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   LOG_OPERATION_KEY,
   LogOperationMeta,
@@ -50,8 +50,7 @@ export class OperationLogInterceptor implements NestInterceptor {
               userName: user.name,
               module: meta.module,
               action: meta.action,
-              targetId:
-                resultMeta?.targetId ?? (typeof target.id === 'string' ? target.id : null),
+              targetId: resultMeta?.targetId ?? (typeof target.id === 'string' ? target.id : null),
               targetName:
                 resultMeta?.targetName ??
                 (typeof target.name === 'string'
@@ -64,7 +63,7 @@ export class OperationLogInterceptor implements NestInterceptor {
             if (resultMeta?.detail) {
               await tx.orm.public.OperationLogBlobs.create({
                 operationLogId: log.id,
-                detail: prisma8JsonValue(resultMeta.detail),
+                detail: jsonValue(resultMeta.detail),
               })
             }
           })

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { AuthUser } from '../auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 
 export interface FieldChange {
   field: string
@@ -65,7 +65,7 @@ export class BusinessChangeLogService {
         })
         await tx.orm.public.OperationLogBlobs.create({
           operationLogId: log.id,
-          detail: prisma8JsonValue({ changes }),
+          detail: jsonValue({ changes }),
         })
       })
     } catch (error) {

@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { DataScopeService } from '../../common/services/data-scope.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
@@ -158,7 +158,7 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         name: '推进商机',
         owner: ownerId,
         stage: stageAfoot,
-        amount: prisma8Numeric(20, 20, 10),
+        amount: numericValue(decimalString(20, 20, 10), 20, 10),
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,
@@ -170,7 +170,7 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         name: '赢单商机',
         owner: ownerId,
         stage: stageWon,
-        amount: prisma8Numeric(100, 20, 10),
+        amount: numericValue(decimalString(100, 20, 10), 20, 10),
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,
@@ -183,7 +183,7 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         name: '输单商机',
         owner: ownerId,
         stage: stageLost,
-        amount: prisma8Numeric(50, 20, 10),
+        amount: numericValue(decimalString(50, 20, 10), 20, 10),
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,
@@ -197,7 +197,7 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         name: '跨 scope 赢单',
         owner: otherId,
         stage: stageWon,
-        amount: prisma8Numeric(999, 20, 10),
+        amount: numericValue(decimalString(999, 20, 10), 20, 10),
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,

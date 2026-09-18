@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ContractInvoiceService } from './contract-invoice.service'
@@ -65,7 +65,7 @@ test(
         name: '发票专项合同',
         customerId: customer.id,
         owner: actor,
-        amount: prisma8Numeric(500, 14, 2),
+        amount: numericValue(decimalString(500, 14, 2), 14, 2),
         number: `INV-${suffix.slice(0, 8)}`,
         stage: 'stage-a',
         organizationId: org,

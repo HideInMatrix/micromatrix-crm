@@ -15,7 +15,7 @@ import {
   prisma8TimestampFromDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
-import { prisma8JsonValue } from '../../prisma/prisma8-values.js'
+import { jsonValue } from '../../prisma/json-value.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import type { QueryAnnouncementsDto, SaveAnnouncementDto } from './dto/announcement.dto'
 
@@ -76,7 +76,9 @@ export class AnnouncementsService {
     const keyword = query.keyword?.trim()
     const scoped = () => {
       const base = this.announcements().where({ tenantId })
-      return keyword ? base.where((announcement) => announcement.subject.ilike(`%${keyword}%`)) : base
+      return keyword
+        ? base.where((announcement) => announcement.subject.ilike(`%${keyword}%`))
+        : base
     }
     const [items, aggregate] = await Promise.all([
       scoped()
@@ -114,9 +116,9 @@ export class AnnouncementsService {
       endAt: prisma8TimestampFromDate(normalized.endAt),
       url: normalized.url,
       linkName: normalized.linkName,
-      departmentIds: prisma8JsonValue(receivers.departmentIds),
-      userIds: prisma8JsonValue(receivers.userIds),
-      receiverUserIds: prisma8JsonValue(receivers.receiverUserIds),
+      departmentIds: jsonValue(receivers.departmentIds),
+      userIds: jsonValue(receivers.userIds),
+      receiverUserIds: jsonValue(receivers.receiverUserIds),
       notice: false,
       createUserId: user.id,
       updateUserId: user.id,
@@ -136,20 +138,22 @@ export class AnnouncementsService {
     )
 
     await this.notifications.removeBySource(user.tenantId, ANNOUNCEMENT_SOURCE, id)
-    const announcement = await this.announcements().where({ id, tenantId: user.tenantId }).update({
-      subject: normalized.subject,
-      content: normalized.content,
-      startAt: prisma8TimestampFromDate(normalized.startAt),
-      endAt: prisma8TimestampFromDate(normalized.endAt),
-      url: normalized.url,
-      linkName: normalized.linkName,
-      departmentIds: prisma8JsonValue(receivers.departmentIds),
-      userIds: prisma8JsonValue(receivers.userIds),
-      receiverUserIds: prisma8JsonValue(receivers.receiverUserIds),
-      notice: false,
-      updateUserId: user.id,
-      updatedAt: prisma8Now(),
-    })
+    const announcement = await this.announcements()
+      .where({ id, tenantId: user.tenantId })
+      .update({
+        subject: normalized.subject,
+        content: normalized.content,
+        startAt: prisma8TimestampFromDate(normalized.startAt),
+        endAt: prisma8TimestampFromDate(normalized.endAt),
+        url: normalized.url,
+        linkName: normalized.linkName,
+        departmentIds: jsonValue(receivers.departmentIds),
+        userIds: jsonValue(receivers.userIds),
+        receiverUserIds: jsonValue(receivers.receiverUserIds),
+        notice: false,
+        updateUserId: user.id,
+        updatedAt: prisma8Now(),
+      })
     if (!announcement) throw new NotFoundException('公告不存在')
     await this.publishIfDue(announcement, new Date())
     return this.detail(user.tenantId, id)

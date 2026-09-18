@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ProductPriceService } from './product-price.service'
@@ -171,7 +171,7 @@ test(
         name: '产品专项报价',
         opportunityId: opportunity.id,
         untilTime: now + 86_400_000n,
-        amount: prisma8Numeric(100, 14, 2),
+        amount: numericValue(decimalString(100, 14, 2), 14, 2),
         organizationId: org,
         createTime: now,
         updateTime: now,

@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import {
@@ -534,7 +534,7 @@ export class ApprovalFlowConfigService {
     if (!config) return null
     const webHookConfig = normalizeApprovalWebhookConfig(config.webHookConfig)
     if (!config.fieldUpdateConfigs.length && !webHookConfig) return null
-    return prisma8JsonValue({
+    return jsonValue({
       fieldUpdateConfigs: config.fieldUpdateConfigs.map((item) => ({
         fieldId: item.fieldId.trim(),
         fieldValue: item.fieldValue ?? null,
@@ -675,7 +675,7 @@ export class ApprovalFlowConfigService {
       allowAddSign: dto.allowAddSign,
       duplicateApproverRule: dto.duplicateApproverRule,
       requireComment: dto.requireComment,
-      condition: dto.condition ? prisma8JsonValue({ amountGte: dto.condition.amountGte }) : null,
+      condition: dto.condition ? jsonValue({ amountGte: dto.condition.amountGte }) : null,
       updatedById: userId,
       ...('formType' in dto ? { createdById: userId } : {}),
     }
@@ -762,7 +762,7 @@ export class ApprovalFlowConfigService {
           sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
           approverDirection: node.approverDirection ?? 'BOTTOM_UP',
           fieldPermissions: node.fieldPermissions?.length
-            ? prisma8JsonValue(
+            ? jsonValue(
                 node.fieldPermissions.map((permission) => ({
                   fieldId: permission.fieldId.trim(),
                   permissionType: permission.permissionType,
@@ -776,7 +776,7 @@ export class ApprovalFlowConfigService {
         await tx.orm.public.ApprovalNodeConditions.create({
           id,
           flowVersionId,
-          conditionConfig: node.conditionConfig ? prisma8JsonValue(node.conditionConfig) : null,
+          conditionConfig: node.conditionConfig ? jsonValue(node.conditionConfig) : null,
         })
       }
     }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
@@ -45,7 +45,7 @@ test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当
       name: '恢复前合同',
       customerId,
       owner: actorVarchar,
-      amount: prisma8Numeric(123.45, 14, 2),
+      amount: numericValue(decimalString(123.45, 14, 2), 14, 2),
       number: `R-${suffix}`.slice(0, 50),
       approvalStatus: 'PENDING',
       stage: 'AFOOT',
@@ -89,7 +89,7 @@ test('ApprovalResourceRestore 使用 Prisma 8 原子恢复 Contract 并保留当
 
     await prisma8Client.orm.public.Contract.where({ id: contractId }).update({
       name: '恢复中的新值',
-      amount: prisma8Numeric(999.99, 14, 2),
+      amount: numericValue(decimalString(999.99, 14, 2), 14, 2),
       approvalStatus: 'APPROVED',
       approved: true,
       updateUser: 'current-operator',

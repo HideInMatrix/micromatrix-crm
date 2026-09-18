@@ -8,7 +8,7 @@ import type {
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
@@ -384,7 +384,7 @@ export class ApprovalResourceService {
           id,
           organizationId: tenantId,
         }).updateAndCount({
-          amount: amount === null ? null : prisma8Numeric(amount, 20, 10),
+          amount: amount === null ? null : numericValue(decimalString(amount, 20, 10), 20, 10),
           updateUser,
           updateTime: now,
         })
@@ -404,7 +404,7 @@ export class ApprovalResourceService {
           id,
           organizationId: tenantId,
         }).updateAndCount({
-          taxRate: taxRate === null ? null : prisma8Numeric(taxRate, 20, 10),
+          taxRate: taxRate === null ? null : numericValue(decimalString(taxRate, 20, 10), 20, 10),
           updateUser,
           updateTime: now,
         })

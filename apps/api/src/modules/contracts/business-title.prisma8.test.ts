@@ -4,7 +4,7 @@ import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
@@ -147,7 +147,7 @@ test(
       const contract = await prisma8Client.orm.public.Contract.select('id').create({
         id: createLegacyId32(),
         name: 'Business Title Contract',
-        amount: prisma8Numeric(0, 14, 2),
+        amount: numericValue(decimalString(0, 14, 2), 14, 2),
         number: `BT-${suffix}`.slice(0, 50),
         customerId: customer.id,
         owner: actorId,

@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { HomeStatisticRequest } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
@@ -120,7 +120,7 @@ test(
         {
           id: createLegacyId32(),
           name: 'Underway 1',
-          amount: prisma8Numeric('100.5000000000', 20, 10),
+          amount: numericValue(decimalString('100.5000000000', 20, 10), 20, 10),
           organizationId,
           stage: afootStage.id,
           owner: actorId,
@@ -133,7 +133,7 @@ test(
         {
           id: createLegacyId32(),
           name: 'Underway 2',
-          amount: prisma8Numeric('49.5000000000', 20, 10),
+          amount: numericValue(decimalString('49.5000000000', 20, 10), 20, 10),
           organizationId,
           stage: afootStage.id,
           owner: actorId,
@@ -146,7 +146,7 @@ test(
         {
           id: createLegacyId32(),
           name: 'Won',
-          amount: prisma8Numeric('200.0000000000', 20, 10),
+          amount: numericValue(decimalString('200.0000000000', 20, 10), 20, 10),
           organizationId,
           stage: successStage.id,
           owner: actorId,
@@ -159,7 +159,7 @@ test(
         {
           id: createLegacyId32(),
           name: 'Lost',
-          amount: prisma8Numeric('999.0000000000', 20, 10),
+          amount: numericValue(decimalString('999.0000000000', 20, 10), 20, 10),
           organizationId,
           stage: failedStage.id,
           owner: actorId,

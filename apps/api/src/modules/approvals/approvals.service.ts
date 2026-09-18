@@ -17,7 +17,7 @@ import {
   prisma8TimestampFromDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
-import { prisma8JsonValue } from '../../prisma/prisma8-values.js'
+import { jsonValue } from '../../prisma/json-value.js'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -185,7 +185,7 @@ export class ApprovalsService {
       targetId,
       targetName: target.name,
       summary: target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null,
-      nodesSnapshot: prisma8JsonValue(snapshot),
+      nodesSnapshot: jsonValue(snapshot),
       comment: context?.comment?.trim() || null,
       updateFields: updateFields.length ? JSON.stringify(updateFields) : null,
       currentNodeIndex: -1,

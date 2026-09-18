@@ -12,7 +12,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -174,7 +174,7 @@ export class QuotesService {
         name: dto.name.trim(),
         opportunityId: dto.opportunityId,
         untilTime: BigInt(dto.untilTime),
-        amount: prisma8Numeric(dto.amount ?? 0, 14, 2),
+        amount: numericValue(decimalString(dto.amount ?? 0, 14, 2), 14, 2),
         approvalStatus: 'NONE',
         invalid: false,
         organizationId: user.tenantId,
@@ -247,7 +247,10 @@ export class QuotesService {
         name: dto.name === undefined ? undefined : dto.name.trim(),
         opportunityId: dto.opportunityId === undefined ? undefined : dto.opportunityId,
         untilTime: dto.untilTime === undefined ? undefined : BigInt(dto.untilTime),
-        amount: dto.amount === undefined ? undefined : prisma8Numeric(dto.amount, 14, 2),
+        amount:
+          dto.amount === undefined
+            ? undefined
+            : numericValue(decimalString(dto.amount, 14, 2), 14, 2),
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
       })
@@ -394,10 +397,14 @@ export class QuotesService {
           updateUser: user.id,
         })
       } else if (field.key === 'amount') {
-        const amount = Number(dto.fieldValue ?? 0)
-        if (!Number.isFinite(amount)) throw new BadRequestException('报价金额不合法')
+        let amount
+        try {
+          amount = numericValue(decimalString(dto.fieldValue ?? 0, 14, 2), 14, 2)
+        } catch {
+          throw new BadRequestException('报价金额不合法')
+        }
         await target.updateAndCount({
-          amount: prisma8Numeric(amount, 14, 2),
+          amount,
           updateTime: now,
           updateUser: user.id,
         })
@@ -722,13 +729,13 @@ export class QuotesService {
       })
     }
     if (numberKeys.has(key)) {
-      const number = Number(condition.value)
-      if (!Number.isFinite(number)) return collection.where((row) => row.id.eq(''))
-      const value = prisma8Numeric(number, 14, 2)
-      const values = (Array.isArray(condition.value) ? condition.value : [condition.value])
-        .map((item) => Number(item))
-        .filter(Number.isFinite)
-        .map((item) => prisma8Numeric(item, 14, 2))
+      const values = tryNumericValues(
+        Array.isArray(condition.value) ? condition.value : [condition.value],
+        14,
+        2,
+      )
+      if (!values) return collection.where((row) => row.id.eq(''))
+      const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.amount.eq(value)
         if (condition.op === 'ne') return row.amount.neq(value)

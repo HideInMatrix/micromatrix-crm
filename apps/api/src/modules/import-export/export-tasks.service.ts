@@ -1,15 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import type { JsonValue } from '@prisma/orm-postgres/target/codec-types'
 import type { AuthUser } from '../../common/auth-user'
 import type { ExportTaskVO } from '@micromatrix/shared'
 import { createReadStream, promises as fs } from 'node:fs'
 import path from 'node:path'
+import { jsonValue } from '../../prisma/json-value'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import {
-  prisma8Now,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal.js'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
 import { AsyncJobsService } from '../../async-jobs/async-jobs.service'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -35,10 +32,10 @@ export class ExportTasksService {
     private readonly asyncJobs: AsyncJobsService,
     config: ConfigService,
   ) {
-    const uploadRoot = config.get<string>('UPLOAD_DIR') ?? path.resolve(__dirname, '../../../uploads')
+    const uploadRoot =
+      config.get<string>('UPLOAD_DIR') ?? path.resolve(__dirname, '../../../uploads')
     this.root = path.join(uploadRoot, 'exports')
   }
-
 
   async enqueue(
     user: AuthUser,
@@ -49,7 +46,7 @@ export class ExportTasksService {
     },
   ): Promise<ExportTaskVO> {
     const fileName = this.normalizeFileName(input.fileName)
-    const payload = this.jsonValue(input.payload)
+    const payload = jsonValue(input.payload)
     const client = this.prisma8.client
     const task = await client.transaction(async (tx) => {
       const lockKey = `export-user:${user.tenantId}:${user.id}`
@@ -133,7 +130,11 @@ export class ExportTasksService {
     return this.tasks().where({ id: taskId }).first()
   }
 
-  async complete(taskId: string, user: { tenantId: string; id: string }, result: ExportBuildResult): Promise<boolean> {
+  async complete(
+    taskId: string,
+    user: { tenantId: string; id: string },
+    result: ExportBuildResult,
+  ): Promise<boolean> {
     const dir = path.join(this.root, user.tenantId, user.id)
     await fs.mkdir(dir, { recursive: true })
     const filePath = path.join(dir, `${taskId}.xlsx`)
@@ -201,7 +202,8 @@ export class ExportTasksService {
 
   async download(user: AuthUser, id: string) {
     const task = await this.getOwnTask(user, id)
-    if (task.status !== 'SUCCESS' || !task.filePath) throw new BadRequestException('导出文件尚未生成完成')
+    if (task.status !== 'SUCCESS' || !task.filePath)
+      throw new BadRequestException('导出文件尚未生成完成')
     if (task.expiresAt.epochMilliseconds <= Date.now()) {
       throw new BadRequestException('导出文件已过期')
     }
@@ -215,11 +217,13 @@ export class ExportTasksService {
 
   async cancel(user: AuthUser, id: string): Promise<{ id: string }> {
     const task = await this.getOwnTask(user, id)
-    await this.tasks().where({ id }).update({
-      status: 'CANCELED',
-      filePath: null,
-      completedAt: task.completedAt ?? prisma8Now(),
-    })
+    await this.tasks()
+      .where({ id })
+      .update({
+        status: 'CANCELED',
+        filePath: null,
+        completedAt: task.completedAt ?? prisma8Now(),
+      })
     await this.asyncJobs.cancelExportJob(id)
     if (task.filePath) await fs.rm(task.filePath, { force: true }).catch(() => undefined)
     return { id }
@@ -251,12 +255,11 @@ export class ExportTasksService {
     return this.prisma8.client.orm.public.ExportTasks
   }
 
-  private jsonValue(value: unknown): JsonValue {
-    return JSON.parse(JSON.stringify(value)) as JsonValue
-  }
-
   private normalizeFileName(fileName: string) {
-    const normalized = fileName.trim().replace(/\.xlsx$/i, '').replace(/[\\/:*?"<>|]/g, '_')
+    const normalized = fileName
+      .trim()
+      .replace(/\.xlsx$/i, '')
+      .replace(/[\\/:*?"<>|]/g, '_')
     if (!normalized) throw new BadRequestException('导出文件名不能为空')
     return normalized.slice(0, 50)
   }

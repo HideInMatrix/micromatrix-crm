@@ -21,7 +21,8 @@ import {
   prisma8TimestampFromDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue, prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
+import { jsonValue } from '../../prisma/json-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { BiddingItem, BiddingProvider } from './providers/bidding-provider.interface'
@@ -77,7 +78,7 @@ export class BiddingService {
     if (existing) {
       await sources.where({ id: existing.id }).update({
         enabled,
-        ...(credentials ? { credentials: prisma8JsonValue(credentials) } : {}),
+        ...(credentials ? { credentials: jsonValue(credentials) } : {}),
         updatedAt: now,
       })
     } else {
@@ -86,7 +87,7 @@ export class BiddingService {
         provider,
         name: adapter.label,
         enabled,
-        credentials: credentials ? prisma8JsonValue(credentials) : null,
+        credentials: credentials ? jsonValue(credentials) : null,
         updatedAt: now,
       })
     }
@@ -307,7 +308,7 @@ export class BiddingService {
         budget:
           item.budget === undefined || item.budget === null
             ? null
-            : prisma8Numeric(item.budget, 16, 2),
+            : numericValue(decimalString(item.budget, 16, 2), 16, 2),
         publishedAt: item.publishedAt ? prisma8TimestampFromDate(item.publishedAt) : null,
         deadline: item.deadline ? prisma8TimestampFromDate(item.deadline) : null,
         sourceUrl: item.sourceUrl ?? null,

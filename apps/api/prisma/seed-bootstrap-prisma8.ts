@@ -3,7 +3,7 @@ import { MESSAGE_TASK_DEFINITIONS } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { createPrisma8Client } from '../src/prisma/prisma8-client'
 import { prisma8Now, prisma8TimestampFromDate } from '../src/prisma/prisma8-temporal'
-import { prisma8Numeric } from '../src/prisma/prisma8-values'
+import { decimalString, numericValue } from '../src/prisma/numeric-value'
 
 const databaseUrl = process.env['DATABASE_URL']
 
@@ -25,7 +25,7 @@ export async function runPrisma8BootstrapSeed() {
     freePlan ??= await plans.create({
       code: 'free',
       name: '免费版',
-      price: prisma8Numeric(0, 10, 2),
+      price: numericValue(decimalString(0, 10, 2), 10, 2),
       maxUsers: 5,
       updatedAt: prisma8Now(),
     })
@@ -33,7 +33,7 @@ export async function runPrisma8BootstrapSeed() {
       await plans.create({
         code: 'pro',
         name: '专业版',
-        price: prisma8Numeric(99, 10, 2),
+        price: numericValue(decimalString(99, 10, 2), 10, 2),
         maxUsers: 50,
         updatedAt: prisma8Now(),
       })

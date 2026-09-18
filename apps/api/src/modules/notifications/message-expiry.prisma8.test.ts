@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
@@ -70,7 +70,7 @@ test(
         name: '到期测试报价',
         opportunityId: opportunity.id,
         untilTime: dueAt,
-        amount: prisma8Numeric(0, 14, 2),
+        amount: numericValue(decimalString(0, 14, 2), 14, 2),
         organizationId,
         createTime: baseTime,
         updateTime: baseTime,
@@ -105,7 +105,7 @@ test(
         name: '到期测试合同',
         customerId: customer.id,
         owner: actorId,
-        amount: prisma8Numeric(0, 14, 2),
+        amount: numericValue(decimalString(0, 14, 2), 14, 2),
         number: `C-${suffix}`.slice(0, 50),
         stage: activeStage.id,
         endTime: dueAt,
@@ -120,7 +120,7 @@ test(
         name: '不应通知的结束合同',
         customerId: customer.id,
         owner: actorId,
-        amount: prisma8Numeric(0, 14, 2),
+        amount: numericValue(decimalString(0, 14, 2), 14, 2),
         number: `END-${suffix}`.slice(0, 50),
         stage: endStage.id,
         endTime: dueAt,

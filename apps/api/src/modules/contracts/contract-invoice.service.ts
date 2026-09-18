@@ -8,7 +8,7 @@ import {
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { formatForExport } from '../../common/export-format'
-import { prisma8Numeric } from '../../prisma/prisma8-values.js'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { DataScopeService } from '../../common/services/data-scope.service'
@@ -240,9 +240,9 @@ export class ContractInvoiceService {
         name: dto.name.trim(),
         contractId: dto.contractId,
         owner: owner,
-        amount: prisma8Numeric(dto.amount, 20, 10),
+        amount: numericValue(decimalString(dto.amount, 20, 10), 20, 10),
         invoiceType: dto.invoiceType?.trim() ? dto.invoiceType.trim() : null,
-        taxRate: prisma8Numeric(dto.taxRate ?? 0, 20, 10),
+        taxRate: numericValue(decimalString(dto.taxRate ?? 0, 20, 10), 20, 10),
         approvalStatus: 'NONE',
         businessTitleId: businessTitleId ? businessTitleId : null,
         organizationId: user.tenantId,
@@ -302,13 +302,17 @@ export class ContractInvoiceService {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         ...(dto.contractId !== undefined ? { contractId: dto.contractId } : {}),
         ...(owner !== undefined ? { owner: owner } : {}),
-        ...(dto.amount !== undefined ? { amount: prisma8Numeric(dto.amount, 20, 10) } : {}),
+        ...(dto.amount !== undefined
+          ? { amount: numericValue(decimalString(dto.amount, 20, 10), 20, 10) }
+          : {}),
         ...(dto.invoiceType !== undefined
           ? {
               invoiceType: dto.invoiceType?.trim() ? dto.invoiceType.trim() : null,
             }
           : {}),
-        ...(dto.taxRate !== undefined ? { taxRate: prisma8Numeric(dto.taxRate, 20, 10) } : {}),
+        ...(dto.taxRate !== undefined
+          ? { taxRate: numericValue(decimalString(dto.taxRate, 20, 10), 20, 10) }
+          : {}),
         ...(titleId !== undefined ? { businessTitleId: titleId ? titleId : null } : {}),
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
@@ -863,9 +867,8 @@ export class ContractInvoiceService {
         return collection.where((row) => (key === 'amount' ? row.amount : row.taxRate).isNotNull())
       }
       const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
-      const numbers = rawValues.map(Number)
-      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
-      const values = numbers.map((value) => prisma8Numeric(value, 20, 10))
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
       const value = values[0]!
       return collection.where((row) => {
         const field = key === 'amount' ? row.amount : row.taxRate

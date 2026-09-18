@@ -13,7 +13,7 @@ import { TenantDerivedCacheService } from '../../common/services/tenant-derived-
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
 import { prisma8Now } from '../../prisma/prisma8-temporal.js'
-import { prisma8JsonValue } from '../../prisma/prisma8-values.js'
+import { jsonValue } from '../../prisma/json-value.js'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
@@ -115,102 +115,102 @@ export class OrganizationSyncApplyService {
     try {
       const client = this.prisma8.client
       await client.transaction(async (tx) => {
-          const lockQuery = client.raw.sql`SELECT pg_advisory_xact_lock(
+        const lockQuery = client.raw.sql`SELECT pg_advisory_xact_lock(
             hashtextextended(${`${user.tenantId}:${provider}`}, 0)
           )::text AS lock`.returnsRow({ lock: 'pg/text@1' })
-          for await (const _row of tx.query(lockQuery.build())) break
+        for await (const _row of tx.query(lockQuery.build())) break
 
-          const batch = await tx.orm.public.OrganizationSyncBatches.where({
-            id: batchId,
-            tenantId: user.tenantId,
-            provider,
-          }).first()
-          if (!batch) throw new NotFoundException('同步批次不存在')
-          if (batch.status === 'SUCCEEDED') return
-          if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
+        const batch = await tx.orm.public.OrganizationSyncBatches.where({
+          id: batchId,
+          tenantId: user.tenantId,
+          provider,
+        }).first()
+        if (!batch) throw new NotFoundException('同步批次不存在')
+        if (batch.status === 'SUCCEEDED') return
+        if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
 
-          const integration = await tx.orm.public.EnterpriseIntegrations.where({
-            id: batch.integrationId,
-            tenantId: user.tenantId,
-            provider,
-          }).first()
-          if (!integration?.syncEnabled || integration.lastTestSucceeded !== true) {
-            throw new BadRequestException(`${providerName}同步配置当前不可用`)
-          }
-          if (integration.credentialVersion !== batch.credentialVersion) {
-            throw new BadRequestException(`${providerName}配置已变化，请重新生成同步预览`)
-          }
-          if (!integration.syncDefaultRoleId) throw new BadRequestException('请选择新成员默认角色')
-          const role = await tx.orm.public.Roles.where({
-            id: integration.syncDefaultRoleId,
-            tenantId: user.tenantId,
-          })
-            .select('id')
-            .first()
-          if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
-          const unresolved = await tx.orm.public.OrganizationSyncItems.where({
-            tenantId: user.tenantId,
-            batchId,
-            action: 'CONFLICT',
-          })
-            .select('id')
-            .first()
-          if (unresolved) throw new BadRequestException('仍有未处理的同步冲突')
-
-          applyStarted = true
-          const applyStartedAt = prisma8Now()
-          await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
-            status: 'APPLYING',
-            appliedById: user.id,
-            applyStartedAt,
-            updatedAt: applyStartedAt,
-          })
-          const items = await tx.orm.public.OrganizationSyncItems.where({
-            tenantId: user.tenantId,
-            batchId,
-          })
-            .orderBy([(item) => item.sort.asc(), (item) => item.createdAt.asc()])
-            .all()
-          const departmentItems = items.filter((item) => item.resourceType === 'DEPARTMENT')
-          const userItems = items.filter((item) => item.resourceType === 'USER')
-          const departmentIds = await this.applyDepartments(
-            tx,
-            user.tenantId,
-            batchId,
-            batch.targetDepartmentId,
-            departmentItems,
-            provider,
-          )
-          await this.applyUsers(
-            tx,
-            user.tenantId,
-            batchId,
-            role.id,
-            userItems,
-            departmentIds,
-            provider,
-          )
-
-          const finishedAt = prisma8Now()
-          await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
-            status: 'SUCCEEDED',
-            errorCode: null,
-            errorMessage: null,
-            finishedAt,
-            updatedAt: finishedAt,
-          })
-          await tx.orm.public.EnterpriseIntegrations.where({ id: integration.id }).update({
-            lastSyncStatus: 'SUCCEEDED',
-            lastSyncMessage: `${providerName}组织架构同步成功`,
-            lastSyncedAt: finishedAt,
-            updatedById: user.id,
-            updatedAt: finishedAt,
-          })
-          await tx.orm.public.Tenants.where({
-            id: user.tenantId,
-            enterpriseSyncResource: provider,
-          }).updateAll({ enterpriseSynced: true, updatedAt: finishedAt })
+        const integration = await tx.orm.public.EnterpriseIntegrations.where({
+          id: batch.integrationId,
+          tenantId: user.tenantId,
+          provider,
+        }).first()
+        if (!integration?.syncEnabled || integration.lastTestSucceeded !== true) {
+          throw new BadRequestException(`${providerName}同步配置当前不可用`)
+        }
+        if (integration.credentialVersion !== batch.credentialVersion) {
+          throw new BadRequestException(`${providerName}配置已变化，请重新生成同步预览`)
+        }
+        if (!integration.syncDefaultRoleId) throw new BadRequestException('请选择新成员默认角色')
+        const role = await tx.orm.public.Roles.where({
+          id: integration.syncDefaultRoleId,
+          tenantId: user.tenantId,
         })
+          .select('id')
+          .first()
+        if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
+        const unresolved = await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+          action: 'CONFLICT',
+        })
+          .select('id')
+          .first()
+        if (unresolved) throw new BadRequestException('仍有未处理的同步冲突')
+
+        applyStarted = true
+        const applyStartedAt = prisma8Now()
+        await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
+          status: 'APPLYING',
+          appliedById: user.id,
+          applyStartedAt,
+          updatedAt: applyStartedAt,
+        })
+        const items = await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+        })
+          .orderBy([(item) => item.sort.asc(), (item) => item.createdAt.asc()])
+          .all()
+        const departmentItems = items.filter((item) => item.resourceType === 'DEPARTMENT')
+        const userItems = items.filter((item) => item.resourceType === 'USER')
+        const departmentIds = await this.applyDepartments(
+          tx,
+          user.tenantId,
+          batchId,
+          batch.targetDepartmentId,
+          departmentItems,
+          provider,
+        )
+        await this.applyUsers(
+          tx,
+          user.tenantId,
+          batchId,
+          role.id,
+          userItems,
+          departmentIds,
+          provider,
+        )
+
+        const finishedAt = prisma8Now()
+        await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
+          status: 'SUCCEEDED',
+          errorCode: null,
+          errorMessage: null,
+          finishedAt,
+          updatedAt: finishedAt,
+        })
+        await tx.orm.public.EnterpriseIntegrations.where({ id: integration.id }).update({
+          lastSyncStatus: 'SUCCEEDED',
+          lastSyncMessage: `${providerName}组织架构同步成功`,
+          lastSyncedAt: finishedAt,
+          updatedById: user.id,
+          updatedAt: finishedAt,
+        })
+        await tx.orm.public.Tenants.where({
+          id: user.tenantId,
+          enterpriseSyncResource: provider,
+        }).updateAll({ enterpriseSynced: true, updatedAt: finishedAt })
+      })
     } catch (error) {
       this.logger.error(
         `组织同步应用失败：${error instanceof Error ? error.message : 'unknown'}`,
@@ -253,7 +253,7 @@ export class OrganizationSyncApplyService {
           })
           await tx.orm.public.OperationLogBlobs.create({
             operationLogId: operationLog.id,
-            detail: prisma8JsonValue({ errorCode: 'APPLY_FAILED' }),
+            detail: jsonValue({ errorCode: 'APPLY_FAILED' }),
           })
         })
       }
@@ -340,7 +340,10 @@ export class OrganizationSyncApplyService {
         departmentId = created.id
       } else {
         if (!departmentId) throw new Error(`同步部门缺少本地目标：${item.externalId}`)
-        const updated = await tx.orm.public.Departments.where({ id: departmentId, tenantId }).update({
+        const updated = await tx.orm.public.Departments.where({
+          id: departmentId,
+          tenantId,
+        }).update({
           name: this.requiredString(source, 'name'),
           parentId,
           sort: this.numberValue(source, 'order'),

@@ -10,7 +10,7 @@ import { formatForExport } from '../../common/export-format'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8Numeric } from '../../prisma/prisma8-values.js'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -261,7 +261,7 @@ export class ContractPaymentPlanService {
         contractId: dto.contractId,
         owner: owner,
         planStatus: dto.planStatus ?? 'PENDING',
-        planAmount: prisma8Numeric(dto.planAmount, 20, 10),
+        planAmount: numericValue(decimalString(dto.planAmount, 20, 10), 20, 10),
         planEndTime: BigInt(dto.planEndTime),
         organizationId: user.tenantId,
         createTime: now,
@@ -305,7 +305,7 @@ export class ContractPaymentPlanService {
         ...(owner !== undefined ? { owner: owner } : {}),
         ...(dto.planStatus !== undefined ? { planStatus: dto.planStatus } : {}),
         ...(dto.planAmount !== undefined
-          ? { planAmount: prisma8Numeric(dto.planAmount, 20, 10) }
+          ? { planAmount: numericValue(decimalString(dto.planAmount, 20, 10), 20, 10) }
           : {}),
         ...(dto.planEndTime !== undefined ? { planEndTime: BigInt(dto.planEndTime) } : {}),
         updateTime: BigInt(Date.now()),
@@ -738,9 +738,8 @@ export class ContractPaymentPlanService {
       if (condition.op === 'isEmpty') return collection.where((row) => row.planAmount.isNull())
       if (condition.op === 'notEmpty') return collection.where((row) => row.planAmount.isNotNull())
       const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
-      const numbers = rawValues.map(Number)
-      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
-      const values = numbers.map((value) => prisma8Numeric(value, 20, 10))
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.planAmount.eq(value)
@@ -1108,7 +1107,7 @@ export class ContractPaymentRecordService {
         owner: owner,
         contractId: dto.contractId,
         paymentPlanId: dto.paymentPlanId ? dto.paymentPlanId : null,
-        recordAmount: prisma8Numeric(dto.recordAmount, 20, 10),
+        recordAmount: numericValue(decimalString(dto.recordAmount, 20, 10), 20, 10),
         recordEndTime: BigInt(dto.recordEndTime),
         organizationId: user.tenantId,
         createTime: now,
@@ -1158,7 +1157,7 @@ export class ContractPaymentRecordService {
             }
           : {}),
         ...(dto.recordAmount !== undefined
-          ? { recordAmount: prisma8Numeric(dto.recordAmount, 20, 10) }
+          ? { recordAmount: numericValue(decimalString(dto.recordAmount, 20, 10), 20, 10) }
           : {}),
         ...(dto.recordEndTime !== undefined ? { recordEndTime: BigInt(dto.recordEndTime) } : {}),
         updateTime: BigInt(Date.now()),
@@ -1606,9 +1605,8 @@ export class ContractPaymentRecordService {
       if (condition.op === 'notEmpty')
         return collection.where((row) => row.recordAmount.isNotNull())
       const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
-      const numbers = rawValues.map(Number)
-      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
-      const values = numbers.map((value) => prisma8Numeric(value, 20, 10))
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.recordAmount.eq(value)

@@ -3,11 +3,8 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
-import {
-  createPrismaTestTenant,
-  openPrismaTestDatabase,
-} from '../../testing/prisma-test-db'
+import { jsonValue } from '../../prisma/json-value'
+import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalsService } from './approvals.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -49,56 +46,56 @@ test(
           updatedAt: prisma8Now(),
         },
       ])
-      const flow = await prisma8Client.orm.public.ApprovalFlows
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          number: `FLOW-${suffix}`,
-          formType: 'CONTRACT',
-          name: 'Prisma 8 advance flow',
-          duplicateApproverRule: 'EACH',
-          updatedAt: prisma8Now(),
+      const flow = await prisma8Client.orm.public.ApprovalFlows.select('id').create({
+        tenantId: tenant.id,
+        number: `FLOW-${suffix}`,
+        formType: 'CONTRACT',
+        name: 'Prisma 8 advance flow',
+        duplicateApproverRule: 'EACH',
+        updatedAt: prisma8Now(),
       })
       const firstNodeId = `node-auto-${suffix}`
       const secondNodeId = `node-manual-${suffix}`
-      const instance = await prisma8Client.orm.public.ApprovalInstances
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          flowId: flow.id,
-          module: 'contract',
-          targetId: `contract-${suffix}`,
-          targetName: 'Prisma 8 advance contract',
-          currentNodeIndex: -1,
-          nodesSnapshot: prisma8JsonValue([
-            {
-              nodeId: firstNodeId,
-              name: '提交人自动跳过',
-              approverType: 'USER',
-              approverIds: [submitterId],
-              ccUserIds: [ccUserId],
-              mode: 'ANY',
-              sameSubmitterAction: 'SKIP',
-            },
-            {
-              nodeId: secondNodeId,
-              name: '人工审批',
-              approverType: 'USER',
-              approverIds: [approverId],
-              ccUserIds: [],
-              mode: 'ANY',
-            },
-          ]),
-          submitterId,
-          submitterName: 'Submitter',
-          updatedAt: prisma8Now(),
+      const instance = await prisma8Client.orm.public.ApprovalInstances.select('id').create({
+        tenantId: tenant.id,
+        flowId: flow.id,
+        module: 'contract',
+        targetId: `contract-${suffix}`,
+        targetName: 'Prisma 8 advance contract',
+        currentNodeIndex: -1,
+        nodesSnapshot: jsonValue([
+          {
+            nodeId: firstNodeId,
+            name: '提交人自动跳过',
+            approverType: 'USER',
+            approverIds: [submitterId],
+            ccUserIds: [ccUserId],
+            mode: 'ANY',
+            sameSubmitterAction: 'SKIP',
+          },
+          {
+            nodeId: secondNodeId,
+            name: '人工审批',
+            approverType: 'USER',
+            approverIds: [approverId],
+            ccUserIds: [],
+            mode: 'ANY',
+          },
+        ]),
+        submitterId,
+        submitterName: 'Submitter',
+        updatedAt: prisma8Now(),
       })
 
       const notified: Array<{ recipients: string[]; title: string }> = []
       const service = new ApprovalsService(
         { client: prisma8Client } as Prisma8Service,
         {
-          notifyMany: async (_tenantId: string, recipients: string[], message: { title: string }) => {
+          notifyMany: async (
+            _tenantId: string,
+            recipients: string[],
+            message: { title: string },
+          ) => {
             notified.push({ recipients, title: message.title })
           },
         } as never,

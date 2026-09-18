@@ -37,9 +37,9 @@
 
 ## P4 Numeric / JSON domain 收口
 
-- [ ] P4.1 Numeric 输入统一精确 decimal domain，不降级为浮点。
-- [ ] P4.2 JSON 输入统一 JsonValue/DTO serializer。
-- [ ] P4.3 删除无引用的 values compatibility helper。
+- [x] P4.1 Numeric 输入统一精确 decimal domain，不降级为浮点。
+- [x] P4.2 JSON 输入统一 JsonValue/DTO serializer。
+- [x] P4.3 删除无引用的 values compatibility helper。
 
 ## P5 Canonicalization 与最终验收
 
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P4.1 / P4.2 / P4.3**。P3 VarChar / ID 治理已完整收口；下一阶段审计 12 个 Numeric 与 21 个 Jsonb contract 字段，统一精确 decimal / JSON domain 输入并删除无引用的 values compatibility helper。
+当前执行 **P5.1 / P5.2**。P1-P4 已完成；下一阶段把 `Prisma8Client/Service/Module` 与 migration-only `prisma8*` 文件/测试命名改为正式 canonical 名称，然后进入最终全量工程、数据库、Docker 与 Browser 验收。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -146,4 +146,14 @@ P3.4 已完成：
 - API typecheck/build、`git diff --check` 全绿，完整 API Rules **346/346 PASS、0 fail、0 skip**。
 
 P3 正式完成，执行指针进入 **P4 Numeric / JSON domain 收口**。
+
+P4 inventory 详见 `value-domain-inventory.md`：canonical contract 含 **12 个 Numeric** 与 **21 个 Jsonb** 字段。阶段开始时 `prisma8Numeric` 共 **66 calls / 23 files**（production 43 / 11），`prisma8JsonValue` 共 **52 calls / 24 files**（production 27 / 12）。
+
+P4.1 已完成：新增 canonical `DecimalString` / `decimalString()` / `numericValue()` / `tryNumericValues()`。production **43/43** Numeric ORM 写入均强制先通过 precision/scale 校验；高级筛选不再经过 `Number()`；Contract / SalesOrder 未修改金额时不再把 DB Numeric 转为 JS number 后重新写回。专项测试固定 `0.1 + 0.2` 对 scale=2 必须拒绝，禁止隐式浮点舍入。
+
+P4.2 已完成：新增统一 `jsonValue()` serializer；新 JSONB 对象统一经 JSON 序列化边界归一化，并拒绝 top-level undefined、BigInt、circular、NaN/Infinity 等非法/会静默失真的输入。production 的 `as JsonValue` 只保留 canonical serializer 内部唯一 cast，ExportTasks 私有重复 serializer 已删除。
+
+P4.3 已完成：删除 `src/prisma/prisma8-values.ts`，`prisma8Numeric` / `prisma8JsonValue` / `prisma8-values` **全部 0 refs**。
+
+P4 最终门禁：API typecheck/build、`git diff --check` 全绿；value-domain 专项 **2/2 PASS**；完整 API Rules 因新增两条 domain 专项变为 **348/348 PASS、0 fail、0 skip**。P4 正式完成，执行指针进入 **P5.1 / P5.2**。
 

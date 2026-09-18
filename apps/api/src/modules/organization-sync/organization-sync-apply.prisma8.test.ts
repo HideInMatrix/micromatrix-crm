@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now, prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -15,10 +15,7 @@ import { OrganizationSyncApplyService } from './organization-sync-apply.service'
 
 const databaseUrl = process.env['DATABASE_URL']
 
-async function deleteOrganizationSyncFixture(
-  prisma8: Prisma8Service['client'],
-  tenantId: string,
-) {
+async function deleteOrganizationSyncFixture(prisma8: Prisma8Service['client'], tenantId: string) {
   await prisma8.orm.public.OperationLogs.where({ tenantId }).deleteAll()
   await prisma8.orm.public.ExternalUserMappings.where({ tenantId }).deleteAll()
   await prisma8.orm.public.ExternalDepartmentMappings.where({ tenantId }).deleteAll()
@@ -55,89 +52,80 @@ test(
         name: '本地同步根部门',
         sort: 1,
       })
-      const role = await prisma8Client.orm.public.Roles
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          name: `外部成员默认角色-${suffix}`,
-          updatedAt: prisma8Now(),
-        })
-      const integration = await prisma8Client.orm.public.EnterpriseIntegrations
-        .select('id', 'credentialVersion')
-        .create({
-          tenantId: tenant.id,
-          provider: 'WECOM',
-          corpId: `corp-${suffix}`,
-          agentId: '1000001',
-          secretCiphertext: 'ciphertext',
-          secretIv: 'iv',
-          secretAuthTag: 'tag',
-          credentialVersion: 7,
-          syncEnabled: true,
-          syncDefaultRoleId: role.id,
-          lastTestSucceeded: true,
-          createdById: actorId,
-          updatedById: actorId,
-          updatedAt: prisma8Now(),
-        })
-      const batch = await prisma8Client.orm.public.OrganizationSyncBatches
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          integrationId: integration.id,
-          provider: 'WECOM',
-          status: 'PREVIEW_READY',
-          targetDepartmentId: targetDepartment.id,
-          credentialVersion: integration.credentialVersion,
-          counts: prisma8JsonValue({ departments: 1, users: 1, conflicts: 0 }),
-          createdById: actorId,
-          previewedAt: prisma8Now(),
-          updatedAt: prisma8Now(),
-        })
+      const role = await prisma8Client.orm.public.Roles.select('id').create({
+        tenantId: tenant.id,
+        name: `外部成员默认角色-${suffix}`,
+        updatedAt: prisma8Now(),
+      })
+      const integration = await prisma8Client.orm.public.EnterpriseIntegrations.select(
+        'id',
+        'credentialVersion',
+      ).create({
+        tenantId: tenant.id,
+        provider: 'WECOM',
+        corpId: `corp-${suffix}`,
+        agentId: '1000001',
+        secretCiphertext: 'ciphertext',
+        secretIv: 'iv',
+        secretAuthTag: 'tag',
+        credentialVersion: 7,
+        syncEnabled: true,
+        syncDefaultRoleId: role.id,
+        lastTestSucceeded: true,
+        createdById: actorId,
+        updatedById: actorId,
+        updatedAt: prisma8Now(),
+      })
+      const batch = await prisma8Client.orm.public.OrganizationSyncBatches.select('id').create({
+        tenantId: tenant.id,
+        integrationId: integration.id,
+        provider: 'WECOM',
+        status: 'PREVIEW_READY',
+        targetDepartmentId: targetDepartment.id,
+        credentialVersion: integration.credentialVersion,
+        counts: jsonValue({ departments: 1, users: 1, conflicts: 0 }),
+        createdById: actorId,
+        previewedAt: prisma8Now(),
+        updatedAt: prisma8Now(),
+      })
       const departmentKey = `dept-key-${suffix}`
-      const departmentItem = await prisma8Client.orm.public.OrganizationSyncItems
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          batchId: batch.id,
-          resourceType: 'DEPARTMENT',
-          externalId: `dept-external-${suffix}`,
-          externalKey: departmentKey,
-          action: 'CREATE',
-          sourceData: prisma8JsonValue({ name: '外部研发部', order: 88 }),
-          sort: 10,
-          updatedAt: prisma8Now(),
-        })
-      const userItem = await prisma8Client.orm.public.OrganizationSyncItems
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          batchId: batch.id,
-          resourceType: 'USER',
-          externalId: `user-external-${suffix}`,
-          externalKey: `user-key-${suffix}`,
-          action: 'CREATE',
-          parentExternalKey: departmentKey,
-          sourceData: prisma8JsonValue({
-            name: '外部研发负责人',
-            proposedEmail: `org-sync-${suffix}@example.test`,
-            position: '研发负责人',
-            mobile: '13800000000',
-            isLeader: true,
-          }),
-          sort: 20,
-          updatedAt: prisma8Now(),
-        })
+      const departmentItem = await prisma8Client.orm.public.OrganizationSyncItems.select(
+        'id',
+      ).create({
+        tenantId: tenant.id,
+        batchId: batch.id,
+        resourceType: 'DEPARTMENT',
+        externalId: `dept-external-${suffix}`,
+        externalKey: departmentKey,
+        action: 'CREATE',
+        sourceData: jsonValue({ name: '外部研发部', order: 88 }),
+        sort: 10,
+        updatedAt: prisma8Now(),
+      })
+      const userItem = await prisma8Client.orm.public.OrganizationSyncItems.select('id').create({
+        tenantId: tenant.id,
+        batchId: batch.id,
+        resourceType: 'USER',
+        externalId: `user-external-${suffix}`,
+        externalKey: `user-key-${suffix}`,
+        action: 'CREATE',
+        parentExternalKey: departmentKey,
+        sourceData: jsonValue({
+          name: '外部研发负责人',
+          proposedEmail: `org-sync-${suffix}@example.test`,
+          position: '研发负责人',
+          mobile: '13800000000',
+          isLeader: true,
+        }),
+        sort: 20,
+        updatedAt: prisma8Now(),
+      })
 
       const notifications: Array<{ tenantId: string; userId: string; title: string }> = []
       const service = new OrganizationSyncApplyService(
         { client: prisma8Client } as Prisma8Service,
         {
-          notify: async (
-            notifyTenantId: string,
-            userId: string,
-            message: { title: string },
-          ) => {
+          notify: async (notifyTenantId: string, userId: string, message: { title: string }) => {
             notifications.push({ tenantId: notifyTenantId, userId, title: message.title })
           },
         } as unknown as NotificationsService,
@@ -272,62 +260,57 @@ test(
         name: '本地根部门',
         sort: 1,
       })
-      const role = await prisma8Client.orm.public.Roles
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          name: `失败测试默认角色-${suffix}`,
-          updatedAt: prisma8Now(),
-        })
-      const integration = await prisma8Client.orm.public.EnterpriseIntegrations
-        .select('id', 'credentialVersion')
-        .create({
-          tenantId: tenant.id,
-          provider: 'WECOM',
-          corpId: `corp-fail-${suffix}`,
-          agentId: '1000001',
-          secretCiphertext: 'ciphertext',
-          secretIv: 'iv',
-          secretAuthTag: 'tag',
-          credentialVersion: 3,
-          syncEnabled: true,
-          syncDefaultRoleId: role.id,
-          lastTestSucceeded: true,
-          createdById: actorId,
-          updatedById: actorId,
-          updatedAt: prisma8Now(),
-        })
-      const batch = await prisma8Client.orm.public.OrganizationSyncBatches
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          integrationId: integration.id,
-          provider: 'WECOM',
-          status: 'PREVIEW_READY',
-          targetDepartmentId: targetDepartment.id,
-          credentialVersion: integration.credentialVersion,
-          counts: prisma8JsonValue({ departments: 0, users: 1, conflicts: 0 }),
-          createdById: actorId,
-          previewedAt: prisma8TimestampFromDate(new Date()),
-          updatedAt: prisma8Now(),
-        })
-      const item = await prisma8Client.orm.public.OrganizationSyncItems
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          batchId: batch.id,
-          resourceType: 'USER',
-          externalId: `missing-dept-user-${suffix}`,
-          externalKey: `missing-dept-user-key-${suffix}`,
-          action: 'CREATE',
-          parentExternalKey: `missing-department-${suffix}`,
-          sourceData: prisma8JsonValue({
-            name: '无法落库成员',
-            proposedEmail: `rollback-${suffix}@example.test`,
-          }),
-          sort: 10,
-          updatedAt: prisma8Now(),
-        })
+      const role = await prisma8Client.orm.public.Roles.select('id').create({
+        tenantId: tenant.id,
+        name: `失败测试默认角色-${suffix}`,
+        updatedAt: prisma8Now(),
+      })
+      const integration = await prisma8Client.orm.public.EnterpriseIntegrations.select(
+        'id',
+        'credentialVersion',
+      ).create({
+        tenantId: tenant.id,
+        provider: 'WECOM',
+        corpId: `corp-fail-${suffix}`,
+        agentId: '1000001',
+        secretCiphertext: 'ciphertext',
+        secretIv: 'iv',
+        secretAuthTag: 'tag',
+        credentialVersion: 3,
+        syncEnabled: true,
+        syncDefaultRoleId: role.id,
+        lastTestSucceeded: true,
+        createdById: actorId,
+        updatedById: actorId,
+        updatedAt: prisma8Now(),
+      })
+      const batch = await prisma8Client.orm.public.OrganizationSyncBatches.select('id').create({
+        tenantId: tenant.id,
+        integrationId: integration.id,
+        provider: 'WECOM',
+        status: 'PREVIEW_READY',
+        targetDepartmentId: targetDepartment.id,
+        credentialVersion: integration.credentialVersion,
+        counts: jsonValue({ departments: 0, users: 1, conflicts: 0 }),
+        createdById: actorId,
+        previewedAt: prisma8TimestampFromDate(new Date()),
+        updatedAt: prisma8Now(),
+      })
+      const item = await prisma8Client.orm.public.OrganizationSyncItems.select('id').create({
+        tenantId: tenant.id,
+        batchId: batch.id,
+        resourceType: 'USER',
+        externalId: `missing-dept-user-${suffix}`,
+        externalKey: `missing-dept-user-key-${suffix}`,
+        action: 'CREATE',
+        parentExternalKey: `missing-department-${suffix}`,
+        sourceData: jsonValue({
+          name: '无法落库成员',
+          proposedEmail: `rollback-${suffix}@example.test`,
+        }),
+        sort: 10,
+        updatedAt: prisma8Now(),
+      })
 
       const service = new OrganizationSyncApplyService(
         { client: prisma8Client } as Prisma8Service,
@@ -370,8 +353,11 @@ test(
       }).first()
       assert.equal(createdUser, null)
       assert.equal(
-        (await prisma8Client.orm.public.ExternalUserMappings.where({ tenantId: tenant.id }).select('id').all())
-          .length,
+        (
+          await prisma8Client.orm.public.ExternalUserMappings.where({ tenantId: tenant.id })
+            .select('id')
+            .all()
+        ).length,
         0,
       )
       const persistedTenant = await prisma8Client.orm.public.Tenants.where({

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -26,47 +26,41 @@ test(
     const tenant = await createPrismaTestTenant(prisma8Client, 'p8-approval-actions')
 
     try {
-      const instance = await prisma8Client.orm.public.ApprovalInstances
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          module: 'contract',
-          targetId: `contract-${suffix}`,
-          targetName: 'Prisma 8 approval action contract',
-          nodesSnapshot: prisma8JsonValue([
-            {
-              nodeId: `node-${suffix}`,
-              name: '审批节点',
-              approverType: 'USER',
-              approverIds: [approverId],
-              ccUserIds: [],
-              mode: 'ANY',
-            },
-          ]),
-          submitterId,
-          submitterName: 'Submitter',
-          updatedAt: prisma8Now(),
-        })
-      const task = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: `node-${suffix}`,
-          nodeIndex: 0,
-          nodeRound: 1,
-          nodeName: '审批节点',
-          approverId,
-          updatedAt: prisma8Now(),
-        })
-      const attachment = await prisma8Client.orm.public.Attachments
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          uploaderId: approverId,
-          name: 'approval.txt',
-          path: `/tmp/${suffix}/approval.txt`,
-        })
+      const instance = await prisma8Client.orm.public.ApprovalInstances.select('id').create({
+        tenantId: tenant.id,
+        module: 'contract',
+        targetId: `contract-${suffix}`,
+        targetName: 'Prisma 8 approval action contract',
+        nodesSnapshot: jsonValue([
+          {
+            nodeId: `node-${suffix}`,
+            name: '审批节点',
+            approverType: 'USER',
+            approverIds: [approverId],
+            ccUserIds: [],
+            mode: 'ANY',
+          },
+        ]),
+        submitterId,
+        submitterName: 'Submitter',
+        updatedAt: prisma8Now(),
+      })
+      const task = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: `node-${suffix}`,
+        nodeIndex: 0,
+        nodeRound: 1,
+        nodeName: '审批节点',
+        approverId,
+        updatedAt: prisma8Now(),
+      })
+      const attachment = await prisma8Client.orm.public.Attachments.select('id').create({
+        tenantId: tenant.id,
+        uploaderId: approverId,
+        name: 'approval.txt',
+        path: `/tmp/${suffix}/approval.txt`,
+      })
 
       const resources = { setBizStatus: async () => undefined }
       const service = new ApprovalsService(
@@ -94,7 +88,9 @@ test(
         [attachment.id],
       )
 
-      const approvedTask = await prisma8Client.orm.public.ApprovalTasks.where({ id: task.id }).first()
+      const approvedTask = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: task.id,
+      }).first()
       assert.ok(approvedTask)
       assert.equal(approvedTask.status, 'APPROVED')
       assert.equal(approvedTask.action, 'APPROVE')
@@ -151,25 +147,25 @@ test(
         handledAt: null,
         updatedAt: prisma8Now(),
       })
-      const peerTask = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: `node-${suffix}`,
-          nodeIndex: 0,
-          nodeRound: 1,
-          nodeName: '审批节点',
-          approverId: `peer-${suffix}`,
-          updatedAt: prisma8Now(),
-        })
+      const peerTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: `node-${suffix}`,
+        nodeIndex: 0,
+        nodeRound: 1,
+        nodeName: '审批节点',
+        approverId: `peer-${suffix}`,
+        updatedAt: prisma8Now(),
+      })
       await service.rejectTask(
         { id: approverId, tenantId: tenant.id, name: 'Approver' } as never,
         task.id,
         '  改为驳回  ',
       )
 
-      const rejectedTask = await prisma8Client.orm.public.ApprovalTasks.where({ id: task.id }).first()
+      const rejectedTask = await prisma8Client.orm.public.ApprovalTasks.where({
+        id: task.id,
+      }).first()
       assert.ok(rejectedTask)
       assert.equal(rejectedTask.status, 'REJECTED')
       assert.equal(rejectedTask.action, 'REJECT')
@@ -233,69 +229,57 @@ test(
     })
 
     try {
-      const flow = await prisma8Client.orm.public.ApprovalFlows
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          number: `FLOW-${suffix}`,
-          formType: 'CONTRACT',
-          name: 'Prisma 8 sign flow',
-          allowAddSign: true,
-          updatedAt: prisma8Now(),
-        })
-      const instance = await prisma8Client.orm.public.ApprovalInstances
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          flowId: flow.id,
-          module: 'contract',
-          targetId: `contract-${suffix}`,
-          targetName: 'Prisma 8 sign contract',
-          nodesSnapshot: prisma8JsonValue([]),
-          submitterId: sourceApprover.id,
-          submitterName: sourceApprover.name,
-          updatedAt: prisma8Now(),
-        })
-      const beforeSource = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: `node-before-${suffix}`,
-          nodeIndex: 0,
-          nodeRound: 1,
-          nodeName: 'Before source',
-          approverId: sourceApprover.id,
-          updatedAt: prisma8Now(),
-        })
-      const afterSource = await prisma8Client.orm.public.ApprovalTasks
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          instanceId: instance.id,
-          nodeId: `node-after-${suffix}`,
-          nodeIndex: 1,
-          nodeRound: 1,
-          nodeName: 'After source',
-          approverId: sourceApprover.id,
-          updatedAt: prisma8Now(),
-        })
-      const beforeAttachment = await prisma8Client.orm.public.Attachments
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          uploaderId: sourceApprover.id,
-          name: 'before.txt',
-          path: `/tmp/${suffix}/before.txt`,
-        })
-      const afterAttachment = await prisma8Client.orm.public.Attachments
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          uploaderId: sourceApprover.id,
-          name: 'after.txt',
-          path: `/tmp/${suffix}/after.txt`,
-        })
+      const flow = await prisma8Client.orm.public.ApprovalFlows.select('id').create({
+        tenantId: tenant.id,
+        number: `FLOW-${suffix}`,
+        formType: 'CONTRACT',
+        name: 'Prisma 8 sign flow',
+        allowAddSign: true,
+        updatedAt: prisma8Now(),
+      })
+      const instance = await prisma8Client.orm.public.ApprovalInstances.select('id').create({
+        tenantId: tenant.id,
+        flowId: flow.id,
+        module: 'contract',
+        targetId: `contract-${suffix}`,
+        targetName: 'Prisma 8 sign contract',
+        nodesSnapshot: jsonValue([]),
+        submitterId: sourceApprover.id,
+        submitterName: sourceApprover.name,
+        updatedAt: prisma8Now(),
+      })
+      const beforeSource = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: `node-before-${suffix}`,
+        nodeIndex: 0,
+        nodeRound: 1,
+        nodeName: 'Before source',
+        approverId: sourceApprover.id,
+        updatedAt: prisma8Now(),
+      })
+      const afterSource = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+        tenantId: tenant.id,
+        instanceId: instance.id,
+        nodeId: `node-after-${suffix}`,
+        nodeIndex: 1,
+        nodeRound: 1,
+        nodeName: 'After source',
+        approverId: sourceApprover.id,
+        updatedAt: prisma8Now(),
+      })
+      const beforeAttachment = await prisma8Client.orm.public.Attachments.select('id').create({
+        tenantId: tenant.id,
+        uploaderId: sourceApprover.id,
+        name: 'before.txt',
+        path: `/tmp/${suffix}/before.txt`,
+      })
+      const afterAttachment = await prisma8Client.orm.public.Attachments.select('id').create({
+        tenantId: tenant.id,
+        uploaderId: sourceApprover.id,
+        name: 'after.txt',
+        path: `/tmp/${suffix}/after.txt`,
+      })
 
       const notifications: Array<Record<string, unknown>> = []
       const service = new ApprovalsService(

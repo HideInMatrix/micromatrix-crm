@@ -15,7 +15,7 @@ import {
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 
 const CACHE_NAMESPACE = 'message-settings'
 const CACHE_TTL_SECONDS = 5 * 60
@@ -179,18 +179,20 @@ export class MessageSettingsService {
     if (input.larkEnabled === true) await this.assertLarkAvailable(tenantId)
 
     const rows = this.prisma8.client.orm.public.MessageTaskSettings
-    const existing = await rows.where({
-      tenantId,
-      module: definition.module,
-      event: definition.event,
-    }).first()
+    const existing = await rows
+      .where({
+        tenantId,
+        module: definition.module,
+        event: definition.event,
+      })
+      .first()
     const updateData = {
       ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
       ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
       ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
       ...(input.dingTalkEnabled === undefined ? {} : { dingTalkEnabled: input.dingTalkEnabled }),
       ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
-      ...(input.config === undefined ? {} : { config: prisma8JsonValue(input.config) }),
+      ...(input.config === undefined ? {} : { config: jsonValue(input.config) }),
       updatedAt: prisma8Now(),
     }
     const row = existing
@@ -204,7 +206,7 @@ export class MessageSettingsService {
           weComEnabled: input.weComEnabled ?? false,
           dingTalkEnabled: input.dingTalkEnabled ?? false,
           larkEnabled: input.larkEnabled ?? false,
-          ...(input.config === undefined ? {} : { config: prisma8JsonValue(input.config) }),
+          ...(input.config === undefined ? {} : { config: jsonValue(input.config) }),
           updatedAt: prisma8Now(),
         })
     if (!row) throw new NotFoundException('消息设置不存在')
@@ -231,16 +233,20 @@ export class MessageSettingsService {
     await this.prisma8.client.transaction(async (tx) => {
       const rows = tx.orm.public.MessageTaskSettings
       for (const definition of MESSAGE_TASK_DEFINITIONS) {
-        const existing = await rows.where({
-          tenantId,
-          module: definition.module,
-          event: definition.event,
-        }).first()
+        const existing = await rows
+          .where({
+            tenantId,
+            module: definition.module,
+            event: definition.event,
+          })
+          .first()
         const patch = {
           ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
           ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
           ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
-          ...(input.dingTalkEnabled === undefined ? {} : { dingTalkEnabled: input.dingTalkEnabled }),
+          ...(input.dingTalkEnabled === undefined
+            ? {}
+            : { dingTalkEnabled: input.dingTalkEnabled }),
           ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
           updatedAt: prisma8Now(),
         }

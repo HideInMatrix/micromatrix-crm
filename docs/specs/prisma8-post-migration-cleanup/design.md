@@ -78,8 +78,9 @@ String / PostgreSQL text
 
 ## 6. Numeric / JSON
 
-- `numeric(p,s)` 保持精确类型，应用 domain 改为 decimal string/typed value，不改浮点；
-- `jsonb` 保持 JSON 类型，通过 DTO/serializer 收紧输入，逐步删除仅做 cast 的 helper。
+- `numeric(p,s)` 物理 schema 保持不变；应用正式 domain 为 `DecimalString -> numericValue()`。所有 ORM Numeric 写入必须先通过 precision/scale 校验，高级筛选也禁止 `Number()` 中转；DB Numeric 若未发生业务修改则不允许经 JS number 回写。
+- `jsonb` 物理 schema 保持不变；新 JSON 对象统一经过 `jsonValue()` serializer。serializer 负责 JSON round-trip normalization，并拒绝 undefined/BigInt/circular/NaN/Infinity 等不可安全持久化输入。
+- migration-only `prisma8-values.ts` 已删除；正式模块名不再携带 Prisma8 迁移阶段语义。
 
 ## 7. 验证策略
 

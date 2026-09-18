@@ -13,7 +13,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import {
@@ -240,7 +240,7 @@ export class OrdersService {
         customerId: dto.customerId,
         contractId: dto.contractId ? dto.contractId : null,
         owner: owner.id,
-        amount: prisma8Numeric(amount, 20, 10),
+        amount: numericValue(decimalString(amount, 20, 10), 20, 10),
         stage: stage.id,
         approvalStatus: 'NONE',
         organizationId: user.tenantId,
@@ -281,6 +281,7 @@ export class OrdersService {
     }
     const owner = dto.owner ? await this.resolveOwner(user, dto.owner) : null
     const products = dto.products === undefined ? undefined : this.normalizeProducts(dto.products)
+    const amountChanged = dto.amount !== undefined || products !== undefined
     const amount =
       dto.amount ?? (products ? this.totalAmount(products) : Number(current.amount ?? 0))
     this.assertAmount(amount)
@@ -307,7 +308,7 @@ export class OrdersService {
         contractId:
           dto.contractId === undefined ? undefined : dto.contractId ? dto.contractId : null,
         owner: owner ? owner.id : undefined,
-        amount: prisma8Numeric(amount, 20, 10),
+        amount: amountChanged ? numericValue(decimalString(amount, 20, 10), 20, 10) : undefined,
         number: dto.number === undefined ? undefined : dto.number.trim(),
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
@@ -1263,11 +1264,12 @@ export class OrdersService {
     }
 
     if (key === 'amount') {
-      const numbers = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
-        Number,
+      const values = tryNumericValues(
+        Array.isArray(condition.value) ? condition.value : [condition.value],
+        20,
+        10,
       )
-      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
-      const values = numbers.map((value) => prisma8Numeric(value, 20, 10))
+      if (!values) return impossible()
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.amount.eq(value)

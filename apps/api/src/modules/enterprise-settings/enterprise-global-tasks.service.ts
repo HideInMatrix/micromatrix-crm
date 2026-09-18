@@ -3,7 +3,7 @@ import type { EnterpriseGlobalTaskExecutionVO, EnterpriseGlobalTaskVO } from '@m
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import type { SaveEnterpriseGlobalTaskDto } from './dto/global-task.dto'
 import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
 
@@ -19,13 +19,18 @@ export class EnterpriseGlobalTasksService {
   async list(tenantId: string, keyword?: string): Promise<EnterpriseGlobalTaskVO[]> {
     const normalized = keyword?.trim()
     const scoped = this.tasks().where({ tenantId })
-    const filtered = normalized ? scoped.where((task) => task.name.ilike(`%${normalized}%`)) : scoped
+    const filtered = normalized
+      ? scoped.where((task) => task.name.ilike(`%${normalized}%`))
+      : scoped
     const rows = await filtered
       .orderBy([(task) => task.createdAt.desc(), (task) => task.id.asc()])
       .all()
     const modelNames = await this.modelNames(rows.map((row) => row.applicableModelId))
     return rows.map((row) =>
-      this.toVO(row, row.applicableModelId ? modelNames.get(row.applicableModelId) ?? null : null),
+      this.toVO(
+        row,
+        row.applicableModelId ? (modelNames.get(row.applicableModelId) ?? null) : null,
+      ),
     )
   }
 
@@ -33,7 +38,10 @@ export class EnterpriseGlobalTasksService {
     const row = await this.tasks().where({ id, tenantId }).first()
     if (!row) throw new NotFoundException('全局任务不存在')
     const modelNames = await this.modelNames([row.applicableModelId])
-    return this.toVO(row, row.applicableModelId ? modelNames.get(row.applicableModelId) ?? null : null)
+    return this.toVO(
+      row,
+      row.applicableModelId ? (modelNames.get(row.applicableModelId) ?? null) : null,
+    )
   }
 
   async create(
@@ -66,17 +74,19 @@ export class EnterpriseGlobalTasksService {
     const existing = await this.ensureOwned(user.tenantId, id)
     await this.assertNameAvailable(user.tenantId, input.name, id)
     const model = await this.assertModel(user.tenantId, input.applicableModelId)
-    const row = await this.tasks().where({ id: existing.id, tenantId: user.tenantId }).update({
-      name: input.name,
-      triggerType: input.triggerType,
-      executionCondition: input.executionCondition ?? '',
-      executionAction: input.executionAction ?? '',
-      confirmationLevel: input.confirmationLevel,
-      applicableModelId: input.applicableModelId || null,
-      enable: input.enable,
-      updatedById: user.id,
-      updatedAt: prisma8Now(),
-    })
+    const row = await this.tasks()
+      .where({ id: existing.id, tenantId: user.tenantId })
+      .update({
+        name: input.name,
+        triggerType: input.triggerType,
+        executionCondition: input.executionCondition ?? '',
+        executionAction: input.executionAction ?? '',
+        confirmationLevel: input.confirmationLevel,
+        applicableModelId: input.applicableModelId || null,
+        enable: input.enable,
+        updatedById: user.id,
+        updatedAt: prisma8Now(),
+      })
     if (!row) throw new NotFoundException('全局任务不存在')
     return this.toVO(row, model?.displayName ?? null)
   }
@@ -89,7 +99,10 @@ export class EnterpriseGlobalTasksService {
     })
     if (!row) throw new NotFoundException('全局任务不存在')
     const modelNames = await this.modelNames([row.applicableModelId])
-    return this.toVO(row, row.applicableModelId ? modelNames.get(row.applicableModelId) ?? null : null)
+    return this.toVO(
+      row,
+      row.applicableModelId ? (modelNames.get(row.applicableModelId) ?? null) : null,
+    )
   }
 
   async remove(tenantId: string, id: string) {
@@ -121,7 +134,7 @@ export class EnterpriseGlobalTasksService {
       tenantId: user.tenantId,
       taskId: task.id,
       status: 'PENDING',
-      input: prisma8JsonValue(input),
+      input: jsonValue(input),
       updatedAt: prisma8Now(),
     })
     await this.executionsTable().where({ id: created.id, tenantId: user.tenantId }).update({
@@ -137,29 +150,33 @@ export class EnterpriseGlobalTasksService {
         this.analysisPrompt(task),
         1024,
       )
-      const row = await this.executionsTable().where({ id: created.id, tenantId: user.tenantId }).update({
-        status: 'SUCCEEDED',
-        output: prisma8JsonValue({
-          analysis: result.text,
-          modelId: result.modelId,
-          modelName: result.modelName,
-          displayName: result.displayName,
-          provider: result.provider,
-          latencyMs: result.latencyMs,
-        }),
-        finishedAt: prisma8Now(),
-        updatedAt: prisma8Now(),
-      })
+      const row = await this.executionsTable()
+        .where({ id: created.id, tenantId: user.tenantId })
+        .update({
+          status: 'SUCCEEDED',
+          output: jsonValue({
+            analysis: result.text,
+            modelId: result.modelId,
+            modelName: result.modelName,
+            displayName: result.displayName,
+            provider: result.provider,
+            latencyMs: result.latencyMs,
+          }),
+          finishedAt: prisma8Now(),
+          updatedAt: prisma8Now(),
+        })
       if (!row) throw new NotFoundException('执行记录不存在')
       return this.executionToVO(row, task.name)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      const row = await this.executionsTable().where({ id: created.id, tenantId: user.tenantId }).update({
-        status: 'FAILED',
-        errorMessage: message.slice(0, 1000),
-        finishedAt: prisma8Now(),
-        updatedAt: prisma8Now(),
-      })
+      const row = await this.executionsTable()
+        .where({ id: created.id, tenantId: user.tenantId })
+        .update({
+          status: 'FAILED',
+          errorMessage: message.slice(0, 1000),
+          finishedAt: prisma8Now(),
+          updatedAt: prisma8Now(),
+        })
       if (!row) throw new NotFoundException('执行记录不存在')
       return this.executionToVO(row, task.name)
     }
@@ -250,7 +267,10 @@ export class EnterpriseGlobalTasksService {
   private async taskNames(taskIds: string[]): Promise<Map<string, string>> {
     const ids = [...new Set(taskIds)]
     if (!ids.length) return new Map()
-    const rows = await this.tasks().where((task) => task.id.in(ids)).select('id', 'name').all()
+    const rows = await this.tasks()
+      .where((task) => task.id.in(ids))
+      .select('id', 'name')
+      .all()
     return new Map(rows.map((row) => [row.id, row.name]))
   }
 
@@ -269,18 +289,21 @@ export class EnterpriseGlobalTasksService {
     ].join('\n')
   }
 
-  private toVO(row: {
-    id: string
-    name: string
-    triggerType: string
-    executionCondition: string
-    executionAction: string
-    confirmationLevel: string
-    applicableModelId: string | null
-    enable: boolean
-    createdAt: Prisma8Timestamp
-    updatedAt: Prisma8Timestamp
-  }, applicableModelName: string | null): EnterpriseGlobalTaskVO {
+  private toVO(
+    row: {
+      id: string
+      name: string
+      triggerType: string
+      executionCondition: string
+      executionAction: string
+      confirmationLevel: string
+      applicableModelId: string | null
+      enable: boolean
+      createdAt: Prisma8Timestamp
+      updatedAt: Prisma8Timestamp
+    },
+    applicableModelName: string | null,
+  ): EnterpriseGlobalTaskVO {
     return {
       id: row.id,
       name: row.name,
@@ -296,17 +319,20 @@ export class EnterpriseGlobalTasksService {
     }
   }
 
-  private executionToVO(row: {
-    id: string
-    taskId: string
-    status: string
-    input: unknown
-    output: unknown
-    errorMessage: string | null
-    startedAt: Prisma8Timestamp | null
-    finishedAt: Prisma8Timestamp | null
-    createdAt: Prisma8Timestamp
-  }, taskName: string): EnterpriseGlobalTaskExecutionVO {
+  private executionToVO(
+    row: {
+      id: string
+      taskId: string
+      status: string
+      input: unknown
+      output: unknown
+      errorMessage: string | null
+      startedAt: Prisma8Timestamp | null
+      finishedAt: Prisma8Timestamp | null
+      createdAt: Prisma8Timestamp
+    },
+    taskName: string,
+  ): EnterpriseGlobalTaskExecutionVO {
     return {
       id: row.id,
       taskId: row.taskId,

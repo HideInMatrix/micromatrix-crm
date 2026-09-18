@@ -20,7 +20,7 @@ import {
   prisma8TimestampFromDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   EnterpriseIntegrationsService,
   type EnterpriseIntegrationRow,
@@ -56,9 +56,7 @@ type OrganizationSyncAction = OrganizationSyncItemRow['action']
 type OrganizationSyncItemCreate = Parameters<
   Prisma8Service['client']['orm']['public']['OrganizationSyncItems']['createAll']
 >[0][number]
-type Prisma8Transaction = Parameters<
-  Parameters<Prisma8Service['client']['transaction']>[0]
->[0]
+type Prisma8Transaction = Parameters<Parameters<Prisma8Service['client']['transaction']>[0]>[0]
 
 type ProviderSyncContext =
   | {
@@ -130,7 +128,10 @@ export class OrganizationSyncService {
       }
     }
     if (!latest && runtime) {
-      latest = await this.prisma8.client.orm.public.OrganizationSyncBatches.where({ tenantId, provider })
+      latest = await this.prisma8.client.orm.public.OrganizationSyncBatches.where({
+        tenantId,
+        provider,
+      })
         .orderBy((row) => row.createdAt.desc())
         .first()
     }
@@ -229,27 +230,27 @@ export class OrganizationSyncService {
       provider,
       status: 'PREVIEW_READY',
     }).updateAndCount({
-        status: 'INVALIDATED',
-        errorCode: 'NEW_PREVIEW_CREATED',
-        errorMessage: '已生成新的同步预览',
-        finishedAt: invalidatedAt,
-        updatedAt: invalidatedAt,
-      })
+      status: 'INVALIDATED',
+      errorCode: 'NEW_PREVIEW_CREATED',
+      errorMessage: '已生成新的同步预览',
+      finishedAt: invalidatedAt,
+      updatedAt: invalidatedAt,
+    })
 
     let batch: OrganizationSyncBatchRow
     try {
       const now = prisma8Now()
       batch = await this.prisma8.client.orm.public.OrganizationSyncBatches.create({
-          tenantId: user.tenantId,
-          integrationId: integration.id,
-          provider,
-          status: 'FETCHING',
-          targetDepartmentId: targetDepartment.id,
-          credentialVersion: integration.credentialVersion,
-          counts: prisma8JsonValue(EMPTY_COUNTS),
-          createdById: user.id,
-          fetchStartedAt: now,
-          updatedAt: now,
+        tenantId: user.tenantId,
+        integrationId: integration.id,
+        provider,
+        status: 'FETCHING',
+        targetDepartmentId: targetDepartment.id,
+        credentialVersion: integration.credentialVersion,
+        counts: jsonValue(EMPTY_COUNTS),
+        createdById: user.id,
+        fetchStartedAt: now,
+        updatedAt: now,
       })
     } catch (error) {
       if ((error as { sqlState?: string }).sqlState === '23505') {
@@ -306,11 +307,11 @@ export class OrganizationSyncService {
         const invalidated = await this.prisma8.client.orm.public.OrganizationSyncBatches.where({
           id: batch.id,
         }).update({
-            status: 'INVALIDATED',
-            errorCode: 'CREDENTIALS_CHANGED',
-            errorMessage: `${this.providerName(provider)}配置已变化，请重新生成同步预览`,
-            finishedAt: now,
-            updatedAt: now,
+          status: 'INVALIDATED',
+          errorCode: 'CREDENTIALS_CHANGED',
+          errorMessage: `${this.providerName(provider)}配置已变化，请重新生成同步预览`,
+          finishedAt: now,
+          updatedAt: now,
         })
         if (!invalidated) throw new NotFoundException('同步批次不存在')
         return this.toBatchVO(invalidated)
@@ -324,12 +325,12 @@ export class OrganizationSyncService {
         }
         const now = prisma8Now()
         const updated = await tx.orm.public.OrganizationSyncBatches.where({ id: batch.id }).update({
-            status: 'PREVIEW_READY',
-            counts: prisma8JsonValue(plan.counts),
-            previewedAt: now,
-            errorCode: null,
-            errorMessage: null,
-            updatedAt: now,
+          status: 'PREVIEW_READY',
+          counts: jsonValue(plan.counts),
+          previewedAt: now,
+          errorCode: null,
+          errorMessage: null,
+          updatedAt: now,
         })
         if (!updated) throw new NotFoundException('同步批次不存在')
         return updated
@@ -364,7 +365,10 @@ export class OrganizationSyncService {
   ): Promise<PaginatedResult<OrganizationSyncBatchVO>> {
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 10
-    let batches = this.prisma8.client.orm.public.OrganizationSyncBatches.where({ tenantId, provider })
+    let batches = this.prisma8.client.orm.public.OrganizationSyncBatches.where({
+      tenantId,
+      provider,
+    })
     if (query.status) batches = batches.where({ status: query.status })
     const [items, aggregate] = await Promise.all([
       batches
@@ -374,7 +378,12 @@ export class OrganizationSyncService {
         .all(),
       batches.aggregate((agg) => ({ count: agg.count() })),
     ])
-    return { items: items.map((item) => this.toBatchVO(item)), total: aggregate.count, page, pageSize }
+    return {
+      items: items.map((item) => this.toBatchVO(item)),
+      total: aggregate.count,
+      page,
+      pageSize,
+    }
   }
 
   async batch(
@@ -421,7 +430,10 @@ export class OrganizationSyncService {
         })
       }
     } else {
-      let collection = this.prisma8.client.orm.public.OrganizationSyncItems.where({ tenantId, batchId })
+      let collection = this.prisma8.client.orm.public.OrganizationSyncItems.where({
+        tenantId,
+        batchId,
+      })
       if (query.resourceType) collection = collection.where({ resourceType: query.resourceType })
       if (query.action) collection = collection.where({ action: query.action })
       const [rows, aggregate] = await Promise.all([
@@ -468,12 +480,12 @@ export class OrganizationSyncService {
         }
         const now = prisma8Now()
         await tx.orm.public.OrganizationSyncItems.where({ id: row.id }).update({
-            resolution: input.resolution,
-            resolvedLocalId: input.resolution === 'BIND' ? input.localId : null,
-            localId: input.resolution === 'BIND' ? input.localId : row.localId,
-            action: input.resolution === 'BIND' ? 'UPDATE' : 'SKIP',
-            result: 'RESOLVED',
-            updatedAt: now,
+          resolution: input.resolution,
+          resolvedLocalId: input.resolution === 'BIND' ? input.localId : null,
+          localId: input.resolution === 'BIND' ? input.localId : row.localId,
+          action: input.resolution === 'BIND' ? 'UPDATE' : 'SKIP',
+          result: 'RESOLVED',
+          updatedAt: now,
         })
         if (row.resourceType === 'DEPARTMENT' && input.resolution === 'SKIP') {
           skippedDepartmentKeys.add(row.externalKey)
@@ -532,7 +544,7 @@ export class OrganizationSyncService {
         .select('action')
         .all()
       await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
-        counts: prisma8JsonValue(this.countRows(allItems.map((row) => row.action))),
+        counts: jsonValue(this.countRows(allItems.map((row) => row.action))),
         updatedAt: prisma8Now(),
       })
     })
@@ -583,7 +595,8 @@ export class OrganizationSyncService {
     const ids: string[] = []
     for await (const row of this.prisma8.client.runtime().query(pageQuery.build())) ids.push(row.id)
     let total = 0
-    for await (const row of this.prisma8.client.runtime().query(countQuery.build())) total = row.total
+    for await (const row of this.prisma8.client.runtime().query(countQuery.build()))
+      total = row.total
     return { ids, total }
   }
 
@@ -597,7 +610,11 @@ export class OrganizationSyncService {
     if (item.resourceType === 'DEPARTMENT') {
       const [local, occupied] = await Promise.all([
         tx.orm.public.Departments.where({ id: localId, tenantId }).select('id').first(),
-        tx.orm.public.ExternalDepartmentMappings.where({ tenantId, provider, departmentId: localId })
+        tx.orm.public.ExternalDepartmentMappings.where({
+          tenantId,
+          provider,
+          departmentId: localId,
+        })
           .where((row) => row.externalKey.neq(item.externalKey))
           .select('id')
           .first(),
@@ -713,8 +730,8 @@ export class OrganizationSyncService {
       action: item.action,
       localId: item.localId,
       parentExternalKey: item.parentExternalKey,
-      sourceData: prisma8JsonValue(item.sourceData),
-      changes: item.changes === undefined ? null : prisma8JsonValue(item.changes),
+      sourceData: jsonValue(item.sourceData),
+      changes: item.changes === undefined ? null : jsonValue(item.changes),
       conflictType: item.conflictType,
       conflictMessage: item.conflictMessage,
       sort: item.sort,

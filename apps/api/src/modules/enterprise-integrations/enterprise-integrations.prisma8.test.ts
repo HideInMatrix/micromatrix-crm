@@ -5,7 +5,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -37,13 +37,11 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
     passwordHash: 'not-used',
     name: 'Integration Admin',
   })
-  const role = await prisma8Client.orm.public.Roles
-    .select('id')
-    .create({
-      tenantId: tenant.id,
-      name: `成员-${suffix}`,
-      updatedAt: prisma8Now(),
-    })
+  const role = await prisma8Client.orm.public.Roles.select('id').create({
+    tenantId: tenant.id,
+    name: `成员-${suffix}`,
+    updatedAt: prisma8Now(),
+  })
   const department = await createPrismaTestDepartment(prisma8Client, {
     tenantId: tenant.id,
     name: `同步目标-${suffix}`,
@@ -97,19 +95,25 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
       provider: 'WECOM',
     }).first()
     assert.ok(wecomRow)
-    const batch = await prisma8Client.orm.public.OrganizationSyncBatches
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        integrationId: wecomRow.id,
-        provider: 'WECOM',
-        status: 'PREVIEW_READY',
-        targetDepartmentId: department.id,
-        credentialVersion: wecomRow.credentialVersion,
-        counts: prisma8JsonValue({ create: 0, update: 0, disable: 0, unchanged: 0, conflict: 0, skip: 0, failed: 0 }),
-        createdById: actor.id,
-        updatedAt: prisma8Now(),
-      })
+    const batch = await prisma8Client.orm.public.OrganizationSyncBatches.select('id').create({
+      tenantId: tenant.id,
+      integrationId: wecomRow.id,
+      provider: 'WECOM',
+      status: 'PREVIEW_READY',
+      targetDepartmentId: department.id,
+      credentialVersion: wecomRow.credentialVersion,
+      counts: jsonValue({
+        create: 0,
+        update: 0,
+        disable: 0,
+        unchanged: 0,
+        conflict: 0,
+        skip: 0,
+        failed: 0,
+      }),
+      createdById: actor.id,
+      updatedAt: prisma8Now(),
+    })
     const changed = await service.saveWeCom(user, {
       corpId: `ww-${suffix}`,
       agentId: '1000002',
@@ -119,7 +123,9 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
     assert.equal(changed.credentialVersion, 2)
     assert.equal(changed.syncEnabled, false)
     assert.equal(changed.lastTestSucceeded, null)
-    const invalidated = await prisma8Client.orm.public.OrganizationSyncBatches.where({ id: batch.id })
+    const invalidated = await prisma8Client.orm.public.OrganizationSyncBatches.where({
+      id: batch.id,
+    })
       .select('status', 'errorCode', 'finishedAt')
       .first()
     assert.ok(invalidated)
@@ -143,7 +149,8 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
       sync: false,
     })
     assert.equal(
-      (await service.updateDingTalkSync(user, { enabled: true, defaultRoleId: role.id })).syncEnabled,
+      (await service.updateDingTalkSync(user, { enabled: true, defaultRoleId: role.id }))
+        .syncEnabled,
       true,
     )
 
@@ -167,7 +174,9 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
       true,
     )
 
-    const rows = await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id })
+    const rows = await prisma8Client.orm.public.EnterpriseIntegrations.where({
+      tenantId: tenant.id,
+    })
       .select('provider', 'syncEnabled')
       .all()
     assert.equal(rows.length, 3)
@@ -175,7 +184,9 @@ test('EnterpriseIntegrations 使用 Prisma 8 保持三 Provider 配置、版本�
     assert.equal(rows.find((row) => row.provider === 'LARK')?.syncEnabled, true)
     assert.deepEqual(await service.getLarkSecret(tenant.id), { appSecret: 'lark-secret' })
   } finally {
-    await prisma8Client.orm.public.OrganizationSyncBatches.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.OrganizationSyncBatches.where({
+      tenantId: tenant.id,
+    }).deleteAll()
     await prisma8Client.orm.public.EnterpriseIntegrations.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Roles.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()

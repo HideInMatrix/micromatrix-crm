@@ -3,7 +3,7 @@ import { MODULE_SYSTEM_FIELDS } from '../src/modules/metadata/system-fields'
 import { createPrisma8Client } from '../src/prisma/prisma8-client'
 import { createLegacyId32 } from '../src/common/legacy-id'
 import { prisma8Now } from '../src/prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../src/prisma/prisma8-values'
+import { jsonValue } from '../src/prisma/json-value'
 import { runPrisma8BootstrapSeed } from './seed-bootstrap-prisma8'
 import * as bcrypt from 'bcryptjs'
 
@@ -822,7 +822,7 @@ async function seedDemoDashboardApprovalBidding(
         formType: 'CONTRACT',
         name: '大额合同审批',
         enabled: true,
-        condition: prisma8JsonValue({ amountGte: 80000 }),
+        condition: jsonValue({ amountGte: 80000 }),
         createdById: adminId,
         updatedById: adminId,
         updatedAt: prisma8Now(),

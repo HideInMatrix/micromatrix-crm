@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
@@ -55,7 +55,7 @@ test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租�
       name: 'Prisma 8 快照合同',
       customerId,
       owner: actorVarchar,
-      amount: prisma8Numeric(123.45, 14, 2),
+      amount: numericValue(decimalString(123.45, 14, 2), 14, 2),
       number: `C-${suffix}`.slice(0, 50),
       stage: 'AFOOT',
       startTime: now - 1_000n,

@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -49,7 +49,12 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
     roles: [],
     permissions: ['*'],
   } as AuthUser
-  const approverActor = { ...submitterActor, id: approver.id, email: approver.email, name: approver.name }
+  const approverActor = {
+    ...submitterActor,
+    id: approver.id,
+    email: approver.email,
+    name: approver.name,
+  }
   const ccActor = { ...submitterActor, id: ccUser.id, email: ccUser.email, name: ccUser.name }
 
   const moduleForms = { listFields: async () => [] } as unknown as ModuleFormsService
@@ -121,65 +126,59 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
 
     const firstNode = createdFlow.createNodes.find((node) => node.name === '一级审批')!
     const secondNode = createdFlow.createNodes.find((node) => node.name === '二级审批')!
-    const instance = await prisma8Client.orm.public.ApprovalInstances
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        flowId: createdFlow.id,
-        flowVersionId: flowRow.currentVersionId,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma 8 读路径合同',
-        currentNodeIndex: 1,
-        nodesSnapshot: prisma8JsonValue([
-          {
-            nodeId: firstNode.id,
-            name: firstNode.name,
-            approverType: 'USER',
-            approverIds: [approver.id],
-            ccUserIds: [],
-            mode: 'ANY',
-          },
-          {
-            nodeId: secondNode.id,
-            name: secondNode.name,
-            approverType: 'USER',
-            approverIds: [approver.id],
-            ccUserIds: [ccUser.id],
-            mode: 'ANY',
-          },
-        ]),
-        submitterId: submitter.id,
-        submitterName: submitter.name,
-        updatedAt: prisma8Now(),
-      })
-    const handledTask = await prisma8Client.orm.public.ApprovalTasks
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        nodeId: firstNode.id,
-        nodeIndex: 0,
-        nodeRound: 1,
-        nodeName: firstNode.name,
-        approverId: approver.id,
-        status: 'APPROVED',
-        action: 'APPROVE',
-        handledAt: prisma8Now(),
-        updatedAt: prisma8Now(),
-      })
-    const pendingTask = await prisma8Client.orm.public.ApprovalTasks
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        nodeId: secondNode.id,
-        nodeIndex: 1,
-        nodeRound: 1,
-        nodeName: secondNode.name,
-        approverId: approver.id,
-        updatedAt: prisma8Now(),
-      })
+    const instance = await prisma8Client.orm.public.ApprovalInstances.select('id').create({
+      tenantId: tenant.id,
+      flowId: createdFlow.id,
+      flowVersionId: flowRow.currentVersionId,
+      module: 'contract',
+      targetId: `contract-${suffix}`,
+      targetName: 'Prisma 8 读路径合同',
+      currentNodeIndex: 1,
+      nodesSnapshot: jsonValue([
+        {
+          nodeId: firstNode.id,
+          name: firstNode.name,
+          approverType: 'USER',
+          approverIds: [approver.id],
+          ccUserIds: [],
+          mode: 'ANY',
+        },
+        {
+          nodeId: secondNode.id,
+          name: secondNode.name,
+          approverType: 'USER',
+          approverIds: [approver.id],
+          ccUserIds: [ccUser.id],
+          mode: 'ANY',
+        },
+      ]),
+      submitterId: submitter.id,
+      submitterName: submitter.name,
+      updatedAt: prisma8Now(),
+    })
+    const handledTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      nodeId: firstNode.id,
+      nodeIndex: 0,
+      nodeRound: 1,
+      nodeName: firstNode.name,
+      approverId: approver.id,
+      status: 'APPROVED',
+      action: 'APPROVE',
+      handledAt: prisma8Now(),
+      updatedAt: prisma8Now(),
+    })
+    const pendingTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      nodeId: secondNode.id,
+      nodeIndex: 1,
+      nodeRound: 1,
+      nodeName: secondNode.name,
+      approverId: approver.id,
+      updatedAt: prisma8Now(),
+    })
     await prisma8Client.orm.public.ApprovalTasks.create({
       tenantId: tenant.id,
       instanceId: instance.id,
@@ -191,32 +190,28 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
       taskType: 'CC',
       updatedAt: prisma8Now(),
     })
-    const signTask = await prisma8Client.orm.public.ApprovalTasks
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        nodeId: secondNode.id,
-        nodeIndex: 1,
-        nodeRound: 1,
-        nodeName: secondNode.name,
-        approverId: signUser.id,
-        taskType: 'SIGN',
-        updatedAt: prisma8Now(),
-      })
-    const record = await prisma8Client.orm.public.ApprovalRecords
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        instanceId: instance.id,
-        taskId: handledTask.id,
-        nodeId: firstNode.id,
-        nodeRound: 1,
-        result: 'APPROVE',
-        comment: '一级审批通过',
-        createdById: approver.id,
-        updatedAt: prisma8Now(),
-      })
+    const signTask = await prisma8Client.orm.public.ApprovalTasks.select('id').create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      nodeId: secondNode.id,
+      nodeIndex: 1,
+      nodeRound: 1,
+      nodeName: secondNode.name,
+      approverId: signUser.id,
+      taskType: 'SIGN',
+      updatedAt: prisma8Now(),
+    })
+    const record = await prisma8Client.orm.public.ApprovalRecords.select('id').create({
+      tenantId: tenant.id,
+      instanceId: instance.id,
+      taskId: handledTask.id,
+      nodeId: firstNode.id,
+      nodeRound: 1,
+      result: 'APPROVE',
+      comment: '一级审批通过',
+      createdById: approver.id,
+      updatedAt: prisma8Now(),
+    })
     await prisma8Client.orm.public.ApprovalAddSignTasks.create({
       tenantId: tenant.id,
       instanceId: instance.id,
@@ -238,16 +233,14 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
       returnUserId: approver.id,
       updatedAt: prisma8Now(),
     })
-    const attachment = await prisma8Client.orm.public.Attachments
-      .select('id')
-      .create({
-        tenantId: tenant.id,
-        uploaderId: approver.id,
-        name: 'approval-read.txt',
-        path: `/tmp/${suffix}/approval-read.txt`,
-        size: 16,
-        mime: 'text/plain',
-      })
+    const attachment = await prisma8Client.orm.public.Attachments.select('id').create({
+      tenantId: tenant.id,
+      uploaderId: approver.id,
+      name: 'approval-read.txt',
+      path: `/tmp/${suffix}/approval-read.txt`,
+      size: 16,
+      mime: 'text/plain',
+    })
     await prisma8Client.orm.public.ApprovalInstanceAttachments.create({
       tenantId: tenant.id,
       instanceId: instance.id,
@@ -318,43 +311,47 @@ test('ApprovalsService Prisma 8 读路径保持分页、timeline 与流程图装
       .select('id')
       .all()
     const versions = flows.length
-      ? await prisma8Client.orm.public.ApprovalFlowVersions
-          .where((row) => row.flowId.in(flows.map((item) => item.id)))
+      ? await prisma8Client.orm.public.ApprovalFlowVersions.where((row) =>
+          row.flowId.in(flows.map((item) => item.id)),
+        )
           .select('id')
           .all()
       : []
     const nodes = versions.length
-      ? await prisma8Client.orm.public.ApprovalNodes
-          .where((row) => row.flowVersionId.in(versions.map((item) => item.id)))
+      ? await prisma8Client.orm.public.ApprovalNodes.where((row) =>
+          row.flowVersionId.in(versions.map((item) => item.id)),
+        )
           .select('id')
           .all()
       : []
     if (versions.length) {
       const versionIds = versions.map((item) => item.id)
-      await prisma8Client.orm.public.ApprovalNodeLinks
-        .where((row) => row.flowVersionId.in(versionIds))
-        .deleteAll()
-      await prisma8Client.orm.public.ApprovalNodeConditions
-        .where((row) => row.flowVersionId.in(versionIds))
-        .deleteAll()
+      await prisma8Client.orm.public.ApprovalNodeLinks.where((row) =>
+        row.flowVersionId.in(versionIds),
+      ).deleteAll()
+      await prisma8Client.orm.public.ApprovalNodeConditions.where((row) =>
+        row.flowVersionId.in(versionIds),
+      ).deleteAll()
     }
     if (nodes.length) {
       const nodeIds = nodes.map((item) => item.id)
-      await prisma8Client.orm.public.ApprovalNodeApprovers
-        .where((row) => row.nodeId.in(nodeIds))
-        .deleteAll()
+      await prisma8Client.orm.public.ApprovalNodeApprovers.where((row) =>
+        row.nodeId.in(nodeIds),
+      ).deleteAll()
       await prisma8Client.orm.public.ApprovalNodes.where((row) => row.id.in(nodeIds)).deleteAll()
     }
     await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id }).update({
       currentVersionId: null,
     })
     if (versions.length) {
-      await prisma8Client.orm.public.ApprovalFlowVersions
-        .where((row) => row.id.in(versions.map((item) => item.id)))
-        .deleteAll()
+      await prisma8Client.orm.public.ApprovalFlowVersions.where((row) =>
+        row.id.in(versions.map((item) => item.id)),
+      ).deleteAll()
     }
     await prisma8Client.orm.public.ApprovalFlows.where({ tenantId: tenant.id }).deleteAll()
-    await prisma8Client.orm.public.ApprovalFlowNumberCounters.where({ tenantId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.ApprovalFlowNumberCounters.where({
+      tenantId: tenant.id,
+    }).deleteAll()
     await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Tenants.where({ id: tenant.id }).deleteAll()
     await testDb.close()

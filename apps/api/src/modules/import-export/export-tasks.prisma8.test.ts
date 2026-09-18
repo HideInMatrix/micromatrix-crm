@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config'
 import type { AsyncJobsService } from '../../async-jobs/async-jobs.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ExportTasksService } from './export-tasks.service'
 
@@ -81,7 +81,7 @@ test(
           userId,
           module: `other-${index}`,
           fileName: `other-${index}`,
-          payload: prisma8JsonValue({ version: 1 }),
+          payload: jsonValue({ version: 1 }),
           expiresAt: prisma8TimestampFromDate(new Date(now.getTime() + 60_000)),
         })),
       )
@@ -108,16 +108,14 @@ test(
       assert.equal(failedRead?.errorMessage, 'expected worker failure')
       assert.ok(failedRead?.completedAt)
 
-      const completeTask = await prisma8.orm.public.ExportTasks
-        .select('id')
-        .create({
-          tenantId,
-          userId,
-          module: 'complete-module',
-          fileName: '完成任务',
-          payload: prisma8JsonValue({ version: 1 }),
-          expiresAt: prisma8TimestampFromDate(new Date(Date.now() + 60_000)),
-        })
+      const completeTask = await prisma8.orm.public.ExportTasks.select('id').create({
+        tenantId,
+        userId,
+        module: 'complete-module',
+        fileName: '完成任务',
+        payload: jsonValue({ version: 1 }),
+        expiresAt: prisma8TimestampFromDate(new Date(Date.now() + 60_000)),
+      })
       assert.equal(
         await service.complete(
           completeTask.id,
@@ -126,7 +124,9 @@ test(
         ),
         true,
       )
-      const completedRead = await prisma8.orm.public.ExportTasks.where({ id: completeTask.id }).first()
+      const completedRead = await prisma8.orm.public.ExportTasks.where({
+        id: completeTask.id,
+      }).first()
       assert.equal(completedRead?.status, 'SUCCESS')
       assert.equal(completedRead?.rowCount, 3)
       assert.equal(completedRead?.fileSize, Buffer.byteLength('xlsx-content'))
@@ -134,7 +134,9 @@ test(
       assert.ok(completedRead?.filePath)
 
       await service.cancel(user, completeTask.id)
-      const canceledRead = await prisma8.orm.public.ExportTasks.where({ id: completeTask.id }).first()
+      const canceledRead = await prisma8.orm.public.ExportTasks.where({
+        id: completeTask.id,
+      }).first()
       assert.equal(canceledRead?.status, 'CANCELED')
       assert.equal(canceledRead?.filePath, null)
     } finally {

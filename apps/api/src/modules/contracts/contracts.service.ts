@@ -10,7 +10,7 @@ import { generateBizCode } from '../../common/code-gen'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8Numeric } from '../../prisma/prisma8-values.js'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { ApprovalsService } from '../approvals/approvals.service'
@@ -217,7 +217,7 @@ export class ContractsService {
         name: dto.name.trim(),
         customerId: dto.customerId,
         owner: owner.id,
-        amount: prisma8Numeric(amount, 14, 2),
+        amount: numericValue(decimalString(amount, 14, 2), 14, 2),
         number: dto.number?.trim() || generateBizCode('HT'),
         approvalStatus: 'NONE',
         stage: stage.id,
@@ -264,6 +264,7 @@ export class ContractsService {
       bizId: item.bizId,
       values: item.values,
     }))
+    const amountChanged = dto.amount !== undefined || products !== undefined
     const amount = dto.amount ?? (products ? this.totalAmount(products) : Number(current.amount))
     this.assertAmount(amount)
     const approvalRequired = await this.approvals.flowRequired(
@@ -287,7 +288,7 @@ export class ContractsService {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         ...(dto.customerId !== undefined ? { customerId: dto.customerId } : {}),
         ...(owner ? { owner: owner.id } : {}),
-        amount: prisma8Numeric(amount, 14, 2),
+        ...(amountChanged ? { amount: numericValue(decimalString(amount, 14, 2), 14, 2) } : {}),
         ...(dto.number !== undefined ? { number: dto.number.trim() } : {}),
         ...(dto.startTime !== undefined
           ? { startTime: dto.startTime === null ? null : BigInt(dto.startTime) }
@@ -894,11 +895,12 @@ export class ContractsService {
       })
     }
     if (numberKeys.has(key)) {
-      const numbers = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
-        Number,
+      const values = tryNumericValues(
+        Array.isArray(condition.value) ? condition.value : [condition.value],
+        14,
+        2,
       )
-      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
-      const values = numbers.map((value) => prisma8Numeric(value, 14, 2))
+      if (!values) return impossible()
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.amount.eq(value)

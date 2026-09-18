@@ -3,7 +3,7 @@ import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { jsonValue } from '../../prisma/json-value'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 import type { ApprovalJsonValue, ApprovalResourceInstance } from './approval-runtime.types'
 
@@ -20,7 +20,7 @@ export class ApprovalResourceSnapshotService {
     const formType = this.formType(module)
     const scope = { tenantId: user.tenantId, formType, resourceId }
     const data = {
-      snapshotData: prisma8JsonValue(snapshotData),
+      snapshotData: jsonValue(snapshotData),
       updatedById: user.id,
       updatedAt: prisma8Now(),
     }

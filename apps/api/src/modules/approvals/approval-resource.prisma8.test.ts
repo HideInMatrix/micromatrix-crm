@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ApprovalResourceInstance } from './approval-runtime.types'
@@ -42,7 +42,7 @@ test('ApprovalResource production 状态/删除路径使用 Prisma 8 并同步�
       name: 'Prisma 8 审批合同',
       customerId,
       owner: actorId,
-      amount: prisma8Numeric(321.45, 14, 2),
+      amount: numericValue(decimalString(321.45, 14, 2), 14, 2),
       number: `APR-${suffix}`.slice(0, 50),
       approvalStatus: 'NONE',
       stage: 'AFOOT',
