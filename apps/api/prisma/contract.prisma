@@ -1,0 +1,2907 @@
+// use prisma-8
+// Contract inferred from the live database schema. Edit as needed, then run `prisma contract emit`.
+
+namespace public {
+  model Announcements {
+    id              String       @id(map: "announcements_pkey") @default(cuid(2))
+    tenantId        String
+    subject         String
+    content         String
+    startAt         Timestamp(3)
+    endAt           Timestamp(3)
+    url             String?
+    linkName        String?
+    departmentIds   Jsonb
+    userIds         Jsonb
+    receiverUserIds Jsonb
+    notice          Boolean      @default(false)
+    createUserId    String
+    updateUserId    String
+    createdAt       Timestamp(3) @default(now())
+    updatedAt       Timestamp(3)
+
+    @@index([tenantId, createdAt], map: "announcements_tenantId_createdAt_idx")
+    @@index([tenantId, notice, startAt, endAt], map: "announcements_tenantId_notice_startAt_endAt_idx")
+    @@map("announcements")
+  }
+
+  model ApprovalFlows {
+    id                    String                         @id(map: "approval_flows_pkey") @default(cuid(2))
+    tenantId              String
+    number                String
+    formType              pg.enum(ApprovalFormType)
+    currentVersionId      String?
+    name                  String
+    createExecute         Boolean                        @default(true)
+    updateExecute         Boolean                        @default(false)
+    deleteExecute         Boolean                        @default(false)
+    submitterCanRevoke    Boolean                        @default(true)
+    allowBatchProcess     Boolean                        @default(false)
+    allowWithdraw         Boolean                        @default(false)
+    allowAddSign          Boolean                        @default(false)
+    duplicateApproverRule pg.enum(DuplicateApproverRule) @default("FIRST_ONLY")
+    requireComment        Boolean                        @default(false)
+    enabled               Boolean                        @default(false)
+    description           VarChar(1000)?
+    condition             Jsonb?
+    deletedAt             Timestamp(3)?
+    createdById           String?
+    updatedById           String?
+    createdAt             Timestamp(3)                   @default(now())
+    updatedAt             Timestamp(3)
+    approvalFlowVersions  ApprovalFlowVersions[]
+    approvalInstances     ApprovalInstances[]
+    currentVersion        ApprovalFlowVersions?          @relation(fields: [currentVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_flows_currentVersionId_fkey", index: false)
+
+    @@index([tenantId, formType], map: "approval_flows_active_form_type_key", where: "(\"deletedAt\" IS NULL)", unique: true)
+    @@index([tenantId, enabled, deletedAt], map: "approval_flows_tenantId_enabled_deletedAt_idx")
+    @@index([tenantId, formType, deletedAt], map: "approval_flows_tenantId_formType_deletedAt_idx")
+    @@index([tenantId, number], map: "approval_flows_tenantId_number_key", unique: true)
+    @@map("approval_flows")
+  }
+
+  model ApprovalFlowVersions {
+    id                     String                   @id(map: "approval_flow_versions_pkey") @default(cuid(2))
+    flowId                 String
+    tenantId               String
+    version                Int
+    createdById            String?
+    createdAt              Timestamp(3)             @default(now())
+    approvalFlows          ApprovalFlows[]
+    approvalInstances      ApprovalInstances[]
+    approvalNodeConditions ApprovalNodeConditions[]
+    approvalNodeLinks      ApprovalNodeLinks[]
+    approvalNodes          ApprovalNodes[]
+    flow                   ApprovalFlows            @relation(fields: [flowId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_flow_versions_flowId_fkey", index: false)
+
+    @@index([flowId, version], map: "approval_flow_versions_flowId_version_key", unique: true)
+    @@index([tenantId, flowId], map: "approval_flow_versions_tenantId_flowId_idx")
+    @@map("approval_flow_versions")
+  }
+
+  model ApprovalInstances {
+    id                          String                          @id(map: "approval_instances_pkey") @default(cuid(2))
+    tenantId                    String
+    flowId                      String?
+    flowVersionId               String?
+    executeTiming               pg.enum(ApprovalExecuteTiming)  @default("CREATE")
+    module                      String
+    targetId                    String
+    targetName                  String
+    summary                     String?
+    status                      pg.enum(ApprovalInstanceStatus) @default("PENDING")
+    currentNodeIndex            Int                             @default(0)
+    nodesSnapshot               Jsonb
+    comment                     String?
+    updateFields                VarChar(2000)?                  @map("update_fields")
+    submitterId                 String
+    submitterName               String
+    finishedAt                  Timestamp(3)?
+    createdAt                   Timestamp(3)                    @default(now())
+    updatedAt                   Timestamp(3)
+    approvalAddSignTasks        ApprovalAddSignTasks[]
+    approvalInstanceAttachments ApprovalInstanceAttachments[]
+    approvalRecords             ApprovalRecords[]
+    approvalReturnBackRecords   ApprovalReturnBackRecords[]
+    approvalTasks               ApprovalTasks[]
+    approvalWebhookDeliveries   ApprovalWebhookDeliveries[]
+    flow                        ApprovalFlows?                  @relation(fields: [flowId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_instances_flowId_fkey", index: false)
+    flowVersion                 ApprovalFlowVersions?           @relation(fields: [flowVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_instances_flowVersionId_fkey")
+
+    @@index([flowId, status], map: "approval_instances_flowId_status_idx")
+    @@index([flowVersionId], map: "approval_instances_flowVersionId_idx")
+    @@index([tenantId, module, targetId], map: "approval_instances_tenantId_module_targetId_idx")
+    @@index([tenantId, status], map: "approval_instances_tenantId_status_idx")
+    @@index([tenantId, submitterId], map: "approval_instances_tenantId_submitterId_idx")
+    @@map("approval_instances")
+  }
+
+  model ApprovalTasks {
+    id                                       String                       @id(map: "approval_tasks_pkey") @default(cuid(2))
+    tenantId                                 String
+    instanceId                               String
+    nodeId                                   String?                      @map("node_id")
+    nodeIndex                                Int
+    nodeRound                                Int                          @default(1) @map("node_round")
+    nodeName                                 String
+    approverId                               String
+    taskType                                 pg.enum(ApprovalTaskType)    @default("APPROVAL") @map("task_type")
+    status                                   pg.enum(ApprovalTaskStatus)  @default("PENDING")
+    action                                   pg.enum(ApprovalTaskAction)?
+    handledAt                                Timestamp(3)?
+    createdAt                                Timestamp(3)                 @default(now())
+    updatedAt                                Timestamp(3)
+    approvalRecords                          ApprovalRecords[]
+    approvalReturnBackRecords                ApprovalReturnBackRecords[]
+    approvalAddSignTasks                     ApprovalAddSignTasks[]       @relation(name: "approval_add_sign_tasks_sign_task_id_fkey")
+    instance                                 ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_tasks_instanceId_fkey")
+
+    @@index([instanceId], map: "approval_tasks_instanceId_idx")
+    @@index([instanceId, nodeIndex, nodeRound], map: "approval_tasks_instanceId_nodeIndex_node_round_idx")
+    @@index([tenantId, approverId, status], map: "approval_tasks_tenantId_approverId_status_idx")
+    @@index([tenantId, approverId, taskType, status], map: "approval_tasks_tenantId_approverId_task_type_status_idx")
+    @@map("approval_tasks")
+  }
+
+  model ApprovalAddSignTasks {
+    id          String                       @id(map: "approval_add_sign_tasks_pkey") @default(cuid(2))
+    tenantId    String
+    instanceId  String
+    taskId      String                       @map("task_id")
+    signTaskId  String                       @map("sign_task_id")
+    _type       pg.enum(ApprovalAddSignType) @map("type")
+    rootTaskId  String                       @map("root_task_id")
+    sort        BigInt
+    comment     String?
+    createdById String                       @map("created_by_id")
+    createdAt   Timestamp(3)                 @default(now()) @map("created_at")
+    updatedAt   Timestamp(3)                 @map("updated_at")
+    instance    ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_instanceId_fkey", index: false)
+    signTask    ApprovalTasks                @relation(name: "approval_add_sign_tasks_sign_task_id_fkey", fields: [signTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_sign_task_id_fkey")
+    task        ApprovalTasks                @relation(name: "approval_add_sign_tasks_task_id_fkey", fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_task_id_fkey")
+
+    @@index([rootTaskId, sort], map: "approval_add_sign_tasks_root_task_id_sort_idx")
+    @@index([signTaskId], map: "approval_add_sign_tasks_sign_task_id_idx")
+    @@index([taskId], map: "approval_add_sign_tasks_task_id_key", unique: true)
+    @@index([tenantId, instanceId], map: "approval_add_sign_tasks_tenantId_instanceId_idx")
+    @@map("approval_add_sign_tasks")
+  }
+
+  model ApprovalFlowNumberCounters {
+    id        String                    @id(map: "approval_flow_number_counters_pkey") @default(cuid(2))
+    tenantId  String
+    formType  pg.enum(ApprovalFormType)
+    nextValue Int                       @default(1)
+    updatedAt Timestamp(3)
+
+    @@index([tenantId, formType], map: "approval_flow_number_counters_tenantId_formType_key", unique: true)
+    @@map("approval_flow_number_counters")
+  }
+
+  model Attachments {
+    id                          String                        @id(map: "attachments_pkey") @default(cuid(2))
+    tenantId                    String
+    uploaderId                  String?
+    name                        String
+    path                        String
+    size                        Int                           @default(0)
+    mime                        String?
+    targetType                  String?
+    targetId                    String?
+    createdAt                   Timestamp(3)                  @default(now())
+    approvalInstanceAttachments ApprovalInstanceAttachments[]
+
+    @@index([tenantId, targetType, targetId], map: "attachments_tenantId_targetType_targetId_idx")
+    @@map("attachments")
+  }
+
+  model ApprovalInstanceAttachments {
+    id           String            @id(map: "approval_instance_attachments_pkey") @default(cuid(2))
+    tenantId     String
+    instanceId   String            @map("instance_id")
+    elementId    String            @map("element_id")
+    attachmentId String            @map("attachment_id")
+    createdAt    Timestamp(3)      @default(now()) @map("created_at")
+    attachment   Attachments       @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_instance_attachments_attachment_id_fkey")
+    instance     ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_instance_attachments_instance_id_fkey", index: false)
+
+    @@index([attachmentId], map: "approval_instance_attachments_attachment_id_idx")
+    @@index([elementId], map: "approval_instance_attachments_element_id_idx")
+    @@index([instanceId, elementId, attachmentId], map: "approval_instance_attachments_instance_id_element_id_attach_key", unique: true)
+    @@index([tenantId, instanceId, createdAt], map: "approval_instance_attachments_tenantId_instance_id_created__idx")
+    @@map("approval_instance_attachments")
+  }
+
+  model ApprovalNodes {
+    id                                 String                         @id(map: "approval_nodes_pkey") @default(cuid(2))
+    flowVersionId                      String
+    number                             String
+    name                               String
+    nodeType                           pg.enum(ApprovalNodeType)
+    executeTiming                      pg.enum(ApprovalExecuteTiming) @default("CREATE")
+    sort                               Int                            @default(0)
+    approvalNodeConditions             ApprovalNodeConditions?
+    approvalNodeLinks                  ApprovalNodeLinks[]            @relation(name: "approval_node_links_fromNodeId_fkey")
+    approvalNodeLinksApprovalNodeLinks ApprovalNodeLinks[]            @relation(name: "approval_node_links_toNodeId_fkey")
+    flowVersion                        ApprovalFlowVersions           @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_nodes_flowVersionId_fkey", index: false)
+
+    @@index([flowVersionId, executeTiming, sort], map: "approval_nodes_flowVersionId_executeTiming_sort_idx")
+    @@index([flowVersionId, number], map: "approval_nodes_flowVersionId_number_key", unique: true)
+    @@map("approval_nodes")
+  }
+
+  model ApprovalNodeApprovers {
+    id                  String                       @id(map: "approval_node_approvers_pkey") @default(cuid(2))
+    nodeId              String
+    approverType        pg.enum(ApproverType)
+    approverIds         String[]?                    @noCheck(elementNotNull)
+    ccUserIds           String[]?                    @noCheck(elementNotNull) @map("cc_user_ids")
+    mode                pg.enum(ApprovalMode)        @default("ANY")
+    emptyApproverAction pg.enum(EmptyApproverAction) @default("AUTO_PASS") @map("empty_approver_action")
+    fallbackApprover    String?                      @map("fallback_approver")
+    sameSubmitterAction pg.enum(SameSubmitterAction) @default("SKIP") @map("same_submitter_action")
+    approverDirection   pg.enum(ApproverDirection)   @default("BOTTOM_UP") @map("approver_direction")
+    fieldPermissions    Jsonb?                       @map("field_permissions")
+    passPostConfig      Jsonb?                       @map("pass_post_config")
+    rejectPostConfig    Jsonb?                       @map("reject_post_config")
+    node                ApprovalNodes                @relation(fields: [nodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_approvers_nodeId_fkey")
+
+    @@index([nodeId], map: "approval_node_approvers_nodeId_key", unique: true)
+    @@map("approval_node_approvers")
+  }
+
+  model ApprovalNodeConditions {
+    id              String               @id(map: "approval_node_conditions_pkey")
+    flowVersionId   String
+    conditionConfig Jsonb?               @map("condition_config")
+    flowVersion     ApprovalFlowVersions @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_conditions_flowVersionId_fkey")
+    approvalNodes   ApprovalNodes        @relation(fields: [id], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_conditions_id_fkey")
+
+    @@index([flowVersionId], map: "approval_node_conditions_flowVersionId_idx")
+    @@map("approval_node_conditions")
+  }
+
+  model ApprovalNodeLinks {
+    id            String               @id(map: "approval_node_links_pkey") @default(cuid(2))
+    flowVersionId String
+    fromNodeId    String
+    toNodeId      String
+    sort          Int                  @default(0)
+    flowVersion   ApprovalFlowVersions @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_flowVersionId_fkey", index: false)
+    fromNode      ApprovalNodes        @relation(name: "approval_node_links_fromNodeId_fkey", fields: [fromNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_fromNodeId_fkey")
+    toNode        ApprovalNodes        @relation(name: "approval_node_links_toNodeId_fkey", fields: [toNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_toNodeId_fkey")
+
+    @@index([flowVersionId, fromNodeId, toNodeId], map: "approval_node_links_flowVersionId_fromNodeId_toNodeId_key", unique: true)
+    @@index([flowVersionId, sort], map: "approval_node_links_flowVersionId_sort_idx")
+    @@index([fromNodeId], map: "approval_node_links_fromNodeId_idx")
+    @@index([toNodeId], map: "approval_node_links_toNodeId_idx")
+    @@map("approval_node_links")
+  }
+
+  model ApprovalRecords {
+    id          String                      @id(map: "approval_records_pkey") @default(cuid(2))
+    tenantId    String
+    instanceId  String
+    taskId      String?
+    nodeId      String?                     @map("node_id")
+    nodeRound   Int                         @default(1) @map("node_round")
+    result      pg.enum(ApprovalTaskAction)
+    comment     String?
+    createdById String                      @map("created_by_id")
+    createdAt   Timestamp(3)                @default(now()) @map("created_at")
+    updatedAt   Timestamp(3)                @map("updated_at")
+    instance    ApprovalInstances           @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_instanceId_fkey", index: false)
+    task        ApprovalTasks?              @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_taskId_fkey")
+
+    @@index([taskId], map: "approval_records_taskId_idx")
+    @@index([tenantId, instanceId, createdAt], map: "approval_records_tenantId_instanceId_created_at_idx")
+    @@map("approval_records")
+  }
+
+  model ApprovalResourceSnapshots {
+    id           String                    @id(map: "approval_resource_snapshots_pkey") @default(cuid(2))
+    tenantId     String
+    formType     pg.enum(ApprovalFormType)
+    resourceId   String
+    snapshotData Jsonb                     @map("snapshot_data")
+    createdById  String?                   @map("created_by_id")
+    updatedById  String?                   @map("updated_by_id")
+    createdAt    Timestamp(3)              @default(now()) @map("created_at")
+    updatedAt    Timestamp(3)              @map("updated_at")
+
+    @@index([tenantId, formType], map: "approval_resource_snapshots_tenantId_formType_idx")
+    @@index([tenantId, formType, resourceId], map: "approval_resource_snapshots_tenantId_formType_resourceId_key", unique: true)
+    @@map("approval_resource_snapshots")
+  }
+
+  model ApprovalReturnBackRecords {
+    id             String            @id(map: "approval_return_back_records_pkey") @default(cuid(2))
+    tenantId       String
+    instanceId     String            @map("instance_id")
+    taskId         String            @map("task_id")
+    returnToNodeId String            @map("return_to_node_id")
+    returnReason   String?           @map("return_reason")
+    returnUserId   String            @map("return_user_id")
+    createdAt      Timestamp(3)      @default(now()) @map("created_at")
+    updatedAt      Timestamp(3)      @map("updated_at")
+    instance       ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_instance_id_fkey", index: false)
+    task           ApprovalTasks     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_task_id_fkey")
+
+    @@index([instanceId, returnToNodeId], map: "approval_return_back_records_instance_id_return_to_node_id_key", unique: true)
+    @@index([taskId], map: "approval_return_back_records_task_id_idx")
+    @@index([tenantId, instanceId, createdAt], map: "approval_return_back_records_tenantId_instance_id_created_a_idx")
+    @@map("approval_return_back_records")
+  }
+
+  model ApprovalWebhookDeliveries {
+    id            String                                 @id(map: "approval_webhook_deliveries_pkey") @default(cuid(2))
+    tenantId      String                                 @map("tenant_id")
+    instanceId    String?                                @map("instance_id")
+    flowId        String?                                @map("flow_id")
+    flowVersionId String?                                @map("flow_version_id")
+    nodeId        String?                                @map("node_id")
+    nodeIndex     Int?                                   @map("node_index")
+    action        String?
+    source        pg.enum(ApprovalWebhookDeliverySource)
+    method        String
+    targetOrigin  String                                 @map("target_origin")
+    targetPath    String                                 @map("target_path")
+    status        pg.enum(ApprovalWebhookDeliveryStatus) @default("PENDING")
+    httpStatus    Int?                                   @map("http_status")
+    responseBytes Int?                                   @map("response_bytes")
+    durationMs    Int?                                   @map("duration_ms")
+    errorCode     VarChar(64)?                           @map("error_code")
+    errorMessage  VarChar(500)?                          @map("error_message")
+    createdById   String?                                @map("created_by_id")
+    startedAt     Timestamp(3)?                          @map("started_at")
+    finishedAt    Timestamp(3)?                          @map("finished_at")
+    createdAt     Timestamp(3)                           @default(now()) @map("created_at")
+    updatedAt     Timestamp(3)                           @map("updated_at")
+    instance      ApprovalInstances?                     @relation(fields: [instanceId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_webhook_deliveries_instance_id_fkey", index: false)
+
+    @@index([tenantId, flowId, createdAt], map: "approval_webhook_deliveries_tenant_id_flow_id_created_at_idx")
+    @@index([tenantId, instanceId, createdAt], map: "approval_webhook_deliveries_tenant_id_instance_id_created_a_idx")
+    @@index([tenantId, status, createdAt], map: "approval_webhook_deliveries_tenant_id_status_created_at_idx")
+    @@map("approval_webhook_deliveries")
+  }
+
+  model BiddingInfos {
+    id              String          @id(map: "bidding_infos_pkey") @default(cuid(2))
+    tenantId        String
+    title           String
+    _type           String?         @map("type")
+    region          String?
+    buyer           String?
+    budget          Numeric(16, 2)?
+    publishedAt     Timestamp(3)?
+    deadline        Timestamp(3)?
+    sourceUrl       String?
+    content         String?
+    source          String?
+    keyword         String?
+    hash            String
+    convertedLeadId String?
+    createdAt       Timestamp(3)    @default(now())
+
+    @@index([tenantId, hash], map: "bidding_infos_tenantId_hash_key", unique: true)
+    @@index([tenantId, publishedAt], map: "bidding_infos_tenantId_publishedAt_idx")
+    @@map("bidding_infos")
+  }
+
+  model BiddingKeywordSubs {
+    id        String       @id(map: "bidding_keyword_subs_pkey") @default(cuid(2))
+    tenantId  String
+    keyword   String
+    enabled   Boolean      @default(true)
+    createdAt Timestamp(3) @default(now())
+
+    @@index([tenantId, keyword], map: "bidding_keyword_subs_tenantId_keyword_key", unique: true)
+    @@map("bidding_keyword_subs")
+  }
+
+  model BiddingSources {
+    id          String        @id(map: "bidding_sources_pkey") @default(cuid(2))
+    tenantId    String
+    provider    String
+    name        String
+    credentials Jsonb?
+    enabled     Boolean       @default(false)
+    lastFetchAt Timestamp(3)?
+    createdAt   Timestamp(3)  @default(now())
+    updatedAt   Timestamp(3)
+
+    @@index([tenantId, provider], map: "bidding_sources_tenantId_provider_key", unique: true)
+    @@map("bidding_sources")
+  }
+
+  model BusinessTitle {
+    id                   VarChar(32)       @id(map: "business_title_pkey")
+    name                 VarChar(255)
+    _type                VarChar(50)?      @map("type")
+    identificationNumber VarChar(255)?     @map("identification_number")
+    openingBank          VarChar(255)?     @map("opening_bank")
+    bankAccount          VarChar(255)?     @map("bank_account")
+    registrationAddress  VarChar(255)?     @map("registration_address")
+    phoneNumber          VarChar(255)?     @map("phone_number")
+    registeredCapital    VarChar(255)?     @map("registered_capital")
+    companySize          VarChar(255)?     @map("company_size")
+    registrationNumber   VarChar(255)?     @map("registration_number")
+    approvalStatus       VarChar(50)?      @map("approval_status")
+    unapprovedReason     VarChar(255)?     @map("unapproved_reason")
+    organizationId       VarChar(50)       @map("organization_id")
+    province             VarChar(255)?
+    city                 VarChar(255)?
+    scale                VarChar(255)?
+    industry             VarChar(255)?
+    remark               VarChar(255)?
+    companyNumber        BigInt            @default(autoincrement()) @map("company_number")
+    createTime           BigInt            @map("create_time")
+    updateTime           BigInt            @map("update_time")
+    createUser           VarChar(32)       @map("create_user")
+    updateUser           VarChar(32)       @map("update_user")
+    contractInvoices     ContractInvoice[]
+
+    @@index([companyNumber], map: "business_title_company_number_key", unique: true)
+    @@index([name], map: "business_title_name_idx")
+    @@index([organizationId], map: "business_title_organization_id_idx")
+    @@map("business_title")
+  }
+
+  model BusinessTitleConfig {
+    id             VarChar(32)  @id(map: "business_title_config_pkey")
+    field          VarChar(255)
+    required       Boolean      @default(true)
+    organizationId VarChar(32)  @map("organization_id")
+
+    @@index([organizationId, field], map: "business_title_config_organization_id_field_key", unique: true)
+    @@index([organizationId], map: "business_title_config_organization_id_idx")
+    @@map("business_title_config")
+  }
+
+  model CluePool {
+    id                   VarChar(32)           @id(map: "clue_pool_pkey")
+    name                 VarChar(255)
+    scopeId              String                @map("scope_id")
+    organizationId       VarChar(32)           @map("organization_id")
+    ownerId              String                @map("owner_id")
+    enable               Boolean               @default(true)
+    auto                 Boolean               @default(false)
+    createTime           BigInt                @map("create_time")
+    updateTime           BigInt                @map("update_time")
+    createUser           VarChar(32)           @map("create_user")
+    updateUser           VarChar(32)           @map("update_user")
+    clues                Clue[]
+    cluePoolHiddenFields CluePoolHiddenField[]
+
+    @@index([organizationId], map: "clue_pool_organization_id_idx")
+    @@map("clue_pool")
+  }
+
+  model Clue {
+    id             VarChar(32)     @id(map: "clue_pkey")
+    name           VarChar(255)
+    owner          VarChar(32)?
+    lastStage      VarChar(30)?    @map("last_stage")
+    stage          VarChar(30)
+    collectionTime BigInt?         @map("collection_time")
+    contact        VarChar(255)?
+    phone          VarChar(255)?
+    products       VarChar(1000)?
+    organizationId VarChar(32)     @map("organization_id")
+    createTime     BigInt          @map("create_time")
+    updateTime     BigInt          @map("update_time")
+    createUser     VarChar(32)     @map("create_user")
+    updateUser     VarChar(32)     @map("update_user")
+    transitionType VarChar(30)?    @default("NONE") @map("transition_type")
+    transitionId   VarChar(32)?    @map("transition_id")
+    inSharedPool   Boolean         @default(false) @map("in_shared_pool")
+    follower       VarChar(32)?
+    followTime     BigInt?         @map("follow_time")
+    poolId         VarChar(32)?    @map("pool_id")
+    reasonId       VarChar(32)?    @map("reason_id")
+    clueFields     ClueField[]
+    clueFieldBlobs ClueFieldBlob[]
+    clueOwners     ClueOwner[]
+    pool           CluePool?       @relation(fields: [poolId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "clue_pool_id_fkey")
+
+    @@index([followTime], map: "clue_follow_time_idx")
+    @@index([follower], map: "clue_follower_idx")
+    @@index([organizationId], map: "clue_organization_id_idx")
+    @@index([phone], map: "clue_phone_idx")
+    @@index([poolId], map: "clue_pool_id_idx")
+    @@index([reasonId], map: "clue_reason_id_idx")
+    @@map("clue")
+  }
+
+  model ClueCapacity {
+    id             VarChar(32) @id(map: "clue_capacity_pkey")
+    organizationId VarChar(32) @map("organization_id")
+    scopeId        String      @map("scope_id")
+    capacity       Int?
+    createTime     BigInt      @map("create_time")
+    updateTime     BigInt      @map("update_time")
+    createUser     VarChar(32) @map("create_user")
+    updateUser     VarChar(32) @map("update_user")
+
+    @@index([organizationId], map: "clue_capacity_organization_id_idx")
+    @@map("clue_capacity")
+  }
+
+  model ClueField {
+    id         VarChar(32)  @id(map: "clue_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    resource   Clue         @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "clue_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "clue_field_resource_id_field_id_key", unique: true)
+    @@map("clue_field")
+  }
+
+  model ClueFieldBlob {
+    id         VarChar(32) @id(map: "clue_field_blob_pkey")
+    resourceId VarChar(32) @map("resource_id")
+    fieldId    VarChar(32) @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Clue        @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "clue_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "clue_field_blob_resource_id_idx")
+    @@map("clue_field_blob")
+  }
+
+  model ClueOwner {
+    id             VarChar(32)  @id(map: "clue_owner_pkey")
+    clueId         VarChar(32)  @map("clue_id")
+    owner          VarChar(32)
+    collectionTime BigInt       @map("collection_time")
+    endTime        BigInt       @map("end_time")
+    operator       VarChar(32)
+    reasonId       VarChar(32)? @map("reason_id")
+    clue           Clue         @relation(fields: [clueId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_owner_clue_id_fkey")
+
+    @@index([clueId], map: "clue_owner_clue_id_idx")
+    @@map("clue_owner")
+  }
+
+  model CluePoolHiddenField {
+    poolId  VarChar(32)  @map("pool_id")
+    fieldId VarChar(255) @map("field_id")
+    pool    CluePool     @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_hidden_field_pool_id_fkey", index: false)
+
+    @@id([poolId, fieldId], map: "clue_pool_hidden_field_pkey")
+    @@map("clue_pool_hidden_field")
+  }
+
+  model CluePoolPickRule {
+    id               VarChar(32) @id(map: "clue_pool_pick_rule_pkey")
+    poolId           VarChar(32) @map("pool_id")
+    limitOnNumber    Boolean     @default(true) @map("limit_on_number")
+    pickNumber       Int?        @map("pick_number")
+    limitPreOwner    Boolean     @default(true) @map("limit_pre_owner")
+    pickIntervalDays Int?        @map("pick_interval_days")
+    limitNew         Boolean     @default(false) @map("limit_new")
+    newPickInterval  Int?        @map("new_pick_interval")
+    createUser       VarChar(32) @map("create_user")
+    createTime       BigInt      @map("create_time")
+    updateUser       VarChar(32) @map("update_user")
+    updateTime       BigInt      @map("update_time")
+    pool             CluePool    @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_pick_rule_pool_id_fkey")
+
+    @@index([poolId], map: "clue_pool_pick_rule_pool_id_key", unique: true)
+    @@map("clue_pool_pick_rule")
+  }
+
+  model CluePoolRecycleRule {
+    id         VarChar(32)  @id(map: "clue_pool_recycle_rule_pkey")
+    poolId     VarChar(32)  @map("pool_id")
+    operator   VarChar(10)?
+    condition  String?
+    createTime BigInt       @map("create_time")
+    updateTime BigInt       @map("update_time")
+    createUser VarChar(32)  @map("create_user")
+    updateUser VarChar(32)  @map("update_user")
+    pool       CluePool     @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_recycle_rule_pool_id_fkey")
+
+    @@index([poolId], map: "clue_pool_recycle_rule_pool_id_key", unique: true)
+    @@map("clue_pool_recycle_rule")
+  }
+
+  model CustomerPool {
+    id                       VarChar(32)               @id(map: "customer_pool_pkey")
+    scopeId                  String                    @map("scope_id")
+    organizationId           VarChar(32)               @map("organization_id")
+    name                     VarChar(255)
+    ownerId                  String                    @map("owner_id")
+    enable                   Boolean                   @default(true)
+    auto                     Boolean                   @default(false)
+    createTime               BigInt                    @map("create_time")
+    updateTime               BigInt                    @map("update_time")
+    createUser               VarChar(32)               @map("create_user")
+    updateUser               VarChar(32)               @map("update_user")
+    customers                Customer[]
+    customerPoolHiddenFields CustomerPoolHiddenField[]
+
+    @@index([organizationId], map: "customer_pool_organization_id_idx")
+    @@map("customer_pool")
+  }
+
+  model Customer {
+    id                                VarChar(32)             @id(map: "customer_pkey")
+    name                              VarChar(255)
+    owner                             VarChar(32)?
+    collectionTime                    BigInt?                 @map("collection_time")
+    poolId                            VarChar(32)?            @map("pool_id")
+    createTime                        BigInt                  @map("create_time")
+    updateTime                        BigInt                  @map("update_time")
+    createUser                        VarChar(32)             @map("create_user")
+    updateUser                        VarChar(32)             @map("update_user")
+    inSharedPool                      Boolean                 @default(false) @map("in_shared_pool")
+    organizationId                    VarChar(32)             @map("organization_id")
+    follower                          VarChar(32)?
+    followTime                        BigInt?                 @map("follow_time")
+    reasonId                          VarChar(32)?            @map("reason_id")
+    contracts                         Contract[]
+    customerCollaborations            CustomerCollaboration[]
+    customerContacts                  CustomerContact[]
+    customerFields                    CustomerField[]
+    customerFieldBlobs                CustomerFieldBlob[]
+    customerOwners                    CustomerOwner[]
+    opportunities                     Opportunity[]
+    salesOrders                       SalesOrder[]
+    pool                              CustomerPool?           @relation(fields: [poolId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "customer_pool_id_fkey")
+    customerRelations                 CustomerRelation[]      @relation(name: "customer_relation_source_customer_id_fkey")
+    customerRelationsCustomerRelation CustomerRelation[]      @relation(name: "customer_relation_target_customer_id_fkey")
+
+    @@index([followTime], map: "customer_follow_time_idx")
+    @@index([follower], map: "customer_follower_idx")
+    @@index([organizationId], map: "customer_organization_id_idx")
+    @@index([poolId], map: "customer_pool_id_idx")
+    @@index([reasonId], map: "customer_reason_id_idx")
+    @@map("customer")
+  }
+
+  model Contract {
+    id                     VarChar(32)             @id(map: "contract_pkey")
+    name                   VarChar(255)
+    customerId             VarChar(32)             @map("customer_id")
+    owner                  VarChar(32)
+    amount                 Numeric(14, 2)
+    number                 VarChar(50)
+    approvalStatus         VarChar(50)             @default("NONE") @map("approval_status")
+    stage                  VarChar(32)
+    startTime              BigInt?                 @map("start_time")
+    endTime                BigInt?                 @map("end_time")
+    voidReason             VarChar(255)?           @map("void_reason")
+    organizationId         VarChar(32)             @map("organization_id")
+    pos                    BigInt?
+    approved               Boolean                 @default(false)
+    createTime             BigInt                  @map("create_time")
+    updateTime             BigInt                  @map("update_time")
+    createUser             VarChar(32)             @map("create_user")
+    updateUser             VarChar(32)             @map("update_user")
+    contractFields         ContractField[]
+    contractFieldBlobs     ContractFieldBlob[]
+    contractInvoices       ContractInvoice[]
+    contractPaymentPlans   ContractPaymentPlan[]
+    contractPaymentRecords ContractPaymentRecord[]
+    contractSnapshots      ContractSnapshot[]
+    salesOrders            SalesOrder[]
+    customer               Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "contract_customer_id_fkey")
+
+    @@index([approvalStatus], map: "contract_approval_status_idx")
+    @@index([createUser], map: "contract_create_user_idx")
+    @@index([customerId], map: "contract_customer_id_idx")
+    @@index([name], map: "contract_name_idx")
+    @@index([number], map: "contract_number_idx")
+    @@index([organizationId], map: "contract_organization_id_idx")
+    @@index([owner], map: "contract_owner_idx")
+    @@index([stage], map: "contract_stage_idx")
+    @@map("contract")
+  }
+
+  model ContractField {
+    id         VarChar(32)  @id(map: "contract_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    refSubId   VarChar(32)? @map("ref_sub_id")
+    rowId      VarChar(32)? @map("row_id")
+    bizId      VarChar(32)? @map("biz_id")
+    resource   Contract     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_field_resource_id_fkey")
+
+    @@index([refSubId], map: "contract_field_ref_sub_id_idx")
+    @@index([resourceId], map: "contract_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_cell", unique: true)
+    @@map("contract_field")
+  }
+
+  model ContractFieldBlob {
+    id         VarChar(32)  @id(map: "contract_field_blob_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue String       @map("field_value")
+    refSubId   VarChar(32)? @map("ref_sub_id")
+    rowId      VarChar(32)? @map("row_id")
+    bizId      VarChar(32)? @map("biz_id")
+    resource   Contract     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "contract_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "contract_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_blob_cell", unique: true)
+    @@map("contract_field_blob")
+  }
+
+  model ContractInvoice {
+    id                        VarChar(32)                @id(map: "contract_invoice_pkey")
+    name                      VarChar(255)
+    contractId                VarChar(32)                @map("contract_id")
+    owner                     VarChar(32)
+    amount                    Numeric(20, 10)?
+    invoiceType               VarChar(32)?               @map("invoice_type")
+    taxRate                   Numeric(20, 10)?           @map("tax_rate")
+    approvalStatus            VarChar(32)?               @map("approval_status")
+    businessTitleId           VarChar(32)?               @map("business_title_id")
+    organizationId            VarChar(32)                @map("organization_id")
+    approved                  Boolean                    @default(false)
+    createTime                BigInt                     @map("create_time")
+    updateTime                BigInt                     @map("update_time")
+    createUser                VarChar(32)                @map("create_user")
+    updateUser                VarChar(32)                @map("update_user")
+    contractInvoiceFields     ContractInvoiceField[]
+    contractInvoiceFieldBlobs ContractInvoiceFieldBlob[]
+    contractInvoiceSnapshots  ContractInvoiceSnapshot[]
+    businessTitle             BusinessTitle?             @relation(fields: [businessTitleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "contract_invoice_business_title_id_fkey", index: false)
+    contract                  Contract                   @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_contract_id_fkey")
+
+    @@index([approvalStatus], map: "contract_invoice_approval_status_idx")
+    @@index([contractId], map: "contract_invoice_contract_id_idx")
+    @@index([createUser], map: "contract_invoice_create_user_idx")
+    @@index([organizationId], map: "contract_invoice_organization_id_idx")
+    @@index([owner], map: "contract_invoice_owner_idx")
+    @@map("contract_invoice")
+  }
+
+  model ContractInvoiceField {
+    id         VarChar(32)     @id(map: "contract_invoice_field_pkey")
+    resourceId VarChar(32)     @map("resource_id")
+    fieldId    VarChar(32)     @map("field_id")
+    fieldValue VarChar(255)    @map("field_value")
+    resource   ContractInvoice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "contract_invoice_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "contract_invoice_field_resource_id_field_id_key", unique: true)
+    @@map("contract_invoice_field")
+  }
+
+  model ContractInvoiceFieldBlob {
+    id         VarChar(32)     @id(map: "contract_invoice_field_blob_pkey")
+    resourceId VarChar(32)     @map("resource_id")
+    fieldId    VarChar(32)     @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   ContractInvoice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "contract_invoice_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "contract_invoice_field_blob_resource_id_idx")
+    @@map("contract_invoice_field_blob")
+  }
+
+  model ContractInvoiceSnapshot {
+    id           VarChar(32)     @id(map: "contract_invoice_snapshot_pkey")
+    invoiceId    VarChar(32)     @map("invoice_id")
+    invoiceProp  String?         @map("invoice_prop")
+    invoiceValue String?         @map("invoice_value")
+    invoice      ContractInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_snapshot_invoice_id_fkey")
+
+    @@index([invoiceId], map: "contract_invoice_snapshot_invoice_id_idx")
+    @@map("contract_invoice_snapshot")
+  }
+
+  model ContractPaymentPlan {
+    id                            VarChar(32)                    @id(map: "contract_payment_plan_pkey")
+    name                          VarChar(255)
+    contractId                    VarChar(32)                    @map("contract_id")
+    owner                         VarChar(32)
+    planStatus                    VarChar(32)                    @default("PENDING") @map("plan_status")
+    planAmount                    Numeric(20, 10)?               @map("plan_amount")
+    planEndTime                   BigInt?                        @map("plan_end_time")
+    organizationId                VarChar(32)                    @map("organization_id")
+    createTime                    BigInt                         @map("create_time")
+    updateTime                    BigInt                         @map("update_time")
+    createUser                    VarChar(32)                    @map("create_user")
+    updateUser                    VarChar(32)                    @map("update_user")
+    contractPaymentPlanFields     ContractPaymentPlanField[]
+    contractPaymentPlanFieldBlobs ContractPaymentPlanFieldBlob[]
+    contractPaymentRecords        ContractPaymentRecord[]
+    contract                      Contract                       @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_plan_contract_id_fkey")
+
+    @@index([contractId], map: "contract_payment_plan_contract_id_idx")
+    @@index([createUser], map: "contract_payment_plan_create_user_idx")
+    @@index([organizationId], map: "contract_payment_plan_organization_id_idx")
+    @@index([owner], map: "contract_payment_plan_owner_idx")
+    @@index([planEndTime], map: "contract_payment_plan_plan_end_time_idx")
+    @@map("contract_payment_plan")
+  }
+
+  model ContractPaymentPlanField {
+    id         VarChar(32)         @id(map: "contract_payment_plan_field_pkey")
+    resourceId VarChar(32)         @map("resource_id")
+    fieldId    VarChar(32)         @map("field_id")
+    fieldValue VarChar(255)        @map("field_value")
+    resource   ContractPaymentPlan @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_plan_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "contract_payment_plan_field_resource_id_field_id_field_valu_idx")
+    @@index([resourceId, fieldId], map: "contract_payment_plan_field_resource_id_field_id_key", unique: true)
+    @@map("contract_payment_plan_field")
+  }
+
+  model ContractPaymentPlanFieldBlob {
+    id         VarChar(32)         @id(map: "contract_payment_plan_field_blob_pkey")
+    resourceId VarChar(32)         @map("resource_id")
+    fieldId    VarChar(32)         @map("field_id")
+    fieldValue String              @map("field_value")
+    resource   ContractPaymentPlan @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_plan_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "contract_payment_plan_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "contract_payment_plan_field_blob_resource_id_idx")
+    @@map("contract_payment_plan_field_blob")
+  }
+
+  model ContractPaymentRecord {
+    id                              VarChar(32)                      @id(map: "contract_payment_record_pkey")
+    name                            VarChar(255)
+    no                              VarChar(50)?
+    owner                           VarChar(32)
+    contractId                      VarChar(32)                      @map("contract_id")
+    paymentPlanId                   VarChar(32)?                     @map("payment_plan_id")
+    recordAmount                    Numeric(20, 10)?                 @map("record_amount")
+    recordEndTime                   BigInt?                          @map("record_end_time")
+    organizationId                  VarChar(32)                      @map("organization_id")
+    createTime                      BigInt                           @map("create_time")
+    updateTime                      BigInt                           @map("update_time")
+    createUser                      VarChar(32)                      @map("create_user")
+    updateUser                      VarChar(32)                      @map("update_user")
+    contractPaymentRecordFields     ContractPaymentRecordField[]
+    contractPaymentRecordFieldBlobs ContractPaymentRecordFieldBlob[]
+    contract                        Contract                         @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_record_contract_id_fkey")
+    paymentPlan                     ContractPaymentPlan?             @relation(fields: [paymentPlanId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "contract_payment_record_payment_plan_id_fkey")
+
+    @@index([contractId], map: "contract_payment_record_contract_id_idx")
+    @@index([createUser], map: "contract_payment_record_create_user_idx")
+    @@index([organizationId], map: "contract_payment_record_organization_id_idx")
+    @@index([owner], map: "contract_payment_record_owner_idx")
+    @@index([paymentPlanId], map: "contract_payment_record_payment_plan_id_idx")
+    @@map("contract_payment_record")
+  }
+
+  model ContractPaymentRecordField {
+    id         VarChar(32)           @id(map: "contract_payment_record_field_pkey")
+    resourceId VarChar(32)           @map("resource_id")
+    fieldId    VarChar(32)           @map("field_id")
+    fieldValue VarChar(255)          @map("field_value")
+    resource   ContractPaymentRecord @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_record_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "contract_payment_record_field_resource_id_field_id_field_va_idx")
+    @@index([resourceId, fieldId], map: "contract_payment_record_field_resource_id_field_id_key", unique: true)
+    @@map("contract_payment_record_field")
+  }
+
+  model ContractPaymentRecordFieldBlob {
+    id         VarChar(32)           @id(map: "contract_payment_record_field_blob_pkey")
+    resourceId VarChar(32)           @map("resource_id")
+    fieldId    VarChar(32)           @map("field_id")
+    fieldValue String                @map("field_value")
+    resource   ContractPaymentRecord @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_record_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "contract_payment_record_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "contract_payment_record_field_blob_resource_id_idx")
+    @@map("contract_payment_record_field_blob")
+  }
+
+  model ContractSnapshot {
+    id            VarChar(32) @id(map: "contract_snapshot_pkey")
+    contractId    VarChar(32) @map("contract_id")
+    contractProp  String?     @map("contract_prop")
+    contractValue String?     @map("contract_value")
+    contract      Contract    @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_snapshot_contract_id_fkey")
+
+    @@index([contractId], map: "contract_snapshot_contract_id_idx")
+    @@map("contract_snapshot")
+  }
+
+  model ContractStageConfig {
+    id              VarChar(32)  @id(map: "contract_stage_config_pkey")
+    name            VarChar(255)
+    _type           VarChar(50)  @map("type")
+    afootRollBack   Boolean      @default(true) @map("afoot_roll_back")
+    endRollBack     Boolean      @default(false) @map("end_roll_back")
+    pos             BigInt
+    organizationId  VarChar(32)  @map("organization_id")
+    circulationType VarChar(50)  @default("NORMAL") @map("circulation_type")
+    createTime      BigInt       @map("create_time")
+    updateTime      BigInt       @map("update_time")
+    createUser      VarChar(32)  @map("create_user")
+    updateUser      VarChar(32)  @map("update_user")
+
+    @@index([organizationId, pos], map: "contract_stage_config_organization_id_pos_idx")
+    @@map("contract_stage_config")
+  }
+
+  model CustomForm {
+    id               VarChar(32)       @id(map: "custom_form_pkey")
+    name             VarChar(255)
+    enable           Boolean           @default(true)
+    organizationId   VarChar(32)       @map("organization_id")
+    createTime       BigInt            @map("create_time")
+    updateTime       BigInt            @map("update_time")
+    createUser       VarChar(32)       @map("create_user")
+    updateUser       VarChar(32)       @map("update_user")
+    customFormAdmins CustomFormAdmin[]
+    customFormData   CustomFormData[]
+    customFormRoles  CustomFormRole[]
+
+    @@index([organizationId, enable], map: "custom_form_organization_id_enable_idx")
+    @@index([organizationId], map: "custom_form_organization_id_idx")
+    @@index([organizationId, name], map: "custom_form_organization_id_name_key", unique: true)
+    @@map("custom_form")
+  }
+
+  model CustomFormAdmin {
+    id           VarChar(32) @id(map: "custom_form_admin_pkey")
+    customFormId VarChar(32) @map("custom_form_id")
+    userId       VarChar(32) @map("user_id")
+    customForm   CustomForm  @relation(fields: [customFormId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_admin_custom_form_id_fkey", index: false)
+
+    @@index([customFormId, userId], map: "custom_form_admin_custom_form_id_user_id_key", unique: true)
+    @@index([userId], map: "custom_form_admin_user_id_idx")
+    @@map("custom_form_admin")
+  }
+
+  model CustomFormData {
+    id                       VarChar(32)               @id(map: "custom_form_data_pkey")
+    customFormId             VarChar(32)               @map("custom_form_id")
+    name                     VarChar(255)
+    owner                    VarChar(32)
+    organizationId           VarChar(32)               @map("organization_id")
+    createTime               BigInt                    @map("create_time")
+    updateTime               BigInt                    @map("update_time")
+    createUser               VarChar(32)               @map("create_user")
+    updateUser               VarChar(32)               @map("update_user")
+    customFormDataFields     CustomFormDataField[]
+    customFormDataFieldBlobs CustomFormDataFieldBlob[]
+    customForm               CustomForm                @relation(fields: [customFormId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_data_custom_form_id_fkey")
+
+    @@index([customFormId, createTime], map: "custom_form_data_custom_form_id_create_time_idx")
+    @@index([customFormId], map: "custom_form_data_custom_form_id_idx")
+    @@index([customFormId, owner], map: "custom_form_data_custom_form_id_owner_idx")
+    @@index([organizationId], map: "custom_form_data_organization_id_idx")
+    @@map("custom_form_data")
+  }
+
+  model CustomFormDataField {
+    id         VarChar(32)    @id(map: "custom_form_data_field_pkey")
+    resourceId VarChar(32)    @map("resource_id")
+    fieldId    VarChar(32)    @map("field_id")
+    fieldValue VarChar(255)   @map("field_value")
+    refSubId   VarChar(32)?   @map("ref_sub_id")
+    rowId      Int?           @map("row_id")
+    bizId      VarChar(32)?   @map("biz_id")
+    resource   CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_data_field_resource_id_fkey", index: false)
+
+    @@index([bizId], map: "custom_form_data_field_biz_id_idx")
+    @@index([resourceId, fieldId, fieldValue], map: "custom_form_data_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, refSubId, rowId], map: "custom_form_data_field_resource_id_ref_sub_id_row_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "custom_form_data_field_sub_cell_key", where: "(ref_sub_id IS NOT NULL)", unique: true)
+    @@index([resourceId, fieldId], map: "custom_form_data_field_top_level_key", where: "(ref_sub_id IS NULL)", unique: true)
+    @@map("custom_form_data_field")
+  }
+
+  model CustomFormDataFieldBlob {
+    id         VarChar(32)    @id(map: "custom_form_data_field_blob_pkey")
+    resourceId VarChar(32)    @map("resource_id")
+    fieldId    VarChar(32)    @map("field_id")
+    fieldValue String         @map("field_value")
+    refSubId   VarChar(32)?   @map("ref_sub_id")
+    rowId      Int?           @map("row_id")
+    bizId      VarChar(32)?   @map("biz_id")
+    resource   CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_data_field_blob_resource_id_fkey")
+
+    @@index([bizId], map: "custom_form_data_field_blob_biz_id_idx")
+    @@index([resourceId], map: "custom_form_data_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId], map: "custom_form_data_field_blob_resource_id_ref_sub_id_row_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "custom_form_data_field_blob_sub_cell_key", where: "(ref_sub_id IS NOT NULL)", unique: true)
+    @@index([resourceId, fieldId], map: "custom_form_data_field_blob_top_level_key", where: "(ref_sub_id IS NULL)", unique: true)
+    @@map("custom_form_data_field_blob")
+  }
+
+  model CustomFormRole {
+    id                  VarChar(32)          @id(map: "custom_form_role_pkey")
+    name                VarChar(255)
+    customFormId        VarChar(32)          @map("custom_form_id")
+    internalKey         VarChar(50)          @map("internal_key")
+    createTime          BigInt               @map("create_time")
+    updateTime          BigInt               @map("update_time")
+    createUser          VarChar(32)          @map("create_user")
+    updateUser          VarChar(32)          @map("update_user")
+    customFormRoleUsers CustomFormRoleUser[]
+    customForm          CustomForm           @relation(fields: [customFormId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_role_custom_form_id_fkey")
+
+    @@index([customFormId], map: "custom_form_role_custom_form_id_idx")
+    @@index([customFormId, internalKey], map: "custom_form_role_custom_form_id_internal_key_key", unique: true)
+    @@map("custom_form_role")
+  }
+
+  model CustomFormRoleUser {
+    id         VarChar(32)    @id(map: "custom_form_role_user_pkey")
+    roleId     VarChar(32)    @map("role_id")
+    userId     VarChar(32)    @map("user_id")
+    createTime BigInt         @map("create_time")
+    updateTime BigInt         @map("update_time")
+    createUser VarChar(32)    @map("create_user")
+    updateUser VarChar(32)    @map("update_user")
+    role       CustomFormRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_role_user_role_id_fkey", index: false)
+
+    @@index([createTime], map: "custom_form_role_user_create_time_idx")
+    @@index([roleId, userId], map: "custom_form_role_user_role_id_user_id_key", unique: true)
+    @@index([userId], map: "custom_form_role_user_user_id_idx")
+    @@map("custom_form_role_user")
+  }
+
+  model CustomerCapacity {
+    id             VarChar(32) @id(map: "customer_capacity_pkey")
+    organizationId VarChar(32) @map("organization_id")
+    scopeId        String      @map("scope_id")
+    capacity       Int?
+    filter         String?
+    createTime     BigInt      @map("create_time")
+    updateTime     BigInt      @map("update_time")
+    createUser     VarChar(32) @map("create_user")
+    updateUser     VarChar(32) @map("update_user")
+
+    @@index([organizationId], map: "customer_capacity_organization_id_idx")
+    @@map("customer_capacity")
+  }
+
+  model CustomerCollaboration {
+    id                VarChar(32) @id(map: "customer_collaboration_pkey")
+    createTime        BigInt      @map("create_time")
+    updateTime        BigInt      @map("update_time")
+    createUser        VarChar(32) @map("create_user")
+    updateUser        VarChar(32) @map("update_user")
+    userId            VarChar(32) @map("user_id")
+    customerId        VarChar(32) @map("customer_id")
+    collaborationType VarChar(50) @map("collaboration_type")
+    customer          Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_collaboration_customer_id_fkey")
+
+    @@index([customerId], map: "customer_collaboration_customer_id_idx")
+    @@index([customerId, userId], map: "customer_collaboration_customer_id_user_id_key", unique: true)
+    @@index([userId], map: "customer_collaboration_user_id_idx")
+    @@map("customer_collaboration")
+  }
+
+  model CustomerContact {
+    id                        VarChar(32)                @id(map: "customer_contact_pkey")
+    customerId                VarChar(32)?               @map("customer_id")
+    name                      VarChar(255)
+    phone                     VarChar(30)?
+    owner                     VarChar(32)
+    createTime                BigInt                     @map("create_time")
+    updateTime                BigInt                     @map("update_time")
+    createUser                VarChar(32)                @map("create_user")
+    updateUser                VarChar(32)                @map("update_user")
+    enable                    Boolean                    @default(false)
+    disableReason             VarChar(255)?              @map("disable_reason")
+    organizationId            VarChar(32)                @map("organization_id")
+    customerContactFields     CustomerContactField[]
+    customerContactFieldBlobs CustomerContactFieldBlob[]
+    opportunities             Opportunity[]
+    customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "customer_contact_customer_id_fkey")
+
+    @@index([customerId], map: "customer_contact_customer_id_idx")
+    @@index([organizationId], map: "customer_contact_organization_id_idx")
+    @@index([phone], map: "customer_contact_phone_idx")
+    @@map("customer_contact")
+  }
+
+  model CustomerContactField {
+    id         VarChar(32)     @id(map: "customer_contact_field_pkey")
+    resourceId VarChar(32)     @map("resource_id")
+    fieldId    VarChar(32)     @map("field_id")
+    fieldValue VarChar(255)    @map("field_value")
+    resource   CustomerContact @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_contact_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "customer_contact_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "customer_contact_field_resource_id_field_id_key", unique: true)
+    @@map("customer_contact_field")
+  }
+
+  model CustomerContactFieldBlob {
+    id         VarChar(32)     @id(map: "customer_contact_field_blob_pkey")
+    resourceId VarChar(32)     @map("resource_id")
+    fieldId    VarChar(32)     @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   CustomerContact @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_contact_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "customer_contact_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "customer_contact_field_blob_resource_id_idx")
+    @@map("customer_contact_field_blob")
+  }
+
+  model CustomerField {
+    id         VarChar(32)  @id(map: "customer_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    resource   Customer     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "customer_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "customer_field_resource_id_field_id_key", unique: true)
+    @@map("customer_field")
+  }
+
+  model CustomerFieldBlob {
+    id         VarChar(32) @id(map: "customer_field_blob_pkey")
+    resourceId VarChar(32) @map("resource_id")
+    fieldId    VarChar(32) @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Customer    @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "customer_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "customer_field_blob_resource_id_idx")
+    @@map("customer_field_blob")
+  }
+
+  model CustomerOwner {
+    id             VarChar(32)  @id(map: "customer_owner_pkey")
+    customerId     VarChar(32)  @map("customer_id")
+    owner          VarChar(32)
+    collectionTime BigInt       @map("collection_time")
+    endTime        BigInt       @map("end_time")
+    operator       VarChar(32)
+    reasonId       VarChar(32)? @map("reason_id")
+    customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_owner_customer_id_fkey")
+
+    @@index([customerId], map: "customer_owner_customer_id_idx")
+    @@map("customer_owner")
+  }
+
+  model CustomerPoolHiddenField {
+    poolId  VarChar(32)  @map("pool_id")
+    fieldId VarChar(32)  @map("field_id")
+    pool    CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_hidden_field_pool_id_fkey", index: false)
+
+    @@id([poolId, fieldId], map: "customer_pool_hidden_field_pkey")
+    @@map("customer_pool_hidden_field")
+  }
+
+  model CustomerPoolPickRule {
+    id               VarChar(32)  @id(map: "customer_pool_pick_rule_pkey")
+    poolId           VarChar(32)  @map("pool_id")
+    limitOnNumber    Boolean      @default(true) @map("limit_on_number")
+    pickNumber       Int?         @map("pick_number")
+    limitPreOwner    Boolean      @default(true) @map("limit_pre_owner")
+    pickIntervalDays Int?         @map("pick_interval_days")
+    limitNew         Boolean      @default(false) @map("limit_new")
+    newPickInterval  Int?         @map("new_pick_interval")
+    createUser       VarChar(32)  @map("create_user")
+    createTime       BigInt       @map("create_time")
+    updateUser       VarChar(32)  @map("update_user")
+    updateTime       BigInt       @map("update_time")
+    pool             CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_pick_rule_pool_id_fkey")
+
+    @@index([poolId], map: "customer_pool_pick_rule_pool_id_key", unique: true)
+    @@map("customer_pool_pick_rule")
+  }
+
+  model CustomerPoolRecycleRule {
+    id         VarChar(32)  @id(map: "customer_pool_recycle_rule_pkey")
+    poolId     VarChar(32)  @map("pool_id")
+    operator   VarChar(10)?
+    condition  String?
+    createTime BigInt       @map("create_time")
+    updateTime BigInt       @map("update_time")
+    createUser VarChar(32)  @map("create_user")
+    updateUser VarChar(32)  @map("update_user")
+    pool       CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_recycle_rule_pool_id_fkey")
+
+    @@index([poolId], map: "customer_pool_recycle_rule_pool_id_key", unique: true)
+    @@map("customer_pool_recycle_rule")
+  }
+
+  model CustomerRelation {
+    id               VarChar(32) @id(map: "customer_relation_pkey")
+    sourceCustomerId VarChar(32) @map("source_customer_id")
+    targetCustomerId VarChar(32) @map("target_customer_id")
+    createTime       BigInt      @map("create_time")
+    sourceCustomer   Customer    @relation(name: "customer_relation_source_customer_id_fkey", fields: [sourceCustomerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_relation_source_customer_id_fkey")
+    targetCustomer   Customer    @relation(name: "customer_relation_target_customer_id_fkey", fields: [targetCustomerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_relation_target_customer_id_fkey")
+
+    @@index([sourceCustomerId], map: "customer_relation_source_customer_id_idx")
+    @@index([sourceCustomerId, targetCustomerId], map: "customer_relation_source_customer_id_target_customer_id_key", unique: true)
+    @@index([targetCustomerId], map: "customer_relation_target_customer_id_idx")
+    @@map("customer_relation")
+  }
+
+  model DashboardModule {
+    id             VarChar(32)  @id(map: "dashboard_module_pkey")
+    organizationId VarChar(32)  @map("organization_id")
+    name           VarChar(255)
+    parentId       VarChar(32)  @default("NONE") @map("parent_id")
+    pos            BigInt       @default(0)
+    createTime     BigInt       @map("create_time")
+    updateTime     BigInt       @map("update_time")
+    createUser     VarChar(32)  @map("create_user")
+    updateUser     VarChar(32)  @map("update_user")
+    dashboards     Dashboard[]
+
+    @@index([name], map: "dashboard_module_name_idx")
+    @@index([organizationId], map: "dashboard_module_organization_id_idx")
+    @@index([parentId], map: "dashboard_module_parent_id_idx")
+    @@index([pos], map: "dashboard_module_pos_idx")
+    @@map("dashboard_module")
+  }
+
+  model Dashboard {
+    id                   VarChar(32)           @id(map: "dashboard_pkey")
+    name                 VarChar(255)
+    resourceUrl          VarChar(500)          @map("resource_url")
+    dashboardModuleId    VarChar(32)           @map("dashboard_module_id")
+    organizationId       VarChar(32)           @map("organization_id")
+    pos                  BigInt                @default(0)
+    scopeId              String                @map("scope_id")
+    description          VarChar(1000)?
+    createTime           BigInt                @map("create_time")
+    updateTime           BigInt                @map("update_time")
+    createUser           VarChar(32)           @map("create_user")
+    updateUser           VarChar(32)           @map("update_user")
+    dashboardCollections DashboardCollection[]
+    dashboardModule      DashboardModule       @relation(fields: [dashboardModuleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "dashboard_dashboard_module_id_fkey")
+
+    @@index([dashboardModuleId], map: "dashboard_dashboard_module_id_idx")
+    @@index([name], map: "dashboard_name_idx")
+    @@index([organizationId], map: "dashboard_organization_id_idx")
+    @@map("dashboard")
+  }
+
+  model DashboardCollection {
+    id          VarChar(32) @id(map: "dashboard_collection_pkey")
+    userId      VarChar(32) @map("user_id")
+    dashboardId VarChar(32) @map("dashboard_id")
+    createTime  BigInt      @map("create_time")
+    updateTime  BigInt      @map("update_time")
+    createUser  VarChar(32) @map("create_user")
+    updateUser  VarChar(32) @map("update_user")
+    dashboard   Dashboard   @relation(fields: [dashboardId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "dashboard_collection_dashboard_id_fkey", index: false)
+
+    @@index([userId, dashboardId], map: "dashboard_collection_user_id_dashboard_id_key", unique: true)
+    @@index([userId], map: "dashboard_collection_user_id_idx")
+    @@map("dashboard_collection")
+  }
+
+  model Tenants {
+    id                             String                                 @id(map: "tenants_pkey") @default(cuid(2))
+    name                           String
+    slug                           String
+    status                         pg.enum(TenantStatus)                  @default("ACTIVE")
+    createdAt                      Timestamp(3)                           @default(now())
+    updatedAt                      Timestamp(3)
+    enterpriseSyncResource         pg.enum(EnterpriseIntegrationProvider) @default("WECOM")
+    enterpriseSynced               Boolean                                @default(false)
+    departments                    Departments[]
+    enterpriseAiModelRoutes        EnterpriseAiModelRoutes[]
+    enterpriseAiModels             EnterpriseAiModels[]
+    enterpriseGlobalTaskExecutions EnterpriseGlobalTaskExecutions[]
+    enterpriseGlobalTasks          EnterpriseGlobalTasks[]
+    enterpriseIntegrations         EnterpriseIntegrations[]
+    enterpriseTermCategories       EnterpriseTermCategories[]
+    enterpriseTermDiscoveries      EnterpriseTermDiscoveries[]
+    enterpriseTerms                EnterpriseTerms[]
+    externalDepartmentMappings     ExternalDepartmentMappings[]
+    externalIdentities             ExternalIdentities[]
+    externalOauthStates            ExternalOauthStates[]
+    externalUserMappings           ExternalUserMappings[]
+    messageDeliveries              MessageDeliveries[]
+    messageTaskSettings            MessageTaskSettings[]
+    moduleConfigs                  ModuleConfigs[]
+    operationLogSettings           OperationLogSettings?
+    organizationSyncBatches        OrganizationSyncBatches[]
+    roles                          Roles[]
+    subscriptions                  Subscriptions[]
+    topNavigationConfigs           TopNavigationConfigs[]
+    userRoles                      UserRoles[]
+    users                          Users[]
+
+    @@index([slug], map: "tenants_slug_key", unique: true)
+    @@map("tenants")
+  }
+
+  model Departments {
+    id                         String                       @id(map: "departments_pkey") @default(cuid(2))
+    tenantId                   String
+    name                       String
+    parentId                   String?
+    leaderId                   String?
+    sort                       Int                          @default(0)
+    createdAt                  Timestamp(3)                 @default(now())
+    updatedAt                  Timestamp(3)
+    externalDepartmentMappings ExternalDepartmentMappings[]
+    users                      Users[]
+    parent                     Departments?                 @relation(name: "departments_parentId_fkey", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "departments_parentId_fkey", index: false)
+    departments                Departments[]                @relation(name: "departments_parentId_fkey")
+    tenant                     Tenants                      @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "departments_tenantId_fkey")
+
+    @@index([tenantId], map: "departments_tenantId_idx")
+    @@index([tenantId, parentId], map: "departments_tenantId_parentId_idx")
+    @@map("departments")
+  }
+
+  model EnterpriseAiModelRoutes {
+    id        String       @id(map: "enterprise_ai_model_routes_pkey") @default(cuid(2))
+    tenantId  String
+    modelId   String
+    sort      Int
+    createdAt Timestamp(3) @default(now())
+    updatedAt Timestamp(3)
+    tenant    Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ai_model_routes_tenantId_fkey")
+
+    @@index([tenantId], map: "enterprise_ai_model_routes_tenantId_idx")
+    @@index([tenantId, modelId], map: "enterprise_ai_model_routes_tenantId_modelId_key", unique: true)
+    @@index([tenantId, sort], map: "enterprise_ai_model_routes_tenantId_sort_key", unique: true)
+    @@map("enterprise_ai_model_routes")
+  }
+
+  model EnterpriseAiModels {
+    id                    String                  @id(map: "enterprise_ai_models_pkey") @default(cuid(2))
+    tenantId              String
+    displayName           String
+    modelName             String
+    provider              String
+    apiUrl                String
+    apiKeyCiphertext      String?
+    apiKeyIv              String?
+    apiKeyAuthTag         String?
+    apiKeyKeyVersion      Int?
+    enable                Boolean                 @default(false)
+    temperature           Float                   @default(0.7)
+    maxTokens             Int                     @default(2048)
+    topP                  Float                   @default(0.9)
+    globalDailyLimit      Int?
+    userDailyLimit        Int?
+    createdById           String
+    updatedById           String
+    createdAt             Timestamp(3)            @default(now())
+    updatedAt             Timestamp(3)
+    enterpriseGlobalTasks EnterpriseGlobalTasks[]
+    tenant                Tenants                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ai_models_tenantId_fkey", index: false)
+
+    @@index([tenantId, displayName], map: "enterprise_ai_models_tenantId_displayName_key", unique: true)
+    @@index([tenantId, enable], map: "enterprise_ai_models_tenantId_enable_idx")
+    @@map("enterprise_ai_models")
+  }
+
+  model EnterpriseGlobalTasks {
+    id                             String                           @id(map: "enterprise_global_tasks_pkey") @default(cuid(2))
+    tenantId                       String
+    name                           String
+    triggerType                    String                           @default("manual")
+    executionCondition             String                           @default("")
+    executionAction                String                           @default("")
+    confirmationLevel              String                           @default("ask")
+    applicableModelId              String?
+    enable                         Boolean                          @default(true)
+    createdById                    String
+    updatedById                    String
+    createdAt                      Timestamp(3)                     @default(now())
+    updatedAt                      Timestamp(3)
+    enterpriseGlobalTaskExecutions EnterpriseGlobalTaskExecutions[]
+    applicableModel                EnterpriseAiModels?              @relation(fields: [applicableModelId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "enterprise_global_tasks_applicableModelId_fkey")
+    tenant                         Tenants                          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_tasks_tenantId_fkey", index: false)
+
+    @@index([applicableModelId], map: "enterprise_global_tasks_applicableModelId_idx")
+    @@index([tenantId, enable], map: "enterprise_global_tasks_tenantId_enable_idx")
+    @@index([tenantId, name], map: "enterprise_global_tasks_tenantId_name_key", unique: true)
+    @@map("enterprise_global_tasks")
+  }
+
+  model EnterpriseGlobalTaskExecutions {
+    id           String                @id(map: "enterprise_global_task_executions_pkey") @default(cuid(2))
+    tenantId     String
+    taskId       String
+    status       String                @default("PENDING")
+    input        Jsonb?
+    output       Jsonb?
+    errorMessage String?
+    startedAt    Timestamp(3)?
+    finishedAt   Timestamp(3)?
+    createdAt    Timestamp(3)          @default(now())
+    updatedAt    Timestamp(3)
+    task         EnterpriseGlobalTasks @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_task_executions_taskId_fkey", index: false)
+    tenant       Tenants               @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_task_executions_tenantId_fkey", index: false)
+
+    @@index([taskId, createdAt], map: "enterprise_global_task_executions_taskId_createdAt_idx")
+    @@index([tenantId, createdAt], map: "enterprise_global_task_executions_tenantId_createdAt_idx")
+    @@map("enterprise_global_task_executions")
+  }
+
+  model Roles {
+    id                     String                   @id(map: "roles_pkey") @default(cuid(2))
+    tenantId               String
+    name                   String
+    permissions            String[]?                @noCheck(elementNotNull)
+    dataScope              pg.enum(DataScope)       @default("SELF")
+    scopeDeptIds           String[]?                @noCheck(elementNotNull)
+    isSystem               Boolean                  @default(false)
+    remark                 String?
+    createdAt              Timestamp(3)             @default(now())
+    updatedAt              Timestamp(3)
+    enterpriseIntegrations EnterpriseIntegrations[]
+    userRoles              UserRoles[]
+    tenant                 Tenants                  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "roles_tenantId_fkey")
+
+    @@index([tenantId], map: "roles_tenantId_idx")
+    @@index([tenantId, name], map: "roles_tenantId_name_key", unique: true)
+    @@map("roles")
+  }
+
+  model EnterpriseIntegrations {
+    id                      String                                 @id(map: "enterprise_integrations_pkey") @default(cuid(2))
+    tenantId                String
+    provider                pg.enum(EnterpriseIntegrationProvider)
+    corpId                  String
+    agentId                 String
+    secretCiphertext        String
+    secretIv                String
+    secretAuthTag           String
+    secretKeyVersion        Int                                    @default(1)
+    credentialVersion       Int                                    @default(1)
+    syncEnabled             Boolean                                @default(false)
+    syncDefaultRoleId       String?
+    lastTestSucceeded       Boolean?
+    lastTestMessage         String?
+    lastTestedAt            Timestamp(3)?
+    lastSyncStatus          pg.enum(OrganizationSyncStatus)?
+    lastSyncMessage         String?
+    lastSyncedAt            Timestamp(3)?
+    createdById             String
+    updatedById             String
+    createdAt               Timestamp(3)                           @default(now())
+    updatedAt               Timestamp(3)
+    clientId                String?
+    redirectUrl             String?
+    externalIdentities      ExternalIdentities[]
+    externalOauthStates     ExternalOauthStates[]
+    messageDeliveries       MessageDeliveries[]
+    organizationSyncBatches OrganizationSyncBatches[]
+    syncDefaultRole         Roles?                                 @relation(fields: [syncDefaultRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "enterprise_integrations_syncDefaultRoleId_fkey")
+    tenant                  Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_integrations_tenantId_fkey")
+
+    @@index([syncDefaultRoleId], map: "enterprise_integrations_syncDefaultRoleId_idx")
+    @@index([tenantId], map: "enterprise_integrations_tenantId_idx")
+    @@index([tenantId, provider], map: "enterprise_integrations_tenantId_provider_key", unique: true)
+    @@map("enterprise_integrations")
+  }
+
+  model EnterpriseMailSettings {
+    id                 String        @id(map: "enterprise_mail_settings_pkey") @default(cuid(2))
+    tenantId           String
+    host               String
+    port               Int
+    account            String
+    passwordCiphertext String?
+    passwordIv         String?
+    passwordAuthTag    String?
+    passwordKeyVersion Int?
+    fromAddress        String        @default("")
+    recipient          String        @default("")
+    ssl                Boolean       @default(false)
+    tls                Boolean       @default(false)
+    lastTestSucceeded  Boolean?
+    lastTestMessage    String?
+    lastTestedAt       Timestamp(3)?
+    createdAt          Timestamp(3)  @default(now())
+    updatedAt          Timestamp(3)
+    tenant             Tenants       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_mail_settings_tenantId_fkey")
+
+    @@index([tenantId], map: "enterprise_mail_settings_tenantId_key", unique: true)
+    @@map("enterprise_mail_settings")
+  }
+
+  model EnterpriseTermCategories {
+    id              String            @id(map: "enterprise_term_categories_pkey") @default(cuid(2))
+    tenantId        String
+    name            String
+    sort            Int               @default(0)
+    createdAt       Timestamp(3)      @default(now())
+    updatedAt       Timestamp(3)
+    enterpriseTerms EnterpriseTerms[]
+    tenant          Tenants           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_term_categories_tenantId_fkey", index: false)
+
+    @@index([tenantId, name], map: "enterprise_term_categories_tenantId_name_key", unique: true)
+    @@index([tenantId, sort], map: "enterprise_term_categories_tenantId_sort_idx")
+    @@map("enterprise_term_categories")
+  }
+
+  model EnterpriseTermDiscoveries {
+    id            String       @id(map: "enterprise_term_discoveries_pkey") @default(cuid(2))
+    tenantId      String
+    discovered    String
+    source        String       @default("")
+    context       String       @default("")
+    status        String       @default("PENDING")
+    adoptedTermId String?
+    createdAt     Timestamp(3) @default(now())
+    updatedAt     Timestamp(3)
+    tenant        Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_term_discoveries_tenantId_fkey", index: false)
+
+    @@index([tenantId, status], map: "enterprise_term_discoveries_tenantId_status_idx")
+    @@map("enterprise_term_discoveries")
+  }
+
+  model EnterpriseTerms {
+    id              String                   @id(map: "enterprise_terms_pkey") @default(cuid(2))
+    tenantId        String
+    categoryId      String
+    standardTerm    String
+    alsoCalled      String                   @default("")
+    avoidThese      String                   @default("")
+    useCase         String                   @default("")
+    systemReference String                   @default("")
+    enable          Boolean                  @default(true)
+    createdById     String
+    updatedById     String
+    createdAt       Timestamp(3)             @default(now())
+    updatedAt       Timestamp(3)
+    category        EnterpriseTermCategories @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_terms_categoryId_fkey")
+    tenant          Tenants                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_terms_tenantId_fkey", index: false)
+
+    @@index([categoryId], map: "enterprise_terms_categoryId_idx")
+    @@index([tenantId, categoryId, standardTerm], map: "enterprise_terms_tenantId_categoryId_standardTerm_key", unique: true)
+    @@index([tenantId, enable], map: "enterprise_terms_tenantId_enable_idx")
+    @@map("enterprise_terms")
+  }
+
+  model EnterpriseUiSettings {
+    id                       String       @id(map: "enterprise_ui_settings_pkey") @default(cuid(2))
+    tenantId                 String
+    theme                    String       @default("default")
+    customTheme              String       @default("#008d91")
+    style                    String       @default("default")
+    customStyle              String       @default("#f9fbfb")
+    title                    String       @default("MicroMatrix CRM")
+    slogan                   String       @default("让客户关系更清晰，让销售协作更高效")
+    helpDoc                  String       @default("")
+    iconAttachmentId         String?
+    loginLogoAttachmentId    String?
+    loginImageAttachmentId   String?
+    platformLogoAttachmentId String?
+    createdAt                Timestamp(3) @default(now())
+    updatedAt                Timestamp(3)
+    tenant                   Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ui_settings_tenantId_fkey")
+
+    @@index([tenantId], map: "enterprise_ui_settings_tenantId_key", unique: true)
+    @@map("enterprise_ui_settings")
+  }
+
+  model ExportTasks {
+    id           String        @id(map: "export_tasks_pkey") @default(cuid(2))
+    tenantId     String
+    userId       String
+    module       String
+    fileName     String
+    filePath     String?
+    status       String        @default("PENDING")
+    rowCount     Int           @default(0)
+    fileSize     Int?
+    errorMessage String?
+    payload      Jsonb?
+    startedAt    Timestamp(3)?
+    attempts     Int           @default(0)
+    completedAt  Timestamp(3)?
+    expiresAt    Timestamp(3)
+    createdAt    Timestamp(3)  @default(now())
+
+    @@index([expiresAt], map: "export_tasks_expiresAt_idx")
+    @@index([tenantId, userId, createdAt], map: "export_tasks_tenantId_userId_createdAt_idx")
+    @@map("export_tasks")
+  }
+
+  model OrganizationSyncBatches {
+    id                         String                                 @id(map: "organization_sync_batches_pkey") @default(cuid(2))
+    tenantId                   String
+    integrationId              String
+    provider                   pg.enum(EnterpriseIntegrationProvider)
+    status                     pg.enum(OrganizationSyncStatus)
+    targetDepartmentId         String
+    credentialVersion          Int
+    counts                     Jsonb
+    errorCode                  String?
+    errorMessage               String?
+    createdById                String
+    appliedById                String?
+    fetchStartedAt             Timestamp(3)?
+    previewedAt                Timestamp(3)?
+    applyStartedAt             Timestamp(3)?
+    finishedAt                 Timestamp(3)?
+    createdAt                  Timestamp(3)                           @default(now())
+    updatedAt                  Timestamp(3)
+    externalDepartmentMappings ExternalDepartmentMappings[]
+    externalUserMappings       ExternalUserMappings[]
+    organizationSyncItems      OrganizationSyncItems[]
+    integration                EnterpriseIntegrations                 @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_batches_integrationId_fkey", index: false)
+    tenant                     Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_batches_tenantId_fkey", index: false)
+
+    @@index([tenantId, provider], map: "organization_sync_batches_active_key", where: "(status = ANY (ARRAY['FETCHING'::\"OrganizationSyncStatus\", 'APPLYING'::\"OrganizationSyncStatus\"]))", unique: true)
+    @@index([integrationId, status], map: "organization_sync_batches_integrationId_status_idx")
+    @@index([tenantId, provider, createdAt], map: "organization_sync_batches_tenantId_provider_createdAt_idx")
+    @@index([tenantId, targetDepartmentId, createdAt], map: "organization_sync_batches_tenantId_targetDepartmentId_creat_idx")
+    @@map("organization_sync_batches")
+  }
+
+  model ExternalDepartmentMappings {
+    id              String                                 @id(map: "external_department_mappings_pkey") @default(cuid(2))
+    tenantId        String
+    provider        pg.enum(EnterpriseIntegrationProvider)
+    externalId      String
+    externalKey     String
+    departmentId    String
+    active          Boolean                                @default(true)
+    lastSeenBatchId String?
+    createdAt       Timestamp(3)                           @default(now())
+    updatedAt       Timestamp(3)
+    department      Departments                            @relation(fields: [departmentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_department_mappings_departmentId_fkey", index: false)
+    lastSeenBatch   OrganizationSyncBatches?               @relation(fields: [lastSeenBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "external_department_mappings_lastSeenBatchId_fkey")
+    tenant          Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_department_mappings_tenantId_fkey", index: false)
+
+    @@index([lastSeenBatchId], map: "external_department_mappings_lastSeenBatchId_idx")
+    @@index([tenantId, provider, active], map: "external_department_mappings_tenantId_provider_active_idx")
+    @@index([tenantId, provider, departmentId], map: "external_department_mappings_tenantId_provider_departmentId_key", unique: true)
+    @@index([tenantId, provider, externalKey], map: "external_department_mappings_tenantId_provider_externalKey_key", unique: true)
+    @@map("external_department_mappings")
+  }
+
+  model Users {
+    id                   String                 @id(map: "users_pkey") @default(cuid(2))
+    tenantId             String
+    email                String?
+    passwordHash         String
+    name                 String
+    status               pg.enum(UserStatus)    @default("ACTIVE")
+    deptId               String?
+    leaderId             String?
+    position             String?
+    phone                String?
+    gender               Boolean                @default(false)
+    passwordLoginEnabled Boolean                @default(true)
+    defaultPwd           Boolean                @default(false) @map("default_pwd")
+    authVersion          Int                    @default(0) @map("auth_version")
+    createdAt            Timestamp(3)           @default(now())
+    updatedAt            Timestamp(3)
+    language             String                 @default("zh-CN")
+    externalIdentities   ExternalIdentities[]
+    externalUserMappings ExternalUserMappings[]
+    messageDeliveries    MessageDeliveries[]
+    userExtensions       UserExtensions?
+    userKeys             UserKey[]
+    userRoles            UserRoles[]
+    dept                 Departments?           @relation(fields: [deptId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_deptId_fkey", index: false)
+    tenant               Tenants                @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "users_tenantId_fkey")
+
+    @@index([email], map: "users_email_idx")
+    @@index([tenantId, deptId], map: "users_tenantId_deptId_idx")
+    @@index([tenantId], map: "users_tenantId_idx")
+    @@map("users")
+  }
+
+  model ExternalUserMappings {
+    id                 String                                 @id(map: "external_user_mappings_pkey") @default(cuid(2))
+    tenantId           String
+    provider           pg.enum(EnterpriseIntegrationProvider)
+    externalId         String
+    externalKey        String
+    userId             String
+    active             Boolean                                @default(true)
+    lastSeenBatchId    String?
+    createdAt          Timestamp(3)                           @default(now())
+    updatedAt          Timestamp(3)
+    lastSeenBatch      OrganizationSyncBatches?               @relation(fields: [lastSeenBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "external_user_mappings_lastSeenBatchId_fkey")
+    tenant             Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_user_mappings_tenantId_fkey", index: false)
+    user               Users                                  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_user_mappings_userId_fkey", index: false)
+
+    @@index([lastSeenBatchId], map: "external_user_mappings_lastSeenBatchId_idx")
+    @@index([tenantId, provider, active], map: "external_user_mappings_tenantId_provider_active_idx")
+    @@index([tenantId, provider, externalKey], map: "external_user_mappings_tenantId_provider_externalKey_key", unique: true)
+    @@index([tenantId, provider, userId], map: "external_user_mappings_tenantId_provider_userId_key", unique: true)
+    @@map("external_user_mappings")
+  }
+
+  model ExternalIdentities {
+    id              String                                 @id(map: "external_identities_pkey") @default(cuid(2))
+    tenantId        String
+    integrationId   String
+    mappingId       String
+    provider        pg.enum(EnterpriseIntegrationProvider)
+    externalSubject String
+    userId          String
+    status          pg.enum(ExternalIdentityStatus)        @default("ACTIVE")
+    bindingSource   String                                 @default("LOGIN")
+    boundById       String?
+    boundAt         Timestamp(3)                           @default(now())
+    revokedById     String?
+    revokedAt       Timestamp(3)?
+    lastLoginAt     Timestamp(3)?
+    createdAt       Timestamp(3)                           @default(now())
+    updatedAt       Timestamp(3)
+    integration     EnterpriseIntegrations                 @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_integrationId_fkey")
+    mapping         ExternalUserMappings                   @relation(fields: [mappingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_mappingId_fkey")
+    tenant          Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_tenantId_fkey", index: false)
+    user            Users                                  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_userId_fkey", index: false)
+
+    @@index([integrationId], map: "external_identities_integrationId_idx")
+    @@index([mappingId], map: "external_identities_mappingId_key", unique: true)
+    @@index([tenantId, provider, externalSubject], map: "external_identities_tenantId_provider_externalSubject_key", unique: true)
+    @@index([tenantId, provider, status], map: "external_identities_tenantId_provider_status_idx")
+    @@index([tenantId, provider, userId], map: "external_identities_tenantId_provider_userId_key", unique: true)
+    @@map("external_identities")
+  }
+
+  model ExternalOauthStates {
+    id               String                     @id(map: "external_oauth_states_pkey") @default(cuid(2))
+    tenantId         String
+    integrationId    String
+    flow             pg.enum(ExternalOAuthFlow)
+    stateHash        String
+    browserNonceHash String
+    returnPath       String
+    expiresAt        Timestamp(3)
+    consumedAt       Timestamp(3)?
+    createdAt        Timestamp(3)               @default(now())
+    integration      EnterpriseIntegrations     @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_oauth_states_integrationId_fkey", index: false)
+    tenant           Tenants                    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_oauth_states_tenantId_fkey", index: false)
+
+    @@index([expiresAt, consumedAt], map: "external_oauth_states_expiresAt_consumedAt_idx")
+    @@index([stateHash], map: "external_oauth_states_stateHash_key", unique: true)
+    @@index([tenantId, flow, expiresAt], map: "external_oauth_states_tenantId_flow_expiresAt_idx")
+    @@map("external_oauth_states")
+  }
+
+  model FollowUpPlans {
+    id                     String                      @id(map: "follow_up_plans_pkey") @default(cuid(2))
+    tenantId               String
+    targetType             String
+    targetId               String
+    contactId              String?
+    content                String
+    method                 String?
+    estimatedAt            Timestamp(3)?
+    status                 pg.enum(FollowUpPlanStatus) @default("PREPARED")
+    converted              Boolean                     @default(false)
+    convertedRecordId      String?
+    ownerId                String
+    deptId                 String?
+    createdById            String
+    dueNotifiedAt          Timestamp(3)?
+    commentCount           Int                         @default(0)
+    customData             Jsonb?
+    createdAt              Timestamp(3)                @default(now())
+    updatedAt              Timestamp(3)
+    followUpPlanComments   FollowUpPlanComment[]
+    followUpPlanFields     FollowUpPlanField[]
+    followUpPlanFieldBlobs FollowUpPlanFieldBlob[]
+
+    @@index([tenantId, estimatedAt, status], map: "follow_up_plans_tenantId_estimatedAt_status_idx")
+    @@index([tenantId, ownerId, status], map: "follow_up_plans_tenantId_ownerId_status_idx")
+    @@index([tenantId, targetType, targetId], map: "follow_up_plans_tenantId_targetType_targetId_idx")
+    @@map("follow_up_plans")
+  }
+
+  model FollowUpPlanComment {
+    id                          VarChar(32)                  @id(map: "follow_up_plan_comment_pkey")
+    resourceId                  String                       @map("resource_id")
+    parentId                    VarChar(32)?                 @map("parent_id")
+    replyToUserId               VarChar(32)?                 @map("reply_to_user_id")
+    content                     VarChar(3000)
+    organizationId              VarChar(32)                  @map("organization_id")
+    createUser                  VarChar(32)                  @map("create_user")
+    updateUser                  VarChar(32)                  @map("update_user")
+    createTime                  Timestamp(3)                 @default(now()) @map("create_time")
+    updateTime                  Timestamp(3)                 @map("update_time")
+    followUpPlanCommentMentions FollowUpPlanCommentMention[]
+    parent                      FollowUpPlanComment?         @relation(name: "follow_up_plan_comment_parent_id_fkey", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_parent_id_fkey")
+    followUpPlanComments        FollowUpPlanComment[]        @relation(name: "follow_up_plan_comment_parent_id_fkey")
+    resource                    FollowUpPlans                @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_resource_id_fkey", index: false)
+
+    @@index([organizationId, resourceId, parentId, createTime], map: "follow_plan_comment_page_idx")
+    @@index([parentId], map: "follow_up_plan_comment_parent_id_idx")
+    @@map("follow_up_plan_comment")
+  }
+
+  model FollowUpPlanCommentMention {
+    id        VarChar(32)         @id(map: "follow_up_plan_comment_mention_pkey")
+    commentId VarChar(32)         @map("comment_id")
+    userId    VarChar(32)         @map("user_id")
+    comment   FollowUpPlanComment @relation(fields: [commentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_mention_comment_id_fkey")
+
+    @@index([commentId], map: "follow_up_plan_comment_mention_comment_id_idx")
+    @@index([commentId, userId], map: "follow_up_plan_comment_mention_comment_id_user_id_key", unique: true)
+    @@index([userId], map: "follow_up_plan_comment_mention_user_id_idx")
+    @@map("follow_up_plan_comment_mention")
+  }
+
+  model FollowUpPlanField {
+    id         VarChar(32)   @id(map: "follow_up_plan_field_pkey")
+    resourceId String        @map("resource_id")
+    fieldId    VarChar(32)   @map("field_id")
+    fieldValue VarChar(255)  @map("field_value")
+    resource   FollowUpPlans @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "follow_up_plan_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "follow_up_plan_field_resource_id_field_id_key", unique: true)
+    @@map("follow_up_plan_field")
+  }
+
+  model FollowUpPlanFieldBlob {
+    id         VarChar(32)   @id(map: "follow_up_plan_field_blob_pkey")
+    resourceId String        @map("resource_id")
+    fieldId    VarChar(32)   @map("field_id")
+    fieldValue String        @map("field_value")
+    resource   FollowUpPlans @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "follow_up_plan_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "follow_up_plan_field_blob_resource_id_idx")
+    @@map("follow_up_plan_field_blob")
+  }
+
+  model FollowUpRecords {
+    id                       String                    @id(map: "follow_up_records_pkey") @default(cuid(2))
+    tenantId                 String
+    targetType               String
+    targetId                 String
+    contactId                String?
+    _type                    String?                   @map("type")
+    content                  String
+    followedAt               Timestamp(3)?
+    ownerId                  String
+    ownerName                String
+    deptId                   String?
+    createdById              String
+    commentCount             Int                       @default(0)
+    createdAt                Timestamp(3)              @default(now())
+    updatedAt                Timestamp(3)
+    followUpRecordComments   FollowUpRecordComment[]
+    followUpRecordFields     FollowUpRecordField[]
+    followUpRecordFieldBlobs FollowUpRecordFieldBlob[]
+
+    @@index([tenantId, ownerId, followedAt], map: "follow_up_records_tenantId_ownerId_followedAt_idx")
+    @@index([tenantId, targetType, targetId], map: "follow_up_records_tenantId_targetType_targetId_idx")
+    @@map("follow_up_records")
+  }
+
+  model FollowUpRecordComment {
+    id                            VarChar(32)                    @id(map: "follow_up_record_comment_pkey")
+    resourceId                    String                         @map("resource_id")
+    parentId                      VarChar(32)?                   @map("parent_id")
+    replyToUserId                 VarChar(32)?                   @map("reply_to_user_id")
+    content                       VarChar(3000)
+    organizationId                VarChar(32)                    @map("organization_id")
+    createUser                    VarChar(32)                    @map("create_user")
+    updateUser                    VarChar(32)                    @map("update_user")
+    createTime                    Timestamp(3)                   @default(now()) @map("create_time")
+    updateTime                    Timestamp(3)                   @map("update_time")
+    followUpRecordCommentMentions FollowUpRecordCommentMention[]
+    parent                        FollowUpRecordComment?         @relation(name: "follow_up_record_comment_parent_id_fkey", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_parent_id_fkey")
+    followUpRecordComments        FollowUpRecordComment[]        @relation(name: "follow_up_record_comment_parent_id_fkey")
+    resource                      FollowUpRecords                @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_resource_id_fkey", index: false)
+
+    @@index([organizationId, resourceId, parentId, createTime], map: "follow_record_comment_page_idx")
+    @@index([parentId], map: "follow_up_record_comment_parent_id_idx")
+    @@map("follow_up_record_comment")
+  }
+
+  model FollowUpRecordCommentMention {
+    id        VarChar(32)           @id(map: "follow_up_record_comment_mention_pkey")
+    commentId VarChar(32)           @map("comment_id")
+    userId    VarChar(32)           @map("user_id")
+    comment   FollowUpRecordComment @relation(fields: [commentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_mention_comment_id_fkey")
+
+    @@index([commentId], map: "follow_up_record_comment_mention_comment_id_idx")
+    @@index([commentId, userId], map: "follow_up_record_comment_mention_comment_id_user_id_key", unique: true)
+    @@index([userId], map: "follow_up_record_comment_mention_user_id_idx")
+    @@map("follow_up_record_comment_mention")
+  }
+
+  model FollowUpRecordField {
+    id         VarChar(32)     @id(map: "follow_up_record_field_pkey")
+    resourceId String          @map("resource_id")
+    fieldId    VarChar(32)     @map("field_id")
+    fieldValue VarChar(255)    @map("field_value")
+    resource   FollowUpRecords @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "follow_up_record_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "follow_up_record_field_resource_id_field_id_key", unique: true)
+    @@map("follow_up_record_field")
+  }
+
+  model FollowUpRecordFieldBlob {
+    id         VarChar(32)     @id(map: "follow_up_record_field_blob_pkey")
+    resourceId String          @map("resource_id")
+    fieldId    VarChar(32)     @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   FollowUpRecords @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "follow_up_record_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "follow_up_record_field_blob_resource_id_idx")
+    @@map("follow_up_record_field_blob")
+  }
+
+  model LoginLogs {
+    id                 String       @id(map: "login_logs_pkey") @default(cuid(2))
+    tenantId           String?
+    userId             String?
+    email              String
+    authType           String       @default("PASSWORD")
+    externalSubject    String?
+    externalIdentityId String?
+    ip                 String?
+    userAgent          String?
+    success            Boolean
+    message            String?
+    createdAt          Timestamp(3) @default(now())
+
+    @@index([tenantId, authType, createdAt], map: "login_logs_tenantId_authType_createdAt_idx")
+    @@index([tenantId, createdAt], map: "login_logs_tenantId_createdAt_idx")
+    @@map("login_logs")
+  }
+
+  model MessageDeliveries {
+    id                String                          @id(map: "message_deliveries_pkey") @default(cuid(2))
+    tenantId          String
+    integrationId     String?
+    channel           pg.enum(MessageDeliveryChannel)
+    event             String
+    userId            String?
+    externalSubject   String?
+    title             String
+    content           String?
+    link              String?
+    status            pg.enum(MessageDeliveryStatus)  @default("PENDING")
+    attempts          Int                             @default(0)
+    maxAttempts       Int                             @default(3)
+    nextAttemptAt     Timestamp(3)?
+    providerMessageId String?
+    errorCode         String?
+    errorMessage      String?
+    sentAt            Timestamp(3)?
+    createdAt         Timestamp(3)                    @default(now())
+    updatedAt         Timestamp(3)
+    integration       EnterpriseIntegrations?         @relation(fields: [integrationId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "message_deliveries_integrationId_fkey", index: false)
+    tenant            Tenants                         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "message_deliveries_tenantId_fkey", index: false)
+    user              Users?                          @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "message_deliveries_userId_fkey", index: false)
+
+    @@index([tenantId, event, createdAt], map: "message_deliveries_tenantId_event_createdAt_idx")
+    @@index([tenantId, status, nextAttemptAt], map: "message_deliveries_tenantId_status_nextAttemptAt_idx")
+    @@index([tenantId, userId, createdAt], map: "message_deliveries_tenantId_userId_createdAt_idx")
+    @@map("message_deliveries")
+  }
+
+  model MessageTaskSettings {
+    id              String       @id(map: "message_task_settings_pkey") @default(cuid(2))
+    tenantId        String
+    module          String
+    event           String
+    systemEnabled   Boolean      @default(true)
+    emailEnabled    Boolean      @default(false)
+    weComEnabled    Boolean      @default(false)
+    config          Jsonb?
+    createdAt       Timestamp(3) @default(now())
+    updatedAt       Timestamp(3)
+    dingTalkEnabled Boolean      @default(false)
+    larkEnabled     Boolean      @default(false)
+    tenant          Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "message_task_settings_tenantId_fkey", index: false)
+
+    @@index([tenantId, module, event], map: "message_task_settings_tenantId_module_event_key", unique: true)
+    @@index([tenantId, module], map: "message_task_settings_tenantId_module_idx")
+    @@map("message_task_settings")
+  }
+
+  model ModuleConfigs {
+    id       String  @id(map: "module_configs_pkey") @default(cuid(2))
+    tenantId String
+    key      String
+    enabled  Boolean @default(true)
+    sort     Int
+    tenant   Tenants @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "module_configs_tenantId_fkey", index: false)
+
+    @@index([tenantId, key], map: "module_configs_tenantId_key_key", unique: true)
+    @@index([tenantId, sort], map: "module_configs_tenantId_sort_idx")
+    @@map("module_configs")
+  }
+
+  model Notifications {
+    id         String        @id(map: "notifications_pkey") @default(cuid(2))
+    tenantId   String
+    userId     String
+    _type      String        @map("type")
+    title      String
+    content    String?
+    link       String?
+    readAt     Timestamp(3)?
+    createdAt  Timestamp(3)  @default(now())
+    linkLabel  String?
+    sourceId   String?
+    sourceType String?
+
+    @@index([tenantId, sourceType, sourceId], map: "notifications_tenantId_sourceType_sourceId_idx")
+    @@index([tenantId, userId, readAt], map: "notifications_tenantId_userId_readAt_idx")
+    @@index([tenantId, userId, sourceType, sourceId], map: "notifications_tenantId_userId_sourceType_sourceId_key", unique: true)
+    @@map("notifications")
+  }
+
+  model OperationLogs {
+    id                String             @id(map: "operation_logs_pkey") @default(cuid(2))
+    tenantId          String
+    userId            String?
+    userName          String?
+    module            String
+    action            String
+    targetId          String?
+    targetName        String?
+    ip                String?
+    createdAt         Timestamp(3)       @default(now())
+    operationLogBlobs OperationLogBlobs?
+
+    @@index([createdAt], map: "operation_logs_createdAt_idx")
+    @@index([tenantId, createdAt], map: "operation_logs_tenantId_createdAt_idx")
+    @@index([tenantId, module], map: "operation_logs_tenantId_module_idx")
+    @@map("operation_logs")
+  }
+
+  model OperationLogBlobs {
+    operationLogId String        @id(map: "operation_log_blobs_pkey")
+    detail         Jsonb
+    operationLog   OperationLogs @relation(fields: [operationLogId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "operation_log_blobs_operationLogId_fkey")
+
+    @@map("operation_log_blobs")
+  }
+
+  model OperationLogSettings {
+    tenantId           String                              @id(map: "operation_log_settings_pkey")
+    retentionDays      Int?
+    lastCleanupAt      Timestamp(3)?
+    lastCleanupDeleted Int                                 @default(0)
+    lastCleanupSource  pg.enum(OperationLogCleanupSource)?
+    updatedAt          Timestamp(3)
+    tenant             Tenants                             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "operation_log_settings_tenantId_fkey")
+
+    @@map("operation_log_settings")
+  }
+
+  model OpportunityStageConfig {
+    id             VarChar(32)   @id(map: "opportunity_stage_config_pkey")
+    name           VarChar(16)
+    _type          VarChar(50)   @map("type")
+    rate           VarChar(10)
+    afootRollBack  Boolean       @default(false) @map("afoot_roll_back")
+    endRollBack    Boolean       @default(false) @map("end_roll_back")
+    pos            BigInt
+    organizationId VarChar(32)   @map("organization_id")
+    createTime     BigInt        @map("create_time")
+    updateTime     BigInt        @map("update_time")
+    createUser     VarChar(32)   @map("create_user")
+    updateUser     VarChar(32)   @map("update_user")
+    opportunities  Opportunity[]
+
+    @@index([organizationId], map: "opportunity_stage_config_organization_id_idx")
+    @@index([organizationId, pos], map: "opportunity_stage_config_organization_id_pos_idx")
+    @@map("opportunity_stage_config")
+  }
+
+  model Opportunity {
+    id                     VarChar(32)            @id(map: "opportunity_pkey")
+    customerId             VarChar(32)?           @map("customer_id")
+    name                   VarChar(255)
+    amount                 Numeric(20, 10)?
+    possible               Numeric(20, 10)?
+    products               VarChar(1000)?
+    organizationId         VarChar(32)            @map("organization_id")
+    lastStage              VarChar(32)?           @map("last_stage")
+    stage                  VarChar(32)
+    contactId              VarChar(32)?           @map("contact_id")
+    owner                  VarChar(32)
+    updateUser             VarChar(32)            @map("update_user")
+    createTime             BigInt                 @map("create_time")
+    updateTime             BigInt                 @map("update_time")
+    createUser             VarChar(32)            @map("create_user")
+    follower               VarChar(32)?
+    followTime             BigInt?                @map("follow_time")
+    expectedEndTime        BigInt?                @map("expected_end_time")
+    actualEndTime          BigInt?                @map("actual_end_time")
+    failureReason          VarChar(50)?           @map("failure_reason")
+    pos                    BigInt?
+    opportunityFields      OpportunityField[]
+    opportunityFieldBlobs  OpportunityFieldBlob[]
+    opportunityQuotations  OpportunityQuotation[]
+    contact                CustomerContact?       @relation(fields: [contactId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "opportunity_contact_id_fkey", index: false)
+    customer               Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "opportunity_customer_id_fkey")
+    opportunityStageConfig OpportunityStageConfig @relation(fields: [stage], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "opportunity_stage_fkey")
+
+    @@index([customerId], map: "opportunity_customer_id_idx")
+    @@index([followTime], map: "opportunity_follow_time_idx")
+    @@index([follower], map: "opportunity_follower_idx")
+    @@index([organizationId], map: "opportunity_organization_id_idx")
+    @@index([owner], map: "opportunity_owner_idx")
+    @@index([stage], map: "opportunity_stage_idx")
+    @@map("opportunity")
+  }
+
+  model OpportunityField {
+    id         VarChar(32)  @id(map: "opportunity_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    resource   Opportunity  @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "opportunity_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "opportunity_field_resource_id_field_id_key", unique: true)
+    @@map("opportunity_field")
+  }
+
+  model OpportunityFieldBlob {
+    id         VarChar(32) @id(map: "opportunity_field_blob_pkey")
+    resourceId VarChar(32) @map("resource_id")
+    fieldId    VarChar(32) @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Opportunity @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "opportunity_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "opportunity_field_blob_resource_id_idx")
+    @@map("opportunity_field_blob")
+  }
+
+  model OpportunityQuotation {
+    id                             VarChar(32)                     @id(map: "opportunity_quotation_pkey")
+    name                           VarChar(255)
+    opportunityId                  VarChar(32)                     @map("opportunity_id")
+    untilTime                      BigInt                          @map("until_time")
+    amount                         Numeric(14, 2)
+    approvalStatus                 VarChar(50)                     @default("NONE") @map("approval_status")
+    invalid                        Boolean                         @default(false)
+    organizationId                 VarChar(32)                     @map("organization_id")
+    createTime                     BigInt                          @map("create_time")
+    updateTime                     BigInt                          @map("update_time")
+    createUser                     VarChar(32)                     @map("create_user")
+    updateUser                     VarChar(32)                     @map("update_user")
+    approved                       Boolean                         @default(false)
+    opportunityQuotationFields     OpportunityQuotationField[]
+    opportunityQuotationFieldBlobs OpportunityQuotationFieldBlob[]
+    opportunityQuotationSnapshots  OpportunityQuotationSnapshot[]
+    opportunity                    Opportunity                     @relation(fields: [opportunityId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "opportunity_quotation_opportunity_id_fkey")
+
+    @@index([approvalStatus], map: "opportunity_quotation_approval_status_idx")
+    @@index([createUser], map: "opportunity_quotation_create_user_idx")
+    @@index([opportunityId], map: "opportunity_quotation_opportunity_id_idx")
+    @@index([organizationId], map: "opportunity_quotation_organization_id_idx")
+    @@map("opportunity_quotation")
+  }
+
+  model OpportunityQuotationField {
+    id         VarChar(32)          @id(map: "opportunity_quotation_field_pkey")
+    resourceId VarChar(32)          @map("resource_id")
+    fieldId    VarChar(32)          @map("field_id")
+    fieldValue VarChar(255)         @map("field_value")
+    refSubId   VarChar(32)?         @map("ref_sub_id")
+    rowId      VarChar(32)?         @map("row_id")
+    bizId      VarChar(32)?         @map("biz_id")
+    resource   OpportunityQuotation @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_field_resource_id_fkey")
+
+    @@index([refSubId], map: "opportunity_quotation_field_ref_sub_id_idx")
+    @@index([resourceId], map: "opportunity_quotation_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_cell", unique: true)
+    @@map("opportunity_quotation_field")
+  }
+
+  model OpportunityQuotationFieldBlob {
+    id         VarChar(32)          @id(map: "opportunity_quotation_field_blob_pkey")
+    resourceId VarChar(32)          @map("resource_id")
+    fieldId    VarChar(32)          @map("field_id")
+    fieldValue String               @map("field_value")
+    refSubId   VarChar(32)?         @map("ref_sub_id")
+    rowId      VarChar(32)?         @map("row_id")
+    bizId      VarChar(32)?         @map("biz_id")
+    resource   OpportunityQuotation @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "opportunity_quotation_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "opportunity_quotation_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_blob_cell", unique: true)
+    @@map("opportunity_quotation_field_blob")
+  }
+
+  model OpportunityQuotationSnapshot {
+    id             VarChar(32)          @id(map: "opportunity_quotation_snapshot_pkey")
+    quotationId    VarChar(32)          @map("quotation_id")
+    quotationProp  String?              @map("quotation_prop")
+    quotationValue String?              @map("quotation_value")
+    quotation      OpportunityQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_snapshot_quotation_id_fkey")
+
+    @@index([quotationId], map: "opportunity_quotation_snapshot_quotation_id_idx")
+    @@map("opportunity_quotation_snapshot")
+  }
+
+  model OpportunityRule {
+    id             VarChar(32)  @id(map: "opportunity_rule_pkey")
+    name           VarChar(255)
+    organizationId VarChar(32)  @map("organization_id")
+    ownerId        String       @map("owner_id")
+    scopeId        String       @map("scope_id")
+    enable         Boolean      @default(true)
+    auto           Boolean      @default(false)
+    operator       VarChar(10)?
+    condition      String?
+    createTime     BigInt       @map("create_time")
+    updateTime     BigInt       @map("update_time")
+    createUser     VarChar(32)  @map("create_user")
+    updateUser     VarChar(32)  @map("update_user")
+
+    @@index([organizationId], map: "opportunity_rule_organization_id_idx")
+    @@map("opportunity_rule")
+  }
+
+  model OrganizationSyncItems {
+    id                String                                @id(map: "organization_sync_items_pkey") @default(cuid(2))
+    tenantId          String
+    batchId           String
+    resourceType      pg.enum(OrganizationSyncResourceType)
+    externalId        String
+    externalKey       String
+    action            pg.enum(OrganizationSyncAction)
+    result            pg.enum(OrganizationSyncItemResult)   @default("PENDING")
+    localId           String?
+    parentExternalKey String?
+    sourceData        Jsonb
+    changes           Jsonb?
+    conflictType      String?
+    conflictMessage   String?
+    resolution        pg.enum(OrganizationSyncResolution)?
+    resolvedLocalId   String?
+    errorMessage      String?
+    sort              Int                                   @default(0)
+    createdAt         Timestamp(3)                          @default(now())
+    updatedAt         Timestamp(3)
+    batch             OrganizationSyncBatches               @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_items_batchId_fkey", index: false)
+
+    @@index([batchId, resourceType, externalKey], map: "organization_sync_items_batchId_resourceType_externalKey_key", unique: true)
+    @@index([tenantId, batchId, resourceType, action], map: "organization_sync_items_tenantId_batchId_resourceType_actio_idx")
+    @@map("organization_sync_items")
+  }
+
+  model Plans {
+    id            String          @id(map: "plans_pkey") @default(cuid(2))
+    code          String
+    name          String
+    price         Numeric(10, 2)
+    maxUsers      Int             @default(10)
+    features      Jsonb?
+    createdAt     Timestamp(3)    @default(now())
+    updatedAt     Timestamp(3)
+    subscriptions Subscriptions[]
+
+    @@index([code], map: "plans_code_key", unique: true)
+    @@map("plans")
+  }
+
+  model Product {
+    id                VarChar(32)        @id(map: "product_pkey")
+    name              VarChar(255)
+    price             Numeric(14, 4)?
+    status            VarChar(32)
+    pos               BigInt
+    organizationId    VarChar(32)        @map("organization_id")
+    createTime        BigInt             @map("create_time")
+    updateTime        BigInt             @map("update_time")
+    createUser        VarChar(32)        @map("create_user")
+    updateUser        VarChar(32)        @map("update_user")
+    productFields     ProductField[]
+    productFieldBlobs ProductFieldBlob[]
+
+    @@index([name], map: "product_name_idx")
+    @@index([organizationId], map: "product_organization_id_idx")
+    @@index([organizationId, pos], map: "product_organization_id_pos_idx")
+    @@map("product")
+  }
+
+  model ProductField {
+    id         VarChar(32)  @id(map: "product_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    resource   Product      @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "product_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "product_field_resource_id_field_id_key", unique: true)
+    @@map("product_field")
+  }
+
+  model ProductFieldBlob {
+    id         VarChar(32) @id(map: "product_field_blob_pkey")
+    resourceId VarChar(32) @map("resource_id")
+    fieldId    VarChar(32) @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Product     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "product_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "product_field_blob_resource_id_idx")
+    @@map("product_field_blob")
+  }
+
+  model ProductPrice {
+    id                     VarChar(32)             @id(map: "product_price_pkey")
+    name                   VarChar(255)
+    status                 VarChar(32)
+    pos                    BigInt
+    organizationId         VarChar(32)             @map("organization_id")
+    createTime             BigInt                  @map("create_time")
+    updateTime             BigInt                  @map("update_time")
+    createUser             VarChar(32)             @map("create_user")
+    updateUser             VarChar(32)             @map("update_user")
+    productPriceFields     ProductPriceField[]
+    productPriceFieldBlobs ProductPriceFieldBlob[]
+
+    @@index([organizationId], map: "product_price_organization_id_idx")
+    @@index([organizationId, pos], map: "product_price_organization_id_pos_idx")
+    @@index([status], map: "product_price_status_idx")
+    @@map("product_price")
+  }
+
+  model ProductPriceField {
+    id         VarChar(32)  @id(map: "product_price_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    refSubId   VarChar(32)? @map("ref_sub_id")
+    rowId      VarChar(32)? @map("row_id")
+    bizId      VarChar(32)? @map("biz_id")
+    resource   ProductPrice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_price_field_resource_id_fkey")
+
+    @@index([refSubId], map: "product_price_field_ref_sub_id_idx")
+    @@index([resourceId], map: "product_price_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_cell", unique: true)
+    @@map("product_price_field")
+  }
+
+  model ProductPriceFieldBlob {
+    id         VarChar(32)  @id(map: "product_price_field_blob_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue String       @map("field_value")
+    refSubId   VarChar(32)? @map("ref_sub_id")
+    rowId      VarChar(32)? @map("row_id")
+    bizId      VarChar(32)? @map("biz_id")
+    resource   ProductPrice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_price_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "product_price_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "product_price_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_blob_cell", unique: true)
+    @@map("product_price_field_blob")
+  }
+
+  model SalesOrder {
+    id                   VarChar(32)           @id(map: "sales_order_pkey")
+    number               VarChar(50)
+    name                 VarChar(255)
+    customerId           VarChar(32)?          @map("customer_id")
+    contractId           VarChar(32)?          @map("contract_id")
+    owner                VarChar(32)?
+    amount               Numeric(20, 10)?
+    stage                VarChar(50)
+    approvalStatus       VarChar(50)           @default("NONE") @map("approval_status")
+    organizationId       VarChar(32)           @map("organization_id")
+    pos                  BigInt?
+    approved             Boolean               @default(false)
+    createTime           BigInt                @map("create_time")
+    updateTime           BigInt                @map("update_time")
+    createUser           VarChar(32)           @map("create_user")
+    updateUser           VarChar(32)           @map("update_user")
+    salesOrderFields     SalesOrderField[]
+    salesOrderFieldBlobs SalesOrderFieldBlob[]
+    salesOrderSnapshots  SalesOrderSnapshot[]
+    contract             Contract?             @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "sales_order_contract_id_fkey")
+    customer             Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "sales_order_customer_id_fkey")
+
+    @@index([approvalStatus], map: "sales_order_approval_status_idx")
+    @@index([contractId], map: "sales_order_contract_id_idx")
+    @@index([createUser], map: "sales_order_create_user_idx")
+    @@index([customerId], map: "sales_order_customer_id_idx")
+    @@index([name], map: "sales_order_name_idx")
+    @@index([number], map: "sales_order_number_idx")
+    @@index([organizationId], map: "sales_order_organization_id_idx")
+    @@index([owner], map: "sales_order_owner_idx")
+    @@index([stage], map: "sales_order_stage_idx")
+    @@map("sales_order")
+  }
+
+  model SalesOrderField {
+    id         VarChar(32)  @id(map: "sales_order_field_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue VarChar(255) @map("field_value")
+    refSubId   VarChar(32)? @map("ref_sub_id")
+    rowId      VarChar(32)? @map("row_id")
+    bizId      VarChar(32)? @map("biz_id")
+    resource   SalesOrder   @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_field_resource_id_fkey")
+
+    @@index([refSubId], map: "sales_order_field_ref_sub_id_idx")
+    @@index([resourceId], map: "sales_order_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_cell", unique: true)
+    @@map("sales_order_field")
+  }
+
+  model SalesOrderFieldBlob {
+    id         VarChar(32)  @id(map: "sales_order_field_blob_pkey")
+    resourceId VarChar(32)  @map("resource_id")
+    fieldId    VarChar(32)  @map("field_id")
+    fieldValue String       @map("field_value")
+    refSubId   VarChar(32)? @map("ref_sub_id")
+    rowId      VarChar(32)? @map("row_id")
+    bizId      VarChar(32)? @map("biz_id")
+    resource   SalesOrder   @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "sales_order_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "sales_order_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_blob_cell", unique: true)
+    @@map("sales_order_field_blob")
+  }
+
+  model SalesOrderSnapshot {
+    id         VarChar(32) @id(map: "sales_order_snapshot_pkey")
+    orderId    VarChar(32) @map("order_id")
+    orderProp  String?     @map("order_prop")
+    orderValue String?     @map("order_value")
+    order      SalesOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_snapshot_order_id_fkey")
+
+    @@index([orderId], map: "sales_order_snapshot_order_id_idx")
+    @@map("sales_order_snapshot")
+  }
+
+  model SalesOrderStageConfig {
+    id              VarChar(32)  @id(map: "sales_order_stage_config_pkey")
+    name            VarChar(255)
+    _type           VarChar(50)  @map("type")
+    afootRollBack   Boolean      @default(true) @map("afoot_roll_back")
+    endRollBack     Boolean      @default(false) @map("end_roll_back")
+    pos             BigInt
+    organizationId  VarChar(32)  @map("organization_id")
+    circulationType VarChar(50)  @default("NORMAL") @map("circulation_type")
+    createTime      BigInt       @map("create_time")
+    updateTime      BigInt       @map("update_time")
+    createUser      VarChar(32)  @map("create_user")
+    updateUser      VarChar(32)  @map("update_user")
+
+    @@index([organizationId, pos], map: "sales_order_stage_config_organization_id_pos_idx")
+    @@map("sales_order_stage_config")
+  }
+
+  model StageAdvancedConfig {
+    id             VarChar(32) @id(map: "stage_advanced_config_pkey")
+    originId       VarChar(32) @map("origin_id")
+    targetId       VarChar(32) @map("target_id")
+    enable         Boolean     @default(false)
+    fieldConfig    String?     @map("field_config")
+    moduleType     VarChar(20) @map("module_type")
+    organizationId VarChar(32) @map("organization_id")
+    createTime     BigInt      @map("create_time")
+    updateTime     BigInt      @map("update_time")
+    createUser     VarChar(32) @map("create_user")
+    updateUser     VarChar(32) @map("update_user")
+
+    @@index([moduleType], map: "idx_stage_advanced_type")
+    @@index([organizationId, moduleType], map: "stage_advanced_config_organization_id_module_type_idx")
+    @@index([organizationId, moduleType, originId, targetId], map: "uk_stage_advanced_transition", unique: true)
+    @@map("stage_advanced_config")
+  }
+
+  model Subscriptions {
+    id                 String                      @id(map: "subscriptions_pkey") @default(cuid(2))
+    tenantId           String
+    planId             String
+    status             pg.enum(SubscriptionStatus) @default("TRIALING")
+    currentPeriodStart Timestamp(3)
+    currentPeriodEnd   Timestamp(3)
+    createdAt          Timestamp(3)                @default(now())
+    updatedAt          Timestamp(3)
+    plan               Plans                       @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "subscriptions_planId_fkey", index: false)
+    tenant             Tenants                     @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "subscriptions_tenantId_fkey")
+
+    @@index([tenantId], map: "subscriptions_tenantId_idx")
+    @@map("subscriptions")
+  }
+
+  model SysDict {
+    id             VarChar(32)  @id(map: "sys_dict_pkey")
+    name           VarChar(255)
+    module         VarChar(20)
+    _type          VarChar(10)  @default("TEXT") @map("type")
+    pos            BigInt
+    organizationId VarChar(32)  @map("organization_id")
+    createTime     BigInt       @map("create_time")
+    updateTime     BigInt       @map("update_time")
+    createUser     VarChar(32)  @map("create_user")
+    updateUser     VarChar(32)  @map("update_user")
+
+    @@index([organizationId, module, pos], map: "sys_dict_organization_id_module_pos_idx")
+    @@index([organizationId, name], map: "sys_dict_organization_id_name_idx")
+    @@map("sys_dict")
+  }
+
+  model SysDictConfig {
+    module         VarChar(20)
+    organizationId VarChar(32) @map("organization_id")
+    enabled        Boolean     @default(false)
+
+    @@id([module, organizationId], map: "sys_dict_config_pkey")
+    @@map("sys_dict_config")
+  }
+
+  model SysModuleForm {
+    id                VarChar(32)        @id(map: "sys_module_form_pkey")
+    formKey           VarChar(50)        @map("form_key")
+    organizationId    VarChar(32)        @map("organization_id")
+    createTime        BigInt             @map("create_time")
+    updateTime        BigInt             @map("update_time")
+    createUser        VarChar(32)        @map("create_user")
+    updateUser        VarChar(32)        @map("update_user")
+    sysModuleFields   SysModuleField[]
+    sysModuleFormBlob SysModuleFormBlob?
+
+    @@index([organizationId, formKey], map: "sys_module_form_organization_id_form_key_key", unique: true)
+    @@index([organizationId], map: "sys_module_form_organization_id_idx")
+    @@map("sys_module_form")
+  }
+
+  model SysModuleField {
+    id                 VarChar(32)         @id(map: "sys_module_field_pkey")
+    formId             VarChar(32)         @map("form_id")
+    internalKey        VarChar(255)?       @map("internal_key")
+    name               VarChar(255)
+    _type              VarChar(20)         @map("type")
+    mobile             Boolean             @default(false)
+    pos                BigInt
+    createUser         VarChar(32)         @map("create_user")
+    createTime         BigInt              @map("create_time")
+    updateUser         VarChar(32)         @map("update_user")
+    updateTime         BigInt              @map("update_time")
+    sysModuleFieldBlob SysModuleFieldBlob?
+    form               SysModuleForm       @relation(fields: [formId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_field_form_id_fkey", index: false)
+
+    @@index([formId, internalKey], map: "sys_module_field_form_id_internal_key_idx")
+    @@index([mobile], map: "sys_module_field_mobile_idx")
+    @@map("sys_module_field")
+  }
+
+  model SysModuleFieldBlob {
+    id             VarChar(32)    @id(map: "sys_module_field_blob_pkey")
+    prop           String?
+    sysModuleField SysModuleField @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_field_blob_id_fkey")
+
+    @@map("sys_module_field_blob")
+  }
+
+  model SysModuleFormBlob {
+    id            VarChar(32)   @id(map: "sys_module_form_blob_pkey")
+    prop          String?
+    sysModuleForm SysModuleForm @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_form_blob_id_fkey")
+
+    @@map("sys_module_form_blob")
+  }
+
+  model SysUserView {
+    id                    VarChar(32)            @id(map: "sys_user_view_pkey")
+    userId                VarChar(32)            @map("user_id")
+    name                  VarChar(255)
+    fixed                 Boolean                @default(false)
+    resourceType          VarChar(50)            @map("resource_type")
+    organizationId        VarChar(32)            @map("organization_id")
+    pos                   BigInt
+    enable                Boolean                @default(true)
+    searchMode            VarChar(10)            @default("AND") @map("search_mode")
+    createTime            BigInt                 @map("create_time")
+    updateTime            BigInt                 @map("update_time")
+    createUser            VarChar(32)            @map("create_user")
+    updateUser            VarChar(32)            @map("update_user")
+    sysUserViewConditions SysUserViewCondition[]
+
+    @@index([name], map: "sys_user_view_name_idx")
+    @@index([organizationId], map: "sys_user_view_organization_id_idx")
+    @@index([organizationId, userId, resourceType, name], map: "sys_user_view_organization_id_user_id_resource_type_name_key", unique: true)
+    @@index([resourceType], map: "sys_user_view_resource_type_idx")
+    @@index([userId], map: "sys_user_view_user_id_idx")
+    @@map("sys_user_view")
+  }
+
+  model SysUserViewCondition {
+    id            VarChar(32)  @id(map: "sys_user_view_condition_pkey")
+    sysUserViewId VarChar(32)  @map("sys_user_view_id")
+    name          VarChar(255)
+    value         String?
+    valueType     String?      @map("value_type")
+    _type         VarChar(20)? @map("type")
+    multipleValue Boolean      @default(false) @map("multiple_value")
+    operator      VarChar(20)?
+    childrenValue String?      @map("children_value")
+    createTime    BigInt       @map("create_time")
+    updateTime    BigInt       @map("update_time")
+    createUser    VarChar(32)  @map("create_user")
+    updateUser    VarChar(32)  @map("update_user")
+    sysUserView   SysUserView  @relation(fields: [sysUserViewId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_user_view_condition_sys_user_view_id_fkey")
+
+    @@index([sysUserViewId], map: "sys_user_view_condition_sys_user_view_id_idx")
+    @@map("sys_user_view_condition")
+  }
+
+  model TopNavigationConfigs {
+    id       String  @id(map: "top_navigation_configs_pkey") @default(cuid(2))
+    tenantId String
+    key      String
+    enabled  Boolean @default(true)
+    sort     Int
+    tenant   Tenants @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "top_navigation_configs_tenantId_fkey", index: false)
+
+    @@index([tenantId, key], map: "top_navigation_configs_tenantId_key_key", unique: true)
+    @@index([tenantId, sort], map: "top_navigation_configs_tenantId_sort_idx")
+    @@map("top_navigation_configs")
+  }
+
+  model UserExtensions {
+    id           String  @id(map: "user_extensions_pkey")
+    avatar       String?
+    platformInfo Bytes?
+    users        Users   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_extensions_id_fkey")
+
+    @@map("user_extensions")
+  }
+
+  model UserKey {
+    id          String        @id(map: "user_key_pkey") @default(cuid(2))
+    createUser  String        @map("create_user")
+    accessKey   String        @map("access_key")
+    secretKey   String        @map("secret_key")
+    createTime  Timestamp(3)  @default(now()) @map("create_time")
+    enable      Boolean       @default(true)
+    forever     Boolean       @default(true)
+    expireTime  Timestamp(3)? @map("expire_time")
+    description String?
+    users       Users         @relation(fields: [createUser], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_key_create_user_fkey")
+
+    @@index([accessKey], map: "user_key_access_key_key", unique: true)
+    @@index([createUser], map: "user_key_create_user_idx")
+    @@map("user_key")
+  }
+
+  model UserRoles {
+    id        String       @id(map: "user_roles_pkey") @default(cuid(2))
+    tenantId  String
+    userId    String
+    roleId    String
+    createdAt Timestamp(3) @default(now())
+    updatedAt Timestamp(3)
+    role      Roles        @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_roleId_fkey", index: false)
+    tenant    Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_tenantId_fkey", index: false)
+    user      Users        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_userId_fkey", index: false)
+
+    @@index([tenantId, roleId], map: "user_roles_tenantId_roleId_idx")
+    @@index([tenantId, userId], map: "user_roles_tenantId_userId_idx")
+    @@index([userId, roleId], map: "user_roles_userId_roleId_key", unique: true)
+    @@map("user_roles")
+  }
+
+  native_enum ApprovalAddSignType {
+    BEFORE = "BEFORE"
+    AFTER = "AFTER"
+  }
+
+  native_enum ApprovalExecuteTiming {
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+  }
+
+  native_enum ApprovalFormType {
+    QUOTATION = "QUOTATION"
+    CONTRACT = "CONTRACT"
+    INVOICE = "INVOICE"
+    ORDER = "ORDER"
+    RECEIVABLE_RECORD_LEGACY = "RECEIVABLE_RECORD_LEGACY"
+  }
+
+  native_enum ApprovalInstanceStatus {
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELED = "CANCELED"
+  }
+
+  native_enum ApprovalMode {
+    ALL = "ALL"
+    ANY = "ANY"
+  }
+
+  native_enum ApprovalNodeType {
+    START = "START"
+    APPROVER = "APPROVER"
+    CONDITION = "CONDITION"
+    DEFAULT = "DEFAULT"
+    END = "END"
+  }
+
+  native_enum ApprovalTaskAction {
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    SIGN = "SIGN"
+    BACK = "BACK"
+  }
+
+  native_enum ApprovalTaskStatus {
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    SKIPPED = "SKIPPED"
+  }
+
+  native_enum ApprovalTaskType {
+    APPROVAL = "APPROVAL"
+    CC = "CC"
+    SIGN = "SIGN"
+    BACK = "BACK"
+  }
+
+  native_enum ApprovalWebhookDeliverySource {
+    TEST = "TEST"
+    RUNTIME = "RUNTIME"
+  }
+
+  native_enum ApprovalWebhookDeliveryStatus {
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+  }
+
+  native_enum ApproverDirection {
+    BOTTOM_UP = "BOTTOM_UP"
+    TOP_DOWN = "TOP_DOWN"
+  }
+
+  native_enum ApproverType {
+    USER = "USER"
+    ROLE = "ROLE"
+    DEPT_LEADER = "DEPT_LEADER"
+    DIRECT_LEADER = "DIRECT_LEADER"
+    MULTIPLE_DEPT_LEADER = "MULTIPLE_DEPT_LEADER"
+    MULTIPLE_DIRECT_LEADER = "MULTIPLE_DIRECT_LEADER"
+  }
+
+  native_enum DataScope {
+    ALL = "ALL"
+    DEPT_AND_CHILD = "DEPT_AND_CHILD"
+    DEPT = "DEPT"
+    SELF = "SELF"
+    CUSTOM = "CUSTOM"
+  }
+
+  native_enum DuplicateApproverRule {
+    FIRST_ONLY = "FIRST_ONLY"
+    SEQUENTIAL_ALL = "SEQUENTIAL_ALL"
+    EACH = "EACH"
+  }
+
+  native_enum EmptyApproverAction {
+    AUTO_PASS = "AUTO_PASS"
+    ASSIGN_SPECIFIC = "ASSIGN_SPECIFIC"
+    ASSIGN_ADMIN = "ASSIGN_ADMIN"
+  }
+
+  native_enum EnterpriseIntegrationProvider {
+    WECOM = "WECOM"
+    DINGTALK = "DINGTALK"
+    LARK = "LARK"
+  }
+
+  native_enum ExternalIdentityStatus {
+    ACTIVE = "ACTIVE"
+    REVOKED = "REVOKED"
+  }
+
+  native_enum ExternalOAuthFlow {
+    QR_WECOM = "QR_WECOM"
+    WECOM = "WECOM"
+    QR_DINGTALK = "QR_DINGTALK"
+    DINGTALK = "DINGTALK"
+    QR_LARK = "QR_LARK"
+    LARK = "LARK"
+    LARK_MOBILE = "LARK_MOBILE"
+  }
+
+  native_enum FollowUpPlanStatus {
+    PREPARED = "PREPARED"
+    UNDERWAY = "UNDERWAY"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+  }
+
+  native_enum MessageDeliveryChannel {
+    WECOM = "WECOM"
+    DINGTALK = "DINGTALK"
+    LARK = "LARK"
+    EMAIL = "EMAIL"
+  }
+
+  native_enum MessageDeliveryStatus {
+    PENDING = "PENDING"
+    SENDING = "SENDING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    DEAD = "DEAD"
+  }
+
+  native_enum OperationLogCleanupSource {
+    AUTO = "AUTO"
+    MANUAL = "MANUAL"
+  }
+
+  native_enum OrganizationSyncAction {
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DISABLE = "DISABLE"
+    UNCHANGED = "UNCHANGED"
+    CONFLICT = "CONFLICT"
+    SKIP = "SKIP"
+  }
+
+  native_enum OrganizationSyncItemResult {
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
+    APPLIED = "APPLIED"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+  }
+
+  native_enum OrganizationSyncResolution {
+    BIND = "BIND"
+    SKIP = "SKIP"
+  }
+
+  native_enum OrganizationSyncResourceType {
+    DEPARTMENT = "DEPARTMENT"
+    USER = "USER"
+  }
+
+  native_enum OrganizationSyncStatus {
+    FETCHING = "FETCHING"
+    PREVIEW_READY = "PREVIEW_READY"
+    APPLYING = "APPLYING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    INVALIDATED = "INVALIDATED"
+  }
+
+  native_enum SameSubmitterAction {
+    SKIP = "SKIP"
+    ALLOW = "ALLOW"
+    ASSIGN_SUPERIOR = "ASSIGN_SUPERIOR"
+  }
+
+  native_enum SubscriptionStatus {
+    TRIALING = "TRIALING"
+    ACTIVE = "ACTIVE"
+    PAST_DUE = "PAST_DUE"
+    CANCELED = "CANCELED"
+  }
+
+  native_enum TenantStatus {
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+  }
+
+  native_enum UserStatus {
+    ACTIVE = "ACTIVE"
+    DISABLED = "DISABLED"
+  }
+}

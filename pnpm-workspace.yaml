@@ -14,6 +14,8 @@ allowBuilds:
   prisma: true
   unrs-resolver: true
   vue-demi: false
+  # Prisma 8 composer CLI 的可选 Cloudflare runtime 依赖；PostgreSQL contract/runtime 不使用其安装脚本。
+  workerd: false
 
 # 弱网重试。pnpm 11 的 pnpm-specific 配置不再放在 .npmrc。
 fetchRetries: 5

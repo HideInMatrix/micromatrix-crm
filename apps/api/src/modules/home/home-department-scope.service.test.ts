@@ -25,12 +25,39 @@ function authUser(roles: Array<Record<string, unknown>>, deptId = 'sales') {
 
 function createService(scopeResult: Record<string, unknown>) {
   let requestedUserDeptIds: string[] = []
-  const prisma = {
-    department: { findMany: async () => departments },
-    user: {
-      findMany: async ({ where }: any) => {
-        requestedUserDeptIds = [...(where.deptId?.in ?? [])]
-        return requestedUserDeptIds.map((deptId) => ({ id: `user-${deptId}` }))
+  const prisma8 = {
+    client: {
+      orm: {
+        public: {
+          Departments: {
+            where: () => ({
+              orderBy: () => ({
+                select: () => ({ all: async () => departments }),
+              }),
+            }),
+          },
+          Users: {
+            where: () => ({
+              where: (predicate: any) => {
+                const field = {
+                  deptId: {
+                    in: (ids: string[]) => {
+                      requestedUserDeptIds = [...ids]
+                      return true
+                    },
+                  },
+                }
+                predicate(field)
+                return {
+                  select: () => ({
+                    all: async () =>
+                      requestedUserDeptIds.map((deptId) => ({ id: `user-${deptId}` })),
+                  }),
+                }
+              },
+            }),
+          },
+        },
       },
     },
   }
@@ -42,7 +69,7 @@ function createService(scopeResult: Record<string, unknown>) {
       rootIds.flatMap((rootId) => (rootId === 'sales' ? ['sales', 'sales-a'] : [rootId])),
   }
   return {
-    service: new HomeDepartmentScopeService(prisma as any, dataScope as any),
+    service: new HomeDepartmentScopeService(prisma8 as any, dataScope as any),
     requestedUserDeptIds: () => requestedUserDeptIds,
   }
 }

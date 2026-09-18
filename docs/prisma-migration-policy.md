@@ -1,131 +1,175 @@
 # Prisma Migration 管理规范
 
-## 1. 当前阶段
+## 1. 当前 ownership
 
-项目当前已经存在被 CI/发布链登记为 **published immutable** 的 Prisma migration，因此 migration 历史已经进入 **forward-only** 模式。无论业务是否仍处于内部阶段，只要 migration 被 `docker/verify-prisma-migrations.mjs` 登记为 immutable，就禁止再修改、删除、改名或重新 squash。
+自 PRISMA8-001 Phase 4 handoff 起，数据库结构与 migration ownership 已正式切换到 **Prisma 8 contract + migration graph**。
 
-- `apps/api/prisma/schema.prisma` 仍是当前 Prisma 7 数据模型真相源。
-- 已发布 migration 的 SQL 与 SHA-256 必须永久保持一致。
-- 后续数据库结构变化只能新增新的时间戳 migration。
-- 生产/CI 继续使用独立 Migration image 执行 `prisma migrate deploy`，不得以 `db push` 替代正式 migration。
-- `db push` 仅允许用于明确的本地临时实验；一旦对应结构进入仓库，必须用 forward migration 记录并使本地 `_prisma_migrations` 与真实结构一致。
+唯一正式事实源：
 
-当前 migration 历史：
+- Contract：`apps/api/prisma/contract.prisma`
+- Prisma 8 config：`apps/api/prisma.config.ts`
+- Migration graph：`apps/api/migrations/`
+- 当前 app baseline：`apps/api/migrations/app/20260918T0338_baseline`
+- 当前 storage contract hash：`651134f9ccfda014c4a27d235488e56b4640ad20fbf307fe0acaa0b8e39566de`
+- 当前 baseline migration hash：`8664ea14548a7cf8419205988976d641f350b773488a2072c1f8f32e9d0312dd`
+- 正式 ref：`apps/api/migrations/app/refs/db.json`，必须指向当前正式 contract hash。
 
-```text
-apps/api/prisma/migrations/
-├── 20260905084900_baseline/
-│   └── migration.sql
-├── 20260911153000_lark_provider_schema/
-│   └── migration.sql
-├── 20260914152000_enterprise_platform_state/
-│   └── migration.sql
-└── migration_lock.toml
-```
+Prisma 7 的 `apps/api/prisma/schema.prisma`、`apps/api/prisma/migrations/` 与数据库中的 `_prisma_migrations` 从此只属于 legacy 历史。Phase 5 删除 legacy 工具链前可以暂时保留这些文件供旧 Client generate/runtime 兼容，但**禁止再用 Prisma 7 生成、修改、部署、resolve 或 db push 任何正式数据库结构**。
 
-其中 `20260905084900_baseline` 与 `20260911153000_lark_provider_schema` 已进入 immutable 校验；`20260914152000_enterprise_platform_state` 是后续新增的 forward migration。
+## 2. Handoff 基线
 
-## 2. 每次数据库结构变更的合并流程
+Phase 4 已完成以下 handoff 证据：
 
-修改 `schema.prisma` 并完成业务实现后，在提交前按以下顺序处理：
+- 隔离验证库 `db015b_validation_0910`：最终 contract `db sign` PASS，`db` ref 指向 baseline，完整 `db verify` PASS，`migration status` 为 `Up to date`。
+- 隔离库 additive 演练：从正式 baseline 增加一个 nullable 测试列，只生成 **1 个 additive operation**；`db migrate --advance-ref db`、完整 `db verify`、`migration status` 全部 PASS，旧 Prisma 7 Client 仍可读取同库。
+- 开发主库 `default`：Prisma 7 历史在 handoff 前确认 3 migrations / schema up-to-date；随后 Prisma 8 `db sign`、`db ref`、完整 `db verify`、`migration status` 全部 PASS。
+- 正式 baseline graph 当前为单一根 migration，`migration check` PASS。
 
-1. 执行 Prisma format / validate / generate，确认 Schema 本身有效。
-2. 新增一个新的时间戳 migration；禁止修改任何已经进入 immutable 列表的 migration。
-3. 审计本次结构变化和 PostgreSQL 原生结构。Prisma Schema 无法表达的 partial index、函数、触发器、View、Extension 等必须显式写入新的 forward migration。
-4. 执行仓库 migration 不可变校验：
+Handoff 之后 migration ownership 是单向切换：不得因为旧环境仍保留 Prisma 7 Client 就恢复 Prisma 7 migration workflow。
 
-   ```bash
-   pnpm db:verify-migrations
-   ```
+## 3. 日常结构变更流程
 
-5. 新建一个**全新空 PostgreSQL**，按仓库中全部 migration 顺序执行：
+数据库结构变更从修改 `prisma/contract.prisma` 开始。
 
-   ```bash
-   pnpm exec prisma migrate deploy
-   pnpm run db:seed
-   ```
+### 3.1 生成 migration
 
-6. 对新库执行结构一致性检查：
-
-   ```bash
-   pnpm exec prisma migrate diff \
-     --from-config-datasource \
-     --to-schema=prisma/schema.prisma \
-     --exit-code
-   ```
-
-   预期结果必须为 `No difference detected.`。
-
-7. 对 Prisma 无法表达的原生结构执行数据库级查询确认，不能只依赖第 6 步，因为 Prisma diff 不会把所有原生结构纳入比较。
-
-### 2.1 本地开发库已经提前拥有新结构时的处理
-
-开发阶段可能出现先通过 `db push` 或临时 SQL 得到目标结构、随后才补正式 forward migration 的情况。此时**不要再次执行同一 ALTER**，也不要回头修改已发布 migration。
-
-先执行结构 drift 检查：
+先 emit contract：
 
 ```bash
-cd apps/api
-pnpm exec prisma migrate diff \
-  --from-config-datasource \
-  --to-schema=prisma/schema.prisma \
-  --script
+pnpm prisma:emit
 ```
 
-- 如果 diff 不是空的，按正常 forward migration 执行 `prisma migrate deploy`，不得用 `resolve` 掩盖未实际执行的结构变化。
-- 如果 diff 明确为空，说明数据库已经拥有该 migration 的完整效果；此时才允许对**当前本地开发库**使用：
-
-  ```bash
-  pnpm exec prisma migrate resolve --applied <migration_name>
-  ```
-
-  `migrate resolve` 只修正 migration ledger，不执行 SQL，因此必须以前述空 diff 为前置证据。
-
-完成后必须再次执行：
+然后生成新的 Prisma 8 migration：
 
 ```bash
-pnpm exec prisma migrate diff \
-  --from-config-datasource \
-  --to-schema=prisma/schema.prisma
+pnpm db:migrate:dev -- --name <change_name>
 ```
 
-预期结果必须为 `No difference detected.`，随后 `prisma migrate status` 必须返回 `Database schema is up to date!`。
+要求：
 
-## 3. 当前必须保留的 PostgreSQL 原生结构
+1. 新 migration 必须从当前 `db` ref / 当前正式 contract hash 出发。
+2. 正常功能迭代只能新增 forward migration，禁止改写已经进入共享分支或发布链的历史 migration。
+3. migration plan 必须审计 operation class、SQL preview、from/to contract hash。
+4. destructive / ambiguous operation 不得仅凭 CLI 提示直接确认，必须先完成真实数据影响分析与专项 gate。
 
-当前 Schema 外还存在六条业务约束所需的 partial unique index，新 baseline 每次重建时都必须保留：
+### 3.2 应用 migration
 
-```sql
-CREATE UNIQUE INDEX "approval_flows_active_form_type_key"
-ON "approval_flows"("tenantId", "formType")
-WHERE "deletedAt" IS NULL;
+开发/测试/发布环境统一使用 Prisma 8：
 
-CREATE UNIQUE INDEX "organization_sync_batches_active_key"
-ON "organization_sync_batches"("tenantId", "provider")
-WHERE "status" IN ('FETCHING', 'APPLYING');
-
-CREATE UNIQUE INDEX "custom_form_data_field_top_level_key"
-ON "custom_form_data_field"("resource_id", "field_id")
-WHERE "ref_sub_id" IS NULL;
-
-CREATE UNIQUE INDEX "custom_form_data_field_sub_cell_key"
-ON "custom_form_data_field"("resource_id", "ref_sub_id", "row_id", "field_id")
-WHERE "ref_sub_id" IS NOT NULL;
-
-CREATE UNIQUE INDEX "custom_form_data_field_blob_top_level_key"
-ON "custom_form_data_field_blob"("resource_id", "field_id")
-WHERE "ref_sub_id" IS NULL;
-
-CREATE UNIQUE INDEX "custom_form_data_field_blob_sub_cell_key"
-ON "custom_form_data_field_blob"("resource_id", "ref_sub_id", "row_id", "field_id")
-WHERE "ref_sub_id" IS NOT NULL;
+```bash
+pnpm db:deploy
 ```
 
-这份列表不是永久封闭清单。以后增加任何 Prisma 无法表达的 PostgreSQL 原生结构时，必须同步登记到本节，并纳入 fresh DB 全 migration 验证。
+正式语义等价于：
 
-## 4. 不可变规则
+```bash
+prisma db migrate --advance-ref db
+```
 
-- `docker/verify-prisma-migrations.mjs` 中登记的 migration 视为 published immutable；SHA-256 变化必须直接导致 CI 失败。
-- 发现旧 migration 缺字段时新增 forward migration，禁止修改旧 SQL 来“补齐”。
-- 涉及旧数据转换时，数据迁移 SQL 与结构迁移一起进入对应 forward migration，并按真实升级路径验证。
-- 不得因为 migration 目录增多而重新合并、改写已经发布的历史。
+迁移成功后 `db` ref 必须随目标 contract 前移。
+
+### 3.3 状态与一致性验证
+
+每次数据库结构变更至少执行：
+
+```bash
+pnpm db:verify-migrations
+pnpm db:status
+pnpm db:verify
+```
+
+含义：
+
+- `db:verify-migrations`：执行 Prisma 8 `migration check`，验证 migration package / snapshot / graph 完整性。
+- `db:status`：验证数据库 marker 能在当前 graph 中解析，且 current/target contract 一致。
+- `db:verify`：同时校验 marker 与真实 PostgreSQL schema 是否满足 emitted contract。
+
+只有三项都通过，数据库结构变更才允许进入 release gate。
+
+## 4. 新数据库 / 已有数据库
+
+### 4.1 Fresh PostgreSQL
+
+Fresh PostgreSQL 必须走正式 graph：
+
+```bash
+pnpm db:deploy
+SEED_MODE=bootstrap pnpm --filter @micromatrix/api run db:seed
+pnpm db:verify
+pnpm db:status
+```
+
+禁止用 Prisma 7 `migrate deploy` 或 `db push` 初始化新库。
+
+### 4.2 已有数据库首次采用 Prisma 8 graph
+
+仅当真实 schema 已经与目标 contract 一致时，才允许执行 adoption：
+
+```bash
+prisma db verify --schema-only
+prisma db sign
+prisma migration ref set db <baseline>
+prisma db verify
+prisma migration status
+```
+
+`db sign` 只用于“数据库结构已经满足 contract，但 marker 尚未采用当前 Prisma 8 graph”的 handoff/adoption 场景。它不是跳过 migration 的通用手段。
+
+如果 `db verify --schema-only` 仍有 drift，应先修 contract 或通过正式 forward migration 解决，不得用 `db sign` 掩盖 schema 差异。
+
+## 5. PostgreSQL 原生结构
+
+当前 contract 中有六个使用 SQL body 的业务索引，必须持续进入 migration graph：
+
+- `approval_flows_active_form_type_key`
+- `organization_sync_batches_active_key`
+- `custom_form_data_field_top_level_key`
+- `custom_form_data_field_sub_cell_key`
+- `custom_form_data_field_blob_top_level_key`
+- `custom_form_data_field_blob_sub_cell_key`
+
+Prisma 8 对 SQL body 的 drift 比较可能采用 authored SQL 文本；修改这些对象时必须：
+
+1. 核对 contract emit warning。
+2. 审计 migration preview 中的实际 SQL。
+3. 在真实 PostgreSQL 上执行完整 `db verify`。
+4. 必要时优先从 `contract infer` 获取数据库真实表达，而不是凭手写 SQL 猜测 introspection 结果。
+
+以后增加任何函数、触发器、View、Extension、partial/expression index 或其它原生 PostgreSQL 对象时，也必须同时进入 contract / migration graph 的可验证边界。
+
+## 6. Release / CI 规则
+
+正式 release workflow 只允许 Prisma 8 migration ownership：
+
+1. `prisma contract emit`
+2. `prisma migration check`
+3. Migration image 执行 `prisma db migrate`
+4. migration 后执行 `prisma db verify`
+5. `prisma migration status` 必须为 up-to-date
+6. bootstrap Seed 继续使用 Prisma 8 runtime
+
+Migration image、`docker/release-init.sh`、`docker/release-smoke.sh` 与 GitHub Release workflow 不得再调用 `legacy Prisma 7 CLI migrate` 或 `legacy Prisma 7 CLI db push`。
+
+Docker release 的最终 fresh-PostgreSQL runtime smoke 属于 P5 最终验收；宿主机 Docker/Buildx 不可用时，不得用静态 grep 冒充真实 image PASS。
+
+## 7. Prisma 7 冻结规则
+
+Phase 4 起立即生效：
+
+- 禁止 `legacy Prisma 7 CLI migrate dev`
+- 禁止 `legacy Prisma 7 CLI migrate deploy`
+- 禁止 `legacy Prisma 7 CLI migrate resolve`
+- 禁止 `legacy Prisma 7 CLI db push` 作为正式或本地结构同步入口
+- 禁止新增/修改 `apps/api/prisma/migrations/`
+- 禁止把 `apps/api/prisma/schema.prisma` 当作新的结构事实源
+
+在 Phase 5 之前，`legacy Prisma 7 CLI generate` / legacy Client / adapter / studio 仅为尚未删除的兼容构建资产；它们不拥有 migration 权限。Phase 5 将删除这些资产并把 `prisma8` / `src/prisma` 收口到 canonical `prisma` / `src/prisma`。
+
+## 8. 不可变与审计原则
+
+- 已进入正式 graph 的 migration package 不得就地篡改；结构变化使用新 forward migration。
+- migration 的 from/to contract hash、migration hash、operation list 都属于审计证据。
+- 不允许通过手工改 marker/ref 掩盖真实 schema drift。
+- `db sign`、`migration ref set` 仅用于有明确 schema verify 证据的 handoff/adoption。
+- 所有高风险 DDL 必须在独立数据库先演练，再进入开发主库/发布链。
+- 每次 release 前必须同时验证 graph integrity、database marker、schema contract，而不是只验证其中一项。

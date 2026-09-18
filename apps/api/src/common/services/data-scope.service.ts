@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { hasPermission } from '@micromatrix/shared'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
 import type { AuthUser } from '../auth-user'
 
 /**
@@ -9,7 +9,7 @@ import type { AuthUser } from '../auth-user'
  */
 @Injectable()
 export class DataScopeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma8: Prisma8Service) {}
 
   async scopeFilter(user: AuthUser, permission: string): Promise<Record<string, unknown>> {
     const scope = await this.resolveScope(user, permission)
@@ -40,10 +40,13 @@ export class DataScopeService {
     if (scope.all) return {}
     const ownerIds = new Set([user.id])
     if (scope.deptIds.length) {
-      const users = await this.prisma.user.findMany({
-        where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: scope.deptIds } },
-        select: { id: true },
+      const users = await this.prisma8.client.orm.public.Users.where({
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
       })
+        .where((row) => row.deptId.in(scope.deptIds))
+        .select('id')
+        .all()
       users.forEach((item) => ownerIds.add(item.id))
     }
     return ownerIds.size === 1 ? { owner: user.id } : { owner: { in: [...ownerIds] } }
@@ -54,15 +57,14 @@ export class DataScopeService {
     if (!scope.hasPermission) return false
     if (scope.all || ownerId === user.id) return true
     if (!ownerId || !scope.deptIds.length) return false
-    return !!(await this.prisma.user.findFirst({
-      where: {
-        id: ownerId,
-        tenantId: user.tenantId,
-        status: 'ACTIVE',
-        deptId: { in: scope.deptIds },
-      },
-      select: { id: true },
-    }))
+    return !!(await this.prisma8.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+    })
+      .where((row) => row.deptId.in(scope.deptIds))
+      .select('id')
+      .first())
   }
 
   /** Cordys 报价等资源按 create_user 所属部门做数据范围，而不是伪造 owner/dept 主表字段。 */
@@ -75,10 +77,13 @@ export class DataScopeService {
     if (scope.all) return {}
     const userIds = new Set([user.id])
     if (scope.deptIds.length) {
-      const users = await this.prisma.user.findMany({
-        where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: scope.deptIds } },
-        select: { id: true },
+      const users = await this.prisma8.client.orm.public.Users.where({
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
       })
+        .where((row) => row.deptId.in(scope.deptIds))
+        .select('id')
+        .all()
       users.forEach((item) => userIds.add(item.id))
     }
     return userIds.size === 1 ? { createUser: user.id } : { createUser: { in: [...userIds] } }
@@ -89,15 +94,14 @@ export class DataScopeService {
     if (!scope.hasPermission) return false
     if (scope.all || createUser === user.id) return true
     if (!createUser || !scope.deptIds.length) return false
-    return !!(await this.prisma.user.findFirst({
-      where: {
-        id: createUser,
-        tenantId: user.tenantId,
-        status: 'ACTIVE',
-        deptId: { in: scope.deptIds },
-      },
-      select: { id: true },
-    }))
+    return !!(await this.prisma8.client.orm.public.Users.where({
+      id: createUser,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+    })
+      .where((row) => row.deptId.in(scope.deptIds))
+      .select('id')
+      .first())
   }
 
   /** Cordys 语义：筛出拥有当前权限的角色，再对这些角色的数据范围取并集。 */
@@ -129,10 +133,9 @@ export class DataScopeService {
   /** Cordys CUSTOM 语义：每个已选部门都包含其全部下级部门。 */
   async collectManyWithDescendants(tenantId: string, rootIds: string[]): Promise<string[]> {
     if (rootIds.length === 0) return []
-    const all = await this.prisma.department.findMany({
-      where: { tenantId },
-      select: { id: true, parentId: true },
-    })
+    const all = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
     const childrenMap = new Map<string | null, string[]>()
     for (const dept of all) {
       const list = childrenMap.get(dept.parentId) ?? []

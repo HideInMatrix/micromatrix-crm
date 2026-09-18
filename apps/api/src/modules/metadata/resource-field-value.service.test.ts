@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException, ConflictException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
 import type { ModuleFormsService } from './module-forms.service'
+import { createMemoryOrmTable, createTransactionStub } from './prisma8-orm-test-stub'
 import { ResourceFieldValueService } from './resource-field-value.service'
 
 interface ValueRow {
@@ -146,6 +147,48 @@ const fields: FieldVO[] = [
   },
 ]
 
+interface RawProbe {
+  __rawText: string
+  __rawValues: unknown[]
+  returns: () => RawProbe
+  returnsRow: () => RawProbe & { build: () => RawProbe }
+}
+
+function createPrisma8Stub(publicNamespace: Record<string, unknown> = {}): Prisma8Service {
+  const rawSql = (strings: TemplateStringsArray, ...inputs: unknown[]): RawProbe => {
+    let text = strings[0] ?? ''
+    const values: unknown[] = []
+    for (const [index, input] of inputs.entries()) {
+      const nested = input as Partial<RawProbe> | null
+      if (nested && typeof nested === 'object' && typeof nested.__rawText === 'string') {
+        text += nested.__rawText
+        values.push(...(nested.__rawValues ?? []))
+      } else {
+        text += `$${values.length + 1}`
+        values.push(input)
+      }
+      text += strings[index + 1] ?? ''
+    }
+    const probe = {
+      __rawText: text,
+      __rawValues: values,
+      returns: () => probe,
+      returnsRow: () => Object.assign(probe, { build: () => probe }),
+    }
+    return probe
+  }
+  const columns = new Proxy({}, { get: (_target, key) => String(key) })
+  const table = new Proxy({}, { get: (_target, key) => (key === 'columns' ? columns : {}) })
+  const sqlPublicNamespace = new Proxy({}, { get: () => table })
+  return {
+    client: {
+      raw: { sql: rawSql },
+      sql: { public: sqlPublicNamespace },
+      orm: { public: publicNamespace },
+    },
+  } as unknown as Prisma8Service
+}
+
 function createHarness() {
   const normal: ValueRow[] = []
   const blob: ValueRow[] = []
@@ -158,81 +201,25 @@ function createHarness() {
   let blobReads = 0
   let failBlobCreate = false
 
-  function delegate(rows: ValueRow[], kind: 'normal' | 'blob') {
-    return {
-      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
-        const excluded = where['resourceId'] as { not?: string } | undefined
-        const organizationId = (where['resource'] as { organizationId?: string } | undefined)
-          ?.organizationId
-        return rows.find(
-          (row) =>
-            row.fieldId === where['fieldId'] &&
-            row.fieldValue === where['fieldValue'] &&
-            row.resourceId !== excluded?.not &&
-            organizations.get(row.resourceId) === organizationId,
-        )
-          ? { id: 'match' }
-          : null
+  const customers = [...organizations].map(([id, organizationId]) => ({ id, organizationId }))
+  const publicNamespace = {
+    Customer: createMemoryOrmTable(customers),
+    CustomerField: createMemoryOrmTable(normal, { onAll: () => normalReads++ }),
+    CustomerFieldBlob: createMemoryOrmTable(blob, {
+      onAll: () => blobReads++,
+      beforeCreateAll: () => {
+        if (failBlobCreate) throw new Error('blob insert failed')
       },
-      deleteMany: async ({
-        where,
-      }: {
-        where: { resourceId: string; fieldId: { in: string[] } }
-      }) => {
-        for (let index = rows.length - 1; index >= 0; index--) {
-          const row = rows[index]
-          if (row && row.resourceId === where.resourceId && where.fieldId.in.includes(row.fieldId))
-            rows.splice(index, 1)
-        }
-        return { count: 1 }
-      },
-      createMany: async ({ data }: { data: ValueRow[] }) => {
-        if (kind === 'blob' && failBlobCreate) throw new Error('blob insert failed')
-        rows.push(...data)
-        return { count: data.length }
-      },
-      findMany: async ({
-        where,
-      }: {
-        where: { resourceId: { in: string[] }; resource: { organizationId: string } }
-      }) => {
-        if (kind === 'normal') normalReads++
-        else blobReads++
-        return rows.filter(
-          (row) =>
-            where.resourceId.in.includes(row.resourceId) &&
-            organizations.get(row.resourceId) === where.resource.organizationId,
-        )
-      },
-    }
+    }),
   }
-
-  const customerField = delegate(normal, 'normal')
-  const customerFieldBlob = delegate(blob, 'blob')
-  const emptyDelegate = delegate([], 'normal')
-  const prismaRecord = {
-    customer: {
-      findFirst: async ({ where }: { where: { id: string; organizationId: string } }) =>
-        organizations.get(where.id) === where.organizationId ? { id: where.id } : null,
-    },
-    clue: { findFirst: async () => null },
-    customerContact: { findFirst: async () => null },
-    customerField,
-    customerFieldBlob,
-    clueField: emptyDelegate,
-    clueFieldBlob: emptyDelegate,
-    customerContactField: emptyDelegate,
-    customerContactFieldBlob: emptyDelegate,
-    $queryRaw: async () => [],
-  }
+  const transaction = createTransactionStub(publicNamespace)
   const moduleForms = {
     listFields: async () => fields,
     listFieldsInTransaction: async () => fields,
   } as unknown as ModuleFormsService
-  const prisma = prismaRecord as unknown as PrismaService
   return {
-    service: new ResourceFieldValueService(prisma, moduleForms),
-    tx: prismaRecord as never,
+    service: new ResourceFieldValueService(moduleForms, createPrisma8Stub(publicNamespace)),
+    tx: transaction as never,
     normal,
     blob,
     reads: () => ({ normal: normalReads, blob: blobReads }),
@@ -414,12 +401,13 @@ test('高级筛选编译为组织隔离的参数化普通值/Blob SQL', async ()
     { key: 'cf_score', op: 'gte', value: 60 },
     { key: 'cf_tags', op: 'contains', value: 'important' },
   ])
-  const sql = query.sql
+  const probe = query as unknown as RawProbe
+  const sql = probe.__rawText
   assert.match(sql, /FROM customer AS resource/)
   assert.match(sql, /customer_field/)
   assert.match(sql, /customer_field_blob/)
   assert.match(sql, /organization_id/)
-  assert.equal(query.values.includes('tenant-a'), true)
+  assert.equal(probe.__rawValues.includes('tenant-a'), true)
 })
 
 test('电话字段 contains 允许普通关键字子串而不执行完整电话格式校验', async () => {
@@ -427,7 +415,7 @@ test('电话字段 contains 允许普通关键字子串而不执行完整电话�
   const query = await service.buildFilter('tenant-a', 'customer', [
     { key: 'cf_phone', op: 'contains', value: '客户名称关键字' },
   ])
-  assert.equal(query.values.includes('%客户名称关键字%'), true)
+  assert.equal((query as unknown as RawProbe).__rawValues.includes('%客户名称关键字%'), true)
 })
 
 test('字段值写入失败时由调用方同一事务整体回滚', async () => {
@@ -512,63 +500,21 @@ test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', 
     ['plan-a', 'tenant-a'],
     ['plan-b', 'tenant-b'],
   ])
-  const delegate = (rows: ValueRow[]) => ({
-    findFirst: async () => null,
-    deleteMany: async ({ where }: { where: { resourceId: string; fieldId: { in: string[] } } }) => {
-      for (let index = rows.length - 1; index >= 0; index--) {
-        const row = rows[index]
-        if (row && row.resourceId === where.resourceId && where.fieldId.in.includes(row.fieldId)) {
-          rows.splice(index, 1)
-        }
-      }
-      return { count: 1 }
-    },
-    createMany: async ({ data }: { data: ValueRow[] }) => {
-      rows.push(...data)
-      return { count: data.length }
-    },
-    findMany: async ({
-      where,
-    }: {
-      where: { resourceId: { in: string[] }; resource: { tenantId: string } }
-    }) =>
-      rows.filter(
-        (row) =>
-          where.resourceId.in.includes(row.resourceId) &&
-          tenantByPlan.get(row.resourceId) === where.resource.tenantId,
-      ),
-  })
-  const forbidOrder = () => {
-    throw new Error('FollowPlan 不应访问 Order 字段表')
+  const publicNamespace = {
+    FollowUpPlans: createMemoryOrmTable(
+      [...tenantByPlan].map(([id, tenantId]) => ({ id, tenantId })),
+    ),
+    FollowUpPlanField: createMemoryOrmTable(normal),
+    FollowUpPlanFieldBlob: createMemoryOrmTable(blob),
   }
-  const prismaRecord = {
-    followUpPlan: {
-      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
-        tenantByPlan.get(where.id) === where.tenantId ? { id: where.id } : null,
-    },
-    followUpPlanField: delegate(normal),
-    followUpPlanFieldBlob: delegate(blob),
-    orderField: {
-      findFirst: forbidOrder,
-      deleteMany: forbidOrder,
-      createMany: forbidOrder,
-      findMany: forbidOrder,
-    },
-    orderFieldBlob: {
-      findFirst: forbidOrder,
-      deleteMany: forbidOrder,
-      createMany: forbidOrder,
-      findMany: forbidOrder,
-    },
-    $queryRaw: async () => [],
-  }
+  const prismaRecord = createTransactionStub(publicNamespace)
   const moduleForms = {
     listFields: async () => followFields,
     listFieldsInTransaction: async () => followFields,
   } as unknown as ModuleFormsService
   const service = new ResourceFieldValueService(
-    prismaRecord as unknown as PrismaService,
     moduleForms,
+    createPrisma8Stub(publicNamespace),
   )
 
   await service.save(
@@ -580,8 +526,14 @@ test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', 
     prismaRecord as never,
     'user-a',
   )
-  assert.deepEqual(normal, [{ resourceId: 'plan-a', fieldId: 'plan-short', fieldValue: '短值' }])
-  assert.deepEqual(blob, [{ resourceId: 'plan-a', fieldId: 'plan-note', fieldValue: '长备注' }])
+  assert.deepEqual(
+    normal.map(({ resourceId, fieldId, fieldValue }) => ({ resourceId, fieldId, fieldValue })),
+    [{ resourceId: 'plan-a', fieldId: 'plan-short', fieldValue: '短值' }],
+  )
+  assert.deepEqual(
+    blob.map(({ resourceId, fieldId, fieldValue }) => ({ resourceId, fieldId, fieldValue })),
+    [{ resourceId: 'plan-a', fieldId: 'plan-note', fieldValue: '长备注' }],
+  )
   assert.deepEqual(
     await service.load('tenant-a', 'followPlan', ['plan-a', 'plan-b']),
     new Map([
@@ -593,30 +545,29 @@ test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', 
   const query = await service.buildFilter('tenant-a', 'followPlan', [
     { key: 'cf_short', op: 'contains', value: '短' },
   ])
-  assert.match(query.sql, /FROM follow_up_plans AS resource/)
-  assert.match(query.sql, /follow_up_plan_field/)
-  assert.match(query.sql, /"tenantId"/)
-  assert.equal(query.values.includes('tenant-a'), true)
+  const probe = query as unknown as RawProbe
+  assert.match(probe.__rawText, /FROM follow_up_plans AS resource/)
+  assert.match(probe.__rawText, /follow_up_plan_field/)
+  assert.match(probe.__rawText, /"tenantId"/)
+  assert.equal(probe.__rawValues.includes('tenant-a'), true)
 })
 
 test('FollowRecord 资源校验使用 FollowUpRecord tenantId，不得落入 FollowPlan 兜底分支', async () => {
   let recordChecks = 0
-  const tx = {
-    followUpRecord: {
-      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+  const records = createMemoryOrmTable([{ id: 'record-a', tenantId: 'tenant-a' }])
+  const publicNamespace = {
+    FollowUpRecords: {
+      ...records,
+      where: (...args: Parameters<typeof records.where>) => {
         recordChecks += 1
-        return where.id === 'record-a' && where.tenantId === 'tenant-a' ? { id: where.id } : null
-      },
-    },
-    followUpPlan: {
-      findFirst: async () => {
-        throw new Error('FollowRecord 不应落入 FollowPlan 资源校验')
+        return records.where(...args)
       },
     },
   }
+  const tx = createTransactionStub(publicNamespace)
   const service = new ResourceFieldValueService(
-    {} as PrismaService,
     { listFieldsInTransaction: async () => [] } as unknown as ModuleFormsService,
+    createPrisma8Stub(publicNamespace),
   )
 
   assert.deepEqual(

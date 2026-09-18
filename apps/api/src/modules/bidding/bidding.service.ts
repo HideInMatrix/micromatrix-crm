@@ -12,10 +12,17 @@ import {
   BiddingSourceVO,
   PaginatedResult,
 } from '@micromatrix/shared'
+import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { BiddingInfo, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToISOString,
+} from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue, prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { BiddingItem, BiddingProvider } from './providers/bidding-provider.interface'
 import { DemoBiddingProvider } from './providers/demo.provider'
@@ -28,7 +35,7 @@ export class BiddingService {
   private readonly providers: Map<string, BiddingProvider>
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly fieldValues: ResourceFieldValueService,
     demoProvider: DemoBiddingProvider,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
@@ -39,7 +46,7 @@ export class BiddingService {
   // ===== 数据源配置 =====
 
   async listSources(tenantId: string): Promise<BiddingSourceVO[]> {
-    const rows = await this.prisma.biddingSource.findMany({ where: { tenantId } })
+    const rows = await this.prisma8.client.orm.public.BiddingSources.where({ tenantId }).all()
     return [...this.providers.values()].map((provider) => {
       const row = rows.find((r) => r.provider === provider.key)
       return {
@@ -48,7 +55,7 @@ export class BiddingService {
         name: provider.label,
         enabled: row?.enabled ?? false,
         hasCredentials: Boolean(row?.credentials),
-        lastFetchAt: row?.lastFetchAt?.toISOString() ?? null,
+        lastFetchAt: row?.lastFetchAt ? prisma8TimestampToISOString(row.lastFetchAt) : null,
       }
     })
   }
@@ -61,70 +68,70 @@ export class BiddingService {
   ) {
     const adapter = this.providers.get(provider)
     if (!adapter) throw new BadRequestException('不支持的数据源')
+    const sources = this.prisma8.client.orm.public.BiddingSources
+    const existing = await sources.where({ tenantId: user.tenantId, provider }).first()
     if (enabled && adapter.requiresCredentials && !credentials) {
-      const existing = await this.prisma.biddingSource.findUnique({
-        where: { tenantId_provider: { tenantId: user.tenantId, provider } },
-      })
       if (!existing?.credentials) throw new BadRequestException('该数据源需要配置凭证')
     }
-    await this.prisma.biddingSource.upsert({
-      where: { tenantId_provider: { tenantId: user.tenantId, provider } },
-      update: {
+    const now = prisma8Now()
+    if (existing) {
+      await sources.where({ id: existing.id }).update({
         enabled,
-        ...(credentials ? { credentials: credentials as Prisma.InputJsonValue } : {}),
-      },
-      create: {
+        ...(credentials ? { credentials: prisma8JsonValue(credentials) } : {}),
+        updatedAt: now,
+      })
+    } else {
+      await sources.create({
         tenantId: user.tenantId,
         provider,
         name: adapter.label,
         enabled,
-        credentials: credentials as Prisma.InputJsonValue | undefined,
-      },
-    })
+        credentials: credentials ? prisma8JsonValue(credentials) : null,
+        updatedAt: now,
+      })
+    }
     return { name: adapter.label }
   }
 
   // ===== 关键词订阅 =====
 
   async listKeywords(tenantId: string): Promise<BiddingKeywordVO[]> {
-    const rows = await this.prisma.biddingKeywordSub.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: 'asc' },
-    })
+    const rows = await this.prisma8.client.orm.public.BiddingKeywordSubs.where({ tenantId })
+      .orderBy((row) => row.createdAt.asc())
+      .all()
     return rows.map((r) => ({ id: r.id, keyword: r.keyword, enabled: r.enabled }))
   }
 
   async addKeyword(user: AuthUser, keyword: string) {
     const trimmed = keyword.trim()
     if (!trimmed) throw new BadRequestException('关键词不能为空')
-    const exists = await this.prisma.biddingKeywordSub.findUnique({
-      where: { tenantId_keyword: { tenantId: user.tenantId, keyword: trimmed } },
-    })
+    const keywords = this.prisma8.client.orm.public.BiddingKeywordSubs
+    const exists = await keywords.where({ tenantId: user.tenantId, keyword: trimmed }).first()
     if (exists) throw new BadRequestException('该关键词已订阅')
-    await this.prisma.biddingKeywordSub.create({
-      data: { tenantId: user.tenantId, keyword: trimmed },
-    })
+    try {
+      await keywords.create({ tenantId: user.tenantId, keyword: trimmed })
+    } catch (error) {
+      if ((error as { sqlState?: string }).sqlState === '23505') {
+        throw new BadRequestException('该关键词已订阅')
+      }
+      throw error
+    }
     return { name: trimmed }
   }
 
   async toggleKeyword(user: AuthUser, id: string) {
-    const row = await this.prisma.biddingKeywordSub.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
+    const keywords = this.prisma8.client.orm.public.BiddingKeywordSubs
+    const row = await keywords.where({ id, tenantId: user.tenantId }).first()
     if (!row) throw new NotFoundException('订阅不存在')
-    await this.prisma.biddingKeywordSub.update({
-      where: { id },
-      data: { enabled: !row.enabled },
-    })
+    await keywords.where({ id }).update({ enabled: !row.enabled })
     return { name: row.keyword }
   }
 
   async removeKeyword(user: AuthUser, id: string) {
-    const row = await this.prisma.biddingKeywordSub.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
+    const keywords = this.prisma8.client.orm.public.BiddingKeywordSubs
+    const row = await keywords.where({ id, tenantId: user.tenantId }).first()
     if (!row) throw new NotFoundException('订阅不存在')
-    await this.prisma.biddingKeywordSub.delete({ where: { id } })
+    await keywords.where({ id }).deleteAndCount()
     return { name: row.keyword }
   }
 
@@ -138,7 +145,9 @@ export class BiddingService {
   }
 
   async fetchAllTenants() {
-    const sources = await this.prisma.biddingSource.findMany({ where: { enabled: true } })
+    const sources = await this.prisma8.client.orm.public.BiddingSources.where({ enabled: true })
+      .select('tenantId')
+      .all()
     const tenantIds = [...new Set(sources.map((s) => s.tenantId))]
     for (const tenantId of tenantIds) {
       await this.fetchTenant(tenantId).catch((e) =>
@@ -149,10 +158,14 @@ export class BiddingService {
 
   /** 手动/定时抓取：启用数据源 × 启用关键词，去重入库 */
   async fetchTenant(tenantId: string): Promise<{ fetched: number; inserted: number }> {
-    const [sources, keywords] = await Promise.all([
-      this.prisma.biddingSource.findMany({ where: { tenantId, enabled: true } }),
-      this.prisma.biddingKeywordSub.findMany({ where: { tenantId, enabled: true } }),
-    ])
+    const sources = await this.prisma8.client.orm.public.BiddingSources.where({
+      tenantId,
+      enabled: true,
+    }).all()
+    const keywords = await this.prisma8.client.orm.public.BiddingKeywordSubs.where({
+      tenantId,
+      enabled: true,
+    }).all()
     if (sources.length === 0) throw new BadRequestException('请先启用至少一个数据源')
     if (keywords.length === 0) throw new BadRequestException('请先订阅至少一个关键词')
 
@@ -162,21 +175,29 @@ export class BiddingService {
       const provider = this.providers.get(source.provider)
       if (!provider) continue
       for (const sub of keywords) {
+        const credentials = source.credentials
+          ? (JSON.parse(JSON.stringify(source.credentials)) as Record<string, unknown>)
+          : {}
         const items = await provider
-          .fetch((source.credentials as Record<string, unknown>) ?? {}, sub.keyword)
+          .fetch(credentials, sub.keyword)
           .catch((e) => {
             this.logger.warn(`数据源 ${source.provider} 拉取「${sub.keyword}」失败: ${e.message}`)
             return [] as BiddingItem[]
           })
         fetched += items.length
         for (const item of items) {
-          const created = await this.insertUnique(tenantId, source.provider, sub.keyword, item)
+          const created = await this.insertUniquePrisma8(
+            tenantId,
+            source.provider,
+            sub.keyword,
+            item,
+          )
           if (created) inserted++
         }
       }
-      await this.prisma.biddingSource.update({
-        where: { id: source.id },
-        data: { lastFetchAt: new Date() },
+      await this.prisma8.client.orm.public.BiddingSources.where({ id: source.id }).update({
+        lastFetchAt: prisma8Now(),
+        updatedAt: prisma8Now(),
       })
     }
     return { fetched, inserted }
@@ -184,7 +205,7 @@ export class BiddingService {
 
   /** 手动录入（无数据源账号时的兜底） */
   async manualImport(user: AuthUser, dto: ImportBiddingDto) {
-    const created = await this.insertUnique(user.tenantId, 'manual', dto.keyword ?? null, {
+    const created = await this.insertUniquePrisma8(user.tenantId, 'manual', dto.keyword ?? null, {
       title: dto.title,
       type: dto.type,
       region: dto.region,
@@ -203,56 +224,59 @@ export class BiddingService {
 
   async findAll(user: AuthUser, query: QueryBiddingDto): Promise<PaginatedResult<BiddingInfoVO>> {
     const { page = 1, pageSize = 10, keyword, type } = query
-    const where: Prisma.BiddingInfoWhereInput = {
+    const normalized = keyword?.trim()
+    const scoped = this.prisma8.client.orm.public.BiddingInfos.where({
       tenantId: user.tenantId,
-      ...(type ? { type } : {}),
-      ...(keyword
-        ? {
-            OR: [
-              { title: { contains: keyword, mode: 'insensitive' } },
-              { buyer: { contains: keyword, mode: 'insensitive' } },
-              { keyword: { contains: keyword, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.biddingInfo.findMany({
-        where,
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.biddingInfo.count({ where }),
+      ...(type ? { _type: type } : {}),
+    })
+    const filtered = normalized
+      ? scoped.where((row) =>
+          or(
+            row.title.ilike(`%${normalized}%`),
+            row.buyer.ilike(`%${normalized}%`),
+            row.keyword.ilike(`%${normalized}%`),
+          ),
+        )
+      : scoped
+    const [items, aggregate] = await Promise.all([
+      filtered
+        .orderBy([(row) => row.publishedAt.desc(), (row) => row.createdAt.desc()])
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      filtered.aggregate((agg) => ({ count: agg.count() })),
     ])
-    return { items: items.map((b) => this.toVO(b)), total, page, pageSize }
+    return { items: items.map((b) => this.toVO(b)), total: aggregate.count, page, pageSize }
   }
 
   /** 标讯一键转线索 */
   async convertToLead(user: AuthUser, id: string) {
-    const bidding = await this.prisma.biddingInfo.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
+    const bidding = await this.prisma8.client.orm.public.BiddingInfos.where({
+      id,
+      tenantId: user.tenantId,
+    }).first()
     if (!bidding) throw new NotFoundException('标讯不存在')
     if (bidding.convertedLeadId) throw new BadRequestException('该标讯已转为线索')
 
     const now = BigInt(Date.now())
-    const lead = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.clue.create({
-        data: {
-          organizationId: user.tenantId,
-          name: bidding.buyer
+    const lead = await this.prisma8.client.transaction(async (tx) => {
+      const created = await tx.orm.public.Clue.create({
+        id: prisma8Id32(),
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        name: prisma8Varchar(
+          bidding.buyer
             ? `${bidding.buyer}（${bidding.title.slice(0, 40)}）`
             : bidding.title.slice(0, 80),
-          owner: user.id,
-          stage: 'FOLLOWING',
-          inSharedPool: false,
-          collectionTime: now,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+          255,
+        ),
+        owner: prisma8Varchar(user.id, 32),
+        stage: prisma8Varchar('FOLLOWING', 30),
+        inSharedPool: false,
+        collectionTime: now,
+        createTime: now,
+        updateTime: now,
+        createUser: prisma8Varchar(user.id, 32),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -263,61 +287,79 @@ export class BiddingService {
         tx,
         user.id,
       )
+      await tx.orm.public.BiddingInfos.where({ id: bidding.id, tenantId: user.tenantId }).update({
+        convertedLeadId: created.id,
+      })
       return created
-    })
-    await this.prisma.biddingInfo.update({
-      where: { id },
-      data: { convertedLeadId: lead.id },
     })
     return { id: lead.id, name: lead.name }
   }
 
-  private async insertUnique(
+  private async insertUniquePrisma8(
     tenantId: string,
     source: string,
     keyword: string | null,
     item: BiddingItem,
-  ): Promise<BiddingInfo | null> {
+  ) {
     const hash = `${item.title}|${item.publishedAt?.toISOString().slice(0, 10) ?? ''}`
-    const exists = await this.prisma.biddingInfo.findUnique({
-      where: { tenantId_hash: { tenantId, hash } },
-    })
-    if (exists) return null
-    return this.prisma.biddingInfo.create({
-      data: {
+    try {
+      return await this.prisma8.client.orm.public.BiddingInfos.create({
         tenantId,
         title: item.title,
-        type: item.type,
-        region: item.region,
-        buyer: item.buyer,
-        budget: item.budget,
-        publishedAt: item.publishedAt,
-        deadline: item.deadline,
-        sourceUrl: item.sourceUrl,
-        content: item.content,
+        _type: item.type ?? null,
+        region: item.region ?? null,
+        buyer: item.buyer ?? null,
+        budget:
+          item.budget === undefined || item.budget === null
+            ? null
+            : prisma8Numeric(item.budget, 16, 2),
+        publishedAt: item.publishedAt ? prisma8TimestampFromDate(item.publishedAt) : null,
+        deadline: item.deadline ? prisma8TimestampFromDate(item.deadline) : null,
+        sourceUrl: item.sourceUrl ?? null,
+        content: item.content ?? null,
         source,
         keyword,
         hash,
-      },
-    })
+      })
+    } catch (error) {
+      if ((error as { sqlState?: string }).sqlState === '23505') return null
+      throw error
+    }
   }
 
-  private toVO(b: BiddingInfo): BiddingInfoVO {
+  private toVO(b: {
+    id: string
+    title: string
+    _type: string | null
+    region: string | null
+    buyer: string | null
+    budget: unknown
+    publishedAt: ReturnType<typeof prisma8Now> | null
+    deadline: ReturnType<typeof prisma8Now> | null
+    sourceUrl: string | null
+    content: string | null
+    source: string | null
+    keyword: string | null
+    convertedLeadId: string | null
+    createdAt: ReturnType<typeof prisma8Now>
+  }): BiddingInfoVO {
     return {
       id: b.id,
       title: b.title,
-      type: b.type,
+      type: b._type,
       region: b.region,
       buyer: b.buyer,
-      budget: b.budget ? Number(b.budget) : null,
-      publishedAt: b.publishedAt?.toISOString().slice(0, 10) ?? null,
-      deadline: b.deadline?.toISOString().slice(0, 10) ?? null,
+      budget: b.budget === null || b.budget === undefined ? null : Number(b.budget),
+      publishedAt: b.publishedAt
+        ? prisma8TimestampToISOString(b.publishedAt).slice(0, 10)
+        : null,
+      deadline: b.deadline ? prisma8TimestampToISOString(b.deadline).slice(0, 10) : null,
       sourceUrl: b.sourceUrl,
       content: b.content,
       source: b.source,
       keyword: b.keyword,
       convertedLeadId: b.convertedLeadId,
-      createdAt: b.createdAt.toISOString(),
+      createdAt: prisma8TimestampToISOString(b.createdAt),
     }
   }
 }

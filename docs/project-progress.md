@@ -1,17 +1,17 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-14。
+最近对齐：2026-09-18。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
 ## 1. 当前代码现场
 
-- 分支：`master`
+- 分支：`feat/prisma8-migration`
 - 当前发布标签：`v0.0.13`
 - W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
 - UI-001 PC/Mobile UI 重构 **T1～T14 均已 VERIFIED**：Header Top Menu、列表工具区、设置域页面级导航、首页按钮间距、全局 Drawer Header/Body 节奏以及审批流程复杂 Drawer/工具区均已完成 Browser 与工程门禁封板。
-- 当前 Prisma migration 历史为 **3 条 forward-only migration**：`20260905084900_baseline`、`20260911153000_lark_provider_schema`、`20260914152000_enterprise_platform_state`。已发布 migration 由 checksum 门禁保护，禁止重写。
-- `PRISMA8-001`：`IN_PROGRESS`。已建立 requirements/design/testing/tasks 文档，采用官方 PostgreSQL Prisma 7/8 side-by-side 路线；Phase 1～3 继续由 Prisma 7 持有 migration ownership，Phase 4 才执行 Prisma 8 baseline/sign/ref handoff。当前执行指针为 P0 基线审计与 Node 24.11+ 前置条件。
+- 当前数据库 migration ownership 已由 Prisma 8 接管，canonical migration graph 为 `apps/api/migrations/`，当前正式 baseline 仅保留 `20260918T0338_baseline`（672 operations）；storage contract 为 `apps/api/prisma/contract.prisma`，hash `651134f9ccfda014c4a27d235488e56b4640ad20fbf307fe0acaa0b8e39566de`。
+- `PRISMA8-001`：`VERIFIED`。Prisma 8 已成为唯一 production/runtime/migration owner；legacy Prisma Client/adapter/service/module/generated artifacts 与旧脚本标识归零；fresh PostgreSQL baseline + bootstrap Seed + verify/status 全绿；API Rules **346/346 PASS**，root typecheck/lint/build 均 exit 0；原始 Docker release smoke exit 0；代表性 Browser 回归覆盖登录、Dashboard、商机高级筛选、客户列表/详情与线索关键词搜索，API 运行期间未发现 5xx/runtime exception。
 
 ## 2. 已关闭主里程碑
 

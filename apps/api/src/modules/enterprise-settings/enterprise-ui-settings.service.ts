@@ -7,7 +7,8 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { AttachmentsService } from '../attachments/attachments.service'
 import type { UpdateEnterpriseUiSettingDto } from './dto/ui-setting.dto'
 
@@ -40,7 +41,7 @@ const SLOT_FIELD: Record<EnterpriseUiAssetSlot, AssetField> = {
 @Injectable()
 export class EnterpriseUiSettingsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly attachments: AttachmentsService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
@@ -63,10 +64,9 @@ export class EnterpriseUiSettingsService {
   }
 
   async getBranding(tenantSlug: string): Promise<EnterpriseUiBrandingVO> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: tenantSlug },
-      select: { id: true, slug: true },
-    })
+    const tenant = await this.prisma8.client.orm.public.Tenants.where({ slug: tenantSlug })
+      .select('id', 'slug')
+      .first()
     if (!tenant) throw new NotFoundException('企业不存在')
     return this.brandingForTenant(tenant.id, tenant.slug)
   }
@@ -80,25 +80,24 @@ export class EnterpriseUiSettingsService {
 
     const email = input.email?.trim()
     if (email) {
-      const user = await this.prisma.user.findFirst({
-        where: { email: { equals: email, mode: 'insensitive' } },
-        select: {
-          tenant: {
-            select: { id: true, slug: true, status: true },
-          },
-        },
-      })
-      if (user?.tenant.status === 'ACTIVE') {
-        return this.brandingForTenant(user.tenant.id, user.tenant.slug)
+      const user = await this.prisma8.client.orm.public.Users.where((row) => row.email.ilike(email))
+        .select('tenantId')
+        .first()
+      const tenant = user
+        ? await this.prisma8.client.orm.public.Tenants.where({ id: user.tenantId })
+            .select('id', 'slug', 'status')
+            .first()
+        : null
+      if (tenant?.status === 'ACTIVE') {
+        return this.brandingForTenant(tenant.id, tenant.slug)
       }
     }
 
-    const tenants = await this.prisma.tenant.findMany({
-      where: { status: 'ACTIVE' },
-      orderBy: { createdAt: 'asc' },
-      take: 2,
-      select: { id: true, slug: true },
-    })
+    const tenants = await this.prisma8.client.orm.public.Tenants.where({ status: 'ACTIVE' })
+      .select('id', 'slug')
+      .orderBy((tenant) => tenant.createdAt.asc())
+      .limit(2)
+      .all()
     if (tenants.length === 1) {
       const tenant = tenants[0]!
       return this.brandingForTenant(tenant.id, tenant.slug)
@@ -109,12 +108,11 @@ export class EnterpriseUiSettingsService {
 
   async viewBrandingAsset(tenantSlug: string, slot: EnterpriseUiAssetSlot) {
     if (!Object.hasOwn(SLOT_FIELD, slot)) throw new BadRequestException('不支持的界面资源类型')
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: tenantSlug },
-      select: { id: true },
-    })
+    const tenant = await this.prisma8.client.orm.public.Tenants.where({ slug: tenantSlug })
+      .select('id')
+      .first()
     if (!tenant) throw new NotFoundException('企业不存在')
-    const row = await this.prisma.enterpriseUiSetting.findUnique({ where: { tenantId: tenant.id } })
+    const row = await this.uiSettings().where({ tenantId: tenant.id }).first()
     if (!row) throw new NotFoundException('品牌资源不存在')
     const attachmentId = row[SLOT_FIELD[slot]]
     if (!attachmentId) throw new NotFoundException('品牌资源不存在')
@@ -126,10 +124,11 @@ export class EnterpriseUiSettingsService {
     input: UpdateEnterpriseUiSettingDto,
   ): Promise<EnterpriseUiSettingVO> {
     const row = await this.ensureRow(user.tenantId)
-    const updated = await this.prisma.enterpriseUiSetting.update({
-      where: { id: row.id },
-      data: input,
+    const updated = await this.uiSettings().where({ id: row.id, tenantId: user.tenantId }).update({
+      ...input,
+      updatedAt: prisma8Now(),
     })
+    if (!updated) throw new NotFoundException('界面设置不存在')
     await this.cache?.invalidate(user.tenantId, CACHE_NAMESPACE)
     return this.toVO(user.tenantId, updated)
   }
@@ -148,10 +147,7 @@ export class EnterpriseUiSettingsService {
     const uploaded = await this.attachments.upload(user, file, TARGET_TYPE, row.id)
 
     try {
-      const updated = await this.prisma.enterpriseUiSetting.update({
-        where: { id: row.id },
-        data: { [field]: uploaded.id },
-      })
+      const updated = await this.updateAssetField(row.id, user.tenantId, slot, uploaded.id)
       await this.cache?.invalidate(user.tenantId, CACHE_NAMESPACE)
       if (oldAttachmentId) {
         await this.attachments.removeFromTarget(user.tenantId, oldAttachmentId, TARGET_TYPE, row.id)
@@ -168,10 +164,7 @@ export class EnterpriseUiSettingsService {
     const row = await this.ensureRow(user.tenantId)
     const field = SLOT_FIELD[slot]
     const oldAttachmentId = row[field]
-    const updated = await this.prisma.enterpriseUiSetting.update({
-      where: { id: row.id },
-      data: { [field]: null },
-    })
+    const updated = await this.updateAssetField(row.id, user.tenantId, slot, null)
     await this.cache?.invalidate(user.tenantId, CACHE_NAMESPACE)
     if (oldAttachmentId) {
       await this.attachments.removeFromTarget(user.tenantId, oldAttachmentId, TARGET_TYPE, row.id)
@@ -179,12 +172,17 @@ export class EnterpriseUiSettingsService {
     return this.toVO(user.tenantId, updated)
   }
 
-  private ensureRow(tenantId: string) {
-    return this.prisma.enterpriseUiSetting.upsert({
-      where: { tenantId },
-      update: {},
-      create: { tenantId, ...DEFAULT_UI_SETTING },
-    })
+  private async ensureRow(tenantId: string) {
+    const existing = await this.uiSettings().where({ tenantId }).first()
+    if (existing) return existing
+    try {
+      return await this.uiSettings().create({ tenantId, ...DEFAULT_UI_SETTING, updatedAt: prisma8Now() })
+    } catch (error) {
+      if ((error as { sqlState?: string }).sqlState !== '23505') throw error
+      const row = await this.uiSettings().where({ tenantId }).first()
+      if (!row) throw error
+      return row
+    }
   }
 
   private async brandingForTenant(
@@ -192,7 +190,7 @@ export class EnterpriseUiSettingsService {
     tenantSlug: string,
   ): Promise<EnterpriseUiBrandingVO> {
     const loader = async () => {
-      const row = await this.prisma.enterpriseUiSetting.findUnique({ where: { tenantId } })
+      const row = await this.uiSettings().where({ tenantId }).first()
       return this.toBranding(tenantSlug, row)
     }
     if (!this.cache) return loader()
@@ -222,7 +220,7 @@ export class EnterpriseUiSettingsService {
       loginLogoConfigured: Boolean(row?.loginLogoAttachmentId),
       loginImageConfigured: Boolean(row?.loginImageAttachmentId),
       platformLogoConfigured: Boolean(row?.platformLogoAttachmentId),
-      updatedAt: row?.updatedAt.toISOString() ?? null,
+      updatedAt: row ? prisma8TimestampToISOString(row.updatedAt) : null,
     }
   }
 
@@ -237,7 +235,10 @@ export class EnterpriseUiSettingsService {
       row.platformLogoAttachmentId,
     ].filter((id): id is string => Boolean(id))
     const attachmentRows = ids.length
-      ? await this.prisma.attachment.findMany({ where: { tenantId, id: { in: ids } } })
+      ? await this.prisma8.client.orm.public.Attachments.where({ tenantId })
+          .where((attachment) => attachment.id.in(ids))
+          .select('id', 'name', 'mime', 'size')
+          .all()
       : []
     const byId = new Map(attachmentRows.map((item) => [item.id, item]))
     const asset = (id: string | null): EnterpriseUiAssetVO | null => {
@@ -258,7 +259,31 @@ export class EnterpriseUiSettingsService {
       loginLogo: asset(row.loginLogoAttachmentId),
       loginImage: asset(row.loginImageAttachmentId),
       platformLogo: asset(row.platformLogoAttachmentId),
-      updatedAt: row.updatedAt.toISOString(),
+      updatedAt: prisma8TimestampToISOString(row.updatedAt),
     }
+  }
+
+  private uiSettings() {
+    return this.prisma8.client.orm.public.EnterpriseUiSettings
+  }
+
+  private async updateAssetField(
+    id: string,
+    tenantId: string,
+    slot: EnterpriseUiAssetSlot,
+    attachmentId: string | null,
+  ) {
+    const rows = this.uiSettings().where({ id, tenantId })
+    const updatedAt = prisma8Now()
+    const row =
+      slot === 'icon'
+        ? await rows.update({ iconAttachmentId: attachmentId, updatedAt })
+        : slot === 'loginLogo'
+          ? await rows.update({ loginLogoAttachmentId: attachmentId, updatedAt })
+          : slot === 'loginImage'
+            ? await rows.update({ loginImageAttachmentId: attachmentId, updatedAt })
+            : await rows.update({ platformLogoAttachmentId: attachmentId, updatedAt })
+    if (!row) throw new NotFoundException('界面设置不存在')
+    return row
   }
 }

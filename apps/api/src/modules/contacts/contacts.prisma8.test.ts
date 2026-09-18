@@ -1,0 +1,148 @@
+import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
+import test from 'node:test'
+import type { AuthUser } from '../../common/auth-user'
+import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
+import { createPrisma8Client } from '../../prisma/prisma8-client'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { ContactsService } from './contacts.service'
+
+const databaseUrl = process.env['DATABASE_URL']
+
+test(
+  'ContactsService production 路径使用 Prisma 8 保持关系、分页、状态与 CRUD 语义',
+  { skip: !databaseUrl },
+  async () => {
+    assert.ok(databaseUrl)
+    const fixtureDb = createPrismaFixtureClient(databaseUrl)
+    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const prisma8 = { client: prisma8Client } as Prisma8Service
+    const suffix = randomUUID().replaceAll('-', '')
+    const organizationId = `org-${suffix}`.slice(0, 32)
+    const actorId = `u${suffix}`.slice(0, 32)
+    const user: AuthUser = {
+      id: actorId,
+      tenantId: organizationId,
+      email: `${suffix}@example.com`,
+      name: '联系人测试成员',
+      deptId: null,
+      leaderId: null,
+      roles: [],
+      permissions: ['*'],
+    }
+    const customerAccess = {
+      assertRead: async () => ({ dataScope: true, pool: false, collaborationType: null }),
+      assertCollaborateWrite: async () => ({ dataScope: true, pool: false, collaborationType: null }),
+    }
+    const dataScope = {
+      directOwnerFilter: async () => ({}),
+      matchesDirectOwner: async () => true,
+      resolveScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+    }
+    const fields = [
+      { id: 'name', key: 'name', label: '姓名', type: 'text', system: true, hidden: false, required: true },
+      { id: 'phone', key: 'phone', label: '手机', type: 'text', system: true, hidden: false, required: false },
+      { id: 'owner', key: 'owner', label: '负责人', type: 'user', system: true, hidden: false, required: true },
+      { id: 'customerId', key: 'customerId', label: '客户', type: 'relation', system: true, hidden: false, required: false },
+      { id: 'enable', key: 'enable', label: '启用', type: 'switch', system: true, hidden: false, required: true },
+    ]
+    const metadata = {
+      listFields: async () => fields,
+      fieldsMap: async () => new Map(fields.map((field) => [field.key, { ...field, config: {} }])),
+      computeFormulas: () => ({}),
+      resolveEditableField: async (_tenantId: string, _module: string, id: string) =>
+        fields.find((field) => field.id === id || field.key === id),
+      validateBatchFieldValue: () => undefined,
+    }
+    const fieldValues = {
+      validate: async () => undefined,
+      save: async () => undefined,
+      saveBatch: async () => ({ count: 1 }),
+      load: async (_tenantId: string, _type: string, ids: string[]) =>
+        new Map(ids.map((id) => [id, {}])),
+      filterResourceIds: async () => [],
+    }
+    const service = new ContactsService(
+      prisma8,
+      customerAccess as never,
+      dataScope as never,
+      metadata as never,
+      { getConfig: async () => ({ fields: [] }) } as never,
+      fieldValues as never,
+      { resolveFilters: async () => null } as never,
+      {} as never,
+      {} as never,
+      { send: async () => undefined } as never,
+    )
+
+    await fixtureDb.$connect()
+    await prisma8Client.connect()
+    try {
+      await fixtureDb.tenant.create({
+        data: { id: organizationId, name: '联系人专项租户', slug: `contacts-${suffix}` },
+      })
+      await fixtureDb.user.create({
+        data: {
+          id: actorId,
+          tenantId: organizationId,
+          email: user.email,
+          passwordHash: 'test',
+          name: user.name,
+        },
+      })
+      const now = BigInt(Date.now())
+      const customer = await fixtureDb.customer.create({
+        data: {
+          name: '联系人专项客户',
+          owner: actorId,
+          organizationId,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        },
+      })
+
+      const contact = await service.create(user, {
+        customerId: customer.id,
+        ownerId: actorId,
+        name: '张三',
+        phone: '13800138000',
+        customData: {},
+      })
+      assert.equal(contact.customerId, customer.id)
+      assert.equal(contact.customerName, '联系人专项客户')
+      assert.equal(contact.ownerId, actorId)
+      assert.equal(contact.enable, true)
+
+      const page = await service.findAll(user, { page: 1, pageSize: 10, keyword: '张三' })
+      assert.equal(page.total, 1)
+      assert.equal(page.items[0]?.id, contact.id)
+      assert.equal(page.items[0]?.customerName, '联系人专项客户')
+
+      const embedded = await service.listByCustomer(user, customer.id)
+      assert.equal(embedded.length, 1)
+      assert.equal(embedded[0]?.id, contact.id)
+
+      const updated = await service.update(user, contact.id, { name: '张三更新', phone: '13900139000' })
+      assert.equal(updated.name, '张三更新')
+      assert.equal(updated.phone, '13900139000')
+      assert.equal((await fixtureDb.customerContact.findUniqueOrThrow({ where: { id: contact.id } })).name, '张三更新')
+
+      const disabled = await service.disable(user, contact.id, '离职')
+      assert.equal(disabled.enable, false)
+      assert.equal(disabled.disableReason, '离职')
+      const enabled = await service.enable(user, contact.id)
+      assert.equal(enabled.enable, true)
+      assert.equal(enabled.disableReason, null)
+
+      assert.deepEqual(await service.checkOpportunity(user, contact.id), { linked: false, count: 0 })
+      const removed = await service.remove(user, contact.id)
+      assert.equal(removed.id, contact.id)
+      assert.equal(await fixtureDb.customerContact.count({ where: { id: contact.id } }), 0)
+    } finally {
+      await prisma8Client.close()
+      await fixtureDb.$disconnect()
+    }
+  },
+)

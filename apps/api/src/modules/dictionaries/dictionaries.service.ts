@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Client } from '../../prisma/prisma8-client'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import type {
   DictionaryAddDto,
   DictionaryModule,
@@ -10,10 +11,11 @@ import type {
 } from './dto/dictionary.dto'
 
 const MAX_REASON_COUNT = 50
+type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
 
 @Injectable()
 export class DictionariesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma8: Prisma8Service) {}
 
   async list(organizationId: string, module: DictionaryModule) {
     const rows = await this.listRows(organizationId, module)
@@ -21,18 +23,24 @@ export class DictionariesService {
   }
 
   private listRows(organizationId: string, module: DictionaryModule) {
-    return this.prisma.sysDict.findMany({
-      where: { organizationId, module },
-      orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
-    })
+    return this.dicts()
+      .where({
+        organizationId: prisma8Varchar(organizationId, 32),
+        module: prisma8Varchar(module, 20),
+      })
+      .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
+      .all()
   }
 
   async config(organizationId: string, module: DictionaryModule) {
     const [dictList, config] = await Promise.all([
       this.listRows(organizationId, module),
-      this.prisma.sysDictConfig.findUnique({
-        where: { module_organizationId: { module, organizationId } },
-      }),
+      this.configs()
+        .where({
+          module: prisma8Varchar(module, 20),
+          organizationId: prisma8Varchar(organizationId, 32),
+        })
+        .first(),
     ])
     return {
       dictList: [
@@ -56,26 +64,27 @@ export class DictionariesService {
 
   async add(user: AuthUser, dto: DictionaryAddDto) {
     const name = dto.name.trim()
-    return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.sysDict.findMany({
-        where: { organizationId: user.tenantId, module: dto.module },
-        orderBy: { pos: 'asc' },
+    return this.prisma8.client.transaction(async (tx) => {
+      const rows = await tx.orm.public.SysDict.where({
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        module: prisma8Varchar(dto.module, 20),
       })
+        .orderBy((row) => row.pos.asc())
+        .all()
       if (rows.length >= MAX_REASON_COUNT) throw new BadRequestException('原因最多配置 50 条')
       if (rows.some((row) => row.name === name)) throw new BadRequestException('原因名称不能重复')
       const now = BigInt(Date.now())
-      const row = await tx.sysDict.create({
-        data: {
-          name,
-          module: dto.module,
-          type: 'TEXT',
-          pos: BigInt(rows.length + 1),
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+      const row = await tx.orm.public.SysDict.create({
+        id: prisma8Id32(),
+        name: prisma8Varchar(name, 255),
+        module: prisma8Varchar(dto.module, 20),
+        _type: prisma8Varchar('TEXT', 10),
+        pos: BigInt(rows.length + 1),
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        createTime: now,
+        updateTime: now,
+        createUser: prisma8Varchar(user.id, 32),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       return this.toVO(row)
     })
@@ -84,38 +93,41 @@ export class DictionariesService {
   async update(user: AuthUser, dto: DictionaryUpdateDto) {
     const row = await this.assertOwned(user.tenantId, dto.id)
     const name = dto.name.trim()
-    const duplicate = await this.prisma.sysDict.findFirst({
-      where: {
-        organizationId: user.tenantId,
+    const duplicate = await this.dicts()
+      .where({
+        organizationId: prisma8Varchar(user.tenantId, 32),
         module: row.module,
-        name,
-        id: { not: row.id },
-      },
+        name: prisma8Varchar(name, 255),
+      })
+      .select('id')
+      .first()
+    if (duplicate && duplicate.id !== row.id) throw new BadRequestException('原因名称不能重复')
+    const updated = await this.dicts().where({ id: row.id }).update({
+      name: prisma8Varchar(name, 255),
+      updateUser: prisma8Varchar(user.id, 32),
+      updateTime: BigInt(Date.now()),
     })
-    if (duplicate) throw new BadRequestException('原因名称不能重复')
-    return this.toVO(
-      await this.prisma.sysDict.update({
-        where: { id: row.id },
-        data: { name, updateUser: user.id, updateTime: BigInt(Date.now()) },
-      }),
-    )
+    if (!updated) throw new NotFoundException('原因不存在')
+    return this.toVO(updated)
   }
 
   async remove(user: AuthUser, id: string) {
     const row = await this.assertOwned(user.tenantId, id)
-    return this.prisma.$transaction(async (tx) => {
-      const [config, count] = await Promise.all([
-        tx.sysDictConfig.findUnique({
-          where: {
-            module_organizationId: { module: row.module, organizationId: user.tenantId },
-          },
-        }),
-        tx.sysDict.count({ where: { organizationId: user.tenantId, module: row.module } }),
+    return this.prisma8.client.transaction(async (tx) => {
+      const [config, rows] = await Promise.all([
+        tx.orm.public.SysDictConfig.where({
+          module: row.module,
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        }).first(),
+        tx.orm.public.SysDict.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+          module: row.module,
+        }).all(),
       ])
-      if (config?.enabled && count <= 1) {
+      if (config?.enabled && rows.length <= 1) {
         throw new BadRequestException('原因已启用，至少保留一条原因')
       }
-      await tx.sysDict.delete({ where: { id } })
+      await tx.orm.public.SysDict.where({ id: prisma8Varchar(id, 32) }).delete()
       await this.normalizePositions(tx, user.tenantId, row.module, user.id)
       return { id }
     })
@@ -123,26 +135,41 @@ export class DictionariesService {
 
   async switch(user: AuthUser, module: DictionaryModule, enable: boolean) {
     if (enable) {
-      const count = await this.prisma.sysDict.count({
-        where: { organizationId: user.tenantId, module },
-      })
-      if (!count) throw new BadRequestException('请先至少配置一条原因')
+      const first = await this.dicts()
+        .where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+          module: prisma8Varchar(module, 20),
+        })
+        .select('id')
+        .first()
+      if (!first) throw new BadRequestException('请先至少配置一条原因')
     }
-    const row = await this.prisma.sysDictConfig.upsert({
-      where: { module_organizationId: { module, organizationId: user.tenantId } },
-      update: { enabled: enable },
-      create: { module, organizationId: user.tenantId, enabled: enable },
-    })
+    const scope = {
+      module: prisma8Varchar(module, 20),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }
+    let row = await this.configs().where(scope).update({ enabled: enable })
+    if (!row) {
+      try {
+        row = await this.configs().create({ ...scope, enabled: enable })
+      } catch (error) {
+        if ((error as { sqlState?: string }).sqlState !== '23505') throw error
+        row = await this.configs().where(scope).update({ enabled: enable })
+      }
+    }
+    if (!row) throw new NotFoundException('原因配置不存在')
     return { module: row.module, enable: row.enabled }
   }
 
   async sort(user: AuthUser, dto: DictionarySortDto) {
     const dragged = await this.assertOwned(user.tenantId, dto.dragDictId)
-    return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.sysDict.findMany({
-        where: { organizationId: user.tenantId, module: dragged.module },
-        orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
+    return this.prisma8.client.transaction(async (tx) => {
+      const rows = await tx.orm.public.SysDict.where({
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        module: dragged.module,
       })
+        .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
+        .all()
       const from = rows.findIndex((row) => row.id === dragged.id)
       const to = Math.max(0, Math.min(rows.length - 1, dto.end - 1))
       if (from < 0) throw new NotFoundException('原因不存在')
@@ -151,12 +178,14 @@ export class DictionariesService {
       rows.splice(to, 0, item)
       const now = BigInt(Date.now())
       for (const [index, row] of rows.entries()) {
-        await tx.sysDict.update({
-          where: { id: row.id },
-          data: { pos: BigInt(index + 1), updateTime: now, updateUser: user.id },
+        const updated = await tx.orm.public.SysDict.where({ id: row.id }).update({
+          pos: BigInt(index + 1),
+          updateTime: now,
+          updateUser: prisma8Varchar(user.id, 32),
         })
+        if (!updated) throw new NotFoundException('原因不存在')
       }
-      return this.listAfterTransaction(tx, user.tenantId, dragged.module as DictionaryModule)
+      return this.listAfterTransaction(tx, user.tenantId, dragged.module)
     })
   }
 
@@ -165,9 +194,12 @@ export class DictionariesService {
     module: DictionaryModule,
     reasonId?: string | null,
   ) {
-    const config = await this.prisma.sysDictConfig.findUnique({
-      where: { module_organizationId: { module, organizationId } },
-    })
+    const config = await this.configs()
+      .where({
+        module: prisma8Varchar(module, 20),
+        organizationId: prisma8Varchar(organizationId, 32),
+      })
+      .first()
     if (!config?.enabled) return null
     const label =
       module === 'OPPORTUNITY_FAIL_RS'
@@ -176,46 +208,62 @@ export class DictionariesService {
           ? '移入客户公海原因'
           : '移入线索池原因'
     if (!reasonId || reasonId === 'system') throw new BadRequestException(`请选择${label}`)
-    const reason = await this.prisma.sysDict.findFirst({
-      where: { id: reasonId, organizationId, module },
-    })
+    const reason = await this.dicts()
+      .where({
+        id: prisma8Varchar(reasonId, 32),
+        organizationId: prisma8Varchar(organizationId, 32),
+        module: prisma8Varchar(module, 20),
+      })
+      .first()
     if (!reason) throw new BadRequestException(`${label}不存在或已删除`)
     return reason
   }
 
   async isEnabled(organizationId: string, module: DictionaryModule) {
-    const config = await this.prisma.sysDictConfig.findUnique({
-      where: { module_organizationId: { module, organizationId } },
-      select: { enabled: true },
-    })
+    const config = await this.configs()
+      .where({
+        module: prisma8Varchar(module, 20),
+        organizationId: prisma8Varchar(organizationId, 32),
+      })
+      .select('enabled')
+      .first()
     return config?.enabled ?? false
   }
 
   async reasonName(organizationId: string, reasonId: string | null) {
     if (!reasonId) return null
     if (reasonId === 'system') return '系统自动回收'
-    const row = await this.prisma.sysDict.findFirst({
-      where: { id: reasonId, organizationId },
-      select: { name: true },
-    })
+    const row = await this.dicts()
+      .where({
+        id: prisma8Varchar(reasonId, 32),
+        organizationId: prisma8Varchar(organizationId, 32),
+      })
+      .select('name')
+      .first()
     return row?.name ?? null
   }
 
   async reasonNames(organizationId: string, reasonIds: string[]) {
     const ids = [...new Set(reasonIds.filter((id) => id && id !== 'system'))]
     const rows = ids.length
-      ? await this.prisma.sysDict.findMany({
-          where: { organizationId, id: { in: ids } },
-          select: { id: true, name: true },
-        })
+      ? await this.dicts()
+          .where({ organizationId: prisma8Varchar(organizationId, 32) })
+          .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+          .select('id', 'name')
+          .all()
       : []
-    const map = new Map(rows.map((row) => [row.id, row.name]))
+    const map = new Map<string, string>(rows.map((row) => [row.id, row.name]))
     if (reasonIds.includes('system')) map.set('system', '系统自动回收')
     return map
   }
 
   private async assertOwned(organizationId: string, id: string) {
-    const row = await this.prisma.sysDict.findFirst({ where: { id, organizationId } })
+    const row = await this.dicts()
+      .where({
+        id: prisma8Varchar(id, 32),
+        organizationId: prisma8Varchar(organizationId, 32),
+      })
+      .first()
     if (!row) throw new NotFoundException('原因不存在')
     return row
   }
@@ -224,7 +272,8 @@ export class DictionariesService {
     id: string
     name: string
     module: string
-    type: string
+    type?: string
+    _type?: string
     pos: bigint
     organizationId: string
     createTime: bigint
@@ -232,37 +281,62 @@ export class DictionariesService {
     createUser: string
     updateUser: string
   }) {
-    return { ...row, pos: Number(row.pos), createTime: Number(row.createTime), updateTime: Number(row.updateTime) }
+    return {
+      id: row.id,
+      name: row.name,
+      module: row.module,
+      type: row._type ?? row.type ?? 'TEXT',
+      pos: Number(row.pos),
+      organizationId: row.organizationId,
+      createTime: Number(row.createTime),
+      updateTime: Number(row.updateTime),
+      createUser: row.createUser,
+      updateUser: row.updateUser,
+    }
   }
 
   private async normalizePositions(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     organizationId: string,
     module: string,
     userId: string,
   ) {
-    const rows = await tx.sysDict.findMany({
-      where: { organizationId, module },
-      orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
+    const rows = await tx.orm.public.SysDict.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+      module: prisma8Varchar(module, 20),
     })
+      .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
+      .all()
     const now = BigInt(Date.now())
     for (const [index, row] of rows.entries()) {
-      await tx.sysDict.update({
-        where: { id: row.id },
-        data: { pos: BigInt(index + 1), updateTime: now, updateUser: userId },
+      const updated = await tx.orm.public.SysDict.where({ id: row.id }).update({
+        pos: BigInt(index + 1),
+        updateTime: now,
+        updateUser: prisma8Varchar(userId, 32),
       })
+      if (!updated) throw new NotFoundException('原因不存在')
     }
   }
 
   private async listAfterTransaction(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     organizationId: string,
-    module: DictionaryModule,
+    module: string,
   ) {
-    const rows = await tx.sysDict.findMany({
-      where: { organizationId, module },
-      orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
+    const rows = await tx.orm.public.SysDict.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+      module: prisma8Varchar(module, 20),
     })
+      .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
+      .all()
     return rows.map((row) => this.toVO(row))
+  }
+
+  private dicts() {
+    return this.prisma8.client.orm.public.SysDict
+  }
+
+  private configs() {
+    return this.prisma8.client.orm.public.SysDictConfig
   }
 }

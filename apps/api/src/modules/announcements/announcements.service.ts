@@ -9,8 +9,13 @@ import { Cron } from '@nestjs/schedule'
 import type { AnnouncementVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { Announcement } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToDate,
+} from '../../prisma/prisma8-temporal.js'
+import { prisma8JsonValue } from '../../prisma/prisma8-values.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import type { QueryAnnouncementsDto, SaveAnnouncementDto } from './dto/announcement.dto'
 
@@ -23,12 +28,44 @@ interface ReceiverSnapshot {
   receiverUserIds: string[]
 }
 
+type Prisma8Timestamp = Parameters<typeof prisma8TimestampToDate>[0]
+type AnnouncementRow = {
+  id: string
+  tenantId: string
+  subject: string
+  content: string
+  startAt: Date | Prisma8Timestamp
+  endAt: Date | Prisma8Timestamp
+  url: string | null
+  linkName: string | null
+  departmentIds: unknown
+  userIds: unknown
+  receiverUserIds: unknown
+  notice: boolean
+  createUserId: string
+  updateUserId: string
+  createdAt: Date | Prisma8Timestamp
+  updatedAt: Date | Prisma8Timestamp
+}
+type PublishAnnouncement = {
+  id: string
+  tenantId: string
+  subject: string
+  content: string
+  url: string | null
+  linkName: string | null
+  receiverUserIds: unknown
+  notice: boolean
+  startAt: Date | Prisma8Timestamp
+  endAt: Date | Prisma8Timestamp
+}
+
 @Injectable()
 export class AnnouncementsService {
   private readonly logger = new Logger(AnnouncementsService.name)
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly notifications: NotificationsService,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
@@ -37,22 +74,21 @@ export class AnnouncementsService {
     const page = query.page || 1
     const pageSize = query.pageSize || 20
     const keyword = query.keyword?.trim()
-    const where = {
-      tenantId,
-      ...(keyword ? { subject: { contains: keyword, mode: 'insensitive' as const } } : {}),
+    const scoped = () => {
+      const base = this.announcements().where({ tenantId })
+      return keyword ? base.where((announcement) => announcement.subject.ilike(`%${keyword}%`)) : base
     }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.announcement.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.announcement.count({ where }),
+    const [items, aggregate] = await Promise.all([
+      scoped()
+        .orderBy((announcement) => announcement.createdAt.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      scoped().aggregate((aggregate) => ({ count: aggregate.count() })),
     ])
     return {
       items: await this.toVOs(tenantId, items),
-      total,
+      total: aggregate.count,
       page,
       pageSize,
     }
@@ -70,22 +106,21 @@ export class AnnouncementsService {
       normalized.departmentIds,
       normalized.userIds,
     )
-    const announcement = await this.prisma.announcement.create({
-      data: {
-        tenantId: user.tenantId,
-        subject: normalized.subject,
-        content: normalized.content,
-        startAt: normalized.startAt,
-        endAt: normalized.endAt,
-        url: normalized.url,
-        linkName: normalized.linkName,
-        departmentIds: receivers.departmentIds,
-        userIds: receivers.userIds,
-        receiverUserIds: receivers.receiverUserIds,
-        notice: false,
-        createUserId: user.id,
-        updateUserId: user.id,
-      },
+    const announcement = await this.announcements().create({
+      tenantId: user.tenantId,
+      subject: normalized.subject,
+      content: normalized.content,
+      startAt: prisma8TimestampFromDate(normalized.startAt),
+      endAt: prisma8TimestampFromDate(normalized.endAt),
+      url: normalized.url,
+      linkName: normalized.linkName,
+      departmentIds: prisma8JsonValue(receivers.departmentIds),
+      userIds: prisma8JsonValue(receivers.userIds),
+      receiverUserIds: prisma8JsonValue(receivers.receiverUserIds),
+      notice: false,
+      createUserId: user.id,
+      updateUserId: user.id,
+      updatedAt: prisma8Now(),
     })
     await this.publishIfDue(announcement, new Date())
     return this.detail(user.tenantId, announcement.id)
@@ -101,22 +136,21 @@ export class AnnouncementsService {
     )
 
     await this.notifications.removeBySource(user.tenantId, ANNOUNCEMENT_SOURCE, id)
-    const announcement = await this.prisma.announcement.update({
-      where: { id },
-      data: {
-        subject: normalized.subject,
-        content: normalized.content,
-        startAt: normalized.startAt,
-        endAt: normalized.endAt,
-        url: normalized.url,
-        linkName: normalized.linkName,
-        departmentIds: receivers.departmentIds,
-        userIds: receivers.userIds,
-        receiverUserIds: receivers.receiverUserIds,
-        notice: false,
-        updateUserId: user.id,
-      },
+    const announcement = await this.announcements().where({ id, tenantId: user.tenantId }).update({
+      subject: normalized.subject,
+      content: normalized.content,
+      startAt: prisma8TimestampFromDate(normalized.startAt),
+      endAt: prisma8TimestampFromDate(normalized.endAt),
+      url: normalized.url,
+      linkName: normalized.linkName,
+      departmentIds: prisma8JsonValue(receivers.departmentIds),
+      userIds: prisma8JsonValue(receivers.userIds),
+      receiverUserIds: prisma8JsonValue(receivers.receiverUserIds),
+      notice: false,
+      updateUserId: user.id,
+      updatedAt: prisma8Now(),
     })
+    if (!announcement) throw new NotFoundException('公告不存在')
     await this.publishIfDue(announcement, new Date())
     return this.detail(user.tenantId, id)
   }
@@ -124,7 +158,7 @@ export class AnnouncementsService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id)
     await this.notifications.removeBySource(tenantId, ANNOUNCEMENT_SOURCE, id)
-    await this.prisma.announcement.delete({ where: { id } })
+    await this.announcements().where({ id, tenantId }).delete()
     return { id }
   }
 
@@ -138,15 +172,13 @@ export class AnnouncementsService {
   }
 
   async publishDueAnnouncements(now = new Date()): Promise<number> {
-    const due = await this.prisma.announcement.findMany({
-      where: {
-        notice: false,
-        startAt: { lte: now },
-        endAt: { gte: now },
-      },
-      orderBy: { startAt: 'asc' },
-      take: PUBLISH_BATCH_SIZE,
-    })
+    const nowTemporal = prisma8TimestampFromDate(now)
+    const due = await this.prisma8.client.orm.public.Announcements.where({ notice: false })
+      .where((announcement) => announcement.startAt.lte(nowTemporal))
+      .where((announcement) => announcement.endAt.gte(nowTemporal))
+      .orderBy((announcement) => announcement.startAt.asc())
+      .limit(PUBLISH_BATCH_SIZE)
+      .all()
     let published = 0
     for (const announcement of due) {
       try {
@@ -158,8 +190,10 @@ export class AnnouncementsService {
     return published
   }
 
-  private async publishIfDue(announcement: Announcement, now: Date): Promise<boolean> {
-    if (announcement.notice || announcement.startAt > now || announcement.endAt < now) return false
+  private async publishIfDue(announcement: PublishAnnouncement, now: Date): Promise<boolean> {
+    const startAt = this.announcementTimeToDate(announcement.startAt)
+    const endAt = this.announcementTimeToDate(announcement.endAt)
+    if (announcement.notice || startAt > now || endAt < now) return false
     const receiverUserIds = this.jsonStringArray(announcement.receiverUserIds)
     if (receiverUserIds.length === 0) {
       this.logger.warn(`公告 ${announcement.id} 没有接收成员，跳过发布`)
@@ -180,10 +214,11 @@ export class AnnouncementsService {
           ...(announcement.linkName ? { linkLabel: announcement.linkName } : {}),
         },
       )
-      await this.prisma.announcement.updateMany({
-        where: { id: announcement.id, tenantId: announcement.tenantId, notice: false },
-        data: { notice: true },
-      })
+      await this.prisma8.client.orm.public.Announcements.where({
+        id: announcement.id,
+        tenantId: announcement.tenantId,
+        notice: false,
+      }).update({ notice: true, updatedAt: prisma8Now() })
       return true
     } catch (error) {
       // 允许下个调度周期完整重试，不留下半成品 source 通知。
@@ -236,10 +271,9 @@ export class AnnouncementsService {
       throw new BadRequestException('至少选择一个公告接收部门或成员')
     }
 
-    const departments = await this.prisma.department.findMany({
-      where: { tenantId },
-      select: { id: true, parentId: true },
-    })
+    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
     const departmentSet = new Set(departments.map((item) => item.id))
     const invalidDepartments = departmentIds.filter((id) => !departmentSet.has(id))
     if (invalidDepartments.length) throw new BadRequestException('公告接收范围包含无效或跨租户部门')
@@ -260,24 +294,20 @@ export class AnnouncementsService {
     departmentIds.forEach(visit)
 
     const explicitUsers = userIds.length
-      ? await this.prisma.user.findMany({
-          where: { tenantId, status: 'ACTIVE', id: { in: userIds } },
-          select: { id: true },
-        })
+      ? await this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+          .where((user) => user.id.in(userIds))
+          .select('id')
+          .all()
       : []
     if (explicitUsers.length !== userIds.length) {
       throw new BadRequestException('公告接收范围包含无效、已禁用或跨租户成员')
     }
 
     const departmentUsers = expandedDepartments.size
-      ? await this.prisma.user.findMany({
-          where: {
-            tenantId,
-            status: 'ACTIVE',
-            deptId: { in: [...expandedDepartments] },
-          },
-          select: { id: true },
-        })
+      ? await this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+          .where((user) => user.deptId.in([...expandedDepartments]))
+          .select('id')
+          .all()
       : []
     const receiverUserIds = [
       ...new Set([...explicitUsers, ...departmentUsers].map((item) => item.id)),
@@ -288,13 +318,16 @@ export class AnnouncementsService {
     return { departmentIds, userIds, receiverUserIds }
   }
 
-  private async findOne(tenantId: string, id: string): Promise<Announcement> {
-    const announcement = await this.prisma.announcement.findFirst({ where: { id, tenantId } })
+  private async findOne(tenantId: string, id: string): Promise<AnnouncementRow> {
+    const announcement = await this.announcements().where({ id, tenantId }).first()
     if (!announcement) throw new NotFoundException('公告不存在')
     return announcement
   }
 
-  private async toVOs(tenantId: string, announcements: Announcement[]): Promise<AnnouncementVO[]> {
+  private async toVOs(
+    tenantId: string,
+    announcements: readonly AnnouncementRow[],
+  ): Promise<AnnouncementVO[]> {
     if (announcements.length === 0) return []
     const departmentIds = new Set<string>()
     const userIds = new Set<string>()
@@ -306,16 +339,16 @@ export class AnnouncementsService {
     }
     const [departments, users] = await Promise.all([
       departmentIds.size
-        ? this.prisma.department.findMany({
-            where: { tenantId, id: { in: [...departmentIds] } },
-            select: { id: true, name: true },
-          })
+        ? this.prisma8.client.orm.public.Departments.where({ tenantId })
+            .where((department) => department.id.in([...departmentIds]))
+            .select('id', 'name')
+            .all()
         : [],
       userIds.size
-        ? this.prisma.user.findMany({
-            where: { tenantId, id: { in: [...userIds] } },
-            select: { id: true, name: true },
-          })
+        ? this.prisma8.client.orm.public.Users.where({ tenantId })
+            .where((user) => user.id.in([...userIds]))
+            .select('id', 'name')
+            .all()
         : [],
     ])
     const departmentNames = new Map(departments.map((item) => [item.id, item.name]))
@@ -327,8 +360,8 @@ export class AnnouncementsService {
         id: item.id,
         subject: item.subject,
         content: item.content,
-        startAt: item.startAt.toISOString(),
-        endAt: item.endAt.toISOString(),
+        startAt: this.announcementTimeToDate(item.startAt).toISOString(),
+        endAt: this.announcementTimeToDate(item.endAt).toISOString(),
         url: item.url,
         linkName: item.linkName,
         notice: item.notice,
@@ -343,8 +376,8 @@ export class AnnouncementsService {
         createUserName: userNames.get(item.createUserId) ?? null,
         updateUserId: item.updateUserId,
         updateUserName: userNames.get(item.updateUserId) ?? null,
-        createdAt: item.createdAt.toISOString(),
-        updatedAt: item.updatedAt.toISOString(),
+        createdAt: this.announcementTimeToDate(item.createdAt).toISOString(),
+        updatedAt: this.announcementTimeToDate(item.updatedAt).toISOString(),
       }
     })
   }
@@ -353,6 +386,10 @@ export class AnnouncementsService {
     return Array.isArray(value)
       ? value.filter((item): item is string => typeof item === 'string')
       : []
+  }
+
+  private announcementTimeToDate(value: Date | Prisma8Timestamp): Date {
+    return value instanceof Date ? value : prisma8TimestampToDate(value)
   }
 
   private uniqueNonEmpty(values: string[]): string[] {
@@ -370,5 +407,9 @@ export class AnnouncementsService {
 
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
+  }
+
+  private announcements() {
+    return this.prisma8.client.orm.public.Announcements
   }
 }

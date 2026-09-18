@@ -7,6 +7,15 @@
 
 # 功能对齐记录
 
+## 2026-09-18：PRISMA8-001 最终封板
+
+- Prisma 8 已成为唯一 production/runtime/migration owner：canonical contract 为 `apps/api/prisma/contract.prisma`，generated contract 位于 `apps/api/src/prisma/generated/`，正式 migration graph 位于 `apps/api/migrations/`；legacy Prisma Client、PostgreSQL adapter、`PrismaService` / module / adapter 与旧 generated client 已删除，旧执行标识全仓扫描归零。
+- 正式 storage contract hash 为 `651134f9ccfda014c4a27d235488e56b4640ad20fbf307fe0acaa0b8e39566de`；baseline `20260918T0338_baseline` 共 **672 operations**。独立 fresh PostgreSQL 从空库执行 baseline → bootstrap Seed → `db verify` → `migration status` 全绿，并确认 demo tenant/admin、3 roles、4 departments、2 plans，验证后临时数据库已删除。
+- 真库 fixture 已切换到 Prisma 8 ORM adapter；完整 API Rules 拆为 4 组执行，分别 **66/66、97/97、96/96、87/87 PASS**，合计 **346/346 PASS，0 fail，0 skip**。root typecheck **exit 0**，lint **exit 0 / 0 errors / 121 warnings**，production build **exit 0**。
+- Docker release smoke 已使用仓库原始 `docker/release-smoke.sh` **exit 0**。宿主最初受 Workbench Seatbelt / Docker socket 与 Buildx 用户目录写权限影响；在不修改项目正式脚本的前提下，通过 Host identity 和 workspace 可写 Buildx state 运行同一 smoke 逻辑，API/Migration/Web image、fresh PostgreSQL baseline/bootstrap、`db verify`、migration status、worker/API/Web runtime、管理员登录、Redis cache、重复初始化密码保护、PC/Mobile SPA fallback 与 `/api` proxy 全部 PASS。
+- Desktop Host Browser 在重启 Workbench-owned Host Worker 后恢复；代表性 Browser 回归真实覆盖 admin 登录、Dashboard、商机列表与高级筛选、客户 48 条列表与客户详情 Drawer/Customer 360、线索列表与关键词搜索。API 运行日志完整扫描未发现 `ERROR`、runtime exception、HTTP 500、Unhandled 或 Prisma runtime error。
+- P5.1～P5.7 全部完成，`PRISMA8-001` 正式切换为 **`VERIFIED`**。
+
 ## 2026-09-14：PRISMA8-001 迁移立项与 P0 启动
 
 - Prisma 8 迁移正式立项为独立基础设施单元 `PRISMA8-001`，先完成 `requirements / design / testing / tasks`，不把 package 版本升级等同于迁移完成。
@@ -43,7 +52,7 @@
 - 按 Cordys `MessageTemplateUtils / Translator / NotificationConstants`、双语 properties 与 `User.language` 收敛真实边界：消息模板继续使用代码/资源注册表，不新增租户 MessageTemplate 表或模板管理 UI；本轮只处理通知内容 locale，不扩张为整站 UI 国际化。
 - `users.language` 已进入唯一 `20260905084900_baseline`，默认 `zh-CN`，PC/Mobile 个人中心均支持 `zh-CN / en-US` 修改；`/auth/me` 与 PersonalCenterVO 同步返回当前偏好。业务通知按 Cordys 规则使用操作者 language 一次渲染，系统/Cron 无操作者时回退 `zh-CN`。
 - 新增双语 MessageTaskEvent 资源与 `MessageTemplateService`，支持 `${param}`、null、`*Time`、`*User`、locale fallback 与“事件名 + Notification/通知”标题；BusinessNotifications 统一负责 renderer，站内 Notification 与外部 MessageDelivery 复用同一 title/content。客户、线索、商机、联系人、池回收、跟进评论、报价/合同/回款到期、合同归档/作废以及 Quote/Contract/Order/Invoice 审批结果均已从手写中文正文迁移到事件模板上下文。
-- fresh-schema 验收额外发现 Prisma CLI 与 `@prisma/adapter-pg` 对 `DATABASE_URL?schema=` 的语义不一致：CLI 会使用目标 schema，Seed/API 之前仍落 public。现通过 `createPrismaPgAdapter()` 显式把 schema 传给 adapter options，migration / Seed / API 对同一连接串保持一致；未指定 schema 的默认部署不受影响。
+- fresh-schema 验收额外发现 Prisma CLI 与 `legacy PostgreSQL adapter package` 对 `DATABASE_URL?schema=` 的语义不一致：CLI 会使用目标 schema，Seed/API 之前仍落 public。现通过 `createPrismaPgAdapter()` 显式把 schema 传给 adapter options，migration / Seed / API 对同一连接串保持一致；未指定 schema 的默认部署不受影响。
 - 验收：MessageTemplate / BusinessNotifications / 到期 / 审批专项 **21/21 PASS**；完整 API Rules **238/238 PASS**；fresh baseline + Seed PASS，Prisma validate 与 database→schema diff=`No difference detected.`。PC/Mobile + 真实 API + headless Chrome CDP Browser **52/52 PASS**，覆盖 PC 中英双向语言偏好、真实 `CUSTOMER_ADD` 英文/中文 Notification、Mobile 双向保存，API 5xx=0、Runtime exception=0。
 - 工程门槛：root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prettier 与 `git diff --check` PASS。DB-008 正式更新为 **`VERIFIED`**；deferred backlog 现为 21 VERIFIED、DB-015 DISCOVERED、DB-023 DEFERRED，当前无正式 `IN_PROGRESS / PLANNED` 执行单元。
 

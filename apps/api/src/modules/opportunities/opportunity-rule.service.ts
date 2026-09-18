@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { Opportunity, OpportunityRule, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
-import { resolveScopeUserIds } from '../pool-rules/pool-repository.helpers'
+import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
 import type {
   OpportunityRuleAddDto,
   OpportunityRuleConditionDto,
@@ -12,52 +12,53 @@ import type {
 } from './dto/opportunity-rule.dto'
 
 type ScopeName = { id: string; name: string }
+type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type OpportunityMatchRow = { id: string; stage: string; createTime: bigint }
 
 @Injectable()
 export class OpportunityRuleService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
 
   async page(organizationId: string, dto: OpportunityRulePageDto) {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
-    const where: Prisma.OpportunityRuleWhereInput = {
-      organizationId,
-      ...(dto.keyword?.trim() ? { name: { contains: dto.keyword.trim(), mode: 'insensitive' } } : {}),
-    }
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.opportunityRule.findMany({
-        where,
-        orderBy: { createTime: 'desc' },
-        skip: (current - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.opportunityRule.count({ where }),
+    let query = this.prisma8.client.orm.public.OpportunityRule.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+    })
+    const keyword = dto.keyword?.trim()
+    if (keyword) query = query.where((rule) => rule.name.ilike(`%${keyword}%`))
+    const [rows, aggregate] = await Promise.all([
+      query
+        .orderBy((rule) => rule.createTime.desc())
+        .offset((current - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      query.aggregate((agg) => ({ count: agg.count() })),
     ])
     const list = await Promise.all(rows.map((row) => this.toVO(row)))
-    return { list, total, current, pageSize }
+    return { list, total: aggregate.count, current, pageSize }
   }
 
   async add(organizationId: string, actorId: string, dto: OpportunityRuleAddDto) {
     await this.assertPayload(organizationId, dto)
     const now = BigInt(Date.now())
-    return this.prisma.opportunityRule.create({
-      data: {
-        name: dto.name.trim(),
-        organizationId,
-        ownerId: JSON.stringify(dto.ownerIds),
-        scopeId: JSON.stringify(dto.scopeIds),
-        enable: dto.enable,
-        auto: dto.auto,
-        operator: dto.operator ?? 'AND',
-        condition: JSON.stringify(dto.auto ? (dto.conditions ?? []) : []),
-        createTime: now,
-        updateTime: now,
-        createUser: actorId,
-        updateUser: actorId,
-      },
+    return this.prisma8.client.orm.public.OpportunityRule.create({
+      id: prisma8Id32(),
+      name: prisma8Varchar(dto.name.trim(), 255),
+      organizationId: prisma8Varchar(organizationId, 32),
+      ownerId: JSON.stringify(dto.ownerIds),
+      scopeId: JSON.stringify(dto.scopeIds),
+      enable: dto.enable,
+      auto: dto.auto,
+      operator: prisma8Varchar(dto.operator ?? 'AND', 10),
+      condition: JSON.stringify(dto.auto ? (dto.conditions ?? []) : []),
+      createTime: now,
+      updateTime: now,
+      createUser: prisma8Varchar(actorId, 32),
+      updateUser: prisma8Varchar(actorId, 32),
     })
   }
 
@@ -73,32 +74,36 @@ export class OpportunityRuleService {
       conditions: dto.conditions ?? this.parseConditions(current.condition),
     }
     await this.assertPayload(organizationId, merged)
-    return this.prisma.opportunityRule.update({
-      where: { id: dto.id },
-      data: {
-        name: merged.name.trim(),
-        scopeId: JSON.stringify(merged.scopeIds),
-        ownerId: JSON.stringify(merged.ownerIds),
-        enable: merged.enable,
-        auto: merged.auto,
-        operator: merged.operator ?? 'AND',
-        condition: JSON.stringify(merged.auto ? (merged.conditions ?? []) : []),
-        updateTime: BigInt(Date.now()),
-        updateUser: actorId,
-      },
+    return this.prisma8.client.orm.public.OpportunityRule.where({
+      id: prisma8Varchar(dto.id, 32),
+    }).update({
+      name: prisma8Varchar(merged.name.trim(), 255),
+      scopeId: JSON.stringify(merged.scopeIds),
+      ownerId: JSON.stringify(merged.ownerIds),
+      enable: merged.enable,
+      auto: merged.auto,
+      operator: prisma8Varchar(merged.operator ?? 'AND', 10),
+      condition: JSON.stringify(merged.auto ? (merged.conditions ?? []) : []),
+      updateTime: BigInt(Date.now()),
+      updateUser: prisma8Varchar(actorId, 32),
     })
   }
 
   async remove(organizationId: string, id: string) {
     await this.ensureOwned(organizationId, id)
-    await this.prisma.opportunityRule.delete({ where: { id } })
+    await this.prisma8.client.orm.public.OpportunityRule.where({
+      id: prisma8Varchar(id, 32),
+    }).deleteAndCount()
   }
 
   async toggle(organizationId: string, actorId: string, id: string) {
     const row = await this.ensureOwned(organizationId, id)
-    await this.prisma.opportunityRule.update({
-      where: { id },
-      data: { enable: !row.enable, updateTime: BigInt(Date.now()), updateUser: actorId },
+    await this.prisma8.client.orm.public.OpportunityRule.where({
+      id: prisma8Varchar(id, 32),
+    }).update({
+      enable: !row.enable,
+      updateTime: BigInt(Date.now()),
+      updateUser: prisma8Varchar(actorId, 32),
     })
   }
 
@@ -112,28 +117,33 @@ export class OpportunityRuleService {
   }
 
   async executeAutoClose(now = new Date(), onlyRuleIds?: string[]) {
-    const rules = await this.prisma.opportunityRule.findMany({
-      where: {
-        enable: true,
-        auto: true,
-        ...(onlyRuleIds?.length ? { id: { in: onlyRuleIds } } : {}),
-      },
-      orderBy: { createTime: 'desc' },
+    const scopedRules = this.prisma8.client.orm.public.OpportunityRule.where({
+      enable: true,
+      auto: true,
     })
+    const rules = await (onlyRuleIds?.length
+      ? scopedRules.where((rule) => rule.id.in(prisma8Varchars(onlyRuleIds, 32)))
+      : scopedRules
+    )
+      .select('id', 'organizationId', 'scopeId', 'operator', 'condition', 'createTime')
+      .orderBy((rule) => rule.createTime.desc())
+      .all()
     if (!rules.length) return { rules: 0, affected: 0 }
 
-    const failStages = await this.prisma.opportunityStageConfig.findMany({
-      where: { type: 'END', rate: '0' },
-      orderBy: { pos: 'asc' },
-      select: { id: true, organizationId: true },
+    const failStages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+      _type: prisma8Varchar('END', 50),
+      rate: prisma8Varchar('0', 10),
     })
+      .select('id', 'organizationId')
+      .orderBy((stage) => stage.pos.asc())
+      .all()
     const failStageByOrg = new Map(failStages.map((row) => [row.organizationId, row.id]))
     const assignedOwners = new Set<string>()
     let affected = 0
 
     for (const rule of rules) {
-      const ownerIds = await this.prisma.$transaction((tx) =>
-        resolveScopeUserIds(tx, rule.organizationId, this.parseArray(rule.scopeId)),
+      const ownerIds = await this.prisma8.client.transaction((tx) =>
+        this.resolveScopeUserIdsPrisma8(tx, rule.organizationId, this.parseArray(rule.scopeId)),
       )
       const matchedOwners = [...ownerIds].filter((id) => !assignedOwners.has(id))
       matchedOwners.forEach((id) => assignedOwners.add(id))
@@ -141,19 +151,19 @@ export class OpportunityRuleService {
 
       const failStage = failStageByOrg.get(rule.organizationId)
       if (!failStage) continue
-      const opportunities = await this.prisma.opportunity.findMany({
-        where: { organizationId: rule.organizationId, owner: { in: matchedOwners } },
+      const opportunities = await this.prisma8.client.orm.public.Opportunity.where({
+        organizationId: rule.organizationId,
       })
+        .where((opportunity) => opportunity.owner.in(prisma8Varchars(matchedOwners, 32)))
+        .select('id', 'stage', 'createTime')
+        .all()
       const conditions = this.parseConditions(rule.condition)
       for (const opportunity of opportunities) {
         if (!this.matches(rule.operator, conditions, opportunity, now)) continue
-        await this.prisma.opportunity.update({
-          where: { id: opportunity.id },
-          data: {
-            lastStage: opportunity.stage,
-            stage: failStage,
-            failureReason: 'system',
-          },
+        await this.prisma8.client.orm.public.Opportunity.where({ id: opportunity.id }).update({
+          lastStage: opportunity.stage,
+          stage: failStage,
+          failureReason: prisma8Varchar('system', 50),
         })
         affected++
       }
@@ -161,8 +171,77 @@ export class OpportunityRuleService {
     return { rules: rules.length, affected }
   }
 
+  private async resolveScopeUserIdsPrisma8(
+    tx: Prisma8Transaction,
+    organizationId: string,
+    scopeIds: string[],
+  ): Promise<Set<string>> {
+    const users = await tx.orm.public.Users.where({ tenantId: organizationId, status: 'ACTIVE' })
+      .select('id', 'deptId')
+      .all()
+    if (scopeIds.includes('*')) return new Set(users.map((user) => user.id))
+
+    const departments = await tx.orm.public.Departments.where({ tenantId: organizationId })
+      .select('id', 'parentId')
+      .all()
+    const departmentIds = new Set(departments.map((department) => department.id))
+    const children = new Map<string, string[]>()
+    for (const department of departments) {
+      if (!department.parentId) continue
+      children.set(department.parentId, [...(children.get(department.parentId) ?? []), department.id])
+    }
+    const selectedDepartments = new Set(
+      scopeIds
+        .map((scopeId) => (scopeId.startsWith('dept:') ? scopeId.slice(5) : scopeId))
+        .filter((scopeId) => departmentIds.has(scopeId)),
+    )
+    const queue = [...selectedDepartments]
+    while (queue.length) {
+      const current = queue.shift()!
+      for (const child of children.get(current) ?? []) {
+        if (selectedDepartments.has(child)) continue
+        selectedDepartments.add(child)
+        queue.push(child)
+      }
+    }
+
+    const explicitUsers = new Set(
+      scopeIds.map((scopeId) => (scopeId.startsWith('user:') ? scopeId.slice(5) : scopeId)),
+    )
+    const roles = await tx.orm.public.Roles.where({ tenantId: organizationId }).select('id').all()
+    const roleIds = new Set(roles.map((role) => role.id))
+    const selectedRoles = new Set(
+      scopeIds
+        .map((scopeId) => (scopeId.startsWith('role:') ? scopeId.slice(5) : scopeId))
+        .filter((scopeId) => roleIds.has(scopeId)),
+    )
+    const userRoles = await tx.orm.public.UserRoles.where({ tenantId: organizationId })
+      .select('userId', 'roleId')
+      .all()
+    const rolesByUser = new Map<string, Set<string>>()
+    for (const userRole of userRoles) {
+      const assigned = rolesByUser.get(userRole.userId) ?? new Set<string>()
+      assigned.add(userRole.roleId)
+      rolesByUser.set(userRole.userId, assigned)
+    }
+
+    return new Set(
+      users
+        .filter(
+          (user) =>
+            explicitUsers.has(user.id) ||
+            (!!user.deptId && selectedDepartments.has(user.deptId)) ||
+            [...(rolesByUser.get(user.id) ?? [])].some((roleId) => selectedRoles.has(roleId)),
+        )
+        .map((user) => user.id),
+    )
+  }
+
   private async ensureOwned(organizationId: string, id: string) {
-    const row = await this.prisma.opportunityRule.findFirst({ where: { id, organizationId } })
+    const row = await this.prisma8.client.orm.public.OpportunityRule.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(organizationId, 32),
+    }).first()
     if (!row) throw new NotFoundException('商机关闭规则不存在')
     return row
   }
@@ -178,10 +257,13 @@ export class OpportunityRuleService {
         .flatMap((condition) => condition.value.split(',').map((value) => value.trim()).filter(Boolean)),
     )
     if (stageIds.size) {
-      const count = await this.prisma.opportunityStageConfig.count({
-        where: { organizationId, id: { in: [...stageIds] } },
+      const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+        organizationId: prisma8Varchar(organizationId, 32),
       })
-      if (count !== stageIds.size) throw new BadRequestException('关闭规则包含无效商机阶段')
+        .where((stage) => stage.id.in(prisma8Varchars([...stageIds], 32)))
+        .select('id')
+        .all()
+      if (rows.length !== stageIds.size) throw new BadRequestException('关闭规则包含无效商机阶段')
     }
     for (const condition of conditions) this.assertCondition(condition)
   }
@@ -208,7 +290,7 @@ export class OpportunityRuleService {
   private matches(
     operator: string | null,
     conditions: OpportunityRuleConditionDto[],
-    opportunity: Opportunity,
+    opportunity: OpportunityMatchRow,
     now: Date,
   ) {
     if (!conditions.length) return false
@@ -295,14 +377,14 @@ export class OpportunityRuleService {
     }
   }
 
-  private async toVO(row: OpportunityRule) {
+  private async toVO(row: Awaited<ReturnType<OpportunityRuleService['ensureOwned']>>) {
     const [members, owners, users] = await Promise.all([
       this.scopeNames(row.organizationId, this.parseArray(row.scopeId)),
       this.scopeNames(row.organizationId, this.parseArray(row.ownerId)),
-      this.prisma.user.findMany({
-        where: { tenantId: row.organizationId, id: { in: [row.createUser, row.updateUser] } },
-        select: { id: true, name: true },
-      }),
+      this.prisma8.client.orm.public.Users.where({ tenantId: row.organizationId })
+        .where((user) => user.id.in([row.createUser, row.updateUser]))
+        .select('id', 'name')
+        .all(),
     ])
     const userMap = new Map(users.map((user) => [user.id, user.name]))
     return {
@@ -320,9 +402,18 @@ export class OpportunityRuleService {
     if (ids.includes('*')) return [{ id: '*', name: '全部' }]
     const normalized = ids.map((id) => id.replace(/^(user|dept|role):/, ''))
     const [users, departments, roles] = await Promise.all([
-      this.prisma.user.findMany({ where: { tenantId: organizationId, id: { in: normalized } }, select: { id: true, name: true } }),
-      this.prisma.department.findMany({ where: { tenantId: organizationId, id: { in: normalized } }, select: { id: true, name: true } }),
-      this.prisma.role.findMany({ where: { tenantId: organizationId, id: { in: normalized } }, select: { id: true, name: true } }),
+      this.prisma8.client.orm.public.Users.where({ tenantId: organizationId })
+        .where((user) => user.id.in(normalized))
+        .select('id', 'name')
+        .all(),
+      this.prisma8.client.orm.public.Departments.where({ tenantId: organizationId })
+        .where((department) => department.id.in(normalized))
+        .select('id', 'name')
+        .all(),
+      this.prisma8.client.orm.public.Roles.where({ tenantId: organizationId })
+        .where((role) => role.id.in(normalized))
+        .select('id', 'name')
+        .all(),
     ])
     const names = new Map<string, string>([
       ...users.map((item) => [item.id, item.name] as const),

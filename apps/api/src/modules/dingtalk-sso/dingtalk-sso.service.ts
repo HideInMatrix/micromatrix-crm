@@ -15,15 +15,15 @@ import type {
   LoginResult,
 } from '@micromatrix/shared'
 import { createHash, randomBytes } from 'node:crypto'
+import { or } from '@prisma/orm-postgres/orm-client'
 import { AuthService, type LoginContext } from '../../auth/auth.service'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
-import type {
-  ExternalIdentity,
-  ExternalOAuthFlow,
-  ExternalUserMapping,
-  User,
-} from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToDate,
+} from '../../prisma/prisma8-temporal'
 import {
   DingTalkClient,
   type DingTalkOAuthLoginIdentity,
@@ -38,12 +38,43 @@ const QR_STATE_PREFIX = 'qr-dingtalk'
 const WORKBENCH_STATE_PREFIX = 'dingtalk'
 const STATE_TTL_MS = 10 * 60 * 1_000
 
-type MappingWithUser = ExternalUserMapping & { user: User }
+type ExternalOAuthFlow = typeof QR_FLOW | typeof WORKBENCH_FLOW
+type UserRow = {
+  id: string
+  tenantId: string
+  email: string | null
+  name: string
+  status: 'ACTIVE' | 'DISABLED'
+  passwordLoginEnabled: boolean
+  phone: string | null
+  gender: boolean
+}
+type MappingRow = {
+  id: string
+  tenantId: string
+  externalId: string
+  externalKey: string
+  userId: string
+  active: boolean
+}
+type IdentityRow = {
+  id: string
+  tenantId: string
+  integrationId: string
+  mappingId: string
+  externalSubject: string
+  userId: string
+  status: NonNullable<ExternalIdentityVO['status']>
+  boundAt: Parameters<typeof prisma8TimestampToDate>[0]
+  revokedAt: Parameters<typeof prisma8TimestampToDate>[0] | null
+  lastLoginAt: Parameters<typeof prisma8TimestampToDate>[0] | null
+}
+type MappingWithUser = MappingRow & { user: UserRow }
 
 @Injectable()
 export class DingTalkSsoService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly config: ConfigService,
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly dingTalkClient: DingTalkClient,
@@ -53,9 +84,10 @@ export class DingTalkSsoService {
 
   async discovery(tenantSlug?: string): Promise<DingTalkLoginDiscoveryVO> {
     const tenant = await this.resolveLoginTenant(tenantSlug)
-    const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId: tenant.id, provider: PROVIDER } },
-    })
+    const integration = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      tenantId: tenant.id,
+      provider: PROVIDER,
+    }).first()
     const activePlatform = await this.integrations.getActivePlatform(tenant.id)
     const reason =
       tenant.status !== 'ACTIVE'
@@ -128,12 +160,8 @@ export class DingTalkSsoService {
   async getIdentity(tenantId: string, userId: string): Promise<ExternalIdentityVO> {
     await this.requireUser(tenantId, userId)
     const [mapping, identity] = await Promise.all([
-      this.prisma.externalUserMapping.findUnique({
-        where: { tenantId_provider_userId: { tenantId, provider: PROVIDER, userId } },
-      }),
-      this.prisma.externalIdentity.findUnique({
-        where: { tenantId_provider_userId: { tenantId, provider: PROVIDER, userId } },
-      }),
+      this.prisma8.client.orm.public.ExternalUserMappings.where({ tenantId, provider: PROVIDER, userId }).first(),
+      this.prisma8.client.orm.public.ExternalIdentities.where({ tenantId, provider: PROVIDER, userId }).first(),
     ])
     return this.identityVO(mapping, identity)
   }
@@ -144,59 +172,59 @@ export class DingTalkSsoService {
     operatorId: string,
   ): Promise<ExternalIdentityVO> {
     await this.requireUser(tenantId, userId)
-    const mapping = await this.prisma.externalUserMapping.findUnique({
-      where: { tenantId_provider_userId: { tenantId, provider: PROVIDER, userId } },
-    })
+    const mapping = await this.prisma8.client.orm.public.ExternalUserMappings.where({
+      tenantId,
+      provider: PROVIDER,
+      userId,
+    }).first()
     if (!mapping?.active) throw new BadRequestException('该成员没有有效的钉钉同步映射')
-    const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId, provider: PROVIDER } },
-    })
+    const integration = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      tenantId,
+      provider: PROVIDER,
+    }).first()
     if (!integration) throw new BadRequestException('请先配置钉钉')
 
-    const subjectOwner = await this.prisma.externalIdentity.findUnique({
-      where: {
-        tenantId_provider_externalSubject: {
-          tenantId,
-          provider: PROVIDER,
-          externalSubject: mapping.externalId,
-        },
-      },
-    })
+    const subjectOwner = await this.prisma8.client.orm.public.ExternalIdentities.where({
+      tenantId,
+      provider: PROVIDER,
+      externalSubject: mapping.externalId,
+    }).first()
     if (subjectOwner && subjectOwner.userId !== userId) {
       throw new ConflictException('该钉钉身份已绑定其他成员')
     }
-    const userIdentity = await this.prisma.externalIdentity.findUnique({
-      where: { tenantId_provider_userId: { tenantId, provider: PROVIDER, userId } },
-    })
+    const userIdentity = await this.prisma8.client.orm.public.ExternalIdentities.where({
+      tenantId,
+      provider: PROVIDER,
+      userId,
+    }).first()
     if (userIdentity && userIdentity.externalSubject !== mapping.externalId) {
       throw new ConflictException('该成员已绑定其他钉钉身份')
     }
+    const now = prisma8Now()
     const identity = userIdentity
-      ? await this.prisma.externalIdentity.update({
-          where: { id: userIdentity.id },
-          data: {
-            mappingId: mapping.id,
-            integrationId: integration.id,
-            status: 'ACTIVE',
-            bindingSource: 'ADMIN',
-            boundById: operatorId,
-            boundAt: new Date(),
-            revokedById: null,
-            revokedAt: null,
-          },
+      ? await this.prisma8.client.orm.public.ExternalIdentities.where({ id: userIdentity.id }).update({
+          mappingId: mapping.id,
+          integrationId: integration.id,
+          status: 'ACTIVE',
+          bindingSource: 'ADMIN',
+          boundById: operatorId,
+          boundAt: now,
+          revokedById: null,
+          revokedAt: null,
+          updatedAt: now,
         })
-      : await this.prisma.externalIdentity.create({
-          data: {
-            tenantId,
-            integrationId: integration.id,
-            mappingId: mapping.id,
-            provider: PROVIDER,
-            externalSubject: mapping.externalId,
-            userId,
-            bindingSource: 'ADMIN',
-            boundById: operatorId,
-          },
+      : await this.prisma8.client.orm.public.ExternalIdentities.create({
+          tenantId,
+          integrationId: integration.id,
+          mappingId: mapping.id,
+          provider: PROVIDER,
+          externalSubject: mapping.externalId,
+          userId,
+          bindingSource: 'ADMIN',
+          boundById: operatorId,
+          updatedAt: now,
         })
+    if (!identity) throw new NotFoundException('钉钉身份不存在')
     return this.identityVO(mapping, identity)
   }
 
@@ -206,31 +234,30 @@ export class DingTalkSsoService {
     operatorId: string,
   ): Promise<ExternalIdentityVO> {
     const user = await this.requireUser(tenantId, userId)
-    const otherActiveIdentity = await this.prisma.externalIdentity.findFirst({
-      where: {
-        tenantId,
-        userId,
-        provider: { not: PROVIDER },
-        status: 'ACTIVE',
-      },
-      select: { id: true },
+    const otherActiveIdentity = await this.prisma8.client.orm.public.ExternalIdentities.where({
+      tenantId,
+      userId,
+      status: 'ACTIVE',
     })
+      .where((identity) => identity.provider.neq(PROVIDER))
+      .select('id')
+      .first()
     if (!user.passwordLoginEnabled && !otherActiveIdentity) {
       throw new BadRequestException('该成员未启用密码登录，不能移除最后一个登录方式')
     }
     const [mapping, identity] = await Promise.all([
-      this.prisma.externalUserMapping.findUnique({
-        where: { tenantId_provider_userId: { tenantId, provider: PROVIDER, userId } },
-      }),
-      this.prisma.externalIdentity.findUnique({
-        where: { tenantId_provider_userId: { tenantId, provider: PROVIDER, userId } },
-      }),
+      this.prisma8.client.orm.public.ExternalUserMappings.where({ tenantId, provider: PROVIDER, userId }).first(),
+      this.prisma8.client.orm.public.ExternalIdentities.where({ tenantId, provider: PROVIDER, userId }).first(),
     ])
     if (!identity) return this.identityVO(mapping, null)
-    const revoked = await this.prisma.externalIdentity.update({
-      where: { id: identity.id },
-      data: { status: 'REVOKED', revokedById: operatorId, revokedAt: new Date() },
+    const now = prisma8Now()
+    const revoked = await this.prisma8.client.orm.public.ExternalIdentities.where({ id: identity.id }).update({
+      status: 'REVOKED',
+      revokedById: operatorId,
+      revokedAt: now,
+      updatedAt: now,
     })
+    if (!revoked) throw new NotFoundException('钉钉身份不存在')
     return this.identityVO(mapping, revoked)
   }
 
@@ -242,9 +269,8 @@ export class DingTalkSsoService {
   ) {
     const discovery = await this.discovery(input.tenantSlug)
     if (!discovery.available) throw new BadRequestException(discovery.reason ?? '钉钉登录不可用')
-    const tenant = await this.prisma.tenant.findUniqueOrThrow({
-      where: { slug: discovery.tenantSlug },
-    })
+    const tenant = await this.prisma8.client.orm.public.Tenants.where({ slug: discovery.tenantSlug }).first()
+    if (!tenant) throw new NotFoundException('企业标识不存在')
     const context = await this.integrations.getDingTalkRuntimeContext(tenant.id)
     if (!context.integration.syncEnabled) throw new BadRequestException('钉钉统一登录尚未开启')
     const state = `${statePrefix}.${randomBytes(32).toString('base64url')}`
@@ -252,22 +278,21 @@ export class DingTalkSsoService {
     const expiresAt = new Date(Date.now() + STATE_TTL_MS)
     const returnPath = this.safeReturnPath(input.returnPath)
 
-    await this.prisma.$transaction([
-      this.prisma.externalOAuthState.deleteMany({
-        where: { OR: [{ expiresAt: { lt: new Date() } }, { consumedAt: { not: null } }] },
-      }),
-      this.prisma.externalOAuthState.create({
-        data: {
-          tenantId: tenant.id,
-          integrationId: context.integration.id,
-          flow,
-          stateHash: this.hash(state),
-          browserNonceHash: this.hash(browserNonce),
-          returnPath,
-          expiresAt,
-        },
-      }),
-    ])
+    await this.prisma8.client.transaction(async (tx) => {
+      const now = prisma8Now()
+      await tx.orm.public.ExternalOauthStates.where((row) =>
+        or(row.expiresAt.lt(now), row.consumedAt.isNotNull()),
+      ).deleteAndCount()
+      await tx.orm.public.ExternalOauthStates.create({
+        tenantId: tenant.id,
+        integrationId: context.integration.id,
+        flow,
+        stateHash: this.hash(state),
+        browserNonceHash: this.hash(browserNonce),
+        returnPath,
+        expiresAt: prisma8TimestampFromDate(expiresAt),
+      })
+    })
 
     const redirectUri = this.callbackUrl(requestOrigin)
     return {
@@ -326,7 +351,7 @@ export class DingTalkSsoService {
     const state = await this.consumeState(input.state, browserNonce, context, flow, statePrefix)
     let externalSubject: string | undefined
     let mapping: MappingWithUser | null = null
-    let identity: ExternalIdentity | null = null
+    let identity: IdentityRow | null = null
     const authType = flow === WORKBENCH_FLOW ? 'DINGTALK_OAUTH2' : 'DINGTALK'
     try {
       const runtime = await this.integrations.getDingTalkRuntimeContext(state.tenantId)
@@ -338,17 +363,18 @@ export class DingTalkSsoService {
         input.code,
       )
       externalSubject = profile.userId
-      mapping = await this.prisma.externalUserMapping.findUnique({
-        where: {
-          tenantId_provider_externalKey: {
-            tenantId: state.tenantId,
-            provider: PROVIDER,
-            externalKey: profile.externalKey,
-          },
-        },
-        include: { user: true },
-      })
-      if (!mapping?.active) throw new UnauthorizedException('钉钉成员未同步或映射已失效')
+      const mapped = await this.prisma8.client.orm.public.ExternalUserMappings.where({
+        tenantId: state.tenantId,
+        provider: PROVIDER,
+        externalKey: profile.externalKey,
+      }).first()
+      if (!mapped?.active) throw new UnauthorizedException('钉钉成员未同步或映射已失效')
+      const mappedUser = await this.prisma8.client.orm.public.Users.where({
+        id: mapped.userId,
+        tenantId: state.tenantId,
+      }).first()
+      if (!mappedUser) throw new UnauthorizedException('钉钉成员未同步或映射已失效')
+      mapping = { ...mapped, user: mappedUser }
       if (mapping.user.status !== 'ACTIVE') throw new ForbiddenException('账号已被禁用')
 
       await this.updateProfile(mapping.user, profile)
@@ -365,9 +391,10 @@ export class DingTalkSsoService {
         },
         context,
       )
-      await this.prisma.externalIdentity.update({
-        where: { id: identity.id },
-        data: { lastLoginAt: new Date() },
+      const lastLoginAt = prisma8Now()
+      await this.prisma8.client.orm.public.ExternalIdentities.where({ id: identity.id }).update({
+        lastLoginAt,
+        updatedAt: lastLoginAt,
       })
       return { ...result, returnPath: state.returnPath }
     } catch (error) {
@@ -398,23 +425,21 @@ export class DingTalkSsoService {
     if (!state.startsWith(`${statePrefix}.`)) {
       throw new UnauthorizedException('钉钉登录状态无效或已过期')
     }
-    const result = await this.prisma.$transaction(async (tx) => {
-      const found = await tx.externalOAuthState.findUnique({
-        where: { stateHash: this.hash(state) },
-      })
+    const result = await this.prisma8.client.transaction(async (tx) => {
+      const found = await tx.orm.public.ExternalOauthStates.where({ stateHash: this.hash(state) }).first()
       if (!found) return null
-      const consumed = await tx.externalOAuthState.updateMany({
-        where: { id: found.id, consumedAt: null },
-        data: { consumedAt: new Date() },
-      })
-      return { row: found, consumed: consumed.count === 1 }
+      const consumed = await tx.orm.public.ExternalOauthStates.where({
+        id: found.id,
+        consumedAt: null,
+      }).updateAndCount({ consumedAt: prisma8Now() })
+      return { row: found, consumed: consumed === 1 }
     })
     const row = result?.row
     if (
       !row ||
       !result.consumed ||
       row.flow !== flow ||
-      row.expiresAt.getTime() < Date.now() ||
+      prisma8TimestampToDate(row.expiresAt).getTime() < Date.now() ||
       !browserNonce ||
       row.browserNonceHash !== this.hash(browserNonce)
     ) {
@@ -430,67 +455,66 @@ export class DingTalkSsoService {
     return row
   }
 
-  private async updateProfile(user: User, profile: DingTalkOAuthLoginIdentity): Promise<void> {
+  private async updateProfile(user: UserRow, profile: DingTalkOAuthLoginIdentity): Promise<void> {
     const data: { email?: string; phone?: string; gender?: boolean } = {}
     if (profile.phone) data.phone = profile.phone
     if (profile.gender !== null) data.gender = profile.gender
     if (profile.email && !user.email) {
-      const owner = await this.prisma.user.findFirst({ where: { email: profile.email } })
+      const owner = await this.prisma8.client.orm.public.Users.where({ email: profile.email }).select('id').first()
       if (!owner || owner.id === user.id) data.email = profile.email
     }
     if (Object.keys(data).length > 0) {
-      await this.prisma.user.update({ where: { id: user.id }, data })
+      await this.prisma8.client.orm.public.Users.where({ id: user.id }).update({
+        ...data,
+        updatedAt: prisma8Now(),
+      })
       await this.authCache?.invalidate(user.id)
     }
     if (profile.avatarUrl) {
-      await this.prisma.userExtension.upsert({
-        where: { id: user.id },
-        create: { id: user.id, avatar: profile.avatarUrl },
-        update: { avatar: profile.avatarUrl },
-      })
+      const extension = await this.prisma8.client.orm.public.UserExtensions.where({ id: user.id })
+        .select('id')
+        .first()
+      if (extension) {
+        await this.prisma8.client.orm.public.UserExtensions.where({ id: user.id }).update({
+          avatar: profile.avatarUrl,
+        })
+      } else {
+        await this.prisma8.client.orm.public.UserExtensions.create({ id: user.id, avatar: profile.avatarUrl })
+      }
     }
   }
 
   private async ensureLoginIdentity(
     integrationId: string,
-    mapping: ExternalUserMapping,
+    mapping: MappingRow,
     externalSubject: string,
-  ): Promise<ExternalIdentity> {
-    const existing = await this.prisma.externalIdentity.findUnique({
-      where: {
-        tenantId_provider_externalSubject: {
-          tenantId: mapping.tenantId,
-          provider: PROVIDER,
-          externalSubject,
-        },
-      },
-    })
+  ): Promise<IdentityRow> {
+    const existing = await this.prisma8.client.orm.public.ExternalIdentities.where({
+      tenantId: mapping.tenantId,
+      provider: PROVIDER,
+      externalSubject,
+    }).first()
     if (existing) {
       if (existing.userId !== mapping.userId || existing.mappingId !== mapping.id) {
         throw new ConflictException('钉钉身份绑定冲突')
       }
       return existing
     }
-    const byUser = await this.prisma.externalIdentity.findUnique({
-      where: {
-        tenantId_provider_userId: {
-          tenantId: mapping.tenantId,
-          provider: PROVIDER,
-          userId: mapping.userId,
-        },
-      },
-    })
+    const byUser = await this.prisma8.client.orm.public.ExternalIdentities.where({
+      tenantId: mapping.tenantId,
+      provider: PROVIDER,
+      userId: mapping.userId,
+    }).first()
     if (byUser) throw new ConflictException('本地成员已绑定其他钉钉身份')
-    return this.prisma.externalIdentity.create({
-      data: {
-        tenantId: mapping.tenantId,
-        integrationId,
-        mappingId: mapping.id,
-        provider: PROVIDER,
-        externalSubject,
-        userId: mapping.userId,
-        bindingSource: 'LOGIN',
-      },
+    return this.prisma8.client.orm.public.ExternalIdentities.create({
+      tenantId: mapping.tenantId,
+      integrationId,
+      mappingId: mapping.id,
+      provider: PROVIDER,
+      externalSubject,
+      userId: mapping.userId,
+      bindingSource: 'LOGIN',
+      updatedAt: prisma8Now(),
     })
   }
 
@@ -498,44 +522,51 @@ export class DingTalkSsoService {
     const configuredDefault = this.config.get<string>('DINGTALK_DEFAULT_TENANT_SLUG')?.trim()
     const requestedSlug = tenantSlug?.trim() || configuredDefault
     if (requestedSlug) {
-      const tenant = await this.prisma.tenant.findUnique({ where: { slug: requestedSlug } })
+      const tenant = await this.prisma8.client.orm.public.Tenants.where({ slug: requestedSlug }).first()
       if (!tenant) throw new NotFoundException('企业标识不存在')
       return tenant
     }
-    const tenants = await this.prisma.tenant.findMany({
-      where: {
-        status: 'ACTIVE',
-        enterpriseIntegrations: {
-          some: { provider: PROVIDER, lastTestSucceeded: true, syncEnabled: true },
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 2,
+    const integrations = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      provider: PROVIDER,
+      lastTestSucceeded: true,
+      syncEnabled: true,
     })
+      .select('tenantId')
+      .all()
+    const tenantIds = [...new Set(integrations.map((integration) => integration.tenantId))]
+    const tenants = tenantIds.length
+      ? await this.prisma8.client.orm.public.Tenants.where({ status: 'ACTIVE' })
+          .where((tenant) => tenant.id.in(tenantIds))
+          .orderBy((tenant) => tenant.createdAt.asc())
+          .limit(2)
+          .all()
+      : []
     if (tenants.length === 0) throw new NotFoundException('钉钉统一登录尚未配置')
     if (tenants.length > 1)
       throw new BadRequestException('存在多个可用企业，请使用企业专属登录地址')
     return tenants[0]!
   }
 
-  private requireUser(tenantId: string, userId: string) {
-    return this.prisma.user
-      .findFirst({ where: { id: userId, tenantId } })
-      .then((user) => user ?? Promise.reject(new NotFoundException('成员不存在')))
+  private async requireUser(tenantId: string, userId: string): Promise<UserRow> {
+    const user = await this.prisma8.client.orm.public.Users.where({ id: userId, tenantId }).first()
+    if (!user) throw new NotFoundException('成员不存在')
+    return user
   }
 
   private identityVO(
-    mapping: ExternalUserMapping | null,
-    identity: ExternalIdentity | null,
+    mapping: MappingRow | null,
+    identity: IdentityRow | null,
   ): ExternalIdentityVO {
     return {
       provider: PROVIDER,
       mapped: Boolean(mapping?.active),
       externalSubject: identity?.externalSubject ?? mapping?.externalId ?? null,
       status: identity?.status ?? null,
-      boundAt: identity?.boundAt.toISOString() ?? null,
-      revokedAt: identity?.revokedAt?.toISOString() ?? null,
-      lastLoginAt: identity?.lastLoginAt?.toISOString() ?? null,
+      boundAt: identity ? prisma8TimestampToDate(identity.boundAt).toISOString() : null,
+      revokedAt: identity?.revokedAt ? prisma8TimestampToDate(identity.revokedAt).toISOString() : null,
+      lastLoginAt: identity?.lastLoginAt
+        ? prisma8TimestampToDate(identity.lastLoginAt).toISOString()
+        : null,
     }
   }
 

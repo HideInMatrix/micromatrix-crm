@@ -10,8 +10,11 @@ import type { AuthUser } from '../../common/auth-user'
 import { generateBizCode } from '../../common/code-gen'
 import { formatForExport } from '../../common/export-format'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { not, or } from '@prisma/orm-postgres/orm-client'
+import type { Prisma8Client } from '../../prisma/prisma8-client'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import {
   ExportTasksService,
@@ -43,6 +46,7 @@ import { OrderStageService } from './order-stage.service'
 const FORM_KEY = 'order'
 const READ_PERMISSION = 'ORDER:READ'
 const MAX_AMOUNT = 9_999_999_999
+type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
 const ORDER_SUB_KEYS = [
   'orderProduct',
   'orderProductPrice',
@@ -59,17 +63,34 @@ interface OrderImportGroup {
   errors: string[]
 }
 
-const orderInclude = {
-  customer: { select: { name: true } },
-  contract: { select: { name: true } },
-} as const
+type OrderRow = {
+  id: string
+  number: string
+  name: string
+  customerId: string | null
+  contractId: string | null
+  owner: string | null
+  amount: unknown
+  stage: string
+  approvalStatus: string
+  organizationId: string
+  pos: bigint | null
+  approved: boolean
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
+}
 
-type OrderWithRefs = Prisma.OrderGetPayload<{ include: typeof orderInclude }>
+type OrderWithRefs = OrderRow & {
+  customer: { name: string } | null
+  contract: { name: string } | null
+}
 
 @Injectable()
 export class OrdersService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly dataScope: DataScopeService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
@@ -102,41 +123,60 @@ export class OrdersService {
         : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
+    let query = this.prisma8.client.orm.public.SalesOrder.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    })
     const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
-    const where: Prisma.OrderWhereInput = {
-      organizationId: user.tenantId,
-      AND: [scope as Prisma.OrderWhereInput],
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(dto.stage ? { stage: dto.stage } : {}),
-      ...(dto.customerId ? { customerId: dto.customerId } : {}),
-      ...(dto.contractId ? { contractId: dto.contractId } : {}),
-      ...(dto.keyword
-        ? {
-            OR: [
-              { name: { contains: dto.keyword, mode: 'insensitive' } },
-              { number: { contains: dto.keyword, mode: 'insensitive' } },
-              { customer: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-              { contract: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+    const ownerScope = scope.owner
+    if (ownerScope) {
+      query = typeof ownerScope === 'string'
+        ? query.where({ owner: prisma8Varchar(ownerScope, 32) })
+        : query.where((row) => row.owner.in(prisma8Varchars(ownerScope.in, 32)))
+    }
+    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
+    if (dto.stage) query = query.where({ stage: prisma8Varchar(dto.stage, 50) })
+    if (dto.customerId) query = query.where({ customerId: prisma8Varchar(dto.customerId, 32) })
+    if (dto.contractId) query = query.where({ contractId: prisma8Varchar(dto.contractId, 32) })
+    if (dto.keyword) {
+      const [customers, contracts] = await Promise.all([
+        this.prisma8.client.orm.public.Customer.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.name.ilike(`%${dto.keyword}%`))
+          .select('id')
+          .all(),
+        this.prisma8.client.orm.public.Contract.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.name.ilike(`%${dto.keyword}%`))
+          .select('id')
+          .all(),
+      ])
+      query = query.where((row) =>
+        or(
+          row.name.ilike(`%${dto.keyword}%`),
+          row.number.ilike(`%${dto.keyword}%`),
+          row.customerId.in(customers.map((item) => item.id)),
+          row.contractId.in(contracts.map((item) => item.id)),
+        ),
+      )
     }
     const take = dto.board ? 500 : pageSize
     const skip = dto.board ? 0 : (current - 1) * pageSize
-    const [rows, total, stages] = await Promise.all([
-      this.prisma.order.findMany({
-        where,
-        include: orderInclude,
-        orderBy: [{ stage: 'asc' }, { pos: 'asc' }, { updateTime: 'desc' }],
-        skip,
-        take,
-      }),
-      this.prisma.order.count({ where }),
-      this.prisma.orderStageConfig.findMany({
-        where: { organizationId: user.tenantId },
-        orderBy: { pos: 'asc' },
-      }),
+    const [baseRows, aggregate, stages] = await Promise.all([
+      query
+        .orderBy([(row) => row.stage.asc(), (row) => row.pos.asc(), (row) => row.updateTime.desc()])
+        .offset(skip)
+        .limit(take)
+        .all(),
+      query.aggregate((value) => ({ count: value.count() })),
+      this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+        organizationId: prisma8Varchar(user.tenantId, 32),
+      })
+        .orderBy((row) => row.pos.asc())
+        .all(),
     ])
+    const rows = await this.attachOrderRefs(baseRows)
     const [dynamic, products, ownerMap] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
@@ -149,7 +189,7 @@ export class OrdersService {
       ),
       this.userNames(rows.map((row) => row.owner)),
     ])
-    const stageMap = new Map(stages.map((stage) => [stage.id, stage.name]))
+    const stageMap = new Map(stages.map((stage) => [String(stage.id), stage.name]))
     return {
       list: rows.map((row) =>
         this.toVO(
@@ -161,13 +201,13 @@ export class OrdersService {
           fields,
         ),
       ),
-      total,
+      total: aggregate.count,
       current,
       pageSize,
       stages: stages.map((stage) => ({
         id: stage.id,
         name: stage.name,
-        type: stage.type,
+        type: stage._type,
         pos: Number(stage.pos),
         circulationType: stage.circulationType,
       })),
@@ -191,25 +231,24 @@ export class OrdersService {
     const config =
       dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const pos = await this.nextPos(user.tenantId, stage.id)
-    const row = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
-        data: {
-          number: dto.number?.trim() || generateBizCode('DD'),
-          name: dto.name.trim(),
-          customerId: dto.customerId,
-          contractId: dto.contractId || null,
-          owner: owner.id,
-          amount: new Prisma.Decimal(amount),
-          stage: stage.id,
-          approvalStatus: 'NONE',
-          organizationId: user.tenantId,
-          pos,
-          approved: false,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+    const row = await this.prisma8.client.transaction(async (tx) => {
+      const created = await tx.orm.public.SalesOrder.create({
+        id: prisma8Id32(),
+        number: prisma8Varchar(dto.number?.trim() || generateBizCode('DD'), 50),
+        name: prisma8Varchar(dto.name.trim(), 255),
+        customerId: prisma8Varchar(dto.customerId, 32),
+        contractId: dto.contractId ? prisma8Varchar(dto.contractId, 32) : null,
+        owner: prisma8Varchar(owner.id, 32),
+        amount: prisma8Numeric(amount, 20, 10),
+        stage: prisma8Varchar(stage.id, 50),
+        approvalStatus: prisma8Varchar('NONE', 50),
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        pos,
+        approved: false,
+        createTime: now,
+        updateTime: now,
+        createUser: prisma8Varchar(user.id, 32),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -260,20 +299,24 @@ export class OrdersService {
       dto.moduleFields === undefined
         ? (existingDynamic.get(dto.id) ?? {})
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
-    await this.prisma.$transaction(async (tx) => {
-      const row = await tx.order.update({
-        where: { id: dto.id },
-        data: {
-          name: dto.name?.trim(),
-          customerId: dto.customerId,
-          contractId: dto.contractId,
-          owner: owner?.id,
-          amount: new Prisma.Decimal(amount),
-          number: dto.number?.trim(),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma8.client.transaction(async (tx) => {
+      const row = await tx.orm.public.SalesOrder.where({ id: prisma8Varchar(dto.id, 32) }).update({
+        name: dto.name === undefined ? undefined : prisma8Varchar(dto.name.trim(), 255),
+        customerId:
+          dto.customerId === undefined ? undefined : prisma8Varchar(dto.customerId, 32),
+        contractId:
+          dto.contractId === undefined
+            ? undefined
+            : dto.contractId
+              ? prisma8Varchar(dto.contractId, 32)
+              : null,
+        owner: owner ? prisma8Varchar(owner.id, 32) : undefined,
+        amount: prisma8Numeric(amount, 20, 10),
+        number: dto.number === undefined ? undefined : prisma8Varchar(dto.number.trim(), 50),
+        updateTime: BigInt(Date.now()),
+        updateUser: prisma8Varchar(user.id, 32),
       })
+      if (!row) throw new NotFoundException('订单不存在')
       if (dto.moduleFields !== undefined) {
         await this.fieldValues.save(
           user.tenantId,
@@ -297,7 +340,7 @@ export class OrdersService {
           bizId: item.bizId,
           values: item.values,
         }))
-      await tx.orderSnapshot.deleteMany({ where: { orderId: dto.id } })
+      await tx.orm.public.SalesOrderSnapshot.where({ orderId: prisma8Varchar(dto.id, 32) }).deleteAll()
       await this.writeSnapshot(tx, user.tenantId, row, config, dynamicValues, latestProducts)
     })
     if (approvalRequired) {
@@ -311,36 +354,45 @@ export class OrdersService {
 
   async findOne(user: AuthUser, id: string): Promise<OrderVO> {
     const row = await this.ensureInScope(user, id)
-    const [full, dynamic, products, ownerMap, stage, fields] = await Promise.all([
-      this.prisma.order.findUniqueOrThrow({ where: { id }, include: orderInclude }),
+    const [full] = await this.attachOrderRefs([row])
+    const [dynamic, products, ownerMap, stage, fields] = await Promise.all([
       this.fieldValues.load(user.tenantId, 'order', [id]),
       this.orderFields.loadProducts(user.tenantId, id),
       this.userNames([row.owner]),
-      this.prisma.orderStageConfig.findFirst({
-        where: { id: row.stage, organizationId: user.tenantId },
-      }),
+      this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+        id: prisma8Varchar(row.stage, 32),
+        organizationId: prisma8Varchar(user.tenantId, 32),
+      }).first(),
       this.moduleForms.listFields(user.tenantId, FORM_KEY),
     ])
     return this.toVO(
-      full,
+      full!,
       dynamic.get(id) ?? {},
       products,
       ownerMap,
-      new Map(stage ? [[stage.id, stage.name]] : []),
+      new Map(stage ? [[String(stage.id), stage.name]] : []),
       fields,
     )
   }
 
   async getSnapshot(user: AuthUser, id: string) {
     await this.ensureInScope(user, id)
-    const snapshot = await this.prisma.orderSnapshot.findFirst({ where: { orderId: id } })
+    const snapshot = await this.prisma8.client.orm.public.SalesOrderSnapshot.where({
+      orderId: prisma8Varchar(id, 32),
+    })
+      .select('orderValue')
+      .first()
     if (!snapshot?.orderValue) throw new NotFoundException('订单快照不存在')
     return this.parseObject(snapshot.orderValue)
   }
 
   async getSnapshotForm(user: AuthUser, id: string) {
     await this.ensureInScope(user, id)
-    const snapshot = await this.prisma.orderSnapshot.findFirst({ where: { orderId: id } })
+    const snapshot = await this.prisma8.client.orm.public.SalesOrderSnapshot.where({
+      orderId: prisma8Varchar(id, 32),
+    })
+      .select('orderProp')
+      .first()
     if (!snapshot?.orderProp) throw new NotFoundException('订单表单快照不存在')
     return this.parseObject(snapshot.orderProp)
   }
@@ -380,9 +432,10 @@ export class OrdersService {
       }
     }
     const stageFields = [...effectiveFields.values()]
-    const target = await this.prisma.orderStageConfig.findFirst({
-      where: { id: dto.stage, organizationId: user.tenantId },
-    })
+    const target = await this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+      id: prisma8Varchar(dto.stage, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).first()
     if (!target) throw new BadRequestException('目标订单阶段不存在')
     const config = await this.moduleForms.getConfig(user.tenantId, FORM_KEY)
     const [currentDynamic, products] = await Promise.all([
@@ -405,20 +458,18 @@ export class OrdersService {
       }
     }
     const pos = await this.nextPos(user.tenantId, dto.stage)
-    await this.prisma.$transaction(async (tx) => {
-      const row = await tx.order.update({
-        where: { id: dto.id },
-        data: {
-          stage: dto.stage,
-          pos,
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma8.client.transaction(async (tx) => {
+      const row = await tx.orm.public.SalesOrder.where({ id: prisma8Varchar(dto.id, 32) }).update({
+        stage: prisma8Varchar(dto.stage, 50),
+        pos,
+        updateTime: BigInt(Date.now()),
+        updateUser: prisma8Varchar(user.id, 32),
       })
+      if (!row) throw new NotFoundException('订单不存在')
       if (stageFields.length) {
         await this.fieldValues.save(user.tenantId, 'order', dto.id, dynamic, 'update', tx, user.id)
       }
-      await tx.orderSnapshot.deleteMany({ where: { orderId: dto.id } })
+      await tx.orm.public.SalesOrderSnapshot.where({ orderId: prisma8Varchar(dto.id, 32) }).deleteAll()
       await this.writeSnapshot(
         tx,
         user.tenantId,
@@ -445,24 +496,30 @@ export class OrdersService {
     const field = fields.find((item) => item.id === dto.fieldId || item.key === dto.fieldId)
     if (!field) throw new BadRequestException('订单字段不存在')
     if (field.system) {
+      const ids = prisma8Varchars(rows.map((row) => row.id), 32)
+      const now = BigInt(Date.now())
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
-        await this.prisma.order.updateMany({
-          where: { id: { in: rows.map((row) => row.id) } },
-          data: { owner: owner.id, updateTime: BigInt(Date.now()), updateUser: user.id },
-        })
+        await this.prisma8.client.orm.public.SalesOrder.where((row) => row.id.in(ids))
+          .updateAndCount({
+            owner: prisma8Varchar(owner.id, 32),
+            updateTime: now,
+            updateUser: prisma8Varchar(user.id, 32),
+          })
       } else if (field.key === 'name') {
         const name = String(dto.fieldValue ?? '').trim()
         if (!name) throw new BadRequestException('订单名称不能为空')
-        await this.prisma.order.updateMany({
-          where: { id: { in: rows.map((row) => row.id) } },
-          data: { name, updateTime: BigInt(Date.now()), updateUser: user.id },
-        })
+        await this.prisma8.client.orm.public.SalesOrder.where((row) => row.id.in(ids))
+          .updateAndCount({
+            name: prisma8Varchar(name, 255),
+            updateTime: now,
+            updateUser: prisma8Varchar(user.id, 32),
+          })
       } else {
         throw new BadRequestException('该系统字段不支持批量修改')
       }
     } else {
-      await this.prisma.$transaction(async (tx) => {
+      await this.prisma8.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'order',
@@ -890,22 +947,26 @@ export class OrdersService {
     if (current.stage !== dto.stage) {
       throw new BadRequestException('跨阶段拖拽请使用订单阶段流转接口')
     }
-    const rows = await this.prisma.order.findMany({
-      where: { organizationId: user.tenantId, stage: dto.stage },
-      orderBy: { pos: 'asc' },
-      select: { id: true },
+    const rows = await this.prisma8.client.orm.public.SalesOrder.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
+      stage: prisma8Varchar(dto.stage, 50),
     })
-    const ids = rows.map((row) => row.id).filter((id) => id !== dto.id)
+      .orderBy((row) => row.pos.asc())
+      .select('id')
+      .all()
+    const ids = rows.map((row) => String(row.id)).filter((id) => id !== dto.id)
     const index = Math.max(0, Math.min(ids.length, (dto.pos ?? ids.length + 1) - 1))
     ids.splice(index, 0, dto.id)
-    await this.prisma.$transaction(
-      ids.map((id, pos) =>
-        this.prisma.order.update({
-          where: { id },
-          data: { pos: BigInt(pos + 1), updateTime: BigInt(Date.now()), updateUser: user.id },
-        }),
-      ),
-    )
+    const now = BigInt(Date.now())
+    await this.prisma8.client.transaction(async (tx) => {
+      for (const [pos, id] of ids.entries()) {
+        await tx.orm.public.SalesOrder.where({ id: prisma8Varchar(id, 32) }).update({
+          pos: BigInt(pos + 1),
+          updateTime: now,
+          updateUser: prisma8Varchar(user.id, 32),
+        })
+      }
+    })
     return { id: dto.id, stage: dto.stage, pos: index + 1 }
   }
 
@@ -917,7 +978,10 @@ export class OrdersService {
       const approval = await this.approvals.submit(user, 'order', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
-    await this.prisma.order.delete({ where: { id } })
+    await this.prisma8.client.orm.public.SalesOrder.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).delete()
     return { id, name: row.name, pendingApproval: false }
   }
 
@@ -952,9 +1016,10 @@ export class OrdersService {
   }
 
   async ensureInScope(user: AuthUser, id: string, permission = READ_PERMISSION) {
-    const row = await this.prisma.order.findFirst({
-      where: { id, organizationId: user.tenantId },
-    })
+    const row = await this.prisma8.client.orm.public.SalesOrder.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('订单不存在或不在你的数据范围内')
     }
@@ -968,8 +1033,8 @@ export class OrdersService {
       this.fieldValues.load(user.tenantId, 'order', [id]),
       this.orderFields.loadProducts(user.tenantId, id),
     ])
-    await this.prisma.$transaction(async (tx) => {
-      await tx.orderSnapshot.deleteMany({ where: { orderId: id } })
+    await this.prisma8.client.transaction(async (tx) => {
+      await tx.orm.public.SalesOrderSnapshot.where({ orderId: prisma8Varchar(id, 32) }).deleteAll()
       await this.writeSnapshot(
         tx,
         user.tenantId,
@@ -990,7 +1055,7 @@ export class OrdersService {
   }
 
   private async writeSnapshot(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     organizationId: string,
     row: {
       id: string
@@ -999,7 +1064,7 @@ export class OrdersService {
       customerId: string | null
       contractId: string | null
       owner: string | null
-      amount: Prisma.Decimal | null
+      amount: unknown
       stage: string
       approvalStatus: string
       approved: boolean
@@ -1010,11 +1075,11 @@ export class OrdersService {
     products: OrderProductInput[],
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
-    await tx.orderSnapshot.create({
-      data: {
-        orderId: row.id,
-        orderProp: JSON.stringify(config ?? {}),
-        orderValue: JSON.stringify({
+    await tx.orm.public.SalesOrderSnapshot.create({
+      id: prisma8Id32(),
+      orderId: prisma8Varchar(row.id, 32),
+      orderProp: JSON.stringify(config ?? {}),
+      orderValue: JSON.stringify({
           id: row.id,
           number: row.number,
           name: row.name,
@@ -1034,7 +1099,6 @@ export class OrdersService {
             .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
           products,
         }),
-      },
     })
   }
 
@@ -1061,9 +1125,13 @@ export class OrdersService {
 
   private async assertBatchInScope(user: AuthUser, ids: string[], permission: string) {
     const unique = [...new Set(ids)]
-    const rows = await this.prisma.order.findMany({
-      where: { id: { in: unique }, organizationId: user.tenantId },
-    })
+    const rows = unique.length
+      ? await this.prisma8.client.orm.public.SalesOrder.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.id.in(prisma8Varchars(unique, 32)))
+          .all()
+      : []
     if (rows.length !== unique.length) throw new NotFoundException('部分订单不存在')
     for (const row of rows) {
       if (!(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
@@ -1104,30 +1172,30 @@ export class OrdersService {
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
           const deptId = String(condition.value ?? '')
-          const users = await this.prisma.user.findMany({
-            where: { tenantId: organizationId, deptId },
-            select: { id: true },
+          const users = await this.prisma8.client.orm.public.Users.where({
+            tenantId: organizationId,
+            deptId,
           })
+            .select('id')
+            .all()
           const ownerIds = users.map((item) => item.id)
-          const rows = await this.prisma.order.findMany({
-            where: {
-              organizationId,
-              ...(condition.op === 'ne'
-                ? { NOT: { owner: { in: ownerIds } } }
-                : { owner: { in: ownerIds } }),
-            },
-            select: { id: true },
+          let query = this.prisma8.client.orm.public.SalesOrder.where({
+            organizationId: prisma8Varchar(organizationId, 32),
           })
-          return new Set(rows.map((row) => row.id))
+          query =
+            condition.op === 'ne'
+              ? query.where((row) => not(row.owner.in(prisma8Varchars(ownerIds, 32))))
+              : query.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+          const rows = await query.select('id').all()
+          return new Set(rows.map((row) => String(row.id)))
         }
         if (directKeys.has(condition.key)) {
-          const clause = this.systemFilterClause(condition.key, condition)
-          if (!clause) return new Set<string>()
-          const rows = await this.prisma.order.findMany({
-            where: { organizationId, AND: [clause] },
-            select: { id: true },
+          let query = this.prisma8.client.orm.public.SalesOrder.where({
+            organizationId: prisma8Varchar(organizationId, 32),
           })
-          return new Set(rows.map((row) => row.id))
+          query = this.applyOrderSystemFilter(query, condition.key, condition)
+          const rows = await query.select('id').all()
+          return new Set(rows.map((row) => String(row.id)))
         }
         const field = fieldMap.get(condition.key)
         if (!field || field.system || (!isCustomFieldKey(condition.key) && field.hidden)) {
@@ -1149,61 +1217,142 @@ export class OrdersService {
     ]
   }
 
-  private systemFilterClause(
+  private applyOrderSystemFilter(
+    collection: ReturnType<typeof this.prisma8.client.orm.public.SalesOrder.where>,
     key: string,
     condition: FilterCondition,
-  ): Prisma.OrderWhereInput | null {
-    if (condition.op === 'in' || condition.op === 'notIn') {
-      const values = Array.isArray(condition.value) ? condition.value : [condition.value]
-      const matches = values.map((value) =>
-        this.systemFilterClause(key, { ...condition, op: 'eq', value }),
+  ) {
+    const impossible = () => collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    if (condition.op === 'isEmpty') {
+      if (key === 'customerId') return collection.where((row) => row.customerId.isNull())
+      if (key === 'contractId') return collection.where((row) => row.contractId.isNull())
+      if (key === 'owner') return collection.where((row) => row.owner.isNull())
+      if (key === 'amount') return collection.where((row) => row.amount.isNull())
+      return impossible()
+    }
+    if (condition.op === 'notEmpty') {
+      if (key === 'customerId') return collection.where((row) => row.customerId.isNotNull())
+      if (key === 'contractId') return collection.where((row) => row.contractId.isNotNull())
+      if (key === 'owner') return collection.where((row) => row.owner.isNotNull())
+      if (key === 'amount') return collection.where((row) => row.amount.isNotNull())
+      return collection
+    }
+
+    if (key === 'createTime' || key === 'updateTime') {
+      const values: bigint[] = []
+      for (const raw of Array.isArray(condition.value) ? condition.value : [condition.value]) {
+        const direct = Number(raw)
+        const millis =
+          Number.isFinite(direct) && String(raw ?? '').trim() !== ''
+            ? direct
+            : new Date(String(raw)).getTime()
+        if (!Number.isFinite(millis)) return impossible()
+        values.push(BigInt(Math.trunc(millis)))
+      }
+      const value = values[0]!
+      return collection.where((row) => {
+        const field = key === 'createTime' ? row.createTime : row.updateTime
+        if (condition.op === 'eq') return field.eq(value)
+        if (condition.op === 'ne') return field.neq(value)
+        if (condition.op === 'in') return field.in(values)
+        if (condition.op === 'notIn') return not(field.in(values))
+        if (condition.op === 'gt') return field.gt(value)
+        if (condition.op === 'gte') return field.gte(value)
+        if (condition.op === 'lt') return field.lt(value)
+        if (condition.op === 'lte') return field.lte(value)
+        return row.id.eq(prisma8Varchar('', 32))
+      })
+    }
+
+    if (key === 'amount') {
+      const numbers = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(Number)
+      if (numbers.some((value) => !Number.isFinite(value))) return impossible()
+      const values = numbers.map((value) => prisma8Numeric(value, 20, 10))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.amount.eq(value)
+        if (condition.op === 'ne') return row.amount.neq(value)
+        if (condition.op === 'in') return row.amount.in(values)
+        if (condition.op === 'notIn') return not(row.amount.in(values))
+        if (condition.op === 'gt') return row.amount.gt(value)
+        if (condition.op === 'gte') return row.amount.gte(value)
+        if (condition.op === 'lt') return row.amount.lt(value)
+        if (condition.op === 'lte') return row.amount.lte(value)
+        return row.id.eq(prisma8Varchar('', 32))
+      })
+    }
+
+    if (key === 'approved') {
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => item === true || String(item).toLowerCase() === 'true',
       )
-      if (!matches.length || matches.some((match) => !match)) return null
-      const OR = matches as Prisma.OrderWhereInput[]
-      return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
+      const value = values[0] ?? false
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.approved.eq(value)
+        if (condition.op === 'ne') return row.approved.neq(value)
+        if (condition.op === 'in') return row.approved.in(values)
+        if (condition.op === 'notIn') return not(row.approved.in(values))
+        return row.id.eq(prisma8Varchar('', 32))
+      })
     }
-    if (condition.op === 'notContains') {
-      const match = this.systemFilterClause(key, { ...condition, op: 'contains' })
-      return match ? { NOT: match } : null
+
+    if (key === 'name') {
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+        prisma8Varchar(String(item ?? ''), 255),
+      )
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.name.eq(value)
+        if (condition.op === 'ne') return row.name.neq(value)
+        if (condition.op === 'in') return row.name.in(values)
+        if (condition.op === 'notIn') return not(row.name.in(values))
+        if (condition.op === 'contains') return row.name.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains') return not(row.name.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq(prisma8Varchar('', 32))
+      })
     }
-    const dateKeys = new Set(['createTime', 'updateTime'])
-    const numberKeys = new Set(['amount'])
-    const boolKeys = new Set(['approved'])
-    let rawValue: unknown = condition.value
-    if (dateKeys.has(key)) {
-      const direct = Number(condition.value)
-      const millis =
-        Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
-          ? direct
-          : new Date(String(condition.value)).getTime()
-      if (!Number.isFinite(millis)) return null
-      rawValue = BigInt(Math.trunc(millis))
-    } else if (numberKeys.has(key)) {
-      const number = Number(condition.value)
-      if (!Number.isFinite(number)) return null
-      rawValue = number
-    } else if (boolKeys.has(key)) {
-      rawValue = condition.value === true || String(condition.value).toLowerCase() === 'true'
+
+    if (key === 'number' || key === 'stage' || key === 'approvalStatus') {
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+        prisma8Varchar(String(item ?? ''), 50),
+      )
+      const value = values[0]!
+      return collection.where((row) => {
+        const field =
+          key === 'number' ? row.number : key === 'stage' ? row.stage : row.approvalStatus
+        if (condition.op === 'eq') return field.eq(value)
+        if (condition.op === 'ne') return field.neq(value)
+        if (condition.op === 'in') return field.in(values)
+        if (condition.op === 'notIn') return not(field.in(values))
+        if (condition.op === 'contains') return field.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains') return not(field.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq(prisma8Varchar('', 32))
+      })
     }
-    const value = rawValue as never
-    const fieldKey = key as keyof Prisma.OrderWhereInput
-    if (condition.op === 'eq') return { [fieldKey]: { equals: value } } as Prisma.OrderWhereInput
-    if (condition.op === 'ne') {
-      return { NOT: { [fieldKey]: { equals: value } } } as Prisma.OrderWhereInput
-    }
-    if (condition.op === 'contains') {
-      if (dateKeys.has(key) || numberKeys.has(key) || boolKeys.has(key)) return null
-      return {
-        [fieldKey]: { contains: String(condition.value ?? ''), mode: 'insensitive' },
-      } as Prisma.OrderWhereInput
-    }
-    if (condition.op === 'gt') return { [fieldKey]: { gt: value } } as Prisma.OrderWhereInput
-    if (condition.op === 'gte') return { [fieldKey]: { gte: value } } as Prisma.OrderWhereInput
-    if (condition.op === 'lt') return { [fieldKey]: { lt: value } } as Prisma.OrderWhereInput
-    if (condition.op === 'lte') return { [fieldKey]: { lte: value } } as Prisma.OrderWhereInput
-    if (condition.op === 'isEmpty') return { [fieldKey]: null } as Prisma.OrderWhereInput
-    if (condition.op === 'notEmpty') return { NOT: { [fieldKey]: null } } as Prisma.OrderWhereInput
-    return null
+
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+      prisma8Varchar(String(item ?? ''), 32),
+    )
+    const value = values[0]!
+    return collection.where((row) => {
+      const field =
+        key === 'customerId'
+          ? row.customerId
+          : key === 'contractId'
+            ? row.contractId
+            : key === 'owner'
+              ? row.owner
+              : key === 'updateUser'
+                ? row.updateUser
+                : row.createUser
+      if (condition.op === 'eq') return field.eq(value)
+      if (condition.op === 'ne') return field.neq(value)
+      if (condition.op === 'in') return field.in(values)
+      if (condition.op === 'notIn') return not(field.in(values))
+      if (condition.op === 'contains') return field.ilike('%' + String(condition.value ?? '') + '%')
+      if (condition.op === 'notContains') return not(field.ilike('%' + String(condition.value ?? '') + '%'))
+      return row.id.eq(prisma8Varchar('', 32))
+    })
   }
 
   private intersectIds(left: string[] | null, right: string[] | null): string[] | null {
@@ -1214,62 +1363,78 @@ export class OrdersService {
   }
 
   private async defaultStage(organizationId: string) {
-    const stage = await this.prisma.orderStageConfig.findFirst({
-      where: { organizationId },
-      orderBy: { pos: 'asc' },
+    const stage = await this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
+      .orderBy((row) => row.pos.asc())
+      .first()
     if (!stage) throw new BadRequestException('订单状态流尚未配置')
     return stage
   }
 
   private async nextPos(organizationId: string, stage: string) {
-    const result = await this.prisma.order.aggregate({
-      where: { organizationId, stage },
-      _max: { pos: true },
+    const last = await this.prisma8.client.orm.public.SalesOrder.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+      stage: prisma8Varchar(stage, 50),
     })
-    return (result._max.pos ?? 0n) + 1n
+      .orderBy((row) => row.pos.desc())
+      .select('pos')
+      .first()
+    return (last?.pos ?? 0n) + 1n
   }
 
   private async ensureCustomer(user: AuthUser, id: string) {
-    const customer = await this.prisma.customer.findFirst({
-      where: { id, organizationId: user.tenantId },
-      select: { id: true },
+    const customer = await this.prisma8.client.orm.public.Customer.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .select('id')
+      .first()
     if (!customer) throw new BadRequestException('关联客户不存在')
     return customer
   }
 
   private async ensureContract(user: AuthUser, id: string, customerId: string) {
-    const contract = await this.prisma.contract.findFirst({
-      where: { id, organizationId: user.tenantId, customerId },
-      select: { id: true },
+    const contract = await this.prisma8.client.orm.public.Contract.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+      customerId: prisma8Varchar(customerId, 32),
     })
+      .select('id')
+      .first()
     if (!contract) throw new BadRequestException('关联合同不存在或不属于当前客户')
     return contract
   }
 
   private async resolveOwner(user: AuthUser, ownerId: string) {
-    const owner = await this.prisma.user.findFirst({
-      where: { id: ownerId, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true },
+    const owner = await this.prisma8.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner
   }
 
   private async resolveImportedCustomer(organizationId: string, ref: string) {
-    const rows = await this.prisma.customer.findMany({
-      where: {
-        organizationId,
-        OR: [{ id: ref }, { name: ref }],
-      },
-      select: { id: true, name: true },
-      take: 3,
+    const rows = await this.prisma8.client.orm.public.Customer.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
-    const exact = rows.find((row) => row.id === ref)
+      .where((row) =>
+        or(
+          row.id.eq(prisma8Varchar(ref, 32)),
+          row.name.eq(prisma8Varchar(ref, 255)),
+        ),
+      )
+      .select('id', 'name')
+      .limit(3)
+      .all()
+    const exact = rows.find((row) => String(row.id) === ref)
     if (exact) return exact
-    if (rows.length === 0) throw new BadRequestException(`客户不存在：${ref}`)
-    if (rows.length > 1) throw new BadRequestException(`客户名称不唯一：${ref}`)
+    if (rows.length === 0) throw new BadRequestException('客户不存在：' + ref)
+    if (rows.length > 1) throw new BadRequestException('客户名称不唯一：' + ref)
     return rows[0]!
   }
 
@@ -1278,63 +1443,105 @@ export class OrdersService {
     ref: string,
     customerId: string | null,
   ) {
-    const rows = await this.prisma.contract.findMany({
-      where: {
-        organizationId,
-        ...(customerId ? { customerId } : {}),
-        OR: [{ id: ref }, { name: ref }, { number: ref }],
-      },
-      select: { id: true, name: true, number: true, customerId: true },
-      take: 3,
+    let query = this.prisma8.client.orm.public.Contract.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
-    const exact = rows.find((row) => row.id === ref || row.number === ref)
+    if (customerId) query = query.where({ customerId: prisma8Varchar(customerId, 32) })
+    query = query.where((row) =>
+      or(
+        row.id.eq(prisma8Varchar(ref, 32)),
+        row.name.eq(prisma8Varchar(ref, 255)),
+        row.number.eq(prisma8Varchar(ref, 50)),
+      ),
+    )
+    const rows = await query.select('id', 'name', 'number', 'customerId').limit(3).all()
+    const exact = rows.find((row) => String(row.id) === ref || String(row.number) === ref)
     if (exact) return exact
-    if (rows.length === 0) throw new BadRequestException(`合同不存在：${ref}`)
-    if (rows.length > 1) throw new BadRequestException(`合同名称不唯一：${ref}`)
+    if (rows.length === 0) throw new BadRequestException('合同不存在：' + ref)
+    if (rows.length > 1) throw new BadRequestException('合同名称不唯一：' + ref)
     return rows[0]!
   }
 
   private async resolveImportedOwner(organizationId: string, ref: string) {
-    const rows = await this.prisma.user.findMany({
-      where: {
-        tenantId: organizationId,
-        status: 'ACTIVE',
-        OR: [{ id: ref }, { name: ref }, { email: ref }],
-      },
-      select: { id: true, name: true, email: true },
-      take: 3,
+    const rows = await this.prisma8.client.orm.public.Users.where({
+      tenantId: organizationId,
+      status: 'ACTIVE',
     })
+      .where((row) => or(row.id.eq(ref), row.name.eq(ref), row.email.eq(ref)))
+      .select('id', 'name', 'email')
+      .limit(3)
+      .all()
     const exact = rows.find((row) => row.id === ref || row.email === ref)
     if (exact) return exact
-    if (rows.length === 0) throw new BadRequestException(`负责人不存在：${ref}`)
-    if (rows.length > 1) throw new BadRequestException(`负责人名称不唯一：${ref}`)
+    if (rows.length === 0) throw new BadRequestException('负责人不存在：' + ref)
+    if (rows.length > 1) throw new BadRequestException('负责人名称不唯一：' + ref)
     return rows[0]!
   }
 
   private async resolveImportedProduct(organizationId: string, ref: string) {
-    const rows = await this.prisma.product.findMany({
-      where: {
-        organizationId,
-        OR: [{ id: ref }, { name: ref }],
-      },
-      select: { id: true, name: true },
-      take: 3,
+    const rows = await this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
-    const exact = rows.find((row) => row.id === ref)
+      .where((row) =>
+        or(
+          row.id.eq(prisma8Varchar(ref, 32)),
+          row.name.eq(prisma8Varchar(ref, 255)),
+        ),
+      )
+      .select('id', 'name')
+      .limit(3)
+      .all()
+    const exact = rows.find((row) => String(row.id) === ref)
     if (exact) return exact
-    if (rows.length === 0) throw new BadRequestException(`产品不存在：${ref}`)
-    if (rows.length > 1) throw new BadRequestException(`产品名称不唯一：${ref}`)
+    if (rows.length === 0) throw new BadRequestException('产品不存在：' + ref)
+    if (rows.length > 1) throw new BadRequestException('产品名称不唯一：' + ref)
     return rows[0]!
   }
 
   private async userNames(ids: (string | null)[]) {
     const unique = [...new Set(ids.filter((id): id is string => !!id))]
     if (!unique.length) return new Map<string, string>()
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: unique } },
-      select: { id: true, name: true },
-    })
+    const users = await this.prisma8.client.orm.public.Users.where((row) => row.id.in(unique))
+      .select('id', 'name')
+      .all()
     return new Map(users.map((user) => [user.id, user.name]))
+  }
+
+  private async attachOrderRefs(rows: OrderRow[]): Promise<OrderWithRefs[]> {
+    if (!rows.length) return []
+    const customerIds = [
+      ...new Set(rows.flatMap((row) => (row.customerId ? [String(row.customerId)] : []))),
+    ]
+    const contractIds = [
+      ...new Set(rows.flatMap((row) => (row.contractId ? [String(row.contractId)] : []))),
+    ]
+    const [customers, contracts] = await Promise.all([
+      customerIds.length
+        ? this.prisma8.client.orm.public.Customer.where((row) =>
+            row.id.in(prisma8Varchars(customerIds, 32)),
+          )
+            .select('id', 'name')
+            .all()
+        : Promise.resolve([]),
+      contractIds.length
+        ? this.prisma8.client.orm.public.Contract.where((row) =>
+            row.id.in(prisma8Varchars(contractIds, 32)),
+          )
+            .select('id', 'name')
+            .all()
+        : Promise.resolve([]),
+    ])
+    const customerMap = new Map(customers.map((item) => [String(item.id), item.name]))
+    const contractMap = new Map(contracts.map((item) => [String(item.id), item.name]))
+    return rows.map((row) => ({
+      ...row,
+      customer: row.customerId
+        ? { name: customerMap.get(String(row.customerId)) ?? '' }
+        : null,
+      contract: row.contractId
+        ? { name: contractMap.get(String(row.contractId)) ?? '' }
+        : null,
+    }))
   }
 
   private assertAmount(amount: number) {

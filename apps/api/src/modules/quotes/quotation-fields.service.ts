@@ -1,17 +1,19 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { FieldVO, QuotationProductVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Client } from '../../prisma/prisma8-client'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import type { QuotationProductDto } from './dto/quotation.dto'
 
 const FORM_KEY = 'quote'
+type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
 
 @Injectable()
 export class QuotationFieldsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly moduleForms: ModuleFormsService,
   ) {}
 
@@ -19,24 +21,38 @@ export class QuotationFieldsService {
     organizationId: string,
     resourceId: string,
     products: QuotationProductDto[],
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const productIds = [...new Set(products.map((item) => item.product))]
     if (productIds.length) {
-      const count = await tx.product.count({ where: { organizationId, id: { in: productIds } } })
+      const { count } = await tx.orm.public.Product.where({
+        organizationId: prisma8Varchar(organizationId, 32),
+      })
+        .where((row) => row.id.in(prisma8Varchars(productIds, 32)))
+        .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== productIds.length) throw new BadRequestException('报价包含不存在的产品')
     }
     const priceIds = [...new Set(products.map((item) => item.priceId).filter((id): id is string => !!id))]
     if (priceIds.length) {
-      const count = await tx.productPrice.count({ where: { organizationId, id: { in: priceIds } } })
+      const { count } = await tx.orm.public.ProductPrice.where({
+        organizationId: prisma8Varchar(organizationId, 32),
+      })
+        .where((row) => row.id.in(prisma8Varchars(priceIds, 32)))
+        .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== priceIds.length) throw new BadRequestException('报价包含不存在的价格表')
     }
 
     await Promise.all([
-      tx.opportunityQuotationField.deleteMany({ where: { resourceId, refSubId: required.parent.id } }),
-      tx.opportunityQuotationFieldBlob.deleteMany({ where: { resourceId, refSubId: required.parent.id } }),
+      tx.orm.public.OpportunityQuotationField.where({
+        resourceId: prisma8Varchar(resourceId, 32),
+        refSubId: prisma8Varchar(required.parent.id, 32),
+      }).deleteAll(),
+      tx.orm.public.OpportunityQuotationFieldBlob.where({
+        resourceId: prisma8Varchar(resourceId, 32),
+        refSubId: prisma8Varchar(required.parent.id, 32),
+      }).deleteAll(),
     ])
 
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
@@ -80,15 +96,25 @@ export class QuotationFieldsService {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
-    const where = {
-      resourceId: { in: ids },
-      refSubId: required.parent.id,
-      resource: { organizationId },
-    }
-    const select = { resourceId: true, fieldId: true, fieldValue: true, rowId: true, bizId: true }
+    const allowedResources = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+    })
+      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .select('id')
+      .all()
+    const allowedIds = allowedResources.map((row) => String(row.id))
+    if (!allowedIds.length) return result
+    const refSubId = prisma8Varchar(required.parent.id, 32)
+    const resourceIdFilter = prisma8Varchars(allowedIds, 32)
     const [normal, blob] = await Promise.all([
-      this.prisma.opportunityQuotationField.findMany({ where, select }),
-      this.prisma.opportunityQuotationFieldBlob.findMany({ where, select }),
+      this.prisma8.client.orm.public.OpportunityQuotationField.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
+      this.prisma8.client.orm.public.OpportunityQuotationFieldBlob.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
     ])
     const rows = new Map<string, {
       resourceId: string
@@ -134,14 +160,24 @@ export class QuotationFieldsService {
     const priceIds = [...new Set(validRows.map((row) => row.priceId).filter((id): id is string => !!id))]
     const [products, prices] = await Promise.all([
       productIds.length
-        ? this.prisma.product.findMany({ where: { organizationId, id: { in: productIds } }, select: { id: true, name: true } })
+        ? this.prisma8.client.orm.public.Product.where({
+            organizationId: prisma8Varchar(organizationId, 32),
+          })
+            .where((row) => row.id.in(prisma8Varchars(productIds, 32)))
+            .select('id', 'name')
+            .all()
         : [],
       priceIds.length
-        ? this.prisma.productPrice.findMany({ where: { organizationId, id: { in: priceIds } }, select: { id: true, name: true } })
+        ? this.prisma8.client.orm.public.ProductPrice.where({
+            organizationId: prisma8Varchar(organizationId, 32),
+          })
+            .where((row) => row.id.in(prisma8Varchars(priceIds, 32)))
+            .select('id', 'name')
+            .all()
         : [],
     ])
-    const productNames = new Map(products.map((item) => [item.id, item.name]))
-    const priceNames = new Map(prices.map((item) => [item.id, item.name]))
+    const productNames = new Map(products.map((item) => [String(item.id), String(item.name)]))
+    const priceNames = new Map(prices.map((item) => [String(item.id), String(item.name)]))
     for (const row of validRows) {
       result.get(row.resourceId)?.push({
         rowId: row.rowId,
@@ -176,7 +212,7 @@ export class QuotationFieldsService {
   }
 
   private async writeCell(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     resourceId: string,
     refSubId: string,
     rowId: string,
@@ -186,9 +222,22 @@ export class QuotationFieldsService {
   ) {
     if (value === undefined || value === null || value === '') return
     const serialized = this.serialize(value)
-    const data = { resourceId, fieldId: field.id, fieldValue: serialized, refSubId, rowId, bizId }
-    if (this.isBlob(field, serialized)) await tx.opportunityQuotationFieldBlob.create({ data })
-    else await tx.opportunityQuotationField.create({ data })
+    const base = {
+      id: prisma8Id32(),
+      resourceId: prisma8Varchar(resourceId, 32),
+      fieldId: prisma8Varchar(field.id, 32),
+      refSubId: prisma8Varchar(refSubId, 32),
+      rowId: prisma8Varchar(rowId, 32),
+      bizId: prisma8Varchar(bizId, 32),
+    }
+    if (this.isBlob(field, serialized)) {
+      await tx.orm.public.OpportunityQuotationFieldBlob.create({ ...base, fieldValue: serialized })
+    } else {
+      await tx.orm.public.OpportunityQuotationField.create({
+        ...base,
+        fieldValue: prisma8Varchar(serialized, 255),
+      })
+    }
   }
 
   private serialize(value: unknown) {

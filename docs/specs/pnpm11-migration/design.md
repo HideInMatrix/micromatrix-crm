@@ -38,7 +38,7 @@ pnpm 11.25.0
 ```yaml
 onlyBuiltDependencies:
   - '@nestjs/core'
-  - '@prisma/client'
+  - 'legacy Prisma Client package'
   - '@prisma/engines'
   - '@swc/core'
   - esbuild
@@ -51,7 +51,7 @@ onlyBuiltDependencies:
 ```yaml
 allowBuilds:
   '@nestjs/core': true
-  '@prisma/client': true
+  'legacy Prisma Client package': true
   '@prisma/engines': true
   '@scarf/scarf': false
   '@swc/core': true

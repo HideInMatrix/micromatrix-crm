@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { DepartmentVO } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now, prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto'
 
 const CACHE_NAMESPACE = 'directory'
@@ -10,7 +11,7 @@ const CACHE_TTL_SECONDS = 3 * 60
 @Injectable()
 export class DepartmentsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
@@ -29,14 +30,10 @@ export class DepartmentsService {
 
   private async loadTree(tenantId: string): Promise<DepartmentVO[]> {
     const [departments, users] = await Promise.all([
-      this.prisma.department.findMany({
-        where: { tenantId },
-        orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
-      }),
-      this.prisma.user.findMany({
-        where: { tenantId },
-        select: { id: true, name: true, deptId: true },
-      }),
+      this.prisma8.client.orm.public.Departments.where({ tenantId })
+        .orderBy([(row) => row.sort.asc(), (row) => row.createdAt.asc()])
+        .all(),
+      this.prisma8.client.orm.public.Users.where({ tenantId }).select('id', 'name', 'deptId').all(),
     ])
 
     const userNameMap = new Map(users.map((u) => [u.id, u.name]))
@@ -74,11 +71,16 @@ export class DepartmentsService {
     if (dto.leaderId) {
       throw new BadRequestException('请先创建部门并将成员加入该部门，再设置部门主管')
     }
-    const department = await this.prisma.department.create({
-      data: { tenantId, name, parentId, sort: dto.sort ?? 0 },
+    const department = await this.prisma8.client.orm.public.Departments.create({
+      tenantId,
+      name,
+      parentId,
+      leaderId: null,
+      sort: dto.sort ?? 0,
+      updatedAt: prisma8Now(),
     })
     await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
-    return department
+    return this.toLegacyDepartment(department)
   }
 
   async update(tenantId: string, id: string, dto: UpdateDepartmentDto) {
@@ -96,26 +98,24 @@ export class DepartmentsService {
     if (dto.leaderId) {
       await this.ensureLeaderCandidate(tenantId, id, dto.leaderId)
     }
-    const department = await this.prisma.department.update({
-      where: { id },
-      data: {
-        ...(dto.name === undefined ? {} : { name }),
-        ...(dto.parentId === undefined ? {} : { parentId }),
-        ...(dto.leaderId === undefined ? {} : { leaderId: dto.leaderId || null }),
-        ...(dto.sort === undefined ? {} : { sort: dto.sort }),
-      },
+    const department = await this.prisma8.client.orm.public.Departments.where({ id, tenantId }).update({
+      ...(dto.name === undefined ? {} : { name }),
+      ...(dto.parentId === undefined ? {} : { parentId }),
+      ...(dto.leaderId === undefined ? {} : { leaderId: dto.leaderId || null }),
+      ...(dto.sort === undefined ? {} : { sort: dto.sort }),
+      updatedAt: prisma8Now(),
     })
+    if (!department) throw new NotFoundException('部门不存在')
     await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
-    return department
+    return this.toLegacyDepartment(department)
   }
 
   async remove(tenantId: string, id: string) {
     const dept = await this.ensureExists(tenantId, id)
     if (!dept.parentId) throw new BadRequestException('组织根部门不可删除')
-    const departments = await this.prisma.department.findMany({
-      where: { tenantId },
-      select: { id: true, parentId: true },
-    })
+    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
     const childrenMap = new Map<string, string[]>()
     departments.forEach((item) => {
       if (!item.parentId) return
@@ -130,21 +130,28 @@ export class DepartmentsService {
     }
     collectSubtree(id)
 
-    const [userCount, scopedRoleCount] = await Promise.all([
-      this.prisma.user.count({ where: { tenantId, deptId: { in: subtreeIds } } }),
-      this.prisma.role.count({ where: { tenantId, scopeDeptIds: { hasSome: subtreeIds } } }),
+    const [users, scopedRoles] = await Promise.all([
+      this.prisma8.client.orm.public.Users.where({ tenantId }).select('deptId').all(),
+      this.prisma8.client.orm.public.Roles.where({ tenantId }).select('scopeDeptIds').all(),
     ])
+    const subtree = new Set(subtreeIds)
+    const userCount = users.filter((user) => user.deptId && subtree.has(user.deptId)).length
+    const scopedRoleCount = scopedRoles.filter((role) =>
+      (role.scopeDeptIds ?? []).some((deptId) => subtree.has(deptId)),
+    ).length
     if (userCount > 0) throw new BadRequestException('当前部门或下级部门存在成员，无法删除')
     if (scopedRoleCount > 0) {
       throw new BadRequestException('当前部门或下级部门仍被角色数据范围使用，无法删除')
     }
-    await this.prisma.department.deleteMany({ where: { tenantId, id: { in: subtreeIds } } })
+    await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      .where((row) => row.id.in(subtreeIds))
+      .deleteAll()
     await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return { id, name: dept.name, deletedCount: subtreeIds.length }
   }
 
   private async ensureExists(tenantId: string, id: string) {
-    const dept = await this.prisma.department.findFirst({ where: { id, tenantId } })
+    const dept = await this.prisma8.client.orm.public.Departments.where({ id, tenantId }).first()
     if (!dept) throw new NotFoundException('部门不存在')
     return dept
   }
@@ -155,23 +162,23 @@ export class DepartmentsService {
     parentId: string | null,
     excludeId?: string,
   ) {
-    const duplicate = await this.prisma.department.findFirst({
-      where: {
-        tenantId,
-        parentId,
-        name: { equals: name, mode: 'insensitive' },
-        ...(excludeId ? { id: { not: excludeId } } : {}),
-      },
-      select: { id: true },
-    })
-    if (duplicate) throw new BadRequestException('同一上级部门下已存在同名部门')
+    const duplicate = await this.prisma8.client.orm.public.Departments.where({ tenantId, parentId })
+      .where((row) => row.name.ilike(name))
+      .select('id')
+      .first()
+    if (duplicate && duplicate.id !== excludeId) {
+      throw new BadRequestException('同一上级部门下已存在同名部门')
+    }
   }
 
   private async ensureLeaderCandidate(tenantId: string, departmentId: string, leaderId: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { id: leaderId, tenantId, status: 'ACTIVE' },
-      select: { deptId: true },
+    const user = await this.prisma8.client.orm.public.Users.where({
+      id: leaderId,
+      tenantId,
+      status: 'ACTIVE',
     })
+      .select('deptId')
+      .first()
     if (!user) throw new BadRequestException('部门主管不存在或已停用')
     if (user.deptId !== departmentId) {
       throw new BadRequestException('部门主管必须是当前部门的直属成员')
@@ -180,15 +187,31 @@ export class DepartmentsService {
 
   /** 防止把部门挂到自己的子孙节点下形成环 */
   private async ensureNotDescendant(tenantId: string, id: string, newParentId: string) {
-    const all = await this.prisma.department.findMany({
-      where: { tenantId },
-      select: { id: true, parentId: true },
-    })
+    const all = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
     const parentMap = new Map(all.map((d) => [d.id, d.parentId]))
     let cursor: string | null = newParentId
     while (cursor) {
       if (cursor === id) throw new BadRequestException('不能移动到自己的下级部门')
       cursor = parentMap.get(cursor) ?? null
+    }
+  }
+
+  private toLegacyDepartment(row: {
+    id: string
+    tenantId: string
+    name: string
+    parentId: string | null
+    leaderId: string | null
+    sort: number
+    createdAt: Parameters<typeof prisma8TimestampToDate>[0]
+    updatedAt: Parameters<typeof prisma8TimestampToDate>[0]
+  }) {
+    return {
+      ...row,
+      createdAt: prisma8TimestampToDate(row.createdAt),
+      updatedAt: prisma8TimestampToDate(row.updatedAt),
     }
   }
 }

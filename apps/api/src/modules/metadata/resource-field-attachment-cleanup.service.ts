@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { AttachmentsService } from '../attachments/attachments.service'
 import {
   RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX,
@@ -20,7 +20,7 @@ export class ResourceFieldAttachmentCleanupService {
   private readonly logger = new Logger(ResourceFieldAttachmentCleanupService.name)
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly fields: ResourceFieldValueService,
     private readonly attachments: AttachmentsService,
     private readonly coordinator: DistributedCoordinatorService,
@@ -39,22 +39,39 @@ export class ResourceFieldAttachmentCleanupService {
     let deleted = 0
 
     for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch++) {
-      const rows = await this.prisma.attachment.findMany({
-        where: {
-          OR: [
-            { targetType: { startsWith: RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX } },
-            {
-              targetType: null,
-              targetId: null,
-              createdAt: { lt: temporaryCutoff },
-              approvalInstanceAttachments: { none: {} },
-            },
-          ],
-        },
-        select: { id: true, tenantId: true, targetType: true, targetId: true },
-        orderBy: { createdAt: 'asc' },
-        take: CLEANUP_BATCH_SIZE,
+      const client = this.prisma8.client
+      const cutoff = temporaryCutoff.toISOString()
+      const query = client.raw.sql`SELECT
+          attachment.id,
+          attachment."tenantId",
+          attachment."targetType",
+          attachment."targetId"
+        FROM attachments AS attachment
+        WHERE attachment."targetType" LIKE ${`${RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX}%`}
+           OR (
+             attachment."targetType" IS NULL
+             AND attachment."targetId" IS NULL
+             AND attachment."createdAt" < (${cutoff}::timestamptz AT TIME ZONE 'UTC')
+             AND NOT EXISTS (
+               SELECT 1
+               FROM approval_instance_attachments AS relation
+               WHERE relation.attachment_id = attachment.id
+             )
+           )
+        ORDER BY attachment."createdAt" ASC
+        LIMIT ${CLEANUP_BATCH_SIZE}`.returnsRow({
+        id: client.sql.public.attachments.columns.id,
+        tenantId: client.sql.public.attachments.columns.tenantId,
+        targetType: client.sql.public.attachments.columns.targetType,
+        targetId: client.sql.public.attachments.columns.targetId,
       })
+      const rows: Array<{
+        id: string
+        tenantId: string
+        targetType: string | null
+        targetId: string | null
+      }> = []
+      for await (const row of client.runtime().query(query.build())) rows.push(row)
       if (!rows.length) break
       scanned += rows.length
 

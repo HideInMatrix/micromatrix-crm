@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
+import test from 'node:test'
+import type { AuthUser } from '../../common/auth-user'
+import { createPrismaFixtureClient } from '../../testing/prisma-fixture-client'
+import { createPrisma8Client } from '../../prisma/prisma8-client'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { LeadsService } from './leads.service'
+
+const databaseUrl = process.env['DATABASE_URL']
+
+test(
+  'LeadsService production 路径使用 Prisma 8 保持 create/page/findOne/updateStatus/delete 语义',
+  { skip: !databaseUrl },
+  async () => {
+    assert.ok(databaseUrl)
+    const fixtureDb = createPrismaFixtureClient(databaseUrl)
+    const prisma8Client = await createPrisma8Client(databaseUrl)
+    const prisma8 = { client: prisma8Client } as Prisma8Service
+    const suffix = randomUUID().replaceAll('-', '')
+    let tenantId: string | null = null
+
+    await fixtureDb.$connect()
+    await prisma8Client.connect()
+    try {
+      const tenant = await fixtureDb.tenant.create({
+        data: { name: 'Leads Prisma8 ' + suffix, slug: 'leads-p8-' + suffix },
+      })
+      tenantId = tenant.id
+      const actor = await fixtureDb.user.create({
+        data: {
+          tenantId: tenant.id,
+          email: suffix + '@example.com',
+          passwordHash: 'test',
+          name: '线索测试成员',
+        },
+      })
+      const user: AuthUser = {
+        id: actor.id,
+        tenantId: tenant.id,
+        email: actor.email,
+        name: actor.name,
+        deptId: null,
+        leaderId: null,
+        roles: [],
+        permissions: ['*'],
+      }
+
+      const dataScope = {
+        directOwnerFilter: async () => ({}),
+        matchesDirectOwner: async () => true,
+        resolveScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+      }
+      const metadata = {
+        listFields: async () => [],
+        computeFormulas: () => ({}),
+      }
+      const fieldValues = {
+        validate: async () => undefined,
+        save: async () => undefined,
+        load: async (_tenantId: string, _type: string, ids: string[]) =>
+          new Map(ids.map((id) => [id, {}])),
+        filterResourceIds: async () => [],
+      }
+      const notifications = { send: async () => undefined }
+      const pools = {
+        assertCapacityForOwner: async () => undefined,
+        assertPoolMember: async () => undefined,
+        options: async () => [],
+      }
+      const changeLog = { record: async () => undefined }
+      const homeFilters = { parse: () => null }
+      const service = new LeadsService(
+        prisma8,
+        dataScope as never,
+        metadata as never,
+        {} as never,
+        fieldValues as never,
+        notifications as never,
+        {} as never,
+        pools as never,
+        {} as never,
+        {} as never,
+        changeLog as never,
+        { resolveFilters: async () => null } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        homeFilters as never,
+        {} as never,
+      )
+
+      const created = await service.create(user, {
+        name: 'Prisma8 线索',
+        contactName: '测试联系人',
+        phone: '13800138000',
+        ownerId: actor.id,
+        customData: {},
+      })
+      assert.equal(created.name, 'Prisma8 线索')
+      assert.equal(created.ownerId, actor.id)
+      assert.equal(created.status, 'NEW')
+
+      const page = await service.findAll(user, {
+        page: 1,
+        pageSize: 10,
+        keyword: '13800138000',
+      })
+      assert.equal(page.total, 1)
+      assert.equal(page.items[0]?.id, created.id)
+
+      const detail = await service.findOne(user, created.id)
+      assert.equal(detail.name, 'Prisma8 线索')
+      assert.equal(detail.phone, '13800138000')
+
+      const status = await service.updateStatus(user, { id: created.id, stage: 'FOLLOWING' })
+      assert.equal(status.stage, 'FOLLOWING')
+      assert.equal(status.lastStage, 'NEW')
+      const oracle = await fixtureDb.clue.findUniqueOrThrow({ where: { id: created.id } })
+      assert.equal(oracle.stage, 'FOLLOWING')
+      assert.equal(oracle.lastStage, 'NEW')
+
+      const removed = await service.remove(user, created.id)
+      assert.equal(removed.id, created.id)
+      assert.equal(await fixtureDb.clue.count({ where: { id: created.id } }), 0)
+    } finally {
+      if (tenantId) {
+        await fixtureDb.clue.deleteMany({ where: { organizationId: tenantId } })
+        await fixtureDb.user.deleteMany({ where: { tenantId } })
+        await fixtureDb.tenant.deleteMany({ where: { id: tenantId } })
+      }
+      await prisma8Client.close()
+      await fixtureDb.$disconnect()
+    }
+  },
+)

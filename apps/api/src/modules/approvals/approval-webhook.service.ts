@@ -5,8 +5,9 @@ import type {
   ApprovalWebhookConfig,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { ApprovalInstance } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
 import { ApprovalResourceService } from './approval-resource.service'
 import {
   ApprovalWebhookClient,
@@ -21,6 +22,16 @@ import {
   validateApprovalWebhookConfig,
 } from './approval-webhook.utils'
 
+interface ApprovalWebhookInstance {
+  id: string
+  tenantId: string
+  module: string
+  targetId: string
+  flowId: string | null
+  flowVersionId: string | null
+  nodesSnapshot: unknown
+}
+
 interface DeliveryExecutionResult {
   ok: boolean
   result?: ApprovalWebhookClientResult
@@ -30,7 +41,7 @@ interface DeliveryExecutionResult {
 @Injectable()
 export class ApprovalWebhookService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly resources: ApprovalResourceService,
     private readonly client: ApprovalWebhookClient,
   ) {}
@@ -48,15 +59,14 @@ export class ApprovalWebhookService {
     }
 
     const target = this.auditTarget(config.webHookUrl)
-    const delivery = await this.prisma.approvalWebhookDelivery.create({
-      data: {
-        tenantId: user.tenantId,
-        source: 'TEST',
-        method: config.webHookMethod,
-        targetOrigin: target.origin,
-        targetPath: target.path,
-        createdById: user.id,
-      },
+    const delivery = await this.deliveries().create({
+      tenantId: user.tenantId,
+      source: 'TEST',
+      method: config.webHookMethod,
+      targetOrigin: target.origin,
+      targetPath: target.path,
+      createdById: user.id,
+      updatedAt: prisma8Now(),
     })
     const execution = await this.executeDelivery(delivery.id, config)
     if (!execution.ok) {
@@ -75,7 +85,7 @@ export class ApprovalWebhookService {
   }
 
   async enqueueRuntime(
-    instance: ApprovalInstance,
+    instance: ApprovalWebhookInstance,
     nodeIndex: number,
     action: 'APPROVE' | 'REJECT',
     operatorId: string,
@@ -99,32 +109,8 @@ export class ApprovalWebhookService {
     } catch (error) {
       const normalizedError = this.normalizeError(error)
       const target = this.tryAuditTarget(configured.webHookUrl)
-      await this.prisma.approvalWebhookDelivery.create({
-        data: {
-          tenantId: instance.tenantId,
-          instanceId: instance.id,
-          flowId: instance.flowId,
-          flowVersionId: instance.flowVersionId,
-          nodeId: node.nodeId ?? null,
-          nodeIndex,
-          action,
-          source: 'RUNTIME',
-          method: configured.webHookMethod,
-          targetOrigin: target.origin,
-          targetPath: target.path,
-          status: 'FAILED',
-          errorCode: normalizedError.code,
-          errorMessage: normalizedError.message,
-          createdById: operatorId,
-          finishedAt: new Date(),
-        },
-      })
-      return
-    }
-
-    const target = this.auditTarget(runtimeConfig.webHookUrl)
-    const delivery = await this.prisma.approvalWebhookDelivery.create({
-      data: {
+      const finishedAt = prisma8Now()
+      await this.deliveries().create({
         tenantId: instance.tenantId,
         instanceId: instance.id,
         flowId: instance.flowId,
@@ -133,11 +119,34 @@ export class ApprovalWebhookService {
         nodeIndex,
         action,
         source: 'RUNTIME',
-        method: runtimeConfig.webHookMethod,
+        method: configured.webHookMethod,
         targetOrigin: target.origin,
         targetPath: target.path,
+        status: 'FAILED',
+        errorCode: prisma8Varchar(normalizedError.code, 64),
+        errorMessage: prisma8Varchar(normalizedError.message, 500),
         createdById: operatorId,
-      },
+        finishedAt,
+        updatedAt: finishedAt,
+      })
+      return
+    }
+
+    const target = this.auditTarget(runtimeConfig.webHookUrl)
+    const delivery = await this.deliveries().create({
+      tenantId: instance.tenantId,
+      instanceId: instance.id,
+      flowId: instance.flowId,
+      flowVersionId: instance.flowVersionId,
+      nodeId: node.nodeId ?? null,
+      nodeIndex,
+      action,
+      source: 'RUNTIME',
+      method: runtimeConfig.webHookMethod,
+      targetOrigin: target.origin,
+      targetPath: target.path,
+      createdById: operatorId,
+      updatedAt: prisma8Now(),
     })
     setImmediate(() => {
       void this.executeDelivery(delivery.id, runtimeConfig).catch(() => undefined)
@@ -148,39 +157,35 @@ export class ApprovalWebhookService {
     deliveryId: string,
     config: ApprovalWebhookConfig,
   ): Promise<DeliveryExecutionResult> {
-    await this.prisma.approvalWebhookDelivery.update({
-      where: { id: deliveryId },
-      data: { startedAt: new Date() },
-    })
+    const startedAt = prisma8Now()
+    await this.deliveries().where({ id: deliveryId }).update({ startedAt, updatedAt: startedAt })
     try {
       const result = await this.client.send(config)
-      await this.prisma.approvalWebhookDelivery.update({
-        where: { id: deliveryId },
-        data: {
-          status: 'SENT',
-          httpStatus: result.httpStatus,
-          responseBytes: result.responseBytes,
-          durationMs: result.durationMs,
-          errorCode: null,
-          errorMessage: null,
-          finishedAt: new Date(),
-        },
+      const finishedAt = prisma8Now()
+      await this.deliveries().where({ id: deliveryId }).update({
+        status: 'SENT',
+        httpStatus: result.httpStatus,
+        responseBytes: result.responseBytes,
+        durationMs: result.durationMs,
+        errorCode: null,
+        errorMessage: null,
+        finishedAt,
+        updatedAt: finishedAt,
       })
       return { ok: true, result }
     } catch (error) {
       const normalizedError = this.normalizeError(error)
       const result = error instanceof ApprovalWebhookClientError ? error.result : undefined
-      await this.prisma.approvalWebhookDelivery.update({
-        where: { id: deliveryId },
-        data: {
-          status: 'FAILED',
-          httpStatus: result?.httpStatus || null,
-          responseBytes: result?.responseBytes ?? null,
-          durationMs: result?.durationMs ?? null,
-          errorCode: normalizedError.code,
-          errorMessage: normalizedError.message,
-          finishedAt: new Date(),
-        },
+      const finishedAt = prisma8Now()
+      await this.deliveries().where({ id: deliveryId }).update({
+        status: 'FAILED',
+        httpStatus: result?.httpStatus || null,
+        responseBytes: result?.responseBytes ?? null,
+        durationMs: result?.durationMs ?? null,
+        errorCode: prisma8Varchar(normalizedError.code, 64),
+        errorMessage: prisma8Varchar(normalizedError.message, 500),
+        finishedAt,
+        updatedAt: finishedAt,
       })
       return { ok: false, error: normalizedError }
     }
@@ -279,5 +284,9 @@ export class ApprovalWebhookService {
 
   private isSecurityClientError(error: ApprovalWebhookClientError) {
     return ['PRIVATE_ADDRESS', 'DNS_RESOLUTION_FAILED'].includes(error.code)
+  }
+
+  private deliveries() {
+    return this.prisma8.client.orm.public.ApprovalWebhookDeliveries
   }
 }

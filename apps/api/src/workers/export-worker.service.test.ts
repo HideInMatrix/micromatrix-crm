@@ -33,26 +33,41 @@ function serviceFixture() {
       return true
     },
   }
-  const prisma = {
-    user: {
-      findUnique: async () => ({
-        id: 'user-a',
-        tenantId: 'tenant-a',
-        name: 'User',
-        email: 'u@example.com',
-        phone: null,
-        status: 'ACTIVE',
-        deptId: null,
-        leaderId: null,
-        authVersion: 0,
-        userRoles: [],
-      }),
+  const collection = (rows: any[]) => ({
+    where() {
+      return this
+    },
+    select() {
+      return this
+    },
+    first: async () => rows[0] ?? null,
+    all: async () => rows,
+  })
+  const prisma8 = {
+    client: {
+      orm: {
+        public: {
+          Users: collection([
+            {
+              id: 'user-a',
+              tenantId: 'tenant-a',
+              name: 'User',
+              email: 'u@example.com',
+              status: 'ACTIVE',
+              deptId: null,
+              leaderId: null,
+            },
+          ]),
+          UserRoles: collection([]),
+          Roles: collection([]),
+        },
+      },
     },
   }
   const jobs = { startExportWorker: () => ({}) }
   const instance = new ExportWorkerService(
     jobs as never,
-    prisma as never,
+    prisma8 as never,
     tasks as never,
     handler('customer', calls) as never,
     handler('contact', calls) as never,

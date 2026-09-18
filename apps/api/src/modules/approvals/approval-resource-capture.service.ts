@@ -1,16 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+import type { ApprovalJsonValue } from './approval-runtime.types'
 
-type CaptureHandler = (user: AuthUser, targetId: string) => Promise<Prisma.InputJsonValue>
+type CaptureHandler = (user: AuthUser, targetId: string) => Promise<ApprovalJsonValue>
 
 @Injectable()
 export class ApprovalResourceCaptureService {
   private readonly handlers: Record<ApprovalModule, CaptureHandler>
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(private readonly prisma8: Prisma8Service) {
     this.handlers = {
       quote: (user, targetId) => this.captureQuotation(user, targetId),
       contract: (user, targetId) => this.captureContract(user, targetId),
@@ -23,16 +24,19 @@ export class ApprovalResourceCaptureService {
     return this.handlers[module](user, targetId)
   }
 
-  private async captureQuotation(user: AuthUser, targetId: string): Promise<Prisma.InputJsonValue> {
-    const quotation = await this.prisma.opportunityQuotation.findFirst({
-      where: { id: targetId, organizationId: user.tenantId },
-      select: { name: true, opportunityId: true, untilTime: true, amount: true },
+  private async captureQuotation(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
+    const id = prisma8Varchar(targetId, 32)
+    const quotation = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+      id,
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .select('name', 'opportunityId', 'untilTime', 'amount')
+      .first()
     if (!quotation) throw new NotFoundException('报价不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma.opportunityQuotationField.findMany({ where: { resourceId: targetId } }),
-      this.prisma.opportunityQuotationFieldBlob.findMany({ where: { resourceId: targetId } }),
-      this.prisma.opportunityQuotationSnapshot.findMany({ where: { quotationId: targetId } }),
+      this.prisma8.client.orm.public.OpportunityQuotationField.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.OpportunityQuotationFieldBlob.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({ quotationId: id }).all(),
     ])
     return {
       quotation: {
@@ -44,30 +48,33 @@ export class ApprovalResourceCaptureService {
       fields,
       fieldBlobs,
       snapshots,
-    } as unknown as Prisma.InputJsonValue
+    } as unknown as ApprovalJsonValue
   }
 
-  private async captureContract(user: AuthUser, targetId: string): Promise<Prisma.InputJsonValue> {
-    const contract = await this.prisma.contract.findFirst({
-      where: { id: targetId, organizationId: user.tenantId },
-      select: {
-        name: true,
-        customerId: true,
-        owner: true,
-        amount: true,
-        number: true,
-        stage: true,
-        startTime: true,
-        endTime: true,
-        voidReason: true,
-        pos: true,
-      },
+  private async captureContract(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
+    const id = prisma8Varchar(targetId, 32)
+    const contract = await this.prisma8.client.orm.public.Contract.where({
+      id,
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .select(
+        'name',
+        'customerId',
+        'owner',
+        'amount',
+        'number',
+        'stage',
+        'startTime',
+        'endTime',
+        'voidReason',
+        'pos',
+      )
+      .first()
     if (!contract) throw new NotFoundException('合同不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma.contractField.findMany({ where: { resourceId: targetId } }),
-      this.prisma.contractFieldBlob.findMany({ where: { resourceId: targetId } }),
-      this.prisma.contractSnapshot.findMany({ where: { contractId: targetId } }),
+      this.prisma8.client.orm.public.ContractField.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.ContractFieldBlob.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.ContractSnapshot.where({ contractId: id }).all(),
     ])
     return {
       contract: {
@@ -85,27 +92,22 @@ export class ApprovalResourceCaptureService {
       fields,
       fieldBlobs,
       snapshots,
-    } as unknown as Prisma.InputJsonValue
+    } as unknown as ApprovalJsonValue
   }
 
-  private async captureInvoice(user: AuthUser, targetId: string): Promise<Prisma.InputJsonValue> {
-    const invoice = await this.prisma.contractInvoice.findFirst({
-      where: { id: targetId, organizationId: user.tenantId },
-      select: {
-        name: true,
-        contractId: true,
-        owner: true,
-        amount: true,
-        invoiceType: true,
-        taxRate: true,
-        businessTitleId: true,
-      },
+  private async captureInvoice(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
+    const id = prisma8Varchar(targetId, 32)
+    const invoice = await this.prisma8.client.orm.public.ContractInvoice.where({
+      id,
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .select('name', 'contractId', 'owner', 'amount', 'invoiceType', 'taxRate', 'businessTitleId')
+      .first()
     if (!invoice) throw new NotFoundException('发票不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma.contractInvoiceField.findMany({ where: { resourceId: targetId } }),
-      this.prisma.contractInvoiceFieldBlob.findMany({ where: { resourceId: targetId } }),
-      this.prisma.contractInvoiceSnapshot.findMany({ where: { invoiceId: targetId } }),
+      this.prisma8.client.orm.public.ContractInvoiceField.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.ContractInvoiceFieldBlob.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.ContractInvoiceSnapshot.where({ invoiceId: id }).all(),
     ])
     return {
       invoice: {
@@ -120,28 +122,22 @@ export class ApprovalResourceCaptureService {
       fields,
       fieldBlobs,
       snapshots,
-    } as unknown as Prisma.InputJsonValue
+    } as unknown as ApprovalJsonValue
   }
 
-  private async captureOrder(user: AuthUser, targetId: string): Promise<Prisma.InputJsonValue> {
-    const order = await this.prisma.order.findFirst({
-      where: { id: targetId, organizationId: user.tenantId },
-      select: {
-        number: true,
-        name: true,
-        customerId: true,
-        contractId: true,
-        owner: true,
-        amount: true,
-        stage: true,
-        pos: true,
-      },
+  private async captureOrder(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
+    const id = prisma8Varchar(targetId, 32)
+    const order = await this.prisma8.client.orm.public.SalesOrder.where({
+      id,
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .select('number', 'name', 'customerId', 'contractId', 'owner', 'amount', 'stage', 'pos')
+      .first()
     if (!order) throw new NotFoundException('订单不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma.orderField.findMany({ where: { resourceId: targetId } }),
-      this.prisma.orderFieldBlob.findMany({ where: { resourceId: targetId } }),
-      this.prisma.orderSnapshot.findMany({ where: { orderId: targetId } }),
+      this.prisma8.client.orm.public.SalesOrderField.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.SalesOrderFieldBlob.where({ resourceId: id }).all(),
+      this.prisma8.client.orm.public.SalesOrderSnapshot.where({ orderId: id }).all(),
     ])
     return {
       order: {
@@ -157,6 +153,6 @@ export class ApprovalResourceCaptureService {
       fields,
       fieldBlobs,
       snapshots,
-    } as unknown as Prisma.InputJsonValue
+    } as unknown as ApprovalJsonValue
   }
 }

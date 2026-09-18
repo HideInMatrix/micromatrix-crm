@@ -1,16 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-alpine AS base
+FROM node:25-alpine AS base
 
 RUN apk add --no-cache ca-certificates openssl
 
 FROM base AS builder
 
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-
-RUN corepack enable \
-  && corepack prepare pnpm@11.25.0 --activate
+RUN npm install --global pnpm@11.25.0
 
 WORKDIR /workspace
 

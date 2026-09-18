@@ -5,7 +5,11 @@ import path from 'node:path'
 import { ConfigService } from '@nestjs/config'
 import { ServiceUnavailableException } from '@nestjs/common'
 import type { AsyncJobsService } from '../../async-jobs/async-jobs.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import {
+  prisma8TimestampFromDate,
+  prisma8TimestampToDate,
+} from '../../prisma/prisma8-temporal'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { ExportTasksService } from './export-tasks.service'
 
 type Row = {
@@ -48,66 +52,83 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
   }))
   let locks = 0
   let enqueueCalls = 0
-  const tx = {
-    $queryRaw: async () => {
-      locks += 1
-      return [{ locked: '1' }]
+  const project = (row: Row, fields: string[]) =>
+    fields.length
+      ? Object.fromEntries(fields.map((field) => [field, row[field as keyof Row]]))
+      : row
+  const collection = (where: Record<string, unknown> = {}, fields: string[] = []): any => ({
+    where: (next: Record<string, unknown>) => collection({ ...where, ...next }, fields),
+    select: (...nextFields: string[]) => collection(where, nextFields),
+    limit: (count: number) => ({
+      all: async () =>
+        rows
+          .filter((row) =>
+            Object.entries(where).every(([key, value]) => row[key as keyof Row] === value),
+          )
+          .slice(0, count)
+          .map((row) => project(row, fields)),
+    }),
+    first: async () => {
+      const row = rows.find((item) =>
+        Object.entries(where).every(([key, value]) => item[key as keyof Row] === value),
+      )
+      return row ? project(row, fields) : null
     },
-    exportTask: {
-      count: async ({ where }: any) =>
-        rows.filter(
-          (row) =>
-            row.tenantId === where.tenantId &&
-            row.userId === where.userId &&
-            row.status === where.status,
-        ).length,
-      findFirst: async ({ where }: any) =>
-        rows.find(
-          (row) =>
-            row.tenantId === where.tenantId &&
-            row.userId === where.userId &&
-            row.module === where.module &&
-            row.status === where.status,
-        ) ?? null,
-      create: async ({ data }: any) => {
-        const row: Row = {
-          id: `task-${rows.length + 1}`,
-          filePath: null,
-          status: 'PENDING',
-          rowCount: 0,
-          fileSize: null,
-          errorMessage: null,
-          startedAt: null,
-          attempts: 0,
-          completedAt: null,
-          createdAt: new Date(),
-          ...data,
+    create: async (data: any) => {
+      const createdAt = new Date()
+      const row: Row = {
+        id: `task-${rows.length + 1}`,
+        tenantId: data.tenantId,
+        userId: data.userId,
+        module: data.module,
+        fileName: data.fileName,
+        filePath: null,
+        status: 'PENDING',
+        rowCount: 0,
+        fileSize: null,
+        errorMessage: null,
+        payload: data.payload,
+        startedAt: null,
+        attempts: 0,
+        completedAt: null,
+        expiresAt: prisma8TimestampToDate(data.expiresAt),
+        createdAt,
+      }
+      rows.push(row)
+      return {
+        ...project(row, fields),
+        createdAt: prisma8TimestampFromDate(createdAt),
+        completedAt: null,
+        expiresAt: data.expiresAt,
+      }
+    },
+    deleteAndCount: async () => {
+      const before = rows.length
+      for (let index = rows.length - 1; index >= 0; index--) {
+        const row = rows[index]!
+        if (Object.entries(where).every(([key, value]) => row[key as keyof Row] === value)) {
+          rows.splice(index, 1)
         }
-        rows.push(row)
-        return row
-      },
+      }
+      return before - rows.length
     },
-  }
-  const prisma = {
-    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
-    exportTask: {
-      deleteMany: async ({ where }: any) => {
-        const before = rows.length
-        for (let index = rows.length - 1; index >= 0; index--) {
-          const row = rows[index]!
-          if (
-            row.id === where.id &&
-            row.tenantId === where.tenantId &&
-            row.userId === where.userId &&
-            row.status === where.status
-          ) {
-            rows.splice(index, 1)
-          }
-        }
-        return { count: before - rows.length }
+  })
+  const prisma8 = {
+    client: {
+      orm: { public: { ExportTasks: collection() } },
+      raw: {
+        sql: () => ({ returnsRow: () => ({ build: () => ({}) }) }),
       },
+      transaction: async (callback: (tx: any) => Promise<unknown>) =>
+        callback({
+          query: async function* () {
+            locks += 1
+            yield { locked: '1' }
+          },
+          orm: { public: { ExportTasks: collection() } },
+        }),
     },
-  } as unknown as PrismaService
+  } as unknown as Prisma8Service
   const asyncJobs = {
     enqueueExport: async () => {
       enqueueCalls += 1
@@ -115,7 +136,7 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
     },
   } as unknown as AsyncJobsService
   const service = new ExportTasksService(
-    prisma,
+    prisma8,
     asyncJobs,
     new ConfigService({ UPLOAD_DIR: '/tmp/mmx-export-tests' }),
   )
@@ -196,13 +217,19 @@ test('取消竞态下 complete 的 PENDING CAS 失败后删除刚生成的文件
     'scripts',
     `.tmp-export-cancel-race-${process.pid}-${Date.now()}`,
   )
-  const prisma = {
-    exportTask: {
-      updateMany: async () => ({ count: 0 }),
+  const prisma8 = {
+    client: {
+      orm: {
+        public: {
+          ExportTasks: {
+            where: () => ({ updateAndCount: async () => 0 }),
+          },
+        },
+      },
     },
-  } as unknown as PrismaService
+  } as unknown as Prisma8Service
   const service = new ExportTasksService(
-    prisma,
+    prisma8,
     {} as AsyncJobsService,
     new ConfigService({ UPLOAD_DIR: uploadRoot }),
   )

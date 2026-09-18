@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { AuthModule } from '../../auth/auth.module'
+import { Prisma8Module } from '../../prisma/prisma8.module'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import {
   DingTalkExternalIdentitiesController,
@@ -8,7 +9,7 @@ import {
 import { DingTalkSsoService } from './dingtalk-sso.service'
 
 @Module({
-  imports: [AuthModule, EnterpriseIntegrationsModule],
+  imports: [AuthModule, Prisma8Module, EnterpriseIntegrationsModule],
   controllers: [DingTalkSsoController, DingTalkExternalIdentitiesController],
   providers: [DingTalkSsoService],
   exports: [DingTalkSsoService],

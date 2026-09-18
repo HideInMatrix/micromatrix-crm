@@ -11,9 +11,17 @@ import {
   type FieldVO,
   type FilterCondition,
 } from '@micromatrix/shared'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { ModuleFormsService } from './module-forms.service'
+
+type Prisma8RawExpression = ReturnType<
+  ReturnType<Prisma8Service['client']['raw']['sql']>['returns']
+>
+type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type Prisma8Database = { orm: Prisma8Service['client']['orm'] }
 
 export type ResourceFieldType =
   | 'clue'
@@ -219,8 +227,8 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
 @Injectable()
 export class ResourceFieldValueService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly moduleForms: ModuleFormsService,
+    private readonly prisma8: Prisma8Service,
   ) {}
 
   async validate(
@@ -234,7 +242,7 @@ export class ResourceFieldValueService {
       RESOURCE_CONFIG[resourceType].formKey,
     )
     const validated = await this.validateWithFields(
-      this.prisma,
+      this.prisma8.client,
       organizationId,
       resourceType,
       fields,
@@ -254,7 +262,7 @@ export class ResourceFieldValueService {
     resourceId: string,
     values: Record<string, unknown>,
     mode: ResourceFieldSaveMode,
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     actorId: string,
   ): Promise<Record<string, unknown>> {
     await this.assertResource(tx, organizationId, resourceType, resourceId)
@@ -286,9 +294,7 @@ export class ResourceFieldValueService {
       (value) => value.field.config?.unique && value.serialized !== null,
     )) {
       const lockKey = `${organizationId}:${resourceType}:${item.field.id}:${item.serialized}`
-      await tx.$queryRaw(
-        Prisma.sql`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
-      )
+      await this.acquireUniqueLock(tx, lockKey)
       await this.assertUnique(tx, organizationId, resourceType, item, resourceId)
     }
 
@@ -320,7 +326,7 @@ export class ResourceFieldValueService {
       fields.filter((field) => !field.system).map((field) => [field.id, field]),
     )
     const [normal, blob] = await this.findValues(
-      this.prisma,
+      this.prisma8.client,
       organizationId,
       resourceType,
       uniqueIds,
@@ -348,7 +354,7 @@ export class ResourceFieldValueService {
       fields.filter((field) => RESOURCE_FIELD_FILE_TYPES.has(field.type)).map((field) => field.id),
     )
     if (!fileFieldIds.size) return false
-    const [normal, blob] = await this.findValues(this.prisma, organizationId, resourceType, [
+    const [normal, blob] = await this.findValues(this.prisma8.client, organizationId, resourceType, [
       resourceId,
     ])
     return [...normal, ...blob].some(
@@ -375,15 +381,14 @@ export class ResourceFieldValueService {
       (await this.load(organizationId, resourceType, [resourceId])).get(resourceId) ?? {}
     const ids = fileFields.flatMap((field) => this.fileIds(values[field.key]))
     if (!ids.length) return result
-    const rows = await this.prisma.attachment.findMany({
-      where: {
-        tenantId: organizationId,
-        targetType: resourceFieldAttachmentTarget(resourceType),
-        targetId: resourceId,
-        id: { in: [...new Set(ids)] },
-      },
-      orderBy: { createdAt: 'asc' },
+    const rows = await this.prisma8.client.orm.public.Attachments.where({
+      tenantId: organizationId,
+      targetType: resourceFieldAttachmentTarget(resourceType),
+      targetId: resourceId,
     })
+      .where((row) => row.id.in([...new Set(ids)]))
+      .orderBy((row) => row.createdAt.asc())
+      .all()
     const byId = new Map(rows.map((row) => [row.id, row]))
     for (const field of fileFields) {
       result[field.key] = this.fileIds(values[field.key]).flatMap((id) => {
@@ -400,7 +405,7 @@ export class ResourceFieldValueService {
     resourceIds: string[],
     fieldIdOrKey: string,
     value: unknown,
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
   ): Promise<{ count: number }> {
     const uniqueIds = [...new Set(resourceIds)]
     if (!uniqueIds.length) return { count: 0 }
@@ -435,9 +440,7 @@ export class ResourceFieldValueService {
       if (!item) continue
       if (field.config?.unique && item.serialized !== null) {
         const lockKey = `${organizationId}:${resourceType}:${field.id}:${item.serialized}`
-        await tx.$queryRaw(
-          Prisma.sql`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
-        )
+        await this.acquireUniqueLock(tx, lockKey)
         await this.assertUnique(tx, organizationId, resourceType, item, resourceId)
       }
       await this.deleteValues(tx, resourceType, resourceId, [field.id])
@@ -460,7 +463,7 @@ export class ResourceFieldValueService {
     organizationId: string,
     resourceType: ResourceFieldType,
     conditions: FilterCondition[],
-  ): Promise<Prisma.Sql> {
+  ) {
     const config = RESOURCE_CONFIG[resourceType]
     const fields = await this.moduleForms.listFields(organizationId, config.formKey)
     const fieldMap = new Map(
@@ -471,18 +474,21 @@ export class ResourceFieldValueService {
           [field.key, field],
         ]),
     )
-    const predicates: Prisma.Sql[] = []
+    const predicates: Prisma8RawExpression[] = []
     for (const condition of conditions) {
       const field = fieldMap.get(condition.key)
       if (!field) throw new BadRequestException(`筛选字段不存在：${condition.key}`)
       if (!filterOpsForType(field.type).includes(condition.op)) {
         throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
       }
-      predicates.push(this.compilePredicate(config, field, condition))
+      predicates.push(this.compilePredicate(resourceType, field, condition))
     }
-    const combined = predicates.length ? Prisma.join(predicates, ' AND ') : Prisma.sql`TRUE`
-    const organizationColumn = config.organizationColumn ?? 'organization_id'
-    return Prisma.sql`SELECT resource.id FROM ${Prisma.raw(config.resourceTable)} AS resource WHERE resource.${Prisma.raw(organizationColumn)} = ${organizationId} AND ${combined}`
+    const client = this.prisma8.client
+    let combined = predicates[0] ?? client.raw.sql`TRUE`.returns('pg/bool@1')
+    for (const predicate of predicates.slice(1)) {
+      combined = client.raw.sql`(${combined}) AND (${predicate})`.returns('pg/bool@1')
+    }
+    return this.buildResourceFilterQuery(resourceType, organizationId, combined)
   }
 
   async filterResourceIds(
@@ -491,12 +497,227 @@ export class ResourceFieldValueService {
     conditions: FilterCondition[],
   ): Promise<string[]> {
     const query = await this.buildFilter(organizationId, resourceType, conditions)
-    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(query)
+    const rows: Array<{ id: string }> = []
+    for await (const row of this.prisma8.client.runtime().query(query.build())) rows.push(row)
     return rows.map((row) => row.id)
   }
 
+  private async acquireUniqueLock(tx: Prisma8Transaction, lockKey: string): Promise<void> {
+    const query = this.prisma8.client.raw.sql`
+      SELECT 1::int4 AS locked
+      FROM pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `.returnsRow({ locked: 'pg/int4@1' })
+    for await (const _row of tx.query(query.build())) return
+    throw new Error('获取唯一字段事务锁失败')
+  }
+
+  private buildResourceFilterQuery(
+    resourceType: ResourceFieldType,
+    organizationId: string,
+    predicate: Prisma8RawExpression,
+  ) {
+    const client = this.prisma8.client
+    switch (resourceType) {
+      case 'clue':
+        return client.raw.sql`SELECT resource.id FROM clue AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.clue.columns.id,
+        })
+      case 'customer':
+        return client.raw.sql`SELECT resource.id FROM customer AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.customer.columns.id,
+        })
+      case 'customerContact':
+        return client.raw.sql`SELECT resource.id FROM customer_contact AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.customer_contact.columns.id,
+        })
+      case 'opportunity':
+        return client.raw.sql`SELECT resource.id FROM opportunity AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.opportunity.columns.id,
+        })
+      case 'product':
+        return client.raw.sql`SELECT resource.id FROM product AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.product.columns.id,
+        })
+      case 'productPrice':
+        return client.raw.sql`SELECT resource.id FROM product_price AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.product_price.columns.id,
+        })
+      case 'quotation':
+        return client.raw.sql`SELECT resource.id FROM opportunity_quotation AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.opportunity_quotation.columns.id,
+        })
+      case 'contract':
+        return client.raw.sql`SELECT resource.id FROM contract AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.contract.columns.id,
+        })
+      case 'contractPaymentPlan':
+        return client.raw.sql`SELECT resource.id FROM contract_payment_plan AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.contract_payment_plan.columns.id,
+        })
+      case 'contractPaymentRecord':
+        return client.raw.sql`SELECT resource.id FROM contract_payment_record AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.contract_payment_record.columns.id,
+        })
+      case 'invoice':
+        return client.raw.sql`SELECT resource.id FROM contract_invoice AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.contract_invoice.columns.id,
+        })
+      case 'order':
+        return client.raw.sql`SELECT resource.id FROM sales_order AS resource
+          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.sales_order.columns.id,
+        })
+      case 'followRecord':
+        return client.raw.sql`SELECT resource.id FROM follow_up_records AS resource
+          WHERE resource."tenantId" = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.follow_up_records.columns.id,
+        })
+      case 'followPlan':
+        return client.raw.sql`SELECT resource.id FROM follow_up_plans AS resource
+          WHERE resource."tenantId" = ${organizationId} AND (${predicate})`.returnsRow({
+          id: client.sql.public.follow_up_plans.columns.id,
+        })
+    }
+  }
+
+  private resourceFieldExists(
+    resourceType: ResourceFieldType,
+    fieldId: string,
+    blob: boolean,
+    predicate?: Prisma8RawExpression,
+  ): Prisma8RawExpression {
+    const client = this.prisma8.client
+    const effectivePredicate = predicate ?? client.raw.sql`TRUE`.returns('pg/bool@1')
+    const suffix = client.raw.sql`AND (${effectivePredicate})`.returns('pg/bool@1')
+    switch (resourceType) {
+      case 'clue':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM clue_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM clue_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM clue_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM clue_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'customer':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM customer_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM customer_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM customer_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM customer_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'customerContact':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM customer_contact_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM customer_contact_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM customer_contact_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM customer_contact_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'opportunity':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM opportunity_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM opportunity_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM opportunity_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM opportunity_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'product':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM product_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM product_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM product_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM product_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'productPrice':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM product_price_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM product_price_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM product_price_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM product_price_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'quotation':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM opportunity_quotation_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM opportunity_quotation_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM opportunity_quotation_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM opportunity_quotation_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'contract':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'contractPaymentPlan':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_plan_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_plan_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_plan_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_plan_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'contractPaymentRecord':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_record_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_record_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_record_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_payment_record_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'invoice':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_invoice_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_invoice_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM contract_invoice_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM contract_invoice_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'order':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM sales_order_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM sales_order_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM sales_order_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM sales_order_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'followRecord':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM follow_up_record_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM follow_up_record_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM follow_up_record_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM follow_up_record_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+      case 'followPlan':
+        return blob
+          ? predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM follow_up_plan_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM follow_up_plan_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+          : predicate
+            ? client.raw.sql`EXISTS (SELECT 1 FROM follow_up_plan_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns('pg/bool@1')
+            : client.raw.sql`EXISTS (SELECT 1 FROM follow_up_plan_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns('pg/bool@1')
+    }
+  }
+
   private async validateWithFields(
-    client: PrismaService | Prisma.TransactionClient,
+    client: Prisma8Database,
     organizationId: string,
     resourceType: ResourceFieldType,
     fields: FieldVO[],
@@ -692,7 +913,7 @@ export class ResourceFieldValueService {
     targetType: string | null
     targetId: string | null
     uploaderId: string | null
-    createdAt: Date
+    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
   }): AttachmentVO {
     return {
       id: row.id,
@@ -702,12 +923,12 @@ export class ResourceFieldValueService {
       targetType: row.targetType,
       targetId: row.targetId,
       uploaderId: row.uploaderId,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: prisma8TimestampToISOString(row.createdAt),
     }
   }
 
   private async claimResourceFieldAttachments(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceId: string,
@@ -750,18 +971,10 @@ export class ResourceFieldValueService {
     }
     if (!allIds.length) return
 
-    const rows = await tx.attachment.findMany({
-      where: { tenantId: organizationId, id: { in: allIds } },
-      select: {
-        id: true,
-        uploaderId: true,
-        name: true,
-        size: true,
-        mime: true,
-        targetType: true,
-        targetId: true,
-      },
-    })
+    const rows = await tx.orm.public.Attachments.where({ tenantId: organizationId })
+      .where((row) => row.id.in(allIds))
+      .select('id', 'uploaderId', 'name', 'size', 'mime', 'targetType', 'targetId')
+      .all()
     if (rows.length !== allIds.length) throw new BadRequestException('文件包含不存在的记录')
     const rowMap = new Map(rows.map((row) => [row.id, row]))
     const targetType = resourceFieldAttachmentTarget(resourceType)
@@ -805,356 +1018,498 @@ export class ResourceFieldValueService {
     }
 
     if (!tempIds.length) return
-    const result = await tx.attachment.updateMany({
-      where: {
-        tenantId: organizationId,
-        uploaderId: actorId,
-        id: { in: tempIds },
-        targetType: null,
-        targetId: null,
-      },
-      data: { targetType, targetId: resourceId },
+    const count = await tx.orm.public.Attachments.where({
+      tenantId: organizationId,
+      uploaderId: actorId,
+      targetType: null,
+      targetId: null,
     })
-    if (result.count !== tempIds.length) {
+      .where((row) => row.id.in(tempIds))
+      .updateAndCount({ targetType, targetId: resourceId })
+    if (count !== tempIds.length) {
       throw new BadRequestException('文件状态已变化，请刷新后重试')
     }
   }
 
   private async assertResource(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceId: string,
   ): Promise<void> {
-    let resource: { id: string } | null
-    if (resourceType === 'clue')
-      resource = await tx.clue.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'customer')
-      resource = await tx.customer.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'customerContact')
-      resource = await tx.customerContact.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'opportunity')
-      resource = await tx.opportunity.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'product')
-      resource = await tx.product.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'productPrice')
-      resource = await tx.productPrice.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'quotation')
-      resource = await tx.opportunityQuotation.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'contract')
-      resource = await tx.contract.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'contractPaymentPlan')
-      resource = await tx.contractPaymentPlan.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'contractPaymentRecord')
-      resource = await tx.contractPaymentRecord.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'invoice')
-      resource = await tx.contractInvoice.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'order')
-      resource = await tx.order.findFirst({
-        where: { id: resourceId, organizationId },
-        select: { id: true },
-      })
-    else if (resourceType === 'followRecord')
-      resource = await tx.followUpRecord.findFirst({
-        where: { id: resourceId, tenantId: organizationId },
-        select: { id: true },
-      })
-    else
-      resource = await tx.followUpPlan.findFirst({
-        where: { id: resourceId, tenantId: organizationId },
-        select: { id: true },
-      })
-    if (!resource) throw new NotFoundException('业务数据不存在')
+    const ids = await this.ownedResourceIds(tx, organizationId, resourceType, [resourceId])
+    if (!ids.length) throw new NotFoundException('业务数据不存在')
+  }
+
+  private async ownedResourceIds(
+    client: Prisma8Database,
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    resourceIds: string[],
+  ): Promise<string[]> {
+    const ids = prisma8Varchars([...new Set(resourceIds)], 32)
+    if (!ids.length) return []
+    const selectIds = async (rows: PromiseLike<readonly { id: string }[]>) =>
+      (await rows).map((row) => String(row.id))
+    switch (resourceType) {
+      case 'clue':
+        return selectIds(
+          client.orm.public.Clue.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'customer':
+        return selectIds(
+          client.orm.public.Customer.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'customerContact':
+        return selectIds(
+          client.orm.public.CustomerContact.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'opportunity':
+        return selectIds(
+          client.orm.public.Opportunity.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'product':
+        return selectIds(
+          client.orm.public.Product.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'productPrice':
+        return selectIds(
+          client.orm.public.ProductPrice.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'quotation':
+        return selectIds(
+          client.orm.public.OpportunityQuotation.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'contract':
+        return selectIds(
+          client.orm.public.Contract.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'contractPaymentPlan':
+        return selectIds(
+          client.orm.public.ContractPaymentPlan.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'contractPaymentRecord':
+        return selectIds(
+          client.orm.public.ContractPaymentRecord.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'invoice':
+        return selectIds(
+          client.orm.public.ContractInvoice.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'order':
+        return selectIds(
+          client.orm.public.SalesOrder.where({ organizationId: prisma8Varchar(organizationId, 32) })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'followRecord':
+        return selectIds(
+          client.orm.public.FollowUpRecords.where({ tenantId: organizationId })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+      case 'followPlan':
+        return selectIds(
+          client.orm.public.FollowUpPlans.where({ tenantId: organizationId })
+            .where((row) => row.id.in(ids))
+            .select('id')
+            .all(),
+        )
+    }
   }
 
   private async assertUnique(
-    client: PrismaService | Prisma.TransactionClient,
+    client: Prisma8Database,
     organizationId: string,
     resourceType: ResourceFieldType,
     item: ValidatedFieldValue,
     excludeResourceId?: string,
   ): Promise<void> {
     if (item.serialized === null) return
-    const where = {
-      fieldId: item.field.id,
-      fieldValue: item.serialized,
-      resourceId: excludeResourceId ? { not: excludeResourceId } : undefined,
-      resource: { organizationId },
+    const candidates = await this.matchingFieldResourceIds(
+      client,
+      resourceType,
+      item.field.id,
+      item.serialized,
+      item.storage,
+      excludeResourceId,
+    )
+    if (!candidates.length) return
+    const owned = await this.ownedResourceIds(client, organizationId, resourceType, candidates)
+    if (owned.length) throw new ConflictException(`「${item.field.label}」的值不能重复`)
+  }
+
+  private async matchingFieldResourceIds(
+    client: Prisma8Database,
+    resourceType: ResourceFieldType,
+    fieldId: string,
+    fieldValue: string,
+    storage: 'normal' | 'blob',
+    excludeResourceId?: string,
+  ): Promise<string[]> {
+    const fieldIdValue = prisma8Varchar(fieldId, 32)
+    const excluded = excludeResourceId ? prisma8Varchar(excludeResourceId, 32) : null
+    const read = async <T extends { resourceId: string }>(rows: PromiseLike<readonly T[]>) =>
+      (await rows).map((row) => String(row.resourceId))
+    const normalValue = prisma8Varchar(fieldValue, 255)
+
+    switch (resourceType) {
+      case 'clue': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ClueFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ClueField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'customer': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.CustomerFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.CustomerField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'customerContact': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.CustomerContactFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.CustomerContactField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'opportunity': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.OpportunityFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.OpportunityField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'product': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ProductFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ProductField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'productPrice': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ProductPriceFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ProductPriceField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'quotation': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.OpportunityQuotationFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.OpportunityQuotationField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'contract': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ContractFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ContractField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'contractPaymentPlan': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ContractPaymentPlanFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ContractPaymentPlanField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'contractPaymentRecord': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ContractPaymentRecordFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ContractPaymentRecordField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'invoice': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.ContractInvoiceFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.ContractInvoiceField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'order': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.SalesOrderFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.SalesOrderField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'followRecord': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.FollowUpRecordFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.FollowUpRecordField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
+      case 'followPlan': {
+        if (storage === 'blob') {
+          let rows = client.orm.public.FollowUpPlanFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
+          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+          return read(rows.select('resourceId').all())
+        }
+        let rows = client.orm.public.FollowUpPlanField.where({ fieldId: fieldIdValue, fieldValue: normalValue })
+        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
+        return read(rows.select('resourceId').all())
+      }
     }
-    let repeated: { id: string } | null
-    if (resourceType === 'clue')
-      repeated =
-        item.storage === 'blob'
-          ? await client.clueFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.clueField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'customer')
-      repeated =
-        item.storage === 'blob'
-          ? await client.customerFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.customerField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'customerContact')
-      repeated =
-        item.storage === 'blob'
-          ? await client.customerContactFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.customerContactField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'opportunity')
-      repeated =
-        item.storage === 'blob'
-          ? await client.opportunityFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.opportunityField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'product')
-      repeated =
-        item.storage === 'blob'
-          ? await client.productFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.productField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'productPrice')
-      repeated =
-        item.storage === 'blob'
-          ? await client.productPriceFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.productPriceField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'quotation')
-      repeated =
-        item.storage === 'blob'
-          ? await client.opportunityQuotationFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.opportunityQuotationField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'contract')
-      repeated =
-        item.storage === 'blob'
-          ? await client.contractFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.contractField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'contractPaymentPlan')
-      repeated =
-        item.storage === 'blob'
-          ? await client.contractPaymentPlanFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.contractPaymentPlanField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'contractPaymentRecord')
-      repeated =
-        item.storage === 'blob'
-          ? await client.contractPaymentRecordFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.contractPaymentRecordField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'invoice')
-      repeated =
-        item.storage === 'blob'
-          ? await client.contractInvoiceFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.contractInvoiceField.findFirst({ where, select: { id: true } })
-    else if (resourceType === 'followRecord') {
-      const followRecordWhere = {
-        fieldId: item.field.id,
-        fieldValue: item.serialized,
-        resourceId: excludeResourceId ? { not: excludeResourceId } : undefined,
-        resource: { tenantId: organizationId },
-      }
-      repeated =
-        item.storage === 'blob'
-          ? await client.followUpRecordFieldBlob.findFirst({
-              where: followRecordWhere,
-              select: { id: true },
-            })
-          : await client.followUpRecordField.findFirst({
-              where: followRecordWhere,
-              select: { id: true },
-            })
-    } else if (resourceType === 'followPlan') {
-      const followPlanWhere = {
-        fieldId: item.field.id,
-        fieldValue: item.serialized,
-        resourceId: excludeResourceId ? { not: excludeResourceId } : undefined,
-        resource: { tenantId: organizationId },
-      }
-      repeated =
-        item.storage === 'blob'
-          ? await client.followUpPlanFieldBlob.findFirst({
-              where: followPlanWhere,
-              select: { id: true },
-            })
-          : await client.followUpPlanField.findFirst({
-              where: followPlanWhere,
-              select: { id: true },
-            })
-    } else
-      repeated =
-        item.storage === 'blob'
-          ? await client.orderFieldBlob.findFirst({ where, select: { id: true } })
-          : await client.orderField.findFirst({ where, select: { id: true } })
-    if (repeated) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
   private async deleteValues(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     resourceType: ResourceFieldType,
     resourceId: string,
     fieldIds: string[],
   ): Promise<void> {
-    const where = { resourceId, fieldId: { in: fieldIds } }
-    if (resourceType === 'clue')
-      await Promise.all([
-        tx.clueField.deleteMany({ where }),
-        tx.clueFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'customer')
-      await Promise.all([
-        tx.customerField.deleteMany({ where }),
-        tx.customerFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'customerContact')
-      await Promise.all([
-        tx.customerContactField.deleteMany({ where }),
-        tx.customerContactFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'opportunity')
-      await Promise.all([
-        tx.opportunityField.deleteMany({ where }),
-        tx.opportunityFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'product')
-      await Promise.all([
-        tx.productField.deleteMany({ where }),
-        tx.productFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'productPrice')
-      await Promise.all([
-        tx.productPriceField.deleteMany({ where }),
-        tx.productPriceFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'quotation')
-      await Promise.all([
-        tx.opportunityQuotationField.deleteMany({ where }),
-        tx.opportunityQuotationFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'contract')
-      await Promise.all([
-        tx.contractField.deleteMany({ where }),
-        tx.contractFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'contractPaymentPlan')
-      await Promise.all([
-        tx.contractPaymentPlanField.deleteMany({ where }),
-        tx.contractPaymentPlanFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'contractPaymentRecord')
-      await Promise.all([
-        tx.contractPaymentRecordField.deleteMany({ where }),
-        tx.contractPaymentRecordFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'invoice')
-      await Promise.all([
-        tx.contractInvoiceField.deleteMany({ where }),
-        tx.contractInvoiceFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'followRecord')
-      await Promise.all([
-        tx.followUpRecordField.deleteMany({ where }),
-        tx.followUpRecordFieldBlob.deleteMany({ where }),
-      ])
-    else if (resourceType === 'followPlan')
-      await Promise.all([
-        tx.followUpPlanField.deleteMany({ where }),
-        tx.followUpPlanFieldBlob.deleteMany({ where }),
-      ])
-    else
-      await Promise.all([
-        tx.orderField.deleteMany({ where }),
-        tx.orderFieldBlob.deleteMany({ where }),
-      ])
+    const resource = prisma8Varchar(resourceId, 32)
+    const fields = prisma8Varchars(fieldIds, 32)
+    if (!fields.length) return
+    switch (resourceType) {
+      case 'clue':
+        await Promise.all([
+          tx.orm.public.ClueField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ClueFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'customer':
+        await Promise.all([
+          tx.orm.public.CustomerField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.CustomerFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'customerContact':
+        await Promise.all([
+          tx.orm.public.CustomerContactField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.CustomerContactFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'opportunity':
+        await Promise.all([
+          tx.orm.public.OpportunityField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.OpportunityFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'product':
+        await Promise.all([
+          tx.orm.public.ProductField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ProductFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'productPrice':
+        await Promise.all([
+          tx.orm.public.ProductPriceField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ProductPriceFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'quotation':
+        await Promise.all([
+          tx.orm.public.OpportunityQuotationField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.OpportunityQuotationFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'contract':
+        await Promise.all([
+          tx.orm.public.ContractField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ContractFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'contractPaymentPlan':
+        await Promise.all([
+          tx.orm.public.ContractPaymentPlanField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ContractPaymentPlanFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'contractPaymentRecord':
+        await Promise.all([
+          tx.orm.public.ContractPaymentRecordField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ContractPaymentRecordFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'invoice':
+        await Promise.all([
+          tx.orm.public.ContractInvoiceField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.ContractInvoiceFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'order':
+        await Promise.all([
+          tx.orm.public.SalesOrderField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.SalesOrderFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'followRecord':
+        await Promise.all([
+          tx.orm.public.FollowUpRecordField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.FollowUpRecordFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+      case 'followPlan':
+        await Promise.all([
+          tx.orm.public.FollowUpPlanField.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+          tx.orm.public.FollowUpPlanFieldBlob.where({ resourceId: resource }).where((row) => row.fieldId.in(fields)).deleteAll(),
+        ])
+        return
+    }
   }
 
   private async createValues(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     resourceType: ResourceFieldType,
     resourceId: string,
     normal: ValidatedFieldValue[],
     blob: ValidatedFieldValue[],
   ): Promise<void> {
     const normalData = normal.map((item) => ({
-      resourceId,
-      fieldId: item.field.id,
-      fieldValue: item.serialized!,
+      id: prisma8Id32(),
+      resourceId: prisma8Varchar(resourceId, 32),
+      fieldId: prisma8Varchar(item.field.id, 32),
+      fieldValue: prisma8Varchar(item.serialized!, 255),
     }))
     const blobData = blob.map((item) => ({
-      resourceId,
-      fieldId: item.field.id,
+      id: prisma8Id32(),
+      resourceId: prisma8Varchar(resourceId, 32),
+      fieldId: prisma8Varchar(item.field.id, 32),
       fieldValue: item.serialized!,
     }))
-    if (resourceType === 'clue') {
-      if (normalData.length) await tx.clueField.createMany({ data: normalData })
-      if (blobData.length) await tx.clueFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'customer') {
-      if (normalData.length) await tx.customerField.createMany({ data: normalData })
-      if (blobData.length) await tx.customerFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'customerContact') {
-      if (normalData.length) await tx.customerContactField.createMany({ data: normalData })
-      if (blobData.length) await tx.customerContactFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'opportunity') {
-      if (normalData.length) await tx.opportunityField.createMany({ data: normalData })
-      if (blobData.length) await tx.opportunityFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'product') {
-      if (normalData.length) await tx.productField.createMany({ data: normalData })
-      if (blobData.length) await tx.productFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'productPrice') {
-      if (normalData.length) await tx.productPriceField.createMany({ data: normalData })
-      if (blobData.length) await tx.productPriceFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'quotation') {
-      if (normalData.length) await tx.opportunityQuotationField.createMany({ data: normalData })
-      if (blobData.length) await tx.opportunityQuotationFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'contract') {
-      if (normalData.length) await tx.contractField.createMany({ data: normalData })
-      if (blobData.length) await tx.contractFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'contractPaymentPlan') {
-      if (normalData.length) await tx.contractPaymentPlanField.createMany({ data: normalData })
-      if (blobData.length) await tx.contractPaymentPlanFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'contractPaymentRecord') {
-      if (normalData.length) await tx.contractPaymentRecordField.createMany({ data: normalData })
-      if (blobData.length) await tx.contractPaymentRecordFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'invoice') {
-      if (normalData.length) await tx.contractInvoiceField.createMany({ data: normalData })
-      if (blobData.length) await tx.contractInvoiceFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'followRecord') {
-      if (normalData.length) await tx.followUpRecordField.createMany({ data: normalData })
-      if (blobData.length) await tx.followUpRecordFieldBlob.createMany({ data: blobData })
-    } else if (resourceType === 'followPlan') {
-      if (normalData.length) await tx.followUpPlanField.createMany({ data: normalData })
-      if (blobData.length) await tx.followUpPlanFieldBlob.createMany({ data: blobData })
-    } else {
-      if (normalData.length) await tx.orderField.createMany({ data: normalData })
-      if (blobData.length) await tx.orderFieldBlob.createMany({ data: blobData })
+    switch (resourceType) {
+      case 'clue':
+        if (normalData.length) await tx.orm.public.ClueField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ClueFieldBlob.createAll(blobData)
+        return
+      case 'customer':
+        if (normalData.length) await tx.orm.public.CustomerField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.CustomerFieldBlob.createAll(blobData)
+        return
+      case 'customerContact':
+        if (normalData.length) await tx.orm.public.CustomerContactField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.CustomerContactFieldBlob.createAll(blobData)
+        return
+      case 'opportunity':
+        if (normalData.length) await tx.orm.public.OpportunityField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.OpportunityFieldBlob.createAll(blobData)
+        return
+      case 'product':
+        if (normalData.length) await tx.orm.public.ProductField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ProductFieldBlob.createAll(blobData)
+        return
+      case 'productPrice':
+        if (normalData.length) await tx.orm.public.ProductPriceField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ProductPriceFieldBlob.createAll(blobData)
+        return
+      case 'quotation':
+        if (normalData.length) await tx.orm.public.OpportunityQuotationField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.OpportunityQuotationFieldBlob.createAll(blobData)
+        return
+      case 'contract':
+        if (normalData.length) await tx.orm.public.ContractField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ContractFieldBlob.createAll(blobData)
+        return
+      case 'contractPaymentPlan':
+        if (normalData.length) await tx.orm.public.ContractPaymentPlanField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ContractPaymentPlanFieldBlob.createAll(blobData)
+        return
+      case 'contractPaymentRecord':
+        if (normalData.length) await tx.orm.public.ContractPaymentRecordField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ContractPaymentRecordFieldBlob.createAll(blobData)
+        return
+      case 'invoice':
+        if (normalData.length) await tx.orm.public.ContractInvoiceField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.ContractInvoiceFieldBlob.createAll(blobData)
+        return
+      case 'order':
+        if (normalData.length) await tx.orm.public.SalesOrderField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.SalesOrderFieldBlob.createAll(blobData)
+        return
+      case 'followRecord':
+        if (normalData.length) await tx.orm.public.FollowUpRecordField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.FollowUpRecordFieldBlob.createAll(blobData)
+        return
+      case 'followPlan':
+        if (normalData.length) await tx.orm.public.FollowUpPlanField.createAll(normalData)
+        if (blobData.length) await tx.orm.public.FollowUpPlanFieldBlob.createAll(blobData)
+        return
     }
   }
 
   private async findValues(
-    client: PrismaService | Prisma.TransactionClient,
+    client: Prisma8Database,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceIds: string[],
@@ -1164,102 +1519,109 @@ export class ResourceFieldValueService {
       Array<{ resourceId: string; fieldId: string; fieldValue: string }>,
     ]
   > {
-    const where = { resourceId: { in: resourceIds }, resource: { organizationId } }
-    const select = { resourceId: true, fieldId: true, fieldValue: true }
-    if (resourceType === 'clue')
-      return Promise.all([
-        client.clueField.findMany({ where, select }),
-        client.clueFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'customer')
-      return Promise.all([
-        client.customerField.findMany({ where, select }),
-        client.customerFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'customerContact')
-      return Promise.all([
-        client.customerContactField.findMany({ where, select }),
-        client.customerContactFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'opportunity')
-      return Promise.all([
-        client.opportunityField.findMany({ where, select }),
-        client.opportunityFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'product')
-      return Promise.all([
-        client.productField.findMany({ where, select }),
-        client.productFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'productPrice')
-      return Promise.all([
-        client.productPriceField.findMany({ where, select }),
-        client.productPriceFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'quotation')
-      return Promise.all([
-        client.opportunityQuotationField.findMany({ where, select }),
-        client.opportunityQuotationFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'contract')
-      return Promise.all([
-        client.contractField.findMany({ where, select }),
-        client.contractFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'contractPaymentPlan')
-      return Promise.all([
-        client.contractPaymentPlanField.findMany({ where, select }),
-        client.contractPaymentPlanFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'contractPaymentRecord')
-      return Promise.all([
-        client.contractPaymentRecordField.findMany({ where, select }),
-        client.contractPaymentRecordFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'invoice')
-      return Promise.all([
-        client.contractInvoiceField.findMany({ where, select }),
-        client.contractInvoiceFieldBlob.findMany({ where, select }),
-      ])
-    if (resourceType === 'followRecord') {
-      const followRecordWhere = {
-        resourceId: { in: resourceIds },
-        resource: { tenantId: organizationId },
-      }
-      return Promise.all([
-        client.followUpRecordField.findMany({ where: followRecordWhere, select }),
-        client.followUpRecordFieldBlob.findMany({ where: followRecordWhere, select }),
-      ])
+    const owned = await this.ownedResourceIds(client, organizationId, resourceType, resourceIds)
+    const ids = prisma8Varchars(owned, 32)
+    if (!ids.length) return [[], []]
+    const selectRows = async <T extends { resourceId: string; fieldId: string; fieldValue: string }>(
+      rows: PromiseLike<readonly T[]>,
+    ) => (await rows).map((row) => ({
+      resourceId: String(row.resourceId),
+      fieldId: String(row.fieldId),
+      fieldValue: row.fieldValue,
+    }))
+    switch (resourceType) {
+      case 'clue':
+        return Promise.all([
+          selectRows(client.orm.public.ClueField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ClueFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'customer':
+        return Promise.all([
+          selectRows(client.orm.public.CustomerField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.CustomerFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'customerContact':
+        return Promise.all([
+          selectRows(client.orm.public.CustomerContactField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.CustomerContactFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'opportunity':
+        return Promise.all([
+          selectRows(client.orm.public.OpportunityField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.OpportunityFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'product':
+        return Promise.all([
+          selectRows(client.orm.public.ProductField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ProductFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'productPrice':
+        return Promise.all([
+          selectRows(client.orm.public.ProductPriceField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ProductPriceFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'quotation':
+        return Promise.all([
+          selectRows(client.orm.public.OpportunityQuotationField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.OpportunityQuotationFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'contract':
+        return Promise.all([
+          selectRows(client.orm.public.ContractField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ContractFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'contractPaymentPlan':
+        return Promise.all([
+          selectRows(client.orm.public.ContractPaymentPlanField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ContractPaymentPlanFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'contractPaymentRecord':
+        return Promise.all([
+          selectRows(client.orm.public.ContractPaymentRecordField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ContractPaymentRecordFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'invoice':
+        return Promise.all([
+          selectRows(client.orm.public.ContractInvoiceField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.ContractInvoiceFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'order':
+        return Promise.all([
+          selectRows(client.orm.public.SalesOrderField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.SalesOrderFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'followRecord':
+        return Promise.all([
+          selectRows(client.orm.public.FollowUpRecordField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.FollowUpRecordFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
+      case 'followPlan':
+        return Promise.all([
+          selectRows(client.orm.public.FollowUpPlanField.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+          selectRows(client.orm.public.FollowUpPlanFieldBlob.where((row) => row.resourceId.in(ids)).select('resourceId', 'fieldId', 'fieldValue').all()),
+        ])
     }
-    if (resourceType === 'followPlan') {
-      const followPlanWhere = {
-        resourceId: { in: resourceIds },
-        resource: { tenantId: organizationId },
-      }
-      return Promise.all([
-        client.followUpPlanField.findMany({ where: followPlanWhere, select }),
-        client.followUpPlanFieldBlob.findMany({ where: followPlanWhere, select }),
-      ])
-    }
-    return Promise.all([
-      client.orderField.findMany({ where, select }),
-      client.orderFieldBlob.findMany({ where, select }),
-    ])
   }
 
   private compilePredicate(
-    config: ResourceConfig,
+    resourceType: ResourceFieldType,
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma.Sql {
-    const normalTable = Prisma.raw(config.normalTable)
-    const blobTable = Prisma.raw(config.blobTable)
-    const exists = (table: Prisma.Sql, predicate: Prisma.Sql = Prisma.sql`TRUE`) =>
-      Prisma.sql`EXISTS (SELECT 1 FROM ${table} AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${field.id} AND ${predicate})`
-    const absent = Prisma.sql`NOT (${exists(normalTable)}) AND NOT (${exists(blobTable)})`
-    if (condition.op === 'isEmpty') return absent
-    if (condition.op === 'notEmpty')
-      return Prisma.sql`(${exists(normalTable)}) OR (${exists(blobTable)})`
+  ): Prisma8RawExpression {
+    const client = this.prisma8.client
+    const existsNormal = (predicate?: Prisma8RawExpression) =>
+      this.resourceFieldExists(resourceType, field.id, false, predicate)
+    const existsBlob = (predicate?: Prisma8RawExpression) =>
+      this.resourceFieldExists(resourceType, field.id, true, predicate)
+    const negate = (expression: Prisma8RawExpression) =>
+      client.raw.sql`NOT (${expression})`.returns('pg/bool@1')
+
+    if (condition.op === 'isEmpty') {
+      return client.raw.sql`NOT (${existsNormal()}) AND NOT (${existsBlob()})`.returns('pg/bool@1')
+    }
+    if (condition.op === 'notEmpty') {
+      return client.raw.sql`(${existsNormal()}) OR (${existsBlob()})`.returns('pg/bool@1')
+    }
 
     if (
       (condition.op === 'contains' || condition.op === 'notContains') &&
@@ -1268,9 +1630,11 @@ export class ResourceFieldValueService {
       if (typeof condition.value !== 'string')
         throw new BadRequestException('多选字段筛选值格式不正确')
       this.assertOptions(field, [condition.value])
-      const match = Prisma.sql`field_value.field_value::jsonb @> ${JSON.stringify([condition.value])}::jsonb`
-      const matched = exists(blobTable, match)
-      return condition.op === 'notContains' ? Prisma.sql`NOT (${matched})` : matched
+      const match = client.raw.sql`field_value.field_value::jsonb @> ${JSON.stringify([
+        condition.value,
+      ])}::jsonb`.returns('pg/bool@1')
+      const matched = existsBlob(match)
+      return condition.op === 'notContains' ? negate(matched) : matched
     }
 
     if (condition.op === 'in' || condition.op === 'notIn') {
@@ -1281,23 +1645,25 @@ export class ResourceFieldValueService {
       if (['multiselect', 'checkbox', 'data_source_multiple'].includes(field.type)) {
         const values = rawValues.map(String)
         this.assertOptions(field, values)
-        const matched = exists(
-          blobTable,
-          Prisma.sql`jsonb_exists_any(field_value.field_value::jsonb, ${values}::text[])`,
-        )
-        return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
+        const valuesJson = JSON.stringify(values)
+        const match = client.raw.sql`jsonb_exists_any(
+          field_value.field_value::jsonb,
+          ARRAY(SELECT jsonb_array_elements_text(${valuesJson}::jsonb))
+        )`.returns('pg/bool@1')
+        const matched = existsBlob(match)
+        return condition.op === 'notIn' ? negate(matched) : matched
       }
       const serializedValues = rawValues.map((value) => this.serialize(field, value))
       if (serializedValues.some((value) => value === null)) {
         throw new BadRequestException('筛选值不能为空')
       }
       const storage = this.storageFor(field.type, serializedValues[0] as string)
-      const table = storage === 'blob' ? blobTable : normalTable
-      const matched = exists(
-        table,
-        Prisma.sql`field_value.field_value IN (${Prisma.join(serializedValues as string[])})`,
-      )
-      return condition.op === 'notIn' ? Prisma.sql`NOT (${matched})` : matched
+      const valuesJson = JSON.stringify(serializedValues)
+      const match = client.raw.sql`field_value.field_value IN (
+        SELECT jsonb_array_elements_text(${valuesJson}::jsonb)
+      )`.returns('pg/bool@1')
+      const matched = storage === 'blob' ? existsBlob(match) : existsNormal(match)
+      return condition.op === 'notIn' ? negate(matched) : matched
     }
 
     const serialized =
@@ -1306,21 +1672,43 @@ export class ResourceFieldValueService {
         : this.serialize(field, condition.value)
     if (serialized === null) throw new BadRequestException('筛选值不能为空')
     const storage = this.storageFor(field.type, serialized)
-    const table = storage === 'blob' ? blobTable : normalTable
-    let match: Prisma.Sql
+    let match: Prisma8RawExpression
     if (condition.op === 'contains' || condition.op === 'notContains') {
-      match = Prisma.sql`field_value.field_value LIKE ${`%${serialized}%`}`
-    } else if (['gt', 'gte', 'lt', 'lte'].includes(condition.op)) {
-      const operator = { gt: '>', gte: '>=', lt: '<', lte: '<=' }[
-        condition.op as 'gt' | 'gte' | 'lt' | 'lte'
-      ]
-      match = Prisma.sql`field_value.field_value::numeric ${Prisma.raw(operator)} ${Number(serialized)}`
+      match = client.raw.sql`field_value.field_value LIKE ${`%${serialized}%`}`.returns('pg/bool@1')
+    } else if (['date', 'datetime'].includes(field.type)) {
+      if (condition.op === 'gte') {
+        match = client.raw.sql`field_value.field_value::timestamptz >= ${serialized}::timestamptz`.returns(
+          'pg/bool@1',
+        )
+      } else if (condition.op === 'lte') {
+        match = client.raw.sql`field_value.field_value::timestamptz <= ${serialized}::timestamptz`.returns(
+          'pg/bool@1',
+        )
+      } else {
+        throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
+      }
+    } else if (condition.op === 'gt') {
+      match = client.raw.sql`field_value.field_value::numeric > ${Number(serialized)}`.returns(
+        'pg/bool@1',
+      )
+    } else if (condition.op === 'gte') {
+      match = client.raw.sql`field_value.field_value::numeric >= ${Number(serialized)}`.returns(
+        'pg/bool@1',
+      )
+    } else if (condition.op === 'lt') {
+      match = client.raw.sql`field_value.field_value::numeric < ${Number(serialized)}`.returns(
+        'pg/bool@1',
+      )
+    } else if (condition.op === 'lte') {
+      match = client.raw.sql`field_value.field_value::numeric <= ${Number(serialized)}`.returns(
+        'pg/bool@1',
+      )
     } else {
-      match = Prisma.sql`field_value.field_value = ${serialized}`
+      match = client.raw.sql`field_value.field_value = ${serialized}`.returns('pg/bool@1')
     }
-    const matched = exists(table, match)
+    const matched = storage === 'blob' ? existsBlob(match) : existsNormal(match)
     return condition.op === 'ne' || condition.op === 'notContains'
-      ? Prisma.sql`NOT (${matched})`
+      ? negate(matched)
       : matched
   }
 

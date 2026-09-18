@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FieldVO, FilterCondition, ImportResultVO, ProductPriceVO } from '@micromatrix/shared'
+import { not, or } from '@prisma/orm-postgres/orm-client'
 import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
-import { Prisma, ProductPrice } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import {
   ExportTasksService,
   type ExportBuildResult,
@@ -43,10 +44,21 @@ interface PriceImportGroup {
   errors: string[]
 }
 
+interface ProductPriceRow {
+  id: string
+  name: string
+  status: string
+  pos: bigint
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
+}
+
 @Injectable()
 export class ProductPriceService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
@@ -89,18 +101,17 @@ export class ProductPriceService {
     const customData = await this.moduleFieldsToCustomData(user, dto.moduleFields)
     const now = BigInt(Date.now())
     const pos = await this.nextPos(user.tenantId)
-    const created = await this.prisma.$transaction(async (tx) => {
-      const price = await tx.productPrice.create({
-        data: {
-          name,
-          status: dto.status,
-          pos,
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+    const created = await this.prisma8.client.transaction(async (tx) => {
+      const price = await tx.orm.public.ProductPrice.create({
+        id: prisma8Id32(),
+        name: prisma8Varchar(name, 255),
+        status: prisma8Varchar(dto.status, 32),
+        pos,
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        createTime: now,
+        updateTime: now,
+        createUser: prisma8Varchar(user.id, 32),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -128,15 +139,12 @@ export class ProductPriceService {
       dto.moduleFields === undefined
         ? undefined
         : await this.moduleFieldsToCustomData(user, dto.moduleFields)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.productPrice.update({
-        where: { id: existing.id },
-        data: {
-          ...(name !== undefined ? { name } : {}),
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma8.client.transaction(async (tx) => {
+      await tx.orm.public.ProductPrice.where({ id: prisma8Varchar(existing.id, 32) }).update({
+        ...(name !== undefined ? { name: prisma8Varchar(name, 255) } : {}),
+        ...(dto.status !== undefined ? { status: prisma8Varchar(dto.status, 32) } : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       if (customData !== undefined) {
         await this.fieldValues.save(
@@ -178,35 +186,47 @@ export class ProductPriceService {
 
   async delete(user: AuthUser, id: string) {
     const price = await this.ensureExists(user, id)
-    const [quotationField, quotationBlobField] = await Promise.all([
-      this.prisma.opportunityQuotationField.findFirst({
-        where: {
-          fieldValue: id,
-          resource: { organizationId: user.tenantId },
-        },
-        select: { id: true },
-      }),
-      this.prisma.opportunityQuotationFieldBlob.findFirst({
-        where: {
-          fieldValue: id,
-          resource: { organizationId: user.tenantId },
-        },
-        select: { id: true },
-      }),
+    const [quotationFields, quotationBlobFields] = await Promise.all([
+      this.prisma8.client.orm.public.OpportunityQuotationField.where({
+        fieldValue: prisma8Varchar(id, 255),
+      })
+        .select('resourceId')
+        .all(),
+      this.prisma8.client.orm.public.OpportunityQuotationFieldBlob.where({ fieldValue: id })
+        .select('resourceId')
+        .all(),
     ])
-    if (quotationField || quotationBlobField) {
+    const quotationIds = [
+      ...new Set([...quotationFields, ...quotationBlobFields].map((row) => String(row.resourceId))),
+    ]
+    const linked = quotationIds.length
+      ? await this.prisma8.client.orm.public.OpportunityQuotation.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.id.in(prisma8Varchars(quotationIds, 32)))
+          .select('id')
+          .first()
+      : null
+    if (linked) {
       throw new BadRequestException('价格表已被报价单关联，无法删除！')
     }
-    await this.prisma.productPrice.delete({ where: { id: price.id } })
+    await this.prisma8.client.orm.public.ProductPrice.where({
+      id: prisma8Varchar(price.id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).delete()
     return { id: price.id, name: price.name }
   }
 
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto) {
     const ids = [...new Set(dto.ids)]
-    const rows = await this.prisma.productPrice.findMany({
-      where: { organizationId: user.tenantId, id: { in: ids } },
-      select: { id: true },
-    })
+    const rows = ids.length
+      ? await this.prisma8.client.orm.public.ProductPrice.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+          .select('id')
+          .all()
+      : []
     if (rows.length !== ids.length) throw new BadRequestException('选中价格表包含不存在的数据')
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const field = fields.find((item) => item.id === dto.fieldId || item.key === dto.fieldId)
@@ -214,7 +234,7 @@ export class ProductPriceService {
       throw new BadRequestException('字段不存在或不支持批量修改')
     }
     if (!field.system) {
-      return this.prisma.$transaction((tx) =>
+      return this.prisma8.client.transaction((tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'productPrice',
@@ -226,21 +246,27 @@ export class ProductPriceService {
       )
     }
     const data = await this.systemBatchUpdateData(user, field.key, dto.fieldValue, ids)
-    const result = await this.prisma.productPrice.updateMany({
-      where: { organizationId: user.tenantId, id: { in: ids } },
-      data: { ...data, updateTime: BigInt(Date.now()), updateUser: user.id },
+    const count = await this.prisma8.client.orm.public.ProductPrice.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
-    return { count: result.count }
+      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .updateAndCount({
+        ...data,
+        updateTime: BigInt(Date.now()),
+        updateUser: prisma8Varchar(user.id, 32),
+      })
+    return { count }
   }
 
   async editPos(user: AuthUser, dto: ProductPriceSortDto) {
     if (dto.dragNodeId === dto.dropNodeId) return { id: dto.dragNodeId }
-    const rows = await this.prisma.productPrice.findMany({
-      where: { organizationId: user.tenantId },
-      orderBy: [{ pos: 'asc' }, { id: 'asc' }],
-      select: { id: true },
+    const rows = await this.prisma8.client.orm.public.ProductPrice.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
-    const ordered = rows.map((row) => row.id)
+      .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
+      .select('id')
+      .all()
+    const ordered = rows.map((row) => String(row.id))
     const dragIndex = ordered.indexOf(dto.dragNodeId)
     if (dragIndex < 0) throw new NotFoundException('价格表不存在')
     ordered.splice(dragIndex, 1)
@@ -250,14 +276,15 @@ export class ProductPriceService {
       targetIndex < 0 ? ordered.length : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     ordered.splice(insertAt, 0, dto.dragNodeId)
     const now = BigInt(Date.now())
-    await this.prisma.$transaction(
-      ordered.map((priceId, index) =>
-        this.prisma.productPrice.update({
-          where: { id: priceId },
-          data: { pos: BigInt((index + 1) * POS_STEP), updateTime: now, updateUser: user.id },
-        }),
-      ),
-    )
+    await this.prisma8.client.transaction(async (tx) => {
+      for (const [index, priceId] of ordered.entries()) {
+        await tx.orm.public.ProductPrice.where({ id: prisma8Varchar(priceId, 32) }).update({
+          pos: BigInt((index + 1) * POS_STEP),
+          updateTime: now,
+          updateUser: prisma8Varchar(user.id, 32),
+        })
+      }
+    })
     return { id: dto.dragNodeId, pos: (insertAt + 1) * POS_STEP }
   }
 
@@ -360,21 +387,21 @@ export class ProductPriceService {
     const filteredIds = dto.filters?.length
       ? await this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
       : null
-    const where: Prisma.ProductPriceWhereInput = {
-      organizationId: user.tenantId,
-      ...(dto.status ? { status: dto.status } : {}),
-      ...(dto.keyword ? { name: { contains: dto.keyword, mode: 'insensitive' } } : {}),
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-    }
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.productPrice.findMany({
-        where,
-        orderBy: [{ pos: 'asc' }, { id: 'asc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.productPrice.count({ where }),
+    let query = this.prisma8.client.orm.public.ProductPrice.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    })
+    if (dto.status) query = query.where({ status: prisma8Varchar(dto.status, 32) })
+    if (dto.keyword) query = query.where((row) => row.name.ilike(`%${dto.keyword}%`))
+    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
+    const [rows, aggregate] = await Promise.all([
+      query
+        .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      query.aggregate((value) => ({ count: value.count() })),
     ])
+    const total = aggregate.count
     const values = await this.fieldValues.load(
       user.tenantId,
       'productPrice',
@@ -614,13 +641,17 @@ export class ProductPriceService {
   }
 
   private async resolveImportedProduct(organizationId: string, productRef: string) {
-    const product = await this.prisma.product.findFirst({
-      where: {
-        organizationId,
-        OR: [{ id: productRef }, { name: productRef }],
-      },
-      select: { id: true, name: true },
+    const product = await this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
+      .where((row) =>
+        or(
+          row.id.eq(prisma8Varchar(productRef, 32)),
+          row.name.eq(prisma8Varchar(productRef, 255)),
+        ),
+      )
+      .select('id', 'name')
+      .first()
     if (!product) throw new BadRequestException(`产品「${productRef}」不存在`)
     return product
   }
@@ -685,18 +716,18 @@ export class ProductPriceService {
     key: string,
     value: unknown,
     ids: string[],
-  ): Promise<Prisma.ProductPriceUpdateManyMutationInput> {
+  ) {
     if (key === 'name') {
       const name = String(value ?? '').trim()
       if (!name) throw new BadRequestException('价格表名称不能为空')
       if (ids.length > 1) throw new BadRequestException('唯一价格表名称不能批量设置为相同值')
       await this.assertNameUnique(user.tenantId, name, ids[0])
-      return { name }
+      return { name: prisma8Varchar(name, 255) }
     }
     if (key === 'status') {
       const status = String(value ?? '')
       if (!['1', '2'].includes(status)) throw new BadRequestException('价格表状态无效')
-      return { status }
+      return { status: prisma8Varchar(status, 32) }
     }
     throw new BadRequestException(`字段「${key}」不支持批量修改`)
   }
@@ -717,12 +748,11 @@ export class ProductPriceService {
             await this.fieldValues.filterResourceIds(organizationId, 'productPrice', [condition]),
           )
         }
-        const clause = this.systemFilterClause(condition)
-        if (!clause) return new Set<string>()
-        const rows = await this.prisma.productPrice.findMany({
-          where: { organizationId, AND: [clause] },
-          select: { id: true },
+        let query = this.prisma8.client.orm.public.ProductPrice.where({
+          organizationId: prisma8Varchar(organizationId, 32),
         })
+        query = this.applySystemFilter(query, condition)
+        const rows = await query.select('id').all()
         return new Set(rows.map((row) => row.id))
       }),
     )
@@ -735,59 +765,73 @@ export class ProductPriceService {
     ]
   }
 
-  private systemFilterClause(condition: FilterCondition): Prisma.ProductPriceWhereInput | null {
+  private applySystemFilter(
+    collection: ReturnType<typeof this.prisma8.client.orm.public.ProductPrice.where>,
+    condition: FilterCondition,
+  ) {
     const key = condition.key as 'name' | 'status'
-    if (!['name', 'status'].includes(key)) return null
-    const listValues = Array.isArray(condition.value) ? condition.value : [condition.value]
-    if (condition.op === 'eq')
-      return { [key]: { equals: condition.value as never } } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'ne')
-      return {
-        NOT: { [key]: { equals: condition.value as never } },
-      } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'in')
-      return { [key]: { in: listValues as never[] } } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'notIn')
-      return { [key]: { notIn: listValues as never[] } } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'contains' && key === 'name') {
-      return { name: { contains: String(condition.value), mode: 'insensitive' } }
+    if (!['name', 'status'].includes(key)) {
+      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
     }
-    if (condition.op === 'notContains' && key === 'name') {
-      return { NOT: { name: { contains: String(condition.value), mode: 'insensitive' } } }
+    if (condition.op === 'isEmpty') {
+      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
     }
-    if (condition.op === 'isEmpty') return { [key]: null } as Prisma.ProductPriceWhereInput
-    if (condition.op === 'notEmpty')
-      return { NOT: { [key]: null } } as Prisma.ProductPriceWhereInput
-    return null
+    if (condition.op === 'notEmpty') return collection
+    if (key === 'name') {
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+        prisma8Varchar(String(item ?? ''), 255),
+      )
+      const value = values[0]!
+      if (condition.op === 'eq') return collection.where((row) => row.name.eq(value))
+      if (condition.op === 'ne') return collection.where((row) => row.name.neq(value))
+      if (condition.op === 'in') return collection.where((row) => row.name.in(values))
+      if (condition.op === 'notIn') return collection.where((row) => not(row.name.in(values)))
+      if (condition.op === 'contains') return collection.where((row) => row.name.ilike(`%${String(condition.value ?? '')}%`))
+      if (condition.op === 'notContains') return collection.where((row) => not(row.name.ilike(`%${String(condition.value ?? '')}%`)))
+      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    }
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+      prisma8Varchar(String(item ?? ''), 32),
+    )
+    const value = values[0]!
+    if (condition.op === 'eq') return collection.where((row) => row.status.eq(value))
+    if (condition.op === 'ne') return collection.where((row) => row.status.neq(value))
+    if (condition.op === 'in') return collection.where((row) => row.status.in(values))
+    if (condition.op === 'notIn') return collection.where((row) => not(row.status.in(values)))
+    return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
   }
 
   private async nextPos(organizationId: string) {
-    const row = await this.prisma.productPrice.findFirst({
-      where: { organizationId },
-      orderBy: { pos: 'desc' },
-      select: { pos: true },
+    const row = await this.prisma8.client.orm.public.ProductPrice.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
+      .orderBy((price) => price.pos.desc())
+      .select('pos')
+      .first()
     return (row?.pos ?? 0n) + BigInt(POS_STEP)
   }
 
   private async assertNameUnique(organizationId: string, name: string, excludeId?: string) {
-    const row = await this.prisma.productPrice.findFirst({
-      where: { organizationId, name, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
-      select: { id: true },
+    let query = this.prisma8.client.orm.public.ProductPrice.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+      name: prisma8Varchar(name, 255),
     })
+    if (excludeId) query = query.where((row) => row.id.neq(prisma8Varchar(excludeId, 32)))
+    const row = await query.select('id').first()
     if (row) throw new BadRequestException('价格表名称不能重复')
   }
 
   private async ensureExists(user: AuthUser, id: string) {
-    const row = await this.prisma.productPrice.findFirst({
-      where: { id, organizationId: user.tenantId },
-    })
+    const row = await this.prisma8.client.orm.public.ProductPrice.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).first()
     if (!row) throw new NotFoundException('价格表不存在')
     return row
   }
 
   private toVO(
-    price: ProductPrice,
+    price: ProductPriceRow,
     fields: FieldVO[],
     customData: Record<string, unknown>,
     products: ProductPriceVO['products'],

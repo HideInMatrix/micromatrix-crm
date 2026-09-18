@@ -8,7 +8,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator'
-import type { DataScope } from '../../../generated/prisma/client'
+import type { DataScope } from '../../../common/auth-user'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
 const DATA_SCOPES = ['ALL', 'DEPT_AND_CHILD', 'DEPT', 'SELF', 'CUSTOM'] as const

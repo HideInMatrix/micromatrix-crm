@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FieldVO, FilterCondition, ImportResultVO, ProductVO } from '@micromatrix/shared'
+import { not } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
-import { Product, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Numeric } from '../../prisma/prisma8-values'
+import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import {
   ExportTasksService,
   type ExportBuildResult,
@@ -27,10 +29,22 @@ import {
 const MODULE = 'product'
 const POS_STEP = 4096
 
+interface ProductRow {
+  id: string
+  name: string
+  price: unknown | null
+  status: string
+  pos: bigint
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
+}
+
 @Injectable()
 export class ProductsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
@@ -71,19 +85,18 @@ export class ProductsService {
     const customData = await this.moduleFieldsToCustomData(user, dto.moduleFields)
     const now = BigInt(Date.now())
     const pos = await this.nextPos(user.tenantId)
-    const product = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.product.create({
-        data: {
-          name,
-          price: dto.price ?? null,
-          status: dto.status,
-          pos,
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+    const product = await this.prisma8.client.transaction(async (tx) => {
+      const created = await tx.orm.public.Product.create({
+        id: prisma8Id32(),
+        name: prisma8Varchar(name, 255),
+        price: dto.price === undefined || dto.price === null ? null : prisma8Numeric(dto.price, 14, 4),
+        status: prisma8Varchar(dto.status, 32),
+        pos,
+        organizationId: prisma8Varchar(user.tenantId, 32),
+        createTime: now,
+        updateTime: now,
+        createUser: prisma8Varchar(user.id, 32),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -110,16 +123,15 @@ export class ProductsService {
       dto.moduleFields === undefined
         ? undefined
         : await this.moduleFieldsToCustomData(user, dto.moduleFields)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.product.update({
-        where: { id: existing.id },
-        data: {
-          ...(name !== undefined ? { name } : {}),
-          ...(dto.price !== undefined ? { price: dto.price ?? null } : {}),
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma8.client.transaction(async (tx) => {
+      await tx.orm.public.Product.where({ id: prisma8Varchar(existing.id, 32) }).update({
+        ...(name !== undefined ? { name: prisma8Varchar(name, 255) } : {}),
+        ...(dto.price !== undefined
+          ? { price: dto.price === null ? null : prisma8Numeric(dto.price, 14, 4) }
+          : {}),
+        ...(dto.status !== undefined ? { status: prisma8Varchar(dto.status, 32) } : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: prisma8Varchar(user.id, 32),
       })
       if (customData !== undefined) {
         await this.fieldValues.save(
@@ -138,10 +150,14 @@ export class ProductsService {
 
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto) {
     const ids = [...new Set(dto.ids)]
-    const rows = await this.prisma.product.findMany({
-      where: { organizationId: user.tenantId, id: { in: ids } },
-      select: { id: true },
-    })
+    const rows = ids.length
+      ? await this.prisma8.client.orm.public.Product.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+          .select('id')
+          .all()
+      : []
     if (rows.length !== ids.length) throw new BadRequestException('选中产品包含不存在的数据')
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const field = fields.find((item) => item.id === dto.fieldId || item.key === dto.fieldId)
@@ -149,44 +165,57 @@ export class ProductsService {
       throw new BadRequestException('字段不存在或不支持批量修改')
     }
     if (!field.system) {
-      return this.prisma.$transaction((tx) =>
+      return this.prisma8.client.transaction((tx) =>
         this.fieldValues.saveBatch(user.tenantId, 'product', ids, field.id, dto.fieldValue, tx),
       )
     }
     const data = await this.systemBatchUpdateData(user, field.key, dto.fieldValue, ids)
-    const result = await this.prisma.product.updateMany({
-      where: { organizationId: user.tenantId, id: { in: ids } },
-      data: { ...data, updateTime: BigInt(Date.now()), updateUser: user.id },
+    const count = await this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
-    return { count: result.count }
+      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .updateAndCount({
+        ...data,
+        updateTime: BigInt(Date.now()),
+        updateUser: prisma8Varchar(user.id, 32),
+      })
+    return { count }
   }
 
   async delete(user: AuthUser, id: string) {
     const product = await this.ensureExists(user, id)
-    await this.prisma.product.delete({ where: { id: product.id } })
+    await this.prisma8.client.orm.public.Product.where({
+      id: prisma8Varchar(product.id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).delete()
     return { id: product.id, name: product.name }
   }
 
   async batchDelete(user: AuthUser, ids: string[]) {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) throw new BadRequestException('请选择产品')
-    const rows = await this.prisma.product.findMany({
-      where: { organizationId: user.tenantId, id: { in: uniqueIds } },
-      select: { id: true },
+    const rows = await this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .where((row) => row.id.in(prisma8Varchars(uniqueIds, 32)))
+      .select('id')
+      .all()
     if (rows.length !== uniqueIds.length) throw new BadRequestException('选中产品包含不存在的数据')
-    const result = await this.prisma.product.deleteMany({ where: { id: { in: uniqueIds } } })
-    return { count: result.count }
+    const count = await this.prisma8.client.orm.public.Product.where((row) =>
+      row.id.in(prisma8Varchars(uniqueIds, 32)),
+    ).deleteAndCount()
+    return { count }
   }
 
   async editPos(user: AuthUser, dto: ProductSortDto) {
     if (dto.dragNodeId === dto.dropNodeId) return { id: dto.dragNodeId }
-    const rows = await this.prisma.product.findMany({
-      where: { organizationId: user.tenantId },
-      orderBy: [{ pos: 'asc' }, { id: 'asc' }],
-      select: { id: true },
+    const rows = await this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
-    const ordered = rows.map((row) => row.id)
+      .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
+      .select('id')
+      .all()
+    const ordered = rows.map((row) => String(row.id))
     const dragIndex = ordered.indexOf(dto.dragNodeId)
     if (dragIndex < 0) throw new NotFoundException('产品不存在')
     ordered.splice(dragIndex, 1)
@@ -196,23 +225,25 @@ export class ProductsService {
       targetIndex < 0 ? ordered.length : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     ordered.splice(insertAt, 0, dto.dragNodeId)
     const now = BigInt(Date.now())
-    await this.prisma.$transaction(
-      ordered.map((id, index) =>
-        this.prisma.product.update({
-          where: { id },
-          data: { pos: BigInt((index + 1) * POS_STEP), updateTime: now, updateUser: user.id },
-        }),
-      ),
-    )
+    await this.prisma8.client.transaction(async (tx) => {
+      for (const [index, id] of ordered.entries()) {
+        await tx.orm.public.Product.where({ id: prisma8Varchar(id, 32) }).update({
+          pos: BigInt((index + 1) * POS_STEP),
+          updateTime: now,
+          updateUser: prisma8Varchar(user.id, 32),
+        })
+      }
+    })
     return { id: dto.dragNodeId, pos: (insertAt + 1) * POS_STEP }
   }
 
   async listOption(user: AuthUser) {
-    return this.prisma.product.findMany({
-      where: { organizationId: user.tenantId },
-      orderBy: [{ pos: 'asc' }, { id: 'asc' }],
-      select: { id: true, name: true },
+    return this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
+      .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
+      .select('id', 'name')
+      .all()
   }
 
   async exportAll(user: AuthUser, dto: ProductExportDto) {
@@ -298,21 +329,21 @@ export class ProductsService {
     const filteredIds = dto.filters?.length
       ? await this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
       : null
-    const where: Prisma.ProductWhereInput = {
-      organizationId: user.tenantId,
-      ...(dto.status ? { status: dto.status } : {}),
-      ...(dto.keyword ? { name: { contains: dto.keyword, mode: 'insensitive' } } : {}),
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-    }
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
-        where,
-        orderBy: [{ pos: 'asc' }, { id: 'asc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.product.count({ where }),
+    let query = this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    })
+    if (dto.status) query = query.where({ status: prisma8Varchar(dto.status, 32) })
+    if (dto.keyword) query = query.where((row) => row.name.ilike(`%${dto.keyword}%`))
+    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
+    const [rows, aggregate] = await Promise.all([
+      query
+        .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      query.aggregate((value) => ({ count: value.count() })),
     ])
+    const total = aggregate.count
     const values = await this.fieldValues.load(
       user.tenantId,
       'product',
@@ -479,24 +510,24 @@ export class ProductsService {
     key: string,
     value: unknown,
     ids: string[],
-  ): Promise<Prisma.ProductUpdateManyMutationInput> {
+  ) {
     if (key === 'name') {
       const name = String(value ?? '').trim()
       if (!name) throw new BadRequestException('产品名称不能为空')
       if (ids.length > 1) throw new BadRequestException('唯一产品名称不能批量设置为相同值')
       await this.assertNameUnique(user.tenantId, name, ids[0])
-      return { name }
+      return { name: prisma8Varchar(name, 255) }
     }
     if (key === 'price') {
       if (value === null || value === '') return { price: null }
       const price = Number(value)
       if (!Number.isFinite(price) || price <= 0) throw new BadRequestException('产品价格必须大于 0')
-      return { price }
+      return { price: prisma8Numeric(price, 14, 4) }
     }
     if (key === 'status') {
       const status = String(value ?? '')
       if (!['1', '2'].includes(status)) throw new BadRequestException('产品状态无效')
-      return { status }
+      return { status: prisma8Varchar(status, 32) }
     }
     throw new BadRequestException(`字段「${key}」不支持批量修改`)
   }
@@ -517,12 +548,11 @@ export class ProductsService {
             await this.fieldValues.filterResourceIds(organizationId, 'product', [condition]),
           )
         }
-        const clause = this.systemFilterClause(field, condition)
-        if (!clause) return new Set<string>()
-        const rows = await this.prisma.product.findMany({
-          where: { organizationId, AND: [clause] },
-          select: { id: true },
+        let query = this.prisma8.client.orm.public.Product.where({
+          organizationId: prisma8Varchar(organizationId, 32),
         })
+        query = this.applySystemFilter(query, field, condition)
+        const rows = await query.select('id').all()
         return new Set(rows.map((row) => row.id))
       }),
     )
@@ -535,75 +565,93 @@ export class ProductsService {
     ]
   }
 
-  private systemFilterClause(
+  private applySystemFilter(
+    collection: ReturnType<typeof this.prisma8.client.orm.public.Product.where>,
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma.ProductWhereInput | null {
+  ) {
     const key = condition.key as 'name' | 'price' | 'status'
-    if (!['name', 'price', 'status'].includes(key)) return null
-    const value =
-      field.type === 'currency' || field.type === 'number'
-        ? Number(condition.value)
-        : condition.value
-    const listValues = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
-      (item) => (field.type === 'currency' || field.type === 'number' ? Number(item) : item),
+    if (!['name', 'price', 'status'].includes(key)) return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    if (key === 'price') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.price.isNull())
+      if (condition.op === 'notEmpty') return collection.where((row) => row.price.isNotNull())
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+        prisma8Numeric(Number(item), 14, 4),
+      )
+      const value = values[0]!
+      if (condition.op === 'eq') return collection.where((row) => row.price.eq(value))
+      if (condition.op === 'ne') return collection.where((row) => row.price.neq(value))
+      if (condition.op === 'in') return collection.where((row) => row.price.in(values))
+      if (condition.op === 'notIn') return collection.where((row) => not(row.price.in(values)))
+      if (condition.op === 'gt') return collection.where((row) => row.price.gt(value))
+      if (condition.op === 'gte') return collection.where((row) => row.price.gte(value))
+      if (condition.op === 'lt') return collection.where((row) => row.price.lt(value))
+      if (condition.op === 'lte') return collection.where((row) => row.price.lte(value))
+      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    }
+    if (condition.op === 'isEmpty') {
+      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    }
+    if (condition.op === 'notEmpty') return collection
+    if (key === 'name') {
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+        prisma8Varchar(String(item ?? ''), 255),
+      )
+      const value = values[0]!
+      if (condition.op === 'eq') return collection.where((row) => row.name.eq(value))
+      if (condition.op === 'ne') return collection.where((row) => row.name.neq(value))
+      if (condition.op === 'in') return collection.where((row) => row.name.in(values))
+      if (condition.op === 'notIn') return collection.where((row) => not(row.name.in(values)))
+      if (condition.op === 'contains') return collection.where((row) => row.name.ilike(`%${String(condition.value ?? '')}%`))
+      if (condition.op === 'notContains') return collection.where((row) => not(row.name.ilike(`%${String(condition.value ?? '')}%`)))
+      if (condition.op === 'gt') return collection.where((row) => row.name.gt(value))
+      if (condition.op === 'gte') return collection.where((row) => row.name.gte(value))
+      if (condition.op === 'lt') return collection.where((row) => row.name.lt(value))
+      if (condition.op === 'lte') return collection.where((row) => row.name.lte(value))
+      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    }
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
+      prisma8Varchar(String(item ?? ''), 32),
     )
-    if (condition.op === 'eq')
-      return { [key]: { equals: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'ne')
-      return { NOT: { [key]: { equals: value as never } } } as Prisma.ProductWhereInput
-    if (condition.op === 'in')
-      return { [key]: { in: listValues as never[] } } as Prisma.ProductWhereInput
-    if (condition.op === 'notIn')
-      return { [key]: { notIn: listValues as never[] } } as Prisma.ProductWhereInput
-    if (condition.op === 'contains' && key === 'name') {
-      return { name: { contains: String(condition.value), mode: 'insensitive' } }
-    }
-    if (condition.op === 'notContains' && key === 'name') {
-      return { NOT: { name: { contains: String(condition.value), mode: 'insensitive' } } }
-    }
-    if (condition.op === 'gt') return { [key]: { gt: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'gte')
-      return { [key]: { gte: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'lt') return { [key]: { lt: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'lte')
-      return { [key]: { lte: value as never } } as Prisma.ProductWhereInput
-    if (condition.op === 'isEmpty') return { [key]: null } as Prisma.ProductWhereInput
-    if (condition.op === 'notEmpty') return { NOT: { [key]: null } } as Prisma.ProductWhereInput
-    return null
+    const value = values[0]!
+    if (condition.op === 'eq') return collection.where((row) => row.status.eq(value))
+    if (condition.op === 'ne') return collection.where((row) => row.status.neq(value))
+    if (condition.op === 'in') return collection.where((row) => row.status.in(values))
+    if (condition.op === 'notIn') return collection.where((row) => not(row.status.in(values)))
+    return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
   }
 
   private async nextPos(organizationId: string) {
-    const row = await this.prisma.product.findFirst({
-      where: { organizationId },
-      orderBy: { pos: 'desc' },
-      select: { pos: true },
+    const row = await this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(organizationId, 32),
     })
+      .orderBy((product) => product.pos.desc())
+      .select('pos')
+      .first()
     return (row?.pos ?? 0n) + BigInt(POS_STEP)
   }
 
   private async assertNameUnique(organizationId: string, name: string, excludeId?: string) {
-    const row = await this.prisma.product.findFirst({
-      where: {
-        organizationId,
-        name,
-        ...(excludeId ? { NOT: { id: excludeId } } : {}),
-      },
-      select: { id: true },
+    let query = this.prisma8.client.orm.public.Product.where({
+      organizationId: prisma8Varchar(organizationId, 32),
+      name: prisma8Varchar(name, 255),
     })
+    if (excludeId) query = query.where((row) => row.id.neq(prisma8Varchar(excludeId, 32)))
+    const row = await query.select('id').first()
     if (row) throw new BadRequestException('产品名称不能重复')
   }
 
   private async ensureExists(user: AuthUser, id: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { id, organizationId: user.tenantId },
-    })
+    const product = await this.prisma8.client.orm.public.Product.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).first()
     if (!product) throw new NotFoundException('产品不存在')
     return product
   }
 
   private toVO(
-    product: Product,
+    product: ProductRow,
     fields: FieldVO[],
     customData: Record<string, unknown>,
   ): ProductVO {

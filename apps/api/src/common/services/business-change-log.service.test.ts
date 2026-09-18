@@ -1,20 +1,36 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { BusinessChangeLogService } from './business-change-log.service'
 
 test('业务字段变更日志把 before/after diff 写入独立 Blob 而不是主表 detail', async () => {
-  const creates: Array<Record<string, unknown>> = []
-  const prisma = {
-    operationLog: {
-      create: async (args: Record<string, unknown>) => {
-        creates.push(args)
-        return { id: 'log-1' }
-      },
+  const logCreates: Array<Record<string, unknown>> = []
+  const blobCreates: Array<Record<string, unknown>> = []
+  const prisma8 = {
+    client: {
+      transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          orm: {
+            public: {
+              OperationLogs: {
+                create: async (data: Record<string, unknown>) => {
+                  logCreates.push(data)
+                  return { id: 'log-1' }
+                },
+              },
+              OperationLogBlobs: {
+                create: async (data: Record<string, unknown>) => {
+                  blobCreates.push(data)
+                  return data
+                },
+              },
+            },
+          },
+        }),
     },
-  } as unknown as PrismaService
+  } as unknown as Prisma8Service
 
-  const service = new BusinessChangeLogService(prisma)
+  const service = new BusinessChangeLogService(prisma8)
   await service.record({ id: 'user-1', tenantId: 'tenant-1', name: '管理员' } as never, {
     module: 'customer',
     action: 'update',
@@ -24,11 +40,11 @@ test('业务字段变更日志把 before/after diff 写入独立 Blob 而不是�
     after: { name: '新名称', phone: '10086' },
   })
 
-  assert.equal(creates.length, 1)
-  const data = creates[0].data as Record<string, unknown>
-  assert.equal('detail' in data, false)
-  const blob = data.blob as { create: { detail: { changes: unknown[] } } }
-  assert.deepEqual(blob.create.detail.changes, [
+  assert.equal(logCreates.length, 1)
+  assert.equal('detail' in logCreates[0], false)
+  assert.equal(blobCreates.length, 1)
+  assert.equal(blobCreates[0].operationLogId, 'log-1')
+  assert.deepEqual((blobCreates[0].detail as { changes: unknown[] }).changes, [
     { field: 'name', before: '旧名称', after: '新名称' },
   ])
 })

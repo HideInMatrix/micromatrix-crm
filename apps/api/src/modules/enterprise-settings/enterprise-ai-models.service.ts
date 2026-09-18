@@ -4,71 +4,96 @@ import type {
   EnterpriseAiModelVO,
   EnterpriseAiRouteStrategyVO,
 } from '@micromatrix/shared'
+import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import type { EnterpriseAiModel } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
 import type { SaveEnterpriseAiModelDto } from './dto/ai-model.dto'
+
+type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+
+type EnterpriseAiModelRow = {
+  id: string
+  tenantId: string
+  displayName: string
+  modelName: string
+  provider: string
+  apiUrl: string
+  apiKeyCiphertext: string | null
+  apiKeyIv: string | null
+  apiKeyAuthTag: string | null
+  apiKeyKeyVersion: number | null
+  enable: boolean
+  temperature: number
+  maxTokens: number
+  topP: number
+  globalDailyLimit: number | null
+  userDailyLimit: number | null
+  createdById: string
+  updatedById: string
+  createdAt: Prisma8Timestamp
+  updatedAt: Prisma8Timestamp
+}
 
 @Injectable()
 export class EnterpriseAiModelsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly cipher: CredentialCipherService,
   ) {}
 
   async list(tenantId: string, keyword?: string): Promise<EnterpriseAiModelVO[]> {
     const normalized = keyword?.trim()
-    const rows = await this.prisma.enterpriseAiModel.findMany({
-      where: {
-        tenantId,
-        ...(normalized && {
-          OR: [
-            { displayName: { contains: normalized, mode: 'insensitive' } },
-            { modelName: { contains: normalized, mode: 'insensitive' } },
-            { provider: { contains: normalized, mode: 'insensitive' } },
-          ],
-        }),
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-    })
+    const scoped = this.aiModels().where({ tenantId })
+    const filtered = normalized
+      ? scoped.where((model) =>
+          or(
+            model.displayName.ilike(`%${normalized}%`),
+            model.modelName.ilike(`%${normalized}%`),
+            model.provider.ilike(`%${normalized}%`),
+          ),
+        )
+      : scoped
+    const rows = await filtered
+      .orderBy([(model) => model.createdAt.desc(), (model) => model.id.asc()])
+      .all()
     return rows.map((row) => this.toVO(row))
   }
 
   async options(tenantId: string): Promise<EnterpriseAiModelOptionVO[]> {
-    const rows = await this.prisma.enterpriseAiModel.findMany({
-      where: { tenantId, enable: true },
-      orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
-      select: { id: true, displayName: true },
-    })
+    const rows = await this.aiModels()
+      .where({ tenantId, enable: true })
+      .select('id', 'displayName')
+      .orderBy([(model) => model.displayName.asc(), (model) => model.id.asc()])
+      .all()
     return rows.map((row) => ({ id: row.id, name: row.displayName }))
   }
 
   async create(user: AuthUser, input: SaveEnterpriseAiModelDto): Promise<EnterpriseAiModelVO> {
     await this.assertDisplayNameAvailable(user.tenantId, input.displayName)
     const encrypted = input.apiKey?.trim() ? this.cipher.encrypt(input.apiKey.trim()) : null
-    const row = await this.prisma.enterpriseAiModel.create({
-      data: {
-        tenantId: user.tenantId,
-        displayName: input.displayName,
-        modelName: input.modelName,
-        provider: input.provider,
-        apiUrl: input.apiUrl,
-        enable: input.enable,
-        temperature: input.temperature,
-        maxTokens: input.maxTokens,
-        topP: input.topP,
-        globalDailyLimit: input.globalDailyLimit ?? null,
-        userDailyLimit: input.userDailyLimit ?? null,
-        createdById: user.id,
-        updatedById: user.id,
-        ...(encrypted && {
-          apiKeyCiphertext: encrypted.ciphertext,
-          apiKeyIv: encrypted.iv,
-          apiKeyAuthTag: encrypted.authTag,
-          apiKeyKeyVersion: encrypted.keyVersion,
-        }),
-      },
+    const row = await this.aiModels().create({
+      tenantId: user.tenantId,
+      displayName: input.displayName,
+      modelName: input.modelName,
+      provider: input.provider,
+      apiUrl: input.apiUrl,
+      enable: input.enable,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+      topP: input.topP,
+      globalDailyLimit: input.globalDailyLimit ?? null,
+      userDailyLimit: input.userDailyLimit ?? null,
+      createdById: user.id,
+      updatedById: user.id,
+      updatedAt: prisma8Now(),
+      ...(encrypted && {
+        apiKeyCiphertext: encrypted.ciphertext,
+        apiKeyIv: encrypted.iv,
+        apiKeyAuthTag: encrypted.authTag,
+        apiKeyKeyVersion: encrypted.keyVersion,
+      }),
     })
     return this.toVO(row)
   }
@@ -77,59 +102,63 @@ export class EnterpriseAiModelsService {
     const existing = await this.ensureOwned(user.tenantId, id)
     await this.assertDisplayNameAvailable(user.tenantId, input.displayName, id)
     const encrypted = input.apiKey?.trim() ? this.cipher.encrypt(input.apiKey.trim()) : null
-    const row = await this.prisma.enterpriseAiModel.update({
-      where: { id: existing.id },
-      data: {
-        displayName: input.displayName,
-        modelName: input.modelName,
-        provider: input.provider,
-        apiUrl: input.apiUrl,
-        enable: input.enable,
-        temperature: input.temperature,
-        maxTokens: input.maxTokens,
-        topP: input.topP,
-        globalDailyLimit: input.globalDailyLimit ?? null,
-        userDailyLimit: input.userDailyLimit ?? null,
-        updatedById: user.id,
-        ...(encrypted && {
-          apiKeyCiphertext: encrypted.ciphertext,
-          apiKeyIv: encrypted.iv,
-          apiKeyAuthTag: encrypted.authTag,
-          apiKeyKeyVersion: encrypted.keyVersion,
-        }),
-      },
+    const row = await this.aiModels().where({ id: existing.id, tenantId: user.tenantId }).update({
+      displayName: input.displayName,
+      modelName: input.modelName,
+      provider: input.provider,
+      apiUrl: input.apiUrl,
+      enable: input.enable,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+      topP: input.topP,
+      globalDailyLimit: input.globalDailyLimit ?? null,
+      userDailyLimit: input.userDailyLimit ?? null,
+      updatedById: user.id,
+      updatedAt: prisma8Now(),
+      ...(encrypted && {
+        apiKeyCiphertext: encrypted.ciphertext,
+        apiKeyIv: encrypted.iv,
+        apiKeyAuthTag: encrypted.authTag,
+        apiKeyKeyVersion: encrypted.keyVersion,
+      }),
     })
+    if (!row) throw new NotFoundException('模型不存在')
     return this.toVO(row)
   }
 
   async setStatus(tenantId: string, id: string, enable: boolean) {
     const existing = await this.ensureOwned(tenantId, id)
-    const row = await this.prisma.enterpriseAiModel.update({
-      where: { id: existing.id },
-      data: { enable },
+    const row = await this.aiModels().where({ id: existing.id, tenantId }).update({
+      enable,
+      updatedAt: prisma8Now(),
     })
+    if (!row) throw new NotFoundException('模型不存在')
     return this.toVO(row)
   }
 
   async remove(tenantId: string, id: string) {
     await this.ensureOwned(tenantId, id)
-    await this.prisma.$transaction([
-      this.prisma.enterpriseAiModelRoute.deleteMany({ where: { tenantId, modelId: id } }),
-      this.prisma.enterpriseAiModel.delete({ where: { id } }),
-    ])
+    await this.prisma8.client.transaction(async (tx) => {
+      await tx.orm.public.EnterpriseAiModelRoutes.where({ tenantId, modelId: id }).deleteAll()
+      const deleted = await tx.orm.public.EnterpriseAiModels.where({ id, tenantId }).delete()
+      if (!deleted) throw new NotFoundException('模型不存在')
+    })
     return { id }
   }
 
   async getRouteStrategy(tenantId: string): Promise<EnterpriseAiRouteStrategyVO> {
-    const routes = await this.prisma.enterpriseAiModelRoute.findMany({
-      where: { tenantId },
-      orderBy: { sort: 'asc' },
-      select: { modelId: true },
-    })
-    const existing = await this.prisma.enterpriseAiModel.findMany({
-      where: { tenantId, id: { in: routes.map((row) => row.modelId) } },
-      select: { id: true },
-    })
+    const routes = await this.aiModelRoutes()
+      .where({ tenantId })
+      .select('modelId')
+      .orderBy((route) => route.sort.asc())
+      .all()
+    if (!routes.length) return { modelIds: [] }
+
+    const existing = await this.aiModels()
+      .where({ tenantId })
+      .where((model) => model.id.in(routes.map((row) => row.modelId)))
+      .select('id')
+      .all()
     const valid = new Set(existing.map((row) => row.id))
     return { modelIds: routes.map((row) => row.modelId).filter((id) => valid.has(id)) }
   }
@@ -139,29 +168,30 @@ export class EnterpriseAiModelsService {
     modelIds: string[],
   ): Promise<EnterpriseAiRouteStrategyVO> {
     if (modelIds.length) {
-      const models = await this.prisma.enterpriseAiModel.findMany({
-        where: { tenantId, id: { in: modelIds } },
-        select: { id: true },
-      })
+      const models = await this.aiModels()
+        .where({ tenantId })
+        .where((model) => model.id.in(modelIds))
+        .select('id')
+        .all()
       if (models.length !== modelIds.length)
         throw new BadRequestException('路由策略包含不存在的模型')
     }
-    await this.prisma.$transaction(async (tx) => {
-      await tx.enterpriseAiModelRoute.deleteMany({ where: { tenantId } })
+    await this.prisma8.client.transaction(async (tx) => {
+      await tx.orm.public.EnterpriseAiModelRoutes.where({ tenantId }).deleteAll()
       if (modelIds.length) {
-        await tx.enterpriseAiModelRoute.createMany({
-          data: modelIds.map((modelId, sort) => ({ tenantId, modelId, sort })),
-        })
+        const updatedAt = prisma8Now()
+        await tx.orm.public.EnterpriseAiModelRoutes.createAll(
+          modelIds.map((modelId, sort) => ({ tenantId, modelId, sort, updatedAt })),
+        )
       }
     })
     return { modelIds }
   }
 
-  private ensureOwned(tenantId: string, id: string) {
-    return this.prisma.enterpriseAiModel.findFirst({ where: { id, tenantId } }).then((row) => {
-      if (!row) throw new NotFoundException('模型不存在')
-      return row
-    })
+  private async ensureOwned(tenantId: string, id: string) {
+    const row = await this.aiModels().where({ id, tenantId }).first()
+    if (!row) throw new NotFoundException('模型不存在')
+    return row
   }
 
   private async assertDisplayNameAvailable(
@@ -169,14 +199,22 @@ export class EnterpriseAiModelsService {
     displayName: string,
     excludeId?: string,
   ) {
-    const duplicate = await this.prisma.enterpriseAiModel.findFirst({
-      where: { tenantId, displayName, ...(excludeId && { id: { not: excludeId } }) },
-      select: { id: true },
-    })
-    if (duplicate) throw new BadRequestException('模型名称已存在')
+    const duplicate = await this.aiModels()
+      .where({ tenantId, displayName })
+      .select('id')
+      .first()
+    if (duplicate && duplicate.id !== excludeId) throw new BadRequestException('模型名称已存在')
   }
 
-  private toVO(row: EnterpriseAiModel): EnterpriseAiModelVO {
+  private aiModels() {
+    return this.prisma8.client.orm.public.EnterpriseAiModels
+  }
+
+  private aiModelRoutes() {
+    return this.prisma8.client.orm.public.EnterpriseAiModelRoutes
+  }
+
+  private toVO(row: EnterpriseAiModelRow): EnterpriseAiModelVO {
     return {
       id: row.id,
       displayName: row.displayName,
@@ -191,8 +229,8 @@ export class EnterpriseAiModelsService {
       globalDailyLimit: row.globalDailyLimit,
       userDailyLimit: row.userDailyLimit,
       dailyTotal: 0,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
+      createdAt: prisma8TimestampToISOString(row.createdAt),
+      updatedAt: prisma8TimestampToISOString(row.updatedAt),
     }
   }
 }

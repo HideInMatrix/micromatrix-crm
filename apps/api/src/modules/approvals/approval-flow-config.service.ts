@@ -14,16 +14,13 @@ import type {
   ApprovalPostConfig,
   PaginatedResult,
 } from '@micromatrix/shared'
+import { or } from '@prisma/orm-postgres/orm-client'
 import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../common/auth-user'
-import {
-  ApprovalExecuteTiming,
-  ApprovalFlow,
-  ApprovalFormType,
-  ApprovalNodeType,
-  Prisma,
-} from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
+import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import {
   APPROVAL_FORM_METADATA_KEY,
@@ -47,25 +44,42 @@ import {
   toDbFormType,
 } from './approval-flow-config.utils'
 
-type FlowListRecord = Prisma.ApprovalFlowGetPayload<{
-  include: { currentVersion: { select: { version: true } } }
-}>
-
-type FlowDetailRecord = Prisma.ApprovalFlowGetPayload<{
-  include: {
-    currentVersion: {
-      include: {
-        nodes: { include: { approver: true; condition: true } }
-        links: true
-      }
-    }
-  }
-}>
+type FlowRow = NonNullable<
+  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalFlows']['first']>>
+>
+type FlowVersionRow = NonNullable<
+  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalFlowVersions']['first']>>
+>
+type FlowNodeRow = NonNullable<
+  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalNodes']['first']>>
+>
+type FlowApproverRow = NonNullable<
+  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalNodeApprovers']['first']>>
+>
+type FlowConditionRow = NonNullable<
+  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalNodeConditions']['first']>>
+>
+type FlowLinkRow = NonNullable<
+  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalNodeLinks']['first']>>
+>
+type FlowListRecord = FlowRow & { currentVersion: Pick<FlowVersionRow, 'version'> | null }
+type FlowDetailRecord = FlowRow & {
+  currentVersion:
+    | (FlowVersionRow & {
+        nodes: Array<FlowNodeRow & { approver: FlowApproverRow | null; condition: FlowConditionRow | null }>
+        links: FlowLinkRow[]
+      })
+    | null
+}
+type Prisma8Transaction = Parameters<Parameters<Prisma8Service['client']['transaction']>[0]>[0]
+type FlowCollection = ReturnType<
+  Prisma8Service['client']['orm']['public']['ApprovalFlows']['where']
+>
 
 @Injectable()
 export class ApprovalFlowConfigService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly moduleForms: ModuleFormsService,
   ) {}
 
@@ -75,38 +89,46 @@ export class ApprovalFlowConfigService {
   ): Promise<PaginatedResult<ApprovalFlowListItem>> {
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 10
-    const where: Prisma.ApprovalFlowWhereInput = {
+    let flows = this.prisma8.client.orm.public.ApprovalFlows.where({
       tenantId: user.tenantId,
       deletedAt: null,
-      formType: { not: ApprovalFormType.RECEIVABLE_RECORD_LEGACY },
-      ...(query.keyword?.trim()
-        ? {
-            OR: [
-              { number: { contains: query.keyword.trim(), mode: 'insensitive' as const } },
-              { name: { contains: query.keyword.trim(), mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
-      ...(query.formType ? { formType: toDbFormType(query.formType) } : {}),
-      ...(query.enabled ? { enabled: query.enabled === 'true' } : {}),
-    }
+    }).where((row) => row.formType.neq('RECEIVABLE_RECORD_LEGACY'))
+    const keyword = query.keyword?.trim()
+    if (keyword) flows = flows.where((row) => or(row.number.ilike(`%${keyword}%`), row.name.ilike(`%${keyword}%`)))
+    if (query.formType) flows = flows.where({ formType: toDbFormType(query.formType) })
+    if (query.enabled) flows = flows.where({ enabled: query.enabled === 'true' })
     const sortBy = query.sortBy ?? 'updatedAt'
     const sortOrder = query.sortOrder ?? 'desc'
-
-    const [flows, total] = await this.prisma.$transaction([
-      this.prisma.approvalFlow.findMany({
-        where,
-        include: { currentVersion: { select: { version: true } } },
-        orderBy: { [sortBy]: sortOrder },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.approvalFlow.count({ where }),
-    ])
-    const userNames = await this.loadUserNames(flows)
+    const aggregatePromise = flows.aggregate((agg) => ({ count: agg.count() }))
+    let rows: FlowRow[]
+    if (sortBy === 'enabled') {
+      const ids = await this.enabledSortedFlowIds(user.tenantId, query, sortOrder, page, pageSize)
+      if (ids.length === 0) {
+        rows = []
+      } else {
+        const fetched = await this.prisma8.client.orm.public.ApprovalFlows.where((row) => row.id.in(ids)).all()
+        const byId = new Map(fetched.map((flow) => [flow.id, flow]))
+        rows = ids.flatMap((id) => {
+          const flow = byId.get(id)
+          return flow ? [flow] : []
+        })
+      }
+    } else {
+      rows = await this.orderFlows(flows, sortBy, sortOrder)
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all()
+    }
+    const aggregate = await aggregatePromise
+    const versions = await this.loadCurrentVersions(rows)
+    const records: FlowListRecord[] = rows.map((flow) => ({
+      ...flow,
+      currentVersion: flow.currentVersionId ? (versions.get(flow.currentVersionId) ?? null) : null,
+    }))
+    const userNames = await this.loadUserNames(records)
     return {
-      items: flows.map((flow) => this.toListItem(flow, userNames)),
-      total,
+      items: records.map((flow) => this.toListItem(flow, userNames)),
+      total: aggregate.count,
       page,
       pageSize,
     }
@@ -121,31 +143,30 @@ export class ApprovalFlowConfigService {
   async create(user: AuthUser, dto: CreateApprovalFlowDto): Promise<ApprovalFlowDetail> {
     const formType = dto.formType as SharedApprovalFormType
     await this.validateWrite(user, formType, dto, dto.createNodes)
+    await this.ensureFlowCounter(user.tenantId, formType)
 
     try {
-      const id = await this.prisma.$transaction(async (tx) => {
+      const id = await this.prisma8.client.transaction(async (tx) => {
         const number = await this.nextFlowNumber(tx, user.tenantId, formType)
-        const flow = await tx.approvalFlow.create({
-          data: {
+        const now = prisma8Now()
+        const flow = await tx.orm.public.ApprovalFlows.create({
             tenantId: user.tenantId,
             number,
             formType: toDbFormType(formType),
             currentVersionId: null,
             ...this.mainFields(dto, user.id),
-          },
+            updatedAt: now,
         })
-        const version = await tx.approvalFlowVersion.create({
-          data: {
+        const version = await tx.orm.public.ApprovalFlowVersions.create({
             flowId: flow.id,
             tenantId: user.tenantId,
             version: 1,
             createdById: user.id,
-          },
         })
         await this.createGraph(tx, version.id, dto.createNodes, dto.createLinks)
-        await tx.approvalFlow.update({
-          where: { id: flow.id },
-          data: { currentVersionId: version.id },
+        await tx.orm.public.ApprovalFlows.where({ id: flow.id }).update({
+          currentVersionId: version.id,
+          updatedAt: prisma8Now(),
         })
         return flow.id
       })
@@ -170,30 +191,26 @@ export class ApprovalFlowConfigService {
 
     const nodeChanged = this.graphChanged(origin, dto.createNodes, dto.createLinks)
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma8.client.transaction(async (tx) => {
       let currentVersionId = origin.currentVersionId
       if (nodeChanged) {
-        const latest = await tx.approvalFlowVersion.aggregate({
-          where: { flowId: id },
-          _max: { version: true },
-        })
-        const version = await tx.approvalFlowVersion.create({
-          data: {
+        const latest = await tx.orm.public.ApprovalFlowVersions.where({ flowId: id })
+          .orderBy((row) => row.version.desc())
+          .select('version')
+          .first()
+        const version = await tx.orm.public.ApprovalFlowVersions.create({
             flowId: id,
             tenantId: user.tenantId,
-            version: (latest._max.version ?? 0) + 1,
+            version: (latest?.version ?? 0) + 1,
             createdById: user.id,
-          },
         })
         await this.createGraph(tx, version.id, dto.createNodes, dto.createLinks)
         currentVersionId = version.id
       }
-      await tx.approvalFlow.update({
-        where: { id },
-        data: {
+      await tx.orm.public.ApprovalFlows.where({ id }).update({
           ...this.mainFields(dto, user.id),
           currentVersionId,
-        },
+          updatedAt: prisma8Now(),
       })
     })
     return this.detail(user, id)
@@ -212,9 +229,10 @@ export class ApprovalFlowConfigService {
         this.approverInputs(flow),
       )
     }
-    await this.prisma.approvalFlow.update({
-      where: { id },
-      data: { enabled, updatedById: user.id },
+    await this.prisma8.client.orm.public.ApprovalFlows.where({ id }).update({
+      enabled,
+      updatedById: user.id,
+      updatedAt: prisma8Now(),
     })
     return { id, name: flow.name }
   }
@@ -223,25 +241,30 @@ export class ApprovalFlowConfigService {
     const flow = await this.getFlowDetail(user.tenantId, id)
     if (flow.enabled) throw new ConflictException('启用中的流程不能删除，请先停用')
 
-    const instances = await this.prisma.approvalInstance.findMany({
-      where: { tenantId: user.tenantId, flowId: id, status: 'PENDING' },
-      select: { id: true, module: true, targetId: true },
+    const instances = await this.prisma8.client.orm.public.ApprovalInstances.where({
+      tenantId: user.tenantId,
+      flowId: id,
+      status: 'PENDING',
     })
+      .select('id', 'module', 'targetId')
+      .all()
     const instanceIds = instances.map((instance) => instance.id)
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.approvalFlow.update({
-        where: { id },
-        data: { deletedAt: new Date(), updatedById: user.id },
+    await this.prisma8.client.transaction(async (tx) => {
+      const now = prisma8Now()
+      await tx.orm.public.ApprovalFlows.where({ id }).update({
+        deletedAt: now,
+        updatedById: user.id,
+        updatedAt: now,
       })
       if (instanceIds.length > 0) {
-        await tx.approvalTask.updateMany({
-          where: { instanceId: { in: instanceIds }, status: 'PENDING' },
-          data: { status: 'SKIPPED' },
-        })
-        await tx.approvalInstance.updateMany({
-          where: { id: { in: instanceIds } },
-          data: { status: 'CANCELED', finishedAt: new Date() },
+        await tx.orm.public.ApprovalTasks.where({ status: 'PENDING' })
+          .where((row) => row.instanceId.in(instanceIds))
+          .updateAndCount({ status: 'SKIPPED', updatedAt: now })
+        await tx.orm.public.ApprovalInstances.where((row) => row.id.in(instanceIds)).updateAndCount({
+          status: 'CANCELED',
+          finishedAt: now,
+          updatedAt: now,
         })
         await this.resetBusinessStatuses(tx, user.tenantId, instances)
       }
@@ -250,24 +273,49 @@ export class ApprovalFlowConfigService {
   }
 
   private async getFlowDetail(tenantId: string, id: string): Promise<FlowDetailRecord> {
-    const flow = await this.prisma.approvalFlow.findFirst({
-      where: {
-        id,
-        tenantId,
-        deletedAt: null,
-        formType: { not: ApprovalFormType.RECEIVABLE_RECORD_LEGACY },
-      },
-      include: {
-        currentVersion: {
-          include: {
-            nodes: { include: { approver: true, condition: true }, orderBy: { sort: 'asc' } },
-            links: { orderBy: { sort: 'asc' } },
-          },
-        },
-      },
+    const flow = await this.prisma8.client.orm.public.ApprovalFlows.where({
+      id,
+      tenantId,
+      deletedAt: null,
     })
-    if (!flow?.currentVersion) throw new NotFoundException('流程不存在')
-    return flow
+      .where((row) => row.formType.neq('RECEIVABLE_RECORD_LEGACY'))
+      .first()
+    if (!flow?.currentVersionId) throw new NotFoundException('流程不存在')
+    const version = await this.prisma8.client.orm.public.ApprovalFlowVersions.where({
+      id: flow.currentVersionId,
+    }).first()
+    if (!version) throw new NotFoundException('流程不存在')
+    const nodes = await this.prisma8.client.orm.public.ApprovalNodes.where({
+      flowVersionId: version.id,
+    })
+      .orderBy((row) => row.sort.asc())
+      .all()
+    const nodeIds = nodes.map((node) => node.id)
+    const [approvers, conditions, links] = await Promise.all([
+      nodeIds.length
+        ? this.prisma8.client.orm.public.ApprovalNodeApprovers.where((row) => row.nodeId.in(nodeIds)).all()
+        : [],
+      nodeIds.length
+        ? this.prisma8.client.orm.public.ApprovalNodeConditions.where((row) => row.id.in(nodeIds)).all()
+        : [],
+      this.prisma8.client.orm.public.ApprovalNodeLinks.where({ flowVersionId: version.id })
+        .orderBy((row) => row.sort.asc())
+        .all(),
+    ])
+    const approverMap = new Map(approvers.map((row) => [row.nodeId, row]))
+    const conditionMap = new Map(conditions.map((row) => [row.id, row]))
+    return {
+      ...flow,
+      currentVersion: {
+        ...version,
+        nodes: nodes.map((node) => ({
+          ...node,
+          approver: approverMap.get(node.id) ?? null,
+          condition: conditionMap.get(node.id) ?? null,
+        })),
+        links,
+      },
+    }
   }
 
   private async validateWrite(
@@ -381,11 +429,17 @@ export class ApprovalFlowConfigService {
     ]
     const [userCount, roleCount] = await Promise.all([
       userIds.length
-        ? this.prisma.user.count({
-            where: { id: { in: userIds }, tenantId, status: 'ACTIVE' },
-          })
+        ? this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+            .where((row) => row.id.in(userIds))
+            .aggregate((agg) => ({ count: agg.count() }))
+            .then((result) => result.count)
         : 0,
-      roleIds.length ? this.prisma.role.count({ where: { id: { in: roleIds }, tenantId } }) : 0,
+      roleIds.length
+        ? this.prisma8.client.orm.public.Roles.where({ tenantId })
+            .where((row) => row.id.in(roleIds))
+            .aggregate((agg) => ({ count: agg.count() }))
+            .then((result) => result.count)
+        : 0,
     ])
     if (userCount !== userIds.length) throw new BadRequestException('存在无效或跨租户审批成员')
     if (roleCount !== roleIds.length) throw new BadRequestException('存在无效或跨租户审批角色')
@@ -469,17 +523,17 @@ export class ApprovalFlowConfigService {
   }
 
   private postConfigJson(config: FlowNodeDto['passPostConfig']) {
-    if (!config) return Prisma.DbNull
+    if (!config) return null
     const webHookConfig = normalizeApprovalWebhookConfig(config.webHookConfig)
-    if (!config.fieldUpdateConfigs.length && !webHookConfig) return Prisma.DbNull
-    return {
+    if (!config.fieldUpdateConfigs.length && !webHookConfig) return null
+    return prisma8JsonValue({
       fieldUpdateConfigs: config.fieldUpdateConfigs.map((item) => ({
         fieldId: item.fieldId.trim(),
         fieldValue: item.fieldValue ?? null,
         enable: item.enable,
       })),
       ...(webHookConfig ? { webHookConfig } : {}),
-    } as unknown as Prisma.InputJsonValue
+    })
   }
 
   private validateConditionConfig(node: FlowNodeDto) {
@@ -597,7 +651,7 @@ export class ApprovalFlowConfigService {
   private mainFields(dto: CreateApprovalFlowDto | UpdateApprovalFlowDto, userId: string) {
     return {
       name: dto.name.trim(),
-      description: dto.description?.trim() || null,
+      description: dto.description?.trim() ? prisma8Varchar(dto.description.trim(), 1000) : null,
       enabled: dto.enabled,
       createExecute: dto.createExecute,
       updateExecute: dto.updateExecute,
@@ -608,29 +662,63 @@ export class ApprovalFlowConfigService {
       allowAddSign: dto.allowAddSign,
       duplicateApproverRule: dto.duplicateApproverRule,
       requireComment: dto.requireComment,
-      condition: dto.condition
-        ? ({ amountGte: dto.condition.amountGte } as Prisma.InputJsonValue)
-        : Prisma.DbNull,
+      condition: dto.condition ? prisma8JsonValue({ amountGte: dto.condition.amountGte }) : null,
       updatedById: userId,
       ...('formType' in dto ? { createdById: userId } : {}),
     }
   }
 
   private async nextFlowNumber(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     tenantId: string,
     formType: SharedApprovalFormType,
   ) {
-    const counter = await tx.approvalFlowNumberCounter.upsert({
-      where: { tenantId_formType: { tenantId, formType: toDbFormType(formType) } },
-      update: { nextValue: { increment: 1 } },
-      create: { tenantId, formType: toDbFormType(formType), nextValue: 2 },
+    const dbFormType = toDbFormType(formType)
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const counter = await tx.orm.public.ApprovalFlowNumberCounters.where({
+        tenantId,
+        formType: dbFormType,
+      })
+        .select('id', 'nextValue')
+        .first()
+      if (!counter) throw new ConflictException('审批流程编号计数器未初始化')
+      const claimed = await tx.orm.public.ApprovalFlowNumberCounters.where({
+        id: counter.id,
+        nextValue: counter.nextValue,
+      }).updateAndCount({
+        nextValue: counter.nextValue + 1,
+        updatedAt: prisma8Now(),
+      })
+      if (claimed === 1) {
+        return `${FORM_TYPE_PREFIX[formType]}-${String(counter.nextValue).padStart(5, '0')}`
+      }
+    }
+    throw new ConflictException('审批流程编号分配冲突，请重试')
+  }
+
+  private async ensureFlowCounter(tenantId: string, formType: SharedApprovalFormType) {
+    const dbFormType = toDbFormType(formType)
+    const exists = await this.prisma8.client.orm.public.ApprovalFlowNumberCounters.where({
+      tenantId,
+      formType: dbFormType,
     })
-    return `${FORM_TYPE_PREFIX[formType]}-${String(counter.nextValue - 1).padStart(5, '0')}`
+      .select('id')
+      .first()
+    if (exists) return
+    try {
+      await this.prisma8.client.orm.public.ApprovalFlowNumberCounters.create({
+        tenantId,
+        formType: dbFormType,
+        nextValue: 1,
+        updatedAt: prisma8Now(),
+      })
+    } catch (error) {
+      if (!this.isUniqueError(error)) throw error
+    }
   }
 
   private async createGraph(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     flowVersionId: string,
     inputNodes: FlowNodeDto[],
     inputLinks: FlowLinkDto[],
@@ -640,20 +728,17 @@ export class ApprovalFlowConfigService {
       idMap.set(node.clientId!, randomUUID())
       const nodeType = node.nodeType ?? 'APPROVER'
       const id = idMap.get(node.clientId!)!
-      await tx.approvalNode.create({
-        data: {
+      await tx.orm.public.ApprovalNodes.create({
           id,
           flowVersionId,
           number: node.number?.trim() || `PN${String(index + 1).padStart(3, '0')}`,
           name: node.name.trim(),
-          nodeType: nodeType as ApprovalNodeType,
-          executeTiming: ApprovalExecuteTiming.CREATE,
+          nodeType,
+          executeTiming: 'CREATE',
           sort: index,
-        },
       })
       if (nodeType === 'APPROVER') {
-        await tx.approvalNodeApprover.create({
-          data: {
+        await tx.orm.public.ApprovalNodeApprovers.create({
             nodeId: id,
             approverType: node.approverType!,
             approverIds: node.approverIds ?? [],
@@ -664,35 +749,32 @@ export class ApprovalFlowConfigService {
             sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
             approverDirection: node.approverDirection ?? 'BOTTOM_UP',
             fieldPermissions: node.fieldPermissions?.length
-              ? (node.fieldPermissions.map((permission) => ({
+              ? prisma8JsonValue(node.fieldPermissions.map((permission) => ({
                   fieldId: permission.fieldId.trim(),
                   permissionType: permission.permissionType,
-                })) as unknown as Prisma.InputJsonValue)
-              : Prisma.DbNull,
+                })))
+              : null,
             passPostConfig: this.postConfigJson(node.passPostConfig),
             rejectPostConfig: this.postConfigJson(node.rejectPostConfig),
-          },
         })
       } else if (nodeType === 'CONDITION') {
-        await tx.approvalNodeCondition.create({
-          data: {
+        await tx.orm.public.ApprovalNodeConditions.create({
             id,
             flowVersionId,
-            conditionConfig: node.conditionConfig as unknown as Prisma.InputJsonValue,
-          },
+            conditionConfig: node.conditionConfig ? prisma8JsonValue(node.conditionConfig) : null,
         })
       }
     }
 
-    await tx.approvalNodeLink.createMany({
-      data: inputLinks.map((link, index) => ({
+    await tx.orm.public.ApprovalNodeLinks.createAll(
+      inputLinks.map((link, index) => ({
         id: randomUUID(),
         flowVersionId,
         fromNodeId: idMap.get(link.fromNodeId)!,
         toNodeId: idMap.get(link.toNodeId)!,
         sort: link.sort ?? index,
       })),
-    })
+    )
   }
 
   private graphChanged(
@@ -706,8 +788,8 @@ export class ApprovalFlowConfigService {
       number: node.number,
       name: node.name,
       approverType: node.approver?.approverType,
-      approverIds: node.approver?.approverIds ?? [],
-      ccUserIds: node.approver?.ccUserIds ?? [],
+      approverIds: [...(node.approver?.approverIds ?? [])],
+      ccUserIds: [...(node.approver?.ccUserIds ?? [])],
       mode: node.approver?.mode,
       emptyApproverAction: node.approver?.emptyApproverAction,
       fallbackApprover: node.approver?.fallbackApprover,
@@ -802,12 +884,12 @@ export class ApprovalFlowConfigService {
 
   private approverInputs(flow: FlowDetailRecord): ApprovalFlowNodeInput[] {
     return (flow.currentVersion?.nodes ?? [])
-      .filter((node) => node.nodeType === ApprovalNodeType.APPROVER && node.approver)
+      .filter((node) => node.nodeType === 'APPROVER' && node.approver)
       .map((node) => ({
         name: node.name,
         approverType: node.approver!.approverType,
-        approverIds: node.approver!.approverIds,
-        ccUserIds: node.approver!.ccUserIds,
+        approverIds: [...(node.approver!.approverIds ?? [])],
+        ccUserIds: [...(node.approver!.ccUserIds ?? [])],
         mode: node.approver!.mode,
         emptyApproverAction: node.approver!.emptyApproverAction,
         fallbackApprover: node.approver!.fallbackApprover,
@@ -822,7 +904,85 @@ export class ApprovalFlowConfigService {
       }))
   }
 
-  private async loadUserNames(flows: Array<Pick<ApprovalFlow, 'createdById' | 'updatedById'>>) {
+  private orderFlows(
+    flows: FlowCollection,
+    sortBy: Exclude<NonNullable<ApprovalFlowPageQueryDto['sortBy']>, 'enabled'>,
+    sortOrder: NonNullable<ApprovalFlowPageQueryDto['sortOrder']>,
+  ) {
+    const asc = sortOrder === 'asc'
+    switch (sortBy) {
+      case 'number':
+        return flows.orderBy((row) => (asc ? row.number.asc() : row.number.desc()))
+      case 'name':
+        return flows.orderBy((row) => (asc ? row.name.asc() : row.name.desc()))
+      case 'formType':
+        return flows.orderBy((row) => (asc ? row.formType.asc() : row.formType.desc()))
+      case 'createdAt':
+        return flows.orderBy((row) => (asc ? row.createdAt.asc() : row.createdAt.desc()))
+      case 'updatedAt':
+      default:
+        return flows.orderBy((row) => (asc ? row.updatedAt.asc() : row.updatedAt.desc()))
+    }
+  }
+
+  private async enabledSortedFlowIds(
+    tenantId: string,
+    query: ApprovalFlowPageQueryDto,
+    sortOrder: 'asc' | 'desc',
+    page: number,
+    pageSize: number,
+  ): Promise<string[]> {
+    const keyword = query.keyword?.trim()
+    const keywordPattern = keyword ? `%${keyword}%` : ''
+    const formTypeFilter = query.formType ? toDbFormType(query.formType) : ''
+    const enabledFilter = query.enabled ?? ''
+    const offset = (page - 1) * pageSize
+    const queryBuilder = sortOrder === 'asc'
+      ? this.prisma8.client.raw.sql`
+          SELECT id
+          FROM approval_flows
+          WHERE "tenantId" = ${tenantId}
+            AND "deletedAt" IS NULL
+            AND "formType"::text <> 'RECEIVABLE_RECORD_LEGACY'
+            AND (${formTypeFilter} = '' OR "formType"::text = ${formTypeFilter})
+            AND (${enabledFilter} = '' OR "enabled"::text = ${enabledFilter})
+            AND (${keywordPattern} = '' OR "number" ILIKE ${keywordPattern} OR "name" ILIKE ${keywordPattern})
+          ORDER BY "enabled" ASC, id ASC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `
+      : this.prisma8.client.raw.sql`
+          SELECT id
+          FROM approval_flows
+          WHERE "tenantId" = ${tenantId}
+            AND "deletedAt" IS NULL
+            AND "formType"::text <> 'RECEIVABLE_RECORD_LEGACY'
+            AND (${formTypeFilter} = '' OR "formType"::text = ${formTypeFilter})
+            AND (${enabledFilter} = '' OR "enabled"::text = ${enabledFilter})
+            AND (${keywordPattern} = '' OR "number" ILIKE ${keywordPattern} OR "name" ILIKE ${keywordPattern})
+          ORDER BY "enabled" DESC, id ASC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `
+    const ids: string[] = []
+    for await (const row of this.prisma8.client.runtime().query(queryBuilder.returnsRow({ id: 'pg/text@1' }).build())) {
+      ids.push(row.id)
+    }
+    return ids
+  }
+
+  private async loadCurrentVersions(flows: FlowRow[]) {
+    const ids = [
+      ...new Set(flows.map((flow) => flow.currentVersionId).filter((id): id is string => !!id)),
+    ]
+    if (ids.length === 0) return new Map<string, Pick<FlowVersionRow, 'version'>>()
+    const versions = await this.prisma8.client.orm.public.ApprovalFlowVersions.where((row) =>
+      row.id.in(ids),
+    )
+      .select('id', 'version')
+      .all()
+    return new Map(versions.map((version) => [version.id, { version: version.version }]))
+  }
+
+  private async loadUserNames(flows: Array<Pick<FlowRow, 'createdById' | 'updatedById'>>) {
     const ids = [
       ...new Set(
         flows
@@ -831,10 +991,9 @@ export class ApprovalFlowConfigService {
       ),
     ]
     if (ids.length === 0) return new Map<string, string>()
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, name: true },
-    })
+    const users = await this.prisma8.client.orm.public.Users.where((row) => row.id.in(ids))
+      .select('id', 'name')
+      .all()
     return new Map(users.map((member) => [member.id, member.name]))
   }
 
@@ -863,8 +1022,8 @@ export class ApprovalFlowConfigService {
       createdByName: flow.createdById ? (userNames.get(flow.createdById) ?? null) : null,
       updatedById: flow.updatedById,
       updatedByName: flow.updatedById ? (userNames.get(flow.updatedById) ?? null) : null,
-      createdAt: flow.createdAt.toISOString(),
-      updatedAt: flow.updatedAt.toISOString(),
+      createdAt: prisma8TimestampToISOString(flow.createdAt),
+      updatedAt: prisma8TimestampToISOString(flow.updatedAt),
     }
   }
 
@@ -882,8 +1041,8 @@ export class ApprovalFlowConfigService {
         executeTiming: node.executeTiming,
         sort: node.sort,
         approverType: node.approver?.approverType,
-        approverIds: node.approver?.approverIds,
-        ccUserIds: node.approver?.ccUserIds,
+        approverIds: node.approver ? [...(node.approver.approverIds ?? [])] : undefined,
+        ccUserIds: node.approver ? [...(node.approver.ccUserIds ?? [])] : undefined,
         mode: node.approver?.mode,
         emptyApproverAction: node.approver?.emptyApproverAction,
         fallbackApprover: node.approver?.fallbackApprover,
@@ -907,7 +1066,7 @@ export class ApprovalFlowConfigService {
   }
 
   private async resetBusinessStatuses(
-    tx: Prisma.TransactionClient,
+    tx: Prisma8Transaction,
     tenantId: string,
     instances: Array<{ module: string; targetId: string }>,
   ) {
@@ -921,26 +1080,23 @@ export class ApprovalFlowConfigService {
       .filter((item) => item.module === 'order')
       .map((item) => item.targetId)
     if (quoteIds.length) {
-      await tx.opportunityQuotation.updateMany({
-        where: { organizationId: tenantId, id: { in: quoteIds } },
-        data: { approvalStatus: 'NONE' },
-      })
+      await tx.orm.public.OpportunityQuotation.where({ organizationId: prisma8Varchar(tenantId, 32) })
+        .where((row) => row.id.in(prisma8Varchars(quoteIds, 32)))
+        .updateAndCount({ approvalStatus: prisma8Varchar('NONE', 50) })
     }
     if (contractIds.length) {
-      await tx.contract.updateMany({
-        where: { organizationId: tenantId, id: { in: contractIds } },
-        data: { approvalStatus: 'NONE' },
-      })
+      await tx.orm.public.Contract.where({ organizationId: prisma8Varchar(tenantId, 32) })
+        .where((row) => row.id.in(prisma8Varchars(contractIds, 32)))
+        .updateAndCount({ approvalStatus: prisma8Varchar('NONE', 50) })
     }
     if (orderIds.length) {
-      await tx.order.updateMany({
-        where: { tenantId, id: { in: orderIds } },
-        data: { approvalStatus: 'NONE' },
-      })
+      await tx.orm.public.SalesOrder.where({ organizationId: prisma8Varchar(tenantId, 32) })
+        .where((row) => row.id.in(prisma8Varchars(orderIds, 32)))
+        .updateAndCount({ approvalStatus: prisma8Varchar('NONE', 50) })
     }
   }
 
-  private isUniqueError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
-    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+  private isUniqueError(error: unknown): boolean {
+    return (error as { sqlState?: string }).sqlState === '23505'
   }
 }

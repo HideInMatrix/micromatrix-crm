@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
-import { PrismaService } from '../prisma/prisma.service'
 import { MetadataService } from '../modules/metadata/metadata.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
+import { Prisma8Service } from '../prisma/prisma8.service'
+import { prisma8Varchar, prisma8Varchars } from '../prisma/prisma8-varchar'
 import type {
   CapacityExclusionCondition,
   DirectPoolConfigurationInput,
@@ -24,7 +25,7 @@ type CustomerPoolRow = Awaited<ReturnType<CustomerPoolRepository['listPools']>>[
 @Injectable()
 export class CustomerPoolConfigService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly metadata: MetadataService,
     private readonly customerPools: CustomerPoolRepository,
   ) {}
@@ -61,11 +62,12 @@ export class CustomerPoolConfigService {
 
   async noPick(user: AuthUser, poolId: string) {
     await this.assertPoolExists(user.tenantId, poolId)
-    return (
-      (await this.prisma.customer.count({
-        where: { organizationId: user.tenantId, poolId, inSharedPool: true },
-      })) > 0
-    )
+    const aggregate = await this.prisma8.client.orm.public.Customer.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
+      poolId: prisma8Varchar(poolId, 32),
+      inSharedPool: true,
+    }).aggregate((agg) => ({ total: agg.count() }))
+    return aggregate.total > 0
   }
 
   async remove(user: AuthUser, poolId: string) {
@@ -173,10 +175,14 @@ export class CustomerPoolConfigService {
     const filter = values[0]
     if (!filter || filter.column !== 'stage') throw new BadRequestException('客户库容仅支持按商机阶段排除')
     if (!filter.value.length) throw new BadRequestException('请选择要排除的商机阶段')
-    const stageCount = await this.prisma.opportunityStageConfig.count({
-      where: { organizationId: user.tenantId, id: { in: filter.value } },
+    const stageIds = [...new Set(filter.value)]
+    const stages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
     })
-    if (stageCount !== new Set(filter.value).size) {
+      .where((stage) => stage.id.in(prisma8Varchars(stageIds, 32)))
+      .select('id')
+      .all()
+    if (stages.length !== stageIds.length) {
       throw new BadRequestException('客户库容排除条件包含不存在的商机阶段')
     }
     return [{ column: 'stage', operator: filter.operator, value: [...filter.value] }]
@@ -193,15 +199,17 @@ export class CustomerPoolConfigService {
     const userIds = [
       ...new Set(rows.flatMap((row) => [row.createUser, row.updateUser]).filter(Boolean)),
     ]
-    const users = await this.prisma.user.findMany({
-      where: { tenantId: user.tenantId, id: { in: userIds } },
-      select: { id: true, name: true },
-    })
+    const users = userIds.length
+      ? await this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+          .where((member) => member.id.in(userIds))
+          .select('id', 'name')
+          .all()
+      : []
     const userMap = new Map(users.map((item) => [item.id, item.name]))
     return rows.map((pool) => {
       const scopeIds = parseStringArray(pool.scopeId)
       const ownerIds = parseStringArray(pool.ownerId)
-      const hiddenFieldIds = pool.hiddenFields.map((item) => item.fieldId)
+      const hiddenFieldIds = pool.hiddenFields.map((item) => String(item.fieldId))
       const hidden = new Set(hiddenFieldIds)
       return {
         id: pool.id,

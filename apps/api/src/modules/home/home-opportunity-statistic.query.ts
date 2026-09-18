@@ -7,8 +7,8 @@ import type {
   HomeTimeField,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomePeriodService } from './home-period.service'
 
@@ -24,10 +24,20 @@ const PERIOD_KEYS: Record<
   THIS_YEAR: { count: 'thisYearOpportunity', amount: 'thisYearOpportunityAmount' },
 }
 
+type HomeOpportunityWhere = {
+  organizationId?: string
+  owner?: string | { in: string[] }
+  stageConfig?: { type?: string; rate?: string }
+  createTime?: { gte: bigint; lte: bigint }
+  expectedEndTime?: { gte: bigint; lte: bigint }
+  actualEndTime?: { gte: bigint; lte: bigint }
+  AND?: HomeOpportunityWhere[]
+}
+
 @Injectable()
 export class HomeOpportunityStatisticQuery {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly scopes: HomeDepartmentScopeService,
     private readonly periods: HomePeriodService,
   ) {}
@@ -53,7 +63,7 @@ export class HomeOpportunityStatisticQuery {
     request: HomeStatisticRequest,
     period: HomeStatisticPeriod,
     scenario: OpportunityScenario,
-  ): Promise<Prisma.OpportunityWhereInput> {
+  ): Promise<HomeOpportunityWhere> {
     const scope = await this.scopes.resolve(
       user,
       'menu:opportunity',
@@ -77,12 +87,9 @@ export class HomeOpportunityStatisticQuery {
       request.deptIds ?? [],
     )
     const range = this.periods.range(period)
-    const where = this.where(user, request, scope, range.start, range.end, scenario)
-    const [value, amountAgg] = await Promise.all([
-      this.prisma.opportunity.count({ where }),
-      this.prisma.opportunity.aggregate({ where, _sum: { amount: true } }),
-    ])
-    const amount = Number(amountAgg._sum.amount ?? 0)
+    const current = await this.aggregateRange(user, request, scope, range.start, range.end, scenario)
+    const value = current.value
+    const amount = current.amount
     if (!request.priorPeriodEnable) {
       return {
         count: { value, priorPeriodCompareRate: null } satisfies HomeStatisticValue,
@@ -90,7 +97,7 @@ export class HomeOpportunityStatisticQuery {
       }
     }
 
-    const previousWhere = this.where(
+    const previous = await this.aggregateRange(
       user,
       request,
       scope,
@@ -98,15 +105,70 @@ export class HomeOpportunityStatisticQuery {
       range.previousEnd,
       scenario,
     )
-    const [previousValue, previousAmountAgg] = await Promise.all([
-      this.prisma.opportunity.count({ where: previousWhere }),
-      this.prisma.opportunity.aggregate({ where: previousWhere, _sum: { amount: true } }),
-    ])
-    const previousAmount = Number(previousAmountAgg._sum.amount ?? 0)
     return {
-      count: { value, priorPeriodCompareRate: this.compare(value, previousValue) },
-      amount: { value: amount, priorPeriodCompareRate: this.compare(amount, previousAmount) },
+      count: { value, priorPeriodCompareRate: this.compare(value, previous.value) },
+      amount: { value: amount, priorPeriodCompareRate: this.compare(amount, previous.amount) },
     }
+  }
+
+  private async aggregateRange(
+    user: AuthUser,
+    request: HomeStatisticRequest,
+    scope: Awaited<ReturnType<HomeDepartmentScopeService['resolve']>>,
+    start: Date,
+    end: Date,
+    scenario: OpportunityScenario,
+  ): Promise<{ value: number; amount: number }> {
+    if (!scope.all && !scope.self && (scope.userIds?.length ?? 0) === 0) {
+      return { value: 0, amount: 0 }
+    }
+
+    const stageIds = await this.stageIds(user.tenantId, scenario)
+    if (scenario !== 'ALL' && stageIds.length === 0) return { value: 0, amount: 0 }
+
+    let query = this.prisma8.client.orm.public.Opportunity.where({
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    })
+    if (!scope.all) {
+      query = scope.self
+        ? query.where({ owner: prisma8Varchar(user.id, 32) })
+        : query.where((row) => row.owner.in(prisma8Varchars(scope.userIds ?? [], 32)))
+    }
+    if (stageIds.length) {
+      query = query.where((row) => row.stage.in(prisma8Varchars(stageIds, 32)))
+    }
+
+    const field = this.timeField(request, scenario)
+    const startMs = BigInt(start.getTime())
+    const endMs = BigInt(end.getTime())
+    query =
+      field === 'CREATE_TIME'
+        ? query.where((row) => row.createTime.gte(startMs)).where((row) => row.createTime.lte(endMs))
+        : field === 'EXPECTED_END_TIME'
+          ? query
+              .where((row) => row.expectedEndTime.gte(startMs))
+              .where((row) => row.expectedEndTime.lte(endMs))
+          : query
+              .where((row) => row.actualEndTime.gte(startMs))
+              .where((row) => row.actualEndTime.lte(endMs))
+
+    const aggregate = await query.aggregate((agg) => ({
+      total: agg.count(),
+      amount: agg.sum('amount'),
+    }))
+    return { value: aggregate.total, amount: Number(aggregate.amount ?? 0) }
+  }
+
+  private async stageIds(tenantId: string, scenario: OpportunityScenario): Promise<string[]> {
+    if (scenario === 'ALL') return []
+    const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+      organizationId: prisma8Varchar(tenantId, 32),
+      _type: prisma8Varchar(scenario === 'SUCCESS' ? 'END' : 'AFOOT', 50),
+      ...(scenario === 'SUCCESS' ? { rate: prisma8Varchar('100', 10) } : {}),
+    })
+      .select('id')
+      .all()
+    return rows.map((row) => row.id)
   }
 
   private where(
@@ -116,17 +178,17 @@ export class HomeOpportunityStatisticQuery {
     start: Date,
     end: Date,
     scenario: OpportunityScenario,
-  ): Prisma.OpportunityWhereInput {
+  ): HomeOpportunityWhere {
     const timeField = this.timeField(request, scenario)
     const timeFilter = this.timeFilter(timeField, start, end)
-    const scopeFilter: Prisma.OpportunityWhereInput = scope.all
+    const scopeFilter: HomeOpportunityWhere = scope.all
       ? {}
       : scope.self
         ? { owner: user.id }
         : scope.userIds?.length
           ? { owner: { in: scope.userIds } }
           : { owner: '__home_scope_empty__' }
-    const stageFilter: Prisma.OpportunityWhereInput =
+    const stageFilter: HomeOpportunityWhere =
       scenario === 'SUCCESS'
         ? { stageConfig: { type: 'END', rate: '100' } }
         : scenario === 'UNDERWAY'
@@ -149,7 +211,7 @@ export class HomeOpportunityStatisticQuery {
     return field
   }
 
-  private timeFilter(field: HomeTimeField, start: Date, end: Date): Prisma.OpportunityWhereInput {
+  private timeFilter(field: HomeTimeField, start: Date, end: Date): HomeOpportunityWhere {
     const range = { gte: BigInt(start.getTime()), lte: BigInt(end.getTime()) }
     if (field === 'CREATE_TIME') return { createTime: range }
     if (field === 'EXPECTED_END_TIME') return { expectedEndTime: range }

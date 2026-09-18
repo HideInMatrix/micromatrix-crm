@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { NAVIGATION_MODULES, type HomeStatisticRequest } from '@micromatrix/shared'
 import type { AuthUser } from '../auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
 import type { TenantDerivedCacheService } from './tenant-derived-cache.service'
 import { ModuleConfigsService } from '../../modules/module-configs/module-configs.service'
 import { DepartmentsService } from '../../modules/departments/departments.service'
@@ -45,48 +46,54 @@ test('ModuleConfig cache hit 跳过默认补种与查询，写后版本失效立
   const rows: Array<{ id: string; tenantId: string; key: string; enabled: boolean; sort: number }> = []
   let createManyCalls = 0
   let findManyCalls = 0
-  const moduleConfig = {
-    createMany: async ({ data }: { data: Array<Omit<(typeof rows)[number], 'id'>> }) => {
-      createManyCalls += 1
-      for (const item of data) {
-        if (rows.some((row) => row.tenantId === item.tenantId && row.key === item.key)) continue
-        rows.push({ ...item, id: `${item.tenantId}-${item.key}` })
+  const moduleConfigs = {
+    where: (where: Partial<(typeof rows)[number]>) => {
+      const matches = (row: (typeof rows)[number]) =>
+        Object.entries(where).every(([key, value]) => row[key as keyof (typeof rows)[number]] === value)
+      const query = {
+        first: async () => rows.find(matches) ?? null,
+        update: async (data: Partial<(typeof rows)[number]>) => {
+          const row = rows.find(matches)
+          if (!row) return null
+          Object.assign(row, data)
+          return row
+        },
+        orderBy: () => query,
+        all: async () => {
+          findManyCalls += 1
+          return rows.filter(matches).sort((left, right) => left.sort - right.sort || left.key.localeCompare(right.key))
+        },
       }
-      return { count: data.length }
+      return query
     },
-    findMany: async ({ where }: { where: { tenantId: string } }) => {
-      findManyCalls += 1
-      return rows
-        .filter((row) => row.tenantId === where.tenantId)
-        .sort((left, right) => left.sort - right.sort || left.key.localeCompare(right.key))
-    },
-    update: async ({
-      where,
-      data,
-    }: {
-      where: { tenantId_key: { tenantId: string; key: string } }
-      data: { enabled?: boolean; sort?: number }
-    }) => {
-      const row = rows.find(
-        (item) =>
-          item.tenantId === where.tenantId_key.tenantId && item.key === where.tenantId_key.key,
-      )
-      assert.ok(row)
-      Object.assign(row, data)
+    create: async (data: Omit<(typeof rows)[number], 'id'>) => {
+      createManyCalls += 1
+      const row = { ...data, id: `${data.tenantId}-${data.key}` }
+      rows.push(row)
       return row
     },
   }
-  const prisma = {
-    moduleConfig,
-    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
-  } as unknown as PrismaService
+  const publicOrm = {
+    ModuleConfigs: moduleConfigs,
+    TopNavigationConfigs: {
+      where: () => ({ first: async () => null }),
+      create: async () => null,
+    },
+  }
+  const prisma8 = {
+    client: {
+      orm: { public: publicOrm },
+      transaction: async (callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>) =>
+        callback({ orm: { public: publicOrm } }),
+    },
+  } as unknown as Prisma8Service
   const { cache, invalidations } = createCache()
-  const service = new ModuleConfigsService(prisma, cache)
+  const service = new ModuleConfigsService(prisma8, cache)
 
   const first = await service.list('tenant-a')
   const second = await service.list('tenant-a')
   assert.deepEqual(second, first)
-  assert.equal(createManyCalls, 1)
+  assert.equal(createManyCalls, NAVIGATION_MODULES.length)
   assert.equal(findManyCalls, 1)
 
   const configurable = NAVIGATION_MODULES.find((item) => item.configurable)
@@ -121,23 +128,54 @@ test('Directory 部门树 cache hit 不重复查询，部门创建后主动失�
     },
   ]
   let findManyCalls = 0
-  const prisma = {
-    department: {
-      findMany: async () => {
-        findManyCalls += 1
-        return departments
-      },
-      findFirst: async () => null,
-      create: async ({ data }: { data: Omit<(typeof departments)[number], 'id' | 'createdAt' | 'leaderId'> }) => {
-        const row = { ...data, id: `dept-${departments.length}`, createdAt: now, leaderId: null }
-        departments.push(row)
-        return row
+  const departmentScope: Record<string, unknown> = {}
+  Object.assign(departmentScope, {
+    where: () => departmentScope,
+    orderBy: () => departmentScope,
+    select: () => departmentScope,
+    first: async () => null,
+    all: async () => {
+      findManyCalls += 1
+      return departments
+    },
+  })
+  const departmentCollection = {
+    ...departmentScope,
+    where: () => departmentScope,
+    create: async (data: {
+      tenantId: string
+      name: string
+      parentId: string | null
+      leaderId: string | null
+      sort: number
+    }) => {
+      const row = {
+        ...data,
+        id: `dept-${departments.length}`,
+        createdAt: prisma8Now(),
+        updatedAt: prisma8Now(),
+      }
+      departments.push({ ...row, createdAt: now })
+      return row
+    },
+  }
+  const userScope: Record<string, unknown> = {}
+  Object.assign(userScope, {
+    select: () => userScope,
+    all: async () => [],
+  })
+  const prisma8 = {
+    client: {
+      orm: {
+        public: {
+          Departments: departmentCollection,
+          Users: { where: () => userScope },
+        },
       },
     },
-    user: { findMany: async () => [] },
-  } as unknown as PrismaService
+  } as unknown as Prisma8Service
   const { cache, invalidations } = createCache()
-  const service = new DepartmentsService(prisma, cache)
+  const service = new DepartmentsService(prisma8, cache)
 
   assert.equal((await service.tree('tenant-a')).length, 1)
   assert.equal((await service.tree('tenant-a')).length, 1)

@@ -2,7 +2,8 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
 import { AuthService } from '../../auth/auth.service'
 import { FollowUpPlansService } from '../follow-up-plans/follow-up-plans.service'
 import type {
@@ -14,7 +15,7 @@ import type {
 @Injectable()
 export class PersonalCenterService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly auth: AuthService,
     private readonly followPlans: FollowUpPlansService,
     private readonly changeLog: BusinessChangeLogService,
@@ -22,15 +23,36 @@ export class PersonalCenterService {
   ) {}
 
   async info(user: AuthUser) {
-    const current = await this.prisma.user.findFirst({
-      where: { id: user.id, tenantId: user.tenantId },
-      include: {
-        dept: true,
-        extension: true,
-        userRoles: { include: { role: true } },
-      },
+    const current = await this.prisma8.client.orm.public.Users.where({
+      id: user.id,
+      tenantId: user.tenantId,
     })
+      .select('id', 'name', 'phone', 'email', 'language', 'deptId', 'passwordLoginEnabled')
+      .first()
     if (!current) throw new UnauthorizedException('用户不存在')
+    const [department, extension, userRoles] = await Promise.all([
+      current.deptId
+        ? this.prisma8.client.orm.public.Departments.where({
+            id: current.deptId,
+            tenantId: user.tenantId,
+          })
+            .select('name')
+            .first()
+        : null,
+      this.prisma8.client.orm.public.UserExtensions.where({ id: current.id })
+        .select('avatar')
+        .first(),
+      this.prisma8.client.orm.public.UserRoles.where({ tenantId: user.tenantId, userId: current.id })
+        .select('roleId')
+        .all(),
+    ])
+    const roleIds = userRoles.map((row) => row.roleId)
+    const roles = roleIds.length
+      ? await this.prisma8.client.orm.public.Roles.where({ tenantId: user.tenantId })
+          .where((row) => row.id.in(roleIds))
+          .select('id', 'name')
+          .all()
+      : []
     return {
       userId: current.id,
       userName: current.name,
@@ -38,10 +60,10 @@ export class PersonalCenterService {
       email: current.email ?? '',
       language: current.language,
       departmentId: current.deptId,
-      departmentName: current.dept?.name ?? '',
-      avatarUrl: current.extension?.avatar ?? null,
+      departmentName: department?.name ?? '',
+      avatarUrl: extension?.avatar ?? null,
       passwordLoginEnabled: current.passwordLoginEnabled,
-      roles: current.userRoles.map(({ role }) => ({ id: role.id, name: role.name })),
+      roles: roles.map((role) => ({ id: role.id, name: role.name })),
     }
   }
 
@@ -49,30 +71,31 @@ export class PersonalCenterService {
     const phone = dto.phone.trim()
     const email = dto.email.trim().toLowerCase()
     const language = dto.language
-    const [current, phoneExists, emailExists] = await Promise.all([
-      this.prisma.user.findFirst({
-        where: { id: user.id, tenantId: user.tenantId },
-        select: { id: true, name: true, phone: true, email: true, language: true },
-      }),
-      this.prisma.user.findFirst({
-        // Cordys ExtUserMapper.countByPhone 不带 organizationId：手机号是全局唯一。
-        where: { phone, id: { not: user.id } },
-        select: { id: true },
-      }),
+    const [current, phoneMatch, emailMatch] = await Promise.all([
+      this.prisma8.client.orm.public.Users.where({ id: user.id, tenantId: user.tenantId })
+        .select('id', 'name', 'phone', 'email', 'language')
+        .first(),
+      // Cordys ExtUserMapper.countByPhone 不带 organizationId：手机号是全局唯一。
+      this.prisma8.client.orm.public.Users.where({ phone }).select('id').first(),
       // 登录入口按邮箱全局解析租户；个人中心也必须保持全局邮箱唯一，避免登录身份歧义。
-      this.prisma.user.findFirst({
-        where: { email: { equals: email, mode: 'insensitive' }, id: { not: user.id } },
-        select: { id: true },
-      }),
+      this.prisma8.client.orm.public.Users.where((row) => row.email.ilike(email))
+        .select('id')
+        .first(),
     ])
     if (!current) throw new UnauthorizedException('用户不存在')
-    if (phoneExists) throw new ConflictException('该手机号已被使用')
-    if (emailExists) throw new ConflictException('该邮箱已被使用')
+    if (phoneMatch && phoneMatch.id !== user.id) throw new ConflictException('该手机号已被使用')
+    if (emailMatch && emailMatch.id !== user.id) throw new ConflictException('该邮箱已被使用')
 
-    await this.prisma.user.updateMany({
-      where: { id: user.id, tenantId: user.tenantId },
-      data: { phone, email, language },
+    const updated = await this.prisma8.client.orm.public.Users.where({
+      id: user.id,
+      tenantId: user.tenantId,
+    }).update({
+      phone,
+      email,
+      language,
+      updatedAt: prisma8Now(),
     })
+    if (!updated) throw new UnauthorizedException('用户不存在')
     await this.authCache.invalidate(user.id)
     const result = await this.info(user)
     await this.changeLog.record(user, {

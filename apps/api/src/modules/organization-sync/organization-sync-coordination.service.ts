@@ -3,8 +3,9 @@ import {
   DistributedCoordinatorService,
   type CoordinationRunResult,
 } from '../../common/services/distributed-coordinator.service'
-import type { EnterpriseIntegrationProvider } from '../../generated/prisma/client'
 import { RedisService } from '../../redis/redis.service'
+
+type EnterpriseIntegrationProvider = 'WECOM' | 'DINGTALK' | 'LARK'
 
 export type OrganizationSyncRuntimePhase = 'FETCHING' | 'APPLYING'
 

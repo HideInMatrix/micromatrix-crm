@@ -60,14 +60,18 @@ test('动态审批方向严格按 Cordys 的层级位置选择', () => {
 test('duplicate rule: FIRST_ONLY 看历史节点，SEQUENTIAL_ALL 只看紧邻上一节点', async () => {
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const calls: unknown[] = []
-  ;(service as unknown as { prisma: unknown }).prisma = {
-    approvalTask: {
-      findMany: async (args: unknown) => {
-        calls.push(args)
-        return [{ approverId: 'u1' }, { approverId: 'u3' }]
-      },
-      aggregate: async () => ({ _max: { nodeRound: 4 } }),
+  const query = {
+    where: () => query,
+    select: () => query,
+    orderBy: () => query,
+    all: async () => {
+      calls.push('all')
+      return [{ approverId: 'u1' }, { approverId: 'u3' }]
     },
+    first: async () => ({ nodeRound: 4 }),
+  }
+  ;(service as unknown as { prisma8: unknown }).prisma8 = {
+    client: { orm: { public: { ApprovalTasks: { where: () => query } } } },
   }
   const runtime = service as unknown as {
     duplicateApproversToSkip(

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common'
 import { AuthModule } from '../../auth/auth.module'
+import { Prisma8Module } from '../../prisma/prisma8.module'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import { ExternalIdentitiesController, WeComSsoController } from './wecom-sso.controller'
 import { WeComSsoService } from './wecom-sso.service'
 
 @Module({
-  imports: [AuthModule, EnterpriseIntegrationsModule],
+  imports: [AuthModule, Prisma8Module, EnterpriseIntegrationsModule],
   controllers: [WeComSsoController, ExternalIdentitiesController],
   providers: [WeComSsoService],
   exports: [WeComSsoService],

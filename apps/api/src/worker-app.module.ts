@@ -4,7 +4,7 @@ import { AuthModule } from './auth/auth.module'
 import { CommonModule } from './common/common.module'
 import { ApprovalsModule } from './modules/approvals/approvals.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
-import { PrismaModule } from './prisma/prisma.module'
+import { Prisma8Module } from './prisma/prisma8.module.js'
 import { RedisModule } from './redis/redis.module'
 import { ExportWorkerModule } from './workers/export-worker.module'
 
@@ -12,7 +12,7 @@ import { ExportWorkerModule } from './workers/export-worker.module'
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
-    PrismaModule,
+    Prisma8Module,
     RedisModule,
     CommonModule,
     ApprovalsModule,

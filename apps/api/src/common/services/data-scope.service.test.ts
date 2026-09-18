@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { AuthUser } from '../auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { DataScopeService } from './data-scope.service'
 
 const departments = [
@@ -13,10 +13,16 @@ const departments = [
 
 function service() {
   return new DataScopeService({
-    department: {
-      findMany: async () => departments,
+    client: {
+      orm: {
+        public: {
+          Departments: {
+            where: () => ({ select: () => ({ all: async () => departments }) }),
+          },
+        },
+      },
     },
-  } as unknown as PrismaService)
+  } as unknown as Prisma8Service)
 }
 
 function actor(): AuthUser {

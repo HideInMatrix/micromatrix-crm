@@ -2,8 +2,8 @@ import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } fr
 import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { Observable, tap } from 'rxjs'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
 import {
   LOG_OPERATION_KEY,
   LogOperationMeta,
@@ -19,7 +19,7 @@ export class OperationLogInterceptor implements NestInterceptor {
 
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -42,33 +42,29 @@ export class OperationLogInterceptor implements NestInterceptor {
           [OPERATION_LOG_RESULT_META]?: OperationLogResultMeta
         }
         const resultMeta = target[OPERATION_LOG_RESULT_META]
-        void this.prisma
-          .$transaction(async (tx) => {
-            const log = await tx.operationLog.create({
-              data: {
-                tenantId: user.tenantId,
-                userId: user.id,
-                userName: user.name,
-                module: meta.module,
-                action: meta.action,
-                targetId:
-                  resultMeta?.targetId ?? (typeof target.id === 'string' ? target.id : undefined),
-                targetName:
-                  resultMeta?.targetName ??
-                  (typeof target.name === 'string'
-                    ? target.name
-                    : typeof target.title === 'string'
-                      ? target.title
-                      : undefined),
-                ip: normalizeClientIp(request.ip),
-              },
+        void this.prisma8.client
+          .transaction(async (tx) => {
+            const log = await tx.orm.public.OperationLogs.create({
+              tenantId: user.tenantId,
+              userId: user.id,
+              userName: user.name,
+              module: meta.module,
+              action: meta.action,
+              targetId:
+                resultMeta?.targetId ?? (typeof target.id === 'string' ? target.id : null),
+              targetName:
+                resultMeta?.targetName ??
+                (typeof target.name === 'string'
+                  ? target.name
+                  : typeof target.title === 'string'
+                    ? target.title
+                    : null),
+              ip: normalizeClientIp(request.ip) ?? null,
             })
             if (resultMeta?.detail) {
-              await tx.operationLogBlob.create({
-                data: {
-                  operationLogId: log.id,
-                  detail: resultMeta.detail as Prisma.InputJsonValue,
-                },
+              await tx.orm.public.OperationLogBlobs.create({
+                operationLogId: log.id,
+                detail: prisma8JsonValue(resultMeta.detail),
               })
             }
           })

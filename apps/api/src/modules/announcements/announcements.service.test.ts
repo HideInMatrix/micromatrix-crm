@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8TimestampToDate } from '../../prisma/prisma8-temporal'
 import type { NotificationsService } from '../notifications/notifications.service'
 import { AnnouncementsService } from './announcements.service'
 
@@ -163,7 +164,139 @@ function createFixture() {
           .map(({ tenantId: _tenantId, status: _status, ...item }) => item),
     },
     $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
-  } as unknown as PrismaService
+  } as unknown as Record<string, unknown>
+  void prisma
+
+  type RowPredicate = (row: Row) => boolean
+  const announcementCollection = (
+    predicates: RowPredicate[] = [],
+    offset = 0,
+    limit: number | null = null,
+  ) => ({
+    where(next: Partial<Row> | ((field: Record<string, any>) => RowPredicate)) {
+      if (typeof next === 'function') {
+        const fields = {
+          subject: {
+            ilike: (pattern: string) => (row: Row) =>
+              row.subject.toLowerCase().includes(pattern.replaceAll('%', '').toLowerCase()),
+          },
+          startAt: {
+            lte: (value: unknown) => (row: Row) =>
+              row.startAt <= prisma8TimestampToDate(value as never),
+          },
+          endAt: {
+            gte: (value: unknown) => (row: Row) =>
+              row.endAt >= prisma8TimestampToDate(value as never),
+          },
+        }
+        return announcementCollection([...predicates, next(fields)], offset, limit)
+      }
+      return announcementCollection(
+        [
+          ...predicates,
+          (row) => Object.entries(next).every(([key, value]) => row[key as keyof Row] === value),
+        ],
+        offset,
+        limit,
+      )
+    },
+    orderBy() {
+      return this
+    },
+    offset(value: number) {
+      return announcementCollection(predicates, value, limit)
+    },
+    limit(value: number) {
+      return announcementCollection(predicates, offset, value)
+    },
+    all: async () =>
+      rows
+        .filter((row) => predicates.every((predicate) => predicate(row)))
+        .slice(offset, limit === null ? undefined : offset + limit)
+        .map((row) => ({ ...row })),
+    first: async () =>
+      rows.find((row) => predicates.every((predicate) => predicate(row))) ?? null,
+    aggregate: async () => ({
+      count: rows.filter((row) => predicates.every((predicate) => predicate(row))).length,
+    }),
+    create: async (data: Record<string, unknown>) => {
+      const row: Row = {
+        ...(data as unknown as Row),
+        id: `announcement-${++sequence}`,
+        startAt: prisma8TimestampToDate(data['startAt'] as never),
+        endAt: prisma8TimestampToDate(data['endAt'] as never),
+        departmentIds: [...(data['departmentIds'] as string[])],
+        userIds: [...(data['userIds'] as string[])],
+        receiverUserIds: [...(data['receiverUserIds'] as string[])],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      rows.push(row)
+      return { ...row }
+    },
+    update: async (data: Record<string, unknown>) => {
+      const row = rows.find((item) => predicates.every((predicate) => predicate(item)))
+      if (!row) return null
+      const normalized = { ...data } as Record<string, unknown>
+      if (normalized['startAt']) normalized['startAt'] = prisma8TimestampToDate(normalized['startAt'] as never)
+      if (normalized['endAt']) normalized['endAt'] = prisma8TimestampToDate(normalized['endAt'] as never)
+      delete normalized['updatedAt']
+      Object.assign(row, normalized)
+      row.updatedAt = new Date()
+      return { ...row }
+    },
+    delete: async () => {
+      const index = rows.findIndex((row) => predicates.every((predicate) => predicate(row)))
+      return index >= 0 ? rows.splice(index, 1)[0] ?? null : null
+    },
+  })
+
+  const entityCollection = <T extends { id: string; tenantId: string; status?: string; deptId?: string | null }>(
+    source: T[],
+    predicates: Array<(row: T) => boolean> = [],
+    selected: string[] | null = null,
+  ) => ({
+    where(next: Record<string, unknown> | ((field: Record<string, any>) => (row: T) => boolean)) {
+      if (typeof next === 'function') {
+        const fields = {
+          id: { in: (values: string[]) => (row: T) => values.includes(row.id) },
+          deptId: { in: (values: string[]) => (row: T) => !!row.deptId && values.includes(row.deptId) },
+        }
+        return entityCollection(source, [...predicates, next(fields)], selected)
+      }
+      return entityCollection(
+        source,
+        [
+          ...predicates,
+          (row) => Object.entries(next).every(([key, value]) => row[key as keyof T] === value),
+        ],
+        selected,
+      )
+    },
+    select(...fields: string[]) {
+      return entityCollection(source, predicates, fields)
+    },
+    async all() {
+      return source
+        .filter((row) => predicates.every((predicate) => predicate(row)))
+        .map((row) =>
+          selected
+            ? Object.fromEntries(selected.map((field) => [field, row[field as keyof T]]))
+            : { ...row },
+        )
+    },
+  })
+  const prisma8 = {
+    client: {
+      orm: {
+        public: {
+          Announcements: announcementCollection(),
+          Departments: entityCollection(departments),
+          Users: entityCollection(users),
+        },
+      },
+    },
+  } as unknown as Prisma8Service
 
   const notifications = {
     notifyManyFromSource: async (
@@ -183,7 +316,7 @@ function createFixture() {
   } as unknown as NotificationsService
 
   return {
-    service: new AnnouncementsService(prisma, notifications),
+    service: new AnnouncementsService(prisma8, notifications),
     rows,
     dispatches,
     removals,

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { AuthUser } from '../auth-user'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
 
 export interface FieldChange {
   field: string
@@ -39,7 +39,7 @@ const DEFAULT_IGNORED = new Set([
 export class BusinessChangeLogService {
   private readonly logger = new Logger(BusinessChangeLogService.name)
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma8: Prisma8Service) {}
 
   diff(before: unknown, after: unknown, ignore: string[] = []): FieldChange[] {
     const ignored = new Set([...DEFAULT_IGNORED, ...ignore])
@@ -52,21 +52,21 @@ export class BusinessChangeLogService {
     const changes = this.diff(input.before, input.after, input.ignore)
     if (changes.length === 0) return
     try {
-      await this.prisma.operationLog.create({
-        data: {
+      await this.prisma8.client.transaction(async (tx) => {
+        const log = await tx.orm.public.OperationLogs.create({
           tenantId: user.tenantId,
           userId: user.id,
           userName: user.name,
           module: input.module,
           action: input.action ?? 'change',
           targetId: input.targetId,
-          targetName: input.targetName ?? undefined,
-          blob: {
-            create: {
-              detail: { changes } as unknown as Prisma.InputJsonValue,
-            },
-          },
-        },
+          targetName: input.targetName ?? null,
+          ip: null,
+        })
+        await tx.orm.public.OperationLogBlobs.create({
+          operationLogId: log.id,
+          detail: prisma8JsonValue({ changes }),
+        })
       })
     } catch (error) {
       this.logger.warn(

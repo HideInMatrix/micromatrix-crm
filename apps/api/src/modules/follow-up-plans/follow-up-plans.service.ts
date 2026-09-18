@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { and, or } from '@prisma/orm-postgres/orm-client'
 import {
   filterOpsForType,
   type FieldVO,
@@ -22,8 +23,14 @@ import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import { FollowUpPlan, FollowUpPlanStatus, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { Prisma8Client } from '../../prisma/prisma8-client'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToDate,
+} from '../../prisma/prisma8-temporal'
+import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -37,6 +44,52 @@ import {
 } from './dto/follow-up-plan.dto'
 
 type TargetType = CreateFollowUpPlanDto['targetType']
+type FollowUpPlanCollection = ReturnType<Prisma8Client['orm']['public']['FollowUpPlans']['where']>
+type FollowUpPlanStatus = SharedFollowUpPlanStatus
+
+export interface FollowUpPlan {
+  id: string
+  tenantId: string
+  targetType: string
+  targetId: string
+  contactId: string | null
+  content: string
+  method: string | null
+  estimatedAt: Date | null
+  status: FollowUpPlanStatus
+  converted: boolean
+  convertedRecordId: string | null
+  ownerId: string
+  deptId: string | null
+  createdById: string
+  dueNotifiedAt: Date | null
+  commentCount: number
+  customData: unknown
+  createdAt: Date
+  updatedAt: Date
+}
+
+interface Prisma8FollowUpPlanRow {
+  id: string
+  tenantId: string
+  targetType: string
+  targetId: string
+  contactId: string | null
+  content: string
+  method: string | null
+  estimatedAt: ReturnType<typeof prisma8Now> | Date | null
+  status: FollowUpPlanStatus
+  converted: boolean
+  convertedRecordId: string | null
+  ownerId: string
+  deptId: string | null
+  createdById: string
+  dueNotifiedAt: ReturnType<typeof prisma8Now> | Date | null
+  commentCount: number
+  customData: unknown
+  createdAt: ReturnType<typeof prisma8Now> | Date
+  updatedAt: ReturnType<typeof prisma8Now> | Date
+}
 
 interface TargetContext {
   name: string
@@ -47,7 +100,7 @@ interface TargetContext {
 @Injectable()
 export class FollowUpPlansService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly dataScope: DataScopeService,
     private readonly customerAccess: CustomerAccessService,
     private readonly pools: ResourcePoolsService,
@@ -68,39 +121,41 @@ export class FollowUpPlansService {
     const { page = 1, pageSize = 10, keyword, status, targetType, targetId, mine, filters } = query
     if (targetId && !targetType) throw new BadRequestException('指定业务对象时必须同时提供类型')
 
-    let accessWhere: Prisma.FollowUpPlanWhereInput
+    let plans = this.prisma8.client.orm.public.FollowUpPlans.where({ tenantId: user.tenantId })
     if (targetType && targetId) {
       const context = await this.assertTargetAccess(user, targetType, targetId, false)
-      accessWhere = {
-        targetType,
-        targetId,
-        ...(context.collaboratorOnly ? { createdById: user.id } : {}),
-      }
+      plans = plans.where({ targetType, targetId })
+      if (context.collaboratorOnly) plans = plans.where({ createdById: user.id })
     } else {
-      accessWhere = await this.globalAccessWhere(user)
+      plans = await this.applyGlobalAccess(plans, user)
     }
 
-    const keywordWhere = keyword ? await this.keywordWhere(user.tenantId, keyword) : undefined
     const filteredIds = filters?.length ? await this.filterIds(user.tenantId, filters) : null
-    const where: Prisma.FollowUpPlanWhereInput = {
-      tenantId: user.tenantId,
-      AND: [
-        accessWhere,
-        ...(keywordWhere ? [keywordWhere] : []),
-        ...(mine ? [{ ownerId: user.id }] : []),
-        ...(filteredIds ? [{ id: { in: filteredIds } }] : []),
-      ],
-      ...(status ? { status } : {}),
+    if (keyword) {
+      const targets = await this.keywordTargetIds(user.tenantId, keyword)
+      plans = plans.where((plan) =>
+        or(
+          plan.content.ilike(`%${keyword}%`),
+          and(plan.targetType.eq('lead'), plan.targetId.in(targets.lead)),
+          and(plan.targetType.eq('customer'), plan.targetId.in(targets.customer)),
+          and(plan.targetType.eq('opportunity'), plan.targetId.in(targets.opportunity)),
+        ),
+      )
     }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.followUpPlan.findMany({
-        where,
-        orderBy: [{ estimatedAt: 'desc' }, { createdAt: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.followUpPlan.count({ where }),
+    if (mine) plans = plans.where({ ownerId: user.id })
+    if (status) plans = plans.where({ status })
+    if (filteredIds !== null) plans = plans.where((plan) => plan.id.in(filteredIds))
+
+    const [rows, aggregate] = await Promise.all([
+      plans
+        .orderBy([(plan) => plan.estimatedAt.desc(), (plan) => plan.createdAt.desc()])
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      plans.aggregate((aggregate) => ({ count: aggregate.count() })),
     ])
+    const items = rows.map((row) => this.legacyPlan(row))
+    const total = aggregate.count
     return { items: await this.toVOs(user, items), total, page, pageSize }
   }
 
@@ -131,20 +186,21 @@ export class FollowUpPlansService {
       user.tenantId,
       dto.moduleFields ?? [],
     )
-    const plan = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.followUpPlan.create({
-        data: {
-          tenantId: user.tenantId,
-          targetType: dto.targetType,
-          targetId: dto.targetId,
-          contactId: dto.contactId ?? null,
-          content: dto.content,
-          method: dto.method ?? null,
-          estimatedAt: dto.estimatedAt ? new Date(dto.estimatedAt) : null,
-          ownerId: owner.id,
-          deptId: owner.deptId,
-          createdById: user.id,
-        },
+    const planId = await this.prisma8.client.transaction(async (tx) => {
+      const created = await tx.orm.public.FollowUpPlans.create({
+        tenantId: user.tenantId,
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+        contactId: dto.contactId ?? null,
+        content: dto.content,
+        method: dto.method ?? null,
+        estimatedAt: dto.estimatedAt
+          ? prisma8TimestampFromDate(new Date(dto.estimatedAt))
+          : null,
+        ownerId: owner.id,
+        deptId: owner.deptId,
+        createdById: user.id,
+        updatedAt: prisma8Now(),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -155,8 +211,9 @@ export class FollowUpPlansService {
         tx,
         user.id,
       )
-      return created
+      return created.id
     })
+    const plan = await this.ensurePlan(user, planId)
     return (await this.toVOs(user, [plan]))[0]
   }
 
@@ -180,19 +237,17 @@ export class FollowUpPlansService {
         ? null
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
 
-    const plan = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.followUpPlan.update({
-        where: { id },
-        data: {
-          targetType,
-          targetId,
-          contactId,
-          content: dto.content,
-          method: dto.method,
-          estimatedAt,
-          ...(owner ? { ownerId: owner.id, deptId: owner.deptId } : {}),
-          ...(dueDateChanged ? { dueNotifiedAt: null } : {}),
-        },
+    await this.prisma8.client.transaction(async (tx) => {
+      await tx.orm.public.FollowUpPlans.where({ id }).update({
+        targetType,
+        targetId,
+        contactId,
+        content: dto.content,
+        method: dto.method,
+        estimatedAt: estimatedAt ? prisma8TimestampFromDate(estimatedAt) : null,
+        ...(owner ? { ownerId: owner.id, deptId: owner.deptId } : {}),
+        ...(dueDateChanged ? { dueNotifiedAt: null } : {}),
+        updatedAt: prisma8Now(),
       })
       if (dynamicValues !== null) {
         await this.fieldValues.save(
@@ -205,8 +260,8 @@ export class FollowUpPlansService {
           user.id,
         )
       }
-      return updated
     })
+    const plan = await this.ensurePlan(user, id)
     return (await this.toVOs(user, [plan]))[0]
   }
 
@@ -219,10 +274,12 @@ export class FollowUpPlansService {
     if (existing.status === 'COMPLETED' && existing.converted) {
       throw new ConflictException('已转为跟进记录的计划不能再变更状态')
     }
-    const plan = await this.prisma.followUpPlan.update({
-      where: { id },
-      data: { status: status as FollowUpPlanStatus },
-    })
+    const row = await this.prisma8.client.orm.public.FollowUpPlans.where({
+      id,
+      tenantId: user.tenantId,
+    }).update({ status: status as FollowUpPlanStatus, updatedAt: prisma8Now() })
+    if (!row) throw new NotFoundException('跟进计划不存在')
+    const plan = this.legacyPlan(row)
     return (await this.toVOs(user, [plan]))[0]
   }
 
@@ -270,7 +327,11 @@ export class FollowUpPlansService {
 
   async remove(user: AuthUser, id: string) {
     const plan = await this.ensureManageablePlan(user, id)
-    await this.prisma.followUpPlan.delete({ where: { id } })
+    const deleted = await this.prisma8.client.orm.public.FollowUpPlans.where({
+      id,
+      tenantId: user.tenantId,
+    }).deleteAndCount()
+    if (deleted !== 1) throw new NotFoundException('跟进计划不存在')
     return { id: plan.id }
   }
 
@@ -289,25 +350,11 @@ export class FollowUpPlansService {
     start.setHours(0, 0, 0, 0)
     const end = new Date(start)
     end.setDate(end.getDate() + 1)
-    const plans = await this.prisma.followUpPlan.findMany({
-      where: {
-        estimatedAt: { gte: start, lt: end },
-        status: { in: ['PREPARED', 'UNDERWAY'] },
-        OR: [{ dueNotifiedAt: null }, { dueNotifiedAt: { lt: start } }],
-      },
-      orderBy: { estimatedAt: 'asc' },
-    })
-    const names = await this.targetNames(plans)
+    const plans = await this.loadDueReminderPlans(start, end)
+    const names = await this.targetNamesPrisma8(plans)
     let notified = 0
     for (const plan of plans) {
-      const claimed = await this.prisma.followUpPlan.updateMany({
-        where: {
-          id: plan.id,
-          OR: [{ dueNotifiedAt: null }, { dueNotifiedAt: { lt: start } }],
-        },
-        data: { dueNotifiedAt: now },
-      })
-      if (claimed.count !== 1) continue
+      if (!(await this.claimDueReminder(plan.id, start, now))) continue
       try {
         await this.notifications.notify(plan.tenantId, plan.ownerId, {
           type: 'follow_plan',
@@ -318,14 +365,90 @@ export class FollowUpPlansService {
         })
         notified += 1
       } catch (error) {
-        await this.prisma.followUpPlan.updateMany({
-          where: { id: plan.id, dueNotifiedAt: now },
-          data: { dueNotifiedAt: null },
-        })
+        await this.releaseDueReminder(plan.id, now)
         throw error
       }
     }
     return notified
+  }
+
+  private async loadDueReminderPlans(start: Date, end: Date) {
+    const startTemporal = prisma8TimestampFromDate(start)
+    const endTemporal = prisma8TimestampFromDate(end)
+    return this.prisma8.client.orm.public.FollowUpPlans.where((plan) =>
+      plan.estimatedAt.gte(startTemporal),
+    )
+      .where((plan) => plan.estimatedAt.lt(endTemporal))
+      .where((plan) => plan.status.in(['PREPARED', 'UNDERWAY']))
+      .where((plan) => or(plan.dueNotifiedAt.isNull(), plan.dueNotifiedAt.lt(startTemporal)))
+      .select('id', 'tenantId', 'ownerId', 'targetType', 'targetId', 'content')
+      .orderBy((plan) => plan.estimatedAt.asc())
+      .all()
+  }
+
+  private async claimDueReminder(id: string, start: Date, now: Date): Promise<boolean> {
+    const client = this.prisma8.client
+    const startIso = start.toISOString()
+    const nowIso = now.toISOString()
+    const query = client.raw.sql`UPDATE follow_up_plans
+      SET "dueNotifiedAt" = (${nowIso}::timestamptz AT TIME ZONE 'UTC'),
+          "updatedAt" = (${nowIso}::timestamptz AT TIME ZONE 'UTC')
+      WHERE id = ${id}
+        AND (
+          "dueNotifiedAt" IS NULL
+          OR "dueNotifiedAt" < (${startIso}::timestamptz AT TIME ZONE 'UTC')
+        )
+      RETURNING id`.returnsRow({ id: client.sql.public.follow_up_plans.columns.id })
+    for await (const _row of client.runtime().query(query.build())) return true
+    return false
+  }
+
+  private async releaseDueReminder(id: string, claimedAt: Date): Promise<void> {
+    const claimedTemporal = prisma8TimestampFromDate(claimedAt)
+    await this.prisma8.client.orm.public.FollowUpPlans.where({ id })
+      .where((plan) => plan.dueNotifiedAt.eq(claimedTemporal))
+      .updateAll({
+        dueNotifiedAt: null,
+        updatedAt: prisma8TimestampFromDate(new Date()),
+      })
+  }
+
+  private async targetNamesPrisma8(
+    plans: ReadonlyArray<{ targetType: string; targetId: string }>,
+  ): Promise<Map<string, string>> {
+    const groups = {
+      lead: plans.filter((plan) => plan.targetType === 'lead').map((plan) => plan.targetId),
+      customer: plans.filter((plan) => plan.targetType === 'customer').map((plan) => plan.targetId),
+      opportunity: plans
+        .filter((plan) => plan.targetType === 'opportunity')
+        .map((plan) => plan.targetId),
+    }
+    const leads = groups.lead.length
+      ? await this.prisma8.client.orm.public.Clue.where((row) =>
+          row.id.in(prisma8Varchars(groups.lead, 32)),
+        )
+          .select('id', 'name')
+          .all()
+      : []
+    const customers = groups.customer.length
+      ? await this.prisma8.client.orm.public.Customer.where((row) =>
+          row.id.in(prisma8Varchars(groups.customer, 32)),
+        )
+          .select('id', 'name')
+          .all()
+      : []
+    const opportunities = groups.opportunity.length
+      ? await this.prisma8.client.orm.public.Opportunity.where((row) =>
+          row.id.in(prisma8Varchars(groups.opportunity, 32)),
+        )
+          .select('id', 'name')
+          .all()
+      : []
+    return new Map([
+      ...leads.map((item) => [`lead:${item.id}`, item.name] as const),
+      ...customers.map((item) => [`customer:${item.id}`, item.name] as const),
+      ...opportunities.map((item) => [`opportunity:${item.id}`, item.name] as const),
+    ])
   }
 
   private followPlanReminderEvent(targetType: TargetType): MessageTaskEvent {
@@ -335,11 +458,12 @@ export class FollowUpPlansService {
   }
 
   private async ensurePlan(user: AuthUser, id: string): Promise<FollowUpPlan> {
-    const plan = await this.prisma.followUpPlan.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
-    if (!plan) throw new NotFoundException('跟进计划不存在')
-    return plan
+    const row = await this.prisma8.client.orm.public.FollowUpPlans.where({
+      id,
+      tenantId: user.tenantId,
+    }).first()
+    if (!row) throw new NotFoundException('跟进计划不存在')
+    return this.legacyPlan(row)
   }
 
   private async ensureManageablePlan(user: AuthUser, id: string): Promise<FollowUpPlan> {
@@ -371,12 +495,13 @@ export class FollowUpPlansService {
     if (type === 'lead') {
       const permission = write ? 'lead:update' : 'menu:lead'
       if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无线索权限')
-      const lead = await this.prisma.clue.findFirst({
-        where: { id, organizationId: user.tenantId },
-      })
+      const lead = await this.prisma8.client.orm.public.Clue.where({
+        id: prisma8Varchar(id, 32),
+        organizationId: prisma8Varchar(user.tenantId, 32),
+      }).first()
       if (!lead) throw new NotFoundException('线索不存在')
       if (lead.inSharedPool) {
-        const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
+        const poolIds = (await this.pools.options(user, 'lead')).map((pool) => String(pool.id))
         if (!lead.poolId || !poolIds.includes(lead.poolId))
           throw new NotFoundException('线索不存在或无权访问')
       } else if (!(await this.dataScope.matchesDirectOwner(user, lead.owner, permission))) {
@@ -386,9 +511,10 @@ export class FollowUpPlansService {
     }
     const permission = write ? 'opportunity:update' : 'menu:opportunity'
     if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无商机权限')
-    const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id, organizationId: user.tenantId },
-    })
+    const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
+      id: prisma8Varchar(id, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).first()
     if (
       !opportunity ||
       !(await this.dataScope.matchesDirectOwner(user, opportunity.owner, permission))
@@ -409,79 +535,151 @@ export class FollowUpPlansService {
     if (type === 'opportunity') {
       customerId =
         (
-          await this.prisma.opportunity.findFirst({
-            where: { id: targetId, organizationId: tenantId },
-            select: { customerId: true },
+          await this.prisma8.client.orm.public.Opportunity.where({
+            id: prisma8Varchar(targetId, 32),
+            organizationId: prisma8Varchar(tenantId, 32),
           })
+            .select('customerId')
+            .first()
         )?.customerId ?? null
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma.customerContact.findFirst({
-      where: { id: contactId, organizationId: tenantId, customerId },
-    })
+    const contact = await this.prisma8.client.orm.public.CustomerContact.where({
+      id: prisma8Varchar(contactId, 32),
+      organizationId: prisma8Varchar(tenantId, 32),
+      customerId: prisma8Varchar(customerId, 32),
+    }).first()
     if (!contact) throw new BadRequestException('联系人不属于当前客户')
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const owner = await this.prisma.user.findFirst({
-      where: { id: ownerId, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true, deptId: true },
+    const owner = await this.prisma8.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id', 'deptId')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner
   }
 
-  private async globalAccessWhere(user: AuthUser): Promise<Prisma.FollowUpPlanWhereInput> {
-    const [lead, customer, opportunity, collaborations] = await Promise.all([
-      this.dataScope.scopeFilter(user, 'menu:lead'),
-      this.dataScope.scopeFilter(user, 'customer:read'),
-      this.dataScope.scopeFilter(user, 'menu:opportunity'),
-      this.prisma.customerCollaboration.findMany({
-        where: { userId: user.id, customer: { organizationId: user.tenantId } },
-        select: { customerId: true },
-      }),
-    ])
+  private legacyPlan(row: Prisma8FollowUpPlanRow): FollowUpPlan {
     return {
-      OR: [
-        { targetType: 'lead', ...(lead as Prisma.FollowUpPlanWhereInput) },
-        { targetType: 'customer', ...(customer as Prisma.FollowUpPlanWhereInput) },
-        { targetType: 'opportunity', ...(opportunity as Prisma.FollowUpPlanWhereInput) },
-        {
-          targetType: 'customer',
-          targetId: { in: collaborations.map((item) => item.customerId) },
-          createdById: user.id,
-        },
-      ],
+      id: row.id,
+      tenantId: row.tenantId,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      contactId: row.contactId,
+      content: row.content,
+      method: row.method,
+      estimatedAt: row.estimatedAt ? this.timestampToDate(row.estimatedAt) : null,
+      status: row.status,
+      converted: row.converted,
+      convertedRecordId: row.convertedRecordId,
+      ownerId: row.ownerId,
+      deptId: row.deptId,
+      createdById: row.createdById,
+      dueNotifiedAt: row.dueNotifiedAt ? this.timestampToDate(row.dueNotifiedAt) : null,
+      commentCount: row.commentCount,
+      customData: row.customData,
+      createdAt: this.timestampToDate(row.createdAt),
+      updatedAt: this.timestampToDate(row.updatedAt),
     }
   }
 
-  private async keywordWhere(
-    tenantId: string,
-    keyword: string,
-  ): Promise<Prisma.FollowUpPlanWhereInput> {
-    const contains = { contains: keyword, mode: 'insensitive' as const }
+  private timestampToDate(value: ReturnType<typeof prisma8Now> | Date): Date {
+    return value instanceof Date ? value : prisma8TimestampToDate(value)
+  }
+
+  private async applyGlobalAccess(
+    collection: FollowUpPlanCollection,
+    user: AuthUser,
+  ): Promise<FollowUpPlanCollection> {
+    const [lead, customer, opportunity, collaborationRows] = await Promise.all([
+      this.dataScope.resolveScope(user, 'menu:lead'),
+      this.dataScope.resolveScope(user, 'customer:read'),
+      this.dataScope.resolveScope(user, 'menu:opportunity'),
+      this.prisma8.client.orm.public.CustomerCollaboration.where({
+        userId: prisma8Varchar(user.id, 32),
+      })
+        .select('customerId')
+        .all(),
+    ])
+    const collaborationCustomerIds = collaborationRows.length
+      ? await this.prisma8.client.orm.public.Customer.where({
+          organizationId: prisma8Varchar(user.tenantId, 32),
+        })
+          .where((row) => row.id.in(collaborationRows.map((item) => item.customerId)))
+          .select('id')
+          .all()
+      : []
+    const collaborated = collaborationCustomerIds.map((item) => String(item.id))
+
+    return collection.where((plan) =>
+      or(
+        lead.hasPermission
+          ? lead.all
+            ? plan.targetType.eq('lead')
+            : and(
+                plan.targetType.eq('lead'),
+                lead.deptIds.length
+                  ? or(plan.ownerId.eq(user.id), plan.deptId.in(lead.deptIds))
+                  : plan.ownerId.eq(user.id),
+              )
+          : plan.id.eq('__permission_scope_denied_lead__'),
+        customer.hasPermission
+          ? customer.all
+            ? plan.targetType.eq('customer')
+            : and(
+                plan.targetType.eq('customer'),
+                customer.deptIds.length
+                  ? or(plan.ownerId.eq(user.id), plan.deptId.in(customer.deptIds))
+                  : plan.ownerId.eq(user.id),
+              )
+          : plan.id.eq('__permission_scope_denied_customer__'),
+        opportunity.hasPermission
+          ? opportunity.all
+            ? plan.targetType.eq('opportunity')
+            : and(
+                plan.targetType.eq('opportunity'),
+                opportunity.deptIds.length
+                  ? or(plan.ownerId.eq(user.id), plan.deptId.in(opportunity.deptIds))
+                  : plan.ownerId.eq(user.id),
+              )
+          : plan.id.eq('__permission_scope_denied_opportunity__'),
+        collaborated.length
+          ? and(
+              plan.targetType.eq('customer'),
+              plan.targetId.in(collaborated),
+              plan.createdById.eq(user.id),
+            )
+          : plan.id.eq('__no_customer_collaboration__'),
+      ),
+    )
+  }
+
+  private async keywordTargetIds(tenantId: string, keyword: string) {
+    const organizationId = prisma8Varchar(tenantId, 32)
     const [leads, customers, opportunities] = await Promise.all([
-      this.prisma.clue.findMany({
-        where: { organizationId: tenantId, name: contains },
-        select: { id: true },
-      }),
-      this.prisma.customer.findMany({
-        where: { organizationId: tenantId, name: contains },
-        select: { id: true },
-      }),
-      this.prisma.opportunity.findMany({
-        where: { organizationId: tenantId, name: contains },
-        select: { id: true },
-      }),
+      this.prisma8.client.orm.public.Clue.where({ organizationId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma8.client.orm.public.Customer.where({ organizationId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma8.client.orm.public.Opportunity.where({ organizationId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
     ])
     return {
-      OR: [
-        { content: contains },
-        { targetType: 'lead', targetId: { in: leads.map((item) => item.id) } },
-        { targetType: 'customer', targetId: { in: customers.map((item) => item.id) } },
-        { targetType: 'opportunity', targetId: { in: opportunities.map((item) => item.id) } },
-      ],
+      lead: leads.map((item) => String(item.id)),
+      customer: customers.map((item) => String(item.id)),
+      opportunity: opportunities.map((item) => String(item.id)),
     }
   }
 
@@ -506,16 +704,10 @@ export class FollowUpPlansService {
       else dynamic.push(condition)
     }
 
+    let directQuery = this.prisma8.client.orm.public.FollowUpPlans.where({ tenantId })
+    for (const item of direct) directQuery = this.applySystemFilter(directQuery, item.field, item.condition)
     const [directRows, dynamicIds] = await Promise.all([
-      direct.length
-        ? this.prisma.followUpPlan.findMany({
-            where: {
-              tenantId,
-              AND: direct.map(({ field, condition }) => this.systemFilterClause(field, condition)),
-            },
-            select: { id: true },
-          })
-        : null,
+      direct.length ? directQuery.select('id').all() : null,
       dynamic.length ? this.fieldValues.filterResourceIds(tenantId, 'followPlan', dynamic) : null,
     ])
 
@@ -530,10 +722,11 @@ export class FollowUpPlansService {
     return selected ?? []
   }
 
-  private systemFilterClause(
+  private applySystemFilter(
+    collection: FollowUpPlanCollection,
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma.FollowUpPlanWhereInput {
+  ): FollowUpPlanCollection {
     const key = field.key
     const allowed = new Set([
       'targetType',
@@ -547,68 +740,104 @@ export class FollowUpPlansService {
     ])
     if (!allowed.has(key)) throw new BadRequestException(`筛选字段不支持：${key}`)
 
-    const nullableText = new Set(['contactId', 'method'])
-    if (condition.op === 'isEmpty') {
-      if (key === 'estimatedAt') return { estimatedAt: null }
-      if (nullableText.has(key)) {
-        return {
-          OR: [
-            { [key]: null } as Prisma.FollowUpPlanWhereInput,
-            { [key]: '' } as Prisma.FollowUpPlanWhereInput,
-          ],
-        }
-      }
-      if (key === 'status') return { id: { in: [] } }
-      return { [key]: '' } as Prisma.FollowUpPlanWhereInput
-    }
-    if (condition.op === 'notEmpty') {
-      if (key === 'estimatedAt') return { estimatedAt: { not: null } }
-      if (nullableText.has(key)) {
-        return {
-          AND: [
-            { [key]: { not: null } } as Prisma.FollowUpPlanWhereInput,
-            { [key]: { not: '' } } as Prisma.FollowUpPlanWhereInput,
-          ],
-        }
-      }
-      if (key === 'status') return {}
-      return { [key]: { not: '' } } as Prisma.FollowUpPlanWhereInput
-    }
-
-    if (condition.value === undefined || condition.value === null || condition.value === '') {
-      throw new BadRequestException(`「${field.label}」筛选值不能为空`)
-    }
     if (key === 'estimatedAt') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.estimatedAt.isNull())
+      if (condition.op === 'notEmpty') return collection.where((row) => row.estimatedAt.isNotNull())
+      if (condition.value === undefined || condition.value === null || condition.value === '') {
+        throw new BadRequestException(`「${field.label}」筛选值不能为空`)
+      }
       const value = new Date(String(condition.value))
       if (Number.isNaN(value.getTime())) throw new BadRequestException('计划时间筛选值不合法')
-      if (condition.op === 'gte') return { estimatedAt: { gte: value } }
-      if (condition.op === 'lte') return { estimatedAt: { lte: value } }
+      const temporal = prisma8TimestampFromDate(value)
+      if (condition.op === 'gte') return collection.where((row) => row.estimatedAt.gte(temporal))
+      if (condition.op === 'lte') return collection.where((row) => row.estimatedAt.lte(temporal))
       throw new BadRequestException('计划时间不支持该筛选操作')
     }
     if (key === 'status') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.id.eq('__empty_status__'))
+      if (condition.op === 'notEmpty') return collection
+      if (condition.value === undefined || condition.value === null || condition.value === '') {
+        throw new BadRequestException(`「${field.label}」筛选值不能为空`)
+      }
       if (!FOLLOW_UP_PLAN_STATUSES.includes(condition.value as never)) {
         throw new BadRequestException('计划状态筛选值不合法')
       }
       const status = condition.value as FollowUpPlanStatus
-      if (condition.op === 'eq') return { status }
-      if (condition.op === 'ne') return { status: { not: status } }
+      if (condition.op === 'eq') return collection.where((row) => row.status.eq(status))
+      if (condition.op === 'ne') return collection.where((row) => row.status.neq(status))
       throw new BadRequestException('计划状态不支持该筛选操作')
+    }
+    if (condition.op === 'isEmpty') {
+      if (key === 'contactId') {
+        return collection.where((row) => or(row.contactId.isNull(), row.contactId.eq('')))
+      }
+      if (key === 'method') {
+        return collection.where((row) => or(row.method.isNull(), row.method.eq('')))
+      }
+      return collection.where((row) => {
+        const column =
+          key === 'targetType'
+            ? row.targetType
+            : key === 'targetId'
+              ? row.targetId
+              : key === 'ownerId'
+                ? row.ownerId
+                : row.content
+        return column.eq('')
+      })
+    }
+    if (condition.op === 'notEmpty') {
+      if (key === 'contactId') {
+        return collection.where((row) => and(row.contactId.isNotNull(), row.contactId.neq('')))
+      }
+      if (key === 'method') {
+        return collection.where((row) => and(row.method.isNotNull(), row.method.neq('')))
+      }
+      return collection.where((row) => {
+        const column =
+          key === 'targetType'
+            ? row.targetType
+            : key === 'targetId'
+              ? row.targetId
+              : key === 'ownerId'
+                ? row.ownerId
+                : row.content
+        return column.neq('')
+      })
+    }
+
+    if (condition.value === undefined || condition.value === null || condition.value === '') {
+      throw new BadRequestException(`「${field.label}」筛选值不能为空`)
     }
     if (key === 'targetType' && !FOLLOW_UP_PLAN_TARGET_TYPES.includes(condition.value as never)) {
       throw new BadRequestException('关联类型筛选值不合法')
     }
 
     const value = String(condition.value)
-    if (condition.op === 'contains') {
-      return {
-        [key]: { contains: value, mode: 'insensitive' },
-      } as Prisma.FollowUpPlanWhereInput
+    if (key === 'contactId') {
+      if (condition.op === 'contains') return collection.where((row) => row.contactId.ilike(`%${value}%`))
+      if (condition.op === 'eq') return collection.where((row) => row.contactId.eq(value))
+      if (condition.op === 'ne') return collection.where((row) => row.contactId.neq(value))
     }
-    if (condition.op === 'eq') return { [key]: value } as Prisma.FollowUpPlanWhereInput
-    if (condition.op === 'ne') {
-      return { [key]: { not: value } } as Prisma.FollowUpPlanWhereInput
+    if (key === 'method') {
+      if (condition.op === 'contains') return collection.where((row) => row.method.ilike(`%${value}%`))
+      if (condition.op === 'eq') return collection.where((row) => row.method.eq(value))
+      if (condition.op === 'ne') return collection.where((row) => row.method.neq(value))
     }
-    throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
+    return collection.where((row) => {
+      const column =
+        key === 'targetType'
+          ? row.targetType
+          : key === 'targetId'
+            ? row.targetId
+            : key === 'ownerId'
+              ? row.ownerId
+              : row.content
+      if (condition.op === 'contains') return column.ilike(`%${value}%`)
+      if (condition.op === 'eq') return column.eq(value)
+      if (condition.op === 'ne') return column.neq(value)
+      return column.eq('__unsupported_filter__')
+    })
   }
 
   private async moduleFieldsToDynamicValues(
@@ -633,53 +862,37 @@ export class FollowUpPlansService {
     return values
   }
 
-  private async targetNames(plans: FollowUpPlan[]): Promise<Map<string, string>> {
-    const groups = {
-      lead: plans.filter((p) => p.targetType === 'lead').map((p) => p.targetId),
-      customer: plans.filter((p) => p.targetType === 'customer').map((p) => p.targetId),
-      opportunity: plans.filter((p) => p.targetType === 'opportunity').map((p) => p.targetId),
-    }
-    const [leads, customers, opportunities] = await Promise.all([
-      this.prisma.clue.findMany({
-        where: { id: { in: groups.lead } },
-        select: { id: true, name: true },
-      }),
-      this.prisma.customer.findMany({
-        where: { id: { in: groups.customer } },
-        select: { id: true, name: true },
-      }),
-      this.prisma.opportunity.findMany({
-        where: { id: { in: groups.opportunity } },
-        select: { id: true, name: true },
-      }),
-    ])
-    return new Map([
-      ...leads.map((item) => [`lead:${item.id}`, item.name] as const),
-      ...customers.map((item) => [`customer:${item.id}`, item.name] as const),
-      ...opportunities.map((item) => [`opportunity:${item.id}`, item.name] as const),
-    ])
-  }
-
   private async toVOs(user: AuthUser, plans: FollowUpPlan[]): Promise<FollowUpPlanVO[]> {
     if (plans.length === 0) return []
-    const names = await this.targetNames(plans)
+    const names = await this.targetNamesPrisma8(plans)
+    const ownerIds = [...new Set(plans.map((plan) => plan.ownerId))]
+    const contactIds = plans.flatMap((plan) => (plan.contactId ? [plan.contactId] : []))
+    const opportunityIds = plans
+      .filter((plan) => plan.targetType === 'opportunity')
+      .map((plan) => plan.targetId)
     const [owners, contacts, opportunities, fields, dynamic] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { id: { in: [...new Set(plans.map((p) => p.ownerId))] } },
-        select: { id: true, name: true },
-      }),
-      this.prisma.customerContact.findMany({
-        where: { id: { in: plans.flatMap((p) => (p.contactId ? [p.contactId] : [])) } },
-        select: { id: true, name: true },
-      }),
-      this.prisma.opportunity.findMany({
-        where: {
-          id: {
-            in: plans.filter((p) => p.targetType === 'opportunity').map((p) => p.targetId),
-          },
-        },
-        select: { id: true, customerId: true },
-      }),
+      ownerIds.length
+        ? this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+            .where((row) => row.id.in(ownerIds))
+            .select('id', 'name')
+            .all()
+        : [],
+      contactIds.length
+        ? this.prisma8.client.orm.public.CustomerContact.where({
+            organizationId: prisma8Varchar(user.tenantId, 32),
+          })
+            .where((row) => row.id.in(prisma8Varchars(contactIds, 32)))
+            .select('id', 'name')
+            .all()
+        : [],
+      opportunityIds.length
+        ? this.prisma8.client.orm.public.Opportunity.where({
+            organizationId: prisma8Varchar(user.tenantId, 32),
+          })
+            .where((row) => row.id.in(prisma8Varchars(opportunityIds, 32)))
+            .select('id', 'customerId')
+            .all()
+        : [],
       this.moduleForms.listFields(user.tenantId, 'followPlan'),
       this.fieldValues.load(
         user.tenantId,
@@ -687,9 +900,11 @@ export class FollowUpPlansService {
         plans.map((plan) => plan.id),
       ),
     ])
-    const ownerMap = new Map(owners.map((item) => [item.id, item.name]))
-    const contactMap = new Map(contacts.map((item) => [item.id, item.name]))
-    const opportunityCustomerMap = new Map(opportunities.map((item) => [item.id, item.customerId]))
+    const ownerMap = new Map(owners.map((item) => [String(item.id), String(item.name)]))
+    const contactMap = new Map(contacts.map((item) => [String(item.id), String(item.name)]))
+    const opportunityCustomerMap = new Map(
+      opportunities.map((item) => [String(item.id), item.customerId ? String(item.customerId) : null]),
+    )
     const admin = hasPermission(user.permissions, '*')
     return plans.map((plan) => {
       const dynamicValues = dynamic.get(plan.id) ?? {}

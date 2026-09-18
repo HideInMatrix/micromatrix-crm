@@ -20,7 +20,7 @@ flowchart LR
     Cron[定时任务<br/>公海回收/回款提醒/标讯抓取]
     Notify[NotificationsService<br/>站内信 + SSE]
   end
-  DB[(PostgreSQL 18<br/>Prisma 7)]
+  DB[(PostgreSQL 18<br/>Prisma 8 contract/runtime)]
   Redis[(Redis<br/>缓存 + Pub/Sub + COORD-001 协调)]
 
   PC -->|/api 代理| Guard
@@ -39,7 +39,9 @@ flowchart LR
   Cron --> Notify
 ```
 
-monorepo：`apps/api`（NestJS CJS）、`apps/web`（单一 Vite ESM 前端，内部同时承载 PC + Mobile）、`packages/shared`（前后端共享类型/权限树/公式求值器）。
+monorepo：`apps/api`（NestJS CJS + Prisma 8 PostgreSQL ORM）、`apps/web`（单一 Vite ESM 前端，内部同时承载 PC + Mobile）、`packages/shared`（前后端共享类型/权限树/公式求值器）。
+
+数据库层已完成 Prisma 8 migration ownership handoff：canonical storage contract 为 `apps/api/prisma/contract.prisma`，生成产物位于 `apps/api/src/prisma/generated/`，正式 migration graph 位于 `apps/api/migrations/`。运行时统一由 `Prisma8Module / Prisma8Service` 提供，业务代码与真库测试不再依赖 legacy Prisma Client；测试 fixture 通过 Prisma 8 ORM 适配器复用既有 CRUD 风格，避免重新引入旧运行时。
 
 前端运行时不再维护两个独立应用。`apps/web/src/router/index.ts` 在根路由按当前 viewport 选择布局与页面：所有路由页面统一归档在 `src/views/<业务模块>/`，同模块移动页面进入 `mobile/` 子目录；桌面使用 `DefaultLayout`，移动端使用 `MobileTabbarLayout`。移动专用 API、组件、Layout 与样式不再放独立 `src/mobile` 根目录，而是分别进入 `src/api`、`src/components`、`src/layouts`、`src/styles`，并以 `Mobile` 文件名/组件名前缀区分。两端共用同一套 Pinia、JWT token、HTTP 拦截器、Vite 代理与构建产物；Chrome DevTools 切换到手机设备模式后刷新即可进入 Mobile 页面，不设置 `?client=` 一类调试路由参数。
 
@@ -160,7 +162,7 @@ flowchart LR
 | 问题                            | 结论                                                                                                                                                                                           |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | postgres:18 镜像启动崩溃        | 18+ 数据卷挂载点从 `/var/lib/postgresql/data` 改为 `/var/lib/postgresql`（官方为支持 pg_upgrade 的破坏性变更）                                                                                 |
-| Prisma 7 大版本变化             | 连接串移至 `prisma.config.ts`；生成器 `prisma-client` 输出 TS 源码到 `src/generated`；运行时必须驱动适配器（`@prisma/adapter-pg`）；`migrate dev` 不再自动 generate                            |
+| Prisma 7 大版本变化             | 连接串移至 `prisma.config.ts`；生成器 `prisma-client` 输出 TS 源码到 `src/generated`；运行时必须驱动适配器（`legacy PostgreSQL adapter package`）；`migrate dev` 不再自动 generate                            |
 | Prisma 生成代码被 Node 误判 ESM | CJS 工程必须在生成器声明 `moduleFormat = "cjs"`，否则生成代码含 `import.meta` 触发 Node 语法检测崩溃                                                                                           |
 | TypeScript 版本                 | npm latest 已是 TS7（原生编译器），typescript-eslint 等生态支持上限 <6.1，全仓固定 `~6.0.x`；TS6 移除 `baseUrl`、`moduleResolution: node10`，需用 NodeNext/Bundler                             |
 | nest build 静默失败             | 与 TS6 组合下出现清空 dist 却不发射的情况，api 构建改为原生 `tsc -p tsconfig.build.json`，dev 用 `tsc -w` + `node --watch`                                                                     |

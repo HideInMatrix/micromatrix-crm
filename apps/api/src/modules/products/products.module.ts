@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { Prisma8Module } from '../../prisma/prisma8.module.js'
 import { ImportExportModule } from '../import-export/import-export.module'
 import { ProductPriceController } from './product-price.controller'
 import { ProductPriceFieldsService } from './product-price-fields.service'
@@ -7,7 +8,7 @@ import { ProductsController } from './products.controller'
 import { ProductsService } from './products.service'
 
 @Module({
-  imports: [ImportExportModule],
+  imports: [Prisma8Module, ImportExportModule],
   controllers: [ProductsController, ProductPriceController],
   providers: [ProductsService, ProductPriceService, ProductPriceFieldsService],
   exports: [ProductsService, ProductPriceService],

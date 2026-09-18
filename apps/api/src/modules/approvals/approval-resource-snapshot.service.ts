@@ -1,74 +1,76 @@
 import { Injectable } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { ApprovalInstance } from '../../generated/prisma/client'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { prisma8JsonValue } from '../../prisma/prisma8-values'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
+import type { ApprovalJsonValue, ApprovalResourceInstance } from './approval-runtime.types'
 
 @Injectable()
 export class ApprovalResourceSnapshotService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma8: Prisma8Service) {}
 
   async save(
     user: AuthUser,
     module: ApprovalModule,
     resourceId: string,
-    snapshotData: Prisma.InputJsonValue,
+    snapshotData: ApprovalJsonValue,
   ) {
     const formType = this.formType(module)
-    await this.prisma.approvalResourceSnapshot.upsert({
-      where: {
-        tenantId_formType_resourceId: {
-          tenantId: user.tenantId,
-          formType,
-          resourceId,
-        },
-      },
-      create: {
-        tenantId: user.tenantId,
-        formType,
-        resourceId,
-        snapshotData,
+    const scope = { tenantId: user.tenantId, formType, resourceId }
+    const data = {
+      snapshotData: prisma8JsonValue(snapshotData),
+      updatedById: user.id,
+      updatedAt: prisma8Now(),
+    }
+    const updated = await this.snapshots().where(scope).update(data)
+    if (updated) return
+    try {
+      await this.snapshots().create({
+        ...scope,
+        snapshotData: data.snapshotData,
         createdById: user.id,
         updatedById: user.id,
-      },
-      update: {
-        snapshotData,
-        updatedById: user.id,
-      },
-    })
+        updatedAt: data.updatedAt,
+      })
+    } catch (error) {
+      if ((error as { sqlState?: string }).sqlState !== '23505') throw error
+      await this.snapshots().where(scope).update(data)
+    }
   }
 
-  async load(instance: ApprovalInstance): Promise<Prisma.JsonValue | null> {
+  async load(instance: ApprovalResourceInstance): Promise<ApprovalJsonValue | null> {
     const module = instance.module as ApprovalModule
-    const row = await this.prisma.approvalResourceSnapshot.findUnique({
-      where: {
-        tenantId_formType_resourceId: {
-          tenantId: instance.tenantId,
-          formType: this.formType(module),
-          resourceId: instance.targetId,
-        },
-      },
-      select: { snapshotData: true },
-    })
-    return row?.snapshotData ?? null
-  }
-
-  async clear(instance: ApprovalInstance) {
-    const module = instance.module as ApprovalModule
-    await this.prisma.approvalResourceSnapshot.deleteMany({
-      where: {
+    const row = await this.snapshots()
+      .where({
         tenantId: instance.tenantId,
         formType: this.formType(module),
         resourceId: instance.targetId,
-      },
-    })
+      })
+      .select('snapshotData')
+      .first()
+    return (row?.snapshotData as ApprovalJsonValue | undefined) ?? null
+  }
+
+  async clear(instance: ApprovalResourceInstance) {
+    const module = instance.module as ApprovalModule
+    await this.snapshots()
+      .where({
+        tenantId: instance.tenantId,
+        formType: this.formType(module),
+        resourceId: instance.targetId,
+      })
+      .deleteAll()
   }
 
   private formType(module: ApprovalModule) {
     const formType = MODULE_TO_FORM_TYPE[module]
     if (!formType) throw new Error(`Unsupported approval resource module: ${module}`)
     return toDbFormType(formType)
+  }
+
+  private snapshots() {
+    return this.prisma8.client.orm.public.ApprovalResourceSnapshots
   }
 }

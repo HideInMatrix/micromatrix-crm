@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { CustomersModule } from '../../customers/customers.module'
+import { Prisma8Module } from '../../prisma/prisma8.module'
 import { HomeModule } from '../home/home.module'
 import { OpportunitiesModule } from '../opportunities/opportunities.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
@@ -23,6 +24,7 @@ import { LeadsService } from './leads.service'
     UserViewsModule,
     ImportExportModule,
     DictionariesModule,
+    Prisma8Module,
   ],
   controllers: [
     ClueController,

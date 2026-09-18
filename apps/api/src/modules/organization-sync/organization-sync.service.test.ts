@@ -39,47 +39,64 @@ test('跳过部门冲突会级联跳过下级部门和成员并更新最终统�
     },
   ]
   let savedCounts: Record<string, number> | undefined
-  const tx = {
-    organizationSyncItem: {
-      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-        Object.assign(
-          items.find((item) => item.id === where.id)!,
-          data,
-        )
-      },
-      findMany: async ({ select }: { select?: Record<string, boolean> }) =>
-        select
-          ? items
-              .filter((item) => item.resourceType === 'DEPARTMENT')
-              .map(({ externalKey, parentExternalKey }) => ({ externalKey, parentExternalKey }))
-          : items,
-      updateMany: async () => {
-        for (const item of items) Object.assign(item, { action: 'SKIP' })
-        return { count: 3 }
-      },
+  const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+    Object.entries(where).every(([key, value]) => row[key] === value)
+  const itemCollection = (
+    where: Record<string, unknown> = {},
+    predicate: (row: Record<string, unknown>) => boolean = () => true,
+    fields: string[] = [],
+  ): any => ({
+    where: (next: any) => {
+      if (typeof next !== 'function') return itemCollection({ ...where, ...next }, predicate, fields)
+      const expr = new Proxy({}, {
+        get: (_target, key: string) => ({
+          in: (values: unknown[]) => (row: Record<string, unknown>) => values.includes(row[key]),
+        }),
+      })
+      return itemCollection(where, next(expr), fields)
     },
-    organizationSyncBatch: {
-      update: async ({ data }: { data: { counts: Record<string, number> } }) => {
-        savedCounts = data.counts
-      },
+    select: (...next: string[]) => itemCollection(where, predicate, next),
+    all: async () => items
+      .filter((item) => matches(item, where) && predicate(item))
+      .map((item) => fields.length ? Object.fromEntries(fields.map((field) => [field, (item as any)[field]])) : item),
+    update: async (data: Record<string, unknown>) => {
+      const item = items.find((row) => matches(row, where) && predicate(row))
+      if (!item) return null
+      Object.assign(item, data)
+      return item
     },
+    updateAndCount: async (data: Record<string, unknown>) => {
+      let count = 0
+      for (const item of items) {
+        if (!matches(item, where) || !predicate(item)) continue
+        Object.assign(item, data)
+        count += 1
+      }
+      return count
+    },
+  })
+  const batch = { id: 'batch-a', tenantId: 'tenant-a', provider: 'WECOM', status: 'PREVIEW_READY' }
+  const batchCollection = (where: Record<string, unknown> = {}): any => ({
+    where: (next: Record<string, unknown>) => batchCollection({ ...where, ...next }),
+    first: async () => matches(batch, where) ? batch : null,
+    update: async (data: { counts?: Record<string, number> }) => {
+      if (data.counts) savedCounts = data.counts
+      Object.assign(batch, data)
+      return batch
+    },
+  })
+  const publicOrm = {
+    OrganizationSyncBatches: batchCollection(),
+    OrganizationSyncItems: itemCollection(),
   }
-  const prisma = {
-    organizationSyncBatch: {
-      findFirst: async () => ({
-        id: 'batch-a',
-        tenantId: 'tenant-a',
-        provider: 'WECOM',
-        status: 'PREVIEW_READY',
-      }),
+  const prisma8 = {
+    client: {
+      orm: { public: publicOrm },
+      transaction: async (callback: (tx: any) => Promise<unknown>) => callback({ orm: { public: publicOrm } }),
     },
-    organizationSyncItem: {
-      findMany: async () => [items[0]],
-    },
-    $transaction: async (callback: (client: typeof tx) => Promise<void>) => callback(tx),
   }
   const service = new OrganizationSyncService(
-    prisma as never,
+    prisma8 as never,
     {} as never,
     {} as never,
     {} as never,
@@ -181,13 +198,15 @@ test('Redis 运行态包含 active batch 时 gate 只读取该批次一次并复
     provider: 'WECOM',
     status: 'FETCHING',
   }
-  const prisma = {
-    organizationSyncBatch: {
-      findFirst: async () => {
+  const batchCollection = (where: Record<string, unknown> = {}): any => ({
+    where: (next: Record<string, unknown>) => batchCollection({ ...where, ...next }),
+    first: async () => {
         batchQueries += 1
         return batch
       },
-    },
+  })
+  const prisma8 = {
+    client: { orm: { public: { OrganizationSyncBatches: batchCollection() } } },
   }
   const integrations = {
     getActivePlatform: async () => ({ syncResource: 'WECOM', sync: false }),
@@ -207,7 +226,7 @@ test('Redis 运行态包含 active batch 时 gate 只读取该批次一次并复
     }),
   }
   const service = new OrganizationSyncService(
-    prisma as never,
+    prisma8 as never,
     integrations as never,
     {} as never,
     {} as never,

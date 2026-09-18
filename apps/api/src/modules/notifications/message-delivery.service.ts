@@ -6,14 +6,20 @@ import {
   Optional,
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { or } from '@prisma/orm-postgres/orm-client'
 import {
   MESSAGE_TASK_DEFINITIONS,
+  type MessageDeliveryStatus,
   type MessageDeliveryVO,
   type MessageTaskEvent,
 } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { MessageDelivery, MessageDeliveryChannel, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import {
+  prisma8Now,
+  prisma8TimestampFromDate,
+  prisma8TimestampToISOString,
+} from '../../prisma/prisma8-temporal.js'
+import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { DingTalkClient } from '../enterprise-integrations/dingtalk.client'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import { LarkClient } from '../enterprise-integrations/lark.client'
@@ -30,7 +36,43 @@ export interface EnqueueMessageInput {
   link?: string
 }
 
-type SupportedDeliveryChannel = Extract<MessageDeliveryChannel, 'WECOM' | 'DINGTALK' | 'LARK'>
+type SupportedDeliveryChannel = 'WECOM' | 'DINGTALK' | 'LARK'
+
+type MessageDeliveryRow = {
+  id: string
+  tenantId: string
+  integrationId: string | null
+  channel: string
+  event: string
+  userId: string | null
+  externalSubject: string | null
+  title: string
+  content: string | null
+  link: string | null
+  status: MessageDeliveryStatus
+  attempts: number
+  maxAttempts: number
+  nextAttemptAt: ReturnType<typeof prisma8Now> | null
+  providerMessageId: string | null
+  errorCode: string | null
+  errorMessage: string | null
+  sentAt: ReturnType<typeof prisma8Now> | null
+  createdAt: ReturnType<typeof prisma8Now>
+  updatedAt: ReturnType<typeof prisma8Now>
+}
+
+type WorkerDelivery = {
+  id: string
+  tenantId: string
+  integrationId: string | null
+  channel: string
+  externalSubject: string | null
+  title: string
+  content: string | null
+  link: string | null
+  attempts: number
+  maxAttempts: number
+}
 
 const SUPPORTED_CHANNELS: SupportedDeliveryChannel[] = ['WECOM', 'DINGTALK', 'LARK']
 
@@ -44,7 +86,7 @@ export class MessageDeliveryService {
   private readonly logger = new Logger(MessageDeliveryService.name)
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly messageSettings: MessageSettingsService,
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly weComClient: WeComClient,
@@ -88,43 +130,48 @@ export class MessageDeliveryService {
           ? await this.messageSettings.getLarkChannelGate(input.tenantId)
           : await this.messageSettings.getWeComChannelGate(input.tenantId)
     if (!gate.available) return 0
-    const integration = await this.prisma.enterpriseIntegration.findUnique({
-      where: { tenantId_provider: { tenantId: input.tenantId, provider: channel } },
+    const integration = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      tenantId: input.tenantId,
+      provider: channel,
     })
+      .select('id')
+      .first()
     if (!integration) return 0
 
     const userIds = [...new Set(input.recipientIds)]
     if (userIds.length === 0) return 0
-    const mappings = await this.prisma.externalUserMapping.findMany({
-      where: {
-        tenantId: input.tenantId,
-        provider: channel,
-        active: true,
-        userId: { in: userIds },
-      },
+    const mappings = await this.prisma8.client.orm.public.ExternalUserMappings.where({
+      tenantId: input.tenantId,
+      provider: channel,
+      active: true,
     })
+      .where((mapping) => mapping.userId.in(userIds))
+      .select('userId', 'externalId')
+      .all()
     const mappingByUser = new Map(mappings.map((mapping) => [mapping.userId, mapping]))
-    const created = await this.prisma.$transaction(
-      userIds.map((userId) => {
+    const updatedAt = prisma8Now()
+    const created = await this.prisma8.client.transaction(async (tx) => {
+      return tx.orm.public.MessageDeliveries.createAll(
+        userIds.map((userId) => {
         const mapping = mappingByUser.get(userId)
-        return this.prisma.messageDelivery.create({
-          data: {
+          return {
             tenantId: input.tenantId,
             integrationId: integration.id,
             channel,
             event: input.event,
             userId,
-            externalSubject: mapping?.externalId,
+            externalSubject: mapping?.externalId ?? null,
             title: input.title.slice(0, 500),
-            content: input.content?.slice(0, 4_000),
-            link: input.link?.slice(0, 1_000),
-            status: mapping ? 'PENDING' : 'DEAD',
+            content: input.content?.slice(0, 4_000) ?? null,
+            link: input.link?.slice(0, 1_000) ?? null,
+            status: mapping ? ('PENDING' as const) : ('DEAD' as const),
             errorCode: mapping ? null : 'EXTERNAL_USER_NOT_MAPPED',
             errorMessage: mapping ? null : `接收人没有有效的${this.channelName(channel)}成员映射`,
-          },
-        })
-      }),
-    )
+            updatedAt,
+          }
+        }),
+      )
+    })
     const pendingIds = created.filter((item) => item.status === 'PENDING').map((item) => item.id)
     if (pendingIds.length > 0) {
       void this.processIds(pendingIds).catch((error) =>
@@ -140,45 +187,49 @@ export class MessageDeliveryService {
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 20
     const keyword = query.keyword?.trim()
-    const where: Prisma.MessageDeliveryWhereInput = {
+    const matchingUsers = keyword
+      ? await this.prisma8.client.orm.public.Users.where({ tenantId })
+          .where((user) => user.name.ilike(`%${keyword}%`))
+          .select('id')
+          .all()
+      : []
+    const scoped = this.prisma8.client.orm.public.MessageDeliveries.where({
       tenantId,
       channel: query.channel ?? 'WECOM',
       ...(query.status ? { status: query.status } : {}),
       ...(query.event ? { event: query.event } : {}),
-      ...(keyword
-        ? {
-            OR: [
-              { title: { contains: keyword, mode: 'insensitive' } },
-              { externalSubject: { contains: keyword, mode: 'insensitive' } },
-              { errorMessage: { contains: keyword, mode: 'insensitive' } },
-              { user: { name: { contains: keyword, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
-    }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.messageDelivery.findMany({
-        where,
-        include: { user: { select: { name: true } } },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.messageDelivery.count({ where }),
+    })
+    const filtered = keyword
+      ? scoped.where((delivery) =>
+          or(
+            delivery.title.ilike(`%${keyword}%`),
+            delivery.externalSubject.ilike(`%${keyword}%`),
+            delivery.errorMessage.ilike(`%${keyword}%`),
+            ...(matchingUsers.length
+              ? [delivery.userId.in(matchingUsers.map((user) => user.id))]
+              : []),
+          ),
+        )
+      : scoped
+    const [items, aggregate] = await Promise.all([
+      filtered
+        .orderBy((delivery) => delivery.createdAt.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      filtered.aggregate((agg) => ({ total: agg.count() })),
     ])
+    const names = await this.userNames(tenantId, items.map((item) => item.userId))
     return {
-      items: items.map((item) => this.toVO(item, item.user?.name ?? null)),
-      total,
+      items: items.map((item) => this.toVO(item, item.userId ? (names.get(item.userId) ?? null) : null)),
+      total: aggregate.total,
       page,
       pageSize,
     }
   }
 
   async retry(tenantId: string, id: string): Promise<MessageDeliveryVO> {
-    const delivery = await this.prisma.messageDelivery.findFirst({
-      where: { id, tenantId },
-      include: { user: { select: { name: true } } },
-    })
+    const delivery = await this.prisma8.client.orm.public.MessageDeliveries.where({ id, tenantId }).first()
     if (!delivery) throw new NotFoundException('投递记录不存在')
     if (!this.isSupportedChannel(delivery.channel)) {
       throw new BadRequestException('当前投递渠道暂不支持手工重试')
@@ -187,23 +238,22 @@ export class MessageDeliveryService {
     if (!['FAILED', 'DEAD'].includes(delivery.status)) {
       throw new BadRequestException('只有失败或已终止的投递可以重试')
     }
-    const updated = await this.prisma.messageDelivery.update({
-      where: { id },
-      data: {
-        status: 'PENDING',
-        attempts: 0,
-        nextAttemptAt: null,
-        errorCode: null,
-        errorMessage: null,
-        providerMessageId: null,
-        sentAt: null,
-      },
-      include: { user: { select: { name: true } } },
+    const updated = await this.prisma8.client.orm.public.MessageDeliveries.where({ id, tenantId }).update({
+      status: 'PENDING',
+      attempts: 0,
+      nextAttemptAt: null,
+      errorCode: null,
+      errorMessage: null,
+      providerMessageId: null,
+      sentAt: null,
+      updatedAt: prisma8Now(),
     })
+    if (!updated) throw new NotFoundException('投递记录不存在')
+    const names = await this.userNames(tenantId, [updated.userId])
     void this.processIds([id]).catch((error) =>
       this.logger.warn(`${this.channelName(channel)}投递手工重试失败: ${this.errorMessage(error)}`),
     )
-    return this.toVO(updated, updated.user?.name ?? null)
+    return this.toVO(updated, updated.userId ? (names.get(updated.userId) ?? null) : null)
   }
 
   @Cron('0 * * * * *')
@@ -215,29 +265,30 @@ export class MessageDeliveryService {
   }
 
   async processDueDeliveries(): Promise<number> {
-    await this.prisma.messageDelivery.updateMany({
-      where: {
-        channel: { in: SUPPORTED_CHANNELS },
-        status: 'SENDING',
-        updatedAt: { lt: new Date(Date.now() - STALE_SENDING_MS) },
-      },
-      data: {
+    const now = new Date()
+    const nowTemporal = prisma8TimestampFromDate(now)
+    const staleBefore = prisma8TimestampFromDate(new Date(now.getTime() - STALE_SENDING_MS))
+    await this.prisma8.client.orm.public.MessageDeliveries.where({ status: 'SENDING' })
+      .where((delivery) => delivery.channel.in(SUPPORTED_CHANNELS))
+      .where((delivery) => delivery.updatedAt.lt(staleBefore))
+      .updateAll({
         status: 'FAILED',
-        nextAttemptAt: new Date(),
+        nextAttemptAt: nowTemporal,
         errorCode: 'WORKER_TIMEOUT',
         errorMessage: '投递处理超时，已恢复等待重试',
-      },
-    })
-    const due = await this.prisma.messageDelivery.findMany({
-      where: {
-        channel: { in: SUPPORTED_CHANNELS },
-        status: { in: ['PENDING', 'FAILED'] },
-        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
-      },
-      orderBy: { createdAt: 'asc' },
-      take: MAX_BATCH_SIZE,
-      select: { id: true },
-    })
+        updatedAt: nowTemporal,
+      })
+    const due = await this.prisma8.client.orm.public.MessageDeliveries.where((delivery) =>
+      delivery.channel.in(SUPPORTED_CHANNELS),
+    )
+      .where((delivery) => delivery.status.in(['PENDING', 'FAILED']))
+      .where((delivery) =>
+        or(delivery.nextAttemptAt.isNull(), delivery.nextAttemptAt.lte(nowTemporal)),
+      )
+      .select('id')
+      .orderBy((delivery) => delivery.createdAt.asc())
+      .limit(MAX_BATCH_SIZE)
+      .all()
     await this.processIds(due.map((item) => item.id))
     return due.length
   }
@@ -254,22 +305,21 @@ export class MessageDeliveryService {
   }
 
   private async processOne(id: string): Promise<void> {
-    const claimed = await this.prisma.messageDelivery.updateMany({
-      where: {
-        id,
-        status: { in: ['PENDING', 'FAILED'] },
-        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
-      },
-      data: {
-        status: 'SENDING',
-        attempts: { increment: 1 },
-        nextAttemptAt: null,
-        errorCode: null,
-        errorMessage: null,
-      },
-    })
-    if (claimed.count !== 1) return
-    const delivery = await this.prisma.messageDelivery.findUnique({ where: { id } })
+    if (!(await this.claimDelivery(id))) return
+    const delivery = await this.prisma8.client.orm.public.MessageDeliveries.where({ id })
+      .select(
+        'id',
+        'tenantId',
+        'integrationId',
+        'channel',
+        'externalSubject',
+        'title',
+        'content',
+        'link',
+        'attempts',
+        'maxAttempts',
+      )
+      .first()
     if (!delivery) return
     if (!this.isSupportedChannel(delivery.channel)) {
       await this.fail(delivery, 'UNSUPPORTED_CHANNEL', '当前投递渠道暂未实现', false)
@@ -288,16 +338,7 @@ export class MessageDeliveryService {
     try {
       const result = await this.sendByChannel(channel, delivery)
       if (result.success) {
-        await this.prisma.messageDelivery.update({
-          where: { id },
-          data: {
-            status: 'SUCCEEDED',
-            providerMessageId: result.providerMessageId,
-            sentAt: new Date(),
-            errorCode: null,
-            errorMessage: null,
-          },
-        })
+        await this.completeDelivery(id, result.providerMessageId)
         return
       }
       await this.fail(
@@ -313,7 +354,42 @@ export class MessageDeliveryService {
     }
   }
 
-  private async sendByChannel(channel: SupportedDeliveryChannel, delivery: MessageDelivery) {
+  private async completeDelivery(id: string, providerMessageId: string | null): Promise<void> {
+    const sentAt = prisma8Now()
+    const updated = await this.prisma8.client.orm.public.MessageDeliveries.where({ id }).update({
+      status: 'SUCCEEDED',
+      providerMessageId,
+      sentAt,
+      errorCode: null,
+      errorMessage: null,
+      updatedAt: sentAt,
+    })
+    if (!updated) throw new NotFoundException('投递记录不存在')
+  }
+
+  private async claimDelivery(id: string): Promise<boolean> {
+    const client = this.prisma8.client
+    const now = new Date().toISOString()
+    const query = client.raw.sql`UPDATE message_deliveries
+      SET status = 'SENDING',
+          attempts = attempts + 1,
+          "nextAttemptAt" = NULL,
+          "errorCode" = NULL,
+          "errorMessage" = NULL,
+          "updatedAt" = (${now}::timestamptz AT TIME ZONE 'UTC')
+      WHERE id = ${id}
+        AND status IN ('PENDING', 'FAILED')
+        AND (
+          "nextAttemptAt" IS NULL
+          OR "nextAttemptAt" <= (${now}::timestamptz AT TIME ZONE 'UTC')
+        )
+      RETURNING id`.returnsRow({ id: client.sql.public.message_deliveries.columns.id })
+    let claimed = false
+    for await (const _row of client.runtime().query(query.build())) claimed = true
+    return claimed
+  }
+
+  private async sendByChannel(channel: SupportedDeliveryChannel, delivery: WorkerDelivery) {
     if (channel === 'DINGTALK') {
       if (!this.dingTalkClient) {
         return {
@@ -386,32 +462,46 @@ export class MessageDeliveryService {
   }
 
   private async fail(
-    delivery: MessageDelivery,
+    delivery: WorkerDelivery,
     errorCode: string,
     errorMessage: string,
     transient: boolean,
   ): Promise<void> {
     const retryable = transient && delivery.attempts < delivery.maxAttempts
     const delay = RETRY_DELAYS_MS[Math.max(0, delivery.attempts - 1)] ?? RETRY_DELAYS_MS.at(-1)!
-    await this.prisma.messageDelivery.update({
-      where: { id: delivery.id },
-      data: {
-        status: retryable ? 'FAILED' : 'DEAD',
-        nextAttemptAt: retryable ? new Date(Date.now() + delay) : null,
-        errorCode: errorCode.slice(0, 100),
-        errorMessage: errorMessage.slice(0, 500),
-      },
+    const updatedAt = prisma8Now()
+    const updated = await this.prisma8.client.orm.public.MessageDeliveries.where({
+      id: delivery.id,
+    }).update({
+      status: retryable ? 'FAILED' : 'DEAD',
+      nextAttemptAt: retryable
+        ? prisma8TimestampFromDate(new Date(Date.now() + delay))
+        : null,
+      errorCode: errorCode.slice(0, 100),
+      errorMessage: errorMessage.slice(0, 500),
+      updatedAt,
     })
+    if (!updated) throw new NotFoundException('投递记录不存在')
   }
 
-  private buildContent(delivery: MessageDelivery): string {
+  private buildContent(delivery: WorkerDelivery): string {
     return [delivery.title, delivery.content, delivery.link]
       .filter(Boolean)
       .join('\n')
       .slice(0, 2_048)
   }
 
-  private toVO(delivery: MessageDelivery, userName: string | null): MessageDeliveryVO {
+  private async userNames(tenantId: string, rawUserIds: Array<string | null>) {
+    const userIds = [...new Set(rawUserIds.filter((id): id is string => Boolean(id)))]
+    if (!userIds.length) return new Map<string, string>()
+    const users = await this.prisma8.client.orm.public.Users.where({ tenantId })
+      .where((user) => user.id.in(userIds))
+      .select('id', 'name')
+      .all()
+    return new Map(users.map((user) => [user.id, user.name]))
+  }
+
+  private toVO(delivery: MessageDeliveryRow, userName: string | null): MessageDeliveryVO {
     if (!this.isSupportedChannel(delivery.channel)) {
       throw new Error(`不支持的消息投递渠道：${delivery.channel}`)
     }
@@ -431,17 +521,19 @@ export class MessageDeliveryService {
       status: delivery.status,
       attempts: delivery.attempts,
       maxAttempts: delivery.maxAttempts,
-      nextAttemptAt: delivery.nextAttemptAt?.toISOString() ?? null,
+      nextAttemptAt: delivery.nextAttemptAt
+        ? prisma8TimestampToISOString(delivery.nextAttemptAt)
+        : null,
       providerMessageId: delivery.providerMessageId,
       errorCode: delivery.errorCode,
       errorMessage: delivery.errorMessage,
-      sentAt: delivery.sentAt?.toISOString() ?? null,
-      createdAt: delivery.createdAt.toISOString(),
-      updatedAt: delivery.updatedAt.toISOString(),
+      sentAt: delivery.sentAt ? prisma8TimestampToISOString(delivery.sentAt) : null,
+      createdAt: prisma8TimestampToISOString(delivery.createdAt),
+      updatedAt: prisma8TimestampToISOString(delivery.updatedAt),
     }
   }
 
-  private isSupportedChannel(channel: MessageDeliveryChannel): channel is SupportedDeliveryChannel {
+  private isSupportedChannel(channel: string): channel is SupportedDeliveryChannel {
     return channel === 'WECOM' || channel === 'DINGTALK' || channel === 'LARK'
   }
 

@@ -1,14 +1,31 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../common/auth-user'
 import { DataScopeService } from '../common/services/data-scope.service'
-import type { Customer } from '../generated/prisma/client'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
-import { PrismaService } from '../prisma/prisma.service'
+import { Prisma8Service } from '../prisma/prisma8.service'
+import { prisma8Varchar } from '../prisma/prisma8-varchar'
 
 export type CustomerCollaborationAccess = 'READ_ONLY' | 'COLLABORATION' | null
 
+export interface CustomerAccessRow {
+  id: string
+  name: string
+  owner: string | null
+  collectionTime: bigint | null
+  poolId: string | null
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
+  inSharedPool: boolean
+  organizationId: string
+  follower: string | null
+  followTime: bigint | null
+  reasonId: string | null
+}
+
 export interface CustomerAccessContext {
-  customer: Customer
+  customer: CustomerAccessRow
   dataScope: boolean
   pool: boolean
   poolManager: boolean
@@ -27,7 +44,7 @@ export interface CustomerAccessContext {
 @Injectable()
 export class CustomerAccessService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly dataScopeService: DataScopeService,
     private readonly resourcePools: ResourcePoolsService,
   ) {}
@@ -37,9 +54,10 @@ export class CustomerAccessService {
     customerId: string,
     permission = 'customer:read',
   ): Promise<CustomerAccessContext> {
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, organizationId: user.tenantId },
-    })
+    const customer = await this.prisma8.client.orm.public.Customer.where({
+      id: prisma8Varchar(customerId, 32),
+      organizationId: prisma8Varchar(user.tenantId, 32),
+    }).first()
     if (!customer) throw new NotFoundException('客户不存在或无权访问')
 
     const dataScope = await this.dataScopeService.matchesDirectOwner(
@@ -56,13 +74,12 @@ export class CustomerAccessService {
       poolManager = await this.resourcePools.isPoolManager(user, 'customer', customer.poolId)
     }
 
-    const collaboration = await this.prisma.customerCollaboration.findFirst({
-      where: {
-        customerId,
-        userId: user.id,
-      },
-      select: { collaborationType: true },
+    const collaboration = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+      customerId: customer.id,
+      userId: prisma8Varchar(user.id, 32),
     })
+      .select('collaborationType')
+      .first()
     const collaborationType = this.normalizeCollaborationType(collaboration?.collaborationType)
 
     const canRead =
@@ -72,7 +89,7 @@ export class CustomerAccessService {
       !customer.inSharedPool && (dataScope || collaborationType === 'COLLABORATION')
 
     return {
-      customer,
+      customer: customer as unknown as CustomerAccessRow,
       dataScope,
       pool,
       poolManager,

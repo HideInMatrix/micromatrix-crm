@@ -8,12 +8,13 @@
 
 ## 2. 外部版本事实
 
-截至 2026-09-14，Prisma 8 为 Release Candidate。项目采用官方 PostgreSQL 7→8 side-by-side 迁移路径，不执行“一次性替换全部 Prisma 7 代码”。
+截至 2026-09-16，Prisma 8 为 Release Candidate。项目采用官方 PostgreSQL 7→8 side-by-side 迁移路径，不执行“一次性替换全部 Prisma 7 代码”。当前官方迁移指南目标版本为 `prisma@8.0.0-rc.14`、`@prisma/orm-postgres@8.0.0-rc.10`、`legacy Prisma 7 CLI package@7.10.0-dev.58`。
 
 迁移前置条件：
 
-- Node.js 至少满足 Prisma 8 runtime 要求；项目继续使用 Node 24 主线，因此最低版本固定为 `24.11.0`。
-- TypeScript 保持当前 6.0.x 主线，满足 Prisma 8 的 TypeScript 要求。
+- 项目运行时基线已经切到 Node 25.x；本迁移分支固定 `.nvmrc=25.7.0`、`engines.node=>=25 <26`，CI/Docker 同步使用 Node 25。
+- TypeScript 主线固定为 `typescript@7.0.2`，root/API/Web/Mobile/shared/frontend-shared 统一使用 7.x；不得为了 Prisma 或静态分析工具兼容性把应用 compiler 回退到 6.x。
+- TypeScript 7 当前不提供旧 JavaScript compiler API 的完全兼容面；`vue-tsc` 与 `typescript-eslint` 因此仅在各自工具进程内使用隔离的 `@typescript/old@npm:typescript@6.0.3` compatibility backend。该 TS6 包不得用于 API/shared 主编译、production build 或业务代码类型检查。
 - PostgreSQL 继续使用现有数据库与连接串，不迁移数据库产品。
 
 参考：
@@ -32,8 +33,8 @@
 
 ### R2 Prisma 7 独立命名
 
-- Prisma 7 CLI 必须迁移到 `@prisma/prisma7` / `prisma7` 命令。
-- Prisma 7 配置文件必须迁移为 `prisma7.config.ts`。
+- Prisma 7 CLI 必须迁移到 `legacy Prisma 7 CLI package` / `legacy Prisma 7 CLI` 命令。
+- Prisma 7 配置文件必须迁移为 `legacy Prisma 7 config`。
 - Prisma 7 Client 与 adapter 在 Prisma 8 runtime 完全接管前继续保留。
 - Phase 1～3 的 schema/migration 所有权仍属于 Prisma 7。
 
@@ -75,7 +76,7 @@
 - API runtime、独立 Migration image、GitHub Actions、本地脚本必须明确调用 Prisma 7 还是 Prisma 8。
 - Phase 1～3 的生产 migration image 继续由 Prisma 7 执行现有 migration。
 - Prisma 8 ownership handoff 之前禁止把 release-init 切到 Prisma 8 migration 命令。
-- Node Docker base 必须满足 Prisma 8 的 Node 24.11+ 要求。
+- Node Docker base 必须使用项目 Node 25 主线。Prisma 7 side-by-side CLI 在 Node 25 上会输出上游支持线警告，因此 Phase 1 必须用真实 Node 25 镜像验证 generate/image；该警告随 Prisma 7 移除而消失，不能通过回退整个项目 Node 版本规避。
 
 ### R8 数据库事实一致性
 
@@ -106,4 +107,6 @@
 4. Prisma 8 拥有 migration workflow，数据库 `db verify` PASS。
 5. Prisma 7 CLI、Client、adapter、config 和旧脚本从运行依赖中删除。
 6. fresh PostgreSQL、现有开发库升级路径、API Rules、typecheck、lint、build、Docker release smoke 全绿。
+7. side-by-side 目录命名必须收口：过渡期的 `apps/api/prisma/contract.prisma`、`apps/api/src/prisma/*` 不作为长期结构保留；最终 Prisma 8 contract 使用 canonical `apps/api/prisma/contract.prisma`，运行时封装/生成 artifact 收口到 `apps/api/src/prisma/*`，旧 Prisma 7 `schema.prisma` / generated client / `legacy Prisma 7 config` 删除。
+8. package scripts、Migration image、Docker release、GitHub Actions 与本地数据库命令不得再出现正式 `legacy Prisma 7 CLI` 调用；`build/typecheck/test` 的数据模型前置步骤统一使用 Prisma 8 `contract emit`，migration/release 链统一使用 Phase 4 验证后的 Prisma 8 workflow。
 

@@ -5,18 +5,19 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { Prisma8Service } from '../../prisma/prisma8.service'
+import { prisma8Varchar } from '../../prisma/prisma8-varchar'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
 import type { PoolModule } from './pool-domain.types'
-import { loadUserScopeTokens, scopeMatches } from './pool-repository.helpers'
+import { scopeMatches } from './pool-repository.helpers'
 
 /** 业务访问编排器：数据读写始终委托 Clue/Customer 分域 Repository。 */
 @Injectable()
 export class ResourcePoolsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma8: Prisma8Service,
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
     private readonly dictionaries: DictionariesService,
@@ -32,9 +33,7 @@ export class ResourcePoolsService {
   async options(user: AuthUser, module: PoolModule) {
     const pools = await this.list(user, module)
     if (user.permissions.includes('*')) return pools.filter((pool) => pool.enable)
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, user.tenantId, user.id),
-    )
+    const tokens = await this.loadUserScopeTokens(user.tenantId, user.id)
     return pools.filter(
       (pool) =>
         pool.enable && (scopeMatches(pool.scopeId, tokens) || scopeMatches(pool.ownerId, tokens)),
@@ -46,9 +45,7 @@ export class ResourcePoolsService {
     if (!poolId) return false
     const pool = (await this.list(user, module)).find((item) => item.id === poolId && item.enable)
     if (!pool) return false
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, user.tenantId, user.id),
-    )
+    const tokens = await this.loadUserScopeTokens(user.tenantId, user.id)
     return scopeMatches(pool.ownerId, tokens)
   }
 
@@ -56,9 +53,7 @@ export class ResourcePoolsService {
     const pool = (await this.list(user, module)).find((item) => item.id === poolId)
     if (!pool) throw new NotFoundException(module === 'lead' ? '线索池不存在' : '客户公海不存在')
     if (user.permissions.includes('*')) return pool
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, user.tenantId, user.id),
-    )
+    const tokens = await this.loadUserScopeTokens(user.tenantId, user.id)
     if (!scopeMatches(pool.scopeId, tokens) && !scopeMatches(pool.ownerId, tokens)) {
       throw new ForbiddenException('你不是该池成员或管理员')
     }
@@ -88,9 +83,7 @@ export class ResourcePoolsService {
       return selected
     }
     if (!ownerId) throw new BadRequestException('原负责人为空，无法匹配目标池')
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, organizationId, ownerId),
-    )
+    const tokens = await this.loadUserScopeTokens(organizationId, ownerId)
     const matched = [...pools]
       .reverse()
       .find((pool) => pool.enable && scopeMatches(pool.scopeId, tokens))
@@ -104,9 +97,7 @@ export class ResourcePoolsService {
     ownerId: string,
     processCount = 1,
   ) {
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, organizationId, ownerId),
-    )
+    const tokens = await this.loadUserScopeTokens(organizationId, ownerId)
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities =
       module === 'lead'
@@ -116,12 +107,20 @@ export class ResourcePoolsService {
     if (capacity === null || capacity === undefined) return
     const owned =
       module === 'lead'
-        ? await this.prisma.clue.count({
-            where: { organizationId, owner: ownerId, inSharedPool: false },
-          })
-        : await this.prisma.customer.count({
-            where: { organizationId, owner: ownerId, inSharedPool: false },
-          })
+        ? (
+            await this.prisma8.client.orm.public.Clue.where({
+              organizationId: prisma8Varchar(organizationId, 32),
+              owner: prisma8Varchar(ownerId, 32),
+              inSharedPool: false,
+            }).aggregate((agg) => ({ count: agg.count() }))
+          ).count
+        : (
+            await this.prisma8.client.orm.public.Customer.where({
+              organizationId: prisma8Varchar(organizationId, 32),
+              owner: prisma8Varchar(ownerId, 32),
+              inSharedPool: false,
+            }).aggregate((agg) => ({ count: agg.count() }))
+          ).count
     if (owned + processCount > capacity)
       throw new BadRequestException('负责人持有数量将超过库容上限')
   }
@@ -135,18 +134,31 @@ export class ResourcePoolsService {
       ...new Set(history.flatMap((item) => [item.owner, item.operator]).filter(Boolean)),
     ]
     const users = userIds.length
-      ? await this.prisma.user.findMany({
-          where: { tenantId: user.tenantId, id: { in: userIds } },
-          select: { id: true, name: true, dept: { select: { id: true, name: true } } },
-        })
+      ? await this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+          .where((row) => row.id.in(userIds))
+          .select('id', 'name', 'deptId')
+          .all()
       : []
-    const userMap = new Map(users.map((item) => [item.id, item]))
+    const deptIds = [...new Set(users.flatMap((item) => (item.deptId ? [item.deptId] : [])))]
+    const departments = deptIds.length
+      ? await this.prisma8.client.orm.public.Departments.where({ tenantId: user.tenantId })
+          .where((row) => row.id.in(deptIds))
+          .select('id', 'name')
+          .all()
+      : []
+    const departmentMap = new Map(departments.map((item) => [item.id, item]))
+    const userMap = new Map(
+      users.map((item) => [
+        item.id,
+        { ...item, dept: item.deptId ? (departmentMap.get(item.deptId) ?? null) : null },
+      ]),
+    )
     const reasonModule = module === 'lead' ? 'CLUE_POOL_RS' : 'CUSTOMER_POOL_RS'
     const showReason = await this.dictionaries.isEnabled(user.tenantId, reasonModule)
     const reasonMap = showReason
       ? await this.dictionaries.reasonNames(
           user.tenantId,
-          history.map((item) => item.reasonId).filter((id): id is string => Boolean(id)),
+          history.flatMap((item) => (item.reasonId ? [String(item.reasonId)] : [])),
         )
       : new Map<string, string>()
 
@@ -174,5 +186,38 @@ export class ResourcePoolsService {
 
   private assertModule(module: PoolModule): void {
     if (module !== 'lead' && module !== 'customer') throw new BadRequestException('池模块不合法')
+  }
+
+  private async loadUserScopeTokens(tenantId: string, userId: string): Promise<Set<string>> {
+    const user = await this.prisma8.client.orm.public.Users.where({
+      id: userId,
+      tenantId,
+      status: 'ACTIVE',
+    })
+      .select('id', 'deptId')
+      .first()
+    if (!user) return new Set()
+
+    const tokens = new Set([user.id, `user:${user.id}`])
+    const links = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, userId: user.id })
+      .select('roleId')
+      .all()
+    for (const link of links) {
+      tokens.add(link.roleId)
+      tokens.add(`role:${link.roleId}`)
+    }
+    if (!user.deptId) return tokens
+
+    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
+    const parentMap = new Map(departments.map((department) => [department.id, department.parentId]))
+    let departmentId: string | null = user.deptId
+    while (departmentId) {
+      tokens.add(departmentId)
+      tokens.add(`dept:${departmentId}`)
+      departmentId = parentMap.get(departmentId) ?? null
+    }
+    return tokens
   }
 }

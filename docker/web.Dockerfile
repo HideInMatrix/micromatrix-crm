@@ -3,12 +3,9 @@
 # Web 产物是与 CPU 架构无关的静态文件。
 # 多架构镜像构建时固定在 BuildKit 原生平台执行 Node/Vite，避免在
 # GitHub x64 runner 上通过 QEMU 执行 arm64 Node 导致 transforming 阶段极慢。
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
+FROM --platform=$BUILDPLATFORM node:25-bookworm-slim AS builder
 
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-
-RUN corepack enable && corepack prepare pnpm@11.25.0 --activate
+RUN npm install --global pnpm@11.25.0
 
 WORKDIR /workspace
 
