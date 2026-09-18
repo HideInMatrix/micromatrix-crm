@@ -30,9 +30,9 @@
 
 ## P3 VarChar / ID 数据库治理
 
-- [ ] P3.1 476 个 VarChar 字段按 ID/枚举协议/自由文本分类。
-- [ ] P3.2 existing DB 长度与 ID 格式 precheck。
-- [ ] P3.3 设计并生成保持等价约束的 forward migration。
+- [x] P3.1 476 个 VarChar 字段按 ID/枚举协议/自由文本分类。
+- [x] P3.2 existing DB 长度与 ID 格式 precheck。
+- [x] P3.3 设计并生成保持等价约束的 forward migration。
 - [ ] P3.4 逐批删除 `prisma8Varchar/prisma8Varchars/prisma8Id32` 调用。
 
 ## P4 Numeric / JSON domain 收口
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P3.1**。P1 测试兼容层与 P2 时间语义/API contract 已完成收口；下一阶段开始对 476 个 `VarChar` 字段按 ID / 枚举协议 / 自由文本分类，并为 existing DB 长度与 ID 格式 precheck 建立清单。
+当前执行 **P3.4**。P3.1/P3.2/P3.3 已完成；476 个 `VarChar(n)` 已正规化为 plain `String/text` + contract-declared 长度 CHECK，generated contract 中 `Varchar<N>` 已归零。下一步逐批删除应用层 `prisma8Varchar/prisma8Varchars/prisma8Id32` 迁移期 helper。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -118,4 +118,21 @@ P2.3 已完成：Web/Mobile 时间展示继续由前端消费 API ISO instant �
 P2.6 已完成：`prisma8TimestampToDate` 引用归零并删除；保留的 `prisma8Now / prisma8TimestampFromDate / prisma8TimestampFromISOString / prisma8TimestampFromEpochMilliseconds / prisma8TimestampToISOString` 均有当前正式 runtime 边界用途，不再承担 Prisma 7 `Date` compatibility。
 
 P2 最终门禁：API typecheck/build **exit 0**，完整 API Rules **346/346 PASS、0 fail、0 skip**，时间相关专项 **91/91 PASS**，Web/Mobile typecheck/build 全绿，`git diff --check` PASS。P2 正式完成，执行指针进入 **P3.1**。
+
+P3.1 已完成，详见 `varchar-inventory.md`：476 个 VarChar 字段完整分类为 IDENTIFIER **361**、PROTOCOL **38**、TEXT **52**、SERIALIZED_VALUE **16**、BOUNDED_VALUE **6**、BUSINESS_KEY **3**。generated contract 已确认普通 `String` 为 `pg/text@1` / plain string，而 `VarChar(n)` 才生成 `Varchar<n>` branded type。
+
+P3.2 existing DB precheck 已完成，详见 `varchar-precheck.md`：476/476 物理列长度与 contract 一致，173 列存在非空数据，共 2467 个值，**0 个长度违规**。361 个 ID/reference 字段中已有 1794 个非空值：CUID/CUID-like 1621、32-hex 17、RFC UUID 0、其它历史/协议标识 157；存在 `SYSTEM/system`、`u<hex>`、`org-<hex>`、`NONE` 等值，因此本轮明确禁止整体迁移为 PostgreSQL UUID。
+
+当前 Prisma 8 varchar compatibility helper 规模：production `prisma8Varchar` **2003 calls / 50 files**、`prisma8Varchars` **247 calls / 34 files**、`prisma8Id32` **82 calls / 32 files**。P3.3 的目标是通过数据库 contract 正规化一次性消除前两类 branded cast，再在 P3.4 清理 ID 生成 helper 的迁移期命名。
+
+P3.3 已完成。先做两轮隔离 rehearsal：
+
+- 普通文本列：`BusinessTitle.name varchar(255) -> text + CHECK`，255 字符可写、256 字符被 DB CHECK 拒绝，Seed / verify / status 全绿；
+- PK/FK 关系：`BusinessTitle.id` 与 `ContractInvoice.businessTitleId` 同步迁为 text，原 `contract_invoice_business_title_id_fkey` 保持存在且语义不变，Seed / verify / status 全绿。
+
+正式 migration 为 `20260918T0923_varchar_text_length_constraints`，storage hash `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`，共 **952 operations = 476 ALTER TYPE + 476 ADD CHECK**。Planner 初始生成的 476 个 type-change dataTransform placeholder 在 P3.2 0-length-violation 与 rehearsal 证据基础上全部删除，最终 migration **0 placeholder**，`migration check` PASS。
+
+existing DB 已正式应用：目标列 **476/476 = text**、P3 长度 CHECK **476/476**；迁移前后 476 列、2467 个非空值逐列 count/maxLen/value multiset fingerprint **0 mismatch**；`db verify` PASS，`migration status` Up to date，`db` ref 已前移到新 storage hash。
+
+fresh PostgreSQL 从空库执行 baseline **672** + timestamp **126** + varchar **952**，合计 **1750 operations**；Seed / `db verify` / `migration status` 全绿。API typecheck/build exit 0，完整 API Rules **346/346 PASS、0 fail、0 skip**，`git diff --check` PASS。P3.3 正式完成，执行指针进入 **P3.4**。
 

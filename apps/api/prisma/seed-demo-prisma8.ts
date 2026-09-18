@@ -274,8 +274,8 @@ async function seedDemoFormsAndStages(prisma: DemoClient, tenantId: string, admi
 
 async function seedStages(
   prisma: DemoClient,
-  organizationId: ReturnType<typeof prisma8Varchar<32>>,
-  actorId: ReturnType<typeof prisma8Varchar<32>>,
+  organizationId: string,
+  actorId: string,
   now: bigint,
 ) {
   const contractStages = [
@@ -341,8 +341,8 @@ async function seedStages(
 
 async function ensureSeedCustomField(
   prisma: DemoClient,
-  formId: ReturnType<typeof prisma8Id32>,
-  actorId: ReturnType<typeof prisma8Varchar<32>>,
+  formId: string,
+  actorId: string,
   now: bigint,
   key: string,
   name: string,
@@ -1225,8 +1225,8 @@ async function seedDemoBusinessSamples(
 
 async function upsertClueField(
   prisma: DemoClient,
-  resourceId: ReturnType<typeof prisma8Id32>,
-  fieldId: ReturnType<typeof prisma8Id32>,
+  resourceId: string,
+  fieldId: string,
   value: string,
 ) {
   const collection = prisma.orm.public.ClueField
@@ -1245,8 +1245,8 @@ async function upsertClueField(
 
 async function upsertClueFieldBlob(
   prisma: DemoClient,
-  resourceId: ReturnType<typeof prisma8Id32>,
-  fieldId: ReturnType<typeof prisma8Id32>,
+  resourceId: string,
+  fieldId: string,
   value: string,
 ) {
   const collection = prisma.orm.public.ClueFieldBlob
@@ -1260,8 +1260,8 @@ async function upsertClueFieldBlob(
 
 async function upsertContactField(
   prisma: DemoClient,
-  resourceId: ReturnType<typeof prisma8Id32>,
-  fieldId: ReturnType<typeof prisma8Id32>,
+  resourceId: string,
+  fieldId: string,
   value: string,
 ) {
   const collection = prisma.orm.public.CustomerContactField
@@ -1280,8 +1280,8 @@ async function upsertContactField(
 
 async function upsertContactFieldBlob(
   prisma: DemoClient,
-  resourceId: ReturnType<typeof prisma8Id32>,
-  fieldId: ReturnType<typeof prisma8Id32>,
+  resourceId: string,
+  fieldId: string,
   value: string,
 ) {
   const collection = prisma.orm.public.CustomerContactFieldBlob
