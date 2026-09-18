@@ -1,13 +1,9 @@
 import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common'
-import type {
-  ApprovalModule,
-  ApprovalNodeConfig,
-  ApprovalWebhookConfig,
-} from '@micromatrix/shared'
+import type { ApprovalModule, ApprovalNodeConfig, ApprovalWebhookConfig } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { ApprovalResourceService } from './approval-resource.service'
 import {
   ApprovalWebhookClient,
@@ -123,8 +119,8 @@ export class ApprovalWebhookService {
         targetOrigin: target.origin,
         targetPath: target.path,
         status: 'FAILED',
-        errorCode: prisma8Varchar(normalizedError.code, 64),
-        errorMessage: prisma8Varchar(normalizedError.message, 500),
+        errorCode: normalizedError.code,
+        errorMessage: normalizedError.message,
         createdById: operatorId,
         finishedAt,
         updatedAt: finishedAt,
@@ -177,16 +173,18 @@ export class ApprovalWebhookService {
       const normalizedError = this.normalizeError(error)
       const result = error instanceof ApprovalWebhookClientError ? error.result : undefined
       const finishedAt = prisma8Now()
-      await this.deliveries().where({ id: deliveryId }).update({
-        status: 'FAILED',
-        httpStatus: result?.httpStatus || null,
-        responseBytes: result?.responseBytes ?? null,
-        durationMs: result?.durationMs ?? null,
-        errorCode: prisma8Varchar(normalizedError.code, 64),
-        errorMessage: prisma8Varchar(normalizedError.message, 500),
-        finishedAt,
-        updatedAt: finishedAt,
-      })
+      await this.deliveries()
+        .where({ id: deliveryId })
+        .update({
+          status: 'FAILED',
+          httpStatus: result?.httpStatus || null,
+          responseBytes: result?.responseBytes ?? null,
+          durationMs: result?.durationMs ?? null,
+          errorCode: normalizedError.code,
+          errorMessage: normalizedError.message,
+          finishedAt,
+          updatedAt: finishedAt,
+        })
       return { ok: false, error: normalizedError }
     }
   }
@@ -201,7 +199,9 @@ export class ApprovalWebhookService {
         : config.webHookUrl
     const webHookBody =
       config.webHookMethod === 'POST'
-        ? JSON.stringify(this.replaceJsonValue(parseApprovalWebhookJsonBody(config.webHookBody), variables))
+        ? JSON.stringify(
+            this.replaceJsonValue(parseApprovalWebhookJsonBody(config.webHookBody), variables),
+          )
         : config.webHookBody
     return {
       ...config,
@@ -276,7 +276,10 @@ export class ApprovalWebhookService {
   }
 
   private normalizeError(error: unknown): ApprovalWebhookClientError | ApprovalWebhookConfigError {
-    if (error instanceof ApprovalWebhookClientError || error instanceof ApprovalWebhookConfigError) {
+    if (
+      error instanceof ApprovalWebhookClientError ||
+      error instanceof ApprovalWebhookConfigError
+    ) {
       return error
     }
     return new ApprovalWebhookClientError('INTERNAL', 'Webhook 执行失败')

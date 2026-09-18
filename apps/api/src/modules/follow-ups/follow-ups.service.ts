@@ -26,7 +26,7 @@ import {
   prisma8TimestampFromISOString,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
-import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+
 import { AttachmentsService } from '../attachments/attachments.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import {
@@ -49,7 +49,12 @@ type FollowRecordSystemSort =
   | 'updatedAt'
 
 type FollowRecordResolvedSort =
-  | { kind: 'system'; field: FollowRecordSystemSort; direction: 'asc' | 'desc'; defaultSort?: boolean }
+  | {
+      kind: 'system'
+      field: FollowRecordSystemSort
+      direction: 'asc' | 'desc'
+      defaultSort?: boolean
+    }
   | { kind: 'dynamic'; field: FieldVO; direction: 'asc' | 'desc' }
 
 export type FollowRecord = {
@@ -118,7 +123,11 @@ export class FollowUpsService {
     }
 
     const saved = dto.viewId
-      ? await this.userViews.resolveFilters(user, dto.viewId, USER_VIEW_RESOURCE_TYPES.follow_record)
+      ? await this.userViews.resolveFilters(
+          user,
+          dto.viewId,
+          USER_VIEW_RESOURCE_TYPES.follow_record,
+        )
       : null
     const [savedIds, adHocIds, keywordIds, accessIds] = await Promise.all([
       saved?.conditions.length
@@ -164,7 +173,10 @@ export class FollowUpsService {
     } else {
       const ordered = this.applySystemSort(query, sort)
       const [rows, aggregate] = await Promise.all([
-        ordered.offset((page - 1) * pageSize).limit(pageSize).all(),
+        ordered
+          .offset((page - 1) * pageSize)
+          .limit(pageSize)
+          .all(),
         query.aggregate((value) => ({ count: value.count() })),
       ])
       records = rows.map((row) => this.toLegacyRecord(row))
@@ -224,20 +236,44 @@ export class FollowUpsService {
       ])
     }
     if (sort.field === 'targetType')
-      return query.orderBy([(row) => (asc ? row.targetType.asc() : row.targetType.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row.targetType.asc() : row.targetType.desc()),
+        (row) => row.id.asc(),
+      ])
     if (sort.field === 'targetId')
-      return query.orderBy([(row) => (asc ? row.targetId.asc() : row.targetId.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row.targetId.asc() : row.targetId.desc()),
+        (row) => row.id.asc(),
+      ])
     if (sort.field === 'ownerId')
-      return query.orderBy([(row) => (asc ? row.ownerId.asc() : row.ownerId.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row.ownerId.asc() : row.ownerId.desc()),
+        (row) => row.id.asc(),
+      ])
     if (sort.field === 'contactId')
-      return query.orderBy([(row) => (asc ? row.contactId.asc() : row.contactId.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row.contactId.asc() : row.contactId.desc()),
+        (row) => row.id.asc(),
+      ])
     if (sort.field === 'followedAt')
-      return query.orderBy([(row) => (asc ? row.followedAt.asc() : row.followedAt.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row.followedAt.asc() : row.followedAt.desc()),
+        (row) => row.id.asc(),
+      ])
     if (sort.field === 'type')
-      return query.orderBy([(row) => (asc ? row._type.asc() : row._type.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row._type.asc() : row._type.desc()),
+        (row) => row.id.asc(),
+      ])
     if (sort.field === 'createdAt')
-      return query.orderBy([(row) => (asc ? row.createdAt.asc() : row.createdAt.desc()), (row) => row.id.asc()])
-    return query.orderBy([(row) => (asc ? row.updatedAt.asc() : row.updatedAt.desc()), (row) => row.id.asc()])
+      return query.orderBy([
+        (row) => (asc ? row.createdAt.asc() : row.createdAt.desc()),
+        (row) => row.id.asc(),
+      ])
+    return query.orderBy([
+      (row) => (asc ? row.updatedAt.asc() : row.updatedAt.desc()),
+      (row) => row.id.asc(),
+    ])
   }
 
   private async sortDynamicRecordIds(
@@ -247,17 +283,19 @@ export class FollowUpsService {
   ): Promise<string[]> {
     if (recordIds.length <= 1) return recordIds
     const [normalRows, blobRows] = await Promise.all([
-      this.prisma8.client.orm.public.FollowUpRecordField.where({ fieldId: prisma8Varchar(field.id, 32) })
+      this.prisma8.client.orm.public.FollowUpRecordField.where({ fieldId: field.id })
         .where((row) => row.resourceId.in(recordIds))
         .select('resourceId', 'fieldValue')
         .all(),
-      this.prisma8.client.orm.public.FollowUpRecordFieldBlob.where({ fieldId: prisma8Varchar(field.id, 32) })
+      this.prisma8.client.orm.public.FollowUpRecordFieldBlob.where({ fieldId: field.id })
         .where((row) => row.resourceId.in(recordIds))
         .select('resourceId', 'fieldValue')
         .all(),
     ])
     const values = new Map(
-      [...normalRows, ...blobRows].map((item) => [item.resourceId, String(item.fieldValue)] as const),
+      [...normalRows, ...blobRows].map(
+        (item) => [item.resourceId, String(item.fieldValue)] as const,
+      ),
     )
     const multiplier = direction === 'asc' ? 1 : -1
     return [...recordIds].sort((leftId, rightId) => {
@@ -447,7 +485,10 @@ export class FollowUpsService {
       record.targetId,
       true,
     )
-    await this.prisma8.client.orm.public.FollowUpRecords.where({ id, tenantId: user.tenantId }).delete()
+    await this.prisma8.client.orm.public.FollowUpRecords.where({
+      id,
+      tenantId: user.tenantId,
+    }).delete()
     return { id }
   }
 
@@ -479,20 +520,22 @@ export class FollowUpsService {
         : write
           ? 'customer:update'
           : 'customer:read'
-      if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无客户跟进权限')
+      if (!hasPermission(user.permissions, permission))
+        throw new ForbiddenException('无客户跟进权限')
       return
     }
     if (targetType === 'lead') {
       const lead = await this.prisma8.client.orm.public.Clue.where({
-        id: prisma8Varchar(targetId, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: targetId,
+        organizationId: user.tenantId,
       })
         .select('owner', 'inSharedPool', 'poolId')
         .first()
       if (!lead) throw new NotFoundException('线索不存在')
       if (lead.inSharedPool) {
         const permission = write ? 'leadPool:update' : 'leadPool:read'
-        if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无线索池跟进权限')
+        if (!hasPermission(user.permissions, permission))
+          throw new ForbiddenException('无线索池跟进权限')
         const poolIds = (await this.pools.options(user, 'lead')).map((pool) => String(pool.id))
         if (!lead.poolId || !poolIds.includes(String(lead.poolId))) {
           throw new NotFoundException('线索不存在或无权访问')
@@ -500,22 +543,33 @@ export class FollowUpsService {
         return
       }
       const permission = write ? 'lead:update' : 'menu:lead'
-      if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无线索跟进权限')
-      if (!(await this.dataScope.matchesDirectOwner(user, lead.owner ? String(lead.owner) : null, permission))) {
+      if (!hasPermission(user.permissions, permission))
+        throw new ForbiddenException('无线索跟进权限')
+      if (
+        !(await this.dataScope.matchesDirectOwner(
+          user,
+          lead.owner ? String(lead.owner) : null,
+          permission,
+        ))
+      ) {
         throw new NotFoundException('线索不存在或不在你的数据范围内')
       }
       return
     }
     if (targetType === 'opportunity') {
       const permission = write ? 'opportunity:update' : 'menu:opportunity'
-      if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无商机跟进权限')
+      if (!hasPermission(user.permissions, permission))
+        throw new ForbiddenException('无商机跟进权限')
       const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
-        id: prisma8Varchar(targetId, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: targetId,
+        organizationId: user.tenantId,
       })
         .select('owner')
         .first()
-      if (!opportunity || !(await this.dataScope.matchesDirectOwner(user, String(opportunity.owner), permission))) {
+      if (
+        !opportunity ||
+        !(await this.dataScope.matchesDirectOwner(user, String(opportunity.owner), permission))
+      ) {
         throw new NotFoundException('商机不存在或不在你的数据范围内')
       }
     }
@@ -527,85 +581,135 @@ export class FollowUpsService {
     const canCustomer = hasPermission(user.permissions, 'customer:read')
     const canCustomerPool = hasPermission(user.permissions, 'customerPool:read')
     const canOpportunity = hasPermission(user.permissions, 'menu:opportunity')
-    const [leadScope, customerScope, opportunityScope, leadPoolOptions, customerPoolOptions] = await Promise.all([
-      canLead ? this.dataScope.directOwnerFilter(user, 'menu:lead') : null,
-      canCustomer ? this.dataScope.directOwnerFilter(user, 'customer:read') : null,
-      canOpportunity ? this.dataScope.directOwnerFilter(user, 'menu:opportunity') : null,
-      canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
-      canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
-    ])
-    const applyOwnerScope = <T extends ReturnType<typeof this.prisma8.client.orm.public.Clue.where>>(query: T, scope: any): T => {
+    const [leadScope, customerScope, opportunityScope, leadPoolOptions, customerPoolOptions] =
+      await Promise.all([
+        canLead ? this.dataScope.directOwnerFilter(user, 'menu:lead') : null,
+        canCustomer ? this.dataScope.directOwnerFilter(user, 'customer:read') : null,
+        canOpportunity ? this.dataScope.directOwnerFilter(user, 'menu:opportunity') : null,
+        canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
+        canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
+      ])
+    const applyOwnerScope = <
+      T extends ReturnType<typeof this.prisma8.client.orm.public.Clue.where>,
+    >(
+      query: T,
+      scope: any,
+    ): T => {
       const owner = scope?.owner
       if (!owner) return query
-      return (typeof owner === 'string'
-        ? query.where({ owner: prisma8Varchar(owner, 32) })
-        : query.where((row: any) => row.owner.in(prisma8Varchars(owner.in, 32)))) as T
+      return (
+        typeof owner === 'string'
+          ? query.where({ owner: owner })
+          : query.where((row: any) => row.owner.in(owner.in))
+      ) as T
     }
     let directLeadQuery = this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       inSharedPool: false,
     })
     if (leadScope) directLeadQuery = applyOwnerScope(directLeadQuery, leadScope)
     let directCustomerQuery = this.prisma8.client.orm.public.Customer.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       inSharedPool: false,
     })
     const customerOwner = (customerScope as any)?.owner
     if (customerOwner) {
-      directCustomerQuery = typeof customerOwner === 'string'
-        ? directCustomerQuery.where({ owner: prisma8Varchar(customerOwner, 32) })
-        : directCustomerQuery.where((row) => row.owner.in(prisma8Varchars(customerOwner.in, 32)))
+      directCustomerQuery =
+        typeof customerOwner === 'string'
+          ? directCustomerQuery.where({ owner: customerOwner })
+          : directCustomerQuery.where((row) => row.owner.in(customerOwner.in))
     }
     let opportunityQuery = this.prisma8.client.orm.public.Opportunity.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
     const opportunityOwner = (opportunityScope as any)?.owner
     if (opportunityOwner) {
-      opportunityQuery = typeof opportunityOwner === 'string'
-        ? opportunityQuery.where({ owner: prisma8Varchar(opportunityOwner, 32) })
-        : opportunityQuery.where((row) => row.owner.in(prisma8Varchars(opportunityOwner.in, 32)))
+      opportunityQuery =
+        typeof opportunityOwner === 'string'
+          ? opportunityQuery.where({ owner: opportunityOwner })
+          : opportunityQuery.where((row) => row.owner.in(opportunityOwner.in))
     }
     const collaborationRows = canCustomer
-      ? await this.prisma8.client.orm.public.CustomerCollaboration.where({ userId: prisma8Varchar(user.id, 32) })
+      ? await this.prisma8.client.orm.public.CustomerCollaboration.where({ userId: user.id })
           .select('customerId')
           .all()
       : []
     const collaborationIds = collaborationRows.map((item) => String(item.customerId))
-    const [directLeads, poolLeads, directCustomers, collaborativeCustomers, poolCustomers, opportunities] = await Promise.all([
+    const [
+      directLeads,
+      poolLeads,
+      directCustomers,
+      collaborativeCustomers,
+      poolCustomers,
+      opportunities,
+    ] = await Promise.all([
       leadScope ? directLeadQuery.select('id').all() : Promise.resolve([]),
       canLeadPool && leadPoolOptions.length
         ? this.prisma8.client.orm.public.Clue.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
             inSharedPool: true,
-          }).where((row) => row.poolId.in(prisma8Varchars(leadPoolOptions.map((item) => String(item.id)), 32))).select('id').all()
+          })
+            .where((row) => row.poolId.in(leadPoolOptions.map((item) => String(item.id))))
+            .select('id')
+            .all()
         : Promise.resolve([]),
       customerScope ? directCustomerQuery.select('id').all() : Promise.resolve([]),
       collaborationIds.length
         ? this.prisma8.client.orm.public.Customer.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
             inSharedPool: false,
-          }).where((row) => row.id.in(prisma8Varchars(collaborationIds, 32))).select('id').all()
+          })
+            .where((row) => row.id.in(collaborationIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
       canCustomerPool && customerPoolOptions.length
         ? this.prisma8.client.orm.public.Customer.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
             inSharedPool: true,
-          }).where((row) => row.poolId.in(prisma8Varchars(customerPoolOptions.map((item) => String(item.id)), 32))).select('id').all()
+          })
+            .where((row) => row.poolId.in(customerPoolOptions.map((item) => String(item.id))))
+            .select('id')
+            .all()
         : Promise.resolve([]),
       opportunityScope ? opportunityQuery.select('id').all() : Promise.resolve([]),
     ])
     const leadIds = [...new Set([...directLeads, ...poolLeads].map((item) => String(item.id)))]
-    const customerIds = [...new Set([...directCustomers, ...collaborativeCustomers, ...poolCustomers].map((item) => String(item.id)))]
+    const customerIds = [
+      ...new Set(
+        [...directCustomers, ...collaborativeCustomers, ...poolCustomers].map((item) =>
+          String(item.id),
+        ),
+      ),
+    ]
     const opportunityIds = opportunities.map((item) => String(item.id))
     const groups = await Promise.all([
       leadIds.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId, targetType: 'lead' }).where((row) => row.targetId.in(leadIds)).select('id').all()
+        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+            tenantId: user.tenantId,
+            targetType: 'lead',
+          })
+            .where((row) => row.targetId.in(leadIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
       customerIds.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId, targetType: 'customer' }).where((row) => row.targetId.in(customerIds)).select('id').all()
+        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+            tenantId: user.tenantId,
+            targetType: 'customer',
+          })
+            .where((row) => row.targetId.in(customerIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
       opportunityIds.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId, targetType: 'opportunity' }).where((row) => row.targetId.in(opportunityIds)).select('id').all()
+        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+            tenantId: user.tenantId,
+            targetType: 'opportunity',
+          })
+            .where((row) => row.targetId.in(opportunityIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
     ])
     return [...new Set(groups.flat().map((item) => item.id))]
@@ -613,19 +717,59 @@ export class FollowUpsService {
 
   private async keywordRecordIds(tenantId: string, keyword: string): Promise<string[]> {
     const [leads, customers, opportunities, direct] = await Promise.all([
-      this.prisma8.client.orm.public.Clue.where({ organizationId: prisma8Varchar(tenantId, 32) }).where((row) => row.name.ilike(`%${keyword}%`)).select('id').all(),
-      this.prisma8.client.orm.public.Customer.where({ organizationId: prisma8Varchar(tenantId, 32) }).where((row) => row.name.ilike(`%${keyword}%`)).select('id').all(),
-      this.prisma8.client.orm.public.Opportunity.where({ organizationId: prisma8Varchar(tenantId, 32) }).where((row) => row.name.ilike(`%${keyword}%`)).select('id').all(),
-      this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId }).where((row) =>
-        or(row.content.ilike(`%${keyword}%`), row._type.ilike(`%${keyword}%`), row.ownerName.ilike(`%${keyword}%`)),
-      ).select('id').all(),
+      this.prisma8.client.orm.public.Clue.where({ organizationId: tenantId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma8.client.orm.public.Customer.where({ organizationId: tenantId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma8.client.orm.public.Opportunity.where({ organizationId: tenantId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId })
+        .where((row) =>
+          or(
+            row.content.ilike(`%${keyword}%`),
+            row._type.ilike(`%${keyword}%`),
+            row.ownerName.ilike(`%${keyword}%`),
+          ),
+        )
+        .select('id')
+        .all(),
     ])
     const [leadRecords, customerRecords, opportunityRecords] = await Promise.all([
-      leads.length ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'lead' }).where((row) => row.targetId.in(leads.map((item) => String(item.id)))).select('id').all() : Promise.resolve([]),
-      customers.length ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'customer' }).where((row) => row.targetId.in(customers.map((item) => String(item.id)))).select('id').all() : Promise.resolve([]),
-      opportunities.length ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'opportunity' }).where((row) => row.targetId.in(opportunities.map((item) => String(item.id)))).select('id').all() : Promise.resolve([]),
+      leads.length
+        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'lead' })
+            .where((row) => row.targetId.in(leads.map((item) => String(item.id))))
+            .select('id')
+            .all()
+        : Promise.resolve([]),
+      customers.length
+        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'customer' })
+            .where((row) => row.targetId.in(customers.map((item) => String(item.id))))
+            .select('id')
+            .all()
+        : Promise.resolve([]),
+      opportunities.length
+        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+            tenantId,
+            targetType: 'opportunity',
+          })
+            .where((row) => row.targetId.in(opportunities.map((item) => String(item.id))))
+            .select('id')
+            .all()
+        : Promise.resolve([]),
     ])
-    return [...new Set([...direct, ...leadRecords, ...customerRecords, ...opportunityRecords].map((item) => item.id))]
+    return [
+      ...new Set(
+        [...direct, ...leadRecords, ...customerRecords, ...opportunityRecords].map(
+          (item) => item.id,
+        ),
+      ),
+    ]
   }
 
   private async filterIds(
@@ -724,7 +868,10 @@ export class FollowUpsService {
             return condition.value.map((item) => String(item))
           })()
         : [String(condition.value)]
-    if (key === 'targetType' && values.some((value) => !['lead', 'customer', 'opportunity'].includes(value))) {
+    if (
+      key === 'targetType' &&
+      values.some((value) => !['lead', 'customer', 'opportunity'].includes(value))
+    ) {
       throw new BadRequestException('关联类型筛选值不合法')
     }
     const value = values[0]!
@@ -812,8 +959,8 @@ export class FollowUpsService {
     let customerId: string | null = targetType === 'customer' ? targetId : null
     if (targetType === 'opportunity') {
       const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
-        id: prisma8Varchar(targetId, 32),
-        organizationId: prisma8Varchar(tenantId, 32),
+        id: targetId,
+        organizationId: tenantId,
       })
         .select('customerId')
         .first()
@@ -821,9 +968,9 @@ export class FollowUpsService {
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
     const contact = await this.prisma8.client.orm.public.CustomerContact.where({
-      id: prisma8Varchar(contactId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
-      customerId: prisma8Varchar(customerId, 32),
+      id: contactId,
+      organizationId: tenantId,
+      customerId: customerId,
     })
       .select('id')
       .first()
@@ -842,31 +989,31 @@ export class FollowUpsService {
     switch (targetType) {
       case 'lead':
         await tx.orm.public.Clue.where({
-          id: prisma8Varchar(targetId, 32),
-          organizationId: prisma8Varchar(tenantId, 32),
+          id: targetId,
+          organizationId: tenantId,
         }).updateAndCount({
           followTime: directNow,
-          follower: prisma8Varchar(ownerId, 32),
+          follower: ownerId,
           updateTime: directNow,
         })
         break
       case 'customer':
         await tx.orm.public.Customer.where({
-          id: prisma8Varchar(targetId, 32),
-          organizationId: prisma8Varchar(tenantId, 32),
+          id: targetId,
+          organizationId: tenantId,
         }).updateAndCount({
           followTime: directNow,
-          follower: prisma8Varchar(ownerId, 32),
+          follower: ownerId,
           updateTime: directNow,
         })
         break
       case 'opportunity':
         await tx.orm.public.Opportunity.where({
-          id: prisma8Varchar(targetId, 32),
-          organizationId: prisma8Varchar(tenantId, 32),
+          id: targetId,
+          organizationId: tenantId,
         }).updateAndCount({
           followTime: directNow,
-          follower: prisma8Varchar(ownerId, 32),
+          follower: ownerId,
           updateTime: directNow,
         })
         break
@@ -951,33 +1098,33 @@ export class FollowUpsService {
       this.fieldValues.load(user.tenantId, 'followRecord', ids),
       leadIds.length
         ? this.prisma8.client.orm.public.Clue.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
-            .where((row) => row.id.in(prisma8Varchars(leadIds, 32)))
+            .where((row) => row.id.in(leadIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
       customerIds.length
         ? this.prisma8.client.orm.public.Customer.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
-            .where((row) => row.id.in(prisma8Varchars(customerIds, 32)))
+            .where((row) => row.id.in(customerIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
       opportunityIds.length
         ? this.prisma8.client.orm.public.Opportunity.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
-            .where((row) => row.id.in(prisma8Varchars(opportunityIds, 32)))
+            .where((row) => row.id.in(opportunityIds))
             .select('id', 'name', 'customerId')
             .all()
         : Promise.resolve([]),
       contactIds.length
         ? this.prisma8.client.orm.public.CustomerContact.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
-            .where((row) => row.id.in(prisma8Varchars(contactIds, 32)))
+            .where((row) => row.id.in(contactIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
@@ -987,7 +1134,12 @@ export class FollowUpsService {
       ...customers.map((item) => [`customer:${String(item.id)}`, item.name] as const),
       ...opportunities.map((item) => [`opportunity:${String(item.id)}`, item.name] as const),
     ])
-    const opportunityCustomerMap = new Map(opportunities.map((item) => [String(item.id), item.customerId ? String(item.customerId) : null]))
+    const opportunityCustomerMap = new Map(
+      opportunities.map((item) => [
+        String(item.id),
+        item.customerId ? String(item.customerId) : null,
+      ]),
+    )
     const contactMap = new Map(contacts.map((item) => [String(item.id), item.name]))
     return records.map((record) => {
       const dynamicValues = dynamic.get(record.id) ?? {}

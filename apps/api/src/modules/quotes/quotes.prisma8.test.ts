@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { QuotesService } from './quotes.service'
 
@@ -70,35 +70,31 @@ test(
 
     try {
       const now = BigInt(Date.now())
-      const org = prisma8Varchar(organizationId, 32)
-      const actor = prisma8Varchar(actorId, 32)
-      const stage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('报价专项阶段', 16),
-          _type: prisma8Varchar('AFOOT', 50),
-          rate: prisma8Varchar('50', 10),
-          pos: 1n,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const opportunity = await prisma8Client.orm.public.Opportunity
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('报价专项商机', 255),
-          organizationId: org,
-          stage: stage.id,
-          owner: actor,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
+      const org = organizationId
+      const actor = actorId
+      const stage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '报价专项阶段',
+        _type: 'AFOOT',
+        rate: '50',
+        pos: 1n,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const opportunity = await prisma8Client.orm.public.Opportunity.select('id').create({
+        id: createLegacyId32(),
+        name: '报价专项商机',
+        organizationId: org,
+        stage: stage.id,
+        owner: actor,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
 
       const created = await service.create(user, {
         name: 'Prisma8 报价',
@@ -129,7 +125,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.OpportunityQuotation.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('invalid')
             .first()
@@ -142,7 +138,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.OpportunityQuotation.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('id')
             .all()
@@ -150,10 +146,12 @@ test(
         0,
       )
     } finally {
-      const org = prisma8Varchar(organizationId, 32)
+      const org = organizationId
       await prisma8Client.orm.public.OpportunityQuotation.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.Opportunity.where({ organizationId: org }).deleteAll()
-      await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.OpportunityStageConfig.where({
+        organizationId: org,
+      }).deleteAll()
       await testDb.close()
     }
   },

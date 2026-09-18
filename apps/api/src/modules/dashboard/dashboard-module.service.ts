@@ -1,7 +1,12 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { DashboardAccessService } from './dashboard-access.service'
 import {
   DashboardModuleAddDto,
@@ -31,8 +36,8 @@ export class DashboardModuleService {
 
   private async assertModule(user: AuthUser, id: string) {
     const row = await this.prisma8.client.orm.public.DashboardModule.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('仪表板文件夹不存在')
     return row
@@ -43,11 +48,16 @@ export class DashboardModuleService {
     await this.assertModule(user, parentId)
   }
 
-  private async assertNameUnique(user: AuthUser, parentId: string, name: string, excludeId?: string) {
+  private async assertNameUnique(
+    user: AuthUser,
+    parentId: string,
+    name: string,
+    excludeId?: string,
+  ) {
     const duplicate = await this.prisma8.client.orm.public.DashboardModule.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      parentId: prisma8Varchar(parentId, 32),
-      name: prisma8Varchar(name.trim(), 255),
+      organizationId: user.tenantId,
+      parentId: parentId,
+      name: name.trim(),
     })
       .select('id')
       .first()
@@ -58,8 +68,8 @@ export class DashboardModuleService {
 
   private async nextPos(user: AuthUser, parentId: string) {
     const rows = await this.prisma8.client.orm.public.DashboardModule.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      parentId: prisma8Varchar(parentId, 32),
+      organizationId: user.tenantId,
+      parentId: parentId,
     })
       .select('pos')
       .all()
@@ -90,15 +100,15 @@ export class DashboardModuleService {
     await this.assertNameUnique(user, dto.parentId, dto.name)
     const now = BigInt(Date.now())
     const row = await this.prisma8.client.orm.public.DashboardModule.create({
-      id: prisma8Id32(),
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      name: prisma8Varchar(dto.name.trim(), 255),
-      parentId: prisma8Varchar(dto.parentId, 32),
+      id: createLegacyId32(),
+      organizationId: user.tenantId,
+      name: dto.name.trim(),
+      parentId: dto.parentId,
       pos: await this.nextPos(user, dto.parentId),
       createTime: now,
       updateTime: now,
-      createUser: prisma8Varchar(user.id, 32),
-      updateUser: prisma8Varchar(user.id, 32),
+      createUser: user.id,
+      updateUser: user.id,
     })
     return this.mapModule(row)
   }
@@ -107,12 +117,12 @@ export class DashboardModuleService {
     const original = await this.assertModule(user, dto.id)
     await this.assertNameUnique(user, original.parentId, dto.name, dto.id)
     const row = await this.prisma8.client.orm.public.DashboardModule.where({
-      id: prisma8Varchar(dto.id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: dto.id,
+      organizationId: user.tenantId,
     }).update({
-      name: prisma8Varchar(dto.name.trim(), 255),
+      name: dto.name.trim(),
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
+      updateUser: user.id,
     })
     if (!row) throw new NotFoundException('仪表板文件夹不存在')
     return this.mapModule(row)
@@ -120,22 +130,22 @@ export class DashboardModuleService {
 
   async remove(user: AuthUser, rawIds: string[]) {
     const ids = [...new Set(rawIds)]
-    const varcharIds = prisma8Varchars(ids, 32)
+    const varcharIds = ids
     const rows = await this.prisma8.client.orm.public.DashboardModule.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .where((row) => row.id.in(varcharIds))
       .all()
     if (rows.length !== ids.length) throw new NotFoundException('存在无效仪表板文件夹')
     const [dashboards, children] = await Promise.all([
       this.prisma8.client.orm.public.Dashboard.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .where((row) => row.dashboardModuleId.in(varcharIds))
         .select('id')
         .all(),
       this.prisma8.client.orm.public.DashboardModule.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .where((row) => row.parentId.in(varcharIds))
         .select('id', 'parentId')
@@ -147,7 +157,7 @@ export class DashboardModuleService {
       throw new BadRequestException('文件夹下存在子文件夹，不能删除')
     }
     await this.prisma8.client.orm.public.DashboardModule.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .where((row) => row.id.in(varcharIds))
       .deleteAll()
@@ -177,19 +187,19 @@ export class DashboardModuleService {
   async tree(user: AuthUser) {
     const [modules, dashboards] = await Promise.all([
       this.prisma8.client.orm.public.DashboardModule.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       }).all(),
       this.prisma8.client.orm.public.Dashboard.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       }).all(),
     ])
     const visibleIds = await this.access.visibleDashboardIds(user, dashboards)
     const visibleDashboardIds = [...visibleIds]
     const collections = visibleDashboardIds.length
       ? await this.prisma8.client.orm.public.DashboardCollection.where({
-          userId: prisma8Varchar(user.id, 32),
+          userId: user.id,
         })
-          .where((row) => row.dashboardId.in(prisma8Varchars(visibleDashboardIds, 32)))
+          .where((row) => row.dashboardId.in(visibleDashboardIds))
           .select('dashboardId')
           .all()
       : []
@@ -220,12 +230,12 @@ export class DashboardModuleService {
   async count(user: AuthUser) {
     const [modules, dashboards] = await Promise.all([
       this.prisma8.client.orm.public.DashboardModule.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .select('id', 'parentId')
         .all(),
       this.prisma8.client.orm.public.Dashboard.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       }).all(),
     ])
     const visibleIds = await this.access.visibleDashboardIds(user, dashboards)
@@ -233,17 +243,19 @@ export class DashboardModuleService {
     const myCollect = visibleDashboardIds.length
       ? (
           await this.prisma8.client.orm.public.DashboardCollection.where({
-            userId: prisma8Varchar(user.id, 32),
+            userId: user.id,
           })
-            .where((row) => row.dashboardId.in(prisma8Varchars(visibleDashboardIds, 32)))
+            .where((row) => row.dashboardId.in(visibleDashboardIds))
             .select('id')
             .all()
         ).length
       : 0
     const direct = new Map<string, number>()
-    dashboards.filter((row) => visibleIds.has(row.id)).forEach((row) => {
-      direct.set(row.dashboardModuleId, (direct.get(row.dashboardModuleId) ?? 0) + 1)
-    })
+    dashboards
+      .filter((row) => visibleIds.has(row.id))
+      .forEach((row) => {
+        direct.set(row.dashboardModuleId, (direct.get(row.dashboardModuleId) ?? 0) + 1)
+      })
     const children = new Map<string, string[]>()
     modules.forEach((row) => {
       const list = children.get(row.parentId) ?? []
@@ -254,7 +266,9 @@ export class DashboardModuleService {
     const countOne = (id: string, visiting = new Set<string>()): number => {
       if (visiting.has(id)) return 0
       const next = new Set(visiting).add(id)
-      const total = (direct.get(id) ?? 0) + (children.get(id) ?? []).reduce((sum, child) => sum + countOne(child, next), 0)
+      const total =
+        (direct.get(id) ?? 0) +
+        (children.get(id) ?? []).reduce((sum, child) => sum + countOne(child, next), 0)
       result[id] = total
       return total
     }
@@ -266,7 +280,7 @@ export class DashboardModuleService {
     if (newParentId === 'NONE') return
     if (newParentId === dragId) throw new BadRequestException('文件夹不能移动到自身')
     const modules = await this.prisma8.client.orm.public.DashboardModule.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select('id', 'parentId')
       .all()
@@ -281,18 +295,20 @@ export class DashboardModuleService {
   }
 
   async move(user: AuthUser, dto: DashboardModuleMoveDto) {
-    if (dto.dragNodeId === dto.dropNodeId) throw new BadRequestException('拖拽节点和目标节点不能相同')
+    if (dto.dragNodeId === dto.dropNodeId)
+      throw new BadRequestException('拖拽节点和目标节点不能相同')
     const [drag, drop] = await Promise.all([
       this.assertModule(user, dto.dragNodeId),
       this.assertModule(user, dto.dropNodeId),
     ])
     const newParentId = dto.dropPosition === 0 ? drop.id : drop.parentId
     await this.assertNoCycle(user, drag.id, newParentId)
-    if (drag.parentId !== newParentId) await this.assertNameUnique(user, newParentId, drag.name, drag.id)
+    if (drag.parentId !== newParentId)
+      await this.assertNameUnique(user, newParentId, drag.name, drag.id)
 
     await this.prisma8.client.transaction(async (tx) => {
       const sourceRows = await tx.orm.public.DashboardModule.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         parentId: drag.parentId,
       })
         .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
@@ -302,8 +318,8 @@ export class DashboardModuleService {
         drag.parentId === newParentId
           ? sourceRows
           : await tx.orm.public.DashboardModule.where({
-              organizationId: prisma8Varchar(user.tenantId, 32),
-              parentId: prisma8Varchar(newParentId, 32),
+              organizationId: user.tenantId,
+              parentId: newParentId,
             })
               .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
               .select('id')
@@ -320,18 +336,18 @@ export class DashboardModuleService {
 
       const moved = await tx.orm.public.DashboardModule.where({
         id: drag.id,
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       }).update({
-        parentId: prisma8Varchar(newParentId, 32),
+        parentId: newParentId,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!moved) throw new NotFoundException('仪表板文件夹不存在')
       const reindex = async (orderedIds: readonly string[]) => {
         for (let index = 0; index < orderedIds.length; index++) {
           await tx.orm.public.DashboardModule.where({
-            id: prisma8Varchar(orderedIds[index]!, 32),
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            id: orderedIds[index]!,
+            organizationId: user.tenantId,
           }).update({ pos: BigInt(index + 1) * POS_STEP })
         }
       }

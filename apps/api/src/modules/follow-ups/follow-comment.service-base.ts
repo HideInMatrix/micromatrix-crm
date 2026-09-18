@@ -10,7 +10,7 @@ import { withOperationLogResult } from '../../common/decorators/log-operation.de
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import type {
   AddFollowCommentDto,
@@ -399,8 +399,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       return (
         (
           await this.prisma8.client.orm.public.Clue.where({
-            id: prisma8Varchar(resource.targetId, 32),
-            organizationId: prisma8Varchar(tenantId, 32),
+            id: resource.targetId,
+            organizationId: tenantId,
           })
             .select('name')
             .first()
@@ -411,8 +411,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       return (
         (
           await this.prisma8.client.orm.public.Opportunity.where({
-            id: prisma8Varchar(resource.targetId, 32),
-            organizationId: prisma8Varchar(tenantId, 32),
+            id: resource.targetId,
+            organizationId: tenantId,
           })
             .select('name')
             .first()
@@ -422,8 +422,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     return (
       (
         await this.prisma8.client.orm.public.Customer.where({
-          id: prisma8Varchar(resource.targetId, 32),
-          organizationId: prisma8Varchar(tenantId, 32),
+          id: resource.targetId,
+          organizationId: tenantId,
         })
           .select('name')
           .first()

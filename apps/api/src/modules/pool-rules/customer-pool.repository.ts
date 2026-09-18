@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import { not } from '@prisma/orm-postgres/orm-client'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import type {
   CapacityExclusionCondition,
@@ -21,7 +21,10 @@ import {
   startOfLocalDay,
 } from './pool-repository.helpers'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
-import { acquirePoolTransactionLocksPrisma8, poolTransactionLockKeys } from './pool-transaction-lock'
+import {
+  acquirePoolTransactionLocksPrisma8,
+  poolTransactionLockKeys,
+} from './pool-transaction-lock'
 
 type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
 
@@ -57,16 +60,22 @@ export class CustomerPoolRepository {
 
   async listPools(organizationId: string) {
     const pools = await this.prisma8.client.orm.public.CustomerPool.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
       .orderBy((pool) => pool.createTime.asc())
       .all()
     if (!pools.length) return []
     const poolIds = pools.map((pool) => pool.id)
     const [hiddenFields, pickRules, recycleRules] = await Promise.all([
-      this.prisma8.client.orm.public.CustomerPoolHiddenField.where((row) => row.poolId.in(poolIds)).all(),
-      this.prisma8.client.orm.public.CustomerPoolPickRule.where((row) => row.poolId.in(poolIds)).all(),
-      this.prisma8.client.orm.public.CustomerPoolRecycleRule.where((row) => row.poolId.in(poolIds)).all(),
+      this.prisma8.client.orm.public.CustomerPoolHiddenField.where((row) =>
+        row.poolId.in(poolIds),
+      ).all(),
+      this.prisma8.client.orm.public.CustomerPoolPickRule.where((row) =>
+        row.poolId.in(poolIds),
+      ).all(),
+      this.prisma8.client.orm.public.CustomerPoolRecycleRule.where((row) =>
+        row.poolId.in(poolIds),
+      ).all(),
     ])
     return pools.map((pool) => ({
       ...pool,
@@ -78,7 +87,7 @@ export class CustomerPoolRepository {
 
   listCapacities(organizationId: string) {
     return this.prisma8.client.orm.public.CustomerCapacity.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
       .orderBy((row) => row.createTime.desc())
       .all()
@@ -86,8 +95,8 @@ export class CustomerPoolRepository {
 
   async listOwnerHistory(organizationId: string, customerId: string) {
     const customer = await this.prisma8.client.orm.public.Customer.where({
-      id: prisma8Varchar(customerId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: customerId,
+      organizationId: organizationId,
     })
       .select('id')
       .first()
@@ -106,17 +115,17 @@ export class CustomerPoolRepository {
     this.assertPoolConfiguration(input)
     return this.prisma8.client.transaction(async (tx) => {
       const pool = await tx.orm.public.CustomerPool.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(input.name.trim(), 255),
-        organizationId: prisma8Varchar(organizationId, 32),
+        id: createLegacyId32(),
+        name: input.name.trim(),
+        organizationId: organizationId,
         scopeId: JSON.stringify(input.scopeIds),
         ownerId: JSON.stringify(input.ownerIds),
         enable: input.enable,
         auto: input.auto,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(operatorId, 32),
-        updateUser: prisma8Varchar(operatorId, 32),
+        createUser: operatorId,
+        updateUser: operatorId,
       })
       await this.replacePoolRelations(tx, pool.id, operatorId, input, now)
       return this.loadPoolView(tx, pool.id)
@@ -133,15 +142,15 @@ export class CustomerPoolRepository {
     this.assertPoolConfiguration(input)
     return this.prisma8.client.transaction(async (tx) => {
       await this.assertPoolExists(tx, organizationId, poolId)
-      const id = prisma8Varchar(poolId, 32)
+      const id = poolId
       const updated = await tx.orm.public.CustomerPool.where({ id }).update({
-        name: prisma8Varchar(input.name.trim(), 255),
+        name: input.name.trim(),
         scopeId: JSON.stringify(input.scopeIds),
         ownerId: JSON.stringify(input.ownerIds),
         enable: input.enable,
         auto: input.auto,
         updateTime: now,
-        updateUser: prisma8Varchar(operatorId, 32),
+        updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('客户公海不存在')
       await this.replacePoolRelations(tx, id, operatorId, input, now)
@@ -155,7 +164,7 @@ export class CustomerPoolRepository {
       const updated = await tx.orm.public.CustomerPool.where({ id: pool.id }).update({
         enable: !pool.enable,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(operatorId, 32),
+        updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('客户公海不存在')
       return updated
@@ -166,12 +175,11 @@ export class CustomerPoolRepository {
     return this.prisma8.client.transaction(async (tx) => {
       const pool = await this.assertPoolExists(tx, organizationId, poolId)
       const linked = await tx.orm.public.Customer.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
         poolId: pool.id,
         inSharedPool: true,
       }).aggregate((agg) => ({ count: agg.count() }))
-      if (linked.count)
-        throw new BadRequestException('客户公海中仍有未领取客户，不能删除')
+      if (linked.count) throw new BadRequestException('客户公海中仍有未领取客户，不能删除')
       await tx.orm.public.CustomerPool.where({ id: pool.id }).delete()
       return pool
     })
@@ -196,8 +204,8 @@ export class CustomerPoolRepository {
 
   async deleteCapacity(organizationId: string, capacityId: string) {
     const deleted = await this.prisma8.client.orm.public.CustomerCapacity.where({
-      id: prisma8Varchar(capacityId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: capacityId,
+      organizationId: organizationId,
     }).deleteAndCount()
     if (!deleted) throw new NotFoundException('客户库容规则不存在')
     return { id: capacityId }
@@ -227,8 +235,8 @@ export class CustomerPoolRepository {
       poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
     )
     const customer = await tx.orm.public.Customer.where({
-      id: prisma8Varchar(input.customerId, 32),
-      organizationId: prisma8Varchar(input.organizationId, 32),
+      id: input.customerId,
+      organizationId: input.organizationId,
       inSharedPool: false,
     }).first()
     if (!customer) throw new NotFoundException('客户不存在或已在公海中')
@@ -238,28 +246,33 @@ export class CustomerPoolRepository {
 
     const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
     const ownedCount = await tx.orm.public.Customer.where({
-      organizationId: prisma8Varchar(input.organizationId, 32),
-      owner: prisma8Varchar(input.ownerId, 32),
+      organizationId: input.organizationId,
+      owner: input.ownerId,
       inSharedPool: false,
     }).aggregate((aggregate) => ({ count: aggregate.count() }))
     const excludedOwnedCount = capacity
       ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
       : 0
-    this.calculator.assertCapacity(capacity?.capacity ?? null, ownedCount.count, excludedOwnedCount, 1)
+    this.calculator.assertCapacity(
+      capacity?.capacity ?? null,
+      ownedCount.count,
+      excludedOwnedCount,
+      1,
+    )
     await this.appendOwnerHistoryPrisma8(tx, customer, input.operatorId, input.reasonId, now)
     await tx.orm.public.CustomerContact.where({
-      organizationId: prisma8Varchar(input.organizationId, 32),
+      organizationId: input.organizationId,
       customerId: customer.id,
     }).updateAndCount({
-      owner: prisma8Varchar(input.ownerId, 32),
-      updateUser: prisma8Varchar(input.operatorId, 32),
+      owner: input.ownerId,
+      updateUser: input.operatorId,
       updateTime: now,
     })
     const updated = await tx.orm.public.Customer.where({ id: customer.id }).update({
-      owner: prisma8Varchar(input.ownerId, 32),
+      owner: input.ownerId,
       collectionTime: now,
-      reasonId: input.reasonId ? prisma8Varchar(input.reasonId, 32) : null,
-      updateUser: prisma8Varchar(input.operatorId, 32),
+      reasonId: input.reasonId ? input.reasonId : null,
+      updateUser: input.operatorId,
       updateTime: now,
     })
     if (!updated) throw new NotFoundException('客户不存在或已在公海中')
@@ -292,15 +305,15 @@ export class CustomerPoolRepository {
       poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
     )
     const customer = await tx.orm.public.Customer.where({
-      id: prisma8Varchar(input.customerId, 32),
-      organizationId: prisma8Varchar(input.organizationId, 32),
+      id: input.customerId,
+      organizationId: input.organizationId,
     }).first()
     if (!customer) throw new NotFoundException('客户不存在')
     if (!customer.inSharedPool || !customer.poolId)
       throw new ConflictException(`客户「${customer.name}」已被领取或所在公海已禁用`)
     const pool = await tx.orm.public.CustomerPool.where({
       id: customer.poolId,
-      organizationId: prisma8Varchar(input.organizationId, 32),
+      organizationId: input.organizationId,
       enable: true,
     }).first()
     if (!pool) throw new ConflictException(`客户「${customer.name}」已被领取或所在公海已禁用`)
@@ -308,8 +321,8 @@ export class CustomerPoolRepository {
 
     const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
     const owned = tx.orm.public.Customer.where({
-      organizationId: prisma8Varchar(input.organizationId, 32),
-      owner: prisma8Varchar(input.ownerId, 32),
+      organizationId: input.organizationId,
+      owner: input.ownerId,
       inSharedPool: false,
     })
     const [ownedCount, todayPickedCount, previousOwner] = await Promise.all([
@@ -343,25 +356,24 @@ export class CustomerPoolRepository {
 
     const updated = await tx.orm.public.Customer.where({
       id: customer.id,
-      organizationId: prisma8Varchar(input.organizationId, 32),
+      organizationId: input.organizationId,
       poolId: customer.poolId,
       inSharedPool: true,
     }).updateAndCount({
       poolId: null,
       inSharedPool: false,
-      owner: prisma8Varchar(input.ownerId, 32),
+      owner: input.ownerId,
       collectionTime: now,
-      updateUser: prisma8Varchar(input.ownerId, 32),
+      updateUser: input.ownerId,
       updateTime: now,
     })
-    if (updated !== 1)
-      throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
+    if (updated !== 1) throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
     await tx.orm.public.CustomerContact.where({
-      organizationId: prisma8Varchar(input.organizationId, 32),
+      organizationId: input.organizationId,
       customerId: customer.id,
     }).updateAndCount({
-      owner: prisma8Varchar(input.ownerId, 32),
-      updateUser: prisma8Varchar(input.operatorId, 32),
+      owner: input.ownerId,
+      updateUser: input.operatorId,
       updateTime: now,
     })
     const claimed = await tx.orm.public.Customer.where({ id: customer.id }).first()
@@ -384,13 +396,13 @@ export class CustomerPoolRepository {
       )
       const [customer, pool] = await Promise.all([
         tx.orm.public.Customer.where({
-          id: prisma8Varchar(input.customerId, 32),
-          organizationId: prisma8Varchar(input.organizationId, 32),
+          id: input.customerId,
+          organizationId: input.organizationId,
           inSharedPool: false,
         }).first(),
         tx.orm.public.CustomerPool.where({
-          id: prisma8Varchar(input.poolId, 32),
-          organizationId: prisma8Varchar(input.organizationId, 32),
+          id: input.poolId,
+          organizationId: input.organizationId,
           enable: true,
         }).first(),
       ])
@@ -401,11 +413,11 @@ export class CustomerPoolRepository {
 
       await this.appendOwnerHistoryPrisma8(tx, customer, input.operatorId, input.reasonId, now)
       await tx.orm.public.CustomerContact.where({
-        organizationId: prisma8Varchar(input.organizationId, 32),
+        organizationId: input.organizationId,
         customerId: customer.id,
       }).updateAndCount({
-        owner: prisma8Varchar('-', 32),
-        updateUser: prisma8Varchar(input.operatorId, 32),
+        owner: '-',
+        updateUser: input.operatorId,
         updateTime: now,
       })
       const updated = await tx.orm.public.Customer.where({ id: customer.id }).update({
@@ -413,12 +425,8 @@ export class CustomerPoolRepository {
         inSharedPool: true,
         owner: null,
         collectionTime: null,
-        reasonId: automatic
-          ? prisma8Varchar('system', 32)
-          : input.reasonId
-            ? prisma8Varchar(input.reasonId, 32)
-            : null,
-        updateUser: prisma8Varchar(input.operatorId, 32),
+        reasonId: automatic ? 'system' : input.reasonId ? input.reasonId : null,
+        updateUser: input.operatorId,
         updateTime: now,
       })
       if (!updated) throw new NotFoundException('客户不存在或已在公海中')
@@ -426,15 +434,11 @@ export class CustomerPoolRepository {
     })
   }
 
-  private async findCapacity(
-    tx: Prisma8Transaction,
-    organizationId: string,
-    ownerId: string,
-  ) {
+  private async findCapacity(tx: Prisma8Transaction, organizationId: string, ownerId: string) {
     const tokens = await loadUserScopeTokensPrisma8(tx, organizationId, ownerId)
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities = await tx.orm.public.CustomerCapacity.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
       .orderBy((row) => row.createTime.desc())
       .all()
@@ -452,17 +456,15 @@ export class CustomerPoolRepository {
       throw new BadRequestException('库容不能小于 0')
     const now = BigInt(Date.now())
     return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
-        tx,
-        [`pool:customer:${organizationId}:capacity-config`],
-      )
+      await acquirePoolTransactionLocksPrisma8(this.prisma8.client, tx, [
+        `pool:customer:${organizationId}:capacity-config`,
+      ])
       const incoming = await resolveScopeUserIdsPrisma8(tx, organizationId, input.scopeIds)
       let existingQuery = tx.orm.public.CustomerCapacity.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       })
       if (capacityId) {
-        const excluded = prisma8Varchar(capacityId, 32)
+        const excluded = capacityId
         existingQuery = existingQuery.where((row) => row.id.neq(excluded))
       }
       const existing = await existingQuery.all()
@@ -478,20 +480,20 @@ export class CustomerPoolRepository {
       const filter = input.filters?.length ? JSON.stringify(input.filters) : null
       if (!capacityId)
         return tx.orm.public.CustomerCapacity.create({
-          id: prisma8Id32(),
-          organizationId: prisma8Varchar(organizationId, 32),
+          id: createLegacyId32(),
+          organizationId: organizationId,
           scopeId: JSON.stringify(input.scopeIds),
           capacity: input.capacity,
           filter,
           createTime: now,
           updateTime: now,
-          createUser: prisma8Varchar(operatorId, 32),
-          updateUser: prisma8Varchar(operatorId, 32),
+          createUser: operatorId,
+          updateUser: operatorId,
         })
-      const id = prisma8Varchar(capacityId, 32)
+      const id = capacityId
       const current = await tx.orm.public.CustomerCapacity.where({
         id,
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       }).first()
       if (!current) throw new NotFoundException('客户库容规则不存在')
       const updated = await tx.orm.public.CustomerCapacity.where({ id }).update({
@@ -499,7 +501,7 @@ export class CustomerPoolRepository {
         capacity: input.capacity,
         filter,
         updateTime: now,
-        updateUser: prisma8Varchar(operatorId, 32),
+        updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('客户库容规则不存在')
       return updated
@@ -513,7 +515,7 @@ export class CustomerPoolRepository {
     input: DirectPoolConfigurationInput,
     now: bigint,
   ) {
-    const id = prisma8Varchar(poolId, 32)
+    const id = poolId
     await Promise.all([
       tx.orm.public.CustomerPoolHiddenField.where({ poolId: id }).deleteAll(),
       tx.orm.public.CustomerPoolPickRule.where({ poolId: id }).deleteAll(),
@@ -524,12 +526,12 @@ export class CustomerPoolRepository {
       await tx.orm.public.CustomerPoolHiddenField.createAll(
         hiddenFieldIds.map((fieldId) => ({
           poolId: id,
-          fieldId: prisma8Varchar(fieldId, 32),
+          fieldId: fieldId,
         })),
       )
     }
     await tx.orm.public.CustomerPoolPickRule.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       poolId: id,
       limitOnNumber: input.pickRule.limitOnNumber,
       pickNumber: input.pickRule.pickNumber,
@@ -537,27 +539,25 @@ export class CustomerPoolRepository {
       pickIntervalDays: input.pickRule.pickIntervalDays,
       limitNew: input.pickRule.limitNew,
       newPickInterval: input.pickRule.newPickInterval,
-      createUser: prisma8Varchar(operatorId, 32),
+      createUser: operatorId,
       createTime: now,
-      updateUser: prisma8Varchar(operatorId, 32),
+      updateUser: operatorId,
       updateTime: now,
     })
     await tx.orm.public.CustomerPoolRecycleRule.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       poolId: id,
-      operator: input.recycleRule.operator
-        ? prisma8Varchar(input.recycleRule.operator, 10)
-        : null,
+      operator: input.recycleRule.operator ? input.recycleRule.operator : null,
       condition: input.recycleRule.condition,
       createTime: now,
       updateTime: now,
-      createUser: prisma8Varchar(operatorId, 32),
-      updateUser: prisma8Varchar(operatorId, 32),
+      createUser: operatorId,
+      updateUser: operatorId,
     })
   }
 
   private async loadPoolView(tx: Prisma8Transaction, poolId: string) {
-    const id = prisma8Varchar(poolId, 32)
+    const id = poolId
     const pool = await tx.orm.public.CustomerPool.where({ id }).first()
     if (!pool) throw new NotFoundException('客户公海不存在')
     const [hiddenFields, pickRule, recycleRule] = await Promise.all([
@@ -578,14 +578,10 @@ export class CustomerPoolRepository {
       throw new BadRequestException('启用新数据限制时必须填写冷却天数')
   }
 
-  private async assertPoolExists(
-    tx: Prisma8Transaction,
-    organizationId: string,
-    poolId: string,
-  ) {
+  private async assertPoolExists(tx: Prisma8Transaction, organizationId: string, poolId: string) {
     const pool = await tx.orm.public.CustomerPool.where({
-      id: prisma8Varchar(poolId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: poolId,
+      organizationId: organizationId,
     }).first()
     if (!pool) throw new NotFoundException('客户公海不存在')
     return pool
@@ -600,8 +596,8 @@ export class CustomerPoolRepository {
     const conditions = this.parseCapacityFilters(rawFilter)
     if (!conditions.length) return 0
     const owned = await tx.orm.public.Customer.where({
-      organizationId: prisma8Varchar(organizationId, 32),
-      owner: prisma8Varchar(ownerId, 32),
+      organizationId: organizationId,
+      owner: ownerId,
       inSharedPool: false,
     })
       .select('id')
@@ -611,10 +607,10 @@ export class CustomerPoolRepository {
     for (const condition of conditions) {
       const customerIds = [...matches]
       if (!customerIds.length) return 0
-      const stageIds = prisma8Varchars(condition.value, 32)
+      const stageIds = condition.value
       let opportunities = tx.orm.public.Opportunity.where({
-        organizationId: prisma8Varchar(organizationId, 32),
-      }).where((row) => row.customerId.in(prisma8Varchars(customerIds, 32)))
+        organizationId: organizationId,
+      }).where((row) => row.customerId.in(customerIds))
       opportunities =
         condition.operator === 'IN'
           ? opportunities.where((row) => row.stage.in(stageIds))
@@ -663,14 +659,13 @@ export class CustomerPoolRepository {
     if (!customer.owner || customer.collectionTime === null)
       throw new BadRequestException('客户负责人历史快照不完整')
     return tx.orm.public.CustomerOwner.create({
-      id: prisma8Id32(),
-      customerId: prisma8Varchar(customer.id, 32),
-      owner: prisma8Varchar(customer.owner, 32),
+      id: createLegacyId32(),
+      customerId: customer.id,
+      owner: customer.owner,
       collectionTime: customer.collectionTime,
       endTime,
-      operator: prisma8Varchar(operatorId, 32),
-      reasonId:
-        reasonId && reasonId !== 'system' ? prisma8Varchar(reasonId, 32) : null,
+      operator: operatorId,
+      reasonId: reasonId && reasonId !== 'system' ? reasonId : null,
     })
   }
 

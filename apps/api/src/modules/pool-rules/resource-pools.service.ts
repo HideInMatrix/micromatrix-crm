@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
@@ -109,15 +109,15 @@ export class ResourcePoolsService {
       module === 'lead'
         ? (
             await this.prisma8.client.orm.public.Clue.where({
-              organizationId: prisma8Varchar(organizationId, 32),
-              owner: prisma8Varchar(ownerId, 32),
+              organizationId: organizationId,
+              owner: ownerId,
               inSharedPool: false,
             }).aggregate((agg) => ({ count: agg.count() }))
           ).count
         : (
             await this.prisma8.client.orm.public.Customer.where({
-              organizationId: prisma8Varchar(organizationId, 32),
-              owner: prisma8Varchar(ownerId, 32),
+              organizationId: organizationId,
+              owner: ownerId,
               inSharedPool: false,
             }).aggregate((agg) => ({ count: agg.count() }))
           ).count
@@ -199,7 +199,10 @@ export class ResourcePoolsService {
     if (!user) return new Set()
 
     const tokens = new Set([user.id, `user:${user.id}`])
-    const links = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, userId: user.id })
+    const links = await this.prisma8.client.orm.public.UserRoles.where({
+      tenantId,
+      userId: user.id,
+    })
       .select('roleId')
       .all()
     for (const link of links) {

@@ -9,7 +9,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import {
@@ -57,19 +57,22 @@ export class ApprovalResourceService {
       quote: {
         rootKey: 'quotation',
         targetInfo: (tenantId, targetId) => this.quotationTargetInfo(tenantId, targetId),
-        setStatus: (tenantId, targetId, status) => this.setQuotationStatus(tenantId, targetId, status),
+        setStatus: (tenantId, targetId, status) =>
+          this.setQuotationStatus(tenantId, targetId, status),
         delete: (tenantId, targetId) => this.deleteQuotation(tenantId, targetId),
       },
       contract: {
         rootKey: 'contract',
         targetInfo: (tenantId, targetId) => this.contractTargetInfo(tenantId, targetId),
-        setStatus: (tenantId, targetId, status) => this.setContractStatus(tenantId, targetId, status),
+        setStatus: (tenantId, targetId, status) =>
+          this.setContractStatus(tenantId, targetId, status),
         delete: (tenantId, targetId) => this.deleteContract(tenantId, targetId),
       },
       invoice: {
         rootKey: 'invoice',
         targetInfo: (tenantId, targetId) => this.invoiceTargetInfo(tenantId, targetId),
-        setStatus: (tenantId, targetId, status) => this.setInvoiceStatus(tenantId, targetId, status),
+        setStatus: (tenantId, targetId, status) =>
+          this.setInvoiceStatus(tenantId, targetId, status),
         delete: (tenantId, targetId) => this.deleteInvoice(tenantId, targetId),
       },
       order: {
@@ -113,7 +116,10 @@ export class ApprovalResourceService {
     module: ApprovalModule,
     targetId: string,
   ): Promise<Record<string, unknown>> {
-    const captured = (await this.capture(user, module, targetId)) as unknown as Record<string, unknown>
+    const captured = (await this.capture(user, module, targetId)) as unknown as Record<
+      string,
+      unknown
+    >
     const values: Record<string, unknown> = {
       ...this.asRecord(captured[this.handlers[module].rootKey]),
     }
@@ -141,16 +147,18 @@ export class ApprovalResourceService {
       const permissionType = forceView ? 'VIEW' : (permissionMap.get(field.id) ?? 'VIEW')
       if (permissionType === 'HIDDEN') return []
       const rawValue = field.system ? values[field.key] : values[field.id]
-      return [{
-        fieldId: field.id,
-        key: field.key,
-        label: field.label,
-        type: field.type,
-        required: field.required,
-        options: field.options,
-        value: this.approvalFieldValue(field, rawValue),
-        permissionType,
-      }]
+      return [
+        {
+          fieldId: field.id,
+          key: field.key,
+          label: field.label,
+          type: field.type,
+          required: field.required,
+          options: field.options,
+          value: this.approvalFieldValue(field, rawValue),
+          permissionType,
+        },
+      ]
     })
   }
 
@@ -162,7 +170,10 @@ export class ApprovalResourceService {
     editableFieldIds: ReadonlySet<string>,
   ) {
     await this.targetInfo(user.tenantId, module, targetId)
-    const fields = await this.moduleForms.listFields(user.tenantId, APPROVAL_MODULE_METADATA_KEY[module])
+    const fields = await this.moduleForms.listFields(
+      user.tenantId,
+      APPROVAL_MODULE_METADATA_KEY[module],
+    )
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
     const formType = APPROVAL_MODULE_FORM_TYPE[module]
 
@@ -275,7 +286,10 @@ export class ApprovalResourceService {
 
   async effectApproved(instance: ApprovalResourceInstance) {
     if (instance.executeTiming === 'DELETE') {
-      await this.handlers[instance.module as ApprovalModule].delete(instance.tenantId, instance.targetId)
+      await this.handlers[instance.module as ApprovalModule].delete(
+        instance.tenantId,
+        instance.targetId,
+      )
       return
     }
     if (instance.executeTiming === 'UPDATE') await this.snapshots.clear(instance)
@@ -303,90 +317,114 @@ export class ApprovalResourceService {
     value: unknown,
   ) {
     const now = BigInt(Date.now())
-    const tenantId = prisma8Varchar(user.tenantId, 32)
-    const id = prisma8Varchar(targetId, 32)
-    const updateUser = prisma8Varchar(user.id, 32)
+    const tenantId = user.tenantId
+    const id = targetId
+    const updateUser = user.id
     let count = 0
     if (module === 'quote') {
       if (field.key === 'name') {
-        count = await tx.orm.public.OpportunityQuotation.where({ id, organizationId: tenantId })
-          .updateAndCount({
-            name: prisma8Varchar(this.textFieldValue(field, value, 255)!, 255),
-            updateUser,
-            updateTime: now,
-          })
+        count = await tx.orm.public.OpportunityQuotation.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          name: this.textFieldValue(field, value, 255)!,
+          updateUser,
+          updateTime: now,
+        })
       } else if (field.key === 'untilTime') {
-        count = await tx.orm.public.OpportunityQuotation.where({ id, organizationId: tenantId })
-          .updateAndCount({
-            untilTime: this.dateFieldValue(field, value)!,
-            updateUser,
-            updateTime: now,
-          })
+        count = await tx.orm.public.OpportunityQuotation.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          untilTime: this.dateFieldValue(field, value)!,
+          updateUser,
+          updateTime: now,
+        })
       }
     } else if (module === 'contract') {
       if (field.key === 'name') {
-        count = await tx.orm.public.Contract.where({ id, organizationId: tenantId }).updateAndCount({
-          name: prisma8Varchar(this.textFieldValue(field, value, 255)!, 255),
-          updateUser,
-          updateTime: now,
-        })
+        count = await tx.orm.public.Contract.where({ id, organizationId: tenantId }).updateAndCount(
+          {
+            name: this.textFieldValue(field, value, 255)!,
+            updateUser,
+            updateTime: now,
+          },
+        )
       } else if (field.key === 'number') {
-        count = await tx.orm.public.Contract.where({ id, organizationId: tenantId }).updateAndCount({
-          number: prisma8Varchar(this.textFieldValue(field, value, 50)!, 50),
-          updateUser,
-          updateTime: now,
-        })
+        count = await tx.orm.public.Contract.where({ id, organizationId: tenantId }).updateAndCount(
+          {
+            number: this.textFieldValue(field, value, 50)!,
+            updateUser,
+            updateTime: now,
+          },
+        )
       } else if (field.key === 'startTime' || field.key === 'endTime') {
         const dateValue = this.dateFieldValue(field, value)
-        count = await tx.orm.public.Contract.where({ id, organizationId: tenantId }).updateAndCount({
-          ...(field.key === 'startTime' ? { startTime: dateValue } : { endTime: dateValue }),
-          updateUser,
-          updateTime: now,
-        })
+        count = await tx.orm.public.Contract.where({ id, organizationId: tenantId }).updateAndCount(
+          {
+            ...(field.key === 'startTime' ? { startTime: dateValue } : { endTime: dateValue }),
+            updateUser,
+            updateTime: now,
+          },
+        )
       }
     } else if (module === 'invoice') {
       if (field.key === 'name') {
-        count = await tx.orm.public.ContractInvoice.where({ id, organizationId: tenantId })
-          .updateAndCount({
-            name: prisma8Varchar(this.textFieldValue(field, value, 255)!, 255),
-            updateUser,
-            updateTime: now,
-          })
+        count = await tx.orm.public.ContractInvoice.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          name: this.textFieldValue(field, value, 255)!,
+          updateUser,
+          updateTime: now,
+        })
       } else if (field.key === 'amount') {
         const amount = this.numberFieldValue(field, value)
-        count = await tx.orm.public.ContractInvoice.where({ id, organizationId: tenantId })
-          .updateAndCount({
-            amount: amount === null ? null : prisma8Numeric(amount, 20, 10),
-            updateUser,
-            updateTime: now,
-          })
+        count = await tx.orm.public.ContractInvoice.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          amount: amount === null ? null : prisma8Numeric(amount, 20, 10),
+          updateUser,
+          updateTime: now,
+        })
       } else if (field.key === 'invoiceType') {
         const invoiceType = this.textFieldValue(field, value, 32)
-        count = await tx.orm.public.ContractInvoice.where({ id, organizationId: tenantId })
-          .updateAndCount({
-            invoiceType: invoiceType === null ? null : prisma8Varchar(invoiceType, 32),
-            updateUser,
-            updateTime: now,
-          })
+        count = await tx.orm.public.ContractInvoice.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          invoiceType: invoiceType === null ? null : invoiceType,
+          updateUser,
+          updateTime: now,
+        })
       } else if (field.key === 'taxRate') {
         const taxRate = this.numberFieldValue(field, value)
-        count = await tx.orm.public.ContractInvoice.where({ id, organizationId: tenantId })
-          .updateAndCount({
-            taxRate: taxRate === null ? null : prisma8Numeric(taxRate, 20, 10),
-            updateUser,
-            updateTime: now,
-          })
+        count = await tx.orm.public.ContractInvoice.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          taxRate: taxRate === null ? null : prisma8Numeric(taxRate, 20, 10),
+          updateUser,
+          updateTime: now,
+        })
       }
     } else if (module === 'order') {
       if (field.key === 'name') {
-        count = await tx.orm.public.SalesOrder.where({ id, organizationId: tenantId }).updateAndCount({
-          name: prisma8Varchar(this.textFieldValue(field, value, 255)!, 255),
+        count = await tx.orm.public.SalesOrder.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          name: this.textFieldValue(field, value, 255)!,
           updateUser,
           updateTime: now,
         })
       } else if (field.key === 'number') {
-        count = await tx.orm.public.SalesOrder.where({ id, organizationId: tenantId }).updateAndCount({
-          number: prisma8Varchar(this.textFieldValue(field, value, 50)!, 50),
+        count = await tx.orm.public.SalesOrder.where({
+          id,
+          organizationId: tenantId,
+        }).updateAndCount({
+          number: this.textFieldValue(field, value, 50)!,
           updateUser,
           updateTime: now,
         })
@@ -401,7 +439,8 @@ export class ApprovalResourceService {
       return null
     }
     const result = String(value).trim()
-    if (result.length > maxLength) throw new BadRequestException(`「${field.label}」长度不能超过 ${maxLength}`)
+    if (result.length > maxLength)
+      throw new BadRequestException(`「${field.label}」长度不能超过 ${maxLength}`)
     return result
   }
 
@@ -428,7 +467,8 @@ export class ApprovalResourceService {
     }
     const direct = typeof value === 'number' ? value : Number(value)
     const timestamp = Number.isFinite(direct) ? direct : new Date(String(value)).getTime()
-    if (!Number.isFinite(timestamp)) throw new BadRequestException(`「${field.label}」必须是有效日期`)
+    if (!Number.isFinite(timestamp))
+      throw new BadRequestException(`「${field.label}」必须是有效日期`)
     return BigInt(Math.trunc(timestamp))
   }
 
@@ -528,8 +568,8 @@ export class ApprovalResourceService {
 
   private async quotationTargetInfo(tenantId: string, targetId: string) {
     const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('name', 'amount', 'approvalStatus')
       .first()
@@ -543,8 +583,8 @@ export class ApprovalResourceService {
 
   private async contractTargetInfo(tenantId: string, targetId: string) {
     const row = await this.prisma8.client.orm.public.Contract.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('name', 'amount', 'approvalStatus')
       .first()
@@ -558,8 +598,8 @@ export class ApprovalResourceService {
 
   private async invoiceTargetInfo(tenantId: string, targetId: string) {
     const row = await this.prisma8.client.orm.public.ContractInvoice.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('name', 'amount', 'approvalStatus')
       .first()
@@ -573,8 +613,8 @@ export class ApprovalResourceService {
 
   private async orderTargetInfo(tenantId: string, targetId: string) {
     const row = await this.prisma8.client.orm.public.SalesOrder.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('name', 'amount', 'approvalStatus')
       .first()
@@ -588,8 +628,8 @@ export class ApprovalResourceService {
 
   private async setQuotationStatus(tenantId: string, targetId: string, status: string) {
     const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('id')
       .first()
@@ -598,7 +638,7 @@ export class ApprovalResourceService {
     const updated = await this.prisma8.client.orm.public.OpportunityQuotation.where({
       id: row.id,
     }).update({
-      approvalStatus: prisma8Varchar(approvalStatus, 50),
+      approvalStatus: approvalStatus,
       ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
     })
     if (!updated) throw new NotFoundException('报价不存在')
@@ -607,15 +647,15 @@ export class ApprovalResourceService {
 
   private async setContractStatus(tenantId: string, targetId: string, status: string) {
     const row = await this.prisma8.client.orm.public.Contract.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('id')
       .first()
     if (!row) throw new NotFoundException('合同不存在')
     const approvalStatus = this.toBusinessApprovalStatus(status)
     const updated = await this.prisma8.client.orm.public.Contract.where({ id: row.id }).update({
-      approvalStatus: prisma8Varchar(approvalStatus, 50),
+      approvalStatus: approvalStatus,
       ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
     })
     if (!updated) throw new NotFoundException('合同不存在')
@@ -624,8 +664,8 @@ export class ApprovalResourceService {
 
   private async setInvoiceStatus(tenantId: string, targetId: string, status: string) {
     const row = await this.prisma8.client.orm.public.ContractInvoice.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('id')
       .first()
@@ -634,7 +674,7 @@ export class ApprovalResourceService {
     const updated = await this.prisma8.client.orm.public.ContractInvoice.where({
       id: row.id,
     }).update({
-      approvalStatus: prisma8Varchar(approvalStatus, 32),
+      approvalStatus: approvalStatus,
       ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
       updateTime: BigInt(Date.now()),
     })
@@ -644,15 +684,15 @@ export class ApprovalResourceService {
 
   private async setOrderStatus(tenantId: string, targetId: string, status: string) {
     const row = await this.prisma8.client.orm.public.SalesOrder.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     })
       .select('id')
       .first()
     if (!row) throw new NotFoundException('订单不存在')
     const approvalStatus = this.toBusinessApprovalStatus(status)
     const updated = await this.prisma8.client.orm.public.SalesOrder.where({ id: row.id }).update({
-      approvalStatus: prisma8Varchar(approvalStatus, 50),
+      approvalStatus: approvalStatus,
       ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
       updateTime: BigInt(Date.now()),
     })
@@ -662,39 +702,43 @@ export class ApprovalResourceService {
 
   private async deleteQuotation(tenantId: string, targetId: string) {
     const count = await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     }).deleteAndCount()
     if (count !== 1) throw new NotFoundException('报价不存在')
   }
 
   private async deleteContract(tenantId: string, targetId: string) {
     const count = await this.prisma8.client.orm.public.Contract.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     }).deleteAndCount()
     if (count !== 1) throw new NotFoundException('合同不存在')
   }
 
   private async deleteInvoice(tenantId: string, targetId: string) {
     const count = await this.prisma8.client.orm.public.ContractInvoice.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     }).deleteAndCount()
     if (count !== 1) throw new NotFoundException('发票不存在')
   }
 
   private async deleteOrder(tenantId: string, targetId: string) {
     const count = await this.prisma8.client.orm.public.SalesOrder.where({
-      id: prisma8Varchar(targetId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
+      id: targetId,
+      organizationId: tenantId,
     }).deleteAndCount()
     if (count !== 1) throw new NotFoundException('订单不存在')
   }
 
-  private async syncQuotationSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
+  private async syncQuotationSnapshot(
+    resourceId: string,
+    approvalStatus: string,
+    approved: boolean,
+  ) {
     const table = this.prisma8.client.orm.public.OpportunityQuotationSnapshot
-    const rows = await table.where({ quotationId: prisma8Varchar(resourceId, 32) }).all()
+    const rows = await table.where({ quotationId: resourceId }).all()
     for (const row of rows) {
       if (!row.quotationValue) continue
       const value = this.parseSnapshotValue(row.quotationValue)
@@ -704,9 +748,13 @@ export class ApprovalResourceService {
     }
   }
 
-  private async syncContractSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
+  private async syncContractSnapshot(
+    resourceId: string,
+    approvalStatus: string,
+    approved: boolean,
+  ) {
     const table = this.prisma8.client.orm.public.ContractSnapshot
-    const rows = await table.where({ contractId: prisma8Varchar(resourceId, 32) }).all()
+    const rows = await table.where({ contractId: resourceId }).all()
     for (const row of rows) {
       if (!row.contractValue) continue
       const value = this.parseSnapshotValue(row.contractValue)
@@ -718,7 +766,7 @@ export class ApprovalResourceService {
 
   private async syncInvoiceSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
     const table = this.prisma8.client.orm.public.ContractInvoiceSnapshot
-    const rows = await table.where({ invoiceId: prisma8Varchar(resourceId, 32) }).all()
+    const rows = await table.where({ invoiceId: resourceId }).all()
     for (const row of rows) {
       if (!row.invoiceValue) continue
       const value = this.parseSnapshotValue(row.invoiceValue)
@@ -730,7 +778,7 @@ export class ApprovalResourceService {
 
   private async syncOrderSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
     const table = this.prisma8.client.orm.public.SalesOrderSnapshot
-    const rows = await table.where({ orderId: prisma8Varchar(resourceId, 32) }).all()
+    const rows = await table.where({ orderId: resourceId }).all()
     for (const row of rows) {
       if (!row.orderValue) continue
       const value = this.parseSnapshotValue(row.orderValue)

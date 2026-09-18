@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   OrderStageAddDto,
   OrderStageAdvancedConfigDto,
@@ -19,15 +19,18 @@ export class OrderStageService {
 
   async get(user: AuthUser) {
     await this.ensureDefaults(user)
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const organizationId = user.tenantId
     const [stages, counts, advanced] = await Promise.all([
-      this.orderStages().where({ organizationId }).orderBy((row) => row.pos.asc()).all(),
+      this.orderStages()
+        .where({ organizationId })
+        .orderBy((row) => row.pos.asc())
+        .all(),
       this.orders()
         .where({ organizationId })
         .groupBy('stage')
         .aggregate((aggregate) => ({ count: aggregate.count() })),
       this.advancedConfigs()
-        .where({ organizationId, moduleType: prisma8Varchar(MODULE_TYPE, 20) })
+        .where({ organizationId, moduleType: MODULE_TYPE })
         .orderBy((row) => row.originId.asc())
         .orderBy((row) => row.targetId.asc())
         .all(),
@@ -86,18 +89,18 @@ export class OrderStageService {
     const first = stages[0]
     const now = BigInt(Date.now())
     const created = await this.orderStages().create({
-      id: prisma8Id32(),
-      name: prisma8Varchar(dto.name.trim(), 255),
-      _type: prisma8Varchar(dto.type ?? 'AFOOT', 50),
+      id: createLegacyId32(),
+      name: dto.name.trim(),
+      _type: dto.type ?? 'AFOOT',
       afootRollBack: first?.afootRollBack ?? true,
       endRollBack: first?.endRollBack ?? false,
       pos: BigInt(insertAt + 1),
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      circulationType: prisma8Varchar(first?.circulationType ?? 'NORMAL', 50),
+      organizationId: user.tenantId,
+      circulationType: first?.circulationType ?? 'NORMAL',
       createTime: now,
       updateTime: now,
-      createUser: prisma8Varchar(user.id, 32),
-      updateUser: prisma8Varchar(user.id, 32),
+      createUser: user.id,
+      updateUser: user.id,
     })
     const ids = stages.map((item) => item.id)
     ids.splice(insertAt, 0, created.id)
@@ -110,23 +113,23 @@ export class OrderStageService {
     if (dto.name && dto.name.trim() !== stage.name) {
       const duplicate = await this.orderStages()
         .where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          name: prisma8Varchar(dto.name.trim(), 255),
+          organizationId: user.tenantId,
+          name: dto.name.trim(),
         })
-        .where((row) => row.id.neq(prisma8Varchar(dto.id, 32)))
+        .where((row) => row.id.neq(dto.id))
         .select('id')
         .first()
       if (duplicate) throw new BadRequestException('订单阶段名称不能重复')
     }
     await this.orderStages()
       .where({
-        id: prisma8Varchar(dto.id, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: dto.id,
+        organizationId: user.tenantId,
       })
       .update({
-        ...(dto.name === undefined ? {} : { name: prisma8Varchar(dto.name.trim(), 255) }),
+        ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
   }
 
@@ -134,17 +137,17 @@ export class OrderStageService {
     const stage = await this.ensureStage(user.tenantId, id)
     const { count } = await this.orders()
       .where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        stage: prisma8Varchar(id, 50),
+        organizationId: user.tenantId,
+        stage: id,
       })
       .aggregate((aggregate) => ({ count: aggregate.count() }))
     if (count > 0) throw new BadRequestException('该阶段下存在订单，无法删除')
-    const stageId = prisma8Varchar(id, 32)
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const stageId = id
+    const organizationId = user.tenantId
     await this.prisma8.client.transaction(async (tx) => {
       await tx.orm.public.StageAdvancedConfig.where({
         organizationId,
-        moduleType: prisma8Varchar(MODULE_TYPE, 20),
+        moduleType: MODULE_TYPE,
       })
         .where((row) => or(row.originId.eq(stageId), row.targetId.eq(stageId)))
         .deleteAndCount()
@@ -157,12 +160,12 @@ export class OrderStageService {
   async updateRollback(user: AuthUser, dto: OrderStageRollbackDto) {
     await this.ensureDefaults(user)
     await this.orderStages()
-      .where({ organizationId: prisma8Varchar(user.tenantId, 32) })
+      .where({ organizationId: user.tenantId })
       .updateAndCount({
         afootRollBack: dto.afootRollBack,
         endRollBack: dto.endRollBack,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
   }
 
@@ -180,12 +183,12 @@ export class OrderStageService {
     await this.prisma8.client.transaction(async (tx) => {
       for (const [index, id] of ids.entries()) {
         await tx.orm.public.SalesOrderStageConfig.where({
-          id: prisma8Varchar(id, 32),
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          id: id,
+          organizationId: user.tenantId,
         }).update({
           pos: BigInt(index + 1),
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       }
     })
@@ -197,11 +200,11 @@ export class OrderStageService {
     }
     await this.ensureDefaults(user)
     await this.orderStages()
-      .where({ organizationId: prisma8Varchar(user.tenantId, 32) })
+      .where({ organizationId: user.tenantId })
       .updateAndCount({
-        circulationType: prisma8Varchar(type, 50),
+        circulationType: type,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
   }
 
@@ -210,17 +213,17 @@ export class OrderStageService {
     const stageIds = new Set<string>(stages.map((item) => item.id))
     const now = BigInt(Date.now())
     const rows: Array<{
-      id: ReturnType<typeof prisma8Id32>
-      originId: ReturnType<typeof prisma8Id32>
-      targetId: ReturnType<typeof prisma8Id32>
+      id: string
+      originId: string
+      targetId: string
       enable: boolean
       fieldConfig: string
-      moduleType: ReturnType<typeof prisma8Varchar<20>>
-      organizationId: ReturnType<typeof prisma8Id32>
+      moduleType: string
+      organizationId: string
       createTime: bigint
       updateTime: bigint
-      createUser: ReturnType<typeof prisma8Id32>
-      updateUser: ReturnType<typeof prisma8Id32>
+      createUser: string
+      updateUser: string
     }> = []
     const seen = new Set<string>()
     for (const setting of dto.circulationSettings) {
@@ -231,32 +234,32 @@ export class OrderStageService {
         if (seen.has(key)) throw new BadRequestException('高级流转配置重复')
         seen.add(key)
         rows.push({
-          id: prisma8Id32(),
-          originId: prisma8Varchar(setting.originId, 32),
-          targetId: prisma8Varchar(target.targetId, 32),
+          id: createLegacyId32(),
+          originId: setting.originId,
+          targetId: target.targetId,
           enable: target.enable,
           fieldConfig: JSON.stringify(target.circulationFieldValues ?? []),
-          moduleType: prisma8Varchar(MODULE_TYPE, 20),
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          moduleType: MODULE_TYPE,
+          organizationId: user.tenantId,
           createTime: now,
           updateTime: now,
-          createUser: prisma8Varchar(user.id, 32),
-          updateUser: prisma8Varchar(user.id, 32),
+          createUser: user.id,
+          updateUser: user.id,
         })
       }
     }
     await this.prisma8.client.transaction(async (tx) => {
       await tx.orm.public.StageAdvancedConfig.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        moduleType: prisma8Varchar(MODULE_TYPE, 20),
+        organizationId: user.tenantId,
+        moduleType: MODULE_TYPE,
       }).deleteAndCount()
       if (rows.length) await tx.orm.public.StageAdvancedConfig.createAll(rows)
       await tx.orm.public.SalesOrderStageConfig.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       }).updateAndCount({
-          circulationType: prisma8Varchar(dto.circulationType, 50),
-          updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+        circulationType: dto.circulationType,
+        updateTime: now,
+        updateUser: user.id,
       })
     })
   }
@@ -267,17 +270,17 @@ export class OrderStageService {
       this.ensureStage(organizationId, originId),
       this.ensureStage(organizationId, targetId),
       this.orderStages()
-        .where({ organizationId: prisma8Varchar(organizationId, 32) })
+        .where({ organizationId: organizationId })
         .orderBy((row) => row.pos.asc())
         .first(),
     ])
     if (first?.circulationType === 'ADVANCED') {
       const config = await this.advancedConfigs()
         .where({
-          organizationId: prisma8Varchar(organizationId, 32),
-          moduleType: prisma8Varchar(MODULE_TYPE, 20),
-          originId: prisma8Varchar(originId, 32),
-          targetId: prisma8Varchar(targetId, 32),
+          organizationId: organizationId,
+          moduleType: MODULE_TYPE,
+          originId: originId,
+          targetId: targetId,
         })
         .first()
       if (!config?.enable) throw new BadRequestException('当前订单阶段不允许流转到目标阶段')
@@ -319,7 +322,7 @@ export class OrderStageService {
 
   private list(organizationId: string) {
     return this.orderStages()
-      .where({ organizationId: prisma8Varchar(organizationId, 32) })
+      .where({ organizationId: organizationId })
       .orderBy((row) => row.pos.asc())
       .all()
   }
@@ -327,8 +330,8 @@ export class OrderStageService {
   private async ensureStage(organizationId: string, id: string) {
     const stage = await this.orderStages()
       .where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(organizationId, 32),
+        id: id,
+        organizationId: organizationId,
       })
       .first()
     if (!stage) throw new NotFoundException('订单阶段不存在')
@@ -337,7 +340,7 @@ export class OrderStageService {
 
   private async ensureDefaults(user: AuthUser) {
     const { count } = await this.orderStages()
-      .where({ organizationId: prisma8Varchar(user.tenantId, 32) })
+      .where({ organizationId: user.tenantId })
       .aggregate((aggregate) => ({ count: aggregate.count() }))
     if (count > 0) return
     const defaults = [
@@ -352,18 +355,18 @@ export class OrderStageService {
     const now = BigInt(Date.now())
     await this.orderStages().createAll(
       defaults.map(([name, type], index) => ({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
-        _type: prisma8Varchar(type, 50),
+        id: createLegacyId32(),
+        name: name,
+        _type: type,
         afootRollBack: true,
         endRollBack: false,
         pos: BigInt(index + 1),
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        circulationType: prisma8Varchar('NORMAL', 50),
+        organizationId: user.tenantId,
+        circulationType: 'NORMAL',
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })),
     )
   }

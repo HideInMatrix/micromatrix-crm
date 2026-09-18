@@ -3,7 +3,7 @@ import test from 'node:test'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -100,7 +100,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.SysUserViewCondition.where({
-            sysUserViewId: prisma8Varchar(first.id, 32),
+            sysUserViewId: first.id,
           })
             .select('id')
             .all()
@@ -109,7 +109,10 @@ test(
       )
 
       await service.toggleEnabled(user, first.id, 'CLUE')
-      await assert.rejects(() => service.resolveFilters(user, first.id, 'CLUE'), BadRequestException)
+      await assert.rejects(
+        () => service.resolveFilters(user, first.id, 'CLUE'),
+        BadRequestException,
+      )
       await service.toggleEnabled(user, first.id, 'CLUE')
       assert.deepEqual(await service.resolveFilters(user, first.id, 'CLUE'), {
         searchMode: 'AND',
@@ -133,7 +136,7 @@ test(
       })
       assert.equal(
         await prisma8Client.orm.public.SysUserView.where({
-          id: prisma8Varchar(first.id, 32),
+          id: first.id,
         })
           .select('id')
           .first(),
@@ -142,7 +145,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.SysUserViewCondition.where({
-            sysUserViewId: prisma8Varchar(first.id, 32),
+            sysUserViewId: first.id,
           })
             .select('id')
             .all()
@@ -151,14 +154,14 @@ test(
       )
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         const viewIds = await prisma8Client.orm.public.SysUserView.where({ organizationId })
           .select('id')
           .all()
         if (viewIds.length) {
-          await prisma8Client.orm.public.SysUserViewCondition
-            .where((row) => row.sysUserViewId.in(viewIds.map((item) => item.id)))
-            .deleteAll()
+          await prisma8Client.orm.public.SysUserViewCondition.where((row) =>
+            row.sysUserViewId.in(viewIds.map((item) => item.id)),
+          ).deleteAll()
         }
         await prisma8Client.orm.public.SysUserView.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()

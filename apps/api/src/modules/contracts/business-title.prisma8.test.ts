@@ -5,7 +5,7 @@ import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -63,7 +63,10 @@ test(
       assert.equal(gamma.identificationNumber, null)
 
       const keyword = await service.page(user, { keyword: 'tax-alpha' })
-      assert.deepEqual(keyword.list.map((item) => item.id), [alpha.id])
+      assert.deepEqual(
+        keyword.list.map((item) => item.id),
+        [alpha.id],
+      )
 
       const andFiltered = await service.page(user, {
         filters: [
@@ -72,7 +75,10 @@ test(
         ],
         filterMode: 'AND',
       })
-      assert.deepEqual(andFiltered.list.map((item) => item.id), [alpha.id])
+      assert.deepEqual(
+        andFiltered.list.map((item) => item.id),
+        [alpha.id],
+      )
 
       const orFiltered = await service.page(user, {
         filters: [
@@ -81,7 +87,10 @@ test(
         ],
         filterMode: 'OR',
       })
-      assert.deepEqual(new Set(orFiltered.list.map((item) => item.id)), new Set([beta.id, gamma.id]))
+      assert.deepEqual(
+        new Set(orFiltered.list.map((item) => item.id)),
+        new Set([beta.id, gamma.id]),
+      )
 
       const notIn = await service.page(user, {
         filters: [{ key: 'type', op: 'notIn', value: ['THIRD_PARTY'] }],
@@ -109,16 +118,14 @@ test(
       assert.equal(renamed.name, 'Beta Services Updated')
       assert.equal(renamed.approvalStatus, 'APPROVING')
 
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor.id, 32)
-      const config = await prisma8Client.orm.public.BusinessTitleConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          field: prisma8Varchar('identification_number', 255),
-          required: false,
-          organizationId,
-        })
+      const organizationId = tenant.id
+      const actorId = actor.id
+      const config = await prisma8Client.orm.public.BusinessTitleConfig.select('id').create({
+        id: createLegacyId32(),
+        field: 'identification_number',
+        required: false,
+        organizationId,
+      })
       const switched = await service.switchRequired(user, config.id)
       assert.ok(switched)
       assert.equal(switched.required, true)
@@ -128,68 +135,60 @@ test(
       )
 
       const now = BigInt(Date.now())
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Business Title Customer', 255),
-          organizationId,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
-      const contract = await prisma8Client.orm.public.Contract
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Business Title Contract', 255),
-          amount: prisma8Numeric(0, 14, 2),
-          number: prisma8Varchar(`BT-${suffix}`.slice(0, 50), 50),
-          customerId: customer.id,
-          owner: actorId,
-          stage: prisma8Varchar('INIT', 32),
-          organizationId,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
-      const invoice = await prisma8Client.orm.public.ContractInvoice
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Business Title Invoice', 255),
-          contractId: contract.id,
-          owner: actorId,
-          businessTitleId: prisma8Varchar(alpha.id, 32),
-          organizationId,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: 'Business Title Customer',
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
+      const contract = await prisma8Client.orm.public.Contract.select('id').create({
+        id: createLegacyId32(),
+        name: 'Business Title Contract',
+        amount: prisma8Numeric(0, 14, 2),
+        number: `BT-${suffix}`.slice(0, 50),
+        customerId: customer.id,
+        owner: actorId,
+        stage: 'INIT',
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
+      const invoice = await prisma8Client.orm.public.ContractInvoice.select('id').create({
+        id: createLegacyId32(),
+        name: 'Business Title Invoice',
+        contractId: contract.id,
+        owner: actorId,
+        businessTitleId: alpha.id,
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
       assert.equal(await service.hasInvoice(user, alpha.id), true)
       await assert.rejects(() => service.remove(user, alpha.id), BadRequestException)
 
       await prisma8Client.orm.public.ContractInvoice.where({ id: invoice.id }).delete()
       assert.deepEqual(await service.remove(user, alpha.id), { id: alpha.id, name: alpha.name })
       const fixtureReadback = await prisma8Client.orm.public.BusinessTitle.where({
-        id: prisma8Varchar(beta.id, 32),
+        id: beta.id,
       }).first()
       assert.equal(fixtureReadback?.name, 'Beta Services Updated')
       assert.equal(fixtureReadback?._type, 'CUSTOM')
       assert.equal(fixtureReadback?.approvalStatus, 'APPROVING')
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.ContractInvoice.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Contract.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.BusinessTitleConfig.where({ organizationId }).deleteAll()
-        await prisma8Client.orm.public.BusinessTitle
-          .where({ organizationId: prisma8Varchar(tenantId, 50) })
-          .deleteAll()
+        await prisma8Client.orm.public.BusinessTitle.where({ organizationId: tenantId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }

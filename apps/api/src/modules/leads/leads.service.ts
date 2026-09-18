@@ -26,7 +26,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { CustomersService } from '../../customers/customers.service'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
@@ -257,12 +257,12 @@ export class LeadsService {
     const lead = await this.ensureInScope(user, dto.id, 'lead:update')
     if (lead.transitionId) throw new BadRequestException('已转换线索不能继续修改状态')
     const updated = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(lead.id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: lead.id,
+      organizationId: user.tenantId,
     }).update({
-      lastStage: prisma8Varchar(lead.stage, 30),
-      stage: prisma8Varchar(dto.stage, 30),
-      updateUser: prisma8Varchar(user.id, 32),
+      lastStage: lead.stage,
+      stage: dto.stage,
+      updateUser: user.id,
       updateTime: BigInt(Date.now()),
     })
     if (!updated) throw new NotFoundException('线索不存在')
@@ -438,7 +438,7 @@ export class LeadsService {
     const filteredIds = this.intersectIds(savedIds, adHocIds)
 
     let db = this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
     if (scope === 'pool') {
       if (homeFilter) throw new BadRequestException('首页统计筛选不能用于线索池')
@@ -446,15 +446,15 @@ export class LeadsService {
         await this.pools.assertPoolMember(user, 'lead', query.poolId)
         db = db.where({
           inSharedPool: true,
-          poolId: prisma8Varchar(query.poolId, 32),
+          poolId: query.poolId,
         })
       } else {
         const options = await this.pools.options(user, 'lead')
         const poolIds = options.map((pool) => String(pool.id))
         db = db.where({ inSharedPool: true })
         db = poolIds.length
-          ? db.where((row) => row.poolId.in(prisma8Varchars(poolIds, 32)))
-          : db.where((row) => row.id.eq(prisma8Varchar('', 32)))
+          ? db.where((row) => row.poolId.in(poolIds))
+          : db.where((row) => row.id.eq(''))
       }
     } else if (homeFilter) {
       const homeWhere = (await this.homeFilters.clueWhere(
@@ -467,21 +467,18 @@ export class LeadsService {
       const scopeFilter = await this.dataScope.directOwnerFilter(user, 'menu:lead')
       const ownerScope = scopeFilter.owner
       if (typeof ownerScope === 'string') {
-        db = db.where({ owner: prisma8Varchar(ownerScope, 32) })
+        db = db.where({ owner: ownerScope })
       } else if (ownerScope?.in) {
         const ownerIds = ownerScope.in
-        db = db.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+        db = db.where((row) => row.owner.in(ownerIds))
       }
     }
 
-    if (filteredIds) db = db.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
-    if (status) db = db.where({ stage: prisma8Varchar(status, 30) })
+    if (filteredIds) db = db.where((row) => row.id.in(filteredIds))
+    if (status) db = db.where({ stage: status })
     if (keyword) {
       db = db.where((row) =>
-        or(
-          row.name.ilike('%' + keyword + '%'),
-          row.phone.ilike('%' + keyword + '%'),
-        ),
+        or(row.name.ilike('%' + keyword + '%'), row.phone.ilike('%' + keyword + '%')),
       )
     }
 
@@ -607,7 +604,9 @@ export class LeadsService {
         direction === 'asc' ? row.updateTime.asc() : row.updateTime.desc(),
       )
     if (column === 'poolId')
-      return collection.orderBy((row) => (direction === 'asc' ? row.poolId.asc() : row.poolId.desc()))
+      return collection.orderBy((row) =>
+        direction === 'asc' ? row.poolId.asc() : row.poolId.desc(),
+      )
     if (column === 'transitionType')
       return collection.orderBy((row) =>
         direction === 'asc' ? row.transitionType.asc() : row.transitionType.desc(),
@@ -632,22 +631,20 @@ export class LeadsService {
     for (const clause of where.AND ?? []) {
       const ownerScope = clause.owner
       if (typeof ownerScope === 'string') {
-        query = query.where({ owner: prisma8Varchar(ownerScope, 32) })
+        query = query.where({ owner: ownerScope })
       } else if (ownerScope?.in) {
         const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+        query = query.where((row) => row.owner.in(ownerIds))
       }
       const creatorScope = clause.createUser
       if (typeof creatorScope === 'string') {
-        query = query.where({ createUser: prisma8Varchar(creatorScope, 32) })
+        query = query.where({ createUser: creatorScope })
       } else if (creatorScope?.in) {
         const creatorIds = creatorScope.in
-        query = query.where((row) => row.createUser.in(prisma8Varchars(creatorIds, 32)))
+        query = query.where((row) => row.createUser.in(creatorIds))
       }
       if (clause.OR?.some((item) => item.transitionId === null)) {
-        query = query.where((row) =>
-          or(row.transitionId.isNull(), row.transitionId.eq(prisma8Varchar('', 32))),
-        )
+        query = query.where((row) => or(row.transitionId.isNull(), row.transitionId.eq('')))
       }
     }
     return query
@@ -669,8 +666,8 @@ export class LeadsService {
 
   async findOne(user: AuthUser, id: string): Promise<LeadVO> {
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
       inSharedPool: false,
     }).first()
     if (!lead) throw new NotFoundException('线索不存在')
@@ -682,8 +679,8 @@ export class LeadsService {
 
   async findPoolOne(user: AuthUser, id: string): Promise<LeadVO> {
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
       inSharedPool: true,
     }).first()
     if (!lead?.poolId) throw new NotFoundException('线索池线索不存在')
@@ -703,23 +700,21 @@ export class LeadsService {
 
     const lead = await this.prisma8.client.transaction(async (tx) => {
       const created = await tx.orm.public.Clue.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(dto.name, 255),
-        contact: dto.contactName ? prisma8Varchar(dto.contactName, 255) : null,
-        phone: dto.phone ? prisma8Varchar(dto.phone, 255) : null,
-        products: dto.products?.length
-          ? prisma8Varchar(JSON.stringify(dto.products), 1000)
-          : null,
-        stage: prisma8Varchar('NEW', 30),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: createLegacyId32(),
+        name: dto.name,
+        contact: dto.contactName ? dto.contactName : null,
+        phone: dto.phone ? dto.phone : null,
+        products: dto.products?.length ? JSON.stringify(dto.products) : null,
+        stage: 'NEW',
+        organizationId: user.tenantId,
         inSharedPool: Boolean(toPool),
-        poolId: targetPool?.id ? prisma8Varchar(targetPool.id, 32) : null,
-        owner: owner?.id ? prisma8Varchar(owner.id, 32) : null,
+        poolId: targetPool?.id ? targetPool.id : null,
+        owner: owner?.id ? owner.id : null,
         collectionTime: owner ? now : null,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -776,23 +771,19 @@ export class LeadsService {
     }
 
     const lead = await this.prisma8.client.transaction(async (tx) => {
-      const updated = await tx.orm.public.Clue.where({ id: prisma8Varchar(existing.id, 32) }).update({
-        ...(dto.name !== undefined ? { name: prisma8Varchar(dto.name, 255) } : {}),
+      const updated = await tx.orm.public.Clue.where({ id: existing.id }).update({
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.contactName !== undefined
-          ? { contact: dto.contactName ? prisma8Varchar(dto.contactName, 255) : null }
+          ? { contact: dto.contactName ? dto.contactName : null }
           : {}),
-        ...(dto.phone !== undefined
-          ? { phone: dto.phone ? prisma8Varchar(dto.phone, 255) : null }
-          : {}),
+        ...(dto.phone !== undefined ? { phone: dto.phone ? dto.phone : null } : {}),
         ...(dto.products !== undefined
           ? {
-              products: dto.products.length
-                ? prisma8Varchar(JSON.stringify(dto.products), 1000)
-                : null,
+              products: dto.products.length ? JSON.stringify(dto.products) : null,
             }
           : {}),
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!updated) throw new NotFoundException('线索不存在')
       if (customData) {
@@ -857,8 +848,8 @@ export class LeadsService {
   /** 从线索池领取 */
   async claim(user: AuthUser, id: string) {
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
       inSharedPool: true,
     }).first()
     if (!lead) throw new BadRequestException('线索不存在或已被他人领取')
@@ -881,8 +872,8 @@ export class LeadsService {
       try {
         if (poolId) {
           const lead = await this.prisma8.client.orm.public.Clue.where({
-            id: prisma8Varchar(id, 32),
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            id: id,
+            organizationId: user.tenantId,
             inSharedPool: true,
           })
             .select('poolId')
@@ -902,10 +893,10 @@ export class LeadsService {
   async poolClaim(user: AuthUser, clueId: string, poolId: string) {
     await this.pools.assertPoolMember(user, 'lead', poolId)
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(clueId, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: clueId,
+      organizationId: user.tenantId,
       inSharedPool: true,
-      poolId: prisma8Varchar(poolId, 32),
+      poolId: poolId,
     }).first()
     if (!lead) throw new BadRequestException('线索不存在、已被领取或不属于指定线索池')
     const claimed = await this.cluePools.pick({
@@ -927,8 +918,8 @@ export class LeadsService {
   /** 分配负责人（主管操作） */
   async assign(user: AuthUser, id: string, dto: AssignLeadInput) {
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!lead) throw new NotFoundException('线索不存在')
     const owner = await this.resolveOwner(user, dto.ownerId)
@@ -977,8 +968,8 @@ export class LeadsService {
   /** Cordys /pool/lead/assign：只允许分配池内线索，不得退化成普通线索转移。 */
   async poolAssign(user: AuthUser, clueId: string, ownerId: string, expectedPoolId?: string) {
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(clueId, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: clueId,
+      organizationId: user.tenantId,
       inSharedPool: true,
     }).first()
     if (!lead?.poolId) throw new NotFoundException('线索池线索不存在')
@@ -1103,11 +1094,11 @@ export class LeadsService {
   async poolBatchUpdate(user: AuthUser, dto: PoolResourceBatchEditDto): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'lead', dto.poolId)
     const leads = await this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       inSharedPool: true,
-      poolId: prisma8Varchar(dto.poolId, 32),
+      poolId: dto.poolId,
     })
-      .where((row) => row.id.in(prisma8Varchars(dto.ids, 32)))
+      .where((row) => row.id.in(dto.ids))
       .all()
     if (leads.length !== dto.ids.length) {
       throw new BadRequestException('所选线索必须全部属于同一个指定线索池')
@@ -1134,11 +1125,11 @@ export class LeadsService {
   async poolBatchDelete(user: AuthUser, poolId: string, ids: string[]): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'lead', poolId)
     const leads = await this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       inSharedPool: true,
-      poolId: prisma8Varchar(poolId, 32),
+      poolId: poolId,
     })
-      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .where((row) => row.id.in(ids))
       .all()
     if (leads.length !== ids.length) {
       throw new BadRequestException('所选线索必须全部属于同一个指定线索池')
@@ -1151,15 +1142,17 @@ export class LeadsService {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) throw new BadRequestException('请选择线索')
     const leads = await this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       inSharedPool: true,
     })
-      .where((row) => row.id.in(prisma8Varchars(uniqueIds, 32)))
+      .where((row) => row.id.in(uniqueIds))
       .all()
     if (leads.length !== uniqueIds.length) {
       throw new BadRequestException('存在不存在或已被领取的线索')
     }
-    const poolIds = [...new Set(leads.flatMap((lead) => (lead.poolId ? [String(lead.poolId)] : [])))]
+    const poolIds = [
+      ...new Set(leads.flatMap((lead) => (lead.poolId ? [String(lead.poolId)] : []))),
+    ]
     if (poolIds.length !== 1) throw new BadRequestException('所选线索必须全部属于同一个线索池')
     const poolId = poolIds[0]
     if (expectedPoolId && poolId !== expectedPoolId) {
@@ -1172,8 +1165,8 @@ export class LeadsService {
 
   async ownerHistory(user: AuthUser, id: string) {
     const lead = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     })
       .select('id', 'inSharedPool', 'poolId')
       .first()
@@ -1191,13 +1184,13 @@ export class LeadsService {
   async markInvalid(user: AuthUser, id: string) {
     const lead = await this.ensureInScope(user, id, 'lead:update')
     await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).update({
-      lastStage: prisma8Varchar(lead.stage, 30),
-      stage: prisma8Varchar('FAIL', 30),
+      lastStage: lead.stage,
+      stage: 'FAIL',
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
+      updateUser: user.id,
     })
     return { id, name: lead.name }
   }
@@ -1299,8 +1292,8 @@ export class LeadsService {
       if (lead.contact?.trim()) {
         const duplicate = lead.phone?.trim()
           ? await tx.orm.public.CustomerContact.where({
-              organizationId: prisma8Varchar(user.tenantId, 32),
-              phone: prisma8Varchar(lead.phone.trim(), 30),
+              organizationId: user.tenantId,
+              phone: lead.phone.trim(),
             })
               .select('id')
               .first()
@@ -1308,27 +1301,27 @@ export class LeadsService {
         if (!duplicate) {
           const now = BigInt(Date.now())
           const contact = await tx.orm.public.CustomerContact.create({
-            id: prisma8Id32(),
-            customerId: prisma8Varchar(String(customer.id), 32),
-            owner: prisma8Varchar(String(customer.owner ?? leadOwner), 32),
-            name: prisma8Varchar(lead.contact.trim(), 255),
-            phone: lead.phone ? prisma8Varchar(lead.phone, 30) : null,
+            id: createLegacyId32(),
+            customerId: String(customer.id),
+            owner: String(customer.owner ?? leadOwner),
+            name: lead.contact.trim(),
+            phone: lead.phone ? lead.phone : null,
             enable: true,
             disableReason: null,
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
             createTime: now,
             updateTime: now,
-            createUser: prisma8Varchar(user.id, 32),
-            updateUser: prisma8Varchar(user.id, 32),
+            createUser: user.id,
+            updateUser: user.id,
           })
           contactId = String(contact.id)
         }
       }
-      const updatedLead = await tx.orm.public.Clue.where({ id: prisma8Varchar(lead.id, 32) }).update({
-        transitionType: prisma8Varchar('CUSTOMER', 30),
-        transitionId: prisma8Varchar(String(customer.id), 32),
+      const updatedLead = await tx.orm.public.Clue.where({ id: lead.id }).update({
+        transitionType: 'CUSTOMER',
+        transitionId: String(customer.id),
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!updatedLead) throw new NotFoundException('线索不存在')
       return { customer, contactId }
@@ -1351,9 +1344,9 @@ export class LeadsService {
     const clueIds = [...new Set(dto.clueIds)]
     const leads = clueIds.length
       ? await this.prisma8.client.orm.public.Clue.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(clueIds, 32)))
+          .where((row) => row.id.in(clueIds))
           .all()
       : []
     const accessibleIds = new Set<string>()
@@ -1368,16 +1361,15 @@ export class LeadsService {
 
     const ownerIds = [...new Set(leads.flatMap((lead) => (lead.owner ? [String(lead.owner)] : [])))]
     const activeOwners = new Set(
-      (
-        ownerIds.length
-          ? await this.prisma8.client.orm.public.Users.where({
-              tenantId: user.tenantId,
-              status: 'ACTIVE',
-            })
-              .where((row) => row.id.in(ownerIds))
-              .select('id')
-              .all()
-          : []
+      (ownerIds.length
+        ? await this.prisma8.client.orm.public.Users.where({
+            tenantId: user.tenantId,
+            status: 'ACTIVE',
+          })
+            .where((row) => row.id.in(ownerIds))
+            .select('id')
+            .all()
+        : []
       ).map((owner) => owner.id),
     )
     const validLeads = leads
@@ -1435,8 +1427,8 @@ export class LeadsService {
 
   private async assertTransitionCustomerAccessible(user: AuthUser, customerId: string) {
     const customer = await this.prisma8.client.orm.public.Customer.where({
-      id: prisma8Varchar(customerId, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: customerId,
+      organizationId: user.tenantId,
     }).first()
     if (!customer) throw new NotFoundException('客户不存在')
 
@@ -1452,8 +1444,8 @@ export class LeadsService {
       return customer
     }
     const collaboration = await this.prisma8.client.orm.public.CustomerCollaboration.where({
-      customerId: prisma8Varchar(customerId, 32),
-      userId: prisma8Varchar(user.id, 32),
+      customerId: customerId,
+      userId: user.id,
     }).first()
     if (!collaboration) throw new ForbiddenException('客户不在可关联范围内')
     if (collaboration.collaborationType === 'READ_ONLY') {
@@ -1501,8 +1493,8 @@ export class LeadsService {
     }
     const firstStage = options.opportunityName
       ? await this.prisma8.client.orm.public.OpportunityStageConfig.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          _type: prisma8Varchar('AFOOT', 50),
+          organizationId: user.tenantId,
+          _type: 'AFOOT',
         })
           .orderBy((row) => row.pos.asc())
           .select('id')
@@ -1533,8 +1525,8 @@ export class LeadsService {
       return { contactIds: [] as string[], opportunityId: null as string | null }
     }
     const customer = await tx.orm.public.Customer.where({
-      id: prisma8Varchar(customerId, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: customerId,
+      organizationId: user.tenantId,
     }).first()
     if (!customer) throw new NotFoundException('客户不存在')
 
@@ -1551,22 +1543,22 @@ export class LeadsService {
 
       if (customer.owner !== lead.owner) {
         const existingTeam = await tx.orm.public.CustomerCollaboration.where({
-          customerId: prisma8Varchar(customerId, 32),
-          userId: prisma8Varchar(lead.owner, 32),
+          customerId: customerId,
+          userId: lead.owner,
         })
           .select('id')
           .first()
         if (!existingTeam) {
           const now = BigInt(Date.now())
           await tx.orm.public.CustomerCollaboration.create({
-            id: prisma8Id32(),
-            customerId: prisma8Varchar(customerId, 32),
-            userId: prisma8Varchar(lead.owner, 32),
-            collaborationType: prisma8Varchar('COLLABORATION', 50),
+            id: createLegacyId32(),
+            customerId: customerId,
+            userId: lead.owner,
+            collaborationType: 'COLLABORATION',
             createTime: now,
             updateTime: now,
-            createUser: prisma8Varchar(user.id, 32),
-            updateUser: prisma8Varchar(user.id, 32),
+            createUser: user.id,
+            updateUser: user.id,
           })
         }
       }
@@ -1577,8 +1569,8 @@ export class LeadsService {
         let duplicate: { id: string } | null = null
         if (prepared.contactNameUnique) {
           const row = await tx.orm.public.CustomerContact.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
-            name: prisma8Varchar(normalizedName, 255),
+            organizationId: user.tenantId,
+            name: normalizedName,
           })
             .select('id')
             .first()
@@ -1586,8 +1578,8 @@ export class LeadsService {
         }
         if (!duplicate && prepared.contactPhoneUnique && lead.phone?.trim()) {
           const row = await tx.orm.public.CustomerContact.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
-            phone: prisma8Varchar(lead.phone.trim(), 30),
+            organizationId: user.tenantId,
+            phone: lead.phone.trim(),
           })
             .select('id')
             .first()
@@ -1596,18 +1588,18 @@ export class LeadsService {
         if (!duplicate) {
           const now = BigInt(Date.now())
           const contact = await tx.orm.public.CustomerContact.create({
-            id: prisma8Id32(),
-            customerId: prisma8Varchar(customerId, 32),
-            owner: prisma8Varchar(lead.owner, 32),
-            name: prisma8Varchar(normalizedName, 255),
-            phone: lead.phone ? prisma8Varchar(lead.phone, 30) : null,
+            id: createLegacyId32(),
+            customerId: customerId,
+            owner: lead.owner,
+            name: normalizedName,
+            phone: lead.phone ? lead.phone : null,
             enable: true,
             disableReason: null,
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
             createTime: now,
             updateTime: now,
-            createUser: prisma8Varchar(user.id, 32),
-            updateUser: prisma8Varchar(user.id, 32),
+            createUser: user.id,
+            updateUser: user.id,
           })
           await this.fieldValues.save(
             user.tenantId,
@@ -1626,27 +1618,27 @@ export class LeadsService {
       if (options.opportunityName && prepared.firstStage && leads.length === 1) {
         const now = BigInt(Date.now())
         const latest = await tx.orm.public.Opportunity.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          stage: prisma8Varchar(prepared.firstStage.id, 32),
+          organizationId: user.tenantId,
+          stage: prepared.firstStage.id,
         })
           .select('pos')
           .orderBy((row) => row.pos.desc())
           .first()
         const opportunity = await tx.orm.public.Opportunity.create({
-          id: prisma8Id32(),
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          name: prisma8Varchar(options.opportunityName, 255),
-          customerId: prisma8Varchar(customerId, 32),
-          contactId: contactId ? prisma8Varchar(contactId, 32) : null,
-          stage: prisma8Varchar(prepared.firstStage.id, 32),
-          owner: prisma8Varchar(lead.owner, 32),
-          products: lead.products ? prisma8Varchar(lead.products, 1000) : null,
-          follower: lead.follower ? prisma8Varchar(lead.follower, 32) : null,
+          id: createLegacyId32(),
+          organizationId: user.tenantId,
+          name: options.opportunityName,
+          customerId: customerId,
+          contactId: contactId ? contactId : null,
+          stage: prepared.firstStage.id,
+          owner: lead.owner,
+          products: lead.products ? lead.products : null,
+          follower: lead.follower ? lead.follower : null,
           followTime: lead.followTime,
           createTime: now,
           updateTime: now,
-          createUser: prisma8Varchar(user.id, 32),
-          updateUser: prisma8Varchar(user.id, 32),
+          createUser: user.id,
+          updateUser: user.id,
           pos: (latest?.pos ?? 0n) + 1n,
         })
         await this.fieldValues.save(
@@ -1671,25 +1663,25 @@ export class LeadsService {
       }
 
       const now = BigInt(Date.now())
-      const transitioned = await tx.orm.public.Clue.where({ id: prisma8Varchar(lead.id, 32) }).update({
-        transitionType: prisma8Varchar('CUSTOMER', 30),
-        transitionId: prisma8Varchar(customerId, 32),
+      const transitioned = await tx.orm.public.Clue.where({ id: lead.id }).update({
+        transitionType: 'CUSTOMER',
+        transitionId: customerId,
         inSharedPool: false,
         poolId: null,
         updateTime: now,
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!transitioned) throw new NotFoundException('线索不存在')
     }
 
     if (newestFollowedAt && newestFollowedAt !== customer.followTime) {
       const updatedCustomer = await tx.orm.public.Customer.where({
-        id: prisma8Varchar(customerId, 32),
+        id: customerId,
       }).update({
         followTime: newestFollowedAt,
-        follower: newestFollower ? prisma8Varchar(newestFollower, 32) : null,
+        follower: newestFollower ? newestFollower : null,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!updatedCustomer) throw new NotFoundException('客户不存在')
     }
@@ -1740,7 +1732,7 @@ export class LeadsService {
       if (fields.length) {
         await tx.orm.public.FollowUpRecordField.createAll(
           fields.map((field) => ({
-            id: prisma8Id32(),
+            id: createLegacyId32(),
             resourceId: copied.id,
             fieldId: field.fieldId,
             fieldValue: field.fieldValue,
@@ -1750,7 +1742,7 @@ export class LeadsService {
       if (fieldBlobs.length) {
         await tx.orm.public.FollowUpRecordFieldBlob.createAll(
           fieldBlobs.map((field) => ({
-            id: prisma8Id32(),
+            id: createLegacyId32(),
             resourceId: copied.id,
             fieldId: field.fieldId,
             fieldValue: field.fieldValue,
@@ -1802,7 +1794,7 @@ export class LeadsService {
       if (fields.length) {
         await tx.orm.public.FollowUpPlanField.createAll(
           fields.map((field) => ({
-            id: prisma8Id32(),
+            id: createLegacyId32(),
             resourceId: copied.id,
             fieldId: field.fieldId,
             fieldValue: field.fieldValue,
@@ -1812,7 +1804,7 @@ export class LeadsService {
       if (fieldBlobs.length) {
         await tx.orm.public.FollowUpPlanFieldBlob.createAll(
           fieldBlobs.map((field) => ({
-            id: prisma8Id32(),
+            id: createLegacyId32(),
             resourceId: copied.id,
             fieldId: field.fieldId,
             fieldValue: field.fieldValue,
@@ -1860,7 +1852,7 @@ export class LeadsService {
     const nameUnique = await this.metadata.hasUniqueRule(user.tenantId, 'customer', 'name')
     if (!nameUnique) return null
     const customers = await this.prisma8.client.orm.public.Customer.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .where((row) => row.name.ilike(lead.name))
       .orderBy((row) => row.createTime.asc())
@@ -2208,10 +2200,10 @@ export class LeadsService {
     if (!resourceId) throw new BadRequestException('唯一ID不能为空')
     const existing = poolId
       ? await this.prisma8.client.orm.public.Clue.where({
-          id: prisma8Varchar(resourceId, 32),
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          id: resourceId,
+          organizationId: user.tenantId,
           inSharedPool: true,
-          poolId: prisma8Varchar(poolId, 32),
+          poolId: poolId,
         }).first()
       : await this.ensureInScope(user, resourceId, 'lead:import')
     if (!existing) throw new BadRequestException('线索不存在或不属于当前线索池')
@@ -2241,7 +2233,8 @@ export class LeadsService {
       .limit(2)
       .all()
     if (byName.length === 0) throw new BadRequestException('负责人「' + input + '」不存在或已禁用')
-    if (byName.length > 1) throw new BadRequestException('负责人名称「' + input + '」不唯一，请填写邮箱')
+    if (byName.length > 1)
+      throw new BadRequestException('负责人名称「' + input + '」不唯一，请填写邮箱')
     return byName[0].id
   }
 
@@ -2278,8 +2271,7 @@ export class LeadsService {
       })
         .where((row) => row.targetId.in(ids))
         .deleteAll()
-      await tx.orm.public.ClueOwner.where((row) => row.clueId.in(prisma8Varchars(ids, 32)))
-        .deleteAll()
+      await tx.orm.public.ClueOwner.where((row) => row.clueId.in(ids)).deleteAll()
       await tx.orm.public.Attachments.where({
         tenantId: user.tenantId,
         targetType: 'lead',
@@ -2287,9 +2279,9 @@ export class LeadsService {
         .where((row) => row.targetId.in(ids))
         .deleteAll()
       await tx.orm.public.Clue.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
-        .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+        .where((row) => row.id.in(ids))
         .deleteAll()
     })
     for (const lead of leads) {
@@ -2349,15 +2341,15 @@ export class LeadsService {
   private async ensureInScope(user: AuthUser, id: string, permission: string) {
     const scope = await this.dataScope.directOwnerFilter(user, permission)
     let query = this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     })
     const ownerScope = scope.owner
     if (typeof ownerScope === 'string') {
-      query = query.where({ owner: prisma8Varchar(ownerScope, 32) })
+      query = query.where({ owner: ownerScope })
     } else if (ownerScope?.in) {
       const ownerIds = ownerScope.in
-      query = query.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+      query = query.where((row) => row.owner.in(ownerIds))
     }
     const lead = await query.first()
     if (!lead) throw new NotFoundException('线索不存在或不在你的数据范围内')
@@ -2370,7 +2362,12 @@ export class LeadsService {
     mode: 'AND' | 'OR',
   ): Promise<string[]> {
     const fields = await this.metadata.listFields(organizationId, MODULE)
-    const fieldMap = new Map(fields.flatMap((field) => [[field.key, field], [field.id, field]]))
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.key, field],
+        [field.id, field],
+      ]),
+    )
     const aliases: Record<string, string> = {
       ownerId: 'owner',
       contactName: 'contact',
@@ -2391,7 +2388,7 @@ export class LeadsService {
         const key = aliases[condition.key] ?? condition.key
         const field = fieldMap.get(condition.key) ?? fieldMap.get(key)
         let query = this.prisma8.client.orm.public.Clue.where({
-          organizationId: prisma8Varchar(organizationId, 32),
+          organizationId: organizationId,
         })
         if (!field || field.type === 'formula') {
           const rows = await query.select('id').all()
@@ -2419,7 +2416,7 @@ export class LeadsService {
     condition: FilterCondition,
     field: FieldVO,
   ) {
-    const impossible = () => collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    const impossible = () => collection.where((row) => row.id.eq(''))
     const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
     const nullableKeys = new Set([
       'owner',
@@ -2440,29 +2437,21 @@ export class LeadsService {
 
     if (condition.op === 'isEmpty') {
       if (key === 'name') {
-        return textEmpty
-          ? collection.where((row) => row.name.eq(prisma8Varchar('', 255)))
-          : impossible()
+        return textEmpty ? collection.where((row) => row.name.eq('')) : impossible()
       }
       if (key === 'contact') {
         return textEmpty
-          ? collection.where((row) =>
-              or(row.contact.isNull(), row.contact.eq(prisma8Varchar('', 255))),
-            )
+          ? collection.where((row) => or(row.contact.isNull(), row.contact.eq('')))
           : collection.where((row) => row.contact.isNull())
       }
       if (key === 'phone') {
         return textEmpty
-          ? collection.where((row) =>
-              or(row.phone.isNull(), row.phone.eq(prisma8Varchar('', 255))),
-            )
+          ? collection.where((row) => or(row.phone.isNull(), row.phone.eq('')))
           : collection.where((row) => row.phone.isNull())
       }
       if (key === 'products') {
         return textEmpty
-          ? collection.where((row) =>
-              or(row.products.isNull(), row.products.eq(prisma8Varchar('', 1000))),
-            )
+          ? collection.where((row) => or(row.products.isNull(), row.products.eq('')))
           : collection.where((row) => row.products.isNull())
       }
       if (key === 'lastStage') return collection.where((row) => row.lastStage.isNull())
@@ -2479,29 +2468,21 @@ export class LeadsService {
 
     if (condition.op === 'notEmpty') {
       if (key === 'name') {
-        return textEmpty
-          ? collection.where((row) => row.name.neq(prisma8Varchar('', 255)))
-          : collection
+        return textEmpty ? collection.where((row) => row.name.neq('')) : collection
       }
       if (key === 'contact') {
         return textEmpty
-          ? collection.where((row) =>
-              not(or(row.contact.isNull(), row.contact.eq(prisma8Varchar('', 255)))),
-            )
+          ? collection.where((row) => not(or(row.contact.isNull(), row.contact.eq(''))))
           : collection.where((row) => row.contact.isNotNull())
       }
       if (key === 'phone') {
         return textEmpty
-          ? collection.where((row) =>
-              not(or(row.phone.isNull(), row.phone.eq(prisma8Varchar('', 255)))),
-            )
+          ? collection.where((row) => not(or(row.phone.isNull(), row.phone.eq(''))))
           : collection.where((row) => row.phone.isNotNull())
       }
       if (key === 'products') {
         return textEmpty
-          ? collection.where((row) =>
-              not(or(row.products.isNull(), row.products.eq(prisma8Varchar('', 1000)))),
-            )
+          ? collection.where((row) => not(or(row.products.isNull(), row.products.eq(''))))
           : collection.where((row) => row.products.isNotNull())
       }
       if (key === 'lastStage') return collection.where((row) => row.lastStage.isNotNull())
@@ -2543,7 +2524,7 @@ export class LeadsService {
           if (condition.op === 'gte') return row.collectionTime.gte(value)
           if (condition.op === 'lt') return row.collectionTime.lt(value)
           if (condition.op === 'lte') return row.collectionTime.lte(value)
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       if (key === 'followTime') {
@@ -2556,7 +2537,7 @@ export class LeadsService {
           if (condition.op === 'gte') return row.followTime.gte(value)
           if (condition.op === 'lt') return row.followTime.lt(value)
           if (condition.op === 'lte') return row.followTime.lte(value)
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       return collection.where((row) => {
@@ -2569,26 +2550,24 @@ export class LeadsService {
         if (condition.op === 'gte') return target.gte(value)
         if (condition.op === 'lt') return target.lt(value)
         if (condition.op === 'lte') return target.lte(value)
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 
     if (key === 'inSharedPool') {
-      const values = rawValues.map(
-        (item) => item === true || String(item).toLowerCase() === 'true',
-      )
+      const values = rawValues.map((item) => item === true || String(item).toLowerCase() === 'true')
       const value = values[0] ?? false
       return collection.where((row) => {
         if (condition.op === 'eq') return row.inSharedPool.eq(value)
         if (condition.op === 'ne') return row.inSharedPool.neq(value)
         if (condition.op === 'in') return row.inSharedPool.in(values)
         if (condition.op === 'notIn') return not(row.inSharedPool.in(values))
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 
     if (key === 'name' || key === 'contact' || key === 'phone') {
-      const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 255))
+      const values = rawValues.map((item) => String(item ?? ''))
       const value = values[0]!
       if (key === 'name') {
         return collection.where((row) => {
@@ -2596,9 +2575,11 @@ export class LeadsService {
           if (condition.op === 'ne') return row.name.neq(value)
           if (condition.op === 'in') return row.name.in(values)
           if (condition.op === 'notIn') return not(row.name.in(values))
-          if (condition.op === 'contains') return row.name.ilike('%' + String(condition.value ?? '') + '%')
-          if (condition.op === 'notContains') return not(row.name.ilike('%' + String(condition.value ?? '') + '%'))
-          return row.id.eq(prisma8Varchar('', 32))
+          if (condition.op === 'contains')
+            return row.name.ilike('%' + String(condition.value ?? '') + '%')
+          if (condition.op === 'notContains')
+            return not(row.name.ilike('%' + String(condition.value ?? '') + '%'))
+          return row.id.eq('')
         })
       }
       if (key === 'contact') {
@@ -2607,9 +2588,11 @@ export class LeadsService {
           if (condition.op === 'ne') return row.contact.neq(value)
           if (condition.op === 'in') return row.contact.in(values)
           if (condition.op === 'notIn') return not(row.contact.in(values))
-          if (condition.op === 'contains') return row.contact.ilike('%' + String(condition.value ?? '') + '%')
-          if (condition.op === 'notContains') return not(row.contact.ilike('%' + String(condition.value ?? '') + '%'))
-          return row.id.eq(prisma8Varchar('', 32))
+          if (condition.op === 'contains')
+            return row.contact.ilike('%' + String(condition.value ?? '') + '%')
+          if (condition.op === 'notContains')
+            return not(row.contact.ilike('%' + String(condition.value ?? '') + '%'))
+          return row.id.eq('')
         })
       }
       return collection.where((row) => {
@@ -2617,28 +2600,32 @@ export class LeadsService {
         if (condition.op === 'ne') return row.phone.neq(value)
         if (condition.op === 'in') return row.phone.in(values)
         if (condition.op === 'notIn') return not(row.phone.in(values))
-        if (condition.op === 'contains') return row.phone.ilike('%' + String(condition.value ?? '') + '%')
-        if (condition.op === 'notContains') return not(row.phone.ilike('%' + String(condition.value ?? '') + '%'))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'contains')
+          return row.phone.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains')
+          return not(row.phone.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq('')
       })
     }
 
     if (key === 'products') {
-      const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 1000))
+      const values = rawValues.map((item) => String(item ?? ''))
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.products.eq(value)
         if (condition.op === 'ne') return row.products.neq(value)
         if (condition.op === 'in') return row.products.in(values)
         if (condition.op === 'notIn') return not(row.products.in(values))
-        if (condition.op === 'contains') return row.products.ilike('%' + String(condition.value ?? '') + '%')
-        if (condition.op === 'notContains') return not(row.products.ilike('%' + String(condition.value ?? '') + '%'))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'contains')
+          return row.products.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains')
+          return not(row.products.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq('')
       })
     }
 
     if (key === 'stage' || key === 'lastStage' || key === 'transitionType') {
-      const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 30))
+      const values = rawValues.map((item) => String(item ?? ''))
       const value = values[0]!
       if (key === 'stage') {
         return collection.where((row) => {
@@ -2646,9 +2633,11 @@ export class LeadsService {
           if (condition.op === 'ne') return row.stage.neq(value)
           if (condition.op === 'in') return row.stage.in(values)
           if (condition.op === 'notIn') return not(row.stage.in(values))
-          if (condition.op === 'contains') return row.stage.ilike('%' + String(condition.value ?? '') + '%')
-          if (condition.op === 'notContains') return not(row.stage.ilike('%' + String(condition.value ?? '') + '%'))
-          return row.id.eq(prisma8Varchar('', 32))
+          if (condition.op === 'contains')
+            return row.stage.ilike('%' + String(condition.value ?? '') + '%')
+          if (condition.op === 'notContains')
+            return not(row.stage.ilike('%' + String(condition.value ?? '') + '%'))
+          return row.id.eq('')
         })
       }
       if (key === 'lastStage') {
@@ -2657,9 +2646,11 @@ export class LeadsService {
           if (condition.op === 'ne') return row.lastStage.neq(value)
           if (condition.op === 'in') return row.lastStage.in(values)
           if (condition.op === 'notIn') return not(row.lastStage.in(values))
-          if (condition.op === 'contains') return row.lastStage.ilike('%' + String(condition.value ?? '') + '%')
-          if (condition.op === 'notContains') return not(row.lastStage.ilike('%' + String(condition.value ?? '') + '%'))
-          return row.id.eq(prisma8Varchar('', 32))
+          if (condition.op === 'contains')
+            return row.lastStage.ilike('%' + String(condition.value ?? '') + '%')
+          if (condition.op === 'notContains')
+            return not(row.lastStage.ilike('%' + String(condition.value ?? '') + '%'))
+          return row.id.eq('')
         })
       }
       return collection.where((row) => {
@@ -2667,9 +2658,11 @@ export class LeadsService {
         if (condition.op === 'ne') return row.transitionType.neq(value)
         if (condition.op === 'in') return row.transitionType.in(values)
         if (condition.op === 'notIn') return not(row.transitionType.in(values))
-        if (condition.op === 'contains') return row.transitionType.ilike('%' + String(condition.value ?? '') + '%')
-        if (condition.op === 'notContains') return not(row.transitionType.ilike('%' + String(condition.value ?? '') + '%'))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'contains')
+          return row.transitionType.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains')
+          return not(row.transitionType.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq('')
       })
     }
 
@@ -2682,7 +2675,7 @@ export class LeadsService {
       key === 'createUser' ||
       key === 'updateUser'
     ) {
-      const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 32))
+      const values = rawValues.map((item) => String(item ?? ''))
       const value = values[0]!
       if (key === 'owner') {
         return collection.where((row) => {
@@ -2690,9 +2683,11 @@ export class LeadsService {
           if (condition.op === 'ne') return row.owner.neq(value)
           if (condition.op === 'in') return row.owner.in(values)
           if (condition.op === 'notIn') return not(row.owner.in(values))
-          if (condition.op === 'contains') return row.owner.ilike('%' + String(condition.value ?? '') + '%')
-          if (condition.op === 'notContains') return not(row.owner.ilike('%' + String(condition.value ?? '') + '%'))
-          return row.id.eq(prisma8Varchar('', 32))
+          if (condition.op === 'contains')
+            return row.owner.ilike('%' + String(condition.value ?? '') + '%')
+          if (condition.op === 'notContains')
+            return not(row.owner.ilike('%' + String(condition.value ?? '') + '%'))
+          return row.id.eq('')
         })
       }
       if (key === 'transitionId') {
@@ -2701,9 +2696,11 @@ export class LeadsService {
           if (condition.op === 'ne') return row.transitionId.neq(value)
           if (condition.op === 'in') return row.transitionId.in(values)
           if (condition.op === 'notIn') return not(row.transitionId.in(values))
-          if (condition.op === 'contains') return row.transitionId.ilike('%' + String(condition.value ?? '') + '%')
-          if (condition.op === 'notContains') return not(row.transitionId.ilike('%' + String(condition.value ?? '') + '%'))
-          return row.id.eq(prisma8Varchar('', 32))
+          if (condition.op === 'contains')
+            return row.transitionId.ilike('%' + String(condition.value ?? '') + '%')
+          if (condition.op === 'notContains')
+            return not(row.transitionId.ilike('%' + String(condition.value ?? '') + '%'))
+          return row.id.eq('')
         })
       }
       if (key === 'follower') {
@@ -2712,7 +2709,7 @@ export class LeadsService {
           if (condition.op === 'ne') return row.follower.neq(value)
           if (condition.op === 'in') return row.follower.in(values)
           if (condition.op === 'notIn') return not(row.follower.in(values))
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       if (key === 'poolId') {
@@ -2721,7 +2718,7 @@ export class LeadsService {
           if (condition.op === 'ne') return row.poolId.neq(value)
           if (condition.op === 'in') return row.poolId.in(values)
           if (condition.op === 'notIn') return not(row.poolId.in(values))
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       if (key === 'reasonId') {
@@ -2730,7 +2727,7 @@ export class LeadsService {
           if (condition.op === 'ne') return row.reasonId.neq(value)
           if (condition.op === 'in') return row.reasonId.in(values)
           if (condition.op === 'notIn') return not(row.reasonId.in(values))
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       return collection.where((row) => {
@@ -2739,7 +2736,7 @@ export class LeadsService {
         if (condition.op === 'ne') return target.neq(value)
         if (condition.op === 'in') return target.in(values)
         if (condition.op === 'notIn') return not(target.in(values))
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 

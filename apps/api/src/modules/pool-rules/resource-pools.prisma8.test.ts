@@ -5,7 +5,7 @@ import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -43,13 +43,11 @@ test(
         name: 'Pool User',
         deptId: child.id,
       })
-      const role = await prisma8Client.orm.public.Roles
-        .select('id')
-        .create({
-          tenantId: tenant.id,
-          name: `Pool Role ${suffix}`,
-          updatedAt: prisma8Now(),
-        })
+      const role = await prisma8Client.orm.public.Roles.select('id').create({
+        tenantId: tenant.id,
+        name: `Pool Role ${suffix}`,
+        updatedAt: prisma8Now(),
+      })
       await prisma8Client.orm.public.UserRoles.create({
         tenantId: tenant.id,
         userId: actor.id,
@@ -57,26 +55,24 @@ test(
         updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor.id, 32)
-      const clue = await prisma8Client.orm.public.Clue
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          organizationId,
-          name: prisma8Varchar('Owned clue', 255),
-          owner: actorId,
-          stage: prisma8Varchar('FOLLOWING', 30),
-          inSharedPool: false,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
-      await prisma8Client.orm.public.Customer.create({
-        id: prisma8Id32(),
+      const organizationId = tenant.id
+      const actorId = actor.id
+      const clue = await prisma8Client.orm.public.Clue.select('id').create({
+        id: createLegacyId32(),
         organizationId,
-        name: prisma8Varchar('Owned customer', 255),
+        name: 'Owned clue',
+        owner: actorId,
+        stage: 'FOLLOWING',
+        inSharedPool: false,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
+      await prisma8Client.orm.public.Customer.create({
+        id: createLegacyId32(),
+        organizationId,
+        name: 'Owned customer',
         owner: actorId,
         inSharedPool: false,
         createTime: now,
@@ -93,9 +89,7 @@ test(
       }
       const cluePools = {
         listPools: async () => [pool],
-        listCapacities: async () => [
-          { scopeId: JSON.stringify([`dept:${root.id}`]), capacity: 1 },
-        ],
+        listCapacities: async () => [{ scopeId: JSON.stringify([`dept:${root.id}`]), capacity: 1 }],
         listOwnerHistory: async () => [
           {
             id: 'history-1',
@@ -109,9 +103,7 @@ test(
       }
       const customerPools = {
         listPools: async () => [pool],
-        listCapacities: async () => [
-          { scopeId: JSON.stringify([`dept:${root.id}`]), capacity: 1 },
-        ],
+        listCapacities: async () => [{ scopeId: JSON.stringify([`dept:${root.id}`]), capacity: 1 }],
         listOwnerHistory: async () => [],
       }
       const dictionaries = {
@@ -132,10 +124,19 @@ test(
       } as unknown as AuthUser
 
       const options = await service.options(user, 'lead')
-      assert.deepEqual(options.map((item) => item.id), ['pool-visible'])
+      assert.deepEqual(
+        options.map((item) => item.id),
+        ['pool-visible'],
+      )
       assert.equal(await service.isPoolManager(user, 'lead', 'pool-visible'), true)
-      assert.equal((await service.assertPoolMember(user, 'lead', 'pool-visible')).id, 'pool-visible')
-      assert.equal((await service.resolveMoveTargetPool(tenant.id, 'lead', actor.id)).id, 'pool-visible')
+      assert.equal(
+        (await service.assertPoolMember(user, 'lead', 'pool-visible')).id,
+        'pool-visible',
+      )
+      assert.equal(
+        (await service.resolveMoveTargetPool(tenant.id, 'lead', actor.id)).id,
+        'pool-visible',
+      )
 
       await assert.rejects(
         () => service.assertCapacityForOwner(tenant.id, 'lead', actor.id, 1),
@@ -156,12 +157,14 @@ test(
       assert.equal(history[0]?.reasonId, null)
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
-        const clueIds = await prisma8Client.orm.public.Clue.where({ organizationId }).select('id').all()
+        const organizationId = tenantId
+        const clueIds = await prisma8Client.orm.public.Clue.where({ organizationId })
+          .select('id')
+          .all()
         if (clueIds.length) {
-          await prisma8Client.orm.public.ClueOwner
-            .where((row) => row.clueId.in(clueIds.map((item) => item.id)))
-            .deleteAll()
+          await prisma8Client.orm.public.ClueOwner.where((row) =>
+            row.clueId.in(clueIds.map((item) => item.id)),
+          ).deleteAll()
         }
         await prisma8Client.orm.public.Clue.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()

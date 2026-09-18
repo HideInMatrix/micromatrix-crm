@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ContractsService } from './contracts.service'
 
@@ -89,32 +89,28 @@ test(
         updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const org = prisma8Varchar(organizationId, 32)
-      const actor = prisma8Varchar(actorId, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('合同专项客户', 255),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const stage = await prisma8Client.orm.public.ContractStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('执行中', 255),
-          _type: prisma8Varchar('AFOOT', 50),
-          pos: 1n,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
+      const org = organizationId
+      const actor = actorId
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '合同专项客户',
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const stage = await prisma8Client.orm.public.ContractStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '执行中',
+        _type: 'AFOOT',
+        pos: 1n,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
 
       const created = await service.addDirect(user, {
         name: 'Prisma8 合同',
@@ -151,7 +147,7 @@ test(
         Number(
           (
             await prisma8Client.orm.public.Contract.where({
-              id: prisma8Varchar(created.id, 32),
+              id: created.id,
             })
               .select('amount')
               .first()
@@ -163,15 +159,12 @@ test(
       const removed = await service.remove(user, created.id)
       assert.equal(removed.pendingApproval, false)
       assert.equal(
-        (
-          await prisma8Client.orm.public.Contract.where({ id: prisma8Varchar(created.id, 32) })
-            .select('id')
-            .all()
-        ).length,
+        (await prisma8Client.orm.public.Contract.where({ id: created.id }).select('id').all())
+          .length,
         0,
       )
     } finally {
-      const org = prisma8Varchar(organizationId, 32)
+      const org = organizationId
       await prisma8Client.orm.public.Contract.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.ContractStageConfig.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.Customer.where({ organizationId: org }).deleteAll()

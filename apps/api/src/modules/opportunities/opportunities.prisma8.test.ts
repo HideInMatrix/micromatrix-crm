@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -44,20 +44,18 @@ test(
         permissions: ['*'],
       }
       const now = BigInt(Date.now())
-      const org = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor.id, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('商机专项客户', 255),
-          owner: actorId,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
+      const org = tenant.id
+      const actorId = actor.id
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '商机专项客户',
+        owner: actorId,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
 
       const fields = [
         { id: 'name', key: 'name', label: '商机名称', type: 'text', system: true, hidden: false },
@@ -127,7 +125,7 @@ test(
       const changed = await service.changeStage(user, created.id, { stageId: targetStage.id })
       assert.equal(changed.id, created.id)
       const oracle = await prisma8Client.orm.public.Opportunity.where({
-        id: prisma8Varchar(created.id, 32),
+        id: created.id,
       }).first()
       assert.ok(oracle)
       assert.equal(oracle.stage, targetStage.id)
@@ -142,7 +140,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.Opportunity.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('name')
             .first()
@@ -155,7 +153,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.Opportunity.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('id')
             .all()
@@ -164,9 +162,11 @@ test(
       )
     } finally {
       if (tenantId) {
-        const org = prisma8Varchar(tenantId, 32)
+        const org = tenantId
         await prisma8Client.orm.public.Opportunity.where({ organizationId: org }).deleteAll()
-        await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId: org }).deleteAll()
+        await prisma8Client.orm.public.OpportunityStageConfig.where({
+          organizationId: org,
+        }).deleteAll()
         await prisma8Client.orm.public.Customer.where({ organizationId: org }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()

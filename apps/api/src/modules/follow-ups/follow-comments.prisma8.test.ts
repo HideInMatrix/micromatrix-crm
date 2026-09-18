@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -62,45 +62,49 @@ test(
         permissions: ['*'],
       }
       const now = BigInt(Date.now())
-      const organizationId = prisma8Varchar(tenantId, 32)
-      const actorId = prisma8Varchar(actorRow.id, 32)
-      const ownerId = prisma8Varchar(ownerRow.id, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Prisma 8 评论客户', 255),
-          owner: ownerId,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-          organizationId,
-        })
-      const record = await prisma8Client.orm.public.FollowUpRecords
-        .select('id', 'targetType', 'targetId', 'ownerId')
-        .create({
-          tenantId,
-          targetType: 'customer',
-          targetId: customer.id,
-          content: '真实跟进记录',
-          ownerId: ownerRow.id,
-          ownerName: ownerRow.name,
-          createdById: actorRow.id,
-          updatedAt: prisma8Now(),
-        })
-      const plan = await prisma8Client.orm.public.FollowUpPlans
-        .select('id', 'targetType', 'targetId', 'ownerId')
-        .create({
-          tenantId,
-          targetType: 'customer',
-          targetId: customer.id,
-          content: '真实跟进计划',
-          status: 'PREPARED',
-          ownerId: ownerRow.id,
-          createdById: actorRow.id,
-          updatedAt: prisma8Now(),
-        })
+      const organizationId = tenantId
+      const actorId = actorRow.id
+      const ownerId = ownerRow.id
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: 'Prisma 8 评论客户',
+        owner: ownerId,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+        organizationId,
+      })
+      const record = await prisma8Client.orm.public.FollowUpRecords.select(
+        'id',
+        'targetType',
+        'targetId',
+        'ownerId',
+      ).create({
+        tenantId,
+        targetType: 'customer',
+        targetId: customer.id,
+        content: '真实跟进记录',
+        ownerId: ownerRow.id,
+        ownerName: ownerRow.name,
+        createdById: actorRow.id,
+        updatedAt: prisma8Now(),
+      })
+      const plan = await prisma8Client.orm.public.FollowUpPlans.select(
+        'id',
+        'targetType',
+        'targetId',
+        'ownerId',
+      ).create({
+        tenantId,
+        targetType: 'customer',
+        targetId: customer.id,
+        content: '真实跟进计划',
+        status: 'PREPARED',
+        ownerId: ownerRow.id,
+        createdById: actorRow.id,
+        updatedAt: prisma8Now(),
+      })
 
       const prisma8 = { client: prisma8Client } as Prisma8Service
       const notifications = { send: async () => 1 } as unknown as BusinessNotificationsService
@@ -121,12 +125,12 @@ test(
         mentionedUserIds: [mentionRow.id],
       })
       const persistedRecordComment = await prisma8Client.orm.public.FollowUpRecordComment.where({
-        id: prisma8Varchar(recordComment.id, 32),
+        id: recordComment.id,
       }).first()
       assert.ok(persistedRecordComment)
       assert.equal(persistedRecordComment.content, '记录评论')
       const recordMentions = await prisma8Client.orm.public.FollowUpRecordCommentMention.where({
-        commentId: prisma8Varchar(recordComment.id, 32),
+        commentId: recordComment.id,
       })
         .select('userId')
         .all()
@@ -152,7 +156,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.FollowUpRecordCommentMention.where({
-            commentId: prisma8Varchar(recordComment.id, 32),
+            commentId: recordComment.id,
           })
             .select('id')
             .all()
@@ -178,12 +182,12 @@ test(
         mentionedUserIds: [mentionRow.id],
       })
       const persistedPlanComment = await prisma8Client.orm.public.FollowUpPlanComment.where({
-        id: prisma8Varchar(planComment.id, 32),
+        id: planComment.id,
       }).first()
       assert.ok(persistedPlanComment)
       assert.equal(persistedPlanComment.content, '计划评论')
       const planMentions = await prisma8Client.orm.public.FollowUpPlanCommentMention.where({
-        commentId: prisma8Varchar(planComment.id, 32),
+        commentId: planComment.id,
       })
         .select('userId')
         .all()
@@ -208,7 +212,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.FollowUpPlanCommentMention.where({
-            commentId: prisma8Varchar(planComment.id, 32),
+            commentId: planComment.id,
           })
             .select('id')
             .all()
@@ -231,9 +235,7 @@ test(
       if (tenantId) {
         await prisma8Client.orm.public.FollowUpRecords.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.FollowUpPlans.where({ tenantId }).deleteAll()
-        await prisma8Client.orm.public.Customer
-          .where({ organizationId: prisma8Varchar(tenantId, 32) })
-          .deleteAll()
+        await prisma8Client.orm.public.Customer.where({ organizationId: tenantId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }

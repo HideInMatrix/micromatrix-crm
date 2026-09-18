@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../common/auth-user'
 import type { Prisma8Service } from '../prisma/prisma8.service'
-import { prisma8Varchar } from '../prisma/prisma8-varchar'
+
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -100,8 +100,8 @@ test(
       const changeLog = { record: async () => undefined }
       const accessResult = async (customerId: string) => {
         const customer = await prisma8Client.orm.public.Customer.where({
-          id: prisma8Varchar(customerId, 32),
-          organizationId: prisma8Varchar(tenant.id, 32),
+          id: customerId,
+          organizationId: tenant.id,
         }).first()
         assert.ok(customer)
         return {
@@ -165,7 +165,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.Customer.where({
-            id: prisma8Varchar(parent.id, 32),
+            id: parent.id,
           })
             .select('name')
             .first()
@@ -179,12 +179,7 @@ test(
       assert.equal(team[0]?.userId, collaborator.id)
       assert.equal(team[0]?.userName, '协作成员')
 
-      const relation = await service.relationAdd(
-        user,
-        parent.id,
-        child.id,
-        'SUBSIDIARY',
-      )
+      const relation = await service.relationAdd(user, parent.id, child.id, 'SUBSIDIARY')
       assert.ok(relation)
       const relations = await service.relationList(user, parent.id)
       assert.equal(relations.length, 1)
@@ -198,28 +193,29 @@ test(
       const removedChild = await service.remove(user, child.id)
       assert.equal(removedParent.id, parent.id)
       assert.equal(removedChild.id, child.id)
-      const remaining = await prisma8Client.orm.public.Customer
-        .where((row) => row.id.in([prisma8Varchar(parent.id, 32), prisma8Varchar(child.id, 32)]))
+      const remaining = await prisma8Client.orm.public.Customer.where((row) =>
+        row.id.in([parent.id, child.id]),
+      )
         .select('id')
         .all()
       assert.equal(remaining.length, 0)
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         const customerIds = await prisma8Client.orm.public.Customer.where({ organizationId })
           .select('id')
           .all()
         if (customerIds.length) {
           const ids = customerIds.map((item) => item.id)
-          await prisma8Client.orm.public.CustomerRelation
-            .where((row) => row.sourceCustomerId.in(ids))
-            .deleteAll()
-          await prisma8Client.orm.public.CustomerRelation
-            .where((row) => row.targetCustomerId.in(ids))
-            .deleteAll()
-          await prisma8Client.orm.public.CustomerCollaboration
-            .where((row) => row.customerId.in(ids))
-            .deleteAll()
+          await prisma8Client.orm.public.CustomerRelation.where((row) =>
+            row.sourceCustomerId.in(ids),
+          ).deleteAll()
+          await prisma8Client.orm.public.CustomerRelation.where((row) =>
+            row.targetCustomerId.in(ids),
+          ).deleteAll()
+          await prisma8Client.orm.public.CustomerCollaboration.where((row) =>
+            row.customerId.in(ids),
+          ).deleteAll()
         }
         await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()

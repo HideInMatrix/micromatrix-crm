@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -45,20 +45,18 @@ test(
         permissions: ['*'],
       }
       const now = BigInt(Date.now())
-      const org = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor.id, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('订单专项客户', 255),
-          owner: actorId,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
+      const org = tenant.id
+      const actorId = actor.id
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '订单专项客户',
+        owner: actorId,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
       const orderStages = new OrderStageService(prisma8)
       await orderStages.get(user)
 
@@ -156,7 +154,7 @@ test(
         Number(
           (
             await prisma8Client.orm.public.SalesOrder.where({
-              id: prisma8Varchar(first.id, 32),
+              id: first.id,
             })
               .select('amount')
               .first()
@@ -174,7 +172,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.SalesOrder.where({
-            id: prisma8Varchar(second.id, 32),
+            id: second.id,
           })
             .select('name')
             .first()
@@ -185,7 +183,7 @@ test(
       await service.sort(user, { id: second.id, stage: second.stage, pos: 1 })
       const ordered = await prisma8Client.orm.public.SalesOrder.where({
         organizationId: org,
-        stage: prisma8Varchar(second.stage, 50),
+        stage: second.stage,
       })
         .orderBy((row) => row.pos.asc())
         .select('id')
@@ -198,10 +196,7 @@ test(
       assert.equal(removedSecond.pendingApproval, false)
       assert.equal(
         (
-          await prisma8Client.orm.public.SalesOrder
-            .where((row) =>
-              row.id.in([prisma8Varchar(first.id, 32), prisma8Varchar(second.id, 32)]),
-            )
+          await prisma8Client.orm.public.SalesOrder.where((row) => row.id.in([first.id, second.id]))
             .select('id')
             .all()
         ).length,
@@ -209,10 +204,14 @@ test(
       )
     } finally {
       if (tenantId) {
-        const org = prisma8Varchar(tenantId, 32)
+        const org = tenantId
         await prisma8Client.orm.public.SalesOrder.where({ organizationId: org }).deleteAll()
-        await prisma8Client.orm.public.StageAdvancedConfig.where({ organizationId: org }).deleteAll()
-        await prisma8Client.orm.public.SalesOrderStageConfig.where({ organizationId: org }).deleteAll()
+        await prisma8Client.orm.public.StageAdvancedConfig.where({
+          organizationId: org,
+        }).deleteAll()
+        await prisma8Client.orm.public.SalesOrderStageConfig.where({
+          organizationId: org,
+        }).deleteAll()
         await prisma8Client.orm.public.Customer.where({ organizationId: org }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()

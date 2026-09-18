@@ -4,7 +4,7 @@ import type { AuthUser } from '../common/auth-user'
 import { MetadataService } from '../modules/metadata/metadata.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
 import { Prisma8Service } from '../prisma/prisma8.service'
-import { prisma8Varchar, prisma8Varchars } from '../prisma/prisma8-varchar'
+
 import type {
   CapacityExclusionCondition,
   DirectPoolConfigurationInput,
@@ -63,8 +63,8 @@ export class CustomerPoolConfigService {
   async noPick(user: AuthUser, poolId: string) {
     await this.assertPoolExists(user.tenantId, poolId)
     const aggregate = await this.prisma8.client.orm.public.Customer.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      poolId: prisma8Varchar(poolId, 32),
+      organizationId: user.tenantId,
+      poolId: poolId,
       inSharedPool: true,
     }).aggregate((agg) => ({ total: agg.count() }))
     return aggregate.total > 0
@@ -173,13 +173,14 @@ export class CustomerPoolConfigService {
     if (!values.length) return []
     if (values.length > 1) throw new BadRequestException('客户库容最多配置一条排除条件')
     const filter = values[0]
-    if (!filter || filter.column !== 'stage') throw new BadRequestException('客户库容仅支持按商机阶段排除')
+    if (!filter || filter.column !== 'stage')
+      throw new BadRequestException('客户库容仅支持按商机阶段排除')
     if (!filter.value.length) throw new BadRequestException('请选择要排除的商机阶段')
     const stageIds = [...new Set(filter.value)]
     const stages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
-      .where((stage) => stage.id.in(prisma8Varchars(stageIds, 32)))
+      .where((stage) => stage.id.in(stageIds))
       .select('id')
       .all()
     if (stages.length !== stageIds.length) {
@@ -189,7 +190,9 @@ export class CustomerPoolConfigService {
   }
 
   private async assertPoolExists(organizationId: string, poolId: string) {
-    const pool = (await this.customerPools.listPools(organizationId)).find((item) => item.id === poolId)
+    const pool = (await this.customerPools.listPools(organizationId)).find(
+      (item) => item.id === poolId,
+    )
     if (!pool) throw new NotFoundException('客户公海不存在')
     return pool
   }

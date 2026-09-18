@@ -5,7 +5,7 @@ import type { HomeStatisticRequest } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
 import type { HomeDepartmentScopeService } from './home-department-scope.service'
@@ -33,17 +33,17 @@ test(
     try {
       const tenant = await createPrismaTestTenant(prisma8Client, 'p8-home')
       tenantId = tenant.id
-      const actorId = prisma8Varchar(suffix.slice(0, 32), 32)
-      const organizationId = prisma8Varchar(tenant.id, 32)
+      const actorId = suffix.slice(0, 32)
+      const organizationId = tenant.id
       const inRange = BigInt(new Date('2026-09-16T08:00:00.000Z').getTime())
       const now = inRange
 
       await prisma8Client.orm.public.Clue.createAll([
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Visible clue', 255),
+          id: createLegacyId32(),
+          name: 'Visible clue',
           owner: actorId,
-          stage: prisma8Varchar('NEW', 30),
+          stage: 'NEW',
           organizationId,
           createTime: inRange,
           updateTime: now,
@@ -53,29 +53,29 @@ test(
           inSharedPool: false,
         },
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Transitioned clue', 255),
+          id: createLegacyId32(),
+          name: 'Transitioned clue',
           owner: actorId,
-          stage: prisma8Varchar('NEW', 30),
+          stage: 'NEW',
           organizationId,
           createTime: inRange,
           updateTime: now,
           createUser: actorId,
           updateUser: actorId,
-          transitionId: prisma8Varchar(suffix.slice(0, 32), 32),
+          transitionId: suffix.slice(0, 32),
           inSharedPool: false,
         },
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Pool clue', 255),
+          id: createLegacyId32(),
+          name: 'Pool clue',
           owner: actorId,
-          stage: prisma8Varchar('NEW', 30),
+          stage: 'NEW',
           organizationId,
           createTime: inRange,
           updateTime: now,
           createUser: actorId,
           updateUser: actorId,
-          transitionId: prisma8Varchar('', 32),
+          transitionId: '',
           inSharedPool: true,
         },
       ])
@@ -87,41 +87,39 @@ test(
         createUser: actorId,
         updateUser: actorId,
       }
-      const afootStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
+      const afootStage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create({
+        ...stageBase,
+        id: createLegacyId32(),
+        name: '进行中',
+        _type: 'AFOOT',
+        rate: '50',
+        pos: 1n,
+      })
+      const successStage = await prisma8Client.orm.public.OpportunityStageConfig.select(
+        'id',
+      ).create({
+        ...stageBase,
+        id: createLegacyId32(),
+        name: '赢单',
+        _type: 'END',
+        rate: '100',
+        pos: 2n,
+      })
+      const failedStage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create(
+        {
           ...stageBase,
-          id: prisma8Id32(),
-          name: prisma8Varchar('进行中', 16),
-          _type: prisma8Varchar('AFOOT', 50),
-          rate: prisma8Varchar('50', 10),
-          pos: 1n,
-        })
-      const successStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          ...stageBase,
-          id: prisma8Id32(),
-          name: prisma8Varchar('赢单', 16),
-          _type: prisma8Varchar('END', 50),
-          rate: prisma8Varchar('100', 10),
-          pos: 2n,
-        })
-      const failedStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          ...stageBase,
-          id: prisma8Id32(),
-          name: prisma8Varchar('输单', 16),
-          _type: prisma8Varchar('END', 50),
-          rate: prisma8Varchar('0', 10),
+          id: createLegacyId32(),
+          name: '输单',
+          _type: 'END',
+          rate: '0',
           pos: 3n,
-        })
+        },
+      )
 
       await prisma8Client.orm.public.Opportunity.createAll([
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Underway 1', 255),
+          id: createLegacyId32(),
+          name: 'Underway 1',
           amount: prisma8Numeric('100.5000000000', 20, 10),
           organizationId,
           stage: afootStage.id,
@@ -133,8 +131,8 @@ test(
           expectedEndTime: inRange,
         },
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Underway 2', 255),
+          id: createLegacyId32(),
+          name: 'Underway 2',
           amount: prisma8Numeric('49.5000000000', 20, 10),
           organizationId,
           stage: afootStage.id,
@@ -146,8 +144,8 @@ test(
           expectedEndTime: inRange,
         },
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Won', 255),
+          id: createLegacyId32(),
+          name: 'Won',
           amount: prisma8Numeric('200.0000000000', 20, 10),
           organizationId,
           stage: successStage.id,
@@ -159,8 +157,8 @@ test(
           expectedEndTime: inRange,
         },
         {
-          id: prisma8Id32(),
-          name: prisma8Varchar('Lost', 255),
+          id: createLegacyId32(),
+          name: 'Lost',
           amount: prisma8Numeric('999.0000000000', 20, 10),
           organizationId,
           stage: failedStage.id,
@@ -210,7 +208,7 @@ test(
       assert.equal(success.todayOpportunityAmount.value, 200)
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.Opportunity.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Clue.where({ organizationId }).deleteAll()

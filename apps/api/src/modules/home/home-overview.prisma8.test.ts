@@ -4,7 +4,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { DataScopeService } from '../../common/services/data-scope.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -47,12 +47,12 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const eventAt = BigInt(Math.max(monthStart.getTime() + 60_000, now.getTime() - 60_000))
-  const organizationId = prisma8Varchar(tenant.id, 32)
-  const ownerId = prisma8Varchar(owner.id, 32)
-  const otherId = prisma8Varchar(other.id, 32)
-  const stageAfoot = prisma8Id32()
-  const stageWon = prisma8Id32()
-  const stageLost = prisma8Id32()
+  const organizationId = tenant.id
+  const ownerId = owner.id
+  const otherId = other.id
+  const stageAfoot = createLegacyId32()
+  const stageWon = createLegacyId32()
+  const stageLost = createLegacyId32()
   const stageBase = {
     organizationId,
     afootRollBack: false,
@@ -68,47 +68,47 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
       {
         ...stageBase,
         id: stageAfoot,
-        name: prisma8Varchar('推进', 16),
-        _type: prisma8Varchar('AFOOT', 50),
-        rate: prisma8Varchar('50', 10),
+        name: '推进',
+        _type: 'AFOOT',
+        rate: '50',
         pos: 1n,
       },
       {
         ...stageBase,
         id: stageWon,
-        name: prisma8Varchar('赢单', 16),
-        _type: prisma8Varchar('END', 50),
-        rate: prisma8Varchar('100', 10),
+        name: '赢单',
+        _type: 'END',
+        rate: '100',
         pos: 2n,
       },
       {
         ...stageBase,
         id: stageLost,
-        name: prisma8Varchar('输单', 16),
-        _type: prisma8Varchar('END', 50),
-        rate: prisma8Varchar('0', 10),
+        name: '输单',
+        _type: 'END',
+        rate: '0',
         pos: 3n,
       },
     ])
 
     await prisma8Client.orm.public.Clue.createAll([
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('线索一', 255),
+        id: createLegacyId32(),
+        name: '线索一',
         owner: ownerId,
-        stage: prisma8Varchar('NEW', 30),
+        stage: 'NEW',
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,
         createUser: ownerId,
         updateUser: ownerId,
-        transitionId: prisma8Id32(),
+        transitionId: createLegacyId32(),
       },
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('线索二', 255),
+        id: createLegacyId32(),
+        name: '线索二',
         owner: ownerId,
-        stage: prisma8Varchar('NEW', 30),
+        stage: 'NEW',
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,
@@ -116,23 +116,23 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         updateUser: ownerId,
       },
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('跨 scope 线索', 255),
+        id: createLegacyId32(),
+        name: '跨 scope 线索',
         owner: otherId,
-        stage: prisma8Varchar('NEW', 30),
+        stage: 'NEW',
         organizationId,
         createTime: eventAt,
         updateTime: eventAt,
         createUser: otherId,
         updateUser: otherId,
-        transitionId: prisma8Id32(),
+        transitionId: createLegacyId32(),
       },
     ])
 
     await prisma8Client.orm.public.Customer.createAll([
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('客户一', 255),
+        id: createLegacyId32(),
+        name: '客户一',
         owner: ownerId,
         organizationId,
         createTime: eventAt,
@@ -141,8 +141,8 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         updateUser: ownerId,
       },
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('跨 scope 客户', 255),
+        id: createLegacyId32(),
+        name: '跨 scope 客户',
         owner: otherId,
         organizationId,
         createTime: eventAt,
@@ -154,8 +154,8 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
 
     await prisma8Client.orm.public.Opportunity.createAll([
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('推进商机', 255),
+        id: createLegacyId32(),
+        name: '推进商机',
         owner: ownerId,
         stage: stageAfoot,
         amount: prisma8Numeric(20, 20, 10),
@@ -166,8 +166,8 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         updateUser: ownerId,
       },
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('赢单商机', 255),
+        id: createLegacyId32(),
+        name: '赢单商机',
         owner: ownerId,
         stage: stageWon,
         amount: prisma8Numeric(100, 20, 10),
@@ -179,8 +179,8 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         updateUser: ownerId,
       },
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('输单商机', 255),
+        id: createLegacyId32(),
+        name: '输单商机',
         owner: ownerId,
         stage: stageLost,
         amount: prisma8Numeric(50, 20, 10),
@@ -188,13 +188,13 @@ test('HomeOverview 使用 Prisma 8 保持 owner scope、阶段聚合、排行、
         createTime: eventAt,
         updateTime: eventAt,
         actualEndTime: eventAt,
-        failureReason: prisma8Varchar('价格', 50),
+        failureReason: '价格',
         createUser: ownerId,
         updateUser: ownerId,
       },
       {
-        id: prisma8Id32(),
-        name: prisma8Varchar('跨 scope 赢单', 255),
+        id: createLegacyId32(),
+        name: '跨 scope 赢单',
         owner: otherId,
         stage: stageWon,
         amount: prisma8Numeric(999, 20, 10),

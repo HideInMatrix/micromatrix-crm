@@ -65,14 +65,16 @@ contract.prisma
 
 ## 5. VarChar / ID
 
-当前 contract 含大量 `VarChar(N)`，Prisma 8 将其暴露为 branded type。不能仅为了消除 cast 将其全部改成无约束 `text`。
+P3 已验证 476 个历史 `VarChar(N)` 不能简单迁为 UUID 或无约束 text。最终正式模型为：
 
-候选方案按字段分类评估：
+```text
+String / PostgreSQL text
+  + contract-declared CHECK(char_length(column) <= N)
+```
 
-- 业务自由文本：可评估 `text + CHECK(char_length(...) <= N)`；
-- 固定长度/协议字段：保留 varchar/domain；
-- 32 位历史 ID：先确认值域；真正 UUID 才评估 PostgreSQL `uuid`，非 UUID 继续 String；
-- 所有变化通过 forward migration，并在 existing DB 上先跑长度/格式 precheck。
+这样保留数据库长度约束，同时 generated TypeScript 回到普通 `string`，不再暴露 `Varchar<N>` branded type。existing/fresh PostgreSQL 已完成 forward migration 与值指纹验证。
+
+32 位历史 ID 保持字符串语义；已有值包含 CUID、32-hex、`SYSTEM`、`u<hex>`、`org-<hex>`、`NONE` 等，不能整体迁为 PostgreSQL `uuid`。无数据库默认值的旧表主键由业务 helper `createLegacyId32()` 生成，不再使用 Prisma compatibility helper。
 
 ## 6. Numeric / JSON
 

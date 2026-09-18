@@ -4,7 +4,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { FollowCommentServiceBase } from './follow-comment.service-base'
 import { type FollowRecord, FollowUpsService } from './follow-ups.service'
@@ -36,7 +36,7 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
     pageSize: number,
   ) {
     const collection = this.comments().where({
-      organizationId: prisma8Varchar(tenantId, 32),
+      organizationId: tenantId,
       resourceId,
       parentId: null,
     })
@@ -53,8 +53,8 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
 
   protected async loadReplies(tenantId: string, resourceId: string, parentIds: string[]) {
     const rows = await this.comments()
-      .where({ organizationId: prisma8Varchar(tenantId, 32), resourceId })
-      .where((row) => row.parentId.in(prisma8Varchars(parentIds, 32)))
+      .where({ organizationId: tenantId, resourceId })
+      .where((row) => row.parentId.in(parentIds))
       .orderBy((row) => row.createTime.asc())
       .all()
     return rows.map((row) => this.toCommentRow(row))
@@ -62,7 +62,7 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
 
   protected findComment(tenantId: string, id: string) {
     return this.comments()
-      .where({ id: prisma8Varchar(id, 32), organizationId: prisma8Varchar(tenantId, 32) })
+      .where({ id: id, organizationId: tenantId })
       .first()
       .then((row) => (row ? this.toCommentRow(row) : null))
   }
@@ -70,8 +70,8 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
   protected findReplyParent(tenantId: string, resourceId: string, parentId: string) {
     return this.comments()
       .where({
-        id: prisma8Varchar(parentId, 32),
-        organizationId: prisma8Varchar(tenantId, 32),
+        id: parentId,
+        organizationId: tenantId,
         resourceId,
       })
       .select('id', 'parentId')
@@ -91,14 +91,14 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
     },
   ) {
     return tx.orm.public.FollowUpRecordComment.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       resourceId: input.resourceId,
-      parentId: input.parentId ? prisma8Varchar(input.parentId, 32) : null,
-      replyToUserId: input.replyToUserId ? prisma8Varchar(input.replyToUserId, 32) : null,
-      content: prisma8Varchar(input.content, 3000),
-      organizationId: prisma8Varchar(input.tenantId, 32),
-      createUser: prisma8Varchar(input.createdById, 32),
-      updateUser: prisma8Varchar(input.updatedById, 32),
+      parentId: input.parentId ? input.parentId : null,
+      replyToUserId: input.replyToUserId ? input.replyToUserId : null,
+      content: input.content,
+      organizationId: input.tenantId,
+      createUser: input.createdById,
+      updateUser: input.updatedById,
       updateTime: prisma8Now(),
     }).then((row) => this.toCommentRow(row))
   }
@@ -109,10 +109,10 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
     content: string,
     updatedById: string,
   ) {
-    return tx.orm.public.FollowUpRecordComment.where({ id: prisma8Varchar(id, 32) })
+    return tx.orm.public.FollowUpRecordComment.where({ id: id })
       .update({
-        content: prisma8Varchar(content, 3000),
-        updateUser: prisma8Varchar(updatedById, 32),
+        content: content,
+        updateUser: updatedById,
         updateTime: prisma8Now(),
       })
       .then((row) => {
@@ -122,30 +122,26 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
   }
 
   protected async deleteComment(tx: Prisma8Transaction, id: string): Promise<void> {
-    await tx.orm.public.FollowUpRecordComment.where({ id: prisma8Varchar(id, 32) }).delete()
+    await tx.orm.public.FollowUpRecordComment.where({ id: id }).delete()
   }
 
-  protected async replaceMentions(
-    tx: Prisma8Transaction,
-    commentId: string,
-    userIds: string[],
-  ) {
+  protected async replaceMentions(tx: Prisma8Transaction, commentId: string, userIds: string[]) {
     await tx.orm.public.FollowUpRecordCommentMention.where({
-      commentId: prisma8Varchar(commentId, 32),
+      commentId: commentId,
     }).deleteAndCount()
     if (!userIds.length) return
     await tx.orm.public.FollowUpRecordCommentMention.createAll(
       userIds.map((userId) => ({
-        id: prisma8Id32(),
-        commentId: prisma8Varchar(commentId, 32),
-        userId: prisma8Varchar(userId, 32),
+        id: createLegacyId32(),
+        commentId: commentId,
+        userId: userId,
       })),
     )
   }
 
   protected async loadMentions(commentIds: string[]) {
     return await this.prisma8.client.orm.public.FollowUpRecordCommentMention.where((row) =>
-      row.commentId.in(prisma8Varchars(commentIds, 32)),
+      row.commentId.in(commentIds),
     )
       .select('commentId', 'userId')
       .all()
@@ -153,7 +149,7 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
 
   protected async recount(tx: Prisma8Transaction, tenantId: string, resourceId: string) {
     const { count: commentCount } = await tx.orm.public.FollowUpRecordComment.where({
-      organizationId: prisma8Varchar(tenantId, 32),
+      organizationId: tenantId,
       resourceId,
     }).aggregate((aggregate) => ({ count: aggregate.count() }))
     await tx.orm.public.FollowUpRecords.where({ id: resourceId, tenantId }).update({

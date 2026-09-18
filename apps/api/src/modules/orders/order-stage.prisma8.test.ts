@@ -4,7 +4,7 @@ import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -33,8 +33,8 @@ test(
       })
       const user = { id: actor.id, tenantId: tenant.id } as AuthUser
       const service = new OrderStageService({ client: prisma8Client } as Prisma8Service)
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor.id, 32)
+      const organizationId = tenant.id
+      const actorId = actor.id
 
       const initial = await service.get(user)
       assert.equal(initial.stageConfigList.length, 7)
@@ -54,21 +54,22 @@ test(
       assert.equal(afterAdd.stageConfigList[1]?.id, addedId)
 
       const now = BigInt(Date.now())
-      const order = await prisma8Client.orm.public.SalesOrder
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          number: prisma8Varchar(`O-${suffix}`.slice(0, 50), 50),
-          name: prisma8Varchar('Prisma8 stage order', 255),
-          stage: prisma8Varchar(addedId, 50),
-          organizationId,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
+      const order = await prisma8Client.orm.public.SalesOrder.select('id').create({
+        id: createLegacyId32(),
+        number: `O-${suffix}`.slice(0, 50),
+        name: 'Prisma8 stage order',
+        stage: addedId,
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
       const withData = await service.get(user)
-      assert.equal(withData.stageConfigList.find((stage) => stage.id === addedId)?.stageHasData, true)
+      assert.equal(
+        withData.stageConfigList.find((stage) => stage.id === addedId)?.stageHasData,
+        true,
+      )
       await assert.rejects(() => service.remove(user, addedId), BadRequestException)
 
       const originId = withData.stageConfigList[0]!.id
@@ -94,14 +95,19 @@ test(
 
       await prisma8Client.orm.public.SalesOrder.where({ id: order.id }).delete()
       assert.deepEqual(await service.remove(user, addedId), { id: addedId, name: '补充订单阶段' })
-      const remaining = await prisma8Client.orm.public.SalesOrderStageConfig.where({ organizationId })
+      const remaining = await prisma8Client.orm.public.SalesOrderStageConfig.where({
+        organizationId,
+      })
         .orderBy((row) => row.pos.asc())
         .all()
       assert.equal(remaining.length, 7)
-      assert.deepEqual(remaining.map((stage) => Number(stage.pos)), [1, 2, 3, 4, 5, 6, 7])
+      assert.deepEqual(
+        remaining.map((stage) => Number(stage.pos)),
+        [1, 2, 3, 4, 5, 6, 7],
+      )
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.SalesOrder.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.StageAdvancedConfig.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.SalesOrderStageConfig.where({ organizationId }).deleteAll()

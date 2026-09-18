@@ -22,7 +22,7 @@ import {
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
 import { prisma8JsonValue, prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { BiddingItem, BiddingProvider } from './providers/bidding-provider.interface'
 import { DemoBiddingProvider } from './providers/demo.provider'
@@ -178,12 +178,10 @@ export class BiddingService {
         const credentials = source.credentials
           ? (JSON.parse(JSON.stringify(source.credentials)) as Record<string, unknown>)
           : {}
-        const items = await provider
-          .fetch(credentials, sub.keyword)
-          .catch((e) => {
-            this.logger.warn(`数据源 ${source.provider} 拉取「${sub.keyword}」失败: ${e.message}`)
-            return [] as BiddingItem[]
-          })
+        const items = await provider.fetch(credentials, sub.keyword).catch((e) => {
+          this.logger.warn(`数据源 ${source.provider} 拉取「${sub.keyword}」失败: ${e.message}`)
+          return [] as BiddingItem[]
+        })
         fetched += items.length
         for (const item of items) {
           const created = await this.insertUniquePrisma8(
@@ -261,22 +259,19 @@ export class BiddingService {
     const now = BigInt(Date.now())
     const lead = await this.prisma8.client.transaction(async (tx) => {
       const created = await tx.orm.public.Clue.create({
-        id: prisma8Id32(),
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        name: prisma8Varchar(
-          bidding.buyer
-            ? `${bidding.buyer}（${bidding.title.slice(0, 40)}）`
-            : bidding.title.slice(0, 80),
-          255,
-        ),
-        owner: prisma8Varchar(user.id, 32),
-        stage: prisma8Varchar('FOLLOWING', 30),
+        id: createLegacyId32(),
+        organizationId: user.tenantId,
+        name: bidding.buyer
+          ? `${bidding.buyer}（${bidding.title.slice(0, 40)}）`
+          : bidding.title.slice(0, 80),
+        owner: user.id,
+        stage: 'FOLLOWING',
         inSharedPool: false,
         collectionTime: now,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -350,9 +345,7 @@ export class BiddingService {
       region: b.region,
       buyer: b.buyer,
       budget: b.budget === null || b.budget === undefined ? null : Number(b.budget),
-      publishedAt: b.publishedAt
-        ? prisma8TimestampToISOString(b.publishedAt).slice(0, 10)
-        : null,
+      publishedAt: b.publishedAt ? prisma8TimestampToISOString(b.publishedAt).slice(0, 10) : null,
       deadline: b.deadline ? prisma8TimestampToISOString(b.deadline).slice(0, 10) : null,
       sourceUrl: b.sourceUrl,
       content: b.content,

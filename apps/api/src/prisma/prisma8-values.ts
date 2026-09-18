@@ -1,4 +1,4 @@
-import type { JsonValue, Numeric, Varchar } from '@prisma/orm-postgres/target/codec-types'
+import type { JsonValue, Numeric } from '@prisma/orm-postgres/target/codec-types'
 
 /**
  * Normalize application objects through JSON serialization before crossing the
@@ -11,15 +11,6 @@ export function prisma8JsonValue(value: unknown): JsonValue {
     throw new TypeError('Prisma 8 JSON value must be JSON-serializable')
   }
   return JSON.parse(serialized) as JsonValue
-}
-
-/**
- * Prisma 8 RC10 models varchar(N) as a compile-time branded string. The
- * PostgreSQL codec still accepts a normal string at runtime and enforces the
- * column length, so keep the cast isolated at this boundary.
- */
-export function prisma8Varchar<N extends number>(value: string): Varchar<N> {
-  return value as Varchar<N>
 }
 
 /**

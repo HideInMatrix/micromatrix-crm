@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { FieldVO } from '@micromatrix/shared'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ModuleFormsService } from '../metadata/module-forms.service'
 import { OrderFieldsService } from '../orders/order-fields.service'
@@ -15,7 +15,7 @@ import { ContractFieldsService } from './contract-fields.service'
 const databaseUrl = process.env['DATABASE_URL']
 
 function id() {
-  return prisma8Id32()
+  return createLegacyId32()
 }
 
 function field(idValue: string, key: string, type = 'text'): FieldVO {
@@ -89,250 +89,368 @@ test(
     ]
 
     try {
-      const org = prisma8Varchar(organizationId, 32)
-      const foreignOrg = prisma8Varchar(foreignOrganizationId, 32)
-      const actor = prisma8Varchar(actorId, 32)
-      const product = await prisma8Client.orm.public.Product
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('Prisma 8 产品', 255),
-          status: prisma8Varchar('ENABLED', 32),
-          pos: 1n,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const price = await prisma8Client.orm.public.ProductPrice
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('标准价格表', 255),
-          status: prisma8Varchar('ENABLED', 32),
-          pos: 1n,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('合同客户', 255),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const foreignCustomer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('跨租户客户', 255),
-          organizationId: foreignOrg,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const contract = await prisma8Client.orm.public.Contract
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('合同 A', 255),
-          customerId: customer.id,
-          owner: actor,
-          amount: prisma8Numeric(200, 14, 2),
-          number: prisma8Varchar(`C-${suffix.slice(0, 8)}`, 50),
-          stage: prisma8Varchar('stage-a', 32),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const foreignContract = await prisma8Client.orm.public.Contract
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('合同 B', 255),
-          customerId: foreignCustomer.id,
-          owner: actor,
-          amount: prisma8Numeric(100, 14, 2),
-          number: prisma8Varchar(`F-${suffix.slice(0, 8)}`, 50),
-          stage: prisma8Varchar('stage-b', 32),
-          organizationId: foreignOrg,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const order = await prisma8Client.orm.public.SalesOrder
-        .select('id')
-        .create({
-          id: id(),
-          number: prisma8Varchar(`O-${suffix.slice(0, 8)}`, 50),
-          name: prisma8Varchar('订单 A', 255),
-          stage: prisma8Varchar('stage-a', 50),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const opportunityStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('测试阶段', 16),
-          _type: prisma8Varchar('AFOOT', 50),
-          rate: prisma8Varchar('50', 10),
-          pos: 1n,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const opportunity = await prisma8Client.orm.public.Opportunity
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('商机 A', 255),
-          organizationId: org,
-          stage: opportunityStage.id,
-          owner: actor,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const quotation = await prisma8Client.orm.public.OpportunityQuotation
-        .select('id')
-        .create({
-          id: id(),
-          name: prisma8Varchar('报价 A', 255),
-          opportunityId: opportunity.id,
-          untilTime: now + 86_400_000n,
-          amount: prisma8Numeric(200, 14, 2),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
+      const org = organizationId
+      const foreignOrg = foreignOrganizationId
+      const actor = actorId
+      const product = await prisma8Client.orm.public.Product.select('id').create({
+        id: id(),
+        name: 'Prisma 8 产品',
+        status: 'ENABLED',
+        pos: 1n,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const price = await prisma8Client.orm.public.ProductPrice.select('id').create({
+        id: id(),
+        name: '标准价格表',
+        status: 'ENABLED',
+        pos: 1n,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: id(),
+        name: '合同客户',
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const foreignCustomer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: id(),
+        name: '跨租户客户',
+        organizationId: foreignOrg,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const contract = await prisma8Client.orm.public.Contract.select('id').create({
+        id: id(),
+        name: '合同 A',
+        customerId: customer.id,
+        owner: actor,
+        amount: prisma8Numeric(200, 14, 2),
+        number: `C-${suffix.slice(0, 8)}`,
+        stage: 'stage-a',
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const foreignContract = await prisma8Client.orm.public.Contract.select('id').create({
+        id: id(),
+        name: '合同 B',
+        customerId: foreignCustomer.id,
+        owner: actor,
+        amount: prisma8Numeric(100, 14, 2),
+        number: `F-${suffix.slice(0, 8)}`,
+        stage: 'stage-b',
+        organizationId: foreignOrg,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const order = await prisma8Client.orm.public.SalesOrder.select('id').create({
+        id: id(),
+        number: `O-${suffix.slice(0, 8)}`,
+        name: '订单 A',
+        stage: 'stage-a',
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const opportunityStage = await prisma8Client.orm.public.OpportunityStageConfig.select(
+        'id',
+      ).create({
+        id: id(),
+        name: '测试阶段',
+        _type: 'AFOOT',
+        rate: '50',
+        pos: 1n,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const opportunity = await prisma8Client.orm.public.Opportunity.select('id').create({
+        id: id(),
+        name: '商机 A',
+        organizationId: org,
+        stage: opportunityStage.id,
+        owner: actor,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const quotation = await prisma8Client.orm.public.OpportunityQuotation.select('id').create({
+        id: id(),
+        name: '报价 A',
+        opportunityId: opportunity.id,
+        untilTime: now + 86_400_000n,
+        amount: prisma8Numeric(200, 14, 2),
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
 
       const contractRow = id()
       await prisma8Client.orm.public.ContractField.createAll(
         [
-          { id: id(), resourceId: contract.id, refSubId: contractFields[0]!.id, rowId: contractRow, bizId: contractRow, fieldId: contractFields[1]!.id, fieldValue: product.id },
-          { id: id(), resourceId: contract.id, refSubId: contractFields[0]!.id, rowId: contractRow, bizId: contractRow, fieldId: contractFields[2]!.id, fieldValue: '100' },
-          { id: id(), resourceId: contract.id, refSubId: contractFields[0]!.id, rowId: contractRow, bizId: contractRow, fieldId: contractFields[3]!.id, fieldValue: '2' },
-          { id: id(), resourceId: contract.id, refSubId: contractFields[0]!.id, rowId: contractRow, bizId: contractRow, fieldId: contractFields[4]!.id, fieldValue: '200' },
-          { id: id(), resourceId: foreignContract.id, refSubId: contractFields[0]!.id, rowId: id(), bizId: id(), fieldId: contractFields[1]!.id, fieldValue: product.id },
+          {
+            id: id(),
+            resourceId: contract.id,
+            refSubId: contractFields[0]!.id,
+            rowId: contractRow,
+            bizId: contractRow,
+            fieldId: contractFields[1]!.id,
+            fieldValue: product.id,
+          },
+          {
+            id: id(),
+            resourceId: contract.id,
+            refSubId: contractFields[0]!.id,
+            rowId: contractRow,
+            bizId: contractRow,
+            fieldId: contractFields[2]!.id,
+            fieldValue: '100',
+          },
+          {
+            id: id(),
+            resourceId: contract.id,
+            refSubId: contractFields[0]!.id,
+            rowId: contractRow,
+            bizId: contractRow,
+            fieldId: contractFields[3]!.id,
+            fieldValue: '2',
+          },
+          {
+            id: id(),
+            resourceId: contract.id,
+            refSubId: contractFields[0]!.id,
+            rowId: contractRow,
+            bizId: contractRow,
+            fieldId: contractFields[4]!.id,
+            fieldValue: '200',
+          },
+          {
+            id: id(),
+            resourceId: foreignContract.id,
+            refSubId: contractFields[0]!.id,
+            rowId: id(),
+            bizId: id(),
+            fieldId: contractFields[1]!.id,
+            fieldValue: product.id,
+          },
         ].map((row) => ({
           ...row,
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          refSubId: prisma8Varchar(row.refSubId, 32),
-          rowId: prisma8Varchar(row.rowId, 32),
-          bizId: prisma8Varchar(row.bizId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
-          fieldValue: prisma8Varchar(row.fieldValue, 255),
+          resourceId: row.resourceId,
+          refSubId: row.refSubId,
+          rowId: row.rowId,
+          bizId: row.bizId,
+          fieldId: row.fieldId,
+          fieldValue: row.fieldValue,
         })),
       )
       await prisma8Client.orm.public.ContractFieldBlob.create({
         id: id(),
         resourceId: contract.id,
-        refSubId: prisma8Varchar(contractFields[0]!.id, 32),
+        refSubId: contractFields[0]!.id,
         rowId: contractRow,
         bizId: contractRow,
-        fieldId: prisma8Varchar(contractFields[5]!.id, 32),
+        fieldId: contractFields[5]!.id,
         fieldValue: '["A","B"]',
       })
 
       const priceRow = id()
       await prisma8Client.orm.public.ProductPriceField.createAll(
         [
-          { id: id(), resourceId: price.id, refSubId: priceFields[0]!.id, rowId: priceRow, bizId: priceRow, fieldId: priceFields[1]!.id, fieldValue: product.id },
-          { id: id(), resourceId: price.id, refSubId: priceFields[0]!.id, rowId: priceRow, bizId: priceRow, fieldId: priceFields[2]!.id, fieldValue: '88.5' },
+          {
+            id: id(),
+            resourceId: price.id,
+            refSubId: priceFields[0]!.id,
+            rowId: priceRow,
+            bizId: priceRow,
+            fieldId: priceFields[1]!.id,
+            fieldValue: product.id,
+          },
+          {
+            id: id(),
+            resourceId: price.id,
+            refSubId: priceFields[0]!.id,
+            rowId: priceRow,
+            bizId: priceRow,
+            fieldId: priceFields[2]!.id,
+            fieldValue: '88.5',
+          },
         ].map((row) => ({
           ...row,
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          refSubId: prisma8Varchar(row.refSubId, 32),
-          rowId: prisma8Varchar(row.rowId, 32),
-          bizId: prisma8Varchar(row.bizId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
-          fieldValue: prisma8Varchar(row.fieldValue, 255),
+          resourceId: row.resourceId,
+          refSubId: row.refSubId,
+          rowId: row.rowId,
+          bizId: row.bizId,
+          fieldId: row.fieldId,
+          fieldValue: row.fieldValue,
         })),
       )
       await prisma8Client.orm.public.ProductPriceFieldBlob.create({
         id: id(),
         resourceId: price.id,
-        refSubId: prisma8Varchar(priceFields[0]!.id, 32),
+        refSubId: priceFields[0]!.id,
         rowId: priceRow,
         bizId: priceRow,
-        fieldId: prisma8Varchar(priceFields[3]!.id, 32),
+        fieldId: priceFields[3]!.id,
         fieldValue: '["VIP"]',
       })
 
       const orderRow = id()
       await prisma8Client.orm.public.SalesOrderField.createAll(
         [
-          { id: id(), resourceId: order.id, refSubId: orderFields[0]!.id, rowId: orderRow, bizId: orderRow, fieldId: orderFields[1]!.id, fieldValue: product.id },
-          { id: id(), resourceId: order.id, refSubId: orderFields[0]!.id, rowId: orderRow, bizId: orderRow, fieldId: orderFields[2]!.id, fieldValue: '90' },
-          { id: id(), resourceId: order.id, refSubId: orderFields[0]!.id, rowId: orderRow, bizId: orderRow, fieldId: orderFields[3]!.id, fieldValue: '2' },
-          { id: id(), resourceId: order.id, refSubId: orderFields[0]!.id, rowId: orderRow, bizId: orderRow, fieldId: orderFields[4]!.id, fieldValue: '180' },
+          {
+            id: id(),
+            resourceId: order.id,
+            refSubId: orderFields[0]!.id,
+            rowId: orderRow,
+            bizId: orderRow,
+            fieldId: orderFields[1]!.id,
+            fieldValue: product.id,
+          },
+          {
+            id: id(),
+            resourceId: order.id,
+            refSubId: orderFields[0]!.id,
+            rowId: orderRow,
+            bizId: orderRow,
+            fieldId: orderFields[2]!.id,
+            fieldValue: '90',
+          },
+          {
+            id: id(),
+            resourceId: order.id,
+            refSubId: orderFields[0]!.id,
+            rowId: orderRow,
+            bizId: orderRow,
+            fieldId: orderFields[3]!.id,
+            fieldValue: '2',
+          },
+          {
+            id: id(),
+            resourceId: order.id,
+            refSubId: orderFields[0]!.id,
+            rowId: orderRow,
+            bizId: orderRow,
+            fieldId: orderFields[4]!.id,
+            fieldValue: '180',
+          },
         ].map((row) => ({
           ...row,
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          refSubId: prisma8Varchar(row.refSubId, 32),
-          rowId: prisma8Varchar(row.rowId, 32),
-          bizId: prisma8Varchar(row.bizId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
-          fieldValue: prisma8Varchar(row.fieldValue, 255),
+          resourceId: row.resourceId,
+          refSubId: row.refSubId,
+          rowId: row.rowId,
+          bizId: row.bizId,
+          fieldId: row.fieldId,
+          fieldValue: row.fieldValue,
         })),
       )
       await prisma8Client.orm.public.SalesOrderFieldBlob.create({
         id: id(),
         resourceId: order.id,
-        refSubId: prisma8Varchar(orderFields[0]!.id, 32),
+        refSubId: orderFields[0]!.id,
         rowId: orderRow,
         bizId: orderRow,
-        fieldId: prisma8Varchar(orderFields[5]!.id, 32),
+        fieldId: orderFields[5]!.id,
         fieldValue: '["gift"]',
       })
 
       const quoteRow = id()
       await prisma8Client.orm.public.OpportunityQuotationField.createAll(
         [
-          { id: id(), resourceId: quotation.id, refSubId: quoteFields[0]!.id, rowId: quoteRow, bizId: quoteRow, fieldId: quoteFields[1]!.id, fieldValue: product.id },
-          { id: id(), resourceId: quotation.id, refSubId: quoteFields[0]!.id, rowId: quoteRow, bizId: quoteRow, fieldId: quoteFields[2]!.id, fieldValue: price.id },
-          { id: id(), resourceId: quotation.id, refSubId: quoteFields[0]!.id, rowId: quoteRow, bizId: quoteRow, fieldId: quoteFields[3]!.id, fieldValue: '2' },
-          { id: id(), resourceId: quotation.id, refSubId: quoteFields[0]!.id, rowId: quoteRow, bizId: quoteRow, fieldId: quoteFields[4]!.id, fieldValue: '95' },
-          { id: id(), resourceId: quotation.id, refSubId: quoteFields[0]!.id, rowId: quoteRow, bizId: quoteRow, fieldId: quoteFields[5]!.id, fieldValue: '6' },
-          { id: id(), resourceId: quotation.id, refSubId: quoteFields[0]!.id, rowId: quoteRow, bizId: quoteRow, fieldId: quoteFields[6]!.id, fieldValue: '190' },
+          {
+            id: id(),
+            resourceId: quotation.id,
+            refSubId: quoteFields[0]!.id,
+            rowId: quoteRow,
+            bizId: quoteRow,
+            fieldId: quoteFields[1]!.id,
+            fieldValue: product.id,
+          },
+          {
+            id: id(),
+            resourceId: quotation.id,
+            refSubId: quoteFields[0]!.id,
+            rowId: quoteRow,
+            bizId: quoteRow,
+            fieldId: quoteFields[2]!.id,
+            fieldValue: price.id,
+          },
+          {
+            id: id(),
+            resourceId: quotation.id,
+            refSubId: quoteFields[0]!.id,
+            rowId: quoteRow,
+            bizId: quoteRow,
+            fieldId: quoteFields[3]!.id,
+            fieldValue: '2',
+          },
+          {
+            id: id(),
+            resourceId: quotation.id,
+            refSubId: quoteFields[0]!.id,
+            rowId: quoteRow,
+            bizId: quoteRow,
+            fieldId: quoteFields[4]!.id,
+            fieldValue: '95',
+          },
+          {
+            id: id(),
+            resourceId: quotation.id,
+            refSubId: quoteFields[0]!.id,
+            rowId: quoteRow,
+            bizId: quoteRow,
+            fieldId: quoteFields[5]!.id,
+            fieldValue: '6',
+          },
+          {
+            id: id(),
+            resourceId: quotation.id,
+            refSubId: quoteFields[0]!.id,
+            rowId: quoteRow,
+            bizId: quoteRow,
+            fieldId: quoteFields[6]!.id,
+            fieldValue: '190',
+          },
         ].map((row) => ({
           ...row,
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          refSubId: prisma8Varchar(row.refSubId, 32),
-          rowId: prisma8Varchar(row.rowId, 32),
-          bizId: prisma8Varchar(row.bizId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
-          fieldValue: prisma8Varchar(row.fieldValue, 255),
+          resourceId: row.resourceId,
+          refSubId: row.refSubId,
+          rowId: row.rowId,
+          bizId: row.bizId,
+          fieldId: row.fieldId,
+          fieldValue: row.fieldValue,
         })),
       )
       await prisma8Client.orm.public.OpportunityQuotationFieldBlob.create({
         id: id(),
         resourceId: quotation.id,
-        refSubId: prisma8Varchar(quoteFields[0]!.id, 32),
+        refSubId: quoteFields[0]!.id,
         rowId: quoteRow,
         bizId: quoteRow,
-        fieldId: prisma8Varchar(quoteFields[7]!.id, 32),
+        fieldId: quoteFields[7]!.id,
         fieldValue: '["quoted"]',
       })
 
@@ -341,7 +459,10 @@ test(
       const orderService = new OrderFieldsService(prisma8, forms(orderFields))
       const quoteService = new QuotationFieldsService(prisma8, forms(quoteFields))
 
-      const contractResult = await contractService.loadProductsBatch(organizationId, [contract.id, foreignContract.id])
+      const contractResult = await contractService.loadProductsBatch(organizationId, [
+        contract.id,
+        foreignContract.id,
+      ])
       assert.deepEqual(contractResult.get(foreignContract.id), [])
       assert.deepEqual(contractResult.get(contract.id)?.[0], {
         rowId: contractRow,
@@ -386,18 +507,20 @@ test(
         values: { quoteExtra: ['quoted'] },
       })
     } finally {
-      const org = prisma8Varchar(organizationId, 32)
-      const foreignOrg = prisma8Varchar(foreignOrganizationId, 32)
+      const org = organizationId
+      const foreignOrg = foreignOrganizationId
       await prisma8Client.orm.public.OpportunityQuotation.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.Opportunity.where({ organizationId: org }).deleteAll()
-      await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId: org }).deleteAll()
+      await prisma8Client.orm.public.OpportunityStageConfig.where({
+        organizationId: org,
+      }).deleteAll()
       await prisma8Client.orm.public.SalesOrder.where({ organizationId: org }).deleteAll()
-      await prisma8Client.orm.public.Contract
-        .where((row) => row.organizationId.in([org, foreignOrg]))
-        .deleteAll()
-      await prisma8Client.orm.public.Customer
-        .where((row) => row.organizationId.in([org, foreignOrg]))
-        .deleteAll()
+      await prisma8Client.orm.public.Contract.where((row) =>
+        row.organizationId.in([org, foreignOrg]),
+      ).deleteAll()
+      await prisma8Client.orm.public.Customer.where((row) =>
+        row.organizationId.in([org, foreignOrg]),
+      ).deleteAll()
       await prisma8Client.orm.public.ProductPrice.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.Product.where({ organizationId: org }).deleteAll()
       await testDb.close()

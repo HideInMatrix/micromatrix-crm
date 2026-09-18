@@ -4,7 +4,7 @@ import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { formatForExport } from '../../common/export-format'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import {
   ExportTasksService,
@@ -168,7 +168,7 @@ export class BusinessTitleService {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
     let rowsQuery = this.prisma8.client.orm.public.BusinessTitle.where({
-      organizationId: prisma8Varchar(user.tenantId, 50),
+      organizationId: user.tenantId,
     })
     const keyword = dto.keyword?.trim()
     if (keyword) {
@@ -185,9 +185,10 @@ export class BusinessTitleService {
           ids.forEach(({ id }) => matched.add(id))
         }
         if (!matched.size) return { list: [], total: 0, current, pageSize }
-        rowsQuery = rowsQuery.where((row) => row.id.in(prisma8Varchars([...matched], 32)))
+        rowsQuery = rowsQuery.where((row) => row.id.in([...matched]))
       } else {
-        for (const condition of conditions) rowsQuery = this.applyDirectCondition(rowsQuery, condition)
+        for (const condition of conditions)
+          rowsQuery = this.applyDirectCondition(rowsQuery, condition)
       }
     }
     const [rows, total] = await Promise.all([
@@ -207,8 +208,8 @@ export class BusinessTitleService {
 
   async options(user: AuthUser) {
     const rows = await this.prisma8.client.orm.public.BusinessTitle.where({
-      organizationId: prisma8Varchar(user.tenantId, 50),
-      approvalStatus: prisma8Varchar('APPROVED', 50),
+      organizationId: user.tenantId,
+      approvalStatus: 'APPROVED',
     })
       .orderBy([(row) => row.name.asc(), (row) => row.id.asc()])
       .all()
@@ -253,18 +254,15 @@ export class BusinessTitleService {
     await this.assertRequired(user, dto as unknown as Record<string, unknown>)
     const now = BigInt(Date.now())
     const row = await this.prisma8.client.orm.public.BusinessTitle.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       ...this.data(dto),
-      name: prisma8Varchar(dto.name.trim(), 255),
-      approvalStatus: prisma8Varchar(
-        (dto.type ?? 'CUSTOM') === 'CUSTOM' ? 'APPROVING' : 'APPROVED',
-        50,
-      ),
-      organizationId: prisma8Varchar(user.tenantId, 50),
+      name: dto.name.trim(),
+      approvalStatus: (dto.type ?? 'CUSTOM') === 'CUSTOM' ? 'APPROVING' : 'APPROVED',
+      organizationId: user.tenantId,
       createTime: now,
       updateTime: now,
-      createUser: prisma8Varchar(user.id, 32),
-      updateUser: prisma8Varchar(user.id, 32),
+      createUser: user.id,
+      updateUser: user.id,
     })
     return this.toVO(row)
   }
@@ -276,13 +274,13 @@ export class BusinessTitleService {
     await this.assertRequired(user, merged)
     const nextType = dto.type ?? (current._type as 'CUSTOM' | 'THIRD_PARTY' | null) ?? 'CUSTOM'
     const row = await this.prisma8.client.orm.public.BusinessTitle.where({
-      id: prisma8Varchar(dto.id, 32),
+      id: dto.id,
     }).update({
       ...this.data(dto),
-      approvalStatus: prisma8Varchar(nextType === 'CUSTOM' ? 'APPROVING' : 'APPROVED', 50),
+      approvalStatus: nextType === 'CUSTOM' ? 'APPROVING' : 'APPROVED',
       unapprovedReason: null,
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
+      updateUser: user.id,
     })
     if (!row) throw new NotFoundException('工商抬头不存在')
     return this.toVO(row)
@@ -291,7 +289,7 @@ export class BusinessTitleService {
   async hasInvoice(user: AuthUser, id: string) {
     await this.ensure(user, id)
     const count = await this.prisma8.client.orm.public.ContractInvoice.where({
-      businessTitleId: prisma8Varchar(id, 32),
+      businessTitleId: id,
     }).aggregate((agg) => ({ count: agg.count() }))
     return count.count > 0
   }
@@ -300,22 +298,22 @@ export class BusinessTitleService {
     const row = await this.ensure(user, id)
     if (await this.hasInvoice(user, id))
       throw new BadRequestException('该工商抬头已被发票引用，无法删除')
-    await this.prisma8.client.orm.public.BusinessTitle.where({ id: prisma8Varchar(id, 32) }).deleteAndCount()
+    await this.prisma8.client.orm.public.BusinessTitle.where({ id: id }).deleteAndCount()
     return { id, name: row.name }
   }
 
   async approval(user: AuthUser, dto: BusinessTitleApprovalDto) {
     await this.ensure(user, dto.id)
-    await this.prisma8.client.orm.public.BusinessTitle.where({ id: prisma8Varchar(dto.id, 32) }).update({
-      approvalStatus: prisma8Varchar(dto.approvalStatus, 50),
+    await this.prisma8.client.orm.public.BusinessTitle.where({ id: dto.id }).update({
+      approvalStatus: dto.approvalStatus,
       unapprovedReason:
         dto.approvalStatus === 'UNAPPROVED'
           ? dto.reason?.trim()
-            ? prisma8Varchar(dto.reason.trim(), 255)
+            ? dto.reason.trim()
             : null
           : null,
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
+      updateUser: user.id,
     })
     return this.get(user, dto.id)
   }
@@ -325,17 +323,17 @@ export class BusinessTitleService {
     if (!['APPROVING', 'APPROVED', 'UNAPPROVED'].includes(row.approvalStatus ?? '')) {
       throw new BadRequestException('当前工商抬头状态不可撤回')
     }
-    await this.prisma8.client.orm.public.BusinessTitle.where({ id: prisma8Varchar(id, 32) }).update({
-      approvalStatus: prisma8Varchar('REVOKED', 50),
+    await this.prisma8.client.orm.public.BusinessTitle.where({ id: id }).update({
+      approvalStatus: 'REVOKED',
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
+      updateUser: user.id,
     })
     return this.get(user, id)
   }
 
   config(user: AuthUser) {
     return this.prisma8.client.orm.public.BusinessTitleConfig.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .orderBy((row) => row.field.asc())
       .all()
@@ -343,19 +341,19 @@ export class BusinessTitleService {
 
   async switchRequired(user: AuthUser, id: string) {
     const row = await this.prisma8.client.orm.public.BusinessTitleConfig.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('工商抬头配置不存在')
-    return this.prisma8.client.orm.public.BusinessTitleConfig.where({ id: prisma8Varchar(id, 32) }).update({
+    return this.prisma8.client.orm.public.BusinessTitleConfig.where({ id: id }).update({
       required: !row.required,
     })
   }
 
   private async ensure(user: AuthUser, id: string) {
     const row = await this.prisma8.client.orm.public.BusinessTitle.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 50),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('工商抬头不存在')
     return row
@@ -363,17 +361,17 @@ export class BusinessTitleService {
 
   private async assertName(user: AuthUser, name: string, excludeId?: string) {
     let rows = this.prisma8.client.orm.public.BusinessTitle.where({
-      organizationId: prisma8Varchar(user.tenantId, 50),
-      name: prisma8Varchar(name.trim(), 255),
+      organizationId: user.tenantId,
+      name: name.trim(),
     })
-    if (excludeId) rows = rows.where((row) => row.id.neq(prisma8Varchar(excludeId, 32)))
+    if (excludeId) rows = rows.where((row) => row.id.neq(excludeId))
     const row = await rows.select('id').first()
     if (row) throw new BadRequestException('工商抬头已存在')
   }
 
   private async assertRequired(user: AuthUser, dto: Record<string, unknown>) {
     const configs = await this.prisma8.client.orm.public.BusinessTitleConfig.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       required: true,
     }).all()
     for (const config of configs) {
@@ -388,86 +386,63 @@ export class BusinessTitleService {
 
   private data(dto: Partial<BusinessTitleAddDto>) {
     return {
-      name: dto.name === undefined ? undefined : prisma8Varchar(dto.name.trim(), 255),
-      _type: dto.type === undefined ? undefined : prisma8Varchar(dto.type, 50),
+      name: dto.name === undefined ? undefined : dto.name.trim(),
+      _type: dto.type === undefined ? undefined : dto.type,
       identificationNumber:
         dto.identificationNumber === undefined
           ? undefined
           : dto.identificationNumber?.trim()
-            ? prisma8Varchar(dto.identificationNumber.trim(), 255)
+            ? dto.identificationNumber.trim()
             : null,
       openingBank:
         dto.openingBank === undefined
           ? undefined
           : dto.openingBank?.trim()
-            ? prisma8Varchar(dto.openingBank.trim(), 255)
+            ? dto.openingBank.trim()
             : null,
       bankAccount:
         dto.bankAccount === undefined
           ? undefined
           : dto.bankAccount?.trim()
-            ? prisma8Varchar(dto.bankAccount.trim(), 255)
+            ? dto.bankAccount.trim()
             : null,
       registrationAddress:
         dto.registrationAddress === undefined
           ? undefined
           : dto.registrationAddress?.trim()
-            ? prisma8Varchar(dto.registrationAddress.trim(), 255)
+            ? dto.registrationAddress.trim()
             : null,
       phoneNumber:
         dto.phoneNumber === undefined
           ? undefined
           : dto.phoneNumber?.trim()
-            ? prisma8Varchar(dto.phoneNumber.trim(), 255)
+            ? dto.phoneNumber.trim()
             : null,
       registeredCapital:
         dto.registeredCapital === undefined
           ? undefined
           : dto.registeredCapital?.trim()
-            ? prisma8Varchar(dto.registeredCapital.trim(), 255)
+            ? dto.registeredCapital.trim()
             : null,
       companySize:
         dto.companySize === undefined
           ? undefined
           : dto.companySize?.trim()
-            ? prisma8Varchar(dto.companySize.trim(), 255)
+            ? dto.companySize.trim()
             : null,
       registrationNumber:
         dto.registrationNumber === undefined
           ? undefined
           : dto.registrationNumber?.trim()
-            ? prisma8Varchar(dto.registrationNumber.trim(), 255)
+            ? dto.registrationNumber.trim()
             : null,
       province:
-        dto.province === undefined
-          ? undefined
-          : dto.province?.trim()
-            ? prisma8Varchar(dto.province.trim(), 255)
-            : null,
-      city:
-        dto.city === undefined
-          ? undefined
-          : dto.city?.trim()
-            ? prisma8Varchar(dto.city.trim(), 255)
-            : null,
-      scale:
-        dto.scale === undefined
-          ? undefined
-          : dto.scale?.trim()
-            ? prisma8Varchar(dto.scale.trim(), 255)
-            : null,
+        dto.province === undefined ? undefined : dto.province?.trim() ? dto.province.trim() : null,
+      city: dto.city === undefined ? undefined : dto.city?.trim() ? dto.city.trim() : null,
+      scale: dto.scale === undefined ? undefined : dto.scale?.trim() ? dto.scale.trim() : null,
       industry:
-        dto.industry === undefined
-          ? undefined
-          : dto.industry?.trim()
-            ? prisma8Varchar(dto.industry.trim(), 255)
-            : null,
-      remark:
-        dto.remark === undefined
-          ? undefined
-          : dto.remark?.trim()
-            ? prisma8Varchar(dto.remark.trim(), 255)
-            : null,
+        dto.industry === undefined ? undefined : dto.industry?.trim() ? dto.industry.trim() : null,
+      remark: dto.remark === undefined ? undefined : dto.remark?.trim() ? dto.remark.trim() : null,
     }
   }
 
@@ -609,7 +584,9 @@ export class BusinessTitleService {
   }
 
   private isDirectCondition(condition: FilterCondition): boolean {
-    return BUSINESS_TITLE_FIELDS.some((field) => field.key === condition.key) && condition.key !== 'id'
+    return (
+      BUSINESS_TITLE_FIELDS.some((field) => field.key === condition.key) && condition.key !== 'id'
+    )
   }
 
   private applyDirectCondition(
@@ -639,11 +616,11 @@ export class BusinessTitleService {
     condition: FilterCondition,
   ): BusinessTitleCollection {
     if (condition.op === 'isEmpty') {
-      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+      return collection.where((row) => row.id.eq(''))
     }
     if (condition.op === 'notEmpty') return collection
-    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((value) =>
-      prisma8Varchar(String(value ?? ''), 255),
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (value) => String(value ?? ''),
     )
     if (condition.op === 'in') return collection.where((row) => row.name.in(values))
     if (condition.op === 'notIn') return collection.where((row) => not(row.name.in(values)))
@@ -668,8 +645,8 @@ export class BusinessTitleService {
     key: NullableVarchar50FilterKey,
     condition: FilterCondition,
   ): BusinessTitleCollection {
-    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((value) =>
-      prisma8Varchar(String(value ?? ''), 50),
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (value) => String(value ?? ''),
     )
     return collection.where((row) => {
       const field = key === 'type' ? row._type : row.approvalStatus
@@ -697,8 +674,8 @@ export class BusinessTitleService {
     key: NullableVarchar255FilterKey,
     condition: FilterCondition,
   ): BusinessTitleCollection {
-    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((value) =>
-      prisma8Varchar(String(value ?? ''), 255),
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (value) => String(value ?? ''),
     )
     return collection.where((row) => {
       const field =
@@ -752,12 +729,12 @@ export class BusinessTitleService {
     condition: FilterCondition,
   ): BusinessTitleCollection {
     if (condition.op === 'isEmpty') {
-      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+      return collection.where((row) => row.id.eq(''))
     }
     if (condition.op === 'notEmpty') return collection
     if (condition.op === 'contains' || condition.op === 'notContains') return collection
-    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((value) =>
-      BigInt(Number(value)),
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (value) => BigInt(Number(value)),
     )
     return collection.where((row) => {
       const field =

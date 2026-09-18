@@ -3,7 +3,7 @@ import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   OpportunityRuleAddDto,
   OpportunityRuleConditionDto,
@@ -26,7 +26,7 @@ export class OpportunityRuleService {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
     let query = this.prisma8.client.orm.public.OpportunityRule.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
     const keyword = dto.keyword?.trim()
     if (keyword) query = query.where((rule) => rule.name.ilike(`%${keyword}%`))
@@ -46,19 +46,19 @@ export class OpportunityRuleService {
     await this.assertPayload(organizationId, dto)
     const now = BigInt(Date.now())
     return this.prisma8.client.orm.public.OpportunityRule.create({
-      id: prisma8Id32(),
-      name: prisma8Varchar(dto.name.trim(), 255),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: createLegacyId32(),
+      name: dto.name.trim(),
+      organizationId: organizationId,
       ownerId: JSON.stringify(dto.ownerIds),
       scopeId: JSON.stringify(dto.scopeIds),
       enable: dto.enable,
       auto: dto.auto,
-      operator: prisma8Varchar(dto.operator ?? 'AND', 10),
+      operator: dto.operator ?? 'AND',
       condition: JSON.stringify(dto.auto ? (dto.conditions ?? []) : []),
       createTime: now,
       updateTime: now,
-      createUser: prisma8Varchar(actorId, 32),
-      updateUser: prisma8Varchar(actorId, 32),
+      createUser: actorId,
+      updateUser: actorId,
     })
   }
 
@@ -75,35 +75,35 @@ export class OpportunityRuleService {
     }
     await this.assertPayload(organizationId, merged)
     return this.prisma8.client.orm.public.OpportunityRule.where({
-      id: prisma8Varchar(dto.id, 32),
+      id: dto.id,
     }).update({
-      name: prisma8Varchar(merged.name.trim(), 255),
+      name: merged.name.trim(),
       scopeId: JSON.stringify(merged.scopeIds),
       ownerId: JSON.stringify(merged.ownerIds),
       enable: merged.enable,
       auto: merged.auto,
-      operator: prisma8Varchar(merged.operator ?? 'AND', 10),
+      operator: merged.operator ?? 'AND',
       condition: JSON.stringify(merged.auto ? (merged.conditions ?? []) : []),
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(actorId, 32),
+      updateUser: actorId,
     })
   }
 
   async remove(organizationId: string, id: string) {
     await this.ensureOwned(organizationId, id)
     await this.prisma8.client.orm.public.OpportunityRule.where({
-      id: prisma8Varchar(id, 32),
+      id: id,
     }).deleteAndCount()
   }
 
   async toggle(organizationId: string, actorId: string, id: string) {
     const row = await this.ensureOwned(organizationId, id)
     await this.prisma8.client.orm.public.OpportunityRule.where({
-      id: prisma8Varchar(id, 32),
+      id: id,
     }).update({
       enable: !row.enable,
       updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(actorId, 32),
+      updateUser: actorId,
     })
   }
 
@@ -121,9 +121,8 @@ export class OpportunityRuleService {
       enable: true,
       auto: true,
     })
-    const rules = await (onlyRuleIds?.length
-      ? scopedRules.where((rule) => rule.id.in(prisma8Varchars(onlyRuleIds, 32)))
-      : scopedRules
+    const rules = await (
+      onlyRuleIds?.length ? scopedRules.where((rule) => rule.id.in(onlyRuleIds)) : scopedRules
     )
       .select('id', 'organizationId', 'scopeId', 'operator', 'condition', 'createTime')
       .orderBy((rule) => rule.createTime.desc())
@@ -131,8 +130,8 @@ export class OpportunityRuleService {
     if (!rules.length) return { rules: 0, affected: 0 }
 
     const failStages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
-      _type: prisma8Varchar('END', 50),
-      rate: prisma8Varchar('0', 10),
+      _type: 'END',
+      rate: '0',
     })
       .select('id', 'organizationId')
       .orderBy((stage) => stage.pos.asc())
@@ -154,7 +153,7 @@ export class OpportunityRuleService {
       const opportunities = await this.prisma8.client.orm.public.Opportunity.where({
         organizationId: rule.organizationId,
       })
-        .where((opportunity) => opportunity.owner.in(prisma8Varchars(matchedOwners, 32)))
+        .where((opportunity) => opportunity.owner.in(matchedOwners))
         .select('id', 'stage', 'createTime')
         .all()
       const conditions = this.parseConditions(rule.condition)
@@ -163,7 +162,7 @@ export class OpportunityRuleService {
         await this.prisma8.client.orm.public.Opportunity.where({ id: opportunity.id }).update({
           lastStage: opportunity.stage,
           stage: failStage,
-          failureReason: prisma8Varchar('system', 50),
+          failureReason: 'system',
         })
         affected++
       }
@@ -188,7 +187,10 @@ export class OpportunityRuleService {
     const children = new Map<string, string[]>()
     for (const department of departments) {
       if (!department.parentId) continue
-      children.set(department.parentId, [...(children.get(department.parentId) ?? []), department.id])
+      children.set(department.parentId, [
+        ...(children.get(department.parentId) ?? []),
+        department.id,
+      ])
     }
     const selectedDepartments = new Set(
       scopeIds
@@ -239,8 +241,8 @@ export class OpportunityRuleService {
 
   private async ensureOwned(organizationId: string, id: string) {
     const row = await this.prisma8.client.orm.public.OpportunityRule.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: id,
+      organizationId: organizationId,
     }).first()
     if (!row) throw new NotFoundException('商机关闭规则不存在')
     return row
@@ -250,17 +252,23 @@ export class OpportunityRuleService {
     if (!dto.scopeIds.length) throw new BadRequestException('规则适用范围不能为空')
     if (!dto.ownerIds.length) throw new BadRequestException('规则管理员不能为空')
     const conditions = dto.conditions ?? []
-    if (dto.auto && !conditions.length) throw new BadRequestException('自动关闭规则至少需要一个条件')
+    if (dto.auto && !conditions.length)
+      throw new BadRequestException('自动关闭规则至少需要一个条件')
     const stageIds = new Set(
       conditions
         .filter((condition) => condition.column === 'opportunityStage')
-        .flatMap((condition) => condition.value.split(',').map((value) => value.trim()).filter(Boolean)),
+        .flatMap((condition) =>
+          condition.value
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
     )
     if (stageIds.size) {
       const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       })
-        .where((stage) => stage.id.in(prisma8Varchars([...stageIds], 32)))
+        .where((stage) => stage.id.in([...stageIds]))
         .select('id')
         .all()
       if (rows.length !== stageIds.size) throw new BadRequestException('关闭规则包含无效商机阶段')
@@ -283,7 +291,8 @@ export class OpportunityRuleService {
     }
     if (!this.timeMatcher(condition, Date.now(), new Date())) {
       // timeMatcher 返回 false 也可能只是当前时间不命中，因此这里只验证格式。
-      if (!this.isValidTimeCondition(condition)) throw new BadRequestException('关闭规则时间条件格式不正确')
+      if (!this.isValidTimeCondition(condition))
+        throw new BadRequestException('关闭规则时间条件格式不正确')
     }
   }
 
@@ -296,7 +305,10 @@ export class OpportunityRuleService {
     if (!conditions.length) return false
     const results = conditions.map((condition) => {
       if (condition.column === 'opportunityStage') {
-        const stages = condition.value.split(',').map((value) => value.trim()).filter(Boolean)
+        const stages = condition.value
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
         const included = stages.includes(opportunity.stage)
         return condition.operator === 'IN' ? included : !included
       }
@@ -306,7 +318,10 @@ export class OpportunityRuleService {
   }
 
   private timeMatcher(condition: OpportunityRuleConditionDto, time: number, now: Date) {
-    const parts = condition.value.split(',').map((value) => value.trim()).filter(Boolean)
+    const parts = condition.value
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
     if (condition.operator === 'FIXED') {
       if (parts.length !== 2) return false
       const start = this.parseTime(parts[0])
@@ -319,19 +334,34 @@ export class OpportunityRuleService {
   }
 
   private isValidTimeCondition(condition: OpportunityRuleConditionDto) {
-    const parts = condition.value.split(',').map((value) => value.trim()).filter(Boolean)
+    const parts = condition.value
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
     if (condition.operator === 'FIXED') {
-      return parts.length === 2 && this.parseTime(parts[0]) !== null && this.parseTime(parts[1]) !== null
+      return (
+        parts.length === 2 && this.parseTime(parts[0]) !== null && this.parseTime(parts[1]) !== null
+      )
     }
     return this.dynamicThreshold(parts, new Date()) !== null
   }
 
-  private dynamicThreshold(parts: string[], now: Date): { time: number; direction: 'before' | 'after' } | null {
+  private dynamicThreshold(
+    parts: string[],
+    now: Date,
+  ): { time: number; direction: 'before' | 'after' } | null {
     let amount: number
     let unit: string
     if (parts.length === 2) {
       amount = Number(parts[0])
-      unit = parts[1] === 'day' ? 'BEFORE_DAY' : parts[1] === 'week' ? 'BEFORE_WEEK' : parts[1] === 'month' ? 'BEFORE_MONTH' : ''
+      unit =
+        parts[1] === 'day'
+          ? 'BEFORE_DAY'
+          : parts[1] === 'week'
+            ? 'BEFORE_WEEK'
+            : parts[1] === 'month'
+              ? 'BEFORE_MONTH'
+              : ''
     } else if (parts.length === 3) {
       amount = Number(parts[1])
       unit = parts[2]
@@ -339,7 +369,11 @@ export class OpportunityRuleService {
       return null
     }
     if (!Number.isFinite(amount) || !unit) return null
-    const direction = unit.startsWith('BEFORE_') ? 'before' : unit.startsWith('AFTER_') ? 'after' : null
+    const direction = unit.startsWith('BEFORE_')
+      ? 'before'
+      : unit.startsWith('AFTER_')
+        ? 'after'
+        : null
     if (!direction) return null
     const date = new Date(now)
     const sign = direction === 'before' ? -1 : 1
@@ -360,7 +394,9 @@ export class OpportunityRuleService {
   private parseArray(value: string) {
     try {
       const parsed: unknown = JSON.parse(value)
-      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : []
     } catch {
       return []
     }
@@ -371,7 +407,9 @@ export class OpportunityRuleService {
     try {
       const parsed: unknown = JSON.parse(value)
       if (!Array.isArray(parsed)) return []
-      return parsed.filter((item): item is OpportunityRuleConditionDto => !!item && typeof item === 'object')
+      return parsed.filter(
+        (item): item is OpportunityRuleConditionDto => !!item && typeof item === 'object',
+      )
     } catch {
       return []
     }
@@ -423,4 +461,3 @@ export class OpportunityRuleService {
     return ids.map((id, index) => ({ id, name: names.get(normalized[index] ?? '') ?? id }))
   }
 }
-

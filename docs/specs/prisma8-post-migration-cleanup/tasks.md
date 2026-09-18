@@ -33,7 +33,7 @@
 - [x] P3.1 476 个 VarChar 字段按 ID/枚举协议/自由文本分类。
 - [x] P3.2 existing DB 长度与 ID 格式 precheck。
 - [x] P3.3 设计并生成保持等价约束的 forward migration。
-- [ ] P3.4 逐批删除 `prisma8Varchar/prisma8Varchars/prisma8Id32` 调用。
+- [x] P3.4 逐批删除 `prisma8Varchar/prisma8Varchars/prisma8Id32` 调用。
 
 ## P4 Numeric / JSON domain 收口
 
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P3.4**。P3.1/P3.2/P3.3 已完成；476 个 `VarChar(n)` 已正规化为 plain `String/text` + contract-declared 长度 CHECK，generated contract 中 `Varchar<N>` 已归零。下一步逐批删除应用层 `prisma8Varchar/prisma8Varchars/prisma8Id32` 迁移期 helper。
+当前执行 **P4.1 / P4.2 / P4.3**。P3 VarChar / ID 治理已完整收口；下一阶段审计 12 个 Numeric 与 21 个 Jsonb contract 字段，统一精确 decimal / JSON domain 输入并删除无引用的 values compatibility helper。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -135,4 +135,15 @@ P3.3 已完成。先做两轮隔离 rehearsal：
 existing DB 已正式应用：目标列 **476/476 = text**、P3 长度 CHECK **476/476**；迁移前后 476 列、2467 个非空值逐列 count/maxLen/value multiset fingerprint **0 mismatch**；`db verify` PASS，`migration status` Up to date，`db` ref 已前移到新 storage hash。
 
 fresh PostgreSQL 从空库执行 baseline **672** + timestamp **126** + varchar **952**，合计 **1750 operations**；Seed / `db verify` / `migration status` 全绿。API typecheck/build exit 0，完整 API Rules **346/346 PASS、0 fail、0 skip**，`git diff --check` PASS。P3.3 正式完成，执行指针进入 **P3.4**。
+
+P3.4 已完成：
+
+- 通过 TypeScript AST 一次性删除 `prisma8Varchar/prisma8Varchars` **2769 个调用**，并清理 123 个对应 import specifier；
+- `prisma8Id32()` **210 个调用 / 65 个 import** 统一迁到正式业务 helper `createLegacyId32(): string`；生成算法保持 `randomUUID().replaceAll('-', '')`，但不再以 Prisma migration compatibility 命名；
+- 删除 `src/prisma/prisma8-varchar.ts`，并删除 `prisma8-values.ts` 中已无引用的 `prisma8Varchar` cast；
+- `apps/api` 中 `prisma8Varchar` / `prisma8Varchars` / `prisma8Id32` / `prisma8-varchar` **全部 0 refs**；
+- 长度越界测试改为验证正式 PostgreSQL CHECK violation，确认约束职责已经从应用 branded cast 下沉到数据库 contract；
+- API typecheck/build、`git diff --check` 全绿，完整 API Rules **346/346 PASS、0 fail、0 skip**。
+
+P3 正式完成，执行指针进入 **P4 Numeric / JSON domain 收口**。
 

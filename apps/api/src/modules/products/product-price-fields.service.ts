@@ -3,7 +3,7 @@ import type { FieldVO, ProductPriceItemVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import type { ProductPriceItemDto } from './dto/product-price.dto'
 
@@ -28,21 +28,21 @@ export class ProductPriceFieldsService {
     const productIds = [...new Set(products.map((item) => item.product))]
     if (productIds.length) {
       const { count } = await tx.orm.public.Product.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       })
-        .where((row) => row.id.in(prisma8Varchars(productIds, 32)))
+        .where((row) => row.id.in(productIds))
         .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== productIds.length) throw new BadRequestException('价格表包含不存在的产品')
     }
 
     await Promise.all([
       tx.orm.public.ProductPriceField.where({
-        resourceId: prisma8Varchar(resourceId, 32),
-        refSubId: prisma8Varchar(parent.id, 32),
+        resourceId: resourceId,
+        refSubId: parent.id,
       }).deleteAll(),
       tx.orm.public.ProductPriceFieldBlob.where({
-        resourceId: prisma8Varchar(resourceId, 32),
-        refSubId: prisma8Varchar(parent.id, 32),
+        resourceId: resourceId,
+        refSubId: parent.id,
       }).deleteAll(),
     ])
 
@@ -77,15 +77,15 @@ export class ProductPriceFieldsService {
     const { parent, productField, amountField } = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
     const allowedResources = await this.prisma8.client.orm.public.ProductPrice.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
-      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .where((row) => row.id.in(ids))
       .select('id')
       .all()
     const allowedIds = allowedResources.map((row) => String(row.id))
     if (!allowedIds.length) return result
-    const refSubId = prisma8Varchar(parent.id, 32)
-    const resourceIdFilter = prisma8Varchars(allowedIds, 32)
+    const refSubId = parent.id
+    const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
       this.prisma8.client.orm.public.ProductPriceField.where({ refSubId })
         .where((row) => row.resourceId.in(resourceIdFilter))
@@ -128,11 +128,9 @@ export class ProductPriceFieldsService {
     const rows = [...groups.values()].filter((row) => row.productId)
     const products = rows.length
       ? await this.prisma8.client.orm.public.Product.where({
-          organizationId: prisma8Varchar(organizationId, 32),
+          organizationId: organizationId,
         })
-          .where((row) =>
-            row.id.in(prisma8Varchars([...new Set(rows.map((item) => item.productId))], 32)),
-          )
+          .where((row) => row.id.in([...new Set(rows.map((item) => item.productId))]))
           .select('id', 'name')
           .all()
       : []
@@ -176,19 +174,19 @@ export class ProductPriceFieldsService {
     if (value === undefined || value === null || value === '') return
     const serialized = this.serialize(value)
     const base = {
-      id: prisma8Id32(),
-      resourceId: prisma8Varchar(resourceId, 32),
-      fieldId: prisma8Varchar(field.id, 32),
-      refSubId: prisma8Varchar(refSubId, 32),
-      rowId: prisma8Varchar(rowId, 32),
-      bizId: prisma8Varchar(bizId, 32),
+      id: createLegacyId32(),
+      resourceId: resourceId,
+      fieldId: field.id,
+      refSubId: refSubId,
+      rowId: rowId,
+      bizId: bizId,
     }
     if (this.isBlob(field, serialized)) {
       await tx.orm.public.ProductPriceFieldBlob.create({ ...base, fieldValue: serialized })
     } else {
       await tx.orm.public.ProductPriceField.create({
         ...base,
-        fieldValue: prisma8Varchar(serialized, 255),
+        fieldValue: serialized,
       })
     }
   }

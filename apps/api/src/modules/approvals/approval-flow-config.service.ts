@@ -20,7 +20,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
 import { prisma8JsonValue } from '../../prisma/prisma8-values'
-import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import {
   APPROVAL_FORM_METADATA_KEY,
@@ -38,11 +38,7 @@ import {
   FlowNodeDto,
   UpdateApprovalFlowDto,
 } from './dto/approval.dto'
-import {
-  FORM_TYPE_PREFIX,
-  fromDbFormType,
-  toDbFormType,
-} from './approval-flow-config.utils'
+import { FORM_TYPE_PREFIX, fromDbFormType, toDbFormType } from './approval-flow-config.utils'
 
 type FlowRow = NonNullable<
   Awaited<ReturnType<Prisma8Service['client']['orm']['public']['ApprovalFlows']['first']>>
@@ -66,7 +62,9 @@ type FlowListRecord = FlowRow & { currentVersion: Pick<FlowVersionRow, 'version'
 type FlowDetailRecord = FlowRow & {
   currentVersion:
     | (FlowVersionRow & {
-        nodes: Array<FlowNodeRow & { approver: FlowApproverRow | null; condition: FlowConditionRow | null }>
+        nodes: Array<
+          FlowNodeRow & { approver: FlowApproverRow | null; condition: FlowConditionRow | null }
+        >
         links: FlowLinkRow[]
       })
     | null
@@ -94,7 +92,10 @@ export class ApprovalFlowConfigService {
       deletedAt: null,
     }).where((row) => row.formType.neq('RECEIVABLE_RECORD_LEGACY'))
     const keyword = query.keyword?.trim()
-    if (keyword) flows = flows.where((row) => or(row.number.ilike(`%${keyword}%`), row.name.ilike(`%${keyword}%`)))
+    if (keyword)
+      flows = flows.where((row) =>
+        or(row.number.ilike(`%${keyword}%`), row.name.ilike(`%${keyword}%`)),
+      )
     if (query.formType) flows = flows.where({ formType: toDbFormType(query.formType) })
     if (query.enabled) flows = flows.where({ enabled: query.enabled === 'true' })
     const sortBy = query.sortBy ?? 'updatedAt'
@@ -106,7 +107,9 @@ export class ApprovalFlowConfigService {
       if (ids.length === 0) {
         rows = []
       } else {
-        const fetched = await this.prisma8.client.orm.public.ApprovalFlows.where((row) => row.id.in(ids)).all()
+        const fetched = await this.prisma8.client.orm.public.ApprovalFlows.where((row) =>
+          row.id.in(ids),
+        ).all()
         const byId = new Map(fetched.map((flow) => [flow.id, flow]))
         rows = ids.flatMap((id) => {
           const flow = byId.get(id)
@@ -150,18 +153,18 @@ export class ApprovalFlowConfigService {
         const number = await this.nextFlowNumber(tx, user.tenantId, formType)
         const now = prisma8Now()
         const flow = await tx.orm.public.ApprovalFlows.create({
-            tenantId: user.tenantId,
-            number,
-            formType: toDbFormType(formType),
-            currentVersionId: null,
-            ...this.mainFields(dto, user.id),
-            updatedAt: now,
+          tenantId: user.tenantId,
+          number,
+          formType: toDbFormType(formType),
+          currentVersionId: null,
+          ...this.mainFields(dto, user.id),
+          updatedAt: now,
         })
         const version = await tx.orm.public.ApprovalFlowVersions.create({
-            flowId: flow.id,
-            tenantId: user.tenantId,
-            version: 1,
-            createdById: user.id,
+          flowId: flow.id,
+          tenantId: user.tenantId,
+          version: 1,
+          createdById: user.id,
         })
         await this.createGraph(tx, version.id, dto.createNodes, dto.createLinks)
         await tx.orm.public.ApprovalFlows.where({ id: flow.id }).update({
@@ -199,18 +202,18 @@ export class ApprovalFlowConfigService {
           .select('version')
           .first()
         const version = await tx.orm.public.ApprovalFlowVersions.create({
-            flowId: id,
-            tenantId: user.tenantId,
-            version: (latest?.version ?? 0) + 1,
-            createdById: user.id,
+          flowId: id,
+          tenantId: user.tenantId,
+          version: (latest?.version ?? 0) + 1,
+          createdById: user.id,
         })
         await this.createGraph(tx, version.id, dto.createNodes, dto.createLinks)
         currentVersionId = version.id
       }
       await tx.orm.public.ApprovalFlows.where({ id }).update({
-          ...this.mainFields(dto, user.id),
-          currentVersionId,
-          updatedAt: prisma8Now(),
+        ...this.mainFields(dto, user.id),
+        currentVersionId,
+        updatedAt: prisma8Now(),
       })
     })
     return this.detail(user, id)
@@ -261,11 +264,13 @@ export class ApprovalFlowConfigService {
         await tx.orm.public.ApprovalTasks.where({ status: 'PENDING' })
           .where((row) => row.instanceId.in(instanceIds))
           .updateAndCount({ status: 'SKIPPED', updatedAt: now })
-        await tx.orm.public.ApprovalInstances.where((row) => row.id.in(instanceIds)).updateAndCount({
-          status: 'CANCELED',
-          finishedAt: now,
-          updatedAt: now,
-        })
+        await tx.orm.public.ApprovalInstances.where((row) => row.id.in(instanceIds)).updateAndCount(
+          {
+            status: 'CANCELED',
+            finishedAt: now,
+            updatedAt: now,
+          },
+        )
         await this.resetBusinessStatuses(tx, user.tenantId, instances)
       }
     })
@@ -293,10 +298,14 @@ export class ApprovalFlowConfigService {
     const nodeIds = nodes.map((node) => node.id)
     const [approvers, conditions, links] = await Promise.all([
       nodeIds.length
-        ? this.prisma8.client.orm.public.ApprovalNodeApprovers.where((row) => row.nodeId.in(nodeIds)).all()
+        ? this.prisma8.client.orm.public.ApprovalNodeApprovers.where((row) =>
+            row.nodeId.in(nodeIds),
+          ).all()
         : [],
       nodeIds.length
-        ? this.prisma8.client.orm.public.ApprovalNodeConditions.where((row) => row.id.in(nodeIds)).all()
+        ? this.prisma8.client.orm.public.ApprovalNodeConditions.where((row) =>
+            row.id.in(nodeIds),
+          ).all()
         : [],
       this.prisma8.client.orm.public.ApprovalNodeLinks.where({ flowVersionId: version.id })
         .orderBy((row) => row.sort.asc())
@@ -421,8 +430,7 @@ export class ApprovalFlowConfigService {
       ...new Set(
         nodes
           .filter(
-            (node) =>
-              (node.nodeType ?? 'APPROVER') === 'APPROVER' && node.approverType === 'ROLE',
+            (node) => (node.nodeType ?? 'APPROVER') === 'APPROVER' && node.approverType === 'ROLE',
           )
           .flatMap((node) => node.approverIds ?? []),
       ),
@@ -450,14 +458,14 @@ export class ApprovalFlowConfigService {
     formType: SharedApprovalFormType,
     nodes: FlowNodeDto[],
   ) {
-    const approverNodes = nodes.filter((node) =>
-      (node.nodeType ?? 'APPROVER') === 'APPROVER' && (
-        (node.fieldPermissions?.length ?? 0) > 0 ||
-        (node.passPostConfig?.fieldUpdateConfigs.length ?? 0) > 0 ||
-        (node.rejectPostConfig?.fieldUpdateConfigs.length ?? 0) > 0 ||
-        Boolean(node.passPostConfig?.webHookConfig) ||
-        Boolean(node.rejectPostConfig?.webHookConfig)
-      ),
+    const approverNodes = nodes.filter(
+      (node) =>
+        (node.nodeType ?? 'APPROVER') === 'APPROVER' &&
+        ((node.fieldPermissions?.length ?? 0) > 0 ||
+          (node.passPostConfig?.fieldUpdateConfigs.length ?? 0) > 0 ||
+          (node.rejectPostConfig?.fieldUpdateConfigs.length ?? 0) > 0 ||
+          Boolean(node.passPostConfig?.webHookConfig) ||
+          Boolean(node.rejectPostConfig?.webHookConfig)),
     )
     if (!approverNodes.length) return
 
@@ -584,7 +592,8 @@ export class ApprovalFlowConfigService {
       if (!nodeMap.has(link.fromNodeId) || !nodeMap.has(link.toNodeId)) {
         throw new BadRequestException('高级流程图存在指向未知节点的连接')
       }
-      if (link.fromNodeId === link.toNodeId) throw new BadRequestException('高级流程图不允许节点自环')
+      if (link.fromNodeId === link.toNodeId)
+        throw new BadRequestException('高级流程图不允许节点自环')
       const pairKey = `${link.fromNodeId}\u0000${link.toNodeId}`
       if (pairKeys.has(pairKey)) throw new BadRequestException('高级流程图存在重复连接')
       pairKeys.add(pairKey)
@@ -600,9 +609,11 @@ export class ApprovalFlowConfigService {
       const next = [...(outgoing.get(id) ?? [])].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
       const prev = incoming.get(id) ?? []
       if (id === startId && prev.length) throw new BadRequestException('START 节点不能存在入边')
-      if (id !== startId && prev.length === 0) throw new BadRequestException(`节点「${node.name}」缺少入边`)
+      if (id !== startId && prev.length === 0)
+        throw new BadRequestException(`节点「${node.name}」缺少入边`)
       if (id === endId && next.length) throw new BadRequestException('END 节点不能存在出边')
-      if (id !== endId && next.length === 0) throw new BadRequestException(`节点「${node.name}」缺少出边`)
+      if (id !== endId && next.length === 0)
+        throw new BadRequestException(`节点「${node.name}」缺少出边`)
       if (id === endId) continue
 
       const targetTypes = next.map((link) => nodeMap.get(link.toNodeId)!.nodeType ?? 'APPROVER')
@@ -636,7 +647,8 @@ export class ApprovalFlowConfigService {
       visited.add(id)
     }
     walk(startId)
-    if (visited.size !== nodes.length) throw new BadRequestException('高级流程图存在 START 不可达节点')
+    if (visited.size !== nodes.length)
+      throw new BadRequestException('高级流程图存在 START 不可达节点')
 
     const reachesEnd = new Set<string>()
     const reverseWalk = (id: string) => {
@@ -645,13 +657,14 @@ export class ApprovalFlowConfigService {
       for (const link of incoming.get(id) ?? []) reverseWalk(link.fromNodeId)
     }
     reverseWalk(endId)
-    if (reachesEnd.size !== nodes.length) throw new BadRequestException('高级流程图存在无法到达 END 的节点')
+    if (reachesEnd.size !== nodes.length)
+      throw new BadRequestException('高级流程图存在无法到达 END 的节点')
   }
 
   private mainFields(dto: CreateApprovalFlowDto | UpdateApprovalFlowDto, userId: string) {
     return {
       name: dto.name.trim(),
-      description: dto.description?.trim() ? prisma8Varchar(dto.description.trim(), 1000) : null,
+      description: dto.description?.trim() ? dto.description.trim() : null,
       enabled: dto.enabled,
       createExecute: dto.createExecute,
       updateExecute: dto.updateExecute,
@@ -729,39 +742,41 @@ export class ApprovalFlowConfigService {
       const nodeType = node.nodeType ?? 'APPROVER'
       const id = idMap.get(node.clientId!)!
       await tx.orm.public.ApprovalNodes.create({
-          id,
-          flowVersionId,
-          number: node.number?.trim() || `PN${String(index + 1).padStart(3, '0')}`,
-          name: node.name.trim(),
-          nodeType,
-          executeTiming: 'CREATE',
-          sort: index,
+        id,
+        flowVersionId,
+        number: node.number?.trim() || `PN${String(index + 1).padStart(3, '0')}`,
+        name: node.name.trim(),
+        nodeType,
+        executeTiming: 'CREATE',
+        sort: index,
       })
       if (nodeType === 'APPROVER') {
         await tx.orm.public.ApprovalNodeApprovers.create({
-            nodeId: id,
-            approverType: node.approverType!,
-            approverIds: node.approverIds ?? [],
-            ccUserIds: node.ccUserIds ?? [],
-            mode: node.mode!,
-            emptyApproverAction: node.emptyApproverAction ?? 'AUTO_PASS',
-            fallbackApprover: node.fallbackApprover?.trim() || null,
-            sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
-            approverDirection: node.approverDirection ?? 'BOTTOM_UP',
-            fieldPermissions: node.fieldPermissions?.length
-              ? prisma8JsonValue(node.fieldPermissions.map((permission) => ({
+          nodeId: id,
+          approverType: node.approverType!,
+          approverIds: node.approverIds ?? [],
+          ccUserIds: node.ccUserIds ?? [],
+          mode: node.mode!,
+          emptyApproverAction: node.emptyApproverAction ?? 'AUTO_PASS',
+          fallbackApprover: node.fallbackApprover?.trim() || null,
+          sameSubmitterAction: node.sameSubmitterAction ?? 'SKIP',
+          approverDirection: node.approverDirection ?? 'BOTTOM_UP',
+          fieldPermissions: node.fieldPermissions?.length
+            ? prisma8JsonValue(
+                node.fieldPermissions.map((permission) => ({
                   fieldId: permission.fieldId.trim(),
                   permissionType: permission.permissionType,
-                })))
-              : null,
-            passPostConfig: this.postConfigJson(node.passPostConfig),
-            rejectPostConfig: this.postConfigJson(node.rejectPostConfig),
+                })),
+              )
+            : null,
+          passPostConfig: this.postConfigJson(node.passPostConfig),
+          rejectPostConfig: this.postConfigJson(node.rejectPostConfig),
         })
       } else if (nodeType === 'CONDITION') {
         await tx.orm.public.ApprovalNodeConditions.create({
-            id,
-            flowVersionId,
-            conditionConfig: node.conditionConfig ? prisma8JsonValue(node.conditionConfig) : null,
+          id,
+          flowVersionId,
+          conditionConfig: node.conditionConfig ? prisma8JsonValue(node.conditionConfig) : null,
         })
       }
     }
@@ -850,10 +865,11 @@ export class ApprovalFlowConfigService {
         toNodeId: link.toNodeId,
         sort: link.sort ?? index,
       }))
-      .sort((left, right) =>
-        left.fromNodeId.localeCompare(right.fromNodeId) ||
-        left.sort - right.sort ||
-        left.toNodeId.localeCompare(right.toNodeId),
+      .sort(
+        (left, right) =>
+          left.fromNodeId.localeCompare(right.fromNodeId) ||
+          left.sort - right.sort ||
+          left.toNodeId.localeCompare(right.toNodeId),
       )
     return { nodes: canonicalNodes, links: canonicalLinks }
   }
@@ -937,8 +953,9 @@ export class ApprovalFlowConfigService {
     const formTypeFilter = query.formType ? toDbFormType(query.formType) : ''
     const enabledFilter = query.enabled ?? ''
     const offset = (page - 1) * pageSize
-    const queryBuilder = sortOrder === 'asc'
-      ? this.prisma8.client.raw.sql`
+    const queryBuilder =
+      sortOrder === 'asc'
+        ? this.prisma8.client.raw.sql`
           SELECT id
           FROM approval_flows
           WHERE "tenantId" = ${tenantId}
@@ -950,7 +967,7 @@ export class ApprovalFlowConfigService {
           ORDER BY "enabled" ASC, id ASC
           LIMIT ${pageSize} OFFSET ${offset}
         `
-      : this.prisma8.client.raw.sql`
+        : this.prisma8.client.raw.sql`
           SELECT id
           FROM approval_flows
           WHERE "tenantId" = ${tenantId}
@@ -963,7 +980,9 @@ export class ApprovalFlowConfigService {
           LIMIT ${pageSize} OFFSET ${offset}
         `
     const ids: string[] = []
-    for await (const row of this.prisma8.client.runtime().query(queryBuilder.returnsRow({ id: 'pg/text@1' }).build())) {
+    for await (const row of this.prisma8.client
+      .runtime()
+      .query(queryBuilder.returnsRow({ id: 'pg/text@1' }).build())) {
       ids.push(row.id)
     }
     return ids
@@ -1054,7 +1073,8 @@ export class ApprovalFlowConfigService {
           (node.approver?.passPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
         rejectPostConfig:
           (node.approver?.rejectPostConfig as unknown as ApprovalPostConfig | null) ?? undefined,
-        conditionConfig: node.condition?.conditionConfig as ApprovalFlowDetail['createNodes'][number]['conditionConfig'],
+        conditionConfig: node.condition
+          ?.conditionConfig as ApprovalFlowDetail['createNodes'][number]['conditionConfig'],
       })),
       createLinks: flow.currentVersion.links.map((link) => ({
         id: link.id,
@@ -1080,19 +1100,19 @@ export class ApprovalFlowConfigService {
       .filter((item) => item.module === 'order')
       .map((item) => item.targetId)
     if (quoteIds.length) {
-      await tx.orm.public.OpportunityQuotation.where({ organizationId: prisma8Varchar(tenantId, 32) })
-        .where((row) => row.id.in(prisma8Varchars(quoteIds, 32)))
-        .updateAndCount({ approvalStatus: prisma8Varchar('NONE', 50) })
+      await tx.orm.public.OpportunityQuotation.where({ organizationId: tenantId })
+        .where((row) => row.id.in(quoteIds))
+        .updateAndCount({ approvalStatus: 'NONE' })
     }
     if (contractIds.length) {
-      await tx.orm.public.Contract.where({ organizationId: prisma8Varchar(tenantId, 32) })
-        .where((row) => row.id.in(prisma8Varchars(contractIds, 32)))
-        .updateAndCount({ approvalStatus: prisma8Varchar('NONE', 50) })
+      await tx.orm.public.Contract.where({ organizationId: tenantId })
+        .where((row) => row.id.in(contractIds))
+        .updateAndCount({ approvalStatus: 'NONE' })
     }
     if (orderIds.length) {
-      await tx.orm.public.SalesOrder.where({ organizationId: prisma8Varchar(tenantId, 32) })
-        .where((row) => row.id.in(prisma8Varchars(orderIds, 32)))
-        .updateAndCount({ approvalStatus: prisma8Varchar('NONE', 50) })
+      await tx.orm.public.SalesOrder.where({ organizationId: tenantId })
+        .where((row) => row.id.in(orderIds))
+        .updateAndCount({ approvalStatus: 'NONE' })
     }
   }
 

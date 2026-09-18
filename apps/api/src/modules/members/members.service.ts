@@ -13,7 +13,7 @@ import { AuthContextCacheService } from '../../common/services/auth-context-cach
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { RolesService } from '../roles/roles.service'
 import { CreateMemberDto, QueryMembersDto, UpdateMemberDto } from './dto/member.dto'
 
@@ -127,7 +127,10 @@ export class MembersService {
     const tenantId = actor.tenantId
     const current = await this.ensureExists(tenantId, id)
     if (dto.roleIds !== undefined) {
-      const currentRoleIds = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, userId: id })
+      const currentRoleIds = await this.prisma8.client.orm.public.UserRoles.where({
+        tenantId,
+        userId: id,
+      })
         .select('roleId')
         .all()
       await this.rolesService.assertRolesAssignable(
@@ -145,14 +148,20 @@ export class MembersService {
       const updatedAt = prisma8Now()
       if (dto.deptId !== undefined && nextDeptId !== current.deptId) {
         let departments = tx.orm.public.Departments.where({ tenantId, leaderId: id })
-        if (nextDeptId) departments = departments.where((department) => department.id.neq(nextDeptId))
+        if (nextDeptId)
+          departments = departments.where((department) => department.id.neq(nextDeptId))
         await departments.updateAndCount({ leaderId: null, updatedAt })
       }
       if (dto.roleIds !== undefined) {
         await tx.orm.public.UserRoles.where({ tenantId, userId: id }).deleteAndCount()
         if (dto.roleIds.length) {
           await tx.orm.public.UserRoles.createAll(
-            [...new Set(dto.roleIds)].map((roleId) => ({ tenantId, userId: id, roleId, updatedAt })),
+            [...new Set(dto.roleIds)].map((roleId) => ({
+              tenantId,
+              userId: id,
+              roleId,
+              updatedAt,
+            })),
           )
         }
       }
@@ -222,8 +231,8 @@ export class MembersService {
   async remove(tenantId: string, operatorId: string, id: string) {
     if (operatorId === id) throw new BadRequestException('不能删除自己的账号')
     const user = await this.ensureExists(tenantId, id)
-    const organizationId = prisma8Varchar(tenantId, 32)
-    const memberId = prisma8Varchar(id, 32)
+    const organizationId = tenantId
+    const memberId = id
     const customerIds = await this.prisma8.client.orm.public.Customer.where({ organizationId })
       .select('id')
       .all()
@@ -245,46 +254,61 @@ export class MembersService {
       this.prisma8.client.orm.public.Customer.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({ count: agg.count() }),
       ),
-      this.prisma8.client.orm.public.CustomerContact.where({ organizationId, owner: memberId }).aggregate(
-        (agg) => ({ count: agg.count() }),
+      this.prisma8.client.orm.public.CustomerContact.where({
+        organizationId,
+        owner: memberId,
+      }).aggregate((agg) => ({ count: agg.count() })),
+      this.prisma8.client.orm.public.Clue.where({ organizationId, owner: memberId }).aggregate(
+        (agg) => ({
+          count: agg.count(),
+        }),
       ),
-      this.prisma8.client.orm.public.Clue.where({ organizationId, owner: memberId }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      this.prisma8.client.orm.public.Opportunity.where({ organizationId, owner: memberId }).aggregate(
-        (agg) => ({ count: agg.count() }),
-      ),
+      this.prisma8.client.orm.public.Opportunity.where({
+        organizationId,
+        owner: memberId,
+      }).aggregate((agg) => ({ count: agg.count() })),
       this.prisma8.client.orm.public.OpportunityQuotation.where({
         organizationId,
         createUser: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.Contract.where({ organizationId, owner: memberId }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
+      this.prisma8.client.orm.public.Contract.where({ organizationId, owner: memberId }).aggregate(
+        (agg) => ({
+          count: agg.count(),
+        }),
+      ),
       this.prisma8.client.orm.public.ContractPaymentRecord.where({
         organizationId,
         owner: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.ContractInvoice.where({ organizationId, owner: memberId }).aggregate(
-        (agg) => ({ count: agg.count() }),
+      this.prisma8.client.orm.public.ContractInvoice.where({
+        organizationId,
+        owner: memberId,
+      }).aggregate((agg) => ({ count: agg.count() })),
+      this.prisma8.client.orm.public.SalesOrder.where({
+        organizationId,
+        owner: memberId,
+      }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, ownerId: id }).aggregate(
+        (agg) => ({
+          count: agg.count(),
+        }),
       ),
-      this.prisma8.client.orm.public.SalesOrder.where({ organizationId, owner: memberId }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, ownerId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
       customerIds.length
         ? this.prisma8.client.orm.public.CustomerCollaboration.where({ userId: memberId })
             .where((row) => row.customerId.in(customerIds.map(({ id: customerId }) => customerId)))
             .aggregate((agg) => ({ count: agg.count() }))
         : Promise.resolve({ count: 0 }),
-      this.prisma8.client.orm.public.ApprovalInstances.where({ tenantId, submitterId: id }).aggregate(
-        (agg) => ({ count: agg.count() }),
+      this.prisma8.client.orm.public.ApprovalInstances.where({
+        tenantId,
+        submitterId: id,
+      }).aggregate((agg) => ({ count: agg.count() })),
+      this.prisma8.client.orm.public.ApprovalTasks.where({ tenantId, approverId: id }).aggregate(
+        (agg) => ({
+          count: agg.count(),
+        }),
       ),
-      this.prisma8.client.orm.public.ApprovalTasks.where({ tenantId, approverId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
     ])
     const referenceCounts = [
       customers.count,
@@ -306,7 +330,9 @@ export class MembersService {
     }
 
     const subordinateIds = (
-      await this.prisma8.client.orm.public.Users.where({ tenantId, leaderId: id }).select('id').all()
+      await this.prisma8.client.orm.public.Users.where({ tenantId, leaderId: id })
+        .select('id')
+        .all()
     ).map(({ id: subordinateId }) => subordinateId)
 
     await this.prisma8.client.transaction(async (tx) => {
@@ -360,7 +386,11 @@ export class MembersService {
             .first()
         : null,
       dto.leaderId
-        ? this.prisma8.client.orm.public.Users.where({ id: dto.leaderId, tenantId, status: 'ACTIVE' })
+        ? this.prisma8.client.orm.public.Users.where({
+            id: dto.leaderId,
+            tenantId,
+            status: 'ACTIVE',
+          })
             .select('id', 'leaderId')
             .first()
         : null,
@@ -404,8 +434,12 @@ export class MembersService {
       .select('userId', 'roleId')
       .all()
     const roleIds = [...new Set(relations.map((relation) => relation.roleId))]
-    const deptIds = [...new Set(users.map((user) => user.deptId).filter((id): id is string => !!id))]
-    const leaderIds = [...new Set(users.map((user) => user.leaderId).filter((id): id is string => !!id))]
+    const deptIds = [
+      ...new Set(users.map((user) => user.deptId).filter((id): id is string => !!id)),
+    ]
+    const leaderIds = [
+      ...new Set(users.map((user) => user.leaderId).filter((id): id is string => !!id)),
+    ]
     const [roles, departments, leaders] = await Promise.all([
       roleIds.length
         ? this.prisma8.client.orm.public.Roles.where({ tenantId })
@@ -431,7 +465,10 @@ export class MembersService {
     const leaderMap = new Map(leaders.map((leader) => [leader.id, leader.name]))
     const rolesByUser = new Map<string, string[]>()
     for (const relation of relations) {
-      rolesByUser.set(relation.userId, [...(rolesByUser.get(relation.userId) ?? []), relation.roleId])
+      rolesByUser.set(relation.userId, [
+        ...(rolesByUser.get(relation.userId) ?? []),
+        relation.roleId,
+      ])
     }
     return users.map((user) => {
       const assignedRoleIds = rolesByUser.get(user.id) ?? []
@@ -440,7 +477,11 @@ export class MembersService {
         email: user.email,
         name: user.name,
         status: user.status,
-        roles: assignedRoleIds.map((roleId) => ({ roleId, id: roleId, name: roleMap.get(roleId) ?? roleId })),
+        roles: assignedRoleIds.map((roleId) => ({
+          roleId,
+          id: roleId,
+          name: roleMap.get(roleId) ?? roleId,
+        })),
         roleIds: assignedRoleIds,
         deptId: user.deptId,
         deptName: user.deptId ? (deptMap.get(user.deptId) ?? null) : null,

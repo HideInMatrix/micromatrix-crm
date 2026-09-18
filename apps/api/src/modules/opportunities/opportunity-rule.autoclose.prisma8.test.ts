@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -37,71 +37,63 @@ test(
         name: 'Prisma8 Auto Close Owner',
       })
 
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor, 32)
-      const openStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('跟进', 16),
-          _type: prisma8Varchar('AFOOT', 50),
-          rate: prisma8Varchar('50', 10),
-          pos: 1n,
-          organizationId,
-          createTime: nowMs,
-          updateTime: nowMs,
-          createUser: actorId,
-          updateUser: actorId,
+      const organizationId = tenant.id
+      const actorId = actor
+      const openStage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '跟进',
+        _type: 'AFOOT',
+        rate: '50',
+        pos: 1n,
+        organizationId,
+        createTime: nowMs,
+        updateTime: nowMs,
+        createUser: actorId,
+        updateUser: actorId,
       })
       stageIds.push(openStage.id)
-      const failStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('失败', 16),
-          _type: prisma8Varchar('END', 50),
-          rate: prisma8Varchar('0', 10),
-          pos: 2n,
-          organizationId,
-          createTime: nowMs,
-          updateTime: nowMs,
-          createUser: actorId,
-          updateUser: actorId,
+      const failStage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '失败',
+        _type: 'END',
+        rate: '0',
+        pos: 2n,
+        organizationId,
+        createTime: nowMs,
+        updateTime: nowMs,
+        createUser: actorId,
+        updateUser: actorId,
       })
       stageIds.push(failStage.id)
 
-      const opportunity = await prisma8Client.orm.public.Opportunity
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('应自动关闭商机', 255),
-          organizationId,
-          stage: openStage.id,
-          owner: prisma8Varchar(user.id, 32),
-          updateUser: actorId,
-          createTime: nowMs,
-          updateTime: nowMs,
-          createUser: actorId,
+      const opportunity = await prisma8Client.orm.public.Opportunity.select('id').create({
+        id: createLegacyId32(),
+        name: '应自动关闭商机',
+        organizationId,
+        stage: openStage.id,
+        owner: user.id,
+        updateUser: actorId,
+        createTime: nowMs,
+        updateTime: nowMs,
+        createUser: actorId,
       })
       opportunityId = opportunity.id
-      const rule = await prisma8Client.orm.public.OpportunityRule
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Prisma8 自动关闭规则', 255),
-          organizationId,
-          ownerId: JSON.stringify([user.id]),
-          scopeId: JSON.stringify(['*']),
-          enable: true,
-          auto: true,
-          operator: prisma8Varchar('AND', 10),
-          condition: JSON.stringify([
-            { column: 'opportunityStage', operator: 'IN', value: openStage.id },
-          ]),
-          createTime: nowMs,
-          updateTime: nowMs,
-          createUser: actorId,
-          updateUser: actorId,
+      const rule = await prisma8Client.orm.public.OpportunityRule.select('id').create({
+        id: createLegacyId32(),
+        name: 'Prisma8 自动关闭规则',
+        organizationId,
+        ownerId: JSON.stringify([user.id]),
+        scopeId: JSON.stringify(['*']),
+        enable: true,
+        auto: true,
+        operator: 'AND',
+        condition: JSON.stringify([
+          { column: 'opportunityStage', operator: 'IN', value: openStage.id },
+        ]),
+        createTime: nowMs,
+        updateTime: nowMs,
+        createUser: actorId,
+        updateUser: actorId,
       })
       ruleId = rule.id
 
@@ -119,12 +111,13 @@ test(
       assert.equal(persisted.lastStage, openStage.id)
       assert.equal(persisted.failureReason, 'system')
     } finally {
-      if (opportunityId) await prisma8Client.orm.public.Opportunity.where({ id: prisma8Varchar(opportunityId, 32) }).deleteAll()
-      if (ruleId) await prisma8Client.orm.public.OpportunityRule.where({ id: prisma8Varchar(ruleId, 32) }).deleteAll()
+      if (opportunityId)
+        await prisma8Client.orm.public.Opportunity.where({ id: opportunityId }).deleteAll()
+      if (ruleId) await prisma8Client.orm.public.OpportunityRule.where({ id: ruleId }).deleteAll()
       if (stageIds.length) {
-        await prisma8Client.orm.public.OpportunityStageConfig
-          .where((row) => row.id.in(stageIds.map((id) => prisma8Varchar(id, 32))))
-          .deleteAll()
+        await prisma8Client.orm.public.OpportunityStageConfig.where((row) =>
+          row.id.in(stageIds.map((id) => id)),
+        ).deleteAll()
       }
       if (tenantId) {
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()

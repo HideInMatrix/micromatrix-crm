@@ -19,7 +19,7 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import type { BatchIdsDto, ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { AttachmentsService } from '../attachments/attachments.service'
 import {
@@ -168,7 +168,7 @@ export class CustomFormsService {
 
   async list(user: AuthUser) {
     const rows = await this.prisma8.client.orm.public.CustomForm.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .orderBy([(row) => row.updateTime.desc(), (row) => row.id.asc()])
       .all()
@@ -176,13 +176,13 @@ export class CustomFormsService {
     const formIds = rows.map((row) => row.id)
     const [admins, roleUsers] = await Promise.all([
       this.prisma8.client.orm.public.CustomFormAdmin.where({
-        userId: prisma8Varchar(user.id, 32),
+        userId: user.id,
       })
         .where((row) => row.customFormId.in(formIds))
         .select('customFormId')
         .all(),
       this.prisma8.client.orm.public.CustomFormRoleUser.where({
-        userId: prisma8Varchar(user.id, 32),
+        userId: user.id,
       })
         .select('roleId')
         .all(),
@@ -221,7 +221,7 @@ export class CustomFormsService {
 
   async options(user: AuthUser) {
     return this.prisma8.client.orm.public.CustomForm.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       enable: true,
     })
       .select('id', 'name')
@@ -260,24 +260,24 @@ export class CustomFormsService {
 
     const form = await this.prisma8.client.transaction(async (tx) => {
       const created = await tx.orm.public.CustomForm.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
+        id: createLegacyId32(),
+        name: name,
         enable: input.enable ?? true,
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
 
       await tx.orm.public.SysModuleForm.create({
         id: created.id,
-        formKey: prisma8Varchar(created.id, 50),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        formKey: created.id,
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       await tx.orm.public.SysModuleFormBlob.create({
         id: created.id,
@@ -291,20 +291,20 @@ export class CustomFormsService {
 
       await tx.orm.public.CustomFormRole.createAll(
         ROLE_DEFINITIONS.map((role) => ({
-          id: prisma8Id32(),
-          name: prisma8Varchar(role.name, 255),
+          id: createLegacyId32(),
+          name: role.name,
           customFormId: created.id,
-          internalKey: prisma8Varchar(role.key, 50),
+          internalKey: role.key,
           createTime: now,
           updateTime: now,
-          createUser: prisma8Varchar(user.id, 32),
-          updateUser: prisma8Varchar(user.id, 32),
+          createUser: user.id,
+          updateUser: user.id,
         })),
       )
       await tx.orm.public.CustomFormAdmin.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         customFormId: created.id,
-        userId: prisma8Varchar(user.id, 32),
+        userId: user.id,
       })
       return created
     })
@@ -319,19 +319,19 @@ export class CustomFormsService {
     await this.ensureNameUnique(user.tenantId, name, id)
     const now = BigInt(Date.now())
     await this.prisma8.client.transaction(async (tx) => {
-      await tx.orm.public.CustomForm.where({ id: prisma8Varchar(id, 32) }).update({
-        name: prisma8Varchar(name, 255),
+      await tx.orm.public.CustomForm.where({ id: id }).update({
+        name: name,
         enable: input.enable,
         updateTime: now,
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (input.formProp !== undefined) {
-        await tx.orm.public.SysModuleForm.where({ id: prisma8Varchar(id, 32) }).update({
+        await tx.orm.public.SysModuleForm.where({ id: id }).update({
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
         const blob = await tx.orm.public.SysModuleFormBlob.where({
-          id: prisma8Varchar(id, 32),
+          id: id,
         })
           .select('id')
           .first()
@@ -341,7 +341,7 @@ export class CustomFormsService {
           })
         } else {
           await tx.orm.public.SysModuleFormBlob.create({
-            id: prisma8Varchar(id, 32),
+            id: id,
             prop: JSON.stringify(input.formProp),
           })
         }
@@ -354,8 +354,8 @@ export class CustomFormsService {
   async setStatus(user: AuthUser, id: string, enable: boolean) {
     await this.requireAdmin(user, id)
     const row = await this.prisma8.client.orm.public.CustomForm.where({
-      id: prisma8Varchar(id, 32),
-    }).update({ enable, updateTime: BigInt(Date.now()), updateUser: prisma8Varchar(user.id, 32) })
+      id: id,
+    }).update({ enable, updateTime: BigInt(Date.now()), updateUser: user.id })
     if (!row) throw new NotFoundException('自定义表单不存在')
     return { id: row.id, enable: row.enable }
   }
@@ -363,21 +363,21 @@ export class CustomFormsService {
   async remove(user: AuthUser, id: string) {
     await this.requireAdmin(user, id)
     const dataRows = await this.prisma8.client.orm.public.CustomFormData.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      customFormId: prisma8Varchar(id, 32),
+      organizationId: user.tenantId,
+      customFormId: id,
     })
       .select('id')
       .all()
     await this.prisma8.client.transaction(async (tx) => {
       await tx.orm.public.SysUserView.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        resourceType: prisma8Varchar(customFormUserViewResourceType(id), 50),
+        organizationId: user.tenantId,
+        resourceType: customFormUserViewResourceType(id),
       }).deleteAll()
       await tx.orm.public.SysModuleForm.where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: id,
+        organizationId: user.tenantId,
       }).deleteAll()
-      await tx.orm.public.CustomForm.where({ id: prisma8Varchar(id, 32) }).delete()
+      await tx.orm.public.CustomForm.where({ id: id }).delete()
     })
     await this.attachments.removeAllFromTargets(
       user.tenantId,
@@ -391,7 +391,7 @@ export class CustomFormsService {
   async admins(user: AuthUser, id: string) {
     await this.resolveAccess(user, id, { requireEnabled: false })
     const rows = await this.prisma8.client.orm.public.CustomFormAdmin.where({
-      customFormId: prisma8Varchar(id, 32),
+      customFormId: id,
     })
       .select('userId')
       .all()
@@ -407,12 +407,12 @@ export class CustomFormsService {
     if (!normalized.length) throw new BadRequestException('自定义表单至少需要一个管理员')
     await this.ensureTenantUsers(user.tenantId, normalized)
     await this.prisma8.client.transaction(async (tx) => {
-      await tx.orm.public.CustomFormAdmin.where({ customFormId: prisma8Varchar(id, 32) }).deleteAll()
+      await tx.orm.public.CustomFormAdmin.where({ customFormId: id }).deleteAll()
       await tx.orm.public.CustomFormAdmin.createAll(
         normalized.map((userId) => ({
-          id: prisma8Id32(),
-          customFormId: prisma8Varchar(id, 32),
-          userId: prisma8Varchar(userId, 32),
+          id: createLegacyId32(),
+          customFormId: id,
+          userId: userId,
         })),
       )
     })
@@ -422,7 +422,7 @@ export class CustomFormsService {
   async roles(user: AuthUser, id: string) {
     await this.resolveAccess(user, id, { requireEnabled: false })
     const roles = await this.prisma8.client.orm.public.CustomFormRole.where({
-      customFormId: prisma8Varchar(id, 32),
+      customFormId: id,
     })
       .orderBy((role) => role.internalKey.asc())
       .all()
@@ -458,8 +458,8 @@ export class CustomFormsService {
     const normalized = [...new Set(userIds)]
     await this.ensureTenantUsers(user.tenantId, normalized)
     const role = await this.prisma8.client.orm.public.CustomFormRole.where({
-      customFormId: prisma8Varchar(id, 32),
-      internalKey: prisma8Varchar(roleKey, 50),
+      customFormId: id,
+      internalKey: roleKey,
     }).first()
     if (!role) throw new NotFoundException('自定义表单角色不存在')
     const now = BigInt(Date.now())
@@ -468,13 +468,13 @@ export class CustomFormsService {
       if (normalized.length) {
         await tx.orm.public.CustomFormRoleUser.createAll(
           normalized.map((userId) => ({
-            id: prisma8Id32(),
+            id: createLegacyId32(),
             roleId: role.id,
-            userId: prisma8Varchar(userId, 32),
+            userId: userId,
             createTime: now,
             updateTime: now,
-            createUser: prisma8Varchar(user.id, 32),
-            updateUser: prisma8Varchar(user.id, 32),
+            createUser: user.id,
+            updateUser: user.id,
           })),
         )
       }
@@ -524,7 +524,7 @@ export class CustomFormsService {
     const attachmentRows =
       field.type === 'attachment'
         ? await this.prisma8.client.orm.public.CustomFormDataFieldBlob.where({
-            fieldId: prisma8Varchar(fieldId, 32),
+            fieldId: fieldId,
           })
             .select('resourceId', 'fieldValue')
             .all()
@@ -570,12 +570,12 @@ export class CustomFormsService {
       return { list: [], total: 0, current, pageSize, fields, access }
     }
     let query = this.prisma8.client.orm.public.CustomFormData.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      customFormId: prisma8Varchar(id, 32),
+      organizationId: user.tenantId,
+      customFormId: id,
     })
-    if (!access.canViewAll) query = query.where({ owner: prisma8Varchar(user.id, 32) })
+    if (!access.canViewAll) query = query.where({ owner: user.id })
     if (keyword) query = query.where((row) => row.name.ilike(`%${keyword}%`))
-    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
     const [aggregate, baseRows] = await Promise.all([
       query.aggregate((agg) => ({ count: agg.count() })),
       query
@@ -628,10 +628,10 @@ export class CustomFormsService {
     try {
       const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
       let query = this.prisma8.client.orm.public.CustomFormData.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        customFormId: prisma8Varchar(id, 32),
-      }).where((row) => row.id.in(prisma8Varchars([...new Set(ids)], 32)))
-      if (!access.canViewAll) query = query.where({ owner: prisma8Varchar(user.id, 32) })
+        organizationId: user.tenantId,
+        customFormId: id,
+      }).where((row) => row.id.in([...new Set(ids)]))
+      if (!access.canViewAll) query = query.where({ owner: user.id })
       return query.select('id', 'name').all()
     } catch (error) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) return []
@@ -661,15 +661,15 @@ export class CustomFormsService {
     const now = BigInt(Date.now())
     const row = await this.prisma8.client.transaction(async (tx) => {
       const created = await tx.orm.public.CustomFormData.create({
-        id: prisma8Id32(),
-        customFormId: prisma8Varchar(id, 32),
-        name: prisma8Varchar(input.name.trim(), 255),
-        owner: prisma8Varchar(input.ownerId, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: createLegacyId32(),
+        customFormId: id,
+        name: input.name.trim(),
+        owner: input.ownerId,
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.replaceFieldValues(tx, created.id, fields, values)
       await this.claimTemporaryAttachments(tx, user, created.id, attachmentPlan.tempIds)
@@ -690,11 +690,11 @@ export class CustomFormsService {
     const oldAttachmentIds = this.attachmentIdsFromRow(current, fields)
     const attachmentPlan = await this.validateAttachmentValues(user, dataId, fields, values)
     await this.prisma8.client.transaction(async (tx) => {
-      await tx.orm.public.CustomFormData.where({ id: prisma8Varchar(dataId, 32) }).update({
-        name: prisma8Varchar(input.name.trim(), 255),
-        owner: prisma8Varchar(input.ownerId, 32),
+      await tx.orm.public.CustomFormData.where({ id: dataId }).update({
+        name: input.name.trim(),
+        owner: input.ownerId,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       await this.replaceFieldValues(tx, dataId, fields, values)
       await this.claimTemporaryAttachments(tx, user, dataId, attachmentPlan.tempIds)
@@ -717,7 +717,7 @@ export class CustomFormsService {
     const current = await this.findData(user.tenantId, id, dataId)
     this.assertWritableData(access, user.id, current.ownerId)
     await this.prisma8.client.orm.public.CustomFormData.where({
-      id: prisma8Varchar(dataId, 32),
+      id: dataId,
     }).delete()
     await this.attachments.removeAllFromTargets(user.tenantId, CUSTOM_FORM_ATTACHMENT_TARGET, [
       dataId,
@@ -729,10 +729,10 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const ids = [...new Set(input.ids)]
     const rows = await this.prisma8.client.orm.public.CustomFormData.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      customFormId: prisma8Varchar(id, 32),
+      organizationId: user.tenantId,
+      customFormId: id,
     })
-      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .where((row) => row.id.in(ids))
       .select('id', 'owner')
       .all()
     if (rows.length !== ids.length) throw new BadRequestException('批量数据包含不存在的记录')
@@ -749,14 +749,14 @@ export class CustomFormsService {
       const name = typeof input.fieldValue === 'string' ? input.fieldValue.trim() : ''
       if (!name) throw new BadRequestException('名称不能为空')
       await this.prisma8.client.orm.public.CustomFormData.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        customFormId: prisma8Varchar(id, 32),
+        organizationId: user.tenantId,
+        customFormId: id,
       })
-        .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+        .where((row) => row.id.in(ids))
         .updateAndCount({
-          name: prisma8Varchar(name, 255),
+          name: name,
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       return { count: ids.length }
     }
@@ -769,14 +769,14 @@ export class CustomFormsService {
       }
       await this.ensureTenantUsers(user.tenantId, [ownerId])
       await this.prisma8.client.orm.public.CustomFormData.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        customFormId: prisma8Varchar(id, 32),
+        organizationId: user.tenantId,
+        customFormId: id,
       })
-        .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+        .where((row) => row.id.in(ids))
         .updateAndCount({
-          owner: prisma8Varchar(ownerId, 32),
+          owner: ownerId,
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       return { count: ids.length }
     }
@@ -786,20 +786,20 @@ export class CustomFormsService {
     const encoded = empty ? null : this.encodeValue(input.fieldValue)
     await this.prisma8.client.transaction(async (tx) => {
       await Promise.all([
-        tx.orm.public.CustomFormDataField.where({ fieldId: prisma8Varchar(field.id, 32) })
-          .where((row) => row.resourceId.in(prisma8Varchars(ids, 32)))
+        tx.orm.public.CustomFormDataField.where({ fieldId: field.id })
+          .where((row) => row.resourceId.in(ids))
           .deleteAll(),
-        tx.orm.public.CustomFormDataFieldBlob.where({ fieldId: prisma8Varchar(field.id, 32) })
-          .where((row) => row.resourceId.in(prisma8Varchars(ids, 32)))
+        tx.orm.public.CustomFormDataFieldBlob.where({ fieldId: field.id })
+          .where((row) => row.resourceId.in(ids))
           .deleteAll(),
       ])
       if (encoded !== null) {
         if (BLOB_FIELD_TYPES.has(field.type)) {
           await tx.orm.public.CustomFormDataFieldBlob.createAll(
             ids.map((resourceId) => ({
-              id: prisma8Id32(),
-              resourceId: prisma8Varchar(resourceId, 32),
-              fieldId: prisma8Varchar(field.id, 32),
+              id: createLegacyId32(),
+              resourceId: resourceId,
+              fieldId: field.id,
               fieldValue: encoded,
               refSubId: null,
               rowId: null,
@@ -809,10 +809,10 @@ export class CustomFormsService {
         } else {
           await tx.orm.public.CustomFormDataField.createAll(
             ids.map((resourceId) => ({
-              id: prisma8Id32(),
-              resourceId: prisma8Varchar(resourceId, 32),
-              fieldId: prisma8Varchar(field.id, 32),
-              fieldValue: prisma8Varchar(encoded, 255),
+              id: createLegacyId32(),
+              resourceId: resourceId,
+              fieldId: field.id,
+              fieldValue: encoded,
               refSubId: null,
               rowId: null,
               bizId: null,
@@ -821,11 +821,11 @@ export class CustomFormsService {
         }
       }
       await tx.orm.public.CustomFormData.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        customFormId: prisma8Varchar(id, 32),
+        organizationId: user.tenantId,
+        customFormId: id,
       })
-        .where((row) => row.id.in(prisma8Varchars(ids, 32)))
-        .updateAndCount({ updateTime: now, updateUser: prisma8Varchar(user.id, 32) })
+        .where((row) => row.id.in(ids))
+        .updateAndCount({ updateTime: now, updateUser: user.id })
     })
     return { count: ids.length }
   }
@@ -834,19 +834,19 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const ids = [...new Set(input.ids)]
     const rows = await this.prisma8.client.orm.public.CustomFormData.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      customFormId: prisma8Varchar(id, 32),
+      organizationId: user.tenantId,
+      customFormId: id,
     })
-      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .where((row) => row.id.in(ids))
       .select('id', 'owner')
       .all()
     if (rows.length !== ids.length) throw new BadRequestException('批量数据包含不存在的记录')
     for (const row of rows) this.assertWritableData(access, user.id, row.owner)
     const count = await this.prisma8.client.orm.public.CustomFormData.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      customFormId: prisma8Varchar(id, 32),
+      organizationId: user.tenantId,
+      customFormId: id,
     })
-      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .where((row) => row.id.in(ids))
       .deleteAndCount()
     await this.attachments.removeAllFromTargets(user.tenantId, CUSTOM_FORM_ATTACHMENT_TARGET, ids)
     return { count }
@@ -2183,19 +2183,19 @@ export class CustomFormsService {
 
   private async resolveAccess(user: AuthUser, id: string, options: { requireEnabled: boolean }) {
     const form = await this.prisma8.client.orm.public.CustomForm.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!form) throw new NotFoundException('自定义表单不存在')
     const [admin, roleMemberships] = await Promise.all([
       this.prisma8.client.orm.public.CustomFormAdmin.where({
-        customFormId: prisma8Varchar(id, 32),
-        userId: prisma8Varchar(user.id, 32),
+        customFormId: id,
+        userId: user.id,
       })
         .select('id')
         .first(),
       this.prisma8.client.orm.public.CustomFormRoleUser.where({
-        userId: prisma8Varchar(user.id, 32),
+        userId: user.id,
       })
         .select('roleId')
         .all(),
@@ -2203,7 +2203,7 @@ export class CustomFormsService {
     const roleIds = [...new Set(roleMemberships.map((row) => row.roleId))]
     const roleRows = roleIds.length
       ? await this.prisma8.client.orm.public.CustomFormRole.where({
-          customFormId: prisma8Varchar(id, 32),
+          customFormId: id,
         })
           .where((role) => role.id.in(roleIds))
           .select('internalKey')
@@ -2236,10 +2236,10 @@ export class CustomFormsService {
 
   private async ensureNameUnique(organizationId: string, name: string, excludeId?: string) {
     let query = this.prisma8.client.orm.public.CustomForm.where({
-      organizationId: prisma8Varchar(organizationId, 32),
-      name: prisma8Varchar(name, 255),
+      organizationId: organizationId,
+      name: name,
     })
-    if (excludeId) query = query.where((form) => form.id.neq(prisma8Varchar(excludeId, 32)))
+    if (excludeId) query = query.where((form) => form.id.neq(excludeId))
     const duplicated = await query.select('id').first()
     if (duplicated) throw new BadRequestException('自定义表单名称不能重复')
   }
@@ -2305,8 +2305,8 @@ export class CustomFormsService {
     if (sourceType === currentFormId)
       throw new BadRequestException('自定义表单不能引用自身作为数据源')
     const target = await this.prisma8.client.orm.public.CustomForm.where({
-      id: prisma8Varchar(sourceType, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: sourceType,
+      organizationId: user.tenantId,
     })
       .select('id')
       .first()
@@ -2414,10 +2414,10 @@ export class CustomFormsService {
     const ids = rows.map((row) => row.id)
     const [fieldValues, fieldBlobValues] = await Promise.all([
       this.prisma8.client.orm.public.CustomFormDataField.where((field) =>
-        field.resourceId.in(prisma8Varchars(ids, 32)),
+        field.resourceId.in(ids),
       ).all(),
       this.prisma8.client.orm.public.CustomFormDataFieldBlob.where((field) =>
-        field.resourceId.in(prisma8Varchars(ids, 32)),
+        field.resourceId.in(ids),
       ).all(),
     ])
     const normalByResource = new Map<string, DataRow['fieldValues']>()
@@ -2461,9 +2461,9 @@ export class CustomFormsService {
 
   private async findData(organizationId: string, formId: string, dataId: string): Promise<DataRow> {
     const row = await this.prisma8.client.orm.public.CustomFormData.where({
-      id: prisma8Varchar(dataId, 32),
-      customFormId: prisma8Varchar(formId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: dataId,
+      customFormId: formId,
+      organizationId: organizationId,
     }).first()
     if (!row) throw new NotFoundException('自定义表单数据不存在')
     const [hydrated] = await this.hydrateDataRows([row])
@@ -2798,9 +2798,9 @@ export class CustomFormsService {
     values: Record<string, unknown>,
   ) {
     await Promise.all([
-      tx.orm.public.CustomFormDataField.where({ resourceId: prisma8Varchar(resourceId, 32) }).deleteAll(),
+      tx.orm.public.CustomFormDataField.where({ resourceId: resourceId }).deleteAll(),
       tx.orm.public.CustomFormDataFieldBlob.where({
-        resourceId: prisma8Varchar(resourceId, 32),
+        resourceId: resourceId,
       }).deleteAll(),
     ])
     const byKey = new Map(fields.map((field) => [field.key, field]))
@@ -2834,26 +2834,26 @@ export class CustomFormsService {
     if (normal.length) {
       await tx.orm.public.CustomFormDataField.createAll(
         normal.map((row) => ({
-          id: prisma8Id32(),
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
-          fieldValue: prisma8Varchar(row.fieldValue, 255),
-          refSubId: row.refSubId ? prisma8Varchar(row.refSubId, 32) : null,
+          id: createLegacyId32(),
+          resourceId: row.resourceId,
+          fieldId: row.fieldId,
+          fieldValue: row.fieldValue,
+          refSubId: row.refSubId ? row.refSubId : null,
           rowId: row.rowId ?? null,
-          bizId: row.bizId ? prisma8Varchar(row.bizId, 32) : null,
+          bizId: row.bizId ? row.bizId : null,
         })),
       )
     }
     if (blob.length) {
       await tx.orm.public.CustomFormDataFieldBlob.createAll(
         blob.map((row) => ({
-          id: prisma8Id32(),
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
+          id: createLegacyId32(),
+          resourceId: row.resourceId,
+          fieldId: row.fieldId,
           fieldValue: row.fieldValue,
-          refSubId: row.refSubId ? prisma8Varchar(row.refSubId, 32) : null,
+          refSubId: row.refSubId ? row.refSubId : null,
           rowId: row.rowId ?? null,
-          bizId: row.bizId ? prisma8Varchar(row.bizId, 32) : null,
+          bizId: row.bizId ? row.bizId : null,
         })),
       )
     }
@@ -2917,17 +2917,17 @@ export class CustomFormsService {
     actorId: string,
     now: bigint,
   ) {
-    const fieldId = prisma8Id32()
+    const fieldId = createLegacyId32()
     const created = await tx.orm.public.SysModuleField.create({
       id: fieldId,
-      formId: prisma8Varchar(formId, 32),
-      internalKey: prisma8Varchar(key, 255),
-      name: prisma8Varchar(name, 255),
-      _type: prisma8Varchar(type, 20),
+      formId: formId,
+      internalKey: key,
+      name: name,
+      _type: type,
       mobile: false,
       pos: BigInt(pos),
-      createUser: prisma8Varchar(actorId, 32),
-      updateUser: prisma8Varchar(actorId, 32),
+      createUser: actorId,
+      updateUser: actorId,
       createTime: now,
       updateTime: now,
     })

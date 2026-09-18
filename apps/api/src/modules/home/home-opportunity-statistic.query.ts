@@ -8,7 +8,7 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomePeriodService } from './home-period.service'
 
@@ -87,7 +87,14 @@ export class HomeOpportunityStatisticQuery {
       request.deptIds ?? [],
     )
     const range = this.periods.range(period)
-    const current = await this.aggregateRange(user, request, scope, range.start, range.end, scenario)
+    const current = await this.aggregateRange(
+      user,
+      request,
+      scope,
+      range.start,
+      range.end,
+      scenario,
+    )
     const value = current.value
     const amount = current.amount
     if (!request.priorPeriodEnable) {
@@ -127,15 +134,15 @@ export class HomeOpportunityStatisticQuery {
     if (scenario !== 'ALL' && stageIds.length === 0) return { value: 0, amount: 0 }
 
     let query = this.prisma8.client.orm.public.Opportunity.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
     if (!scope.all) {
       query = scope.self
-        ? query.where({ owner: prisma8Varchar(user.id, 32) })
-        : query.where((row) => row.owner.in(prisma8Varchars(scope.userIds ?? [], 32)))
+        ? query.where({ owner: user.id })
+        : query.where((row) => row.owner.in(scope.userIds ?? []))
     }
     if (stageIds.length) {
-      query = query.where((row) => row.stage.in(prisma8Varchars(stageIds, 32)))
+      query = query.where((row) => row.stage.in(stageIds))
     }
 
     const field = this.timeField(request, scenario)
@@ -143,7 +150,9 @@ export class HomeOpportunityStatisticQuery {
     const endMs = BigInt(end.getTime())
     query =
       field === 'CREATE_TIME'
-        ? query.where((row) => row.createTime.gte(startMs)).where((row) => row.createTime.lte(endMs))
+        ? query
+            .where((row) => row.createTime.gte(startMs))
+            .where((row) => row.createTime.lte(endMs))
         : field === 'EXPECTED_END_TIME'
           ? query
               .where((row) => row.expectedEndTime.gte(startMs))
@@ -162,9 +171,9 @@ export class HomeOpportunityStatisticQuery {
   private async stageIds(tenantId: string, scenario: OpportunityScenario): Promise<string[]> {
     if (scenario === 'ALL') return []
     const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
-      organizationId: prisma8Varchar(tenantId, 32),
-      _type: prisma8Varchar(scenario === 'SUCCESS' ? 'END' : 'AFOOT', 50),
-      ...(scenario === 'SUCCESS' ? { rate: prisma8Varchar('100', 10) } : {}),
+      organizationId: tenantId,
+      _type: scenario === 'SUCCESS' ? 'END' : 'AFOOT',
+      ...(scenario === 'SUCCESS' ? { rate: '100' } : {}),
     })
       .select('id')
       .all()

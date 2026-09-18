@@ -17,7 +17,7 @@ import {
   prisma8TimestampFromDate,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal.js'
-import { prisma8JsonValue, prisma8Varchar } from '../../prisma/prisma8-values.js'
+import { prisma8JsonValue } from '../../prisma/prisma8-values.js'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -187,9 +187,7 @@ export class ApprovalsService {
       summary: target.amount ? `金额 ¥${target.amount.toLocaleString('zh-CN')}` : null,
       nodesSnapshot: prisma8JsonValue(snapshot),
       comment: context?.comment?.trim() || null,
-      updateFields: updateFields.length
-        ? prisma8Varchar<2000>(JSON.stringify(updateFields))
-        : null,
+      updateFields: updateFields.length ? JSON.stringify(updateFields) : null,
       currentNodeIndex: -1,
       submitterId: user.id,
       submitterName: user.name,
@@ -971,9 +969,11 @@ export class ApprovalsService {
       .orderBy((instance) => instance.createdAt.desc())
       .first()
     if (!instanceRow) return null
-    const tasks = (await this.prisma8.client.orm.public.ApprovalTasks.where({
-      instanceId: instanceRow.id,
-    }).all()).map((task) => this.toLegacyTask(task))
+    const tasks = (
+      await this.prisma8.client.orm.public.ApprovalTasks.where({
+        instanceId: instanceRow.id,
+      }).all()
+    ).map((task) => this.toLegacyTask(task))
     return this.toInstanceVO(this.toLegacyInstance(instanceRow), tasks, user)
   }
 
@@ -2406,9 +2406,7 @@ export class ApprovalsService {
               .first()
           : Promise.resolve(null),
       ])
-    const attachmentIds = [
-      ...new Set(attachmentRelations.map((relation) => relation.attachmentId)),
-    ]
+    const attachmentIds = [...new Set(attachmentRelations.map((relation) => relation.attachmentId))]
     const attachmentRows = attachmentIds.length
       ? await this.prisma8.client.orm.public.Attachments.where({ tenantId: instance.tenantId })
           .where((attachment) => attachment.id.in(attachmentIds))

@@ -3,7 +3,7 @@ import type { FieldVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 
 const FORM_KEY = 'contract'
@@ -37,30 +37,42 @@ export class ContractFieldsService {
     private readonly moduleForms: ModuleFormsService,
   ) {}
 
-  async saveProducts(organizationId: string, resourceId: string, products: ContractProductInput[], tx: Prisma8Transaction) {
+  async saveProducts(
+    organizationId: string,
+    resourceId: string,
+    products: ContractProductInput[],
+    tx: Prisma8Transaction,
+  ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const productIds = [...new Set(products.map((item) => item.product))]
     if (productIds.length) {
       const count = await tx.orm.public.Product.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       })
-        .where((row) => row.id.in(prisma8Varchars(productIds, 32)))
+        .where((row) => row.id.in(productIds))
         .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count.count !== productIds.length) throw new BadRequestException('合同包含不存在的产品')
     }
     await Promise.all([
       tx.orm.public.ContractField.where({
-        resourceId: prisma8Varchar(resourceId, 32),
-        refSubId: prisma8Varchar(required.parent.id, 32),
+        resourceId: resourceId,
+        refSubId: required.parent.id,
       }).deleteAll(),
       tx.orm.public.ContractFieldBlob.where({
-        resourceId: prisma8Varchar(resourceId, 32),
-        refSubId: prisma8Varchar(required.parent.id, 32),
+        resourceId: resourceId,
+        refSubId: required.parent.id,
       }).deleteAll(),
     ])
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
-    const reserved = new Set(['products', 'product', 'productAmount', 'productNumber', 'sumAmount', 'amount'])
+    const reserved = new Set([
+      'products',
+      'product',
+      'productAmount',
+      'productNumber',
+      'sumAmount',
+      'amount',
+    ])
     for (const item of products) {
       const rowId = item.rowId || this.id()
       const bizId = item.bizId || this.id()
@@ -72,7 +84,8 @@ export class ContractFieldsService {
         [required.productNumberField, quantity],
         [required.sumAmountField, amount],
       ]
-      for (const [field, value] of cells) await this.writeCell(tx, resourceId, required.parent.id, rowId, bizId, field, value)
+      for (const [field, value] of cells)
+        await this.writeCell(tx, resourceId, required.parent.id, rowId, bizId, field, value)
       for (const [key, value] of Object.entries(item.values ?? {})) {
         if (reserved.has(key)) continue
         const field = fieldMap.get(key)
@@ -94,15 +107,15 @@ export class ContractFieldsService {
     const required = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
     const allowedResources = await this.prisma8.client.orm.public.Contract.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
-      .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+      .where((row) => row.id.in(ids))
       .select('id')
       .all()
     const allowedIds = allowedResources.map((row) => String(row.id))
     if (!allowedIds.length) return result
-    const refSubId = prisma8Varchar(required.parent.id, 32)
-    const resourceIdFilter = prisma8Varchars(allowedIds, 32)
+    const refSubId = required.parent.id
+    const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
       this.prisma8.client.orm.public.ContractField.where({ refSubId })
         .where((row) => row.resourceId.in(resourceIdFilter))
@@ -117,12 +130,23 @@ export class ContractFieldsService {
     for (const cell of [...normal, ...blob]) {
       if (!cell.rowId) continue
       const key = `${cell.resourceId}:${cell.rowId}`
-      const row = rows.get(key) ?? { resourceId: cell.resourceId, rowId: cell.rowId, bizId: cell.bizId ?? cell.rowId, productId: '', productAmount: 0, productNumber: 1, amount: 0, values: {} }
+      const row = rows.get(key) ?? {
+        resourceId: cell.resourceId,
+        rowId: cell.rowId,
+        bizId: cell.bizId ?? cell.rowId,
+        productId: '',
+        productAmount: 0,
+        productNumber: 1,
+        amount: 0,
+        values: {},
+      }
       const field = fieldMap.get(cell.fieldId)
       if (!field) continue
       if (field.id === required.productField.id) row.productId = cell.fieldValue
-      else if (field.id === required.productAmountField.id) row.productAmount = Number(cell.fieldValue)
-      else if (field.id === required.productNumberField.id) row.productNumber = Number(cell.fieldValue)
+      else if (field.id === required.productAmountField.id)
+        row.productAmount = Number(cell.fieldValue)
+      else if (field.id === required.productNumberField.id)
+        row.productNumber = Number(cell.fieldValue)
       else if (field.id === required.sumAmountField.id) row.amount = Number(cell.fieldValue)
       else row.values[field.key] = this.deserialize(field, cell.fieldValue)
       rows.set(key, row)
@@ -131,9 +155,9 @@ export class ContractFieldsService {
     const productIds = [...new Set(validRows.map((row) => row.productId))]
     const products = productIds.length
       ? await this.prisma8.client.orm.public.Product.where({
-          organizationId: prisma8Varchar(organizationId, 32),
+          organizationId: organizationId,
         })
-          .where((row) => row.id.in(prisma8Varchars(productIds, 32)))
+          .where((row) => row.id.in(productIds))
           .select('id', 'name')
           .all()
       : []
@@ -152,33 +176,43 @@ export class ContractFieldsService {
     const productAmountField = fields.find((field) => field.key === 'productAmount')
     const productNumberField = fields.find((field) => field.key === 'productNumber')
     const sumAmountField = fields.find((field) => field.key === 'sumAmount')
-    if (!parent || !productField || !productAmountField || !productNumberField || !sumAmountField) throw new BadRequestException('合同产品子表字段配置不完整')
+    if (!parent || !productField || !productAmountField || !productNumberField || !sumAmountField)
+      throw new BadRequestException('合同产品子表字段配置不完整')
     return { parent, productField, productAmountField, productNumberField, sumAmountField }
   }
 
-  private async writeCell(tx: Prisma8Transaction, resourceId: string, refSubId: string, rowId: string, bizId: string, field: FieldVO, value: unknown) {
+  private async writeCell(
+    tx: Prisma8Transaction,
+    resourceId: string,
+    refSubId: string,
+    rowId: string,
+    bizId: string,
+    field: FieldVO,
+    value: unknown,
+  ) {
     if (value === undefined || value === null || value === '') return
     const serialized = this.serialize(value)
     const data = {
-      id: prisma8Id32(),
-      resourceId: prisma8Varchar(resourceId, 32),
-      fieldId: prisma8Varchar(field.id, 32),
+      id: createLegacyId32(),
+      resourceId: resourceId,
+      fieldId: field.id,
       fieldValue: serialized,
-      refSubId: prisma8Varchar(refSubId, 32),
-      rowId: prisma8Varchar(rowId, 32),
-      bizId: prisma8Varchar(bizId, 32),
+      refSubId: refSubId,
+      rowId: rowId,
+      bizId: bizId,
     }
     if (this.isBlob(field, serialized)) await tx.orm.public.ContractFieldBlob.create(data)
     else {
       await tx.orm.public.ContractField.create({
         ...data,
-        fieldValue: prisma8Varchar(serialized, 255),
+        fieldValue: serialized,
       })
     }
   }
 
   private serialize(value: unknown) {
-    if (Array.isArray(value) || (typeof value === 'object' && value !== null)) return JSON.stringify(value)
+    if (Array.isArray(value) || (typeof value === 'object' && value !== null))
+      return JSON.stringify(value)
     return String(value)
   }
 
@@ -186,15 +220,26 @@ export class ContractFieldsService {
     if (['number', 'currency', 'percent', 'formula'].includes(field.type)) return Number(value)
     if (field.type === 'switch') return value === 'true'
     if (['multiselect', 'checkbox', 'picture'].includes(field.type)) {
-      try { return JSON.parse(value) as unknown } catch { return [] }
+      try {
+        return JSON.parse(value) as unknown
+      } catch {
+        return []
+      }
     }
     return value
   }
 
   private isBlob(field: FieldVO, serialized: string) {
-    return ['textarea', 'multiselect', 'checkbox', 'picture'].includes(field.type) || serialized.length > 255
+    return (
+      ['textarea', 'multiselect', 'checkbox', 'picture'].includes(field.type) ||
+      serialized.length > 255
+    )
   }
 
-  private lineAmount(price: number, quantity: number) { return Math.round(price * quantity * 100) / 100 }
-  private id() { return randomUUID().replaceAll('-', '').slice(0, 32) }
+  private lineAmount(price: number, quantity: number) {
+    return Math.round(price * quantity * 100) / 100
+  }
+  private id() {
+    return randomUUID().replaceAll('-', '').slice(0, 32)
+  }
 }

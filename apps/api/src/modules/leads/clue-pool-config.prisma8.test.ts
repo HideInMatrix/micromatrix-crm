@@ -5,7 +5,7 @@ import type { MetadataService } from '../metadata/metadata.service'
 import type { CluePoolRepository } from '../pool-rules/clue-pool.repository'
 import type { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -44,28 +44,38 @@ test(
         deptId: child.id,
       })
       const now = BigInt(Date.now())
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const userId = prisma8Varchar(user.id, 32)
-      const pool = await prisma8Client.orm.public.CluePool
-        .select('id', 'name', 'scopeId', 'organizationId', 'ownerId', 'enable', 'auto', 'createTime', 'updateTime', 'createUser', 'updateUser')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Lead Pool', 255),
-          scopeId: JSON.stringify([`dept:${root.id}`]),
-          organizationId,
-          ownerId: JSON.stringify([`dept:${root.id}`]),
-          enable: true,
-          auto: false,
-          createTime: now,
-          updateTime: now,
-          createUser: userId,
-          updateUser: userId,
-        })
+      const organizationId = tenant.id
+      const userId = user.id
+      const pool = await prisma8Client.orm.public.CluePool.select(
+        'id',
+        'name',
+        'scopeId',
+        'organizationId',
+        'ownerId',
+        'enable',
+        'auto',
+        'createTime',
+        'updateTime',
+        'createUser',
+        'updateUser',
+      ).create({
+        id: createLegacyId32(),
+        name: 'Lead Pool',
+        scopeId: JSON.stringify([`dept:${root.id}`]),
+        organizationId,
+        ownerId: JSON.stringify([`dept:${root.id}`]),
+        enable: true,
+        auto: false,
+        createTime: now,
+        updateTime: now,
+        createUser: userId,
+        updateUser: userId,
+      })
       await prisma8Client.orm.public.Clue.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar('Pool Lead', 255),
+        id: createLegacyId32(),
+        name: 'Pool Lead',
         owner: null,
-        stage: prisma8Varchar('NEW', 30),
+        stage: 'NEW',
         organizationId,
         createTime: now,
         updateTime: now,
@@ -112,7 +122,7 @@ test(
       assert.equal(page.list[0]?.updateUserName, 'Clue Pool Operator')
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.Clue.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.CluePool.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()

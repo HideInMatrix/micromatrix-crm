@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -59,14 +59,17 @@ test(
         enable: true,
       })
       assert.equal(await service.isEnabled(tenant.id, 'CLUE_POOL_RS'), true)
-      assert.equal((await service.validateReason(tenant.id, 'CLUE_POOL_RS', first.id))?.id, first.id)
+      assert.equal(
+        (await service.validateReason(tenant.id, 'CLUE_POOL_RS', first.id))?.id,
+        first.id,
+      )
 
       await service.remove(actor, first.id)
       await service.remove(actor, second.id)
       await assert.rejects(() => service.remove(actor, third.id), /原因已启用，至少保留一条原因/)
 
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const moduleName = prisma8Varchar('CLUE_POOL_RS', 20)
+      const organizationId = tenant.id
+      const moduleName = 'CLUE_POOL_RS'
       const stored = await prisma8Client.orm.public.SysDict.where({
         organizationId,
         module: moduleName,
@@ -89,7 +92,7 @@ test(
       assert.equal(config.enabled, true)
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.SysDict.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.SysDictConfig.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()

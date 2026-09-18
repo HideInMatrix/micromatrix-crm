@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -115,7 +115,7 @@ test(
       assert.equal(status.stage, 'FOLLOWING')
       assert.equal(status.lastStage, 'NEW')
       const oracle = await prisma8Client.orm.public.Clue.where({
-        id: prisma8Varchar(created.id, 32),
+        id: created.id,
       })
         .select('stage', 'lastStage')
         .first()
@@ -128,7 +128,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.Clue.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('id')
             .all()
@@ -137,9 +137,7 @@ test(
       )
     } finally {
       if (tenantId) {
-        await prisma8Client.orm.public.Clue
-          .where({ organizationId: prisma8Varchar(tenantId, 32) })
-          .deleteAll()
+        await prisma8Client.orm.public.Clue.where({ organizationId: tenantId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }

@@ -3,7 +3,6 @@ import type { AuthUser } from '../common/auth-user'
 import { DataScopeService } from '../common/services/data-scope.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import { Prisma8Service } from '../prisma/prisma8.service'
-import { prisma8Varchar } from '../prisma/prisma8-varchar'
 
 export type CustomerCollaborationAccess = 'READ_ONLY' | 'COLLABORATION' | null
 
@@ -55,8 +54,8 @@ export class CustomerAccessService {
     permission = 'customer:read',
   ): Promise<CustomerAccessContext> {
     const customer = await this.prisma8.client.orm.public.Customer.where({
-      id: prisma8Varchar(customerId, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: customerId,
+      organizationId: user.tenantId,
     }).first()
     if (!customer) throw new NotFoundException('客户不存在或无权访问')
 
@@ -76,14 +75,13 @@ export class CustomerAccessService {
 
     const collaboration = await this.prisma8.client.orm.public.CustomerCollaboration.where({
       customerId: customer.id,
-      userId: prisma8Varchar(user.id, 32),
+      userId: user.id,
     })
       .select('collaborationType')
       .first()
     const collaborationType = this.normalizeCollaborationType(collaboration?.collaborationType)
 
-    const canRead =
-      !customer.inSharedPool && (dataScope || collaborationType !== null)
+    const canRead = !customer.inSharedPool && (dataScope || collaborationType !== null)
     const canManageCustomer = !customer.inSharedPool && dataScope
     const canCollaborateWrite =
       !customer.inSharedPool && (dataScope || collaborationType === 'COLLABORATION')

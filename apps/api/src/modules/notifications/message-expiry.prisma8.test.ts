@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { BusinessNotificationsService } from './business-notifications.service'
@@ -28,129 +28,119 @@ test(
     try {
       const tenant = await createPrismaTestTenant(prisma8Client, 'p8-expiry')
       tenantId = tenant.id
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const actorId = prisma8Varchar(actor, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('到期测试客户', 255),
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+      const organizationId = tenant.id
+      const actorId = actor
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '到期测试客户',
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
-      const opportunityStage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('跟进', 16),
-          _type: prisma8Varchar('AFOOT', 50),
-          rate: prisma8Varchar('50', 10),
-          pos: 1n,
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+      const opportunityStage = await prisma8Client.orm.public.OpportunityStageConfig.select(
+        'id',
+      ).create({
+        id: createLegacyId32(),
+        name: '跟进',
+        _type: 'AFOOT',
+        rate: '50',
+        pos: 1n,
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
-      const opportunity = await prisma8Client.orm.public.Opportunity
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          customerId: customer.id,
-          name: prisma8Varchar('到期测试商机', 255),
-          organizationId,
-          stage: opportunityStage.id,
-          owner: actorId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+      const opportunity = await prisma8Client.orm.public.Opportunity.select('id').create({
+        id: createLegacyId32(),
+        customerId: customer.id,
+        name: '到期测试商机',
+        organizationId,
+        stage: opportunityStage.id,
+        owner: actorId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
       await prisma8Client.orm.public.OpportunityQuotation.create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('到期测试报价', 255),
-          opportunityId: opportunity.id,
-          untilTime: dueAt,
-          amount: prisma8Numeric(0, 14, 2),
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+        id: createLegacyId32(),
+        name: '到期测试报价',
+        opportunityId: opportunity.id,
+        untilTime: dueAt,
+        amount: prisma8Numeric(0, 14, 2),
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
 
-      const activeStage = await prisma8Client.orm.public.ContractStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('履约中', 255),
-          _type: prisma8Varchar('AFOOT', 50),
-          pos: 1n,
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+      const activeStage = await prisma8Client.orm.public.ContractStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '履约中',
+        _type: 'AFOOT',
+        pos: 1n,
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
-      const endStage = await prisma8Client.orm.public.ContractStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('已结束', 255),
-          _type: prisma8Varchar('END', 50),
-          pos: 2n,
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+      const endStage = await prisma8Client.orm.public.ContractStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '已结束',
+        _type: 'END',
+        pos: 2n,
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
-      const contract = await prisma8Client.orm.public.Contract
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('到期测试合同', 255),
-          customerId: customer.id,
-          owner: actorId,
-          amount: prisma8Numeric(0, 14, 2),
-          number: prisma8Varchar(`C-${suffix}`.slice(0, 50), 50),
-          stage: activeStage.id,
-          endTime: dueAt,
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+      const contract = await prisma8Client.orm.public.Contract.select('id').create({
+        id: createLegacyId32(),
+        name: '到期测试合同',
+        customerId: customer.id,
+        owner: actorId,
+        amount: prisma8Numeric(0, 14, 2),
+        number: `C-${suffix}`.slice(0, 50),
+        stage: activeStage.id,
+        endTime: dueAt,
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
       await prisma8Client.orm.public.Contract.create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('不应通知的结束合同', 255),
-          customerId: customer.id,
-          owner: actorId,
-          amount: prisma8Numeric(0, 14, 2),
-          number: prisma8Varchar(`END-${suffix}`.slice(0, 50), 50),
-          stage: endStage.id,
-          endTime: dueAt,
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+        id: createLegacyId32(),
+        name: '不应通知的结束合同',
+        customerId: customer.id,
+        owner: actorId,
+        amount: prisma8Numeric(0, 14, 2),
+        number: `END-${suffix}`.slice(0, 50),
+        stage: endStage.id,
+        endTime: dueAt,
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
       await prisma8Client.orm.public.ContractPaymentPlan.create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('到期测试回款计划', 255),
-          contractId: contract.id,
-          owner: actorId,
-          planEndTime: dueAt,
-          organizationId,
-          createTime: baseTime,
-          updateTime: baseTime,
-          createUser: actorId,
-          updateUser: actorId,
+        id: createLegacyId32(),
+        name: '到期测试回款计划',
+        contractId: contract.id,
+        owner: actorId,
+        planEndTime: dueAt,
+        organizationId,
+        createTime: baseTime,
+        updateTime: baseTime,
+        createUser: actorId,
+        updateUser: actorId,
       })
 
       const delivered: Array<{ event: string; ownerId: string | null | undefined }> = []
@@ -175,16 +165,12 @@ test(
       assert.equal(await service.runTenant(tenant.id, now), 3)
       assert.deepEqual(
         delivered.map(({ event }) => event),
-        [
-          'BUSINESS_QUOTATION_EXPIRED',
-          'CONTRACT_EXPIRED',
-          'CONTRACT_PAYMENT_EXPIRED',
-        ],
+        ['BUSINESS_QUOTATION_EXPIRED', 'CONTRACT_EXPIRED', 'CONTRACT_PAYMENT_EXPIRED'],
       )
       assert.ok(delivered.every(({ ownerId }) => ownerId === actor))
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.ContractPaymentPlan.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.OpportunityQuotation.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Contract.where({ organizationId }).deleteAll()

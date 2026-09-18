@@ -5,7 +5,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ContractInvoiceService } from './contract-invoice.service'
 
@@ -49,39 +49,35 @@ test(
         updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const org = prisma8Varchar(organizationId, 32)
-      const actor = prisma8Varchar(actorId, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('发票专项客户', 255),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const contract = await prisma8Client.orm.public.Contract
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('发票专项合同', 255),
-          customerId: customer.id,
-          owner: actor,
-          amount: prisma8Numeric(500, 14, 2),
-          number: prisma8Varchar(`INV-${suffix.slice(0, 8)}`, 50),
-          stage: prisma8Varchar('stage-a', 32),
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
+      const org = organizationId
+      const actor = actorId
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '发票专项客户',
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const contract = await prisma8Client.orm.public.Contract.select('id').create({
+        id: createLegacyId32(),
+        name: '发票专项合同',
+        customerId: customer.id,
+        owner: actor,
+        amount: prisma8Numeric(500, 14, 2),
+        number: `INV-${suffix.slice(0, 8)}`,
+        stage: 'stage-a',
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
       const contracts = {
         ensureInScope: async (_user: AuthUser, contractId: string) => {
           const row = await prisma8Client.orm.public.Contract.where({
-            id: prisma8Varchar(contractId, 32),
+            id: contractId,
             organizationId: org,
           }).first()
           assert.ok(row)
@@ -155,7 +151,7 @@ test(
         Number(
           (
             await prisma8Client.orm.public.ContractInvoice.where({
-              id: prisma8Varchar(created.id, 32),
+              id: created.id,
             })
               .select('amount')
               .first()
@@ -169,7 +165,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.ContractInvoice.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('id')
             .all()
@@ -177,7 +173,7 @@ test(
         0,
       )
     } finally {
-      const org = prisma8Varchar(organizationId, 32)
+      const org = organizationId
       await prisma8Client.orm.public.ContractInvoice.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.Contract.where({ organizationId: org }).deleteAll()
       await prisma8Client.orm.public.Customer.where({ organizationId: org }).deleteAll()

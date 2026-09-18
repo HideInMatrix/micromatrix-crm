@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -52,30 +52,30 @@ test(
         tenantId: otherTenant.id,
         name: '其他租户成员',
       })
-      const module = await prisma8Client.orm.public.DashboardModule
-        .select('id', 'name')
-        .create({
-          id: prisma8Id32(),
-          organizationId: prisma8Varchar(tenant.id, 32),
-          name: prisma8Varchar('经营看板', 255),
-          createTime: 1n,
-          updateTime: 1n,
-          createUser: prisma8Varchar(viewer.id, 32),
-          updateUser: prisma8Varchar(viewer.id, 32),
-        })
-      const dashboard = await prisma8Client.orm.public.Dashboard
-        .select('id', 'scopeId', 'createUser')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('部门可见看板', 255),
-          resourceUrl: prisma8Varchar('https://example.com/dashboard', 500),
-          dashboardModuleId: module.id,
-          organizationId: prisma8Varchar(tenant.id, 32),
-          scopeId: JSON.stringify([root.id]),
-          createTime: 1n,
-          updateTime: 1n,
-          createUser: prisma8Varchar(member.id, 32),
-          updateUser: prisma8Varchar(member.id, 32),
+      const module = await prisma8Client.orm.public.DashboardModule.select('id', 'name').create({
+        id: createLegacyId32(),
+        organizationId: tenant.id,
+        name: '经营看板',
+        createTime: 1n,
+        updateTime: 1n,
+        createUser: viewer.id,
+        updateUser: viewer.id,
+      })
+      const dashboard = await prisma8Client.orm.public.Dashboard.select(
+        'id',
+        'scopeId',
+        'createUser',
+      ).create({
+        id: createLegacyId32(),
+        name: '部门可见看板',
+        resourceUrl: 'https://example.com/dashboard',
+        dashboardModuleId: module.id,
+        organizationId: tenant.id,
+        scopeId: JSON.stringify([root.id]),
+        createTime: 1n,
+        updateTime: 1n,
+        createUser: member.id,
+        updateUser: member.id,
       })
 
       const service = new DashboardAccessService({ client: prisma8Client } as Prisma8Service)
@@ -91,7 +91,10 @@ test(
       }
 
       assert.deepEqual(await service.departmentPathIds(authUser), [child.id, root.id])
-      assert.deepEqual(await service.validateScopeIds(authUser, [member.id, root.id, member.id]), [member.id, root.id])
+      assert.deepEqual(await service.validateScopeIds(authUser, [member.id, root.id, member.id]), [
+        member.id,
+        root.id,
+      ])
       await assert.rejects(
         () => service.validateScopeIds(authUser, [foreignUser.id]),
         /仪表板成员范围包含无效 ID/,
@@ -105,15 +108,20 @@ test(
       assert.equal(visible.id, dashboard.id)
       assert.equal(visible.module.id, module.id)
       assert.equal(visible.module.name, module.name)
-      assert.deepEqual(await service.visibleDashboardIds(authUser, [dashboard]), new Set([dashboard.id]))
+      assert.deepEqual(
+        await service.visibleDashboardIds(authUser, [dashboard]),
+        new Set([dashboard.id]),
+      )
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
-        const dashboardIds = await prisma8Client.orm.public.Dashboard.where({ organizationId }).select('id').all()
+        const organizationId = tenantId
+        const dashboardIds = await prisma8Client.orm.public.Dashboard.where({ organizationId })
+          .select('id')
+          .all()
         if (dashboardIds.length) {
-          await prisma8Client.orm.public.DashboardCollection
-            .where((row) => row.dashboardId.in(dashboardIds.map((item) => item.id)))
-            .deleteAll()
+          await prisma8Client.orm.public.DashboardCollection.where((row) =>
+            row.dashboardId.in(dashboardIds.map((item) => item.id)),
+          ).deleteAll()
         }
         await prisma8Client.orm.public.Dashboard.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.DashboardModule.where({ organizationId }).deleteAll()

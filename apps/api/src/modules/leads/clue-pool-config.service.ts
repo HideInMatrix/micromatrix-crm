@@ -2,14 +2,11 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { MetadataService } from '../metadata/metadata.service'
 import { CluePoolRepository } from '../pool-rules/clue-pool.repository'
 import type { DirectPoolConfigurationInput } from '../pool-rules/pool-domain.types'
-import {
-  parseStringArray,
-  scopeMatches,
-} from '../pool-rules/pool-repository.helpers'
+import { parseStringArray, scopeMatches } from '../pool-rules/pool-repository.helpers'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import type {
   ClueCapacityAddDto,
@@ -77,8 +74,8 @@ export class CluePoolConfigService {
   async noPick(user: AuthUser, poolId: string) {
     await this.assertPoolExists(user.tenantId, poolId)
     const aggregate = await this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
-      poolId: prisma8Varchar(poolId, 32),
+      organizationId: user.tenantId,
+      poolId: poolId,
       inSharedPool: true,
     }).aggregate((agg) => ({ total: agg.count() }))
     return aggregate.total > 0
@@ -192,7 +189,8 @@ export class CluePoolConfigService {
       const ownerIds = parseStringArray(pool.ownerId)
       const hiddenFieldIds = pool.hiddenFields.map((item) => String(item.fieldId))
       const hidden = new Set(hiddenFieldIds)
-      const editable = user.permissions.includes('*') || Boolean(tokens && scopeMatches(pool.ownerId, tokens))
+      const editable =
+        user.permissions.includes('*') || Boolean(tokens && scopeMatches(pool.ownerId, tokens))
       return {
         id: pool.id,
         name: pool.name,
@@ -245,7 +243,10 @@ export class CluePoolConfigService {
     if (!user) return new Set()
 
     const tokens = new Set([user.id, `user:${user.id}`])
-    const links = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, userId: user.id })
+    const links = await this.prisma8.client.orm.public.UserRoles.where({
+      tenantId,
+      userId: user.id,
+    })
       .select('roleId')
       .all()
     for (const link of links) {

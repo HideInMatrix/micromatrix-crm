@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
@@ -67,7 +67,7 @@ export class PoolRecycleService {
   }
 
   private async recycleClues(organizationId: string): Promise<number> {
-    const organization = prisma8Varchar(organizationId, 32)
+    const organization = organizationId
     const [poolRows, clues] = await Promise.all([
       this.prisma8.client.orm.public.CluePool.where({
         organizationId: organization,
@@ -120,7 +120,7 @@ export class PoolRecycleService {
   }
 
   private async recycleCustomers(organizationId: string): Promise<number> {
-    const organization = prisma8Varchar(organizationId, 32)
+    const organization = organizationId
     const [poolRows, customers] = await Promise.all([
       this.prisma8.client.orm.public.CustomerPool.where({
         organizationId: organization,

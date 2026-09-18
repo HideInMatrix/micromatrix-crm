@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal.js'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -31,28 +31,24 @@ test('OpportunityRule 使用 Prisma 8 保持 CRUD、分页、scope 名称与阶�
     passwordHash: 'test-only',
     name: '规则管理员',
   })
-  const role = await prisma8Client.orm.public.Roles
-    .select('id')
-    .create({
-      tenantId: tenant.id,
-      name: `规则角色-${suffix}`,
-      permissions: [],
-      updatedAt: prisma8Now(),
-    })
+  const role = await prisma8Client.orm.public.Roles.select('id').create({
+    tenantId: tenant.id,
+    name: `规则角色-${suffix}`,
+    permissions: [],
+    updatedAt: prisma8Now(),
+  })
   const now = BigInt(Date.now())
-  const stage = await prisma8Client.orm.public.OpportunityStageConfig
-    .select('id')
-    .create({
-      id: prisma8Id32(),
-      name: prisma8Varchar('规则阶段', 16),
-      _type: prisma8Varchar('AFOOT', 50),
-      rate: prisma8Varchar('50', 10),
-      pos: 1n,
-      organizationId: prisma8Varchar(tenant.id, 32),
-      createTime: now,
-      updateTime: now,
-      createUser: prisma8Varchar(actor.id, 32),
-      updateUser: prisma8Varchar(actor.id, 32),
+  const stage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create({
+    id: createLegacyId32(),
+    name: '规则阶段',
+    _type: 'AFOOT',
+    rate: '50',
+    pos: 1n,
+    organizationId: tenant.id,
+    createTime: now,
+    updateTime: now,
+    createUser: actor.id,
+    updateUser: actor.id,
   })
   const service = new OpportunityRuleService(prisma8)
 
@@ -66,9 +62,7 @@ test('OpportunityRule 使用 Prisma 8 保持 CRUD、分页、scope 名称与阶�
           enable: true,
           auto: true,
           operator: 'AND',
-          conditions: [
-            { column: 'opportunityStage', operator: 'IN', value: 'missing-stage-id' },
-          ],
+          conditions: [{ column: 'opportunityStage', operator: 'IN', value: 'missing-stage-id' }],
         }),
       /无效商机阶段/,
     )
@@ -111,7 +105,7 @@ test('OpportunityRule 使用 Prisma 8 保持 CRUD、分页、scope 名称与阶�
 
     await service.toggle(tenant.id, actor.id, created.id)
     const persisted = await prisma8Client.orm.public.OpportunityRule.where({
-      id: prisma8Varchar(created.id, 32),
+      id: created.id,
     }).first()
     assert.ok(persisted)
     assert.equal(persisted.enable, false)
@@ -121,7 +115,7 @@ test('OpportunityRule 使用 Prisma 8 保持 CRUD、分页、scope 名称与阶�
     assert.equal(
       (
         await prisma8Client.orm.public.OpportunityRule.where({
-          id: prisma8Varchar(created.id, 32),
+          id: created.id,
         })
           .select('id')
           .all()
@@ -129,7 +123,7 @@ test('OpportunityRule 使用 Prisma 8 保持 CRUD、分页、scope 名称与阶�
       0,
     )
   } finally {
-    const organizationId = prisma8Varchar(tenant.id, 32)
+    const organizationId = tenant.id
     await prisma8Client.orm.public.OpportunityRule.where({ organizationId }).deleteAll()
     await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
     await prisma8Client.orm.public.UserRoles.where({ tenantId: tenant.id }).deleteAll()

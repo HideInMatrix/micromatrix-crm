@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { MODULE_SYSTEM_FIELDS } from '../src/modules/metadata/system-fields'
 import { createPrisma8Client } from '../src/prisma/prisma8-client'
-import { prisma8Id32, prisma8Varchar } from '../src/prisma/prisma8-varchar'
+import { createLegacyId32 } from '../src/common/legacy-id'
 import { prisma8Now } from '../src/prisma/prisma8-temporal'
 import { prisma8JsonValue } from '../src/prisma/prisma8-values'
 import { runPrisma8BootstrapSeed } from './seed-bootstrap-prisma8'
@@ -114,8 +114,8 @@ async function upsertDemoUser(
 ) {
   const users = prisma.orm.public.Users
   const password = input.privilegedPassword
-    ? process.env['DEMO_MANAGER_PASSWORD'] ?? ['admin', '123'].join('')
-    : process.env['DEMO_USER_PASSWORD'] ?? ['demo', '123'].join('')
+    ? (process.env['DEMO_MANAGER_PASSWORD'] ?? ['admin', '123'].join(''))
+    : (process.env['DEMO_USER_PASSWORD'] ?? ['demo', '123'].join(''))
   const passwordHash = await bcrypt.hash(password, 10)
   let user = await users.where({ tenantId: input.tenantId, email: input.email }).first()
   if (user) {
@@ -156,8 +156,8 @@ async function upsertDemoUser(
 }
 
 async function seedDemoFormsAndStages(prisma: DemoClient, tenantId: string, adminId: string) {
-  const organizationId = prisma8Varchar(tenantId, 32)
-  const actorId = prisma8Varchar(adminId, 32)
+  const organizationId = tenantId
+  const actorId = adminId
   const now = BigInt(Date.now())
   const forms = prisma.orm.public.SysModuleForm
   const fields = prisma.orm.public.SysModuleField
@@ -176,13 +176,13 @@ async function seedDemoFormsAndStages(prisma: DemoClient, tenantId: string, admi
       | 'followRecord'
       | 'followPlan',
   ) => {
-    const key = prisma8Varchar(formKey, 50)
+    const key = formKey
     let form = await forms.where({ organizationId, formKey: key }).first()
     if (form) {
       form = await forms.where({ id: form.id }).update({ updateTime: now, updateUser: actorId })
     } else {
       form = await forms.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         formKey: key,
         organizationId,
         createTime: now,
@@ -208,12 +208,12 @@ async function seedDemoFormsAndStages(prisma: DemoClient, tenantId: string, admi
         showInList: template.showInList ?? true,
         listWidth: template.listWidth ?? null,
       })
-      const internalKey = prisma8Varchar(template.key, 255)
+      const internalKey = template.key
       let field = await fields.where({ formId: form.id, internalKey }).first()
       if (field) {
         field = await fields.where({ id: field.id }).update({
-          name: prisma8Varchar(template.label, 255),
-          _type: prisma8Varchar(template.type, 20),
+          name: template.label,
+          _type: template.type,
           mobile: template.mobile ?? false,
           pos: BigInt(template.sort),
           updateTime: now,
@@ -221,11 +221,11 @@ async function seedDemoFormsAndStages(prisma: DemoClient, tenantId: string, admi
         })
       } else {
         field = await fields.create({
-          id: prisma8Id32(),
+          id: createLegacyId32(),
           formId: form.id,
           internalKey,
-          name: prisma8Varchar(template.label, 255),
-          _type: prisma8Varchar(template.type, 20),
+          name: template.label,
+          _type: template.type,
           mobile: template.mobile ?? false,
           pos: BigInt(template.sort),
           createUser: actorId,
@@ -267,9 +267,36 @@ async function seedDemoFormsAndStages(prisma: DemoClient, tenantId: string, admi
   }
 
   await seedStages(prisma, organizationId, actorId, now)
-  await ensureSeedCustomField(prisma, leadForm.id, actorId, now, 'cf_notes', '线索备注', 'textarea', 6)
-  await ensureSeedCustomField(prisma, contactForm.id, actorId, now, 'cf_position', '职位', 'text', 5)
-  await ensureSeedCustomField(prisma, contactForm.id, actorId, now, 'cf_notes', '联系人备注', 'textarea', 6)
+  await ensureSeedCustomField(
+    prisma,
+    leadForm.id,
+    actorId,
+    now,
+    'cf_notes',
+    '线索备注',
+    'textarea',
+    6,
+  )
+  await ensureSeedCustomField(
+    prisma,
+    contactForm.id,
+    actorId,
+    now,
+    'cf_position',
+    '职位',
+    'text',
+    5,
+  )
+  await ensureSeedCustomField(
+    prisma,
+    contactForm.id,
+    actorId,
+    now,
+    'cf_notes',
+    '联系人备注',
+    'textarea',
+    6,
+  )
 }
 
 async function seedStages(
@@ -279,26 +306,31 @@ async function seedStages(
   now: bigint,
 ) {
   const contractStages = [
-    ['待签署', 'AFOOT'], ['已签署', 'AFOOT'], ['合同变更', 'AFOOT'], ['履行中', 'AFOOT'],
-    ['履行完毕', 'AFOOT'], ['合同完结', 'END'], ['作废', 'END'],
+    ['待签署', 'AFOOT'],
+    ['已签署', 'AFOOT'],
+    ['合同变更', 'AFOOT'],
+    ['履行中', 'AFOOT'],
+    ['履行完毕', 'AFOOT'],
+    ['合同完结', 'END'],
+    ['作废', 'END'],
   ] as const
   for (const [index, [name, type]] of contractStages.entries()) {
     const collection = prisma.orm.public.ContractStageConfig
-    let row = await collection.where({ organizationId, name: prisma8Varchar(name, 255) }).first()
+    let row = await collection.where({ organizationId, name: name }).first()
     const data = {
-      _type: prisma8Varchar(type, 50),
+      _type: type,
       pos: BigInt(index + 1),
       afootRollBack: true,
       endRollBack: false,
-      circulationType: prisma8Varchar('NORMAL', 50),
+      circulationType: 'NORMAL',
       updateTime: now,
       updateUser: actorId,
     }
     if (row) row = await collection.where({ id: row.id }).update(data)
     else {
       row = await collection.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
+        id: createLegacyId32(),
+        name: name,
         organizationId,
         createTime: now,
         createUser: actorId,
@@ -309,26 +341,31 @@ async function seedStages(
   }
 
   const orderStages = [
-    ['新建', 'AFOOT'], ['待发货', 'AFOOT'], ['部分发货', 'AFOOT'], ['已发货', 'AFOOT'],
-    ['待验收', 'AFOOT'], ['已完成', 'END'], ['已作废', 'END'],
+    ['新建', 'AFOOT'],
+    ['待发货', 'AFOOT'],
+    ['部分发货', 'AFOOT'],
+    ['已发货', 'AFOOT'],
+    ['待验收', 'AFOOT'],
+    ['已完成', 'END'],
+    ['已作废', 'END'],
   ] as const
   for (const [index, [name, type]] of orderStages.entries()) {
     const collection = prisma.orm.public.SalesOrderStageConfig
-    let row = await collection.where({ organizationId, name: prisma8Varchar(name, 255) }).first()
+    let row = await collection.where({ organizationId, name: name }).first()
     const data = {
-      _type: prisma8Varchar(type, 50),
+      _type: type,
       pos: BigInt(index + 1),
       afootRollBack: true,
       endRollBack: false,
-      circulationType: prisma8Varchar('NORMAL', 50),
+      circulationType: 'NORMAL',
       updateTime: now,
       updateUser: actorId,
     }
     if (row) row = await collection.where({ id: row.id }).update(data)
     else {
       row = await collection.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
+        id: createLegacyId32(),
+        name: name,
         organizationId,
         createTime: now,
         createUser: actorId,
@@ -351,7 +388,7 @@ async function ensureSeedCustomField(
 ) {
   const fields = prisma.orm.public.SysModuleField
   const blobs = prisma.orm.public.SysModuleFieldBlob
-  const internalKey = prisma8Varchar(key, 255)
+  const internalKey = key
   const prop = JSON.stringify({
     key,
     required: false,
@@ -366,19 +403,19 @@ async function ensureSeedCustomField(
   let field = await fields.where({ formId, internalKey }).first()
   if (field) {
     field = await fields.where({ id: field.id }).update({
-      name: prisma8Varchar(name, 255),
-      _type: prisma8Varchar(type, 20),
+      name: name,
+      _type: type,
       pos: BigInt(pos),
       updateTime: now,
       updateUser: actorId,
     })
   } else {
     field = await fields.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       formId,
       internalKey,
-      name: prisma8Varchar(name, 255),
-      _type: prisma8Varchar(type, 20),
+      name: name,
+      _type: type,
       mobile: false,
       pos: BigInt(pos),
       createUser: actorId,
@@ -388,7 +425,8 @@ async function ensureSeedCustomField(
     })
   }
   if (!field) throw new Error(`演示字段创建失败: ${key}`)
-  if (await blobs.where({ id: field.id }).first()) await blobs.where({ id: field.id }).update({ prop })
+  if (await blobs.where({ id: field.id }).first())
+    await blobs.where({ id: field.id }).update({ prop })
   else await blobs.create({ id: field.id, prop })
   return field
 }
@@ -406,8 +444,8 @@ async function seedDemoPoolsAndViews(
     salesTeam2Id: string
   },
 ) {
-  const organizationId = prisma8Varchar(input.tenantId, 32)
-  const actorId = prisma8Varchar(input.adminId, 32)
+  const organizationId = input.tenantId
+  const actorId = input.adminId
   const now = BigInt(Date.now())
 
   const ensureCluePool = async (
@@ -417,11 +455,11 @@ async function seedDemoPoolsAndViews(
     auto: boolean,
   ) => {
     const pools = prisma.orm.public.CluePool
-    let pool = await pools.where({ organizationId, name: prisma8Varchar(name, 255) }).first()
+    let pool = await pools.where({ organizationId, name: name }).first()
     if (!pool) {
       pool = await pools.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
+        id: createLegacyId32(),
+        name: name,
         scopeId: JSON.stringify(scopeIds),
         organizationId,
         ownerId: JSON.stringify(ownerIds),
@@ -438,7 +476,7 @@ async function seedDemoPoolsAndViews(
     const pickRules = prisma.orm.public.CluePoolPickRule
     if (!(await pickRules.where({ poolId: pool.id }).first())) {
       await pickRules.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         poolId: pool.id,
         limitOnNumber: true,
         pickNumber: 20,
@@ -455,9 +493,9 @@ async function seedDemoPoolsAndViews(
     const recycleRules = prisma.orm.public.CluePoolRecycleRule
     if (!(await recycleRules.where({ poolId: pool.id }).first())) {
       await recycleRules.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         poolId: pool.id,
-        operator: prisma8Varchar('AND', 10),
+        operator: 'AND',
         condition: null,
         createTime: now,
         updateTime: now,
@@ -475,11 +513,11 @@ async function seedDemoPoolsAndViews(
     auto: boolean,
   ) => {
     const pools = prisma.orm.public.CustomerPool
-    let pool = await pools.where({ organizationId, name: prisma8Varchar(name, 255) }).first()
+    let pool = await pools.where({ organizationId, name: name }).first()
     if (!pool) {
       pool = await pools.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
+        id: createLegacyId32(),
+        name: name,
         scopeId: JSON.stringify(scopeIds),
         organizationId,
         ownerId: JSON.stringify(ownerIds),
@@ -496,7 +534,7 @@ async function seedDemoPoolsAndViews(
     const pickRules = prisma.orm.public.CustomerPoolPickRule
     if (!(await pickRules.where({ poolId: pool.id }).first())) {
       await pickRules.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         poolId: pool.id,
         limitOnNumber: true,
         pickNumber: 10,
@@ -513,9 +551,9 @@ async function seedDemoPoolsAndViews(
     const recycleRules = prisma.orm.public.CustomerPoolRecycleRule
     if (!(await recycleRules.where({ poolId: pool.id }).first())) {
       await recycleRules.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         poolId: pool.id,
-        operator: prisma8Varchar('AND', 10),
+        operator: 'AND',
         condition: null,
         createTime: now,
         updateTime: now,
@@ -552,28 +590,24 @@ async function seedDemoPoolsAndViews(
   )
 
   const forms = prisma.orm.public.SysModuleForm
-  const leadForm = await forms.where({ organizationId, formKey: prisma8Varchar('lead', 50) }).first()
-  const customerForm = await forms
-    .where({ organizationId, formKey: prisma8Varchar('customer', 50) })
-    .first()
+  const leadForm = await forms.where({ organizationId, formKey: 'lead' }).first()
+  const customerForm = await forms.where({ organizationId, formKey: 'customer' }).first()
   if (!leadForm || !customerForm) throw new Error('Pool 隐藏字段依赖的模块表单不存在')
   const fields = prisma.orm.public.SysModuleField
-  const phoneField = await fields
-    .where({ formId: leadForm.id, internalKey: prisma8Varchar('phone', 255) })
-    .first()
+  const phoneField = await fields.where({ formId: leadForm.id, internalKey: 'phone' }).first()
   const emailField = await fields
-    .where({ formId: customerForm.id, internalKey: prisma8Varchar('cf_email', 255) })
+    .where({ formId: customerForm.id, internalKey: 'cf_email' })
     .first()
   if (phoneField) {
     const hiddenFields = prisma.orm.public.CluePoolHiddenField
-    const fieldId = prisma8Varchar(phoneField.id, 255)
+    const fieldId = phoneField.id
     if (!(await hiddenFields.where({ poolId: cluePoolChannel.id, fieldId }).first())) {
       await hiddenFields.create({ poolId: cluePoolChannel.id, fieldId })
     }
   }
   if (emailField) {
     const hiddenFields = prisma.orm.public.CustomerPoolHiddenField
-    const fieldId = prisma8Varchar(emailField.id, 32)
+    const fieldId = emailField.id
     if (!(await hiddenFields.where({ poolId: customerPoolPriority.id, fieldId }).first())) {
       await hiddenFields.create({ poolId: customerPoolPriority.id, fieldId })
     }
@@ -583,7 +617,7 @@ async function seedDemoPoolsAndViews(
   if ((await clueCapacities.where({ organizationId }).all()).length === 0) {
     await clueCapacities.createAll(
       [input.salesTeam1Id, input.salesTeam2Id].map((departmentId) => ({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         organizationId,
         scopeId: JSON.stringify([departmentId]),
         capacity: 80,
@@ -598,7 +632,7 @@ async function seedDemoPoolsAndViews(
   if ((await customerCapacities.where({ organizationId }).all()).length === 0) {
     await customerCapacities.createAll(
       [input.salesTeam1Id, input.salesTeam2Id].map((departmentId) => ({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         organizationId,
         scopeId: JSON.stringify([departmentId]),
         capacity: 120,
@@ -638,11 +672,9 @@ async function seedDemoPoolsAndViews(
   const views = prisma.orm.public.SysUserView
   const conditions = prisma.orm.public.SysUserViewCondition
   for (const [index, seed] of userViewSeeds.entries()) {
-    const resourceType = prisma8Varchar(seed.resourceType, 50)
-    const name = prisma8Varchar(seed.name, 255)
-    let view = await views
-      .where({ organizationId, userId: actorId, resourceType, name })
-      .first()
+    const resourceType = seed.resourceType
+    const name = seed.name
+    let view = await views.where({ organizationId, userId: actorId, resourceType, name }).first()
     if (view) {
       view = await views.where({ id: view.id }).update({
         enable: true,
@@ -651,7 +683,7 @@ async function seedDemoPoolsAndViews(
       })
     } else {
       view = await views.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         userId: actorId,
         name,
         fixed: index === 0,
@@ -659,7 +691,7 @@ async function seedDemoPoolsAndViews(
         organizationId,
         pos: BigInt((index + 1) * 4096),
         enable: true,
-        searchMode: prisma8Varchar('AND', 10),
+        searchMode: 'AND',
         createTime: now,
         updateTime: now,
         createUser: actorId,
@@ -669,14 +701,14 @@ async function seedDemoPoolsAndViews(
     if (!view) throw new Error(`用户视图创建失败: ${seed.name}`)
     if (seed.condition && (await conditions.where({ sysUserViewId: view.id }).all()).length === 0) {
       await conditions.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         sysUserViewId: view.id,
-        name: prisma8Varchar(seed.condition.name, 255),
+        name: seed.condition.name,
         value: seed.condition.value,
         valueType: seed.condition.valueType,
         _type: null,
         multipleValue: false,
-        operator: prisma8Varchar(seed.condition.operator, 20),
+        operator: seed.condition.operator,
         childrenValue: null,
         createTime: now,
         updateTime: now,
@@ -693,20 +725,18 @@ async function seedDemoDashboardApprovalBidding(
   adminId: string,
   salesDeptId: string,
 ) {
-  const organizationId = prisma8Varchar(tenantId, 32)
-  const actorId = prisma8Varchar(adminId, 32)
+  const organizationId = tenantId
+  const actorId = adminId
   const now = BigInt(Date.now())
 
   const modules = prisma.orm.public.DashboardModule
-  let dashboardModule = await modules
-    .where({ organizationId, name: prisma8Varchar('默认文件夹', 255) })
-    .first()
+  let dashboardModule = await modules.where({ organizationId, name: '默认文件夹' }).first()
   if (!dashboardModule) {
     dashboardModule = await modules.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       organizationId,
-      name: prisma8Varchar('默认文件夹', 255),
-      parentId: prisma8Varchar('NONE', 32),
+      name: '默认文件夹',
+      parentId: 'NONE',
       pos: 4096n,
       createTime: now,
       updateTime: now,
@@ -721,22 +751,19 @@ async function seedDemoDashboardApprovalBidding(
     .where({
       organizationId,
       dashboardModuleId: dashboardModule.id,
-      name: prisma8Varchar('销售概览', 255),
+      name: '销售概览',
     })
     .first()
   if (!dashboard) {
     dashboard = await dashboards.create({
-      id: prisma8Id32(),
-      name: prisma8Varchar('销售概览', 255),
-      resourceUrl: prisma8Varchar('https://example.com/dashboard/sales-overview', 500),
+      id: createLegacyId32(),
+      name: '销售概览',
+      resourceUrl: 'https://example.com/dashboard/sales-overview',
       dashboardModuleId: dashboardModule.id,
       organizationId,
       pos: 4096n,
       scopeId: JSON.stringify([salesDeptId]),
-      description: prisma8Varchar(
-        'W3.4 演示仪表板资源，供目录、Scope、收藏与嵌入链路验收使用',
-        1000,
-      ),
+      description: 'W3.4 演示仪表板资源，供目录、Scope、收藏与嵌入链路验收使用',
       createTime: now,
       updateTime: now,
       createUser: actorId,
@@ -746,9 +773,7 @@ async function seedDemoDashboardApprovalBidding(
   if (!dashboard) throw new Error('Demo 仪表板创建失败')
 
   const collections = prisma.orm.public.DashboardCollection
-  let collection = await collections
-    .where({ userId: actorId, dashboardId: dashboard.id })
-    .first()
+  let collection = await collections.where({ userId: actorId, dashboardId: dashboard.id }).first()
   if (collection) {
     collection = await collections.where({ id: collection.id }).update({
       updateTime: now,
@@ -756,7 +781,7 @@ async function seedDemoDashboardApprovalBidding(
     })
   } else {
     collection = await collections.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       userId: actorId,
       dashboardId: dashboard.id,
       createTime: now,
@@ -768,7 +793,9 @@ async function seedDemoDashboardApprovalBidding(
   if (!collection) throw new Error('Demo 仪表板收藏创建失败')
 
   const flows = prisma.orm.public.ApprovalFlows
-  const existingFlow = await flows.where({ tenantId, formType: 'CONTRACT', deletedAt: null }).first()
+  const existingFlow = await flows
+    .where({ tenantId, formType: 'CONTRACT', deletedAt: null })
+    .first()
   if (!existingFlow) {
     await prisma.transaction(async (tx) => {
       const counters = tx.orm.public.ApprovalFlowNumberCounters
@@ -898,30 +925,25 @@ async function seedDemoBusinessSamples(
     sales2Id: string
   },
 ) {
-  const organizationId = prisma8Varchar(input.tenantId, 32)
-  const actorId = prisma8Varchar(input.adminId, 32)
-  const managerId = prisma8Varchar(input.managerId, 32)
-  const sales1Id = prisma8Varchar(input.sales1Id, 32)
-  const sales2Id = prisma8Varchar(input.sales2Id, 32)
+  const organizationId = input.tenantId
+  const actorId = input.adminId
+  const managerId = input.managerId
+  const sales1Id = input.sales1Id
+  const sales2Id = input.sales2Id
   const now = BigInt(Date.now())
 
   const forms = prisma.orm.public.SysModuleForm
-  const customerForm = await forms
-    .where({ organizationId, formKey: prisma8Varchar('customer', 50) })
-    .first()
-  const leadForm = await forms.where({ organizationId, formKey: prisma8Varchar('lead', 50) }).first()
-  const contactForm = await forms
-    .where({ organizationId, formKey: prisma8Varchar('contact', 50) })
-    .first()
+  const customerForm = await forms.where({ organizationId, formKey: 'customer' }).first()
+  const leadForm = await forms.where({ organizationId, formKey: 'lead' }).first()
+  const contactForm = await forms.where({ organizationId, formKey: 'contact' }).first()
   if (!customerForm || !leadForm || !contactForm) {
     throw new Error('Demo 业务样例依赖的模块表单不存在')
   }
 
   const customerFieldIds = new Map(
-    (await prisma.orm.public.SysModuleField.where({ formId: customerForm.id }).all()).map((field) => [
-      field.internalKey,
-      field.id,
-    ]),
+    (await prisma.orm.public.SysModuleField.where({ formId: customerForm.id }).all()).map(
+      (field) => [field.internalKey, field.id],
+    ),
   )
   const leadFieldIds = new Map(
     (await prisma.orm.public.SysModuleField.where({ formId: leadForm.id }).all()).map((field) => [
@@ -930,10 +952,9 @@ async function seedDemoBusinessSamples(
     ]),
   )
   const contactFieldIds = new Map(
-    (await prisma.orm.public.SysModuleField.where({ formId: contactForm.id }).all()).map((field) => [
-      field.internalKey,
-      field.id,
-    ]),
+    (await prisma.orm.public.SysModuleField.where({ formId: contactForm.id }).all()).map(
+      (field) => [field.internalKey, field.id],
+    ),
   )
 
   const customers = prisma.orm.public.Customer
@@ -961,8 +982,8 @@ async function seedDemoBusinessSamples(
     ] as const
     for (const [name, owner, industry, phone, email, remark] of seeds) {
       const customer = await customers.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
+        id: createLegacyId32(),
+        name: name,
         owner,
         collectionTime: now,
         createTime: now,
@@ -978,19 +999,19 @@ async function seedDemoBusinessSamples(
         ['cf_email', email],
       ] as const
       for (const [key, value] of normalValues) {
-        const fieldId = customerFieldIds.get(prisma8Varchar(key, 255))
+        const fieldId = customerFieldIds.get(key)
         if (!fieldId || !value) continue
         await prisma.orm.public.CustomerField.create({
-          id: prisma8Id32(),
+          id: createLegacyId32(),
           resourceId: customer.id,
           fieldId,
-          fieldValue: prisma8Varchar(value, 255),
+          fieldValue: value,
         })
       }
-      const remarkFieldId = customerFieldIds.get(prisma8Varchar('cf_remark', 255))
+      const remarkFieldId = customerFieldIds.get('cf_remark')
       if (remarkFieldId && remark) {
         await prisma.orm.public.CustomerFieldBlob.create({
-          id: prisma8Id32(),
+          id: createLegacyId32(),
           resourceId: customer.id,
           fieldId: remarkFieldId,
           fieldValue: remark,
@@ -1000,17 +1021,15 @@ async function seedDemoBusinessSamples(
   }
 
   const clues = prisma.orm.public.Clue
-  let activeClue = await clues
-    .where({ organizationId, name: prisma8Varchar('华南数字化升级项目', 255) })
-    .first()
+  let activeClue = await clues.where({ organizationId, name: '华南数字化升级项目' }).first()
   if (!activeClue) {
     activeClue = await clues.create({
-      id: prisma8Id32(),
-      name: prisma8Varchar('华南数字化升级项目', 255),
+      id: createLegacyId32(),
+      name: '华南数字化升级项目',
       owner: sales1Id,
-      stage: prisma8Varchar('NEW', 30),
-      contact: prisma8Varchar('陈经理', 255),
-      phone: prisma8Varchar('13800000001', 255),
+      stage: 'NEW',
+      contact: '陈经理',
+      phone: '13800000001',
       organizationId,
       createTime: now,
       updateTime: now,
@@ -1022,27 +1041,26 @@ async function seedDemoBusinessSamples(
   }
   if (!activeClue) throw new Error('Demo 活跃线索创建失败')
 
-  const sourceFieldId = leadFieldIds.get(prisma8Varchar('cf_source', 255))
-  const levelFieldId = leadFieldIds.get(prisma8Varchar('cf_level', 255))
-  const notesFieldId = leadFieldIds.get(prisma8Varchar('cf_notes', 255))
+  const sourceFieldId = leadFieldIds.get('cf_source')
+  const levelFieldId = leadFieldIds.get('cf_level')
+  const notesFieldId = leadFieldIds.get('cf_notes')
   if (sourceFieldId) await upsertClueField(prisma, activeClue.id, sourceFieldId, '官网表单')
   if (levelFieldId) await upsertClueField(prisma, activeClue.id, levelFieldId, 'A')
   if (notesFieldId) {
     await upsertClueFieldBlob(prisma, activeClue.id, notesFieldId, '来自官网的重点演示线索')
   }
 
-  const cluePool = await prisma.orm.public.CluePool
-    .where({ organizationId, name: prisma8Varchar('默认线索池', 255) })
-    .first()
+  const cluePool = await prisma.orm.public.CluePool.where({
+    organizationId,
+    name: '默认线索池',
+  }).first()
   if (!cluePool) throw new Error('Demo 默认线索池不存在')
-  if (
-    !(await clues.where({ organizationId, name: prisma8Varchar('公海演示线索', 255) }).first())
-  ) {
+  if (!(await clues.where({ organizationId, name: '公海演示线索' }).first())) {
     await clues.create({
-      id: prisma8Id32(),
-      name: prisma8Varchar('公海演示线索', 255),
+      id: createLegacyId32(),
+      name: '公海演示线索',
       owner: null,
-      stage: prisma8Varchar('NEW', 30),
+      stage: 'NEW',
       organizationId,
       createTime: now,
       updateTime: now,
@@ -1053,14 +1071,15 @@ async function seedDemoBusinessSamples(
     })
   }
 
-  const customerPool = await prisma.orm.public.CustomerPool
-    .where({ organizationId, name: prisma8Varchar('默认客户公海', 255) })
-    .first()
+  const customerPool = await prisma.orm.public.CustomerPool.where({
+    organizationId,
+    name: '默认客户公海',
+  }).first()
   if (!customerPool) throw new Error('Demo 默认客户公海不存在')
   if ((await customers.where({ organizationId, inSharedPool: true }).all()).length === 0) {
     await customers.create({
-      id: prisma8Id32(),
-      name: prisma8Varchar('公海演示客户', 255),
+      id: createLegacyId32(),
+      name: '公海演示客户',
       owner: null,
       poolId: customerPool.id,
       createTime: now,
@@ -1083,15 +1102,15 @@ async function seedDemoBusinessSamples(
     .where({
       organizationId,
       customerId: firstCustomer.id,
-      name: prisma8Varchar('陈经理', 255),
+      name: '陈经理',
     })
     .first()
   if (!contact) {
     contact = await contacts.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       customerId: firstCustomer.id,
-      name: prisma8Varchar('陈经理', 255),
-      phone: prisma8Varchar('13900000001', 30),
+      name: '陈经理',
+      phone: '13900000001',
       owner: sales1Id,
       createTime: now,
       updateTime: now,
@@ -1103,11 +1122,11 @@ async function seedDemoBusinessSamples(
   }
   if (!contact) throw new Error('Demo 联系人创建失败')
 
-  const contactPositionFieldId = contactFieldIds.get(prisma8Varchar('cf_position', 255))
+  const contactPositionFieldId = contactFieldIds.get('cf_position')
   if (contactPositionFieldId) {
     await upsertContactField(prisma, contact.id, contactPositionFieldId, '技术负责人')
   }
-  const contactNotesFieldId = contactFieldIds.get(prisma8Varchar('cf_notes', 255))
+  const contactNotesFieldId = contactFieldIds.get('cf_notes')
   if (contactNotesFieldId) {
     await upsertContactFieldBlob(
       prisma,
@@ -1123,16 +1142,16 @@ async function seedDemoBusinessSamples(
     .first()
   if (collaboration) {
     collaboration = await collaborations.where({ id: collaboration.id }).update({
-      collaborationType: prisma8Varchar('COLLABORATION', 50),
+      collaborationType: 'COLLABORATION',
       updateTime: now,
       updateUser: actorId,
     })
   } else {
     collaboration = await collaborations.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       customerId: firstCustomer.id,
       userId: sales2Id,
-      collaborationType: prisma8Varchar('COLLABORATION', 50),
+      collaborationType: 'COLLABORATION',
       createTime: now,
       updateTime: now,
       createUser: actorId,
@@ -1154,7 +1173,7 @@ async function seedDemoBusinessSamples(
         .first())
     ) {
       await relations.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         sourceCustomerId: firstCustomer.id,
         targetCustomerId: relatedCustomer.id,
         createTime: now,
@@ -1162,23 +1181,21 @@ async function seedDemoBusinessSamples(
     }
   }
 
-  if (
-    !(await clues.where({ organizationId, name: prisma8Varchar('已转换演示线索', 255) }).first())
-  ) {
+  if (!(await clues.where({ organizationId, name: '已转换演示线索' }).first())) {
     await clues.create({
-      id: prisma8Id32(),
-      name: prisma8Varchar('已转换演示线索', 255),
+      id: createLegacyId32(),
+      name: '已转换演示线索',
       owner: sales2Id,
-      lastStage: prisma8Varchar('NEW', 30),
-      stage: prisma8Varchar('FOLLOWING', 30),
-      contact: prisma8Varchar('周经理', 255),
-      phone: prisma8Varchar('13800000002', 255),
+      lastStage: 'NEW',
+      stage: 'FOLLOWING',
+      contact: '周经理',
+      phone: '13800000002',
       organizationId,
       createTime: now,
       updateTime: now,
       createUser: actorId,
       updateUser: actorId,
-      transitionType: prisma8Varchar('CUSTOMER', 30),
+      transitionType: 'CUSTOMER',
       transitionId: firstCustomer.id,
       inSharedPool: false,
       collectionTime: now,
@@ -1197,7 +1214,7 @@ async function seedDemoBusinessSamples(
     const owners = prisma.orm.public.ClueOwner
     if (!(await owners.where({ clueId: activeHistoryClue.id }).first())) {
       await owners.create({
-        id: prisma8Id32(),
+        id: createLegacyId32(),
         clueId: activeHistoryClue.id,
         owner: managerId,
         collectionTime: historyStart,
@@ -1210,7 +1227,7 @@ async function seedDemoBusinessSamples(
   const customerOwners = prisma.orm.public.CustomerOwner
   if (!(await customerOwners.where({ customerId: firstCustomer.id }).first())) {
     await customerOwners.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       customerId: firstCustomer.id,
       owner: managerId,
       collectionTime: historyStart,
@@ -1232,14 +1249,14 @@ async function upsertClueField(
   const collection = prisma.orm.public.ClueField
   const existing = await collection.where({ resourceId, fieldId }).first()
   if (existing) {
-    await collection.where({ id: existing.id }).update({ fieldValue: prisma8Varchar(value, 255) })
+    await collection.where({ id: existing.id }).update({ fieldValue: value })
     return
   }
   await collection.create({
-    id: prisma8Id32(),
+    id: createLegacyId32(),
     resourceId,
     fieldId,
-    fieldValue: prisma8Varchar(value, 255),
+    fieldValue: value,
   })
 }
 
@@ -1255,7 +1272,7 @@ async function upsertClueFieldBlob(
     await collection.where({ id: existing.id }).update({ fieldValue: value })
     return
   }
-  await collection.create({ id: prisma8Id32(), resourceId, fieldId, fieldValue: value })
+  await collection.create({ id: createLegacyId32(), resourceId, fieldId, fieldValue: value })
 }
 
 async function upsertContactField(
@@ -1267,14 +1284,14 @@ async function upsertContactField(
   const collection = prisma.orm.public.CustomerContactField
   const existing = await collection.where({ resourceId, fieldId }).first()
   if (existing) {
-    await collection.where({ id: existing.id }).update({ fieldValue: prisma8Varchar(value, 255) })
+    await collection.where({ id: existing.id }).update({ fieldValue: value })
     return
   }
   await collection.create({
-    id: prisma8Id32(),
+    id: createLegacyId32(),
     resourceId,
     fieldId,
-    fieldValue: prisma8Varchar(value, 255),
+    fieldValue: value,
   })
 }
 
@@ -1290,5 +1307,5 @@ async function upsertContactFieldBlob(
     await collection.where({ id: existing.id }).update({ fieldValue: value })
     return
   }
-  await collection.create({ id: prisma8Id32(), resourceId, fieldId, fieldValue: value })
+  await collection.create({ id: createLegacyId32(), resourceId, fieldId, fieldValue: value })
 }

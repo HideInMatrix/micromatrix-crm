@@ -5,7 +5,7 @@ import type { AuthUser } from '../common/auth-user'
 import type { DataScopeService } from '../common/services/data-scope.service'
 import type { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import type { Prisma8Service } from '../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -37,43 +37,39 @@ test(
         name: 'Collaborator',
       })
       const now = BigInt(Date.now())
-      const memberId = prisma8Varchar(member.id, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Customer A', 255),
-          owner: null,
-          organizationId: prisma8Varchar(tenant.id, 32),
-          createTime: now,
-          updateTime: now,
-          createUser: memberId,
-          updateUser: memberId,
-        })
-      const foreignCustomer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('Foreign Customer', 255),
-          owner: null,
-          organizationId: prisma8Varchar(otherTenant.id, 32),
-          createTime: now,
-          updateTime: now,
-          createUser: memberId,
-          updateUser: memberId,
-        })
-      const collaboration = await prisma8Client.orm.public.CustomerCollaboration
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          createTime: now,
-          updateTime: now,
-          createUser: memberId,
-          updateUser: memberId,
-          userId: memberId,
-          customerId: customer.id,
-          collaborationType: prisma8Varchar('READ_ONLY', 50),
-        })
+      const memberId = member.id
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: 'Customer A',
+        owner: null,
+        organizationId: tenant.id,
+        createTime: now,
+        updateTime: now,
+        createUser: memberId,
+        updateUser: memberId,
+      })
+      const foreignCustomer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: 'Foreign Customer',
+        owner: null,
+        organizationId: otherTenant.id,
+        createTime: now,
+        updateTime: now,
+        createUser: memberId,
+        updateUser: memberId,
+      })
+      const collaboration = await prisma8Client.orm.public.CustomerCollaboration.select(
+        'id',
+      ).create({
+        id: createLegacyId32(),
+        createTime: now,
+        updateTime: now,
+        createUser: memberId,
+        updateUser: memberId,
+        userId: memberId,
+        customerId: customer.id,
+        collaborationType: 'READ_ONLY',
+      })
 
       const dataScope = {
         matchesDirectOwner: async () => false,
@@ -107,7 +103,7 @@ test(
       assert.equal(readOnly.canCollaborateWrite, false)
 
       await prisma8Client.orm.public.CustomerCollaboration.where({ id: collaboration.id }).update({
-        collaborationType: prisma8Varchar('COLLABORATION', 50),
+        collaborationType: 'COLLABORATION',
       })
       const writable = await service.resolve(user, customer.id)
       assert.equal(writable.collaborationType, 'COLLABORATION')
@@ -120,23 +116,21 @@ test(
       )
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         const customerIds = await prisma8Client.orm.public.Customer.where({ organizationId })
           .select('id')
           .all()
         if (customerIds.length) {
-          await prisma8Client.orm.public.CustomerCollaboration
-            .where((row) => row.customerId.in(customerIds.map((item) => item.id)))
-            .deleteAll()
+          await prisma8Client.orm.public.CustomerCollaboration.where((row) =>
+            row.customerId.in(customerIds.map((item) => item.id)),
+          ).deleteAll()
         }
         await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
       if (otherTenantId) {
-        await prisma8Client.orm.public.Customer
-          .where({ organizationId: prisma8Varchar(otherTenantId, 32) })
-          .deleteAll()
+        await prisma8Client.orm.public.Customer.where({ organizationId: otherTenantId }).deleteAll()
         await prisma8Client.orm.public.Tenants.where({ id: otherTenantId }).deleteAll()
       }
       await testDb.close()

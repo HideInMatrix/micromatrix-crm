@@ -1,7 +1,11 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
 
 export interface DashboardScopeMember {
   id: string
@@ -69,24 +73,29 @@ export class DashboardAccessService {
 
   async assertVisibleDashboard(user: AuthUser, id: string) {
     const row = await this.prisma8.client.orm.public.Dashboard.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('仪表板不存在')
     const departmentIds = await this.departmentPathIds(user)
     if (!this.isVisible(row, user, departmentIds)) throw new ForbiddenException('无权访问该仪表板')
     const module = await this.prisma8.client.orm.public.DashboardModule.where({
       id: row.dashboardModuleId,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     }).first()
     if (!module) throw new NotFoundException('仪表板文件夹不存在')
     return { ...row, module }
   }
 
-  async visibleDashboardIds<T extends DashboardVisibilityRow>(user: AuthUser, rows: T[]): Promise<Set<string>> {
+  async visibleDashboardIds<T extends DashboardVisibilityRow>(
+    user: AuthUser,
+    rows: T[],
+  ): Promise<Set<string>> {
     if (this.hasWildcard(user)) return new Set(rows.map((row) => row.id))
     const departmentIds = await this.departmentPathIds(user)
-    return new Set(rows.filter((row) => this.isVisible(row, user, departmentIds)).map((row) => row.id))
+    return new Set(
+      rows.filter((row) => this.isVisible(row, user, departmentIds)).map((row) => row.id),
+    )
   }
 
   async validateScopeIds(user: AuthUser, rawIds: string[]) {
@@ -104,7 +113,8 @@ export class DashboardAccessService {
     ])
     const found = new Set([...users.map((item) => item.id), ...departments.map((item) => item.id)])
     const missing = ids.filter((id) => !found.has(id))
-    if (missing.length) throw new BadRequestException(`仪表板成员范围包含无效 ID: ${missing.join(', ')}`)
+    if (missing.length)
+      throw new BadRequestException(`仪表板成员范围包含无效 ID: ${missing.join(', ')}`)
     return ids
   }
 

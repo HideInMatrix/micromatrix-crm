@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { FollowUpsService } from './follow-ups.service'
 
@@ -76,20 +76,18 @@ test(
         updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const org = prisma8Varchar(organizationId, 32)
-      const actor = prisma8Varchar(actorId, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('跟进专项客户', 255),
-          owner: actor,
-          organizationId: org,
-          createTime: now,
-          updateTime: now,
-          createUser: actor,
-          updateUser: actor,
-        })
+      const org = organizationId
+      const actor = actorId
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '跟进专项客户',
+        owner: actor,
+        organizationId: org,
+        createTime: now,
+        updateTime: now,
+        createUser: actor,
+        updateUser: actor,
+      })
 
       const created = await service.create(user, {
         targetType: 'customer',
@@ -158,9 +156,7 @@ test(
       )
     } finally {
       await prisma8Client.orm.public.FollowUpRecords.where({ tenantId: organizationId }).deleteAll()
-      await prisma8Client.orm.public.Customer
-        .where({ organizationId: prisma8Varchar(organizationId, 32) })
-        .deleteAll()
+      await prisma8Client.orm.public.Customer.where({ organizationId: organizationId }).deleteAll()
       await prisma8Client.orm.public.Users.where({ tenantId: organizationId }).deleteAll()
       await prisma8Client.orm.public.Tenants.where({ id: organizationId }).deleteAll()
       await testDb.close()

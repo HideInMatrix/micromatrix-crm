@@ -8,7 +8,7 @@ import type {
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomePeriodService } from './home-period.service'
 
@@ -81,24 +81,20 @@ export class HomeClueStatisticQuery {
     if (!scope.all && !scope.self && (scope.userIds?.length ?? 0) === 0) return 0
 
     let query = this.prisma8.client.orm.public.Clue.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
       ...(userField === 'OWNER' ? { inSharedPool: false } : {}),
     })
       .where((row) => row.createTime.gte(BigInt(start.getTime())))
       .where((row) => row.createTime.lte(BigInt(end.getTime())))
-      .where((row) =>
-        or(row.transitionId.isNull(), row.transitionId.eq(prisma8Varchar('', 32))),
-      )
+      .where((row) => or(row.transitionId.isNull(), row.transitionId.eq('')))
 
     if (!scope.all) {
       if (scope.self) {
-        query = query.where({ owner: prisma8Varchar(user.id, 32) })
+        query = query.where({ owner: user.id })
       } else if (userField === 'CREATE_USER') {
-        query = query.where((row) =>
-          row.createUser.in(prisma8Varchars(scope.userIds ?? [], 32)),
-        )
+        query = query.where((row) => row.createUser.in(scope.userIds ?? []))
       } else {
-        query = query.where((row) => row.owner.in(prisma8Varchars(scope.userIds ?? [], 32)))
+        query = query.where((row) => row.owner.in(scope.userIds ?? []))
       }
     }
 

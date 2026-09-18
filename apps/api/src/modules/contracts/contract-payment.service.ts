@@ -11,7 +11,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { Prisma8Client } from '../../prisma/prisma8-client.js'
 import { prisma8Numeric } from '../../prisma/prisma8-values.js'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar.js'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { Prisma8Service } from '../../prisma/prisma8.service.js'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
@@ -128,22 +128,22 @@ export class ContractPaymentPlanService {
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
     let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
     const scope = await this.dataScope.directOwnerFilter(user, PLAN_READ_PERMISSION)
     const ownerScope = scope.owner
     if (ownerScope) {
       query =
         typeof ownerScope === 'string'
-          ? query.where({ owner: prisma8Varchar(ownerScope, 32) })
-          : query.where((row) => row.owner.in(prisma8Varchars(ownerScope.in, 32)))
+          ? query.where({ owner: ownerScope })
+          : query.where((row) => row.owner.in(ownerScope.in))
     }
-    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
-    if (dto.contractId) query = query.where({ contractId: prisma8Varchar(dto.contractId, 32) })
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
+    if (dto.contractId) query = query.where({ contractId: dto.contractId })
     if (dto.customerId) {
       const contracts = await this.prisma8.client.orm.public.Contract.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        customerId: prisma8Varchar(dto.customerId, 32),
+        organizationId: user.tenantId,
+        customerId: dto.customerId,
       })
         .select('id')
         .all()
@@ -151,7 +151,7 @@ export class ContractPaymentPlanService {
     }
     if (dto.keyword) {
       const contracts = await this.prisma8.client.orm.public.Contract.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .where((row) => row.name.ilike(`%${dto.keyword}%`))
         .select('id')
@@ -256,18 +256,18 @@ export class ContractPaymentPlanService {
     const now = BigInt(Date.now())
     const created = await this.prisma8.client.transaction(async (tx) => {
       const row = await tx.orm.public.ContractPaymentPlan.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(dto.name.trim(), 255),
-        contractId: prisma8Varchar(dto.contractId, 32),
-        owner: prisma8Varchar(owner, 32),
-        planStatus: prisma8Varchar(dto.planStatus ?? 'PENDING', 32),
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        contractId: dto.contractId,
+        owner: owner,
+        planStatus: dto.planStatus ?? 'PENDING',
         planAmount: prisma8Numeric(dto.planAmount, 20, 10),
         planEndTime: BigInt(dto.planEndTime),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -298,22 +298,18 @@ export class ContractPaymentPlanService {
         : await this.moduleFieldsToCustomData(user.tenantId, PLAN_FORM_KEY, dto.moduleFields)
     await this.prisma8.client.transaction(async (tx) => {
       const updated = await tx.orm.public.ContractPaymentPlan.where({
-        id: prisma8Varchar(dto.id, 32),
+        id: dto.id,
       }).update({
-        ...(dto.name !== undefined ? { name: prisma8Varchar(dto.name.trim(), 255) } : {}),
-        ...(dto.contractId !== undefined
-          ? { contractId: prisma8Varchar(dto.contractId, 32) }
-          : {}),
-        ...(owner !== undefined ? { owner: prisma8Varchar(owner, 32) } : {}),
-        ...(dto.planStatus !== undefined
-          ? { planStatus: prisma8Varchar(dto.planStatus, 32) }
-          : {}),
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.contractId !== undefined ? { contractId: dto.contractId } : {}),
+        ...(owner !== undefined ? { owner: owner } : {}),
+        ...(dto.planStatus !== undefined ? { planStatus: dto.planStatus } : {}),
         ...(dto.planAmount !== undefined
           ? { planAmount: prisma8Numeric(dto.planAmount, 20, 10) }
           : {}),
         ...(dto.planEndTime !== undefined ? { planEndTime: BigInt(dto.planEndTime) } : {}),
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!updated) throw new NotFoundException('回款计划不存在')
       if (customData) {
@@ -334,8 +330,8 @@ export class ContractPaymentPlanService {
   async remove(user: AuthUser, id: string) {
     const current = await this.ensureInScope(user, id, 'CONTRACT_PAYMENT_PLAN:DELETE')
     await this.prisma8.client.orm.public.ContractPaymentPlan.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).delete()
     return { id, name: current.name }
   }
@@ -349,25 +345,25 @@ export class ContractPaymentPlanService {
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
         await this.prisma8.client.orm.public.ContractPaymentPlan.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(rows.map((item) => item.id), 32)))
+          .where((row) => row.id.in(rows.map((item) => item.id)))
           .updateAndCount({
-            owner: prisma8Varchar(owner, 32),
+            owner: owner,
             updateTime: BigInt(Date.now()),
-            updateUser: prisma8Varchar(user.id, 32),
+            updateUser: user.id,
           })
       } else if (field.key === 'planStatus') {
         const status = String(dto.fieldValue ?? '')
         if (!PLAN_STATUSES.has(status)) throw new BadRequestException('回款计划状态不合法')
         await this.prisma8.client.orm.public.ContractPaymentPlan.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(rows.map((item) => item.id), 32)))
+          .where((row) => row.id.in(rows.map((item) => item.id)))
           .updateAndCount({
-            planStatus: prisma8Varchar(status, 32),
+            planStatus: status,
             updateTime: BigInt(Date.now()),
-            updateUser: prisma8Varchar(user.id, 32),
+            updateUser: user.id,
           })
       } else {
         throw new BadRequestException('该系统字段不支持批量修改')
@@ -613,15 +609,15 @@ export class ContractPaymentPlanService {
 
   private async ensureInScope(user: AuthUser, id: string, permission = PLAN_READ_PERMISSION) {
     const row = await this.prisma8.client.orm.public.ContractPaymentPlan.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('回款计划不存在或不在你的数据范围内')
     }
     const contract = await this.prisma8.client.orm.public.Contract.where({
       id: row.contractId,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select('name', 'customerId')
       .first()
@@ -633,9 +629,9 @@ export class ContractPaymentPlanService {
     const unique = [...new Set(ids)]
     const rows = unique.length
       ? await this.prisma8.client.orm.public.ContractPaymentPlan.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(unique, 32)))
+          .where((row) => row.id.in(unique))
           .all()
       : []
     if (rows.length !== unique.length) throw new NotFoundException('部分回款计划不存在')
@@ -692,17 +688,18 @@ export class ContractPaymentPlanService {
             .all()
           const ownerIds = users.map((item) => String(item.id))
           let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
-            organizationId: prisma8Varchar(organizationId, 32),
+            organizationId: organizationId,
           })
-          query = condition.op === 'ne'
-            ? query.where((row) => not(row.owner.in(prisma8Varchars(ownerIds, 32))))
-            : query.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+          query =
+            condition.op === 'ne'
+              ? query.where((row) => not(row.owner.in(ownerIds)))
+              : query.where((row) => row.owner.in(ownerIds))
           const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
           let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
-            organizationId: prisma8Varchar(organizationId, 32),
+            organizationId: organizationId,
           })
           query = this.applyPlanDirectFilter(query, condition.key, condition)
           const rows = await query.select('id').all()
@@ -715,7 +712,9 @@ export class ContractPaymentPlanService {
         const normalized =
           field.key === condition.key ? condition : { ...condition, key: field.key }
         return new Set(
-          await this.fieldValues.filterResourceIds(organizationId, 'contractPaymentPlan', [normalized]),
+          await this.fieldValues.filterResourceIds(organizationId, 'contractPaymentPlan', [
+            normalized,
+          ]),
         )
       }),
     )
@@ -733,7 +732,7 @@ export class ContractPaymentPlanService {
     key: string,
     condition: FilterCondition,
   ) {
-    const impossible = () => collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    const impossible = () => collection.where((row) => row.id.eq(''))
 
     if (key === 'planAmount') {
       if (condition.op === 'isEmpty') return collection.where((row) => row.planAmount.isNull())
@@ -752,7 +751,7 @@ export class ContractPaymentPlanService {
         if (condition.op === 'gte') return row.planAmount.gte(value)
         if (condition.op === 'lt') return row.planAmount.lt(value)
         if (condition.op === 'lte') return row.planAmount.lte(value)
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 
@@ -789,7 +788,7 @@ export class ContractPaymentPlanService {
           if (condition.op === 'gte') return row.planEndTime.gte(value)
           if (condition.op === 'lt') return row.planEndTime.lt(value)
           if (condition.op === 'lte') return row.planEndTime.lte(value)
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       return collection.where((row) => {
@@ -802,15 +801,15 @@ export class ContractPaymentPlanService {
         if (condition.op === 'gte') return field.gte(value)
         if (condition.op === 'lt') return field.lt(value)
         if (condition.op === 'lte') return field.lte(value)
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 
     if (key === 'name') {
       if (condition.op === 'isEmpty') return impossible()
       if (condition.op === 'notEmpty') return collection
-      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
-        prisma8Varchar(String(item ?? ''), 255),
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
       )
       const value = values[0]!
       return collection.where((row) => {
@@ -819,15 +818,16 @@ export class ContractPaymentPlanService {
         if (condition.op === 'in') return row.name.in(values)
         if (condition.op === 'notIn') return not(row.name.in(values))
         if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
-        if (condition.op === 'notContains') return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
       })
     }
 
     if (condition.op === 'isEmpty') return impossible()
     if (condition.op === 'notEmpty') return collection
-    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
-      prisma8Varchar(String(item ?? ''), 32),
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (item) => String(item ?? ''),
     )
     const value = values[0]!
     return collection.where((row) => {
@@ -846,8 +846,9 @@ export class ContractPaymentPlanService {
       if (condition.op === 'in') return field.in(values)
       if (condition.op === 'notIn') return not(field.in(values))
       if (condition.op === 'contains') return field.ilike(`%${String(condition.value ?? '')}%`)
-      if (condition.op === 'notContains') return not(field.ilike(`%${String(condition.value ?? '')}%`))
-      return row.id.eq(prisma8Varchar('', 32))
+      if (condition.op === 'notContains')
+        return not(field.ilike(`%${String(condition.value ?? '')}%`))
+      return row.id.eq('')
     })
   }
 
@@ -893,7 +894,9 @@ export class ContractPaymentPlanService {
           .select('id', 'name', 'deptId')
           .all()
       : []
-    const deptIds = [...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : [])))]
+    const deptIds = [
+      ...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : []))),
+    ]
     const depts = deptIds.length
       ? await this.prisma8.client.orm.public.Departments.where((row) => row.id.in(deptIds))
           .select('id', 'name')
@@ -952,22 +955,22 @@ export class ContractPaymentRecordService {
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
     let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
     const scope = await this.dataScope.directOwnerFilter(user, RECORD_READ_PERMISSION)
     const ownerScope = scope.owner
     if (ownerScope) {
       query =
         typeof ownerScope === 'string'
-          ? query.where({ owner: prisma8Varchar(ownerScope, 32) })
-          : query.where((row) => row.owner.in(prisma8Varchars(ownerScope.in, 32)))
+          ? query.where({ owner: ownerScope })
+          : query.where((row) => row.owner.in(ownerScope.in))
     }
-    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
-    if (dto.contractId) query = query.where({ contractId: prisma8Varchar(dto.contractId, 32) })
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
+    if (dto.contractId) query = query.where({ contractId: dto.contractId })
     if (dto.customerId) {
       const contracts = await this.prisma8.client.orm.public.Contract.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        customerId: prisma8Varchar(dto.customerId, 32),
+        organizationId: user.tenantId,
+        customerId: dto.customerId,
       })
         .select('id')
         .all()
@@ -975,7 +978,7 @@ export class ContractPaymentRecordService {
     }
     if (dto.keyword) {
       const contracts = await this.prisma8.client.orm.public.Contract.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .where((row) => row.name.ilike(`%${dto.keyword}%`))
         .select('id')
@@ -1008,7 +1011,9 @@ export class ContractPaymentRecordService {
             .all()
         : [],
       paymentPlanIds.length
-        ? this.prisma8.client.orm.public.ContractPaymentPlan.where((row) => row.id.in(paymentPlanIds))
+        ? this.prisma8.client.orm.public.ContractPaymentPlan.where((row) =>
+            row.id.in(paymentPlanIds),
+          )
             .select('id', 'name')
             .all()
         : [],
@@ -1032,7 +1037,9 @@ export class ContractPaymentRecordService {
         contractName: contractMap.get(String(row.contractId))?.name ?? '已删除合同',
         customerId: contractMap.get(String(row.contractId))?.customerId ?? null,
         paymentPlanId: row.paymentPlanId,
-        paymentPlanName: row.paymentPlanId ? (paymentPlanMap.get(String(row.paymentPlanId)) ?? null) : null,
+        paymentPlanName: row.paymentPlanId
+          ? (paymentPlanMap.get(String(row.paymentPlanId)) ?? null)
+          : null,
         owner: row.owner,
         ownerName: people.get(row.owner)?.name ?? null,
         departmentId: people.get(row.owner)?.deptId ?? null,
@@ -1095,19 +1102,19 @@ export class ContractPaymentRecordService {
     const created = await this.prisma8.client.transaction(async (tx) => {
       const no = dto.no?.trim() || (await this.nextRecordNo(tx, user.tenantId, dto.recordEndTime))
       const row = await tx.orm.public.ContractPaymentRecord.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(dto.name.trim(), 255),
-        no: prisma8Varchar(no, 50),
-        owner: prisma8Varchar(owner, 32),
-        contractId: prisma8Varchar(dto.contractId, 32),
-        paymentPlanId: dto.paymentPlanId ? prisma8Varchar(dto.paymentPlanId, 32) : null,
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        no: no,
+        owner: owner,
+        contractId: dto.contractId,
+        paymentPlanId: dto.paymentPlanId ? dto.paymentPlanId : null,
         recordAmount: prisma8Numeric(dto.recordAmount, 20, 10),
         recordEndTime: BigInt(dto.recordEndTime),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -1138,30 +1145,24 @@ export class ContractPaymentRecordService {
         : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
     await this.prisma8.client.transaction(async (tx) => {
       const updated = await tx.orm.public.ContractPaymentRecord.where({
-        id: prisma8Varchar(dto.id, 32),
+        id: dto.id,
       }).update({
-        ...(dto.name !== undefined ? { name: prisma8Varchar(dto.name.trim(), 255) } : {}),
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         // Cordys update explicitly preserves the original serial number.
-        no: current.no ? prisma8Varchar(current.no, 50) : null,
-        ...(owner !== undefined ? { owner: prisma8Varchar(owner, 32) } : {}),
-        ...(dto.contractId !== undefined
-          ? { contractId: prisma8Varchar(dto.contractId, 32) }
-          : {}),
+        no: current.no ? current.no : null,
+        ...(owner !== undefined ? { owner: owner } : {}),
+        ...(dto.contractId !== undefined ? { contractId: dto.contractId } : {}),
         ...(dto.paymentPlanId !== undefined
           ? {
-              paymentPlanId: dto.paymentPlanId
-                ? prisma8Varchar(dto.paymentPlanId, 32)
-                : null,
+              paymentPlanId: dto.paymentPlanId ? dto.paymentPlanId : null,
             }
           : {}),
         ...(dto.recordAmount !== undefined
           ? { recordAmount: prisma8Numeric(dto.recordAmount, 20, 10) }
           : {}),
-        ...(dto.recordEndTime !== undefined
-          ? { recordEndTime: BigInt(dto.recordEndTime) }
-          : {}),
+        ...(dto.recordEndTime !== undefined ? { recordEndTime: BigInt(dto.recordEndTime) } : {}),
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!updated) throw new NotFoundException('回款记录不存在')
       if (customData) {
@@ -1182,8 +1183,8 @@ export class ContractPaymentRecordService {
   async remove(user: AuthUser, id: string) {
     const current = await this.ensureInScope(user, id, 'CONTRACT_PAYMENT_RECORD:DELETE')
     await this.prisma8.client.orm.public.ContractPaymentRecord.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).delete()
     return { id, name: current.name }
   }
@@ -1197,13 +1198,13 @@ export class ContractPaymentRecordService {
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
         await this.prisma8.client.orm.public.ContractPaymentRecord.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(rows.map((item) => item.id), 32)))
+          .where((row) => row.id.in(rows.map((item) => item.id)))
           .updateAndCount({
-            owner: prisma8Varchar(owner, 32),
+            owner: owner,
             updateTime: BigInt(Date.now()),
-            updateUser: prisma8Varchar(user.id, 32),
+            updateUser: user.id,
           })
       } else {
         throw new BadRequestException('该系统字段不支持批量修改')
@@ -1462,9 +1463,9 @@ export class ContractPaymentRecordService {
     await this.contracts.ensureInScope(user, contractId)
     if (paymentPlanId) {
       const plan = await this.prisma8.client.orm.public.ContractPaymentPlan.where({
-        id: prisma8Varchar(paymentPlanId, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        contractId: prisma8Varchar(contractId, 32),
+        id: paymentPlanId,
+        organizationId: user.tenantId,
+        contractId: contractId,
       })
         .select('id')
         .first()
@@ -1474,8 +1475,8 @@ export class ContractPaymentRecordService {
 
   private async ensureInScope(user: AuthUser, id: string, permission = RECORD_READ_PERMISSION) {
     const row = await this.prisma8.client.orm.public.ContractPaymentRecord.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('回款记录不存在或不在你的数据范围内')
@@ -1483,14 +1484,14 @@ export class ContractPaymentRecordService {
     const [contract, paymentPlan] = await Promise.all([
       this.prisma8.client.orm.public.Contract.where({
         id: row.contractId,
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .select('name', 'customerId')
         .first(),
       row.paymentPlanId
         ? this.prisma8.client.orm.public.ContractPaymentPlan.where({
             id: row.paymentPlanId,
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
             .select('name')
             .first()
@@ -1504,9 +1505,9 @@ export class ContractPaymentRecordService {
     const unique = [...new Set(ids)]
     const rows = unique.length
       ? await this.prisma8.client.orm.public.ContractPaymentRecord.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(unique, 32)))
+          .where((row) => row.id.in(unique))
           .all()
       : []
     if (rows.length !== unique.length) throw new NotFoundException('部分回款记录不存在')
@@ -1554,17 +1555,18 @@ export class ContractPaymentRecordService {
             .all()
           const ownerIds = users.map((item) => String(item.id))
           let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
-            organizationId: prisma8Varchar(organizationId, 32),
+            organizationId: organizationId,
           })
-          query = condition.op === 'ne'
-            ? query.where((row) => not(row.owner.in(prisma8Varchars(ownerIds, 32))))
-            : query.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+          query =
+            condition.op === 'ne'
+              ? query.where((row) => not(row.owner.in(ownerIds)))
+              : query.where((row) => row.owner.in(ownerIds))
           const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
           let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
-            organizationId: prisma8Varchar(organizationId, 32),
+            organizationId: organizationId,
           })
           query = this.applyRecordDirectFilter(query, condition.key, condition)
           const rows = await query.select('id').all()
@@ -1597,11 +1599,12 @@ export class ContractPaymentRecordService {
     key: string,
     condition: FilterCondition,
   ) {
-    const impossible = () => collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+    const impossible = () => collection.where((row) => row.id.eq(''))
 
     if (key === 'recordAmount') {
       if (condition.op === 'isEmpty') return collection.where((row) => row.recordAmount.isNull())
-      if (condition.op === 'notEmpty') return collection.where((row) => row.recordAmount.isNotNull())
+      if (condition.op === 'notEmpty')
+        return collection.where((row) => row.recordAmount.isNotNull())
       const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
       const numbers = rawValues.map(Number)
       if (numbers.some((value) => !Number.isFinite(value))) return impossible()
@@ -1616,7 +1619,7 @@ export class ContractPaymentRecordService {
         if (condition.op === 'gte') return row.recordAmount.gte(value)
         if (condition.op === 'lt') return row.recordAmount.lt(value)
         if (condition.op === 'lte') return row.recordAmount.lte(value)
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 
@@ -1653,7 +1656,7 @@ export class ContractPaymentRecordService {
           if (condition.op === 'gte') return row.recordEndTime.gte(value)
           if (condition.op === 'lt') return row.recordEndTime.lt(value)
           if (condition.op === 'lte') return row.recordEndTime.lte(value)
-          return row.id.eq(prisma8Varchar('', 32))
+          return row.id.eq('')
         })
       }
       return collection.where((row) => {
@@ -1666,15 +1669,15 @@ export class ContractPaymentRecordService {
         if (condition.op === 'gte') return field.gte(value)
         if (condition.op === 'lt') return field.lt(value)
         if (condition.op === 'lte') return field.lte(value)
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
 
     if (key === 'name') {
       if (condition.op === 'isEmpty') return impossible()
       if (condition.op === 'notEmpty') return collection
-      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
-        prisma8Varchar(String(item ?? ''), 255),
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
       )
       const value = values[0]!
       return collection.where((row) => {
@@ -1683,16 +1686,17 @@ export class ContractPaymentRecordService {
         if (condition.op === 'in') return row.name.in(values)
         if (condition.op === 'notIn') return not(row.name.in(values))
         if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
-        if (condition.op === 'notContains') return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
       })
     }
 
     if (key === 'no') {
       if (condition.op === 'isEmpty') return collection.where((row) => row.no.isNull())
       if (condition.op === 'notEmpty') return collection.where((row) => row.no.isNotNull())
-      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
-        prisma8Varchar(String(item ?? ''), 50),
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
       )
       const value = values[0]!
       return collection.where((row) => {
@@ -1701,8 +1705,9 @@ export class ContractPaymentRecordService {
         if (condition.op === 'in') return row.no.in(values)
         if (condition.op === 'notIn') return not(row.no.in(values))
         if (condition.op === 'contains') return row.no.ilike(`%${String(condition.value ?? '')}%`)
-        if (condition.op === 'notContains') return not(row.no.ilike(`%${String(condition.value ?? '')}%`))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'notContains')
+          return not(row.no.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
       })
     }
 
@@ -1713,8 +1718,8 @@ export class ContractPaymentRecordService {
     if (condition.op === 'notEmpty') {
       return nullable ? collection.where((row) => row.paymentPlanId.isNotNull()) : collection
     }
-    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map((item) =>
-      prisma8Varchar(String(item ?? ''), 32),
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (item) => String(item ?? ''),
     )
     const value = values[0]!
     return collection.where((row) => {
@@ -1733,8 +1738,9 @@ export class ContractPaymentRecordService {
       if (condition.op === 'in') return field.in(values)
       if (condition.op === 'notIn') return not(field.in(values))
       if (condition.op === 'contains') return field.ilike(`%${String(condition.value ?? '')}%`)
-      if (condition.op === 'notContains') return not(field.ilike(`%${String(condition.value ?? '')}%`))
-      return row.id.eq(prisma8Varchar('', 32))
+      if (condition.op === 'notContains')
+        return not(field.ilike(`%${String(condition.value ?? '')}%`))
+      return row.id.eq('')
     })
   }
 
@@ -1779,7 +1785,9 @@ export class ContractPaymentRecordService {
           .select('id', 'name', 'deptId')
           .all()
       : []
-    const deptIds = [...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : [])))]
+    const deptIds = [
+      ...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : []))),
+    ]
     const depts = deptIds.length
       ? await this.prisma8.client.orm.public.Departments.where((row) => row.id.in(deptIds))
           .select('id', 'name')

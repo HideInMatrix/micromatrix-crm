@@ -4,7 +4,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8TimestampFromEpochMilliseconds } from '../../prisma/prisma8-temporal'
-import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+
 import { homeCacheUserContext } from './home-cache-context'
 
 function monthStart(offset = 0): Date {
@@ -45,27 +45,31 @@ export class HomeOverviewService {
     const ownerIds = await this.ownerIds(user)
     const since = monthStart()
     const sinceMs = BigInt(since.getTime())
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const organizationId = user.tenantId
     const wonStageIds = await this.stageIds(user.tenantId, 'END', '100')
 
-    let leads = this.prisma8.client.orm.public.Clue.where({ organizationId })
-      .where((row) => row.createTime.gte(sinceMs))
+    let leads = this.prisma8.client.orm.public.Clue.where({ organizationId }).where((row) =>
+      row.createTime.gte(sinceMs),
+    )
     let customers = this.prisma8.client.orm.public.Customer.where({
       organizationId,
       inSharedPool: false,
     }).where((row) => row.createTime.gte(sinceMs))
-    let opportunities = this.prisma8.client.orm.public.Opportunity.where({ organizationId })
-      .where((row) => row.createTime.gte(sinceMs))
-    let won = this.prisma8.client.orm.public.Opportunity.where({ organizationId })
-      .where((row) => row.actualEndTime.gte(sinceMs))
-    let received = this.prisma8.client.orm.public.ContractPaymentRecord.where({ organizationId })
-      .where((row) => row.recordEndTime.gte(sinceMs))
+    let opportunities = this.prisma8.client.orm.public.Opportunity.where({ organizationId }).where(
+      (row) => row.createTime.gte(sinceMs),
+    )
+    let won = this.prisma8.client.orm.public.Opportunity.where({ organizationId }).where((row) =>
+      row.actualEndTime.gte(sinceMs),
+    )
+    let received = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      organizationId,
+    }).where((row) => row.recordEndTime.gte(sinceMs))
     let overdue = this.prisma8.client.orm.public.ContractPaymentPlan.where({ organizationId })
       .where((row) => row.planEndTime.lt(BigInt(Date.now())))
-      .where((row) => row.planStatus.neq(prisma8Varchar('COMPLETED', 32)))
+      .where((row) => row.planStatus.neq('COMPLETED'))
 
     if (ownerIds !== null) {
-      const scoped = prisma8Varchars(ownerIds, 32)
+      const scoped = ownerIds
       leads = leads.where((row) => row.owner.in(scoped))
       customers = customers.where((row) => row.owner.in(scoped))
       opportunities = opportunities.where((row) => row.owner.in(scoped))
@@ -74,38 +78,46 @@ export class HomeOverviewService {
       overdue = overdue.where((row) => row.owner.in(scoped))
     }
     if (wonStageIds.length) {
-      won = won.where((row) => row.stage.in(prisma8Varchars(wonStageIds, 32)))
+      won = won.where((row) => row.stage.in(wonStageIds))
     } else {
-      won = won.where((row) => row.stage.in(prisma8Varchars([], 32)))
+      won = won.where((row) => row.stage.in([]))
     }
 
     const now = Date.now()
-    const [newLeadAgg, newCustomerAgg, newOpportunityAgg, wonAgg, receivedAgg, approvalAgg, followAgg, overdueAgg] =
-      await Promise.all([
-        leads.aggregate((agg) => ({ count: agg.count() })),
-        customers.aggregate((agg) => ({ count: agg.count() })),
-        opportunities.aggregate((agg) => ({ count: agg.count() })),
-        won.aggregate((agg) => ({ amount: agg.sum('amount') })),
-        received.aggregate((agg) => ({ amount: agg.sum('recordAmount') })),
-        this.prisma8.client.orm.public.ApprovalTasks.where({
-          tenantId: user.tenantId,
-          approverId: user.id,
-          status: 'PENDING',
-        }).aggregate((agg) => ({ count: agg.count() })),
-        this.prisma8.client.orm.public.FollowUpPlans.where({
-          tenantId: user.tenantId,
-          ownerId: user.id,
-        })
-          .where((row) => row.status.in(['PREPARED', 'UNDERWAY']))
-          .where((row) =>
-            row.estimatedAt.gte(prisma8TimestampFromEpochMilliseconds(now - 24 * 3600 * 1000)),
-          )
-          .where((row) =>
-            row.estimatedAt.lte(prisma8TimestampFromEpochMilliseconds(now + 3 * 24 * 3600 * 1000)),
-          )
-          .aggregate((agg) => ({ count: agg.count() })),
-        overdue.aggregate((agg) => ({ count: agg.count() })),
-      ])
+    const [
+      newLeadAgg,
+      newCustomerAgg,
+      newOpportunityAgg,
+      wonAgg,
+      receivedAgg,
+      approvalAgg,
+      followAgg,
+      overdueAgg,
+    ] = await Promise.all([
+      leads.aggregate((agg) => ({ count: agg.count() })),
+      customers.aggregate((agg) => ({ count: agg.count() })),
+      opportunities.aggregate((agg) => ({ count: agg.count() })),
+      won.aggregate((agg) => ({ amount: agg.sum('amount') })),
+      received.aggregate((agg) => ({ amount: agg.sum('recordAmount') })),
+      this.prisma8.client.orm.public.ApprovalTasks.where({
+        tenantId: user.tenantId,
+        approverId: user.id,
+        status: 'PENDING',
+      }).aggregate((agg) => ({ count: agg.count() })),
+      this.prisma8.client.orm.public.FollowUpPlans.where({
+        tenantId: user.tenantId,
+        ownerId: user.id,
+      })
+        .where((row) => row.status.in(['PREPARED', 'UNDERWAY']))
+        .where((row) =>
+          row.estimatedAt.gte(prisma8TimestampFromEpochMilliseconds(now - 24 * 3600 * 1000)),
+        )
+        .where((row) =>
+          row.estimatedAt.lte(prisma8TimestampFromEpochMilliseconds(now + 3 * 24 * 3600 * 1000)),
+        )
+        .aggregate((agg) => ({ count: agg.count() })),
+      overdue.aggregate((agg) => ({ count: agg.count() })),
+    ])
 
     return {
       newLeads: newLeadAgg.count,
@@ -122,7 +134,7 @@ export class HomeOverviewService {
   /** 商机漏斗（按阶段） */
   private async loadFunnel(user: AuthUser) {
     const ownerIds = await this.ownerIds(user)
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const organizationId = user.tenantId
     const stages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
       organizationId,
     })
@@ -130,7 +142,7 @@ export class HomeOverviewService {
       .all()
     let opportunities = this.prisma8.client.orm.public.Opportunity.where({ organizationId })
     if (ownerIds !== null) {
-      opportunities = opportunities.where((row) => row.owner.in(prisma8Varchars(ownerIds, 32)))
+      opportunities = opportunities.where((row) => row.owner.in(ownerIds))
     }
     const grouped = await opportunities
       .groupBy('stage')
@@ -151,21 +163,23 @@ export class HomeOverviewService {
   private async loadRanking(user: AuthUser) {
     const since = monthStart()
     const ownerIds = await this.ownerIds(user)
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const organizationId = user.tenantId
     const wonStageIds = await this.stageIds(user.tenantId, 'END', '100')
-    let won = this.prisma8.client.orm.public.Opportunity.where({ organizationId })
-      .where((row) => row.actualEndTime.gte(BigInt(since.getTime())))
-    let received = this.prisma8.client.orm.public.ContractPaymentRecord.where({ organizationId })
-      .where((row) => row.recordEndTime.gte(BigInt(since.getTime())))
+    let won = this.prisma8.client.orm.public.Opportunity.where({ organizationId }).where((row) =>
+      row.actualEndTime.gte(BigInt(since.getTime())),
+    )
+    let received = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      organizationId,
+    }).where((row) => row.recordEndTime.gte(BigInt(since.getTime())))
     if (ownerIds !== null) {
-      const scoped = prisma8Varchars(ownerIds, 32)
+      const scoped = ownerIds
       won = won.where((row) => row.owner.in(scoped))
       received = received.where((row) => row.owner.in(scoped))
     }
     if (wonStageIds.length) {
-      won = won.where((row) => row.stage.in(prisma8Varchars(wonStageIds, 32)))
+      won = won.where((row) => row.stage.in(wonStageIds))
     } else {
-      won = won.where((row) => row.stage.in(prisma8Varchars([], 32)))
+      won = won.where((row) => row.stage.in([]))
     }
 
     const [wonGroups, receivedGroups] = await Promise.all([
@@ -210,21 +224,23 @@ export class HomeOverviewService {
   private async loadTrend(user: AuthUser) {
     const since = monthStart(-5)
     const ownerIds = await this.ownerIds(user)
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const organizationId = user.tenantId
     const wonStageIds = await this.stageIds(user.tenantId, 'END', '100')
-    let won = this.prisma8.client.orm.public.Opportunity.where({ organizationId })
-      .where((row) => row.actualEndTime.gte(BigInt(since.getTime())))
-    let received = this.prisma8.client.orm.public.ContractPaymentRecord.where({ organizationId })
-      .where((row) => row.recordEndTime.gte(BigInt(since.getTime())))
+    let won = this.prisma8.client.orm.public.Opportunity.where({ organizationId }).where((row) =>
+      row.actualEndTime.gte(BigInt(since.getTime())),
+    )
+    let received = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      organizationId,
+    }).where((row) => row.recordEndTime.gte(BigInt(since.getTime())))
     if (ownerIds !== null) {
-      const scoped = prisma8Varchars(ownerIds, 32)
+      const scoped = ownerIds
       won = won.where((row) => row.owner.in(scoped))
       received = received.where((row) => row.owner.in(scoped))
     }
     if (wonStageIds.length) {
-      won = won.where((row) => row.stage.in(prisma8Varchars(wonStageIds, 32)))
+      won = won.where((row) => row.stage.in(wonStageIds))
     } else {
-      won = won.where((row) => row.stage.in(prisma8Varchars([], 32)))
+      won = won.where((row) => row.stage.in([]))
     }
 
     const [wonList, receivedList] = await Promise.all([
@@ -265,26 +281,30 @@ export class HomeOverviewService {
   private async loadConversion(user: AuthUser) {
     const ownerIds = await this.ownerIds(user)
     const since = monthStart(-5)
-    const organizationId = prisma8Varchar(user.tenantId, 32)
+    const organizationId = user.tenantId
     const lostStageIds = await this.stageIds(user.tenantId, 'END', '0')
-    let leads = this.prisma8.client.orm.public.Clue.where({ organizationId })
-      .where((row) => row.createTime.gte(BigInt(since.getTime())))
-    let lost = this.prisma8.client.orm.public.Opportunity.where({ organizationId })
-      .where((row) => row.actualEndTime.isNotNull())
+    let leads = this.prisma8.client.orm.public.Clue.where({ organizationId }).where((row) =>
+      row.createTime.gte(BigInt(since.getTime())),
+    )
+    let lost = this.prisma8.client.orm.public.Opportunity.where({ organizationId }).where((row) =>
+      row.actualEndTime.isNotNull(),
+    )
     if (ownerIds !== null) {
-      const scoped = prisma8Varchars(ownerIds, 32)
+      const scoped = ownerIds
       leads = leads.where((row) => row.owner.in(scoped))
       lost = lost.where((row) => row.owner.in(scoped))
     }
     if (lostStageIds.length) {
-      lost = lost.where((row) => row.stage.in(prisma8Varchars(lostStageIds, 32)))
+      lost = lost.where((row) => row.stage.in(lostStageIds))
     } else {
-      lost = lost.where((row) => row.stage.in(prisma8Varchars([], 32)))
+      lost = lost.where((row) => row.stage.in([]))
     }
 
     const [totalLeads, convertedLeads, lostGroups] = await Promise.all([
       leads.aggregate((agg) => ({ count: agg.count() })),
-      leads.where((row) => row.transitionId.isNotNull()).aggregate((agg) => ({ count: agg.count() })),
+      leads
+        .where((row) => row.transitionId.isNotNull())
+        .aggregate((agg) => ({ count: agg.count() })),
       lost.groupBy('failureReason').aggregate((agg) => ({ count: agg.count() })),
     ])
 
@@ -292,7 +312,9 @@ export class HomeOverviewService {
       totalLeads: totalLeads.count,
       convertedLeads: convertedLeads.count,
       conversionRate:
-        totalLeads.count > 0 ? Math.round((convertedLeads.count / totalLeads.count) * 1000) / 10 : 0,
+        totalLeads.count > 0
+          ? Math.round((convertedLeads.count / totalLeads.count) * 1000) / 10
+          : 0,
       lostReasons: lostGroups.map((g) => ({
         reason: g.failureReason?.trim() || '未填写',
         count: g.count,
@@ -308,9 +330,9 @@ export class HomeOverviewService {
 
   private async stageIds(tenantId: string, type: 'AFOOT' | 'END', rate?: string) {
     const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
-      organizationId: prisma8Varchar(tenantId, 32),
-      _type: prisma8Varchar(type, 50),
-      ...(rate ? { rate: prisma8Varchar(rate, 10) } : {}),
+      organizationId: tenantId,
+      _type: type,
+      ...(rate ? { rate: rate } : {}),
     })
       .select('id')
       .all()

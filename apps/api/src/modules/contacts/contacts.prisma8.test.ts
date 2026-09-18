@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ContactsService } from './contacts.service'
 
@@ -33,7 +33,11 @@ test(
     }
     const customerAccess = {
       assertRead: async () => ({ dataScope: true, pool: false, collaborationType: null }),
-      assertCollaborateWrite: async () => ({ dataScope: true, pool: false, collaborationType: null }),
+      assertCollaborateWrite: async () => ({
+        dataScope: true,
+        pool: false,
+        collaborationType: null,
+      }),
     }
     const dataScope = {
       directOwnerFilter: async () => ({}),
@@ -41,11 +45,51 @@ test(
       resolveScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
     }
     const fields = [
-      { id: 'name', key: 'name', label: '姓名', type: 'text', system: true, hidden: false, required: true },
-      { id: 'phone', key: 'phone', label: '手机', type: 'text', system: true, hidden: false, required: false },
-      { id: 'owner', key: 'owner', label: '负责人', type: 'user', system: true, hidden: false, required: true },
-      { id: 'customerId', key: 'customerId', label: '客户', type: 'relation', system: true, hidden: false, required: false },
-      { id: 'enable', key: 'enable', label: '启用', type: 'switch', system: true, hidden: false, required: true },
+      {
+        id: 'name',
+        key: 'name',
+        label: '姓名',
+        type: 'text',
+        system: true,
+        hidden: false,
+        required: true,
+      },
+      {
+        id: 'phone',
+        key: 'phone',
+        label: '手机',
+        type: 'text',
+        system: true,
+        hidden: false,
+        required: false,
+      },
+      {
+        id: 'owner',
+        key: 'owner',
+        label: '负责人',
+        type: 'user',
+        system: true,
+        hidden: false,
+        required: true,
+      },
+      {
+        id: 'customerId',
+        key: 'customerId',
+        label: '客户',
+        type: 'relation',
+        system: true,
+        hidden: false,
+        required: false,
+      },
+      {
+        id: 'enable',
+        key: 'enable',
+        label: '启用',
+        type: 'switch',
+        system: true,
+        hidden: false,
+        required: true,
+      },
     ]
     const metadata = {
       listFields: async () => fields,
@@ -92,20 +136,18 @@ test(
         updatedAt: prisma8Now(),
       })
       const now = BigInt(Date.now())
-      const actorVarchar = prisma8Varchar(actorId, 32)
-      const organizationVarchar = prisma8Varchar(organizationId, 32)
-      const customer = await prisma8Client.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('联系人专项客户', 255),
-          owner: actorVarchar,
-          organizationId: organizationVarchar,
-          createTime: now,
-          updateTime: now,
-          createUser: actorVarchar,
-          updateUser: actorVarchar,
-        })
+      const actorVarchar = actorId
+      const organizationVarchar = organizationId
+      const customer = await prisma8Client.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: '联系人专项客户',
+        owner: actorVarchar,
+        organizationId: organizationVarchar,
+        createTime: now,
+        updateTime: now,
+        createUser: actorVarchar,
+        updateUser: actorVarchar,
+      })
 
       const contact = await service.create(user, {
         customerId: customer.id,
@@ -128,13 +170,16 @@ test(
       assert.equal(embedded.length, 1)
       assert.equal(embedded[0]?.id, contact.id)
 
-      const updated = await service.update(user, contact.id, { name: '张三更新', phone: '13900139000' })
+      const updated = await service.update(user, contact.id, {
+        name: '张三更新',
+        phone: '13900139000',
+      })
       assert.equal(updated.name, '张三更新')
       assert.equal(updated.phone, '13900139000')
       assert.equal(
         (
           await prisma8Client.orm.public.CustomerContact.where({
-            id: prisma8Varchar(contact.id, 32),
+            id: contact.id,
           })
             .select('name')
             .first()
@@ -149,13 +194,16 @@ test(
       assert.equal(enabled.enable, true)
       assert.equal(enabled.disableReason, null)
 
-      assert.deepEqual(await service.checkOpportunity(user, contact.id), { linked: false, count: 0 })
+      assert.deepEqual(await service.checkOpportunity(user, contact.id), {
+        linked: false,
+        count: 0,
+      })
       const removed = await service.remove(user, contact.id)
       assert.equal(removed.id, contact.id)
       assert.equal(
         (
           await prisma8Client.orm.public.CustomerContact.where({
-            id: prisma8Varchar(contact.id, 32),
+            id: contact.id,
           })
             .select('id')
             .all()
@@ -163,12 +211,10 @@ test(
         0,
       )
     } finally {
-      await prisma8Client.orm.public.CustomerContact
-        .where({ organizationId: prisma8Varchar(organizationId, 32) })
-        .deleteAll()
-      await prisma8Client.orm.public.Customer
-        .where({ organizationId: prisma8Varchar(organizationId, 32) })
-        .deleteAll()
+      await prisma8Client.orm.public.CustomerContact.where({
+        organizationId: organizationId,
+      }).deleteAll()
+      await prisma8Client.orm.public.Customer.where({ organizationId: organizationId }).deleteAll()
       await prisma8Client.orm.public.Users.where({ tenantId: organizationId }).deleteAll()
       await prisma8Client.orm.public.Tenants.where({ id: organizationId }).deleteAll()
       await testDb.close()

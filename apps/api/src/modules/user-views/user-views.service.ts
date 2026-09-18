@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { FilterCondition, FilterOp } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   CreateUserViewDto,
   EditUserViewPosDto,
@@ -21,9 +21,9 @@ export class UserViewsService {
   async list(user: AuthUser, resourceType: UserViewResourceKey) {
     const views = await this.views()
       .where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        userId: prisma8Varchar(user.id, 32),
-        resourceType: prisma8Varchar(resourceType, 50),
+        organizationId: user.tenantId,
+        userId: user.id,
+        resourceType: resourceType,
       })
       .select('id', 'name', 'fixed', 'enable')
       .orderBy((view) => view.pos.desc())
@@ -57,9 +57,9 @@ export class UserViewsService {
     try {
       const view = await this.prisma8.client.transaction(async (tx) => {
         const scope = {
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          userId: prisma8Varchar(user.id, 32),
-          resourceType: prisma8Varchar(resourceType, 50),
+          organizationId: user.tenantId,
+          userId: user.id,
+          resourceType: resourceType,
         }
         const latest = await tx.orm.public.SysUserView.where(scope)
           .select('pos')
@@ -67,23 +67,26 @@ export class UserViewsService {
           .limit(1)
           .first()
         const created = await tx.orm.public.SysUserView.create({
-          id: prisma8Id32(),
+          id: createLegacyId32(),
           userId: scope.userId,
-          name: prisma8Varchar(name, 255),
+          name: name,
           fixed: false,
           enable: true,
           resourceType: scope.resourceType,
           organizationId: scope.organizationId,
           pos: (latest?.pos ?? 0n) + POS_STEP,
-          searchMode: prisma8Varchar(dto.searchMode ?? 'AND', 10),
+          searchMode: dto.searchMode ?? 'AND',
           createTime: now,
           updateTime: now,
-          createUser: prisma8Varchar(user.id, 32),
-          updateUser: prisma8Varchar(user.id, 32),
+          createUser: user.id,
+          updateUser: user.id,
         })
         const conditions = this.conditionCreates(created.id, user.id, now, dto.conditions ?? [])
         if (conditions.length) await tx.orm.public.SysUserViewCondition.createAll(conditions)
-        return { ...created, conditions: await this.loadConditions(tx.orm.public.SysUserViewCondition, created.id) }
+        return {
+          ...created,
+          conditions: await this.loadConditions(tx.orm.public.SysUserViewCondition, created.id),
+        }
       })
       return this.toDetail(view)
     } catch (error) {
@@ -97,23 +100,26 @@ export class UserViewsService {
     const now = BigInt(Date.now())
     try {
       const view = await this.prisma8.client.transaction(async (tx) => {
-        const id = prisma8Varchar(dto.id, 32)
+        const id = dto.id
         await tx.orm.public.SysUserViewCondition.where({ sysUserViewId: id }).deleteAndCount()
         const updated = await tx.orm.public.SysUserView.where({
           id,
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          userId: prisma8Varchar(user.id, 32),
-          resourceType: prisma8Varchar(resourceType, 50),
+          organizationId: user.tenantId,
+          userId: user.id,
+          resourceType: resourceType,
         }).update({
-          name: prisma8Varchar(dto.name.trim(), 255),
-          searchMode: prisma8Varchar(dto.searchMode ?? 'AND', 10),
+          name: dto.name.trim(),
+          searchMode: dto.searchMode ?? 'AND',
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
         if (!updated) throw new NotFoundException('视图不存在')
         const conditions = this.conditionCreates(id, user.id, now, dto.conditions ?? [])
         if (conditions.length) await tx.orm.public.SysUserViewCondition.createAll(conditions)
-        return { ...updated, conditions: await this.loadConditions(tx.orm.public.SysUserViewCondition, id) }
+        return {
+          ...updated,
+          conditions: await this.loadConditions(tx.orm.public.SysUserViewCondition, id),
+        }
       })
       return this.toDetail(view)
     } catch (error) {
@@ -125,10 +131,10 @@ export class UserViewsService {
     const view = await this.getOwnedView(user, id, resourceType)
     await this.views()
       .where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        userId: prisma8Varchar(user.id, 32),
-        resourceType: prisma8Varchar(resourceType, 50),
+        id: id,
+        organizationId: user.tenantId,
+        userId: user.id,
+        resourceType: resourceType,
       })
       .delete()
     return { id, name: view.name }
@@ -136,20 +142,24 @@ export class UserViewsService {
 
   async toggleFixed(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedView(user, id, resourceType)
-    await this.views().where({ id: prisma8Varchar(id, 32) }).update({
-      fixed: !view.fixed,
-      updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
-    })
+    await this.views()
+      .where({ id: id })
+      .update({
+        fixed: !view.fixed,
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
+      })
   }
 
   async toggleEnabled(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.getOwnedView(user, id, resourceType)
-    await this.views().where({ id: prisma8Varchar(id, 32) }).update({
-      enable: !view.enable,
-      updateTime: BigInt(Date.now()),
-      updateUser: prisma8Varchar(user.id, 32),
-    })
+    await this.views()
+      .where({ id: id })
+      .update({
+        enable: !view.enable,
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
+      })
   }
 
   async editPos(user: AuthUser, resourceType: UserViewResourceKey, dto: EditUserViewPosDto) {
@@ -158,9 +168,9 @@ export class UserViewsService {
 
     const views = await this.views()
       .where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        userId: prisma8Varchar(user.id, 32),
-        resourceType: prisma8Varchar(resourceType, 50),
+        organizationId: user.tenantId,
+        userId: user.id,
+        resourceType: resourceType,
       })
       .select('id')
       .orderBy((view) => view.pos.desc())
@@ -178,14 +188,14 @@ export class UserViewsService {
     await this.prisma8.client.transaction(async (tx) => {
       for (const [index, id] of ordered.entries()) {
         await tx.orm.public.SysUserView.where({
-          id: prisma8Varchar(id, 32),
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          userId: prisma8Varchar(user.id, 32),
-          resourceType: prisma8Varchar(resourceType, 50),
+          id: id,
+          organizationId: user.tenantId,
+          userId: user.id,
+          resourceType: resourceType,
         }).update({
-            pos: BigInt(ordered.length - index) * POS_STEP,
-            updateTime: now,
-            updateUser: prisma8Varchar(user.id, 32),
+          pos: BigInt(ordered.length - index) * POS_STEP,
+          updateTime: now,
+          updateUser: user.id,
         })
       }
     })
@@ -194,10 +204,10 @@ export class UserViewsService {
   private async getOwnedView(user: AuthUser, id: string, resourceType: UserViewResourceKey) {
     const view = await this.views()
       .where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        userId: prisma8Varchar(user.id, 32),
-        resourceType: prisma8Varchar(resourceType, 50),
+        id: id,
+        organizationId: user.tenantId,
+        userId: user.id,
+        resourceType: resourceType,
       })
       .first()
     if (!view) throw new NotFoundException('视图不存在')
@@ -226,21 +236,21 @@ export class UserViewsService {
     return conditions.map((condition) => {
       const serialized = this.encodeValue(condition.value)
       return {
-        id: prisma8Id32(),
-        sysUserViewId: prisma8Varchar(viewId, 32),
-        name: prisma8Varchar(condition.name, 255),
+        id: createLegacyId32(),
+        sysUserViewId: viewId,
+        name: condition.name,
         value: serialized.value,
         valueType: serialized.valueType,
-        _type: condition.type ? prisma8Varchar(condition.type, 20) : null,
+        _type: condition.type ? condition.type : null,
         multipleValue: condition.multipleValue ?? false,
-        operator: condition.operator ? prisma8Varchar(condition.operator, 20) : null,
+        operator: condition.operator ? condition.operator : null,
         childrenValue: condition.containChildIds?.length
           ? JSON.stringify(condition.containChildIds)
           : null,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(userId, 32),
-        updateUser: prisma8Varchar(userId, 32),
+        createUser: userId,
+        updateUser: userId,
       }
     })
   }
@@ -353,12 +363,9 @@ export class UserViewsService {
     return this.prisma8.client.orm.public.SysUserViewCondition
   }
 
-  private loadConditions(
-    collection: ReturnType<UserViewsService['conditions']>,
-    viewId: string,
-  ) {
+  private loadConditions(collection: ReturnType<UserViewsService['conditions']>, viewId: string) {
     return collection
-      .where({ sysUserViewId: prisma8Varchar(viewId, 32) })
+      .where({ sysUserViewId: viewId })
       .orderBy((condition) => condition.createTime.asc())
       .all()
   }

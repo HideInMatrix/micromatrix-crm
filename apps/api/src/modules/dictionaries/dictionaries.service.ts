@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   DictionaryAddDto,
   DictionaryModule,
@@ -25,8 +25,8 @@ export class DictionariesService {
   private listRows(organizationId: string, module: DictionaryModule) {
     return this.dicts()
       .where({
-        organizationId: prisma8Varchar(organizationId, 32),
-        module: prisma8Varchar(module, 20),
+        organizationId: organizationId,
+        module: module,
       })
       .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
       .all()
@@ -37,8 +37,8 @@ export class DictionariesService {
       this.listRows(organizationId, module),
       this.configs()
         .where({
-          module: prisma8Varchar(module, 20),
-          organizationId: prisma8Varchar(organizationId, 32),
+          module: module,
+          organizationId: organizationId,
         })
         .first(),
     ])
@@ -66,8 +66,8 @@ export class DictionariesService {
     const name = dto.name.trim()
     return this.prisma8.client.transaction(async (tx) => {
       const rows = await tx.orm.public.SysDict.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
-        module: prisma8Varchar(dto.module, 20),
+        organizationId: user.tenantId,
+        module: dto.module,
       })
         .orderBy((row) => row.pos.asc())
         .all()
@@ -75,16 +75,16 @@ export class DictionariesService {
       if (rows.some((row) => row.name === name)) throw new BadRequestException('原因名称不能重复')
       const now = BigInt(Date.now())
       const row = await tx.orm.public.SysDict.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(name, 255),
-        module: prisma8Varchar(dto.module, 20),
-        _type: prisma8Varchar('TEXT', 10),
+        id: createLegacyId32(),
+        name: name,
+        module: dto.module,
+        _type: 'TEXT',
         pos: BigInt(rows.length + 1),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
       })
       return this.toVO(row)
     })
@@ -95,18 +95,20 @@ export class DictionariesService {
     const name = dto.name.trim()
     const duplicate = await this.dicts()
       .where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         module: row.module,
-        name: prisma8Varchar(name, 255),
+        name: name,
       })
       .select('id')
       .first()
     if (duplicate && duplicate.id !== row.id) throw new BadRequestException('原因名称不能重复')
-    const updated = await this.dicts().where({ id: row.id }).update({
-      name: prisma8Varchar(name, 255),
-      updateUser: prisma8Varchar(user.id, 32),
-      updateTime: BigInt(Date.now()),
-    })
+    const updated = await this.dicts()
+      .where({ id: row.id })
+      .update({
+        name: name,
+        updateUser: user.id,
+        updateTime: BigInt(Date.now()),
+      })
     if (!updated) throw new NotFoundException('原因不存在')
     return this.toVO(updated)
   }
@@ -117,17 +119,17 @@ export class DictionariesService {
       const [config, rows] = await Promise.all([
         tx.orm.public.SysDictConfig.where({
           module: row.module,
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         }).first(),
         tx.orm.public.SysDict.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
           module: row.module,
         }).all(),
       ])
       if (config?.enabled && rows.length <= 1) {
         throw new BadRequestException('原因已启用，至少保留一条原因')
       }
-      await tx.orm.public.SysDict.where({ id: prisma8Varchar(id, 32) }).delete()
+      await tx.orm.public.SysDict.where({ id: id }).delete()
       await this.normalizePositions(tx, user.tenantId, row.module, user.id)
       return { id }
     })
@@ -137,16 +139,16 @@ export class DictionariesService {
     if (enable) {
       const first = await this.dicts()
         .where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
-          module: prisma8Varchar(module, 20),
+          organizationId: user.tenantId,
+          module: module,
         })
         .select('id')
         .first()
       if (!first) throw new BadRequestException('请先至少配置一条原因')
     }
     const scope = {
-      module: prisma8Varchar(module, 20),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      module: module,
+      organizationId: user.tenantId,
     }
     let row = await this.configs().where(scope).update({ enabled: enable })
     if (!row) {
@@ -165,7 +167,7 @@ export class DictionariesService {
     const dragged = await this.assertOwned(user.tenantId, dto.dragDictId)
     return this.prisma8.client.transaction(async (tx) => {
       const rows = await tx.orm.public.SysDict.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         module: dragged.module,
       })
         .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
@@ -181,7 +183,7 @@ export class DictionariesService {
         const updated = await tx.orm.public.SysDict.where({ id: row.id }).update({
           pos: BigInt(index + 1),
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
         if (!updated) throw new NotFoundException('原因不存在')
       }
@@ -189,15 +191,11 @@ export class DictionariesService {
     })
   }
 
-  async validateReason(
-    organizationId: string,
-    module: DictionaryModule,
-    reasonId?: string | null,
-  ) {
+  async validateReason(organizationId: string, module: DictionaryModule, reasonId?: string | null) {
     const config = await this.configs()
       .where({
-        module: prisma8Varchar(module, 20),
-        organizationId: prisma8Varchar(organizationId, 32),
+        module: module,
+        organizationId: organizationId,
       })
       .first()
     if (!config?.enabled) return null
@@ -210,9 +208,9 @@ export class DictionariesService {
     if (!reasonId || reasonId === 'system') throw new BadRequestException(`请选择${label}`)
     const reason = await this.dicts()
       .where({
-        id: prisma8Varchar(reasonId, 32),
-        organizationId: prisma8Varchar(organizationId, 32),
-        module: prisma8Varchar(module, 20),
+        id: reasonId,
+        organizationId: organizationId,
+        module: module,
       })
       .first()
     if (!reason) throw new BadRequestException(`${label}不存在或已删除`)
@@ -222,8 +220,8 @@ export class DictionariesService {
   async isEnabled(organizationId: string, module: DictionaryModule) {
     const config = await this.configs()
       .where({
-        module: prisma8Varchar(module, 20),
-        organizationId: prisma8Varchar(organizationId, 32),
+        module: module,
+        organizationId: organizationId,
       })
       .select('enabled')
       .first()
@@ -235,8 +233,8 @@ export class DictionariesService {
     if (reasonId === 'system') return '系统自动回收'
     const row = await this.dicts()
       .where({
-        id: prisma8Varchar(reasonId, 32),
-        organizationId: prisma8Varchar(organizationId, 32),
+        id: reasonId,
+        organizationId: organizationId,
       })
       .select('name')
       .first()
@@ -247,8 +245,8 @@ export class DictionariesService {
     const ids = [...new Set(reasonIds.filter((id) => id && id !== 'system'))]
     const rows = ids.length
       ? await this.dicts()
-          .where({ organizationId: prisma8Varchar(organizationId, 32) })
-          .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+          .where({ organizationId: organizationId })
+          .where((row) => row.id.in(ids))
           .select('id', 'name')
           .all()
       : []
@@ -260,8 +258,8 @@ export class DictionariesService {
   private async assertOwned(organizationId: string, id: string) {
     const row = await this.dicts()
       .where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(organizationId, 32),
+        id: id,
+        organizationId: organizationId,
       })
       .first()
     if (!row) throw new NotFoundException('原因不存在')
@@ -302,8 +300,8 @@ export class DictionariesService {
     userId: string,
   ) {
     const rows = await tx.orm.public.SysDict.where({
-      organizationId: prisma8Varchar(organizationId, 32),
-      module: prisma8Varchar(module, 20),
+      organizationId: organizationId,
+      module: module,
     })
       .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
       .all()
@@ -312,7 +310,7 @@ export class DictionariesService {
       const updated = await tx.orm.public.SysDict.where({ id: row.id }).update({
         pos: BigInt(index + 1),
         updateTime: now,
-        updateUser: prisma8Varchar(userId, 32),
+        updateUser: userId,
       })
       if (!updated) throw new NotFoundException('原因不存在')
     }
@@ -324,8 +322,8 @@ export class DictionariesService {
     module: string,
   ) {
     const rows = await tx.orm.public.SysDict.where({
-      organizationId: prisma8Varchar(organizationId, 32),
-      module: prisma8Varchar(module, 20),
+      organizationId: organizationId,
+      module: module,
     })
       .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
       .all()

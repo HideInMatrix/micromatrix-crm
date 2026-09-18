@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   DirectCapacityConfigurationInput,
   DirectPoolConfigurationInput,
@@ -81,7 +81,7 @@ export class CluePoolRepository {
   ) {}
 
   async listPools(organizationId: string) {
-    const organization = prisma8Varchar(organizationId, 32)
+    const organization = organizationId
     const pools = await this.prisma8.client.orm.public.CluePool.where({
       organizationId: organization,
     })
@@ -90,9 +90,13 @@ export class CluePoolRepository {
     if (!pools.length) return []
     const poolIds = pools.map((pool) => pool.id)
     const [hiddenFields, pickRules, recycleRules] = await Promise.all([
-      this.prisma8.client.orm.public.CluePoolHiddenField.where((row) => row.poolId.in(poolIds)).all(),
+      this.prisma8.client.orm.public.CluePoolHiddenField.where((row) =>
+        row.poolId.in(poolIds),
+      ).all(),
       this.prisma8.client.orm.public.CluePoolPickRule.where((row) => row.poolId.in(poolIds)).all(),
-      this.prisma8.client.orm.public.CluePoolRecycleRule.where((row) => row.poolId.in(poolIds)).all(),
+      this.prisma8.client.orm.public.CluePoolRecycleRule.where((row) =>
+        row.poolId.in(poolIds),
+      ).all(),
     ])
     return pools.map((pool) => ({
       ...pool,
@@ -104,7 +108,7 @@ export class CluePoolRepository {
 
   listCapacities(organizationId: string) {
     return this.prisma8.client.orm.public.ClueCapacity.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
       .orderBy((row) => row.createTime.asc())
       .all()
@@ -112,8 +116,8 @@ export class CluePoolRepository {
 
   async listOwnerHistory(organizationId: string, clueId: string) {
     const clue = await this.prisma8.client.orm.public.Clue.where({
-      id: prisma8Varchar(clueId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: clueId,
+      organizationId: organizationId,
     })
       .select('id')
       .first()
@@ -132,17 +136,17 @@ export class CluePoolRepository {
     this.assertPoolConfiguration(input)
     return this.prisma8.client.transaction(async (tx) => {
       const pool = await tx.orm.public.CluePool.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(input.name.trim(), 255),
-        organizationId: prisma8Varchar(organizationId, 32),
+        id: createLegacyId32(),
+        name: input.name.trim(),
+        organizationId: organizationId,
         scopeId: JSON.stringify(input.scopeIds),
         ownerId: JSON.stringify(input.ownerIds),
         enable: input.enable,
         auto: input.auto,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(operatorId, 32),
-        updateUser: prisma8Varchar(operatorId, 32),
+        createUser: operatorId,
+        updateUser: operatorId,
       })
       await this.replacePoolRelations(tx, pool.id, operatorId, input, now)
       return this.loadPoolView(tx, pool.id)
@@ -159,15 +163,15 @@ export class CluePoolRepository {
     this.assertPoolConfiguration(input)
     return this.prisma8.client.transaction(async (tx) => {
       await this.assertPoolExists(tx, organizationId, poolId)
-      const id = prisma8Varchar(poolId, 32)
+      const id = poolId
       const updated = await tx.orm.public.CluePool.where({ id }).update({
-        name: prisma8Varchar(input.name.trim(), 255),
+        name: input.name.trim(),
         scopeId: JSON.stringify(input.scopeIds),
         ownerId: JSON.stringify(input.ownerIds),
         enable: input.enable,
         auto: input.auto,
         updateTime: now,
-        updateUser: prisma8Varchar(operatorId, 32),
+        updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('线索池不存在')
       await this.replacePoolRelations(tx, id, operatorId, input, now)
@@ -181,7 +185,7 @@ export class CluePoolRepository {
       const updated = await tx.orm.public.CluePool.where({ id: pool.id }).update({
         enable: !pool.enable,
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(operatorId, 32),
+        updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('线索池不存在')
       return updated
@@ -192,12 +196,11 @@ export class CluePoolRepository {
     return this.prisma8.client.transaction(async (tx) => {
       const pool = await this.assertPoolExists(tx, organizationId, poolId)
       const linked = await tx.orm.public.Clue.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
         poolId: pool.id,
         inSharedPool: true,
       }).aggregate((agg) => ({ count: agg.count() }))
-      if (linked.count)
-        throw new BadRequestException('线索池中仍有未领取线索，不能删除')
+      if (linked.count) throw new BadRequestException('线索池中仍有未领取线索，不能删除')
       await tx.orm.public.CluePool.where({ id: pool.id }).delete()
       return pool
     })
@@ -222,8 +225,8 @@ export class CluePoolRepository {
 
   async deleteCapacity(organizationId: string, capacityId: string) {
     const deleted = await this.prisma8.client.orm.public.ClueCapacity.where({
-      id: prisma8Varchar(capacityId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: capacityId,
+      organizationId: organizationId,
     }).deleteAndCount()
     if (!deleted) throw new NotFoundException('线索库容规则不存在')
     return { id: capacityId }
@@ -246,8 +249,8 @@ export class CluePoolRepository {
         poolTransactionLockKeys('clue', input.organizationId, input.clueId, input.ownerId),
       )
       const clue = await tx.orm.public.Clue.where({
-        id: prisma8Varchar(input.clueId, 32),
-        organizationId: prisma8Varchar(input.organizationId, 32),
+        id: input.clueId,
+        organizationId: input.organizationId,
         inSharedPool: false,
       }).first()
       if (!clue) throw new NotFoundException('线索不存在或已在线索池中')
@@ -257,19 +260,19 @@ export class CluePoolRepository {
 
       const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
       const owned = await tx.orm.public.Clue.where({
-        organizationId: prisma8Varchar(input.organizationId, 32),
-        owner: prisma8Varchar(input.ownerId, 32),
+        organizationId: input.organizationId,
+        owner: input.ownerId,
         inSharedPool: false,
       })
-        .where((row) => row.transitionType.neq(prisma8Varchar('CUSTOMER', 30)))
+        .where((row) => row.transitionType.neq('CUSTOMER'))
         .aggregate((agg) => ({ count: agg.count() }))
       this.calculator.assertCapacity(capacity, owned.count, 0, 1)
       await this.appendOwnerHistory(tx, clue, input.operatorId, input.reasonId, now)
       const updated = await tx.orm.public.Clue.where({ id: clue.id }).update({
-        owner: prisma8Varchar(input.ownerId, 32),
+        owner: input.ownerId,
         collectionTime: now,
-        reasonId: input.reasonId ? prisma8Varchar(input.reasonId, 32) : null,
-        updateUser: prisma8Varchar(input.operatorId, 32),
+        reasonId: input.reasonId ? input.reasonId : null,
+        updateUser: input.operatorId,
         updateTime: now,
       })
       if (!updated) throw new NotFoundException('线索不存在或已在线索池中')
@@ -290,10 +293,10 @@ export class CluePoolRepository {
         ),
       )
       const clues = await tx.orm.public.Clue.where({
-        organizationId: prisma8Varchar(input.organizationId, 32),
+        organizationId: input.organizationId,
         inSharedPool: false,
       })
-        .where((row) => row.id.in(prisma8Varchars(clueIds, 32)))
+        .where((row) => row.id.in(clueIds))
         .all()
       if (clues.length !== clueIds.length) {
         throw new NotFoundException('存在不存在或已在线索池中的线索')
@@ -307,8 +310,8 @@ export class CluePoolRepository {
 
       const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
       const owned = await tx.orm.public.Clue.where({
-        organizationId: prisma8Varchar(input.organizationId, 32),
-        owner: prisma8Varchar(input.ownerId, 32),
+        organizationId: input.organizationId,
+        owner: input.ownerId,
         inSharedPool: false,
         transitionId: null,
       }).aggregate((agg) => ({ count: agg.count() }))
@@ -318,14 +321,14 @@ export class CluePoolRepository {
         await this.appendOwnerHistory(tx, clue, input.operatorId, input.reasonId, now)
       }
       const count = await tx.orm.public.Clue.where({
-        organizationId: prisma8Varchar(input.organizationId, 32),
+        organizationId: input.organizationId,
       })
         .where((row) => row.id.in(changed.map((clue) => clue.id)))
         .updateAndCount({
-          owner: prisma8Varchar(input.ownerId, 32),
+          owner: input.ownerId,
           collectionTime: now,
-          reasonId: input.reasonId ? prisma8Varchar(input.reasonId, 32) : null,
-          updateUser: prisma8Varchar(input.operatorId, 32),
+          reasonId: input.reasonId ? input.reasonId : null,
+          updateUser: input.operatorId,
           updateTime: now,
         })
       return { count }
@@ -349,14 +352,14 @@ export class CluePoolRepository {
         poolTransactionLockKeys('clue', input.organizationId, input.clueId, input.ownerId),
       )
       const clue = await tx.orm.public.Clue.where({
-        id: prisma8Varchar(input.clueId, 32),
-        organizationId: prisma8Varchar(input.organizationId, 32),
+        id: input.clueId,
+        organizationId: input.organizationId,
       }).first()
       if (!clue) throw new NotFoundException('线索不存在')
       const pool = clue.poolId
         ? await tx.orm.public.CluePool.where({
             id: clue.poolId,
-            organizationId: prisma8Varchar(input.organizationId, 32),
+            organizationId: input.organizationId,
             enable: true,
           }).first()
         : null
@@ -367,15 +370,15 @@ export class CluePoolRepository {
       const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
       const [owned, todayPicked, previousOwner] = await Promise.all([
         tx.orm.public.Clue.where({
-          organizationId: prisma8Varchar(input.organizationId, 32),
-          owner: prisma8Varchar(input.ownerId, 32),
+          organizationId: input.organizationId,
+          owner: input.ownerId,
           inSharedPool: false,
         })
-          .where((row) => row.transitionType.neq(prisma8Varchar('CUSTOMER', 30)))
+          .where((row) => row.transitionType.neq('CUSTOMER'))
           .aggregate((agg) => ({ count: agg.count() })),
         tx.orm.public.Clue.where({
-          organizationId: prisma8Varchar(input.organizationId, 32),
-          owner: prisma8Varchar(input.ownerId, 32),
+          organizationId: input.organizationId,
+          owner: input.ownerId,
           inSharedPool: false,
         })
           .where((row) => row.collectionTime.gte(startOfLocalDay(now)))
@@ -403,16 +406,16 @@ export class CluePoolRepository {
 
       const updated = await tx.orm.public.Clue.where({
         id: clue.id,
-        organizationId: prisma8Varchar(input.organizationId, 32),
+        organizationId: input.organizationId,
         poolId: clue.poolId,
         inSharedPool: true,
       }).updateAndCount({
         poolId: null,
         inSharedPool: false,
-        owner: prisma8Varchar(input.ownerId, 32),
+        owner: input.ownerId,
         collectionTime: now,
-        stage: prisma8Varchar('FOLLOWING', 30),
-        updateUser: prisma8Varchar(input.ownerId, 32),
+        stage: 'FOLLOWING',
+        updateUser: input.ownerId,
         updateTime: now,
       })
       if (updated !== 1) throw new ConflictException(`线索「${clue.name}」已被其他成员领取`)
@@ -432,13 +435,13 @@ export class CluePoolRepository {
       )
       const [clue, pool] = await Promise.all([
         tx.orm.public.Clue.where({
-          id: prisma8Varchar(input.clueId, 32),
-          organizationId: prisma8Varchar(input.organizationId, 32),
+          id: input.clueId,
+          organizationId: input.organizationId,
           inSharedPool: false,
         }).first(),
         tx.orm.public.CluePool.where({
-          id: prisma8Varchar(input.poolId, 32),
-          organizationId: prisma8Varchar(input.organizationId, 32),
+          id: input.poolId,
+          organizationId: input.organizationId,
           enable: true,
         }).first(),
       ])
@@ -453,12 +456,8 @@ export class CluePoolRepository {
         inSharedPool: true,
         owner: null,
         collectionTime: null,
-        reasonId: automatic
-          ? prisma8Varchar('system', 32)
-          : input.reasonId
-            ? prisma8Varchar(input.reasonId, 32)
-            : null,
-        updateUser: prisma8Varchar(input.operatorId, 32),
+        reasonId: automatic ? 'system' : input.reasonId ? input.reasonId : null,
+        updateUser: input.operatorId,
         updateTime: now,
       })
       if (!updated) throw new NotFoundException('线索不存在或已在线索池中')
@@ -474,7 +473,7 @@ export class CluePoolRepository {
     const tokens = await loadUserScopeTokensPrisma8(tx, organizationId, ownerId)
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities = await tx.orm.public.ClueCapacity.where({
-      organizationId: prisma8Varchar(organizationId, 32),
+      organizationId: organizationId,
     })
       .orderBy((row) => row.createTime.desc())
       .all()
@@ -492,17 +491,15 @@ export class CluePoolRepository {
       throw new BadRequestException('库容不能小于 0')
     const now = BigInt(Date.now())
     return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
-        tx,
-        [`pool:clue:${organizationId}:capacity-config`],
-      )
+      await acquirePoolTransactionLocksPrisma8(this.prisma8.client, tx, [
+        `pool:clue:${organizationId}:capacity-config`,
+      ])
       const incoming = await resolveScopeUserIdsPrisma8(tx, organizationId, input.scopeIds)
       let existingQuery = tx.orm.public.ClueCapacity.where({
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       })
       if (capacityId) {
-        const excluded = prisma8Varchar(capacityId, 32)
+        const excluded = capacityId
         existingQuery = existingQuery.where((row) => row.id.neq(excluded))
       }
       const existing = await existingQuery.all()
@@ -517,26 +514,26 @@ export class CluePoolRepository {
       }
       if (!capacityId)
         return tx.orm.public.ClueCapacity.create({
-          id: prisma8Id32(),
-          organizationId: prisma8Varchar(organizationId, 32),
+          id: createLegacyId32(),
+          organizationId: organizationId,
           scopeId: JSON.stringify(input.scopeIds),
           capacity: input.capacity,
           createTime: now,
           updateTime: now,
-          createUser: prisma8Varchar(operatorId, 32),
-          updateUser: prisma8Varchar(operatorId, 32),
+          createUser: operatorId,
+          updateUser: operatorId,
         })
-      const id = prisma8Varchar(capacityId, 32)
+      const id = capacityId
       const current = await tx.orm.public.ClueCapacity.where({
         id,
-        organizationId: prisma8Varchar(organizationId, 32),
+        organizationId: organizationId,
       }).first()
       if (!current) throw new NotFoundException('线索库容规则不存在')
       const updated = await tx.orm.public.ClueCapacity.where({ id }).update({
         scopeId: JSON.stringify(input.scopeIds),
         capacity: input.capacity,
         updateTime: now,
-        updateUser: prisma8Varchar(operatorId, 32),
+        updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('线索库容规则不存在')
       return updated
@@ -550,7 +547,7 @@ export class CluePoolRepository {
     input: DirectPoolConfigurationInput,
     now: bigint,
   ) {
-    const id = prisma8Varchar(poolId, 32)
+    const id = poolId
     await Promise.all([
       tx.orm.public.CluePoolHiddenField.where({ poolId: id }).deleteAll(),
       tx.orm.public.CluePoolPickRule.where({ poolId: id }).deleteAll(),
@@ -561,12 +558,12 @@ export class CluePoolRepository {
       await tx.orm.public.CluePoolHiddenField.createAll(
         hiddenFieldIds.map((fieldId) => ({
           poolId: id,
-          fieldId: prisma8Varchar(fieldId, 255),
+          fieldId: fieldId,
         })),
       )
     }
     await tx.orm.public.CluePoolPickRule.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       poolId: id,
       limitOnNumber: input.pickRule.limitOnNumber,
       pickNumber: input.pickRule.pickNumber,
@@ -574,27 +571,25 @@ export class CluePoolRepository {
       pickIntervalDays: input.pickRule.pickIntervalDays,
       limitNew: input.pickRule.limitNew,
       newPickInterval: input.pickRule.newPickInterval,
-      createUser: prisma8Varchar(operatorId, 32),
+      createUser: operatorId,
       createTime: now,
-      updateUser: prisma8Varchar(operatorId, 32),
+      updateUser: operatorId,
       updateTime: now,
     })
     await tx.orm.public.CluePoolRecycleRule.create({
-      id: prisma8Id32(),
+      id: createLegacyId32(),
       poolId: id,
-      operator: input.recycleRule.operator
-        ? prisma8Varchar(input.recycleRule.operator, 10)
-        : null,
+      operator: input.recycleRule.operator ? input.recycleRule.operator : null,
       condition: input.recycleRule.condition,
       createTime: now,
       updateTime: now,
-      createUser: prisma8Varchar(operatorId, 32),
-      updateUser: prisma8Varchar(operatorId, 32),
+      createUser: operatorId,
+      updateUser: operatorId,
     })
   }
 
   private async loadPoolView(tx: Prisma8Transaction, poolId: string) {
-    const id = prisma8Varchar(poolId, 32)
+    const id = poolId
     const pool = await tx.orm.public.CluePool.where({ id }).first()
     if (!pool) throw new NotFoundException('线索池不存在')
     const [hiddenFields, pickRule, recycleRule] = await Promise.all([
@@ -615,14 +610,10 @@ export class CluePoolRepository {
       throw new BadRequestException('启用新数据限制时必须填写冷却天数')
   }
 
-  private async assertPoolExists(
-    tx: Prisma8Transaction,
-    organizationId: string,
-    poolId: string,
-  ) {
+  private async assertPoolExists(tx: Prisma8Transaction, organizationId: string, poolId: string) {
     const pool = await tx.orm.public.CluePool.where({
-      id: prisma8Varchar(poolId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: poolId,
+      organizationId: organizationId,
     }).first()
     if (!pool) throw new NotFoundException('线索池不存在')
     return pool
@@ -638,14 +629,13 @@ export class CluePoolRepository {
     if (!clue.owner || clue.collectionTime === null)
       throw new BadRequestException('线索负责人历史快照不完整')
     return tx.orm.public.ClueOwner.create({
-      id: prisma8Id32(),
-      clueId: prisma8Varchar(clue.id, 32),
-      owner: prisma8Varchar(clue.owner, 32),
+      id: createLegacyId32(),
+      clueId: clue.id,
+      owner: clue.owner,
       collectionTime: clue.collectionTime,
       endTime,
-      operator: prisma8Varchar(operatorId, 32),
-      reasonId:
-        reasonId && reasonId !== 'system' ? prisma8Varchar(reasonId, 32) : null,
+      operator: operatorId,
+      reasonId: reasonId && reasonId !== 'system' ? reasonId : null,
     })
   }
 

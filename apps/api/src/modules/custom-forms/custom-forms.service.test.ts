@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -60,47 +60,41 @@ test(
     const createdFormIds: string[] = []
 
     try {
-      const org = prisma8Varchar(organizationId, 32)
-      const operator = prisma8Varchar(operatorId, 32)
-      const form = await prisma8Client.orm.public.CustomForm
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar(`Prisma 8 raw ${randomUUID()}`, 255),
-          organizationId: org,
-          createTime: timestamp,
-          updateTime: timestamp,
-          createUser: operator,
-          updateUser: operator,
-        })
-      const otherForm = await prisma8Client.orm.public.CustomForm
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar(`Prisma 8 raw other ${randomUUID()}`, 255),
-          organizationId: org,
-          createTime: timestamp,
-          updateTime: timestamp,
-          createUser: operator,
-          updateUser: operator,
-        })
+      const org = organizationId
+      const operator = operatorId
+      const form = await prisma8Client.orm.public.CustomForm.select('id').create({
+        id: createLegacyId32(),
+        name: `Prisma 8 raw ${randomUUID()}`,
+        organizationId: org,
+        createTime: timestamp,
+        updateTime: timestamp,
+        createUser: operator,
+        updateUser: operator,
+      })
+      const otherForm = await prisma8Client.orm.public.CustomForm.select('id').create({
+        id: createLegacyId32(),
+        name: `Prisma 8 raw other ${randomUUID()}`,
+        organizationId: org,
+        createTime: timestamp,
+        updateTime: timestamp,
+        createUser: operator,
+        updateUser: operator,
+      })
       createdFormIds.push(form.id, otherForm.id)
 
       const exactName = `O'Reilly ${randomUUID()}`
       const createData = async (formId: string, name: string, dataOrg: string) =>
-        prisma8Client.orm.public.CustomFormData
-          .select('id', 'name')
-          .create({
-            id: prisma8Id32(),
-            customFormId: prisma8Varchar(formId, 32),
-            name: prisma8Varchar(name, 255),
-            owner: operator,
-            organizationId: prisma8Varchar(dataOrg, 32),
-            createTime: timestamp,
-            updateTime: timestamp,
-            createUser: operator,
-            updateUser: operator,
-          })
+        prisma8Client.orm.public.CustomFormData.select('id', 'name').create({
+          id: createLegacyId32(),
+          customFormId: formId,
+          name: name,
+          owner: operator,
+          organizationId: dataOrg,
+          createTime: timestamp,
+          updateTime: timestamp,
+          createUser: operator,
+          updateUser: operator,
+        })
       const first = await createData(form.id, exactName, organizationId)
       const second = await createData(form.id, '第二条', organizationId)
       const otherFormRow = await createData(otherForm.id, exactName, organizationId)
@@ -126,10 +120,10 @@ test(
             fieldValue: '2025-01-01T00:00:00.000Z',
           },
         ].map((row) => ({
-          id: prisma8Id32(),
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
-          fieldValue: prisma8Varchar(row.fieldValue, 255),
+          id: createLegacyId32(),
+          resourceId: row.resourceId,
+          fieldId: row.fieldId,
+          fieldValue: row.fieldValue,
         })),
       )
       await prisma8Client.orm.public.CustomFormDataFieldBlob.createAll(
@@ -145,9 +139,9 @@ test(
             fieldValue: JSON.stringify(['normal']),
           },
         ].map((row) => ({
-          id: prisma8Id32(),
-          resourceId: prisma8Varchar(row.resourceId, 32),
-          fieldId: prisma8Varchar(row.fieldId, 32),
+          id: createLegacyId32(),
+          resourceId: row.resourceId,
+          fieldId: row.fieldId,
           fieldValue: row.fieldValue,
         })),
       )
@@ -191,10 +185,9 @@ test(
           )
         ).sort()
 
-      assert.deepEqual(
-        await filtered([{ key: 'name', op: 'contains', value: `O'Reilly` }]),
-        [first.id],
-      )
+      assert.deepEqual(await filtered([{ key: 'name', op: 'contains', value: `O'Reilly` }]), [
+        first.id,
+      ])
       assert.deepEqual(await filtered([{ key: 'score', op: 'gte', value: 60 }]), [first.id])
       assert.deepEqual(await filtered([{ key: 'tags', op: 'contains', value: 'vip' }]), [first.id])
       assert.deepEqual(
@@ -263,9 +256,9 @@ test(
       }
     } finally {
       if (createdFormIds.length) {
-        await prisma8Client.orm.public.CustomForm
-          .where((row) => row.id.in(createdFormIds.map((id) => prisma8Varchar(id, 32))))
-          .deleteAll()
+        await prisma8Client.orm.public.CustomForm.where((row) =>
+          row.id.in(createdFormIds.map((id) => id)),
+        ).deleteAll()
       }
       await testDb.close()
     }
@@ -379,8 +372,8 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.CustomForm.where({
-            id: prisma8Varchar(form.id, 32),
-            organizationId: prisma8Varchar(tenant.id, 32),
+            id: form.id,
+            organizationId: tenant.id,
           })
             .select('id')
             .all()
@@ -388,17 +381,14 @@ test(
         1,
       )
       assert.equal(
-        (
-          await prisma8Client.orm.public.SysModuleForm.where({ id: prisma8Varchar(form.id, 32) })
-            .select('id')
-            .all()
-        ).length,
+        (await prisma8Client.orm.public.SysModuleForm.where({ id: form.id }).select('id').all())
+          .length,
         1,
       )
       assert.equal(
         (
           await prisma8Client.orm.public.SysModuleField.where({
-            formId: prisma8Varchar(form.id, 32),
+            formId: form.id,
           })
             .select('id')
             .all()
@@ -408,7 +398,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.CustomFormRole.where({
-            customFormId: prisma8Varchar(form.id, 32),
+            customFormId: form.id,
           })
             .select('id')
             .all()
@@ -418,7 +408,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.CustomFormAdmin.where({
-            customFormId: prisma8Varchar(form.id, 32),
+            customFormId: form.id,
           })
             .select('id')
             .all()
@@ -426,14 +416,17 @@ test(
         1,
       )
       const formBlob = await prisma8Client.orm.public.SysModuleFormBlob.where({
-        id: prisma8Varchar(form.id, 32),
+        id: form.id,
       }).first()
       assert.ok(formBlob)
       assert.deepEqual(JSON.parse(formBlob.prop ?? '{}'), { layout: 'two-column' })
 
       await service.setRoleUsers(actor, form.id, 'MANAGE_OWN', [member.id])
       const memberForms = await service.list(memberActor)
-      assert.equal(memberForms.some((item) => item.id === form.id), true)
+      assert.equal(
+        memberForms.some((item) => item.id === form.id),
+        true,
+      )
       assert.equal(memberForms.find((item) => item.id === form.id)?.hasCreateDataPermission, true)
 
       const created = await service.createData(actor, form.id, {
@@ -445,15 +438,15 @@ test(
       assert.equal(created.values['note'], '初始备注')
       assert.deepEqual(created.values['tags'], ['vip', 'new'])
       const persisted = await prisma8Client.orm.public.CustomFormData.where({
-        id: prisma8Varchar(created.id, 32),
+        id: created.id,
       }).first()
       assert.ok(persisted)
       assert.equal(persisted.owner, admin.id)
       assert.equal(
         (
           await prisma8Client.orm.public.CustomFormDataField.where({
-            resourceId: prisma8Varchar(created.id, 32),
-            fieldId: prisma8Varchar(noteField.id, 32),
+            resourceId: created.id,
+            fieldId: noteField.id,
           })
             .select('id')
             .all()
@@ -463,8 +456,8 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.CustomFormDataFieldBlob.where({
-            resourceId: prisma8Varchar(created.id, 32),
-            fieldId: prisma8Varchar(tagsField.id, 32),
+            resourceId: created.id,
+            fieldId: tagsField.id,
           })
             .select('id')
             .all()
@@ -504,7 +497,7 @@ test(
       assert.equal(
         (
           await prisma8Client.orm.public.CustomFormData.where({
-            id: prisma8Varchar(created.id, 32),
+            id: created.id,
           })
             .select('id')
             .all()
@@ -514,24 +507,18 @@ test(
 
       await service.remove(actor, form.id)
       assert.equal(
-        (
-          await prisma8Client.orm.public.CustomForm.where({ id: prisma8Varchar(form.id, 32) })
-            .select('id')
-            .all()
-        ).length,
+        (await prisma8Client.orm.public.CustomForm.where({ id: form.id }).select('id').all())
+          .length,
         0,
       )
       assert.equal(
-        (
-          await prisma8Client.orm.public.SysModuleForm.where({ id: prisma8Varchar(form.id, 32) })
-            .select('id')
-            .all()
-        ).length,
+        (await prisma8Client.orm.public.SysModuleForm.where({ id: form.id }).select('id').all())
+          .length,
         0,
       )
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.CustomFormData.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.SysModuleForm.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.CustomForm.where({ organizationId }).deleteAll()

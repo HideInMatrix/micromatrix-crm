@@ -3,13 +3,10 @@ import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { FieldVO } from '@micromatrix/shared'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { ModuleFormsService } from './module-forms.service'
-import {
-  RESOURCE_FIELD_TYPES,
-  ResourceFieldValueService,
-} from './resource-field-value.service'
+import { RESOURCE_FIELD_TYPES, ResourceFieldValueService } from './resource-field-value.service'
 
 const databaseUrl = process.env['DATABASE_URL']
 
@@ -81,10 +78,9 @@ test(
     const moduleForms = {
       listFields: async () => filterFields,
     } as unknown as ModuleFormsService
-    const service = new ResourceFieldValueService(
-      moduleForms,
-      { client: prisma8 } as Prisma8Service,
-    )
+    const service = new ResourceFieldValueService(moduleForms, {
+      client: prisma8,
+    } as Prisma8Service)
     const organizationId = shortId('p8meta')
     const otherOrganizationId = shortId('p8other')
     const actorId = shortId('p8user')
@@ -100,43 +96,38 @@ test(
         )
       }
 
-      const actor = prisma8Varchar(actorId, 32)
-      const target = await prisma8.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar(`Prisma8 Metadata ${randomUUID()}`, 255),
-          organizationId: prisma8Varchar(organizationId, 32),
-          createTime: timestamp,
-          updateTime: timestamp,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const lowScore = await prisma8.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar(`Prisma8 Metadata low ${randomUUID()}`, 255),
-          organizationId: prisma8Varchar(organizationId, 32),
-          createTime: timestamp,
-          updateTime: timestamp,
-          createUser: actor,
-          updateUser: actor,
-        })
-      const otherTenant = await prisma8.orm.public.Customer
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar(`Prisma8 Metadata other ${randomUUID()}`, 255),
-          organizationId: prisma8Varchar(otherOrganizationId, 32),
-          createTime: timestamp,
-          updateTime: timestamp,
-          createUser: actor,
-          updateUser: actor,
-        })
+      const actor = actorId
+      const target = await prisma8.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: `Prisma8 Metadata ${randomUUID()}`,
+        organizationId: organizationId,
+        createTime: timestamp,
+        updateTime: timestamp,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const lowScore = await prisma8.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: `Prisma8 Metadata low ${randomUUID()}`,
+        organizationId: organizationId,
+        createTime: timestamp,
+        updateTime: timestamp,
+        createUser: actor,
+        updateUser: actor,
+      })
+      const otherTenant = await prisma8.orm.public.Customer.select('id').create({
+        id: createLegacyId32(),
+        name: `Prisma8 Metadata other ${randomUUID()}`,
+        organizationId: otherOrganizationId,
+        createTime: timestamp,
+        updateTime: timestamp,
+        createUser: actor,
+        updateUser: actor,
+      })
       customerIds.push(target.id, lowScore.id, otherTenant.id)
 
-      await prisma8.orm.public.CustomerField.createAll([
+      await prisma8.orm.public.CustomerField.createAll(
+        [
           { resourceId: target.id, fieldId: 'p8-field-score', fieldValue: '88' },
           {
             resourceId: target.id,
@@ -156,12 +147,14 @@ test(
             fieldValue: '2026-09-10T12:00:00.000Z',
           },
         ].map((item) => ({
-          id: prisma8Id32(),
+          id: createLegacyId32(),
           resourceId: item.resourceId,
-          fieldId: prisma8Varchar(item.fieldId, 32),
-          fieldValue: prisma8Varchar(item.fieldValue, 255),
-        })))
-      await prisma8.orm.public.CustomerFieldBlob.createAll([
+          fieldId: item.fieldId,
+          fieldValue: item.fieldValue,
+        })),
+      )
+      await prisma8.orm.public.CustomerFieldBlob.createAll(
+        [
           {
             resourceId: target.id,
             fieldId: 'p8-field-tags',
@@ -178,11 +171,12 @@ test(
             fieldValue: JSON.stringify(['important']),
           },
         ].map((item) => ({
-          id: prisma8Id32(),
+          id: createLegacyId32(),
           resourceId: item.resourceId,
-          fieldId: prisma8Varchar(item.fieldId, 32),
+          fieldId: item.fieldId,
           fieldValue: item.fieldValue,
-        })))
+        })),
+      )
 
       assert.deepEqual(
         await service.filterResourceIds(organizationId, 'customer', [
@@ -201,9 +195,7 @@ test(
       )
     } finally {
       if (customerIds.length) {
-        await prisma8.orm.public.Customer
-          .where((row) => row.id.in(prisma8Varchars(customerIds, 32)))
-          .deleteAll()
+        await prisma8.orm.public.Customer.where((row) => row.id.in(customerIds)).deleteAll()
       }
       await testDb.close()
     }

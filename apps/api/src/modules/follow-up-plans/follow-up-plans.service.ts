@@ -31,7 +31,7 @@ import {
   prisma8TimestampFromISOString,
   prisma8TimestampToISOString,
 } from '../../prisma/prisma8-temporal'
-import { prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -424,22 +424,18 @@ export class FollowUpPlansService {
         .map((plan) => plan.targetId),
     }
     const leads = groups.lead.length
-      ? await this.prisma8.client.orm.public.Clue.where((row) =>
-          row.id.in(prisma8Varchars(groups.lead, 32)),
-        )
+      ? await this.prisma8.client.orm.public.Clue.where((row) => row.id.in(groups.lead))
           .select('id', 'name')
           .all()
       : []
     const customers = groups.customer.length
-      ? await this.prisma8.client.orm.public.Customer.where((row) =>
-          row.id.in(prisma8Varchars(groups.customer, 32)),
-        )
+      ? await this.prisma8.client.orm.public.Customer.where((row) => row.id.in(groups.customer))
           .select('id', 'name')
           .all()
       : []
     const opportunities = groups.opportunity.length
       ? await this.prisma8.client.orm.public.Opportunity.where((row) =>
-          row.id.in(prisma8Varchars(groups.opportunity, 32)),
+          row.id.in(groups.opportunity),
         )
           .select('id', 'name')
           .all()
@@ -496,8 +492,8 @@ export class FollowUpPlansService {
       const permission = write ? 'lead:update' : 'menu:lead'
       if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无线索权限')
       const lead = await this.prisma8.client.orm.public.Clue.where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: id,
+        organizationId: user.tenantId,
       }).first()
       if (!lead) throw new NotFoundException('线索不存在')
       if (lead.inSharedPool) {
@@ -512,8 +508,8 @@ export class FollowUpPlansService {
     const permission = write ? 'opportunity:update' : 'menu:opportunity'
     if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无商机权限')
     const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (
       !opportunity ||
@@ -536,8 +532,8 @@ export class FollowUpPlansService {
       customerId =
         (
           await this.prisma8.client.orm.public.Opportunity.where({
-            id: prisma8Varchar(targetId, 32),
-            organizationId: prisma8Varchar(tenantId, 32),
+            id: targetId,
+            organizationId: tenantId,
           })
             .select('customerId')
             .first()
@@ -545,9 +541,9 @@ export class FollowUpPlansService {
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
     const contact = await this.prisma8.client.orm.public.CustomerContact.where({
-      id: prisma8Varchar(contactId, 32),
-      organizationId: prisma8Varchar(tenantId, 32),
-      customerId: prisma8Varchar(customerId, 32),
+      id: contactId,
+      organizationId: tenantId,
+      customerId: customerId,
     }).first()
     if (!contact) throw new BadRequestException('联系人不属于当前客户')
   }
@@ -598,14 +594,14 @@ export class FollowUpPlansService {
       this.dataScope.resolveScope(user, 'customer:read'),
       this.dataScope.resolveScope(user, 'menu:opportunity'),
       this.prisma8.client.orm.public.CustomerCollaboration.where({
-        userId: prisma8Varchar(user.id, 32),
+        userId: user.id,
       })
         .select('customerId')
         .all(),
     ])
     const collaborationCustomerIds = collaborationRows.length
       ? await this.prisma8.client.orm.public.Customer.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
           .where((row) => row.id.in(collaborationRows.map((item) => item.customerId)))
           .select('id')
@@ -657,7 +653,7 @@ export class FollowUpPlansService {
   }
 
   private async keywordTargetIds(tenantId: string, keyword: string) {
-    const organizationId = prisma8Varchar(tenantId, 32)
+    const organizationId = tenantId
     const [leads, customers, opportunities] = await Promise.all([
       this.prisma8.client.orm.public.Clue.where({ organizationId })
         .where((row) => row.name.ilike(`%${keyword}%`))
@@ -701,7 +697,8 @@ export class FollowUpPlansService {
     }
 
     let directQuery = this.prisma8.client.orm.public.FollowUpPlans.where({ tenantId })
-    for (const item of direct) directQuery = this.applySystemFilter(directQuery, item.field, item.condition)
+    for (const item of direct)
+      directQuery = this.applySystemFilter(directQuery, item.field, item.condition)
     const [directRows, dynamicIds] = await Promise.all([
       direct.length ? directQuery.select('id').all() : null,
       dynamic.length ? this.fieldValues.filterResourceIds(tenantId, 'followPlan', dynamic) : null,
@@ -750,7 +747,8 @@ export class FollowUpPlansService {
       throw new BadRequestException('计划时间不支持该筛选操作')
     }
     if (key === 'status') {
-      if (condition.op === 'isEmpty') return collection.where((row) => row.id.eq('__empty_status__'))
+      if (condition.op === 'isEmpty')
+        return collection.where((row) => row.id.eq('__empty_status__'))
       if (condition.op === 'notEmpty') return collection
       if (condition.value === undefined || condition.value === null || condition.value === '') {
         throw new BadRequestException(`「${field.label}」筛选值不能为空`)
@@ -811,12 +809,14 @@ export class FollowUpPlansService {
 
     const value = String(condition.value)
     if (key === 'contactId') {
-      if (condition.op === 'contains') return collection.where((row) => row.contactId.ilike(`%${value}%`))
+      if (condition.op === 'contains')
+        return collection.where((row) => row.contactId.ilike(`%${value}%`))
       if (condition.op === 'eq') return collection.where((row) => row.contactId.eq(value))
       if (condition.op === 'ne') return collection.where((row) => row.contactId.neq(value))
     }
     if (key === 'method') {
-      if (condition.op === 'contains') return collection.where((row) => row.method.ilike(`%${value}%`))
+      if (condition.op === 'contains')
+        return collection.where((row) => row.method.ilike(`%${value}%`))
       if (condition.op === 'eq') return collection.where((row) => row.method.eq(value))
       if (condition.op === 'ne') return collection.where((row) => row.method.neq(value))
     }
@@ -875,17 +875,17 @@ export class FollowUpPlansService {
         : [],
       contactIds.length
         ? this.prisma8.client.orm.public.CustomerContact.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
-            .where((row) => row.id.in(prisma8Varchars(contactIds, 32)))
+            .where((row) => row.id.in(contactIds))
             .select('id', 'name')
             .all()
         : [],
       opportunityIds.length
         ? this.prisma8.client.orm.public.Opportunity.where({
-            organizationId: prisma8Varchar(user.tenantId, 32),
+            organizationId: user.tenantId,
           })
-            .where((row) => row.id.in(prisma8Varchars(opportunityIds, 32)))
+            .where((row) => row.id.in(opportunityIds))
             .select('id', 'customerId')
             .all()
         : [],
@@ -899,7 +899,10 @@ export class FollowUpPlansService {
     const ownerMap = new Map(owners.map((item) => [String(item.id), String(item.name)]))
     const contactMap = new Map(contacts.map((item) => [String(item.id), String(item.name)]))
     const opportunityCustomerMap = new Map(
-      opportunities.map((item) => [String(item.id), item.customerId ? String(item.customerId) : null]),
+      opportunities.map((item) => [
+        String(item.id),
+        item.customerId ? String(item.customerId) : null,
+      ]),
     )
     const admin = hasPermission(user.permissions, '*')
     return plans.map((plan) => {

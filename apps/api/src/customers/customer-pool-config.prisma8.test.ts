@@ -4,7 +4,7 @@ import type { AuthUser } from '../common/auth-user'
 import type { MetadataService } from '../modules/metadata/metadata.service'
 import type { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
 import type { Prisma8Service } from '../prisma/prisma8.service'
-import { prisma8Id32, prisma8Varchar } from '../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../common/legacy-id'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -31,26 +31,36 @@ test(
         name: 'Pool Operator',
       })
       const now = BigInt(Date.now())
-      const organizationId = prisma8Varchar(tenant.id, 32)
-      const userId = prisma8Varchar(user.id, 32)
-      const pool = await prisma8Client.orm.public.CustomerPool
-        .select('id', 'scopeId', 'organizationId', 'name', 'ownerId', 'enable', 'auto', 'createTime', 'updateTime', 'createUser', 'updateUser')
-        .create({
-          id: prisma8Id32(),
-          scopeId: JSON.stringify([user.id]),
-          organizationId,
-          name: prisma8Varchar('Shared Pool', 255),
-          ownerId: JSON.stringify([user.id]),
-          enable: true,
-          auto: false,
-          createTime: now,
-          updateTime: now,
-          createUser: userId,
-          updateUser: userId,
-        })
+      const organizationId = tenant.id
+      const userId = user.id
+      const pool = await prisma8Client.orm.public.CustomerPool.select(
+        'id',
+        'scopeId',
+        'organizationId',
+        'name',
+        'ownerId',
+        'enable',
+        'auto',
+        'createTime',
+        'updateTime',
+        'createUser',
+        'updateUser',
+      ).create({
+        id: createLegacyId32(),
+        scopeId: JSON.stringify([user.id]),
+        organizationId,
+        name: 'Shared Pool',
+        ownerId: JSON.stringify([user.id]),
+        enable: true,
+        auto: false,
+        createTime: now,
+        updateTime: now,
+        createUser: userId,
+        updateUser: userId,
+      })
       await prisma8Client.orm.public.Customer.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar('Pool Customer', 255),
+        id: createLegacyId32(),
+        name: 'Pool Customer',
         owner: null,
         poolId: pool.id,
         organizationId,
@@ -60,20 +70,18 @@ test(
         updateUser: userId,
         inSharedPool: true,
       })
-      const stage = await prisma8Client.orm.public.OpportunityStageConfig
-        .select('id')
-        .create({
-          id: prisma8Id32(),
-          name: prisma8Varchar('进行中', 16),
-          _type: prisma8Varchar('AFOOT', 50),
-          rate: prisma8Varchar('50', 10),
-          pos: 1n,
-          organizationId,
-          createTime: now,
-          updateTime: now,
-          createUser: userId,
-          updateUser: userId,
-        })
+      const stage = await prisma8Client.orm.public.OpportunityStageConfig.select('id').create({
+        id: createLegacyId32(),
+        name: '进行中',
+        _type: 'AFOOT',
+        rate: '50',
+        pos: 1n,
+        organizationId,
+        createTime: now,
+        updateTime: now,
+        createUser: userId,
+        updateUser: userId,
+      })
 
       let savedFilters: unknown = null
       const repository = {
@@ -86,11 +94,7 @@ test(
           },
         ],
         listCapacities: async () => [],
-        createCapacity: async (
-          _tenantId: string,
-          _userId: string,
-          input: { filters: unknown },
-        ) => {
+        createCapacity: async (_tenantId: string, _userId: string, input: { filters: unknown }) => {
           savedFilters = input.filters
         },
       } as unknown as CustomerPoolRepository
@@ -120,9 +124,7 @@ test(
         capacity: 10,
         filters: [{ column: 'stage', operator: 'NOT_IN', value: [stage.id] }],
       })
-      assert.deepEqual(savedFilters, [
-        { column: 'stage', operator: 'NOT_IN', value: [stage.id] },
-      ])
+      assert.deepEqual(savedFilters, [{ column: 'stage', operator: 'NOT_IN', value: [stage.id] }])
 
       await assert.rejects(
         () =>
@@ -140,7 +142,7 @@ test(
       assert.equal(page.list[0]?.updateUserName, 'Pool Operator')
     } finally {
       if (tenantId) {
-        const organizationId = prisma8Varchar(tenantId, 32)
+        const organizationId = tenantId
         await prisma8Client.orm.public.Customer.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.CustomerPool.where({ organizationId }).deleteAll()
         await prisma8Client.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()

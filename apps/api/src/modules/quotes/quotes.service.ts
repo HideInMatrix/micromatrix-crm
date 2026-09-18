@@ -13,7 +13,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import type { Prisma8Client } from '../../prisma/prisma8-client'
 import { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar, prisma8Varchars } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ApprovalsService } from '../approvals/approvals.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
@@ -90,25 +90,23 @@ export class QuotesService {
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
     let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
     const creatorFilter = await this.dataScope.directCreatorFilter(user, READ_PERMISSION)
     const creatorScope = creatorFilter.createUser
     if (creatorScope) {
       query =
         typeof creatorScope === 'string'
-          ? query.where({ createUser: prisma8Varchar(creatorScope, 32) })
-          : query.where((row) =>
-              row.createUser.in(prisma8Varchars(creatorScope.in, 32)),
-            )
+          ? query.where({ createUser: creatorScope })
+          : query.where((row) => row.createUser.in(creatorScope.in))
     }
-    if (filteredIds) query = query.where((row) => row.id.in(prisma8Varchars(filteredIds, 32)))
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
     if (dto.opportunityId) {
-      query = query.where({ opportunityId: prisma8Varchar(dto.opportunityId, 32) })
+      query = query.where({ opportunityId: dto.opportunityId })
     }
     if (dto.keyword) {
       const opportunityIds = await this.prisma8.client.orm.public.Opportunity.where({
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
       })
         .where((row) => row.name.ilike(`%${dto.keyword}%`))
         .select('id')
@@ -133,9 +131,7 @@ export class QuotesService {
     const total = aggregate.count
     const opportunityIds = [...new Set(rows.map((row) => row.opportunityId))]
     const opportunities = opportunityIds.length
-      ? await this.prisma8.client.orm.public.Opportunity.where((row) =>
-          row.id.in(opportunityIds),
-        )
+      ? await this.prisma8.client.orm.public.Opportunity.where((row) => row.id.in(opportunityIds))
           .select('id', 'name')
           .all()
       : []
@@ -174,18 +170,18 @@ export class QuotesService {
     const now = BigInt(Date.now())
     const created = await this.prisma8.client.transaction(async (tx) => {
       const row = await tx.orm.public.OpportunityQuotation.create({
-        id: prisma8Id32(),
-        name: prisma8Varchar(dto.name.trim(), 255),
-        opportunityId: prisma8Varchar(dto.opportunityId, 32),
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        opportunityId: dto.opportunityId,
         untilTime: BigInt(dto.untilTime),
         amount: prisma8Numeric(dto.amount ?? 0, 14, 2),
-        approvalStatus: prisma8Varchar('NONE', 50),
+        approvalStatus: 'NONE',
         invalid: false,
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
-        createUser: prisma8Varchar(user.id, 32),
-        updateUser: prisma8Varchar(user.id, 32),
+        createUser: user.id,
+        updateUser: user.id,
         approved: false,
       })
       await this.fieldValues.save(
@@ -246,15 +242,14 @@ export class QuotesService {
         : null
     await this.prisma8.client.transaction(async (tx) => {
       const row = await tx.orm.public.OpportunityQuotation.where({
-        id: prisma8Varchar(dto.id, 32),
+        id: dto.id,
       }).update({
-        name: dto.name === undefined ? undefined : prisma8Varchar(dto.name.trim(), 255),
-        opportunityId:
-          dto.opportunityId === undefined ? undefined : prisma8Varchar(dto.opportunityId, 32),
+        name: dto.name === undefined ? undefined : dto.name.trim(),
+        opportunityId: dto.opportunityId === undefined ? undefined : dto.opportunityId,
         untilTime: dto.untilTime === undefined ? undefined : BigInt(dto.untilTime),
         amount: dto.amount === undefined ? undefined : prisma8Numeric(dto.amount, 14, 2),
         updateTime: BigInt(Date.now()),
-        updateUser: prisma8Varchar(user.id, 32),
+        updateUser: user.id,
       })
       if (!row) throw new NotFoundException('报价不存在')
       if (customData !== undefined)
@@ -270,7 +265,7 @@ export class QuotesService {
       if (dto.products !== undefined)
         await this.quotationFields.saveProducts(user.tenantId, dto.id, dto.products, tx)
       await tx.orm.public.OpportunityQuotationSnapshot.where({
-        quotationId: prisma8Varchar(dto.id, 32),
+        quotationId: dto.id,
       }).deleteAll()
       await this.writeSnapshot(tx, dto.id, config, {
         id: row.id,
@@ -296,8 +291,8 @@ export class QuotesService {
 
   async get(user: AuthUser, id: string): Promise<QuoteVO> {
     const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('报价不存在')
     if (!(await this.dataScope.matchesDirectCreator(user, row.createUser, READ_PERMISSION))) {
@@ -305,7 +300,7 @@ export class QuotesService {
     }
     const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
       id: row.opportunityId,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select('name')
       .first()
@@ -314,13 +309,19 @@ export class QuotesService {
       this.fieldValues.load(user.tenantId, 'quotation', [id]),
       this.quotationFields.loadProducts(user.tenantId, id),
     ])
-    return this.toVO(row, opportunity?.name ?? '已删除商机', fields, dynamic.get(id) ?? {}, products)
+    return this.toVO(
+      row,
+      opportunity?.name ?? '已删除商机',
+      fields,
+      dynamic.get(id) ?? {},
+      products,
+    )
   }
 
   async getSnapshot(user: AuthUser, id: string) {
     const current = await this.get(user, id)
     const snapshot = await this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({
-      quotationId: prisma8Varchar(id, 32),
+      quotationId: id,
     })
       .orderBy((row) => row.id.desc())
       .first()
@@ -337,7 +338,7 @@ export class QuotesService {
   async getSnapshotForm(user: AuthUser, id: string) {
     await this.get(user, id)
     const snapshot = await this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({
-      quotationId: prisma8Varchar(id, 32),
+      quotationId: id,
     })
       .orderBy((row) => row.id.desc())
       .first()
@@ -349,9 +350,9 @@ export class QuotesService {
     const ids = [...new Set(dto.ids)]
     const rows = ids.length
       ? await this.prisma8.client.orm.public.OpportunityQuotation.where({
-          organizationId: prisma8Varchar(user.tenantId, 32),
+          organizationId: user.tenantId,
         })
-          .where((row) => row.id.in(prisma8Varchars(ids, 32)))
+          .where((row) => row.id.in(ids))
           .select('id', 'createUser')
           .all()
       : []
@@ -368,29 +369,29 @@ export class QuotesService {
     const now = BigInt(Date.now())
     if (field.system) {
       const target = this.prisma8.client.orm.public.OpportunityQuotation.where((row) =>
-        row.id.in(prisma8Varchars(allowed, 32)),
+        row.id.in(allowed),
       )
       if (field.key === 'name') {
         const name = String(dto.fieldValue ?? '').trim()
         if (!name) throw new BadRequestException('报价名称不能为空')
         await target.updateAndCount({
-          name: prisma8Varchar(name, 255),
+          name: name,
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       } else if (field.key === 'opportunityId') {
         const opportunityId = String(dto.fieldValue ?? '')
         await this.assertOpportunity(user.tenantId, opportunityId)
         await target.updateAndCount({
-          opportunityId: prisma8Varchar(opportunityId, 32),
+          opportunityId: opportunityId,
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       } else if (field.key === 'untilTime') {
         await target.updateAndCount({
           untilTime: BigInt(Number(dto.fieldValue)),
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       } else if (field.key === 'amount') {
         const amount = Number(dto.fieldValue ?? 0)
@@ -398,7 +399,7 @@ export class QuotesService {
         await target.updateAndCount({
           amount: prisma8Numeric(amount, 14, 2),
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       } else throw new BadRequestException('该系统字段不支持批量编辑')
     } else {
@@ -411,11 +412,9 @@ export class QuotesService {
           dto.fieldValue,
           tx,
         )
-        await tx.orm.public.OpportunityQuotation.where((row) =>
-          row.id.in(prisma8Varchars(allowed, 32)),
-        ).updateAndCount({
+        await tx.orm.public.OpportunityQuotation.where((row) => row.id.in(allowed)).updateAndCount({
           updateTime: now,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
         })
       })
     }
@@ -441,8 +440,8 @@ export class QuotesService {
     let skip = 0
     for (const id of [...new Set(dto.ids)]) {
       const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
-        id: prisma8Varchar(id, 32),
-        organizationId: prisma8Varchar(user.tenantId, 32),
+        id: id,
+        organizationId: user.tenantId,
       })
         .select('approvalStatus')
         .first()
@@ -464,10 +463,10 @@ export class QuotesService {
     const row = await this.ensureWritable(user, id)
     if (row.invalid === invalid) return this.get(user, id)
     await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(id, 32),
+      id: id,
     }).update({
       invalid,
-      updateUser: prisma8Varchar(user.id, 32),
+      updateUser: user.id,
       updateTime: BigInt(Date.now()),
     })
     await this.refreshSnapshot(user, id)
@@ -487,10 +486,10 @@ export class QuotesService {
           continue
         }
         await this.prisma8.client.orm.public.OpportunityQuotation.where({
-          id: prisma8Varchar(id, 32),
+          id: id,
         }).update({
           invalid: true,
-          updateUser: prisma8Varchar(user.id, 32),
+          updateUser: user.id,
           updateTime: BigInt(Date.now()),
         })
         await this.refreshSnapshot(user, id)
@@ -524,8 +523,8 @@ export class QuotesService {
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
     await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).delete()
     return { id, name: row.name, pendingApproval: false }
   }
@@ -535,7 +534,7 @@ export class QuotesService {
     const config = await this.moduleForms.getConfig(user.tenantId, FORM_KEY)
     await this.prisma8.client.transaction(async (tx) => {
       await tx.orm.public.OpportunityQuotationSnapshot.where({
-        quotationId: prisma8Varchar(id, 32),
+        quotationId: id,
       }).deleteAll()
       await this.writeSnapshot(tx, id, config, current)
     })
@@ -573,8 +572,8 @@ export class QuotesService {
 
   private async assertOpportunity(organizationId: string, opportunityId: string) {
     const exists = await this.prisma8.client.orm.public.Opportunity.where({
-      id: prisma8Varchar(opportunityId, 32),
-      organizationId: prisma8Varchar(organizationId, 32),
+      id: opportunityId,
+      organizationId: organizationId,
     })
       .select('id')
       .first()
@@ -583,18 +582,18 @@ export class QuotesService {
 
   private async assertNameUnique(organizationId: string, name: string, excludeId?: string) {
     let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
-      organizationId: prisma8Varchar(organizationId, 32),
-      name: prisma8Varchar(name.trim(), 255),
+      organizationId: organizationId,
+      name: name.trim(),
     })
-    if (excludeId) query = query.where((row) => row.id.neq(prisma8Varchar(excludeId, 32)))
+    if (excludeId) query = query.where((row) => row.id.neq(excludeId))
     const exists = await query.select('id').first()
     if (exists) throw new BadRequestException('报价名称不能重复')
   }
 
   private async ensureWritable(user: AuthUser, id: string) {
     const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
-      id: prisma8Varchar(id, 32),
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      id: id,
+      organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('报价不存在')
     if (!(await this.dataScope.matchesDirectCreator(user, row.createUser, 'quote:update'))) {
@@ -641,18 +640,19 @@ export class QuotesService {
             .all()
           const creatorIds = users.map((item) => String(item.id))
           let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
-            organizationId: prisma8Varchar(organizationId, 32),
+            organizationId: organizationId,
           })
-          query = condition.op === 'ne'
-            ? query.where((row) => not(row.createUser.in(prisma8Varchars(creatorIds, 32))))
-            : query.where((row) => row.createUser.in(prisma8Varchars(creatorIds, 32)))
+          query =
+            condition.op === 'ne'
+              ? query.where((row) => not(row.createUser.in(creatorIds)))
+              : query.where((row) => row.createUser.in(creatorIds))
           const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         const directKey = condition.key === 'owner' ? 'createUser' : condition.key
         if (directKeys.has(condition.key)) {
           let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
-            organizationId: prisma8Varchar(organizationId, 32),
+            organizationId: organizationId,
           })
           query = this.applyQuotationSystemFilter(query, directKey, condition)
           const rows = await query.select('id').all()
@@ -684,7 +684,7 @@ export class QuotesService {
     condition: FilterCondition,
   ) {
     if (condition.op === 'isEmpty') {
-      return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+      return collection.where((row) => row.id.eq(''))
     }
     if (condition.op === 'notEmpty') return collection
     const dateKeys = new Set(['untilTime', 'createTime', 'updateTime'])
@@ -696,10 +696,15 @@ export class QuotesService {
         Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
           ? direct
           : new Date(String(condition.value)).getTime()
-      if (!Number.isFinite(millis)) return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+      if (!Number.isFinite(millis)) return collection.where((row) => row.id.eq(''))
       const value = BigInt(Math.trunc(millis))
       return collection.where((row) => {
-        const field = key === 'untilTime' ? row.untilTime : key === 'createTime' ? row.createTime : row.updateTime
+        const field =
+          key === 'untilTime'
+            ? row.untilTime
+            : key === 'createTime'
+              ? row.createTime
+              : row.updateTime
         if (condition.op === 'eq') return field.eq(value)
         if (condition.op === 'ne') return field.neq(value)
         if (condition.op === 'gt') return field.gt(value)
@@ -713,12 +718,12 @@ export class QuotesService {
             .map((item) => BigInt(Math.trunc(item)))
           return condition.op === 'notIn' ? not(field.in(values)) : field.in(values)
         }
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
     if (numberKeys.has(key)) {
       const number = Number(condition.value)
-      if (!Number.isFinite(number)) return collection.where((row) => row.id.eq(prisma8Varchar('', 32)))
+      if (!Number.isFinite(number)) return collection.where((row) => row.id.eq(''))
       const value = prisma8Numeric(number, 14, 2)
       const values = (Array.isArray(condition.value) ? condition.value : [condition.value])
         .map((item) => Number(item))
@@ -733,7 +738,7 @@ export class QuotesService {
         if (condition.op === 'gte') return row.amount.gte(value)
         if (condition.op === 'lt') return row.amount.lt(value)
         if (condition.op === 'lte') return row.amount.lte(value)
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
     if (boolKeys.has(key)) {
@@ -746,13 +751,13 @@ export class QuotesService {
         if (condition.op === 'ne') return field.neq(value)
         if (condition.op === 'in') return field.in(values)
         if (condition.op === 'notIn') return not(field.in(values))
-        return row.id.eq(prisma8Varchar('', 32))
+        return row.id.eq('')
       })
     }
     const maxLength = key === 'name' ? 255 : key === 'approvalStatus' ? 50 : 32
     const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
     if (key === 'name') {
-      const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 255))
+      const values = rawValues.map((item) => String(item ?? ''))
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.name.eq(value)
@@ -760,35 +765,44 @@ export class QuotesService {
         if (condition.op === 'in') return row.name.in(values)
         if (condition.op === 'notIn') return not(row.name.in(values))
         if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
-        if (condition.op === 'notContains') return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
       })
     }
     if (key === 'approvalStatus') {
-      const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 50))
+      const values = rawValues.map((item) => String(item ?? ''))
       const value = values[0]!
       return collection.where((row) => {
         if (condition.op === 'eq') return row.approvalStatus.eq(value)
         if (condition.op === 'ne') return row.approvalStatus.neq(value)
         if (condition.op === 'in') return row.approvalStatus.in(values)
         if (condition.op === 'notIn') return not(row.approvalStatus.in(values))
-        if (condition.op === 'contains') return row.approvalStatus.ilike(`%${String(condition.value ?? '')}%`)
-        if (condition.op === 'notContains') return not(row.approvalStatus.ilike(`%${String(condition.value ?? '')}%`))
-        return row.id.eq(prisma8Varchar('', 32))
+        if (condition.op === 'contains')
+          return row.approvalStatus.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.approvalStatus.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
       })
     }
     void maxLength
-    const values = rawValues.map((item) => prisma8Varchar(String(item ?? ''), 32))
+    const values = rawValues.map((item) => String(item ?? ''))
     const value = values[0]!
     return collection.where((row) => {
-      const field = key === 'opportunityId' ? row.opportunityId : key === 'updateUser' ? row.updateUser : row.createUser
+      const field =
+        key === 'opportunityId'
+          ? row.opportunityId
+          : key === 'updateUser'
+            ? row.updateUser
+            : row.createUser
       if (condition.op === 'eq') return field.eq(value)
       if (condition.op === 'ne') return field.neq(value)
       if (condition.op === 'in') return field.in(values)
       if (condition.op === 'notIn') return not(field.in(values))
       if (condition.op === 'contains') return field.ilike(`%${String(condition.value ?? '')}%`)
-      if (condition.op === 'notContains') return not(field.ilike(`%${String(condition.value ?? '')}%`))
-      return row.id.eq(prisma8Varchar('', 32))
+      if (condition.op === 'notContains')
+        return not(field.ilike(`%${String(condition.value ?? '')}%`))
+      return row.id.eq('')
     })
   }
 
@@ -806,8 +820,8 @@ export class QuotesService {
     value: unknown,
   ) {
     await tx.orm.public.OpportunityQuotationSnapshot.create({
-      id: prisma8Id32(),
-      quotationId: prisma8Varchar(quotationId, 32),
+      id: createLegacyId32(),
+      quotationId: quotationId,
       quotationProp: JSON.stringify(formConfig ?? {}),
       quotationValue: JSON.stringify(value ?? {}),
     })

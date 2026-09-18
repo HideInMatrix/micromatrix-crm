@@ -3,11 +3,11 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Numeric } from '../../prisma/prisma8-values'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
 
-const id32 = () => prisma8Id32()
+const id32 = () => createLegacyId32()
 
 test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租户隔离', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
@@ -38,40 +38,40 @@ test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租�
   }
 
   try {
-    const organizationId = prisma8Varchar(tenant.id, 32)
-    const actorVarchar = prisma8Varchar(actorId, 32)
+    const organizationId = tenant.id
+    const actorVarchar = actorId
     await prisma8Client.orm.public.Customer.create({
-        id: customerId,
-        name: prisma8Varchar('快照客户', 255),
-        owner: actorVarchar,
-        organizationId,
-        createTime: now,
-        updateTime: now,
-        createUser: actorVarchar,
-        updateUser: actorVarchar,
+      id: customerId,
+      name: '快照客户',
+      owner: actorVarchar,
+      organizationId,
+      createTime: now,
+      updateTime: now,
+      createUser: actorVarchar,
+      updateUser: actorVarchar,
     })
     await prisma8Client.orm.public.Contract.create({
-        id: contractId,
-        name: prisma8Varchar('Prisma 8 快照合同', 255),
-        customerId,
-        owner: actorVarchar,
-        amount: prisma8Numeric(123.45, 14, 2),
-        number: prisma8Varchar(`C-${suffix}`.slice(0, 50), 50),
-        stage: prisma8Varchar('AFOOT', 32),
-        startTime: now - 1_000n,
-        endTime: now + 1_000n,
-        organizationId,
-        pos: 4096n,
-        createTime: now,
-        updateTime: now,
-        createUser: actorVarchar,
-        updateUser: actorVarchar,
+      id: contractId,
+      name: 'Prisma 8 快照合同',
+      customerId,
+      owner: actorVarchar,
+      amount: prisma8Numeric(123.45, 14, 2),
+      number: `C-${suffix}`.slice(0, 50),
+      stage: 'AFOOT',
+      startTime: now - 1_000n,
+      endTime: now + 1_000n,
+      organizationId,
+      pos: 4096n,
+      createTime: now,
+      updateTime: now,
+      createUser: actorVarchar,
+      updateUser: actorVarchar,
     })
     await prisma8Client.orm.public.ContractField.create({
       id: id32(),
       resourceId: contractId,
       fieldId,
-      fieldValue: prisma8Varchar('normal-value', 255),
+      fieldValue: 'normal-value',
     })
     await prisma8Client.orm.public.ContractFieldBlob.create({
       id: id32(),
@@ -80,10 +80,10 @@ test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租�
       fieldValue: 'blob-value',
     })
     await prisma8Client.orm.public.ContractSnapshot.create({
-        id: id32(),
-        contractId,
-        contractProp: 'name',
-        contractValue: '历史合同名',
+      id: id32(),
+      contractId,
+      contractProp: 'name',
+      contractValue: '历史合同名',
     })
 
     const service = new ApprovalResourceCaptureService(prisma8)
@@ -110,15 +110,11 @@ test('ApprovalResourceCapture 使用 Prisma 8 保持 Contract JSON 快照与租�
       /合同不存在/,
     )
   } finally {
-    await prisma8Client.orm.public.Contract
-      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
-      .deleteAll()
-    await prisma8Client.orm.public.Customer
-      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
-      .deleteAll()
-    await prisma8Client.orm.public.Tenants
-      .where((row) => row.id.in([tenant.id, otherTenant.id]))
-      .deleteAll()
+    await prisma8Client.orm.public.Contract.where({ organizationId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Customer.where({ organizationId: tenant.id }).deleteAll()
+    await prisma8Client.orm.public.Tenants.where((row) =>
+      row.id.in([tenant.id, otherTenant.id]),
+    ).deleteAll()
     await testDb.close()
   }
 })

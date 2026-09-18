@@ -5,7 +5,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8Now } from '../../prisma/prisma8-temporal'
-import { prisma8Id32, prisma8Varchar } from '../../prisma/prisma8-varchar'
+import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestDepartment,
   createPrismaTestTenant,
@@ -15,7 +15,7 @@ import {
 import type { RolesService } from '../roles/roles.service'
 import { MembersService } from './members.service'
 
-const id32 = () => prisma8Id32()
+const id32 = () => createLegacyId32()
 
 test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除保护语义', async (t) => {
   const databaseUrl = process.env['DATABASE_URL']
@@ -34,24 +34,20 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
     tenantId: tenant.id,
     name: '产品部',
   })
-  const roleA = await prisma8Client.orm.public.Roles
-    .select('id', 'name')
-    .create({
-      tenantId: tenant.id,
-      name: '成员角色 A',
-      permissions: [],
-      dataScope: 'SELF',
-      updatedAt: prisma8Now(),
-    })
-  const roleB = await prisma8Client.orm.public.Roles
-    .select('id', 'name')
-    .create({
-      tenantId: tenant.id,
-      name: '成员角色 B',
-      permissions: [],
-      dataScope: 'SELF',
-      updatedAt: prisma8Now(),
-    })
+  const roleA = await prisma8Client.orm.public.Roles.select('id', 'name').create({
+    tenantId: tenant.id,
+    name: '成员角色 A',
+    permissions: [],
+    dataScope: 'SELF',
+    updatedAt: prisma8Now(),
+  })
+  const roleB = await prisma8Client.orm.public.Roles.select('id', 'name').create({
+    tenantId: tenant.id,
+    name: '成员角色 B',
+    permissions: [],
+    dataScope: 'SELF',
+    updatedAt: prisma8Now(),
+  })
   const leader = await createPrismaTestUser(prisma8Client, {
     tenantId: tenant.id,
     email: `leader-${suffix}@example.test`,
@@ -66,8 +62,7 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
   } as unknown as AuthContextCacheService
   const rolesService = {
     assertRolesAssignable: async (_actor: AuthUser, ids: string[]) =>
-      prisma8Client.orm.public.Roles
-        .where({ tenantId: tenant.id })
+      prisma8Client.orm.public.Roles.where({ tenantId: tenant.id })
         .where((row) => row.id.in(ids))
         .all(),
   } as unknown as RolesService
@@ -99,7 +94,11 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
     assert.equal(created.leaderName, '直属上级')
     assert.deepEqual(created.roleIds, [roleA.id])
 
-    const page = await service.findAll(tenant.id, { page: 1, pageSize: 10, keyword: 'prisma8 成员' })
+    const page = await service.findAll(tenant.id, {
+      page: 1,
+      pageSize: 10,
+      keyword: 'prisma8 成员',
+    })
     assert.equal(page.total, 1)
     assert.equal(page.items[0]?.roles[0]?.name, '成员角色 A')
 
@@ -151,13 +150,19 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
     })
     assert.equal((await service.toggleStatus(tenant.id, leader.id, created.id)).status, 'DISABLED')
     assert.equal(
-      (await prisma8Client.orm.public.Users.where({ id: subordinate.id }).select('leaderId').first())
-        ?.leaderId,
+      (
+        await prisma8Client.orm.public.Users.where({ id: subordinate.id })
+          .select('leaderId')
+          .first()
+      )?.leaderId,
       null,
     )
     assert.equal(
-      (await prisma8Client.orm.public.Departments.where({ id: deptA.id }).select('leaderId').first())
-        ?.leaderId,
+      (
+        await prisma8Client.orm.public.Departments.where({ id: deptA.id })
+          .select('leaderId')
+          .first()
+      )?.leaderId,
       null,
     )
 
@@ -170,11 +175,11 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
     })
     const customerId = id32()
     const now = BigInt(Date.now())
-    const protectedId = prisma8Varchar(protectedMember.id, 32)
-    const organizationId = prisma8Varchar(tenant.id, 32)
+    const protectedId = protectedMember.id
+    const organizationId = tenant.id
     await prisma8Client.orm.public.Customer.create({
       id: customerId,
-      name: prisma8Varchar('删除保护客户', 255),
+      name: '删除保护客户',
       owner: protectedId,
       organizationId,
       createTime: now,
@@ -182,13 +187,16 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
       createUser: protectedId,
       updateUser: protectedId,
     })
-    await assert.rejects(() => service.remove(tenant.id, leader.id, protectedMember.id), /成员仍有关联业务数据/)
+    await assert.rejects(
+      () => service.remove(tenant.id, leader.id, protectedMember.id),
+      /成员仍有关联业务数据/,
+    )
     await prisma8Client.orm.public.Customer.where({ id: customerId }).delete()
     await prisma8Client.orm.public.SysUserView.create({
       id: id32(),
       userId: protectedId,
-      name: prisma8Varchar('待清理视图', 255),
-      resourceType: prisma8Varchar('customer', 50),
+      name: '待清理视图',
+      resourceType: 'customer',
       organizationId,
       pos: 4096n,
       createTime: now,
@@ -204,15 +212,13 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
     })
     await service.remove(tenant.id, leader.id, protectedMember.id)
     assert.equal(
-      (await prisma8Client.orm.public.Users.where({ id: protectedMember.id }).select('id').all()).length,
+      (await prisma8Client.orm.public.Users.where({ id: protectedMember.id }).select('id').all())
+        .length,
       0,
     )
     assert.equal(
-      (
-        await prisma8Client.orm.public.SysUserView.where({ userId: protectedId })
-          .select('id')
-          .all()
-      ).length,
+      (await prisma8Client.orm.public.SysUserView.where({ userId: protectedId }).select('id').all())
+        .length,
       0,
     )
     assert.equal(
@@ -226,9 +232,7 @@ test('Members 使用 Prisma 8 保持成员关系装配、状态清理与删除�
     assert.ok(invalidated.includes(created.id))
   } finally {
     await prisma8Client.orm.public.Notifications.where({ tenantId: tenant.id }).deleteAll()
-    await prisma8Client.orm.public.SysUserView
-      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
-      .deleteAll()
+    await prisma8Client.orm.public.SysUserView.where({ organizationId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.UserRoles.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.Departments.where({ tenantId: tenant.id }).deleteAll()

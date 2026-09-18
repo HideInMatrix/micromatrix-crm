@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { Prisma8Service } from '../../prisma/prisma8.service'
 import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
@@ -59,17 +59,12 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
       },
     ],
   } as unknown as DemoBiddingProvider
-  const service = new BiddingService(
-    prisma8,
-    { save: async () => undefined } as never,
-    provider,
-  )
+  const service = new BiddingService(prisma8, { save: async () => undefined } as never, provider)
 
   try {
-    assert.deepEqual(
-      await service.saveSource(user, 'demo', true, { apiKey: 'prisma8-test' }),
-      { name: 'Prisma 8 Demo Source' },
-    )
+    assert.deepEqual(await service.saveSource(user, 'demo', true, { apiKey: 'prisma8-test' }), {
+      name: 'Prisma 8 Demo Source',
+    })
     const sources = await service.listSources(tenant.id)
     assert.equal(sources.length, 1)
     assert.equal(sources[0]?.enabled, true)
@@ -141,7 +136,7 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
 
     const lead = await service.convertToLead(user, manual.id)
     const storedLead = await prisma8Client.orm.public.Clue.where({
-      id: prisma8Varchar(lead.id, 32),
+      id: lead.id,
     }).first()
     assert.ok(storedLead)
     assert.equal(storedLead.organizationId, tenant.id)
@@ -150,9 +145,7 @@ test('Bidding production 路径完整使用 Prisma 8：配置、订阅、抓取�
     assert.ok(converted)
     assert.equal(converted.convertedLeadId, lead.id)
   } finally {
-    await prisma8Client.orm.public.Clue
-      .where({ organizationId: prisma8Varchar(tenant.id, 32) })
-      .deleteAll()
+    await prisma8Client.orm.public.Clue.where({ organizationId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.BiddingInfos.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.BiddingKeywordSubs.where({ tenantId: tenant.id }).deleteAll()
     await prisma8Client.orm.public.BiddingSources.where({ tenantId: tenant.id }).deleteAll()

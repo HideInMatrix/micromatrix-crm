@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Varchar } from '../../prisma/prisma8-varchar'
+
 import type { ApprovalJsonValue } from './approval-runtime.types'
 
 type CaptureHandler = (user: AuthUser, targetId: string) => Promise<ApprovalJsonValue>
@@ -25,10 +25,10 @@ export class ApprovalResourceCaptureService {
   }
 
   private async captureQuotation(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
-    const id = prisma8Varchar(targetId, 32)
+    const id = targetId
     const quotation = await this.prisma8.client.orm.public.OpportunityQuotation.where({
       id,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select('name', 'opportunityId', 'untilTime', 'amount')
       .first()
@@ -52,10 +52,10 @@ export class ApprovalResourceCaptureService {
   }
 
   private async captureContract(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
-    const id = prisma8Varchar(targetId, 32)
+    const id = targetId
     const contract = await this.prisma8.client.orm.public.Contract.where({
       id,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select(
         'name',
@@ -96,10 +96,10 @@ export class ApprovalResourceCaptureService {
   }
 
   private async captureInvoice(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
-    const id = prisma8Varchar(targetId, 32)
+    const id = targetId
     const invoice = await this.prisma8.client.orm.public.ContractInvoice.where({
       id,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select('name', 'contractId', 'owner', 'amount', 'invoiceType', 'taxRate', 'businessTitleId')
       .first()
@@ -126,10 +126,10 @@ export class ApprovalResourceCaptureService {
   }
 
   private async captureOrder(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
-    const id = prisma8Varchar(targetId, 32)
+    const id = targetId
     const order = await this.prisma8.client.orm.public.SalesOrder.where({
       id,
-      organizationId: prisma8Varchar(user.tenantId, 32),
+      organizationId: user.tenantId,
     })
       .select('number', 'name', 'customerId', 'contractId', 'owner', 'amount', 'stage', 'pos')
       .first()
