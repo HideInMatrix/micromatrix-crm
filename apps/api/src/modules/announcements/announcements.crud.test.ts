@@ -99,7 +99,7 @@ test(
       assert.ok(persisted.startAt)
       assert.ok(persisted.updatedAt)
 
-      const listed = await service.list(tenant.id, { page: 1, pageSize: 10, keyword: 'PRISMA 8' })
+      const listed = await service.list(tenant.id, { page: 1, pageSize: 10, keyword: 'PRISMA' })
       assert.equal(listed.total, 1)
       assert.equal(listed.items[0]?.id, created.id)
 

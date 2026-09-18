@@ -18,7 +18,7 @@
     "prisma:generate": "pnpm --filter @micromatrix/api prisma:generate",
     "prisma:infer": "pnpm --filter @micromatrix/api prisma:infer",
     "prisma:emit": "pnpm --filter @micromatrix/api prisma:emit",
-    "prisma:test-compat": "pnpm --filter @micromatrix/api test:prisma-compat",
+    "prisma:test": "pnpm --filter @micromatrix/api test:prisma",
     "db:migrate": "pnpm --filter @micromatrix/api prisma:deploy",
     "db:deploy": "pnpm --filter @micromatrix/api prisma:deploy",
     "db:migrate:dev": "pnpm --filter @micromatrix/api prisma:migrate",

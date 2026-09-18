@@ -45,7 +45,7 @@
 
 - [x] P5.1 `Prisma8Client/Service/Module` 改为正式 canonical 名称。
 - [x] P5.2 删除 migration-only `prisma8*` 文件名和测试命名。
-- [ ] P5.3 全量 typecheck/lint/build/API Rules。
+- [x] P5.3 全量 typecheck/lint/build/API Rules。
 - [ ] P5.4 existing/fresh PostgreSQL migration/seed/verify/status。
 - [ ] P5.5 Docker release smoke。
 - [ ] P5.6 Browser 代表性回归与 API runtime log 扫描。
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P5.3**。P1-P4 与 P5 canonical naming 已完成；下一阶段执行最终全量 typecheck/lint/build/API Rules，随后进入 existing/fresh PostgreSQL、Docker release smoke 与 Browser 代表性回归。
+当前执行 **P5.4**。P1-P4、P5 canonical naming 与最终工程门禁已完成；下一阶段复验 existing/fresh PostgreSQL migration / seed / verify / status，随后进入 Docker release smoke 与 Browser 代表性回归。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -168,4 +168,17 @@ P5.1/P5.2 已完成 canonicalization：
 - API typecheck 与 production build **exit 0**。
 
 P5.1/P5.2 完成后执行指针进入 **P5.3**。
+
+P5.3 最终工程门禁已完成：
+
+- canonical test scripts 已同步：API `test:rules` 改为包含 `src/prisma/*.test.ts`，专项脚本改为 `test:prisma`，root 对应改为 `prisma:test`；
+- `test:rules` 增加 `--import dotenv/config`，避免真实 PostgreSQL tests 因 `DATABASE_URL` 未载入而被静默 skip；
+- root typecheck 等价执行：shared build/typecheck、frontend-shared typecheck、API contract emit/typecheck、Web typecheck、Mobile typecheck **全部 exit 0**；
+- root production build 等价执行：shared、frontend-shared、API、Web、Mobile **全部 exit 0**；
+- root lint：**exit 0，0 errors / 80 warnings**；
+- API Rules：**348/348 PASS、0 fail、0 skip**；
+- canonicalization 后发现并修正 Announcements CRUD 测试关键词仍保留旧 `PRISMA 8` 文案的问题，单测与全量 Rules 均已复验；
+- `git diff --check` PASS。
+
+P5.3 完成后执行指针进入 **P5.4**。
 
