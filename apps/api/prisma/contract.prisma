@@ -7,8 +7,8 @@ namespace public {
     tenantId        String
     subject         String
     content         String
-    startAt         Timestamp(3)
-    endAt           Timestamp(3)
+    startAt         Timestamptz(3)
+    endAt           Timestamptz(3)
     url             String?
     linkName        String?
     departmentIds   Jsonb
@@ -17,8 +17,8 @@ namespace public {
     notice          Boolean      @default(false)
     createUserId    String
     updateUserId    String
-    createdAt       Timestamp(3) @default(now())
-    updatedAt       Timestamp(3)
+    createdAt       Timestamptz(3) @default(now())
+    updatedAt       Timestamptz(3)
 
     @@index([tenantId, createdAt], map: "announcements_tenantId_createdAt_idx")
     @@index([tenantId, notice, startAt, endAt], map: "announcements_tenantId_notice_startAt_endAt_idx")
@@ -44,11 +44,11 @@ namespace public {
     enabled               Boolean                        @default(false)
     description           VarChar(1000)?
     condition             Jsonb?
-    deletedAt             Timestamp(3)?
+    deletedAt             Timestamptz(3)?
     createdById           String?
     updatedById           String?
-    createdAt             Timestamp(3)                   @default(now())
-    updatedAt             Timestamp(3)
+    createdAt             Timestamptz(3)                   @default(now())
+    updatedAt             Timestamptz(3)
     approvalFlowVersions  ApprovalFlowVersions[]
     approvalInstances     ApprovalInstances[]
     currentVersion        ApprovalFlowVersions?          @relation(fields: [currentVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_flows_currentVersionId_fkey", index: false)
@@ -66,7 +66,7 @@ namespace public {
     tenantId               String
     version                Int
     createdById            String?
-    createdAt              Timestamp(3)             @default(now())
+    createdAt              Timestamptz(3)             @default(now())
     approvalFlows          ApprovalFlows[]
     approvalInstances      ApprovalInstances[]
     approvalNodeConditions ApprovalNodeConditions[]
@@ -96,9 +96,9 @@ namespace public {
     updateFields                VarChar(2000)?                  @map("update_fields")
     submitterId                 String
     submitterName               String
-    finishedAt                  Timestamp(3)?
-    createdAt                   Timestamp(3)                    @default(now())
-    updatedAt                   Timestamp(3)
+    finishedAt                  Timestamptz(3)?
+    createdAt                   Timestamptz(3)                    @default(now())
+    updatedAt                   Timestamptz(3)
     approvalAddSignTasks        ApprovalAddSignTasks[]
     approvalInstanceAttachments ApprovalInstanceAttachments[]
     approvalRecords             ApprovalRecords[]
@@ -128,9 +128,9 @@ namespace public {
     taskType                                 pg.enum(ApprovalTaskType)    @default("APPROVAL") @map("task_type")
     status                                   pg.enum(ApprovalTaskStatus)  @default("PENDING")
     action                                   pg.enum(ApprovalTaskAction)?
-    handledAt                                Timestamp(3)?
-    createdAt                                Timestamp(3)                 @default(now())
-    updatedAt                                Timestamp(3)
+    handledAt                                Timestamptz(3)?
+    createdAt                                Timestamptz(3)                 @default(now())
+    updatedAt                                Timestamptz(3)
     approvalRecords                          ApprovalRecords[]
     approvalReturnBackRecords                ApprovalReturnBackRecords[]
     approvalAddSignTasks                     ApprovalAddSignTasks[]       @relation(name: "approval_add_sign_tasks_sign_task_id_fkey")
@@ -154,8 +154,8 @@ namespace public {
     sort        BigInt
     comment     String?
     createdById String                       @map("created_by_id")
-    createdAt   Timestamp(3)                 @default(now()) @map("created_at")
-    updatedAt   Timestamp(3)                 @map("updated_at")
+    createdAt   Timestamptz(3)                 @default(now()) @map("created_at")
+    updatedAt   Timestamptz(3)                 @map("updated_at")
     instance    ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_instanceId_fkey", index: false)
     signTask    ApprovalTasks                @relation(name: "approval_add_sign_tasks_sign_task_id_fkey", fields: [signTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_sign_task_id_fkey")
     task        ApprovalTasks                @relation(name: "approval_add_sign_tasks_task_id_fkey", fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_task_id_fkey")
@@ -172,7 +172,7 @@ namespace public {
     tenantId  String
     formType  pg.enum(ApprovalFormType)
     nextValue Int                       @default(1)
-    updatedAt Timestamp(3)
+    updatedAt Timestamptz(3)
 
     @@index([tenantId, formType], map: "approval_flow_number_counters_tenantId_formType_key", unique: true)
     @@map("approval_flow_number_counters")
@@ -188,7 +188,7 @@ namespace public {
     mime                        String?
     targetType                  String?
     targetId                    String?
-    createdAt                   Timestamp(3)                  @default(now())
+    createdAt                   Timestamptz(3)                  @default(now())
     approvalInstanceAttachments ApprovalInstanceAttachments[]
 
     @@index([tenantId, targetType, targetId], map: "attachments_tenantId_targetType_targetId_idx")
@@ -201,7 +201,7 @@ namespace public {
     instanceId   String            @map("instance_id")
     elementId    String            @map("element_id")
     attachmentId String            @map("attachment_id")
-    createdAt    Timestamp(3)      @default(now()) @map("created_at")
+    createdAt    Timestamptz(3)      @default(now()) @map("created_at")
     attachment   Attachments       @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_instance_attachments_attachment_id_fkey")
     instance     ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_instance_attachments_instance_id_fkey", index: false)
 
@@ -288,8 +288,8 @@ namespace public {
     result      pg.enum(ApprovalTaskAction)
     comment     String?
     createdById String                      @map("created_by_id")
-    createdAt   Timestamp(3)                @default(now()) @map("created_at")
-    updatedAt   Timestamp(3)                @map("updated_at")
+    createdAt   Timestamptz(3)                @default(now()) @map("created_at")
+    updatedAt   Timestamptz(3)                @map("updated_at")
     instance    ApprovalInstances           @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_instanceId_fkey", index: false)
     task        ApprovalTasks?              @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_taskId_fkey")
 
@@ -306,8 +306,8 @@ namespace public {
     snapshotData Jsonb                     @map("snapshot_data")
     createdById  String?                   @map("created_by_id")
     updatedById  String?                   @map("updated_by_id")
-    createdAt    Timestamp(3)              @default(now()) @map("created_at")
-    updatedAt    Timestamp(3)              @map("updated_at")
+    createdAt    Timestamptz(3)              @default(now()) @map("created_at")
+    updatedAt    Timestamptz(3)              @map("updated_at")
 
     @@index([tenantId, formType], map: "approval_resource_snapshots_tenantId_formType_idx")
     @@index([tenantId, formType, resourceId], map: "approval_resource_snapshots_tenantId_formType_resourceId_key", unique: true)
@@ -322,8 +322,8 @@ namespace public {
     returnToNodeId String            @map("return_to_node_id")
     returnReason   String?           @map("return_reason")
     returnUserId   String            @map("return_user_id")
-    createdAt      Timestamp(3)      @default(now()) @map("created_at")
-    updatedAt      Timestamp(3)      @map("updated_at")
+    createdAt      Timestamptz(3)      @default(now()) @map("created_at")
+    updatedAt      Timestamptz(3)      @map("updated_at")
     instance       ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_instance_id_fkey", index: false)
     task           ApprovalTasks     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_task_id_fkey")
 
@@ -353,10 +353,10 @@ namespace public {
     errorCode     VarChar(64)?                           @map("error_code")
     errorMessage  VarChar(500)?                          @map("error_message")
     createdById   String?                                @map("created_by_id")
-    startedAt     Timestamp(3)?                          @map("started_at")
-    finishedAt    Timestamp(3)?                          @map("finished_at")
-    createdAt     Timestamp(3)                           @default(now()) @map("created_at")
-    updatedAt     Timestamp(3)                           @map("updated_at")
+    startedAt     Timestamptz(3)?                          @map("started_at")
+    finishedAt    Timestamptz(3)?                          @map("finished_at")
+    createdAt     Timestamptz(3)                           @default(now()) @map("created_at")
+    updatedAt     Timestamptz(3)                           @map("updated_at")
     instance      ApprovalInstances?                     @relation(fields: [instanceId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_webhook_deliveries_instance_id_fkey", index: false)
 
     @@index([tenantId, flowId, createdAt], map: "approval_webhook_deliveries_tenant_id_flow_id_created_at_idx")
@@ -373,15 +373,15 @@ namespace public {
     region          String?
     buyer           String?
     budget          Numeric(16, 2)?
-    publishedAt     Timestamp(3)?
-    deadline        Timestamp(3)?
+    publishedAt     Timestamptz(3)?
+    deadline        Timestamptz(3)?
     sourceUrl       String?
     content         String?
     source          String?
     keyword         String?
     hash            String
     convertedLeadId String?
-    createdAt       Timestamp(3)    @default(now())
+    createdAt       Timestamptz(3)    @default(now())
 
     @@index([tenantId, hash], map: "bidding_infos_tenantId_hash_key", unique: true)
     @@index([tenantId, publishedAt], map: "bidding_infos_tenantId_publishedAt_idx")
@@ -393,7 +393,7 @@ namespace public {
     tenantId  String
     keyword   String
     enabled   Boolean      @default(true)
-    createdAt Timestamp(3) @default(now())
+    createdAt Timestamptz(3) @default(now())
 
     @@index([tenantId, keyword], map: "bidding_keyword_subs_tenantId_keyword_key", unique: true)
     @@map("bidding_keyword_subs")
@@ -406,9 +406,9 @@ namespace public {
     name        String
     credentials Jsonb?
     enabled     Boolean       @default(false)
-    lastFetchAt Timestamp(3)?
-    createdAt   Timestamp(3)  @default(now())
-    updatedAt   Timestamp(3)
+    lastFetchAt Timestamptz(3)?
+    createdAt   Timestamptz(3)  @default(now())
+    updatedAt   Timestamptz(3)
 
     @@index([tenantId, provider], map: "bidding_sources_tenantId_provider_key", unique: true)
     @@map("bidding_sources")
@@ -1284,8 +1284,8 @@ namespace public {
     name                           String
     slug                           String
     status                         pg.enum(TenantStatus)                  @default("ACTIVE")
-    createdAt                      Timestamp(3)                           @default(now())
-    updatedAt                      Timestamp(3)
+    createdAt                      Timestamptz(3)                           @default(now())
+    updatedAt                      Timestamptz(3)
     enterpriseSyncResource         pg.enum(EnterpriseIntegrationProvider) @default("WECOM")
     enterpriseSynced               Boolean                                @default(false)
     departments                    Departments[]
@@ -1323,8 +1323,8 @@ namespace public {
     parentId                   String?
     leaderId                   String?
     sort                       Int                          @default(0)
-    createdAt                  Timestamp(3)                 @default(now())
-    updatedAt                  Timestamp(3)
+    createdAt                  Timestamptz(3)                 @default(now())
+    updatedAt                  Timestamptz(3)
     externalDepartmentMappings ExternalDepartmentMappings[]
     users                      Users[]
     parent                     Departments?                 @relation(name: "departments_parentId_fkey", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "departments_parentId_fkey", index: false)
@@ -1341,8 +1341,8 @@ namespace public {
     tenantId  String
     modelId   String
     sort      Int
-    createdAt Timestamp(3) @default(now())
-    updatedAt Timestamp(3)
+    createdAt Timestamptz(3) @default(now())
+    updatedAt Timestamptz(3)
     tenant    Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ai_model_routes_tenantId_fkey")
 
     @@index([tenantId], map: "enterprise_ai_model_routes_tenantId_idx")
@@ -1370,8 +1370,8 @@ namespace public {
     userDailyLimit        Int?
     createdById           String
     updatedById           String
-    createdAt             Timestamp(3)            @default(now())
-    updatedAt             Timestamp(3)
+    createdAt             Timestamptz(3)            @default(now())
+    updatedAt             Timestamptz(3)
     enterpriseGlobalTasks EnterpriseGlobalTasks[]
     tenant                Tenants                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ai_models_tenantId_fkey", index: false)
 
@@ -1392,8 +1392,8 @@ namespace public {
     enable                         Boolean                          @default(true)
     createdById                    String
     updatedById                    String
-    createdAt                      Timestamp(3)                     @default(now())
-    updatedAt                      Timestamp(3)
+    createdAt                      Timestamptz(3)                     @default(now())
+    updatedAt                      Timestamptz(3)
     enterpriseGlobalTaskExecutions EnterpriseGlobalTaskExecutions[]
     applicableModel                EnterpriseAiModels?              @relation(fields: [applicableModelId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "enterprise_global_tasks_applicableModelId_fkey")
     tenant                         Tenants                          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_tasks_tenantId_fkey", index: false)
@@ -1412,10 +1412,10 @@ namespace public {
     input        Jsonb?
     output       Jsonb?
     errorMessage String?
-    startedAt    Timestamp(3)?
-    finishedAt   Timestamp(3)?
-    createdAt    Timestamp(3)          @default(now())
-    updatedAt    Timestamp(3)
+    startedAt    Timestamptz(3)?
+    finishedAt   Timestamptz(3)?
+    createdAt    Timestamptz(3)          @default(now())
+    updatedAt    Timestamptz(3)
     task         EnterpriseGlobalTasks @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_task_executions_taskId_fkey", index: false)
     tenant       Tenants               @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_task_executions_tenantId_fkey", index: false)
 
@@ -1433,8 +1433,8 @@ namespace public {
     scopeDeptIds           String[]?                @noCheck(elementNotNull)
     isSystem               Boolean                  @default(false)
     remark                 String?
-    createdAt              Timestamp(3)             @default(now())
-    updatedAt              Timestamp(3)
+    createdAt              Timestamptz(3)             @default(now())
+    updatedAt              Timestamptz(3)
     enterpriseIntegrations EnterpriseIntegrations[]
     userRoles              UserRoles[]
     tenant                 Tenants                  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "roles_tenantId_fkey")
@@ -1459,14 +1459,14 @@ namespace public {
     syncDefaultRoleId       String?
     lastTestSucceeded       Boolean?
     lastTestMessage         String?
-    lastTestedAt            Timestamp(3)?
+    lastTestedAt            Timestamptz(3)?
     lastSyncStatus          pg.enum(OrganizationSyncStatus)?
     lastSyncMessage         String?
-    lastSyncedAt            Timestamp(3)?
+    lastSyncedAt            Timestamptz(3)?
     createdById             String
     updatedById             String
-    createdAt               Timestamp(3)                           @default(now())
-    updatedAt               Timestamp(3)
+    createdAt               Timestamptz(3)                           @default(now())
+    updatedAt               Timestamptz(3)
     clientId                String?
     redirectUrl             String?
     externalIdentities      ExternalIdentities[]
@@ -1498,9 +1498,9 @@ namespace public {
     tls                Boolean       @default(false)
     lastTestSucceeded  Boolean?
     lastTestMessage    String?
-    lastTestedAt       Timestamp(3)?
-    createdAt          Timestamp(3)  @default(now())
-    updatedAt          Timestamp(3)
+    lastTestedAt       Timestamptz(3)?
+    createdAt          Timestamptz(3)  @default(now())
+    updatedAt          Timestamptz(3)
     tenant             Tenants       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_mail_settings_tenantId_fkey")
 
     @@index([tenantId], map: "enterprise_mail_settings_tenantId_key", unique: true)
@@ -1512,8 +1512,8 @@ namespace public {
     tenantId        String
     name            String
     sort            Int               @default(0)
-    createdAt       Timestamp(3)      @default(now())
-    updatedAt       Timestamp(3)
+    createdAt       Timestamptz(3)      @default(now())
+    updatedAt       Timestamptz(3)
     enterpriseTerms EnterpriseTerms[]
     tenant          Tenants           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_term_categories_tenantId_fkey", index: false)
 
@@ -1530,8 +1530,8 @@ namespace public {
     context       String       @default("")
     status        String       @default("PENDING")
     adoptedTermId String?
-    createdAt     Timestamp(3) @default(now())
-    updatedAt     Timestamp(3)
+    createdAt     Timestamptz(3) @default(now())
+    updatedAt     Timestamptz(3)
     tenant        Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_term_discoveries_tenantId_fkey", index: false)
 
     @@index([tenantId, status], map: "enterprise_term_discoveries_tenantId_status_idx")
@@ -1550,8 +1550,8 @@ namespace public {
     enable          Boolean                  @default(true)
     createdById     String
     updatedById     String
-    createdAt       Timestamp(3)             @default(now())
-    updatedAt       Timestamp(3)
+    createdAt       Timestamptz(3)             @default(now())
+    updatedAt       Timestamptz(3)
     category        EnterpriseTermCategories @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_terms_categoryId_fkey")
     tenant          Tenants                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_terms_tenantId_fkey", index: false)
 
@@ -1575,8 +1575,8 @@ namespace public {
     loginLogoAttachmentId    String?
     loginImageAttachmentId   String?
     platformLogoAttachmentId String?
-    createdAt                Timestamp(3) @default(now())
-    updatedAt                Timestamp(3)
+    createdAt                Timestamptz(3) @default(now())
+    updatedAt                Timestamptz(3)
     tenant                   Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ui_settings_tenantId_fkey")
 
     @@index([tenantId], map: "enterprise_ui_settings_tenantId_key", unique: true)
@@ -1595,11 +1595,11 @@ namespace public {
     fileSize     Int?
     errorMessage String?
     payload      Jsonb?
-    startedAt    Timestamp(3)?
+    startedAt    Timestamptz(3)?
     attempts     Int           @default(0)
-    completedAt  Timestamp(3)?
-    expiresAt    Timestamp(3)
-    createdAt    Timestamp(3)  @default(now())
+    completedAt  Timestamptz(3)?
+    expiresAt    Timestamptz(3)
+    createdAt    Timestamptz(3)  @default(now())
 
     @@index([expiresAt], map: "export_tasks_expiresAt_idx")
     @@index([tenantId, userId, createdAt], map: "export_tasks_tenantId_userId_createdAt_idx")
@@ -1619,12 +1619,12 @@ namespace public {
     errorMessage               String?
     createdById                String
     appliedById                String?
-    fetchStartedAt             Timestamp(3)?
-    previewedAt                Timestamp(3)?
-    applyStartedAt             Timestamp(3)?
-    finishedAt                 Timestamp(3)?
-    createdAt                  Timestamp(3)                           @default(now())
-    updatedAt                  Timestamp(3)
+    fetchStartedAt             Timestamptz(3)?
+    previewedAt                Timestamptz(3)?
+    applyStartedAt             Timestamptz(3)?
+    finishedAt                 Timestamptz(3)?
+    createdAt                  Timestamptz(3)                           @default(now())
+    updatedAt                  Timestamptz(3)
     externalDepartmentMappings ExternalDepartmentMappings[]
     externalUserMappings       ExternalUserMappings[]
     organizationSyncItems      OrganizationSyncItems[]
@@ -1647,8 +1647,8 @@ namespace public {
     departmentId    String
     active          Boolean                                @default(true)
     lastSeenBatchId String?
-    createdAt       Timestamp(3)                           @default(now())
-    updatedAt       Timestamp(3)
+    createdAt       Timestamptz(3)                           @default(now())
+    updatedAt       Timestamptz(3)
     department      Departments                            @relation(fields: [departmentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_department_mappings_departmentId_fkey", index: false)
     lastSeenBatch   OrganizationSyncBatches?               @relation(fields: [lastSeenBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "external_department_mappings_lastSeenBatchId_fkey")
     tenant          Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_department_mappings_tenantId_fkey", index: false)
@@ -1675,8 +1675,8 @@ namespace public {
     passwordLoginEnabled Boolean                @default(true)
     defaultPwd           Boolean                @default(false) @map("default_pwd")
     authVersion          Int                    @default(0) @map("auth_version")
-    createdAt            Timestamp(3)           @default(now())
-    updatedAt            Timestamp(3)
+    createdAt            Timestamptz(3)           @default(now())
+    updatedAt            Timestamptz(3)
     language             String                 @default("zh-CN")
     externalIdentities   ExternalIdentities[]
     externalUserMappings ExternalUserMappings[]
@@ -1702,8 +1702,8 @@ namespace public {
     userId             String
     active             Boolean                                @default(true)
     lastSeenBatchId    String?
-    createdAt          Timestamp(3)                           @default(now())
-    updatedAt          Timestamp(3)
+    createdAt          Timestamptz(3)                           @default(now())
+    updatedAt          Timestamptz(3)
     lastSeenBatch      OrganizationSyncBatches?               @relation(fields: [lastSeenBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "external_user_mappings_lastSeenBatchId_fkey")
     tenant             Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_user_mappings_tenantId_fkey", index: false)
     user               Users                                  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_user_mappings_userId_fkey", index: false)
@@ -1726,12 +1726,12 @@ namespace public {
     status          pg.enum(ExternalIdentityStatus)        @default("ACTIVE")
     bindingSource   String                                 @default("LOGIN")
     boundById       String?
-    boundAt         Timestamp(3)                           @default(now())
+    boundAt         Timestamptz(3)                           @default(now())
     revokedById     String?
-    revokedAt       Timestamp(3)?
-    lastLoginAt     Timestamp(3)?
-    createdAt       Timestamp(3)                           @default(now())
-    updatedAt       Timestamp(3)
+    revokedAt       Timestamptz(3)?
+    lastLoginAt     Timestamptz(3)?
+    createdAt       Timestamptz(3)                           @default(now())
+    updatedAt       Timestamptz(3)
     integration     EnterpriseIntegrations                 @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_integrationId_fkey")
     mapping         ExternalUserMappings                   @relation(fields: [mappingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_mappingId_fkey")
     tenant          Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_tenantId_fkey", index: false)
@@ -1753,9 +1753,9 @@ namespace public {
     stateHash        String
     browserNonceHash String
     returnPath       String
-    expiresAt        Timestamp(3)
-    consumedAt       Timestamp(3)?
-    createdAt        Timestamp(3)               @default(now())
+    expiresAt        Timestamptz(3)
+    consumedAt       Timestamptz(3)?
+    createdAt        Timestamptz(3)               @default(now())
     integration      EnterpriseIntegrations     @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_oauth_states_integrationId_fkey", index: false)
     tenant           Tenants                    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_oauth_states_tenantId_fkey", index: false)
 
@@ -1773,18 +1773,18 @@ namespace public {
     contactId              String?
     content                String
     method                 String?
-    estimatedAt            Timestamp(3)?
+    estimatedAt            Timestamptz(3)?
     status                 pg.enum(FollowUpPlanStatus) @default("PREPARED")
     converted              Boolean                     @default(false)
     convertedRecordId      String?
     ownerId                String
     deptId                 String?
     createdById            String
-    dueNotifiedAt          Timestamp(3)?
+    dueNotifiedAt          Timestamptz(3)?
     commentCount           Int                         @default(0)
     customData             Jsonb?
-    createdAt              Timestamp(3)                @default(now())
-    updatedAt              Timestamp(3)
+    createdAt              Timestamptz(3)                @default(now())
+    updatedAt              Timestamptz(3)
     followUpPlanComments   FollowUpPlanComment[]
     followUpPlanFields     FollowUpPlanField[]
     followUpPlanFieldBlobs FollowUpPlanFieldBlob[]
@@ -1804,8 +1804,8 @@ namespace public {
     organizationId              VarChar(32)                  @map("organization_id")
     createUser                  VarChar(32)                  @map("create_user")
     updateUser                  VarChar(32)                  @map("update_user")
-    createTime                  Timestamp(3)                 @default(now()) @map("create_time")
-    updateTime                  Timestamp(3)                 @map("update_time")
+    createTime                  Timestamptz(3)                 @default(now()) @map("create_time")
+    updateTime                  Timestamptz(3)                 @map("update_time")
     followUpPlanCommentMentions FollowUpPlanCommentMention[]
     parent                      FollowUpPlanComment?         @relation(name: "follow_up_plan_comment_parent_id_fkey", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_parent_id_fkey")
     followUpPlanComments        FollowUpPlanComment[]        @relation(name: "follow_up_plan_comment_parent_id_fkey")
@@ -1860,14 +1860,14 @@ namespace public {
     contactId                String?
     _type                    String?                   @map("type")
     content                  String
-    followedAt               Timestamp(3)?
+    followedAt               Timestamptz(3)?
     ownerId                  String
     ownerName                String
     deptId                   String?
     createdById              String
     commentCount             Int                       @default(0)
-    createdAt                Timestamp(3)              @default(now())
-    updatedAt                Timestamp(3)
+    createdAt                Timestamptz(3)              @default(now())
+    updatedAt                Timestamptz(3)
     followUpRecordComments   FollowUpRecordComment[]
     followUpRecordFields     FollowUpRecordField[]
     followUpRecordFieldBlobs FollowUpRecordFieldBlob[]
@@ -1886,8 +1886,8 @@ namespace public {
     organizationId                VarChar(32)                    @map("organization_id")
     createUser                    VarChar(32)                    @map("create_user")
     updateUser                    VarChar(32)                    @map("update_user")
-    createTime                    Timestamp(3)                   @default(now()) @map("create_time")
-    updateTime                    Timestamp(3)                   @map("update_time")
+    createTime                    Timestamptz(3)                   @default(now()) @map("create_time")
+    updateTime                    Timestamptz(3)                   @map("update_time")
     followUpRecordCommentMentions FollowUpRecordCommentMention[]
     parent                        FollowUpRecordComment?         @relation(name: "follow_up_record_comment_parent_id_fkey", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_parent_id_fkey")
     followUpRecordComments        FollowUpRecordComment[]        @relation(name: "follow_up_record_comment_parent_id_fkey")
@@ -1946,7 +1946,7 @@ namespace public {
     userAgent          String?
     success            Boolean
     message            String?
-    createdAt          Timestamp(3) @default(now())
+    createdAt          Timestamptz(3) @default(now())
 
     @@index([tenantId, authType, createdAt], map: "login_logs_tenantId_authType_createdAt_idx")
     @@index([tenantId, createdAt], map: "login_logs_tenantId_createdAt_idx")
@@ -1967,13 +1967,13 @@ namespace public {
     status            pg.enum(MessageDeliveryStatus)  @default("PENDING")
     attempts          Int                             @default(0)
     maxAttempts       Int                             @default(3)
-    nextAttemptAt     Timestamp(3)?
+    nextAttemptAt     Timestamptz(3)?
     providerMessageId String?
     errorCode         String?
     errorMessage      String?
-    sentAt            Timestamp(3)?
-    createdAt         Timestamp(3)                    @default(now())
-    updatedAt         Timestamp(3)
+    sentAt            Timestamptz(3)?
+    createdAt         Timestamptz(3)                    @default(now())
+    updatedAt         Timestamptz(3)
     integration       EnterpriseIntegrations?         @relation(fields: [integrationId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "message_deliveries_integrationId_fkey", index: false)
     tenant            Tenants                         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "message_deliveries_tenantId_fkey", index: false)
     user              Users?                          @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "message_deliveries_userId_fkey", index: false)
@@ -1993,8 +1993,8 @@ namespace public {
     emailEnabled    Boolean      @default(false)
     weComEnabled    Boolean      @default(false)
     config          Jsonb?
-    createdAt       Timestamp(3) @default(now())
-    updatedAt       Timestamp(3)
+    createdAt       Timestamptz(3) @default(now())
+    updatedAt       Timestamptz(3)
     dingTalkEnabled Boolean      @default(false)
     larkEnabled     Boolean      @default(false)
     tenant          Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "message_task_settings_tenantId_fkey", index: false)
@@ -2025,8 +2025,8 @@ namespace public {
     title      String
     content    String?
     link       String?
-    readAt     Timestamp(3)?
-    createdAt  Timestamp(3)  @default(now())
+    readAt     Timestamptz(3)?
+    createdAt  Timestamptz(3)  @default(now())
     linkLabel  String?
     sourceId   String?
     sourceType String?
@@ -2047,7 +2047,7 @@ namespace public {
     targetId          String?
     targetName        String?
     ip                String?
-    createdAt         Timestamp(3)       @default(now())
+    createdAt         Timestamptz(3)       @default(now())
     operationLogBlobs OperationLogBlobs?
 
     @@index([createdAt], map: "operation_logs_createdAt_idx")
@@ -2067,10 +2067,10 @@ namespace public {
   model OperationLogSettings {
     tenantId           String                              @id(map: "operation_log_settings_pkey")
     retentionDays      Int?
-    lastCleanupAt      Timestamp(3)?
+    lastCleanupAt      Timestamptz(3)?
     lastCleanupDeleted Int                                 @default(0)
     lastCleanupSource  pg.enum(OperationLogCleanupSource)?
-    updatedAt          Timestamp(3)
+    updatedAt          Timestamptz(3)
     tenant             Tenants                             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "operation_log_settings_tenantId_fkey")
 
     @@map("operation_log_settings")
@@ -2265,8 +2265,8 @@ namespace public {
     resolvedLocalId   String?
     errorMessage      String?
     sort              Int                                   @default(0)
-    createdAt         Timestamp(3)                          @default(now())
-    updatedAt         Timestamp(3)
+    createdAt         Timestamptz(3)                          @default(now())
+    updatedAt         Timestamptz(3)
     batch             OrganizationSyncBatches               @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_items_batchId_fkey", index: false)
 
     @@index([batchId, resourceType, externalKey], map: "organization_sync_items_batchId_resourceType_externalKey_key", unique: true)
@@ -2281,8 +2281,8 @@ namespace public {
     price         Numeric(10, 2)
     maxUsers      Int             @default(10)
     features      Jsonb?
-    createdAt     Timestamp(3)    @default(now())
-    updatedAt     Timestamp(3)
+    createdAt     Timestamptz(3)    @default(now())
+    updatedAt     Timestamptz(3)
     subscriptions Subscriptions[]
 
     @@index([code], map: "plans_code_key", unique: true)
@@ -2504,10 +2504,10 @@ namespace public {
     tenantId           String
     planId             String
     status             pg.enum(SubscriptionStatus) @default("TRIALING")
-    currentPeriodStart Timestamp(3)
-    currentPeriodEnd   Timestamp(3)
-    createdAt          Timestamp(3)                @default(now())
-    updatedAt          Timestamp(3)
+    currentPeriodStart Timestamptz(3)
+    currentPeriodEnd   Timestamptz(3)
+    createdAt          Timestamptz(3)                @default(now())
+    updatedAt          Timestamptz(3)
     plan               Plans                       @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "subscriptions_planId_fkey", index: false)
     tenant             Tenants                     @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "subscriptions_tenantId_fkey")
 
@@ -2664,10 +2664,10 @@ namespace public {
     createUser  String        @map("create_user")
     accessKey   String        @map("access_key")
     secretKey   String        @map("secret_key")
-    createTime  Timestamp(3)  @default(now()) @map("create_time")
+    createTime  Timestamptz(3)  @default(now()) @map("create_time")
     enable      Boolean       @default(true)
     forever     Boolean       @default(true)
-    expireTime  Timestamp(3)? @map("expire_time")
+    expireTime  Timestamptz(3)? @map("expire_time")
     description String?
     users       Users         @relation(fields: [createUser], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_key_create_user_fkey")
 
@@ -2681,8 +2681,8 @@ namespace public {
     tenantId  String
     userId    String
     roleId    String
-    createdAt Timestamp(3) @default(now())
-    updatedAt Timestamp(3)
+    createdAt Timestamptz(3) @default(now())
+    updatedAt Timestamptz(3)
     role      Roles        @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_roleId_fkey", index: false)
     tenant    Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_tenantId_fkey", index: false)
     user      Users        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_userId_fkey", index: false)

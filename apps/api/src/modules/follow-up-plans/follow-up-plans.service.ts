@@ -391,12 +391,12 @@ export class FollowUpPlansService {
     const startIso = start.toISOString()
     const nowIso = now.toISOString()
     const query = client.raw.sql`UPDATE follow_up_plans
-      SET "dueNotifiedAt" = (${nowIso}::timestamptz AT TIME ZONE 'UTC'),
-          "updatedAt" = (${nowIso}::timestamptz AT TIME ZONE 'UTC')
+      SET "dueNotifiedAt" = ${nowIso}::timestamptz,
+          "updatedAt" = ${nowIso}::timestamptz
       WHERE id = ${id}
         AND (
           "dueNotifiedAt" IS NULL
-          OR "dueNotifiedAt" < (${startIso}::timestamptz AT TIME ZONE 'UTC')
+          OR "dueNotifiedAt" < ${startIso}::timestamptz
         )
       RETURNING id`.returnsRow({ id: client.sql.public.follow_up_plans.columns.id })
     for await (const _row of client.runtime().query(query.build())) return true

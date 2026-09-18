@@ -376,12 +376,12 @@ export class MessageDeliveryService {
           "nextAttemptAt" = NULL,
           "errorCode" = NULL,
           "errorMessage" = NULL,
-          "updatedAt" = (${now}::timestamptz AT TIME ZONE 'UTC')
+          "updatedAt" = ${now}::timestamptz
       WHERE id = ${id}
         AND status IN ('PENDING', 'FAILED')
         AND (
           "nextAttemptAt" IS NULL
-          OR "nextAttemptAt" <= (${now}::timestamptz AT TIME ZONE 'UTC')
+          OR "nextAttemptAt" <= ${now}::timestamptz
         )
       RETURNING id`.returnsRow({ id: client.sql.public.message_deliveries.columns.id })
     let claimed = false

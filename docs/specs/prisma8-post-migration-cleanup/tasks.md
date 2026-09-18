@@ -21,11 +21,11 @@
 
 ## P2 时间语义与 API contract
 
-- [ ] P2.1 对 126 个 Timestamp 字段按 absolute/local/schedule 分类。
+- [x] P2.1 对 126 个 Timestamp 字段按 absolute/local/schedule 分类。
 - [ ] P2.2 建立统一 API 时间 serializer，禁止业务内部 Date/Temporal 往返。
 - [ ] P2.3 前端 Web/Mobile 时间展示统一从 API ISO 值格式化。
-- [ ] P2.4 existing DB UTC/时区历史数据 precheck。
-- [ ] P2.5 对确认属于 absolute instant 的字段生成 forward migration，并验证旧数据转换。
+- [x] P2.4 existing DB UTC/时区历史数据 precheck。
+- [x] P2.5 对确认属于 absolute instant 的字段生成 forward migration，并验证旧数据转换。
 - [ ] P2.6 删除无引用的 `prisma8-temporal` compatibility functions。
 
 ## P3 VarChar / ID 数据库治理
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P2.1**。P1 测试兼容层已完成收口；`src/testing/prisma-test-db.ts` 只保留 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
+当前执行 **P2.2 / P2.3 / P2.6**。P1 测试兼容层已完成收口；`src/testing/prisma-test-db.ts` 只保留 Prisma 8 client lifecycle 与 tenant/user/department 等测试原语，不复制 Prisma 7 delegate API。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -101,5 +101,15 @@ P1.5/P1.6 已完成：
 - 删除后 `prisma contract emit`、API typecheck、API build、`git diff --check` 全绿；
 - API Rules 在保留真实 PostgreSQL、显式清空 Redis 环境以满足“未配置 Redis”专项前提后 **346/346 PASS、0 fail、0 skip**。
 
-P1 正式完成。下一步进入 **P2 时间语义与 API contract**，先对 126 个 Timestamp 字段按 absolute instant / local wall-clock / schedule 分类并生成 existing DB 数据语义 precheck。
+P1 正式完成。P2.1 inventory 已写入 `timestamp-inventory.md`：126 个字段全部属于 absolute instant，其中 AUDIT 89、EVENT_INSTANT 27、SCHEDULED_INSTANT 10；未发现真正 local/wall-clock 或 recurring time-of-day 字段。
+
+P2.4 existing DB 只读 precheck 已通过：开发库当前 TimeZone=UTC；126/126 目标列均为 timestamp without time zone；52 列存在非空历史数据，最早值为 2026-09-07 03:47:17.978；50 个列 default 为 CURRENT_TIMESTAMP，76 个无 DB default；AUDIT / EVENT_INSTANT 字段未发现超过当前 UTC + 24h 的异常未来值。Users / OperationLogs / BiddingInfos / Subscriptions 抽样使用 AT TIME ZONE 'UTC' 后保持原 wall value 并明确成为 +00 instant。
+
+P2.5 已完成：新增 `20260918T0826_timestamp_absolute_instants` forward migration，共 **126 operations**。每列显式使用 `USING <column> AT TIME ZONE 'UTC'`；Prisma 8 RC 对 `timestamptz(3)` 的 postcheck 采用 PostgreSQL canonical `timestamp(3) with time zone` 修正后，`migration check` PASS。
+
+existing DB 已应用该 migration 并把 `db` ref 前移到 storage hash `07748bd3c63b9a5cad29fe7ca01d2112d369c952703a483fb95f34ecd715c0a9`。迁移前后 126 列的 UTC epoch 指纹均为 `1a7e4fcdfaacffe4b3536924b4b67b90b8aa89998757bae914ef4b2ffe8395b4`，52 个有数据列数量一致，物理类型 **126/126 = timestamp with time zone**；`db verify` 与 `migration status` 全绿。
+
+fresh PostgreSQL 从空库执行 baseline **672 operations** + forward migration **126 operations**，合计 **798 operations**，随后 bootstrap Seed / `db verify` / `migration status` 全绿，fresh 库同样为 **126 个 timestamptz 列**。API typecheck / production build exit 0；完整 API Rules 在正确清空 Redis 配置的专项环境下 **346/346 PASS、0 fail、0 skip**。
+
+当前继续 **P2.2 / P2.3 / P2.6**：数据库与 ORM 已改成 `Timestamptz(3) / Temporal.Instant`，接下来删除业务内部 Date↔Instant 往返和 Prisma migration-only 时间 helper，并确认 Web/Mobile 只消费 ISO instant 后自行格式化展示。
 

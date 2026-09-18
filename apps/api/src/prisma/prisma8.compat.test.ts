@@ -69,7 +69,7 @@ test(
       assert.equal(prisma8Updated.name, updatedName)
       assert.equal(prisma8Updated.slug, fromPrisma8.slug)
       assert.ok(
-        Temporal.PlainDateTime.compare(prisma8Updated.updatedAt, prisma8Created.updatedAt) > 0,
+        Temporal.Instant.compare(prisma8Updated.updatedAt, prisma8Created.updatedAt) > 0,
       )
 
       const nativeRead = await prisma8.orm.public.Tenants.where({ id: prisma8Created.id })

@@ -108,7 +108,7 @@ export class OperationLogCleanupService {
         SELECT id
         FROM operation_logs
         WHERE "tenantId" = ${tenantId}
-          AND "createdAt" < (${cutoffIso}::timestamptz AT TIME ZONE 'UTC')
+          AND "createdAt" < ${cutoffIso}::timestamptz
         ORDER BY "createdAt" ASC, id ASC
         LIMIT ${limit}
       )

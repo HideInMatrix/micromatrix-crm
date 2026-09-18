@@ -604,7 +604,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -621,7 +621,7 @@
               "endAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -659,7 +659,7 @@
               "startAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -690,7 +690,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -790,7 +790,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -856,7 +856,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -993,7 +993,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1029,7 +1029,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1230,7 +1230,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1261,7 +1261,7 @@
               "deletedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1357,7 +1357,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1508,7 +1508,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1615,7 +1615,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1642,7 +1642,7 @@
               "finishedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -1749,7 +1749,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2466,7 +2466,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2535,7 +2535,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2622,7 +2622,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2677,7 +2677,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2732,7 +2732,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2791,7 +2791,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2889,7 +2889,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2899,7 +2899,7 @@
               "handledAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -2978,7 +2978,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3110,7 +3110,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3154,7 +3154,7 @@
               "finishedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3237,7 +3237,7 @@
               "startedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3278,7 +3278,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3385,7 +3385,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3554,7 +3554,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3564,7 +3564,7 @@
               "deadline": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3595,7 +3595,7 @@
               "publishedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3699,7 +3699,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3763,7 +3763,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3794,7 +3794,7 @@
               "lastFetchAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -3825,7 +3825,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -10694,7 +10694,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -10746,7 +10746,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -10869,7 +10869,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -10907,7 +10907,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -10998,7 +10998,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11085,7 +11085,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11212,7 +11212,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11229,7 +11229,7 @@
               "finishedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11260,7 +11260,7 @@
               "startedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11291,7 +11291,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11392,7 +11392,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11458,7 +11458,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11594,7 +11594,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11642,7 +11642,7 @@
               "lastSyncedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11666,7 +11666,7 @@
               "lastTestedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11742,7 +11742,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11942,7 +11942,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -11987,7 +11987,7 @@
               "lastTestedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12060,7 +12060,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12152,7 +12152,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12190,7 +12190,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12275,7 +12275,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12320,7 +12320,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12406,7 +12406,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12458,7 +12458,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12565,7 +12565,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12666,7 +12666,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12756,7 +12756,7 @@
               "completedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12766,7 +12766,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12783,7 +12783,7 @@
               "expiresAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12842,7 +12842,7 @@
               "startedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -12939,7 +12939,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13001,7 +13001,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13108,7 +13108,7 @@
               "boundAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13125,7 +13125,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13156,7 +13156,7 @@
               "lastLoginAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13183,7 +13183,7 @@
               "revokedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13217,7 +13217,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13365,7 +13365,7 @@
               "consumedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13375,7 +13375,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13385,7 +13385,7 @@
               "expiresAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13521,7 +13521,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13576,7 +13576,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13693,7 +13693,7 @@
               "createTime": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -13760,7 +13760,7 @@
               "updateTime": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14137,7 +14137,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14168,7 +14168,7 @@
               "dueNotifiedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14178,7 +14178,7 @@
               "estimatedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14240,7 +14240,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14374,7 +14374,7 @@
               "createTime": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14441,7 +14441,7 @@
               "updateTime": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14811,7 +14811,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14835,7 +14835,7 @@
               "followedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -14887,7 +14887,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15006,7 +15006,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15157,7 +15157,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15223,7 +15223,7 @@
               "nextAttemptAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15240,7 +15240,7 @@
               "sentAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15274,7 +15274,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15418,7 +15418,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15484,7 +15484,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15657,7 +15657,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15688,7 +15688,7 @@
               "readAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15828,7 +15828,7 @@
               "lastCleanupAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15869,7 +15869,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -15932,7 +15932,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17446,7 +17446,7 @@
               "applyStartedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17463,7 +17463,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17501,7 +17501,7 @@
               "fetchStartedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17511,7 +17511,7 @@
               "finishedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17535,7 +17535,7 @@
               "previewedAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17579,7 +17579,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17770,7 +17770,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17880,7 +17880,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -17985,7 +17985,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -18034,7 +18034,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -18801,7 +18801,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -18872,7 +18872,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -19859,7 +19859,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -19869,7 +19869,7 @@
               "currentPeriodEnd": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -19879,7 +19879,7 @@
               "currentPeriodStart": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -19920,7 +19920,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -20942,7 +20942,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21000,7 +21000,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21535,7 +21535,7 @@
               "createTime": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21566,7 +21566,7 @@
               "expireTime": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21652,7 +21652,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21683,7 +21683,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21785,7 +21785,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -21896,7 +21896,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar",
                   "typeParams": {
                     "precision": 3
@@ -22419,12 +22419,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22436,8 +22436,8 @@
                   "nullable": false
                 },
                 "endAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22468,8 +22468,8 @@
                   "nullable": false
                 },
                 "startAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22491,8 +22491,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22546,12 +22546,12 @@
                   "nullable": true
                 },
                 "created_at": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22612,8 +22612,8 @@
                   }
                 },
                 "updated_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22755,8 +22755,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22785,12 +22785,12 @@
             "approval_flow_versions": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22913,12 +22913,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -22944,8 +22944,8 @@
                   "nullable": false
                 },
                 "deletedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -23048,8 +23048,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -23135,12 +23135,12 @@
                   "nullable": false
                 },
                 "created_at": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -23257,12 +23257,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -23296,8 +23296,8 @@
                   }
                 },
                 "finishedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -23385,8 +23385,8 @@
                   }
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -23985,12 +23985,12 @@
                   "nullable": true
                 },
                 "created_at": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24050,8 +24050,8 @@
                   "nullable": false
                 },
                 "updated_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24127,12 +24127,12 @@
             "approval_resource_snapshots": {
               "columns": {
                 "created_at": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24178,8 +24178,8 @@
                   "nullable": false
                 },
                 "updated_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24222,12 +24222,12 @@
             "approval_return_back_records": {
               "columns": {
                 "created_at": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24269,8 +24269,8 @@
                   "nullable": false
                 },
                 "updated_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24373,20 +24373,20 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "handledAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -24468,8 +24468,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24550,12 +24550,12 @@
                   "nullable": true
                 },
                 "created_at": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24588,8 +24588,8 @@
                   }
                 },
                 "finished_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -24655,8 +24655,8 @@
                   }
                 },
                 "started_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -24696,8 +24696,8 @@
                   "nullable": false
                 },
                 "updated_at": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24765,12 +24765,12 @@
             "attachments": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -24873,20 +24873,20 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "deadline": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -24908,8 +24908,8 @@
                   "nullable": true
                 },
                 "publishedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -24976,12 +24976,12 @@
             "bidding_keyword_subs": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -25034,12 +25034,12 @@
             "bidding_sources": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -25065,8 +25065,8 @@
                   "nullable": false
                 },
                 "lastFetchAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -25088,8 +25088,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30587,12 +30587,12 @@
             "departments": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30633,8 +30633,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30709,12 +30709,12 @@
             "enterprise_ai_model_routes": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30741,8 +30741,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30831,12 +30831,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30914,8 +30914,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30982,12 +30982,12 @@
             "enterprise_global_task_executions": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -30999,8 +30999,8 @@
                   "nullable": true
                 },
                 "finishedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -31022,8 +31022,8 @@
                   "nullable": true
                 },
                 "startedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -31049,8 +31049,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31140,12 +31140,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31208,8 +31208,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31312,12 +31312,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31362,8 +31362,8 @@
                   }
                 },
                 "lastSyncedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -31380,8 +31380,8 @@
                   "nullable": true
                 },
                 "lastTestedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -31450,8 +31450,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31543,12 +31543,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31584,8 +31584,8 @@
                   "nullable": true
                 },
                 "lastTestedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -31649,8 +31649,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31698,12 +31698,12 @@
             "enterprise_term_categories": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31734,8 +31734,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31806,12 +31806,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31851,8 +31851,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31924,12 +31924,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -31974,8 +31974,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32073,12 +32073,12 @@
             "enterprise_ui_settings": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32178,8 +32178,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32236,20 +32236,20 @@
                   "nullable": false
                 },
                 "completedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32261,8 +32261,8 @@
                   "nullable": true
                 },
                 "expiresAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32308,8 +32308,8 @@
                   "nullable": false
                 },
                 "startedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -32374,12 +32374,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32430,8 +32430,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32553,12 +32553,12 @@
                   "nullable": false
                 },
                 "boundAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32570,12 +32570,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32597,8 +32597,8 @@
                   "nullable": false
                 },
                 "lastLoginAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -32624,8 +32624,8 @@
                   }
                 },
                 "revokedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -32660,8 +32660,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32810,28 +32810,28 @@
                   "nullable": false
                 },
                 "consumedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "expiresAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -32963,12 +32963,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33014,8 +33014,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33141,12 +33141,12 @@
                   }
                 },
                 "create_time": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33198,8 +33198,8 @@
                   "nullable": false
                 },
                 "update_time": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33552,12 +33552,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33579,16 +33579,16 @@
                   "nullable": true
                 },
                 "dueNotifiedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "estimatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -33643,8 +33643,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33700,12 +33700,12 @@
                   }
                 },
                 "create_time": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -33757,8 +33757,8 @@
                   "nullable": false
                 },
                 "update_time": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34097,12 +34097,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34119,8 +34119,8 @@
                   "nullable": true
                 },
                 "followedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -34162,8 +34162,8 @@
                   "nullable": true
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34211,12 +34211,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34332,12 +34332,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34388,8 +34388,8 @@
                   "nullable": false
                 },
                 "nextAttemptAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -34401,8 +34401,8 @@
                   "nullable": true
                 },
                 "sentAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -34437,8 +34437,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34554,12 +34554,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34622,8 +34622,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34774,12 +34774,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -34801,8 +34801,8 @@
                   "nullable": true
                 },
                 "readAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -34924,8 +34924,8 @@
             "operation_log_settings": {
               "columns": {
                 "lastCleanupAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -34965,8 +34965,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -35011,12 +35011,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -36218,8 +36218,8 @@
                   "nullable": true
                 },
                 "applyStartedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -36231,12 +36231,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -36263,16 +36263,16 @@
                   "nullable": true
                 },
                 "fetchStartedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "finishedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -36289,8 +36289,8 @@
                   "nullable": false
                 },
                 "previewedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -36335,8 +36335,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -36465,12 +36465,12 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -36577,8 +36577,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -36643,12 +36643,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -36688,8 +36688,8 @@
                   }
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -37310,12 +37310,12 @@
             "roles": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -37387,8 +37387,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -38211,28 +38211,28 @@
             "subscriptions": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "currentPeriodEnd": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
                   }
                 },
                 "currentPeriodStart": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -38272,8 +38272,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39069,12 +39069,12 @@
             "tenants": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39141,8 +39141,8 @@
                   }
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39302,12 +39302,12 @@
                   "nullable": false
                 },
                 "create_time": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39333,8 +39333,8 @@
                   "nullable": false
                 },
                 "expire_time": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": true,
                   "typeParams": {
                     "precision": 3
@@ -39408,12 +39408,12 @@
             "user_roles": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39435,8 +39435,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39553,12 +39553,12 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamp-temporal@1",
+                  "codecId": "pg/timestamptz-temporal@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nativeType": "timestamp",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -39664,8 +39664,8 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamp-temporal@1",
-                  "nativeType": "timestamp",
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
                   "nullable": false,
                   "typeParams": {
                     "precision": 3
@@ -40028,7 +40028,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "651134f9ccfda014c4a27d235488e56b4640ad20fbf307fe0acaa0b8e39566de"
+    "storageHash": "07748bd3c63b9a5cad29fe7ca01d2112d369c952703a483fb95f34ecd715c0a9"
   },
   "execution": {
     "executionHash": "ee1184fbeb592072aa009813e818cb3444ede51deecdee3e8a696e7ac2e43e19",

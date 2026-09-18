@@ -1,22 +1,24 @@
 import { Temporal } from '@js-temporal/polyfill'
 
 /**
- * Prisma 8 maps PostgreSQL `timestamp without time zone` to
- * `Temporal.PlainDateTime`. The legacy Prisma 7 API exposes the same columns
- * as JavaScript Date values, so keep the migration boundary explicitly UTC.
+ * Project time columns represent absolute instants.
+ *
+ * Prisma 8 maps PostgreSQL `timestamptz` to `Temporal.Instant`; keep the
+ * application boundary instant-first and only convert to Date when integrating
+ * with APIs that still require the legacy JavaScript Date type.
  */
-export function prisma8Now(): Temporal.PlainDateTime {
-  return Temporal.Now.instant().toZonedDateTimeISO('UTC').toPlainDateTime()
+export function prisma8Now(): Temporal.Instant {
+  return Temporal.Now.instant()
 }
 
-export function prisma8TimestampFromDate(value: Date): Temporal.PlainDateTime {
-  return Temporal.Instant.from(value.toISOString()).toZonedDateTimeISO('UTC').toPlainDateTime()
+export function prisma8TimestampFromDate(value: Date): Temporal.Instant {
+  return Temporal.Instant.fromEpochMilliseconds(value.getTime())
 }
 
-export function prisma8TimestampToDate(value: Temporal.PlainDateTime): Date {
-  return new Date(value.toZonedDateTime('UTC').toInstant().epochMilliseconds)
+export function prisma8TimestampToDate(value: Temporal.Instant): Date {
+  return new Date(value.epochMilliseconds)
 }
 
-export function prisma8TimestampToISOString(value: Temporal.PlainDateTime): string {
-  return prisma8TimestampToDate(value).toISOString()
+export function prisma8TimestampToISOString(value: Temporal.Instant): string {
+  return value.toString({ smallestUnit: 'millisecond' })
 }

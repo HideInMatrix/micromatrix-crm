@@ -79,7 +79,7 @@ export class OperationLogSettingsService {
     const query = client.raw.sql`INSERT INTO operation_log_settings (
         "tenantId", "retentionDays", "lastCleanupAt", "lastCleanupDeleted", "lastCleanupSource", "updatedAt"
       ) VALUES (
-        ${tenantId}, NULL, (${atIso}::timestamptz AT TIME ZONE 'UTC'), ${deleted},
+        ${tenantId}, NULL, ${atIso}::timestamptz, ${deleted},
         ${source}::"OperationLogCleanupSource", CURRENT_TIMESTAMP
       )
       ON CONFLICT ("tenantId") DO UPDATE SET

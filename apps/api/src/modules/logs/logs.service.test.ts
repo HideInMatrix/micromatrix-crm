@@ -24,7 +24,7 @@ test('操作日志分页列表只选择轻量字段且不读取 Blob', async () 
             action: 'update',
             targetName: '线索A',
             ip: '192.168.1.10',
-            createdAt: Temporal.PlainDateTime.from('2026-09-04T05:00:00'),
+            createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
           },
         ],
     aggregate: async () => ({ total: 1 }),
@@ -59,7 +59,7 @@ test('操作日志详情按 tenantId + id 查询并返回 Blob detail', async ()
           targetId: 'customer-1',
           targetName: '客户A',
           ip: '192.168.1.10',
-          createdAt: Temporal.PlainDateTime.from('2026-09-04T05:00:00'),
+          createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
         }),
   }
   const blobCollection = {
