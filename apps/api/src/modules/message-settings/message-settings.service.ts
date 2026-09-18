@@ -13,8 +13,8 @@ import {
   type UpdateMessageTaskSettingInput,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 
 const CACHE_NAMESPACE = 'message-settings'
@@ -23,7 +23,7 @@ const CACHE_TTL_SECONDS = 5 * 60
 @Injectable()
 export class MessageSettingsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
@@ -41,7 +41,7 @@ export class MessageSettingsService {
   }
 
   private async loadList(tenantId: string): Promise<MessageTaskGroupVO[]> {
-    const rows = await this.prisma8.client.orm.public.MessageTaskSettings.where({ tenantId }).all()
+    const rows = await this.prisma.client.orm.public.MessageTaskSettings.where({ tenantId }).all()
     const rowMap = new Map(rows.map((row) => [row.event, row]))
     const groups = new Map<MessageTaskModule, MessageTaskGroupVO>()
 
@@ -81,7 +81,7 @@ export class MessageSettingsService {
     tenantId: string,
     definition: MessageTaskDefinition,
   ): Promise<MessageTaskSettingVO> {
-    const row = await this.prisma8.client.orm.public.MessageTaskSettings.where({
+    const row = await this.prisma.client.orm.public.MessageTaskSettings.where({
       tenantId,
       module: definition.module,
       event: definition.event,
@@ -112,7 +112,7 @@ export class MessageSettingsService {
     }
 
     if (config.roleEnable && config.roleIds.length > 0) {
-      const roleMembers = await this.prisma8.client.orm.public.UserRoles.where({ tenantId })
+      const roleMembers = await this.prisma.client.orm.public.UserRoles.where({ tenantId })
         .where((row) => row.roleId.in(config.roleIds))
         .select('userId')
         .all()
@@ -120,7 +120,7 @@ export class MessageSettingsService {
     }
 
     if (config.ownerEnable && context.ownerId) {
-      const owner = await this.prisma8.client.orm.public.Users.where({
+      const owner = await this.prisma.client.orm.public.Users.where({
         id: context.ownerId,
         tenantId,
         status: 'ACTIVE',
@@ -130,7 +130,7 @@ export class MessageSettingsService {
       let departmentId = owner?.deptId ?? null
       const levelCount = Math.max(1, config.ownerLevel)
       for (let level = 0; departmentId && level < levelCount; level++) {
-        const department = await this.prisma8.client.orm.public.Departments.where({
+        const department = await this.prisma.client.orm.public.Departments.where({
           id: departmentId,
           tenantId,
         })
@@ -143,7 +143,7 @@ export class MessageSettingsService {
     }
 
     if (recipientIds.size === 0) return []
-    const activeUsers = await this.prisma8.client.orm.public.Users.where({
+    const activeUsers = await this.prisma.client.orm.public.Users.where({
       tenantId,
       status: 'ACTIVE',
     })
@@ -178,7 +178,7 @@ export class MessageSettingsService {
     if (input.dingTalkEnabled === true) await this.assertDingTalkAvailable(tenantId)
     if (input.larkEnabled === true) await this.assertLarkAvailable(tenantId)
 
-    const rows = this.prisma8.client.orm.public.MessageTaskSettings
+    const rows = this.prisma.client.orm.public.MessageTaskSettings
     const existing = await rows
       .where({
         tenantId,
@@ -193,7 +193,7 @@ export class MessageSettingsService {
       ...(input.dingTalkEnabled === undefined ? {} : { dingTalkEnabled: input.dingTalkEnabled }),
       ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
       ...(input.config === undefined ? {} : { config: jsonValue(input.config) }),
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     }
     const row = existing
       ? await rows.where({ id: existing.id }).update(updateData)
@@ -207,7 +207,7 @@ export class MessageSettingsService {
           dingTalkEnabled: input.dingTalkEnabled ?? false,
           larkEnabled: input.larkEnabled ?? false,
           ...(input.config === undefined ? {} : { config: jsonValue(input.config) }),
-          updatedAt: prisma8Now(),
+          updatedAt: nowInstant(),
         })
     if (!row) throw new NotFoundException('消息设置不存在')
     await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
@@ -230,7 +230,7 @@ export class MessageSettingsService {
     if (input.weComEnabled === true) await this.assertWeComAvailable(tenantId)
     if (input.dingTalkEnabled === true) await this.assertDingTalkAvailable(tenantId)
     if (input.larkEnabled === true) await this.assertLarkAvailable(tenantId)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const rows = tx.orm.public.MessageTaskSettings
       for (const definition of MESSAGE_TASK_DEFINITIONS) {
         const existing = await rows
@@ -248,7 +248,7 @@ export class MessageSettingsService {
             ? {}
             : { dingTalkEnabled: input.dingTalkEnabled }),
           ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
-          updatedAt: prisma8Now(),
+          updatedAt: nowInstant(),
         }
         if (existing) {
           await rows.where({ id: existing.id }).update(patch)
@@ -262,7 +262,7 @@ export class MessageSettingsService {
             weComEnabled: input.weComEnabled ?? false,
             dingTalkEnabled: input.dingTalkEnabled ?? false,
             larkEnabled: input.larkEnabled ?? false,
-            updatedAt: prisma8Now(),
+            updatedAt: nowInstant(),
           })
         }
       }
@@ -289,11 +289,11 @@ export class MessageSettingsService {
 
   async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const [integration, tenant] = await Promise.all([
-      this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({
         tenantId,
         provider: 'WECOM',
       }).first(),
-      this.prisma8.client.orm.public.Tenants.where({ id: tenantId })
+      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
         .select('enterpriseSyncResource')
         .first(),
     ])
@@ -319,11 +319,11 @@ export class MessageSettingsService {
 
   async getDingTalkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const [integration, tenant] = await Promise.all([
-      this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({
         tenantId,
         provider: 'DINGTALK',
       }).first(),
-      this.prisma8.client.orm.public.Tenants.where({ id: tenantId })
+      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
         .select('enterpriseSyncResource')
         .first(),
     ])
@@ -349,11 +349,11 @@ export class MessageSettingsService {
 
   async getLarkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const [integration, tenant] = await Promise.all([
-      this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({
         tenantId,
         provider: 'LARK',
       }).first(),
-      this.prisma8.client.orm.public.Tenants.where({ id: tenantId })
+      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
         .select('enterpriseSyncResource')
         .first(),
     ])
@@ -400,7 +400,7 @@ export class MessageSettingsService {
     }
     const normalUserIds = [...new Set(config.userIds.filter((id) => id !== 'OWNER'))]
     if (normalUserIds.length > 0) {
-      const users = await this.prisma8.client.orm.public.Users.where({
+      const users = await this.prisma.client.orm.public.Users.where({
         tenantId,
         status: 'ACTIVE',
       })
@@ -414,7 +414,7 @@ export class MessageSettingsService {
       throw new BadRequestException('开启角色通知后至少选择一个角色')
     }
     if (roleIds.length > 0) {
-      const roles = await this.prisma8.client.orm.public.Roles.where({ tenantId })
+      const roles = await this.prisma.client.orm.public.Roles.where({ tenantId })
         .where((row) => row.id.in(roleIds))
         .select('id')
         .all()

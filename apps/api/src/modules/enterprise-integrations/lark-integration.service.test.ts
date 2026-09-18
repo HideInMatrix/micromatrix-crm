@@ -6,7 +6,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import type { DingTalkClient } from './dingtalk.client'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
-import { createIntegrationPrisma8Harness } from './enterprise-integrations.prisma8-test-harness'
+import { createIntegrationPrismaHarness } from './enterprise-integrations.test-harness'
 import type { LarkClient, LarkConnectionResult } from './lark.client'
 import type { WeComClient } from './wecom.client'
 
@@ -24,7 +24,7 @@ const user: AuthUser = {
 function createService(
   result: LarkConnectionResult = { success: true, message: '飞书连接成功', providerCode: 0 },
 ) {
-  const { prisma8, rows } = createIntegrationPrisma8Harness('LARK')
+  const { prisma, rows } = createIntegrationPrismaHarness('LARK')
   const cipher = new CredentialCipherService(
     new ConfigService({
       INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',
@@ -33,7 +33,7 @@ function createService(
   )
   const larkClient = { testConnection: async () => result } as unknown as LarkClient
   const service = new EnterpriseIntegrationsService(
-    prisma8,
+    prisma,
     cipher,
     {} as WeComClient,
     {} as DingTalkClient,

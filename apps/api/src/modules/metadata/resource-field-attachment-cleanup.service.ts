@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { AttachmentsService } from '../attachments/attachments.service'
 import {
   RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX,
@@ -20,7 +20,7 @@ export class ResourceFieldAttachmentCleanupService {
   private readonly logger = new Logger(ResourceFieldAttachmentCleanupService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly fields: ResourceFieldValueService,
     private readonly attachments: AttachmentsService,
     private readonly coordinator: DistributedCoordinatorService,
@@ -39,7 +39,7 @@ export class ResourceFieldAttachmentCleanupService {
     let deleted = 0
 
     for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch++) {
-      const client = this.prisma8.client
+      const client = this.prisma.client
       const cutoff = temporaryCutoff.toISOString()
       const query = client.raw.sql`SELECT
           attachment.id,

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 export interface DashboardScopeMember {
   id: string
@@ -21,7 +21,7 @@ interface DashboardVisibilityRow {
 
 @Injectable()
 export class DashboardAccessService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   hasWildcard(user: AuthUser) {
     return user.permissions.includes('*')
@@ -43,7 +43,7 @@ export class DashboardAccessService {
 
   async departmentPathIds(user: AuthUser): Promise<string[]> {
     if (!user.deptId) return []
-    const rows = await this.prisma8.client.orm.public.Departments.where({ tenantId: user.tenantId })
+    const rows = await this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
       .select('id', 'parentId')
       .all()
     const map = new Map(rows.map((row) => [row.id, row.parentId]))
@@ -72,14 +72,14 @@ export class DashboardAccessService {
   }
 
   async assertVisibleDashboard(user: AuthUser, id: string) {
-    const row = await this.prisma8.client.orm.public.Dashboard.where({
+    const row = await this.prisma.client.orm.public.Dashboard.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('仪表板不存在')
     const departmentIds = await this.departmentPathIds(user)
     if (!this.isVisible(row, user, departmentIds)) throw new ForbiddenException('无权访问该仪表板')
-    const module = await this.prisma8.client.orm.public.DashboardModule.where({
+    const module = await this.prisma.client.orm.public.DashboardModule.where({
       id: row.dashboardModuleId,
       organizationId: user.tenantId,
     }).first()
@@ -102,11 +102,11 @@ export class DashboardAccessService {
     const ids = [...new Set(rawIds.map((item) => item.trim()).filter(Boolean))]
     if (ids.length === 0) return []
     const [users, departments] = await Promise.all([
-      this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
         .where((row) => row.id.in(ids))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.Departments.where({ tenantId: user.tenantId })
+      this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
         .where((row) => row.id.in(ids))
         .select('id')
         .all(),
@@ -121,11 +121,11 @@ export class DashboardAccessService {
   async resolveScopeMembers(user: AuthUser, scopeIds: string[]): Promise<DashboardScopeMember[]> {
     if (scopeIds.length === 0) return []
     const [users, departments] = await Promise.all([
-      this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
         .where((row) => row.id.in(scopeIds))
         .select('id', 'name')
         .all(),
-      this.prisma8.client.orm.public.Departments.where({ tenantId: user.tenantId })
+      this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
         .where((row) => row.id.in(scopeIds))
         .select('id', 'name')
         .all(),

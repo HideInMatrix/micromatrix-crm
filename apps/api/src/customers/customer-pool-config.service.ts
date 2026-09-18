@@ -3,7 +3,7 @@ import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
 import { MetadataService } from '../modules/metadata/metadata.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
-import { Prisma8Service } from '../prisma/prisma8.service'
+import { PrismaService } from '../prisma/prisma.service'
 
 import type {
   CapacityExclusionCondition,
@@ -25,7 +25,7 @@ type CustomerPoolRow = Awaited<ReturnType<CustomerPoolRepository['listPools']>>[
 @Injectable()
 export class CustomerPoolConfigService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly metadata: MetadataService,
     private readonly customerPools: CustomerPoolRepository,
   ) {}
@@ -62,7 +62,7 @@ export class CustomerPoolConfigService {
 
   async noPick(user: AuthUser, poolId: string) {
     await this.assertPoolExists(user.tenantId, poolId)
-    const aggregate = await this.prisma8.client.orm.public.Customer.where({
+    const aggregate = await this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       poolId: poolId,
       inSharedPool: true,
@@ -177,7 +177,7 @@ export class CustomerPoolConfigService {
       throw new BadRequestException('客户库容仅支持按商机阶段排除')
     if (!filter.value.length) throw new BadRequestException('请选择要排除的商机阶段')
     const stageIds = [...new Set(filter.value)]
-    const stages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const stages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: user.tenantId,
     })
       .where((stage) => stage.id.in(stageIds))
@@ -203,7 +203,7 @@ export class CustomerPoolConfigService {
       ...new Set(rows.flatMap((row) => [row.createUser, row.updateUser]).filter(Boolean)),
     ]
     const users = userIds.length
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
           .where((member) => member.id.in(userIds))
           .select('id', 'name')
           .all()

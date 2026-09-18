@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common'
-import { Prisma8Module } from '../../prisma/prisma8.module'
+import { PrismaModule } from '../../prisma/prisma.module'
 import { DictionariesController } from './dictionaries.controller'
 import { DictionariesService } from './dictionaries.service'
 
 @Module({
-  imports: [Prisma8Module],
+  imports: [PrismaModule],
   controllers: [DictionariesController],
   providers: [DictionariesService],
   exports: [DictionariesService],

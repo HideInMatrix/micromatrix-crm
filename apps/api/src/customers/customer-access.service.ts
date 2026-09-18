@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { AuthUser } from '../common/auth-user'
 import { DataScopeService } from '../common/services/data-scope.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
-import { Prisma8Service } from '../prisma/prisma8.service'
+import { PrismaService } from '../prisma/prisma.service'
 
 export type CustomerCollaborationAccess = 'READ_ONLY' | 'COLLABORATION' | null
 
@@ -43,7 +43,7 @@ export interface CustomerAccessContext {
 @Injectable()
 export class CustomerAccessService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScopeService: DataScopeService,
     private readonly resourcePools: ResourcePoolsService,
   ) {}
@@ -53,7 +53,7 @@ export class CustomerAccessService {
     customerId: string,
     permission = 'customer:read',
   ): Promise<CustomerAccessContext> {
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: customerId,
       organizationId: user.tenantId,
     }).first()
@@ -73,7 +73,7 @@ export class CustomerAccessService {
       poolManager = await this.resourcePools.isPoolManager(user, 'customer', customer.poolId)
     }
 
-    const collaboration = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    const collaboration = await this.prisma.client.orm.public.CustomerCollaboration.where({
       customerId: customer.id,
       userId: user.id,
     })

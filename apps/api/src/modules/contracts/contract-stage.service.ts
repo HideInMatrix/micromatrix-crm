@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   ContractStageAddDto,
@@ -15,7 +15,7 @@ const MAX_STAGE_COUNT = 15
 
 @Injectable()
 export class ContractStageService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async get(user: AuthUser) {
     await this.ensureDefaults(user)
@@ -143,7 +143,7 @@ export class ContractStageService {
     if (count > 0) throw new BadRequestException('该阶段下存在合同，无法删除')
     const stageId = id
     const organizationId = user.tenantId
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.StageAdvancedConfig.where({
         organizationId,
         moduleType: MODULE_TYPE,
@@ -179,7 +179,7 @@ export class ContractStageService {
       throw new BadRequestException('阶段排序必须包含当前全部阶段且不能重复')
     }
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ids.entries()) {
         await tx.orm.public.ContractStageConfig.where({
           id: id,
@@ -246,7 +246,7 @@ export class ContractStageService {
         })
       }
     }
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.StageAdvancedConfig.where({
         organizationId: user.tenantId,
         moduleType: MODULE_TYPE,
@@ -385,14 +385,14 @@ export class ContractStageService {
   }
 
   private contractStages() {
-    return this.prisma8.client.orm.public.ContractStageConfig
+    return this.prisma.client.orm.public.ContractStageConfig
   }
 
   private contracts() {
-    return this.prisma8.client.orm.public.Contract
+    return this.prisma.client.orm.public.Contract
   }
 
   private advancedConfigs() {
-    return this.prisma8.client.orm.public.StageAdvancedConfig
+    return this.prisma.client.orm.public.StageAdvancedConfig
   }
 }

@@ -9,8 +9,8 @@ import { JwtService, type JwtSignOptions } from '@nestjs/jwt'
 import { CurrentUser, LoginResult } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
 import { AuthContextCacheService } from '../common/services/auth-context-cache.service'
-import { Prisma8Service } from '../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampFromDate } from '../prisma/prisma8-temporal'
+import { PrismaService } from '../prisma/prisma.service'
+import { nowInstant, instantFromDate } from '../prisma/temporal'
 import { LoginDto } from './dto/login.dto'
 import { RegisterDto } from './dto/register.dto'
 import type { JwtPayload } from './jwt-payload.interface'
@@ -59,7 +59,7 @@ export interface ExternalLoginAudit {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly authCache: AuthContextCacheService,
@@ -67,7 +67,7 @@ export class AuthService {
 
   /** 注册 = 创建租户 + 根部门 + 管理员角色 + 管理员账号 */
   async register(dto: RegisterDto): Promise<LoginResult> {
-    const exists = await this.prisma8.client.orm.public.Users.where({ email: dto.email })
+    const exists = await this.prisma.client.orm.public.Users.where({ email: dto.email })
       .select('id')
       .first()
     if (exists) throw new ConflictException('该邮箱已被注册')
@@ -75,16 +75,16 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 10)
     const slug = await this.generateTenantSlug(dto.tenantName)
 
-    const userId = await this.prisma8.client.transaction(async (tx) => {
+    const userId = await this.prisma.client.transaction(async (tx) => {
       const tenant = await tx.orm.public.Tenants.create({
         name: dto.tenantName,
         slug,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       const rootDept = await tx.orm.public.Departments.create({
         tenantId: tenant.id,
         name: dto.tenantName,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       const adminRole = await tx.orm.public.Roles.create({
         tenantId: tenant.id,
@@ -92,7 +92,7 @@ export class AuthService {
         permissions: ['*'],
         dataScope: 'ALL',
         isSystem: true,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       const created = await tx.orm.public.Users.create({
         tenantId: tenant.id,
@@ -100,13 +100,13 @@ export class AuthService {
         passwordHash,
         name: dto.name,
         deptId: rootDept.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       await tx.orm.public.UserRoles.create({
         tenantId: tenant.id,
         userId: created.id,
         roleId: adminRole.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
 
       const freePlan = await tx.orm.public.Plans.where({ code: 'free' }).select('id').first()
@@ -116,11 +116,11 @@ export class AuthService {
           tenantId: tenant.id,
           planId: freePlan.id,
           status: 'TRIALING',
-          currentPeriodStart: prisma8TimestampFromDate(periodStart),
-          currentPeriodEnd: prisma8TimestampFromDate(
+          currentPeriodStart: instantFromDate(periodStart),
+          currentPeriodEnd: instantFromDate(
             new Date(periodStart.getTime() + 14 * 24 * 3600 * 1000),
           ),
-          updatedAt: prisma8Now(),
+          updatedAt: nowInstant(),
         })
       }
       return created.id
@@ -132,7 +132,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, context: LoginContext = {}): Promise<LoginResult> {
-    const row = await this.prisma8.client.orm.public.Users.where((user) => user.email.ilike(dto.email))
+    const row = await this.prisma.client.orm.public.Users.where((user) =>
+      user.email.ilike(dto.email),
+    )
       .select('id')
       .first()
     const user = row ? await this.loadUserWithRelations(row.id) : null
@@ -209,7 +211,7 @@ export class AuthService {
     message: string,
     context: LoginContext = {},
   ): Promise<void> {
-    await this.prisma8.client.orm.public.LoginLogs.create({
+    await this.prisma.client.orm.public.LoginLogs.create({
       tenantId: audit.tenantId,
       userId: audit.userId,
       email: audit.email,
@@ -220,8 +222,7 @@ export class AuthService {
       message: message.slice(0, 500),
       ip: context.ip,
       userAgent: context.userAgent,
-    })
-      .catch(() => undefined)
+    }).catch(() => undefined)
   }
 
   async refresh(refreshToken: string): Promise<LoginResult> {
@@ -251,7 +252,7 @@ export class AuthService {
   }
 
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
-    const user = await this.prisma8.client.orm.public.Users.where({ id: userId }).first()
+    const user = await this.prisma.client.orm.public.Users.where({ id: userId }).first()
     if (!user) throw new UnauthorizedException('用户不存在')
     if (!user.passwordLoginEnabled) throw new ForbiddenException('当前账号未启用密码登录')
     if (!(await bcrypt.compare(oldPassword, user.passwordHash))) {
@@ -261,11 +262,11 @@ export class AuthService {
       throw new ConflictException('新密码不能与原密码相同')
     }
     const passwordHash = await bcrypt.hash(newPassword, 10)
-    await this.prisma8.client.orm.public.Users.where({ id: userId }).update({
+    await this.prisma.client.orm.public.Users.where({ id: userId }).update({
       passwordHash,
       defaultPwd: false,
       authVersion: user.authVersion + 1,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     await this.authCache.invalidate(userId)
     return { success: true }
@@ -290,7 +291,7 @@ export class AuthService {
       externalIdentityId?: string
     } = { authType: 'PASSWORD' },
   ): Promise<void> {
-    await this.prisma8.client.orm.public.LoginLogs.create({
+    await this.prisma.client.orm.public.LoginLogs.create({
       tenantId: user?.tenantId,
       userId: user?.id,
       email,
@@ -301,8 +302,7 @@ export class AuthService {
       message,
       ip: context.ip,
       userAgent: context.userAgent,
-    })
-      .catch(() => undefined)
+    }).catch(() => undefined)
   }
 
   private async buildLoginResult(user: UserWithRelations): Promise<LoginResult> {
@@ -360,35 +360,36 @@ export class AuthService {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '') || 'tenant'
     let slug = base
-    while (await this.prisma8.client.orm.public.Tenants.where({ slug }).select('id').first()) {
+    while (await this.prisma.client.orm.public.Tenants.where({ slug }).select('id').first()) {
       slug = `${base}-${Math.random().toString(36).slice(2, 6)}`
     }
     return slug
   }
 
   private async loadUserWithRelations(userId: string): Promise<UserWithRelations | null> {
-    const user = await this.prisma8.client.orm.public.Users.where({ id: userId }).first()
+    const user = await this.prisma.client.orm.public.Users.where({ id: userId }).first()
     if (!user) return null
     const [tenant, dept, extension, relations] = await Promise.all([
-      this.prisma8.client.orm.public.Tenants.where({ id: user.tenantId })
+      this.prisma.client.orm.public.Tenants.where({ id: user.tenantId })
         .select('name', 'slug', 'status')
         .first(),
       user.deptId
-        ? this.prisma8.client.orm.public.Departments.where({ id: user.deptId, tenantId: user.tenantId })
+        ? this.prisma.client.orm.public.Departments.where({
+            id: user.deptId,
+            tenantId: user.tenantId,
+          })
             .select('name')
             .first()
         : null,
-      this.prisma8.client.orm.public.UserExtensions.where({ id: user.id })
-        .select('avatar')
-        .first(),
-      this.prisma8.client.orm.public.UserRoles.where({ tenantId: user.tenantId, userId: user.id })
+      this.prisma.client.orm.public.UserExtensions.where({ id: user.id }).select('avatar').first(),
+      this.prisma.client.orm.public.UserRoles.where({ tenantId: user.tenantId, userId: user.id })
         .select('roleId')
         .all(),
     ])
     if (!tenant) return null
     const roleIds = relations.map((relation) => relation.roleId)
     const roles = roleIds.length
-      ? await this.prisma8.client.orm.public.Roles.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Roles.where({ tenantId: user.tenantId })
           .where((role) => role.id.in(roleIds))
           .select('id', 'name', 'permissions')
           .all()

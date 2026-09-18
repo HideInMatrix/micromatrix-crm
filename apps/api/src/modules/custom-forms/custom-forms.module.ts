@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { Prisma8Module } from '../../prisma/prisma8.module.js'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { ImportExportModule } from '../import-export/import-export.module'
 import { UserViewsModule } from '../user-views/user-views.module'
@@ -7,7 +7,7 @@ import { CustomFormDataController, CustomFormsController } from './custom-forms.
 import { CustomFormsService } from './custom-forms.service'
 
 @Module({
-  imports: [AttachmentsModule, ImportExportModule, UserViewsModule, Prisma8Module],
+  imports: [AttachmentsModule, ImportExportModule, UserViewsModule, PrismaModule],
   controllers: [CustomFormsController, CustomFormDataController],
   providers: [CustomFormsService],
   exports: [CustomFormsService],

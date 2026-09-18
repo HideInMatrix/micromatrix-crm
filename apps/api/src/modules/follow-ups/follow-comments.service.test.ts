@@ -3,16 +3,13 @@ import test from 'node:test'
 import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import { OPERATION_LOG_RESULT_META } from '../../common/decorators/log-operation.decorator'
 import type { AuthUser } from '../../common/auth-user'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import {
-  createFollowCommentPrisma8Harness,
-  type HarnessUser,
-} from './follow-comment.prisma8-test-harness'
+import { instantFromDate } from '../../prisma/temporal'
+import { createFollowCommentPrismaHarness, type HarnessUser } from './follow-comment.test-harness'
 import type { FollowCommentRow as FollowUpRecordComment } from './follow-comment.service-base'
 import { FollowCommentsService } from './follow-comments.service'
 import type { FollowRecord as FollowUpRecord } from './follow-ups.service'
 
-const instant = (value: string) => prisma8TimestampFromDate(new Date(value))
+const instant = (value: string) => instantFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'user-1',
@@ -68,7 +65,7 @@ function member(id: string, overrides: Partial<HarnessUser> = {}): HarnessUser {
 
 test('新增评论原子写 Comment/Mention/commentCount，并分别发送负责人和 mention/reply 事件', async () => {
   const notifications: Array<{ event: string; recipientIds: Array<string | null | undefined> }> = []
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'record',
     tenantId: user.tenantId,
     nextCreatedId: 'comment-1',
@@ -76,7 +73,7 @@ test('新增评论原子写 Comment/Mention/commentCount，并分别发送负责
     users: [member(user.id), member('mention-1'), member('reply-1')],
   })
   const service = new FollowCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertRecordAccess: async () => record() } as never,
     {
       send: async (input: { event: string; recipientIds: Array<string | null | undefined> }) => {
@@ -119,14 +116,14 @@ test('新增评论原子写 Comment/Mention/commentCount，并分别发送负责
 })
 
 test('回复只允许挂在顶层评论，禁止形成第三级', async () => {
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'record',
     tenantId: user.tenantId,
     comments: [comment({ id: 'reply-1', parentId: 'parent-1' })],
     users: [member('user-2')],
   })
   const service = new FollowCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertRecordAccess: async () => record() } as never,
     {} as never,
   )
@@ -144,13 +141,13 @@ test('回复只允许挂在顶层评论，禁止形成第三级', async () => {
 })
 
 test('mention 必须全部属于当前租户 ACTIVE 用户', async () => {
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'record',
     tenantId: user.tenantId,
     users: [member('valid-user')],
   })
   const service = new FollowCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertRecordAccess: async () => record() } as never,
     {} as never,
   )
@@ -168,14 +165,14 @@ test('mention 必须全部属于当前租户 ACTIVE 用户', async () => {
 
 test('编辑评论只允许创建人，并在日志元数据中保留正文 before/after', async () => {
   const own = comment({ content: '旧内容' })
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'record',
     tenantId: user.tenantId,
     comments: [own],
     users: [member(user.id)],
   })
   const service = new FollowCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertRecordAccess: async () => record({ ownerId: user.id }) } as never,
     { send: async () => 0 } as never,
   )
@@ -190,12 +187,12 @@ test('编辑评论只允许创建人，并在日志元数据中保留正文 befo
   assert.equal(logMeta.detail.before.content, '旧内容')
   assert.equal(logMeta.detail.after.content, '新内容')
 
-  const foreignHarness = createFollowCommentPrisma8Harness({
+  const foreignHarness = createFollowCommentPrismaHarness({
     kind: 'record',
     tenantId: user.tenantId,
     comments: [comment({ createdById: 'other-user' })],
   })
-  const foreignService = new FollowCommentsService(foreignHarness.prisma8, {} as never, {} as never)
+  const foreignService = new FollowCommentsService(foreignHarness.prisma, {} as never, {} as never)
   await assert.rejects(
     () => foreignService.update(user, { id: 'comment-1', content: '越权修改' }),
     ForbiddenException,
@@ -210,7 +207,7 @@ test('分页只统计顶层 total，但 commentCount 包含回复并批量装配
     createdById: 'reply-user',
     replyToUserId: user.id,
   })
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'record',
     tenantId: user.tenantId,
     comments: [parent, reply],
@@ -218,7 +215,7 @@ test('分页只统计顶层 total，但 commentCount 包含回复并批量装配
     users: [member(user.id), member('reply-user'), member('mention-user')],
   })
   const service = new FollowCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertRecordAccess: async () => record({ commentCount: 2 }) } as never,
     {} as never,
   )

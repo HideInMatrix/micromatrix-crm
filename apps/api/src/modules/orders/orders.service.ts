@@ -11,8 +11,8 @@ import { generateBizCode } from '../../common/code-gen'
 import { formatForExport } from '../../common/export-format'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type { ImportType } from '../import-export/dto/import-export.dto'
@@ -46,7 +46,7 @@ import { OrderStageService } from './order-stage.service'
 const FORM_KEY = 'order'
 const READ_PERMISSION = 'ORDER:READ'
 const MAX_AMOUNT = 9_999_999_999
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 const ORDER_SUB_KEYS = [
   'orderProduct',
   'orderProductPrice',
@@ -90,7 +90,7 @@ type OrderWithRefs = OrderRow & {
 @Injectable()
 export class OrdersService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
@@ -123,7 +123,7 @@ export class OrdersService {
         : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    let query = this.prisma8.client.orm.public.SalesOrder.where({
+    let query = this.prisma.client.orm.public.SalesOrder.where({
       organizationId: user.tenantId,
     })
     const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
@@ -140,13 +140,13 @@ export class OrdersService {
     if (dto.contractId) query = query.where({ contractId: dto.contractId })
     if (dto.keyword) {
       const [customers, contracts] = await Promise.all([
-        this.prisma8.client.orm.public.Customer.where({
+        this.prisma.client.orm.public.Customer.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.name.ilike(`%${dto.keyword}%`))
           .select('id')
           .all(),
-        this.prisma8.client.orm.public.Contract.where({
+        this.prisma.client.orm.public.Contract.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.name.ilike(`%${dto.keyword}%`))
@@ -171,7 +171,7 @@ export class OrdersService {
         .limit(take)
         .all(),
       query.aggregate((value) => ({ count: value.count() })),
-      this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+      this.prisma.client.orm.public.SalesOrderStageConfig.where({
         organizationId: user.tenantId,
       })
         .orderBy((row) => row.pos.asc())
@@ -232,7 +232,7 @@ export class OrdersService {
     const config =
       dto.moduleFormConfigDTO ?? (await this.moduleForms.getConfig(user.tenantId, FORM_KEY))
     const pos = await this.nextPos(user.tenantId, stage.id)
-    const row = await this.prisma8.client.transaction(async (tx) => {
+    const row = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.SalesOrder.create({
         id: createLegacyId32(),
         number: dto.number?.trim() || generateBizCode('DD'),
@@ -301,7 +301,7 @@ export class OrdersService {
       dto.moduleFields === undefined
         ? (existingDynamic.get(dto.id) ?? {})
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const row = await tx.orm.public.SalesOrder.where({ id: dto.id }).update({
         name: dto.name === undefined ? undefined : dto.name.trim(),
         customerId: dto.customerId === undefined ? undefined : dto.customerId,
@@ -356,7 +356,7 @@ export class OrdersService {
       this.fieldValues.load(user.tenantId, 'order', [id]),
       this.orderFields.loadProducts(user.tenantId, id),
       this.userNames([row.owner]),
-      this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+      this.prisma.client.orm.public.SalesOrderStageConfig.where({
         id: row.stage,
         organizationId: user.tenantId,
       }).first(),
@@ -374,7 +374,7 @@ export class OrdersService {
 
   async getSnapshot(user: AuthUser, id: string) {
     await this.ensureInScope(user, id)
-    const snapshot = await this.prisma8.client.orm.public.SalesOrderSnapshot.where({
+    const snapshot = await this.prisma.client.orm.public.SalesOrderSnapshot.where({
       orderId: id,
     })
       .select('orderValue')
@@ -385,7 +385,7 @@ export class OrdersService {
 
   async getSnapshotForm(user: AuthUser, id: string) {
     await this.ensureInScope(user, id)
-    const snapshot = await this.prisma8.client.orm.public.SalesOrderSnapshot.where({
+    const snapshot = await this.prisma.client.orm.public.SalesOrderSnapshot.where({
       orderId: id,
     })
       .select('orderProp')
@@ -429,7 +429,7 @@ export class OrdersService {
       }
     }
     const stageFields = [...effectiveFields.values()]
-    const target = await this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+    const target = await this.prisma.client.orm.public.SalesOrderStageConfig.where({
       id: dto.stage,
       organizationId: user.tenantId,
     }).first()
@@ -455,7 +455,7 @@ export class OrdersService {
       }
     }
     const pos = await this.nextPos(user.tenantId, dto.stage)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const row = await tx.orm.public.SalesOrder.where({ id: dto.id }).update({
         stage: dto.stage,
         pos,
@@ -497,7 +497,7 @@ export class OrdersService {
       const now = BigInt(Date.now())
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
-        await this.prisma8.client.orm.public.SalesOrder.where((row) =>
+        await this.prisma.client.orm.public.SalesOrder.where((row) =>
           row.id.in(ids),
         ).updateAndCount({
           owner: owner.id,
@@ -507,7 +507,7 @@ export class OrdersService {
       } else if (field.key === 'name') {
         const name = String(dto.fieldValue ?? '').trim()
         if (!name) throw new BadRequestException('订单名称不能为空')
-        await this.prisma8.client.orm.public.SalesOrder.where((row) =>
+        await this.prisma.client.orm.public.SalesOrder.where((row) =>
           row.id.in(ids),
         ).updateAndCount({
           name: name,
@@ -518,7 +518,7 @@ export class OrdersService {
         throw new BadRequestException('该系统字段不支持批量修改')
       }
     } else {
-      await this.prisma8.client.transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'order',
@@ -946,7 +946,7 @@ export class OrdersService {
     if (current.stage !== dto.stage) {
       throw new BadRequestException('跨阶段拖拽请使用订单阶段流转接口')
     }
-    const rows = await this.prisma8.client.orm.public.SalesOrder.where({
+    const rows = await this.prisma.client.orm.public.SalesOrder.where({
       organizationId: user.tenantId,
       stage: dto.stage,
     })
@@ -957,7 +957,7 @@ export class OrdersService {
     const index = Math.max(0, Math.min(ids.length, (dto.pos ?? ids.length + 1) - 1))
     ids.splice(index, 0, dto.id)
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [pos, id] of ids.entries()) {
         await tx.orm.public.SalesOrder.where({ id: id }).update({
           pos: BigInt(pos + 1),
@@ -977,7 +977,7 @@ export class OrdersService {
       const approval = await this.approvals.submit(user, 'order', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
-    await this.prisma8.client.orm.public.SalesOrder.where({
+    await this.prisma.client.orm.public.SalesOrder.where({
       id: id,
       organizationId: user.tenantId,
     }).delete()
@@ -1015,7 +1015,7 @@ export class OrdersService {
   }
 
   async ensureInScope(user: AuthUser, id: string, permission = READ_PERMISSION) {
-    const row = await this.prisma8.client.orm.public.SalesOrder.where({
+    const row = await this.prisma.client.orm.public.SalesOrder.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -1032,7 +1032,7 @@ export class OrdersService {
       this.fieldValues.load(user.tenantId, 'order', [id]),
       this.orderFields.loadProducts(user.tenantId, id),
     ])
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.SalesOrderSnapshot.where({ orderId: id }).deleteAll()
       await this.writeSnapshot(
         tx,
@@ -1054,7 +1054,7 @@ export class OrdersService {
   }
 
   private async writeSnapshot(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     row: {
       id: string
@@ -1125,7 +1125,7 @@ export class OrdersService {
   private async assertBatchInScope(user: AuthUser, ids: string[], permission: string) {
     const unique = [...new Set(ids)]
     const rows = unique.length
-      ? await this.prisma8.client.orm.public.SalesOrder.where({
+      ? await this.prisma.client.orm.public.SalesOrder.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(unique))
@@ -1171,14 +1171,14 @@ export class OrdersService {
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
           const deptId = String(condition.value ?? '')
-          const users = await this.prisma8.client.orm.public.Users.where({
+          const users = await this.prisma.client.orm.public.Users.where({
             tenantId: organizationId,
             deptId,
           })
             .select('id')
             .all()
           const ownerIds = users.map((item) => item.id)
-          let query = this.prisma8.client.orm.public.SalesOrder.where({
+          let query = this.prisma.client.orm.public.SalesOrder.where({
             organizationId: organizationId,
           })
           query =
@@ -1189,7 +1189,7 @@ export class OrdersService {
           return new Set(rows.map((row) => String(row.id)))
         }
         if (directKeys.has(condition.key)) {
-          let query = this.prisma8.client.orm.public.SalesOrder.where({
+          let query = this.prisma.client.orm.public.SalesOrder.where({
             organizationId: organizationId,
           })
           query = this.applyOrderSystemFilter(query, condition.key, condition)
@@ -1217,7 +1217,7 @@ export class OrdersService {
   }
 
   private applyOrderSystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.SalesOrder.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.SalesOrder.where>,
     key: string,
     condition: FilterCondition,
   ) {
@@ -1370,7 +1370,7 @@ export class OrdersService {
   }
 
   private async defaultStage(organizationId: string) {
-    const stage = await this.prisma8.client.orm.public.SalesOrderStageConfig.where({
+    const stage = await this.prisma.client.orm.public.SalesOrderStageConfig.where({
       organizationId: organizationId,
     })
       .orderBy((row) => row.pos.asc())
@@ -1380,7 +1380,7 @@ export class OrdersService {
   }
 
   private async nextPos(organizationId: string, stage: string) {
-    const last = await this.prisma8.client.orm.public.SalesOrder.where({
+    const last = await this.prisma.client.orm.public.SalesOrder.where({
       organizationId: organizationId,
       stage: stage,
     })
@@ -1391,7 +1391,7 @@ export class OrdersService {
   }
 
   private async ensureCustomer(user: AuthUser, id: string) {
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: id,
       organizationId: user.tenantId,
     })
@@ -1402,7 +1402,7 @@ export class OrdersService {
   }
 
   private async ensureContract(user: AuthUser, id: string, customerId: string) {
-    const contract = await this.prisma8.client.orm.public.Contract.where({
+    const contract = await this.prisma.client.orm.public.Contract.where({
       id: id,
       organizationId: user.tenantId,
       customerId: customerId,
@@ -1414,7 +1414,7 @@ export class OrdersService {
   }
 
   private async resolveOwner(user: AuthUser, ownerId: string) {
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -1426,7 +1426,7 @@ export class OrdersService {
   }
 
   private async resolveImportedCustomer(organizationId: string, ref: string) {
-    const rows = await this.prisma8.client.orm.public.Customer.where({
+    const rows = await this.prisma.client.orm.public.Customer.where({
       organizationId: organizationId,
     })
       .where((row) => or(row.id.eq(ref), row.name.eq(ref)))
@@ -1445,7 +1445,7 @@ export class OrdersService {
     ref: string,
     customerId: string | null,
   ) {
-    let query = this.prisma8.client.orm.public.Contract.where({
+    let query = this.prisma.client.orm.public.Contract.where({
       organizationId: organizationId,
     })
     if (customerId) query = query.where({ customerId: customerId })
@@ -1459,7 +1459,7 @@ export class OrdersService {
   }
 
   private async resolveImportedOwner(organizationId: string, ref: string) {
-    const rows = await this.prisma8.client.orm.public.Users.where({
+    const rows = await this.prisma.client.orm.public.Users.where({
       tenantId: organizationId,
       status: 'ACTIVE',
     })
@@ -1475,7 +1475,7 @@ export class OrdersService {
   }
 
   private async resolveImportedProduct(organizationId: string, ref: string) {
-    const rows = await this.prisma8.client.orm.public.Product.where({
+    const rows = await this.prisma.client.orm.public.Product.where({
       organizationId: organizationId,
     })
       .where((row) => or(row.id.eq(ref), row.name.eq(ref)))
@@ -1492,7 +1492,7 @@ export class OrdersService {
   private async userNames(ids: (string | null)[]) {
     const unique = [...new Set(ids.filter((id): id is string => !!id))]
     if (!unique.length) return new Map<string, string>()
-    const users = await this.prisma8.client.orm.public.Users.where((row) => row.id.in(unique))
+    const users = await this.prisma.client.orm.public.Users.where((row) => row.id.in(unique))
       .select('id', 'name')
       .all()
     return new Map(users.map((user) => [user.id, user.name]))
@@ -1508,12 +1508,12 @@ export class OrdersService {
     ]
     const [customers, contracts] = await Promise.all([
       customerIds.length
-        ? this.prisma8.client.orm.public.Customer.where((row) => row.id.in(customerIds))
+        ? this.prisma.client.orm.public.Customer.where((row) => row.id.in(customerIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
       contractIds.length
-        ? this.prisma8.client.orm.public.Contract.where((row) => row.id.in(contractIds))
+        ? this.prisma.client.orm.public.Contract.where((row) => row.id.in(contractIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),

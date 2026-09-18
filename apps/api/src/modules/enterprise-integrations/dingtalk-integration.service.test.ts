@@ -6,7 +6,7 @@ import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import type { DingTalkClient, DingTalkConnectionResult } from './dingtalk.client'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
-import { createIntegrationPrisma8Harness } from './enterprise-integrations.prisma8-test-harness'
+import { createIntegrationPrismaHarness } from './enterprise-integrations.test-harness'
 import type { WeComClient } from './wecom.client'
 
 const user: AuthUser = {
@@ -23,7 +23,7 @@ const user: AuthUser = {
 function createService(
   result: DingTalkConnectionResult = { success: true, message: '钉钉连接成功', providerCode: 0 },
 ) {
-  const { prisma8, rows } = createIntegrationPrisma8Harness('DINGTALK')
+  const { prisma, rows } = createIntegrationPrismaHarness('DINGTALK')
   const cipher = new CredentialCipherService(
     new ConfigService({
       INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',
@@ -32,7 +32,7 @@ function createService(
   )
   const dingTalkClient = { testConnection: async () => result } as unknown as DingTalkClient
   const service = new EnterpriseIntegrationsService(
-    prisma8,
+    prisma,
     cipher,
     {} as WeComClient,
     dingTalkClient,

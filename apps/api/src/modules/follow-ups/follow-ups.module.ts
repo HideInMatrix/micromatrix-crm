@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { CustomersModule } from '../../customers/customers.module'
-import { Prisma8Module } from '../../prisma/prisma8.module.js'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
 import { UserViewsModule } from '../user-views/user-views.module'
@@ -10,7 +10,7 @@ import { FollowUpsController } from './follow-ups.controller'
 import { FollowUpsService } from './follow-ups.service'
 
 @Module({
-  imports: [Prisma8Module, CustomersModule, AttachmentsModule, PoolRulesModule, UserViewsModule],
+  imports: [PrismaModule, CustomersModule, AttachmentsModule, PoolRulesModule, UserViewsModule],
   controllers: [FollowUpsController, FollowCommentsController],
   providers: [FollowUpsService, FollowCommentsService],
   exports: [FollowUpsService],

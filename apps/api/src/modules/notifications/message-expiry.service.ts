@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { BusinessNotificationsService } from './business-notifications.service'
 
@@ -19,7 +19,7 @@ export class MessageExpiryService {
   private readonly logger = new Logger(MessageExpiryService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly settings: MessageSettingsService,
     private readonly notifications: BusinessNotificationsService,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
@@ -37,7 +37,7 @@ export class MessageExpiryService {
   }
 
   async run(now: Date): Promise<number> {
-    const tenants = await this.prisma8.client.orm.public.Tenants.select('id').all()
+    const tenants = await this.prisma.client.orm.public.Tenants.select('id').all()
     let delivered = 0
     for (const tenant of tenants) {
       try {
@@ -96,7 +96,7 @@ export class MessageExpiryService {
     const { start, end } = this.dayWindow(now, days)
     const startMs = BigInt(start.getTime())
     const endMs = BigInt(end.getTime())
-    const client = this.prisma8.client
+    const client = this.prisma.client
     if (event.startsWith('BUSINESS_QUOTATION_')) {
       const query = client.raw.sql`SELECT
           quotation.id,

@@ -18,9 +18,9 @@ import {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { BatchIdsDto, ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { AttachmentsService } from '../attachments/attachments.service'
 import {
   ExportTasksService,
@@ -50,12 +50,10 @@ import type {
   SaveCustomFormDto,
 } from './dto/custom-form.dto'
 
-type Prisma8RawExpression = ReturnType<
-  ReturnType<Prisma8Service['client']['raw']['sql']>['returns']
->
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
-type Prisma8CustomFormDataRow = NonNullable<
-  Awaited<ReturnType<Prisma8Service['client']['orm']['public']['CustomFormData']['first']>>
+type PrismaRawExpression = ReturnType<ReturnType<PrismaService['client']['raw']['sql']>['returns']>
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
+type CustomFormDataRow = NonNullable<
+  Awaited<ReturnType<PrismaService['client']['orm']['public']['CustomFormData']['first']>>
 >
 
 const ROLE_DEFINITIONS: Array<{ key: CustomFormRoleKey; name: string }> = [
@@ -157,7 +155,7 @@ interface CustomFormSubTableImportGroup {
 @Injectable()
 export class CustomFormsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly moduleForms: ModuleFormsService,
     private readonly metadata: MetadataService,
     private readonly attachments: AttachmentsService,
@@ -167,7 +165,7 @@ export class CustomFormsService {
   ) {}
 
   async list(user: AuthUser) {
-    const rows = await this.prisma8.client.orm.public.CustomForm.where({
+    const rows = await this.prisma.client.orm.public.CustomForm.where({
       organizationId: user.tenantId,
     })
       .orderBy([(row) => row.updateTime.desc(), (row) => row.id.asc()])
@@ -175,13 +173,13 @@ export class CustomFormsService {
     if (!rows.length) return []
     const formIds = rows.map((row) => row.id)
     const [admins, roleUsers] = await Promise.all([
-      this.prisma8.client.orm.public.CustomFormAdmin.where({
+      this.prisma.client.orm.public.CustomFormAdmin.where({
         userId: user.id,
       })
         .where((row) => row.customFormId.in(formIds))
         .select('customFormId')
         .all(),
-      this.prisma8.client.orm.public.CustomFormRoleUser.where({
+      this.prisma.client.orm.public.CustomFormRoleUser.where({
         userId: user.id,
       })
         .select('roleId')
@@ -189,7 +187,7 @@ export class CustomFormsService {
     ])
     const roleIds = [...new Set(roleUsers.map((row) => row.roleId))]
     const roles = roleIds.length
-      ? await this.prisma8.client.orm.public.CustomFormRole.where((role) => role.id.in(roleIds))
+      ? await this.prisma.client.orm.public.CustomFormRole.where((role) => role.id.in(roleIds))
           .where((role) => role.customFormId.in(formIds))
           .select('customFormId', 'internalKey')
           .all()
@@ -220,7 +218,7 @@ export class CustomFormsService {
   }
 
   async options(user: AuthUser) {
-    return this.prisma8.client.orm.public.CustomForm.where({
+    return this.prisma.client.orm.public.CustomForm.where({
       organizationId: user.tenantId,
       enable: true,
     })
@@ -233,7 +231,7 @@ export class CustomFormsService {
     const { form, access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const [config, creator] = await Promise.all([
       this.moduleForms.getConfig(user.tenantId, id),
-      this.prisma8.client.orm.public.Users.where({
+      this.prisma.client.orm.public.Users.where({
         id: form.createUser,
         tenantId: user.tenantId,
       })
@@ -258,7 +256,7 @@ export class CustomFormsService {
     await this.ensureNameUnique(user.tenantId, name)
     const now = BigInt(Date.now())
 
-    const form = await this.prisma8.client.transaction(async (tx) => {
+    const form = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.CustomForm.create({
         id: createLegacyId32(),
         name: name,
@@ -318,7 +316,7 @@ export class CustomFormsService {
     const name = input.name.trim()
     await this.ensureNameUnique(user.tenantId, name, id)
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomForm.where({ id: id }).update({
         name: name,
         enable: input.enable,
@@ -353,7 +351,7 @@ export class CustomFormsService {
 
   async setStatus(user: AuthUser, id: string, enable: boolean) {
     await this.requireAdmin(user, id)
-    const row = await this.prisma8.client.orm.public.CustomForm.where({
+    const row = await this.prisma.client.orm.public.CustomForm.where({
       id: id,
     }).update({ enable, updateTime: BigInt(Date.now()), updateUser: user.id })
     if (!row) throw new NotFoundException('自定义表单不存在')
@@ -362,13 +360,13 @@ export class CustomFormsService {
 
   async remove(user: AuthUser, id: string) {
     await this.requireAdmin(user, id)
-    const dataRows = await this.prisma8.client.orm.public.CustomFormData.where({
+    const dataRows = await this.prisma.client.orm.public.CustomFormData.where({
       organizationId: user.tenantId,
       customFormId: id,
     })
       .select('id')
       .all()
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.SysUserView.where({
         organizationId: user.tenantId,
         resourceType: customFormUserViewResourceType(id),
@@ -390,7 +388,7 @@ export class CustomFormsService {
 
   async admins(user: AuthUser, id: string) {
     await this.resolveAccess(user, id, { requireEnabled: false })
-    const rows = await this.prisma8.client.orm.public.CustomFormAdmin.where({
+    const rows = await this.prisma.client.orm.public.CustomFormAdmin.where({
       customFormId: id,
     })
       .select('userId')
@@ -406,7 +404,7 @@ export class CustomFormsService {
     const normalized = [...new Set(userIds)]
     if (!normalized.length) throw new BadRequestException('自定义表单至少需要一个管理员')
     await this.ensureTenantUsers(user.tenantId, normalized)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomFormAdmin.where({ customFormId: id }).deleteAll()
       await tx.orm.public.CustomFormAdmin.createAll(
         normalized.map((userId) => ({
@@ -421,13 +419,13 @@ export class CustomFormsService {
 
   async roles(user: AuthUser, id: string) {
     await this.resolveAccess(user, id, { requireEnabled: false })
-    const roles = await this.prisma8.client.orm.public.CustomFormRole.where({
+    const roles = await this.prisma.client.orm.public.CustomFormRole.where({
       customFormId: id,
     })
       .orderBy((role) => role.internalKey.asc())
       .all()
     const roleUsers = roles.length
-      ? await this.prisma8.client.orm.public.CustomFormRoleUser.where((row) =>
+      ? await this.prisma.client.orm.public.CustomFormRoleUser.where((row) =>
           row.roleId.in(roles.map((role) => role.id)),
         )
           .select('roleId', 'userId')
@@ -457,13 +455,13 @@ export class CustomFormsService {
     await this.requireAdmin(user, id)
     const normalized = [...new Set(userIds)]
     await this.ensureTenantUsers(user.tenantId, normalized)
-    const role = await this.prisma8.client.orm.public.CustomFormRole.where({
+    const role = await this.prisma.client.orm.public.CustomFormRole.where({
       customFormId: id,
       internalKey: roleKey,
     }).first()
     if (!role) throw new NotFoundException('自定义表单角色不存在')
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomFormRoleUser.where({ roleId: role.id }).deleteAll()
       if (normalized.length) {
         await tx.orm.public.CustomFormRoleUser.createAll(
@@ -523,7 +521,7 @@ export class CustomFormsService {
     const field = await this.requireField(id, user.tenantId, fieldId)
     const attachmentRows =
       field.type === 'attachment'
-        ? await this.prisma8.client.orm.public.CustomFormDataFieldBlob.where({
+        ? await this.prisma.client.orm.public.CustomFormDataFieldBlob.where({
             fieldId: fieldId,
           })
             .select('resourceId', 'fieldValue')
@@ -569,7 +567,7 @@ export class CustomFormsService {
     if (filteredIds?.length === 0) {
       return { list: [], total: 0, current, pageSize, fields, access }
     }
-    let query = this.prisma8.client.orm.public.CustomFormData.where({
+    let query = this.prisma.client.orm.public.CustomFormData.where({
       organizationId: user.tenantId,
       customFormId: id,
     })
@@ -627,7 +625,7 @@ export class CustomFormsService {
     if (!ids.length) return []
     try {
       const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
-      let query = this.prisma8.client.orm.public.CustomFormData.where({
+      let query = this.prisma.client.orm.public.CustomFormData.where({
         organizationId: user.tenantId,
         customFormId: id,
       }).where((row) => row.id.in([...new Set(ids)]))
@@ -659,7 +657,7 @@ export class CustomFormsService {
     const { fields, values } = await this.validateValues(user.tenantId, id, input.values, true)
     const attachmentPlan = await this.validateAttachmentValues(user, null, fields, values)
     const now = BigInt(Date.now())
-    const row = await this.prisma8.client.transaction(async (tx) => {
+    const row = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.CustomFormData.create({
         id: createLegacyId32(),
         customFormId: id,
@@ -689,7 +687,7 @@ export class CustomFormsService {
     const { fields, values } = await this.validateValues(user.tenantId, id, input.values, true)
     const oldAttachmentIds = this.attachmentIdsFromRow(current, fields)
     const attachmentPlan = await this.validateAttachmentValues(user, dataId, fields, values)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomFormData.where({ id: dataId }).update({
         name: input.name.trim(),
         owner: input.ownerId,
@@ -716,7 +714,7 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const current = await this.findData(user.tenantId, id, dataId)
     this.assertWritableData(access, user.id, current.ownerId)
-    await this.prisma8.client.orm.public.CustomFormData.where({
+    await this.prisma.client.orm.public.CustomFormData.where({
       id: dataId,
     }).delete()
     await this.attachments.removeAllFromTargets(user.tenantId, CUSTOM_FORM_ATTACHMENT_TARGET, [
@@ -728,7 +726,7 @@ export class CustomFormsService {
   async batchUpdateData(user: AuthUser, id: string, input: ResourceBatchEditDto) {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const ids = [...new Set(input.ids)]
-    const rows = await this.prisma8.client.orm.public.CustomFormData.where({
+    const rows = await this.prisma.client.orm.public.CustomFormData.where({
       organizationId: user.tenantId,
       customFormId: id,
     })
@@ -748,7 +746,7 @@ export class CustomFormsService {
     if (field.key === 'name') {
       const name = typeof input.fieldValue === 'string' ? input.fieldValue.trim() : ''
       if (!name) throw new BadRequestException('名称不能为空')
-      await this.prisma8.client.orm.public.CustomFormData.where({
+      await this.prisma.client.orm.public.CustomFormData.where({
         organizationId: user.tenantId,
         customFormId: id,
       })
@@ -768,7 +766,7 @@ export class CustomFormsService {
         throw new ForbiddenException('当前成员不能把数据转交给其他负责人')
       }
       await this.ensureTenantUsers(user.tenantId, [ownerId])
-      await this.prisma8.client.orm.public.CustomFormData.where({
+      await this.prisma.client.orm.public.CustomFormData.where({
         organizationId: user.tenantId,
         customFormId: id,
       })
@@ -784,7 +782,7 @@ export class CustomFormsService {
     await this.validateBatchReferenceValue(user.tenantId, field, input.fieldValue)
     const empty = this.isEmptyValue(input.fieldValue)
     const encoded = empty ? null : this.encodeValue(input.fieldValue)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await Promise.all([
         tx.orm.public.CustomFormDataField.where({ fieldId: field.id })
           .where((row) => row.resourceId.in(ids))
@@ -833,7 +831,7 @@ export class CustomFormsService {
   async batchDeleteData(user: AuthUser, id: string, input: BatchIdsDto) {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const ids = [...new Set(input.ids)]
-    const rows = await this.prisma8.client.orm.public.CustomFormData.where({
+    const rows = await this.prisma.client.orm.public.CustomFormData.where({
       organizationId: user.tenantId,
       customFormId: id,
     })
@@ -842,7 +840,7 @@ export class CustomFormsService {
       .all()
     if (rows.length !== ids.length) throw new BadRequestException('批量数据包含不存在的记录')
     for (const row of rows) this.assertWritableData(access, user.id, row.owner)
-    const count = await this.prisma8.client.orm.public.CustomFormData.where({
+    const count = await this.prisma.client.orm.public.CustomFormData.where({
       organizationId: user.tenantId,
       customFormId: id,
     })
@@ -1066,7 +1064,7 @@ export class CustomFormsService {
         : this.compileDynamicFilterPredicate(field, condition)
     })
     if (!predicates.length) return []
-    const client = this.prisma8.client
+    const client = this.prisma.client
     let combined = predicates[0]
     if (!combined) return []
     for (const predicate of predicates.slice(1)) {
@@ -1088,10 +1086,10 @@ export class CustomFormsService {
   private compileSystemFilterPredicate(
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma8RawExpression {
+  ): PrismaRawExpression {
     if (!['name', 'ownerId'].includes(field.key))
       throw new BadRequestException(`筛选字段不支持：${field.key}`)
-    const client = this.prisma8.client
+    const client = this.prisma.client
     if (condition.op === 'isEmpty') {
       return field.key === 'name'
         ? client.raw.sql`resource.name = ''`.returns('pg/bool@1')
@@ -1141,13 +1139,13 @@ export class CustomFormsService {
   private compileDynamicFilterPredicate(
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma8RawExpression {
-    const client = this.prisma8.client
-    const existsNormal = (predicate?: Prisma8RawExpression) =>
+  ): PrismaRawExpression {
+    const client = this.prisma.client
+    const existsNormal = (predicate?: PrismaRawExpression) =>
       this.customFormFieldExists(field.id, false, predicate)
-    const existsBlob = (predicate?: Prisma8RawExpression) =>
+    const existsBlob = (predicate?: PrismaRawExpression) =>
       this.customFormFieldExists(field.id, true, predicate)
-    const negate = (expression: Prisma8RawExpression) =>
+    const negate = (expression: PrismaRawExpression) =>
       client.raw.sql`NOT (${expression})`.returns('pg/bool@1')
 
     if (condition.op === 'isEmpty') {
@@ -1295,9 +1293,9 @@ export class CustomFormsService {
   private customFormFieldExists(
     fieldId: string,
     blob: boolean,
-    predicate?: Prisma8RawExpression,
-  ): Prisma8RawExpression {
-    const client = this.prisma8.client
+    predicate?: PrismaRawExpression,
+  ): PrismaRawExpression {
+    const client = this.prisma.client
     if (blob) {
       return predicate
         ? client.raw.sql`EXISTS (
@@ -1377,7 +1375,7 @@ export class CustomFormsService {
       return
     }
     if (field.type === 'dept') {
-      const department = await this.prisma8.client.orm.public.Departments.where({
+      const department = await this.prisma.client.orm.public.Departments.where({
         tenantId,
         id: String(value),
       })
@@ -1595,13 +1593,13 @@ export class CustomFormsService {
 
     const [users, departments, dataSourceGroups] = await Promise.all([
       userIds.size
-        ? this.prisma8.client.orm.public.Users.where({ tenantId })
+        ? this.prisma.client.orm.public.Users.where({ tenantId })
             .where((user) => user.id.in([...userIds]))
             .select('id', 'name')
             .all()
         : [],
       departmentIds.size
-        ? this.prisma8.client.orm.public.Departments.where({ tenantId })
+        ? this.prisma.client.orm.public.Departments.where({ tenantId })
             .where((department) => department.id.in([...departmentIds]))
             .select('id', 'name')
             .all()
@@ -1845,14 +1843,14 @@ export class CustomFormsService {
   private async resolveImportUser(user: AuthUser, value: string) {
     const input = value.trim()
     if (!input) throw new BadRequestException('成员不能为空')
-    let direct = await this.prisma8.client.orm.public.Users.where({
+    let direct = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
       id: input,
     })
       .select('id')
       .first()
-    direct ??= await this.prisma8.client.orm.public.Users.where({
+    direct ??= await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
     })
@@ -1860,7 +1858,7 @@ export class CustomFormsService {
       .select('id')
       .first()
     if (direct) return direct.id
-    const byName = await this.prisma8.client.orm.public.Users.where({
+    const byName = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
       name: input,
@@ -1878,14 +1876,14 @@ export class CustomFormsService {
   private async resolveImportDepartment(user: AuthUser, value: string) {
     const input = value.trim()
     if (!input) throw new BadRequestException('部门不能为空')
-    const direct = await this.prisma8.client.orm.public.Departments.where({
+    const direct = await this.prisma.client.orm.public.Departments.where({
       tenantId: user.tenantId,
       id: input,
     })
       .select('id')
       .first()
     if (direct) return direct.id
-    const byName = await this.prisma8.client.orm.public.Departments.where({
+    const byName = await this.prisma.client.orm.public.Departments.where({
       tenantId: user.tenantId,
       name: input,
     })
@@ -1911,7 +1909,7 @@ export class CustomFormsService {
       return this.loadBuiltinDataSourceOptionsByIds(tenantId, sourceType, uniqueIds)
     }
 
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const query = client.raw.sql`SELECT id, name
       FROM custom_form_data
       WHERE organization_id = ${tenantId}
@@ -1936,7 +1934,7 @@ export class CustomFormsService {
       return this.loadBuiltinDataSourceOptionsByName(tenantId, sourceType, name)
     }
 
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const query = client.raw.sql`SELECT id, name
       FROM custom_form_data
       WHERE organization_id = ${tenantId}
@@ -1956,7 +1954,7 @@ export class CustomFormsService {
     sourceType: BuiltinDataSourceType,
     ids: string[],
   ): Promise<Array<{ id: string; name: string }>> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const idsJson = JSON.stringify(ids)
     const query = (() => {
       switch (sourceType) {
@@ -2063,7 +2061,7 @@ export class CustomFormsService {
     sourceType: BuiltinDataSourceType,
     name: string,
   ): Promise<Array<{ id: string; name: string }>> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const query = (() => {
       switch (sourceType) {
         case 'CUSTOMER':
@@ -2182,19 +2180,19 @@ export class CustomFormsService {
   }
 
   private async resolveAccess(user: AuthUser, id: string, options: { requireEnabled: boolean }) {
-    const form = await this.prisma8.client.orm.public.CustomForm.where({
+    const form = await this.prisma.client.orm.public.CustomForm.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
     if (!form) throw new NotFoundException('自定义表单不存在')
     const [admin, roleMemberships] = await Promise.all([
-      this.prisma8.client.orm.public.CustomFormAdmin.where({
+      this.prisma.client.orm.public.CustomFormAdmin.where({
         customFormId: id,
         userId: user.id,
       })
         .select('id')
         .first(),
-      this.prisma8.client.orm.public.CustomFormRoleUser.where({
+      this.prisma.client.orm.public.CustomFormRoleUser.where({
         userId: user.id,
       })
         .select('roleId')
@@ -2202,7 +2200,7 @@ export class CustomFormsService {
     ])
     const roleIds = [...new Set(roleMemberships.map((row) => row.roleId))]
     const roleRows = roleIds.length
-      ? await this.prisma8.client.orm.public.CustomFormRole.where({
+      ? await this.prisma.client.orm.public.CustomFormRole.where({
           customFormId: id,
         })
           .where((role) => role.id.in(roleIds))
@@ -2235,7 +2233,7 @@ export class CustomFormsService {
   }
 
   private async ensureNameUnique(organizationId: string, name: string, excludeId?: string) {
-    let query = this.prisma8.client.orm.public.CustomForm.where({
+    let query = this.prisma.client.orm.public.CustomForm.where({
       organizationId: organizationId,
       name: name,
     })
@@ -2247,7 +2245,7 @@ export class CustomFormsService {
   private async ensureTenantUsers(tenantId: string, userIds: string[]) {
     if (!userIds.length) return
     const unique = [...new Set(userIds)]
-    const users = await this.prisma8.client.orm.public.Users.where({
+    const users = await this.prisma.client.orm.public.Users.where({
       tenantId,
       status: 'ACTIVE',
     })
@@ -2259,7 +2257,7 @@ export class CustomFormsService {
 
   private async userOptions(tenantId: string, userIds: string[]) {
     if (!userIds.length) return []
-    return this.prisma8.client.orm.public.Users.where({ tenantId })
+    return this.prisma.client.orm.public.Users.where({ tenantId })
       .where((user) => user.id.in([...new Set(userIds)]))
       .select('id', 'name')
       .orderBy((user) => user.name.asc())
@@ -2304,7 +2302,7 @@ export class CustomFormsService {
     if (isBuiltinDataSourceType(sourceType)) return
     if (sourceType === currentFormId)
       throw new BadRequestException('自定义表单不能引用自身作为数据源')
-    const target = await this.prisma8.client.orm.public.CustomForm.where({
+    const target = await this.prisma.client.orm.public.CustomForm.where({
       id: sourceType,
       organizationId: user.tenantId,
     })
@@ -2409,14 +2407,14 @@ export class CustomFormsService {
     }
   }
 
-  private async hydrateDataRows(rows: Prisma8CustomFormDataRow[]): Promise<DataRow[]> {
+  private async hydrateDataRows(rows: CustomFormDataRow[]): Promise<DataRow[]> {
     if (!rows.length) return []
     const ids = rows.map((row) => row.id)
     const [fieldValues, fieldBlobValues] = await Promise.all([
-      this.prisma8.client.orm.public.CustomFormDataField.where((field) =>
+      this.prisma.client.orm.public.CustomFormDataField.where((field) =>
         field.resourceId.in(ids),
       ).all(),
-      this.prisma8.client.orm.public.CustomFormDataFieldBlob.where((field) =>
+      this.prisma.client.orm.public.CustomFormDataFieldBlob.where((field) =>
         field.resourceId.in(ids),
       ).all(),
     ])
@@ -2460,7 +2458,7 @@ export class CustomFormsService {
   }
 
   private async findData(organizationId: string, formId: string, dataId: string): Promise<DataRow> {
-    const row = await this.prisma8.client.orm.public.CustomFormData.where({
+    const row = await this.prisma.client.orm.public.CustomFormData.where({
       id: dataId,
       customFormId: formId,
       organizationId: organizationId,
@@ -2539,7 +2537,7 @@ export class CustomFormsService {
     }
     if (!allIds.length) return { allIds: [], tempIds: [] }
 
-    const rows = await this.prisma8.client.orm.public.Attachments.where({ tenantId: user.tenantId })
+    const rows = await this.prisma.client.orm.public.Attachments.where({ tenantId: user.tenantId })
       .where((attachment) => attachment.id.in(allIds))
       .select('id', 'name', 'size', 'uploaderId', 'targetType', 'targetId')
       .all()
@@ -2584,7 +2582,7 @@ export class CustomFormsService {
   }
 
   private async claimTemporaryAttachments(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     user: AuthUser,
     dataId: string,
     ids: string[],
@@ -2792,7 +2790,7 @@ export class CustomFormsService {
   }
 
   private async replaceFieldValues(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     resourceId: string,
     fields: FieldVO[],
     values: Record<string, unknown>,
@@ -2908,7 +2906,7 @@ export class CustomFormsService {
   }
 
   private async createSystemField(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     formId: string,
     key: string,
     name: string,

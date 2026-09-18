@@ -47,18 +47,27 @@ test('跳过部门冲突会级联跳过下级部门和成员并更新最终统�
     fields: string[] = [],
   ): any => ({
     where: (next: any) => {
-      if (typeof next !== 'function') return itemCollection({ ...where, ...next }, predicate, fields)
-      const expr = new Proxy({}, {
-        get: (_target, key: string) => ({
-          in: (values: unknown[]) => (row: Record<string, unknown>) => values.includes(row[key]),
-        }),
-      })
+      if (typeof next !== 'function')
+        return itemCollection({ ...where, ...next }, predicate, fields)
+      const expr = new Proxy(
+        {},
+        {
+          get: (_target, key: string) => ({
+            in: (values: unknown[]) => (row: Record<string, unknown>) => values.includes(row[key]),
+          }),
+        },
+      )
       return itemCollection(where, next(expr), fields)
     },
     select: (...next: string[]) => itemCollection(where, predicate, next),
-    all: async () => items
-      .filter((item) => matches(item, where) && predicate(item))
-      .map((item) => fields.length ? Object.fromEntries(fields.map((field) => [field, (item as any)[field]])) : item),
+    all: async () =>
+      items
+        .filter((item) => matches(item, where) && predicate(item))
+        .map((item) =>
+          fields.length
+            ? Object.fromEntries(fields.map((field) => [field, (item as any)[field]]))
+            : item,
+        ),
     update: async (data: Record<string, unknown>) => {
       const item = items.find((row) => matches(row, where) && predicate(row))
       if (!item) return null
@@ -78,7 +87,7 @@ test('跳过部门冲突会级联跳过下级部门和成员并更新最终统�
   const batch = { id: 'batch-a', tenantId: 'tenant-a', provider: 'WECOM', status: 'PREVIEW_READY' }
   const batchCollection = (where: Record<string, unknown> = {}): any => ({
     where: (next: Record<string, unknown>) => batchCollection({ ...where, ...next }),
-    first: async () => matches(batch, where) ? batch : null,
+    first: async () => (matches(batch, where) ? batch : null),
     update: async (data: { counts?: Record<string, number> }) => {
       if (data.counts) savedCounts = data.counts
       Object.assign(batch, data)
@@ -89,14 +98,15 @@ test('跳过部门冲突会级联跳过下级部门和成员并更新最终统�
     OrganizationSyncBatches: batchCollection(),
     OrganizationSyncItems: itemCollection(),
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: { public: publicOrm },
-      transaction: async (callback: (tx: any) => Promise<unknown>) => callback({ orm: { public: publicOrm } }),
+      transaction: async (callback: (tx: any) => Promise<unknown>) =>
+        callback({ orm: { public: publicOrm } }),
     },
   }
   const service = new OrganizationSyncService(
-    prisma8 as never,
+    prisma as never,
     {} as never,
     {} as never,
     {} as never,
@@ -201,11 +211,11 @@ test('Redis 运行态包含 active batch 时 gate 只读取该批次一次并复
   const batchCollection = (where: Record<string, unknown> = {}): any => ({
     where: (next: Record<string, unknown>) => batchCollection({ ...where, ...next }),
     first: async () => {
-        batchQueries += 1
-        return batch
-      },
+      batchQueries += 1
+      return batch
+    },
   })
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { OrganizationSyncBatches: batchCollection() } } },
   }
   const integrations = {
@@ -226,7 +236,7 @@ test('Redis 运行态包含 active batch 时 gate 只读取该批次一次并复
     }),
   }
   const service = new OrganizationSyncService(
-    prisma8 as never,
+    prisma as never,
     integrations as never,
     {} as never,
     {} as never,

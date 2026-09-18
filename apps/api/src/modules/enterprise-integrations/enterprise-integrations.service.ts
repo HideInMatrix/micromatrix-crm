@@ -12,12 +12,8 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
 import type { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
 import type {
   SaveDingTalkIntegrationDto,
@@ -30,7 +26,7 @@ import { WeComClient } from './wecom.client'
 
 const PROVIDER = 'WECOM' as const
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 export type EnterpriseIntegrationRow = {
   id: string
   tenantId: string
@@ -48,14 +44,14 @@ export type EnterpriseIntegrationRow = {
   syncDefaultRoleId: string | null
   lastTestSucceeded: boolean | null
   lastTestMessage: string | null
-  lastTestedAt: Prisma8Timestamp | null
+  lastTestedAt: InstantTimestamp | null
   lastSyncStatus: EnterpriseIntegrationVO['lastSyncStatus']
   lastSyncMessage: string | null
-  lastSyncedAt: Prisma8Timestamp | null
+  lastSyncedAt: InstantTimestamp | null
   createdById: string
   updatedById: string
-  createdAt: Prisma8Timestamp
-  updatedAt: Prisma8Timestamp
+  createdAt: InstantTimestamp
+  updatedAt: InstantTimestamp
 }
 
 export interface WeComSyncContext {
@@ -82,7 +78,7 @@ export type LarkRuntimeContext = LarkSyncContext
 @Injectable()
 export class EnterpriseIntegrationsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly cipher: CredentialCipherService,
     private readonly weComClient: WeComClient,
     @Optional() private readonly dingTalkClient?: DingTalkClient,
@@ -90,7 +86,7 @@ export class EnterpriseIntegrationsService {
   ) {}
 
   async getActivePlatform(tenantId: string): Promise<EnterpriseIntegrationPlatformStateVO> {
-    const tenant = await this.prisma8.client.orm.public.Tenants.where({ id: tenantId })
+    const tenant = await this.prisma.client.orm.public.Tenants.where({ id: tenantId })
       .select('enterpriseSyncResource', 'enterpriseSynced')
       .first()
     if (!tenant) throw new BadRequestException('企业不存在')
@@ -107,8 +103,8 @@ export class EnterpriseIntegrationsService {
     const current = await this.getActivePlatform(user.tenantId)
     if (current.syncResource === provider) return current
 
-    const switchedAt = prisma8Now()
-    return this.prisma8.client.transaction(async (tx) => {
+    const switchedAt = nowInstant()
+    return this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.EnterpriseIntegrations.where({
         tenantId: user.tenantId,
         syncEnabled: true,
@@ -190,9 +186,9 @@ export class EnterpriseIntegrationsService {
         : null)
     if (!storedCredential) throw new BadRequestException('首次配置必须填写应用 Secret')
 
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
-      const lockQuery = this.prisma8.client.raw.sql`SELECT pg_advisory_xact_lock(
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
+      const lockQuery = this.prisma.client.raw.sql`SELECT pg_advisory_xact_lock(
         hashtextextended(${`enterprise-integration:${user.tenantId}:WECOM`}, 0)
       )::text AS locked`.returnsRow({ locked: 'pg/text@1' })
       for await (const _row of tx.query(lockQuery.build())) break
@@ -202,47 +198,47 @@ export class EnterpriseIntegrationsService {
       }).first()
       const saved = current
         ? await tx.orm.public.EnterpriseIntegrations.where({ id: current.id }).update({
-          corpId: input.corpId,
-          agentId: input.agentId,
-          ...(input.redirectUrl !== undefined
-            ? { redirectUrl: input.redirectUrl.trim() || null }
-            : {}),
-          ...(encrypted
-            ? {
-                secretCiphertext: encrypted.ciphertext,
-                secretIv: encrypted.iv,
-                secretAuthTag: encrypted.authTag,
-                secretKeyVersion: encrypted.keyVersion,
-              }
-            : {}),
-          ...(credentialsChanged
-            ? {
-                credentialVersion: current.credentialVersion + 1,
-                syncEnabled: false,
-                lastTestSucceeded: null,
-                lastTestMessage: null,
-                lastTestedAt: null,
-              }
-            : {}),
-          updatedById: user.id,
-          updatedAt,
-        })
+            corpId: input.corpId,
+            agentId: input.agentId,
+            ...(input.redirectUrl !== undefined
+              ? { redirectUrl: input.redirectUrl.trim() || null }
+              : {}),
+            ...(encrypted
+              ? {
+                  secretCiphertext: encrypted.ciphertext,
+                  secretIv: encrypted.iv,
+                  secretAuthTag: encrypted.authTag,
+                  secretKeyVersion: encrypted.keyVersion,
+                }
+              : {}),
+            ...(credentialsChanged
+              ? {
+                  credentialVersion: current.credentialVersion + 1,
+                  syncEnabled: false,
+                  lastTestSucceeded: null,
+                  lastTestMessage: null,
+                  lastTestedAt: null,
+                }
+              : {}),
+            updatedById: user.id,
+            updatedAt,
+          })
         : await tx.orm.public.EnterpriseIntegrations.create({
-          tenantId: user.tenantId,
-          provider: PROVIDER,
-          corpId: input.corpId,
-          agentId: input.agentId,
-          redirectUrl: input.redirectUrl?.trim() || null,
-          secretCiphertext: storedCredential.ciphertext,
-          secretIv: storedCredential.iv,
-          secretAuthTag: storedCredential.authTag,
-          secretKeyVersion: storedCredential.keyVersion,
-          credentialVersion: 1,
-          syncEnabled: false,
-          createdById: user.id,
-          updatedById: user.id,
-          updatedAt,
-        })
+            tenantId: user.tenantId,
+            provider: PROVIDER,
+            corpId: input.corpId,
+            agentId: input.agentId,
+            redirectUrl: input.redirectUrl?.trim() || null,
+            secretCiphertext: storedCredential.ciphertext,
+            secretIv: storedCredential.iv,
+            secretAuthTag: storedCredential.authTag,
+            secretKeyVersion: storedCredential.keyVersion,
+            credentialVersion: 1,
+            syncEnabled: false,
+            createdById: user.id,
+            updatedById: user.id,
+            updatedAt,
+          })
       if (!saved) throw new BadRequestException('请先配置企业微信')
       if (existing && credentialsChanged) {
         await tx.orm.public.OrganizationSyncBatches.where({
@@ -305,16 +301,16 @@ export class EnterpriseIntegrationsService {
         : null)
     if (!storedCredential) throw new BadRequestException('首次测试必须填写应用 Secret')
     const testedAt = new Date()
-    const testedAtTimestamp = prisma8TimestampFromDate(testedAt)
+    const testedAtTimestamp = instantFromDate(testedAt)
     const credentialsChanged =
       !existing ||
       existing.corpId !== input.corpId ||
       existing.agentId !== input.agentId ||
       (submittedSecret !== null && submittedSecret !== existingSecret)
 
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
-      const lockQuery = this.prisma8.client.raw.sql`SELECT pg_advisory_xact_lock(
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
+      const lockQuery = this.prisma.client.raw.sql`SELECT pg_advisory_xact_lock(
         hashtextextended(${`enterprise-integration:${user.tenantId}:WECOM`}, 0)
       )::text AS locked`.returnsRow({ locked: 'pg/text@1' })
       for await (const _row of tx.query(lockQuery.build())) break
@@ -324,47 +320,47 @@ export class EnterpriseIntegrationsService {
       }).first()
       const saved = current
         ? await tx.orm.public.EnterpriseIntegrations.where({ id: current.id }).update({
-          corpId: input.corpId,
-          agentId: input.agentId,
-          ...(input.redirectUrl !== undefined
-            ? { redirectUrl: input.redirectUrl.trim() || null }
-            : {}),
-          ...(encrypted
-            ? {
-                secretCiphertext: encrypted.ciphertext,
-                secretIv: encrypted.iv,
-                secretAuthTag: encrypted.authTag,
-                secretKeyVersion: encrypted.keyVersion,
-              }
-            : {}),
-          ...(credentialsChanged
-            ? { credentialVersion: current.credentialVersion + 1, syncEnabled: false }
-            : {}),
-          lastTestSucceeded: result.success,
-          lastTestMessage: result.message.slice(0, 500),
-          lastTestedAt: testedAtTimestamp,
-          updatedById: user.id,
-          updatedAt,
-        })
+            corpId: input.corpId,
+            agentId: input.agentId,
+            ...(input.redirectUrl !== undefined
+              ? { redirectUrl: input.redirectUrl.trim() || null }
+              : {}),
+            ...(encrypted
+              ? {
+                  secretCiphertext: encrypted.ciphertext,
+                  secretIv: encrypted.iv,
+                  secretAuthTag: encrypted.authTag,
+                  secretKeyVersion: encrypted.keyVersion,
+                }
+              : {}),
+            ...(credentialsChanged
+              ? { credentialVersion: current.credentialVersion + 1, syncEnabled: false }
+              : {}),
+            lastTestSucceeded: result.success,
+            lastTestMessage: result.message.slice(0, 500),
+            lastTestedAt: testedAtTimestamp,
+            updatedById: user.id,
+            updatedAt,
+          })
         : await tx.orm.public.EnterpriseIntegrations.create({
-          tenantId: user.tenantId,
-          provider: PROVIDER,
-          corpId: input.corpId,
-          agentId: input.agentId,
-          redirectUrl: input.redirectUrl?.trim() || null,
-          secretCiphertext: storedCredential.ciphertext,
-          secretIv: storedCredential.iv,
-          secretAuthTag: storedCredential.authTag,
-          secretKeyVersion: storedCredential.keyVersion,
-          credentialVersion: 1,
-          syncEnabled: false,
-          lastTestSucceeded: result.success,
-          lastTestMessage: result.message.slice(0, 500),
-          lastTestedAt: testedAtTimestamp,
-          createdById: user.id,
-          updatedById: user.id,
-          updatedAt,
-        })
+            tenantId: user.tenantId,
+            provider: PROVIDER,
+            corpId: input.corpId,
+            agentId: input.agentId,
+            redirectUrl: input.redirectUrl?.trim() || null,
+            secretCiphertext: storedCredential.ciphertext,
+            secretIv: storedCredential.iv,
+            secretAuthTag: storedCredential.authTag,
+            secretKeyVersion: storedCredential.keyVersion,
+            credentialVersion: 1,
+            syncEnabled: false,
+            lastTestSucceeded: result.success,
+            lastTestMessage: result.message.slice(0, 500),
+            lastTestedAt: testedAtTimestamp,
+            createdById: user.id,
+            updatedById: user.id,
+            updatedAt,
+          })
       if (!saved) throw new BadRequestException('请先配置企业微信')
       if (existing && credentialsChanged) {
         await tx.orm.public.OrganizationSyncBatches.where({
@@ -407,15 +403,17 @@ export class EnterpriseIntegrationsService {
     const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
     if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
     if (roleId) {
-      const role = await this.prisma8.client.orm.public.Roles.where({
+      const role = await this.prisma.client.orm.public.Roles.where({
         id: roleId,
         tenantId: user.tenantId,
-      }).select('id').first()
+      })
+        .select('id')
+        .first()
       if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
     }
 
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
       if (input.enabled) {
         await tx.orm.public.EnterpriseIntegrations.where({
           tenantId: user.tenantId,
@@ -500,9 +498,9 @@ export class EnterpriseIntegrationsService {
       authTag: existing!.secretAuthTag,
       keyVersion: existing!.secretKeyVersion,
     }
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
-      const lockQuery = this.prisma8.client.raw.sql`SELECT pg_advisory_xact_lock(
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
+      const lockQuery = this.prisma.client.raw.sql`SELECT pg_advisory_xact_lock(
         hashtextextended(${`enterprise-integration:${user.tenantId}:DINGTALK`}, 0)
       )::text AS locked`.returnsRow({ locked: 'pg/text@1' })
       for await (const _row of tx.query(lockQuery.build())) break
@@ -512,45 +510,45 @@ export class EnterpriseIntegrationsService {
       }).first()
       const saved = current
         ? await tx.orm.public.EnterpriseIntegrations.where({ id: current.id }).update({
-          corpId: input.corpId,
-          clientId: input.clientId,
-          agentId: input.agentId,
-          ...(encrypted
-            ? {
-                secretCiphertext: encrypted.ciphertext,
-                secretIv: encrypted.iv,
-                secretAuthTag: encrypted.authTag,
-                secretKeyVersion: encrypted.keyVersion,
-              }
-            : {}),
-          ...(credentialsChanged
-            ? {
-                credentialVersion: current.credentialVersion + 1,
-                syncEnabled: false,
-                lastTestSucceeded: null,
-                lastTestMessage: null,
-                lastTestedAt: null,
-              }
-            : {}),
-          updatedById: user.id,
-          updatedAt,
-        })
+            corpId: input.corpId,
+            clientId: input.clientId,
+            agentId: input.agentId,
+            ...(encrypted
+              ? {
+                  secretCiphertext: encrypted.ciphertext,
+                  secretIv: encrypted.iv,
+                  secretAuthTag: encrypted.authTag,
+                  secretKeyVersion: encrypted.keyVersion,
+                }
+              : {}),
+            ...(credentialsChanged
+              ? {
+                  credentialVersion: current.credentialVersion + 1,
+                  syncEnabled: false,
+                  lastTestSucceeded: null,
+                  lastTestMessage: null,
+                  lastTestedAt: null,
+                }
+              : {}),
+            updatedById: user.id,
+            updatedAt,
+          })
         : await tx.orm.public.EnterpriseIntegrations.create({
-          tenantId: user.tenantId,
-          provider: 'DINGTALK',
-          corpId: input.corpId,
-          clientId: input.clientId,
-          agentId: input.agentId,
-          secretCiphertext: credential.ciphertext,
-          secretIv: credential.iv,
-          secretAuthTag: credential.authTag,
-          secretKeyVersion: credential.keyVersion,
-          credentialVersion: 1,
-          syncEnabled: false,
-          createdById: user.id,
-          updatedById: user.id,
-          updatedAt,
-        })
+            tenantId: user.tenantId,
+            provider: 'DINGTALK',
+            corpId: input.corpId,
+            clientId: input.clientId,
+            agentId: input.agentId,
+            secretCiphertext: credential.ciphertext,
+            secretIv: credential.iv,
+            secretAuthTag: credential.authTag,
+            secretKeyVersion: credential.keyVersion,
+            credentialVersion: 1,
+            syncEnabled: false,
+            createdById: user.id,
+            updatedById: user.id,
+            updatedAt,
+          })
       if (!saved) throw new BadRequestException('请先配置钉钉')
       if (existing && credentialsChanged) {
         await tx.orm.public.OrganizationSyncBatches.where({
@@ -613,10 +611,10 @@ export class EnterpriseIntegrationsService {
       existing.agentId !== input.agentId ||
       (submittedSecret !== null && submittedSecret !== existingSecret)
     const testedAt = new Date()
-    const testedAtTimestamp = prisma8TimestampFromDate(testedAt)
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
-      const lockQuery = this.prisma8.client.raw.sql`SELECT pg_advisory_xact_lock(
+    const testedAtTimestamp = instantFromDate(testedAt)
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
+      const lockQuery = this.prisma.client.raw.sql`SELECT pg_advisory_xact_lock(
         hashtextextended(${`enterprise-integration:${user.tenantId}:DINGTALK`}, 0)
       )::text AS locked`.returnsRow({ locked: 'pg/text@1' })
       for await (const _row of tx.query(lockQuery.build())) break
@@ -626,45 +624,45 @@ export class EnterpriseIntegrationsService {
       }).first()
       const saved = current
         ? await tx.orm.public.EnterpriseIntegrations.where({ id: current.id }).update({
-          corpId: input.corpId,
-          clientId: input.clientId,
-          agentId: input.agentId,
-          ...(encrypted
-            ? {
-                secretCiphertext: encrypted.ciphertext,
-                secretIv: encrypted.iv,
-                secretAuthTag: encrypted.authTag,
-                secretKeyVersion: encrypted.keyVersion,
-              }
-            : {}),
-          ...(credentialsChanged
-            ? { credentialVersion: current.credentialVersion + 1, syncEnabled: false }
-            : {}),
-          lastTestSucceeded: result.success,
-          lastTestMessage: result.message.slice(0, 500),
-          lastTestedAt: testedAtTimestamp,
-          updatedById: user.id,
-          updatedAt,
-        })
+            corpId: input.corpId,
+            clientId: input.clientId,
+            agentId: input.agentId,
+            ...(encrypted
+              ? {
+                  secretCiphertext: encrypted.ciphertext,
+                  secretIv: encrypted.iv,
+                  secretAuthTag: encrypted.authTag,
+                  secretKeyVersion: encrypted.keyVersion,
+                }
+              : {}),
+            ...(credentialsChanged
+              ? { credentialVersion: current.credentialVersion + 1, syncEnabled: false }
+              : {}),
+            lastTestSucceeded: result.success,
+            lastTestMessage: result.message.slice(0, 500),
+            lastTestedAt: testedAtTimestamp,
+            updatedById: user.id,
+            updatedAt,
+          })
         : await tx.orm.public.EnterpriseIntegrations.create({
-          tenantId: user.tenantId,
-          provider: 'DINGTALK',
-          corpId: input.corpId,
-          clientId: input.clientId,
-          agentId: input.agentId,
-          secretCiphertext: credential.ciphertext,
-          secretIv: credential.iv,
-          secretAuthTag: credential.authTag,
-          secretKeyVersion: credential.keyVersion,
-          credentialVersion: 1,
-          syncEnabled: false,
-          lastTestSucceeded: result.success,
-          lastTestMessage: result.message.slice(0, 500),
-          lastTestedAt: testedAtTimestamp,
-          createdById: user.id,
-          updatedById: user.id,
-          updatedAt,
-        })
+            tenantId: user.tenantId,
+            provider: 'DINGTALK',
+            corpId: input.corpId,
+            clientId: input.clientId,
+            agentId: input.agentId,
+            secretCiphertext: credential.ciphertext,
+            secretIv: credential.iv,
+            secretAuthTag: credential.authTag,
+            secretKeyVersion: credential.keyVersion,
+            credentialVersion: 1,
+            syncEnabled: false,
+            lastTestSucceeded: result.success,
+            lastTestMessage: result.message.slice(0, 500),
+            lastTestedAt: testedAtTimestamp,
+            createdById: user.id,
+            updatedById: user.id,
+            updatedAt,
+          })
       if (!saved) throw new BadRequestException('请先配置钉钉')
       if (existing && credentialsChanged) {
         await tx.orm.public.OrganizationSyncBatches.where({
@@ -702,16 +700,21 @@ export class EnterpriseIntegrationsService {
     const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
     if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
     if (roleId) {
-      const role = await this.prisma8.client.orm.public.Roles.where({
+      const role = await this.prisma.client.orm.public.Roles.where({
         id: roleId,
         tenantId: user.tenantId,
-      }).select('id').first()
+      })
+        .select('id')
+        .first()
       if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
     }
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
       if (input.enabled) {
-        await tx.orm.public.EnterpriseIntegrations.where({ tenantId: user.tenantId, syncEnabled: true })
+        await tx.orm.public.EnterpriseIntegrations.where({
+          tenantId: user.tenantId,
+          syncEnabled: true,
+        })
           .where((integration) => integration.provider.neq('DINGTALK'))
           .updateAll({ syncEnabled: false, updatedById: user.id, updatedAt })
       }
@@ -784,9 +787,9 @@ export class EnterpriseIntegrationsService {
       keyVersion: existing!.secretKeyVersion,
     }
 
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
-      const lockQuery = this.prisma8.client.raw.sql`SELECT pg_advisory_xact_lock(
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
+      const lockQuery = this.prisma.client.raw.sql`SELECT pg_advisory_xact_lock(
         hashtextextended(${`enterprise-integration:${user.tenantId}:LARK`}, 0)
       )::text AS locked`.returnsRow({ locked: 'pg/text@1' })
       for await (const _row of tx.query(lockQuery.build())) break
@@ -796,45 +799,45 @@ export class EnterpriseIntegrationsService {
       }).first()
       const saved = current
         ? await tx.orm.public.EnterpriseIntegrations.where({ id: current.id }).update({
-          corpId: input.corpId,
-          agentId: input.agentId,
-          redirectUrl: input.redirectUrl,
-          ...(encrypted
-            ? {
-                secretCiphertext: encrypted.ciphertext,
-                secretIv: encrypted.iv,
-                secretAuthTag: encrypted.authTag,
-                secretKeyVersion: encrypted.keyVersion,
-              }
-            : {}),
-          ...(credentialsChanged
-            ? {
-                credentialVersion: current.credentialVersion + 1,
-                syncEnabled: false,
-                lastTestSucceeded: null,
-                lastTestMessage: null,
-                lastTestedAt: null,
-              }
-            : {}),
-          updatedById: user.id,
-          updatedAt,
-        })
+            corpId: input.corpId,
+            agentId: input.agentId,
+            redirectUrl: input.redirectUrl,
+            ...(encrypted
+              ? {
+                  secretCiphertext: encrypted.ciphertext,
+                  secretIv: encrypted.iv,
+                  secretAuthTag: encrypted.authTag,
+                  secretKeyVersion: encrypted.keyVersion,
+                }
+              : {}),
+            ...(credentialsChanged
+              ? {
+                  credentialVersion: current.credentialVersion + 1,
+                  syncEnabled: false,
+                  lastTestSucceeded: null,
+                  lastTestMessage: null,
+                  lastTestedAt: null,
+                }
+              : {}),
+            updatedById: user.id,
+            updatedAt,
+          })
         : await tx.orm.public.EnterpriseIntegrations.create({
-          tenantId: user.tenantId,
-          provider: 'LARK',
-          corpId: input.corpId,
-          agentId: input.agentId,
-          redirectUrl: input.redirectUrl,
-          secretCiphertext: credential.ciphertext,
-          secretIv: credential.iv,
-          secretAuthTag: credential.authTag,
-          secretKeyVersion: credential.keyVersion,
-          credentialVersion: 1,
-          syncEnabled: false,
-          createdById: user.id,
-          updatedById: user.id,
-          updatedAt,
-        })
+            tenantId: user.tenantId,
+            provider: 'LARK',
+            corpId: input.corpId,
+            agentId: input.agentId,
+            redirectUrl: input.redirectUrl,
+            secretCiphertext: credential.ciphertext,
+            secretIv: credential.iv,
+            secretAuthTag: credential.authTag,
+            secretKeyVersion: credential.keyVersion,
+            credentialVersion: 1,
+            syncEnabled: false,
+            createdById: user.id,
+            updatedById: user.id,
+            updatedAt,
+          })
       if (!saved) throw new BadRequestException('请先配置飞书')
       if (existing && credentialsChanged) {
         await tx.orm.public.OrganizationSyncBatches.where({
@@ -896,11 +899,11 @@ export class EnterpriseIntegrationsService {
       existing.redirectUrl !== input.redirectUrl ||
       (submittedSecret !== null && submittedSecret !== existingSecret)
     const testedAt = new Date()
-    const testedAtTimestamp = prisma8TimestampFromDate(testedAt)
+    const testedAtTimestamp = instantFromDate(testedAt)
 
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
-      const lockQuery = this.prisma8.client.raw.sql`SELECT pg_advisory_xact_lock(
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
+      const lockQuery = this.prisma.client.raw.sql`SELECT pg_advisory_xact_lock(
         hashtextextended(${`enterprise-integration:${user.tenantId}:LARK`}, 0)
       )::text AS locked`.returnsRow({ locked: 'pg/text@1' })
       for await (const _row of tx.query(lockQuery.build())) break
@@ -910,45 +913,45 @@ export class EnterpriseIntegrationsService {
       }).first()
       const saved = current
         ? await tx.orm.public.EnterpriseIntegrations.where({ id: current.id }).update({
-          corpId: input.corpId,
-          agentId: input.agentId,
-          redirectUrl: input.redirectUrl,
-          ...(encrypted
-            ? {
-                secretCiphertext: encrypted.ciphertext,
-                secretIv: encrypted.iv,
-                secretAuthTag: encrypted.authTag,
-                secretKeyVersion: encrypted.keyVersion,
-              }
-            : {}),
-          ...(credentialsChanged
-            ? { credentialVersion: current.credentialVersion + 1, syncEnabled: false }
-            : {}),
-          lastTestSucceeded: result.success,
-          lastTestMessage: result.message.slice(0, 500),
-          lastTestedAt: testedAtTimestamp,
-          updatedById: user.id,
-          updatedAt,
-        })
+            corpId: input.corpId,
+            agentId: input.agentId,
+            redirectUrl: input.redirectUrl,
+            ...(encrypted
+              ? {
+                  secretCiphertext: encrypted.ciphertext,
+                  secretIv: encrypted.iv,
+                  secretAuthTag: encrypted.authTag,
+                  secretKeyVersion: encrypted.keyVersion,
+                }
+              : {}),
+            ...(credentialsChanged
+              ? { credentialVersion: current.credentialVersion + 1, syncEnabled: false }
+              : {}),
+            lastTestSucceeded: result.success,
+            lastTestMessage: result.message.slice(0, 500),
+            lastTestedAt: testedAtTimestamp,
+            updatedById: user.id,
+            updatedAt,
+          })
         : await tx.orm.public.EnterpriseIntegrations.create({
-          tenantId: user.tenantId,
-          provider: 'LARK',
-          corpId: input.corpId,
-          agentId: input.agentId,
-          redirectUrl: input.redirectUrl,
-          secretCiphertext: credential.ciphertext,
-          secretIv: credential.iv,
-          secretAuthTag: credential.authTag,
-          secretKeyVersion: credential.keyVersion,
-          credentialVersion: 1,
-          syncEnabled: false,
-          lastTestSucceeded: result.success,
-          lastTestMessage: result.message.slice(0, 500),
-          lastTestedAt: testedAtTimestamp,
-          createdById: user.id,
-          updatedById: user.id,
-          updatedAt,
-        })
+            tenantId: user.tenantId,
+            provider: 'LARK',
+            corpId: input.corpId,
+            agentId: input.agentId,
+            redirectUrl: input.redirectUrl,
+            secretCiphertext: credential.ciphertext,
+            secretIv: credential.iv,
+            secretAuthTag: credential.authTag,
+            secretKeyVersion: credential.keyVersion,
+            credentialVersion: 1,
+            syncEnabled: false,
+            lastTestSucceeded: result.success,
+            lastTestMessage: result.message.slice(0, 500),
+            lastTestedAt: testedAtTimestamp,
+            createdById: user.id,
+            updatedById: user.id,
+            updatedAt,
+          })
       if (!saved) throw new BadRequestException('请先配置飞书')
       if (existing && credentialsChanged) {
         await tx.orm.public.OrganizationSyncBatches.where({
@@ -983,16 +986,21 @@ export class EnterpriseIntegrationsService {
     const roleId = input.defaultRoleId ?? existing.syncDefaultRoleId
     if (input.enabled && !roleId) throw new BadRequestException('请选择新成员默认角色')
     if (roleId) {
-      const role = await this.prisma8.client.orm.public.Roles.where({
+      const role = await this.prisma.client.orm.public.Roles.where({
         id: roleId,
         tenantId: user.tenantId,
-      }).select('id').first()
+      })
+        .select('id')
+        .first()
       if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
     }
-    const row = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
       if (input.enabled) {
-        await tx.orm.public.EnterpriseIntegrations.where({ tenantId: user.tenantId, syncEnabled: true })
+        await tx.orm.public.EnterpriseIntegrations.where({
+          tenantId: user.tenantId,
+          syncEnabled: true,
+        })
           .where((integration) => integration.provider.neq('LARK'))
           .updateAll({ syncEnabled: false, updatedById: user.id, updatedAt })
       }
@@ -1035,14 +1043,14 @@ export class EnterpriseIntegrationsService {
   }
 
   private findDingTalk(tenantId: string) {
-    return this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    return this.prisma.client.orm.public.EnterpriseIntegrations.where({
       tenantId,
       provider: 'DINGTALK',
     }).first()
   }
 
   private findLark(tenantId: string) {
-    return this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    return this.prisma.client.orm.public.EnterpriseIntegrations.where({
       tenantId,
       provider: 'LARK',
     }).first()
@@ -1058,7 +1066,7 @@ export class EnterpriseIntegrationsService {
   }
 
   private findWeCom(tenantId: string) {
-    return this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    return this.prisma.client.orm.public.EnterpriseIntegrations.where({
       tenantId,
       provider: PROVIDER,
     }).first()
@@ -1120,12 +1128,12 @@ export class EnterpriseIntegrationsService {
       syncDefaultRoleId: row.syncDefaultRoleId,
       lastTestSucceeded: row.lastTestSucceeded,
       lastTestMessage: row.lastTestMessage,
-      lastTestedAt: row.lastTestedAt ? prisma8TimestampToISOString(row.lastTestedAt) : null,
+      lastTestedAt: row.lastTestedAt ? instantToISOString(row.lastTestedAt) : null,
       lastSyncStatus: row.lastSyncStatus,
       lastSyncMessage: row.lastSyncMessage,
-      lastSyncedAt: row.lastSyncedAt ? prisma8TimestampToISOString(row.lastSyncedAt) : null,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
-      updatedAt: prisma8TimestampToISOString(row.updatedAt),
+      lastSyncedAt: row.lastSyncedAt ? instantToISOString(row.lastSyncedAt) : null,
+      createdAt: instantToISOString(row.createdAt),
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 }

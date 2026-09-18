@@ -4,9 +4,11 @@ import { ApprovalsService } from './approvals.service'
 
 test('审批结果业务事件按 Cordys 映射 invoice -> INVOICE_APPROVAL', () => {
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
-  const resolve = (service as unknown as {
-    approvalResultEvent(module: string): string | undefined
-  }).approvalResultEvent.bind(service)
+  const resolve = (
+    service as unknown as {
+      approvalResultEvent(module: string): string | undefined
+    }
+  ).approvalResultEvent.bind(service)
 
   assert.equal(resolve('quote'), 'BUSINESS_QUOTATION_APPROVAL')
   assert.equal(resolve('contract'), 'CONTRACT_APPROVAL')
@@ -57,17 +59,22 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
   const records: Array<Record<string, unknown>> = []
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const runtime = service as unknown as {
-    prisma8: {
+    prisma: {
       client: {
-        orm: { public: { ApprovalInstances: { where(): { first(): Promise<Record<string, unknown>> } } } }
+        orm: {
+          public: { ApprovalInstances: { where(): { first(): Promise<Record<string, unknown>> } } }
+        }
         transaction(input: (tx: unknown) => Promise<unknown>): Promise<unknown>
       }
     }
     toLegacyInstance(row: Record<string, unknown>): Record<string, unknown>
-    ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+    ensurePendingTask(
+      user: Record<string, unknown>,
+      taskId: string,
+    ): Promise<Record<string, unknown>>
     ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
     requireCommentForInstance(user: Record<string, unknown>, instanceId: string): Promise<boolean>
-    saveApprovalRecordPrisma8(
+    saveApprovalRecordPrisma(
       tx: unknown,
       user: Record<string, unknown>,
       task: Record<string, unknown>,
@@ -97,7 +104,7 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
   runtime.ensureActionAttachmentIds = async (_user, ids) => ids ?? []
   runtime.requireCommentForInstance = async () => false
   runtime.toLegacyInstance = (row) => row
-  runtime.prisma8 = {
+  runtime.prisma = {
     client: {
       orm: {
         public: {
@@ -131,7 +138,7 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
         }),
     },
   }
-  runtime.saveApprovalRecordPrisma8 = async (_tx, _user, task, result, comment) => {
+  runtime.saveApprovalRecordPrisma = async (_tx, _user, task, result, comment) => {
     const record = {
       taskId: task['id'],
       nodeId: task['nodeId'],
@@ -169,18 +176,23 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
   const records: Array<Record<string, unknown>> = []
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const runtime = service as unknown as {
-    prisma8: {
+    prisma: {
       client: {
-        orm: { public: { ApprovalInstances: { where(): { first(): Promise<Record<string, unknown>> } } } }
+        orm: {
+          public: { ApprovalInstances: { where(): { first(): Promise<Record<string, unknown>> } } }
+        }
         transaction(input: (tx: unknown) => Promise<unknown>): Promise<unknown>
       }
     }
     toLegacyInstance(row: Record<string, unknown>): Record<string, unknown>
     resources: { setBizStatus(): Promise<void> }
-    ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+    ensurePendingTask(
+      user: Record<string, unknown>,
+      taskId: string,
+    ): Promise<Record<string, unknown>>
     ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
     requireCommentForInstance(user: Record<string, unknown>, instanceId: string): Promise<boolean>
-    saveApprovalRecordPrisma8(
+    saveApprovalRecordPrisma(
       tx: unknown,
       user: Record<string, unknown>,
       task: Record<string, unknown>,
@@ -216,7 +228,7 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
   runtime.ensureActionAttachmentIds = async (_user, ids) => ids ?? []
   runtime.requireCommentForInstance = async () => false
   runtime.toLegacyInstance = (row) => row
-  runtime.prisma8 = {
+  runtime.prisma = {
     client: {
       orm: {
         public: {
@@ -280,7 +292,7 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
         }),
     },
   }
-  runtime.saveApprovalRecordPrisma8 = async (_tx, _user, task, result, comment) => {
+  runtime.saveApprovalRecordPrisma = async (_tx, _user, task, result, comment) => {
     const record = {
       taskId: task['id'],
       nodeId: task['nodeId'],
@@ -316,7 +328,7 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
 test('节点再次进入时 round 取 task/record 最大值 + 1', async () => {
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const runtime = service as unknown as {
-    prisma8: unknown
+    prisma: unknown
     nextApprovalNodeRound(instanceId: string, nodeId: string | null): Promise<number>
   }
   const collection = (nodeRound: number) => ({
@@ -324,7 +336,7 @@ test('节点再次进入时 round 取 task/record 最大值 + 1', async () => {
       select: () => ({ orderBy: () => ({ first: async () => ({ nodeRound }) }) }),
     }),
   })
-  runtime.prisma8 = {
+  runtime.prisma = {
     client: {
       orm: {
         public: {
@@ -341,14 +353,16 @@ test('节点再次进入时 round 取 task/record 最大值 + 1', async () => {
 
 test('审批人撤回的 ANY / ALL 可逆边界按当前活动节点 fail-closed', () => {
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
-  const canWithdraw = (service as unknown as {
-    isTaskWithdrawable(
-      instance: Record<string, unknown>,
-      tasks: Array<Record<string, unknown>>,
-      task: Record<string, unknown>,
-      allowWithdraw: boolean,
-    ): boolean
-  }).isTaskWithdrawable.bind(service)
+  const canWithdraw = (
+    service as unknown as {
+      isTaskWithdrawable(
+        instance: Record<string, unknown>,
+        tasks: Array<Record<string, unknown>>,
+        task: Record<string, unknown>,
+        allowWithdraw: boolean,
+      ): boolean
+    }
+  ).isTaskWithdrawable.bind(service)
 
   const baseTask = {
     id: 'task-a',
@@ -368,9 +382,27 @@ test('审批人撤回的 ANY / ALL 可逆边界按当前活动节点 fail-closed
     status: 'PENDING',
     currentNodeIndex: 1,
     nodesSnapshot: [
-      { nodeId: 'node-a', name: '一级审批', approverType: 'USER', approverIds: ['user-a'], mode: 'ANY' },
-      { nodeId: 'node-b', name: '二级审批', approverType: 'USER', approverIds: ['user-b'], mode: 'ANY' },
-      { nodeId: 'node-c', name: '三级审批', approverType: 'USER', approverIds: ['user-c'], mode: 'ANY' },
+      {
+        nodeId: 'node-a',
+        name: '一级审批',
+        approverType: 'USER',
+        approverIds: ['user-a'],
+        mode: 'ANY',
+      },
+      {
+        nodeId: 'node-b',
+        name: '二级审批',
+        approverType: 'USER',
+        approverIds: ['user-b'],
+        mode: 'ANY',
+      },
+      {
+        nodeId: 'node-c',
+        name: '三级审批',
+        approverType: 'USER',
+        approverIds: ['user-c'],
+        mode: 'ANY',
+      },
     ],
   }
   const nextPending = {
@@ -438,7 +470,7 @@ test('审批人撤回的 ANY / ALL 可逆边界按当前活动节点 fail-closed
 test('撤回后同 task/node/round 重审按 Cordys 保留或 delete+create ApprovalRecord', async () => {
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const runtime = service as unknown as {
-    saveApprovalRecordPrisma8(
+    saveApprovalRecordPrisma(
       tx: Record<string, unknown>,
       user: Record<string, unknown>,
       task: Record<string, unknown>,
@@ -490,33 +522,25 @@ test('撤回后同 task/node/round 重审按 Cordys 保留或 delete+create Appr
   const task = { id: 'task-a', instanceId: 'instance-a', nodeId: 'node-a', nodeRound: 1 }
   const updatedAt = {}
 
-  await runtime.saveApprovalRecordPrisma8(tx, user, task, 'APPROVE', null, [], updatedAt)
+  await runtime.saveApprovalRecordPrisma(tx, user, task, 'APPROVE', null, [], updatedAt)
   assert.equal(deleted, 0)
   assert.equal(created.length, 0, '无新意见再次同意时保留原 record')
 
-  await runtime.saveApprovalRecordPrisma8(
-    tx,
-    user,
-    task,
-    'APPROVE',
-    '重新确认通过',
-    [],
-    updatedAt,
-  )
+  await runtime.saveApprovalRecordPrisma(tx, user, task, 'APPROVE', '重新确认通过', [], updatedAt)
   assert.equal(deleted, 1)
   assert.equal(relationDeleted, 1)
   assert.equal(created.length, 1)
   assert.equal(created[0]?.result, 'APPROVE')
   assert.equal(created[0]?.comment, '重新确认通过')
 
-  await runtime.saveApprovalRecordPrisma8(tx, user, task, 'REJECT', '复核后驳回', [], updatedAt)
+  await runtime.saveApprovalRecordPrisma(tx, user, task, 'REJECT', '复核后驳回', [], updatedAt)
   assert.equal(deleted, 2)
   assert.equal(relationDeleted, 2)
   assert.equal(created.length, 2)
   assert.equal(created[1]?.result, 'REJECT')
   assert.equal(created[1]?.comment, '复核后驳回')
 
-  await runtime.saveApprovalRecordPrisma8(
+  await runtime.saveApprovalRecordPrisma(
     tx,
     user,
     task,
@@ -565,10 +589,10 @@ test('审批动作附件只接受当前操作人尚未归档的租户内附件',
   let attachmentQuery: Record<string, unknown> | undefined
   let hasBoundAttachment = false
   const runtime = service as unknown as {
-    prisma8: unknown
+    prisma: unknown
     ensureActionAttachmentIds(user: Record<string, unknown>, ids?: string[]): Promise<string[]>
   }
-  runtime.prisma8 = {
+  runtime.prisma = {
     client: {
       orm: {
         public: {
@@ -584,8 +608,7 @@ test('审批动作附件只接受当前操作人尚未归档的租户内附件',
             where: () => ({
               where: () => ({
                 select: () => ({
-                  all: async () =>
-                    hasBoundAttachment ? [{ attachmentId: 'attachment-a' }] : [],
+                  all: async () => (hasBoundAttachment ? [{ attachmentId: 'attachment-a' }] : []),
                 }),
               }),
             }),
@@ -595,9 +618,10 @@ test('审批动作附件只接受当前操作人尚未归档的租户内附件',
     },
   }
   const user = { id: 'user-a', tenantId: 'tenant-a' }
-  assert.deepEqual(await runtime.ensureActionAttachmentIds(user, ['attachment-a', 'attachment-a']), [
-    'attachment-a',
-  ])
+  assert.deepEqual(
+    await runtime.ensureActionAttachmentIds(user, ['attachment-a', 'attachment-a']),
+    ['attachment-a'],
+  )
   assert.deepEqual(attachmentQuery ?? {}, {
     tenantId: 'tenant-a',
     uploaderId: 'user-a',
@@ -617,12 +641,15 @@ test('待办任务查询强制 tenant/owner/status，并拒绝已执行 BACK 的
   let instanceWhere: Record<string, unknown> | undefined
   const service = Object.create(ApprovalsService.prototype) as ApprovalsService
   const runtime = service as unknown as {
-    prisma8: unknown
+    prisma: unknown
     toLegacyTask(row: Record<string, unknown>): Record<string, unknown>
-    ensurePendingTask(user: Record<string, unknown>, taskId: string): Promise<Record<string, unknown>>
+    ensurePendingTask(
+      user: Record<string, unknown>,
+      taskId: string,
+    ): Promise<Record<string, unknown>>
   }
   runtime.toLegacyTask = (row) => row
-  runtime.prisma8 = {
+  runtime.prisma = {
     client: {
       orm: {
         public: {

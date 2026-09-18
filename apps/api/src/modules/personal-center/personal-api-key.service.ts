@@ -7,17 +7,14 @@ import {
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import {
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate, instantToISOString } from '../../prisma/temporal'
 import type { UpdatePersonalApiKeyDto } from './dto/personal-api-key.dto'
 
 @Injectable()
 export class PersonalApiKeyService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly changeLog: BusinessChangeLogService,
   ) {}
 
@@ -56,11 +53,13 @@ export class PersonalApiKeyService {
       expireAt = new Date(dto.expireTime)
       if (Number.isNaN(expireAt.getTime())) throw new UnprocessableEntityException('到期时间无效')
     }
-    const updated = await this.keys().where({ id: current.id, createUser: user.id }).update({
-      forever: dto.forever,
-      expireTime: expireAt ? prisma8TimestampFromDate(expireAt) : null,
-      description: dto.description?.trim() || null,
-    })
+    const updated = await this.keys()
+      .where({ id: current.id, createUser: user.id })
+      .update({
+        forever: dto.forever,
+        expireTime: expireAt ? instantFromDate(expireAt) : null,
+        description: dto.description?.trim() || null,
+      })
     if (!updated) throw new NotFoundException('API Key 不存在')
     await this.changeLog.record(user, {
       module: 'personalApiKey',
@@ -108,7 +107,7 @@ export class PersonalApiKeyService {
   }
 
   private keys() {
-    return this.prisma8.client.orm.public.UserKey
+    return this.prisma.client.orm.public.UserKey
   }
 
   private toVO(row: {
@@ -116,10 +115,10 @@ export class PersonalApiKeyService {
     createUser: string
     accessKey: string
     secretKey: string
-    createTime: ReturnType<typeof prisma8TimestampFromDate>
+    createTime: ReturnType<typeof instantFromDate>
     enable: boolean
     forever: boolean
-    expireTime: ReturnType<typeof prisma8TimestampFromDate> | null
+    expireTime: ReturnType<typeof instantFromDate> | null
     description: string | null
   }) {
     return {
@@ -139,14 +138,14 @@ export class PersonalApiKeyService {
     accessKey: string
     enable: boolean
     forever: boolean
-    expireTime: ReturnType<typeof prisma8TimestampFromDate> | null
+    expireTime: ReturnType<typeof instantFromDate> | null
     description: string | null
   }) {
     return {
       accessKey: row.accessKey,
       enabled: row.enable,
       forever: row.forever,
-      expireAt: row.expireTime ? prisma8TimestampToISOString(row.expireTime) : null,
+      expireAt: row.expireTime ? instantToISOString(row.expireTime) : null,
       description: row.description,
     }
   }

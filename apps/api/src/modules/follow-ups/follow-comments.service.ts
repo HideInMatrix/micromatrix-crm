@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now } from '../../prisma/prisma8-temporal'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { FollowCommentServiceBase } from './follow-comment.service-base'
 import { type FollowRecord, FollowUpsService } from './follow-ups.service'
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
 export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord> {
@@ -18,11 +18,11 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
   protected readonly notificationTitle = '跟进记录'
 
   constructor(
-    prisma8: Prisma8Service,
+    prisma: PrismaService,
     private readonly followUps: FollowUpsService,
     notifications: BusinessNotificationsService,
   ) {
-    super(prisma8, notifications)
+    super(prisma, notifications)
   }
 
   protected assertResourceAccess(user: AuthUser, resourceId: string, write: boolean) {
@@ -79,7 +79,7 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
   }
 
   protected createComment(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     input: {
       resourceId: string
       parentId: string | null
@@ -99,21 +99,16 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
       organizationId: input.tenantId,
       createUser: input.createdById,
       updateUser: input.updatedById,
-      updateTime: prisma8Now(),
+      updateTime: nowInstant(),
     }).then((row) => this.toCommentRow(row))
   }
 
-  protected updateComment(
-    tx: Prisma8Transaction,
-    id: string,
-    content: string,
-    updatedById: string,
-  ) {
+  protected updateComment(tx: PrismaTransaction, id: string, content: string, updatedById: string) {
     return tx.orm.public.FollowUpRecordComment.where({ id: id })
       .update({
         content: content,
         updateUser: updatedById,
-        updateTime: prisma8Now(),
+        updateTime: nowInstant(),
       })
       .then((row) => {
         if (!row) throw new Error('评论不存在')
@@ -121,11 +116,11 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
       })
   }
 
-  protected async deleteComment(tx: Prisma8Transaction, id: string): Promise<void> {
+  protected async deleteComment(tx: PrismaTransaction, id: string): Promise<void> {
     await tx.orm.public.FollowUpRecordComment.where({ id: id }).delete()
   }
 
-  protected async replaceMentions(tx: Prisma8Transaction, commentId: string, userIds: string[]) {
+  protected async replaceMentions(tx: PrismaTransaction, commentId: string, userIds: string[]) {
     await tx.orm.public.FollowUpRecordCommentMention.where({
       commentId: commentId,
     }).deleteAndCount()
@@ -140,27 +135,27 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
   }
 
   protected async loadMentions(commentIds: string[]) {
-    return await this.prisma8.client.orm.public.FollowUpRecordCommentMention.where((row) =>
+    return await this.prisma.client.orm.public.FollowUpRecordCommentMention.where((row) =>
       row.commentId.in(commentIds),
     )
       .select('commentId', 'userId')
       .all()
   }
 
-  protected async recount(tx: Prisma8Transaction, tenantId: string, resourceId: string) {
+  protected async recount(tx: PrismaTransaction, tenantId: string, resourceId: string) {
     const { count: commentCount } = await tx.orm.public.FollowUpRecordComment.where({
       organizationId: tenantId,
       resourceId,
     }).aggregate((aggregate) => ({ count: aggregate.count() }))
     await tx.orm.public.FollowUpRecords.where({ id: resourceId, tenantId }).update({
       commentCount,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     return commentCount
   }
 
   private comments() {
-    return this.prisma8.client.orm.public.FollowUpRecordComment
+    return this.prisma.client.orm.public.FollowUpRecordComment
   }
 
   protected commentEvent(record: FollowRecord, mentioned: boolean): MessageTaskEvent {

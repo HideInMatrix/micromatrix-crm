@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { Prisma8Module } from '../../prisma/prisma8.module.js'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { DictionariesModule } from '../dictionaries/dictionaries.module'
 import { HomeModule } from '../home/home.module'
 import { ImportExportModule } from '../import-export/import-export.module'
@@ -11,7 +11,7 @@ import { OpportunitiesController } from './opportunities.controller'
 import { OpportunitiesService } from './opportunities.service'
 
 @Module({
-  imports: [Prisma8Module, HomeModule, UserViewsModule, ImportExportModule, DictionariesModule],
+  imports: [PrismaModule, HomeModule, UserViewsModule, ImportExportModule, DictionariesModule],
   controllers: [OpportunitiesController, OpportunityStageController, OpportunityRuleController],
   providers: [OpportunitiesService, OpportunityRuleService],
   exports: [OpportunitiesService],

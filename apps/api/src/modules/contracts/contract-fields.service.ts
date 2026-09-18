@@ -1,13 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 
 const FORM_KEY = 'contract'
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 export interface ContractProductInput {
   product: string
@@ -33,7 +33,7 @@ export interface ContractProductValue {
 @Injectable()
 export class ContractFieldsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly moduleForms: ModuleFormsService,
   ) {}
 
@@ -41,7 +41,7 @@ export class ContractFieldsService {
     organizationId: string,
     resourceId: string,
     products: ContractProductInput[],
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
@@ -106,7 +106,7 @@ export class ContractFieldsService {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
-    const allowedResources = await this.prisma8.client.orm.public.Contract.where({
+    const allowedResources = await this.prisma.client.orm.public.Contract.where({
       organizationId: organizationId,
     })
       .where((row) => row.id.in(ids))
@@ -117,11 +117,11 @@ export class ContractFieldsService {
     const refSubId = required.parent.id
     const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
-      this.prisma8.client.orm.public.ContractField.where({ refSubId })
+      this.prisma.client.orm.public.ContractField.where({ refSubId })
         .where((row) => row.resourceId.in(resourceIdFilter))
         .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
         .all(),
-      this.prisma8.client.orm.public.ContractFieldBlob.where({ refSubId })
+      this.prisma.client.orm.public.ContractFieldBlob.where({ refSubId })
         .where((row) => row.resourceId.in(resourceIdFilter))
         .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
         .all(),
@@ -154,7 +154,7 @@ export class ContractFieldsService {
     const validRows = [...rows.values()].filter((row) => row.productId)
     const productIds = [...new Set(validRows.map((row) => row.productId))]
     const products = productIds.length
-      ? await this.prisma8.client.orm.public.Product.where({
+      ? await this.prisma.client.orm.public.Product.where({
           organizationId: organizationId,
         })
           .where((row) => row.id.in(productIds))
@@ -182,7 +182,7 @@ export class ContractFieldsService {
   }
 
   private async writeCell(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     resourceId: string,
     refSubId: string,
     rowId: string,

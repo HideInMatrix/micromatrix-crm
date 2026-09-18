@@ -15,12 +15,12 @@ import {
 } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import {
-  prisma8Now,
-  prisma8TimestampFromEpochMilliseconds,
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal.js'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+  nowInstant,
+  instantFromEpochMilliseconds,
+  instantFromDate,
+  instantToISOString,
+} from '../../prisma/temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { DingTalkClient } from '../enterprise-integrations/dingtalk.client'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import { LarkClient } from '../enterprise-integrations/lark.client'
@@ -53,13 +53,13 @@ type MessageDeliveryRow = {
   status: MessageDeliveryStatus
   attempts: number
   maxAttempts: number
-  nextAttemptAt: ReturnType<typeof prisma8Now> | null
+  nextAttemptAt: ReturnType<typeof nowInstant> | null
   providerMessageId: string | null
   errorCode: string | null
   errorMessage: string | null
-  sentAt: ReturnType<typeof prisma8Now> | null
-  createdAt: ReturnType<typeof prisma8Now>
-  updatedAt: ReturnType<typeof prisma8Now>
+  sentAt: ReturnType<typeof nowInstant> | null
+  createdAt: ReturnType<typeof nowInstant>
+  updatedAt: ReturnType<typeof nowInstant>
 }
 
 type WorkerDelivery = {
@@ -87,7 +87,7 @@ export class MessageDeliveryService {
   private readonly logger = new Logger(MessageDeliveryService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly messageSettings: MessageSettingsService,
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly weComClient: WeComClient,
@@ -131,7 +131,7 @@ export class MessageDeliveryService {
           ? await this.messageSettings.getLarkChannelGate(input.tenantId)
           : await this.messageSettings.getWeComChannelGate(input.tenantId)
     if (!gate.available) return 0
-    const integration = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    const integration = await this.prisma.client.orm.public.EnterpriseIntegrations.where({
       tenantId: input.tenantId,
       provider: channel,
     })
@@ -141,7 +141,7 @@ export class MessageDeliveryService {
 
     const userIds = [...new Set(input.recipientIds)]
     if (userIds.length === 0) return 0
-    const mappings = await this.prisma8.client.orm.public.ExternalUserMappings.where({
+    const mappings = await this.prisma.client.orm.public.ExternalUserMappings.where({
       tenantId: input.tenantId,
       provider: channel,
       active: true,
@@ -150,11 +150,11 @@ export class MessageDeliveryService {
       .select('userId', 'externalId')
       .all()
     const mappingByUser = new Map(mappings.map((mapping) => [mapping.userId, mapping]))
-    const updatedAt = prisma8Now()
-    const created = await this.prisma8.client.transaction(async (tx) => {
+    const updatedAt = nowInstant()
+    const created = await this.prisma.client.transaction(async (tx) => {
       return tx.orm.public.MessageDeliveries.createAll(
         userIds.map((userId) => {
-        const mapping = mappingByUser.get(userId)
+          const mapping = mappingByUser.get(userId)
           return {
             tenantId: input.tenantId,
             integrationId: integration.id,
@@ -189,12 +189,12 @@ export class MessageDeliveryService {
     const pageSize = query.pageSize ?? 20
     const keyword = query.keyword?.trim()
     const matchingUsers = keyword
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId })
           .where((user) => user.name.ilike(`%${keyword}%`))
           .select('id')
           .all()
       : []
-    const scoped = this.prisma8.client.orm.public.MessageDeliveries.where({
+    const scoped = this.prisma.client.orm.public.MessageDeliveries.where({
       tenantId,
       channel: query.channel ?? 'WECOM',
       ...(query.status ? { status: query.status } : {}),
@@ -220,9 +220,14 @@ export class MessageDeliveryService {
         .all(),
       filtered.aggregate((agg) => ({ total: agg.count() })),
     ])
-    const names = await this.userNames(tenantId, items.map((item) => item.userId))
+    const names = await this.userNames(
+      tenantId,
+      items.map((item) => item.userId),
+    )
     return {
-      items: items.map((item) => this.toVO(item, item.userId ? (names.get(item.userId) ?? null) : null)),
+      items: items.map((item) =>
+        this.toVO(item, item.userId ? (names.get(item.userId) ?? null) : null),
+      ),
       total: aggregate.total,
       page,
       pageSize,
@@ -230,7 +235,10 @@ export class MessageDeliveryService {
   }
 
   async retry(tenantId: string, id: string): Promise<MessageDeliveryVO> {
-    const delivery = await this.prisma8.client.orm.public.MessageDeliveries.where({ id, tenantId }).first()
+    const delivery = await this.prisma.client.orm.public.MessageDeliveries.where({
+      id,
+      tenantId,
+    }).first()
     if (!delivery) throw new NotFoundException('投递记录不存在')
     if (!this.isSupportedChannel(delivery.channel)) {
       throw new BadRequestException('当前投递渠道暂不支持手工重试')
@@ -239,7 +247,10 @@ export class MessageDeliveryService {
     if (!['FAILED', 'DEAD'].includes(delivery.status)) {
       throw new BadRequestException('只有失败或已终止的投递可以重试')
     }
-    const updated = await this.prisma8.client.orm.public.MessageDeliveries.where({ id, tenantId }).update({
+    const updated = await this.prisma.client.orm.public.MessageDeliveries.where({
+      id,
+      tenantId,
+    }).update({
       status: 'PENDING',
       attempts: 0,
       nextAttemptAt: null,
@@ -247,7 +258,7 @@ export class MessageDeliveryService {
       errorMessage: null,
       providerMessageId: null,
       sentAt: null,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!updated) throw new NotFoundException('投递记录不存在')
     const names = await this.userNames(tenantId, [updated.userId])
@@ -267,9 +278,9 @@ export class MessageDeliveryService {
 
   async processDueDeliveries(): Promise<number> {
     const now = new Date()
-    const nowTemporal = prisma8TimestampFromDate(now)
-    const staleBefore = prisma8TimestampFromEpochMilliseconds(now.getTime() - STALE_SENDING_MS)
-    await this.prisma8.client.orm.public.MessageDeliveries.where({ status: 'SENDING' })
+    const nowTemporal = instantFromDate(now)
+    const staleBefore = instantFromEpochMilliseconds(now.getTime() - STALE_SENDING_MS)
+    await this.prisma.client.orm.public.MessageDeliveries.where({ status: 'SENDING' })
       .where((delivery) => delivery.channel.in(SUPPORTED_CHANNELS))
       .where((delivery) => delivery.updatedAt.lt(staleBefore))
       .updateAll({
@@ -279,7 +290,7 @@ export class MessageDeliveryService {
         errorMessage: '投递处理超时，已恢复等待重试',
         updatedAt: nowTemporal,
       })
-    const due = await this.prisma8.client.orm.public.MessageDeliveries.where((delivery) =>
+    const due = await this.prisma.client.orm.public.MessageDeliveries.where((delivery) =>
       delivery.channel.in(SUPPORTED_CHANNELS),
     )
       .where((delivery) => delivery.status.in(['PENDING', 'FAILED']))
@@ -307,7 +318,7 @@ export class MessageDeliveryService {
 
   private async processOne(id: string): Promise<void> {
     if (!(await this.claimDelivery(id))) return
-    const delivery = await this.prisma8.client.orm.public.MessageDeliveries.where({ id })
+    const delivery = await this.prisma.client.orm.public.MessageDeliveries.where({ id })
       .select(
         'id',
         'tenantId',
@@ -356,8 +367,8 @@ export class MessageDeliveryService {
   }
 
   private async completeDelivery(id: string, providerMessageId: string | null): Promise<void> {
-    const sentAt = prisma8Now()
-    const updated = await this.prisma8.client.orm.public.MessageDeliveries.where({ id }).update({
+    const sentAt = nowInstant()
+    const updated = await this.prisma.client.orm.public.MessageDeliveries.where({ id }).update({
       status: 'SUCCEEDED',
       providerMessageId,
       sentAt,
@@ -369,7 +380,7 @@ export class MessageDeliveryService {
   }
 
   private async claimDelivery(id: string): Promise<boolean> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const now = new Date().toISOString()
     const query = client.raw.sql`UPDATE message_deliveries
       SET status = 'SENDING',
@@ -470,12 +481,12 @@ export class MessageDeliveryService {
   ): Promise<void> {
     const retryable = transient && delivery.attempts < delivery.maxAttempts
     const delay = RETRY_DELAYS_MS[Math.max(0, delivery.attempts - 1)] ?? RETRY_DELAYS_MS.at(-1)!
-    const updatedAt = prisma8Now()
-    const updated = await this.prisma8.client.orm.public.MessageDeliveries.where({
+    const updatedAt = nowInstant()
+    const updated = await this.prisma.client.orm.public.MessageDeliveries.where({
       id: delivery.id,
     }).update({
       status: retryable ? 'FAILED' : 'DEAD',
-      nextAttemptAt: retryable ? prisma8Now().add({ milliseconds: delay }) : null,
+      nextAttemptAt: retryable ? nowInstant().add({ milliseconds: delay }) : null,
       errorCode: errorCode.slice(0, 100),
       errorMessage: errorMessage.slice(0, 500),
       updatedAt,
@@ -493,7 +504,7 @@ export class MessageDeliveryService {
   private async userNames(tenantId: string, rawUserIds: Array<string | null>) {
     const userIds = [...new Set(rawUserIds.filter((id): id is string => Boolean(id)))]
     if (!userIds.length) return new Map<string, string>()
-    const users = await this.prisma8.client.orm.public.Users.where({ tenantId })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId })
       .where((user) => user.id.in(userIds))
       .select('id', 'name')
       .all()
@@ -520,15 +531,13 @@ export class MessageDeliveryService {
       status: delivery.status,
       attempts: delivery.attempts,
       maxAttempts: delivery.maxAttempts,
-      nextAttemptAt: delivery.nextAttemptAt
-        ? prisma8TimestampToISOString(delivery.nextAttemptAt)
-        : null,
+      nextAttemptAt: delivery.nextAttemptAt ? instantToISOString(delivery.nextAttemptAt) : null,
       providerMessageId: delivery.providerMessageId,
       errorCode: delivery.errorCode,
       errorMessage: delivery.errorMessage,
-      sentAt: delivery.sentAt ? prisma8TimestampToISOString(delivery.sentAt) : null,
-      createdAt: prisma8TimestampToISOString(delivery.createdAt),
-      updatedAt: prisma8TimestampToISOString(delivery.updatedAt),
+      sentAt: delivery.sentAt ? instantToISOString(delivery.sentAt) : null,
+      createdAt: instantToISOString(delivery.createdAt),
+      updatedAt: instantToISOString(delivery.updatedAt),
     }
   }
 

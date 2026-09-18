@@ -8,7 +8,7 @@ import {
   type TopNavigationKey,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 const definitionMap = new Map(NAVIGATION_MODULES.map((definition) => [definition.key, definition]))
 const topNavigationDefinitionMap = new Map(
@@ -20,7 +20,7 @@ const CACHE_TTL_SECONDS = 10 * 60
 @Injectable()
 export class ModuleConfigsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
@@ -39,7 +39,7 @@ export class ModuleConfigsService {
 
   private async loadList(tenantId: string): Promise<ModuleConfigVO[]> {
     await this.ensureDefaults(tenantId)
-    const rows = await this.prisma8.client.orm.public.ModuleConfigs.where({ tenantId })
+    const rows = await this.prisma.client.orm.public.ModuleConfigs.where({ tenantId })
       .orderBy((row) => row.sort.asc())
       .orderBy((row) => row.key.asc())
       .all()
@@ -50,7 +50,7 @@ export class ModuleConfigsService {
     const definition = this.getDefinition(moduleKey)
     if (!definition.configurable) throw new BadRequestException(`${definition.label}模块不可关闭`)
     await this.ensureDefaults(tenantId)
-    const row = await this.prisma8.client.orm.public.ModuleConfigs.where({
+    const row = await this.prisma.client.orm.public.ModuleConfigs.where({
       tenantId,
       key: definition.key,
     }).update({ enabled })
@@ -70,7 +70,7 @@ export class ModuleConfigsService {
       throw new BadRequestException('模块排序必须包含全部模块且不能重复')
     }
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, key] of uniqueKeys.entries()) {
         const updated = await tx.orm.public.ModuleConfigs.where({ tenantId, key }).update({
           sort: index + 1,
@@ -97,7 +97,7 @@ export class ModuleConfigsService {
 
   private async loadTopNavigation(tenantId: string): Promise<TopNavigationConfigVO[]> {
     await this.ensureTopNavigationDefaults(tenantId)
-    const rows = await this.prisma8.client.orm.public.TopNavigationConfigs.where({ tenantId })
+    const rows = await this.prisma.client.orm.public.TopNavigationConfigs.where({ tenantId })
       .orderBy((row) => row.sort.asc())
       .orderBy((row) => row.key.asc())
       .all()
@@ -118,7 +118,7 @@ export class ModuleConfigsService {
       throw new BadRequestException('顶部导航排序必须包含全部入口且不能重复')
     }
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, key] of uniqueKeys.entries()) {
         const updated = await tx.orm.public.TopNavigationConfigs.where({ tenantId, key }).update({
           sort: index + 1,
@@ -131,7 +131,7 @@ export class ModuleConfigsService {
   }
 
   private async ensureDefaults(tenantId: string) {
-    const rows = this.prisma8.client.orm.public.ModuleConfigs
+    const rows = this.prisma.client.orm.public.ModuleConfigs
     for (const [index, definition] of NAVIGATION_MODULES.entries()) {
       if (await rows.where({ tenantId, key: definition.key }).first()) continue
       try {
@@ -148,7 +148,7 @@ export class ModuleConfigsService {
   }
 
   private async ensureTopNavigationDefaults(tenantId: string) {
-    const rows = this.prisma8.client.orm.public.TopNavigationConfigs
+    const rows = this.prisma.client.orm.public.TopNavigationConfigs
     for (const [index, definition] of TOP_NAVIGATION_DEFINITIONS.entries()) {
       if (await rows.where({ tenantId, key: definition.key }).first()) continue
       try {

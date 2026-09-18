@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { OperationLogSettingVO } from '@micromatrix/shared'
-import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { instantToISOString } from '../../prisma/temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { resolveOperationLogCleanupConfig } from './operation-log-config'
 
 const PERMANENT_SENTINEL = 0
@@ -17,7 +17,7 @@ export type OperationLogCleanupSource =
 
 type SettingRow = {
   retentionDays: number | null
-  lastCleanupAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
+  lastCleanupAt: Parameters<typeof instantToISOString>[0] | null
   lastCleanupDeleted: number
   lastCleanupSource: OperationLogCleanupSource | null
 }
@@ -26,7 +26,7 @@ type SettingRow = {
 export class OperationLogSettingsService {
   private readonly defaultRetentionDays = resolveOperationLogCleanupConfig().retentionDays
 
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async get(tenantId: string): Promise<OperationLogSettingVO> {
     const row = await this.find(tenantId)
@@ -51,7 +51,7 @@ export class OperationLogSettingsService {
       )
     }
     const storedValue = retentionDays === null ? PERMANENT_SENTINEL : retentionDays
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const query = client.raw.sql`INSERT INTO operation_log_settings (
         "tenantId", "retentionDays", "updatedAt"
       ) VALUES (
@@ -61,9 +61,7 @@ export class OperationLogSettingsService {
         "retentionDays" = EXCLUDED."retentionDays",
         "updatedAt" = CURRENT_TIMESTAMP
       RETURNING "retentionDays", "lastCleanupAt", "lastCleanupDeleted",
-        "lastCleanupSource"::text AS "lastCleanupSource"`.returnsRow(
-      this.settingRowCodec(),
-    )
+        "lastCleanupSource"::text AS "lastCleanupSource"`.returnsRow(this.settingRowCodec())
     const row = await this.firstRow(query.build())
     return this.toVO(row)
   }
@@ -74,7 +72,7 @@ export class OperationLogSettingsService {
     source: OperationLogCleanupSource,
     at: Date,
   ): Promise<OperationLogSettingVO> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const atIso = at.toISOString()
     const query = client.raw.sql`INSERT INTO operation_log_settings (
         "tenantId", "retentionDays", "lastCleanupAt", "lastCleanupDeleted", "lastCleanupSource", "updatedAt"
@@ -88,21 +86,19 @@ export class OperationLogSettingsService {
         "lastCleanupSource" = EXCLUDED."lastCleanupSource",
         "updatedAt" = CURRENT_TIMESTAMP
       RETURNING "retentionDays", "lastCleanupAt", "lastCleanupDeleted",
-        "lastCleanupSource"::text AS "lastCleanupSource"`.returnsRow(
-      this.settingRowCodec(),
-    )
+        "lastCleanupSource"::text AS "lastCleanupSource"`.returnsRow(this.settingRowCodec())
     const row = await this.firstRow(query.build())
     return this.toVO(row)
   }
 
   private async find(tenantId: string): Promise<SettingRow | null> {
-    return this.prisma8.client.orm.public.OperationLogSettings.where({ tenantId })
+    return this.prisma.client.orm.public.OperationLogSettings.where({ tenantId })
       .select('retentionDays', 'lastCleanupAt', 'lastCleanupDeleted', 'lastCleanupSource')
       .first()
   }
 
   private settingRowCodec() {
-    const columns = this.prisma8.client.sql.public.operation_log_settings.columns
+    const columns = this.prisma.client.sql.public.operation_log_settings.columns
     return {
       retentionDays: columns.retentionDays,
       lastCleanupAt: columns.lastCleanupAt,
@@ -114,7 +110,7 @@ export class OperationLogSettingsService {
   private async firstRow(query: unknown): Promise<SettingRow> {
     // The query object is intentionally kept opaque at this boundary; runtime.query
     // validates it against the contract codec supplied by returnsRow above.
-    for await (const row of this.prisma8.client.runtime().query(query as never)) {
+    for await (const row of this.prisma.client.runtime().query(query as never)) {
       return row as SettingRow
     }
     throw new Error('操作日志设置写入后未返回记录')
@@ -128,7 +124,7 @@ export class OperationLogSettingsService {
       retentionDays: permanent ? null : (row?.retentionDays ?? this.defaultRetentionDays),
       defaultRetentionDays: this.defaultRetentionDays,
       permanent,
-      lastCleanupAt: row?.lastCleanupAt ? prisma8TimestampToISOString(row.lastCleanupAt) : null,
+      lastCleanupAt: row?.lastCleanupAt ? instantToISOString(row.lastCleanupAt) : null,
       lastCleanupDeleted: row?.lastCleanupDeleted ?? 0,
       lastCleanupSource: row?.lastCleanupSource ?? null,
     }

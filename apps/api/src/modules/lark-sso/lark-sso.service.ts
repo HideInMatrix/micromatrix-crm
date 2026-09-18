@@ -18,12 +18,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { or } from '@prisma/orm-postgres/orm-client'
 import { AuthService, type LoginContext } from '../../auth/auth.service'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
 import { LarkClient, type LarkOAuthLoginIdentity } from '../enterprise-integrations/lark.client'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { LarkLoginCallbackDto, StartLarkLoginDto } from './dto/lark-sso.dto'
@@ -64,16 +60,16 @@ type IdentityRow = {
   externalSubject: string
   userId: string
   status: NonNullable<ExternalIdentityVO['status']>
-  boundAt: Parameters<typeof prisma8TimestampToISOString>[0]
-  revokedAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
-  lastLoginAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
+  boundAt: Parameters<typeof instantToISOString>[0]
+  revokedAt: Parameters<typeof instantToISOString>[0] | null
+  lastLoginAt: Parameters<typeof instantToISOString>[0] | null
 }
 type MappingWithUser = MappingRow & { user: UserRow }
 
 @Injectable()
 export class LarkSsoService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly integrations: EnterpriseIntegrationsService,
     private readonly larkClient: LarkClient,
@@ -83,7 +79,7 @@ export class LarkSsoService {
 
   async discovery(tenantSlug?: string): Promise<LarkLoginDiscoveryVO> {
     const tenant = await this.resolveLoginTenant(tenantSlug)
-    const integration = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    const integration = await this.prisma.client.orm.public.EnterpriseIntegrations.where({
       tenantId: tenant.id,
       provider: PROVIDER,
     }).first()
@@ -162,8 +158,16 @@ export class LarkSsoService {
   async getIdentity(tenantId: string, userId: string): Promise<ExternalIdentityVO> {
     await this.requireUser(tenantId, userId)
     const [mapping, identity] = await Promise.all([
-      this.prisma8.client.orm.public.ExternalUserMappings.where({ tenantId, provider: PROVIDER, userId }).first(),
-      this.prisma8.client.orm.public.ExternalIdentities.where({ tenantId, provider: PROVIDER, userId }).first(),
+      this.prisma.client.orm.public.ExternalUserMappings.where({
+        tenantId,
+        provider: PROVIDER,
+        userId,
+      }).first(),
+      this.prisma.client.orm.public.ExternalIdentities.where({
+        tenantId,
+        provider: PROVIDER,
+        userId,
+      }).first(),
     ])
     return this.identityVO(mapping, identity)
   }
@@ -174,19 +178,19 @@ export class LarkSsoService {
     operatorId: string,
   ): Promise<ExternalIdentityVO> {
     await this.requireUser(tenantId, userId)
-    const mapping = await this.prisma8.client.orm.public.ExternalUserMappings.where({
+    const mapping = await this.prisma.client.orm.public.ExternalUserMappings.where({
       tenantId,
       provider: PROVIDER,
       userId,
     }).first()
     if (!mapping?.active) throw new BadRequestException('该成员没有有效的飞书同步映射')
-    const integration = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    const integration = await this.prisma.client.orm.public.EnterpriseIntegrations.where({
       tenantId,
       provider: PROVIDER,
     }).first()
     if (!integration) throw new BadRequestException('请先配置飞书')
 
-    const subjectOwner = await this.prisma8.client.orm.public.ExternalIdentities.where({
+    const subjectOwner = await this.prisma.client.orm.public.ExternalIdentities.where({
       tenantId,
       provider: PROVIDER,
       externalSubject: mapping.externalId,
@@ -194,7 +198,7 @@ export class LarkSsoService {
     if (subjectOwner && subjectOwner.userId !== userId) {
       throw new ConflictException('该飞书身份已绑定其他成员')
     }
-    const userIdentity = await this.prisma8.client.orm.public.ExternalIdentities.where({
+    const userIdentity = await this.prisma.client.orm.public.ExternalIdentities.where({
       tenantId,
       provider: PROVIDER,
       userId,
@@ -202,9 +206,11 @@ export class LarkSsoService {
     if (userIdentity && userIdentity.externalSubject !== mapping.externalId) {
       throw new ConflictException('该成员已绑定其他飞书身份')
     }
-    const now = prisma8Now()
+    const now = nowInstant()
     const identity = userIdentity
-      ? await this.prisma8.client.orm.public.ExternalIdentities.where({ id: userIdentity.id }).update({
+      ? await this.prisma.client.orm.public.ExternalIdentities.where({
+          id: userIdentity.id,
+        }).update({
           mappingId: mapping.id,
           integrationId: integration.id,
           status: 'ACTIVE',
@@ -215,7 +221,7 @@ export class LarkSsoService {
           revokedAt: null,
           updatedAt: now,
         })
-      : await this.prisma8.client.orm.public.ExternalIdentities.create({
+      : await this.prisma.client.orm.public.ExternalIdentities.create({
           tenantId,
           integrationId: integration.id,
           mappingId: mapping.id,
@@ -236,7 +242,7 @@ export class LarkSsoService {
     operatorId: string,
   ): Promise<ExternalIdentityVO> {
     const user = await this.requireUser(tenantId, userId)
-    const otherActiveIdentity = await this.prisma8.client.orm.public.ExternalIdentities.where({
+    const otherActiveIdentity = await this.prisma.client.orm.public.ExternalIdentities.where({
       tenantId,
       userId,
       status: 'ACTIVE',
@@ -248,12 +254,22 @@ export class LarkSsoService {
       throw new BadRequestException('该成员未启用密码登录，不能移除最后一个登录方式')
     }
     const [mapping, identity] = await Promise.all([
-      this.prisma8.client.orm.public.ExternalUserMappings.where({ tenantId, provider: PROVIDER, userId }).first(),
-      this.prisma8.client.orm.public.ExternalIdentities.where({ tenantId, provider: PROVIDER, userId }).first(),
+      this.prisma.client.orm.public.ExternalUserMappings.where({
+        tenantId,
+        provider: PROVIDER,
+        userId,
+      }).first(),
+      this.prisma.client.orm.public.ExternalIdentities.where({
+        tenantId,
+        provider: PROVIDER,
+        userId,
+      }).first(),
     ])
     if (!identity) return this.identityVO(mapping, null)
-    const now = prisma8Now()
-    const revoked = await this.prisma8.client.orm.public.ExternalIdentities.where({ id: identity.id }).update({
+    const now = nowInstant()
+    const revoked = await this.prisma.client.orm.public.ExternalIdentities.where({
+      id: identity.id,
+    }).update({
       status: 'REVOKED',
       revokedById: operatorId,
       revokedAt: now,
@@ -270,7 +286,9 @@ export class LarkSsoService {
   ) {
     const discovery = await this.discovery(input.tenantSlug)
     if (!discovery.available) throw new BadRequestException(discovery.reason ?? '飞书登录不可用')
-    const tenant = await this.prisma8.client.orm.public.Tenants.where({ slug: discovery.tenantSlug }).first()
+    const tenant = await this.prisma.client.orm.public.Tenants.where({
+      slug: discovery.tenantSlug,
+    }).first()
     if (!tenant) throw new NotFoundException('企业标识不存在')
     const context = await this.integrations.getLarkRuntimeContext(tenant.id)
     if (!context.integration.syncEnabled) throw new BadRequestException('飞书统一登录尚未开启')
@@ -279,8 +297,8 @@ export class LarkSsoService {
     const expiresAt = new Date(Date.now() + STATE_TTL_MS)
     const returnPath = this.safeReturnPath(input.returnPath)
 
-    await this.prisma8.client.transaction(async (tx) => {
-      const now = prisma8Now()
+    await this.prisma.client.transaction(async (tx) => {
+      const now = nowInstant()
       await tx.orm.public.ExternalOauthStates.where((row) =>
         or(row.expiresAt.lt(now), row.consumedAt.isNotNull()),
       ).deleteAndCount()
@@ -291,7 +309,7 @@ export class LarkSsoService {
         stateHash: this.hash(state),
         browserNonceHash: this.hash(browserNonce),
         returnPath,
-        expiresAt: prisma8TimestampFromDate(expiresAt),
+        expiresAt: instantFromDate(expiresAt),
       })
     })
 
@@ -370,13 +388,13 @@ export class LarkSsoService {
         this.redirectUri(runtime.credentials.redirectUrl, flow),
       )
       externalSubject = profile.userId
-      const mapped = await this.prisma8.client.orm.public.ExternalUserMappings.where({
+      const mapped = await this.prisma.client.orm.public.ExternalUserMappings.where({
         tenantId: state.tenantId,
         provider: PROVIDER,
         externalKey: profile.externalKey,
       }).first()
       if (!mapped?.active) throw new UnauthorizedException('飞书成员未同步或映射已失效')
-      const mappedUser = await this.prisma8.client.orm.public.Users.where({
+      const mappedUser = await this.prisma.client.orm.public.Users.where({
         id: mapped.userId,
         tenantId: state.tenantId,
       }).first()
@@ -398,8 +416,8 @@ export class LarkSsoService {
         },
         context,
       )
-      const lastLoginAt = prisma8Now()
-      await this.prisma8.client.orm.public.ExternalIdentities.where({ id: identity.id }).update({
+      const lastLoginAt = nowInstant()
+      await this.prisma.client.orm.public.ExternalIdentities.where({ id: identity.id }).update({
         lastLoginAt,
         updatedAt: lastLoginAt,
       })
@@ -432,13 +450,15 @@ export class LarkSsoService {
     if (!state.startsWith(`${statePrefix}.`)) {
       throw new UnauthorizedException('飞书登录状态无效或已过期')
     }
-    const result = await this.prisma8.client.transaction(async (tx) => {
-      const found = await tx.orm.public.ExternalOauthStates.where({ stateHash: this.hash(state) }).first()
+    const result = await this.prisma.client.transaction(async (tx) => {
+      const found = await tx.orm.public.ExternalOauthStates.where({
+        stateHash: this.hash(state),
+      }).first()
       if (!found) return null
       const consumed = await tx.orm.public.ExternalOauthStates.where({
         id: found.id,
         consumedAt: null,
-      }).updateAndCount({ consumedAt: prisma8Now() })
+      }).updateAndCount({ consumedAt: nowInstant() })
       return { row: found, consumed: consumed === 1 }
     })
     const row = result?.row
@@ -467,26 +487,31 @@ export class LarkSsoService {
     if (profile.phone) data.phone = profile.phone
     if (profile.gender !== null) data.gender = profile.gender
     if (profile.email && !user.email) {
-      const owner = await this.prisma8.client.orm.public.Users.where({ email: profile.email }).select('id').first()
+      const owner = await this.prisma.client.orm.public.Users.where({ email: profile.email })
+        .select('id')
+        .first()
       if (!owner || owner.id === user.id) data.email = profile.email
     }
     if (Object.keys(data).length > 0) {
-      await this.prisma8.client.orm.public.Users.where({ id: user.id }).update({
+      await this.prisma.client.orm.public.Users.where({ id: user.id }).update({
         ...data,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       await this.authCache?.invalidate(user.id)
     }
     if (profile.avatarUrl) {
-      const extension = await this.prisma8.client.orm.public.UserExtensions.where({ id: user.id })
+      const extension = await this.prisma.client.orm.public.UserExtensions.where({ id: user.id })
         .select('id')
         .first()
       if (extension) {
-        await this.prisma8.client.orm.public.UserExtensions.where({ id: user.id }).update({
+        await this.prisma.client.orm.public.UserExtensions.where({ id: user.id }).update({
           avatar: profile.avatarUrl,
         })
       } else {
-        await this.prisma8.client.orm.public.UserExtensions.create({ id: user.id, avatar: profile.avatarUrl })
+        await this.prisma.client.orm.public.UserExtensions.create({
+          id: user.id,
+          avatar: profile.avatarUrl,
+        })
       }
     }
   }
@@ -496,7 +521,7 @@ export class LarkSsoService {
     mapping: MappingRow,
     externalSubject: string,
   ): Promise<IdentityRow> {
-    const existing = await this.prisma8.client.orm.public.ExternalIdentities.where({
+    const existing = await this.prisma.client.orm.public.ExternalIdentities.where({
       tenantId: mapping.tenantId,
       provider: PROVIDER,
       externalSubject,
@@ -507,13 +532,13 @@ export class LarkSsoService {
       }
       return existing
     }
-    const byUser = await this.prisma8.client.orm.public.ExternalIdentities.where({
+    const byUser = await this.prisma.client.orm.public.ExternalIdentities.where({
       tenantId: mapping.tenantId,
       provider: PROVIDER,
       userId: mapping.userId,
     }).first()
     if (byUser) throw new ConflictException('本地成员已绑定其他飞书身份')
-    return this.prisma8.client.orm.public.ExternalIdentities.create({
+    return this.prisma.client.orm.public.ExternalIdentities.create({
       tenantId: mapping.tenantId,
       integrationId,
       mappingId: mapping.id,
@@ -521,7 +546,7 @@ export class LarkSsoService {
       externalSubject,
       userId: mapping.userId,
       bindingSource: 'LOGIN',
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
   }
 
@@ -529,11 +554,13 @@ export class LarkSsoService {
     const configuredDefault = this.config.get<string>('LARK_DEFAULT_TENANT_SLUG')?.trim()
     const requestedSlug = tenantSlug?.trim() || configuredDefault
     if (requestedSlug) {
-      const tenant = await this.prisma8.client.orm.public.Tenants.where({ slug: requestedSlug }).first()
+      const tenant = await this.prisma.client.orm.public.Tenants.where({
+        slug: requestedSlug,
+      }).first()
       if (!tenant) throw new NotFoundException('企业标识不存在')
       return tenant
     }
-    const integrations = await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+    const integrations = await this.prisma.client.orm.public.EnterpriseIntegrations.where({
       provider: PROVIDER,
       lastTestSucceeded: true,
       syncEnabled: true,
@@ -542,7 +569,7 @@ export class LarkSsoService {
       .all()
     const tenantIds = [...new Set(integrations.map((integration) => integration.tenantId))]
     const tenants = tenantIds.length
-      ? await this.prisma8.client.orm.public.Tenants.where({ status: 'ACTIVE' })
+      ? await this.prisma.client.orm.public.Tenants.where({ status: 'ACTIVE' })
           .where((tenant) => tenant.id.in(tenantIds))
           .orderBy((tenant) => tenant.createdAt.asc())
           .limit(2)
@@ -555,25 +582,20 @@ export class LarkSsoService {
   }
 
   private async requireUser(tenantId: string, userId: string): Promise<UserRow> {
-    const user = await this.prisma8.client.orm.public.Users.where({ id: userId, tenantId }).first()
+    const user = await this.prisma.client.orm.public.Users.where({ id: userId, tenantId }).first()
     if (!user) throw new NotFoundException('成员不存在')
     return user
   }
 
-  private identityVO(
-    mapping: MappingRow | null,
-    identity: IdentityRow | null,
-  ): ExternalIdentityVO {
+  private identityVO(mapping: MappingRow | null, identity: IdentityRow | null): ExternalIdentityVO {
     return {
       provider: PROVIDER,
       mapped: Boolean(mapping?.active),
       externalSubject: identity?.externalSubject ?? mapping?.externalId ?? null,
       status: identity?.status ?? null,
-      boundAt: identity ? prisma8TimestampToISOString(identity.boundAt) : null,
-      revokedAt: identity?.revokedAt ? prisma8TimestampToISOString(identity.revokedAt) : null,
-      lastLoginAt: identity?.lastLoginAt
-        ? prisma8TimestampToISOString(identity.lastLoginAt)
-        : null,
+      boundAt: identity ? instantToISOString(identity.boundAt) : null,
+      revokedAt: identity?.revokedAt ? instantToISOString(identity.revokedAt) : null,
+      lastLoginAt: identity?.lastLoginAt ? instantToISOString(identity.lastLoginAt) : null,
     }
   }
 

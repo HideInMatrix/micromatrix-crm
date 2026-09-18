@@ -11,7 +11,7 @@ import { Reflector } from '@nestjs/core'
 import { JwtService } from '@nestjs/jwt'
 import { hasPermission } from '@micromatrix/shared'
 import type { Request } from 'express'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { toAuthUser } from '../auth-user'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
@@ -30,7 +30,7 @@ export class AuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
     private readonly config: ConfigService,
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly authCache: AuthContextCacheService,
   ) {}
 
@@ -50,16 +50,11 @@ export class AuthGuard implements CanActivate {
 
     if (accessKey || secretKey) {
       if (!accessKey || !secretKey) throw new UnauthorizedException('API Key 凭证不完整')
-      const apiKey = await this.prisma8.client.orm.public.UserKey.where({ accessKey }).first()
+      const apiKey = await this.prisma.client.orm.public.UserKey.where({ accessKey }).first()
       const expired =
         apiKey?.forever === false &&
         (!apiKey.expireTime || apiKey.expireTime.epochMilliseconds <= Date.now())
-      if (
-        !apiKey ||
-        !apiKey.enable ||
-        expired ||
-        !this.secretEquals(apiKey.secretKey, secretKey)
-      ) {
+      if (!apiKey || !apiKey.enable || expired || !this.secretEquals(apiKey.secretKey, secretKey)) {
         throw new UnauthorizedException('API Key 无效、已停用或已过期')
       }
       userId = apiKey.createUser
@@ -121,12 +116,12 @@ export class AuthGuard implements CanActivate {
   }
 
   private async loadUserWithRoles(userId: string) {
-    const user = await this.prisma8.client.orm.public.Users.where({ id: userId })
+    const user = await this.prisma.client.orm.public.Users.where({ id: userId })
       .select('id', 'tenantId', 'email', 'name', 'deptId', 'leaderId', 'status', 'authVersion')
       .first()
     if (!user) return null
 
-    const links = await this.prisma8.client.orm.public.UserRoles.where({
+    const links = await this.prisma.client.orm.public.UserRoles.where({
       userId: user.id,
       tenantId: user.tenantId,
     })
@@ -134,7 +129,7 @@ export class AuthGuard implements CanActivate {
       .all()
     const roleIds = [...new Set(links.map((link) => link.roleId))]
     const roles = roleIds.length
-      ? await this.prisma8.client.orm.public.Roles.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Roles.where({ tenantId: user.tenantId })
           .where((role) => role.id.in(roleIds))
           .select('id', 'name', 'permissions', 'dataScope', 'scopeDeptIds')
           .all()

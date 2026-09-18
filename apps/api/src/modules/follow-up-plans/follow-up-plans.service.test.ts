@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ConflictException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { instantFromDate } from '../../prisma/temporal'
 import { type FollowUpPlan, FollowUpPlansService } from './follow-up-plans.service'
 
-const instant = (value: string) => prisma8TimestampFromDate(new Date(value))
+const instant = (value: string) => instantFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'owner-1',
@@ -51,7 +51,7 @@ function dependencies(
     input: { type: string; event?: string },
   ) => Promise<void> = async () => undefined,
   options: {
-    prisma8?: Record<string, unknown>
+    prismaRuntime?: Record<string, unknown>
     customerAccess?: Record<string, unknown>
     moduleForms?: Record<string, unknown>
     fieldValues?: Record<string, unknown>
@@ -102,13 +102,13 @@ function dependencies(
       legacy.customerContact?.findMany ? legacy.customerContact.findMany() : [],
     ),
   }
-  const supplied = (options.prisma8 ?? {}) as {
+  const supplied = (options.prismaRuntime ?? {}) as {
     client?: {
       transaction?: (operation: (tx: unknown) => Promise<unknown>) => Promise<unknown>
       orm?: { public?: Record<string, unknown> }
     }
   }
-  const prisma8 = {
+  const prismaRuntime = {
     ...supplied,
     client: {
       ...(supplied.client ?? {}),
@@ -121,7 +121,7 @@ function dependencies(
     },
   }
   return new FollowUpPlansService(
-    prisma8 as never,
+    prismaRuntime as never,
     {} as never,
     (options.customerAccess ?? {}) as never,
     {} as never,
@@ -249,7 +249,7 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
     user: { findMany: async () => [{ id: 'owner-1', name: '负责人' }] },
     customerContact: { findMany: async () => [] },
   }
-  const prisma8 = {
+  const prismaRuntime = {
     client: {
       transaction: async (operation: (tx: unknown) => Promise<unknown>) =>
         operation({
@@ -264,7 +264,7 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
     },
   }
   const service = dependencies(prisma, undefined, {
-    prisma8,
+    prismaRuntime,
     customerAccess: {
       assertCollaborateWrite: async () => ({
         customer: { name: '测试客户' },
@@ -292,9 +292,7 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
     targetType: 'customer',
     targetId: 'customer-1',
     content: '带产品的跟进计划',
-    moduleFields: [
-      { fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] },
-    ],
+    moduleFields: [{ fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] }],
   })
 
   assert.deepEqual(savedValues, { planProduct: ['product-a', 'product-b'] })
@@ -317,7 +315,7 @@ test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去�
     loadDueReminderPlans: () => Promise<FollowUpPlan[]>
     claimDueReminder: () => Promise<boolean>
     releaseDueReminder: () => Promise<void>
-    targetNamesPrisma8: () => Promise<Map<string, string>>
+    targetNamesPrisma: () => Promise<Map<string, string>>
   }
   storage.loadDueReminderPlans = async () => (claimed ? [] : [row])
   storage.claimDueReminder = async () => {
@@ -326,7 +324,7 @@ test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去�
     return true
   }
   storage.releaseDueReminder = async () => undefined
-  storage.targetNamesPrisma8 = async () => new Map([['customer:customer-1', '测试客户']])
+  storage.targetNamesPrisma = async () => new Map([['customer:customer-1', '测试客户']])
 
   const first = await service.runDueReminders(new Date('2026-08-22T03:00:00.000Z'))
   const second = await service.runDueReminders(new Date('2026-08-22T03:05:00.000Z'))

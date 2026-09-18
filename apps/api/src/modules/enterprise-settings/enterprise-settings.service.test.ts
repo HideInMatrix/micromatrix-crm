@@ -4,8 +4,8 @@ import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now } from '../../prisma/prisma8-temporal'
+import type { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
 import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
@@ -37,7 +37,7 @@ const cipher = {
 
 const databaseUrl = process.env['DATABASE_URL']
 
-test('AI runtime 使用 Prisma 8 按租户读取模型且保持 provider 请求契约', async () => {
+test('AI runtime 使用 Prisma 按租户读取模型且保持 provider 请求契约', async () => {
   const whereCalls: unknown[] = []
   const selectCalls: string[][] = []
   const collection = {
@@ -67,10 +67,10 @@ test('AI runtime 使用 Prisma 8 按租户读取模型且保持 provider 请求�
       }
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { EnterpriseAiModels: collection } } },
-  } as unknown as Prisma8Service
-  const service = new EnterpriseAiRuntimeService(prisma8, cipher)
+  } as unknown as PrismaService
+  const service = new EnterpriseAiRuntimeService(prisma, cipher)
   const originalFetch = globalThis.fetch
   let requestUrl = ''
   let requestBody: Record<string, unknown> | undefined
@@ -100,7 +100,7 @@ test('AI runtime 使用 Prisma 8 按租户读取模型且保持 provider 请求�
 })
 
 test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', async () => {
-  const now = prisma8Now()
+  const now = nowInstant()
   const setting = {
     id: 'ui-a',
     tenantId: 'tenant-a',
@@ -118,13 +118,15 @@ test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', as
     createdAt: now,
     updatedAt: now,
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
           Tenants: {
             where: ({ slug }: { slug?: string }) => ({
-              select: () => ({ first: async () => (slug === 'demo' ? { id: 'tenant-a', slug: 'demo' } : null) }),
+              select: () => ({
+                first: async () => (slug === 'demo' ? { id: 'tenant-a', slug: 'demo' } : null),
+              }),
             }),
           },
           EnterpriseUiSettings: {
@@ -135,9 +137,9 @@ test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', as
         },
       },
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   const attachments = {} as any
-  const service = new EnterpriseUiSettingsService(prisma8, attachments)
+  const service = new EnterpriseUiSettingsService(prisma, attachments)
 
   const branding = await service.getBranding('demo')
   assert.equal(branding.title, '一草一木 CRM')
@@ -151,7 +153,7 @@ test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', as
 })
 
 test('登录页品牌配置可在未登录时按邮箱解析所属租户', async () => {
-  const now = prisma8Now()
+  const now = nowInstant()
   const setting = {
     id: 'ui-a',
     tenantId: 'tenant-a',
@@ -169,7 +171,7 @@ test('登录页品牌配置可在未登录时按邮箱解析所属租户', async
     createdAt: now,
     updatedAt: now,
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -180,9 +182,7 @@ test('登录页品牌配置可在未登录时按邮箱解析所属租户', async
             where: ({ id }: { id?: string }) => ({
               select: () => ({
                 first: async () =>
-                  id === 'tenant-a'
-                    ? { id: 'tenant-a', slug: 'demo', status: 'ACTIVE' }
-                    : null,
+                  id === 'tenant-a' ? { id: 'tenant-a', slug: 'demo', status: 'ACTIVE' } : null,
               }),
             }),
           },
@@ -194,8 +194,8 @@ test('登录页品牌配置可在未登录时按邮箱解析所属租户', async
         },
       },
     },
-  } as unknown as Prisma8Service
-  const service = new EnterpriseUiSettingsService(prisma8, {} as any)
+  } as unknown as PrismaService
+  const service = new EnterpriseUiSettingsService(prisma, {} as any)
 
   const branding = await service.getLoginBranding({ email: 'admin@demo.com' })
   assert.equal(branding.tenantSlug, 'demo')
@@ -217,8 +217,8 @@ test('SMTP 密码加密保存、留空保留且响应不回显秘密材料', asy
         lastTestSucceeded: null,
         lastTestMessage: null,
         lastTestedAt: null,
-        createdAt: prisma8Now(),
-        updatedAt: prisma8Now(),
+        createdAt: nowInstant(),
+        updatedAt: nowInstant(),
       }
       return row
     },
@@ -233,16 +233,16 @@ test('SMTP 密码加密保存、留空保留且响应不回显秘密材料', asy
         if (!row) return null
         if (where.tenantId && row.tenantId !== where.tenantId) return null
         if (where.id && row.id !== where.id) return null
-        row = { ...row, ...data, updatedAt: prisma8Now() }
+        row = { ...row, ...data, updatedAt: nowInstant() }
         return row
       },
     }),
   }
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { EnterpriseMailSettings: mail } } },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   const probe = { test: async () => undefined } as unknown as SmtpProbeService
-  const service = new EnterpriseMailSettingsService(prisma8, cipher, probe)
+  const service = new EnterpriseMailSettingsService(prisma, cipher, probe)
   const base = {
     host: 'smtp.example.com',
     port: 465,
@@ -265,79 +265,76 @@ test('SMTP 密码加密保存、留空保留且响应不回显秘密材料', asy
   await assert.rejects(() => service.save(user, { ...base, tls: true }), BadRequestException)
 })
 
-test(
-  'SMTP 设置通过 Prisma 8 写入并保持 fixture readback 一致',
-  { skip: !databaseUrl },
-  async () => {
-    assert.ok(databaseUrl)
-    const testDb = await openPrismaTestDatabase(databaseUrl)
-    const prisma8Client = testDb.client
-    const prisma8 = { client: prisma8Client } as Prisma8Service
-    let tenantId = ''
-    let probedPassword = ''
-    const probe = {
-      test: async ({ password }: { password: string }) => {
-        probedPassword = password
-      },
-    } as unknown as SmtpProbeService
-    const service = new EnterpriseMailSettingsService(prisma8, cipher, probe)
-    const base = {
-      host: 'smtp.example.com',
-      port: 465,
-      account: 'mailer@example.com',
-      from: 'mailer@example.com',
-      recipient: 'admin@example.com',
-      ssl: true,
-      tls: false,
+test('SMTP 设置通过 Prisma 写入并保持 fixture readback 一致', { skip: !databaseUrl }, async () => {
+  assert.ok(databaseUrl)
+  const testDb = await openPrismaTestDatabase(databaseUrl)
+  const prismaClient = testDb.client
+  const prisma = { client: prismaClient } as PrismaService
+  let tenantId = ''
+  let probedPassword = ''
+  const probe = {
+    test: async ({ password }: { password: string }) => {
+      probedPassword = password
+    },
+  } as unknown as SmtpProbeService
+  const service = new EnterpriseMailSettingsService(prisma, cipher, probe)
+  const base = {
+    host: 'smtp.example.com',
+    port: 465,
+    account: 'mailer@example.com',
+    from: 'mailer@example.com',
+    recipient: 'admin@example.com',
+    ssl: true,
+    tls: false,
+  }
+
+  try {
+    const createdTenant = await createPrismaTestTenant(prismaClient, 'prisma-mail')
+    tenantId = createdTenant.id
+    const integrationUser = { ...user, tenantId }
+
+    const first = await service.save(integrationUser, {
+      ...base,
+      password: 'integration-secret',
+    })
+    assert.equal(first.passwordConfigured, true)
+    assert.equal('passwordCiphertext' in first, false)
+
+    const firstDb = await prismaClient.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
+    assert.ok(firstDb)
+    assert.ok(firstDb.id)
+    assert.equal(firstDb.passwordCiphertext, 'enc:integration-secret')
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await service.save(integrationUser, { ...base, password: '' })
+    const secondDb = await prismaClient.orm.public.EnterpriseMailSettings.where({
+      tenantId,
+    }).first()
+    assert.ok(secondDb)
+    assert.equal(secondDb.passwordCiphertext, firstDb.passwordCiphertext)
+    assert.equal(secondDb.updatedAt.epochMilliseconds > firstDb.updatedAt.epochMilliseconds, true)
+
+    const tested = await service.test(integrationUser, { ...base, password: '' })
+    assert.equal(tested.success, true)
+    assert.equal(probedPassword, 'integration-secret')
+    const testedDb = await prismaClient.orm.public.EnterpriseMailSettings.where({
+      tenantId,
+    }).first()
+    assert.ok(testedDb)
+    assert.equal(testedDb?.lastTestSucceeded, true)
+    assert.equal(testedDb?.lastTestMessage, 'SMTP 连接与认证成功')
+    assert.ok(testedDb?.lastTestedAt)
+  } finally {
+    if (tenantId) {
+      await prismaClient.orm.public.EnterpriseMailSettings.where({ tenantId }).deleteAll()
+      await prismaClient.orm.public.Tenants.where({ id: tenantId }).deleteAll()
     }
-
-    try {
-      const createdTenant = await createPrismaTestTenant(prisma8Client, 'prisma8-mail')
-      tenantId = createdTenant.id
-      const integrationUser = { ...user, tenantId }
-
-      const first = await service.save(integrationUser, {
-        ...base,
-        password: 'integration-secret',
-      })
-      assert.equal(first.passwordConfigured, true)
-      assert.equal('passwordCiphertext' in first, false)
-
-      const firstDb = await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
-      assert.ok(firstDb)
-      assert.ok(firstDb.id)
-      assert.equal(firstDb.passwordCiphertext, 'enc:integration-secret')
-
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      await service.save(integrationUser, { ...base, password: '' })
-      const secondDb = await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
-      assert.ok(secondDb)
-      assert.equal(secondDb.passwordCiphertext, firstDb.passwordCiphertext)
-      assert.equal(
-        secondDb.updatedAt.epochMilliseconds > firstDb.updatedAt.epochMilliseconds,
-        true,
-      )
-
-      const tested = await service.test(integrationUser, { ...base, password: '' })
-      assert.equal(tested.success, true)
-      assert.equal(probedPassword, 'integration-secret')
-      const testedDb = await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).first()
-      assert.ok(testedDb)
-      assert.equal(testedDb?.lastTestSucceeded, true)
-      assert.equal(testedDb?.lastTestMessage, 'SMTP 连接与认证成功')
-      assert.ok(testedDb?.lastTestedAt)
-    } finally {
-      if (tenantId) {
-        await prisma8Client.orm.public.EnterpriseMailSettings.where({ tenantId }).deleteAll()
-        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
-      }
-      await testDb.close()
-    }
-  },
-)
+    await testDb.close()
+  }
+})
 
 test('AI 模型 API Key 留空保留，路由策略只接受当前租户真实模型并保持顺序', async () => {
-  const now = prisma8Now()
+  const now = nowInstant()
   const models: any[] = []
   let routes: any[] = []
   type Predicate = (row: any) => boolean
@@ -346,9 +343,18 @@ test('AI 模型 API Key 留空保留，路由策略只接受当前租户真实�
     {},
     {
       get: (_target, key: string) => ({
-        eq: (value: unknown): Predicate => (row) => row[key] === value,
-        neq: (value: unknown): Predicate => (row) => row[key] !== value,
-        in: (values: unknown[]): Predicate => (row) => values.includes(row[key]),
+        eq:
+          (value: unknown): Predicate =>
+          (row) =>
+            row[key] === value,
+        neq:
+          (value: unknown): Predicate =>
+          (row) =>
+            row[key] !== value,
+        in:
+          (values: unknown[]): Predicate =>
+          (row) =>
+            values.includes(row[key]),
       }),
     },
   )
@@ -368,7 +374,10 @@ test('AI 模型 API Key 留空保留，路由策略只接受当前租户真实�
       return modelCollection(predicates, fieldsToSelect)
     },
     async first() {
-      return project(models.find((row) => predicates.every((predicate) => predicate(row))) ?? null, selected)
+      return project(
+        models.find((row) => predicates.every((predicate) => predicate(row))) ?? null,
+        selected,
+      )
     },
     async all() {
       return models
@@ -420,13 +429,13 @@ test('AI 模型 API Key 留空保留，路由策略只接受当前租户真实�
       EnterpriseAiModelRoutes: routeCollection(),
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm,
       transaction: async (callback: any) => callback({ orm }),
     },
-  } as unknown as Prisma8Service
-  const service = new EnterpriseAiModelsService(prisma8, cipher)
+  } as unknown as PrismaService
+  const service = new EnterpriseAiModelsService(prisma, cipher)
   const input = {
     displayName: '主模型',
     modelName: 'gpt-test',
@@ -460,15 +469,15 @@ test('AI 模型 API Key 留空保留，路由策略只接受当前租户真实�
 })
 
 test(
-  'AI 模型 Prisma 8 transaction/createAll 写入保持 fixture readback 一致',
+  'AI 模型 Prisma transaction/createAll 写入保持 fixture readback 一致',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
     const testDb = await openPrismaTestDatabase(databaseUrl)
-    const prisma8Client = testDb.client
-    const prisma8 = { client: prisma8Client } as Prisma8Service
+    const prismaClient = testDb.client
+    const prisma = { client: prismaClient } as PrismaService
     let tenantId = ''
-    const service = new EnterpriseAiModelsService(prisma8, cipher)
+    const service = new EnterpriseAiModelsService(prisma, cipher)
     const base = {
       modelName: 'gpt-test',
       provider: 'OpenAI' as const,
@@ -480,7 +489,7 @@ test(
     }
 
     try {
-      const createdTenant = await createPrismaTestTenant(prisma8Client, 'prisma8-ai-models')
+      const createdTenant = await createPrismaTestTenant(prismaClient, 'prisma-ai-models')
       tenantId = createdTenant.id
       const integrationUser = { ...user, tenantId }
 
@@ -501,7 +510,7 @@ test(
         [secondary.id],
       )
 
-      const primaryDb = await prisma8Client.orm.public.EnterpriseAiModels.where({
+      const primaryDb = await prismaClient.orm.public.EnterpriseAiModels.where({
         id: primary.id,
       }).first()
       assert.ok(primaryDb)
@@ -515,7 +524,7 @@ test(
         displayName: '主模型',
         apiKey: '',
       })
-      const updatedDb = await prisma8Client.orm.public.EnterpriseAiModels.where({
+      const updatedDb = await prismaClient.orm.public.EnterpriseAiModels.where({
         id: primary.id,
       }).first()
       assert.ok(updatedDb)
@@ -526,7 +535,7 @@ test(
       )
 
       await service.updateRouteStrategy(tenantId, [secondary.id, primary.id])
-      const routeDb = await prisma8Client.orm.public.EnterpriseAiModelRoutes.where({ tenantId })
+      const routeDb = await prismaClient.orm.public.EnterpriseAiModelRoutes.where({ tenantId })
         .orderBy((row) => row.sort.asc())
         .all()
       assert.deepEqual(
@@ -534,16 +543,19 @@ test(
         [secondary.id, primary.id],
       )
       assert.equal(routeDb.length, 2)
-      assert.equal(routeDb.every((route) => Boolean(route.id) && Boolean(route.updatedAt)), true)
+      assert.equal(
+        routeDb.every((route) => Boolean(route.id) && Boolean(route.updatedAt)),
+        true,
+      )
       assert.deepEqual(await service.getRouteStrategy(tenantId), {
         modelIds: [secondary.id, primary.id],
       })
 
       await service.remove(tenantId, secondary.id)
-      const secondaryDb = await prisma8Client.orm.public.EnterpriseAiModels.where({
+      const secondaryDb = await prismaClient.orm.public.EnterpriseAiModels.where({
         id: secondary.id,
       }).first()
-      const routesAfterRemove = await prisma8Client.orm.public.EnterpriseAiModelRoutes.where({
+      const routesAfterRemove = await prismaClient.orm.public.EnterpriseAiModelRoutes.where({
         tenantId,
       })
         .orderBy((row) => row.sort.asc())
@@ -555,9 +567,9 @@ test(
       )
     } finally {
       if (tenantId) {
-        await prisma8Client.orm.public.EnterpriseAiModelRoutes.where({ tenantId }).deleteAll()
-        await prisma8Client.orm.public.EnterpriseAiModels.where({ tenantId }).deleteAll()
-        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
+        await prismaClient.orm.public.EnterpriseAiModelRoutes.where({ tenantId }).deleteAll()
+        await prismaClient.orm.public.EnterpriseAiModels.where({ tenantId }).deleteAll()
+        await prismaClient.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
       await testDb.close()
     }
@@ -565,7 +577,7 @@ test(
 )
 
 test('术语发现只能处理一次，采纳在同一事务创建术语并回写 ADOPTED', async () => {
-  const now = prisma8Now()
+  const now = nowInstant()
   const category = {
     id: 'category-a',
     tenantId: 'tenant-a',
@@ -589,7 +601,9 @@ test('术语发现只能处理一次，采纳在同一事务创建术语并回�
   const categories = {
     where: ({ id, tenantId }: { id?: string; tenantId?: string }) => ({
       first: async () =>
-        (!id || id === category.id) && (!tenantId || tenantId === category.tenantId) ? category : null,
+        (!id || id === category.id) && (!tenantId || tenantId === category.tenantId)
+          ? category
+          : null,
     }),
   }
   const terms = {
@@ -618,13 +632,14 @@ test('术语发现只能处理一次，采纳在同一事务创建术语并回�
       EnterpriseTermDiscoveries: discoveries,
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm,
-      transaction: async (callback: (tx: { orm: typeof orm }) => Promise<unknown>) => callback({ orm }),
+      transaction: async (callback: (tx: { orm: typeof orm }) => Promise<unknown>) =>
+        callback({ orm }),
     },
-  } as unknown as Prisma8Service
-  const service = new EnterpriseTermsService(prisma8)
+  } as unknown as PrismaService
+  const service = new EnterpriseTermsService(prisma)
   const adopted = await service.adoptDiscovery(user, discovery.id, {
     categoryId: category.id,
     standardTerm: 'GMV',
@@ -648,7 +663,7 @@ test('术语发现只能处理一次，采纳在同一事务创建术语并回�
 })
 
 test('全局任务执行记录必须先停止再删除，且跨租户不可操作', async () => {
-  const now = prisma8Now()
+  const now = nowInstant()
   const executions: any[] = [
     {
       id: 'execution-running',
@@ -707,7 +722,7 @@ test('全局任务执行记录必须先停止再删除，且跨租户不可操�
     { id: 'task-a', name: '巡检任务' },
     { id: 'task-b', name: '其他租户任务' },
   ]
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -720,8 +735,8 @@ test('全局任务执行记录必须先停止再删除，且跨租户不可操�
         },
       },
     },
-  } as unknown as Prisma8Service
-  const service = new EnterpriseGlobalTasksService(prisma8, {
+  } as unknown as PrismaService
+  const service = new EnterpriseGlobalTasksService(prisma, {
     complete: async () => {
       throw new Error('本测试不应调用 AI runtime')
     },

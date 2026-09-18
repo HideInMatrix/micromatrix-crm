@@ -3,8 +3,8 @@ import test from 'node:test'
 import { UnauthorizedException } from '@nestjs/common'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthService } from '../../auth/auth.service'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { LarkClient } from '../enterprise-integrations/lark.client'
 import { LarkSsoService } from './lark-sso.service'
@@ -19,20 +19,45 @@ test('飞书 QR/Web/Mobile OAuth state 绑定浏览器、只消费一次并按 o
   let lastRedirectUri = ''
   const tenant = { id: 'tenant-a', slug: 'acme', name: '示例企业', status: 'ACTIVE' }
   const integration = {
-    id: 'integration-a', tenantId: tenant.id, provider: 'LARK', corpId: 'tenant-key',
-    agentId: 'cli_aabbcc', redirectUrl: 'https://crm.example.com/login/lark/callback',
-    lastTestSucceeded: true, syncEnabled: true,
+    id: 'integration-a',
+    tenantId: tenant.id,
+    provider: 'LARK',
+    corpId: 'tenant-key',
+    agentId: 'cli_aabbcc',
+    redirectUrl: 'https://crm.example.com/login/lark/callback',
+    lastTestSucceeded: true,
+    syncEnabled: true,
   }
   const mappedUser: any = {
-    id: 'user-a', tenantId: tenant.id, email: 'zhangsan@example.com', passwordHash: 'test',
-    name: '张三', status: 'ACTIVE', deptId: null, leaderId: null, position: null, phone: null,
-    gender: false, passwordLoginEnabled: false, defaultPwd: false, authVersion: 0, language: 'zh-CN',
-    createdAt: prisma8TimestampFromDate(new Date()), updatedAt: prisma8TimestampFromDate(new Date()),
+    id: 'user-a',
+    tenantId: tenant.id,
+    email: 'zhangsan@example.com',
+    passwordHash: 'test',
+    name: '张三',
+    status: 'ACTIVE',
+    deptId: null,
+    leaderId: null,
+    position: null,
+    phone: null,
+    gender: false,
+    passwordLoginEnabled: false,
+    defaultPwd: false,
+    authVersion: 0,
+    language: 'zh-CN',
+    createdAt: instantFromDate(new Date()),
+    updatedAt: instantFromDate(new Date()),
   }
   const mapping: any = {
-    id: 'mapping-a', tenantId: tenant.id, provider: 'LARK', externalId: 'ou_user_001',
-    externalKey: 'ou_user_001', userId: mappedUser.id, active: true, lastSeenBatchId: null,
-    createdAt: prisma8TimestampFromDate(new Date()), updatedAt: prisma8TimestampFromDate(new Date()),
+    id: 'mapping-a',
+    tenantId: tenant.id,
+    provider: 'LARK',
+    externalId: 'ou_user_001',
+    externalKey: 'ou_user_001',
+    userId: mappedUser.id,
+    active: true,
+    lastSeenBatchId: null,
+    createdAt: instantFromDate(new Date()),
+    updatedAt: instantFromDate(new Date()),
   }
   let extension: any = null
   const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
@@ -41,103 +66,233 @@ test('飞书 QR/Web/Mobile OAuth state 绑定浏览器、只消费一次并按 o
     fields.length ? Object.fromEntries(fields.map((field) => [field, row[field]])) : row
 
   const tenants = (where: Record<string, unknown> = {}, fields: string[] = []): any => ({
-    where: (next: any) => typeof next === 'function' ? tenants(where, fields) : tenants({ ...where, ...next }, fields),
-    select: (...next: string[]) => tenants(where, next), orderBy: () => tenants(where, fields), limit: () => tenants(where, fields),
-    first: async () => matches(tenant, where) ? project(tenant, fields) : null,
-    all: async () => matches(tenant, where) ? [project(tenant, fields)] : [],
+    where: (next: any) =>
+      typeof next === 'function' ? tenants(where, fields) : tenants({ ...where, ...next }, fields),
+    select: (...next: string[]) => tenants(where, next),
+    orderBy: () => tenants(where, fields),
+    limit: () => tenants(where, fields),
+    first: async () => (matches(tenant, where) ? project(tenant, fields) : null),
+    all: async () => (matches(tenant, where) ? [project(tenant, fields)] : []),
   })
-  const integrationsCollection = (where: Record<string, unknown> = {}, fields: string[] = []): any => ({
+  const integrationsCollection = (
+    where: Record<string, unknown> = {},
+    fields: string[] = [],
+  ): any => ({
     where: (next: Record<string, unknown>) => integrationsCollection({ ...where, ...next }, fields),
     select: (...next: string[]) => integrationsCollection(where, next),
-    first: async () => matches(integration, where) ? project(integration, fields) : null,
-    all: async () => matches(integration, where) ? [project(integration, fields)] : [],
+    first: async () => (matches(integration, where) ? project(integration, fields) : null),
+    all: async () => (matches(integration, where) ? [project(integration, fields)] : []),
   })
   const oauthStates = (where: Record<string, unknown> = {}): any => ({
-    where: (next: any) => typeof next === 'function' ? oauthStates(where) : oauthStates({ ...where, ...next }),
-    first: async () => oauthState && matches(oauthState, where) ? oauthState : null,
+    where: (next: any) =>
+      typeof next === 'function' ? oauthStates(where) : oauthStates({ ...where, ...next }),
+    first: async () => (oauthState && matches(oauthState, where) ? oauthState : null),
     deleteAndCount: async () => {
       if (!oauthState) return 0
       const expired = oauthState.expiresAt.epochMilliseconds < Date.now()
-      if (oauthState.consumedAt || expired || Object.keys(where).length === 0) { oauthState = null; return 1 }
+      if (oauthState.consumedAt || expired || Object.keys(where).length === 0) {
+        oauthState = null
+        return 1
+      }
       return 0
     },
     updateAndCount: async (data: Record<string, unknown>) => {
       if (!oauthState || !matches(oauthState, where) || oauthState.consumedAt) return 0
-      oauthState = { ...oauthState, ...data }; return 1
+      oauthState = { ...oauthState, ...data }
+      return 1
     },
     create: async (data: Record<string, unknown>) => {
-      oauthState = { id: 'state-a', consumedAt: null, createdAt: prisma8TimestampFromDate(new Date()), ...data }
+      oauthState = {
+        id: 'state-a',
+        consumedAt: null,
+        createdAt: instantFromDate(new Date()),
+        ...data,
+      }
       return oauthState
     },
   })
   const mappings = (where: Record<string, unknown> = {}): any => ({
     where: (next: Record<string, unknown>) => mappings({ ...where, ...next }),
-    first: async () => matches(mapping, where) ? mapping : null,
+    first: async () => (matches(mapping, where) ? mapping : null),
   })
   const users = (where: Record<string, unknown> = {}, fields: string[] = []): any => ({
     where: (next: Record<string, unknown>) => users({ ...where, ...next }, fields),
     select: (...next: string[]) => users(where, next),
-    first: async () => matches(mappedUser, where) ? project(mappedUser, fields) : null,
+    first: async () => (matches(mappedUser, where) ? project(mappedUser, fields) : null),
     update: async (data: Record<string, unknown>) => {
       if (!matches(mappedUser, where)) return null
-      const { updatedAt: _updatedAt, ...profile } = data; updatedProfile = profile
-      Object.assign(mappedUser, data); return mappedUser
+      const { updatedAt: _updatedAt, ...profile } = data
+      updatedProfile = profile
+      Object.assign(mappedUser, data)
+      return mappedUser
     },
   })
   const identities = (where: Record<string, unknown> = {}, fields: string[] = []): any => ({
-    where: (next: any) => typeof next === 'function' ? identities(where, fields) : identities({ ...where, ...next }, fields),
+    where: (next: any) =>
+      typeof next === 'function'
+        ? identities(where, fields)
+        : identities({ ...where, ...next }, fields),
     select: (...next: string[]) => identities(where, next),
-    first: async () => identity && matches(identity, where) ? project(identity, fields) : null,
-    update: async (data: Record<string, unknown>) => { if (!identity || !matches(identity, where)) return null; identity = { ...identity, ...data }; return identity },
+    first: async () => (identity && matches(identity, where) ? project(identity, fields) : null),
+    update: async (data: Record<string, unknown>) => {
+      if (!identity || !matches(identity, where)) return null
+      identity = { ...identity, ...data }
+      return identity
+    },
     create: async (data: Record<string, unknown>) => {
-      const now = prisma8TimestampFromDate(new Date())
-      identity = { id: 'identity-a', status: 'ACTIVE', boundAt: now, revokedAt: null, lastLoginAt: null, createdAt: now, ...data }
+      const now = instantFromDate(new Date())
+      identity = {
+        id: 'identity-a',
+        status: 'ACTIVE',
+        boundAt: now,
+        revokedAt: null,
+        lastLoginAt: null,
+        createdAt: now,
+        ...data,
+      }
       return identity
     },
   })
   const extensions = (where: Record<string, unknown> = {}, fields: string[] = []): any => ({
     where: (next: Record<string, unknown>) => extensions({ ...where, ...next }, fields),
-    select: (...next: string[]) => extensions(where, next), first: async () => extension && matches(extension, where) ? project(extension, fields) : null,
-    update: async (data: Record<string, unknown>) => { extension = { ...extension, ...data }; updatedAvatar = extension.avatar; return extension },
-    create: async (data: Record<string, unknown>) => { extension = { ...data, platformInfo: null }; updatedAvatar = extension.avatar; return extension },
+    select: (...next: string[]) => extensions(where, next),
+    first: async () => (extension && matches(extension, where) ? project(extension, fields) : null),
+    update: async (data: Record<string, unknown>) => {
+      extension = { ...extension, ...data }
+      updatedAvatar = extension.avatar
+      return extension
+    },
+    create: async (data: Record<string, unknown>) => {
+      extension = { ...data, platformInfo: null }
+      updatedAvatar = extension.avatar
+      return extension
+    },
   })
-  const publicOrm = { Tenants: tenants(), EnterpriseIntegrations: integrationsCollection(), ExternalOauthStates: oauthStates(), ExternalUserMappings: mappings(), Users: users(), ExternalIdentities: identities(), UserExtensions: extensions() }
-  const prisma8 = { client: { orm: { public: publicOrm }, transaction: async (callback: (tx: any) => Promise<unknown>) => callback({ orm: { public: publicOrm } }) } } as unknown as Prisma8Service
-  const config = { get: (key: string) => key === 'LARK_DEFAULT_TENANT_SLUG' ? tenant.slug : undefined } as unknown as ConfigService
+  const publicOrm = {
+    Tenants: tenants(),
+    EnterpriseIntegrations: integrationsCollection(),
+    ExternalOauthStates: oauthStates(),
+    ExternalUserMappings: mappings(),
+    Users: users(),
+    ExternalIdentities: identities(),
+    UserExtensions: extensions(),
+  }
+  const prisma = {
+    client: {
+      orm: { public: publicOrm },
+      transaction: async (callback: (tx: any) => Promise<unknown>) =>
+        callback({ orm: { public: publicOrm } }),
+    },
+  } as unknown as PrismaService
+  const config = {
+    get: (key: string) => (key === 'LARK_DEFAULT_TENANT_SLUG' ? tenant.slug : undefined),
+  } as unknown as ConfigService
   const integrations = {
     getActivePlatform: async () => ({ syncResource: 'LARK', sync: true }),
-    getLarkRuntimeContext: async () => ({ integration, credentials: { corpId: integration.corpId, agentId: integration.agentId, appSecret: 'secret', redirectUrl: integration.redirectUrl } }),
+    getLarkRuntimeContext: async () => ({
+      integration,
+      credentials: {
+        corpId: integration.corpId,
+        agentId: integration.agentId,
+        appSecret: 'secret',
+        redirectUrl: integration.redirectUrl,
+      },
+    }),
   } as unknown as EnterpriseIntegrationsService
-  const client = { exchangeOAuthLoginCode: async (_credentials: unknown, _code: string, redirectUri: string) => {
-    lastRedirectUri = redirectUri
-    return { userId: 'ou_user_001', externalKey: 'ou_user_001', unionId: 'on_user_001', email: 'zhangsan@work.example.com', phone: '13800000001', avatarUrl: 'https://example.com/avatar.png', gender: null }
-  } } as unknown as LarkClient
+  const client = {
+    exchangeOAuthLoginCode: async (_credentials: unknown, _code: string, redirectUri: string) => {
+      lastRedirectUri = redirectUri
+      return {
+        userId: 'ou_user_001',
+        externalKey: 'ou_user_001',
+        unionId: 'on_user_001',
+        email: 'zhangsan@work.example.com',
+        phone: '13800000001',
+        avatarUrl: 'https://example.com/avatar.png',
+        gender: null,
+      }
+    },
+  } as unknown as LarkClient
   const auth = {
-    loginExternal: async () => { loginCalls += 1; return { accessToken: 'access-token', refreshToken: 'refresh-token', user: { id: mapping.userId } } },
-    recordExternalLoginFailure: async () => { failedAudits += 1 },
+    loginExternal: async () => {
+      loginCalls += 1
+      return {
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        user: { id: mapping.userId },
+      }
+    },
+    recordExternalLoginFailure: async () => {
+      failedAudits += 1
+    },
   } as unknown as AuthService
-  const service = new LarkSsoService(prisma8, config, integrations, client, auth)
+  const service = new LarkSsoService(prisma, config, integrations, client, auth)
 
   const started = await service.start({ returnPath: '/customers' })
   assert.ok(started.value.state.startsWith('qr-lark.'))
   const qrUrl = new URL(started.value.authorizationUrl)
-  assert.equal(qrUrl.origin + qrUrl.pathname, 'https://passport.feishu.cn/suite/passport/oauth/authorize')
+  assert.equal(
+    qrUrl.origin + qrUrl.pathname,
+    'https://passport.feishu.cn/suite/passport/oauth/authorize',
+  )
   assert.equal(qrUrl.searchParams.get('client_id'), integration.agentId)
   assert.equal(started.value.redirectUri, integration.redirectUrl)
   assert.notEqual(oauthState.stateHash, started.value.state)
-  const result = await service.callback({ code: 'single-use-code', state: started.value.state }, started.browserNonce, { ip: '127.0.0.1', userAgent: 'node-test' })
-  assert.equal(result.returnPath, '/customers'); assert.equal(loginCalls, 1); assert.equal(lastRedirectUri, integration.redirectUrl); assert.equal(identity.status, 'ACTIVE')
-  assert.deepEqual(updatedProfile, { phone: '13800000001' }); assert.equal(updatedAvatar, 'https://example.com/avatar.png')
-  await assert.rejects(() => service.callback({ code: 'replayed-code', state: started.value.state }, started.browserNonce, { ip: '127.0.0.1', userAgent: 'node-test' }), UnauthorizedException)
-  assert.equal(loginCalls, 1); assert.equal(failedAudits, 1)
+  const result = await service.callback(
+    { code: 'single-use-code', state: started.value.state },
+    started.browserNonce,
+    { ip: '127.0.0.1', userAgent: 'node-test' },
+  )
+  assert.equal(result.returnPath, '/customers')
+  assert.equal(loginCalls, 1)
+  assert.equal(lastRedirectUri, integration.redirectUrl)
+  assert.equal(identity.status, 'ACTIVE')
+  assert.deepEqual(updatedProfile, { phone: '13800000001' })
+  assert.equal(updatedAvatar, 'https://example.com/avatar.png')
+  await assert.rejects(
+    () =>
+      service.callback(
+        { code: 'replayed-code', state: started.value.state },
+        started.browserNonce,
+        { ip: '127.0.0.1', userAgent: 'node-test' },
+      ),
+    UnauthorizedException,
+  )
+  assert.equal(loginCalls, 1)
+  assert.equal(failedAudits, 1)
 
   const oauth = await service.startOauth({ returnPath: '/dashboard' })
-  assert.ok(oauth.value.state.startsWith('lark.')); assert.equal(oauthState.flow, 'LARK')
-  assert.equal(new URL(oauth.value.authorizationUrl).searchParams.get('app_id'), integration.agentId)
-  assert.equal((await service.callbackOauth({ code: 'oauth-code', state: oauth.value.state }, oauth.browserNonce, { ip: '127.0.0.1', userAgent: 'Feishu node-test' })).returnPath, '/dashboard')
+  assert.ok(oauth.value.state.startsWith('lark.'))
+  assert.equal(oauthState.flow, 'LARK')
+  assert.equal(
+    new URL(oauth.value.authorizationUrl).searchParams.get('app_id'),
+    integration.agentId,
+  )
+  assert.equal(
+    (
+      await service.callbackOauth(
+        { code: 'oauth-code', state: oauth.value.state },
+        oauth.browserNonce,
+        { ip: '127.0.0.1', userAgent: 'Feishu node-test' },
+      )
+    ).returnPath,
+    '/dashboard',
+  )
   assert.equal(loginCalls, 2)
   const mobile = await service.startMobile({ returnPath: '/mobile/home' })
-  assert.ok(mobile.value.state.startsWith('lark-mobile.')); assert.equal(oauthState.flow, 'LARK_MOBILE'); assert.equal(mobile.value.redirectUri, 'https://crm.example.com/mobile/lark/callback')
-  assert.equal((await service.callbackMobile({ code: 'mobile-code', state: mobile.value.state }, mobile.browserNonce, { ip: '127.0.0.1', userAgent: 'Feishu Mobile' })).returnPath, '/mobile/home')
-  assert.equal(loginCalls, 3); assert.equal(lastRedirectUri, 'https://crm.example.com/mobile/lark/callback')
+  assert.ok(mobile.value.state.startsWith('lark-mobile.'))
+  assert.equal(oauthState.flow, 'LARK_MOBILE')
+  assert.equal(mobile.value.redirectUri, 'https://crm.example.com/mobile/lark/callback')
+  assert.equal(
+    (
+      await service.callbackMobile(
+        { code: 'mobile-code', state: mobile.value.state },
+        mobile.browserNonce,
+        { ip: '127.0.0.1', userAgent: 'Feishu Mobile' },
+      )
+    ).returnPath,
+    '/mobile/home',
+  )
+  assert.equal(loginCalls, 3)
+  assert.equal(lastRedirectUri, 'https://crm.example.com/mobile/lark/callback')
 })

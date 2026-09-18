@@ -14,7 +14,7 @@ const user: AuthUser = {
   permissions: [],
 }
 
-function prisma8Harness(selectedIds: string[] = []) {
+function prismaHarness(selectedIds: string[] = []) {
   const calls: Array<{ op: string; value?: unknown }> = []
   const scalar = (name: string) => ({
     eq: (value: unknown) => {
@@ -74,7 +74,7 @@ function prisma8Harness(selectedIds: string[] = []) {
 
   return {
     calls,
-    prisma8: {
+    prisma: {
       client: {
         orm: {
           public: {
@@ -92,13 +92,13 @@ function prisma8Harness(selectedIds: string[] = []) {
 }
 
 function createService(options: {
-  prisma8: unknown
+  prisma: unknown
   metadata: unknown
   fieldValues: unknown
   dataScope?: unknown
 }) {
   return new CustomersService(
-    options.prisma8 as never,
+    options.prisma as never,
     (options.dataScope ?? { directOwnerFilter: async () => ({ owner: user.id }) }) as never,
     options.metadata as never,
     {} as never,
@@ -116,9 +116,9 @@ function createService(options: {
 }
 
 test('客户分页关键词只搜索客户名称，不查询可配置动态字段', async () => {
-  const harness = prisma8Harness()
+  const harness = prismaHarness()
   const service = createService({
-    prisma8: harness.prisma8,
+    prisma: harness.prisma,
     metadata: { listFields: async () => [] },
     fieldValues: {
       filterResourceIds: async () => {
@@ -138,9 +138,9 @@ test('客户分页关键词只搜索客户名称，不查询可配置动态字�
 })
 
 test('客户 /account/page 高级筛选直接使用 FilterCondition[] 并约束最终列表查询', async () => {
-  const harness = prisma8Harness(['customer-zhang'])
+  const harness = prismaHarness(['customer-zhang'])
   const service = createService({
-    prisma8: harness.prisma8,
+    prisma: harness.prisma,
     metadata: {
       listFields: async () => [
         {

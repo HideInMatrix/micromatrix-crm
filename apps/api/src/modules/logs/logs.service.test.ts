@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { NotFoundException } from '@nestjs/common'
 import { Temporal } from '@js-temporal/polyfill'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { LogsService } from './logs.service'
 
 test('操作日志分页列表只选择轻量字段且不读取 Blob', async () => {
@@ -17,22 +17,22 @@ test('操作日志分页列表只选择轻量字段且不读取 Blob', async () 
     offset: () => collection,
     limit: () => collection,
     all: async () => [
-          {
-            id: 'log-1',
-            userName: '管理员',
-            module: 'lead',
-            action: 'update',
-            targetName: '线索A',
-            ip: '192.168.1.10',
-            createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
-          },
-        ],
+      {
+        id: 'log-1',
+        userName: '管理员',
+        module: 'lead',
+        action: 'update',
+        targetName: '线索A',
+        ip: '192.168.1.10',
+        createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
+      },
+    ],
     aggregate: async () => ({ total: 1 }),
   }
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { OperationLogs: collection } } },
-  } as unknown as Prisma8Service
-  const service = new LogsService(prisma8)
+  } as unknown as PrismaService
+  const service = new LogsService(prisma)
 
   const result = await service.operationLogs('tenant-a', { page: 1, pageSize: 10 })
 
@@ -52,27 +52,27 @@ test('操作日志详情按 tenantId + id 查询并返回 Blob detail', async ()
     },
     select: () => logCollection,
     first: async () => ({
-          id: 'log-1',
-          userName: '管理员',
-          module: 'customer',
-          action: 'change',
-          targetId: 'customer-1',
-          targetName: '客户A',
-          ip: '192.168.1.10',
-          createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
-        }),
+      id: 'log-1',
+      userName: '管理员',
+      module: 'customer',
+      action: 'change',
+      targetId: 'customer-1',
+      targetName: '客户A',
+      ip: '192.168.1.10',
+      createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
+    }),
   }
   const blobCollection = {
     where: () => blobCollection,
     select: () => blobCollection,
     first: async () => ({ detail: { changes: [{ field: 'name', before: 'A', after: 'B' }] } }),
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: { public: { OperationLogs: logCollection, OperationLogBlobs: blobCollection } },
     },
-  } as unknown as Prisma8Service
-  const service = new LogsService(prisma8)
+  } as unknown as PrismaService
+  const service = new LogsService(prisma)
 
   const detail = await service.operationLogDetail('tenant-a', 'log-1')
 
@@ -88,10 +88,10 @@ test('操作日志详情不存在或跨租户时返回 404', async () => {
     select: () => collection,
     first: async () => null,
   }
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { OperationLogs: collection } } },
-  } as unknown as Prisma8Service
-  const service = new LogsService(prisma8)
+  } as unknown as PrismaService
+  const service = new LogsService(prisma)
 
   await assert.rejects(
     () => service.operationLogDetail('tenant-b', 'foreign-log'),

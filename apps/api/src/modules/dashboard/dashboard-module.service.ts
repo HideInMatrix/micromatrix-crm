@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { DashboardAccessService } from './dashboard-access.service'
 import {
@@ -30,12 +30,12 @@ interface DashboardTreeNode {
 @Injectable()
 export class DashboardModuleService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly access: DashboardAccessService,
   ) {}
 
   private async assertModule(user: AuthUser, id: string) {
-    const row = await this.prisma8.client.orm.public.DashboardModule.where({
+    const row = await this.prisma.client.orm.public.DashboardModule.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -54,7 +54,7 @@ export class DashboardModuleService {
     name: string,
     excludeId?: string,
   ) {
-    const duplicate = await this.prisma8.client.orm.public.DashboardModule.where({
+    const duplicate = await this.prisma.client.orm.public.DashboardModule.where({
       organizationId: user.tenantId,
       parentId: parentId,
       name: name.trim(),
@@ -67,7 +67,7 @@ export class DashboardModuleService {
   }
 
   private async nextPos(user: AuthUser, parentId: string) {
-    const rows = await this.prisma8.client.orm.public.DashboardModule.where({
+    const rows = await this.prisma.client.orm.public.DashboardModule.where({
       organizationId: user.tenantId,
       parentId: parentId,
     })
@@ -99,7 +99,7 @@ export class DashboardModuleService {
     await this.assertParent(user, dto.parentId)
     await this.assertNameUnique(user, dto.parentId, dto.name)
     const now = BigInt(Date.now())
-    const row = await this.prisma8.client.orm.public.DashboardModule.create({
+    const row = await this.prisma.client.orm.public.DashboardModule.create({
       id: createLegacyId32(),
       organizationId: user.tenantId,
       name: dto.name.trim(),
@@ -116,7 +116,7 @@ export class DashboardModuleService {
   async rename(user: AuthUser, dto: DashboardModuleRenameDto) {
     const original = await this.assertModule(user, dto.id)
     await this.assertNameUnique(user, original.parentId, dto.name, dto.id)
-    const row = await this.prisma8.client.orm.public.DashboardModule.where({
+    const row = await this.prisma.client.orm.public.DashboardModule.where({
       id: dto.id,
       organizationId: user.tenantId,
     }).update({
@@ -131,20 +131,20 @@ export class DashboardModuleService {
   async remove(user: AuthUser, rawIds: string[]) {
     const ids = [...new Set(rawIds)]
     const varcharIds = ids
-    const rows = await this.prisma8.client.orm.public.DashboardModule.where({
+    const rows = await this.prisma.client.orm.public.DashboardModule.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(varcharIds))
       .all()
     if (rows.length !== ids.length) throw new NotFoundException('存在无效仪表板文件夹')
     const [dashboards, children] = await Promise.all([
-      this.prisma8.client.orm.public.Dashboard.where({
+      this.prisma.client.orm.public.Dashboard.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.dashboardModuleId.in(varcharIds))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.DashboardModule.where({
+      this.prisma.client.orm.public.DashboardModule.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.parentId.in(varcharIds))
@@ -156,7 +156,7 @@ export class DashboardModuleService {
     if (children.some((child) => !selected.has(child.id))) {
       throw new BadRequestException('文件夹下存在子文件夹，不能删除')
     }
-    await this.prisma8.client.orm.public.DashboardModule.where({
+    await this.prisma.client.orm.public.DashboardModule.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(varcharIds))
@@ -186,17 +186,17 @@ export class DashboardModuleService {
 
   async tree(user: AuthUser) {
     const [modules, dashboards] = await Promise.all([
-      this.prisma8.client.orm.public.DashboardModule.where({
+      this.prisma.client.orm.public.DashboardModule.where({
         organizationId: user.tenantId,
       }).all(),
-      this.prisma8.client.orm.public.Dashboard.where({
+      this.prisma.client.orm.public.Dashboard.where({
         organizationId: user.tenantId,
       }).all(),
     ])
     const visibleIds = await this.access.visibleDashboardIds(user, dashboards)
     const visibleDashboardIds = [...visibleIds]
     const collections = visibleDashboardIds.length
-      ? await this.prisma8.client.orm.public.DashboardCollection.where({
+      ? await this.prisma.client.orm.public.DashboardCollection.where({
           userId: user.id,
         })
           .where((row) => row.dashboardId.in(visibleDashboardIds))
@@ -229,12 +229,12 @@ export class DashboardModuleService {
 
   async count(user: AuthUser) {
     const [modules, dashboards] = await Promise.all([
-      this.prisma8.client.orm.public.DashboardModule.where({
+      this.prisma.client.orm.public.DashboardModule.where({
         organizationId: user.tenantId,
       })
         .select('id', 'parentId')
         .all(),
-      this.prisma8.client.orm.public.Dashboard.where({
+      this.prisma.client.orm.public.Dashboard.where({
         organizationId: user.tenantId,
       }).all(),
     ])
@@ -242,7 +242,7 @@ export class DashboardModuleService {
     const visibleDashboardIds = [...visibleIds]
     const myCollect = visibleDashboardIds.length
       ? (
-          await this.prisma8.client.orm.public.DashboardCollection.where({
+          await this.prisma.client.orm.public.DashboardCollection.where({
             userId: user.id,
           })
             .where((row) => row.dashboardId.in(visibleDashboardIds))
@@ -279,7 +279,7 @@ export class DashboardModuleService {
   private async assertNoCycle(user: AuthUser, dragId: string, newParentId: string) {
     if (newParentId === 'NONE') return
     if (newParentId === dragId) throw new BadRequestException('文件夹不能移动到自身')
-    const modules = await this.prisma8.client.orm.public.DashboardModule.where({
+    const modules = await this.prisma.client.orm.public.DashboardModule.where({
       organizationId: user.tenantId,
     })
       .select('id', 'parentId')
@@ -306,7 +306,7 @@ export class DashboardModuleService {
     if (drag.parentId !== newParentId)
       await this.assertNameUnique(user, newParentId, drag.name, drag.id)
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const sourceRows = await tx.orm.public.DashboardModule.where({
         organizationId: user.tenantId,
         parentId: drag.parentId,

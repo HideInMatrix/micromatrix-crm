@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { RedisService } from '../../redis/redis.service'
 
 export type CoordinationSlot = 'DAILY' | 'MINUTE'
@@ -47,7 +47,7 @@ export class DistributedCoordinatorService {
 
   constructor(
     private readonly redis: RedisService,
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
   ) {}
 
   snapshot() {
@@ -136,7 +136,7 @@ export class DistributedCoordinatorService {
     task: () => Promise<T>,
   ): Promise<CoordinationRunResult<T>> {
     this.metrics.postgresFallback += 1
-    const client = this.prisma8.client
+    const client = this.prisma.client
     return client.transaction(async (tx) => {
       const query = client.raw.sql`SELECT pg_try_advisory_xact_lock(
         hashtextextended(${key}, 0)

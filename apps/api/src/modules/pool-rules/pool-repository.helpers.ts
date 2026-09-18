@@ -1,6 +1,6 @@
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 export function parseStringArray(value: string): string[] {
   try {
@@ -19,8 +19,8 @@ export function startOfLocalDay(now: bigint): bigint {
   return BigInt(date.getTime())
 }
 
-export async function loadUserScopeTokensPrisma8(
-  tx: Prisma8Transaction,
+export async function loadUserScopeTokensPrisma(
+  tx: PrismaTransaction,
   organizationId: string,
   userId: string,
 ): Promise<Set<string>> {
@@ -65,8 +65,8 @@ export function scopeMatches(scopeId: string, userTokens: Set<string>): boolean 
   return scope.includes('*') || scope.some((token) => userTokens.has(token))
 }
 
-export async function resolveScopeUserIdsPrisma8(
-  tx: Prisma8Transaction,
+export async function resolveScopeUserIdsPrisma(
+  tx: PrismaTransaction,
   organizationId: string,
   scopeIds: string[],
 ): Promise<Set<string>> {

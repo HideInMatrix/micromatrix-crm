@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { Prisma8Module } from '../../prisma/prisma8.module'
+import { PrismaModule } from '../../prisma/prisma.module'
 import { OrdersModule } from '../orders/orders.module'
 import { QuotesModule } from '../quotes/quotes.module'
 import { UserViewsModule } from '../user-views/user-views.module'
@@ -28,7 +28,7 @@ import { BusinessTitleService } from './business-title.service'
 import { ContractsService } from './contracts.service'
 
 @Module({
-  imports: [Prisma8Module, QuotesModule, OrdersModule, UserViewsModule, ImportExportModule],
+  imports: [PrismaModule, QuotesModule, OrdersModule, UserViewsModule, ImportExportModule],
   controllers: [
     ContractController,
     ContractStageController,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { MessageTemplateService } from './message-template.service'
 
 function serviceWithUsers(
@@ -12,10 +12,10 @@ function serviceWithUsers(
     select: () => scope,
     all: async () => users,
   })
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { Users: { where: () => scope } } } },
-  } as unknown as Prisma8Service
-  return new MessageTemplateService(prisma8)
+  } as unknown as PrismaService
+  return new MessageTemplateService(prisma)
 }
 
 test('消息模板语言归一化并按 Cordys 事件名 + subject 后缀渲染', async () => {

@@ -43,8 +43,8 @@
 
 ## P5 Canonicalization 与最终验收
 
-- [ ] P5.1 `Prisma8Client/Service/Module` 改为正式 canonical 名称。
-- [ ] P5.2 删除 migration-only `prisma8*` 文件名和测试命名。
+- [x] P5.1 `Prisma8Client/Service/Module` 改为正式 canonical 名称。
+- [x] P5.2 删除 migration-only `prisma8*` 文件名和测试命名。
 - [ ] P5.3 全量 typecheck/lint/build/API Rules。
 - [ ] P5.4 existing/fresh PostgreSQL migration/seed/verify/status。
 - [ ] P5.5 Docker release smoke。
@@ -53,7 +53,7 @@
 
 ## 当前执行指针
 
-当前执行 **P5.1 / P5.2**。P1-P4 已完成；下一阶段把 `Prisma8Client/Service/Module` 与 migration-only `prisma8*` 文件/测试命名改为正式 canonical 名称，然后进入最终全量工程、数据库、Docker 与 Browser 验收。
+当前执行 **P5.3**。P1-P4 与 P5 canonical naming 已完成；下一阶段执行最终全量 typecheck/lint/build/API Rules，随后进入 existing/fresh PostgreSQL、Docker release smoke 与 Browser 代表性回归。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -156,4 +156,16 @@ P4.2 已完成：新增统一 `jsonValue()` serializer；新 JSONB 对象统一�
 P4.3 已完成：删除 `src/prisma/prisma8-values.ts`，`prisma8Numeric` / `prisma8JsonValue` / `prisma8-values` **全部 0 refs**。
 
 P4 最终门禁：API typecheck/build、`git diff --check` 全绿；value-domain 专项 **2/2 PASS**；完整 API Rules 因新增两条 domain 专项变为 **348/348 PASS、0 fail、0 skip**。P4 正式完成，执行指针进入 **P5.1 / P5.2**。
+
+P5.1/P5.2 已完成 canonicalization：
+
+- runtime 文件正式命名为 `prisma-client.ts / prisma.service.ts / prisma.module.ts / temporal.ts`；
+- 导出正式命名为 `PrismaClient / createPrismaClient / PrismaService / PrismaModule`，Temporal 边界为 `nowInstant / instantFromDate / instantFromISOString / instantFromEpochMilliseconds / instantToISOString`；
+- Seed 正式命名为 `seed-bootstrap.ts / seed-demo.ts`，入口函数改为 `runBootstrapSeed / runDemoSeed`；
+- 原 `*.prisma8.test.ts` / `*prisma8-test-harness.ts` / `prisma8-orm-test-stub.ts` 全部改为正式测试/辅助文件名；`*.compat.test.ts` 同步改为正式测试名；
+- `apps/api/src` 与 `apps/api/prisma` 源码中 `Prisma8 / prisma8 / .prisma8.` **0 refs**；
+- 清空旧 `apps/api/dist` 后重新 production build，新的 dist 中 `*prisma8*` / `*compat*` 文件 **0**；
+- API typecheck 与 production build **exit 0**。
+
+P5.1/P5.2 完成后执行指针进入 **P5.3**。
 

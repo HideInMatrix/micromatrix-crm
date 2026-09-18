@@ -1,12 +1,12 @@
 import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
-import { loadUserScopeTokensPrisma8, scopeMatches } from './pool-repository.helpers'
+import { loadUserScopeTokensPrisma, scopeMatches } from './pool-repository.helpers'
 import { ResourceRecycleConditionEvaluator } from './resource-recycle-condition-evaluator.service'
 
 interface RecycleResource {
@@ -21,7 +21,7 @@ export class PoolRecycleService {
   private readonly logger = new Logger(PoolRecycleService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly notifications: BusinessNotificationsService,
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
@@ -37,10 +37,10 @@ export class PoolRecycleService {
 
   async recycleAll() {
     const [clueOrganizations, customerOrganizations] = await Promise.all([
-      this.prisma8.client.orm.public.CluePool.where({ enable: true, auto: true })
+      this.prisma.client.orm.public.CluePool.where({ enable: true, auto: true })
         .select('organizationId')
         .all(),
-      this.prisma8.client.orm.public.CustomerPool.where({ enable: true, auto: true })
+      this.prisma.client.orm.public.CustomerPool.where({ enable: true, auto: true })
         .select('organizationId')
         .all(),
     ])
@@ -69,14 +69,14 @@ export class PoolRecycleService {
   private async recycleClues(organizationId: string): Promise<number> {
     const organization = organizationId
     const [poolRows, clues] = await Promise.all([
-      this.prisma8.client.orm.public.CluePool.where({
+      this.prisma.client.orm.public.CluePool.where({
         organizationId: organization,
         enable: true,
         auto: true,
       })
         .orderBy((pool) => pool.createTime.desc())
         .all(),
-      this.prisma8.client.orm.public.Clue.where({
+      this.prisma.client.orm.public.Clue.where({
         organizationId: organization,
         inSharedPool: false,
         transitionId: null,
@@ -85,7 +85,7 @@ export class PoolRecycleService {
         .all(),
     ])
     const rules = poolRows.length
-      ? await this.prisma8.client.orm.public.CluePoolRecycleRule.where((rule) =>
+      ? await this.prisma.client.orm.public.CluePoolRecycleRule.where((rule) =>
           rule.poolId.in(poolRows.map((pool) => pool.id)),
         ).all()
       : []
@@ -122,14 +122,14 @@ export class PoolRecycleService {
   private async recycleCustomers(organizationId: string): Promise<number> {
     const organization = organizationId
     const [poolRows, customers] = await Promise.all([
-      this.prisma8.client.orm.public.CustomerPool.where({
+      this.prisma.client.orm.public.CustomerPool.where({
         organizationId: organization,
         enable: true,
         auto: true,
       })
         .orderBy((pool) => pool.createTime.desc())
         .all(),
-      this.prisma8.client.orm.public.Customer.where({
+      this.prisma.client.orm.public.Customer.where({
         organizationId: organization,
         inSharedPool: false,
       })
@@ -137,7 +137,7 @@ export class PoolRecycleService {
         .all(),
     ])
     const rules = poolRows.length
-      ? await this.prisma8.client.orm.public.CustomerPoolRecycleRule.where((rule) =>
+      ? await this.prisma.client.orm.public.CustomerPoolRecycleRule.where((rule) =>
           rule.poolId.in(poolRows.map((pool) => pool.id)),
         ).all()
       : []
@@ -196,8 +196,8 @@ export class PoolRecycleService {
     pools: T[],
   ): Promise<T | null> {
     if (!ownerId) return null
-    const tokens = await this.prisma8.client.transaction((tx) =>
-      loadUserScopeTokensPrisma8(tx, organizationId, ownerId),
+    const tokens = await this.prisma.client.transaction((tx) =>
+      loadUserScopeTokensPrisma(tx, organizationId, ownerId),
     )
     return pools.find((pool) => scopeMatches(pool.scopeId, tokens)) ?? null
   }

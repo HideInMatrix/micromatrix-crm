@@ -1,19 +1,19 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { FieldVO, ProductPriceItemVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import type { ProductPriceItemDto } from './dto/product-price.dto'
 
 const FORM_KEY = 'price'
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
 export class ProductPriceFieldsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly moduleForms: ModuleFormsService,
   ) {}
 
@@ -21,7 +21,7 @@ export class ProductPriceFieldsService {
     organizationId: string,
     resourceId: string,
     products: ProductPriceItemDto[],
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const { parent, productField, amountField } = this.requiredFields(fields)
@@ -76,7 +76,7 @@ export class ProductPriceFieldsService {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
     const { parent, productField, amountField } = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
-    const allowedResources = await this.prisma8.client.orm.public.ProductPrice.where({
+    const allowedResources = await this.prisma.client.orm.public.ProductPrice.where({
       organizationId: organizationId,
     })
       .where((row) => row.id.in(ids))
@@ -87,11 +87,11 @@ export class ProductPriceFieldsService {
     const refSubId = parent.id
     const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
-      this.prisma8.client.orm.public.ProductPriceField.where({ refSubId })
+      this.prisma.client.orm.public.ProductPriceField.where({ refSubId })
         .where((row) => row.resourceId.in(resourceIdFilter))
         .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
         .all(),
-      this.prisma8.client.orm.public.ProductPriceFieldBlob.where({ refSubId })
+      this.prisma.client.orm.public.ProductPriceFieldBlob.where({ refSubId })
         .where((row) => row.resourceId.in(resourceIdFilter))
         .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
         .all(),
@@ -127,7 +127,7 @@ export class ProductPriceFieldsService {
     }
     const rows = [...groups.values()].filter((row) => row.productId)
     const products = rows.length
-      ? await this.prisma8.client.orm.public.Product.where({
+      ? await this.prisma.client.orm.public.Product.where({
           organizationId: organizationId,
         })
           .where((row) => row.id.in([...new Set(rows.map((item) => item.productId))]))
@@ -163,7 +163,7 @@ export class ProductPriceFieldsService {
   }
 
   private async writeCell(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     resourceId: string,
     refSubId: string,
     rowId: string,

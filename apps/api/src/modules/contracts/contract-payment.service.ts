@@ -9,10 +9,10 @@ import type { AuthUser } from '../../common/auth-user'
 import { formatForExport } from '../../common/export-format'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import {
@@ -43,7 +43,7 @@ const PLAN_READ_PERMISSION = 'CONTRACT_PAYMENT_PLAN:READ'
 const RECORD_READ_PERMISSION = 'CONTRACT_PAYMENT_RECORD:READ'
 const PLAN_STATUSES = new Set(['PENDING', 'PARTIALLY_COMPLETED', 'COMPLETED'])
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 function intersectIds(left: string[] | null, right: string[] | null): string[] | null {
   if (left === null) return right
@@ -92,7 +92,7 @@ function importedMillis(values: Record<string, unknown>, key: string, label: str
 @Injectable()
 export class ContractPaymentPlanService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly contracts: ContractsService,
     private readonly dataScope: DataScopeService,
     private readonly moduleForms: ModuleFormsService,
@@ -127,7 +127,7 @@ export class ContractPaymentPlanService {
         : null,
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
-    let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
+    let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
       organizationId: user.tenantId,
     })
     const scope = await this.dataScope.directOwnerFilter(user, PLAN_READ_PERMISSION)
@@ -141,7 +141,7 @@ export class ContractPaymentPlanService {
     if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
     if (dto.contractId) query = query.where({ contractId: dto.contractId })
     if (dto.customerId) {
-      const contracts = await this.prisma8.client.orm.public.Contract.where({
+      const contracts = await this.prisma.client.orm.public.Contract.where({
         organizationId: user.tenantId,
         customerId: dto.customerId,
       })
@@ -150,7 +150,7 @@ export class ContractPaymentPlanService {
       query = query.where((row) => row.contractId.in(contracts.map((item) => item.id)))
     }
     if (dto.keyword) {
-      const contracts = await this.prisma8.client.orm.public.Contract.where({
+      const contracts = await this.prisma.client.orm.public.Contract.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.name.ilike(`%${dto.keyword}%`))
@@ -170,7 +170,7 @@ export class ContractPaymentPlanService {
     ])
     const total = aggregate.count
     const contracts = rows.length
-      ? await this.prisma8.client.orm.public.Contract.where((row) =>
+      ? await this.prisma.client.orm.public.Contract.where((row) =>
           row.id.in([...new Set(rows.map((item) => item.contractId))]),
         )
           .select('id', 'name', 'customerId')
@@ -254,7 +254,7 @@ export class ContractPaymentPlanService {
       dto.moduleFields,
     )
     const now = BigInt(Date.now())
-    const created = await this.prisma8.client.transaction(async (tx) => {
+    const created = await this.prisma.client.transaction(async (tx) => {
       const row = await tx.orm.public.ContractPaymentPlan.create({
         id: createLegacyId32(),
         name: dto.name.trim(),
@@ -296,7 +296,7 @@ export class ContractPaymentPlanService {
       dto.moduleFields === undefined
         ? null
         : await this.moduleFieldsToCustomData(user.tenantId, PLAN_FORM_KEY, dto.moduleFields)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const updated = await tx.orm.public.ContractPaymentPlan.where({
         id: dto.id,
       }).update({
@@ -329,7 +329,7 @@ export class ContractPaymentPlanService {
 
   async remove(user: AuthUser, id: string) {
     const current = await this.ensureInScope(user, id, 'CONTRACT_PAYMENT_PLAN:DELETE')
-    await this.prisma8.client.orm.public.ContractPaymentPlan.where({
+    await this.prisma.client.orm.public.ContractPaymentPlan.where({
       id: id,
       organizationId: user.tenantId,
     }).delete()
@@ -344,7 +344,7 @@ export class ContractPaymentPlanService {
     if (field.system) {
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
-        await this.prisma8.client.orm.public.ContractPaymentPlan.where({
+        await this.prisma.client.orm.public.ContractPaymentPlan.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(rows.map((item) => item.id)))
@@ -356,7 +356,7 @@ export class ContractPaymentPlanService {
       } else if (field.key === 'planStatus') {
         const status = String(dto.fieldValue ?? '')
         if (!PLAN_STATUSES.has(status)) throw new BadRequestException('回款计划状态不合法')
-        await this.prisma8.client.orm.public.ContractPaymentPlan.where({
+        await this.prisma.client.orm.public.ContractPaymentPlan.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(rows.map((item) => item.id)))
@@ -369,7 +369,7 @@ export class ContractPaymentPlanService {
         throw new BadRequestException('该系统字段不支持批量修改')
       }
     } else {
-      await this.prisma8.client.transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'contractPaymentPlan',
@@ -608,14 +608,14 @@ export class ContractPaymentPlanService {
   }
 
   private async ensureInScope(user: AuthUser, id: string, permission = PLAN_READ_PERMISSION) {
-    const row = await this.prisma8.client.orm.public.ContractPaymentPlan.where({
+    const row = await this.prisma.client.orm.public.ContractPaymentPlan.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('回款计划不存在或不在你的数据范围内')
     }
-    const contract = await this.prisma8.client.orm.public.Contract.where({
+    const contract = await this.prisma.client.orm.public.Contract.where({
       id: row.contractId,
       organizationId: user.tenantId,
     })
@@ -628,7 +628,7 @@ export class ContractPaymentPlanService {
   private async assertBatchInScope(user: AuthUser, ids: string[], permission: string) {
     const unique = [...new Set(ids)]
     const rows = unique.length
-      ? await this.prisma8.client.orm.public.ContractPaymentPlan.where({
+      ? await this.prisma.client.orm.public.ContractPaymentPlan.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(unique))
@@ -680,14 +680,14 @@ export class ContractPaymentPlanService {
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
-          const users = await this.prisma8.client.orm.public.Users.where({
+          const users = await this.prisma.client.orm.public.Users.where({
             tenantId: organizationId,
             deptId: String(condition.value ?? ''),
           })
             .select('id')
             .all()
           const ownerIds = users.map((item) => String(item.id))
-          let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
+          let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
             organizationId: organizationId,
           })
           query =
@@ -698,7 +698,7 @@ export class ContractPaymentPlanService {
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
-          let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
+          let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
             organizationId: organizationId,
           })
           query = this.applyPlanDirectFilter(query, condition.key, condition)
@@ -728,7 +728,7 @@ export class ContractPaymentPlanService {
   }
 
   private applyPlanDirectFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.ContractPaymentPlan.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.ContractPaymentPlan.where>,
     key: string,
     condition: FilterCondition,
   ) {
@@ -875,7 +875,7 @@ export class ContractPaymentPlanService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     const id = ownerId || user.id
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -889,7 +889,7 @@ export class ContractPaymentPlanService {
   private async people(ids: string[]) {
     const unique = [...new Set(ids.filter(Boolean))]
     const users = unique.length
-      ? await this.prisma8.client.orm.public.Users.where((row) => row.id.in(unique))
+      ? await this.prisma.client.orm.public.Users.where((row) => row.id.in(unique))
           .select('id', 'name', 'deptId')
           .all()
       : []
@@ -897,7 +897,7 @@ export class ContractPaymentPlanService {
       ...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : []))),
     ]
     const depts = deptIds.length
-      ? await this.prisma8.client.orm.public.Departments.where((row) => row.id.in(deptIds))
+      ? await this.prisma.client.orm.public.Departments.where((row) => row.id.in(deptIds))
           .select('id', 'name')
           .all()
       : []
@@ -918,7 +918,7 @@ export class ContractPaymentPlanService {
 @Injectable()
 export class ContractPaymentRecordService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly contracts: ContractsService,
     private readonly dataScope: DataScopeService,
     private readonly moduleForms: ModuleFormsService,
@@ -953,7 +953,7 @@ export class ContractPaymentRecordService {
         : null,
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
-    let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+    let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
       organizationId: user.tenantId,
     })
     const scope = await this.dataScope.directOwnerFilter(user, RECORD_READ_PERMISSION)
@@ -967,7 +967,7 @@ export class ContractPaymentRecordService {
     if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
     if (dto.contractId) query = query.where({ contractId: dto.contractId })
     if (dto.customerId) {
-      const contracts = await this.prisma8.client.orm.public.Contract.where({
+      const contracts = await this.prisma.client.orm.public.Contract.where({
         organizationId: user.tenantId,
         customerId: dto.customerId,
       })
@@ -976,7 +976,7 @@ export class ContractPaymentRecordService {
       query = query.where((row) => row.contractId.in(contracts.map((item) => item.id)))
     }
     if (dto.keyword) {
-      const contracts = await this.prisma8.client.orm.public.Contract.where({
+      const contracts = await this.prisma.client.orm.public.Contract.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.name.ilike(`%${dto.keyword}%`))
@@ -1005,12 +1005,12 @@ export class ContractPaymentRecordService {
     ]
     const [contracts, paymentPlans] = await Promise.all([
       contractIds.length
-        ? this.prisma8.client.orm.public.Contract.where((row) => row.id.in(contractIds))
+        ? this.prisma.client.orm.public.Contract.where((row) => row.id.in(contractIds))
             .select('id', 'name', 'customerId')
             .all()
         : [],
       paymentPlanIds.length
-        ? this.prisma8.client.orm.public.ContractPaymentPlan.where((row) =>
+        ? this.prisma.client.orm.public.ContractPaymentPlan.where((row) =>
             row.id.in(paymentPlanIds),
           )
             .select('id', 'name')
@@ -1098,7 +1098,7 @@ export class ContractPaymentRecordService {
     const owner = await this.resolveOwner(user, dto.owner)
     const customData = await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
     const now = BigInt(Date.now())
-    const created = await this.prisma8.client.transaction(async (tx) => {
+    const created = await this.prisma.client.transaction(async (tx) => {
       const no = dto.no?.trim() || (await this.nextRecordNo(tx, user.tenantId, dto.recordEndTime))
       const row = await tx.orm.public.ContractPaymentRecord.create({
         id: createLegacyId32(),
@@ -1142,7 +1142,7 @@ export class ContractPaymentRecordService {
       dto.moduleFields === undefined
         ? null
         : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const updated = await tx.orm.public.ContractPaymentRecord.where({
         id: dto.id,
       }).update({
@@ -1181,7 +1181,7 @@ export class ContractPaymentRecordService {
 
   async remove(user: AuthUser, id: string) {
     const current = await this.ensureInScope(user, id, 'CONTRACT_PAYMENT_RECORD:DELETE')
-    await this.prisma8.client.orm.public.ContractPaymentRecord.where({
+    await this.prisma.client.orm.public.ContractPaymentRecord.where({
       id: id,
       organizationId: user.tenantId,
     }).delete()
@@ -1196,7 +1196,7 @@ export class ContractPaymentRecordService {
     if (field.system) {
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
-        await this.prisma8.client.orm.public.ContractPaymentRecord.where({
+        await this.prisma.client.orm.public.ContractPaymentRecord.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(rows.map((item) => item.id)))
@@ -1209,7 +1209,7 @@ export class ContractPaymentRecordService {
         throw new BadRequestException('该系统字段不支持批量修改')
       }
     } else {
-      await this.prisma8.client.transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'contractPaymentRecord',
@@ -1461,7 +1461,7 @@ export class ContractPaymentRecordService {
     if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('回款金额必须大于 0')
     await this.contracts.ensureInScope(user, contractId)
     if (paymentPlanId) {
-      const plan = await this.prisma8.client.orm.public.ContractPaymentPlan.where({
+      const plan = await this.prisma.client.orm.public.ContractPaymentPlan.where({
         id: paymentPlanId,
         organizationId: user.tenantId,
         contractId: contractId,
@@ -1473,7 +1473,7 @@ export class ContractPaymentRecordService {
   }
 
   private async ensureInScope(user: AuthUser, id: string, permission = RECORD_READ_PERMISSION) {
-    const row = await this.prisma8.client.orm.public.ContractPaymentRecord.where({
+    const row = await this.prisma.client.orm.public.ContractPaymentRecord.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -1481,14 +1481,14 @@ export class ContractPaymentRecordService {
       throw new NotFoundException('回款记录不存在或不在你的数据范围内')
     }
     const [contract, paymentPlan] = await Promise.all([
-      this.prisma8.client.orm.public.Contract.where({
+      this.prisma.client.orm.public.Contract.where({
         id: row.contractId,
         organizationId: user.tenantId,
       })
         .select('name', 'customerId')
         .first(),
       row.paymentPlanId
-        ? this.prisma8.client.orm.public.ContractPaymentPlan.where({
+        ? this.prisma.client.orm.public.ContractPaymentPlan.where({
             id: row.paymentPlanId,
             organizationId: user.tenantId,
           })
@@ -1503,7 +1503,7 @@ export class ContractPaymentRecordService {
   private async assertBatchInScope(user: AuthUser, ids: string[], permission: string) {
     const unique = [...new Set(ids)]
     const rows = unique.length
-      ? await this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      ? await this.prisma.client.orm.public.ContractPaymentRecord.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(unique))
@@ -1546,14 +1546,14 @@ export class ContractPaymentRecordService {
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
-          const users = await this.prisma8.client.orm.public.Users.where({
+          const users = await this.prisma.client.orm.public.Users.where({
             tenantId: organizationId,
             deptId: String(condition.value ?? ''),
           })
             .select('id')
             .all()
           const ownerIds = users.map((item) => String(item.id))
-          let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+          let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
             organizationId: organizationId,
           })
           query =
@@ -1564,7 +1564,7 @@ export class ContractPaymentRecordService {
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
-          let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+          let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
             organizationId: organizationId,
           })
           query = this.applyRecordDirectFilter(query, condition.key, condition)
@@ -1594,7 +1594,7 @@ export class ContractPaymentRecordService {
   }
 
   private applyRecordDirectFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.ContractPaymentRecord.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.ContractPaymentRecord.where>,
     key: string,
     condition: FilterCondition,
   ) {
@@ -1765,7 +1765,7 @@ export class ContractPaymentRecordService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     const id = ownerId || user.id
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -1779,7 +1779,7 @@ export class ContractPaymentRecordService {
   private async people(ids: string[]) {
     const unique = [...new Set(ids.filter(Boolean))]
     const users = unique.length
-      ? await this.prisma8.client.orm.public.Users.where((row) => row.id.in(unique))
+      ? await this.prisma.client.orm.public.Users.where((row) => row.id.in(unique))
           .select('id', 'name', 'deptId')
           .all()
       : []
@@ -1787,7 +1787,7 @@ export class ContractPaymentRecordService {
       ...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : []))),
     ]
     const depts = deptIds.length
-      ? await this.prisma8.client.orm.public.Departments.where((row) => row.id.in(deptIds))
+      ? await this.prisma.client.orm.public.Departments.where((row) => row.id.in(deptIds))
           .select('id', 'name')
           .all()
       : []
@@ -1804,22 +1804,18 @@ export class ContractPaymentRecordService {
     )
   }
 
-  private async nextRecordNo(
-    tx: Prisma8Transaction,
-    organizationId: string,
-    recordEndTime: number,
-  ) {
+  private async nextRecordNo(tx: PrismaTransaction, organizationId: string, recordEndTime: number) {
     const date = new Date(recordEndTime)
     if (Number.isNaN(date.getTime())) throw new BadRequestException('回款时间不合法')
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const prefix = `PAY-${year}${month}-`
-    const lockQuery = this.prisma8.client.raw.sql`
+    const lockQuery = this.prisma.client.raw.sql`
       SELECT 1::int4 AS locked
       FROM pg_advisory_xact_lock(hashtext(${`payment-record:${organizationId}:${year}${month}`}))
     `.returnsRow({ locked: 'pg/int4@1' })
     for await (const _row of tx.query(lockQuery.build())) break
-    const latestQuery = this.prisma8.client.raw.sql`
+    const latestQuery = this.prisma.client.raw.sql`
       SELECT no::text AS no
       FROM contract_payment_record
       WHERE organization_id = ${organizationId}

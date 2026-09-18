@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import {
   OperationLogCleanupService,
   resolveOperationLogCleanupConfig,
@@ -18,11 +18,13 @@ interface RawQueryHarness {
   build: () => RawQueryHarness
 }
 
-function prisma8Fixture(options: {
-  tenants?: Array<{ id: string }>
-  onQuery?: (query: RawQueryHarness) => unknown[] | Promise<unknown[]>
-} = {}) {
-  const prisma8 = {
+function prismaFixture(
+  options: {
+    tenants?: Array<{ id: string }>
+    onQuery?: (query: RawQueryHarness) => unknown[] | Promise<unknown[]>
+  } = {},
+) {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -57,8 +59,8 @@ function prisma8Fixture(options: {
         },
       }),
     },
-  } as unknown as Prisma8Service
-  return prisma8
+  } as unknown as PrismaService
+  return prisma
 }
 
 const baseSetting = {
@@ -123,14 +125,14 @@ test('操作日志清理配置使用安全默认值并拒绝危险批次', () =>
 
 test('租户清理只删除当前租户 cutoff 之前记录并保存执行状态', async () => {
   const queries: RawQueryHarness[] = []
-  const prisma8 = prisma8Fixture({
+  const prisma = prismaFixture({
     onQuery: (query) => {
       queries.push(query)
       return [{ id: 'old-1' }, { id: 'old-2' }]
     },
   })
   const { settings, records } = settingsMock(180)
-  const service = new OperationLogCleanupService(prisma8, settings)
+  const service = new OperationLogCleanupService(prisma, settings)
   const now = new Date('2026-09-04T00:00:00.000Z')
 
   const result = await service.cleanupTenant('tenant-a', now, OperationLogCleanupSources.MANUAL)
@@ -149,14 +151,14 @@ test('租户清理只删除当前租户 cutoff 之前记录并保存执行状态
 
 test('历史积压时单租户清理严格受 maxBatches 上限约束', async () => {
   let queryCalls = 0
-  const prisma8 = prisma8Fixture({
+  const prisma = prismaFixture({
     onQuery: () => {
       queryCalls += 1
       return Array.from({ length: 1_000 }, (_, index) => ({ id: `${queryCalls}-${index}` }))
     },
   })
   const { settings } = settingsMock(180)
-  const service = new OperationLogCleanupService(prisma8, settings)
+  const service = new OperationLogCleanupService(prisma, settings)
 
   const result = await service.cleanupTenant('tenant-a', new Date('2026-09-04T00:00:00.000Z'))
 
@@ -166,14 +168,14 @@ test('历史积压时单租户清理严格受 maxBatches 上限约束', async ()
 
 test('永久保留租户跳过删除但记录最近检查状态', async () => {
   let touchedOperationLog = false
-  const prisma8 = prisma8Fixture({
+  const prisma = prismaFixture({
     onQuery: () => {
       touchedOperationLog = true
       return []
     },
   })
   const { settings, records } = settingsMock(null)
-  const service = new OperationLogCleanupService(prisma8, settings)
+  const service = new OperationLogCleanupService(prisma, settings)
 
   const result = await service.cleanupTenant('tenant-permanent')
 
@@ -192,17 +194,17 @@ test('scheduled cleanup 复用 operation-log-cleanup DAILY coordination', async 
       return { executed: true, source: 'REDIS', value: await task() }
     },
   } as unknown as DistributedCoordinatorService
-  const prisma8 = prisma8Fixture()
+  const prisma = prismaFixture()
   const { settings } = settingsMock()
 
-  await new OperationLogCleanupService(prisma8, settings, coordinator).scheduledCleanup(
+  await new OperationLogCleanupService(prisma, settings, coordinator).scheduledCleanup(
     new Date('2026-09-04T04:15:00.000Z'),
   )
   assert.deepEqual(calls, [{ job: 'operation-log-cleanup', slot: 'DAILY' }])
 })
 
 test('自动清理逐租户执行且单租户失败不阻断其他租户', async () => {
-  const prisma8 = prisma8Fixture({
+  const prisma = prismaFixture({
     tenants: [{ id: 'tenant-a' }, { id: 'tenant-b' }],
     onQuery: (query) => {
       if (query.values[0] === 'tenant-a') throw new Error('tenant-a failed')
@@ -210,7 +212,7 @@ test('自动清理逐租户执行且单租户失败不阻断其他租户', async
     },
   })
   const { settings, records } = settingsMock(180)
-  const service = new OperationLogCleanupService(prisma8, settings)
+  const service = new OperationLogCleanupService(prisma, settings)
 
   assert.equal(await service.cleanupAllTenants(new Date('2026-09-04T04:15:00.000Z')), 0)
   assert.equal(
@@ -221,14 +223,14 @@ test('自动清理逐租户执行且单租户失败不阻断其他租户', async
 
 test('全量清空只删除当前租户全部操作日志并返回真实数量', async () => {
   const calls: RawQueryHarness[] = []
-  const prisma8 = prisma8Fixture({
+  const prisma = prismaFixture({
     onQuery: (query) => {
       calls.push(query)
       return Array.from({ length: 37 }, (_, index) => ({ id: `log-${index}` }))
     },
   })
   const { settings, records } = settingsMock(180)
-  const service = new OperationLogCleanupService(prisma8, settings)
+  const service = new OperationLogCleanupService(prisma, settings)
 
   const result = await service.clearTenant('tenant-a')
 

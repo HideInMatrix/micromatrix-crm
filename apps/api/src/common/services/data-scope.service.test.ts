@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { AuthUser } from '../auth-user'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { DataScopeService } from './data-scope.service'
 
 const departments = [
@@ -22,7 +22,7 @@ function service() {
         },
       },
     },
-  } as unknown as Prisma8Service)
+  } as unknown as PrismaService)
 }
 
 function actor(): AuthUser {
@@ -75,7 +75,10 @@ describe('DataScopeService multi-role merge', () => {
       await dataScope.matchesResource(actor(), 'other-user', 'sales-child', 'customer:update'),
       false,
     )
-    assert.equal(await dataScope.matchesResource(actor(), 'actor', 'service', 'customer:update'), true)
+    assert.equal(
+      await dataScope.matchesResource(actor(), 'actor', 'service', 'customer:update'),
+      true,
+    )
   })
 
   it('unions department scopes from multiple roles with the same permission', async () => {

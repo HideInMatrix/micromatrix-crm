@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { MessageEvent } from '@nestjs/common'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
 import type { RedisService } from '../../redis/redis.service'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
 
-type Timestamp = ReturnType<typeof prisma8TimestampFromDate>
+type Timestamp = ReturnType<typeof instantFromDate>
 
 interface TestNotification {
   id: string
@@ -38,7 +38,7 @@ function createNotificationStore(initialRows: Partial<TestNotification>[] = []) 
     sourceType: row.sourceType ?? null,
     sourceId: row.sourceId ?? null,
     readAt: row.readAt ?? null,
-    createdAt: row.createdAt ?? prisma8TimestampFromDate(new Date('2026-09-03T00:00:00.000Z')),
+    createdAt: row.createdAt ?? instantFromDate(new Date('2026-09-03T00:00:00.000Z')),
   }))
   const metrics = { creates: 0, lists: 0, aggregates: 0, updates: 0, deletes: 0 }
 
@@ -58,7 +58,8 @@ function createNotificationStore(initialRows: Partial<TestNotification>[] = []) 
             get: (_target, field: string) => ({
               in: (values: unknown[]) => (row: TestNotification) =>
                 values.includes(row[field as keyof TestNotification]),
-              isNull: () => (row: TestNotification) => row[field as keyof TestNotification] === null,
+              isNull: () => (row: TestNotification) =>
+                row[field as keyof TestNotification] === null,
             }),
           },
         ) as Record<string, any>
@@ -135,17 +136,17 @@ function createNotificationStore(initialRows: Partial<TestNotification>[] = []) 
         ...input,
         id: `notification-${++sequence}`,
         readAt: null,
-        createdAt: prisma8TimestampFromDate(new Date('2026-09-03T00:00:00.000Z')),
+        createdAt: instantFromDate(new Date('2026-09-03T00:00:00.000Z')),
       }
       rows.push(row)
       return { ...row }
     },
   })
 
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { Notifications: makeCollection() } } },
-  } as unknown as Prisma8Service
-  return { prisma8, rows, metrics }
+  } as unknown as PrismaService
+  return { prisma, rows, metrics }
 }
 
 function createRedisCache() {
@@ -216,11 +217,11 @@ function createRealtimeRedisBus() {
 }
 
 test('事件关闭时不落库，未绑定事件的兼容通知仍发送', async () => {
-  const { prisma8, metrics } = createNotificationStore()
+  const { prisma, metrics } = createNotificationStore()
   const messageSettings = {
     isSystemEnabled: async () => false,
   } as unknown as MessageSettingsService
-  const service = new NotificationsService(prisma8, messageSettings)
+  const service = new NotificationsService(prisma, messageSettings)
 
   await service.notify('tenant-a', 'user-a', {
     type: 'follow_plan',
@@ -234,16 +235,18 @@ test('事件关闭时不落库，未绑定事件的兼容通知仍发送', async
 })
 
 test('通知列表与未读数命中 Redis，写操作通过版本号使旧缓存失效', async () => {
-  const { prisma8, metrics } = createNotificationStore([{
-    id: 'notification-a',
-    tenantId: 'tenant-a',
-    userId: 'user-a',
-    _type: 'system',
-    title: '测试通知',
-  }])
+  const { prisma, metrics } = createNotificationStore([
+    {
+      id: 'notification-a',
+      tenantId: 'tenant-a',
+      userId: 'user-a',
+      _type: 'system',
+      title: '测试通知',
+    },
+  ])
   const messageSettings = {} as MessageSettingsService
   const { redis } = createRedisCache()
-  const service = new NotificationsService(prisma8, messageSettings, redis)
+  const service = new NotificationsService(prisma, messageSettings, redis)
 
   const firstList = await service.list('tenant-a', 'user-a', 1, 5, true)
   const secondList = await service.list('tenant-a', 'user-a', 1, 5, true)
@@ -265,12 +268,12 @@ test('Redis Pub/Sub 将新通知跨 API 实例送达且来源实例不重复', a
   const bus = createRealtimeRedisBus()
   const messageSettings = { isSystemEnabled: async () => true } as unknown as MessageSettingsService
   const serviceA = new NotificationsService(
-    createNotificationStore().prisma8,
+    createNotificationStore().prisma,
     messageSettings,
     bus.createRedis(),
   )
   const serviceB = new NotificationsService(
-    createNotificationStore().prisma8,
+    createNotificationStore().prisma,
     messageSettings,
     bus.createRedis(),
   )
@@ -299,13 +302,13 @@ test('Redis Pub/Sub 将新通知跨 API 实例送达且来源实例不重复', a
 
 test('通知已读状态通过 Pub/Sub 跨实例发送 refresh event', async () => {
   const bus = createRealtimeRedisBus()
-  const { prisma8 } = createNotificationStore([
+  const { prisma } = createNotificationStore([
     { id: 'notification-a', tenantId: 'tenant-a', userId: 'user-a' },
     { id: 'notification-b', tenantId: 'tenant-a', userId: 'user-a' },
   ])
   const messageSettings = {} as MessageSettingsService
-  const serviceA = new NotificationsService(prisma8, messageSettings, bus.createRedis())
-  const serviceB = new NotificationsService(prisma8, messageSettings, bus.createRedis())
+  const serviceA = new NotificationsService(prisma, messageSettings, bus.createRedis())
+  const serviceB = new NotificationsService(prisma, messageSettings, bus.createRedis())
   await serviceA.onModuleInit()
   await serviceB.onModuleInit()
 
@@ -338,8 +341,8 @@ test('Redis 发布不可用时仍保持本实例 SSE，非法事件不影响后�
       return async () => handlers.delete(handler)
     },
   } as unknown as RedisService
-  const { prisma8 } = createNotificationStore()
-  const service = new NotificationsService(prisma8, {} as MessageSettingsService, redis)
+  const { prisma } = createNotificationStore()
+  const service = new NotificationsService(prisma, {} as MessageSettingsService, redis)
   await service.onModuleInit()
   const events: MessageEvent[] = []
   const subscription = service.subscribe('user-a').subscribe((event) => events.push(event))
@@ -396,8 +399,8 @@ test('Redis 发布不可用时仍保持本实例 SSE，非法事件不影响后�
 })
 
 test('来源通知按 tenant/user/source 幂等派发，重复调用只补缺失接收人', async () => {
-  const { prisma8, rows } = createNotificationStore()
-  const service = new NotificationsService(prisma8, {} as MessageSettingsService)
+  const { prisma, rows } = createNotificationStore()
+  const service = new NotificationsService(prisma, {} as MessageSettingsService)
 
   assert.equal(
     await service.notifyManyFromSource('tenant-a', ['user-a', 'user-b'], 'announcement', 'a-1', {
@@ -430,7 +433,7 @@ test('来源通知按 tenant/user/source 幂等派发，重复调用只补缺失
 test('删除来源通知会清理全部 source 行并逐用户失效通知缓存', async () => {
   const versions = new Map<string, number>()
   const published: string[] = []
-  const { prisma8, rows } = createNotificationStore([
+  const { prisma, rows } = createNotificationStore([
     { tenantId: 'tenant-a', userId: 'user-a', sourceType: 'announcement', sourceId: 'a-1' },
     { tenantId: 'tenant-a', userId: 'user-b', sourceType: 'announcement', sourceId: 'a-1' },
     { tenantId: 'tenant-a', userId: 'user-a', sourceType: 'announcement', sourceId: 'a-2' },
@@ -446,7 +449,7 @@ test('删除来源通知会清理全部 source 行并逐用户失效通知缓存
       return 1
     },
   } as unknown as RedisService
-  const service = new NotificationsService(prisma8, {} as MessageSettingsService, redis)
+  const service = new NotificationsService(prisma, {} as MessageSettingsService, redis)
 
   assert.equal(await service.removeBySource('tenant-a', 'announcement', 'a-1'), 2)
   assert.equal(rows.length, 1)

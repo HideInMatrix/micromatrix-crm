@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { CluePoolRepository } from './clue-pool.repository'
@@ -17,7 +17,7 @@ import { scopeMatches } from './pool-repository.helpers'
 @Injectable()
 export class ResourcePoolsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
     private readonly dictionaries: DictionariesService,
@@ -108,14 +108,14 @@ export class ResourcePoolsService {
     const owned =
       module === 'lead'
         ? (
-            await this.prisma8.client.orm.public.Clue.where({
+            await this.prisma.client.orm.public.Clue.where({
               organizationId: organizationId,
               owner: ownerId,
               inSharedPool: false,
             }).aggregate((agg) => ({ count: agg.count() }))
           ).count
         : (
-            await this.prisma8.client.orm.public.Customer.where({
+            await this.prisma.client.orm.public.Customer.where({
               organizationId: organizationId,
               owner: ownerId,
               inSharedPool: false,
@@ -134,14 +134,14 @@ export class ResourcePoolsService {
       ...new Set(history.flatMap((item) => [item.owner, item.operator]).filter(Boolean)),
     ]
     const users = userIds.length
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
           .where((row) => row.id.in(userIds))
           .select('id', 'name', 'deptId')
           .all()
       : []
     const deptIds = [...new Set(users.flatMap((item) => (item.deptId ? [item.deptId] : [])))]
     const departments = deptIds.length
-      ? await this.prisma8.client.orm.public.Departments.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
           .where((row) => row.id.in(deptIds))
           .select('id', 'name')
           .all()
@@ -189,7 +189,7 @@ export class ResourcePoolsService {
   }
 
   private async loadUserScopeTokens(tenantId: string, userId: string): Promise<Set<string>> {
-    const user = await this.prisma8.client.orm.public.Users.where({
+    const user = await this.prisma.client.orm.public.Users.where({
       id: userId,
       tenantId,
       status: 'ACTIVE',
@@ -199,7 +199,7 @@ export class ResourcePoolsService {
     if (!user) return new Set()
 
     const tokens = new Set([user.id, `user:${user.id}`])
-    const links = await this.prisma8.client.orm.public.UserRoles.where({
+    const links = await this.prisma.client.orm.public.UserRoles.where({
       tenantId,
       userId: user.id,
     })
@@ -211,7 +211,7 @@ export class ResourcePoolsService {
     }
     if (!user.deptId) return tokens
 
-    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()
     const parentMap = new Map(departments.map((department) => [department.id, department.parentId]))

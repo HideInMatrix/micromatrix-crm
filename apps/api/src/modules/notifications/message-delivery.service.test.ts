@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import type {
   DingTalkClient,
   DingTalkMessageResult,
@@ -64,13 +64,13 @@ function delivery(
   }
 }
 
-function prisma8Outbox(
+function outbox(
   rows: MessageDelivery[],
   integrationForChannel: (channel: string) => { id: string } | null = () => ({
     id: 'integration-a',
   }),
   mappings: Array<{ userId: string; externalId: string }> = [],
-): Prisma8Service {
+): PrismaService {
   const messageDeliveries = {
     createAll: async (data: Array<Partial<MessageDelivery>>) =>
       data.map((item) => {
@@ -106,10 +106,10 @@ function prisma8Outbox(
       transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({ orm: { public: { MessageDeliveries: messageDeliveries } } }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 }
 
-function prisma8WorkerRows(rows: Map<string, MessageDelivery>): Prisma8Service {
+function workerRows(rows: Map<string, MessageDelivery>): PrismaService {
   const collection = (id?: string) => ({
     where(input: { id?: string }) {
       return collection(input.id ?? id)
@@ -117,11 +117,11 @@ function prisma8WorkerRows(rows: Map<string, MessageDelivery>): Prisma8Service {
     select() {
       return this
     },
-    first: async () => (id ? rows.get(id) ?? null : null),
+    first: async () => (id ? (rows.get(id) ?? null) : null),
   })
   return {
     client: { orm: { public: { MessageDeliveries: collection() } } },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 }
 
 function installWorkerClaim(
@@ -193,18 +193,13 @@ function createWorker(result: WeComMessageResult) {
   return {
     rows,
     service: installWorkerClaim(
-      new MessageDeliveryService(
-        prisma8WorkerRows(rows),
-        settings,
-        integrations,
-        client,
-      ),
+      new MessageDeliveryService(workerRows(rows), settings, integrations, client),
       rows,
     ),
   }
 }
 
-test('消息投递 Cron 通过 Prisma 8 恢复超时 SENDING，并保持 due 扫描边界', async () => {
+test('消息投递 Cron 通过 Prisma 恢复超时 SENDING，并保持 due 扫描边界', async () => {
   const whereCalls: unknown[] = []
   let updateData: Record<string, unknown> | undefined
   let processedIds: string[] = []
@@ -255,11 +250,11 @@ test('消息投递 Cron 通过 Prisma 8 恢复超时 SENDING，并保持 due 扫
       return [{ id: 'due-1' }]
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: { MessageDeliveries: collection } } },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   const service = new MessageDeliveryService(
-    prisma8,
+    prisma,
     {} as MessageSettingsService,
     {} as EnterpriseIntegrationsService,
     {} as WeComClient,
@@ -304,7 +299,7 @@ test('企微 outbox 对缺失成员映射保留 DEAD 审计', async () => {
     getWeComChannelGate: async () => ({ available: true }),
   } as unknown as MessageSettingsService
   const service = new MessageDeliveryService(
-    prisma8Outbox(rows, () => ({ id: 'integration-a' }), []),
+    outbox(rows, () => ({ id: 'integration-a' }), []),
     settings,
     {} as EnterpriseIntegrationsService,
     {} as WeComClient,
@@ -367,11 +362,9 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
       getDingTalkChannelGate: async () => ({ available: true }),
     } as unknown as MessageSettingsService
     const service = new MessageDeliveryService(
-      prisma8Outbox(
-        rows,
-        (channel) => (channel === 'DINGTALK' ? { id: 'ding-integration' } : null),
-        [{ userId: 'user-a', externalId: 'ding-user-a' }],
-      ),
+      outbox(rows, (channel) => (channel === 'DINGTALK' ? { id: 'ding-integration' } : null), [
+        { userId: 'user-a', externalId: 'ding-user-a' },
+      ]),
       settings,
       {} as EnterpriseIntegrationsService,
       {} as WeComClient,
@@ -406,7 +399,7 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
       rows,
       service: installWorkerClaim(
         new MessageDeliveryService(
-          prisma8WorkerRows(rows),
+          workerRows(rows),
           {} as MessageSettingsService,
           integrations,
           {} as WeComClient,
@@ -458,11 +451,9 @@ test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机
       getLarkChannelGate: async () => ({ available: true }),
     } as unknown as MessageSettingsService
     const service = new MessageDeliveryService(
-      prisma8Outbox(
-        rows,
-        (channel) => (channel === 'LARK' ? { id: 'lark-integration' } : null),
-        [{ userId: 'user-a', externalId: 'ou_user_a' }],
-      ),
+      outbox(rows, (channel) => (channel === 'LARK' ? { id: 'lark-integration' } : null), [
+        { userId: 'user-a', externalId: 'ou_user_a' },
+      ]),
       settings,
       {} as EnterpriseIntegrationsService,
       {} as WeComClient,
@@ -497,7 +488,7 @@ test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机
       rows,
       service: installWorkerClaim(
         new MessageDeliveryService(
-          prisma8WorkerRows(rows),
+          workerRows(rows),
           {} as MessageSettingsService,
           integrations,
           {} as WeComClient,

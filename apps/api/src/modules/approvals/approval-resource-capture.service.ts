@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 import type { ApprovalJsonValue } from './approval-runtime.types'
 
@@ -11,7 +11,7 @@ type CaptureHandler = (user: AuthUser, targetId: string) => Promise<ApprovalJson
 export class ApprovalResourceCaptureService {
   private readonly handlers: Record<ApprovalModule, CaptureHandler>
 
-  constructor(private readonly prisma8: Prisma8Service) {
+  constructor(private readonly prisma: PrismaService) {
     this.handlers = {
       quote: (user, targetId) => this.captureQuotation(user, targetId),
       contract: (user, targetId) => this.captureContract(user, targetId),
@@ -26,7 +26,7 @@ export class ApprovalResourceCaptureService {
 
   private async captureQuotation(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
     const id = targetId
-    const quotation = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const quotation = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id,
       organizationId: user.tenantId,
     })
@@ -34,9 +34,9 @@ export class ApprovalResourceCaptureService {
       .first()
     if (!quotation) throw new NotFoundException('报价不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma8.client.orm.public.OpportunityQuotationField.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.OpportunityQuotationFieldBlob.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({ quotationId: id }).all(),
+      this.prisma.client.orm.public.OpportunityQuotationField.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.OpportunityQuotationFieldBlob.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.OpportunityQuotationSnapshot.where({ quotationId: id }).all(),
     ])
     return {
       quotation: {
@@ -53,7 +53,7 @@ export class ApprovalResourceCaptureService {
 
   private async captureContract(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
     const id = targetId
-    const contract = await this.prisma8.client.orm.public.Contract.where({
+    const contract = await this.prisma.client.orm.public.Contract.where({
       id,
       organizationId: user.tenantId,
     })
@@ -72,9 +72,9 @@ export class ApprovalResourceCaptureService {
       .first()
     if (!contract) throw new NotFoundException('合同不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma8.client.orm.public.ContractField.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.ContractFieldBlob.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.ContractSnapshot.where({ contractId: id }).all(),
+      this.prisma.client.orm.public.ContractField.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.ContractFieldBlob.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.ContractSnapshot.where({ contractId: id }).all(),
     ])
     return {
       contract: {
@@ -97,7 +97,7 @@ export class ApprovalResourceCaptureService {
 
   private async captureInvoice(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
     const id = targetId
-    const invoice = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const invoice = await this.prisma.client.orm.public.ContractInvoice.where({
       id,
       organizationId: user.tenantId,
     })
@@ -105,9 +105,9 @@ export class ApprovalResourceCaptureService {
       .first()
     if (!invoice) throw new NotFoundException('发票不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma8.client.orm.public.ContractInvoiceField.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.ContractInvoiceFieldBlob.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.ContractInvoiceSnapshot.where({ invoiceId: id }).all(),
+      this.prisma.client.orm.public.ContractInvoiceField.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.ContractInvoiceFieldBlob.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.ContractInvoiceSnapshot.where({ invoiceId: id }).all(),
     ])
     return {
       invoice: {
@@ -127,7 +127,7 @@ export class ApprovalResourceCaptureService {
 
   private async captureOrder(user: AuthUser, targetId: string): Promise<ApprovalJsonValue> {
     const id = targetId
-    const order = await this.prisma8.client.orm.public.SalesOrder.where({
+    const order = await this.prisma.client.orm.public.SalesOrder.where({
       id,
       organizationId: user.tenantId,
     })
@@ -135,9 +135,9 @@ export class ApprovalResourceCaptureService {
       .first()
     if (!order) throw new NotFoundException('订单不存在')
     const [fields, fieldBlobs, snapshots] = await Promise.all([
-      this.prisma8.client.orm.public.SalesOrderField.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.SalesOrderFieldBlob.where({ resourceId: id }).all(),
-      this.prisma8.client.orm.public.SalesOrderSnapshot.where({ orderId: id }).all(),
+      this.prisma.client.orm.public.SalesOrderField.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.SalesOrderFieldBlob.where({ resourceId: id }).all(),
+      this.prisma.client.orm.public.SalesOrderSnapshot.where({ orderId: id }).all(),
     ])
     return {
       order: {

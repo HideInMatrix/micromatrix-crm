@@ -5,8 +5,8 @@ import path from 'node:path'
 import { ConfigService } from '@nestjs/config'
 import { ServiceUnavailableException } from '@nestjs/common'
 import type { AsyncJobsService } from '../../async-jobs/async-jobs.service'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { instantFromDate } from '../../prisma/temporal'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { ExportTasksService } from './export-tasks.service'
 
 type Row = {
@@ -21,11 +21,11 @@ type Row = {
   fileSize: number | null
   errorMessage: string | null
   payload: unknown
-  startedAt: ReturnType<typeof prisma8TimestampFromDate> | null
+  startedAt: ReturnType<typeof instantFromDate> | null
   attempts: number
-  completedAt: ReturnType<typeof prisma8TimestampFromDate> | null
-  expiresAt: ReturnType<typeof prisma8TimestampFromDate>
-  createdAt: ReturnType<typeof prisma8TimestampFromDate>
+  completedAt: ReturnType<typeof instantFromDate> | null
+  expiresAt: ReturnType<typeof instantFromDate>
+  createdAt: ReturnType<typeof instantFromDate>
 }
 
 function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, 'module'>> }) {
@@ -44,8 +44,8 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
     startedAt: null,
     attempts: 0,
     completedAt: null,
-    expiresAt: prisma8TimestampFromDate(new Date(Date.now() + 60_000)),
-    createdAt: prisma8TimestampFromDate(new Date()),
+    expiresAt: instantFromDate(new Date(Date.now() + 60_000)),
+    createdAt: instantFromDate(new Date()),
   }))
   let locks = 0
   let enqueueCalls = 0
@@ -72,7 +72,7 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
       return row ? project(row, fields) : null
     },
     create: async (data: any) => {
-      const createdAt = prisma8TimestampFromDate(new Date())
+      const createdAt = instantFromDate(new Date())
       const row: Row = {
         id: `task-${rows.length + 1}`,
         tenantId: data.tenantId,
@@ -110,7 +110,7 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
       return before - rows.length
     },
   })
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: { public: { ExportTasks: collection() } },
       raw: {
@@ -125,7 +125,7 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
           orm: { public: { ExportTasks: collection() } },
         }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   const asyncJobs = {
     enqueueExport: async () => {
       enqueueCalls += 1
@@ -133,7 +133,7 @@ function fixture(options?: { enqueueFails?: boolean; pending?: Array<Pick<Row, '
     },
   } as unknown as AsyncJobsService
   const service = new ExportTasksService(
-    prisma8,
+    prisma,
     asyncJobs,
     new ConfigService({ UPLOAD_DIR: '/tmp/mmx-export-tests' }),
   )
@@ -214,7 +214,7 @@ test('取消竞态下 complete 的 PENDING CAS 失败后删除刚生成的文件
     'scripts',
     `.tmp-export-cancel-race-${process.pid}-${Date.now()}`,
   )
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -224,9 +224,9 @@ test('取消竞态下 complete 的 PENDING CAS 失败后删除刚生成的文件
         },
       },
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   const service = new ExportTasksService(
-    prisma8,
+    prisma,
     {} as AsyncJobsService,
     new ConfigService({ UPLOAD_DIR: uploadRoot }),
   )

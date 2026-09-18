@@ -7,9 +7,9 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { withOperationLogResult } from '../../common/decorators/log-operation.decorator'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
+import { instantToISOString } from '../../prisma/temporal'
 
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import type {
@@ -27,8 +27,8 @@ export interface FollowCommentRow {
   tenantId: string
   createdById: string
   updatedById: string
-  createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
-  updatedAt: Parameters<typeof prisma8TimestampToISOString>[0]
+  createdAt: Parameters<typeof instantToISOString>[0]
+  updatedAt: Parameters<typeof instantToISOString>[0]
 }
 
 export interface FollowCommentResource {
@@ -54,13 +54,13 @@ interface CreateCommentInput {
   updatedById: string
 }
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 /** FollowRecord / FollowPlan 共用评论业务内核，子类仅提供资源、表和事件差异。 */
 export abstract class FollowCommentServiceBase<TResource extends FollowCommentResource> {
   protected constructor(
-    protected readonly prisma8: Prisma8Service,
+    protected readonly prisma: PrismaService,
     protected readonly notifications: BusinessNotificationsService,
   ) {}
 
@@ -91,24 +91,24 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     parentId: string,
   ): Promise<{ id: string; parentId: string | null } | null>
   protected abstract createComment(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     input: CreateCommentInput,
   ): Promise<FollowCommentRow>
   protected abstract updateComment(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     id: string,
     content: string,
     updatedById: string,
   ): Promise<FollowCommentRow>
-  protected abstract deleteComment(tx: Prisma8Transaction, id: string): Promise<void>
+  protected abstract deleteComment(tx: PrismaTransaction, id: string): Promise<void>
   protected abstract replaceMentions(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     commentId: string,
     userIds: string[],
   ): Promise<void>
   protected abstract loadMentions(commentIds: string[]): Promise<MentionRow[]>
   protected abstract recount(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     tenantId: string,
     resourceId: string,
   ): Promise<number>
@@ -141,7 +141,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     const mentionedUserIds = await this.validateMentionUsers(user.tenantId, dto.mentionedUserIds)
     await this.validateReply(user.tenantId, dto.resourceId, dto.parentId, dto.replyToUserId)
 
-    const comment = await this.prisma8.client.transaction(async (tx) => {
+    const comment = await this.prisma.client.transaction(async (tx) => {
       const created = await this.createComment(tx, {
         resourceId: dto.resourceId,
         parentId: dto.parentId ?? null,
@@ -175,7 +175,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     const content = this.normalizeContent(dto.content)
     const mentionedUserIds = await this.validateMentionUsers(user.tenantId, dto.mentionedUserIds)
 
-    const updated = await this.prisma8.client.transaction(async (tx) => {
+    const updated = await this.prisma.client.transaction(async (tx) => {
       const row = await this.updateComment(tx, comment.id, content, user.id)
       await this.replaceMentions(tx, row.id, mentionedUserIds)
       return row
@@ -202,7 +202,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
   async remove(user: AuthUser, id: string): Promise<{ id: string; commentCount: number }> {
     const comment = await this.getOwnComment(user, id)
     await this.assertResourceAccess(user, comment.resourceId, false)
-    const commentCount = await this.prisma8.client.transaction(async (tx) => {
+    const commentCount = await this.prisma.client.transaction(async (tx) => {
       await this.deleteComment(tx, comment.id)
       return this.recount(tx, user.tenantId, comment.resourceId)
     })
@@ -247,7 +247,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     const normalized = userIds.map((id) => id.trim())
     if (normalized.some((id) => !id)) throw new BadRequestException('存在无效的@成员')
     const distinct = [...new Set(normalized)]
-    const users = await this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
       .where((row) => row.id.in(distinct))
       .select('id')
       .all()
@@ -256,7 +256,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
   }
 
   private async assertActiveUser(tenantId: string, userId: string, label: string): Promise<void> {
-    const user = await this.prisma8.client.orm.public.Users.where({
+    const user = await this.prisma.client.orm.public.Users.where({
       id: userId,
       tenantId,
       status: 'ACTIVE',
@@ -290,11 +290,11 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     mentions.forEach((mention) => userIds.add(mention.userId))
     const ids = [...userIds]
     const [users, extensions] = await Promise.all([
-      this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
         .where((row) => row.id.in(ids))
         .select('id', 'name', 'status')
         .all(),
-      this.prisma8.client.orm.public.UserExtensions.where((row) => row.id.in(ids))
+      this.prisma.client.orm.public.UserExtensions.where((row) => row.id.in(ids))
         .select('id', 'avatar')
         .all(),
     ])
@@ -338,8 +338,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         }),
         replies: [],
         replyCount: 0,
-        createdAt: prisma8TimestampToISOString(comment.createdAt),
-        updatedAt: prisma8TimestampToISOString(comment.updatedAt),
+        createdAt: instantToISOString(comment.createdAt),
+        updatedAt: instantToISOString(comment.updatedAt),
       }
     }
 
@@ -398,7 +398,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     if (resource.targetType === 'lead') {
       return (
         (
-          await this.prisma8.client.orm.public.Clue.where({
+          await this.prisma.client.orm.public.Clue.where({
             id: resource.targetId,
             organizationId: tenantId,
           })
@@ -410,7 +410,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     if (resource.targetType === 'opportunity') {
       return (
         (
-          await this.prisma8.client.orm.public.Opportunity.where({
+          await this.prisma.client.orm.public.Opportunity.where({
             id: resource.targetId,
             organizationId: tenantId,
           })
@@ -421,7 +421,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     }
     return (
       (
-        await this.prisma8.client.orm.public.Customer.where({
+        await this.prisma.client.orm.public.Customer.where({
           id: resource.targetId,
           organizationId: tenantId,
         })
@@ -440,8 +440,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     organizationId: string
     createUser: string
     updateUser: string
-    createTime: Prisma8Timestamp
-    updateTime: Prisma8Timestamp
+    createTime: InstantTimestamp
+    updateTime: InstantTimestamp
   }): FollowCommentRow {
     return {
       id: row.id,

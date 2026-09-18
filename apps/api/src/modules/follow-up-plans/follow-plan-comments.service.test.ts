@@ -4,16 +4,16 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { OPERATION_LOG_RESULT_META } from '../../common/decorators/log-operation.decorator'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import { instantFromDate } from '../../prisma/temporal'
 import {
-  createFollowCommentPrisma8Harness,
+  createFollowCommentPrismaHarness,
   type HarnessUser,
-} from '../follow-ups/follow-comment.prisma8-test-harness'
+} from '../follow-ups/follow-comment.test-harness'
 import type { FollowCommentRow as FollowUpPlanComment } from '../follow-ups/follow-comment.service-base'
 import { FollowPlanCommentsService } from './follow-plan-comments.service'
 import type { FollowUpPlan } from './follow-up-plans.service'
 
-const instant = (value: string) => prisma8TimestampFromDate(new Date(value))
+const instant = (value: string) => instantFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'user-1',
@@ -73,7 +73,7 @@ function member(id: string, overrides: Partial<HarnessUser> = {}): HarnessUser {
 
 test('FollowPlan 评论原子写 Comment/Mention/commentCount，并通知负责人和 mention/reply', async () => {
   const notifications: Array<{ event: string; recipientIds: Array<string | null | undefined> }> = []
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'plan',
     tenantId: user.tenantId,
     nextCreatedId: 'comment-1',
@@ -81,7 +81,7 @@ test('FollowPlan 评论原子写 Comment/Mention/commentCount，并通知负责�
     users: [member(user.id), member('mention-1'), member('reply-1')],
   })
   const service = new FollowPlanCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertPlanAccess: async () => plan() } as never,
     {
       send: async (input: { event: string; recipientIds: Array<string | null | undefined> }) => {
@@ -123,14 +123,14 @@ test('FollowPlan 评论原子写 Comment/Mention/commentCount，并通知负责�
 })
 
 test('FollowPlan 回复只允许挂在顶层评论', async () => {
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'plan',
     tenantId: user.tenantId,
     comments: [comment({ id: 'reply-1', parentId: 'parent-1' })],
     users: [member('user-2')],
   })
   const service = new FollowPlanCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertPlanAccess: async () => plan() } as never,
     {} as never,
   )
@@ -148,12 +148,12 @@ test('FollowPlan 回复只允许挂在顶层评论', async () => {
 })
 
 test('FollowPlan 评论只有创建人可编辑', async () => {
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'plan',
     tenantId: user.tenantId,
     comments: [comment({ createdById: 'other-user' })],
   })
-  const service = new FollowPlanCommentsService(harness.prisma8, {} as never, {} as never)
+  const service = new FollowPlanCommentsService(harness.prisma, {} as never, {} as never)
 
   await assert.rejects(
     () => service.update(user, { id: 'comment-1', content: '越权修改' }),
@@ -169,7 +169,7 @@ test('FollowPlan 评论分页只统计顶层 total，commentCount 包含回复',
     createdById: 'reply-user',
     replyToUserId: user.id,
   })
-  const harness = createFollowCommentPrisma8Harness({
+  const harness = createFollowCommentPrismaHarness({
     kind: 'plan',
     tenantId: user.tenantId,
     comments: [parent, reply],
@@ -177,7 +177,7 @@ test('FollowPlan 评论分页只统计顶层 total，commentCount 包含回复',
     users: [member(user.id), member('reply-user'), member('mention-user')],
   })
   const service = new FollowPlanCommentsService(
-    harness.prisma8,
+    harness.prisma,
     { assertPlanAccess: async () => plan({ commentCount: 2 }) } as never,
     {} as never,
   )
@@ -189,8 +189,8 @@ test('FollowPlan 评论分页只统计顶层 total，commentCount 包含回复',
 })
 
 test('FollowPlan 评论事件按 customer/lead/opportunity 与 added/mentioned 六类映射', () => {
-  const harness = createFollowCommentPrisma8Harness({ kind: 'plan', tenantId: user.tenantId })
-  const service = new FollowPlanCommentsService(harness.prisma8, {} as never, {} as never)
+  const harness = createFollowCommentPrismaHarness({ kind: 'plan', tenantId: user.tenantId })
+  const service = new FollowPlanCommentsService(harness.prisma, {} as never, {} as never)
   const event = (resource: FollowUpPlan, mentioned: boolean): MessageTaskEvent =>
     (
       service as unknown as {

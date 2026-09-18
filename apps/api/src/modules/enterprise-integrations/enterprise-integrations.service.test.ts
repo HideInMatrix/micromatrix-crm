@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
-import { createIntegrationPrisma8Harness } from './enterprise-integrations.prisma8-test-harness'
+import { createIntegrationPrismaHarness } from './enterprise-integrations.test-harness'
 import type { WeComClient, WeComConnectionResult } from './wecom.client'
 
 const user: AuthUser = {
@@ -22,7 +22,7 @@ const user: AuthUser = {
 function createService(
   result: WeComConnectionResult = { success: true, message: '企业微信连接成功', providerCode: 0 },
 ) {
-  const { prisma8, rows } = createIntegrationPrisma8Harness('WECOM')
+  const { prisma, rows } = createIntegrationPrismaHarness('WECOM')
   const cipher = new CredentialCipherService(
     new ConfigService({
       INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',
@@ -31,7 +31,7 @@ function createService(
   )
   const client = { testConnection: async () => result } as unknown as WeComClient
   return {
-    service: new EnterpriseIntegrationsService(prisma8, cipher, client),
+    service: new EnterpriseIntegrationsService(prisma, cipher, client),
     rows,
   }
 }

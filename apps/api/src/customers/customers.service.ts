@@ -44,10 +44,10 @@ import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repo
 import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
 import { USER_VIEW_RESOURCE_TYPES } from '../modules/user-views/user-views.constants'
 import { UserViewsService } from '../modules/user-views/user-views.service'
-import type { Prisma8Client } from '../prisma/prisma8-client.js'
-import { prisma8TimestampToISOString } from '../prisma/prisma8-temporal.js'
+import type { PrismaClient } from '../prisma/prisma-client.js'
+import { instantToISOString } from '../prisma/temporal.js'
 import { createLegacyId32 } from '../common/legacy-id'
-import { Prisma8Service } from '../prisma/prisma8.service.js'
+import { PrismaService } from '../prisma/prisma.service.js'
 import { CustomerAccessService } from './customer-access.service'
 import type {
   AccountAddDto,
@@ -63,7 +63,7 @@ import { CheckDuplicateQueryDto, QueryCustomersDto } from './dto/query-customers
 import { UpdateCustomerDto } from './dto/update-customer.dto'
 
 const MODULE = 'customer'
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 type CustomerQueryInput = Omit<QueryCustomersDto, 'filters'> & {
   filters?: string | FilterCondition[]
@@ -94,7 +94,7 @@ type CustomerListScope = {
 @Injectable()
 export class CustomersService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
@@ -161,7 +161,7 @@ export class CustomersService {
       customData: await this.moduleFieldsToCustomData(user, dto.moduleFields),
     })
     if (dto.follower !== undefined || dto.followTime !== undefined) {
-      await this.prisma8.client.orm.public.Customer.where({
+      await this.prisma.client.orm.public.Customer.where({
         id: result.id,
         organizationId: user.tenantId,
       }).update({
@@ -185,7 +185,7 @@ export class CustomersService {
 
   async optionPage(user: AuthUser, current = 1, pageSize = 20, keyword?: string) {
     const value = keyword?.trim()
-    let query = this.prisma8.client.orm.public.Customer.where({
+    let query = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
     if (value) query = query.where((row) => row.name.ilike('%' + value + '%'))
@@ -354,7 +354,7 @@ export class CustomersService {
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
 
-    let db = this.prisma8.client.orm.public.Customer.where({
+    let db = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
     if (poolMode) {
@@ -432,7 +432,7 @@ export class CustomersService {
     const adHocConditions = parseFilters(query.filters)
     const [adHocIds, collaborations, poolOptions, directScope] = await Promise.all([
       adHocConditions.length ? this.filterCustomerIds(user.tenantId, adHocConditions, 'AND') : null,
-      this.prisma8.client.orm.public.CustomerCollaboration.where({
+      this.prisma.client.orm.public.CustomerCollaboration.where({
         userId: user.id,
       })
         .select('customerId', 'collaborationType')
@@ -442,7 +442,7 @@ export class CustomersService {
     ])
     const accessiblePoolIds = poolOptions.map((pool) => String(pool.id))
     const collaborationIds = collaborations.map((item) => String(item.customerId))
-    let db = this.prisma8.client.orm.public.Customer.where({
+    let db = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
     const directOwner = directScope.owner
@@ -523,7 +523,7 @@ export class CustomersService {
   async findOne(user: AuthUser, id: string): Promise<CustomerVO> {
     const access = await this.customerAccess.assertRead(user, id)
     const [customer, fields, values] = await Promise.all([
-      this.prisma8.client.orm.public.Customer.where({
+      this.prisma.client.orm.public.Customer.where({
         id: id,
         organizationId: user.tenantId,
       }).first(),
@@ -560,7 +560,7 @@ export class CustomersService {
   /** Cordys /customer/option 语义：仅返回租户内客户 id/name，不下推 owner 数据范围。 */
   async customerOptions(user: AuthUser, keyword?: string) {
     const value = keyword?.trim()
-    let query = this.prisma8.client.orm.public.Customer.where({
+    let query = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
     if (value) query = query.where((row) => row.name.ilike('%' + value + '%'))
@@ -584,7 +584,7 @@ export class CustomersService {
         ])
       : []
 
-    let customerQuery = this.prisma8.client.orm.public.Customer.where({
+    let customerQuery = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
     if (name && customerPhoneIds.length) {
@@ -599,7 +599,7 @@ export class CustomersService {
       customerQuery = customerQuery.where((row) => row.id.eq(''))
     }
 
-    let contactQuery = this.prisma8.client.orm.public.CustomerContact.where({
+    let contactQuery = this.prisma.client.orm.public.CustomerContact.where({
       organizationId: user.tenantId,
     })
     if (name && phone) {
@@ -612,7 +612,7 @@ export class CustomersService {
       contactQuery = contactQuery.where({ phone: phone })
     }
 
-    let leadQuery = this.prisma8.client.orm.public.Clue.where({
+    let leadQuery = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
     }).where((row) => row.stage.neq('FAIL'))
     if (name && phone) {
@@ -630,7 +630,7 @@ export class CustomersService {
       contactQuery.limit(10).all(),
       leadQuery.limit(10).all(),
       name
-        ? this.prisma8.client.orm.public.Opportunity.where({
+        ? this.prisma.client.orm.public.Opportunity.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.name.ilike('%' + name + '%'))
@@ -651,7 +651,7 @@ export class CustomersService {
     ]
     const refCustomerIds = [...new Set([...contactCustomerIds, ...opportunityCustomerIds])]
     const refCustomers = refCustomerIds.length
-      ? await this.prisma8.client.orm.public.Customer.where((row) => row.id.in(refCustomerIds))
+      ? await this.prisma.client.orm.public.Customer.where((row) => row.id.in(refCustomerIds))
           .select('id', 'name', 'owner', 'inSharedPool')
           .all()
       : []
@@ -789,14 +789,14 @@ export class CustomersService {
         : Promise.resolve(null),
     ])
 
-    let contactQuery = this.prisma8.client.orm.public.CustomerContact.where({
+    let contactQuery = this.prisma.client.orm.public.CustomerContact.where({
       organizationId: user.tenantId,
       customerId: id,
     })
     if (!access.dataScope && !access.pool && access.collaborationType === 'COLLABORATION') {
       contactQuery = contactQuery.where({ owner: user.id })
     }
-    let opportunityQuery = this.prisma8.client.orm.public.Opportunity.where({
+    let opportunityQuery = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
       customerId: id,
     })
@@ -809,7 +809,7 @@ export class CustomersService {
         opportunityQuery = opportunityQuery.where((row) => row.owner.in(ownerIds))
       }
     }
-    let contractQuery = this.prisma8.client.orm.public.Contract.where({
+    let contractQuery = this.prisma.client.orm.public.Contract.where({
       organizationId: user.tenantId,
       customerId: id,
     })
@@ -839,7 +839,7 @@ export class CustomersService {
             .limit(50)
             .all()
         : Promise.resolve([]),
-      this.prisma8.client.orm.public.FollowUpRecords.where({
+      this.prisma.client.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',
         targetId: id,
@@ -848,7 +848,7 @@ export class CustomersService {
         .limit(50)
         .all(),
       canReadTeam
-        ? this.prisma8.client.orm.public.CustomerCollaboration.where({
+        ? this.prisma.client.orm.public.CustomerCollaboration.where({
             customerId: id,
           })
             .orderBy((row) => row.createTime.asc())
@@ -860,12 +860,12 @@ export class CustomersService {
     const contractIds = contracts.map((item) => String(item.id))
     const [stageRows, paymentRecords, ownerMap] = await Promise.all([
       stageIds.length
-        ? this.prisma8.client.orm.public.OpportunityStageConfig.where((row) => row.id.in(stageIds))
+        ? this.prisma.client.orm.public.OpportunityStageConfig.where((row) => row.id.in(stageIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
       contractIds.length
-        ? this.prisma8.client.orm.public.ContractPaymentRecord.where((row) =>
+        ? this.prisma.client.orm.public.ContractPaymentRecord.where((row) =>
             row.contractId.in(contractIds),
           )
             .select('contractId', 'recordAmount')
@@ -929,14 +929,14 @@ export class CustomersService {
         contactId: record.contactId,
         type: record._type,
         content: record.content,
-        followedAt: record.followedAt ? prisma8TimestampToISOString(record.followedAt) : null,
+        followedAt: record.followedAt ? instantToISOString(record.followedAt) : null,
         ownerId: record.ownerId,
         ownerName: record.ownerName,
         canManage: record.ownerId === user.id || hasPermission(user.permissions, '*'),
         commentCount: record.commentCount,
         moduleFields: [],
-        createdAt: prisma8TimestampToISOString(record.createdAt),
-        updatedAt: prisma8TimestampToISOString(record.updatedAt),
+        createdAt: instantToISOString(record.createdAt),
+        updatedAt: instantToISOString(record.updatedAt),
       })),
       team: team.map((member) => ({
         id: String(member.id),
@@ -968,7 +968,7 @@ export class CustomersService {
     const skip = (currentPage - 1) * take
 
     if (resource === 'opportunities') {
-      let query = this.prisma8.client.orm.public.Opportunity.where({
+      let query = this.prisma.client.orm.public.Opportunity.where({
         organizationId: user.tenantId,
         customerId: id,
       })
@@ -990,9 +990,7 @@ export class CustomersService {
       const [ownerMap, stages] = await Promise.all([
         this.userNames(rows.map((row) => String(row.owner))),
         stageIds.length
-          ? this.prisma8.client.orm.public.OpportunityStageConfig.where((row) =>
-              row.id.in(stageIds),
-            )
+          ? this.prisma.client.orm.public.OpportunityStageConfig.where((row) => row.id.in(stageIds))
               .select('id', 'name')
               .all()
           : Promise.resolve([]),
@@ -1014,7 +1012,7 @@ export class CustomersService {
     }
 
     if (resource === 'contracts') {
-      let query = this.prisma8.client.orm.public.Contract.where({
+      let query = this.prisma.client.orm.public.Contract.where({
         organizationId: user.tenantId,
         customerId: id,
       })
@@ -1035,13 +1033,13 @@ export class CustomersService {
       const contractIds = rows.map((row) => String(row.id))
       const [ownerMap, stageConfigs, paymentRecords] = await Promise.all([
         this.userNames(rows.map((row) => String(row.owner))),
-        this.prisma8.client.orm.public.ContractStageConfig.where({
+        this.prisma.client.orm.public.ContractStageConfig.where({
           organizationId: user.tenantId,
         })
           .select('id', 'name')
           .all(),
         contractIds.length
-          ? this.prisma8.client.orm.public.ContractPaymentRecord.where((row) =>
+          ? this.prisma.client.orm.public.ContractPaymentRecord.where((row) =>
               row.contractId.in(contractIds),
             )
               .select('contractId', 'recordAmount')
@@ -1073,7 +1071,7 @@ export class CustomersService {
       }
     }
 
-    const contractRows = await this.prisma8.client.orm.public.Contract.where({
+    const contractRows = await this.prisma.client.orm.public.Contract.where({
       organizationId: user.tenantId,
       customerId: id,
     })
@@ -1083,7 +1081,7 @@ export class CustomersService {
     const contractMap = new Map(contractRows.map((row) => [String(row.id), String(row.name)]))
 
     if (resource === 'contractPaymentPlans') {
-      let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
+      let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
         organizationId: user.tenantId,
       })
       query = contractIds.length
@@ -1124,7 +1122,7 @@ export class CustomersService {
     }
 
     if (resource === 'contractPaymentRecords') {
-      let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
         organizationId: user.tenantId,
       })
       query = contractIds.length
@@ -1150,7 +1148,7 @@ export class CustomersService {
       const [ownerMap, plans] = await Promise.all([
         this.userNames(rows.map((row) => String(row.owner))),
         planIds.length
-          ? this.prisma8.client.orm.public.ContractPaymentPlan.where((row) => row.id.in(planIds))
+          ? this.prisma.client.orm.public.ContractPaymentPlan.where((row) => row.id.in(planIds))
               .select('id', 'name')
               .all()
           : Promise.resolve([]),
@@ -1180,7 +1178,7 @@ export class CustomersService {
     }
 
     if (resource === 'invoices') {
-      let query = this.prisma8.client.orm.public.ContractInvoice.where({
+      let query = this.prisma.client.orm.public.ContractInvoice.where({
         organizationId: user.tenantId,
       })
       query = contractIds.length
@@ -1208,7 +1206,7 @@ export class CustomersService {
       const [ownerMap, titles] = await Promise.all([
         this.userNames(rows.map((row) => String(row.owner))),
         titleIds.length
-          ? this.prisma8.client.orm.public.BusinessTitle.where((row) => row.id.in(titleIds))
+          ? this.prisma.client.orm.public.BusinessTitle.where((row) => row.id.in(titleIds))
               .select('id', 'name')
               .all()
           : Promise.resolve([]),
@@ -1239,7 +1237,7 @@ export class CustomersService {
       }
     }
 
-    let query = this.prisma8.client.orm.public.SalesOrder.where({
+    let query = this.prisma.client.orm.public.SalesOrder.where({
       organizationId: user.tenantId,
       customerId: id,
     })
@@ -1261,7 +1259,7 @@ export class CustomersService {
       ...new Set(rows.flatMap((row) => (row.contractId ? [String(row.contractId)] : []))),
     ]
     const orderContracts = orderContractIds.length
-      ? await this.prisma8.client.orm.public.Contract.where((row) => row.id.in(orderContractIds))
+      ? await this.prisma.client.orm.public.Contract.where((row) => row.id.in(orderContractIds))
           .select('id', 'name')
           .all()
       : []
@@ -1307,7 +1305,7 @@ export class CustomersService {
         ? ((await this.dataScope.directOwnerFilter(user, 'menu:contract')) as CustomerListScope)
         : resourceScope
 
-    let contractQuery = this.prisma8.client.orm.public.Contract.where({
+    let contractQuery = this.prisma.client.orm.public.Contract.where({
       organizationId: user.tenantId,
       customerId: customerId,
     })
@@ -1324,7 +1322,7 @@ export class CustomersService {
     const contractAmount = Number(contractAggregate.amount ?? 0)
     if (resource === 'contracts') return { totalAmount: contractAmount }
 
-    const customerContracts = await this.prisma8.client.orm.public.Contract.where({
+    const customerContracts = await this.prisma.client.orm.public.Contract.where({
       organizationId: user.tenantId,
       customerId: customerId,
     })
@@ -1333,7 +1331,7 @@ export class CustomersService {
     const contractIds = customerContracts.map((row) => String(row.id))
 
     if (resource === 'contractPaymentPlans') {
-      let query = this.prisma8.client.orm.public.ContractPaymentPlan.where({
+      let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
         organizationId: user.tenantId,
       })
       query = contractIds.length
@@ -1351,7 +1349,7 @@ export class CustomersService {
     }
 
     if (resource === 'contractPaymentRecords') {
-      let query = this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
         organizationId: user.tenantId,
       })
       query = contractIds.length
@@ -1373,7 +1371,7 @@ export class CustomersService {
       }
     }
 
-    const invoiceApprovalAggregate = await this.prisma8.client.orm.public.ApprovalFlows.where({
+    const invoiceApprovalAggregate = await this.prisma.client.orm.public.ApprovalFlows.where({
       tenantId: user.tenantId,
       formType: 'INVOICE',
       enabled: true,
@@ -1383,7 +1381,7 @@ export class CustomersService {
       .aggregate((agg) => ({ count: agg.count() }))
     const invoiceApprovalEnabled = invoiceApprovalAggregate.count > 0
 
-    let invoiceQuery = this.prisma8.client.orm.public.ContractInvoice.where({
+    let invoiceQuery = this.prisma.client.orm.public.ContractInvoice.where({
       organizationId: user.tenantId,
     })
     invoiceQuery = contractIds.length
@@ -1410,7 +1408,7 @@ export class CustomersService {
 
   async create(user: AuthUser, dto: CreateCustomerDto): Promise<CustomerVO> {
     const prepared = await this.prepareCreateForTransaction(user, dto)
-    const customer = await this.prisma8.client.transaction((tx) =>
+    const customer = await this.prisma.client.transaction((tx) =>
       this.createPreparedInTransaction(user, dto, prepared, tx),
     )
     await this.notifyCreatedCustomer(user, customer, prepared.owner.id)
@@ -1430,7 +1428,7 @@ export class CustomersService {
     user: AuthUser,
     dto: CreateCustomerDto,
     prepared: Awaited<ReturnType<CustomersService['prepareCreateForTransaction']>>,
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
   ) {
     const now = BigInt(Date.now())
     const created = await tx.orm.public.Customer.create({
@@ -1497,7 +1495,7 @@ export class CustomersService {
         : null
 
     const now = BigInt(Date.now())
-    const customer = await this.prisma8.client.transaction(async (tx) => {
+    const customer = await this.prisma.client.transaction(async (tx) => {
       if (owner) {
         await this.customerPools.transferInTransaction(tx, {
           organizationId: user.tenantId,
@@ -1599,7 +1597,7 @@ export class CustomersService {
       operatorId: user.id,
       poolAdmin: await this.pools.isPoolManager(user, 'customer', current.poolId),
     })
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: id,
       organizationId: user.tenantId,
     })
@@ -1618,7 +1616,7 @@ export class CustomersService {
     for (const id of ids) {
       try {
         if (poolId) {
-          const customer = await this.prisma8.client.orm.public.Customer.where({
+          const customer = await this.prisma.client.orm.public.Customer.where({
             id: id,
             organizationId: user.tenantId,
             inSharedPool: true,
@@ -1727,7 +1725,7 @@ export class CustomersService {
 
   async poolBatchAssignOwner(user: AuthUser, ids: string[], ownerId: string) {
     const poolId = await this.resolvePoolSelection(user, ids)
-    const customers = await this.prisma8.client.orm.public.Customer.where({
+    const customers = await this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       inSharedPool: true,
       poolId: poolId,
@@ -1802,7 +1800,7 @@ export class CustomersService {
     }
 
     if (field.key.startsWith('cf_')) {
-      await this.prisma8.client.transaction((tx) =>
+      await this.prisma.client.transaction((tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'customer',
@@ -1830,7 +1828,7 @@ export class CustomersService {
 
   async poolBatchUpdate(user: AuthUser, dto: PoolResourceBatchEditDto): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'customer', dto.poolId)
-    const rawCustomers = await this.prisma8.client.orm.public.Customer.where({
+    const rawCustomers = await this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       inSharedPool: true,
       poolId: dto.poolId,
@@ -1861,7 +1859,7 @@ export class CustomersService {
     }
 
     if (field.key.startsWith('cf_')) {
-      await this.prisma8.client.transaction((tx) =>
+      await this.prisma.client.transaction((tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'customer',
@@ -1888,7 +1886,7 @@ export class CustomersService {
 
   async poolBatchDelete(user: AuthUser, poolId: string, ids: string[]): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'customer', poolId)
-    const customers = (await this.prisma8.client.orm.public.Customer.where({
+    const customers = (await this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       inSharedPool: true,
       poolId: poolId,
@@ -1909,7 +1907,7 @@ export class CustomersService {
     if (!firstId) throw new BadRequestException('请选择客户')
     const first = (await this.customerAccess.assertPoolRead(user, firstId)).customer
     if (!first.poolId) throw new BadRequestException('客户不属于公海')
-    const aggregate = await this.prisma8.client.orm.public.Customer.where({
+    const aggregate = await this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       inSharedPool: true,
       poolId: first.poolId,
@@ -1932,7 +1930,7 @@ export class CustomersService {
 
   async teamList(user: AuthUser, customerId: string) {
     await this.ensureInScope(user, customerId, 'customer:read')
-    const members = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    const members = await this.prisma.client.orm.public.CustomerCollaboration.where({
       customerId: customerId,
     })
       .orderBy((row) => row.createTime.asc())
@@ -1956,7 +1954,7 @@ export class CustomersService {
     collaborationType: 'READ_ONLY' | 'COLLABORATION' = 'COLLABORATION',
   ) {
     const customer = (await this.customerAccess.assertManageCustomer(user, customerId)).customer
-    const member = await this.prisma8.client.orm.public.Users.where({
+    const member = await this.prisma.client.orm.public.Users.where({
       id: userId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -1964,13 +1962,13 @@ export class CustomersService {
       .select('id', 'name')
       .first()
     if (!member) throw new BadRequestException('协作成员不存在或已禁用')
-    const exists = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    const exists = await this.prisma.client.orm.public.CustomerCollaboration.where({
       customerId: customerId,
       userId: userId,
     }).first()
     if (exists) throw new BadRequestException('该成员已在团队中')
     const now = BigInt(Date.now())
-    await this.prisma8.client.orm.public.CustomerCollaboration.create({
+    await this.prisma.client.orm.public.CustomerCollaboration.create({
       id: createLegacyId32(),
       customerId: customerId,
       userId: userId,
@@ -2004,7 +2002,7 @@ export class CustomersService {
     collaborationType: 'READ_ONLY' | 'COLLABORATION',
   ) {
     await this.customerAccess.assertManageCustomer(user, customerId)
-    const count = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    const count = await this.prisma.client.orm.public.CustomerCollaboration.where({
       id: memberId,
       customerId: customerId,
     }).updateAndCount({
@@ -2018,7 +2016,7 @@ export class CustomersService {
 
   async teamRemove(user: AuthUser, customerId: string, memberId: string) {
     await this.customerAccess.assertManageCustomer(user, customerId)
-    await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    await this.prisma.client.orm.public.CustomerCollaboration.where({
       id: memberId,
       customerId: customerId,
     }).deleteAll()
@@ -2026,14 +2024,14 @@ export class CustomersService {
   }
 
   private async collaborationCustomerId(user: AuthUser, memberId: string) {
-    const member = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    const member = await this.prisma.client.orm.public.CustomerCollaboration.where({
       id: memberId,
     })
       .select('customerId')
       .first()
     if (!member) throw new NotFoundException('协作成员不存在')
     const customerId = String(member.customerId)
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: customerId,
       organizationId: user.tenantId,
     })
@@ -2060,7 +2058,7 @@ export class CustomersService {
   async collaborationBatchRemove(user: AuthUser, ids: string[]) {
     const uniqueIds = [...new Set(ids)]
     const members = uniqueIds.length
-      ? await this.prisma8.client.orm.public.CustomerCollaboration.where((row) =>
+      ? await this.prisma.client.orm.public.CustomerCollaboration.where((row) =>
           row.id.in(uniqueIds),
         )
           .select('id', 'customerId')
@@ -2069,7 +2067,7 @@ export class CustomersService {
     if (members.length !== uniqueIds.length) throw new NotFoundException('协作成员不存在')
     const customerIds = [...new Set(members.map((member) => String(member.customerId)))]
     const tenantCustomers = customerIds.length
-      ? await this.prisma8.client.orm.public.Customer.where({
+      ? await this.prisma.client.orm.public.Customer.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(customerIds))
@@ -2079,7 +2077,7 @@ export class CustomersService {
     if (tenantCustomers.length !== customerIds.length) throw new NotFoundException('协作成员不存在')
     await Promise.all(customerIds.map((id) => this.customerAccess.assertManageCustomer(user, id)))
     if (uniqueIds.length) {
-      await this.prisma8.client.orm.public.CustomerCollaboration.where((row) =>
+      await this.prisma.client.orm.public.CustomerCollaboration.where((row) =>
         row.id.in(uniqueIds),
       ).deleteAll()
     }
@@ -2090,7 +2088,7 @@ export class CustomersService {
 
   async relationList(user: AuthUser, customerId: string) {
     await this.customerAccess.assertRead(user, customerId)
-    const rows = await this.prisma8.client.orm.public.CustomerRelation.where((row) =>
+    const rows = await this.prisma.client.orm.public.CustomerRelation.where((row) =>
       or(row.sourceCustomerId.eq(customerId), row.targetCustomerId.eq(customerId)),
     )
       .orderBy((row) => row.createTime.asc())
@@ -2101,7 +2099,7 @@ export class CustomersService {
         : String(row.sourceCustomerId),
     )
     const customers = relatedIds.length
-      ? await this.prisma8.client.orm.public.Customer.where({
+      ? await this.prisma.client.orm.public.Customer.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(relatedIds))
@@ -2139,7 +2137,7 @@ export class CustomersService {
       throw new BadRequestException('一个客户最多设置 10 个子公司')
     }
 
-    const currentRows = await this.prisma8.client.orm.public.CustomerRelation.where((row) =>
+    const currentRows = await this.prisma.client.orm.public.CustomerRelation.where((row) =>
       or(row.sourceCustomerId.eq(customerId), row.targetCustomerId.eq(customerId)),
     )
       .select('id')
@@ -2167,7 +2165,7 @@ export class CustomersService {
     }
     await this.assertCustomerRelationGraphValid(user.tenantId, relations, excludeIds)
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomerRelation.where((row) =>
         or(row.sourceCustomerId.eq(customerId), row.targetCustomerId.eq(customerId)),
       ).deleteAll()
@@ -2201,7 +2199,7 @@ export class CustomersService {
       relation.sourceCustomerId,
       relation.targetCustomerId,
     )
-    return this.prisma8.client.orm.public.CustomerRelation.create({
+    return this.prisma.client.orm.public.CustomerRelation.create({
       id: createLegacyId32(),
       sourceCustomerId: relation.sourceCustomerId,
       targetCustomerId: relation.targetCustomerId,
@@ -2217,7 +2215,7 @@ export class CustomersService {
     relationType: 'GROUP' | 'SUBSIDIARY',
   ) {
     await this.ensureInScope(user, customerId, 'customer:update')
-    const existing = await this.prisma8.client.orm.public.CustomerRelation.where({
+    const existing = await this.prisma.client.orm.public.CustomerRelation.where({
       id: relationId,
     })
       .where((row) => or(row.sourceCustomerId.eq(customerId), row.targetCustomerId.eq(customerId)))
@@ -2235,7 +2233,7 @@ export class CustomersService {
       relation.targetCustomerId,
       [relationId],
     )
-    return this.prisma8.client.orm.public.CustomerRelation.where({
+    return this.prisma.client.orm.public.CustomerRelation.where({
       id: relationId,
     }).update({
       sourceCustomerId: relation.sourceCustomerId,
@@ -2245,20 +2243,20 @@ export class CustomersService {
 
   async relationRemove(user: AuthUser, customerId: string, relationId: string) {
     await this.ensureInScope(user, customerId, 'customer:update')
-    const relation = await this.prisma8.client.orm.public.CustomerRelation.where({
+    const relation = await this.prisma.client.orm.public.CustomerRelation.where({
       id: relationId,
     })
       .where((row) => or(row.sourceCustomerId.eq(customerId), row.targetCustomerId.eq(customerId)))
       .first()
     if (!relation) throw new NotFoundException('客户关系不存在')
-    await this.prisma8.client.orm.public.CustomerRelation.where({
+    await this.prisma.client.orm.public.CustomerRelation.where({
       id: relationId,
     }).delete()
     return { id: relationId }
   }
 
   async relationRemoveById(user: AuthUser, relationId: string) {
-    const relation = await this.prisma8.client.orm.public.CustomerRelation.where({
+    const relation = await this.prisma.client.orm.public.CustomerRelation.where({
       id: relationId,
     })
       .select('sourceCustomerId', 'targetCustomerId')
@@ -2266,7 +2264,7 @@ export class CustomersService {
     if (!relation) throw new NotFoundException('客户关系不存在')
     const sourceCustomerId = String(relation.sourceCustomerId)
     const targetCustomerId = String(relation.targetCustomerId)
-    const sourceCustomer = await this.prisma8.client.orm.public.Customer.where({
+    const sourceCustomer = await this.prisma.client.orm.public.Customer.where({
       id: sourceCustomerId,
       organizationId: user.tenantId,
     })
@@ -2284,7 +2282,7 @@ export class CustomersService {
     const context = await this.prepareMergeContext(user, dto)
     const sourceIds = context.sourceIds
     const sourceVarchars = sourceIds
-    const sourceOpportunities = await this.prisma8.client.orm.public.Opportunity.where({
+    const sourceOpportunities = await this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.customerId.in(sourceVarchars))
@@ -2307,45 +2305,45 @@ export class CustomersService {
         ...context.sources.map((item) => item.owner),
         context.newOwner.id,
       ]),
-      this.prisma8.client.orm.public.Opportunity.where({
+      this.prisma.client.orm.public.Opportunity.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.customerId.in(sourceVarchars))
         .aggregate((row) => ({ count: row.count() })),
       opportunityIds.length
-        ? this.prisma8.client.orm.public.OpportunityQuotation.where({
+        ? this.prisma.client.orm.public.OpportunityQuotation.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.opportunityId.in(opportunityIds))
             .aggregate((row) => ({ count: row.count() }))
         : Promise.resolve({ count: 0 }),
-      this.prisma8.client.orm.public.Contract.where({
+      this.prisma.client.orm.public.Contract.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.customerId.in(sourceVarchars))
         .aggregate((row) => ({ count: row.count() })),
-      this.prisma8.client.orm.public.FollowUpRecords.where({
+      this.prisma.client.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',
       })
         .where((row) => row.targetId.in(sourceIds))
         .aggregate((row) => ({ count: row.count() })),
-      this.prisma8.client.orm.public.FollowUpPlans.where({
+      this.prisma.client.orm.public.FollowUpPlans.where({
         tenantId: user.tenantId,
         targetType: 'customer',
       })
         .where((row) => row.targetId.in(sourceIds))
         .aggregate((row) => ({ count: row.count() })),
-      this.prisma8.client.orm.public.Attachments.where({
+      this.prisma.client.orm.public.Attachments.where({
         tenantId: user.tenantId,
         targetType: 'customer',
       })
         .where((row) => row.targetId.in(sourceIds))
         .aggregate((row) => ({ count: row.count() })),
-      this.prisma8.client.orm.public.CustomerCollaboration.where((row) =>
+      this.prisma.client.orm.public.CustomerCollaboration.where((row) =>
         row.customerId.in(sourceVarchars),
       ).aggregate((row) => ({ count: row.count() })),
-      this.prisma8.client.orm.public.CustomerRelation.where((row) =>
+      this.prisma.client.orm.public.CustomerRelation.where((row) =>
         or(row.sourceCustomerId.in(sourceVarchars), row.targetCustomerId.in(sourceVarchars)),
       ).aggregate((row) => ({ count: row.count() })),
     ])
@@ -2393,10 +2391,10 @@ export class CustomersService {
 
     const sourceNames = sources.map((source) => source.name)
     const [sourceTeams, targetTeams] = await Promise.all([
-      this.prisma8.client.orm.public.CustomerCollaboration.where((row) =>
+      this.prisma.client.orm.public.CustomerCollaboration.where((row) =>
         row.customerId.in(sourceVarchars),
       ).all(),
-      this.prisma8.client.orm.public.CustomerCollaboration.where({
+      this.prisma.client.orm.public.CustomerCollaboration.where({
         customerId: dto.toMergeId,
       })
         .select('userId')
@@ -2417,7 +2415,7 @@ export class CustomersService {
     }
 
     const now = BigInt(Date.now())
-    const result = await this.prisma8.client.transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       if (skipContactIds.length > 0) {
         for (const conflict of contactConflicts) {
           if (!skipContactIds.includes(conflict.sourceContactId)) continue
@@ -2617,13 +2615,13 @@ export class CustomersService {
     }
 
     const [targetContactRows, sourceContactRows] = await Promise.all([
-      this.prisma8.client.orm.public.CustomerContact.where({
+      this.prisma.client.orm.public.CustomerContact.where({
         organizationId: user.tenantId,
         customerId: target.id,
       })
         .select('id', 'customerId', 'name', 'phone')
         .all(),
-      this.prisma8.client.orm.public.CustomerContact.where({
+      this.prisma.client.orm.public.CustomerContact.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.customerId.in(sourceIds))
@@ -2726,7 +2724,7 @@ export class CustomersService {
   private async userNames(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
     const unique = [...new Set(ids.filter((v): v is string => !!v))]
     if (unique.length === 0) return new Map()
-    const users = await this.prisma8.client.orm.public.Users.where((row) => row.id.in(unique))
+    const users = await this.prisma.client.orm.public.Users.where((row) => row.id.in(unique))
       .select('id', 'name')
       .all()
     return new Map(users.map((user) => [user.id, user.name]))
@@ -2770,7 +2768,7 @@ export class CustomersService {
     if (customerId === relatedCustomerId) {
       throw new BadRequestException('客户不能与自己建立集团关系')
     }
-    const related = await this.prisma8.client.orm.public.Customer.where({
+    const related = await this.prisma.client.orm.public.Customer.where({
       id: relatedCustomerId,
       organizationId: user.tenantId,
     })
@@ -2796,7 +2794,7 @@ export class CustomersService {
     targetCustomerId: string,
     excludeIds: string[] = [],
   ) {
-    let edgeQuery = this.prisma8.client.orm.public.CustomerRelation.where({
+    let edgeQuery = this.prisma.client.orm.public.CustomerRelation.where({
       sourceCustomerId: sourceCustomerId,
       targetCustomerId: targetCustomerId,
     })
@@ -2806,7 +2804,7 @@ export class CustomersService {
     const existingEdge = await edgeQuery.select('id').first()
     if (existingEdge) throw new BadRequestException('同一个客户不能重复建立关系')
 
-    let parentQuery = this.prisma8.client.orm.public.CustomerRelation.where({
+    let parentQuery = this.prisma.client.orm.public.CustomerRelation.where({
       targetCustomerId: targetCustomerId,
     })
     if (excludeIds.length) {
@@ -2814,7 +2812,7 @@ export class CustomersService {
     }
     const existingParent = await parentQuery.select('sourceCustomerId').first()
     if (existingParent && String(existingParent.sourceCustomerId) !== sourceCustomerId) {
-      const group = await this.prisma8.client.orm.public.Customer.where({
+      const group = await this.prisma.client.orm.public.Customer.where({
         id: existingParent.sourceCustomerId,
         organizationId: tenantId,
       })
@@ -2825,7 +2823,7 @@ export class CustomersService {
       )
     }
 
-    let childQuery = this.prisma8.client.orm.public.CustomerRelation.where({
+    let childQuery = this.prisma.client.orm.public.CustomerRelation.where({
       sourceCustomerId: sourceCustomerId,
     })
     if (excludeIds.length) {
@@ -2840,8 +2838,8 @@ export class CustomersService {
       if (current === targetCustomerId) throw new BadRequestException('客户集团关系不能形成循环')
       if (visited.has(current)) break
       visited.add(current)
-      const baseQuery: ReturnType<typeof this.prisma8.client.orm.public.CustomerRelation.where> =
-        this.prisma8.client.orm.public.CustomerRelation.where({
+      const baseQuery: ReturnType<typeof this.prisma.client.orm.public.CustomerRelation.where> =
+        this.prisma.client.orm.public.CustomerRelation.where({
           targetCustomerId: current,
         })
       const parent: { sourceCustomerId: unknown } | null = excludeIds.length
@@ -2859,13 +2857,13 @@ export class CustomersService {
     pending: { sourceCustomerId: string; targetCustomerId: string }[],
     excludeIds: string[],
   ) {
-    const tenantCustomers = await this.prisma8.client.orm.public.Customer.where({
+    const tenantCustomers = await this.prisma.client.orm.public.Customer.where({
       organizationId: tenantId,
     })
       .select('id')
       .all()
     const tenantIds = tenantCustomers.map((item) => String(item.id))
-    let query = this.prisma8.client.orm.public.CustomerRelation.where((row) =>
+    let query = this.prisma.client.orm.public.CustomerRelation.where((row) =>
       row.sourceCustomerId.in(tenantIds),
     )
     if (excludeIds.length) {
@@ -2919,7 +2917,7 @@ export class CustomersService {
           { key: 'cf_phone', op: 'eq', value: phone },
         ])
       : []
-    let query = this.prisma8.client.orm.public.Customer.where({
+    let query = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
     query = phoneIds.length
@@ -2936,7 +2934,7 @@ export class CustomersService {
   ) {
     const fields = await this.metadata.fieldsMap(tenantId, MODULE)
     if (!fields.get('name')?.config?.unique || !values.name?.trim()) return
-    let query = this.prisma8.client.orm.public.Customer.where({
+    let query = this.prisma.client.orm.public.Customer.where({
       organizationId: tenantId,
     }).where((row) => row.name.ilike(values.name!.trim()))
     if (excludeId) {
@@ -2951,7 +2949,7 @@ export class CustomersService {
     if (unique.length === 0) return new Set()
     const [poolOptions, collaborationRows, scope] = await Promise.all([
       this.pools.options(user, 'customer'),
-      this.prisma8.client.orm.public.CustomerCollaboration.where({
+      this.prisma.client.orm.public.CustomerCollaboration.where({
         userId: user.id,
       })
         .where((row) => row.customerId.in(unique))
@@ -2961,7 +2959,7 @@ export class CustomersService {
     ])
     const poolIds = poolOptions.map((pool) => String(pool.id))
     const collaborationIds = collaborationRows.map((item) => String(item.customerId))
-    let query = this.prisma8.client.orm.public.Customer.where({
+    let query = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     }).where((row) => row.id.in(unique))
     const ownerScope = scope.owner
@@ -2986,7 +2984,7 @@ export class CustomersService {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
     const scope = await this.dataScope.directOwnerFilter(user, 'menu:lead')
-    let query = this.prisma8.client.orm.public.Clue.where({
+    let query = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
     }).where((row) => row.id.in(unique))
     const ownerScope = scope.owner
@@ -3007,7 +3005,7 @@ export class CustomersService {
     const unique = [...new Set(ids)]
     if (unique.length === 0) return new Set()
     const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
-    let query = this.prisma8.client.orm.public.Opportunity.where({
+    let query = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     }).where((row) => row.id.in(unique))
     const ownerScope = scope.owner
@@ -3322,7 +3320,7 @@ export class CustomersService {
 
     if (!resourceId) throw new BadRequestException('唯一ID不能为空')
     const existing = poolId
-      ? await this.prisma8.client.orm.public.Customer.where({
+      ? await this.prisma.client.orm.public.Customer.where({
           id: resourceId,
           organizationId: user.tenantId,
           inSharedPool: true,
@@ -3343,7 +3341,7 @@ export class CustomersService {
     const name = typeof dto.name === 'string' ? dto.name.trim() : ''
     if (!name) throw new BadRequestException('客户名称不能为空')
     const now = BigInt(Date.now())
-    const customer = await this.prisma8.client.transaction(async (tx) => {
+    const customer = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.Customer.create({
         id: createLegacyId32(),
         name: name,
@@ -3377,7 +3375,7 @@ export class CustomersService {
   private async resolveImportOwner(user: AuthUser, value: string): Promise<string> {
     const input = value.trim()
     if (!input) throw new BadRequestException('负责人不能为空')
-    const direct = await this.prisma8.client.orm.public.Users.where({
+    const direct = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
     })
@@ -3385,7 +3383,7 @@ export class CustomersService {
       .select('id')
       .first()
     if (direct) return direct.id
-    const byName = await this.prisma8.client.orm.public.Users.where({
+    const byName = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
       name: input,
@@ -3423,7 +3421,7 @@ export class CustomersService {
    */
   private async assertCustomersDeletable(tenantId: string, ids: string[]) {
     const customerIds = ids
-    const opportunityRows = await this.prisma8.client.orm.public.Opportunity.where({
+    const opportunityRows = await this.prisma.client.orm.public.Opportunity.where({
       organizationId: tenantId,
     })
       .where((row) => row.customerId.in(customerIds))
@@ -3431,24 +3429,24 @@ export class CustomersService {
       .all()
     const opportunityIds = opportunityRows.map((row) => String(row.id))
     const [contacts, opportunities, quotes, contracts] = await Promise.all([
-      this.prisma8.client.orm.public.CustomerContact.where({
+      this.prisma.client.orm.public.CustomerContact.where({
         organizationId: tenantId,
       })
         .where((row) => row.customerId.in(customerIds))
         .aggregate((row) => ({ count: row.count() })),
-      this.prisma8.client.orm.public.Opportunity.where({
+      this.prisma.client.orm.public.Opportunity.where({
         organizationId: tenantId,
       })
         .where((row) => row.customerId.in(customerIds))
         .aggregate((row) => ({ count: row.count() })),
       opportunityIds.length
-        ? this.prisma8.client.orm.public.OpportunityQuotation.where({
+        ? this.prisma.client.orm.public.OpportunityQuotation.where({
             organizationId: tenantId,
           })
             .where((row) => row.opportunityId.in(opportunityIds))
             .aggregate((row) => ({ count: row.count() }))
         : Promise.resolve({ count: 0 }),
-      this.prisma8.client.orm.public.Contract.where({
+      this.prisma.client.orm.public.Contract.where({
         organizationId: tenantId,
       })
         .where((row) => row.customerId.in(customerIds))
@@ -3465,7 +3463,7 @@ export class CustomersService {
   ) {
     const ids = customers.map((customer) => customer.id)
     const customerIds = ids
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomerField.where((row) => row.resourceId.in(customerIds)).deleteAll()
       await tx.orm.public.CustomerFieldBlob.where((row) =>
         row.resourceId.in(customerIds),
@@ -3531,14 +3529,14 @@ export class CustomersService {
     if (!view) return this.dataScope.directOwnerFilter(user, 'customer:read')
     if (view === 'SELF') return { owner: user.id }
     if (view === 'COLLABORATION') {
-      const collaborations = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+      const collaborations = await this.prisma.client.orm.public.CustomerCollaboration.where({
         userId: user.id,
       })
         .select('customerId')
         .all()
       const candidateIds = collaborations.map((item) => String(item.customerId))
       if (!candidateIds.length) return { ids: [] }
-      const customers = await this.prisma8.client.orm.public.Customer.where({
+      const customers = await this.prisma.client.orm.public.Customer.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.id.in(candidateIds))
@@ -3560,7 +3558,7 @@ export class CustomersService {
       }
       const effective = await this.dataScope.resolveScope(user, 'customer:read')
       if (effective.all) return {}
-      let users = this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      let users = this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
       if (effective.deptIds.length) {
         users = users.where((row) => or(row.id.eq(user.id), row.deptId.in(effective.deptIds)))
       } else {
@@ -3574,7 +3572,7 @@ export class CustomersService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -3587,7 +3585,7 @@ export class CustomersService {
 
   private async ensureInScope(user: AuthUser, id: string, permission: string) {
     const scope = await this.dataScope.directOwnerFilter(user, permission)
-    let query = this.prisma8.client.orm.public.Customer.where({
+    let query = this.prisma.client.orm.public.Customer.where({
       id: id,
       organizationId: user.tenantId,
       inSharedPool: false,
@@ -3649,7 +3647,7 @@ export class CustomersService {
         }
         const normalized = condition.key === 'ownerId' ? { ...condition, key: 'owner' } : condition
         const field = fieldMap.get(condition.key) ?? fieldMap.get(normalized.key)
-        let query = this.prisma8.client.orm.public.Customer.where({
+        let query = this.prisma.client.orm.public.Customer.where({
           organizationId: organizationId,
         })
         if (field && field.type !== 'formula') {
@@ -3668,7 +3666,7 @@ export class CustomersService {
   }
 
   private applyCustomerSystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Customer.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Customer.where>,
     key: string,
     condition: FilterCondition,
     field: FieldVO,

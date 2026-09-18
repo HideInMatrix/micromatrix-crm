@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { OperationLogCleanupResultVO, OperationLogClearResultVO } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { resolveOperationLogCleanupConfig } from './operation-log-config'
 import {
   type OperationLogCleanupSource,
@@ -20,7 +20,7 @@ export class OperationLogCleanupService {
   private readonly config = resolveOperationLogCleanupConfig()
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly settings: OperationLogSettingsService,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
@@ -41,7 +41,7 @@ export class OperationLogCleanupService {
   }
 
   async cleanupAllTenants(now = new Date()): Promise<number> {
-    const tenants = await this.prisma8.client.orm.public.Tenants.select('id').all()
+    const tenants = await this.prisma.client.orm.public.Tenants.select('id').all()
     let deleted = 0
 
     for (const tenant of tenants) {
@@ -91,7 +91,7 @@ export class OperationLogCleanupService {
 
   /** 高风险人工操作：清空当前租户全部操作日志，不计入 retention 清理状态。 */
   async clearTenant(tenantId: string): Promise<OperationLogClearResultVO> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const query = client.raw.sql`DELETE FROM operation_logs
       WHERE "tenantId" = ${tenantId}
       RETURNING id`.returnsRow({ id: client.sql.public.operation_logs.columns.id })
@@ -102,7 +102,7 @@ export class OperationLogCleanupService {
   }
 
   private async deleteBatch(tenantId: string, cutoff: Date, limit: number): Promise<number> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const cutoffIso = cutoff.toISOString()
     const query = client.raw.sql`WITH candidates AS (
         SELECT id

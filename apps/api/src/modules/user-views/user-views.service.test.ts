@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { UserViewsService } from './user-views.service'
 
 interface ConditionRow {
@@ -138,10 +138,7 @@ function createHarness() {
     },
   })
 
-  const makeConditionCollection = (
-    where: Partial<ConditionRow> = {},
-    orders: Order[] = [],
-  ) => ({
+  const makeConditionCollection = (where: Partial<ConditionRow> = {}, orders: Order[] = []) => ({
     where(next: Partial<ConditionRow>) {
       return makeConditionCollection({ ...where, ...next }, orders)
     },
@@ -181,16 +178,17 @@ function createHarness() {
     SysUserView: makeViewCollection(),
     SysUserViewCondition: makeConditionCollection(),
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: { public: publicOrm },
-      transaction: async (callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>) =>
-        callback({ orm: { public: publicOrm } }),
+      transaction: async (
+        callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>,
+      ) => callback({ orm: { public: publicOrm } }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 
   return {
-    service: new UserViewsService(prisma8),
+    service: new UserViewsService(prisma),
     views,
     conditions,
   }

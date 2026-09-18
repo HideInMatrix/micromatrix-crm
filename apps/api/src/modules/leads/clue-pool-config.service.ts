@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 import { MetadataService } from '../metadata/metadata.service'
 import { CluePoolRepository } from '../pool-rules/clue-pool.repository'
@@ -22,7 +22,7 @@ type CluePoolRow = Awaited<ReturnType<CluePoolRepository['listPools']>>[number]
 @Injectable()
 export class CluePoolConfigService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly metadata: MetadataService,
     private readonly cluePools: CluePoolRepository,
     private readonly pools: ResourcePoolsService,
@@ -73,7 +73,7 @@ export class CluePoolConfigService {
 
   async noPick(user: AuthUser, poolId: string) {
     await this.assertPoolExists(user.tenantId, poolId)
-    const aggregate = await this.prisma8.client.orm.public.Clue.where({
+    const aggregate = await this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
       poolId: poolId,
       inSharedPool: true,
@@ -174,7 +174,7 @@ export class CluePoolConfigService {
       ...new Set(rows.flatMap((row) => [row.createUser, row.updateUser]).filter(Boolean)),
     ]
     const users = userIds.length
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
           .where((member) => member.id.in(userIds))
           .select('id', 'name')
           .all()
@@ -233,7 +233,7 @@ export class CluePoolConfigService {
   }
 
   private async loadUserScopeTokens(tenantId: string, userId: string): Promise<Set<string>> {
-    const user = await this.prisma8.client.orm.public.Users.where({
+    const user = await this.prisma.client.orm.public.Users.where({
       id: userId,
       tenantId,
       status: 'ACTIVE',
@@ -243,7 +243,7 @@ export class CluePoolConfigService {
     if (!user) return new Set()
 
     const tokens = new Set([user.id, `user:${user.id}`])
-    const links = await this.prisma8.client.orm.public.UserRoles.where({
+    const links = await this.prisma.client.orm.public.UserRoles.where({
       tenantId,
       userId: user.id,
     })
@@ -255,7 +255,7 @@ export class CluePoolConfigService {
     }
     if (!user.deptId) return tokens
 
-    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()
     const parentMap = new Map(departments.map((department) => [department.id, department.parentId]))

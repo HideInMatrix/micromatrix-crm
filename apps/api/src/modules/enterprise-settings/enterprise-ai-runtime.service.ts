@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 
 export interface EnterpriseAiCompletionResult {
   text: string
@@ -19,7 +19,7 @@ export interface EnterpriseAiCompletionResult {
 @Injectable()
 export class EnterpriseAiRuntimeService {
   constructor(
-    private readonly prisma: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly cipher: CredentialCipherService,
   ) {}
 
@@ -29,8 +29,10 @@ export class EnterpriseAiRuntimeService {
     prompt: string,
     requestedMaxTokens = 512,
   ): Promise<EnterpriseAiCompletionResult> {
-    const model = await this.prisma.client.orm.public.EnterpriseAiModels
-      .where({ id: modelId, tenantId })
+    const model = await this.prisma.client.orm.public.EnterpriseAiModels.where({
+      id: modelId,
+      tenantId,
+    })
       .select(
         'id',
         'displayName',

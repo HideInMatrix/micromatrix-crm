@@ -3,12 +3,12 @@ import 'dotenv/config'
 async function main() {
   const seedMode = process.env['SEED_MODE'] ?? 'demo'
   if (seedMode === 'bootstrap') {
-    const { runPrisma8BootstrapSeed } = await import('./seed-bootstrap-prisma8.js')
-    await runPrisma8BootstrapSeed()
+    const { runBootstrapSeed } = await import('./seed-bootstrap.js')
+    await runBootstrapSeed()
     return
   }
-  const { runPrisma8DemoSeed } = await import('./seed-demo-prisma8.js')
-  await runPrisma8DemoSeed()
+  const { runDemoSeed } = await import('./seed-demo.js')
+  await runDemoSeed()
 }
 
 main().catch((error) => {

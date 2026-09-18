@@ -4,7 +4,7 @@ import { not } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
@@ -44,7 +44,7 @@ interface ProductRow {
 @Injectable()
 export class ProductsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
@@ -85,7 +85,7 @@ export class ProductsService {
     const customData = await this.moduleFieldsToCustomData(user, dto.moduleFields)
     const now = BigInt(Date.now())
     const pos = await this.nextPos(user.tenantId)
-    const product = await this.prisma8.client.transaction(async (tx) => {
+    const product = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.Product.create({
         id: createLegacyId32(),
         name: name,
@@ -126,7 +126,7 @@ export class ProductsService {
       dto.moduleFields === undefined
         ? undefined
         : await this.moduleFieldsToCustomData(user, dto.moduleFields)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.Product.where({ id: existing.id }).update({
         ...(name !== undefined ? { name: name } : {}),
         ...(dto.price !== undefined
@@ -157,7 +157,7 @@ export class ProductsService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto) {
     const ids = [...new Set(dto.ids)]
     const rows = ids.length
-      ? await this.prisma8.client.orm.public.Product.where({
+      ? await this.prisma.client.orm.public.Product.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(ids))
@@ -171,12 +171,12 @@ export class ProductsService {
       throw new BadRequestException('字段不存在或不支持批量修改')
     }
     if (!field.system) {
-      return this.prisma8.client.transaction((tx) =>
+      return this.prisma.client.transaction((tx) =>
         this.fieldValues.saveBatch(user.tenantId, 'product', ids, field.id, dto.fieldValue, tx),
       )
     }
     const data = await this.systemBatchUpdateData(user, field.key, dto.fieldValue, ids)
-    const count = await this.prisma8.client.orm.public.Product.where({
+    const count = await this.prisma.client.orm.public.Product.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(ids))
@@ -190,7 +190,7 @@ export class ProductsService {
 
   async delete(user: AuthUser, id: string) {
     const product = await this.ensureExists(user, id)
-    await this.prisma8.client.orm.public.Product.where({
+    await this.prisma.client.orm.public.Product.where({
       id: product.id,
       organizationId: user.tenantId,
     }).delete()
@@ -200,14 +200,14 @@ export class ProductsService {
   async batchDelete(user: AuthUser, ids: string[]) {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) throw new BadRequestException('请选择产品')
-    const rows = await this.prisma8.client.orm.public.Product.where({
+    const rows = await this.prisma.client.orm.public.Product.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(uniqueIds))
       .select('id')
       .all()
     if (rows.length !== uniqueIds.length) throw new BadRequestException('选中产品包含不存在的数据')
-    const count = await this.prisma8.client.orm.public.Product.where((row) =>
+    const count = await this.prisma.client.orm.public.Product.where((row) =>
       row.id.in(uniqueIds),
     ).deleteAndCount()
     return { count }
@@ -215,7 +215,7 @@ export class ProductsService {
 
   async editPos(user: AuthUser, dto: ProductSortDto) {
     if (dto.dragNodeId === dto.dropNodeId) return { id: dto.dragNodeId }
-    const rows = await this.prisma8.client.orm.public.Product.where({
+    const rows = await this.prisma.client.orm.public.Product.where({
       organizationId: user.tenantId,
     })
       .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
@@ -231,7 +231,7 @@ export class ProductsService {
       targetIndex < 0 ? ordered.length : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     ordered.splice(insertAt, 0, dto.dragNodeId)
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ordered.entries()) {
         await tx.orm.public.Product.where({ id: id }).update({
           pos: BigInt((index + 1) * POS_STEP),
@@ -244,7 +244,7 @@ export class ProductsService {
   }
 
   async listOption(user: AuthUser) {
-    return this.prisma8.client.orm.public.Product.where({
+    return this.prisma.client.orm.public.Product.where({
       organizationId: user.tenantId,
     })
       .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
@@ -335,7 +335,7 @@ export class ProductsService {
     const filteredIds = dto.filters?.length
       ? await this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
       : null
-    let query = this.prisma8.client.orm.public.Product.where({
+    let query = this.prisma.client.orm.public.Product.where({
       organizationId: user.tenantId,
     })
     if (dto.status) query = query.where({ status: dto.status })
@@ -555,7 +555,7 @@ export class ProductsService {
             await this.fieldValues.filterResourceIds(organizationId, 'product', [condition]),
           )
         }
-        let query = this.prisma8.client.orm.public.Product.where({
+        let query = this.prisma.client.orm.public.Product.where({
           organizationId: organizationId,
         })
         query = this.applySystemFilter(query, field, condition)
@@ -573,7 +573,7 @@ export class ProductsService {
   }
 
   private applySystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Product.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Product.where>,
     field: FieldVO,
     condition: FilterCondition,
   ) {
@@ -631,7 +631,7 @@ export class ProductsService {
   }
 
   private async nextPos(organizationId: string) {
-    const row = await this.prisma8.client.orm.public.Product.where({
+    const row = await this.prisma.client.orm.public.Product.where({
       organizationId: organizationId,
     })
       .orderBy((product) => product.pos.desc())
@@ -641,7 +641,7 @@ export class ProductsService {
   }
 
   private async assertNameUnique(organizationId: string, name: string, excludeId?: string) {
-    let query = this.prisma8.client.orm.public.Product.where({
+    let query = this.prisma.client.orm.public.Product.where({
       organizationId: organizationId,
       name: name,
     })
@@ -651,7 +651,7 @@ export class ProductsService {
   }
 
   private async ensureExists(user: AuthUser, id: string) {
-    const product = await this.prisma8.client.orm.public.Product.where({
+    const product = await this.prisma.client.orm.public.Product.where({
       id: id,
       organizationId: user.tenantId,
     }).first()

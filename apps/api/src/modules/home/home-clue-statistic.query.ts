@@ -7,7 +7,7 @@ import type {
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomePeriodService } from './home-period.service'
@@ -31,7 +31,7 @@ const PERIOD_KEY: Record<HomeStatisticPeriod, keyof HomeLeadStatistic> = {
 @Injectable()
 export class HomeClueStatisticQuery {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly scopes: HomeDepartmentScopeService,
     private readonly periods: HomePeriodService,
   ) {}
@@ -80,7 +80,7 @@ export class HomeClueStatisticQuery {
     const userField = request.userField ?? 'OWNER'
     if (!scope.all && !scope.self && (scope.userIds?.length ?? 0) === 0) return 0
 
-    let query = this.prisma8.client.orm.public.Clue.where({
+    let query = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
       ...(userField === 'OWNER' ? { inSharedPool: false } : {}),
     })

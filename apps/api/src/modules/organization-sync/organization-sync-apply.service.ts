@@ -11,15 +11,15 @@ import * as bcrypt from 'bcryptjs'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
 import type { AuthUser } from '../../common/auth-user'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8Now } from '../../prisma/prisma8-temporal.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { nowInstant } from '../../prisma/temporal.js'
 import { jsonValue } from '../../prisma/json-value.js'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
 import type { OrganizationSyncProvider } from './organization-sync.service'
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 type OrganizationSyncResourceType = 'DEPARTMENT' | 'USER'
 type OrganizationSyncAction = 'CREATE' | 'UPDATE' | 'DISABLE' | 'UNCHANGED' | 'CONFLICT' | 'SKIP'
@@ -46,7 +46,7 @@ export class OrganizationSyncApplyService {
   private readonly logger = new Logger(OrganizationSyncApplyService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     @Optional() private readonly authCache?: AuthContextCacheService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
@@ -58,7 +58,7 @@ export class OrganizationSyncApplyService {
     batchId: string,
     provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<void> {
-    const initial = await this.prisma8.client.orm.public.OrganizationSyncBatches.where({
+    const initial = await this.prisma.client.orm.public.OrganizationSyncBatches.where({
       id: batchId,
       tenantId: user.tenantId,
       provider,
@@ -90,7 +90,7 @@ export class OrganizationSyncApplyService {
     const providerName =
       provider === 'DINGTALK' ? '钉钉' : provider === 'LARK' ? '飞书' : '企业微信'
     const disabledUserIds = (
-      await this.prisma8.client.orm.public.OrganizationSyncItems.where({
+      await this.prisma.client.orm.public.OrganizationSyncItems.where({
         tenantId: user.tenantId,
         batchId,
         resourceType: 'USER',
@@ -104,7 +104,7 @@ export class OrganizationSyncApplyService {
       .filter((id): id is string => Boolean(id))
     const subordinateIds = disabledUserIds.length
       ? (
-          await this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+          await this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
             .where((member) => member.leaderId.in(disabledUserIds))
             .select('id')
             .all()
@@ -113,7 +113,7 @@ export class OrganizationSyncApplyService {
 
     let applyStarted = false
     try {
-      const client = this.prisma8.client
+      const client = this.prisma.client
       await client.transaction(async (tx) => {
         const lockQuery = client.raw.sql`SELECT pg_advisory_xact_lock(
             hashtextextended(${`${user.tenantId}:${provider}`}, 0)
@@ -158,7 +158,7 @@ export class OrganizationSyncApplyService {
         if (unresolved) throw new BadRequestException('仍有未处理的同步冲突')
 
         applyStarted = true
-        const applyStartedAt = prisma8Now()
+        const applyStartedAt = nowInstant()
         await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
           status: 'APPLYING',
           appliedById: user.id,
@@ -191,7 +191,7 @@ export class OrganizationSyncApplyService {
           provider,
         )
 
-        const finishedAt = prisma8Now()
+        const finishedAt = nowInstant()
         await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
           status: 'SUCCEEDED',
           errorCode: null,
@@ -217,8 +217,8 @@ export class OrganizationSyncApplyService {
         error instanceof Error ? error.stack : undefined,
       )
       if (applyStarted && !(error instanceof BadRequestException)) {
-        const failedAt = prisma8Now()
-        await this.prisma8.client.orm.public.OrganizationSyncBatches.where({
+        const failedAt = nowInstant()
+        await this.prisma.client.orm.public.OrganizationSyncBatches.where({
           id: batchId,
           tenantId: user.tenantId,
           status: 'PREVIEW_READY',
@@ -229,7 +229,7 @@ export class OrganizationSyncApplyService {
           finishedAt: failedAt,
           updatedAt: failedAt,
         })
-        await this.prisma8.client.orm.public.EnterpriseIntegrations.where({
+        await this.prisma.client.orm.public.EnterpriseIntegrations.where({
           id: initial.integrationId,
           tenantId: user.tenantId,
         }).updateAll({
@@ -237,7 +237,7 @@ export class OrganizationSyncApplyService {
           lastSyncMessage: '应用组织同步失败，所有变更已回滚',
           updatedAt: failedAt,
         })
-        await this.prisma8.client.transaction(async (tx) => {
+        await this.prisma.client.transaction(async (tx) => {
           const operationLog = await tx.orm.public.OperationLogs.create({
             tenantId: user.tenantId,
             userId: user.id,
@@ -260,7 +260,7 @@ export class OrganizationSyncApplyService {
       throw error
     }
 
-    const affectedUsers = await this.prisma8.client.orm.public.OrganizationSyncItems.where({
+    const affectedUsers = await this.prisma.client.orm.public.OrganizationSyncItems.where({
       tenantId: user.tenantId,
       batchId,
       resourceType: 'USER',
@@ -290,7 +290,7 @@ export class OrganizationSyncApplyService {
   }
 
   private async applyDepartments(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     tenantId: string,
     batchId: string,
     targetDepartmentId: string,
@@ -305,7 +305,7 @@ export class OrganizationSyncApplyService {
     for (const mapping of existingMappings) resolved.set(mapping.externalKey, mapping.departmentId)
 
     for (const item of items) {
-      const updatedAt = prisma8Now()
+      const updatedAt = nowInstant()
       if (item.action === 'SKIP') {
         await this.markItem(tx, item.id, 'SKIPPED')
         continue
@@ -385,7 +385,7 @@ export class OrganizationSyncApplyService {
   }
 
   private async applyUsers(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     tenantId: string,
     batchId: string,
     defaultRoleId: string,
@@ -397,7 +397,7 @@ export class OrganizationSyncApplyService {
     const departmentsWithLeaderData = new Set<string>()
 
     for (const item of items) {
-      const updatedAt = prisma8Now()
+      const updatedAt = nowInstant()
       if (item.action === 'SKIP') {
         await this.markItem(tx, item.id, 'SKIPPED')
         continue
@@ -501,13 +501,13 @@ export class OrganizationSyncApplyService {
     for (const departmentId of departmentsWithLeaderData) {
       await tx.orm.public.Departments.where({ id: departmentId, tenantId }).updateAll({
         leaderId: leaderByDepartment.get(departmentId) ?? null,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
     }
   }
 
   private markItem(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     id: string,
     result: 'APPLIED' | 'SKIPPED',
     localId?: string,
@@ -515,7 +515,7 @@ export class OrganizationSyncApplyService {
     return tx.orm.public.OrganizationSyncItems.where({ id }).update({
       result,
       ...(localId ? { localId } : {}),
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
   }
 

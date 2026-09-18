@@ -11,17 +11,15 @@ import {
   type FieldVO,
   type FilterCondition,
 } from '@micromatrix/shared'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { instantToISOString } from '../../prisma/temporal.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { ModuleFormsService } from './module-forms.service'
 
-type Prisma8RawExpression = ReturnType<
-  ReturnType<Prisma8Service['client']['raw']['sql']>['returns']
->
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
-type Prisma8Database = { orm: Prisma8Service['client']['orm'] }
+type PrismaRawExpression = ReturnType<ReturnType<PrismaService['client']['raw']['sql']>['returns']>
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
+type PrismaDatabase = { orm: PrismaService['client']['orm'] }
 
 export type ResourceFieldType =
   | 'clue'
@@ -228,7 +226,7 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
 export class ResourceFieldValueService {
   constructor(
     private readonly moduleForms: ModuleFormsService,
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
   ) {}
 
   async validate(
@@ -242,7 +240,7 @@ export class ResourceFieldValueService {
       RESOURCE_CONFIG[resourceType].formKey,
     )
     const validated = await this.validateWithFields(
-      this.prisma8.client,
+      this.prisma.client,
       organizationId,
       resourceType,
       fields,
@@ -262,7 +260,7 @@ export class ResourceFieldValueService {
     resourceId: string,
     values: Record<string, unknown>,
     mode: ResourceFieldSaveMode,
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     actorId: string,
   ): Promise<Record<string, unknown>> {
     await this.assertResource(tx, organizationId, resourceType, resourceId)
@@ -326,7 +324,7 @@ export class ResourceFieldValueService {
       fields.filter((field) => !field.system).map((field) => [field.id, field]),
     )
     const [normal, blob] = await this.findValues(
-      this.prisma8.client,
+      this.prisma.client,
       organizationId,
       resourceType,
       uniqueIds,
@@ -354,12 +352,9 @@ export class ResourceFieldValueService {
       fields.filter((field) => RESOURCE_FIELD_FILE_TYPES.has(field.type)).map((field) => field.id),
     )
     if (!fileFieldIds.size) return false
-    const [normal, blob] = await this.findValues(
-      this.prisma8.client,
-      organizationId,
-      resourceType,
-      [resourceId],
-    )
+    const [normal, blob] = await this.findValues(this.prisma.client, organizationId, resourceType, [
+      resourceId,
+    ])
     return [...normal, ...blob].some(
       (row) =>
         fileFieldIds.has(row.fieldId) && this.decodeFileIds(row.fieldValue).includes(attachmentId),
@@ -384,7 +379,7 @@ export class ResourceFieldValueService {
       (await this.load(organizationId, resourceType, [resourceId])).get(resourceId) ?? {}
     const ids = fileFields.flatMap((field) => this.fileIds(values[field.key]))
     if (!ids.length) return result
-    const rows = await this.prisma8.client.orm.public.Attachments.where({
+    const rows = await this.prisma.client.orm.public.Attachments.where({
       tenantId: organizationId,
       targetType: resourceFieldAttachmentTarget(resourceType),
       targetId: resourceId,
@@ -408,7 +403,7 @@ export class ResourceFieldValueService {
     resourceIds: string[],
     fieldIdOrKey: string,
     value: unknown,
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
   ): Promise<{ count: number }> {
     const uniqueIds = [...new Set(resourceIds)]
     if (!uniqueIds.length) return { count: 0 }
@@ -477,7 +472,7 @@ export class ResourceFieldValueService {
           [field.key, field],
         ]),
     )
-    const predicates: Prisma8RawExpression[] = []
+    const predicates: PrismaRawExpression[] = []
     for (const condition of conditions) {
       const field = fieldMap.get(condition.key)
       if (!field) throw new BadRequestException(`筛选字段不存在：${condition.key}`)
@@ -486,7 +481,7 @@ export class ResourceFieldValueService {
       }
       predicates.push(this.compilePredicate(resourceType, field, condition))
     }
-    const client = this.prisma8.client
+    const client = this.prisma.client
     let combined = predicates[0] ?? client.raw.sql`TRUE`.returns('pg/bool@1')
     for (const predicate of predicates.slice(1)) {
       combined = client.raw.sql`(${combined}) AND (${predicate})`.returns('pg/bool@1')
@@ -501,12 +496,12 @@ export class ResourceFieldValueService {
   ): Promise<string[]> {
     const query = await this.buildFilter(organizationId, resourceType, conditions)
     const rows: Array<{ id: string }> = []
-    for await (const row of this.prisma8.client.runtime().query(query.build())) rows.push(row)
+    for await (const row of this.prisma.client.runtime().query(query.build())) rows.push(row)
     return rows.map((row) => row.id)
   }
 
-  private async acquireUniqueLock(tx: Prisma8Transaction, lockKey: string): Promise<void> {
-    const query = this.prisma8.client.raw.sql`
+  private async acquireUniqueLock(tx: PrismaTransaction, lockKey: string): Promise<void> {
+    const query = this.prisma.client.raw.sql`
       SELECT 1::int4 AS locked
       FROM pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
     `.returnsRow({ locked: 'pg/int4@1' })
@@ -517,9 +512,9 @@ export class ResourceFieldValueService {
   private buildResourceFilterQuery(
     resourceType: ResourceFieldType,
     organizationId: string,
-    predicate: Prisma8RawExpression,
+    predicate: PrismaRawExpression,
   ) {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     switch (resourceType) {
       case 'clue':
         return client.raw.sql`SELECT resource.id FROM clue AS resource
@@ -598,9 +593,9 @@ export class ResourceFieldValueService {
     resourceType: ResourceFieldType,
     fieldId: string,
     blob: boolean,
-    predicate?: Prisma8RawExpression,
-  ): Prisma8RawExpression {
-    const client = this.prisma8.client
+    predicate?: PrismaRawExpression,
+  ): PrismaRawExpression {
+    const client = this.prisma.client
     const effectivePredicate = predicate ?? client.raw.sql`TRUE`.returns('pg/bool@1')
     const suffix = client.raw.sql`AND (${effectivePredicate})`.returns('pg/bool@1')
     switch (resourceType) {
@@ -888,7 +883,7 @@ export class ResourceFieldValueService {
   }
 
   private async validateWithFields(
-    client: Prisma8Database,
+    client: PrismaDatabase,
     organizationId: string,
     resourceType: ResourceFieldType,
     fields: FieldVO[],
@@ -1091,7 +1086,7 @@ export class ResourceFieldValueService {
     targetType: string | null
     targetId: string | null
     uploaderId: string | null
-    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
+    createdAt: Parameters<typeof instantToISOString>[0]
   }): AttachmentVO {
     return {
       id: row.id,
@@ -1101,12 +1096,12 @@ export class ResourceFieldValueService {
       targetType: row.targetType,
       targetId: row.targetId,
       uploaderId: row.uploaderId,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
+      createdAt: instantToISOString(row.createdAt),
     }
   }
 
   private async claimResourceFieldAttachments(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceId: string,
@@ -1210,7 +1205,7 @@ export class ResourceFieldValueService {
   }
 
   private async assertResource(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceId: string,
@@ -1220,7 +1215,7 @@ export class ResourceFieldValueService {
   }
 
   private async ownedResourceIds(
-    client: Prisma8Database,
+    client: PrismaDatabase,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceIds: string[],
@@ -1332,7 +1327,7 @@ export class ResourceFieldValueService {
   }
 
   private async assertUnique(
-    client: Prisma8Database,
+    client: PrismaDatabase,
     organizationId: string,
     resourceType: ResourceFieldType,
     item: ValidatedFieldValue,
@@ -1353,7 +1348,7 @@ export class ResourceFieldValueService {
   }
 
   private async matchingFieldResourceIds(
-    client: Prisma8Database,
+    client: PrismaDatabase,
     resourceType: ResourceFieldType,
     fieldId: string,
     fieldValue: string,
@@ -1589,7 +1584,7 @@ export class ResourceFieldValueService {
   }
 
   private async deleteValues(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     resourceType: ResourceFieldType,
     resourceId: string,
     fieldIds: string[],
@@ -1742,7 +1737,7 @@ export class ResourceFieldValueService {
   }
 
   private async createValues(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     resourceType: ResourceFieldType,
     resourceId: string,
     normal: ValidatedFieldValue[],
@@ -1821,7 +1816,7 @@ export class ResourceFieldValueService {
   }
 
   private async findValues(
-    client: Prisma8Database,
+    client: PrismaDatabase,
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceIds: string[],
@@ -2034,13 +2029,13 @@ export class ResourceFieldValueService {
     resourceType: ResourceFieldType,
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma8RawExpression {
-    const client = this.prisma8.client
-    const existsNormal = (predicate?: Prisma8RawExpression) =>
+  ): PrismaRawExpression {
+    const client = this.prisma.client
+    const existsNormal = (predicate?: PrismaRawExpression) =>
       this.resourceFieldExists(resourceType, field.id, false, predicate)
-    const existsBlob = (predicate?: Prisma8RawExpression) =>
+    const existsBlob = (predicate?: PrismaRawExpression) =>
       this.resourceFieldExists(resourceType, field.id, true, predicate)
-    const negate = (expression: Prisma8RawExpression) =>
+    const negate = (expression: PrismaRawExpression) =>
       client.raw.sql`NOT (${expression})`.returns('pg/bool@1')
 
     if (condition.op === 'isEmpty') {
@@ -2099,7 +2094,7 @@ export class ResourceFieldValueService {
         : this.serialize(field, condition.value)
     if (serialized === null) throw new BadRequestException('筛选值不能为空')
     const storage = this.storageFor(field.type, serialized)
-    let match: Prisma8RawExpression
+    let match: PrismaRawExpression
     if (condition.op === 'contains' || condition.op === 'notContains') {
       match = client.raw.sql`field_value.field_value LIKE ${`%${serialized}%`}`.returns('pg/bool@1')
     } else if (['date', 'datetime'].includes(field.type)) {

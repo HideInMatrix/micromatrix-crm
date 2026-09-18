@@ -6,13 +6,13 @@ import {
   PaginatedResult,
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import { instantToISOString } from '../../prisma/temporal.js'
 import { QueryLoginLogsDto, QueryOperationLogsDto } from './dto/query-logs.dto'
 
 @Injectable()
 export class LogsService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async operationLogs(
     tenantId: string,
@@ -20,16 +20,13 @@ export class LogsService {
   ): Promise<PaginatedResult<OperationLogVO>> {
     const { page = 1, pageSize = 10, module, keyword } = query
     const normalized = keyword?.trim()
-    const scoped = this.prisma8.client.orm.public.OperationLogs.where({
+    const scoped = this.prisma.client.orm.public.OperationLogs.where({
       tenantId,
       ...(module ? { module } : {}),
     })
     const filtered = normalized
       ? scoped.where((log) =>
-          or(
-            log.userName.ilike(`%${normalized}%`),
-            log.targetName.ilike(`%${normalized}%`),
-          ),
+          or(log.userName.ilike(`%${normalized}%`), log.targetName.ilike(`%${normalized}%`)),
         )
       : scoped
     const [items, aggregate] = await Promise.all([
@@ -50,7 +47,7 @@ export class LogsService {
         action: log.action,
         targetName: log.targetName,
         ip: log.ip,
-        createdAt: prisma8TimestampToISOString(log.createdAt),
+        createdAt: instantToISOString(log.createdAt),
       })),
       total: aggregate.total,
       page,
@@ -59,11 +56,11 @@ export class LogsService {
   }
 
   async operationLogDetail(tenantId: string, id: string): Promise<OperationLogDetailVO> {
-    const log = await this.prisma8.client.orm.public.OperationLogs.where({ id, tenantId })
+    const log = await this.prisma.client.orm.public.OperationLogs.where({ id, tenantId })
       .select('id', 'userName', 'module', 'action', 'targetId', 'targetName', 'ip', 'createdAt')
       .first()
     if (!log) throw new NotFoundException('操作日志不存在')
-    const blob = await this.prisma8.client.orm.public.OperationLogBlobs.where({
+    const blob = await this.prisma.client.orm.public.OperationLogBlobs.where({
       operationLogId: log.id,
     })
       .select('detail')
@@ -78,7 +75,7 @@ export class LogsService {
       targetName: log.targetName,
       detail: blob?.detail ?? null,
       ip: log.ip,
-      createdAt: prisma8TimestampToISOString(log.createdAt),
+      createdAt: instantToISOString(log.createdAt),
     }
   }
 
@@ -88,10 +85,8 @@ export class LogsService {
   ): Promise<PaginatedResult<LoginLogVO>> {
     const { page = 1, pageSize = 10, keyword } = query
     const normalized = keyword?.trim()
-    const scoped = this.prisma8.client.orm.public.LoginLogs.where({ tenantId })
-    const filtered = normalized
-      ? scoped.where((log) => log.email.ilike(`%${normalized}%`))
-      : scoped
+    const scoped = this.prisma.client.orm.public.LoginLogs.where({ tenantId })
+    const filtered = normalized ? scoped.where((log) => log.email.ilike(`%${normalized}%`)) : scoped
     const [items, aggregate] = await Promise.all([
       filtered
         .orderBy((log) => log.createdAt.desc())
@@ -111,7 +106,7 @@ export class LogsService {
         userAgent: log.userAgent,
         success: log.success,
         message: log.message,
-        createdAt: prisma8TimestampToISOString(log.createdAt),
+        createdAt: instantToISOString(log.createdAt),
       })),
       total: aggregate.total,
       page,

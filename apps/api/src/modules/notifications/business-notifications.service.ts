@@ -4,7 +4,7 @@ import {
   type MessageTaskEvent,
   type NotificationBizType,
 } from '@micromatrix/shared'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
 import { MessageDeliveryService } from './message-delivery.service'
@@ -37,7 +37,7 @@ export class BusinessNotificationsService {
   private readonly logger = new Logger(BusinessNotificationsService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly messageSettings: MessageSettingsService,
     @Optional() private readonly deliveries?: MessageDeliveryService,
@@ -55,7 +55,7 @@ export class BusinessNotificationsService {
       ]
       if (candidateIds.length === 0) return 0
       const [users, operator] = await Promise.all([
-        this.prisma8.client.orm.public.Users.where({
+        this.prisma.client.orm.public.Users.where({
           tenantId: input.tenantId,
           status: 'ACTIVE',
         })
@@ -63,7 +63,7 @@ export class BusinessNotificationsService {
           .select('id')
           .all(),
         input.operatorId
-          ? this.prisma8.client.orm.public.Users.where({
+          ? this.prisma.client.orm.public.Users.where({
               id: input.operatorId,
               tenantId: input.tenantId,
             })

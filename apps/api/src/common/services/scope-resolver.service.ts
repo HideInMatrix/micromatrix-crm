@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { AuthUser } from '../auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 /**
  * 通用范围 token 解析器。
@@ -9,7 +9,7 @@ import { Prisma8Service } from '../../prisma/prisma8.service'
  */
 @Injectable()
 export class ScopeResolverService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async matchesUser(user: AuthUser, scopeIds: string[]): Promise<boolean> {
     if (scopeIds.length === 0) return false
@@ -21,7 +21,7 @@ export class ScopeResolverService {
     const deptTokens = scopeIds.filter((id) => id.startsWith('dept:')).map((id) => id.slice(5))
     if (deptTokens.length === 0) return false
 
-    const departments = await this.prisma8.client.orm.public.Departments.where({
+    const departments = await this.prisma.client.orm.public.Departments.where({
       tenantId: user.tenantId,
     })
       .select('id', 'parentId')
@@ -41,12 +41,12 @@ export class ScopeResolverService {
    */
   async resolveUserIds(tenantId: string, scopeIds: string[]): Promise<string[]> {
     if (scopeIds.length === 0) return []
-    const users = await this.prisma8.client.orm.public.Users.where({ tenantId })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId })
       .select('id', 'deptId')
       .all()
     if (scopeIds.includes('*')) return users.map((user) => user.id)
 
-    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()
     const userIds = new Set(users.map((user) => user.id))

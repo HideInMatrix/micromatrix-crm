@@ -7,7 +7,7 @@ import type {
   HomeTimeField,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomePeriodService } from './home-period.service'
@@ -37,7 +37,7 @@ type HomeOpportunityWhere = {
 @Injectable()
 export class HomeOpportunityStatisticQuery {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly scopes: HomeDepartmentScopeService,
     private readonly periods: HomePeriodService,
   ) {}
@@ -133,7 +133,7 @@ export class HomeOpportunityStatisticQuery {
     const stageIds = await this.stageIds(user.tenantId, scenario)
     if (scenario !== 'ALL' && stageIds.length === 0) return { value: 0, amount: 0 }
 
-    let query = this.prisma8.client.orm.public.Opportunity.where({
+    let query = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
     if (!scope.all) {
@@ -170,7 +170,7 @@ export class HomeOpportunityStatisticQuery {
 
   private async stageIds(tenantId: string, scenario: OpportunityScenario): Promise<string[]> {
     if (scenario === 'ALL') return []
-    const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const rows = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: tenantId,
       _type: scenario === 'SUCCESS' ? 'END' : 'AFOOT',
       ...(scenario === 'SUCCESS' ? { rate: '100' } : {}),

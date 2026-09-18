@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal.js'
+import { instantFromDate } from '../../prisma/temporal.js'
 import { FollowUpsService } from './follow-ups.service'
 
 const user: AuthUser = {
@@ -35,14 +35,14 @@ function legacyRecord(id = 'record-1', content = '最终记录内容') {
   }
 }
 
-function prisma8Record(id = 'record-1', content = '最终记录内容') {
+function record(id = 'record-1', content = '最终记录内容') {
   const row = legacyRecord(id, content)
   return {
     ...row,
     _type: row.type,
-    followedAt: row.followedAt ? prisma8TimestampFromDate(row.followedAt) : null,
-    createdAt: prisma8TimestampFromDate(row.createdAt),
-    updatedAt: prisma8TimestampFromDate(row.updatedAt),
+    followedAt: row.followedAt ? instantFromDate(row.followedAt) : null,
+    createdAt: instantFromDate(row.createdAt),
+    updatedAt: instantFromDate(row.updatedAt),
   }
 }
 
@@ -74,9 +74,9 @@ function customerAccess() {
   }
 }
 
-function baseDeps(prisma8: unknown, overrides: Partial<Record<string, unknown>> = {}) {
+function baseDeps(prisma: unknown, overrides: Partial<Record<string, unknown>> = {}) {
   return new FollowUpsService(
-    prisma8 as never,
+    prisma as never,
     (overrides.customerAccess ?? customerAccess()) as never,
     (overrides.dataScope ?? {
       directOwnerFilter: async () => ({}),
@@ -114,10 +114,10 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
     dueNotifiedAt: null,
     commentCount: 0,
     customData: {},
-    createdAt: prisma8TimestampFromDate(new Date('2026-09-01T00:00:00.000Z')),
-    updatedAt: prisma8TimestampFromDate(new Date('2026-09-01T00:00:00.000Z')),
+    createdAt: instantFromDate(new Date('2026-09-01T00:00:00.000Z')),
+    updatedAt: instantFromDate(new Date('2026-09-01T00:00:00.000Z')),
   }
-  const created = prisma8Record()
+  const created = record()
   const tx = {
     orm: {
       public: {
@@ -152,7 +152,7 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
       },
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -166,7 +166,7 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
       transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
     },
   }
-  const service = baseDeps(prisma8, {
+  const service = baseDeps(prisma, {
     fieldValues: {
       save: async () => {
         calls.push('fields')
@@ -187,10 +187,10 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
   assert.equal(result.content, '最终记录内容')
 })
 
-test('统一 page 使用 FOLLOW_RECORD 视图并通过 Prisma8 返回跟进记录', async () => {
-  const rows = [prisma8Record('record-system', 'alpha'), prisma8Record('record-custom', 'beta')]
+test('统一 page 使用 FOLLOW_RECORD 视图并通过 Prisma 返回跟进记录', async () => {
+  const rows = [record('record-system', 'alpha'), record('record-custom', 'beta')]
   let resourceType = ''
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -203,9 +203,12 @@ test('统一 page 使用 FOLLOW_RECORD 视图并通过 Prisma8 返回跟进记�
       },
     },
   }
-  const service = baseDeps(prisma8, {
+  const service = baseDeps(prisma, {
     moduleForms: { listFields: async () => [] },
-    fieldValues: { load: async () => new Map(rows.map((item) => [item.id, {}])), filterResourceIds: async () => [] },
+    fieldValues: {
+      load: async () => new Map(rows.map((item) => [item.id, {}])),
+      filterResourceIds: async () => [],
+    },
     userViews: {
       resolveFilters: async (_user: AuthUser, _id: string, type: string) => {
         resourceType = type
@@ -222,12 +225,15 @@ test('统一 page 使用 FOLLOW_RECORD 视图并通过 Prisma8 返回跟进记�
     viewId: 'view-1',
   })
   assert.equal(resourceType, 'FOLLOW_RECORD')
-  assert.deepEqual(result.items.map((item) => item.id), ['record-system', 'record-custom'])
+  assert.deepEqual(
+    result.items.map((item) => item.id),
+    ['record-system', 'record-custom'],
+  )
   assert.equal(result.total, 2)
 })
 
 test('全局 page 在无可访问目标时返回空集合', async () => {
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -243,9 +249,15 @@ test('全局 page 在无可访问目标时返回空集合', async () => {
   }
   const scopedUser: AuthUser = {
     ...user,
-    permissions: ['menu:lead', 'leadPool:read', 'customer:read', 'customerPool:read', 'menu:opportunity'],
+    permissions: [
+      'menu:lead',
+      'leadPool:read',
+      'customer:read',
+      'customerPool:read',
+      'menu:opportunity',
+    ],
   }
-  const service = baseDeps(prisma8, {
+  const service = baseDeps(prisma, {
     dataScope: { directOwnerFilter: async () => ({ owner: scopedUser.id }) },
     pools: { options: async () => [] },
     fieldValues: { load: async () => new Map(), filterResourceIds: async () => [] },
@@ -256,7 +268,7 @@ test('全局 page 在无可访问目标时返回空集合', async () => {
 })
 
 test('池中线索缺少 poolId 时跟进访问 fail-closed', async () => {
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -266,7 +278,7 @@ test('池中线索缺少 poolId 时跟进访问 fail-closed', async () => {
     },
   }
   const poolUser: AuthUser = { ...user, permissions: ['leadPool:read'] }
-  const service = baseDeps(prisma8, { pools: { options: async () => [{ id: 'pool-1' }] } })
+  const service = baseDeps(prisma, { pools: { options: async () => [{ id: 'pool-1' }] } })
   await assert.rejects(
     () => service.assertTargetAccess(poolUser, 'lead', 'lead-1', false),
     /线索不存在或无权访问/,
@@ -274,7 +286,7 @@ test('池中线索缺少 poolId 时跟进访问 fail-closed', async () => {
 })
 
 test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段伪排序', async () => {
-  const rows = [prisma8Record('record-high', 'high'), prisma8Record('record-low', 'low')]
+  const rows = [record('record-high', 'high'), record('record-low', 'low')]
   const numberField = {
     id: 'field-score',
     key: 'cf_score',
@@ -289,7 +301,7 @@ test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段�
     type: 'textarea' as const,
     system: false,
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -307,9 +319,12 @@ test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段�
       },
     },
   }
-  const service = baseDeps(prisma8, {
+  const service = baseDeps(prisma, {
     moduleForms: { listFields: async () => [numberField, textareaField] },
-    fieldValues: { load: async () => new Map(rows.map((item) => [item.id, {}])), filterResourceIds: async () => [] },
+    fieldValues: {
+      load: async () => new Map(rows.map((item) => [item.id, {}])),
+      filterResourceIds: async () => [],
+    },
   })
 
   const result = await service.page(user, {
@@ -319,7 +334,10 @@ test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段�
     pageSize: 20,
     sort: { name: numberField.id, type: 'asc' },
   })
-  assert.deepEqual(result.items.map((item) => item.id), ['record-low', 'record-high'])
+  assert.deepEqual(
+    result.items.map((item) => item.id),
+    ['record-low', 'record-high'],
+  )
 
   await assert.rejects(
     () =>

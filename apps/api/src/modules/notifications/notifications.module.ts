@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common'
-import { Prisma8Module } from '../../prisma/prisma8.module.js'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { MessageSettingsModule } from '../message-settings/message-settings.module'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import { BusinessNotificationsService } from './business-notifications.service'
@@ -13,7 +13,7 @@ import { MessageDeliveryService } from './message-delivery.service'
 /** 全局模块：业务模块（分配/审批/回款提醒等）都会调用通知服务 */
 @Global()
 @Module({
-  imports: [MessageSettingsModule, EnterpriseIntegrationsModule, Prisma8Module],
+  imports: [MessageSettingsModule, EnterpriseIntegrationsModule, PrismaModule],
   controllers: [NotificationsController, MessageDeliveriesController],
   providers: [
     NotificationsService,

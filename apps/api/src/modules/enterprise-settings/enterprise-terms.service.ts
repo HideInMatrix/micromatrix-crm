@@ -6,15 +6,15 @@ import type {
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import type { SaveEnterpriseTermCategoryDto, SaveEnterpriseTermDto } from './dto/term-setting.dto'
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 @Injectable()
 export class EnterpriseTermsService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async categories(tenantId: string): Promise<EnterpriseTermCategoryVO[]> {
     const rows = await this.categoriesTable()
@@ -37,7 +37,7 @@ export class EnterpriseTermsService {
       tenantId,
       name: input.name,
       sort,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     return {
       id: row.id,
@@ -50,11 +50,13 @@ export class EnterpriseTermsService {
   async updateCategory(tenantId: string, id: string, input: SaveEnterpriseTermCategoryDto) {
     const existing = await this.ensureCategory(tenantId, id)
     await this.assertCategoryNameAvailable(tenantId, input.name, id)
-    const row = await this.categoriesTable().where({ id: existing.id, tenantId }).update({
-      name: input.name,
-      ...(input.sort !== undefined && { sort: input.sort }),
-      updatedAt: prisma8Now(),
-    })
+    const row = await this.categoriesTable()
+      .where({ id: existing.id, tenantId })
+      .update({
+        name: input.name,
+        ...(input.sort !== undefined && { sort: input.sort }),
+        updatedAt: nowInstant(),
+      })
     if (!row) throw new NotFoundException('术语分类不存在')
     return {
       id: row.id,
@@ -108,7 +110,7 @@ export class EnterpriseTermsService {
       enable: input.enable,
       createdById: user.id,
       updatedById: user.id,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     return this.toVO(row, category.name)
   }
@@ -121,17 +123,19 @@ export class EnterpriseTermsService {
     const existing = await this.ensureTerm(user.tenantId, id)
     const category = await this.ensureCategory(user.tenantId, input.categoryId)
     await this.assertTermAvailable(user.tenantId, input.categoryId, input.standardTerm, id)
-    const row = await this.termsTable().where({ id: existing.id, tenantId: user.tenantId }).update({
-      categoryId: category.id,
-      standardTerm: input.standardTerm,
-      alsoCalled: input.alsoCalled ?? '',
-      avoidThese: input.avoidThese ?? '',
-      useCase: input.useCase ?? '',
-      systemReference: input.systemReference ?? '',
-      enable: input.enable,
-      updatedById: user.id,
-      updatedAt: prisma8Now(),
-    })
+    const row = await this.termsTable()
+      .where({ id: existing.id, tenantId: user.tenantId })
+      .update({
+        categoryId: category.id,
+        standardTerm: input.standardTerm,
+        alsoCalled: input.alsoCalled ?? '',
+        avoidThese: input.avoidThese ?? '',
+        useCase: input.useCase ?? '',
+        systemReference: input.systemReference ?? '',
+        enable: input.enable,
+        updatedById: user.id,
+        updatedAt: nowInstant(),
+      })
     if (!row) throw new NotFoundException('术语不存在')
     return this.toVO(row, category.name)
   }
@@ -140,7 +144,7 @@ export class EnterpriseTermsService {
     const existing = await this.ensureTerm(tenantId, id)
     const row = await this.termsTable().where({ id: existing.id, tenantId }).update({
       enable,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!row) throw new NotFoundException('术语不存在')
     const category = await this.ensureCategory(tenantId, row.categoryId)
@@ -167,7 +171,7 @@ export class EnterpriseTermsService {
     if (existing.status !== 'PENDING') throw new BadRequestException('该术语发现已处理')
     const row = await this.discoveriesTable().where({ id: existing.id, tenantId }).update({
       status: 'IGNORED',
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!row) throw new NotFoundException('术语发现不存在')
     return this.discoveryToVO(row)
@@ -183,7 +187,7 @@ export class EnterpriseTermsService {
     const category = await this.ensureCategory(user.tenantId, input.categoryId)
     await this.assertTermAvailable(user.tenantId, input.categoryId, input.standardTerm)
 
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const term = await tx.orm.public.EnterpriseTerms.create({
         tenantId: user.tenantId,
         categoryId: category.id,
@@ -195,7 +199,7 @@ export class EnterpriseTermsService {
         enable: input.enable,
         createdById: user.id,
         updatedById: user.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       const updated = await tx.orm.public.EnterpriseTermDiscoveries.where({
         id: discovery.id,
@@ -203,7 +207,7 @@ export class EnterpriseTermsService {
       }).update({
         status: 'ADOPTED',
         adoptedTermId: term.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       if (!updated) throw new NotFoundException('术语发现不存在')
       return this.toVO(term, category.name)
@@ -257,15 +261,15 @@ export class EnterpriseTermsService {
   }
 
   private categoriesTable() {
-    return this.prisma8.client.orm.public.EnterpriseTermCategories
+    return this.prisma.client.orm.public.EnterpriseTermCategories
   }
 
   private termsTable() {
-    return this.prisma8.client.orm.public.EnterpriseTerms
+    return this.prisma.client.orm.public.EnterpriseTerms
   }
 
   private discoveriesTable() {
-    return this.prisma8.client.orm.public.EnterpriseTermDiscoveries
+    return this.prisma.client.orm.public.EnterpriseTermDiscoveries
   }
 
   private async categoryNames(categoryIds: string[]): Promise<Map<string, string>> {
@@ -290,18 +294,21 @@ export class EnterpriseTermsService {
     return rows.length
   }
 
-  private toVO(row: {
-    id: string
-    categoryId: string
-    standardTerm: string
-    alsoCalled: string
-    avoidThese: string
-    useCase: string
-    systemReference: string
-    enable: boolean
-    createdAt: Prisma8Timestamp
-    updatedAt: Prisma8Timestamp
-  }, categoryName: string): EnterpriseTermVO {
+  private toVO(
+    row: {
+      id: string
+      categoryId: string
+      standardTerm: string
+      alsoCalled: string
+      avoidThese: string
+      useCase: string
+      systemReference: string
+      enable: boolean
+      createdAt: InstantTimestamp
+      updatedAt: InstantTimestamp
+    },
+    categoryName: string,
+  ): EnterpriseTermVO {
     return {
       id: row.id,
       categoryId: row.categoryId,
@@ -312,8 +319,8 @@ export class EnterpriseTermsService {
       useCase: row.useCase,
       systemReference: row.systemReference,
       enable: row.enable,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
-      updatedAt: prisma8TimestampToISOString(row.updatedAt),
+      createdAt: instantToISOString(row.createdAt),
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 
@@ -324,7 +331,7 @@ export class EnterpriseTermsService {
     context: string
     status: string
     adoptedTermId: string | null
-    createdAt: Prisma8Timestamp
+    createdAt: InstantTimestamp
   }): EnterpriseTermDiscoveryVO {
     return {
       id: row.id,
@@ -333,7 +340,7 @@ export class EnterpriseTermsService {
       reference: row.context,
       status: row.status as EnterpriseTermDiscoveryVO['status'],
       adoptedTermId: row.adoptedTermId,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
+      createdAt: instantToISOString(row.createdAt),
     }
   }
 }

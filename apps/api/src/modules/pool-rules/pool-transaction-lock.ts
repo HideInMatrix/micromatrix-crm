@@ -1,6 +1,6 @@
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 export type PoolDomain = 'clue' | 'customer'
 
@@ -16,9 +16,9 @@ export function poolTransactionLockKeys(
   ].sort()
 }
 
-export async function acquirePoolTransactionLocksPrisma8(
-  client: Prisma8Client,
-  tx: Prisma8Transaction,
+export async function acquirePoolTransactionLocksPrisma(
+  client: PrismaClient,
+  tx: PrismaTransaction,
   keys: string[],
 ): Promise<void> {
   for (const key of [...new Set(keys)].sort()) {

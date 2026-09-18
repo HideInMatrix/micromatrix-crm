@@ -19,16 +19,16 @@ import {
   type ModuleFormProp,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
 
 const SYSTEM_ACTOR = 'SYSTEM'
 const CACHE_TTL_SECONDS = 10 * 60
 
-export type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+export type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 interface FieldWithBlob {
   id: string
@@ -82,7 +82,7 @@ export interface ModuleFormConfigVO {
 @Injectable()
 export class ModuleFormsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
@@ -100,7 +100,7 @@ export class ModuleFormsService {
   }
 
   private async loadConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey)
       const [blob, fields] = await Promise.all([
         tx.orm.public.SysModuleFormBlob.where({ id: form.id }).first(),
@@ -119,7 +119,7 @@ export class ModuleFormsService {
   }
 
   async listFieldsInTransaction(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     formKey: string,
   ): Promise<FieldVO[]> {
@@ -153,7 +153,7 @@ export class ModuleFormsService {
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     await this.validateFormPropLinkage(organizationId, formKey, formProp)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const now = BigInt(Date.now())
       await tx.orm.public.SysModuleForm.where({ id: form.id }).update({
@@ -177,7 +177,7 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
     this.validateFieldInput(dto)
-    const result = await this.prisma8.client.transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const duplicated = await tx.orm.public.SysModuleField.where({
         formId: form.id,
@@ -233,7 +233,7 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
     this.validateFieldInput(dto)
-    const result = await this.prisma8.client.transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       const current = this.parseProp(field)
       if (dto.label && dto.label.trim() !== field.name) {
@@ -338,7 +338,7 @@ export class ModuleFormsService {
   }
 
   async deleteField(organizationId: string, id: string): Promise<{ id: string; name: string }> {
-    const deleted = await this.prisma8.client.transaction(async (tx) => {
+    const deleted = await this.prisma.client.transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       const prop = this.parseProp(field)
       if (prop.system) throw new BadRequestException('系统字段不可删除')
@@ -363,7 +363,7 @@ export class ModuleFormsService {
     orderedIds: string[],
     actorId = SYSTEM_ACTOR,
   ): Promise<{ count: number }> {
-    const result = await this.prisma8.client.transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const fields = await tx.orm.public.SysModuleField.where({ formId: form.id })
         .select('id')
@@ -416,7 +416,7 @@ export class ModuleFormsService {
   }
 
   private async ensureForm(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     formKey: string,
     actorId = SYSTEM_ACTOR,
@@ -464,7 +464,7 @@ export class ModuleFormsService {
   }
 
   private async ensureSystemFields(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     formId: string,
     formKey: string,
     actorId: string,
@@ -500,7 +500,7 @@ export class ModuleFormsService {
     }
   }
 
-  private async findFields(tx: Prisma8Transaction, formId: string): Promise<FieldWithBlob[]> {
+  private async findFields(tx: PrismaTransaction, formId: string): Promise<FieldWithBlob[]> {
     const rows = await tx.orm.public.SysModuleField.where({ formId: formId })
       .orderBy([(field) => field.pos.asc(), (field) => field.createTime.asc()])
       .all()
@@ -513,7 +513,7 @@ export class ModuleFormsService {
   }
 
   private async ensureField(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     id: string,
   ): Promise<FieldWithForm> {
@@ -535,7 +535,7 @@ export class ModuleFormsService {
 
   private fieldWithBlob(
     row: NonNullable<
-      Awaited<ReturnType<Prisma8Service['client']['orm']['public']['SysModuleField']['first']>>
+      Awaited<ReturnType<PrismaService['client']['orm']['public']['SysModuleField']['first']>>
     >,
     blob: { id: string; prop: string | null } | null,
   ): FieldWithBlob {
@@ -1022,7 +1022,7 @@ export class ModuleFormsService {
   }
 
   private async reconcileSubFieldValues(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     current: StoredSubFieldProp[],
     next: StoredSubFieldProp[],
   ): Promise<void> {
@@ -1157,7 +1157,7 @@ export class ModuleFormsService {
     }
   }
 
-  private async countFieldValues(tx: Prisma8Transaction, fieldId: string): Promise<number> {
+  private async countFieldValues(tx: PrismaTransaction, fieldId: string): Promise<number> {
     const id = fieldId
     const counts = await Promise.all([
       tx.orm.public.ClueField.where({ fieldId: id }).aggregate((agg) => ({ count: agg.count() })),
@@ -1252,7 +1252,7 @@ export class ModuleFormsService {
     return counts.reduce((sum, item) => sum + item.count, 0)
   }
 
-  private async deleteFieldValues(tx: Prisma8Transaction, fieldId: string): Promise<void> {
+  private async deleteFieldValues(tx: PrismaTransaction, fieldId: string): Promise<void> {
     const id = fieldId
     await Promise.all([
       tx.orm.public.ClueField.where({ fieldId: id }).deleteAll(),
@@ -1289,7 +1289,7 @@ export class ModuleFormsService {
   }
 
   private async deleteCustomSubFieldValues(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     blob: boolean,
     parentId: string,
     childIds: string[],

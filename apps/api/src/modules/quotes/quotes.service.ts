@@ -10,8 +10,8 @@ import { isCustomFieldKey } from '@micromatrix/shared'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { ApprovalsService } from '../approvals/approvals.service'
@@ -31,7 +31,7 @@ import { QuotationFieldsService } from './quotation-fields.service'
 
 const FORM_KEY = 'quote'
 const READ_PERMISSION = 'menu:quote'
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 interface QuoteRow {
   id: string
@@ -52,7 +52,7 @@ interface QuoteRow {
 @Injectable()
 export class QuotesService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly approvals: ApprovalsService,
     private readonly dataScope: DataScopeService,
     private readonly moduleForms: ModuleFormsService,
@@ -89,7 +89,7 @@ export class QuotesService {
         : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
+    let query = this.prisma.client.orm.public.OpportunityQuotation.where({
       organizationId: user.tenantId,
     })
     const creatorFilter = await this.dataScope.directCreatorFilter(user, READ_PERMISSION)
@@ -105,7 +105,7 @@ export class QuotesService {
       query = query.where({ opportunityId: dto.opportunityId })
     }
     if (dto.keyword) {
-      const opportunityIds = await this.prisma8.client.orm.public.Opportunity.where({
+      const opportunityIds = await this.prisma.client.orm.public.Opportunity.where({
         organizationId: user.tenantId,
       })
         .where((row) => row.name.ilike(`%${dto.keyword}%`))
@@ -131,7 +131,7 @@ export class QuotesService {
     const total = aggregate.count
     const opportunityIds = [...new Set(rows.map((row) => row.opportunityId))]
     const opportunities = opportunityIds.length
-      ? await this.prisma8.client.orm.public.Opportunity.where((row) => row.id.in(opportunityIds))
+      ? await this.prisma.client.orm.public.Opportunity.where((row) => row.id.in(opportunityIds))
           .select('id', 'name')
           .all()
       : []
@@ -168,7 +168,7 @@ export class QuotesService {
     await this.assertNameUnique(user.tenantId, dto.name)
     const customData = await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
     const now = BigInt(Date.now())
-    const created = await this.prisma8.client.transaction(async (tx) => {
+    const created = await this.prisma.client.transaction(async (tx) => {
       const row = await tx.orm.public.OpportunityQuotation.create({
         id: createLegacyId32(),
         name: dto.name.trim(),
@@ -240,7 +240,7 @@ export class QuotesService {
       approvalRequired && executeTiming === 'UPDATE'
         ? await this.approvals.capturePreUpdateSnapshot(user, 'quote', dto.id)
         : null
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const row = await tx.orm.public.OpportunityQuotation.where({
         id: dto.id,
       }).update({
@@ -293,7 +293,7 @@ export class QuotesService {
   }
 
   async get(user: AuthUser, id: string): Promise<QuoteVO> {
-    const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const row = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -301,7 +301,7 @@ export class QuotesService {
     if (!(await this.dataScope.matchesDirectCreator(user, row.createUser, READ_PERMISSION))) {
       throw new NotFoundException('报价不存在')
     }
-    const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
+    const opportunity = await this.prisma.client.orm.public.Opportunity.where({
       id: row.opportunityId,
       organizationId: user.tenantId,
     })
@@ -323,7 +323,7 @@ export class QuotesService {
 
   async getSnapshot(user: AuthUser, id: string) {
     const current = await this.get(user, id)
-    const snapshot = await this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({
+    const snapshot = await this.prisma.client.orm.public.OpportunityQuotationSnapshot.where({
       quotationId: id,
     })
       .orderBy((row) => row.id.desc())
@@ -340,7 +340,7 @@ export class QuotesService {
 
   async getSnapshotForm(user: AuthUser, id: string) {
     await this.get(user, id)
-    const snapshot = await this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({
+    const snapshot = await this.prisma.client.orm.public.OpportunityQuotationSnapshot.where({
       quotationId: id,
     })
       .orderBy((row) => row.id.desc())
@@ -352,7 +352,7 @@ export class QuotesService {
   async batchUpdate(user: AuthUser, dto: QuotationBatchUpdateDto) {
     const ids = [...new Set(dto.ids)]
     const rows = ids.length
-      ? await this.prisma8.client.orm.public.OpportunityQuotation.where({
+      ? await this.prisma.client.orm.public.OpportunityQuotation.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(ids))
@@ -371,7 +371,7 @@ export class QuotesService {
       throw new BadRequestException('字段不存在或不支持批量编辑')
     const now = BigInt(Date.now())
     if (field.system) {
-      const target = this.prisma8.client.orm.public.OpportunityQuotation.where((row) =>
+      const target = this.prisma.client.orm.public.OpportunityQuotation.where((row) =>
         row.id.in(allowed),
       )
       if (field.key === 'name') {
@@ -410,7 +410,7 @@ export class QuotesService {
         })
       } else throw new BadRequestException('该系统字段不支持批量编辑')
     } else {
-      await this.prisma8.client.transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'quotation',
@@ -446,7 +446,7 @@ export class QuotesService {
     let fail = 0
     let skip = 0
     for (const id of [...new Set(dto.ids)]) {
-      const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+      const row = await this.prisma.client.orm.public.OpportunityQuotation.where({
         id: id,
         organizationId: user.tenantId,
       })
@@ -469,7 +469,7 @@ export class QuotesService {
   async setInvalid(user: AuthUser, id: string, invalid = true) {
     const row = await this.ensureWritable(user, id)
     if (row.invalid === invalid) return this.get(user, id)
-    await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: id,
     }).update({
       invalid,
@@ -492,7 +492,7 @@ export class QuotesService {
           skip++
           continue
         }
-        await this.prisma8.client.orm.public.OpportunityQuotation.where({
+        await this.prisma.client.orm.public.OpportunityQuotation.where({
           id: id,
         }).update({
           invalid: true,
@@ -529,7 +529,7 @@ export class QuotesService {
       const approval = await this.approvals.submit(user, 'quote', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
-    await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: id,
       organizationId: user.tenantId,
     }).delete()
@@ -539,7 +539,7 @@ export class QuotesService {
   async refreshSnapshot(user: AuthUser, id: string) {
     const current = await this.get(user, id)
     const config = await this.moduleForms.getConfig(user.tenantId, FORM_KEY)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.OpportunityQuotationSnapshot.where({
         quotationId: id,
       }).deleteAll()
@@ -578,7 +578,7 @@ export class QuotesService {
   }
 
   private async assertOpportunity(organizationId: string, opportunityId: string) {
-    const exists = await this.prisma8.client.orm.public.Opportunity.where({
+    const exists = await this.prisma.client.orm.public.Opportunity.where({
       id: opportunityId,
       organizationId: organizationId,
     })
@@ -588,7 +588,7 @@ export class QuotesService {
   }
 
   private async assertNameUnique(organizationId: string, name: string, excludeId?: string) {
-    let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
+    let query = this.prisma.client.orm.public.OpportunityQuotation.where({
       organizationId: organizationId,
       name: name.trim(),
     })
@@ -598,7 +598,7 @@ export class QuotesService {
   }
 
   private async ensureWritable(user: AuthUser, id: string) {
-    const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const row = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -639,14 +639,14 @@ export class QuotesService {
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
           const deptId = String(condition.value ?? '')
-          const users = await this.prisma8.client.orm.public.Users.where({
+          const users = await this.prisma.client.orm.public.Users.where({
             tenantId: organizationId,
             deptId,
           })
             .select('id')
             .all()
           const creatorIds = users.map((item) => String(item.id))
-          let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
+          let query = this.prisma.client.orm.public.OpportunityQuotation.where({
             organizationId: organizationId,
           })
           query =
@@ -658,7 +658,7 @@ export class QuotesService {
         }
         const directKey = condition.key === 'owner' ? 'createUser' : condition.key
         if (directKeys.has(condition.key)) {
-          let query = this.prisma8.client.orm.public.OpportunityQuotation.where({
+          let query = this.prisma.client.orm.public.OpportunityQuotation.where({
             organizationId: organizationId,
           })
           query = this.applyQuotationSystemFilter(query, directKey, condition)
@@ -686,7 +686,7 @@ export class QuotesService {
   }
 
   private applyQuotationSystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.OpportunityQuotation.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.OpportunityQuotation.where>,
     key: string,
     condition: FilterCondition,
   ) {
@@ -821,7 +821,7 @@ export class QuotesService {
   }
 
   private async writeSnapshot(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     quotationId: string,
     formConfig: unknown,
     value: unknown,

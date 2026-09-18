@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   DictionaryAddDto,
@@ -11,11 +11,11 @@ import type {
 } from './dto/dictionary.dto'
 
 const MAX_REASON_COUNT = 50
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
 export class DictionariesService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async list(organizationId: string, module: DictionaryModule) {
     const rows = await this.listRows(organizationId, module)
@@ -64,7 +64,7 @@ export class DictionariesService {
 
   async add(user: AuthUser, dto: DictionaryAddDto) {
     const name = dto.name.trim()
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const rows = await tx.orm.public.SysDict.where({
         organizationId: user.tenantId,
         module: dto.module,
@@ -115,7 +115,7 @@ export class DictionariesService {
 
   async remove(user: AuthUser, id: string) {
     const row = await this.assertOwned(user.tenantId, id)
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const [config, rows] = await Promise.all([
         tx.orm.public.SysDictConfig.where({
           module: row.module,
@@ -165,7 +165,7 @@ export class DictionariesService {
 
   async sort(user: AuthUser, dto: DictionarySortDto) {
     const dragged = await this.assertOwned(user.tenantId, dto.dragDictId)
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const rows = await tx.orm.public.SysDict.where({
         organizationId: user.tenantId,
         module: dragged.module,
@@ -294,7 +294,7 @@ export class DictionariesService {
   }
 
   private async normalizePositions(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     module: string,
     userId: string,
@@ -317,7 +317,7 @@ export class DictionariesService {
   }
 
   private async listAfterTransaction(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     module: string,
   ) {
@@ -331,10 +331,10 @@ export class DictionariesService {
   }
 
   private dicts() {
-    return this.prisma8.client.orm.public.SysDict
+    return this.prisma.client.orm.public.SysDict
   }
 
   private configs() {
-    return this.prisma8.client.orm.public.SysDictConfig
+    return this.prisma.client.orm.public.SysDictConfig
   }
 }

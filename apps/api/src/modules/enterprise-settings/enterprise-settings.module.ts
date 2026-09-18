@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { Prisma8Module } from '../../prisma/prisma8.module.js'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { EnterpriseAiModelsController } from './enterprise-ai-models.controller'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'
@@ -14,7 +14,7 @@ import { EnterpriseUiSettingsService } from './enterprise-ui-settings.service'
 import { SmtpProbeService } from './smtp-probe.service'
 
 @Module({
-  imports: [AttachmentsModule, Prisma8Module],
+  imports: [AttachmentsModule, PrismaModule],
   controllers: [
     EnterpriseSettingsController,
     EnterpriseAiModelsController,

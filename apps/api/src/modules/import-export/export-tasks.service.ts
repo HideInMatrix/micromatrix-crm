@@ -5,8 +5,8 @@ import type { ExportTaskVO } from '@micromatrix/shared'
 import { createReadStream, promises as fs } from 'node:fs'
 import path from 'node:path'
 import { jsonValue } from '../../prisma/json-value'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import { nowInstant, instantToISOString } from '../../prisma/temporal.js'
 import { AsyncJobsService } from '../../async-jobs/async-jobs.service'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -28,7 +28,7 @@ export class ExportTasksService {
   private readonly root: string
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly asyncJobs: AsyncJobsService,
     config: ConfigService,
   ) {
@@ -47,7 +47,7 @@ export class ExportTasksService {
   ): Promise<ExportTaskVO> {
     const fileName = this.normalizeFileName(input.fileName)
     const payload = jsonValue(input.payload)
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const task = await client.transaction(async (tx) => {
       const lockKey = `export-user:${user.tenantId}:${user.id}`
       const lockQuery = client.raw.sql`SELECT pg_advisory_xact_lock(
@@ -93,7 +93,7 @@ export class ExportTasksService {
           module: input.module,
           fileName,
           payload,
-          expiresAt: prisma8Now().add({ milliseconds: DAY_MS }),
+          expiresAt: nowInstant().add({ milliseconds: DAY_MS }),
         })
     })
 
@@ -109,7 +109,7 @@ export class ExportTasksService {
   }
 
   async beginAttempt(taskId: string) {
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const tasks = tx.orm.public.ExportTasks
       const current = await tasks.where({ id: taskId }).first()
       if (
@@ -121,7 +121,7 @@ export class ExportTasksService {
       }
       return tasks.where({ id: taskId }).update({
         attempts: current.attempts + 1,
-        ...(current.startedAt ? {} : { startedAt: prisma8Now() }),
+        ...(current.startedAt ? {} : { startedAt: nowInstant() }),
       })
     })
   }
@@ -139,7 +139,7 @@ export class ExportTasksService {
     await fs.mkdir(dir, { recursive: true })
     const filePath = path.join(dir, `${taskId}.xlsx`)
     await fs.writeFile(filePath, result.data)
-    const completedAt = prisma8Now()
+    const completedAt = nowInstant()
     const updated = await this.tasks()
       .where({ id: taskId, tenantId: user.tenantId, userId: user.id, status: 'PENDING' })
       .updateAndCount({
@@ -161,14 +161,14 @@ export class ExportTasksService {
       .updateAndCount({
         status: 'FAILED',
         errorMessage: message.slice(0, 500),
-        completedAt: prisma8Now(),
+        completedAt: nowInstant(),
       })
   }
 
   async recoverPending(): Promise<{ recovered: number; kept: number; failedLegacy: number }> {
     const pending = await this.tasks()
       .where({ status: 'PENDING' })
-      .where((task) => task.expiresAt.gt(prisma8Now()))
+      .where((task) => task.expiresAt.gt(nowInstant()))
       .orderBy((task) => task.createdAt.asc())
       .limit(2_000)
       .select('id', 'payload')
@@ -193,7 +193,7 @@ export class ExportTasksService {
     await this.cleanupExpired(user)
     const tasks = await this.tasks()
       .where({ tenantId: user.tenantId, userId: user.id })
-      .where((task) => task.expiresAt.gt(prisma8Now()))
+      .where((task) => task.expiresAt.gt(nowInstant()))
       .orderBy((task) => task.createdAt.desc())
       .limit(100)
       .all()
@@ -222,7 +222,7 @@ export class ExportTasksService {
       .update({
         status: 'CANCELED',
         filePath: null,
-        completedAt: task.completedAt ?? prisma8Now(),
+        completedAt: task.completedAt ?? nowInstant(),
       })
     await this.asyncJobs.cancelExportJob(id)
     if (task.filePath) await fs.rm(task.filePath, { force: true }).catch(() => undefined)
@@ -238,7 +238,7 @@ export class ExportTasksService {
   private async cleanupExpired(user: AuthUser) {
     const expired = await this.tasks()
       .where({ tenantId: user.tenantId, userId: user.id })
-      .where((task) => task.expiresAt.lte(prisma8Now()))
+      .where((task) => task.expiresAt.lte(nowInstant()))
       .select('id', 'filePath')
       .all()
     for (const task of expired) {
@@ -252,7 +252,7 @@ export class ExportTasksService {
   }
 
   private tasks() {
-    return this.prisma8.client.orm.public.ExportTasks
+    return this.prisma.client.orm.public.ExportTasks
   }
 
   private normalizeFileName(fileName: string) {
@@ -272,9 +272,9 @@ export class ExportTasksService {
     rowCount: number
     fileSize: number | null
     errorMessage: string | null
-    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
-    completedAt: Parameters<typeof prisma8TimestampToISOString>[0] | null
-    expiresAt: Parameters<typeof prisma8TimestampToISOString>[0]
+    createdAt: Parameters<typeof instantToISOString>[0]
+    completedAt: Parameters<typeof instantToISOString>[0] | null
+    expiresAt: Parameters<typeof instantToISOString>[0]
   }): ExportTaskVO {
     return {
       id: task.id,
@@ -284,9 +284,9 @@ export class ExportTasksService {
       rowCount: task.rowCount,
       fileSize: task.fileSize,
       errorMessage: task.errorMessage,
-      createdAt: prisma8TimestampToISOString(task.createdAt),
-      completedAt: task.completedAt ? prisma8TimestampToISOString(task.completedAt) : null,
-      expiresAt: prisma8TimestampToISOString(task.expiresAt),
+      createdAt: instantToISOString(task.createdAt),
+      completedAt: task.completedAt ? instantToISOString(task.completedAt) : null,
+      expiresAt: instantToISOString(task.expiresAt),
     }
   }
 }

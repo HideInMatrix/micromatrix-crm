@@ -3,7 +3,7 @@ import type { FieldVO, FilterCondition, ImportResultVO } from '@micromatrix/shar
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { formatForExport } from '../../common/export-format'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import {
@@ -114,7 +114,7 @@ const BUSINESS_TITLE_IMPORT_KEYS = new Set([
 ])
 
 type BusinessTitleCollection = ReturnType<
-  Prisma8Service['client']['orm']['public']['BusinessTitle']['where']
+  PrismaService['client']['orm']['public']['BusinessTitle']['where']
 >
 
 const NULLABLE_VARCHAR_255_FILTER_KEYS = [
@@ -140,7 +140,7 @@ type BigIntFilterKey = 'companyNumber' | 'createTime' | 'updateTime'
 @Injectable()
 export class BusinessTitleService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
   ) {}
@@ -167,7 +167,7 @@ export class BusinessTitleService {
   async page(user: AuthUser, dto: BusinessTitlePageDto) {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
-    let rowsQuery = this.prisma8.client.orm.public.BusinessTitle.where({
+    let rowsQuery = this.prisma.client.orm.public.BusinessTitle.where({
       organizationId: user.tenantId,
     })
     const keyword = dto.keyword?.trim()
@@ -207,7 +207,7 @@ export class BusinessTitleService {
   }
 
   async options(user: AuthUser) {
-    const rows = await this.prisma8.client.orm.public.BusinessTitle.where({
+    const rows = await this.prisma.client.orm.public.BusinessTitle.where({
       organizationId: user.tenantId,
       approvalStatus: 'APPROVED',
     })
@@ -253,7 +253,7 @@ export class BusinessTitleService {
     await this.assertName(user, dto.name)
     await this.assertRequired(user, dto as unknown as Record<string, unknown>)
     const now = BigInt(Date.now())
-    const row = await this.prisma8.client.orm.public.BusinessTitle.create({
+    const row = await this.prisma.client.orm.public.BusinessTitle.create({
       id: createLegacyId32(),
       ...this.data(dto),
       name: dto.name.trim(),
@@ -273,7 +273,7 @@ export class BusinessTitleService {
     const merged = { ...this.toVO(current), ...dto }
     await this.assertRequired(user, merged)
     const nextType = dto.type ?? (current._type as 'CUSTOM' | 'THIRD_PARTY' | null) ?? 'CUSTOM'
-    const row = await this.prisma8.client.orm.public.BusinessTitle.where({
+    const row = await this.prisma.client.orm.public.BusinessTitle.where({
       id: dto.id,
     }).update({
       ...this.data(dto),
@@ -288,7 +288,7 @@ export class BusinessTitleService {
 
   async hasInvoice(user: AuthUser, id: string) {
     await this.ensure(user, id)
-    const count = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const count = await this.prisma.client.orm.public.ContractInvoice.where({
       businessTitleId: id,
     }).aggregate((agg) => ({ count: agg.count() }))
     return count.count > 0
@@ -298,13 +298,13 @@ export class BusinessTitleService {
     const row = await this.ensure(user, id)
     if (await this.hasInvoice(user, id))
       throw new BadRequestException('该工商抬头已被发票引用，无法删除')
-    await this.prisma8.client.orm.public.BusinessTitle.where({ id: id }).deleteAndCount()
+    await this.prisma.client.orm.public.BusinessTitle.where({ id: id }).deleteAndCount()
     return { id, name: row.name }
   }
 
   async approval(user: AuthUser, dto: BusinessTitleApprovalDto) {
     await this.ensure(user, dto.id)
-    await this.prisma8.client.orm.public.BusinessTitle.where({ id: dto.id }).update({
+    await this.prisma.client.orm.public.BusinessTitle.where({ id: dto.id }).update({
       approvalStatus: dto.approvalStatus,
       unapprovedReason:
         dto.approvalStatus === 'UNAPPROVED'
@@ -323,7 +323,7 @@ export class BusinessTitleService {
     if (!['APPROVING', 'APPROVED', 'UNAPPROVED'].includes(row.approvalStatus ?? '')) {
       throw new BadRequestException('当前工商抬头状态不可撤回')
     }
-    await this.prisma8.client.orm.public.BusinessTitle.where({ id: id }).update({
+    await this.prisma.client.orm.public.BusinessTitle.where({ id: id }).update({
       approvalStatus: 'REVOKED',
       updateTime: BigInt(Date.now()),
       updateUser: user.id,
@@ -332,7 +332,7 @@ export class BusinessTitleService {
   }
 
   config(user: AuthUser) {
-    return this.prisma8.client.orm.public.BusinessTitleConfig.where({
+    return this.prisma.client.orm.public.BusinessTitleConfig.where({
       organizationId: user.tenantId,
     })
       .orderBy((row) => row.field.asc())
@@ -340,18 +340,18 @@ export class BusinessTitleService {
   }
 
   async switchRequired(user: AuthUser, id: string) {
-    const row = await this.prisma8.client.orm.public.BusinessTitleConfig.where({
+    const row = await this.prisma.client.orm.public.BusinessTitleConfig.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
     if (!row) throw new NotFoundException('工商抬头配置不存在')
-    return this.prisma8.client.orm.public.BusinessTitleConfig.where({ id: id }).update({
+    return this.prisma.client.orm.public.BusinessTitleConfig.where({ id: id }).update({
       required: !row.required,
     })
   }
 
   private async ensure(user: AuthUser, id: string) {
-    const row = await this.prisma8.client.orm.public.BusinessTitle.where({
+    const row = await this.prisma.client.orm.public.BusinessTitle.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -360,7 +360,7 @@ export class BusinessTitleService {
   }
 
   private async assertName(user: AuthUser, name: string, excludeId?: string) {
-    let rows = this.prisma8.client.orm.public.BusinessTitle.where({
+    let rows = this.prisma.client.orm.public.BusinessTitle.where({
       organizationId: user.tenantId,
       name: name.trim(),
     })
@@ -370,7 +370,7 @@ export class BusinessTitleService {
   }
 
   private async assertRequired(user: AuthUser, dto: Record<string, unknown>) {
-    const configs = await this.prisma8.client.orm.public.BusinessTitleConfig.where({
+    const configs = await this.prisma.client.orm.public.BusinessTitleConfig.where({
       organizationId: user.tenantId,
       required: true,
     }).all()

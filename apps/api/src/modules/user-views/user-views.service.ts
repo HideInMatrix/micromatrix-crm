@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FilterCondition, FilterOp } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   CreateUserViewDto,
@@ -16,7 +16,7 @@ type ConditionValueType = 'ARRAY' | 'STRING' | 'INT' | 'FLOAT' | 'BOOLEAN'
 
 @Injectable()
 export class UserViewsService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async list(user: AuthUser, resourceType: UserViewResourceKey) {
     const views = await this.views()
@@ -55,7 +55,7 @@ export class UserViewsService {
     const now = BigInt(Date.now())
     const name = dto.name.trim()
     try {
-      const view = await this.prisma8.client.transaction(async (tx) => {
+      const view = await this.prisma.client.transaction(async (tx) => {
         const scope = {
           organizationId: user.tenantId,
           userId: user.id,
@@ -99,7 +99,7 @@ export class UserViewsService {
     await this.getOwnedView(user, dto.id, resourceType)
     const now = BigInt(Date.now())
     try {
-      const view = await this.prisma8.client.transaction(async (tx) => {
+      const view = await this.prisma.client.transaction(async (tx) => {
         const id = dto.id
         await tx.orm.public.SysUserViewCondition.where({ sysUserViewId: id }).deleteAndCount()
         const updated = await tx.orm.public.SysUserView.where({
@@ -185,7 +185,7 @@ export class UserViewsService {
     const nextTargetIndex = ordered.indexOf(dto.targetId)
     ordered.splice(nextTargetIndex + (dto.moveMode === 'AFTER' ? 1 : 0), 0, dto.moveId)
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ordered.entries()) {
         await tx.orm.public.SysUserView.where({
           id: id,
@@ -356,11 +356,11 @@ export class UserViewsService {
   }
 
   private views() {
-    return this.prisma8.client.orm.public.SysUserView
+    return this.prisma.client.orm.public.SysUserView
   }
 
   private conditions() {
-    return this.prisma8.client.orm.public.SysUserViewCondition
+    return this.prisma.client.orm.public.SysUserViewCondition
   }
 
   private loadConditions(collection: ReturnType<UserViewsService['conditions']>, viewId: string) {

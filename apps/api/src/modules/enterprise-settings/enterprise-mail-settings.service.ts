@@ -2,21 +2,17 @@ import { BadRequestException, Injectable } from '@nestjs/common'
 import type { EnterpriseMailSettingVO, EnterpriseMailTestVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal.js'
 import type { SaveEnterpriseMailSettingDto } from './dto/mail-setting.dto'
 import { SmtpProbeService } from './smtp-probe.service'
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 @Injectable()
 export class EnterpriseMailSettingsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly cipher: CredentialCipherService,
     private readonly smtpProbe: SmtpProbeService,
   ) {}
@@ -52,7 +48,7 @@ export class EnterpriseMailSettingsService {
     const password = input.password?.trim() ?? ''
     const encrypted = password ? this.cipher.encrypt(password) : null
     const credential = encrypted ?? this.existingCredential(existing)
-    const updatedAt = prisma8Now()
+    const updatedAt = nowInstant()
     const update = {
       host: input.host,
       port: input.port,
@@ -69,9 +65,7 @@ export class EnterpriseMailSettingsService {
         passwordKeyVersion: credential.keyVersion,
       }),
     }
-    let row = existing
-      ? await this.mailSettings().where({ id: existing.id }).update(update)
-      : null
+    let row = existing ? await this.mailSettings().where({ id: existing.id }).update(update) : null
     if (!row) {
       try {
         row = await this.mailSettings().create({
@@ -161,17 +155,19 @@ export class EnterpriseMailSettingsService {
     testedAt: Date,
   ) {
     if (!id) return
-    const updated = await this.mailSettings().where({ id, tenantId }).update({
-      lastTestSucceeded: success,
-      lastTestMessage: message,
-      lastTestedAt: prisma8TimestampFromDate(testedAt),
-      updatedAt: prisma8Now(),
-    })
+    const updated = await this.mailSettings()
+      .where({ id, tenantId })
+      .update({
+        lastTestSucceeded: success,
+        lastTestMessage: message,
+        lastTestedAt: instantFromDate(testedAt),
+        updatedAt: nowInstant(),
+      })
     if (!updated) throw new Error('SMTP 配置不存在')
   }
 
   private mailSettings() {
-    return this.prisma8.client.orm.public.EnterpriseMailSettings
+    return this.prisma.client.orm.public.EnterpriseMailSettings
   }
 
   private toVO(row: {
@@ -185,8 +181,8 @@ export class EnterpriseMailSettingsService {
     tls: boolean
     lastTestSucceeded: boolean | null
     lastTestMessage: string | null
-    lastTestedAt: Prisma8Timestamp | null
-    updatedAt: Prisma8Timestamp
+    lastTestedAt: InstantTimestamp | null
+    updatedAt: InstantTimestamp
   }): EnterpriseMailSettingVO {
     return {
       configured: true,
@@ -200,8 +196,8 @@ export class EnterpriseMailSettingsService {
       tls: row.tls,
       lastTestSucceeded: row.lastTestSucceeded,
       lastTestMessage: row.lastTestMessage,
-      lastTestedAt: row.lastTestedAt ? prisma8TimestampToISOString(row.lastTestedAt) : null,
-      updatedAt: prisma8TimestampToISOString(row.updatedAt),
+      lastTestedAt: row.lastTestedAt ? instantToISOString(row.lastTestedAt) : null,
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 }

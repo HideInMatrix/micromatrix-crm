@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   OrderStageAddDto,
@@ -15,7 +15,7 @@ const MAX_STAGE_COUNT = 15
 
 @Injectable()
 export class OrderStageService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async get(user: AuthUser) {
     await this.ensureDefaults(user)
@@ -144,7 +144,7 @@ export class OrderStageService {
     if (count > 0) throw new BadRequestException('该阶段下存在订单，无法删除')
     const stageId = id
     const organizationId = user.tenantId
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.StageAdvancedConfig.where({
         organizationId,
         moduleType: MODULE_TYPE,
@@ -180,7 +180,7 @@ export class OrderStageService {
       throw new BadRequestException('阶段排序必须包含当前全部阶段且不能重复')
     }
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ids.entries()) {
         await tx.orm.public.SalesOrderStageConfig.where({
           id: id,
@@ -248,7 +248,7 @@ export class OrderStageService {
         })
       }
     }
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.StageAdvancedConfig.where({
         organizationId: user.tenantId,
         moduleType: MODULE_TYPE,
@@ -387,14 +387,14 @@ export class OrderStageService {
   }
 
   private orderStages() {
-    return this.prisma8.client.orm.public.SalesOrderStageConfig
+    return this.prisma.client.orm.public.SalesOrderStageConfig
   }
 
   private orders() {
-    return this.prisma8.client.orm.public.SalesOrder
+    return this.prisma.client.orm.public.SalesOrder
   }
 
   private advancedConfigs() {
-    return this.prisma8.client.orm.public.StageAdvancedConfig
+    return this.prisma.client.orm.public.StageAdvancedConfig
   }
 }

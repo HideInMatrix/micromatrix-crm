@@ -9,12 +9,8 @@ import { Cron } from '@nestjs/schedule'
 import type { AnnouncementVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal.js'
 import { jsonValue } from '../../prisma/json-value.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import type { QueryAnnouncementsDto, SaveAnnouncementDto } from './dto/announcement.dto'
@@ -28,14 +24,14 @@ interface ReceiverSnapshot {
   receiverUserIds: string[]
 }
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 type AnnouncementRow = {
   id: string
   tenantId: string
   subject: string
   content: string
-  startAt: Prisma8Timestamp
-  endAt: Prisma8Timestamp
+  startAt: InstantTimestamp
+  endAt: InstantTimestamp
   url: string | null
   linkName: string | null
   departmentIds: unknown
@@ -44,8 +40,8 @@ type AnnouncementRow = {
   notice: boolean
   createUserId: string
   updateUserId: string
-  createdAt: Prisma8Timestamp
-  updatedAt: Prisma8Timestamp
+  createdAt: InstantTimestamp
+  updatedAt: InstantTimestamp
 }
 type PublishAnnouncement = {
   id: string
@@ -56,8 +52,8 @@ type PublishAnnouncement = {
   linkName: string | null
   receiverUserIds: unknown
   notice: boolean
-  startAt: Prisma8Timestamp
-  endAt: Prisma8Timestamp
+  startAt: InstantTimestamp
+  endAt: InstantTimestamp
 }
 
 @Injectable()
@@ -65,7 +61,7 @@ export class AnnouncementsService {
   private readonly logger = new Logger(AnnouncementsService.name)
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
@@ -112,8 +108,8 @@ export class AnnouncementsService {
       tenantId: user.tenantId,
       subject: normalized.subject,
       content: normalized.content,
-      startAt: prisma8TimestampFromDate(normalized.startAt),
-      endAt: prisma8TimestampFromDate(normalized.endAt),
+      startAt: instantFromDate(normalized.startAt),
+      endAt: instantFromDate(normalized.endAt),
       url: normalized.url,
       linkName: normalized.linkName,
       departmentIds: jsonValue(receivers.departmentIds),
@@ -122,7 +118,7 @@ export class AnnouncementsService {
       notice: false,
       createUserId: user.id,
       updateUserId: user.id,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     await this.publishIfDue(announcement, new Date())
     return this.detail(user.tenantId, announcement.id)
@@ -143,8 +139,8 @@ export class AnnouncementsService {
       .update({
         subject: normalized.subject,
         content: normalized.content,
-        startAt: prisma8TimestampFromDate(normalized.startAt),
-        endAt: prisma8TimestampFromDate(normalized.endAt),
+        startAt: instantFromDate(normalized.startAt),
+        endAt: instantFromDate(normalized.endAt),
         url: normalized.url,
         linkName: normalized.linkName,
         departmentIds: jsonValue(receivers.departmentIds),
@@ -152,7 +148,7 @@ export class AnnouncementsService {
         receiverUserIds: jsonValue(receivers.receiverUserIds),
         notice: false,
         updateUserId: user.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
     if (!announcement) throw new NotFoundException('公告不存在')
     await this.publishIfDue(announcement, new Date())
@@ -176,8 +172,8 @@ export class AnnouncementsService {
   }
 
   async publishDueAnnouncements(now = new Date()): Promise<number> {
-    const nowTemporal = prisma8TimestampFromDate(now)
-    const due = await this.prisma8.client.orm.public.Announcements.where({ notice: false })
+    const nowTemporal = instantFromDate(now)
+    const due = await this.prisma.client.orm.public.Announcements.where({ notice: false })
       .where((announcement) => announcement.startAt.lte(nowTemporal))
       .where((announcement) => announcement.endAt.gte(nowTemporal))
       .orderBy((announcement) => announcement.startAt.asc())
@@ -223,11 +219,11 @@ export class AnnouncementsService {
           ...(announcement.linkName ? { linkLabel: announcement.linkName } : {}),
         },
       )
-      await this.prisma8.client.orm.public.Announcements.where({
+      await this.prisma.client.orm.public.Announcements.where({
         id: announcement.id,
         tenantId: announcement.tenantId,
         notice: false,
-      }).update({ notice: true, updatedAt: prisma8Now() })
+      }).update({ notice: true, updatedAt: nowInstant() })
       return true
     } catch (error) {
       // 允许下个调度周期完整重试，不留下半成品 source 通知。
@@ -280,7 +276,7 @@ export class AnnouncementsService {
       throw new BadRequestException('至少选择一个公告接收部门或成员')
     }
 
-    const departments = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()
     const departmentSet = new Set(departments.map((item) => item.id))
@@ -303,7 +299,7 @@ export class AnnouncementsService {
     departmentIds.forEach(visit)
 
     const explicitUsers = userIds.length
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
           .where((user) => user.id.in(userIds))
           .select('id')
           .all()
@@ -313,7 +309,7 @@ export class AnnouncementsService {
     }
 
     const departmentUsers = expandedDepartments.size
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
           .where((user) => user.deptId.in([...expandedDepartments]))
           .select('id')
           .all()
@@ -348,13 +344,13 @@ export class AnnouncementsService {
     }
     const [departments, users] = await Promise.all([
       departmentIds.size
-        ? this.prisma8.client.orm.public.Departments.where({ tenantId })
+        ? this.prisma.client.orm.public.Departments.where({ tenantId })
             .where((department) => department.id.in([...departmentIds]))
             .select('id', 'name')
             .all()
         : [],
       userIds.size
-        ? this.prisma8.client.orm.public.Users.where({ tenantId })
+        ? this.prisma.client.orm.public.Users.where({ tenantId })
             .where((user) => user.id.in([...userIds]))
             .select('id', 'name')
             .all()
@@ -369,8 +365,8 @@ export class AnnouncementsService {
         id: item.id,
         subject: item.subject,
         content: item.content,
-        startAt: prisma8TimestampToISOString(item.startAt),
-        endAt: prisma8TimestampToISOString(item.endAt),
+        startAt: instantToISOString(item.startAt),
+        endAt: instantToISOString(item.endAt),
         url: item.url,
         linkName: item.linkName,
         notice: item.notice,
@@ -385,8 +381,8 @@ export class AnnouncementsService {
         createUserName: userNames.get(item.createUserId) ?? null,
         updateUserId: item.updateUserId,
         updateUserName: userNames.get(item.updateUserId) ?? null,
-        createdAt: prisma8TimestampToISOString(item.createdAt),
-        updatedAt: prisma8TimestampToISOString(item.updatedAt),
+        createdAt: instantToISOString(item.createdAt),
+        updatedAt: instantToISOString(item.updatedAt),
       }
     })
   }
@@ -415,6 +411,6 @@ export class AnnouncementsService {
   }
 
   private announcements() {
-    return this.prisma8.client.orm.public.Announcements
+    return this.prisma.client.orm.public.Announcements
   }
 }

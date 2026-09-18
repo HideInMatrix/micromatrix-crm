@@ -3,7 +3,7 @@ import { hasPermission, type HomeDepartmentNode, type HomeSearchType } from '@mi
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { homeCacheUserContext } from './home-cache-context'
 
 export interface HomeResolvedScope {
@@ -16,7 +16,7 @@ export interface HomeResolvedScope {
 @Injectable()
 export class HomeDepartmentScopeService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
@@ -42,7 +42,7 @@ export class HomeDepartmentScopeService {
     )
     if (!relevantRoles.length) return []
 
-    const departments = await this.prisma8.client.orm.public.Departments.where({
+    const departments = await this.prisma.client.orm.public.Departments.where({
       tenantId: user.tenantId,
     })
       .orderBy([(row) => row.sort.asc(), (row) => row.createdAt.asc()])
@@ -101,7 +101,7 @@ export class HomeDepartmentScopeService {
         : { all: false, self: false, deptIds: [], userIds: [] }
     }
 
-    const scopedUsers = await this.prisma8.client.orm.public.Users.where({
+    const scopedUsers = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
     })

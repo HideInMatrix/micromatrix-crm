@@ -28,7 +28,7 @@ import { OpportunitiesService } from '../modules/opportunities/opportunities.ser
 import { OrdersService } from '../modules/orders/orders.service'
 import { ProductPriceService } from '../modules/products/product-price.service'
 import { ProductsService } from '../modules/products/products.service'
-import { Prisma8Service } from '../prisma/prisma8.service.js'
+import { PrismaService } from '../prisma/prisma.service.js'
 import { AsyncJobsService, type ExportJobData } from '../async-jobs/async-jobs.service'
 
 @Injectable()
@@ -37,7 +37,7 @@ export class ExportWorkerService implements OnApplicationBootstrap {
 
   constructor(
     private readonly jobs: AsyncJobsService,
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly tasks: ExportTasksService,
     private readonly customers: CustomersService,
     private readonly contacts: ContactsService,
@@ -130,12 +130,12 @@ export class ExportWorkerService implements OnApplicationBootstrap {
   }
 
   private async loadUser(userId: string) {
-    const user = await this.prisma8.client.orm.public.Users.where({ id: userId })
+    const user = await this.prisma.client.orm.public.Users.where({ id: userId })
       .select('id', 'tenantId', 'email', 'name', 'status', 'deptId', 'leaderId')
       .first()
     if (!user || user.status !== 'ACTIVE')
       throw new UnauthorizedException('导出任务创建人不存在或已被禁用')
-    const links = await this.prisma8.client.orm.public.UserRoles.where({
+    const links = await this.prisma.client.orm.public.UserRoles.where({
       tenantId: user.tenantId,
       userId: user.id,
     })
@@ -143,7 +143,7 @@ export class ExportWorkerService implements OnApplicationBootstrap {
       .all()
     const roleIds = links.map(({ roleId }) => roleId)
     const roles = roleIds.length
-      ? await this.prisma8.client.orm.public.Roles.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Roles.where({ tenantId: user.tenantId })
           .where((role) => role.id.in(roleIds))
           .select('id', 'name', 'permissions', 'dataScope', 'scopeDeptIds')
           .all()

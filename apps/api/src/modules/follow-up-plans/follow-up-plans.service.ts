@@ -23,14 +23,14 @@ import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampFromISOString,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal'
+  nowInstant,
+  instantFromDate,
+  instantFromISOString,
+  instantToISOString,
+} from '../../prisma/temporal'
 
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
@@ -45,7 +45,7 @@ import {
 } from './dto/follow-up-plan.dto'
 
 type TargetType = CreateFollowUpPlanDto['targetType']
-type FollowUpPlanCollection = ReturnType<Prisma8Client['orm']['public']['FollowUpPlans']['where']>
+type FollowUpPlanCollection = ReturnType<PrismaClient['orm']['public']['FollowUpPlans']['where']>
 type FollowUpPlanStatus = SharedFollowUpPlanStatus
 
 export interface FollowUpPlan {
@@ -56,21 +56,21 @@ export interface FollowUpPlan {
   contactId: string | null
   content: string
   method: string | null
-  estimatedAt: ReturnType<typeof prisma8Now> | null
+  estimatedAt: ReturnType<typeof nowInstant> | null
   status: FollowUpPlanStatus
   converted: boolean
   convertedRecordId: string | null
   ownerId: string
   deptId: string | null
   createdById: string
-  dueNotifiedAt: ReturnType<typeof prisma8Now> | null
+  dueNotifiedAt: ReturnType<typeof nowInstant> | null
   commentCount: number
   customData: unknown
-  createdAt: ReturnType<typeof prisma8Now>
-  updatedAt: ReturnType<typeof prisma8Now>
+  createdAt: ReturnType<typeof nowInstant>
+  updatedAt: ReturnType<typeof nowInstant>
 }
 
-interface Prisma8FollowUpPlanRow {
+interface FollowUpPlanRow {
   id: string
   tenantId: string
   targetType: string
@@ -78,18 +78,18 @@ interface Prisma8FollowUpPlanRow {
   contactId: string | null
   content: string
   method: string | null
-  estimatedAt: ReturnType<typeof prisma8Now> | null
+  estimatedAt: ReturnType<typeof nowInstant> | null
   status: FollowUpPlanStatus
   converted: boolean
   convertedRecordId: string | null
   ownerId: string
   deptId: string | null
   createdById: string
-  dueNotifiedAt: ReturnType<typeof prisma8Now> | null
+  dueNotifiedAt: ReturnType<typeof nowInstant> | null
   commentCount: number
   customData: unknown
-  createdAt: ReturnType<typeof prisma8Now>
-  updatedAt: ReturnType<typeof prisma8Now>
+  createdAt: ReturnType<typeof nowInstant>
+  updatedAt: ReturnType<typeof nowInstant>
 }
 
 interface TargetContext {
@@ -101,7 +101,7 @@ interface TargetContext {
 @Injectable()
 export class FollowUpPlansService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly customerAccess: CustomerAccessService,
     private readonly pools: ResourcePoolsService,
@@ -122,7 +122,7 @@ export class FollowUpPlansService {
     const { page = 1, pageSize = 10, keyword, status, targetType, targetId, mine, filters } = query
     if (targetId && !targetType) throw new BadRequestException('指定业务对象时必须同时提供类型')
 
-    let plans = this.prisma8.client.orm.public.FollowUpPlans.where({ tenantId: user.tenantId })
+    let plans = this.prisma.client.orm.public.FollowUpPlans.where({ tenantId: user.tenantId })
     if (targetType && targetId) {
       const context = await this.assertTargetAccess(user, targetType, targetId, false)
       plans = plans.where({ targetType, targetId })
@@ -187,7 +187,7 @@ export class FollowUpPlansService {
       user.tenantId,
       dto.moduleFields ?? [],
     )
-    const planId = await this.prisma8.client.transaction(async (tx) => {
+    const planId = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.FollowUpPlans.create({
         tenantId: user.tenantId,
         targetType: dto.targetType,
@@ -195,11 +195,11 @@ export class FollowUpPlansService {
         contactId: dto.contactId ?? null,
         content: dto.content,
         method: dto.method ?? null,
-        estimatedAt: dto.estimatedAt ? prisma8TimestampFromISOString(dto.estimatedAt) : null,
+        estimatedAt: dto.estimatedAt ? instantFromISOString(dto.estimatedAt) : null,
         ownerId: owner.id,
         deptId: owner.deptId,
         createdById: user.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -228,7 +228,7 @@ export class FollowUpPlansService {
       dto.estimatedAt === undefined
         ? existing.estimatedAt
         : dto.estimatedAt
-          ? prisma8TimestampFromISOString(dto.estimatedAt)
+          ? instantFromISOString(dto.estimatedAt)
           : null
     const dueDateChanged =
       estimatedAt?.epochMilliseconds !== existing.estimatedAt?.epochMilliseconds
@@ -237,7 +237,7 @@ export class FollowUpPlansService {
         ? null
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.FollowUpPlans.where({ id }).update({
         targetType,
         targetId,
@@ -247,7 +247,7 @@ export class FollowUpPlansService {
         estimatedAt,
         ...(owner ? { ownerId: owner.id, deptId: owner.deptId } : {}),
         ...(dueDateChanged ? { dueNotifiedAt: null } : {}),
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       if (dynamicValues !== null) {
         await this.fieldValues.save(
@@ -274,10 +274,10 @@ export class FollowUpPlansService {
     if (existing.status === 'COMPLETED' && existing.converted) {
       throw new ConflictException('已转为跟进记录的计划不能再变更状态')
     }
-    const row = await this.prisma8.client.orm.public.FollowUpPlans.where({
+    const row = await this.prisma.client.orm.public.FollowUpPlans.where({
       id,
       tenantId: user.tenantId,
-    }).update({ status: status as FollowUpPlanStatus, updatedAt: prisma8Now() })
+    }).update({ status: status as FollowUpPlanStatus, updatedAt: nowInstant() })
     if (!row) throw new NotFoundException('跟进计划不存在')
     const plan = this.legacyPlan(row)
     return (await this.toVOs(user, [plan]))[0]
@@ -301,7 +301,7 @@ export class FollowUpPlansService {
       targetId: plan.targetId,
       ownerId: plan.ownerId,
       contactId: plan.contactId,
-      estimatedAt: plan.estimatedAt ? prisma8TimestampToISOString(plan.estimatedAt) : null,
+      estimatedAt: plan.estimatedAt ? instantToISOString(plan.estimatedAt) : null,
       content: plan.content,
       method: plan.method,
       status: plan.status,
@@ -327,7 +327,7 @@ export class FollowUpPlansService {
 
   async remove(user: AuthUser, id: string) {
     const plan = await this.ensureManageablePlan(user, id)
-    const deleted = await this.prisma8.client.orm.public.FollowUpPlans.where({
+    const deleted = await this.prisma.client.orm.public.FollowUpPlans.where({
       id,
       tenantId: user.tenantId,
     }).deleteAndCount()
@@ -351,7 +351,7 @@ export class FollowUpPlansService {
     const end = new Date(start)
     end.setDate(end.getDate() + 1)
     const plans = await this.loadDueReminderPlans(start, end)
-    const names = await this.targetNamesPrisma8(plans)
+    const names = await this.targetNamesPrisma(plans)
     let notified = 0
     for (const plan of plans) {
       if (!(await this.claimDueReminder(plan.id, start, now))) continue
@@ -373,9 +373,9 @@ export class FollowUpPlansService {
   }
 
   private async loadDueReminderPlans(start: Date, end: Date) {
-    const startTemporal = prisma8TimestampFromDate(start)
-    const endTemporal = prisma8TimestampFromDate(end)
-    return this.prisma8.client.orm.public.FollowUpPlans.where((plan) =>
+    const startTemporal = instantFromDate(start)
+    const endTemporal = instantFromDate(end)
+    return this.prisma.client.orm.public.FollowUpPlans.where((plan) =>
       plan.estimatedAt.gte(startTemporal),
     )
       .where((plan) => plan.estimatedAt.lt(endTemporal))
@@ -387,7 +387,7 @@ export class FollowUpPlansService {
   }
 
   private async claimDueReminder(id: string, start: Date, now: Date): Promise<boolean> {
-    const client = this.prisma8.client
+    const client = this.prisma.client
     const startIso = start.toISOString()
     const nowIso = now.toISOString()
     const query = client.raw.sql`UPDATE follow_up_plans
@@ -404,16 +404,16 @@ export class FollowUpPlansService {
   }
 
   private async releaseDueReminder(id: string, claimedAt: Date): Promise<void> {
-    const claimedTemporal = prisma8TimestampFromDate(claimedAt)
-    await this.prisma8.client.orm.public.FollowUpPlans.where({ id })
+    const claimedTemporal = instantFromDate(claimedAt)
+    await this.prisma.client.orm.public.FollowUpPlans.where({ id })
       .where((plan) => plan.dueNotifiedAt.eq(claimedTemporal))
       .updateAll({
         dueNotifiedAt: null,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
   }
 
-  private async targetNamesPrisma8(
+  private async targetNamesPrisma(
     plans: ReadonlyArray<{ targetType: string; targetId: string }>,
   ): Promise<Map<string, string>> {
     const groups = {
@@ -424,17 +424,17 @@ export class FollowUpPlansService {
         .map((plan) => plan.targetId),
     }
     const leads = groups.lead.length
-      ? await this.prisma8.client.orm.public.Clue.where((row) => row.id.in(groups.lead))
+      ? await this.prisma.client.orm.public.Clue.where((row) => row.id.in(groups.lead))
           .select('id', 'name')
           .all()
       : []
     const customers = groups.customer.length
-      ? await this.prisma8.client.orm.public.Customer.where((row) => row.id.in(groups.customer))
+      ? await this.prisma.client.orm.public.Customer.where((row) => row.id.in(groups.customer))
           .select('id', 'name')
           .all()
       : []
     const opportunities = groups.opportunity.length
-      ? await this.prisma8.client.orm.public.Opportunity.where((row) =>
+      ? await this.prisma.client.orm.public.Opportunity.where((row) =>
           row.id.in(groups.opportunity),
         )
           .select('id', 'name')
@@ -454,7 +454,7 @@ export class FollowUpPlansService {
   }
 
   private async ensurePlan(user: AuthUser, id: string): Promise<FollowUpPlan> {
-    const row = await this.prisma8.client.orm.public.FollowUpPlans.where({
+    const row = await this.prisma.client.orm.public.FollowUpPlans.where({
       id,
       tenantId: user.tenantId,
     }).first()
@@ -491,7 +491,7 @@ export class FollowUpPlansService {
     if (type === 'lead') {
       const permission = write ? 'lead:update' : 'menu:lead'
       if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无线索权限')
-      const lead = await this.prisma8.client.orm.public.Clue.where({
+      const lead = await this.prisma.client.orm.public.Clue.where({
         id: id,
         organizationId: user.tenantId,
       }).first()
@@ -507,7 +507,7 @@ export class FollowUpPlansService {
     }
     const permission = write ? 'opportunity:update' : 'menu:opportunity'
     if (!hasPermission(user.permissions, permission)) throw new ForbiddenException('无商机权限')
-    const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
+    const opportunity = await this.prisma.client.orm.public.Opportunity.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -531,7 +531,7 @@ export class FollowUpPlansService {
     if (type === 'opportunity') {
       customerId =
         (
-          await this.prisma8.client.orm.public.Opportunity.where({
+          await this.prisma.client.orm.public.Opportunity.where({
             id: targetId,
             organizationId: tenantId,
           })
@@ -540,7 +540,7 @@ export class FollowUpPlansService {
         )?.customerId ?? null
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma8.client.orm.public.CustomerContact.where({
+    const contact = await this.prisma.client.orm.public.CustomerContact.where({
       id: contactId,
       organizationId: tenantId,
       customerId: customerId,
@@ -550,7 +550,7 @@ export class FollowUpPlansService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -561,7 +561,7 @@ export class FollowUpPlansService {
     return owner
   }
 
-  private legacyPlan(row: Prisma8FollowUpPlanRow): FollowUpPlan {
+  private legacyPlan(row: FollowUpPlanRow): FollowUpPlan {
     return {
       id: row.id,
       tenantId: row.tenantId,
@@ -593,14 +593,14 @@ export class FollowUpPlansService {
       this.dataScope.resolveScope(user, 'menu:lead'),
       this.dataScope.resolveScope(user, 'customer:read'),
       this.dataScope.resolveScope(user, 'menu:opportunity'),
-      this.prisma8.client.orm.public.CustomerCollaboration.where({
+      this.prisma.client.orm.public.CustomerCollaboration.where({
         userId: user.id,
       })
         .select('customerId')
         .all(),
     ])
     const collaborationCustomerIds = collaborationRows.length
-      ? await this.prisma8.client.orm.public.Customer.where({
+      ? await this.prisma.client.orm.public.Customer.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(collaborationRows.map((item) => item.customerId)))
@@ -655,15 +655,15 @@ export class FollowUpPlansService {
   private async keywordTargetIds(tenantId: string, keyword: string) {
     const organizationId = tenantId
     const [leads, customers, opportunities] = await Promise.all([
-      this.prisma8.client.orm.public.Clue.where({ organizationId })
+      this.prisma.client.orm.public.Clue.where({ organizationId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.Customer.where({ organizationId })
+      this.prisma.client.orm.public.Customer.where({ organizationId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.Opportunity.where({ organizationId })
+      this.prisma.client.orm.public.Opportunity.where({ organizationId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
@@ -696,7 +696,7 @@ export class FollowUpPlansService {
       else dynamic.push(condition)
     }
 
-    let directQuery = this.prisma8.client.orm.public.FollowUpPlans.where({ tenantId })
+    let directQuery = this.prisma.client.orm.public.FollowUpPlans.where({ tenantId })
     for (const item of direct)
       directQuery = this.applySystemFilter(directQuery, item.field, item.condition)
     const [directRows, dynamicIds] = await Promise.all([
@@ -741,7 +741,7 @@ export class FollowUpPlansService {
       }
       const value = new Date(String(condition.value))
       if (Number.isNaN(value.getTime())) throw new BadRequestException('计划时间筛选值不合法')
-      const temporal = prisma8TimestampFromDate(value)
+      const temporal = instantFromDate(value)
       if (condition.op === 'gte') return collection.where((row) => row.estimatedAt.gte(temporal))
       if (condition.op === 'lte') return collection.where((row) => row.estimatedAt.lte(temporal))
       throw new BadRequestException('计划时间不支持该筛选操作')
@@ -860,7 +860,7 @@ export class FollowUpPlansService {
 
   private async toVOs(user: AuthUser, plans: FollowUpPlan[]): Promise<FollowUpPlanVO[]> {
     if (plans.length === 0) return []
-    const names = await this.targetNamesPrisma8(plans)
+    const names = await this.targetNamesPrisma(plans)
     const ownerIds = [...new Set(plans.map((plan) => plan.ownerId))]
     const contactIds = plans.flatMap((plan) => (plan.contactId ? [plan.contactId] : []))
     const opportunityIds = plans
@@ -868,13 +868,13 @@ export class FollowUpPlansService {
       .map((plan) => plan.targetId)
     const [owners, contacts, opportunities, fields, dynamic] = await Promise.all([
       ownerIds.length
-        ? this.prisma8.client.orm.public.Users.where({ tenantId: user.tenantId })
+        ? this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
             .where((row) => row.id.in(ownerIds))
             .select('id', 'name')
             .all()
         : [],
       contactIds.length
-        ? this.prisma8.client.orm.public.CustomerContact.where({
+        ? this.prisma.client.orm.public.CustomerContact.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.id.in(contactIds))
@@ -882,7 +882,7 @@ export class FollowUpPlansService {
             .all()
         : [],
       opportunityIds.length
-        ? this.prisma8.client.orm.public.Opportunity.where({
+        ? this.prisma.client.orm.public.Opportunity.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.id.in(opportunityIds))
@@ -922,7 +922,7 @@ export class FollowUpPlansService {
         contactName: plan.contactId ? (contactMap.get(plan.contactId) ?? null) : null,
         content: plan.content,
         method: plan.method,
-        estimatedAt: plan.estimatedAt ? prisma8TimestampToISOString(plan.estimatedAt) : null,
+        estimatedAt: plan.estimatedAt ? instantToISOString(plan.estimatedAt) : null,
         status: plan.status,
         converted: plan.converted,
         convertedRecordId: plan.convertedRecordId,
@@ -937,8 +937,8 @@ export class FollowUpPlansService {
           )
           .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
         canManage: admin || plan.ownerId === user.id,
-        createdAt: prisma8TimestampToISOString(plan.createdAt),
-        updatedAt: prisma8TimestampToISOString(plan.updatedAt),
+        createdAt: instantToISOString(plan.createdAt),
+        updatedAt: instantToISOString(plan.updatedAt),
       }
     })
   }

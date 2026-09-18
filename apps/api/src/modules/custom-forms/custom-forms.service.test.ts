@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
@@ -18,15 +18,15 @@ function shortId(prefix: string) {
 }
 
 test(
-  '自定义表单数据源通过 Prisma 8 raw lane 按组织和 customFormId 隔离',
+  '自定义表单数据源通过 Prisma raw lane 按组织和 customFormId 隔离',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
 
     const testDb = await openPrismaTestDatabase(databaseUrl)
-    const prisma8Client = testDb.client
+    const prismaClient = testDb.client
     const service = new CustomFormsService(
-      { client: prisma8Client } as Prisma8Service,
+      { client: prismaClient } as PrismaService,
       {} as any,
       {} as any,
       {} as any,
@@ -62,18 +62,18 @@ test(
     try {
       const org = organizationId
       const operator = operatorId
-      const form = await prisma8Client.orm.public.CustomForm.select('id').create({
+      const form = await prismaClient.orm.public.CustomForm.select('id').create({
         id: createLegacyId32(),
-        name: `Prisma 8 raw ${randomUUID()}`,
+        name: `Prisma raw ${randomUUID()}`,
         organizationId: org,
         createTime: timestamp,
         updateTime: timestamp,
         createUser: operator,
         updateUser: operator,
       })
-      const otherForm = await prisma8Client.orm.public.CustomForm.select('id').create({
+      const otherForm = await prismaClient.orm.public.CustomForm.select('id').create({
         id: createLegacyId32(),
-        name: `Prisma 8 raw other ${randomUUID()}`,
+        name: `Prisma raw other ${randomUUID()}`,
         organizationId: org,
         createTime: timestamp,
         updateTime: timestamp,
@@ -84,7 +84,7 @@ test(
 
       const exactName = `O'Reilly ${randomUUID()}`
       const createData = async (formId: string, name: string, dataOrg: string) =>
-        prisma8Client.orm.public.CustomFormData.select('id', 'name').create({
+        prismaClient.orm.public.CustomFormData.select('id', 'name').create({
           id: createLegacyId32(),
           customFormId: formId,
           name: name,
@@ -104,7 +104,7 @@ test(
       const noteFieldId = shortId('note')
       const dateFieldId = shortId('date')
       const tagsFieldId = shortId('tags')
-      await prisma8Client.orm.public.CustomFormDataField.createAll(
+      await prismaClient.orm.public.CustomFormDataField.createAll(
         [
           { resourceId: first.id, fieldId: scoreFieldId, fieldValue: '88' },
           { resourceId: second.id, fieldId: scoreFieldId, fieldValue: '40' },
@@ -126,7 +126,7 @@ test(
           fieldValue: row.fieldValue,
         })),
       )
-      await prisma8Client.orm.public.CustomFormDataFieldBlob.createAll(
+      await prismaClient.orm.public.CustomFormDataFieldBlob.createAll(
         [
           {
             resourceId: first.id,
@@ -256,7 +256,7 @@ test(
       }
     } finally {
       if (createdFormIds.length) {
-        await prisma8Client.orm.public.CustomForm.where((row) =>
+        await prismaClient.orm.public.CustomForm.where((row) =>
           row.id.in(createdFormIds.map((id) => id)),
         ).deleteAll()
       }
@@ -266,13 +266,13 @@ test(
 )
 
 test(
-  'CustomFormsService 使用 Prisma 8 保持配置、角色、Field/Blob 与批量数据事务语义',
+  'CustomFormsService 使用 Prisma 保持配置、角色、Field/Blob 与批量数据事务语义',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
 
     const testDb = await openPrismaTestDatabase(databaseUrl)
-    const prisma8Client = testDb.client
+    const prismaClient = testDb.client
     const suffix = randomUUID().replaceAll('-', '')
     const noteField = {
       id: shortId('note'),
@@ -296,16 +296,16 @@ test(
     let tenantId: string | null = null
 
     try {
-      const tenant = await createPrismaTestTenant(prisma8Client, 'custom-forms-p8')
+      const tenant = await createPrismaTestTenant(prismaClient, 'custom-forms-p8')
       tenantId = tenant.id
       const [admin, member] = await Promise.all([
-        createPrismaTestUser(prisma8Client, {
+        createPrismaTestUser(prismaClient, {
           tenantId: tenant.id,
           email: `custom-admin-${suffix}@example.test`,
           passwordHash: 'not-used',
           name: 'Custom Admin',
         }),
-        createPrismaTestUser(prisma8Client, {
+        createPrismaTestUser(prismaClient, {
           tenantId: tenant.id,
           email: `custom-member-${suffix}@example.test`,
           passwordHash: 'not-used',
@@ -353,7 +353,7 @@ test(
         listByIdsFromTarget: async () => [],
       }
       const service = new CustomFormsService(
-        { client: prisma8Client } as Prisma8Service,
+        { client: prismaClient } as PrismaService,
         moduleForms as any,
         metadata as any,
         attachments as any,
@@ -363,15 +363,15 @@ test(
       )
 
       const form = await service.create(actor, {
-        name: 'Prisma8 自定义表单',
+        name: 'Prisma 自定义表单',
         enable: true,
         formProp: { layout: 'two-column' },
       })
-      assert.equal(form.name, 'Prisma8 自定义表单')
+      assert.equal(form.name, 'Prisma 自定义表单')
       assert.equal(form.isAdmin, true)
       assert.equal(
         (
-          await prisma8Client.orm.public.CustomForm.where({
+          await prismaClient.orm.public.CustomForm.where({
             id: form.id,
             organizationId: tenant.id,
           })
@@ -381,13 +381,13 @@ test(
         1,
       )
       assert.equal(
-        (await prisma8Client.orm.public.SysModuleForm.where({ id: form.id }).select('id').all())
+        (await prismaClient.orm.public.SysModuleForm.where({ id: form.id }).select('id').all())
           .length,
         1,
       )
       assert.equal(
         (
-          await prisma8Client.orm.public.SysModuleField.where({
+          await prismaClient.orm.public.SysModuleField.where({
             formId: form.id,
           })
             .select('id')
@@ -397,7 +397,7 @@ test(
       )
       assert.equal(
         (
-          await prisma8Client.orm.public.CustomFormRole.where({
+          await prismaClient.orm.public.CustomFormRole.where({
             customFormId: form.id,
           })
             .select('id')
@@ -407,7 +407,7 @@ test(
       )
       assert.equal(
         (
-          await prisma8Client.orm.public.CustomFormAdmin.where({
+          await prismaClient.orm.public.CustomFormAdmin.where({
             customFormId: form.id,
           })
             .select('id')
@@ -415,7 +415,7 @@ test(
         ).length,
         1,
       )
-      const formBlob = await prisma8Client.orm.public.SysModuleFormBlob.where({
+      const formBlob = await prismaClient.orm.public.SysModuleFormBlob.where({
         id: form.id,
       }).first()
       assert.ok(formBlob)
@@ -430,21 +430,21 @@ test(
       assert.equal(memberForms.find((item) => item.id === form.id)?.hasCreateDataPermission, true)
 
       const created = await service.createData(actor, form.id, {
-        name: 'Prisma8 数据一',
+        name: 'Prisma 数据一',
         ownerId: admin.id,
         values: { note: '初始备注', tags: ['vip', 'new'] },
       })
-      assert.equal(created.name, 'Prisma8 数据一')
+      assert.equal(created.name, 'Prisma 数据一')
       assert.equal(created.values['note'], '初始备注')
       assert.deepEqual(created.values['tags'], ['vip', 'new'])
-      const persisted = await prisma8Client.orm.public.CustomFormData.where({
+      const persisted = await prismaClient.orm.public.CustomFormData.where({
         id: created.id,
       }).first()
       assert.ok(persisted)
       assert.equal(persisted.owner, admin.id)
       assert.equal(
         (
-          await prisma8Client.orm.public.CustomFormDataField.where({
+          await prismaClient.orm.public.CustomFormDataField.where({
             resourceId: created.id,
             fieldId: noteField.id,
           })
@@ -455,7 +455,7 @@ test(
       )
       assert.equal(
         (
-          await prisma8Client.orm.public.CustomFormDataFieldBlob.where({
+          await prismaClient.orm.public.CustomFormDataFieldBlob.where({
             resourceId: created.id,
             fieldId: tagsField.id,
           })
@@ -475,11 +475,11 @@ test(
       assert.equal(page.list[0]?.values['note'], '初始备注')
 
       const updated = await service.updateData(actor, form.id, created.id, {
-        name: 'Prisma8 数据一更新',
+        name: 'Prisma 数据一更新',
         ownerId: admin.id,
         values: { note: '更新备注', tags: ['updated'] },
       })
-      assert.equal(updated.name, 'Prisma8 数据一更新')
+      assert.equal(updated.name, 'Prisma 数据一更新')
       assert.equal(updated.values['note'], '更新备注')
       assert.deepEqual(updated.values['tags'], ['updated'])
 
@@ -496,7 +496,7 @@ test(
       assert.equal(deleted.count, 1)
       assert.equal(
         (
-          await prisma8Client.orm.public.CustomFormData.where({
+          await prismaClient.orm.public.CustomFormData.where({
             id: created.id,
           })
             .select('id')
@@ -507,23 +507,22 @@ test(
 
       await service.remove(actor, form.id)
       assert.equal(
-        (await prisma8Client.orm.public.CustomForm.where({ id: form.id }).select('id').all())
-          .length,
+        (await prismaClient.orm.public.CustomForm.where({ id: form.id }).select('id').all()).length,
         0,
       )
       assert.equal(
-        (await prisma8Client.orm.public.SysModuleForm.where({ id: form.id }).select('id').all())
+        (await prismaClient.orm.public.SysModuleForm.where({ id: form.id }).select('id').all())
           .length,
         0,
       )
     } finally {
       if (tenantId) {
         const organizationId = tenantId
-        await prisma8Client.orm.public.CustomFormData.where({ organizationId }).deleteAll()
-        await prisma8Client.orm.public.SysModuleForm.where({ organizationId }).deleteAll()
-        await prisma8Client.orm.public.CustomForm.where({ organizationId }).deleteAll()
-        await prisma8Client.orm.public.Users.where({ tenantId }).deleteAll()
-        await prisma8Client.orm.public.Tenants.where({ id: tenantId }).deleteAll()
+        await prismaClient.orm.public.CustomFormData.where({ organizationId }).deleteAll()
+        await prismaClient.orm.public.SysModuleForm.where({ organizationId }).deleteAll()
+        await prismaClient.orm.public.CustomForm.where({ organizationId }).deleteAll()
+        await prismaClient.orm.public.Users.where({ tenantId }).deleteAll()
+        await prismaClient.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }
       await testDb.close()
     }

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { BusinessNotificationsService } from './business-notifications.service'
 import type { MessageDeliveryService } from './message-delivery.service'
 import { MessageTemplateService } from './message-template.service'
 import type { NotificationsService } from './notifications.service'
 
-function prisma8Users(options: {
+function users(options: {
   many: Array<{ id: string }>
   first: { name: string; language: string } | null
 }) {
@@ -20,12 +20,12 @@ function prisma8Users(options: {
   })
   return {
     client: { orm: { public: { Users: { where: () => scope } } } },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 }
 
 test('业务通知去重、排除操作者并过滤非租户有效成员', async () => {
   const delivered: string[][] = []
-  const prisma8 = prisma8Users({
+  const prisma = users({
     many: [{ id: 'member-a' }],
     first: { name: '操作者', language: 'zh-CN' },
   })
@@ -35,7 +35,7 @@ test('业务通知去重、排除操作者并过滤非租户有效成员', async
     },
   } as unknown as NotificationsService
   const service = new BusinessNotificationsService(
-    prisma8,
+    prisma,
     notifications,
     {} as MessageSettingsService,
   )
@@ -55,7 +55,7 @@ test('业务通知去重、排除操作者并过滤非租户有效成员', async
 })
 
 test('配置通知使用范围解析结果并隔离发送异常', async () => {
-  const prisma8 = prisma8Users({ many: [{ id: 'owner-a' }], first: null })
+  const prisma = users({ many: [{ id: 'owner-a' }], first: null })
   const notifications = {
     notifyMany: async () => {
       throw new Error('push failed')
@@ -64,7 +64,7 @@ test('配置通知使用范围解析结果并隔离发送异常', async () => {
   const settings = {
     resolveRecipients: async () => ['owner-a'],
   } as unknown as MessageSettingsService
-  const service = new BusinessNotificationsService(prisma8, notifications, settings)
+  const service = new BusinessNotificationsService(prisma, notifications, settings)
 
   const count = await service.sendConfigured({
     tenantId: 'tenant-a',
@@ -80,7 +80,7 @@ test('配置通知使用范围解析结果并隔离发送异常', async () => {
 test('模板通知按操作者语言渲染，并保证站内与企微投递使用同一最终文本', async () => {
   const inSite: Array<{ title: string; content?: string }> = []
   const external: Array<{ title: string; content?: string }> = []
-  const prisma8 = prisma8Users({
+  const prisma = users({
     many: [{ id: 'owner-a' }],
     first: { name: 'David', language: 'en-US' },
   })
@@ -98,9 +98,9 @@ test('模板通知按操作者语言渲染，并保证站内与企微投递使�
       external.push({ title: input.title, content: input.content })
     },
   } as unknown as MessageDeliveryService
-  const templates = new MessageTemplateService(prisma8)
+  const templates = new MessageTemplateService(prisma)
   const service = new BusinessNotificationsService(
-    prisma8,
+    prisma,
     notifications,
     {} as MessageSettingsService,
     deliveries,

@@ -30,7 +30,13 @@ test('审批人异常策略进入冻结节点契约并使用 Cordys 业务默认
   })
 
   const [defaults] = normalizeFlowNodes([
-    { name: '直属上级', approverType: 'DIRECT_LEADER', approverIds: [], ccUserIds: [], mode: 'ANY' },
+    {
+      name: '直属上级',
+      approverType: 'DIRECT_LEADER',
+      approverIds: [],
+      ccUserIds: [],
+      mode: 'ANY',
+    },
   ])
   assert.equal(defaults.approverIds[0], '1')
   assert.equal(defaults.emptyApproverAction, 'AUTO_PASS')
@@ -51,10 +57,16 @@ test('动态审批方向严格按 Cordys 的层级位置选择', () => {
   const chain = ['direct', 'middle', 'top']
   assert.deepEqual(runtime.selectHierarchyApprovers(chain, 2, 'BOTTOM_UP', false), ['middle'])
   assert.deepEqual(runtime.selectHierarchyApprovers(chain, 2, 'TOP_DOWN', false), ['middle'])
-  assert.deepEqual(runtime.selectHierarchyApprovers(chain, 2, 'BOTTOM_UP', true), ['direct', 'middle'])
+  assert.deepEqual(runtime.selectHierarchyApprovers(chain, 2, 'BOTTOM_UP', true), [
+    'direct',
+    'middle',
+  ])
   assert.deepEqual(runtime.selectHierarchyApprovers(chain, 2, 'TOP_DOWN', true), ['top', 'middle'])
   assert.deepEqual(runtime.selectHierarchyApprovers(chain, 4, 'BOTTOM_UP', true), [])
-  assert.deepEqual(runtime.selectHierarchyApprovers([null, 'middle', 'top'], 1, 'BOTTOM_UP', false), [])
+  assert.deepEqual(
+    runtime.selectHierarchyApprovers([null, 'middle', 'top'], 1, 'BOTTOM_UP', false),
+    [],
+  )
 })
 
 test('duplicate rule: FIRST_ONLY 看历史节点，SEQUENTIAL_ALL 只看紧邻上一节点', async () => {
@@ -70,7 +82,7 @@ test('duplicate rule: FIRST_ONLY 看历史节点，SEQUENTIAL_ALL 只看紧邻�
     },
     first: async () => ({ nodeRound: 4 }),
   }
-  ;(service as unknown as { prisma8: unknown }).prisma8 = {
+  ;(service as unknown as { prisma: unknown }).prisma = {
     client: { orm: { public: { ApprovalTasks: { where: () => query } } } },
   }
   const runtime = service as unknown as {
@@ -83,15 +95,25 @@ test('duplicate rule: FIRST_ONLY 看历史节点，SEQUENTIAL_ALL 只看紧邻�
     ): Promise<Set<string>>
   }
   assert.deepEqual(
-    [...await runtime.duplicateApproversToSkip({ id: 'i1' }, 3, 'n4', 'FIRST_ONLY', ['u1', 'u2'])],
+    [
+      ...(await runtime.duplicateApproversToSkip({ id: 'i1' }, 3, 'n4', 'FIRST_ONLY', [
+        'u1',
+        'u2',
+      ])),
+    ],
     ['u1'],
   )
   assert.deepEqual(
-    [...await runtime.duplicateApproversToSkip({ id: 'i1' }, 3, 'n4', 'SEQUENTIAL_ALL', ['u2', 'u3'])],
+    [
+      ...(await runtime.duplicateApproversToSkip({ id: 'i1' }, 3, 'n4', 'SEQUENTIAL_ALL', [
+        'u2',
+        'u3',
+      ])),
+    ],
     ['u3'],
   )
   assert.deepEqual(
-    [...await runtime.duplicateApproversToSkip({ id: 'i1' }, 3, 'n4', 'EACH', ['u1'])],
+    [...(await runtime.duplicateApproversToSkip({ id: 'i1' }, 3, 'n4', 'EACH', ['u1']))],
     [],
   )
   assert.equal(calls.length, 2)

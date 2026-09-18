@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { BusinessNotificationsService } from './business-notifications.service'
 import { MessageExpiryService } from './message-expiry.service'
@@ -14,12 +14,14 @@ interface RawQueryHarness {
   build: () => RawQueryHarness
 }
 
-function prisma8Fixture(options: {
-  quotation?: (values: unknown[], sql: string) => unknown[]
-  payment?: (values: unknown[], sql: string) => unknown[]
-  contract?: (values: unknown[], sql: string) => unknown[]
-  onQuery?: (kind: QueryKind, values: unknown[], sql: string) => void
-} = {}) {
+function prismaFixture(
+  options: {
+    quotation?: (values: unknown[], sql: string) => unknown[]
+    payment?: (values: unknown[], sql: string) => unknown[]
+    contract?: (values: unknown[], sql: string) => unknown[]
+    onQuery?: (kind: QueryKind, values: unknown[], sql: string) => void
+  } = {},
+) {
   const columns = {
     opportunity_quotation: {
       columns: { id: {}, name: {}, create_user: {}, until_time: {} },
@@ -77,13 +79,13 @@ function prisma8Fixture(options: {
         },
       }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 }
 
 test('到期执行器按配置提前天数发送并过滤已足额回款', async () => {
   const events: string[] = []
   const day = (value: Date) => value.getDate()
-  const prisma = prisma8Fixture({
+  const prisma = prismaFixture({
     quotation: (values) =>
       day(new Date(Number(values[1]))) === 27
         ? [
@@ -135,7 +137,7 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
 
 test('关闭事件或清空提前时间时不查询业务数据', async () => {
   let queried = false
-  const prisma = prisma8Fixture({ onQuery: () => (queried = true) })
+  const prisma = prismaFixture({ onQuery: () => (queried = true) })
   const settings = {
     getEffectiveSetting: async (_tenantId: string, event: string) => ({
       systemEnabled: event.endsWith('_EXPIRING'),
@@ -157,7 +159,7 @@ test('到期执行器严格保持 Cordys 六个事件且不增加发票到期分
     },
   } as unknown as MessageSettingsService
   const service = new MessageExpiryService(
-    prisma8Fixture(),
+    prismaFixture(),
     settings,
     {} as BusinessNotificationsService,
   )
@@ -184,7 +186,7 @@ test('合同到期按 3/7 天和当天窗口分别发送且通过 SQL 排除 END
     event: string
     templateContext?: Record<string, unknown>
   }> = []
-  const prisma = prisma8Fixture({
+  const prisma = prismaFixture({
     contract: (values, sql) => {
       const day = new Date(Number(values[1])).getDate()
       windows.push(day)
@@ -254,7 +256,7 @@ test('报价/合同/回款计划到期通知携带 direct createUser，且回款
     ownerId?: string | null
     createUserId?: string | null
   }> = []
-  const prisma = prisma8Fixture({
+  const prisma = prismaFixture({
     quotation: (values) => [
       {
         id: 'quote-a',

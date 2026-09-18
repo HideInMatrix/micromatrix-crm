@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { instantFromDate } from '../../prisma/temporal'
+import type { PrismaService } from '../../prisma/prisma.service'
 import {
   OperationLogCleanupSources,
   OperationLogSettingsService,
@@ -9,7 +9,7 @@ import {
 
 type StoredSetting = {
   retentionDays: number | null
-  lastCleanupAt: ReturnType<typeof prisma8TimestampFromDate> | null
+  lastCleanupAt: ReturnType<typeof instantFromDate> | null
   lastCleanupDeleted: number
   lastCleanupSource: 'AUTO' | 'MANUAL' | null
 }
@@ -21,7 +21,7 @@ interface RawQueryHarness {
   build: () => RawQueryHarness
 }
 
-function prisma8Fixture(initial: StoredSetting | null = null) {
+function prismaFixture(initial: StoredSetting | null = null) {
   let row = initial
   const writes: RawQueryHarness[] = []
   const collection = {
@@ -33,7 +33,7 @@ function prisma8Fixture(initial: StoredSetting | null = null) {
     },
     first: async () => row,
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: { public: { OperationLogSettings: collection } },
       raw: {
@@ -71,7 +71,7 @@ function prisma8Fixture(initial: StoredSetting | null = null) {
             assert.equal(typeof tenantId, 'string')
             row = {
               retentionDays: row?.retentionDays ?? null,
-              lastCleanupAt: prisma8TimestampFromDate(new Date(String(atIso))),
+              lastCleanupAt: instantFromDate(new Date(String(atIso))),
               lastCleanupDeleted: Number(deleted),
               lastCleanupSource: source as 'AUTO' | 'MANUAL',
             }
@@ -89,14 +89,14 @@ function prisma8Fixture(initial: StoredSetting | null = null) {
         },
       }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 
-  return { prisma8, writes, getRow: () => row }
+  return { prisma, writes, getRow: () => row }
 }
 
 test('未配置租户继承 180 天默认值且不伪装为已配置', async () => {
-  const { prisma8 } = prisma8Fixture()
-  const service = new OperationLogSettingsService(prisma8)
+  const { prisma } = prismaFixture()
+  const service = new OperationLogSettingsService(prisma)
 
   assert.deepEqual(await service.get('tenant-a'), {
     configured: false,
@@ -110,13 +110,13 @@ test('未配置租户继承 180 天默认值且不伪装为已配置', async () 
 })
 
 test('状态行 retentionDays=null 继续继承部署默认值', async () => {
-  const { prisma8 } = prisma8Fixture({
+  const { prisma } = prismaFixture({
     retentionDays: null,
-    lastCleanupAt: prisma8TimestampFromDate(new Date('2026-09-04T04:15:00.000Z')),
+    lastCleanupAt: instantFromDate(new Date('2026-09-04T04:15:00.000Z')),
     lastCleanupDeleted: 12,
     lastCleanupSource: OperationLogCleanupSources.AUTO,
   })
-  const service = new OperationLogSettingsService(prisma8)
+  const service = new OperationLogSettingsService(prisma)
   const setting = await service.get('tenant-a')
 
   assert.equal(setting.configured, false)
@@ -126,8 +126,8 @@ test('状态行 retentionDays=null 继续继承部署默认值', async () => {
 })
 
 test('显式天数与永久保留分别写入数字和内部 0 sentinel', async () => {
-  const { prisma8, writes } = prisma8Fixture()
-  const service = new OperationLogSettingsService(prisma8)
+  const { prisma, writes } = prismaFixture()
+  const service = new OperationLogSettingsService(prisma)
 
   const days = await service.update('tenant-a', 365)
   const permanent = await service.update('tenant-a', null)
@@ -145,15 +145,15 @@ test('显式天数与永久保留分别写入数字和内部 0 sentinel', async 
 })
 
 test('策略服务拒绝越界保留天数', async () => {
-  const { prisma8 } = prisma8Fixture()
-  const service = new OperationLogSettingsService(prisma8)
+  const { prisma } = prismaFixture()
+  const service = new OperationLogSettingsService(prisma)
   await assert.rejects(() => service.update('tenant-a', 29), /30～3650/)
   await assert.rejects(() => service.update('tenant-a', 3651), /30～3650/)
 })
 
 test('自动清理状态首次落库保持 retentionDays=null 继承默认值', async () => {
-  const { prisma8, getRow } = prisma8Fixture()
-  const service = new OperationLogSettingsService(prisma8)
+  const { prisma, getRow } = prismaFixture()
+  const service = new OperationLogSettingsService(prisma)
   const at = new Date('2026-09-04T04:15:00.000Z')
 
   const setting = await service.recordCleanup('tenant-a', 5, OperationLogCleanupSources.AUTO, at)

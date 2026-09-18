@@ -15,12 +15,8 @@ import {
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
 import { decimalString, numericValue } from '../../prisma/numeric-value'
 import { jsonValue } from '../../prisma/json-value'
 import { createLegacyId32 } from '../../common/legacy-id'
@@ -36,7 +32,7 @@ export class BiddingService {
   private readonly providers: Map<string, BiddingProvider>
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly fieldValues: ResourceFieldValueService,
     demoProvider: DemoBiddingProvider,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
@@ -47,7 +43,7 @@ export class BiddingService {
   // ===== 数据源配置 =====
 
   async listSources(tenantId: string): Promise<BiddingSourceVO[]> {
-    const rows = await this.prisma8.client.orm.public.BiddingSources.where({ tenantId }).all()
+    const rows = await this.prisma.client.orm.public.BiddingSources.where({ tenantId }).all()
     return [...this.providers.values()].map((provider) => {
       const row = rows.find((r) => r.provider === provider.key)
       return {
@@ -56,7 +52,7 @@ export class BiddingService {
         name: provider.label,
         enabled: row?.enabled ?? false,
         hasCredentials: Boolean(row?.credentials),
-        lastFetchAt: row?.lastFetchAt ? prisma8TimestampToISOString(row.lastFetchAt) : null,
+        lastFetchAt: row?.lastFetchAt ? instantToISOString(row.lastFetchAt) : null,
       }
     })
   }
@@ -69,12 +65,12 @@ export class BiddingService {
   ) {
     const adapter = this.providers.get(provider)
     if (!adapter) throw new BadRequestException('不支持的数据源')
-    const sources = this.prisma8.client.orm.public.BiddingSources
+    const sources = this.prisma.client.orm.public.BiddingSources
     const existing = await sources.where({ tenantId: user.tenantId, provider }).first()
     if (enabled && adapter.requiresCredentials && !credentials) {
       if (!existing?.credentials) throw new BadRequestException('该数据源需要配置凭证')
     }
-    const now = prisma8Now()
+    const now = nowInstant()
     if (existing) {
       await sources.where({ id: existing.id }).update({
         enabled,
@@ -97,7 +93,7 @@ export class BiddingService {
   // ===== 关键词订阅 =====
 
   async listKeywords(tenantId: string): Promise<BiddingKeywordVO[]> {
-    const rows = await this.prisma8.client.orm.public.BiddingKeywordSubs.where({ tenantId })
+    const rows = await this.prisma.client.orm.public.BiddingKeywordSubs.where({ tenantId })
       .orderBy((row) => row.createdAt.asc())
       .all()
     return rows.map((r) => ({ id: r.id, keyword: r.keyword, enabled: r.enabled }))
@@ -106,7 +102,7 @@ export class BiddingService {
   async addKeyword(user: AuthUser, keyword: string) {
     const trimmed = keyword.trim()
     if (!trimmed) throw new BadRequestException('关键词不能为空')
-    const keywords = this.prisma8.client.orm.public.BiddingKeywordSubs
+    const keywords = this.prisma.client.orm.public.BiddingKeywordSubs
     const exists = await keywords.where({ tenantId: user.tenantId, keyword: trimmed }).first()
     if (exists) throw new BadRequestException('该关键词已订阅')
     try {
@@ -121,7 +117,7 @@ export class BiddingService {
   }
 
   async toggleKeyword(user: AuthUser, id: string) {
-    const keywords = this.prisma8.client.orm.public.BiddingKeywordSubs
+    const keywords = this.prisma.client.orm.public.BiddingKeywordSubs
     const row = await keywords.where({ id, tenantId: user.tenantId }).first()
     if (!row) throw new NotFoundException('订阅不存在')
     await keywords.where({ id }).update({ enabled: !row.enabled })
@@ -129,7 +125,7 @@ export class BiddingService {
   }
 
   async removeKeyword(user: AuthUser, id: string) {
-    const keywords = this.prisma8.client.orm.public.BiddingKeywordSubs
+    const keywords = this.prisma.client.orm.public.BiddingKeywordSubs
     const row = await keywords.where({ id, tenantId: user.tenantId }).first()
     if (!row) throw new NotFoundException('订阅不存在')
     await keywords.where({ id }).deleteAndCount()
@@ -146,7 +142,7 @@ export class BiddingService {
   }
 
   async fetchAllTenants() {
-    const sources = await this.prisma8.client.orm.public.BiddingSources.where({ enabled: true })
+    const sources = await this.prisma.client.orm.public.BiddingSources.where({ enabled: true })
       .select('tenantId')
       .all()
     const tenantIds = [...new Set(sources.map((s) => s.tenantId))]
@@ -159,11 +155,11 @@ export class BiddingService {
 
   /** 手动/定时抓取：启用数据源 × 启用关键词，去重入库 */
   async fetchTenant(tenantId: string): Promise<{ fetched: number; inserted: number }> {
-    const sources = await this.prisma8.client.orm.public.BiddingSources.where({
+    const sources = await this.prisma.client.orm.public.BiddingSources.where({
       tenantId,
       enabled: true,
     }).all()
-    const keywords = await this.prisma8.client.orm.public.BiddingKeywordSubs.where({
+    const keywords = await this.prisma.client.orm.public.BiddingKeywordSubs.where({
       tenantId,
       enabled: true,
     }).all()
@@ -185,7 +181,7 @@ export class BiddingService {
         })
         fetched += items.length
         for (const item of items) {
-          const created = await this.insertUniquePrisma8(
+          const created = await this.insertUniquePrisma(
             tenantId,
             source.provider,
             sub.keyword,
@@ -194,9 +190,9 @@ export class BiddingService {
           if (created) inserted++
         }
       }
-      await this.prisma8.client.orm.public.BiddingSources.where({ id: source.id }).update({
-        lastFetchAt: prisma8Now(),
-        updatedAt: prisma8Now(),
+      await this.prisma.client.orm.public.BiddingSources.where({ id: source.id }).update({
+        lastFetchAt: nowInstant(),
+        updatedAt: nowInstant(),
       })
     }
     return { fetched, inserted }
@@ -204,7 +200,7 @@ export class BiddingService {
 
   /** 手动录入（无数据源账号时的兜底） */
   async manualImport(user: AuthUser, dto: ImportBiddingDto) {
-    const created = await this.insertUniquePrisma8(user.tenantId, 'manual', dto.keyword ?? null, {
+    const created = await this.insertUniquePrisma(user.tenantId, 'manual', dto.keyword ?? null, {
       title: dto.title,
       type: dto.type,
       region: dto.region,
@@ -224,7 +220,7 @@ export class BiddingService {
   async findAll(user: AuthUser, query: QueryBiddingDto): Promise<PaginatedResult<BiddingInfoVO>> {
     const { page = 1, pageSize = 10, keyword, type } = query
     const normalized = keyword?.trim()
-    const scoped = this.prisma8.client.orm.public.BiddingInfos.where({
+    const scoped = this.prisma.client.orm.public.BiddingInfos.where({
       tenantId: user.tenantId,
       ...(type ? { _type: type } : {}),
     })
@@ -250,7 +246,7 @@ export class BiddingService {
 
   /** 标讯一键转线索 */
   async convertToLead(user: AuthUser, id: string) {
-    const bidding = await this.prisma8.client.orm.public.BiddingInfos.where({
+    const bidding = await this.prisma.client.orm.public.BiddingInfos.where({
       id,
       tenantId: user.tenantId,
     }).first()
@@ -258,7 +254,7 @@ export class BiddingService {
     if (bidding.convertedLeadId) throw new BadRequestException('该标讯已转为线索')
 
     const now = BigInt(Date.now())
-    const lead = await this.prisma8.client.transaction(async (tx) => {
+    const lead = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.Clue.create({
         id: createLegacyId32(),
         organizationId: user.tenantId,
@@ -291,7 +287,7 @@ export class BiddingService {
     return { id: lead.id, name: lead.name }
   }
 
-  private async insertUniquePrisma8(
+  private async insertUniquePrisma(
     tenantId: string,
     source: string,
     keyword: string | null,
@@ -299,7 +295,7 @@ export class BiddingService {
   ) {
     const hash = `${item.title}|${item.publishedAt?.toISOString().slice(0, 10) ?? ''}`
     try {
-      return await this.prisma8.client.orm.public.BiddingInfos.create({
+      return await this.prisma.client.orm.public.BiddingInfos.create({
         tenantId,
         title: item.title,
         _type: item.type ?? null,
@@ -309,8 +305,8 @@ export class BiddingService {
           item.budget === undefined || item.budget === null
             ? null
             : numericValue(decimalString(item.budget, 16, 2), 16, 2),
-        publishedAt: item.publishedAt ? prisma8TimestampFromDate(item.publishedAt) : null,
-        deadline: item.deadline ? prisma8TimestampFromDate(item.deadline) : null,
+        publishedAt: item.publishedAt ? instantFromDate(item.publishedAt) : null,
+        deadline: item.deadline ? instantFromDate(item.deadline) : null,
         sourceUrl: item.sourceUrl ?? null,
         content: item.content ?? null,
         source,
@@ -330,14 +326,14 @@ export class BiddingService {
     region: string | null
     buyer: string | null
     budget: unknown
-    publishedAt: ReturnType<typeof prisma8Now> | null
-    deadline: ReturnType<typeof prisma8Now> | null
+    publishedAt: ReturnType<typeof nowInstant> | null
+    deadline: ReturnType<typeof nowInstant> | null
     sourceUrl: string | null
     content: string | null
     source: string | null
     keyword: string | null
     convertedLeadId: string | null
-    createdAt: ReturnType<typeof prisma8Now>
+    createdAt: ReturnType<typeof nowInstant>
   }): BiddingInfoVO {
     return {
       id: b.id,
@@ -346,14 +342,14 @@ export class BiddingService {
       region: b.region,
       buyer: b.buyer,
       budget: b.budget === null || b.budget === undefined ? null : Number(b.budget),
-      publishedAt: b.publishedAt ? prisma8TimestampToISOString(b.publishedAt).slice(0, 10) : null,
-      deadline: b.deadline ? prisma8TimestampToISOString(b.deadline).slice(0, 10) : null,
+      publishedAt: b.publishedAt ? instantToISOString(b.publishedAt).slice(0, 10) : null,
+      deadline: b.deadline ? instantToISOString(b.deadline).slice(0, 10) : null,
       sourceUrl: b.sourceUrl,
       content: b.content,
       source: b.source,
       keyword: b.keyword,
       convertedLeadId: b.convertedLeadId,
-      createdAt: prisma8TimestampToISOString(b.createdAt),
+      createdAt: instantToISOString(b.createdAt),
     }
   }
 }

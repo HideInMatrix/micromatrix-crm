@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { decimalString, numericValue } from '../../prisma/numeric-value'
 
 import type { ApprovalJsonValue } from './approval-runtime.types'
@@ -155,7 +155,7 @@ type RestoreHandler = (
 export class ApprovalResourceRestoreService {
   private readonly handlers: Record<ApprovalModule, RestoreHandler>
 
-  constructor(private readonly prisma8: Prisma8Service) {
+  constructor(private readonly prisma: PrismaService) {
     this.handlers = {
       quote: (tenantId, targetId, snapshot, operatorId) =>
         this.restoreQuotation(tenantId, targetId, snapshot, operatorId),
@@ -192,7 +192,7 @@ export class ApprovalResourceRestoreService {
     )
       return
     const id = targetId
-    const current = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const current = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id,
       organizationId: tenantId,
     })
@@ -200,7 +200,7 @@ export class ApprovalResourceRestoreService {
       .first()
     if (!current) return
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.OpportunityQuotation.where({ id }).update({
         name: snapshot.quotation.name,
         opportunityId: snapshot.quotation.opportunityId,
@@ -250,7 +250,7 @@ export class ApprovalResourceRestoreService {
     )
       return
     const id = targetId
-    const current = await this.prisma8.client.orm.public.Contract.where({
+    const current = await this.prisma.client.orm.public.Contract.where({
       id,
       organizationId: tenantId,
     })
@@ -258,7 +258,7 @@ export class ApprovalResourceRestoreService {
       .first()
     if (!current) return
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.Contract.where({ id }).update({
         name: snapshot.contract.name,
         customerId: snapshot.contract.customerId,
@@ -311,7 +311,7 @@ export class ApprovalResourceRestoreService {
     if (!snapshot.invoice || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs))
       return
     const id = targetId
-    const current = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const current = await this.prisma.client.orm.public.ContractInvoice.where({
       id,
       organizationId: tenantId,
     })
@@ -319,7 +319,7 @@ export class ApprovalResourceRestoreService {
       .first()
     if (!current) return
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.ContractInvoice.where({ id }).update({
         name: snapshot.invoice.name,
         contractId: snapshot.invoice.contractId,
@@ -375,7 +375,7 @@ export class ApprovalResourceRestoreService {
     if (!snapshot.order || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.fieldBlobs))
       return
     const id = targetId
-    const current = await this.prisma8.client.orm.public.SalesOrder.where({
+    const current = await this.prisma.client.orm.public.SalesOrder.where({
       id,
       organizationId: tenantId,
     })
@@ -383,7 +383,7 @@ export class ApprovalResourceRestoreService {
       .first()
     if (!current) return
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.SalesOrder.where({ id }).update({
         number: snapshot.order.number,
         name: snapshot.order.name,
@@ -431,7 +431,7 @@ export class ApprovalResourceRestoreService {
     approvalStatus: string,
     approved: boolean,
   ) {
-    const snapshots = await this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({
+    const snapshots = await this.prisma.client.orm.public.OpportunityQuotationSnapshot.where({
       quotationId: resourceId,
     }).all()
     for (const snapshot of snapshots) {
@@ -439,7 +439,7 @@ export class ApprovalResourceRestoreService {
       const value = this.parseSnapshotValue(snapshot.quotationValue)
       value.approvalStatus = approvalStatus
       value.approved = approved
-      await this.prisma8.client.orm.public.OpportunityQuotationSnapshot.where({
+      await this.prisma.client.orm.public.OpportunityQuotationSnapshot.where({
         id: snapshot.id,
       }).update({ quotationValue: JSON.stringify(value) })
     }
@@ -450,7 +450,7 @@ export class ApprovalResourceRestoreService {
     approvalStatus: string,
     approved: boolean,
   ) {
-    const snapshots = await this.prisma8.client.orm.public.ContractSnapshot.where({
+    const snapshots = await this.prisma.client.orm.public.ContractSnapshot.where({
       contractId: resourceId,
     }).all()
     for (const snapshot of snapshots) {
@@ -458,14 +458,14 @@ export class ApprovalResourceRestoreService {
       const value = this.parseSnapshotValue(snapshot.contractValue)
       value.approvalStatus = approvalStatus
       value.approved = approved
-      await this.prisma8.client.orm.public.ContractSnapshot.where({ id: snapshot.id }).update({
+      await this.prisma.client.orm.public.ContractSnapshot.where({ id: snapshot.id }).update({
         contractValue: JSON.stringify(value),
       })
     }
   }
 
   private async syncInvoiceSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
-    const snapshots = await this.prisma8.client.orm.public.ContractInvoiceSnapshot.where({
+    const snapshots = await this.prisma.client.orm.public.ContractInvoiceSnapshot.where({
       invoiceId: resourceId,
     }).all()
     for (const snapshot of snapshots) {
@@ -473,7 +473,7 @@ export class ApprovalResourceRestoreService {
       const value = this.parseSnapshotValue(snapshot.invoiceValue)
       value.approvalStatus = approvalStatus
       value.approved = approved
-      await this.prisma8.client.orm.public.ContractInvoiceSnapshot.where({
+      await this.prisma.client.orm.public.ContractInvoiceSnapshot.where({
         id: snapshot.id,
       }).update({
         invoiceValue: JSON.stringify(value),
@@ -482,7 +482,7 @@ export class ApprovalResourceRestoreService {
   }
 
   private async syncOrderSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
-    const snapshots = await this.prisma8.client.orm.public.SalesOrderSnapshot.where({
+    const snapshots = await this.prisma.client.orm.public.SalesOrderSnapshot.where({
       orderId: resourceId,
     }).all()
     for (const snapshot of snapshots) {
@@ -490,7 +490,7 @@ export class ApprovalResourceRestoreService {
       const value = this.parseSnapshotValue(snapshot.orderValue)
       value.approvalStatus = approvalStatus
       value.approved = approved
-      await this.prisma8.client.orm.public.SalesOrderSnapshot.where({ id: snapshot.id }).update({
+      await this.prisma.client.orm.public.SalesOrderSnapshot.where({ id: snapshot.id }).update({
         orderValue: JSON.stringify(value),
       })
     }

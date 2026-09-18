@@ -5,28 +5,25 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { not } from '@prisma/orm-postgres/orm-client'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import type {
   CapacityExclusionCondition,
   DirectCapacityConfigurationInput,
   DirectPoolConfigurationInput,
 } from './pool-domain.types'
 import {
-  loadUserScopeTokensPrisma8,
+  loadUserScopeTokensPrisma,
   parseStringArray,
-  resolveScopeUserIdsPrisma8,
+  resolveScopeUserIdsPrisma,
   scopeMatches,
   startOfLocalDay,
 } from './pool-repository.helpers'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
-import {
-  acquirePoolTransactionLocksPrisma8,
-  poolTransactionLockKeys,
-} from './pool-transaction-lock'
+import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 interface CustomerOwnershipInput {
   organizationId: string
@@ -54,12 +51,12 @@ interface CustomerMoveToPoolInput {
 @Injectable()
 export class CustomerPoolRepository {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly calculator: PoolRuleCalculator,
   ) {}
 
   async listPools(organizationId: string) {
-    const pools = await this.prisma8.client.orm.public.CustomerPool.where({
+    const pools = await this.prisma.client.orm.public.CustomerPool.where({
       organizationId: organizationId,
     })
       .orderBy((pool) => pool.createTime.asc())
@@ -67,13 +64,13 @@ export class CustomerPoolRepository {
     if (!pools.length) return []
     const poolIds = pools.map((pool) => pool.id)
     const [hiddenFields, pickRules, recycleRules] = await Promise.all([
-      this.prisma8.client.orm.public.CustomerPoolHiddenField.where((row) =>
+      this.prisma.client.orm.public.CustomerPoolHiddenField.where((row) =>
         row.poolId.in(poolIds),
       ).all(),
-      this.prisma8.client.orm.public.CustomerPoolPickRule.where((row) =>
+      this.prisma.client.orm.public.CustomerPoolPickRule.where((row) =>
         row.poolId.in(poolIds),
       ).all(),
-      this.prisma8.client.orm.public.CustomerPoolRecycleRule.where((row) =>
+      this.prisma.client.orm.public.CustomerPoolRecycleRule.where((row) =>
         row.poolId.in(poolIds),
       ).all(),
     ])
@@ -86,7 +83,7 @@ export class CustomerPoolRepository {
   }
 
   listCapacities(organizationId: string) {
-    return this.prisma8.client.orm.public.CustomerCapacity.where({
+    return this.prisma.client.orm.public.CustomerCapacity.where({
       organizationId: organizationId,
     })
       .orderBy((row) => row.createTime.desc())
@@ -94,14 +91,14 @@ export class CustomerPoolRepository {
   }
 
   async listOwnerHistory(organizationId: string, customerId: string) {
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: customerId,
       organizationId: organizationId,
     })
       .select('id')
       .first()
     if (!customer) return []
-    return this.prisma8.client.orm.public.CustomerOwner.where({ customerId: customer.id })
+    return this.prisma.client.orm.public.CustomerOwner.where({ customerId: customer.id })
       .orderBy((row) => row.endTime.desc())
       .all()
   }
@@ -113,7 +110,7 @@ export class CustomerPoolRepository {
     now = BigInt(Date.now()),
   ) {
     this.assertPoolConfiguration(input)
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const pool = await tx.orm.public.CustomerPool.create({
         id: createLegacyId32(),
         name: input.name.trim(),
@@ -140,7 +137,7 @@ export class CustomerPoolRepository {
     now = BigInt(Date.now()),
   ) {
     this.assertPoolConfiguration(input)
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       await this.assertPoolExists(tx, organizationId, poolId)
       const id = poolId
       const updated = await tx.orm.public.CustomerPool.where({ id }).update({
@@ -159,7 +156,7 @@ export class CustomerPoolRepository {
   }
 
   async togglePool(organizationId: string, poolId: string, operatorId: string) {
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const pool = await this.assertPoolExists(tx, organizationId, poolId)
       const updated = await tx.orm.public.CustomerPool.where({ id: pool.id }).update({
         enable: !pool.enable,
@@ -172,7 +169,7 @@ export class CustomerPoolRepository {
   }
 
   async deletePool(organizationId: string, poolId: string) {
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const pool = await this.assertPoolExists(tx, organizationId, poolId)
       const linked = await tx.orm.public.Customer.where({
         organizationId: organizationId,
@@ -203,7 +200,7 @@ export class CustomerPoolRepository {
   }
 
   async deleteCapacity(organizationId: string, capacityId: string) {
-    const deleted = await this.prisma8.client.orm.public.CustomerCapacity.where({
+    const deleted = await this.prisma.client.orm.public.CustomerCapacity.where({
       id: capacityId,
       organizationId: organizationId,
     }).deleteAndCount()
@@ -215,7 +212,7 @@ export class CustomerPoolRepository {
     return this.takeFromPool(input, true)
   }
 
-  pickInTransaction(tx: Prisma8Transaction, input: CustomerOwnershipInput) {
+  pickInTransaction(tx: PrismaTransaction, input: CustomerOwnershipInput) {
     return this.takeFromPoolInTransaction(tx, input, true)
   }
 
@@ -224,13 +221,13 @@ export class CustomerPoolRepository {
   }
 
   async transfer(input: CustomerTransferInput) {
-    return this.prisma8.client.transaction((tx) => this.transferInTransaction(tx, input))
+    return this.prisma.client.transaction((tx) => this.transferInTransaction(tx, input))
   }
 
-  async transferInTransaction(tx: Prisma8Transaction, input: CustomerTransferInput) {
+  async transferInTransaction(tx: PrismaTransaction, input: CustomerTransferInput) {
     const now = input.now ?? BigInt(Date.now())
-    await acquirePoolTransactionLocksPrisma8(
-      this.prisma8.client,
+    await acquirePoolTransactionLocksPrisma(
+      this.prisma.client,
       tx,
       poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
     )
@@ -259,7 +256,7 @@ export class CustomerPoolRepository {
       excludedOwnedCount,
       1,
     )
-    await this.appendOwnerHistoryPrisma8(tx, customer, input.operatorId, input.reasonId, now)
+    await this.appendOwnerHistoryPrisma(tx, customer, input.operatorId, input.reasonId, now)
     await tx.orm.public.CustomerContact.where({
       organizationId: input.organizationId,
       customerId: customer.id,
@@ -288,19 +285,19 @@ export class CustomerPoolRepository {
   }
 
   private async takeFromPool(input: CustomerOwnershipInput, enforcePickRule: boolean) {
-    return this.prisma8.client.transaction((tx) =>
+    return this.prisma.client.transaction((tx) =>
       this.takeFromPoolInTransaction(tx, input, enforcePickRule),
     )
   }
 
   private async takeFromPoolInTransaction(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     input: CustomerOwnershipInput,
     enforcePickRule: boolean,
   ) {
     const now = input.now ?? BigInt(Date.now())
-    await acquirePoolTransactionLocksPrisma8(
-      this.prisma8.client,
+    await acquirePoolTransactionLocksPrisma(
+      this.prisma.client,
       tx,
       poolTransactionLockKeys('customer', input.organizationId, input.customerId, input.ownerId),
     )
@@ -383,9 +380,9 @@ export class CustomerPoolRepository {
 
   private async finishOwnership(input: CustomerMoveToPoolInput, automatic: boolean) {
     const now = input.now ?? BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
         tx,
         poolTransactionLockKeys(
           'customer',
@@ -411,7 +408,7 @@ export class CustomerPoolRepository {
       if (!customer.owner || customer.collectionTime === null)
         throw new BadRequestException('客户当前没有可结束的负责人')
 
-      await this.appendOwnerHistoryPrisma8(tx, customer, input.operatorId, input.reasonId, now)
+      await this.appendOwnerHistoryPrisma(tx, customer, input.operatorId, input.reasonId, now)
       await tx.orm.public.CustomerContact.where({
         organizationId: input.organizationId,
         customerId: customer.id,
@@ -434,8 +431,8 @@ export class CustomerPoolRepository {
     })
   }
 
-  private async findCapacity(tx: Prisma8Transaction, organizationId: string, ownerId: string) {
-    const tokens = await loadUserScopeTokensPrisma8(tx, organizationId, ownerId)
+  private async findCapacity(tx: PrismaTransaction, organizationId: string, ownerId: string) {
+    const tokens = await loadUserScopeTokensPrisma(tx, organizationId, ownerId)
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities = await tx.orm.public.CustomerCapacity.where({
       organizationId: organizationId,
@@ -455,11 +452,11 @@ export class CustomerPoolRepository {
     if (input.capacity !== null && input.capacity < 0)
       throw new BadRequestException('库容不能小于 0')
     const now = BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(this.prisma8.client, tx, [
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
         `pool:customer:${organizationId}:capacity-config`,
       ])
-      const incoming = await resolveScopeUserIdsPrisma8(tx, organizationId, input.scopeIds)
+      const incoming = await resolveScopeUserIdsPrisma(tx, organizationId, input.scopeIds)
       let existingQuery = tx.orm.public.CustomerCapacity.where({
         organizationId: organizationId,
       })
@@ -469,7 +466,7 @@ export class CustomerPoolRepository {
       }
       const existing = await existingQuery.all()
       for (const row of existing) {
-        const members = await resolveScopeUserIdsPrisma8(
+        const members = await resolveScopeUserIdsPrisma(
           tx,
           organizationId,
           parseStringArray(row.scopeId),
@@ -509,7 +506,7 @@ export class CustomerPoolRepository {
   }
 
   private async replacePoolRelations(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     poolId: string,
     operatorId: string,
     input: DirectPoolConfigurationInput,
@@ -556,7 +553,7 @@ export class CustomerPoolRepository {
     })
   }
 
-  private async loadPoolView(tx: Prisma8Transaction, poolId: string) {
+  private async loadPoolView(tx: PrismaTransaction, poolId: string) {
     const id = poolId
     const pool = await tx.orm.public.CustomerPool.where({ id }).first()
     if (!pool) throw new NotFoundException('客户公海不存在')
@@ -578,7 +575,7 @@ export class CustomerPoolRepository {
       throw new BadRequestException('启用新数据限制时必须填写冷却天数')
   }
 
-  private async assertPoolExists(tx: Prisma8Transaction, organizationId: string, poolId: string) {
+  private async assertPoolExists(tx: PrismaTransaction, organizationId: string, poolId: string) {
     const pool = await tx.orm.public.CustomerPool.where({
       id: poolId,
       organizationId: organizationId,
@@ -588,7 +585,7 @@ export class CustomerPoolRepository {
   }
 
   private async countExcludedOwned(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     ownerId: string,
     rawFilter: string | null,
@@ -645,8 +642,8 @@ export class CustomerPoolRepository {
     }
   }
 
-  private appendOwnerHistoryPrisma8(
-    tx: Prisma8Transaction,
+  private appendOwnerHistoryPrisma(
+    tx: PrismaTransaction,
     customer: {
       id: string
       owner: string | null

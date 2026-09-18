@@ -6,8 +6,8 @@ import type {
   FieldVO,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import { decimalString, numericValue } from '../../prisma/numeric-value'
 
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -28,7 +28,7 @@ export interface ApprovalTargetInfo {
   amount: number
   approvalStatus: string
 }
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 interface ResourceRuntimeHandler {
   readonly rootKey: 'quotation' | 'contract' | 'invoice' | 'order'
@@ -46,7 +46,7 @@ export class ApprovalResourceService {
   private readonly handlers: Record<ApprovalModule, ResourceRuntimeHandler>
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly captureService: ApprovalResourceCaptureService,
     private readonly restoreService: ApprovalResourceRestoreService,
     private readonly snapshots: ApprovalResourceSnapshotService,
@@ -177,7 +177,7 @@ export class ApprovalResourceService {
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
     const formType = APPROVAL_MODULE_FORM_TYPE[module]
 
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const update of updates) {
         const field = fieldMap.get(update.fieldId)
         if (!field || !editableFieldIds.has(update.fieldId)) {
@@ -309,7 +309,7 @@ export class ApprovalResourceService {
   }
 
   private async updateApprovalSystemField(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     user: AuthUser,
     module: ApprovalModule,
     targetId: string,
@@ -567,7 +567,7 @@ export class ApprovalResourceService {
   }
 
   private async quotationTargetInfo(tenantId: string, targetId: string) {
-    const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const row = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -582,7 +582,7 @@ export class ApprovalResourceService {
   }
 
   private async contractTargetInfo(tenantId: string, targetId: string) {
-    const row = await this.prisma8.client.orm.public.Contract.where({
+    const row = await this.prisma.client.orm.public.Contract.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -597,7 +597,7 @@ export class ApprovalResourceService {
   }
 
   private async invoiceTargetInfo(tenantId: string, targetId: string) {
-    const row = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const row = await this.prisma.client.orm.public.ContractInvoice.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -612,7 +612,7 @@ export class ApprovalResourceService {
   }
 
   private async orderTargetInfo(tenantId: string, targetId: string) {
-    const row = await this.prisma8.client.orm.public.SalesOrder.where({
+    const row = await this.prisma.client.orm.public.SalesOrder.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -627,7 +627,7 @@ export class ApprovalResourceService {
   }
 
   private async setQuotationStatus(tenantId: string, targetId: string, status: string) {
-    const row = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const row = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -635,7 +635,7 @@ export class ApprovalResourceService {
       .first()
     if (!row) throw new NotFoundException('报价不存在')
     const approvalStatus = this.toBusinessApprovalStatus(status)
-    const updated = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const updated = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: row.id,
     }).update({
       approvalStatus: approvalStatus,
@@ -646,7 +646,7 @@ export class ApprovalResourceService {
   }
 
   private async setContractStatus(tenantId: string, targetId: string, status: string) {
-    const row = await this.prisma8.client.orm.public.Contract.where({
+    const row = await this.prisma.client.orm.public.Contract.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -654,7 +654,7 @@ export class ApprovalResourceService {
       .first()
     if (!row) throw new NotFoundException('合同不存在')
     const approvalStatus = this.toBusinessApprovalStatus(status)
-    const updated = await this.prisma8.client.orm.public.Contract.where({ id: row.id }).update({
+    const updated = await this.prisma.client.orm.public.Contract.where({ id: row.id }).update({
       approvalStatus: approvalStatus,
       ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
     })
@@ -663,7 +663,7 @@ export class ApprovalResourceService {
   }
 
   private async setInvoiceStatus(tenantId: string, targetId: string, status: string) {
-    const row = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const row = await this.prisma.client.orm.public.ContractInvoice.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -671,7 +671,7 @@ export class ApprovalResourceService {
       .first()
     if (!row) throw new NotFoundException('发票不存在')
     const approvalStatus = this.toBusinessApprovalStatus(status)
-    const updated = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const updated = await this.prisma.client.orm.public.ContractInvoice.where({
       id: row.id,
     }).update({
       approvalStatus: approvalStatus,
@@ -683,7 +683,7 @@ export class ApprovalResourceService {
   }
 
   private async setOrderStatus(tenantId: string, targetId: string, status: string) {
-    const row = await this.prisma8.client.orm.public.SalesOrder.where({
+    const row = await this.prisma.client.orm.public.SalesOrder.where({
       id: targetId,
       organizationId: tenantId,
     })
@@ -691,7 +691,7 @@ export class ApprovalResourceService {
       .first()
     if (!row) throw new NotFoundException('订单不存在')
     const approvalStatus = this.toBusinessApprovalStatus(status)
-    const updated = await this.prisma8.client.orm.public.SalesOrder.where({ id: row.id }).update({
+    const updated = await this.prisma.client.orm.public.SalesOrder.where({ id: row.id }).update({
       approvalStatus: approvalStatus,
       ...(approvalStatus === 'APPROVED' ? { approved: true } : {}),
       updateTime: BigInt(Date.now()),
@@ -701,7 +701,7 @@ export class ApprovalResourceService {
   }
 
   private async deleteQuotation(tenantId: string, targetId: string) {
-    const count = await this.prisma8.client.orm.public.OpportunityQuotation.where({
+    const count = await this.prisma.client.orm.public.OpportunityQuotation.where({
       id: targetId,
       organizationId: tenantId,
     }).deleteAndCount()
@@ -709,7 +709,7 @@ export class ApprovalResourceService {
   }
 
   private async deleteContract(tenantId: string, targetId: string) {
-    const count = await this.prisma8.client.orm.public.Contract.where({
+    const count = await this.prisma.client.orm.public.Contract.where({
       id: targetId,
       organizationId: tenantId,
     }).deleteAndCount()
@@ -717,7 +717,7 @@ export class ApprovalResourceService {
   }
 
   private async deleteInvoice(tenantId: string, targetId: string) {
-    const count = await this.prisma8.client.orm.public.ContractInvoice.where({
+    const count = await this.prisma.client.orm.public.ContractInvoice.where({
       id: targetId,
       organizationId: tenantId,
     }).deleteAndCount()
@@ -725,7 +725,7 @@ export class ApprovalResourceService {
   }
 
   private async deleteOrder(tenantId: string, targetId: string) {
-    const count = await this.prisma8.client.orm.public.SalesOrder.where({
+    const count = await this.prisma.client.orm.public.SalesOrder.where({
       id: targetId,
       organizationId: tenantId,
     }).deleteAndCount()
@@ -737,7 +737,7 @@ export class ApprovalResourceService {
     approvalStatus: string,
     approved: boolean,
   ) {
-    const table = this.prisma8.client.orm.public.OpportunityQuotationSnapshot
+    const table = this.prisma.client.orm.public.OpportunityQuotationSnapshot
     const rows = await table.where({ quotationId: resourceId }).all()
     for (const row of rows) {
       if (!row.quotationValue) continue
@@ -753,7 +753,7 @@ export class ApprovalResourceService {
     approvalStatus: string,
     approved: boolean,
   ) {
-    const table = this.prisma8.client.orm.public.ContractSnapshot
+    const table = this.prisma.client.orm.public.ContractSnapshot
     const rows = await table.where({ contractId: resourceId }).all()
     for (const row of rows) {
       if (!row.contractValue) continue
@@ -765,7 +765,7 @@ export class ApprovalResourceService {
   }
 
   private async syncInvoiceSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
-    const table = this.prisma8.client.orm.public.ContractInvoiceSnapshot
+    const table = this.prisma.client.orm.public.ContractInvoiceSnapshot
     const rows = await table.where({ invoiceId: resourceId }).all()
     for (const row of rows) {
       if (!row.invoiceValue) continue
@@ -777,7 +777,7 @@ export class ApprovalResourceService {
   }
 
   private async syncOrderSnapshot(resourceId: string, approvalStatus: string, approved: boolean) {
-    const table = this.prisma8.client.orm.public.SalesOrderSnapshot
+    const table = this.prisma.client.orm.public.SalesOrderSnapshot
     const rows = await table.where({ orderId: resourceId }).all()
     for (const row of rows) {
       if (!row.orderValue) continue

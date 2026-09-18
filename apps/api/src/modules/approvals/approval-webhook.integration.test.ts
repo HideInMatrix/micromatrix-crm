@@ -1,0 +1,115 @@
+import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
+import test from 'node:test'
+import { BadGatewayException } from '@nestjs/common'
+import type { ApprovalWebhookConfig } from '@micromatrix/shared'
+import type { AuthUser } from '../../common/auth-user'
+import type { PrismaService } from '../../prisma/prisma.service'
+import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
+import type { ApprovalResourceService } from './approval-resource.service'
+import { ApprovalWebhookClient, ApprovalWebhookClientError } from './approval-webhook.client'
+import { ApprovalWebhookService } from './approval-webhook.service'
+
+const databaseUrl = process.env['DATABASE_URL']
+
+function config(): ApprovalWebhookConfig {
+  return {
+    webHookEnable: true,
+    webHookUrl: 'https://hooks.example.com/private/path?token=secret',
+    webHookMethod: 'POST',
+    webHookHeader: '{"Content-Type":"application/json"}',
+    webHookBody: '{"ok":true}',
+    webHookDescribe: 'Prisma delivery gate',
+  }
+}
+
+test(
+  'ApprovalWebhook delivery 使用 Prisma 保持 SENT/FAILED 审计状态与 Temporal 时间字段',
+  { skip: !databaseUrl },
+  async () => {
+    assert.ok(databaseUrl)
+    const testDb = await openPrismaTestDatabase(databaseUrl)
+    const prismaClient = testDb.client
+    const suffix = randomUUID().replaceAll('-', '')
+    const tenantId = `p8-webhook-${suffix}`
+    const user: AuthUser = {
+      id: `u${suffix}`,
+      tenantId,
+      email: null,
+      name: 'Webhook Tester',
+      deptId: null,
+      leaderId: null,
+      roles: [],
+      permissions: ['*'],
+    }
+
+    try {
+      const resources = {} as ApprovalResourceService
+      const successClient = {
+        send: async () => ({ httpStatus: 204, responseBytes: 12, durationMs: 34 }),
+      } as unknown as ApprovalWebhookClient
+      const successService = new ApprovalWebhookService(
+        { client: prismaClient } as PrismaService,
+        resources,
+        successClient,
+      )
+
+      assert.deepEqual(await successService.testConnection(user, config()), {
+        ok: true,
+        httpStatus: 204,
+        responseBytes: 12,
+        durationMs: 34,
+      })
+
+      const sent = await prismaClient.orm.public.ApprovalWebhookDeliveries.where({
+        tenantId,
+        status: 'SENT',
+      })
+        .orderBy((row) => row.createdAt.asc())
+        .first()
+      assert.ok(sent)
+      assert.equal(sent.source, 'TEST')
+      assert.equal(sent.method, 'POST')
+      assert.equal(sent.targetOrigin, 'https://hooks.example.com')
+      assert.equal(sent.targetPath, '[redacted-path]')
+      assert.equal(sent.httpStatus, 204)
+      assert.equal(sent.responseBytes, 12)
+      assert.equal(sent.durationMs, 34)
+      assert.ok(sent.startedAt)
+      assert.ok(sent.finishedAt)
+      assert.ok(sent.updatedAt.epochMilliseconds >= sent.createdAt.epochMilliseconds)
+
+      const failedClient = {
+        send: async () => {
+          throw new ApprovalWebhookClientError('NETWORK', '模拟网络失败', {
+            responseBytes: 7,
+            durationMs: 9,
+          })
+        },
+      } as unknown as ApprovalWebhookClient
+      const failedService = new ApprovalWebhookService(
+        { client: prismaClient } as PrismaService,
+        resources,
+        failedClient,
+      )
+
+      await assert.rejects(() => failedService.testConnection(user, config()), BadGatewayException)
+      const failed = await prismaClient.orm.public.ApprovalWebhookDeliveries.where({
+        tenantId,
+        status: 'FAILED',
+      })
+        .orderBy((row) => row.createdAt.desc())
+        .first()
+      assert.ok(failed)
+      assert.equal(failed.errorCode, 'NETWORK')
+      assert.equal(failed.errorMessage, '模拟网络失败')
+      assert.equal(failed.responseBytes, 7)
+      assert.equal(failed.durationMs, 9)
+      assert.ok(failed.startedAt)
+      assert.ok(failed.finishedAt)
+    } finally {
+      await prismaClient.orm.public.ApprovalWebhookDeliveries.where({ tenantId }).deleteAll()
+      await testDb.close()
+    }
+  },
+)

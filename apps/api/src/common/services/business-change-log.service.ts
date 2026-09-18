@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { AuthUser } from '../auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { jsonValue } from '../../prisma/json-value'
 
 export interface FieldChange {
@@ -39,7 +39,7 @@ const DEFAULT_IGNORED = new Set([
 export class BusinessChangeLogService {
   private readonly logger = new Logger(BusinessChangeLogService.name)
 
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   diff(before: unknown, after: unknown, ignore: string[] = []): FieldChange[] {
     const ignored = new Set([...DEFAULT_IGNORED, ...ignore])
@@ -52,7 +52,7 @@ export class BusinessChangeLogService {
     const changes = this.diff(input.before, input.after, input.ignore)
     if (changes.length === 0) return
     try {
-      await this.prisma8.client.transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         const log = await tx.orm.public.OperationLogs.create({
           tenantId: user.tenantId,
           userId: user.id,

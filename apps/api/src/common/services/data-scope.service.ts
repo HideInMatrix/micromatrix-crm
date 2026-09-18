@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { hasPermission } from '@micromatrix/shared'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import type { AuthUser } from '../auth-user'
 
 /**
@@ -9,7 +9,7 @@ import type { AuthUser } from '../auth-user'
  */
 @Injectable()
 export class DataScopeService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async scopeFilter(user: AuthUser, permission: string): Promise<Record<string, unknown>> {
     const scope = await this.resolveScope(user, permission)
@@ -40,7 +40,7 @@ export class DataScopeService {
     if (scope.all) return {}
     const ownerIds = new Set([user.id])
     if (scope.deptIds.length) {
-      const users = await this.prisma8.client.orm.public.Users.where({
+      const users = await this.prisma.client.orm.public.Users.where({
         tenantId: user.tenantId,
         status: 'ACTIVE',
       })
@@ -57,7 +57,7 @@ export class DataScopeService {
     if (!scope.hasPermission) return false
     if (scope.all || ownerId === user.id) return true
     if (!ownerId || !scope.deptIds.length) return false
-    return !!(await this.prisma8.client.orm.public.Users.where({
+    return !!(await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -77,7 +77,7 @@ export class DataScopeService {
     if (scope.all) return {}
     const userIds = new Set([user.id])
     if (scope.deptIds.length) {
-      const users = await this.prisma8.client.orm.public.Users.where({
+      const users = await this.prisma.client.orm.public.Users.where({
         tenantId: user.tenantId,
         status: 'ACTIVE',
       })
@@ -94,7 +94,7 @@ export class DataScopeService {
     if (!scope.hasPermission) return false
     if (scope.all || createUser === user.id) return true
     if (!createUser || !scope.deptIds.length) return false
-    return !!(await this.prisma8.client.orm.public.Users.where({
+    return !!(await this.prisma.client.orm.public.Users.where({
       id: createUser,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -133,7 +133,7 @@ export class DataScopeService {
   /** Cordys CUSTOM 语义：每个已选部门都包含其全部下级部门。 */
   async collectManyWithDescendants(tenantId: string, rootIds: string[]): Promise<string[]> {
     if (rootIds.length === 0) return []
-    const all = await this.prisma8.client.orm.public.Departments.where({ tenantId })
+    const all = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()
     const childrenMap = new Map<string | null, string[]>()

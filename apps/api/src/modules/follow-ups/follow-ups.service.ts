@@ -18,14 +18,14 @@ import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import {
-  prisma8Now,
-  prisma8TimestampFromDate,
-  prisma8TimestampFromISOString,
-  prisma8TimestampToISOString,
-} from '../../prisma/prisma8-temporal.js'
+  nowInstant,
+  instantFromDate,
+  instantFromISOString,
+  instantToISOString,
+} from '../../prisma/temporal.js'
 
 import { AttachmentsService } from '../attachments/attachments.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -65,17 +65,17 @@ export type FollowRecord = {
   contactId: string | null
   type: string | null
   content: string
-  followedAt: ReturnType<typeof prisma8Now> | null
+  followedAt: ReturnType<typeof nowInstant> | null
   ownerId: string
   ownerName: string
   deptId: string | null
   createdById: string
   commentCount: number
-  createdAt: ReturnType<typeof prisma8Now>
-  updatedAt: ReturnType<typeof prisma8Now>
+  createdAt: ReturnType<typeof nowInstant>
+  updatedAt: ReturnType<typeof nowInstant>
 }
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 const FOLLOW_RECORD_DYNAMIC_SORT_TYPES = new Set<FieldType>([
   'text',
@@ -98,7 +98,7 @@ const FOLLOW_RECORD_DYNAMIC_SORT_TYPES = new Set<FieldType>([
 @Injectable()
 export class FollowUpsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly customerAccess: CustomerAccessService,
     private readonly dataScope: DataScopeService,
     private readonly pools: ResourcePoolsService,
@@ -140,7 +140,7 @@ export class FollowUpsService {
       dto.targetType && dto.targetId ? null : this.globalAccessibleRecordIds(user),
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    let query = this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId })
+    let query = this.prisma.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId })
     if (dto.targetType) query = query.where({ targetType: dto.targetType })
     if (dto.targetId) query = query.where({ targetId: dto.targetId })
     if (accessIds) query = query.where((row) => row.id.in(accessIds))
@@ -161,7 +161,7 @@ export class FollowUpsService {
       )
       const pageIds = orderedIds.slice((page - 1) * pageSize, page * pageSize)
       const rows = pageIds.length
-        ? await this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId })
+        ? await this.prisma.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId })
             .where((row) => row.id.in(pageIds))
             .all()
         : []
@@ -224,7 +224,7 @@ export class FollowUpsService {
   }
 
   private applySystemSort(
-    query: ReturnType<typeof this.prisma8.client.orm.public.FollowUpRecords.where>,
+    query: ReturnType<typeof this.prisma.client.orm.public.FollowUpRecords.where>,
     sort: Extract<FollowRecordResolvedSort, { kind: 'system' }>,
   ) {
     const asc = sort.direction === 'asc'
@@ -283,11 +283,11 @@ export class FollowUpsService {
   ): Promise<string[]> {
     if (recordIds.length <= 1) return recordIds
     const [normalRows, blobRows] = await Promise.all([
-      this.prisma8.client.orm.public.FollowUpRecordField.where({ fieldId: field.id })
+      this.prisma.client.orm.public.FollowUpRecordField.where({ fieldId: field.id })
         .where((row) => row.resourceId.in(recordIds))
         .select('resourceId', 'fieldValue')
         .all(),
-      this.prisma8.client.orm.public.FollowUpRecordFieldBlob.where({ fieldId: field.id })
+      this.prisma.client.orm.public.FollowUpRecordFieldBlob.where({ fieldId: field.id })
         .where((row) => row.resourceId.in(recordIds))
         .select('resourceId', 'fieldValue')
         .all(),
@@ -344,14 +344,14 @@ export class FollowUpsService {
       user.tenantId,
       dto.moduleFields ?? [],
     )
-    const record = await this.prisma8.client.transaction(async (tx) => {
+    const record = await this.prisma.client.transaction(async (tx) => {
       if (sourcePlan) {
         const claimed = await tx.orm.public.FollowUpPlans.where({
           id: sourcePlan.id,
           tenantId: user.tenantId,
           status: 'COMPLETED',
           converted: false,
-        }).updateAndCount({ converted: true, updatedAt: prisma8Now() })
+        }).updateAndCount({ converted: true, updatedAt: nowInstant() })
         if (claimed !== 1) throw new ConflictException('该计划已转为跟进记录')
       }
       const created = await tx.orm.public.FollowUpRecords.create({
@@ -361,12 +361,12 @@ export class FollowUpsService {
         contactId: dto.contactId ?? null,
         _type: dto.type ?? null,
         content: dto.content,
-        followedAt: dto.followedAt ? prisma8TimestampFromISOString(dto.followedAt) : prisma8Now(),
+        followedAt: dto.followedAt ? instantFromISOString(dto.followedAt) : nowInstant(),
         ownerId: owner.id,
         ownerName: owner.name,
         deptId: owner.deptId,
         createdById: user.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -381,7 +381,7 @@ export class FollowUpsService {
       if (sourcePlan) {
         await tx.orm.public.FollowUpPlans.where({ id: sourcePlan.id }).update({
           convertedRecordId: created.id,
-          updatedAt: prisma8Now(),
+          updatedAt: nowInstant(),
         })
       }
       return this.toLegacyRecord(created)
@@ -442,7 +442,7 @@ export class FollowUpsService {
       dto.moduleFields === undefined
         ? null
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
-    const updated = await this.prisma8.client.transaction(async (tx) => {
+    const updated = await this.prisma.client.transaction(async (tx) => {
       const record = await tx.orm.public.FollowUpRecords.where({ id }).update({
         targetType,
         targetId,
@@ -453,10 +453,10 @@ export class FollowUpsService {
           dto.followedAt === undefined
             ? existing.followedAt
             : dto.followedAt
-              ? prisma8TimestampFromISOString(dto.followedAt)
+              ? instantFromISOString(dto.followedAt)
               : null,
         ...(owner ? { ownerId: owner.id, ownerName: owner.name, deptId: owner.deptId } : {}),
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
       if (!record) throw new NotFoundException('跟进记录不存在')
       if (dynamicValues !== null) {
@@ -485,7 +485,7 @@ export class FollowUpsService {
       record.targetId,
       true,
     )
-    await this.prisma8.client.orm.public.FollowUpRecords.where({
+    await this.prisma.client.orm.public.FollowUpRecords.where({
       id,
       tenantId: user.tenantId,
     }).delete()
@@ -525,7 +525,7 @@ export class FollowUpsService {
       return
     }
     if (targetType === 'lead') {
-      const lead = await this.prisma8.client.orm.public.Clue.where({
+      const lead = await this.prisma.client.orm.public.Clue.where({
         id: targetId,
         organizationId: user.tenantId,
       })
@@ -560,7 +560,7 @@ export class FollowUpsService {
       const permission = write ? 'opportunity:update' : 'menu:opportunity'
       if (!hasPermission(user.permissions, permission))
         throw new ForbiddenException('无商机跟进权限')
-      const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
+      const opportunity = await this.prisma.client.orm.public.Opportunity.where({
         id: targetId,
         organizationId: user.tenantId,
       })
@@ -589,9 +589,7 @@ export class FollowUpsService {
         canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
         canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
       ])
-    const applyOwnerScope = <
-      T extends ReturnType<typeof this.prisma8.client.orm.public.Clue.where>,
-    >(
+    const applyOwnerScope = <T extends ReturnType<typeof this.prisma.client.orm.public.Clue.where>>(
       query: T,
       scope: any,
     ): T => {
@@ -603,12 +601,12 @@ export class FollowUpsService {
           : query.where((row: any) => row.owner.in(owner.in))
       ) as T
     }
-    let directLeadQuery = this.prisma8.client.orm.public.Clue.where({
+    let directLeadQuery = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
       inSharedPool: false,
     })
     if (leadScope) directLeadQuery = applyOwnerScope(directLeadQuery, leadScope)
-    let directCustomerQuery = this.prisma8.client.orm.public.Customer.where({
+    let directCustomerQuery = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       inSharedPool: false,
     })
@@ -619,7 +617,7 @@ export class FollowUpsService {
           ? directCustomerQuery.where({ owner: customerOwner })
           : directCustomerQuery.where((row) => row.owner.in(customerOwner.in))
     }
-    let opportunityQuery = this.prisma8.client.orm.public.Opportunity.where({
+    let opportunityQuery = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
     const opportunityOwner = (opportunityScope as any)?.owner
@@ -630,7 +628,7 @@ export class FollowUpsService {
           : opportunityQuery.where((row) => row.owner.in(opportunityOwner.in))
     }
     const collaborationRows = canCustomer
-      ? await this.prisma8.client.orm.public.CustomerCollaboration.where({ userId: user.id })
+      ? await this.prisma.client.orm.public.CustomerCollaboration.where({ userId: user.id })
           .select('customerId')
           .all()
       : []
@@ -645,7 +643,7 @@ export class FollowUpsService {
     ] = await Promise.all([
       leadScope ? directLeadQuery.select('id').all() : Promise.resolve([]),
       canLeadPool && leadPoolOptions.length
-        ? this.prisma8.client.orm.public.Clue.where({
+        ? this.prisma.client.orm.public.Clue.where({
             organizationId: user.tenantId,
             inSharedPool: true,
           })
@@ -655,7 +653,7 @@ export class FollowUpsService {
         : Promise.resolve([]),
       customerScope ? directCustomerQuery.select('id').all() : Promise.resolve([]),
       collaborationIds.length
-        ? this.prisma8.client.orm.public.Customer.where({
+        ? this.prisma.client.orm.public.Customer.where({
             organizationId: user.tenantId,
             inSharedPool: false,
           })
@@ -664,7 +662,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
       canCustomerPool && customerPoolOptions.length
-        ? this.prisma8.client.orm.public.Customer.where({
+        ? this.prisma.client.orm.public.Customer.where({
             organizationId: user.tenantId,
             inSharedPool: true,
           })
@@ -685,7 +683,7 @@ export class FollowUpsService {
     const opportunityIds = opportunities.map((item) => String(item.id))
     const groups = await Promise.all([
       leadIds.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
             tenantId: user.tenantId,
             targetType: 'lead',
           })
@@ -694,7 +692,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
       customerIds.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
             tenantId: user.tenantId,
             targetType: 'customer',
           })
@@ -703,7 +701,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
       opportunityIds.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
             tenantId: user.tenantId,
             targetType: 'opportunity',
           })
@@ -717,19 +715,19 @@ export class FollowUpsService {
 
   private async keywordRecordIds(tenantId: string, keyword: string): Promise<string[]> {
     const [leads, customers, opportunities, direct] = await Promise.all([
-      this.prisma8.client.orm.public.Clue.where({ organizationId: tenantId })
+      this.prisma.client.orm.public.Clue.where({ organizationId: tenantId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.Customer.where({ organizationId: tenantId })
+      this.prisma.client.orm.public.Customer.where({ organizationId: tenantId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.Opportunity.where({ organizationId: tenantId })
+      this.prisma.client.orm.public.Opportunity.where({ organizationId: tenantId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
-      this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId })
+      this.prisma.client.orm.public.FollowUpRecords.where({ tenantId })
         .where((row) =>
           or(
             row.content.ilike(`%${keyword}%`),
@@ -742,19 +740,19 @@ export class FollowUpsService {
     ])
     const [leadRecords, customerRecords, opportunityRecords] = await Promise.all([
       leads.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'lead' })
+        ? this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'lead' })
             .where((row) => row.targetId.in(leads.map((item) => String(item.id))))
             .select('id')
             .all()
         : Promise.resolve([]),
       customers.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'customer' })
+        ? this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'customer' })
             .where((row) => row.targetId.in(customers.map((item) => String(item.id))))
             .select('id')
             .all()
         : Promise.resolve([]),
       opportunities.length
-        ? this.prisma8.client.orm.public.FollowUpRecords.where({
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
             tenantId,
             targetType: 'opportunity',
           })
@@ -794,7 +792,7 @@ export class FollowUpsService {
         if (!field.system) {
           return this.fieldValues.filterResourceIds(tenantId, 'followRecord', [condition])
         }
-        let query = this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId })
+        let query = this.prisma.client.orm.public.FollowUpRecords.where({ tenantId })
         query = this.applySystemFilter(query, field, condition)
         const rows = await query.select('id').all()
         return rows.map((row) => row.id)
@@ -811,7 +809,7 @@ export class FollowUpsService {
   }
 
   private applySystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.FollowUpRecords.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.FollowUpRecords.where>,
     field: FieldVO,
     condition: FilterCondition,
   ) {
@@ -854,7 +852,7 @@ export class FollowUpsService {
     if (key === 'followedAt') {
       const value = new Date(String(condition.value))
       if (Number.isNaN(value.getTime())) throw new BadRequestException('跟进时间筛选值不合法')
-      const timestamp = prisma8TimestampFromDate(value)
+      const timestamp = instantFromDate(value)
       if (condition.op === 'gte') return collection.where((row) => row.followedAt.gte(timestamp))
       if (condition.op === 'lte') return collection.where((row) => row.followedAt.lte(timestamp))
       throw new BadRequestException('跟进时间不支持该筛选操作')
@@ -906,7 +904,7 @@ export class FollowUpsService {
   }
 
   private async ensureRecord(user: AuthUser, id: string): Promise<FollowRecord> {
-    const record = await this.prisma8.client.orm.public.FollowUpRecords.where({
+    const record = await this.prisma.client.orm.public.FollowUpRecords.where({
       id,
       tenantId: user.tenantId,
     }).first()
@@ -921,7 +919,7 @@ export class FollowUpsService {
   }
 
   private async ensureConvertiblePlan(user: AuthUser, id: string) {
-    const plan = await this.prisma8.client.orm.public.FollowUpPlans.where({
+    const plan = await this.prisma.client.orm.public.FollowUpPlans.where({
       id,
       tenantId: user.tenantId,
     }).first()
@@ -938,7 +936,7 @@ export class FollowUpsService {
     if (!ownerId || ownerId === user.id) {
       return { id: user.id, name: user.name, deptId: user.deptId }
     }
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -958,7 +956,7 @@ export class FollowUpsService {
     if (!contactId) return
     let customerId: string | null = targetType === 'customer' ? targetId : null
     if (targetType === 'opportunity') {
-      const opportunity = await this.prisma8.client.orm.public.Opportunity.where({
+      const opportunity = await this.prisma.client.orm.public.Opportunity.where({
         id: targetId,
         organizationId: tenantId,
       })
@@ -967,7 +965,7 @@ export class FollowUpsService {
       customerId = opportunity?.customerId ? String(opportunity.customerId) : null
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma8.client.orm.public.CustomerContact.where({
+    const contact = await this.prisma.client.orm.public.CustomerContact.where({
       id: contactId,
       organizationId: tenantId,
       customerId: customerId,
@@ -979,7 +977,7 @@ export class FollowUpsService {
 
   /** 更新目标对象的最近跟进时间与跟进人；跟记录写入保持同一事务。 */
   private async touchTarget(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     tenantId: string,
     targetType: string,
     targetId: string,
@@ -1030,14 +1028,14 @@ export class FollowUpsService {
     contactId: string | null
     _type: string | null
     content: string
-    followedAt: ReturnType<typeof prisma8Now> | null
+    followedAt: ReturnType<typeof nowInstant> | null
     ownerId: string
     ownerName: string
     deptId: string | null
     createdById: string
     commentCount: number
-    createdAt: ReturnType<typeof prisma8Now>
-    updatedAt: ReturnType<typeof prisma8Now>
+    createdAt: ReturnType<typeof nowInstant>
+    updatedAt: ReturnType<typeof nowInstant>
   }): FollowRecord {
     return {
       id: row.id,
@@ -1097,7 +1095,7 @@ export class FollowUpsService {
       this.moduleForms.listFields(user.tenantId, 'followRecord'),
       this.fieldValues.load(user.tenantId, 'followRecord', ids),
       leadIds.length
-        ? this.prisma8.client.orm.public.Clue.where({
+        ? this.prisma.client.orm.public.Clue.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.id.in(leadIds))
@@ -1105,7 +1103,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
       customerIds.length
-        ? this.prisma8.client.orm.public.Customer.where({
+        ? this.prisma.client.orm.public.Customer.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.id.in(customerIds))
@@ -1113,7 +1111,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
       opportunityIds.length
-        ? this.prisma8.client.orm.public.Opportunity.where({
+        ? this.prisma.client.orm.public.Opportunity.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.id.in(opportunityIds))
@@ -1121,7 +1119,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
       contactIds.length
-        ? this.prisma8.client.orm.public.CustomerContact.where({
+        ? this.prisma.client.orm.public.CustomerContact.where({
             organizationId: user.tenantId,
           })
             .where((row) => row.id.in(contactIds))
@@ -1159,7 +1157,7 @@ export class FollowUpsService {
         contactName: record.contactId ? (contactMap.get(record.contactId) ?? null) : null,
         type: record.type,
         content: record.content,
-        followedAt: record.followedAt ? prisma8TimestampToISOString(record.followedAt) : null,
+        followedAt: record.followedAt ? instantToISOString(record.followedAt) : null,
         ownerId: record.ownerId,
         ownerName: record.ownerName,
         canManage: record.ownerId === user.id || hasPermission(user.permissions, '*'),
@@ -1170,8 +1168,8 @@ export class FollowUpsService {
               !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key),
           )
           .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
-        createdAt: prisma8TimestampToISOString(record.createdAt),
-        updatedAt: prisma8TimestampToISOString(record.updatedAt),
+        createdAt: instantToISOString(record.createdAt),
+        updatedAt: instantToISOString(record.updatedAt),
       }
     })
   }

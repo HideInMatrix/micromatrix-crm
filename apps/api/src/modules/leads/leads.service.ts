@@ -25,9 +25,9 @@ import { parseFilters } from '../../common/filter-builder'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
-import type { Prisma8Client } from '../../prisma/prisma8-client.js'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { CustomersService } from '../../customers/customers.service'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
@@ -61,7 +61,7 @@ import {
 } from './dto/clue.dto'
 
 const MODULE = 'lead'
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 export function buildLeadKeywordWhere(keyword: string) {
   return {
@@ -159,7 +159,7 @@ interface LeadAssociationPrepared {
 @Injectable()
 export class LeadsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
@@ -256,7 +256,7 @@ export class LeadsService {
   ) {
     const lead = await this.ensureInScope(user, dto.id, 'lead:update')
     if (lead.transitionId) throw new BadRequestException('已转换线索不能继续修改状态')
-    const updated = await this.prisma8.client.orm.public.Clue.where({
+    const updated = await this.prisma.client.orm.public.Clue.where({
       id: lead.id,
       organizationId: user.tenantId,
     }).update({
@@ -437,7 +437,7 @@ export class LeadsService {
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
 
-    let db = this.prisma8.client.orm.public.Clue.where({
+    let db = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
     })
     if (scope === 'pool') {
@@ -575,7 +575,7 @@ export class LeadsService {
   }
 
   private applyClueSort(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Clue.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Clue.where>,
     column: LeadSortColumn,
     direction: 'asc' | 'desc',
   ) {
@@ -617,7 +617,7 @@ export class LeadsService {
   }
 
   private applyHomeLeadWhere(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Clue.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Clue.where>,
     where: LeadHomeWhere,
   ) {
     let query = collection
@@ -665,7 +665,7 @@ export class LeadsService {
   }
 
   async findOne(user: AuthUser, id: string): Promise<LeadVO> {
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
       inSharedPool: false,
@@ -678,7 +678,7 @@ export class LeadsService {
   }
 
   async findPoolOne(user: AuthUser, id: string): Promise<LeadVO> {
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
       inSharedPool: true,
@@ -698,7 +698,7 @@ export class LeadsService {
     const now = BigInt(Date.now())
     if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
 
-    const lead = await this.prisma8.client.transaction(async (tx) => {
+    const lead = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.Clue.create({
         id: createLegacyId32(),
         name: dto.name,
@@ -770,7 +770,7 @@ export class LeadsService {
       transferredOwnerId = owner.id
     }
 
-    const lead = await this.prisma8.client.transaction(async (tx) => {
+    const lead = await this.prisma.client.transaction(async (tx) => {
       const updated = await tx.orm.public.Clue.where({ id: existing.id }).update({
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.contactName !== undefined
@@ -847,7 +847,7 @@ export class LeadsService {
 
   /** 从线索池领取 */
   async claim(user: AuthUser, id: string) {
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
       inSharedPool: true,
@@ -871,7 +871,7 @@ export class LeadsService {
     for (const id of ids) {
       try {
         if (poolId) {
-          const lead = await this.prisma8.client.orm.public.Clue.where({
+          const lead = await this.prisma.client.orm.public.Clue.where({
             id: id,
             organizationId: user.tenantId,
             inSharedPool: true,
@@ -892,7 +892,7 @@ export class LeadsService {
   /** Cordys /pool/lead/pick：资源必须仍属于请求中的同一个池。 */
   async poolClaim(user: AuthUser, clueId: string, poolId: string) {
     await this.pools.assertPoolMember(user, 'lead', poolId)
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: clueId,
       organizationId: user.tenantId,
       inSharedPool: true,
@@ -917,7 +917,7 @@ export class LeadsService {
 
   /** 分配负责人（主管操作） */
   async assign(user: AuthUser, id: string, dto: AssignLeadInput) {
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -967,7 +967,7 @@ export class LeadsService {
 
   /** Cordys /pool/lead/assign：只允许分配池内线索，不得退化成普通线索转移。 */
   async poolAssign(user: AuthUser, clueId: string, ownerId: string, expectedPoolId?: string) {
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: clueId,
       organizationId: user.tenantId,
       inSharedPool: true,
@@ -1093,7 +1093,7 @@ export class LeadsService {
 
   async poolBatchUpdate(user: AuthUser, dto: PoolResourceBatchEditDto): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'lead', dto.poolId)
-    const leads = await this.prisma8.client.orm.public.Clue.where({
+    const leads = await this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
       inSharedPool: true,
       poolId: dto.poolId,
@@ -1124,7 +1124,7 @@ export class LeadsService {
 
   async poolBatchDelete(user: AuthUser, poolId: string, ids: string[]): Promise<BatchAffectResult> {
     await this.pools.assertPoolMember(user, 'lead', poolId)
-    const leads = await this.prisma8.client.orm.public.Clue.where({
+    const leads = await this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
       inSharedPool: true,
       poolId: poolId,
@@ -1141,7 +1141,7 @@ export class LeadsService {
   private async assertPoolBatchResources(user: AuthUser, ids: string[], expectedPoolId?: string) {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) throw new BadRequestException('请选择线索')
-    const leads = await this.prisma8.client.orm.public.Clue.where({
+    const leads = await this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
       inSharedPool: true,
     })
@@ -1164,7 +1164,7 @@ export class LeadsService {
   }
 
   async ownerHistory(user: AuthUser, id: string) {
-    const lead = await this.prisma8.client.orm.public.Clue.where({
+    const lead = await this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
     })
@@ -1183,7 +1183,7 @@ export class LeadsService {
 
   async markInvalid(user: AuthUser, id: string) {
     const lead = await this.ensureInScope(user, id, 'lead:update')
-    await this.prisma8.client.orm.public.Clue.where({
+    await this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
     }).update({
@@ -1225,7 +1225,7 @@ export class LeadsService {
       opportunityName: dto.oppCreated ? dto.oppName?.trim() : undefined,
     })
 
-    const transactionResult = await this.prisma8.client.transaction(async (tx) => {
+    const transactionResult = await this.prisma.client.transaction(async (tx) => {
       const createdCustomer =
         customerCreateDto && customerPrepared
           ? await this.customers.createPreparedInTransaction(
@@ -1281,7 +1281,7 @@ export class LeadsService {
     const leadOwner = lead.owner
     const { clueId: _, ...customerPayload } = dto
     const prepared = await this.customers.prepareCreateForTransaction(user, customerPayload)
-    const result = await this.prisma8.client.transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const customer = await this.customers.createPreparedInTransaction(
         user,
         customerPayload,
@@ -1343,7 +1343,7 @@ export class LeadsService {
       : false
     const clueIds = [...new Set(dto.clueIds)]
     const leads = clueIds.length
-      ? await this.prisma8.client.orm.public.Clue.where({
+      ? await this.prisma.client.orm.public.Clue.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(clueIds))
@@ -1362,7 +1362,7 @@ export class LeadsService {
     const ownerIds = [...new Set(leads.flatMap((lead) => (lead.owner ? [String(lead.owner)] : [])))]
     const activeOwners = new Set(
       (ownerIds.length
-        ? await this.prisma8.client.orm.public.Users.where({
+        ? await this.prisma.client.orm.public.Users.where({
             tenantId: user.tenantId,
             status: 'ACTIVE',
           })
@@ -1379,7 +1379,7 @@ export class LeadsService {
       .filter((lead) => !lead.owner || !activeOwners.has(String(lead.owner)))
       .map((lead) => String(lead.id))
     const associationPrepared = await this.prepareLeadAssociation(user, validLeads)
-    const result = await this.prisma8.client.transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       if (customer.inSharedPool) {
         if (!customer.poolId) throw new BadRequestException('客户不属于有效公海')
         await this.customerPools.pickInTransaction(tx, {
@@ -1426,7 +1426,7 @@ export class LeadsService {
   }
 
   private async assertTransitionCustomerAccessible(user: AuthUser, customerId: string) {
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: customerId,
       organizationId: user.tenantId,
     }).first()
@@ -1443,7 +1443,7 @@ export class LeadsService {
     if (await this.dataScope.matchesDirectOwner(user, customer.owner, 'customer:read')) {
       return customer
     }
-    const collaboration = await this.prisma8.client.orm.public.CustomerCollaboration.where({
+    const collaboration = await this.prisma.client.orm.public.CustomerCollaboration.where({
       customerId: customerId,
       userId: user.id,
     }).first()
@@ -1479,7 +1479,7 @@ export class LeadsService {
       ...new Set(leads.map((lead) => lead.owner).filter((id): id is string => !!id)),
     ]
     const owners = ownerIds.length
-      ? await this.prisma8.client.orm.public.Users.where({
+      ? await this.prisma.client.orm.public.Users.where({
           tenantId: user.tenantId,
           status: 'ACTIVE',
         })
@@ -1492,7 +1492,7 @@ export class LeadsService {
       throw new BadRequestException('线索负责人不存在或已禁用')
     }
     const firstStage = options.opportunityName
-      ? await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+      ? await this.prisma.client.orm.public.OpportunityStageConfig.where({
           organizationId: user.tenantId,
           _type: 'AFOOT',
         })
@@ -1514,7 +1514,7 @@ export class LeadsService {
   }
 
   private async associateLeadsToCustomerInTransaction(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     user: AuthUser,
     leads: Lead[],
     customerId: string,
@@ -1690,7 +1690,7 @@ export class LeadsService {
   }
 
   private async copyLeadFollowArtifactsInTransaction(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     user: AuthUser,
     leadId: string,
     customerId: string,
@@ -1851,7 +1851,7 @@ export class LeadsService {
   private async selectTransformCustomer(user: AuthUser, lead: Lead) {
     const nameUnique = await this.metadata.hasUniqueRule(user.tenantId, 'customer', 'name')
     if (!nameUnique) return null
-    const customers = await this.prisma8.client.orm.public.Customer.where({
+    const customers = await this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.name.ilike(lead.name))
@@ -2199,7 +2199,7 @@ export class LeadsService {
 
     if (!resourceId) throw new BadRequestException('唯一ID不能为空')
     const existing = poolId
-      ? await this.prisma8.client.orm.public.Clue.where({
+      ? await this.prisma.client.orm.public.Clue.where({
           id: resourceId,
           organizationId: user.tenantId,
           inSharedPool: true,
@@ -2216,7 +2216,7 @@ export class LeadsService {
   private async resolveImportOwner(user: AuthUser, value: string): Promise<string> {
     const input = value.trim()
     if (!input) throw new BadRequestException('负责人不能为空')
-    const direct = await this.prisma8.client.orm.public.Users.where({
+    const direct = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
     })
@@ -2224,7 +2224,7 @@ export class LeadsService {
       .select('id')
       .first()
     if (direct) return direct.id
-    const byName = await this.prisma8.client.orm.public.Users.where({
+    const byName = await this.prisma.client.orm.public.Users.where({
       tenantId: user.tenantId,
       status: 'ACTIVE',
       name: input,
@@ -2258,7 +2258,7 @@ export class LeadsService {
 
   private async deleteLeadResources(user: AuthUser, leads: Lead[]) {
     const ids = leads.map((lead) => lead.id)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'lead',
@@ -2327,7 +2327,7 @@ export class LeadsService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -2340,7 +2340,7 @@ export class LeadsService {
 
   private async ensureInScope(user: AuthUser, id: string, permission: string) {
     const scope = await this.dataScope.directOwnerFilter(user, permission)
-    let query = this.prisma8.client.orm.public.Clue.where({
+    let query = this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,
     })
@@ -2387,7 +2387,7 @@ export class LeadsService {
         }
         const key = aliases[condition.key] ?? condition.key
         const field = fieldMap.get(condition.key) ?? fieldMap.get(key)
-        let query = this.prisma8.client.orm.public.Clue.where({
+        let query = this.prisma.client.orm.public.Clue.where({
           organizationId: organizationId,
         })
         if (!field || field.type === 'formula') {
@@ -2411,7 +2411,7 @@ export class LeadsService {
   }
 
   private applyLeadSystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Clue.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Clue.where>,
     key: string,
     condition: FilterCondition,
     field: FieldVO,
@@ -2753,7 +2753,7 @@ export class LeadsService {
   private async ownerNames(ownerIds: (string | null)[]): Promise<Map<string, string>> {
     const ids = [...new Set(ownerIds.filter((v): v is string => !!v))]
     if (ids.length === 0) return new Map()
-    const users = await this.prisma8.client.orm.public.Users.where((row) => row.id.in(ids))
+    const users = await this.prisma.client.orm.public.Users.where((row) => row.id.in(ids))
       .select('id', 'name')
       .all()
     return new Map(users.map((u) => [u.id, u.name]))

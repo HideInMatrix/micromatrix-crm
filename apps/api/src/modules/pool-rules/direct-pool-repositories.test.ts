@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
@@ -45,15 +45,15 @@ test('线索手工退池在同一事务中结束当前负责人并保存退池�
       },
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       transaction: async (operation: (client: typeof tx) => Promise<unknown>) => operation(tx),
       raw: {
         sql: () => ({ returnsRow: () => ({ build: () => ({}) }) }),
       },
     },
-  } as unknown as Prisma8Service
-  const repository = new CluePoolRepository(prisma8, new PoolRuleCalculator())
+  } as unknown as PrismaService
+  const repository = new CluePoolRepository(prisma, new PoolRuleCalculator())
 
   await repository.moveToPool({
     organizationId: 'org-1',
@@ -125,15 +125,15 @@ test('客户自动回收写 customer_owner，system 只保留在当前资源而�
       },
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       transaction: async (operation: (client: typeof tx) => Promise<unknown>) => operation(tx),
       raw: {
         sql: () => ({ returnsRow: () => ({ build: () => ({}) }) }),
       },
     },
-  } as unknown as Prisma8Service
-  const repository = new CustomerPoolRepository(prisma8, new PoolRuleCalculator())
+  } as unknown as PrismaService
+  const repository = new CustomerPoolRepository(prisma, new PoolRuleCalculator())
 
   await repository.recycle({
     organizationId: 'org-1',

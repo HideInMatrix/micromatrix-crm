@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { BusinessChangeLogService } from './business-change-log.service'
 
 test('业务字段变更日志把 before/after diff 写入独立 Blob 而不是主表 detail', async () => {
   const logCreates: Array<Record<string, unknown>> = []
   const blobCreates: Array<Record<string, unknown>> = []
-  const prisma8 = {
+  const prisma = {
     client: {
       transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
@@ -28,9 +28,9 @@ test('业务字段变更日志把 before/after diff 写入独立 Blob 而不是�
           },
         }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 
-  const service = new BusinessChangeLogService(prisma8)
+  const service = new BusinessChangeLogService(prisma)
   await service.record({ id: 'user-1', tenantId: 'tenant-1', name: '管理员' } as never, {
     module: 'customer',
     action: 'update',

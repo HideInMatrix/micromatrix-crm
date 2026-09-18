@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import { TOP_NAVIGATION_DEFINITIONS } from '@micromatrix/shared'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { ModuleConfigsService } from './module-configs.service'
 
 interface TopNavigationRow {
@@ -28,7 +28,8 @@ function createService() {
           return row
         },
         orderBy: () => query,
-        all: async () => rows.filter(matches).sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key)),
+        all: async () =>
+          rows.filter(matches).sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key)),
       }
       return query
     },
@@ -45,14 +46,15 @@ function createService() {
     },
     TopNavigationConfigs: topNavigationConfigs,
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: { public: publicOrm },
-      transaction: async (callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>) =>
-        callback({ orm: { public: publicOrm } }),
+      transaction: async (
+        callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>,
+      ) => callback({ orm: { public: publicOrm } }),
     },
-  } as unknown as Prisma8Service
-  return { service: new ModuleConfigsService(prisma8), rows }
+  } as unknown as PrismaService
+  return { service: new ModuleConfigsService(prisma), rows }
 }
 
 test('顶部导航默认补种幂等并保持 Cordys 最终顺序', async () => {

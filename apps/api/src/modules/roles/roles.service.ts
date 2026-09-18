@@ -16,8 +16,8 @@ import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { CreateRoleDto, QueryRoleMembersDto, UpdateRoleDto } from './dto/role.dto'
 
 type DataScope = CreateRoleDto['dataScope']
@@ -25,17 +25,17 @@ type DataScope = CreateRoleDto['dataScope']
 @Injectable()
 export class RolesService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly authCache: AuthContextCacheService,
   ) {}
 
   async findAll(tenantId: string): Promise<RoleVO[]> {
     const [roles, counts] = await Promise.all([
-      this.prisma8.client.orm.public.Roles.where({ tenantId })
+      this.prisma.client.orm.public.Roles.where({ tenantId })
         .orderBy((role) => role.createdAt.asc())
         .all(),
-      this.prisma8.client.orm.public.UserRoles.where({ tenantId })
+      this.prisma.client.orm.public.UserRoles.where({ tenantId })
         .groupBy('roleId')
         .aggregate((agg) => ({ count: agg.count() })),
     ])
@@ -44,7 +44,7 @@ export class RolesService {
   }
 
   async options(tenantId: string) {
-    return this.prisma8.client.orm.public.Roles.where({ tenantId })
+    return this.prisma.client.orm.public.Roles.where({ tenantId })
       .select('id', 'name')
       .orderBy((role) => role.createdAt.asc())
       .all()
@@ -59,14 +59,14 @@ export class RolesService {
       dto.scopeDeptIds,
       dto.permissions,
     )
-    const role = await this.prisma8.client.orm.public.Roles.create({
+    const role = await this.prisma.client.orm.public.Roles.create({
       tenantId: user.tenantId,
       name,
       permissions: normalized.permissions,
       dataScope: normalized.dataScope,
       scopeDeptIds: normalized.scopeDeptIds,
       remark: dto.remark?.trim() || null,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     return this.toVO(role)
   }
@@ -83,19 +83,19 @@ export class RolesService {
       dto.scopeDeptIds ?? [...(role.scopeDeptIds ?? [])],
       dto.permissions ?? [...(role.permissions ?? [])],
     )
-    const affectedUsers = await this.prisma8.client.orm.public.UserRoles.where({
+    const affectedUsers = await this.prisma.client.orm.public.UserRoles.where({
       tenantId: user.tenantId,
       roleId: id,
     })
       .select('userId')
       .all()
-    const updated = await this.prisma8.client.orm.public.Roles.where({ id }).update({
+    const updated = await this.prisma.client.orm.public.Roles.where({ id }).update({
       ...(name === undefined ? {} : { name }),
       permissions: normalized.permissions,
       dataScope: normalized.dataScope,
       scopeDeptIds: normalized.scopeDeptIds,
       ...(dto.remark === undefined ? {} : { remark: dto.remark.trim() || null }),
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!updated) throw new NotFoundException('角色不存在')
     await this.authCache.invalidateMany(affectedUsers.map(({ userId }) => userId))
@@ -105,12 +105,15 @@ export class RolesService {
   async remove(tenantId: string, id: string) {
     const role = await this.ensureExists(tenantId, id)
     if (role.isSystem) throw new BadRequestException('系统内置角色不可删除')
-    const affectedUsers = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, roleId: id })
+    const affectedUsers = await this.prisma.client.orm.public.UserRoles.where({
+      tenantId,
+      roleId: id,
+    })
       .select('userId')
       .all()
     const affectedUserIds = [...new Set(affectedUsers.map(({ userId }) => userId))]
     const roleCounts = affectedUserIds.length
-      ? await this.prisma8.client.orm.public.UserRoles.where({ tenantId })
+      ? await this.prisma.client.orm.public.UserRoles.where({ tenantId })
           .where((relation) => relation.userId.in(affectedUserIds))
           .groupBy('userId')
           .aggregate((agg) => ({ count: agg.count() }))
@@ -118,20 +121,22 @@ export class RolesService {
     if (roleCounts.some((item) => item.count <= 1)) {
       throw new BadRequestException('该角色仍是部分成员的唯一角色，请先为其分配其他角色')
     }
-    await this.prisma8.client.orm.public.Roles.where({ id }).deleteAndCount()
+    await this.prisma.client.orm.public.Roles.where({ id }).deleteAndCount()
     await this.authCache.invalidateMany(affectedUsers.map(({ userId }) => userId))
     return { id, name: role.name }
   }
 
   private async ensureNameFree(tenantId: string, name: string, excludeId?: string) {
-    let query = this.prisma8.client.orm.public.Roles.where({ tenantId }).where((role) => role.name.ilike(name))
+    let query = this.prisma.client.orm.public.Roles.where({ tenantId }).where((role) =>
+      role.name.ilike(name),
+    )
     if (excludeId) query = query.where((role) => role.id.neq(excludeId))
     const exists = await query.select('id').first()
     if (exists) throw new ConflictException('角色名称已存在')
   }
 
   private async ensureExists(tenantId: string, id: string) {
-    const role = await this.prisma8.client.orm.public.Roles.where({ id, tenantId }).first()
+    const role = await this.prisma.client.orm.public.Roles.where({ id, tenantId }).first()
     if (!role) throw new NotFoundException('角色不存在')
     return role
   }
@@ -143,12 +148,12 @@ export class RolesService {
   ): Promise<PaginatedResult<MemberVO>> {
     await this.ensureExists(tenantId, roleId)
     const { page = 1, pageSize = 10, keyword } = query
-    const roleRelations = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, roleId })
+    const roleRelations = await this.prisma.client.orm.public.UserRoles.where({ tenantId, roleId })
       .select('userId')
       .all()
     const roleUserIds = [...new Set(roleRelations.map(({ userId }) => userId))]
     if (!roleUserIds.length) return { items: [], total: 0, page, pageSize }
-    let usersQuery = this.prisma8.client.orm.public.Users.where({ tenantId }).where((user) =>
+    let usersQuery = this.prisma.client.orm.public.Users.where({ tenantId }).where((user) =>
       user.id.in(roleUserIds),
     )
     if (keyword) {
@@ -166,14 +171,14 @@ export class RolesService {
     ])
     const userIds = users.map((user) => user.id)
     const userRoles = userIds.length
-      ? await this.prisma8.client.orm.public.UserRoles.where({ tenantId })
+      ? await this.prisma.client.orm.public.UserRoles.where({ tenantId })
           .where((relation) => relation.userId.in(userIds))
           .select('userId', 'roleId')
           .all()
       : []
     const relatedRoleIds = [...new Set(userRoles.map((relation) => relation.roleId))]
     const roles = relatedRoleIds.length
-      ? await this.prisma8.client.orm.public.Roles.where({ tenantId })
+      ? await this.prisma.client.orm.public.Roles.where({ tenantId })
           .where((role) => role.id.in(relatedRoleIds))
           .select('id', 'name')
           .all()
@@ -181,11 +186,16 @@ export class RolesService {
     const roleMap = new Map(roles.map((role) => [role.id, role.name]))
     const rolesByUser = new Map<string, string[]>()
     for (const relation of userRoles) {
-      rolesByUser.set(relation.userId, [...(rolesByUser.get(relation.userId) ?? []), relation.roleId])
+      rolesByUser.set(relation.userId, [
+        ...(rolesByUser.get(relation.userId) ?? []),
+        relation.roleId,
+      ])
     }
-    const deptIds = [...new Set(users.map((user) => user.deptId).filter((id): id is string => !!id))]
+    const deptIds = [
+      ...new Set(users.map((user) => user.deptId).filter((id): id is string => !!id)),
+    ]
     const departments = deptIds.length
-      ? await this.prisma8.client.orm.public.Departments.where({ tenantId })
+      ? await this.prisma.client.orm.public.Departments.where({ tenantId })
           .where((department) => department.id.in(deptIds))
           .select('id', 'name')
           .all()
@@ -193,7 +203,7 @@ export class RolesService {
     const deptMap = new Map(departments.map((department) => [department.id, department.name]))
     const leaderIds = users.map((user) => user.leaderId).filter((id): id is string => !!id)
     const leaders = leaderIds.length
-      ? await this.prisma8.client.orm.public.Users.where({ tenantId })
+      ? await this.prisma.client.orm.public.Users.where({ tenantId })
           .where((user) => user.id.in(leaderIds))
           .select('id', 'name')
           .all()
@@ -214,7 +224,7 @@ export class RolesService {
         position: user.position,
         phone: user.phone,
         passwordLoginEnabled: user.passwordLoginEnabled,
-        createdAt: prisma8TimestampToISOString(user.createdAt),
+        createdAt: instantToISOString(user.createdAt),
       })),
       total: aggregate.count,
       page,
@@ -226,23 +236,23 @@ export class RolesService {
     const tenantId = actor.tenantId
     await this.assertRolesAssignable(actor, [roleId])
     const ids = [...new Set(userIds)]
-    const users = await this.prisma8.client.orm.public.Users.where({ tenantId })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId })
       .where((user) => user.id.in(ids))
       .select('id')
       .all()
     if (users.length !== ids.length) throw new BadRequestException('成员不存在或不属于当前租户')
-    const existing = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, roleId })
+    const existing = await this.prisma.client.orm.public.UserRoles.where({ tenantId, roleId })
       .where((relation) => relation.userId.in(ids))
       .select('userId')
       .all()
     const existingIds = new Set(existing.map(({ userId }) => userId))
     for (const userId of ids.filter((id) => !existingIds.has(id))) {
       try {
-        await this.prisma8.client.orm.public.UserRoles.create({
+        await this.prisma.client.orm.public.UserRoles.create({
           tenantId,
           roleId,
           userId,
-          updatedAt: prisma8Now(),
+          updatedAt: nowInstant(),
         })
       } catch (error) {
         if ((error as { sqlState?: string }).sqlState !== '23505') throw error
@@ -256,19 +266,25 @@ export class RolesService {
     const tenantId = actor.tenantId
     const [role] = await this.assertRolesAssignable(actor, [roleId])
     if (role.isSystem) throw new BadRequestException('不能从系统内置角色移除成员')
-    const relation = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, roleId, userId }).first()
+    const relation = await this.prisma.client.orm.public.UserRoles.where({
+      tenantId,
+      roleId,
+      userId,
+    }).first()
     if (!relation) throw new NotFoundException('该成员未关联此角色')
-    const roleCount = await this.prisma8.client.orm.public.UserRoles.where({ tenantId, userId })
-      .aggregate((agg) => ({ count: agg.count() }))
+    const roleCount = await this.prisma.client.orm.public.UserRoles.where({
+      tenantId,
+      userId,
+    }).aggregate((agg) => ({ count: agg.count() }))
     if (roleCount.count <= 1) throw new BadRequestException('成员至少需要保留一个角色')
-    await this.prisma8.client.orm.public.UserRoles.where({ id: relation.id }).deleteAndCount()
+    await this.prisma.client.orm.public.UserRoles.where({ id: relation.id }).deleteAndCount()
     await this.authCache.invalidate(userId)
     return { roleId, userId }
   }
 
   async assertRolesAssignable(actor: AuthUser, roleIds: string[]) {
     const ids = [...new Set(roleIds)]
-    const roles = await this.prisma8.client.orm.public.Roles.where({ tenantId: actor.tenantId })
+    const roles = await this.prisma.client.orm.public.Roles.where({ tenantId: actor.tenantId })
       .where((role) => role.id.in(ids))
       .all()
     if (roles.length !== ids.length) throw new BadRequestException('角色不存在或不属于当前租户')
@@ -310,7 +326,7 @@ export class RolesService {
       throw new BadRequestException('自定义数据范围至少选择一个部门')
     }
     if (scopeDeptIds.length > 0) {
-      const departments = await this.prisma8.client.orm.public.Departments.where({
+      const departments = await this.prisma.client.orm.public.Departments.where({
         tenantId: actor.tenantId,
       })
         .where((department) => department.id.in(scopeDeptIds))

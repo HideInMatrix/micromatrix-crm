@@ -9,8 +9,8 @@ import {
 } from '@nestjs/common'
 import { type MessageTaskEvent, NotificationBizType, NotificationVO } from '@micromatrix/shared'
 import { finalize, interval, map, merge, Observable, Subject } from 'rxjs'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { RedisService } from '../../redis/redis.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import {
@@ -59,7 +59,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly messageSettings: MessageSettingsService,
     @Optional() private readonly redis?: RedisService,
   ) {}
@@ -268,7 +268,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const count = await this.notifications()
       .where({ id, tenantId, userId })
       .where((notification) => notification.readAt.isNull())
-      .updateAndCount({ readAt: prisma8Now() })
+      .updateAndCount({ readAt: nowInstant() })
     if (count > 0) {
       await this.bumpCacheVersion(tenantId, userId)
       const event = this.stateChangedEvent(tenantId, userId)
@@ -282,7 +282,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const count = await this.notifications()
       .where({ tenantId, userId })
       .where((notification) => notification.readAt.isNull())
-      .updateAndCount({ readAt: prisma8Now() })
+      .updateAndCount({ readAt: nowInstant() })
     if (count > 0) {
       await this.bumpCacheVersion(tenantId, userId)
       const event = this.stateChangedEvent(tenantId, userId)
@@ -412,7 +412,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private notifications() {
-    return this.prisma8.client.orm.public.Notifications
+    return this.prisma.client.orm.public.Notifications
   }
 
   private toVO(n: {
@@ -422,8 +422,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     content: string | null
     link: string | null
     linkLabel: string | null
-    readAt: ReturnType<typeof prisma8Now> | null
-    createdAt: ReturnType<typeof prisma8Now>
+    readAt: ReturnType<typeof nowInstant> | null
+    createdAt: ReturnType<typeof nowInstant>
   }): NotificationVO {
     return {
       id: n.id,
@@ -432,8 +432,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       content: n.content,
       link: n.link,
       linkLabel: n.linkLabel ?? null,
-      readAt: n.readAt ? prisma8TimestampToISOString(n.readAt) : null,
-      createdAt: prisma8TimestampToISOString(n.createdAt),
+      readAt: n.readAt ? instantToISOString(n.readAt) : null,
+      createdAt: instantToISOString(n.createdAt),
     }
   }
 }

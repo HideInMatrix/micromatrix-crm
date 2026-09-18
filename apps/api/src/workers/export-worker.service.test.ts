@@ -43,7 +43,7 @@ function serviceFixture() {
     first: async () => rows[0] ?? null,
     all: async () => rows,
   })
-  const prisma8 = {
+  const prisma = {
     client: {
       orm: {
         public: {
@@ -67,7 +67,7 @@ function serviceFixture() {
   const jobs = { startExportWorker: () => ({}) }
   const instance = new ExportWorkerService(
     jobs as never,
-    prisma8 as never,
+    prisma as never,
     tasks as never,
     handler('customer', calls) as never,
     handler('contact', calls) as never,

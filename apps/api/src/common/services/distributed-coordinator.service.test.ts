@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrisma8Client } from '../../prisma/prisma8-client'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import { createPrismaClient } from '../../prisma/prisma-client'
+import type { PrismaService } from '../../prisma/prisma.service'
 import type { RedisService } from '../../redis/redis.service'
 import { DistributedCoordinatorService } from './distributed-coordinator.service'
 
@@ -66,7 +66,7 @@ function fakeRedis() {
   }
 }
 
-function fakePrisma8(lock = true) {
+function fakePrisma(lock = true) {
   let fallbackCalls = 0
   const query = { build: () => ({}) }
   const client = {
@@ -84,15 +84,15 @@ function fakePrisma8(lock = true) {
       })
     },
   }
-  const prisma8 = { client } as unknown as Prisma8Service
-  return { prisma8, fallbackCalls: () => fallbackCalls }
+  const prisma = { client } as unknown as PrismaService
+  return { prisma, fallbackCalls: () => fallbackCalls }
 }
 
 test('exclusive lease 同 key 只允许一个实例进入并在完成后安全释放', async () => {
   const { redis } = fakeRedis()
-  const { prisma8 } = fakePrisma8()
-  const first = new DistributedCoordinatorService(redis, prisma8)
-  const second = new DistributedCoordinatorService(redis, prisma8)
+  const { prisma } = fakePrisma()
+  const first = new DistributedCoordinatorService(redis, prisma)
+  const second = new DistributedCoordinatorService(redis, prisma)
   let release!: () => void
   const blocker = new Promise<void>((resolve) => (release = resolve))
   const firstRun = first.runExclusive('organization-sync:tenant-a', async () => {
@@ -104,14 +104,17 @@ test('exclusive lease 同 key 只允许一个实例进入并在完成后安全�
   assert.deepEqual(secondRun, { executed: false, source: 'REDIS', reason: 'BUSY' })
   release()
   assert.equal((await firstRun).executed, true)
-  assert.equal((await second.runExclusive('organization-sync:tenant-a', async () => 'next')).executed, true)
+  assert.equal(
+    (await second.runExclusive('organization-sync:tenant-a', async () => 'next')).executed,
+    true,
+  )
 })
 
 test('exclusive lease 长任务自动续租，第二实例在初始 TTL 后仍保持 busy', async () => {
   const { redis, renewCalls } = fakeRedis()
-  const { prisma8 } = fakePrisma8()
-  const first = new DistributedCoordinatorService(redis, prisma8)
-  const second = new DistributedCoordinatorService(redis, prisma8)
+  const { prisma } = fakePrisma()
+  const first = new DistributedCoordinatorService(redis, prisma)
+  const second = new DistributedCoordinatorService(redis, prisma)
   let release!: () => void
   const blocker = new Promise<void>((resolve) => (release = resolve))
   const firstRun = first.runExclusive(
@@ -133,13 +136,21 @@ test('exclusive lease 长任务自动续租，第二实例在初始 TTL 后仍�
 
 test('Cron 同一时间槽只执行一次，不同分钟槽可再次执行', async () => {
   const { redis } = fakeRedis()
-  const { prisma8 } = fakePrisma8()
-  const a = new DistributedCoordinatorService(redis, prisma8)
-  const b = new DistributedCoordinatorService(redis, prisma8)
+  const { prisma } = fakePrisma()
+  const a = new DistributedCoordinatorService(redis, prisma)
+  const b = new DistributedCoordinatorService(redis, prisma)
   let executions = 0
   const now = new Date('2026-09-03T08:15:10.000Z')
-  assert.equal((await a.runScheduledOnce('message-delivery', 'MINUTE', async () => ++executions, now)).executed, true)
-  assert.equal((await b.runScheduledOnce('message-delivery', 'MINUTE', async () => ++executions, now)).executed, false)
+  assert.equal(
+    (await a.runScheduledOnce('message-delivery', 'MINUTE', async () => ++executions, now))
+      .executed,
+    true,
+  )
+  assert.equal(
+    (await b.runScheduledOnce('message-delivery', 'MINUTE', async () => ++executions, now))
+      .executed,
+    false,
+  )
   assert.equal(
     (
       await b.runScheduledOnce(
@@ -157,17 +168,17 @@ test('Cron 同一时间槽只执行一次，不同分钟槽可再次执行', asy
 test('Redis unavailable 时 Cron 使用 PostgreSQL advisory fallback', async () => {
   const { redis, setUnavailable } = fakeRedis()
   setUnavailable(true)
-  const acquired = fakePrisma8(true)
-  const skipped = fakePrisma8(false)
+  const acquired = fakePrisma(true)
+  const skipped = fakePrisma(false)
   let executions = 0
   const now = new Date('2026-09-03T08:00:00.000Z')
-  const run = await new DistributedCoordinatorService(redis, acquired.prisma8).runScheduledOnce(
+  const run = await new DistributedCoordinatorService(redis, acquired.prisma).runScheduledOnce(
     'message-expiry',
     'DAILY',
     async () => ++executions,
     now,
   )
-  const skip = await new DistributedCoordinatorService(redis, skipped.prisma8).runScheduledOnce(
+  const skip = await new DistributedCoordinatorService(redis, skipped.prisma).runScheduledOnce(
     'message-expiry',
     'DAILY',
     async () => ++executions,
@@ -181,7 +192,7 @@ test('Redis unavailable 时 Cron 使用 PostgreSQL advisory fallback', async () 
 })
 
 test(
-  'Redis unavailable 时 Prisma 8 PostgreSQL fallback 在独立连接间保持 advisory xact lock 互斥',
+  'Redis unavailable 时 Prisma PostgreSQL fallback 在独立连接间保持 advisory xact lock 互斥',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
@@ -189,19 +200,17 @@ test(
     const secondRedis = fakeRedis()
     firstRedis.setUnavailable(true)
     secondRedis.setUnavailable(true)
-    const firstClient = await createPrisma8Client(databaseUrl)
-    const secondClient = await createPrisma8Client(databaseUrl)
+    const firstClient = await createPrismaClient(databaseUrl)
+    const secondClient = await createPrismaClient(databaseUrl)
     await firstClient.connect()
     await secondClient.connect()
-    const first = new DistributedCoordinatorService(
-      firstRedis.redis,
-      { client: firstClient } as Prisma8Service,
-    )
-    const second = new DistributedCoordinatorService(
-      secondRedis.redis,
-      { client: secondClient } as Prisma8Service,
-    )
-    const job = `prisma8-coordinator-${randomUUID()}`
+    const first = new DistributedCoordinatorService(firstRedis.redis, {
+      client: firstClient,
+    } as PrismaService)
+    const second = new DistributedCoordinatorService(secondRedis.redis, {
+      client: secondClient,
+    } as PrismaService)
+    const job = `prisma-coordinator-${randomUUID()}`
     const now = new Date('2026-09-15T08:00:00.000Z')
     let release!: () => void
     let entered!: () => void

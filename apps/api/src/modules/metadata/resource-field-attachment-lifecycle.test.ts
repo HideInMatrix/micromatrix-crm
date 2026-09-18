@@ -3,12 +3,12 @@ import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import type { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampFromDate } from '../../prisma/prisma8-temporal'
+import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
 import type { AttachmentsService } from '../attachments/attachments.service'
 import { ResourceFieldAttachmentCleanupService } from './resource-field-attachment-cleanup.service'
 import type { ModuleFormsService } from './module-forms.service'
-import { createMemoryOrmTable, createTransactionStub } from './prisma8-orm-test-stub'
+import { createMemoryOrmTable, createTransactionStub } from './orm-test-stub'
 import { ResourceFieldValueService } from './resource-field-value.service'
 
 interface ValueRow {
@@ -26,7 +26,7 @@ interface AttachmentRow {
   mime: string | null
   targetType: string | null
   targetId: string | null
-  createdAt: ReturnType<typeof prisma8TimestampFromDate>
+  createdAt: ReturnType<typeof instantFromDate>
 }
 
 const fileFields = [
@@ -77,7 +77,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'application/pdf',
       targetType: null,
       targetId: null,
-      createdAt: prisma8TimestampFromDate(new Date('2026-09-01T00:00:00Z')),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
     {
       id: 'picture-a',
@@ -88,7 +88,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'image/png',
       targetType: null,
       targetId: null,
-      createdAt: prisma8TimestampFromDate(new Date('2026-09-01T00:00:00Z')),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
     {
       id: 'foreign-temp',
@@ -99,7 +99,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'application/pdf',
       targetType: null,
       targetId: null,
-      createdAt: prisma8TimestampFromDate(new Date('2026-09-01T00:00:00Z')),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
     {
       id: 'bound-other',
@@ -110,7 +110,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'application/pdf',
       targetType: 'resourceField:customer',
       targetId: 'customer-b',
-      createdAt: prisma8TimestampFromDate(new Date('2026-09-01T00:00:00Z')),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
   ]
 
@@ -125,11 +125,11 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
     listFields: async () => fileFields,
     listFieldsInTransaction: async () => fileFields,
   } as unknown as ModuleFormsService
-  const prisma8 = {
+  const prisma = {
     client: { orm: { public: publicNamespace } },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   return {
-    service: new ResourceFieldValueService(moduleForms, prisma8),
+    service: new ResourceFieldValueService(moduleForms, prisma),
     tx: transaction as never,
     attachments,
     blob,
@@ -262,7 +262,7 @@ test('资源字段附件清理器保留有效引用，删除孤儿和超过 24 �
       return {}
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       raw: { sql: () => query },
       sql: {
@@ -280,7 +280,7 @@ test('资源字段附件清理器保留有效引用，删除孤儿和超过 24 �
         },
       }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   const fields = {
     isAttachmentReferenced: async (
       _tenantId: string,
@@ -301,7 +301,7 @@ test('资源字段附件清理器保留有效引用，删除孤儿和超过 24 �
   } as unknown as AttachmentsService
   const coordinator = {} as DistributedCoordinatorService
   const service = new ResourceFieldAttachmentCleanupService(
-    prisma8,
+    prisma,
     fields,
     attachments,
     coordinator,
@@ -321,7 +321,7 @@ test('资源字段附件清理 Cron 必须通过 DistributedCoordinator 执行�
     },
   } as unknown as DistributedCoordinatorService
   const service = new ResourceFieldAttachmentCleanupService(
-    {} as Prisma8Service,
+    {} as PrismaService,
     {} as ResourceFieldValueService,
     {} as AttachmentsService,
     coordinator,

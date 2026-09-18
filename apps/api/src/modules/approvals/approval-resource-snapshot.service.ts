@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 import type { ApprovalJsonValue, ApprovalResourceInstance } from './approval-runtime.types'
 
 @Injectable()
 export class ApprovalResourceSnapshotService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async save(
     user: AuthUser,
@@ -22,7 +22,7 @@ export class ApprovalResourceSnapshotService {
     const data = {
       snapshotData: jsonValue(snapshotData),
       updatedById: user.id,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     }
     const updated = await this.snapshots().where(scope).update(data)
     if (updated) return
@@ -71,6 +71,6 @@ export class ApprovalResourceSnapshotService {
   }
 
   private snapshots() {
-    return this.prisma8.client.orm.public.ApprovalResourceSnapshots
+    return this.prisma.client.orm.public.ApprovalResourceSnapshots
   }
 }

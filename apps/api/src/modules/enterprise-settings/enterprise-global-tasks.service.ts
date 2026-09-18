@@ -1,18 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { EnterpriseGlobalTaskExecutionVO, EnterpriseGlobalTaskVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import type { SaveEnterpriseGlobalTaskDto } from './dto/global-task.dto'
 import { EnterpriseAiRuntimeService } from './enterprise-ai-runtime.service'
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 @Injectable()
 export class EnterpriseGlobalTasksService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly runtime: EnterpriseAiRuntimeService,
   ) {}
 
@@ -61,7 +61,7 @@ export class EnterpriseGlobalTasksService {
       enable: input.enable,
       createdById: user.id,
       updatedById: user.id,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     return this.toVO(row, model?.displayName ?? null)
   }
@@ -85,7 +85,7 @@ export class EnterpriseGlobalTasksService {
         applicableModelId: input.applicableModelId || null,
         enable: input.enable,
         updatedById: user.id,
-        updatedAt: prisma8Now(),
+        updatedAt: nowInstant(),
       })
     if (!row) throw new NotFoundException('全局任务不存在')
     return this.toVO(row, model?.displayName ?? null)
@@ -95,7 +95,7 @@ export class EnterpriseGlobalTasksService {
     const existing = await this.ensureOwned(tenantId, id)
     const row = await this.tasks().where({ id: existing.id, tenantId }).update({
       enable,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!row) throw new NotFoundException('全局任务不存在')
     const modelNames = await this.modelNames([row.applicableModelId])
@@ -135,12 +135,12 @@ export class EnterpriseGlobalTasksService {
       taskId: task.id,
       status: 'PENDING',
       input: jsonValue(input),
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     await this.executionsTable().where({ id: created.id, tenantId: user.tenantId }).update({
       status: 'RUNNING',
-      startedAt: prisma8Now(),
-      updatedAt: prisma8Now(),
+      startedAt: nowInstant(),
+      updatedAt: nowInstant(),
     })
 
     try {
@@ -162,8 +162,8 @@ export class EnterpriseGlobalTasksService {
             provider: result.provider,
             latencyMs: result.latencyMs,
           }),
-          finishedAt: prisma8Now(),
-          updatedAt: prisma8Now(),
+          finishedAt: nowInstant(),
+          updatedAt: nowInstant(),
         })
       if (!row) throw new NotFoundException('执行记录不存在')
       return this.executionToVO(row, task.name)
@@ -174,8 +174,8 @@ export class EnterpriseGlobalTasksService {
         .update({
           status: 'FAILED',
           errorMessage: message.slice(0, 1000),
-          finishedAt: prisma8Now(),
-          updatedAt: prisma8Now(),
+          finishedAt: nowInstant(),
+          updatedAt: nowInstant(),
         })
       if (!row) throw new NotFoundException('执行记录不存在')
       return this.executionToVO(row, task.name)
@@ -200,8 +200,8 @@ export class EnterpriseGlobalTasksService {
     }
     const row = await this.executionsTable().where({ id: existing.id, tenantId }).update({
       status: 'STOPPED',
-      finishedAt: prisma8Now(),
-      updatedAt: prisma8Now(),
+      finishedAt: nowInstant(),
+      updatedAt: nowInstant(),
     })
     if (!row) throw new NotFoundException('执行记录不存在')
     const taskNames = await this.taskNames([row.taskId])
@@ -243,15 +243,15 @@ export class EnterpriseGlobalTasksService {
   }
 
   private tasks() {
-    return this.prisma8.client.orm.public.EnterpriseGlobalTasks
+    return this.prisma.client.orm.public.EnterpriseGlobalTasks
   }
 
   private executionsTable() {
-    return this.prisma8.client.orm.public.EnterpriseGlobalTaskExecutions
+    return this.prisma.client.orm.public.EnterpriseGlobalTaskExecutions
   }
 
   private models() {
-    return this.prisma8.client.orm.public.EnterpriseAiModels
+    return this.prisma.client.orm.public.EnterpriseAiModels
   }
 
   private async modelNames(modelIds: Array<string | null>): Promise<Map<string, string>> {
@@ -299,8 +299,8 @@ export class EnterpriseGlobalTasksService {
       confirmationLevel: string
       applicableModelId: string | null
       enable: boolean
-      createdAt: Prisma8Timestamp
-      updatedAt: Prisma8Timestamp
+      createdAt: InstantTimestamp
+      updatedAt: InstantTimestamp
     },
     applicableModelName: string | null,
   ): EnterpriseGlobalTaskVO {
@@ -314,8 +314,8 @@ export class EnterpriseGlobalTasksService {
       applicableModelId: row.applicableModelId,
       applicableModelName,
       enable: row.enable,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
-      updatedAt: prisma8TimestampToISOString(row.updatedAt),
+      createdAt: instantToISOString(row.createdAt),
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 
@@ -327,9 +327,9 @@ export class EnterpriseGlobalTasksService {
       input: unknown
       output: unknown
       errorMessage: string | null
-      startedAt: Prisma8Timestamp | null
-      finishedAt: Prisma8Timestamp | null
-      createdAt: Prisma8Timestamp
+      startedAt: InstantTimestamp | null
+      finishedAt: InstantTimestamp | null
+      createdAt: InstantTimestamp
     },
     taskName: string,
   ): EnterpriseGlobalTaskExecutionVO {
@@ -341,9 +341,9 @@ export class EnterpriseGlobalTasksService {
       input: row.input,
       output: row.output,
       errorMessage: row.errorMessage,
-      startedAt: row.startedAt ? prisma8TimestampToISOString(row.startedAt) : null,
-      finishedAt: row.finishedAt ? prisma8TimestampToISOString(row.finishedAt) : null,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
+      startedAt: row.startedAt ? instantToISOString(row.startedAt) : null,
+      finishedAt: row.finishedAt ? instantToISOString(row.finishedAt) : null,
+      createdAt: instantToISOString(row.createdAt),
     }
   }
 }

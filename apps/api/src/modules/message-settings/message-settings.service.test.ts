@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { MessageTaskConfig } from '@micromatrix/shared'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { MessageSettingsService } from './message-settings.service'
 
 interface TestMessageTaskSetting {
@@ -36,7 +36,9 @@ function createService() {
     },
     async all() {
       return rows.filter((row) =>
-        Object.entries(criteria).every(([key, value]) => row[key as keyof TestMessageTaskSetting] === value),
+        Object.entries(criteria).every(
+          ([key, value]) => row[key as keyof TestMessageTaskSetting] === value,
+        ),
       )
     },
     async first() {
@@ -72,7 +74,9 @@ function createService() {
         where: () => ({ first: async () => integration }),
       },
       Tenants: {
-        where: () => ({ select: () => ({ first: async () => ({ enterpriseSyncResource: activeProvider }) }) }),
+        where: () => ({
+          select: () => ({ first: async () => ({ enterpriseSyncResource: activeProvider }) }),
+        }),
       },
       UserRoles: {
         where: () => ({ where: () => ({ select: () => ({ all: async () => [] }) }) }),
@@ -91,14 +95,15 @@ function createService() {
       },
     },
   }
-  const prisma8 = {
+  const prisma = {
     client: {
       orm,
-      transaction: async (callback: (tx: { orm: typeof orm }) => Promise<unknown>) => callback({ orm }),
+      transaction: async (callback: (tx: { orm: typeof orm }) => Promise<unknown>) =>
+        callback({ orm }),
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
   return {
-    service: new MessageSettingsService(prisma8),
+    service: new MessageSettingsService(prisma),
     rows,
     setActiveProvider: (provider: 'WECOM' | 'DINGTALK' | 'LARK') => {
       activeProvider = provider
@@ -256,7 +261,9 @@ test('配置接收范围合并负责人、成员、角色和部门负责人层�
         }),
       },
       UserRoles: {
-        where: () => ({ where: () => ({ select: () => ({ all: async () => [{ userId: 'role-member' }] }) }) }),
+        where: () => ({
+          where: () => ({ select: () => ({ all: async () => [{ userId: 'role-member' }] }) }),
+        }),
       },
       Users: {
         where: () => ({
@@ -278,7 +285,7 @@ test('配置接收范围合并负责人、成员、角色和部门负责人层�
       },
     },
   }
-  const service = new MessageSettingsService({ client: { orm } } as unknown as Prisma8Service)
+  const service = new MessageSettingsService({ client: { orm } } as unknown as PrismaService)
 
   const recipients = await service.resolveRecipients('tenant-a', 'CONTRACT_EXPIRING', {
     ownerId: 'owner-a',

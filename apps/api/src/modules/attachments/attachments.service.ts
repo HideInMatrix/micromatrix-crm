@@ -4,8 +4,8 @@ import { createReadStream } from 'node:fs'
 import path from 'node:path'
 import { AttachmentVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { instantToISOString } from '../../prisma/temporal'
 import { LocalDiskStorage } from './storage/local-disk.storage'
 import type { StorageProvider } from './storage/storage-provider'
 
@@ -33,7 +33,7 @@ export class AttachmentsService {
   private readonly storage: StorageProvider
 
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     config: ConfigService,
   ) {
     const root = config.get<string>('UPLOAD_DIR') ?? path.resolve(__dirname, '../../../uploads')
@@ -206,7 +206,7 @@ export class AttachmentsService {
   }
 
   private async ensureNotApprovalBound(tenantId: string, attachmentId: string) {
-    const linked = await this.prisma8.client.orm.public.ApprovalInstanceAttachments.where({
+    const linked = await this.prisma.client.orm.public.ApprovalInstanceAttachments.where({
       tenantId,
       attachmentId,
     }).aggregate((agg) => ({ count: agg.count() }))
@@ -214,7 +214,7 @@ export class AttachmentsService {
   }
 
   private attachments() {
-    return this.prisma8.client.orm.public.Attachments
+    return this.prisma.client.orm.public.Attachments
   }
 
   private toVO(row: {
@@ -225,7 +225,7 @@ export class AttachmentsService {
     targetType: string | null
     targetId: string | null
     uploaderId: string | null
-    createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
+    createdAt: Parameters<typeof instantToISOString>[0]
   }): AttachmentVO {
     return {
       id: row.id,
@@ -235,7 +235,7 @@ export class AttachmentsService {
       targetType: row.targetType,
       targetId: row.targetId,
       uploaderId: row.uploaderId,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
+      createdAt: instantToISOString(row.createdAt),
     }
   }
 }

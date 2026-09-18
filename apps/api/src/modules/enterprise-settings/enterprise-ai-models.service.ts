@@ -7,11 +7,11 @@ import type {
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import { nowInstant, instantToISOString } from '../../prisma/temporal.js'
 import type { SaveEnterpriseAiModelDto } from './dto/ai-model.dto'
 
-type Prisma8Timestamp = Parameters<typeof prisma8TimestampToISOString>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 type EnterpriseAiModelRow = {
   id: string
@@ -32,14 +32,14 @@ type EnterpriseAiModelRow = {
   userDailyLimit: number | null
   createdById: string
   updatedById: string
-  createdAt: Prisma8Timestamp
-  updatedAt: Prisma8Timestamp
+  createdAt: InstantTimestamp
+  updatedAt: InstantTimestamp
 }
 
 @Injectable()
 export class EnterpriseAiModelsService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly cipher: CredentialCipherService,
   ) {}
 
@@ -87,7 +87,7 @@ export class EnterpriseAiModelsService {
       userDailyLimit: input.userDailyLimit ?? null,
       createdById: user.id,
       updatedById: user.id,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
       ...(encrypted && {
         apiKeyCiphertext: encrypted.ciphertext,
         apiKeyIv: encrypted.iv,
@@ -102,26 +102,28 @@ export class EnterpriseAiModelsService {
     const existing = await this.ensureOwned(user.tenantId, id)
     await this.assertDisplayNameAvailable(user.tenantId, input.displayName, id)
     const encrypted = input.apiKey?.trim() ? this.cipher.encrypt(input.apiKey.trim()) : null
-    const row = await this.aiModels().where({ id: existing.id, tenantId: user.tenantId }).update({
-      displayName: input.displayName,
-      modelName: input.modelName,
-      provider: input.provider,
-      apiUrl: input.apiUrl,
-      enable: input.enable,
-      temperature: input.temperature,
-      maxTokens: input.maxTokens,
-      topP: input.topP,
-      globalDailyLimit: input.globalDailyLimit ?? null,
-      userDailyLimit: input.userDailyLimit ?? null,
-      updatedById: user.id,
-      updatedAt: prisma8Now(),
-      ...(encrypted && {
-        apiKeyCiphertext: encrypted.ciphertext,
-        apiKeyIv: encrypted.iv,
-        apiKeyAuthTag: encrypted.authTag,
-        apiKeyKeyVersion: encrypted.keyVersion,
-      }),
-    })
+    const row = await this.aiModels()
+      .where({ id: existing.id, tenantId: user.tenantId })
+      .update({
+        displayName: input.displayName,
+        modelName: input.modelName,
+        provider: input.provider,
+        apiUrl: input.apiUrl,
+        enable: input.enable,
+        temperature: input.temperature,
+        maxTokens: input.maxTokens,
+        topP: input.topP,
+        globalDailyLimit: input.globalDailyLimit ?? null,
+        userDailyLimit: input.userDailyLimit ?? null,
+        updatedById: user.id,
+        updatedAt: nowInstant(),
+        ...(encrypted && {
+          apiKeyCiphertext: encrypted.ciphertext,
+          apiKeyIv: encrypted.iv,
+          apiKeyAuthTag: encrypted.authTag,
+          apiKeyKeyVersion: encrypted.keyVersion,
+        }),
+      })
     if (!row) throw new NotFoundException('模型不存在')
     return this.toVO(row)
   }
@@ -130,7 +132,7 @@ export class EnterpriseAiModelsService {
     const existing = await this.ensureOwned(tenantId, id)
     const row = await this.aiModels().where({ id: existing.id, tenantId }).update({
       enable,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!row) throw new NotFoundException('模型不存在')
     return this.toVO(row)
@@ -138,7 +140,7 @@ export class EnterpriseAiModelsService {
 
   async remove(tenantId: string, id: string) {
     await this.ensureOwned(tenantId, id)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.EnterpriseAiModelRoutes.where({ tenantId, modelId: id }).deleteAll()
       const deleted = await tx.orm.public.EnterpriseAiModels.where({ id, tenantId }).delete()
       if (!deleted) throw new NotFoundException('模型不存在')
@@ -176,10 +178,10 @@ export class EnterpriseAiModelsService {
       if (models.length !== modelIds.length)
         throw new BadRequestException('路由策略包含不存在的模型')
     }
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.EnterpriseAiModelRoutes.where({ tenantId }).deleteAll()
       if (modelIds.length) {
-        const updatedAt = prisma8Now()
+        const updatedAt = nowInstant()
         await tx.orm.public.EnterpriseAiModelRoutes.createAll(
           modelIds.map((modelId, sort) => ({ tenantId, modelId, sort, updatedAt })),
         )
@@ -199,19 +201,16 @@ export class EnterpriseAiModelsService {
     displayName: string,
     excludeId?: string,
   ) {
-    const duplicate = await this.aiModels()
-      .where({ tenantId, displayName })
-      .select('id')
-      .first()
+    const duplicate = await this.aiModels().where({ tenantId, displayName }).select('id').first()
     if (duplicate && duplicate.id !== excludeId) throw new BadRequestException('模型名称已存在')
   }
 
   private aiModels() {
-    return this.prisma8.client.orm.public.EnterpriseAiModels
+    return this.prisma.client.orm.public.EnterpriseAiModels
   }
 
   private aiModelRoutes() {
-    return this.prisma8.client.orm.public.EnterpriseAiModelRoutes
+    return this.prisma.client.orm.public.EnterpriseAiModelRoutes
   }
 
   private toVO(row: EnterpriseAiModelRow): EnterpriseAiModelVO {
@@ -229,8 +228,8 @@ export class EnterpriseAiModelsService {
       globalDailyLimit: row.globalDailyLimit,
       userDailyLimit: row.userDailyLimit,
       dailyTotal: 0,
-      createdAt: prisma8TimestampToISOString(row.createdAt),
-      updatedAt: prisma8TimestampToISOString(row.updatedAt),
+      createdAt: instantToISOString(row.createdAt),
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 }

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException, ConflictException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
-import type { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import type { ModuleFormsService } from './module-forms.service'
-import { createMemoryOrmTable, createTransactionStub } from './prisma8-orm-test-stub'
+import { createMemoryOrmTable, createTransactionStub } from './orm-test-stub'
 import { ResourceFieldValueService } from './resource-field-value.service'
 
 interface ValueRow {
@@ -154,7 +154,7 @@ interface RawProbe {
   returnsRow: () => RawProbe & { build: () => RawProbe }
 }
 
-function createPrisma8Stub(publicNamespace: Record<string, unknown> = {}): Prisma8Service {
+function createPrismaStub(publicNamespace: Record<string, unknown> = {}): PrismaService {
   const rawSql = (strings: TemplateStringsArray, ...inputs: unknown[]): RawProbe => {
     let text = strings[0] ?? ''
     const values: unknown[] = []
@@ -186,7 +186,7 @@ function createPrisma8Stub(publicNamespace: Record<string, unknown> = {}): Prism
       sql: { public: sqlPublicNamespace },
       orm: { public: publicNamespace },
     },
-  } as unknown as Prisma8Service
+  } as unknown as PrismaService
 }
 
 function createHarness() {
@@ -218,7 +218,7 @@ function createHarness() {
     listFieldsInTransaction: async () => fields,
   } as unknown as ModuleFormsService
   return {
-    service: new ResourceFieldValueService(moduleForms, createPrisma8Stub(publicNamespace)),
+    service: new ResourceFieldValueService(moduleForms, createPrismaStub(publicNamespace)),
     tx: transaction as never,
     normal,
     blob,
@@ -512,10 +512,7 @@ test('FollowPlan 使用 tenantId 隔离并只写自己的 Field/Blob delegate', 
     listFields: async () => followFields,
     listFieldsInTransaction: async () => followFields,
   } as unknown as ModuleFormsService
-  const service = new ResourceFieldValueService(
-    moduleForms,
-    createPrisma8Stub(publicNamespace),
-  )
+  const service = new ResourceFieldValueService(moduleForms, createPrismaStub(publicNamespace))
 
   await service.save(
     'tenant-a',
@@ -567,7 +564,7 @@ test('FollowRecord 资源校验使用 FollowUpRecord tenantId，不得落入 Fol
   const tx = createTransactionStub(publicNamespace)
   const service = new ResourceFieldValueService(
     { listFieldsInTransaction: async () => [] } as unknown as ModuleFormsService,
-    createPrisma8Stub(publicNamespace),
+    createPrismaStub(publicNamespace),
   )
 
   assert.deepEqual(

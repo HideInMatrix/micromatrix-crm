@@ -2,7 +2,7 @@ import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } fr
 import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { Observable, tap } from 'rxjs'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { jsonValue } from '../../prisma/json-value'
 import {
   LOG_OPERATION_KEY,
@@ -19,7 +19,7 @@ export class OperationLogInterceptor implements NestInterceptor {
 
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -42,7 +42,7 @@ export class OperationLogInterceptor implements NestInterceptor {
           [OPERATION_LOG_RESULT_META]?: OperationLogResultMeta
         }
         const resultMeta = target[OPERATION_LOG_RESULT_META]
-        void this.prisma8.client
+        void this.prisma.client
           .transaction(async (tx) => {
             const log = await tx.orm.public.OperationLogs.create({
               tenantId: user.tenantId,

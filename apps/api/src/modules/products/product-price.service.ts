@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../common/auth-user'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   ExportTasksService,
@@ -58,7 +58,7 @@ interface ProductPriceRow {
 @Injectable()
 export class ProductPriceService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
@@ -101,7 +101,7 @@ export class ProductPriceService {
     const customData = await this.moduleFieldsToCustomData(user, dto.moduleFields)
     const now = BigInt(Date.now())
     const pos = await this.nextPos(user.tenantId)
-    const created = await this.prisma8.client.transaction(async (tx) => {
+    const created = await this.prisma.client.transaction(async (tx) => {
       const price = await tx.orm.public.ProductPrice.create({
         id: createLegacyId32(),
         name: name,
@@ -139,7 +139,7 @@ export class ProductPriceService {
       dto.moduleFields === undefined
         ? undefined
         : await this.moduleFieldsToCustomData(user, dto.moduleFields)
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.ProductPrice.where({ id: existing.id }).update({
         ...(name !== undefined ? { name: name } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
@@ -187,12 +187,12 @@ export class ProductPriceService {
   async delete(user: AuthUser, id: string) {
     const price = await this.ensureExists(user, id)
     const [quotationFields, quotationBlobFields] = await Promise.all([
-      this.prisma8.client.orm.public.OpportunityQuotationField.where({
+      this.prisma.client.orm.public.OpportunityQuotationField.where({
         fieldValue: id,
       })
         .select('resourceId')
         .all(),
-      this.prisma8.client.orm.public.OpportunityQuotationFieldBlob.where({ fieldValue: id })
+      this.prisma.client.orm.public.OpportunityQuotationFieldBlob.where({ fieldValue: id })
         .select('resourceId')
         .all(),
     ])
@@ -200,7 +200,7 @@ export class ProductPriceService {
       ...new Set([...quotationFields, ...quotationBlobFields].map((row) => String(row.resourceId))),
     ]
     const linked = quotationIds.length
-      ? await this.prisma8.client.orm.public.OpportunityQuotation.where({
+      ? await this.prisma.client.orm.public.OpportunityQuotation.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(quotationIds))
@@ -210,7 +210,7 @@ export class ProductPriceService {
     if (linked) {
       throw new BadRequestException('价格表已被报价单关联，无法删除！')
     }
-    await this.prisma8.client.orm.public.ProductPrice.where({
+    await this.prisma.client.orm.public.ProductPrice.where({
       id: price.id,
       organizationId: user.tenantId,
     }).delete()
@@ -220,7 +220,7 @@ export class ProductPriceService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto) {
     const ids = [...new Set(dto.ids)]
     const rows = ids.length
-      ? await this.prisma8.client.orm.public.ProductPrice.where({
+      ? await this.prisma.client.orm.public.ProductPrice.where({
           organizationId: user.tenantId,
         })
           .where((row) => row.id.in(ids))
@@ -234,7 +234,7 @@ export class ProductPriceService {
       throw new BadRequestException('字段不存在或不支持批量修改')
     }
     if (!field.system) {
-      return this.prisma8.client.transaction((tx) =>
+      return this.prisma.client.transaction((tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'productPrice',
@@ -246,7 +246,7 @@ export class ProductPriceService {
       )
     }
     const data = await this.systemBatchUpdateData(user, field.key, dto.fieldValue, ids)
-    const count = await this.prisma8.client.orm.public.ProductPrice.where({
+    const count = await this.prisma.client.orm.public.ProductPrice.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(ids))
@@ -260,7 +260,7 @@ export class ProductPriceService {
 
   async editPos(user: AuthUser, dto: ProductPriceSortDto) {
     if (dto.dragNodeId === dto.dropNodeId) return { id: dto.dragNodeId }
-    const rows = await this.prisma8.client.orm.public.ProductPrice.where({
+    const rows = await this.prisma.client.orm.public.ProductPrice.where({
       organizationId: user.tenantId,
     })
       .orderBy([(row) => row.pos.asc(), (row) => row.id.asc()])
@@ -276,7 +276,7 @@ export class ProductPriceService {
       targetIndex < 0 ? ordered.length : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     ordered.splice(insertAt, 0, dto.dragNodeId)
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, priceId] of ordered.entries()) {
         await tx.orm.public.ProductPrice.where({ id: priceId }).update({
           pos: BigInt((index + 1) * POS_STEP),
@@ -387,7 +387,7 @@ export class ProductPriceService {
     const filteredIds = dto.filters?.length
       ? await this.filterIds(user.tenantId, fields, dto.filters, dto.filterMode ?? 'AND')
       : null
-    let query = this.prisma8.client.orm.public.ProductPrice.where({
+    let query = this.prisma.client.orm.public.ProductPrice.where({
       organizationId: user.tenantId,
     })
     if (dto.status) query = query.where({ status: dto.status })
@@ -641,7 +641,7 @@ export class ProductPriceService {
   }
 
   private async resolveImportedProduct(organizationId: string, productRef: string) {
-    const product = await this.prisma8.client.orm.public.Product.where({
+    const product = await this.prisma.client.orm.public.Product.where({
       organizationId: organizationId,
     })
       .where((row) => or(row.id.eq(productRef), row.name.eq(productRef)))
@@ -738,7 +738,7 @@ export class ProductPriceService {
             await this.fieldValues.filterResourceIds(organizationId, 'productPrice', [condition]),
           )
         }
-        let query = this.prisma8.client.orm.public.ProductPrice.where({
+        let query = this.prisma.client.orm.public.ProductPrice.where({
           organizationId: organizationId,
         })
         query = this.applySystemFilter(query, condition)
@@ -756,7 +756,7 @@ export class ProductPriceService {
   }
 
   private applySystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.ProductPrice.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.ProductPrice.where>,
     condition: FilterCondition,
   ) {
     const key = condition.key as 'name' | 'status'
@@ -794,7 +794,7 @@ export class ProductPriceService {
   }
 
   private async nextPos(organizationId: string) {
-    const row = await this.prisma8.client.orm.public.ProductPrice.where({
+    const row = await this.prisma.client.orm.public.ProductPrice.where({
       organizationId: organizationId,
     })
       .orderBy((price) => price.pos.desc())
@@ -804,7 +804,7 @@ export class ProductPriceService {
   }
 
   private async assertNameUnique(organizationId: string, name: string, excludeId?: string) {
-    let query = this.prisma8.client.orm.public.ProductPrice.where({
+    let query = this.prisma.client.orm.public.ProductPrice.where({
       organizationId: organizationId,
       name: name,
     })
@@ -814,7 +814,7 @@ export class ProductPriceService {
   }
 
   private async ensureExists(user: AuthUser, id: string) {
-    const row = await this.prisma8.client.orm.public.ProductPrice.where({
+    const row = await this.prisma.client.orm.public.ProductPrice.where({
       id: id,
       organizationId: user.tenantId,
     }).first()

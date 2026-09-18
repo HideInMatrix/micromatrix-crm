@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type { MessageLanguage, MessageTaskEvent } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import {
   APPROVAL_TEMPLATE_STATES,
   APPROVAL_TEMPLATE_TYPES,
@@ -19,7 +19,7 @@ export interface RenderedMessageTemplate {
 
 @Injectable()
 export class MessageTemplateService {
-  constructor(private readonly prisma8: Prisma8Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   normalizeLanguage(language: string | null | undefined): MessageLanguage {
     return language?.replace('_', '-').toLowerCase() === 'en-us' ? 'en-US' : 'zh-CN'
@@ -79,7 +79,7 @@ export class MessageTemplateService {
 
     if (userLookups.length) {
       const values = [...new Set(userLookups.map(({ value }) => value))]
-      const users = await this.prisma8.client.orm.public.Users.where({ tenantId })
+      const users = await this.prisma.client.orm.public.Users.where({ tenantId })
         .where((user) =>
           or(user.phone.in(values), ...values.map((value) => user.email.ilike(value))),
         )

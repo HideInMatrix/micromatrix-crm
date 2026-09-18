@@ -17,7 +17,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { not } from '@prisma/orm-postgres/orm-client'
 import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { Prisma8Service } from '../../prisma/prisma8.service.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
 import {
@@ -133,7 +133,7 @@ const DEFAULT_STAGES = [
 @Injectable()
 export class OpportunitiesService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
@@ -215,7 +215,7 @@ export class OpportunitiesService {
       possible: dto.possible,
     } as CreateOpportunityDto)
     if (dto.follower !== undefined || dto.followTime !== undefined) {
-      await this.prisma8.client.orm.public.Opportunity.where({
+      await this.prisma.client.orm.public.Opportunity.where({
         id: result.id,
         organizationId: user.tenantId,
       }).update({
@@ -254,7 +254,7 @@ export class OpportunitiesService {
       possible: dto.possible,
     } as UpdateOpportunityDto)
     if (dto.follower !== undefined || dto.followTime !== undefined) {
-      await this.prisma8.client.orm.public.Opportunity.where({
+      await this.prisma.client.orm.public.Opportunity.where({
         id: dto.id,
         organizationId: user.tenantId,
       }).update({
@@ -273,7 +273,7 @@ export class OpportunitiesService {
     const owner = await this.resolveOwner(user, dto.owner)
     const rows = await this.assertBatchInScope(user, dto.ids, 'opportunity:transfer')
     const now = BigInt(Date.now())
-    await this.prisma8.client.orm.public.Opportunity.where({
+    await this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(rows.map((item) => item.id)))
@@ -287,7 +287,7 @@ export class OpportunitiesService {
 
   async batchDelete(user: AuthUser, ids: string[]) {
     const rows = await this.assertBatchInScope(user, ids, 'opportunity:delete')
-    await this.prisma8.client.orm.public.Opportunity.where({
+    await this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
       .where((row) => row.id.in(rows.map((item) => item.id)))
@@ -303,7 +303,7 @@ export class OpportunitiesService {
       throw new BadRequestException('字段不存在或不支持批量修改')
     }
     if (!field.system || isCustomFieldKey(field.key)) {
-      return this.prisma8.client.transaction(async (tx) =>
+      return this.prisma.client.transaction(async (tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'opportunity',
@@ -331,7 +331,7 @@ export class OpportunitiesService {
   async contactList(user: AuthUser, opportunityId: string) {
     const opportunity = await this.ensureInScope(user, opportunityId, 'menu:opportunity')
     if (!opportunity.customerId) return { list: [] }
-    const contacts = await this.prisma8.client.orm.public.CustomerContact.where({
+    const contacts = await this.prisma.client.orm.public.CustomerContact.where({
       organizationId: user.tenantId,
       customerId: opportunity.customerId,
       enable: true,
@@ -360,7 +360,7 @@ export class OpportunitiesService {
   async sortBoard(user: AuthUser, dto: OpportunityBoardSortDto) {
     const moving = await this.ensureInScope(user, dto.dragNodeId, 'opportunity:update')
     const targetStage = await this.ensureStage(user.tenantId, dto.stage)
-    const targetRows = await this.prisma8.client.orm.public.Opportunity.where({
+    const targetRows = await this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
       stage: targetStage.id,
     })
@@ -374,7 +374,7 @@ export class OpportunitiesService {
       targetIndex < 0 ? ordered.length : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     ordered.splice(insertAt, 0, moving.id)
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ordered.entries()) {
         const updated = await tx.orm.public.Opportunity.where({
           id: id,
@@ -561,7 +561,7 @@ export class OpportunitiesService {
 
   async listStages(organizationId: string): Promise<OpportunityStageVO[]> {
     await this.ensureDefaultStages(organizationId)
-    const rows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const rows = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: organizationId,
     })
       .orderBy((row) => row.pos.asc())
@@ -571,7 +571,7 @@ export class OpportunitiesService {
 
   async getStageConfig(user: AuthUser) {
     await this.ensureDefaultStages(user.tenantId)
-    const rawRows = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const rawRows = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: user.tenantId,
     })
       .orderBy((row) => row.pos.asc())
@@ -580,7 +580,7 @@ export class OpportunitiesService {
     const counts = new Map<string, number>()
     await Promise.all(
       rows.map(async (stage) => {
-        const aggregate = await this.prisma8.client.orm.public.Opportunity.where({
+        const aggregate = await this.prisma.client.orm.public.Opportunity.where({
           organizationId: user.tenantId,
           stage: stage.id,
         }).aggregate((value) => ({ count: value.count() }))
@@ -606,7 +606,7 @@ export class OpportunitiesService {
 
   async addStageConfig(user: AuthUser, dto: OpportunityStageAddDto) {
     await this.ensureDefaultStages(user.tenantId)
-    const rawStages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const rawStages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: user.tenantId,
     })
       .orderBy((row) => row.pos.asc())
@@ -628,7 +628,7 @@ export class OpportunitiesService {
       targetIndex < 0 ? defaultInsertAt : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     const first = stages[0]
     const now = BigInt(Date.now())
-    const created = await this.prisma8.client.orm.public.OpportunityStageConfig.create({
+    const created = await this.prisma.client.orm.public.OpportunityStageConfig.create({
       id: createLegacyId32(),
       name: dto.name.trim(),
       _type: type,
@@ -657,7 +657,7 @@ export class OpportunitiesService {
     if (stage.type === 'END' && rate !== undefined && rate !== 0 && rate !== 100) {
       throw new BadRequestException('完结阶段赢率只能为 0 或 100')
     }
-    await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    await this.prisma.client.orm.public.OpportunityStageConfig.where({
       id: stage.id,
       organizationId: user.tenantId,
     }).update({
@@ -670,7 +670,7 @@ export class OpportunitiesService {
 
   async updateStageRollback(user: AuthUser, dto: OpportunityStageRollbackDto) {
     await this.ensureDefaultStages(user.tenantId)
-    await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: user.tenantId,
     }).updateAndCount({
       afootRollBack: dto.afootRollBack,
@@ -681,7 +681,7 @@ export class OpportunitiesService {
   }
 
   async sortStageIds(user: AuthUser, ids: string[]) {
-    const stages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const stages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: user.tenantId,
     })
       .select('id')
@@ -695,7 +695,7 @@ export class OpportunitiesService {
       throw new BadRequestException('阶段排序必须包含当前全部阶段且不能重复')
     }
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ids.entries()) {
         await tx.orm.public.OpportunityStageConfig.where({
           id: id,
@@ -712,17 +712,17 @@ export class OpportunitiesService {
   async removeStage(user: AuthUser, id: string) {
     const stage = await this.ensureStage(user.tenantId, id)
     if (stage.type === 'END') throw new BadRequestException('成功/失败阶段不可删除')
-    const runningAggregate = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const runningAggregate = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: user.tenantId,
       _type: 'AFOOT',
     }).aggregate((value) => ({ count: value.count() }))
     if (runningAggregate.count <= 1) throw new BadRequestException('至少保留一个进行中阶段')
-    const opportunityAggregate = await this.prisma8.client.orm.public.Opportunity.where({
+    const opportunityAggregate = await this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
       stage: id,
     }).aggregate((value) => ({ count: value.count() }))
     if (opportunityAggregate.count > 0) throw new BadRequestException('该阶段下存在商机，无法删除')
-    await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    await this.prisma.client.orm.public.OpportunityStageConfig.where({
       id: id,
       organizationId: user.tenantId,
     }).delete()
@@ -753,7 +753,7 @@ export class OpportunitiesService {
         : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    let db = this.prisma8.client.orm.public.Opportunity.where({
+    let db = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
     const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
@@ -820,7 +820,7 @@ export class OpportunitiesService {
       this.dataScope.directOwnerFilter(user, 'menu:opportunity'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
-    let db = this.prisma8.client.orm.public.Opportunity.where({
+    let db = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     })
     const ownerScope = scope.owner
@@ -879,7 +879,7 @@ export class OpportunitiesService {
     const pos = await this.nextPosition(user.tenantId, stage.id)
     const customData = dto.customData ?? {}
 
-    const opportunityId = await this.prisma8.client.transaction(async (tx) => {
+    const opportunityId = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.Opportunity.create({
         id: createLegacyId32(),
         customerId: customerId ? customerId : null,
@@ -913,7 +913,7 @@ export class OpportunitiesService {
       )
       return String(created.id)
     })
-    const createdRow = await this.prisma8.client.orm.public.Opportunity.where({
+    const createdRow = await this.prisma.client.orm.public.Opportunity.where({
       id: opportunityId,
       organizationId: user.tenantId,
     }).first()
@@ -948,7 +948,7 @@ export class OpportunitiesService {
     const customData = dto.customData
     const possible = this.numberFromDto(dto, 'possible')
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const updated = await tx.orm.public.Opportunity.where({ id: id }).update({
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.amount !== undefined
@@ -996,7 +996,7 @@ export class OpportunitiesService {
         )
       }
     })
-    const updatedRow = await this.prisma8.client.orm.public.Opportunity.where({
+    const updatedRow = await this.prisma.client.orm.public.Opportunity.where({
       id: id,
       organizationId: user.tenantId,
     }).first()
@@ -1044,7 +1044,7 @@ export class OpportunitiesService {
         )
       : null
     const now = BigInt(Date.now())
-    await this.prisma8.client.orm.public.Opportunity.where({
+    await this.prisma.client.orm.public.Opportunity.where({
       id: id,
       organizationId: user.tenantId,
     }).update({
@@ -1066,7 +1066,7 @@ export class OpportunitiesService {
 
   async remove(user: AuthUser, id: string) {
     const opportunity = await this.ensureInScope(user, id, 'opportunity:delete')
-    await this.prisma8.client.orm.public.Opportunity.where({
+    await this.prisma.client.orm.public.Opportunity.where({
       id: id,
       organizationId: user.tenantId,
     }).delete()
@@ -1084,12 +1084,12 @@ export class OpportunitiesService {
   }
 
   async ensureDefaultStages(organizationId: string) {
-    const aggregate = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const aggregate = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: organizationId,
     }).aggregate((value) => ({ count: value.count() }))
     if (aggregate.count > 0) return
     const now = BigInt(Date.now())
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const stage of DEFAULT_STAGES) {
         await tx.orm.public.OpportunityStageConfig.create({
           id: createLegacyId32(),
@@ -1110,7 +1110,7 @@ export class OpportunitiesService {
   }
 
   private async normalizeStagePositions(organizationId: string) {
-    const rawStages = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const rawStages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       organizationId: organizationId,
     })
       .orderBy((row) => row.pos.asc())
@@ -1118,7 +1118,7 @@ export class OpportunitiesService {
     const stages = rawStages.map((stage) => this.normalizeStage(stage))
     const running = stages.filter((stage) => stage.type === 'AFOOT')
     const ended = stages.filter((stage) => stage.type === 'END')
-    await this.prisma8.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, stage] of [...running, ...ended].entries()) {
         await tx.orm.public.OpportunityStageConfig.where({
           id: stage.id,
@@ -1129,7 +1129,7 @@ export class OpportunitiesService {
   }
 
   private async ensureStage(organizationId: string, id: string) {
-    const stage = await this.prisma8.client.orm.public.OpportunityStageConfig.where({
+    const stage = await this.prisma.client.orm.public.OpportunityStageConfig.where({
       id: id,
       organizationId: organizationId,
     }).first()
@@ -1139,7 +1139,7 @@ export class OpportunitiesService {
 
   private async ensureInScope(user: AuthUser, id: string, permission: string) {
     const scope = await this.dataScope.directOwnerFilter(user, permission)
-    let query = this.prisma8.client.orm.public.Opportunity.where({
+    let query = this.prisma.client.orm.public.Opportunity.where({
       id: id,
       organizationId: user.tenantId,
     })
@@ -1157,7 +1157,7 @@ export class OpportunitiesService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id }
-    const owner = await this.prisma8.client.orm.public.Users.where({
+    const owner = await this.prisma.client.orm.public.Users.where({
       id: ownerId,
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -1172,7 +1172,7 @@ export class OpportunitiesService {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) throw new BadRequestException('请选择商机')
     const scope = await this.dataScope.directOwnerFilter(user, permission)
-    let query = this.prisma8.client.orm.public.Opportunity.where({
+    let query = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     }).where((row) => row.id.in(uniqueIds))
     const ownerScope = scope.owner
@@ -1265,7 +1265,7 @@ export class OpportunitiesService {
     ids: string[],
     data: OpportunitySystemBatchUpdate,
   ) {
-    const query = this.prisma8.client.orm.public.Opportunity.where({
+    const query = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
     }).where((row) => row.id.in(ids))
     const common = {
@@ -1567,16 +1567,16 @@ export class OpportunitiesService {
     const stageIds = [...new Set(rows.map((row) => String(row.stage)))]
     const [customers, contacts, rawStages] = await Promise.all([
       customerIds.length
-        ? this.prisma8.client.orm.public.Customer.where((row) => row.id.in(customerIds))
+        ? this.prisma.client.orm.public.Customer.where((row) => row.id.in(customerIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
       contactIds.length
-        ? this.prisma8.client.orm.public.CustomerContact.where((row) => row.id.in(contactIds))
+        ? this.prisma.client.orm.public.CustomerContact.where((row) => row.id.in(contactIds))
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
-      this.prisma8.client.orm.public.OpportunityStageConfig.where((row) =>
+      this.prisma.client.orm.public.OpportunityStageConfig.where((row) =>
         row.id.in(stageIds),
       ).all(),
     ])
@@ -1610,7 +1610,7 @@ export class OpportunitiesService {
   }
 
   private async applyHomeOpportunityWhere(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Opportunity.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Opportunity.where>,
     organizationId: string,
     where: OpportunityHomeWhere,
   ) {
@@ -1624,7 +1624,7 @@ export class OpportunitiesService {
         query = query.where((row) => row.owner.in(ownerIds))
       }
       if (clause.stageConfig) {
-        let stages = this.prisma8.client.orm.public.OpportunityStageConfig.where({
+        let stages = this.prisma.client.orm.public.OpportunityStageConfig.where({
           organizationId: organizationId,
         })
         if (clause.stageConfig.type) {
@@ -1674,7 +1674,7 @@ export class OpportunitiesService {
   private async ownerNames(ownerIds: string[]): Promise<Map<string, string>> {
     const ids = [...new Set(ownerIds.filter(Boolean))]
     if (!ids.length) return new Map()
-    const users = await this.prisma8.client.orm.public.Users.where((row) => row.id.in(ids))
+    const users = await this.prisma.client.orm.public.Users.where((row) => row.id.in(ids))
       .select('id', 'name')
       .all()
     return new Map(users.map((user) => [user.id, user.name]))
@@ -1786,7 +1786,7 @@ export class OpportunitiesService {
   }
 
   private async assertCustomer(organizationId: string, customerId: string) {
-    const customer = await this.prisma8.client.orm.public.Customer.where({
+    const customer = await this.prisma.client.orm.public.Customer.where({
       id: customerId,
       organizationId: organizationId,
     })
@@ -1800,7 +1800,7 @@ export class OpportunitiesService {
     contactId: string,
     customerId: string,
   ) {
-    const contact = await this.prisma8.client.orm.public.CustomerContact.where({
+    const contact = await this.prisma.client.orm.public.CustomerContact.where({
       id: contactId,
       organizationId: organizationId,
       customerId: customerId,
@@ -1833,7 +1833,7 @@ export class OpportunitiesService {
 
   private async validateProducts(tenantId: string, productIds: string[]) {
     if (!productIds.length) return
-    const aggregate = await this.prisma8.client.orm.public.Product.where({
+    const aggregate = await this.prisma.client.orm.public.Product.where({
       organizationId: tenantId,
     })
       .where((row) => row.id.in(productIds))
@@ -1844,7 +1844,7 @@ export class OpportunitiesService {
   }
 
   private async nextPosition(organizationId: string, stage: string) {
-    const row = await this.prisma8.client.orm.public.Opportunity.where({
+    const row = await this.prisma.client.orm.public.Opportunity.where({
       organizationId: organizationId,
       stage: stage,
     })
@@ -1864,7 +1864,7 @@ export class OpportunitiesService {
   }
 
   private applyOpportunitySystemFilter(
-    collection: ReturnType<typeof this.prisma8.client.orm.public.Opportunity.where>,
+    collection: ReturnType<typeof this.prisma.client.orm.public.Opportunity.where>,
     field: FieldVO | undefined,
     condition: FilterCondition,
   ) {
@@ -2095,7 +2095,7 @@ export class OpportunitiesService {
             await this.fieldValues.filterResourceIds(organizationId, 'opportunity', [normalized]),
           )
         }
-        let query = this.prisma8.client.orm.public.Opportunity.where({
+        let query = this.prisma.client.orm.public.Opportunity.where({
           organizationId: organizationId,
         })
         query = this.applyOpportunitySystemFilter(query, field, normalized)

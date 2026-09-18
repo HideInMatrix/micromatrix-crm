@@ -11,8 +11,8 @@ import * as bcrypt from 'bcryptjs'
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now, prisma8TimestampToISOString } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantToISOString } from '../../prisma/temporal'
 
 import { RolesService } from '../roles/roles.service'
 import { CreateMemberDto, QueryMembersDto, UpdateMemberDto } from './dto/member.dto'
@@ -27,7 +27,7 @@ type MemberRow = {
   position: string | null
   phone: string | null
   passwordLoginEnabled: boolean
-  createdAt: Parameters<typeof prisma8TimestampToISOString>[0]
+  createdAt: Parameters<typeof instantToISOString>[0]
 }
 
 const DIRECTORY_CACHE_NAMESPACE = 'directory'
@@ -36,7 +36,7 @@ const DIRECTORY_CACHE_TTL_SECONDS = 3 * 60
 @Injectable()
 export class MembersService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly rolesService: RolesService,
     private readonly authCache: AuthContextCacheService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
@@ -44,7 +44,7 @@ export class MembersService {
 
   async findAll(tenantId: string, query: QueryMembersDto): Promise<PaginatedResult<MemberVO>> {
     const { page = 1, pageSize = 10, keyword, deptId, status } = query
-    let users = this.prisma8.client.orm.public.Users.where({ tenantId })
+    let users = this.prisma.client.orm.public.Users.where({ tenantId })
     if (deptId) users = users.where({ deptId })
     if (status) users = users.where({ status })
     if (keyword) {
@@ -72,7 +72,7 @@ export class MembersService {
 
   async options(tenantId: string) {
     const loader = async () =>
-      await this.prisma8.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+      await this.prisma.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
         .select('id', 'name', 'deptId')
         .orderBy((user) => user.createdAt.asc())
         .all()
@@ -89,7 +89,7 @@ export class MembersService {
   async create(actor: AuthUser, dto: CreateMemberDto): Promise<MemberVO> {
     const tenantId = actor.tenantId
     const roleIds = [...new Set(dto.roleIds)]
-    const exists = await this.prisma8.client.orm.public.Users.where({ email: dto.email })
+    const exists = await this.prisma.client.orm.public.Users.where({ email: dto.email })
       .select('id')
       .first()
     if (exists) throw new ConflictException('该邮箱已被使用')
@@ -100,8 +100,8 @@ export class MembersService {
     await this.ensurePhoneFree(tenantId, dto.phone)
 
     const passwordHash = await bcrypt.hash(dto.password, 10)
-    const now = prisma8Now()
-    const user = await this.prisma8.client.transaction(async (tx) => {
+    const now = nowInstant()
+    const user = await this.prisma.client.transaction(async (tx) => {
       const created = await tx.orm.public.Users.create({
         tenantId,
         email: dto.email,
@@ -127,7 +127,7 @@ export class MembersService {
     const tenantId = actor.tenantId
     const current = await this.ensureExists(tenantId, id)
     if (dto.roleIds !== undefined) {
-      const currentRoleIds = await this.prisma8.client.orm.public.UserRoles.where({
+      const currentRoleIds = await this.prisma.client.orm.public.UserRoles.where({
         tenantId,
         userId: id,
       })
@@ -144,8 +144,8 @@ export class MembersService {
     await this.ensurePhoneFree(tenantId, dto.phone, id)
 
     const nextDeptId = dto.deptId === undefined ? current.deptId : dto.deptId
-    const user = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
+    const user = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
       if (dto.deptId !== undefined && nextDeptId !== current.deptId) {
         let departments = tx.orm.public.Departments.where({ tenantId, leaderId: id })
         if (nextDeptId)
@@ -183,10 +183,10 @@ export class MembersService {
 
   async resetPassword(tenantId: string, id: string, password: string) {
     const user = await this.ensureExists(tenantId, id)
-    await this.prisma8.client.orm.public.Users.where({ id, tenantId }).update({
+    await this.prisma.client.orm.public.Users.where({ id, tenantId }).update({
       passwordHash: await bcrypt.hash(password, 10),
       defaultPwd: true,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     await this.authCache.invalidate(id)
     return { id, name: user.name }
@@ -199,13 +199,13 @@ export class MembersService {
     const subordinateIds =
       nextStatus === 'DISABLED'
         ? (
-            await this.prisma8.client.orm.public.Users.where({ tenantId, leaderId: id })
+            await this.prisma.client.orm.public.Users.where({ tenantId, leaderId: id })
               .select('id')
               .all()
           ).map(({ id: subordinateId }) => subordinateId)
         : []
-    const updated = await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
+    const updated = await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
       if (nextStatus === 'DISABLED') {
         await tx.orm.public.Departments.where({ tenantId, leaderId: id }).updateAndCount({
           leaderId: null,
@@ -233,7 +233,7 @@ export class MembersService {
     const user = await this.ensureExists(tenantId, id)
     const organizationId = tenantId
     const memberId = id
-    const customerIds = await this.prisma8.client.orm.public.Customer.where({ organizationId })
+    const customerIds = await this.prisma.client.orm.public.Customer.where({ organizationId })
       .select('id')
       .all()
     const [
@@ -251,60 +251,60 @@ export class MembersService {
       approvalInstances,
       approvalTasks,
     ] = await Promise.all([
-      this.prisma8.client.orm.public.Customer.where({ organizationId, owner: memberId }).aggregate(
+      this.prisma.client.orm.public.Customer.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({ count: agg.count() }),
       ),
-      this.prisma8.client.orm.public.CustomerContact.where({
+      this.prisma.client.orm.public.CustomerContact.where({
         organizationId,
         owner: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.Clue.where({ organizationId, owner: memberId }).aggregate(
+      this.prisma.client.orm.public.Clue.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({
           count: agg.count(),
         }),
       ),
-      this.prisma8.client.orm.public.Opportunity.where({
+      this.prisma.client.orm.public.Opportunity.where({
         organizationId,
         owner: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.OpportunityQuotation.where({
+      this.prisma.client.orm.public.OpportunityQuotation.where({
         organizationId,
         createUser: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.Contract.where({ organizationId, owner: memberId }).aggregate(
+      this.prisma.client.orm.public.Contract.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({
           count: agg.count(),
         }),
       ),
-      this.prisma8.client.orm.public.ContractPaymentRecord.where({
+      this.prisma.client.orm.public.ContractPaymentRecord.where({
         organizationId,
         owner: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.ContractInvoice.where({
+      this.prisma.client.orm.public.ContractInvoice.where({
         organizationId,
         owner: memberId,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.SalesOrder.where({
+      this.prisma.client.orm.public.SalesOrder.where({
         organizationId,
         owner: memberId,
       }).aggregate((agg) => ({
         count: agg.count(),
       })),
-      this.prisma8.client.orm.public.FollowUpRecords.where({ tenantId, ownerId: id }).aggregate(
+      this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, ownerId: id }).aggregate(
         (agg) => ({
           count: agg.count(),
         }),
       ),
       customerIds.length
-        ? this.prisma8.client.orm.public.CustomerCollaboration.where({ userId: memberId })
+        ? this.prisma.client.orm.public.CustomerCollaboration.where({ userId: memberId })
             .where((row) => row.customerId.in(customerIds.map(({ id: customerId }) => customerId)))
             .aggregate((agg) => ({ count: agg.count() }))
         : Promise.resolve({ count: 0 }),
-      this.prisma8.client.orm.public.ApprovalInstances.where({
+      this.prisma.client.orm.public.ApprovalInstances.where({
         tenantId,
         submitterId: id,
       }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma8.client.orm.public.ApprovalTasks.where({ tenantId, approverId: id }).aggregate(
+      this.prisma.client.orm.public.ApprovalTasks.where({ tenantId, approverId: id }).aggregate(
         (agg) => ({
           count: agg.count(),
         }),
@@ -330,13 +330,11 @@ export class MembersService {
     }
 
     const subordinateIds = (
-      await this.prisma8.client.orm.public.Users.where({ tenantId, leaderId: id })
-        .select('id')
-        .all()
+      await this.prisma.client.orm.public.Users.where({ tenantId, leaderId: id }).select('id').all()
     ).map(({ id: subordinateId }) => subordinateId)
 
-    await this.prisma8.client.transaction(async (tx) => {
-      const updatedAt = prisma8Now()
+    await this.prisma.client.transaction(async (tx) => {
+      const updatedAt = nowInstant()
       await tx.orm.public.Departments.where({ tenantId, leaderId: id }).updateAndCount({
         leaderId: null,
         updatedAt,
@@ -359,7 +357,7 @@ export class MembersService {
   }
 
   private async ensureExists(tenantId: string, id: string) {
-    const user = await this.prisma8.client.orm.public.Users.where({ id, tenantId }).first()
+    const user = await this.prisma.client.orm.public.Users.where({ id, tenantId }).first()
     if (!user) throw new NotFoundException('成员不存在')
     return user
   }
@@ -375,18 +373,18 @@ export class MembersService {
     const uniqueRoleIds = [...new Set(dto.roleIds ?? [])]
     const [roles, department, leader] = await Promise.all([
       uniqueRoleIds.length > 0
-        ? this.prisma8.client.orm.public.Roles.where({ tenantId })
+        ? this.prisma.client.orm.public.Roles.where({ tenantId })
             .where((role) => role.id.in(uniqueRoleIds))
             .select('id')
             .all()
         : [],
       dto.deptId
-        ? this.prisma8.client.orm.public.Departments.where({ id: dto.deptId, tenantId })
+        ? this.prisma.client.orm.public.Departments.where({ id: dto.deptId, tenantId })
             .select('id')
             .first()
         : null,
       dto.leaderId
-        ? this.prisma8.client.orm.public.Users.where({
+        ? this.prisma.client.orm.public.Users.where({
             id: dto.leaderId,
             tenantId,
             status: 'ACTIVE',
@@ -404,7 +402,7 @@ export class MembersService {
   }
 
   private async ensureNoLeaderCycle(tenantId: string, memberId: string, leaderId: string) {
-    const users = await this.prisma8.client.orm.public.Users.where({ tenantId })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId })
       .select('id', 'leaderId')
       .all()
     const leaderMap = new Map(users.map((user) => [user.id, user.leaderId]))
@@ -420,7 +418,7 @@ export class MembersService {
 
   private async ensurePhoneFree(tenantId: string, phone?: string | null, excludeId?: string) {
     if (!phone) return
-    let users = this.prisma8.client.orm.public.Users.where({ tenantId, phone })
+    let users = this.prisma.client.orm.public.Users.where({ tenantId, phone })
     if (excludeId) users = users.where((user) => user.id.neq(excludeId))
     const exists = await users.select('id').first()
     if (exists) throw new ConflictException('该手机号已被使用')
@@ -429,7 +427,7 @@ export class MembersService {
   private async toVOs(tenantId: string, users: readonly MemberRow[]): Promise<MemberVO[]> {
     if (!users.length) return []
     const userIds = users.map((user) => user.id)
-    const relations = await this.prisma8.client.orm.public.UserRoles.where({ tenantId })
+    const relations = await this.prisma.client.orm.public.UserRoles.where({ tenantId })
       .where((relation) => relation.userId.in(userIds))
       .select('userId', 'roleId')
       .all()
@@ -442,19 +440,19 @@ export class MembersService {
     ]
     const [roles, departments, leaders] = await Promise.all([
       roleIds.length
-        ? this.prisma8.client.orm.public.Roles.where({ tenantId })
+        ? this.prisma.client.orm.public.Roles.where({ tenantId })
             .where((role) => role.id.in(roleIds))
             .select('id', 'name')
             .all()
         : [],
       deptIds.length
-        ? this.prisma8.client.orm.public.Departments.where({ tenantId })
+        ? this.prisma.client.orm.public.Departments.where({ tenantId })
             .where((department) => department.id.in(deptIds))
             .select('id', 'name')
             .all()
         : [],
       leaderIds.length
-        ? this.prisma8.client.orm.public.Users.where({ tenantId })
+        ? this.prisma.client.orm.public.Users.where({ tenantId })
             .where((user) => user.id.in(leaderIds))
             .select('id', 'name')
             .all()
@@ -490,7 +488,7 @@ export class MembersService {
         position: user.position,
         phone: user.phone,
         passwordLoginEnabled: user.passwordLoginEnabled,
-        createdAt: prisma8TimestampToISOString(user.createdAt),
+        createdAt: instantToISOString(user.createdAt),
       }
     })
   }

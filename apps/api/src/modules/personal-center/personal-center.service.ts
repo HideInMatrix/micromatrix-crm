@@ -2,8 +2,8 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
-import { Prisma8Service } from '../../prisma/prisma8.service'
-import { prisma8Now } from '../../prisma/prisma8-temporal'
+import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
 import { AuthService } from '../../auth/auth.service'
 import { FollowUpPlansService } from '../follow-up-plans/follow-up-plans.service'
 import type {
@@ -15,7 +15,7 @@ import type {
 @Injectable()
 export class PersonalCenterService {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly followPlans: FollowUpPlansService,
     private readonly changeLog: BusinessChangeLogService,
@@ -23,7 +23,7 @@ export class PersonalCenterService {
   ) {}
 
   async info(user: AuthUser) {
-    const current = await this.prisma8.client.orm.public.Users.where({
+    const current = await this.prisma.client.orm.public.Users.where({
       id: user.id,
       tenantId: user.tenantId,
     })
@@ -32,23 +32,23 @@ export class PersonalCenterService {
     if (!current) throw new UnauthorizedException('用户不存在')
     const [department, extension, userRoles] = await Promise.all([
       current.deptId
-        ? this.prisma8.client.orm.public.Departments.where({
+        ? this.prisma.client.orm.public.Departments.where({
             id: current.deptId,
             tenantId: user.tenantId,
           })
             .select('name')
             .first()
         : null,
-      this.prisma8.client.orm.public.UserExtensions.where({ id: current.id })
+      this.prisma.client.orm.public.UserExtensions.where({ id: current.id })
         .select('avatar')
         .first(),
-      this.prisma8.client.orm.public.UserRoles.where({ tenantId: user.tenantId, userId: current.id })
+      this.prisma.client.orm.public.UserRoles.where({ tenantId: user.tenantId, userId: current.id })
         .select('roleId')
         .all(),
     ])
     const roleIds = userRoles.map((row) => row.roleId)
     const roles = roleIds.length
-      ? await this.prisma8.client.orm.public.Roles.where({ tenantId: user.tenantId })
+      ? await this.prisma.client.orm.public.Roles.where({ tenantId: user.tenantId })
           .where((row) => row.id.in(roleIds))
           .select('id', 'name')
           .all()
@@ -72,13 +72,13 @@ export class PersonalCenterService {
     const email = dto.email.trim().toLowerCase()
     const language = dto.language
     const [current, phoneMatch, emailMatch] = await Promise.all([
-      this.prisma8.client.orm.public.Users.where({ id: user.id, tenantId: user.tenantId })
+      this.prisma.client.orm.public.Users.where({ id: user.id, tenantId: user.tenantId })
         .select('id', 'name', 'phone', 'email', 'language')
         .first(),
       // Cordys ExtUserMapper.countByPhone 不带 organizationId：手机号是全局唯一。
-      this.prisma8.client.orm.public.Users.where({ phone }).select('id').first(),
+      this.prisma.client.orm.public.Users.where({ phone }).select('id').first(),
       // 登录入口按邮箱全局解析租户；个人中心也必须保持全局邮箱唯一，避免登录身份歧义。
-      this.prisma8.client.orm.public.Users.where((row) => row.email.ilike(email))
+      this.prisma.client.orm.public.Users.where((row) => row.email.ilike(email))
         .select('id')
         .first(),
     ])
@@ -86,14 +86,14 @@ export class PersonalCenterService {
     if (phoneMatch && phoneMatch.id !== user.id) throw new ConflictException('该手机号已被使用')
     if (emailMatch && emailMatch.id !== user.id) throw new ConflictException('该邮箱已被使用')
 
-    const updated = await this.prisma8.client.orm.public.Users.where({
+    const updated = await this.prisma.client.orm.public.Users.where({
       id: user.id,
       tenantId: user.tenantId,
     }).update({
       phone,
       email,
       language,
-      updatedAt: prisma8Now(),
+      updatedAt: nowInstant(),
     })
     if (!updated) throw new UnauthorizedException('用户不存在')
     await this.authCache.invalidate(user.id)

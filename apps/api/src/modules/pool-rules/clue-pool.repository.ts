@@ -4,27 +4,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import type { Prisma8Client } from '../../prisma/prisma8-client'
-import { Prisma8Service } from '../../prisma/prisma8.service'
+import type { PrismaClient } from '../../prisma/prisma-client'
+import { PrismaService } from '../../prisma/prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   DirectCapacityConfigurationInput,
   DirectPoolConfigurationInput,
 } from './pool-domain.types'
 import {
-  loadUserScopeTokensPrisma8,
+  loadUserScopeTokensPrisma,
   parseStringArray,
-  resolveScopeUserIdsPrisma8,
+  resolveScopeUserIdsPrisma,
   scopeMatches,
   startOfLocalDay,
 } from './pool-repository.helpers'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
-import {
-  acquirePoolTransactionLocksPrisma8,
-  poolTransactionLockKeys,
-} from './pool-transaction-lock'
+import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
 
-type Prisma8Transaction = Parameters<Parameters<Prisma8Client['transaction']>[0]>[0]
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 interface ClueSnapshot {
   id: string
@@ -76,13 +73,13 @@ interface ClueMoveToPoolInput {
 @Injectable()
 export class CluePoolRepository {
   constructor(
-    private readonly prisma8: Prisma8Service,
+    private readonly prisma: PrismaService,
     private readonly calculator: PoolRuleCalculator,
   ) {}
 
   async listPools(organizationId: string) {
     const organization = organizationId
-    const pools = await this.prisma8.client.orm.public.CluePool.where({
+    const pools = await this.prisma.client.orm.public.CluePool.where({
       organizationId: organization,
     })
       .orderBy((pool) => pool.createTime.asc())
@@ -90,11 +87,11 @@ export class CluePoolRepository {
     if (!pools.length) return []
     const poolIds = pools.map((pool) => pool.id)
     const [hiddenFields, pickRules, recycleRules] = await Promise.all([
-      this.prisma8.client.orm.public.CluePoolHiddenField.where((row) =>
+      this.prisma.client.orm.public.CluePoolHiddenField.where((row) =>
         row.poolId.in(poolIds),
       ).all(),
-      this.prisma8.client.orm.public.CluePoolPickRule.where((row) => row.poolId.in(poolIds)).all(),
-      this.prisma8.client.orm.public.CluePoolRecycleRule.where((row) =>
+      this.prisma.client.orm.public.CluePoolPickRule.where((row) => row.poolId.in(poolIds)).all(),
+      this.prisma.client.orm.public.CluePoolRecycleRule.where((row) =>
         row.poolId.in(poolIds),
       ).all(),
     ])
@@ -107,7 +104,7 @@ export class CluePoolRepository {
   }
 
   listCapacities(organizationId: string) {
-    return this.prisma8.client.orm.public.ClueCapacity.where({
+    return this.prisma.client.orm.public.ClueCapacity.where({
       organizationId: organizationId,
     })
       .orderBy((row) => row.createTime.asc())
@@ -115,14 +112,14 @@ export class CluePoolRepository {
   }
 
   async listOwnerHistory(organizationId: string, clueId: string) {
-    const clue = await this.prisma8.client.orm.public.Clue.where({
+    const clue = await this.prisma.client.orm.public.Clue.where({
       id: clueId,
       organizationId: organizationId,
     })
       .select('id')
       .first()
     if (!clue) return []
-    return this.prisma8.client.orm.public.ClueOwner.where({ clueId: clue.id })
+    return this.prisma.client.orm.public.ClueOwner.where({ clueId: clue.id })
       .orderBy((row) => row.endTime.desc())
       .all()
   }
@@ -134,7 +131,7 @@ export class CluePoolRepository {
     now = BigInt(Date.now()),
   ) {
     this.assertPoolConfiguration(input)
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const pool = await tx.orm.public.CluePool.create({
         id: createLegacyId32(),
         name: input.name.trim(),
@@ -161,7 +158,7 @@ export class CluePoolRepository {
     now = BigInt(Date.now()),
   ) {
     this.assertPoolConfiguration(input)
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       await this.assertPoolExists(tx, organizationId, poolId)
       const id = poolId
       const updated = await tx.orm.public.CluePool.where({ id }).update({
@@ -180,7 +177,7 @@ export class CluePoolRepository {
   }
 
   async togglePool(organizationId: string, poolId: string, operatorId: string) {
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const pool = await this.assertPoolExists(tx, organizationId, poolId)
       const updated = await tx.orm.public.CluePool.where({ id: pool.id }).update({
         enable: !pool.enable,
@@ -193,7 +190,7 @@ export class CluePoolRepository {
   }
 
   async deletePool(organizationId: string, poolId: string) {
-    return this.prisma8.client.transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const pool = await this.assertPoolExists(tx, organizationId, poolId)
       const linked = await tx.orm.public.Clue.where({
         organizationId: organizationId,
@@ -224,7 +221,7 @@ export class CluePoolRepository {
   }
 
   async deleteCapacity(organizationId: string, capacityId: string) {
-    const deleted = await this.prisma8.client.orm.public.ClueCapacity.where({
+    const deleted = await this.prisma.client.orm.public.ClueCapacity.where({
       id: capacityId,
       organizationId: organizationId,
     }).deleteAndCount()
@@ -242,9 +239,9 @@ export class CluePoolRepository {
 
   async transfer(input: ClueTransferInput) {
     const now = input.now ?? BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
         tx,
         poolTransactionLockKeys('clue', input.organizationId, input.clueId, input.ownerId),
       )
@@ -284,9 +281,9 @@ export class CluePoolRepository {
     const clueIds = [...new Set(input.clueIds)]
     if (clueIds.length === 0) throw new BadRequestException('请选择线索')
     const now = input.now ?? BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
         tx,
         clueIds.flatMap((clueId) =>
           poolTransactionLockKeys('clue', input.organizationId, clueId, input.ownerId),
@@ -345,9 +342,9 @@ export class CluePoolRepository {
 
   private async takeFromPool(input: ClueOwnershipInput, enforcePickRule: boolean) {
     const now = input.now ?? BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
         tx,
         poolTransactionLockKeys('clue', input.organizationId, input.clueId, input.ownerId),
       )
@@ -427,9 +424,9 @@ export class CluePoolRepository {
 
   private async finishOwnership(input: ClueMoveToPoolInput, automatic: boolean) {
     const now = input.now ?? BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(
-        this.prisma8.client,
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
         tx,
         poolTransactionLockKeys('clue', input.organizationId, input.clueId, input.operatorId),
       )
@@ -466,11 +463,11 @@ export class CluePoolRepository {
   }
 
   private async findCapacity(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     organizationId: string,
     ownerId: string,
   ): Promise<number | null> {
-    const tokens = await loadUserScopeTokensPrisma8(tx, organizationId, ownerId)
+    const tokens = await loadUserScopeTokensPrisma(tx, organizationId, ownerId)
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities = await tx.orm.public.ClueCapacity.where({
       organizationId: organizationId,
@@ -490,11 +487,11 @@ export class CluePoolRepository {
     if (input.capacity !== null && input.capacity < 0)
       throw new BadRequestException('库容不能小于 0')
     const now = BigInt(Date.now())
-    return this.prisma8.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma8(this.prisma8.client, tx, [
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
         `pool:clue:${organizationId}:capacity-config`,
       ])
-      const incoming = await resolveScopeUserIdsPrisma8(tx, organizationId, input.scopeIds)
+      const incoming = await resolveScopeUserIdsPrisma(tx, organizationId, input.scopeIds)
       let existingQuery = tx.orm.public.ClueCapacity.where({
         organizationId: organizationId,
       })
@@ -504,7 +501,7 @@ export class CluePoolRepository {
       }
       const existing = await existingQuery.all()
       for (const row of existing) {
-        const members = await resolveScopeUserIdsPrisma8(
+        const members = await resolveScopeUserIdsPrisma(
           tx,
           organizationId,
           parseStringArray(row.scopeId),
@@ -541,7 +538,7 @@ export class CluePoolRepository {
   }
 
   private async replacePoolRelations(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     poolId: string,
     operatorId: string,
     input: DirectPoolConfigurationInput,
@@ -588,7 +585,7 @@ export class CluePoolRepository {
     })
   }
 
-  private async loadPoolView(tx: Prisma8Transaction, poolId: string) {
+  private async loadPoolView(tx: PrismaTransaction, poolId: string) {
     const id = poolId
     const pool = await tx.orm.public.CluePool.where({ id }).first()
     if (!pool) throw new NotFoundException('线索池不存在')
@@ -610,7 +607,7 @@ export class CluePoolRepository {
       throw new BadRequestException('启用新数据限制时必须填写冷却天数')
   }
 
-  private async assertPoolExists(tx: Prisma8Transaction, organizationId: string, poolId: string) {
+  private async assertPoolExists(tx: PrismaTransaction, organizationId: string, poolId: string) {
     const pool = await tx.orm.public.CluePool.where({
       id: poolId,
       organizationId: organizationId,
@@ -620,7 +617,7 @@ export class CluePoolRepository {
   }
 
   private appendOwnerHistory(
-    tx: Prisma8Transaction,
+    tx: PrismaTransaction,
     clue: ClueSnapshot,
     operatorId: string,
     reasonId: string | null | undefined,
