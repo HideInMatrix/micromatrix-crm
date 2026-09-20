@@ -13,8 +13,9 @@ import {
   type UpdateMessageTaskSettingInput,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { Prisma, type MessageTaskSetting } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
+import { jsonValue } from '../../prisma/json-value'
 
 const CACHE_NAMESPACE = 'message-settings'
 const CACHE_TTL_SECONDS = 5 * 60
@@ -40,7 +41,7 @@ export class MessageSettingsService {
   }
 
   private async loadList(tenantId: string): Promise<MessageTaskGroupVO[]> {
-    const rows = await this.prisma.messageTaskSetting.findMany({ where: { tenantId } })
+    const rows = await this.prisma.client.orm.public.MessageTaskSettings.where({ tenantId }).all()
     const rowMap = new Map(rows.map((row) => [row.event, row]))
     const groups = new Map<MessageTaskModule, MessageTaskGroupVO>()
 
@@ -80,9 +81,11 @@ export class MessageSettingsService {
     tenantId: string,
     definition: MessageTaskDefinition,
   ): Promise<MessageTaskSettingVO> {
-    const row = await this.prisma.messageTaskSetting.findFirst({
-      where: { tenantId, module: definition.module, event: definition.event },
-    })
+    const row = await this.prisma.client.orm.public.MessageTaskSettings.where({
+      tenantId,
+      module: definition.module,
+      event: definition.event,
+    }).first()
     return this.toVO(definition, row ?? undefined)
   }
 
@@ -109,25 +112,30 @@ export class MessageSettingsService {
     }
 
     if (config.roleEnable && config.roleIds.length > 0) {
-      const roleMembers = await this.prisma.userRole.findMany({
-        where: { tenantId, roleId: { in: config.roleIds } },
-        select: { userId: true },
-      })
+      const roleMembers = await this.prisma.client.orm.public.UserRoles.where({ tenantId })
+        .where((row) => row.roleId.in(config.roleIds))
+        .select('userId')
+        .all()
       for (const member of roleMembers) recipientIds.add(member.userId)
     }
 
     if (config.ownerEnable && context.ownerId) {
-      const owner = await this.prisma.user.findFirst({
-        where: { id: context.ownerId, tenantId, status: 'ACTIVE' },
-        select: { deptId: true },
+      const owner = await this.prisma.client.orm.public.Users.where({
+        id: context.ownerId,
+        tenantId,
+        status: 'ACTIVE',
       })
+        .select('deptId')
+        .first()
       let departmentId = owner?.deptId ?? null
       const levelCount = Math.max(1, config.ownerLevel)
       for (let level = 0; departmentId && level < levelCount; level++) {
-        const department = await this.prisma.department.findFirst({
-          where: { id: departmentId, tenantId },
-          select: { leaderId: true, parentId: true },
+        const department = await this.prisma.client.orm.public.Departments.where({
+          id: departmentId,
+          tenantId,
         })
+          .select('leaderId', 'parentId')
+          .first()
         if (!department) break
         if (department.leaderId) recipientIds.add(department.leaderId)
         departmentId = department.parentId
@@ -135,10 +143,13 @@ export class MessageSettingsService {
     }
 
     if (recipientIds.size === 0) return []
-    const activeUsers = await this.prisma.user.findMany({
-      where: { tenantId, status: 'ACTIVE', id: { in: [...recipientIds] } },
-      select: { id: true },
+    const activeUsers = await this.prisma.client.orm.public.Users.where({
+      tenantId,
+      status: 'ACTIVE',
     })
+      .where((row) => row.id.in([...recipientIds]))
+      .select('id')
+      .all()
     return activeUsers.map((user) => user.id)
   }
 
@@ -167,39 +178,38 @@ export class MessageSettingsService {
     if (input.dingTalkEnabled === true) await this.assertDingTalkAvailable(tenantId)
     if (input.larkEnabled === true) await this.assertLarkAvailable(tenantId)
 
-    const row = await this.prisma.messageTaskSetting.upsert({
-      where: {
-        tenantId_module_event: {
-          tenantId,
-          module: definition.module,
-          event: definition.event,
-        },
-      },
-      update: {
-        ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
-        ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
-        ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
-        ...(input.dingTalkEnabled === undefined ? {} : { dingTalkEnabled: input.dingTalkEnabled }),
-        ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
-        ...(input.config === undefined
-          ? {}
-          : { config: input.config as unknown as Prisma.InputJsonValue }),
-      },
-      create: {
+    const rows = this.prisma.client.orm.public.MessageTaskSettings
+    const existing = await rows
+      .where({
         tenantId,
         module: definition.module,
         event: definition.event,
-        systemEnabled: input.systemEnabled ?? definition.defaultSystemEnabled,
-        emailEnabled: input.emailEnabled ?? definition.defaultEmailEnabled,
-        weComEnabled: input.weComEnabled ?? false,
-        dingTalkEnabled: input.dingTalkEnabled ?? false,
-        larkEnabled: input.larkEnabled ?? false,
-        config:
-          input.config === undefined
-            ? undefined
-            : (input.config as unknown as Prisma.InputJsonValue),
-      },
-    })
+      })
+      .first()
+    const updateData = {
+      ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
+      ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
+      ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
+      ...(input.dingTalkEnabled === undefined ? {} : { dingTalkEnabled: input.dingTalkEnabled }),
+      ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
+      ...(input.config === undefined ? {} : { config: jsonValue(input.config) }),
+      updatedAt: nowInstant(),
+    }
+    const row = existing
+      ? await rows.where({ id: existing.id }).update(updateData)
+      : await rows.create({
+          tenantId,
+          module: definition.module,
+          event: definition.event,
+          systemEnabled: input.systemEnabled ?? definition.defaultSystemEnabled,
+          emailEnabled: input.emailEnabled ?? definition.defaultEmailEnabled,
+          weComEnabled: input.weComEnabled ?? false,
+          dingTalkEnabled: input.dingTalkEnabled ?? false,
+          larkEnabled: input.larkEnabled ?? false,
+          ...(input.config === undefined ? {} : { config: jsonValue(input.config) }),
+          updatedAt: nowInstant(),
+        })
+    if (!row) throw new NotFoundException('消息设置不存在')
     await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.toVO(definition, row)
   }
@@ -220,26 +230,30 @@ export class MessageSettingsService {
     if (input.weComEnabled === true) await this.assertWeComAvailable(tenantId)
     if (input.dingTalkEnabled === true) await this.assertDingTalkAvailable(tenantId)
     if (input.larkEnabled === true) await this.assertLarkAvailable(tenantId)
-    await this.prisma.$transaction(
-      MESSAGE_TASK_DEFINITIONS.map((definition) =>
-        this.prisma.messageTaskSetting.upsert({
-          where: {
-            tenantId_module_event: {
-              tenantId,
-              module: definition.module,
-              event: definition.event,
-            },
-          },
-          update: {
-            ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
-            ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
-            ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
-            ...(input.dingTalkEnabled === undefined
-              ? {}
-              : { dingTalkEnabled: input.dingTalkEnabled }),
-            ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
-          },
-          create: {
+    await this.prisma.client.transaction(async (tx) => {
+      const rows = tx.orm.public.MessageTaskSettings
+      for (const definition of MESSAGE_TASK_DEFINITIONS) {
+        const existing = await rows
+          .where({
+            tenantId,
+            module: definition.module,
+            event: definition.event,
+          })
+          .first()
+        const patch = {
+          ...(input.systemEnabled === undefined ? {} : { systemEnabled: input.systemEnabled }),
+          ...(input.emailEnabled === undefined ? {} : { emailEnabled: input.emailEnabled }),
+          ...(input.weComEnabled === undefined ? {} : { weComEnabled: input.weComEnabled }),
+          ...(input.dingTalkEnabled === undefined
+            ? {}
+            : { dingTalkEnabled: input.dingTalkEnabled }),
+          ...(input.larkEnabled === undefined ? {} : { larkEnabled: input.larkEnabled }),
+          updatedAt: nowInstant(),
+        }
+        if (existing) {
+          await rows.where({ id: existing.id }).update(patch)
+        } else {
+          await rows.create({
             tenantId,
             module: definition.module,
             event: definition.event,
@@ -248,10 +262,11 @@ export class MessageSettingsService {
             weComEnabled: input.weComEnabled ?? false,
             dingTalkEnabled: input.dingTalkEnabled ?? false,
             larkEnabled: input.larkEnabled ?? false,
-          },
-        }),
-      ),
-    )
+            updatedAt: nowInstant(),
+          })
+        }
+      }
+    })
     await this.cache?.invalidate(tenantId, CACHE_NAMESPACE)
     return this.list(tenantId)
   }
@@ -274,13 +289,13 @@ export class MessageSettingsService {
 
   async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const [integration, tenant] = await Promise.all([
-      this.prisma.enterpriseIntegration.findUnique({
-        where: { tenantId_provider: { tenantId, provider: 'WECOM' } },
-      }),
-      this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { enterpriseSyncResource: true },
-      }),
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({
+        tenantId,
+        provider: 'WECOM',
+      }).first(),
+      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
+        .select('enterpriseSyncResource')
+        .first(),
     ])
     const active = tenant?.enterpriseSyncResource === 'WECOM'
     const reason = !active
@@ -304,13 +319,13 @@ export class MessageSettingsService {
 
   async getDingTalkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const [integration, tenant] = await Promise.all([
-      this.prisma.enterpriseIntegration.findUnique({
-        where: { tenantId_provider: { tenantId, provider: 'DINGTALK' } },
-      }),
-      this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { enterpriseSyncResource: true },
-      }),
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({
+        tenantId,
+        provider: 'DINGTALK',
+      }).first(),
+      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
+        .select('enterpriseSyncResource')
+        .first(),
     ])
     const active = tenant?.enterpriseSyncResource === 'DINGTALK'
     const reason = !active
@@ -334,13 +349,13 @@ export class MessageSettingsService {
 
   async getLarkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
     const [integration, tenant] = await Promise.all([
-      this.prisma.enterpriseIntegration.findUnique({
-        where: { tenantId_provider: { tenantId, provider: 'LARK' } },
-      }),
-      this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { enterpriseSyncResource: true },
-      }),
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({
+        tenantId,
+        provider: 'LARK',
+      }).first(),
+      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
+        .select('enterpriseSyncResource')
+        .first(),
     ])
     const active = tenant?.enterpriseSyncResource === 'LARK'
     const reason = !active
@@ -385,32 +400,38 @@ export class MessageSettingsService {
     }
     const normalUserIds = [...new Set(config.userIds.filter((id) => id !== 'OWNER'))]
     if (normalUserIds.length > 0) {
-      const count = await this.prisma.user.count({
-        where: { tenantId, id: { in: normalUserIds }, status: 'ACTIVE' },
+      const users = await this.prisma.client.orm.public.Users.where({
+        tenantId,
+        status: 'ACTIVE',
       })
-      if (count !== normalUserIds.length) throw new BadRequestException('存在无效的通知成员')
+        .where((row) => row.id.in(normalUserIds))
+        .select('id')
+        .all()
+      if (users.length !== normalUserIds.length) throw new BadRequestException('存在无效的通知成员')
     }
     const roleIds = [...new Set(config.roleIds)]
     if (config.roleEnable && roleIds.length === 0) {
       throw new BadRequestException('开启角色通知后至少选择一个角色')
     }
     if (roleIds.length > 0) {
-      const count = await this.prisma.role.count({ where: { tenantId, id: { in: roleIds } } })
-      if (count !== roleIds.length) throw new BadRequestException('存在无效的通知角色')
+      const roles = await this.prisma.client.orm.public.Roles.where({ tenantId })
+        .where((row) => row.id.in(roleIds))
+        .select('id')
+        .all()
+      if (roles.length !== roleIds.length) throw new BadRequestException('存在无效的通知角色')
     }
   }
 
   private toVO(
     definition: MessageTaskDefinition,
-    row?: Pick<
-      MessageTaskSetting,
-      | 'systemEnabled'
-      | 'emailEnabled'
-      | 'weComEnabled'
-      | 'dingTalkEnabled'
-      | 'larkEnabled'
-      | 'config'
-    >,
+    row?: {
+      systemEnabled: boolean
+      emailEnabled: boolean
+      weComEnabled: boolean
+      dingTalkEnabled: boolean
+      larkEnabled: boolean
+      config: unknown
+    },
   ): MessageTaskSettingVO {
     return {
       ...definition,
@@ -423,10 +444,7 @@ export class MessageSettingsService {
     }
   }
 
-  private configFrom(
-    value: Prisma.JsonValue | undefined,
-    event: MessageTaskEvent,
-  ): MessageTaskConfig | null {
+  private configFrom(value: unknown, event: MessageTaskEvent): MessageTaskConfig | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return defaultMessageTaskConfig(event)
     }

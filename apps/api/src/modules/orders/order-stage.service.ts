@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   OrderStageAddDto,
   OrderStageAdvancedConfigDto,
@@ -18,22 +19,23 @@ export class OrderStageService {
 
   async get(user: AuthUser) {
     await this.ensureDefaults(user)
+    const organizationId = user.tenantId
     const [stages, counts, advanced] = await Promise.all([
-      this.prisma.orderStageConfig.findMany({
-        where: { organizationId: user.tenantId },
-        orderBy: { pos: 'asc' },
-      }),
-      this.prisma.order.groupBy({
-        by: ['stage'],
-        where: { organizationId: user.tenantId },
-        _count: { _all: true },
-      }),
-      this.prisma.stageAdvancedConfig.findMany({
-        where: { organizationId: user.tenantId, moduleType: MODULE_TYPE },
-        orderBy: [{ originId: 'asc' }, { targetId: 'asc' }],
-      }),
+      this.orderStages()
+        .where({ organizationId })
+        .orderBy((row) => row.pos.asc())
+        .all(),
+      this.orders()
+        .where({ organizationId })
+        .groupBy('stage')
+        .aggregate((aggregate) => ({ count: aggregate.count() })),
+      this.advancedConfigs()
+        .where({ organizationId, moduleType: MODULE_TYPE })
+        .orderBy((row) => row.originId.asc())
+        .orderBy((row) => row.targetId.asc())
+        .all(),
     ])
-    const countMap = new Map(counts.map((item) => [item.stage, item._count._all]))
+    const countMap = new Map<string, number>(counts.map((item) => [item.stage, item.count]))
     const grouped = new Map<
       string,
       Array<{ targetId: string; enable: boolean; circulationFieldValues: unknown[] }>
@@ -52,7 +54,7 @@ export class OrderStageService {
       stageConfigList: stages.map((stage) => ({
         id: stage.id,
         name: stage.name,
-        type: stage.type,
+        type: stage._type,
         afootRollBack: stage.afootRollBack,
         endRollBack: stage.endRollBack,
         pos: Number(stage.pos),
@@ -86,20 +88,19 @@ export class OrderStageService {
         : Math.max(0, targetIndex + ((dto.dropPosition ?? 1) > 0 ? 1 : 0))
     const first = stages[0]
     const now = BigInt(Date.now())
-    const created = await this.prisma.orderStageConfig.create({
-      data: {
-        name: dto.name.trim(),
-        type: dto.type ?? 'AFOOT',
-        afootRollBack: first?.afootRollBack ?? true,
-        endRollBack: first?.endRollBack ?? false,
-        pos: BigInt(insertAt + 1),
-        organizationId: user.tenantId,
-        circulationType: first?.circulationType ?? 'NORMAL',
-        createTime: now,
-        updateTime: now,
-        createUser: user.id,
-        updateUser: user.id,
-      },
+    const created = await this.orderStages().create({
+      id: createLegacyId32(),
+      name: dto.name.trim(),
+      _type: dto.type ?? 'AFOOT',
+      afootRollBack: first?.afootRollBack ?? true,
+      endRollBack: first?.endRollBack ?? false,
+      pos: BigInt(insertAt + 1),
+      organizationId: user.tenantId,
+      circulationType: first?.circulationType ?? 'NORMAL',
+      createTime: now,
+      updateTime: now,
+      createUser: user.id,
+      updateUser: user.id,
     })
     const ids = stages.map((item) => item.id)
     ids.splice(insertAt, 0, created.id)
@@ -110,58 +111,67 @@ export class OrderStageService {
   async update(user: AuthUser, dto: OrderStageUpdateDto) {
     const stage = await this.ensureStage(user.tenantId, dto.id)
     if (dto.name && dto.name.trim() !== stage.name) {
-      const duplicate = await this.prisma.orderStageConfig.findFirst({
-        where: { organizationId: user.tenantId, name: dto.name.trim(), NOT: { id: dto.id } },
-        select: { id: true },
-      })
+      const duplicate = await this.orderStages()
+        .where({
+          organizationId: user.tenantId,
+          name: dto.name.trim(),
+        })
+        .where((row) => row.id.neq(dto.id))
+        .select('id')
+        .first()
       if (duplicate) throw new BadRequestException('订单阶段名称不能重复')
     }
-    await this.prisma.orderStageConfig.update({
-      where: { id: dto.id },
-      data: {
+    await this.orderStages()
+      .where({
+        id: dto.id,
+        organizationId: user.tenantId,
+      })
+      .update({
         ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
-      },
-    })
+      })
   }
 
   async remove(user: AuthUser, id: string) {
     const stage = await this.ensureStage(user.tenantId, id)
-    const count = await this.prisma.order.count({
-      where: { organizationId: user.tenantId, stage: id },
-    })
+    const { count } = await this.orders()
+      .where({
+        organizationId: user.tenantId,
+        stage: id,
+      })
+      .aggregate((aggregate) => ({ count: aggregate.count() }))
     if (count > 0) throw new BadRequestException('该阶段下存在订单，无法删除')
-    await this.prisma.$transaction([
-      this.prisma.stageAdvancedConfig.deleteMany({
-        where: {
-          organizationId: user.tenantId,
-          moduleType: MODULE_TYPE,
-          OR: [{ originId: id }, { targetId: id }],
-        },
-      }),
-      this.prisma.orderStageConfig.delete({ where: { id } }),
-    ])
+    const stageId = id
+    const organizationId = user.tenantId
+    await this.prisma.client.transaction(async (tx) => {
+      await tx.orm.public.StageAdvancedConfig.where({
+        organizationId,
+        moduleType: MODULE_TYPE,
+      })
+        .where((row) => or(row.originId.eq(stageId), row.targetId.eq(stageId)))
+        .deleteAndCount()
+      await tx.orm.public.SalesOrderStageConfig.where({ id: stageId, organizationId }).delete()
+    })
     await this.normalizePositions(user)
     return { id, name: stage.name }
   }
 
   async updateRollback(user: AuthUser, dto: OrderStageRollbackDto) {
     await this.ensureDefaults(user)
-    await this.prisma.orderStageConfig.updateMany({
-      where: { organizationId: user.tenantId },
-      data: {
+    await this.orderStages()
+      .where({ organizationId: user.tenantId })
+      .updateAndCount({
         afootRollBack: dto.afootRollBack,
         endRollBack: dto.endRollBack,
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
-      },
-    })
+      })
   }
 
   async sort(user: AuthUser, ids: string[]) {
     const stages = await this.list(user.tenantId)
-    const current = new Set(stages.map((item) => item.id))
+    const current = new Set<string>(stages.map((item) => item.id))
     if (
       ids.length !== current.size ||
       new Set(ids).size !== current.size ||
@@ -170,14 +180,18 @@ export class OrderStageService {
       throw new BadRequestException('阶段排序必须包含当前全部阶段且不能重复')
     }
     const now = BigInt(Date.now())
-    await this.prisma.$transaction(
-      ids.map((id, index) =>
-        this.prisma.orderStageConfig.update({
-          where: { id },
-          data: { pos: BigInt(index + 1), updateTime: now, updateUser: user.id },
-        }),
-      ),
-    )
+    await this.prisma.client.transaction(async (tx) => {
+      for (const [index, id] of ids.entries()) {
+        await tx.orm.public.SalesOrderStageConfig.where({
+          id: id,
+          organizationId: user.tenantId,
+        }).update({
+          pos: BigInt(index + 1),
+          updateTime: now,
+          updateUser: user.id,
+        })
+      }
+    })
   }
 
   async switchCirculationType(user: AuthUser, type: string) {
@@ -185,21 +199,32 @@ export class OrderStageService {
       throw new BadRequestException('订单阶段流转类型无效')
     }
     await this.ensureDefaults(user)
-    await this.prisma.orderStageConfig.updateMany({
-      where: { organizationId: user.tenantId },
-      data: {
+    await this.orderStages()
+      .where({ organizationId: user.tenantId })
+      .updateAndCount({
         circulationType: type,
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
-      },
-    })
+      })
   }
 
   async saveAdvancedConfig(user: AuthUser, dto: OrderStageAdvancedConfigDto) {
     const stages = await this.list(user.tenantId)
-    const stageIds = new Set(stages.map((item) => item.id))
+    const stageIds = new Set<string>(stages.map((item) => item.id))
     const now = BigInt(Date.now())
-    const rows: Prisma.StageAdvancedConfigCreateManyInput[] = []
+    const rows: Array<{
+      id: string
+      originId: string
+      targetId: string
+      enable: boolean
+      fieldConfig: string
+      moduleType: string
+      organizationId: string
+      createTime: bigint
+      updateTime: bigint
+      createUser: string
+      updateUser: string
+    }> = []
     const seen = new Set<string>()
     for (const setting of dto.circulationSettings) {
       if (!stageIds.has(setting.originId)) throw new BadRequestException('高级流转源阶段不存在')
@@ -209,6 +234,7 @@ export class OrderStageService {
         if (seen.has(key)) throw new BadRequestException('高级流转配置重复')
         seen.add(key)
         rows.push({
+          id: createLegacyId32(),
           originId: setting.originId,
           targetId: target.targetId,
           enable: target.enable,
@@ -222,18 +248,18 @@ export class OrderStageService {
         })
       }
     }
-    await this.prisma.$transaction(async (tx) => {
-      await tx.stageAdvancedConfig.deleteMany({
-        where: { organizationId: user.tenantId, moduleType: MODULE_TYPE },
-      })
-      if (rows.length) await tx.stageAdvancedConfig.createMany({ data: rows })
-      await tx.orderStageConfig.updateMany({
-        where: { organizationId: user.tenantId },
-        data: {
-          circulationType: dto.circulationType,
-          updateTime: now,
-          updateUser: user.id,
-        },
+    await this.prisma.client.transaction(async (tx) => {
+      await tx.orm.public.StageAdvancedConfig.where({
+        organizationId: user.tenantId,
+        moduleType: MODULE_TYPE,
+      }).deleteAndCount()
+      if (rows.length) await tx.orm.public.StageAdvancedConfig.createAll(rows)
+      await tx.orm.public.SalesOrderStageConfig.where({
+        organizationId: user.tenantId,
+      }).updateAndCount({
+        circulationType: dto.circulationType,
+        updateTime: now,
+        updateUser: user.id,
       })
     })
   }
@@ -243,22 +269,20 @@ export class OrderStageService {
     const [origin, target, first] = await Promise.all([
       this.ensureStage(organizationId, originId),
       this.ensureStage(organizationId, targetId),
-      this.prisma.orderStageConfig.findFirst({
-        where: { organizationId },
-        orderBy: { pos: 'asc' },
-      }),
+      this.orderStages()
+        .where({ organizationId: organizationId })
+        .orderBy((row) => row.pos.asc())
+        .first(),
     ])
     if (first?.circulationType === 'ADVANCED') {
-      const config = await this.prisma.stageAdvancedConfig.findUnique({
-        where: {
-          organizationId_moduleType_originId_targetId: {
-            organizationId,
-            moduleType: MODULE_TYPE,
-            originId,
-            targetId,
-          },
-        },
-      })
+      const config = await this.advancedConfigs()
+        .where({
+          organizationId: organizationId,
+          moduleType: MODULE_TYPE,
+          originId: originId,
+          targetId: targetId,
+        })
+        .first()
       if (!config?.enable) throw new BadRequestException('当前订单阶段不允许流转到目标阶段')
       return this.parseFieldConfig(config.fieldConfig)
     }
@@ -267,8 +291,14 @@ export class OrderStageService {
   }
 
   private assertNormalTransition(
-    origin: { name: string; type: string; pos: bigint; afootRollBack: boolean; endRollBack: boolean },
-    target: { name: string; type: string; pos: bigint },
+    origin: {
+      name: string
+      _type: string
+      pos: bigint
+      afootRollBack: boolean
+      endRollBack: boolean
+    },
+    target: { name: string; _type: string; pos: bigint },
   ) {
     const deny = () => {
       throw new BadRequestException(`[${origin.name}] 不允许流转至 [${target.name}]`)
@@ -280,37 +310,39 @@ export class OrderStageService {
     }
     if (origin.endRollBack) {
       if (target.pos > origin.pos) return
-      if (!(origin.type === 'AFOOT' && target.type === 'AFOOT')) return
+      if (!(origin._type === 'AFOOT' && target._type === 'AFOOT')) return
       return deny()
     }
     if (origin.afootRollBack) {
-      if (origin.type === 'END') return deny()
-      if (target.type === 'AFOOT' || target.type === 'END') return
+      if (origin._type === 'END') return deny()
+      if (target._type === 'AFOOT' || target._type === 'END') return
     }
     return deny()
   }
 
   private list(organizationId: string) {
-    return this.prisma.orderStageConfig.findMany({
-      where: { organizationId },
-      orderBy: { pos: 'asc' },
-    })
+    return this.orderStages()
+      .where({ organizationId: organizationId })
+      .orderBy((row) => row.pos.asc())
+      .all()
   }
 
   private async ensureStage(organizationId: string, id: string) {
-    const stage = await this.prisma.orderStageConfig.findFirst({
-      where: { id, organizationId },
-    })
+    const stage = await this.orderStages()
+      .where({
+        id: id,
+        organizationId: organizationId,
+      })
+      .first()
     if (!stage) throw new NotFoundException('订单阶段不存在')
     return stage
   }
 
   private async ensureDefaults(user: AuthUser) {
-    if (
-      (await this.prisma.orderStageConfig.count({ where: { organizationId: user.tenantId } })) > 0
-    ) {
-      return
-    }
+    const { count } = await this.orderStages()
+      .where({ organizationId: user.tenantId })
+      .aggregate((aggregate) => ({ count: aggregate.count() }))
+    if (count > 0) return
     const defaults = [
       ['新建', 'AFOOT'],
       ['待发货', 'AFOOT'],
@@ -321,10 +353,11 @@ export class OrderStageService {
       ['已作废', 'END'],
     ] as const
     const now = BigInt(Date.now())
-    await this.prisma.orderStageConfig.createMany({
-      data: defaults.map(([name, type], index) => ({
-        name,
-        type,
+    await this.orderStages().createAll(
+      defaults.map(([name, type], index) => ({
+        id: createLegacyId32(),
+        name: name,
+        _type: type,
         afootRollBack: true,
         endRollBack: false,
         pos: BigInt(index + 1),
@@ -335,7 +368,7 @@ export class OrderStageService {
         createUser: user.id,
         updateUser: user.id,
       })),
-    })
+    )
   }
 
   private async normalizePositions(user: AuthUser) {
@@ -351,5 +384,17 @@ export class OrderStageService {
     } catch {
       return []
     }
+  }
+
+  private orderStages() {
+    return this.prisma.client.orm.public.SalesOrderStageConfig
+  }
+
+  private orders() {
+    return this.prisma.client.orm.public.SalesOrder
+  }
+
+  private advancedConfigs() {
+    return this.prisma.client.orm.public.StageAdvancedConfig
   }
 }

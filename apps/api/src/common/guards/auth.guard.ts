@@ -50,17 +50,14 @@ export class AuthGuard implements CanActivate {
 
     if (accessKey || secretKey) {
       if (!accessKey || !secretKey) throw new UnauthorizedException('API Key 凭证不完整')
-      const apiKey = await this.prisma.userApiKey.findUnique({ where: { accessKey } })
-      const expired = apiKey?.forever === false && (!apiKey.expireAt || apiKey.expireAt <= new Date())
-      if (
-        !apiKey ||
-        !apiKey.enabled ||
-        expired ||
-        !this.secretEquals(apiKey.secretKey, secretKey)
-      ) {
+      const apiKey = await this.prisma.client.orm.public.UserKey.where({ accessKey }).first()
+      const expired =
+        apiKey?.forever === false &&
+        (!apiKey.expireTime || apiKey.expireTime.epochMilliseconds <= Date.now())
+      if (!apiKey || !apiKey.enable || expired || !this.secretEquals(apiKey.secretKey, secretKey)) {
         throw new UnauthorizedException('API Key 无效、已停用或已过期')
       }
-      userId = apiKey.userId
+      userId = apiKey.createUser
     } else {
       const token = this.extractToken(request)
       if (!token) throw new UnauthorizedException('缺少访问令牌')
@@ -85,10 +82,7 @@ export class AuthGuard implements CanActivate {
       }
       authUser = cached.user
     } else {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        include: { userRoles: { include: { role: true } } },
-      })
+      const user = await this.loadUserWithRoles(userId)
       if (!user || user.status !== 'ACTIVE') {
         throw new UnauthorizedException('用户不存在或已被禁用')
       }
@@ -119,6 +113,46 @@ export class AuthGuard implements CanActivate {
       if (!ok) throw new ForbiddenException('没有操作权限')
     }
     return true
+  }
+
+  private async loadUserWithRoles(userId: string) {
+    const user = await this.prisma.client.orm.public.Users.where({ id: userId })
+      .select('id', 'tenantId', 'email', 'name', 'deptId', 'leaderId', 'status', 'authVersion')
+      .first()
+    if (!user) return null
+
+    const links = await this.prisma.client.orm.public.UserRoles.where({
+      userId: user.id,
+      tenantId: user.tenantId,
+    })
+      .select('roleId')
+      .all()
+    const roleIds = [...new Set(links.map((link) => link.roleId))]
+    const roles = roleIds.length
+      ? await this.prisma.client.orm.public.Roles.where({ tenantId: user.tenantId })
+          .where((role) => role.id.in(roleIds))
+          .select('id', 'name', 'permissions', 'dataScope', 'scopeDeptIds')
+          .all()
+      : []
+    const roleMap = new Map(roles.map((role) => [role.id, role]))
+
+    return {
+      ...user,
+      userRoles: links.flatMap((link) => {
+        const role = roleMap.get(link.roleId)
+        return role
+          ? [
+              {
+                role: {
+                  ...role,
+                  permissions: [...(role.permissions ?? [])],
+                  scopeDeptIds: [...(role.scopeDeptIds ?? [])],
+                },
+              },
+            ]
+          : []
+      }),
+    }
   }
 
   private extractToken(request: Request): string | undefined {

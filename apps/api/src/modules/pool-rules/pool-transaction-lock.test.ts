@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Prisma } from '../../generated/prisma/client'
-import { acquirePoolTransactionLocks, poolTransactionLockKeys } from './pool-transaction-lock'
+import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
 
 test('并发领取锁同时覆盖资源与负责人并保持全局稳定顺序', () => {
   const first = poolTransactionLockKeys('clue', 'org-1', 'clue-1', 'user-1')
@@ -13,14 +12,28 @@ test('并发领取锁同时覆盖资源与负责人并保持全局稳定顺序',
   assert.deepEqual(first, [...first].sort())
 })
 
-test('事务锁去重并按排序后的顺序逐个获取', async () => {
+test('Prisma 事务锁去重并按排序后的顺序逐个获取', async () => {
   const calls: string[] = []
-  const tx = {
-    $queryRaw: async (query: { strings?: readonly string[]; values?: unknown[] }) => {
-      calls.push(String(query.values?.[0]))
-      return []
+  const client = {
+    raw: {
+      sql: (_strings: TemplateStringsArray, ...values: unknown[]) => ({
+        returnsRow: () => ({
+          build: () => ({ values }),
+        }),
+      }),
     },
-  } as unknown as Prisma.TransactionClient
-  await acquirePoolTransactionLocks(tx, ['z-lock', 'a-lock', 'z-lock'])
+  }
+  const tx = {
+    query: async function* (plan: { values: unknown[] }) {
+      calls.push(String(plan.values[0]))
+      yield { locked: 1 }
+    },
+  }
+
+  await acquirePoolTransactionLocksPrisma(client as never, tx as never, [
+    'z-lock',
+    'a-lock',
+    'z-lock',
+  ])
   assert.deepEqual(calls, ['a-lock', 'z-lock'])
 })

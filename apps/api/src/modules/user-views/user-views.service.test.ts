@@ -11,7 +11,7 @@ interface ConditionRow {
   name: string
   value: string | null
   valueType: string | null
-  type: string | null
+  _type: string | null
   multipleValue: boolean
   operator: string | null
   childrenValue: string | null
@@ -53,113 +53,142 @@ const userB = { ...userA, id: 'user-b', name: '乙' } satisfies AuthUser
 function createHarness() {
   const views: ViewRow[] = []
   const conditions: ConditionRow[] = []
-  let sequence = 0
+  type Order = { field: string; direction: 'asc' | 'desc' }
+  const accessor = new Proxy(
+    {},
+    {
+      get: (_target, field: string) => ({
+        asc: () => ({ field, direction: 'asc' as const }),
+        desc: () => ({ field, direction: 'desc' as const }),
+      }),
+    },
+  ) as Record<string, { asc(): Order; desc(): Order }>
 
-  const attachConditions = (view: ViewRow) => ({
-    ...view,
-    conditions: conditions.filter((condition) => condition.sysUserViewId === view.id),
-  })
-  const matches = (view: ViewRow, where: Partial<ViewRow>) =>
-    Object.entries(where).every(([key, value]) => view[key as keyof ViewRow] === value)
+  const matches = <T extends object>(row: T, where: Partial<T>) =>
+    Object.entries(where).every(([key, value]) => row[key as keyof T] === value)
 
-  const sysUserView = {
-    findMany: async ({ where }: { where: Partial<ViewRow> }) =>
-      views
-        .filter((view) => matches(view, where))
-        .sort((a, b) => Number(b.pos - a.pos))
-        .map(({ id, name, fixed, enable }) => ({ id, name, fixed, enable })),
-    findFirst: async ({
-      where,
-      include,
-    }: {
-      where: Partial<ViewRow>
-      include?: Record<string, unknown>
-    }) => {
+  const makeViewCollection = (
+    where: Partial<ViewRow> = {},
+    selected: string[] | null = null,
+    orders: Order[] = [],
+    limit: number | null = null,
+  ) => ({
+    where(next: Partial<ViewRow>) {
+      return makeViewCollection({ ...where, ...next }, selected, orders, limit)
+    },
+    select(...fields: string[]) {
+      return makeViewCollection(where, fields, orders, limit)
+    },
+    orderBy(selector: (row: typeof accessor) => Order) {
+      return makeViewCollection(where, selected, [...orders, selector(accessor)], limit)
+    },
+    limit(value: number) {
+      return makeViewCollection(where, selected, orders, value)
+    },
+    async all() {
+      const rows = views.filter((view) => matches(view, where)).slice()
+      rows.sort((left, right) => {
+        for (const order of orders) {
+          const a = left[order.field as keyof ViewRow]
+          const b = right[order.field as keyof ViewRow]
+          if (a === b) continue
+          const result = a! < b! ? -1 : 1
+          return order.direction === 'asc' ? result : -result
+        }
+        return 0
+      })
+      const limited = limit === null ? rows : rows.slice(0, limit)
+      if (!selected) return limited.map((view) => ({ ...view }))
+      return limited.map((view) =>
+        Object.fromEntries(selected.map((field) => [field, view[field as keyof ViewRow]])),
+      )
+    },
+    async first() {
+      return (await this.all())[0] ?? null
+    },
+    async create(data: ViewRow) {
+      if (
+        views.some(
+          (view) =>
+            view.organizationId === data.organizationId &&
+            view.userId === data.userId &&
+            view.resourceType === data.resourceType &&
+            view.name === data.name,
+        )
+      ) {
+        throw Object.assign(new Error('duplicate'), { sqlState: '23505' })
+      }
+      views.push({ ...data })
+      return { ...data }
+    },
+    async update(data: Partial<ViewRow>) {
       const view = views.find((item) => matches(item, where))
       if (!view) return null
-      return include ? attachConditions(view) : { ...view }
+      Object.assign(view, data)
+      return { ...view }
     },
-    aggregate: async ({ where }: { where: Partial<ViewRow> }) => {
-      const scoped = views.filter((view) => matches(view, where))
-      return {
-        _max: {
-          pos: scoped.reduce<bigint | null>(
-            (max, view) => (max === null || view.pos > max ? view.pos : max),
-            null,
-          ),
-        },
-      }
-    },
-    create: async ({ data, include }: { data: Record<string, unknown>; include?: unknown }) => {
-      const id = `view-${++sequence}`
-      const nested = data['conditions'] as { create?: Array<Record<string, unknown>> }
-      const { conditions: _ignored, ...viewData } = data
-      const view = { id, ...viewData } as ViewRow
-      views.push(view)
-      for (const item of nested?.create ?? []) {
-        conditions.push({
-          id: `condition-${++sequence}`,
-          sysUserViewId: id,
-          ...item,
-        } as ConditionRow)
-      }
-      return include ? attachConditions(view) : { ...view }
-    },
-    update: async ({
-      where,
-      data,
-      include,
-    }: {
-      where: { id: string }
-      data: Record<string, unknown>
-      include?: unknown
-    }) => {
-      const view = views.find((item) => item.id === where.id)
-      if (!view) throw new Error('missing view')
-      const nested = data['conditions'] as { create?: Array<Record<string, unknown>> } | undefined
-      const { conditions: _ignored, ...viewData } = data
-      Object.assign(view, viewData)
-      for (const item of nested?.create ?? []) {
-        conditions.push({
-          id: `condition-${++sequence}`,
-          sysUserViewId: view.id,
-          ...item,
-        } as ConditionRow)
-      }
-      return include ? attachConditions(view) : { ...view }
-    },
-    delete: async ({ where }: { where: { id: string } }) => {
-      const index = views.findIndex((view) => view.id === where.id)
+    async delete() {
+      const index = views.findIndex((view) => matches(view, where))
+      if (index < 0) return null
       const [removed] = views.splice(index, 1)
-      for (let cursor = conditions.length - 1; cursor >= 0; cursor--) {
-        if (conditions[cursor]?.sysUserViewId === where.id) conditions.splice(cursor, 1)
+      for (let cursor = conditions.length - 1; cursor >= 0; cursor -= 1) {
+        if (conditions[cursor]?.sysUserViewId === removed?.id) conditions.splice(cursor, 1)
       }
-      return removed
+      return removed ?? null
     },
-  }
+  })
 
-  const prismaRecord = {
-    sysUserView,
-    sysUserViewCondition: {
-      deleteMany: async ({ where }: { where: { sysUserViewId: string } }) => {
-        let count = 0
-        for (let index = conditions.length - 1; index >= 0; index--) {
-          if (conditions[index]?.sysUserViewId === where.sysUserViewId) {
-            conditions.splice(index, 1)
-            count++
-          }
+  const makeConditionCollection = (where: Partial<ConditionRow> = {}, orders: Order[] = []) => ({
+    where(next: Partial<ConditionRow>) {
+      return makeConditionCollection({ ...where, ...next }, orders)
+    },
+    orderBy(selector: (row: typeof accessor) => Order) {
+      return makeConditionCollection(where, [...orders, selector(accessor)])
+    },
+    async all() {
+      const rows = conditions.filter((condition) => matches(condition, where)).slice()
+      rows.sort((left, right) => {
+        for (const order of orders) {
+          const a = left[order.field as keyof ConditionRow]
+          const b = right[order.field as keyof ConditionRow]
+          if (a === b) continue
+          const result = a! < b! ? -1 : 1
+          return order.direction === 'asc' ? result : -result
         }
-        return { count }
-      },
+        return 0
+      })
+      return rows.map((condition) => ({ ...condition }))
     },
-    $transaction: async (input: unknown) => {
-      if (typeof input === 'function') return input(prismaRecord)
-      return Promise.all(input as Promise<unknown>[])
+    async createAll(data: ConditionRow[]) {
+      conditions.push(...data.map((condition) => ({ ...condition })))
+      return data.map((condition) => ({ ...condition }))
     },
+    async deleteAndCount() {
+      let count = 0
+      for (let index = conditions.length - 1; index >= 0; index -= 1) {
+        if (!matches(conditions[index]!, where)) continue
+        conditions.splice(index, 1)
+        count += 1
+      }
+      return count
+    },
+  })
+
+  const publicOrm = {
+    SysUserView: makeViewCollection(),
+    SysUserViewCondition: makeConditionCollection(),
   }
+  const prisma = {
+    client: {
+      orm: { public: publicOrm },
+      transaction: async (
+        callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>,
+      ) => callback({ orm: { public: publicOrm } }),
+    },
+  } as unknown as PrismaService
 
   return {
-    service: new UserViewsService(prismaRecord as unknown as PrismaService),
+    service: new UserViewsService(prisma),
     views,
     conditions,
   }

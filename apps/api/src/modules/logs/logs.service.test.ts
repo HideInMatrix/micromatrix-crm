@@ -1,30 +1,36 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { NotFoundException } from '@nestjs/common'
+import { Temporal } from '@js-temporal/polyfill'
 import type { PrismaService } from '../../prisma/prisma.service'
 import { LogsService } from './logs.service'
 
 test('操作日志分页列表只选择轻量字段且不读取 Blob', async () => {
-  let findArgs: Record<string, unknown> | undefined
-  const prisma = {
-    operationLog: {
-      findMany: (args: Record<string, unknown>) => {
-        findArgs = args
-        return Promise.resolve([
-          {
-            id: 'log-1',
-            userName: '管理员',
-            module: 'lead',
-            action: 'update',
-            targetName: '线索A',
-            ip: '192.168.1.10',
-            createdAt: new Date('2026-09-04T05:00:00.000Z'),
-          },
-        ])
-      },
-      count: () => Promise.resolve(1),
+  let selectedFields: string[] = []
+  const collection = {
+    where: () => collection,
+    select: (...fields: string[]) => {
+      selectedFields = fields
+      return collection
     },
-    $transaction: (operations: Promise<unknown>[]) => Promise.all(operations),
+    orderBy: () => collection,
+    offset: () => collection,
+    limit: () => collection,
+    all: async () => [
+      {
+        id: 'log-1',
+        userName: '管理员',
+        module: 'lead',
+        action: 'update',
+        targetName: '线索A',
+        ip: '192.168.1.10',
+        createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
+      },
+    ],
+    aggregate: async () => ({ total: 1 }),
+  }
+  const prisma = {
+    client: { orm: { public: { OperationLogs: collection } } },
   } as unknown as PrismaService
   const service = new LogsService(prisma)
 
@@ -32,30 +38,38 @@ test('操作日志分页列表只选择轻量字段且不读取 Blob', async () 
 
   assert.equal(result.total, 1)
   assert.equal(result.items[0].id, 'log-1')
-  const select = findArgs?.select as Record<string, boolean>
-  assert.equal(select.id, true)
-  assert.equal('blob' in select, false)
-  assert.equal('detail' in select, false)
+  assert.equal(selectedFields.includes('id'), true)
+  assert.equal(selectedFields.includes('operationLogBlobs'), false)
+  assert.equal(selectedFields.includes('detail'), false)
 })
 
 test('操作日志详情按 tenantId + id 查询并返回 Blob detail', async () => {
   let detailWhere: Record<string, unknown> | undefined
+  const logCollection = {
+    where: (where: Record<string, unknown>) => {
+      detailWhere = where
+      return logCollection
+    },
+    select: () => logCollection,
+    first: async () => ({
+      id: 'log-1',
+      userName: '管理员',
+      module: 'customer',
+      action: 'change',
+      targetId: 'customer-1',
+      targetName: '客户A',
+      ip: '192.168.1.10',
+      createdAt: Temporal.Instant.from('2026-09-04T05:00:00Z'),
+    }),
+  }
+  const blobCollection = {
+    where: () => blobCollection,
+    select: () => blobCollection,
+    first: async () => ({ detail: { changes: [{ field: 'name', before: 'A', after: 'B' }] } }),
+  }
   const prisma = {
-    operationLog: {
-      findFirst: async (args: { where: Record<string, unknown> }) => {
-        detailWhere = args.where
-        return {
-          id: 'log-1',
-          userName: '管理员',
-          module: 'customer',
-          action: 'change',
-          targetId: 'customer-1',
-          targetName: '客户A',
-          ip: '192.168.1.10',
-          createdAt: new Date('2026-09-04T05:00:00.000Z'),
-          blob: { detail: { changes: [{ field: 'name', before: 'A', after: 'B' }] } },
-        }
-      },
+    client: {
+      orm: { public: { OperationLogs: logCollection, OperationLogBlobs: blobCollection } },
     },
   } as unknown as PrismaService
   const service = new LogsService(prisma)
@@ -69,8 +83,13 @@ test('操作日志详情按 tenantId + id 查询并返回 Blob detail', async ()
 })
 
 test('操作日志详情不存在或跨租户时返回 404', async () => {
+  const collection = {
+    where: () => collection,
+    select: () => collection,
+    first: async () => null,
+  }
   const prisma = {
-    operationLog: { findFirst: async () => null },
+    client: { orm: { public: { OperationLogs: collection } } },
   } as unknown as PrismaService
   const service = new LogsService(prisma)
 

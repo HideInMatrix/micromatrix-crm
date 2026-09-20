@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { FieldVO, QuotationProductVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '../../generated/prisma/client'
+import type { PrismaClient } from '../../prisma/prisma-client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import type { QuotationProductDto } from './dto/quotation.dto'
 
 const FORM_KEY = 'quote'
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
 export class QuotationFieldsService {
@@ -19,29 +21,52 @@ export class QuotationFieldsService {
     organizationId: string,
     resourceId: string,
     products: QuotationProductDto[],
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const productIds = [...new Set(products.map((item) => item.product))]
     if (productIds.length) {
-      const count = await tx.product.count({ where: { organizationId, id: { in: productIds } } })
+      const { count } = await tx.orm.public.Product.where({
+        organizationId: organizationId,
+      })
+        .where((row) => row.id.in(productIds))
+        .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== productIds.length) throw new BadRequestException('报价包含不存在的产品')
     }
-    const priceIds = [...new Set(products.map((item) => item.priceId).filter((id): id is string => !!id))]
+    const priceIds = [
+      ...new Set(products.map((item) => item.priceId).filter((id): id is string => !!id)),
+    ]
     if (priceIds.length) {
-      const count = await tx.productPrice.count({ where: { organizationId, id: { in: priceIds } } })
+      const { count } = await tx.orm.public.ProductPrice.where({
+        organizationId: organizationId,
+      })
+        .where((row) => row.id.in(priceIds))
+        .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== priceIds.length) throw new BadRequestException('报价包含不存在的价格表')
     }
 
     await Promise.all([
-      tx.opportunityQuotationField.deleteMany({ where: { resourceId, refSubId: required.parent.id } }),
-      tx.opportunityQuotationFieldBlob.deleteMany({ where: { resourceId, refSubId: required.parent.id } }),
+      tx.orm.public.OpportunityQuotationField.where({
+        resourceId: resourceId,
+        refSubId: required.parent.id,
+      }).deleteAll(),
+      tx.orm.public.OpportunityQuotationFieldBlob.where({
+        resourceId: resourceId,
+        refSubId: required.parent.id,
+      }).deleteAll(),
     ])
 
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
     const reserved = new Set([
-      'products', 'product', 'priceId', 'productAmount', 'discount', 'tax', 'lineAmount', 'amount',
+      'products',
+      'product',
+      'priceId',
+      'productAmount',
+      'discount',
+      'tax',
+      'lineAmount',
+      'amount',
     ])
     for (const item of products) {
       const rowId = item.rowId || this.id()
@@ -80,28 +105,41 @@ export class QuotationFieldsService {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
-    const where = {
-      resourceId: { in: ids },
-      refSubId: required.parent.id,
-      resource: { organizationId },
-    }
-    const select = { resourceId: true, fieldId: true, fieldValue: true, rowId: true, bizId: true }
+    const allowedResources = await this.prisma.client.orm.public.OpportunityQuotation.where({
+      organizationId: organizationId,
+    })
+      .where((row) => row.id.in(ids))
+      .select('id')
+      .all()
+    const allowedIds = allowedResources.map((row) => String(row.id))
+    if (!allowedIds.length) return result
+    const refSubId = required.parent.id
+    const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
-      this.prisma.opportunityQuotationField.findMany({ where, select }),
-      this.prisma.opportunityQuotationFieldBlob.findMany({ where, select }),
+      this.prisma.client.orm.public.OpportunityQuotationField.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
+      this.prisma.client.orm.public.OpportunityQuotationFieldBlob.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
     ])
-    const rows = new Map<string, {
-      resourceId: string
-      rowId: string
-      bizId: string
-      productId: string
-      priceId: string | null
-      productAmount: number
-      discount: number
-      tax: number
-      amount: number
-      values: Record<string, unknown>
-    }>()
+    const rows = new Map<
+      string,
+      {
+        resourceId: string
+        rowId: string
+        bizId: string
+        productId: string
+        priceId: string | null
+        productAmount: number
+        discount: number
+        tax: number
+        amount: number
+        values: Record<string, unknown>
+      }
+    >()
     for (const cell of [...normal, ...blob]) {
       if (!cell.rowId) continue
       const key = `${cell.resourceId}:${cell.rowId}`
@@ -121,7 +159,8 @@ export class QuotationFieldsService {
       if (!field) continue
       if (field.id === required.productField.id) row.productId = cell.fieldValue
       else if (field.id === required.priceField.id) row.priceId = cell.fieldValue
-      else if (field.id === required.productAmountField.id) row.productAmount = Number(cell.fieldValue)
+      else if (field.id === required.productAmountField.id)
+        row.productAmount = Number(cell.fieldValue)
       else if (field.id === required.discountField.id) row.discount = Number(cell.fieldValue)
       else if (field.id === required.taxField.id) row.tax = Number(cell.fieldValue)
       else if (field.id === required.lineAmountField.id) row.amount = Number(cell.fieldValue)
@@ -131,17 +170,29 @@ export class QuotationFieldsService {
 
     const validRows = [...rows.values()].filter((row) => row.productId)
     const productIds = [...new Set(validRows.map((row) => row.productId))]
-    const priceIds = [...new Set(validRows.map((row) => row.priceId).filter((id): id is string => !!id))]
+    const priceIds = [
+      ...new Set(validRows.map((row) => row.priceId).filter((id): id is string => !!id)),
+    ]
     const [products, prices] = await Promise.all([
       productIds.length
-        ? this.prisma.product.findMany({ where: { organizationId, id: { in: productIds } }, select: { id: true, name: true } })
+        ? this.prisma.client.orm.public.Product.where({
+            organizationId: organizationId,
+          })
+            .where((row) => row.id.in(productIds))
+            .select('id', 'name')
+            .all()
         : [],
       priceIds.length
-        ? this.prisma.productPrice.findMany({ where: { organizationId, id: { in: priceIds } }, select: { id: true, name: true } })
+        ? this.prisma.client.orm.public.ProductPrice.where({
+            organizationId: organizationId,
+          })
+            .where((row) => row.id.in(priceIds))
+            .select('id', 'name')
+            .all()
         : [],
     ])
-    const productNames = new Map(products.map((item) => [item.id, item.name]))
-    const priceNames = new Map(prices.map((item) => [item.id, item.name]))
+    const productNames = new Map(products.map((item) => [String(item.id), String(item.name)]))
+    const priceNames = new Map(prices.map((item) => [String(item.id), String(item.name)]))
     for (const row of validRows) {
       result.get(row.resourceId)?.push({
         rowId: row.rowId,
@@ -169,14 +220,30 @@ export class QuotationFieldsService {
     const discountField = fields.find((field) => field.key === 'discount')
     const taxField = fields.find((field) => field.key === 'tax')
     const lineAmountField = fields.find((field) => field.key === 'lineAmount')
-    if (!parent || !productField || !priceField || !productAmountField || !discountField || !taxField || !lineAmountField) {
+    if (
+      !parent ||
+      !productField ||
+      !priceField ||
+      !productAmountField ||
+      !discountField ||
+      !taxField ||
+      !lineAmountField
+    ) {
       throw new BadRequestException('报价产品子表字段配置不完整')
     }
-    return { parent, productField, priceField, productAmountField, discountField, taxField, lineAmountField }
+    return {
+      parent,
+      productField,
+      priceField,
+      productAmountField,
+      discountField,
+      taxField,
+      lineAmountField,
+    }
   }
 
   private async writeCell(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     resourceId: string,
     refSubId: string,
     rowId: string,
@@ -186,13 +253,27 @@ export class QuotationFieldsService {
   ) {
     if (value === undefined || value === null || value === '') return
     const serialized = this.serialize(value)
-    const data = { resourceId, fieldId: field.id, fieldValue: serialized, refSubId, rowId, bizId }
-    if (this.isBlob(field, serialized)) await tx.opportunityQuotationFieldBlob.create({ data })
-    else await tx.opportunityQuotationField.create({ data })
+    const base = {
+      id: createLegacyId32(),
+      resourceId: resourceId,
+      fieldId: field.id,
+      refSubId: refSubId,
+      rowId: rowId,
+      bizId: bizId,
+    }
+    if (this.isBlob(field, serialized)) {
+      await tx.orm.public.OpportunityQuotationFieldBlob.create({ ...base, fieldValue: serialized })
+    } else {
+      await tx.orm.public.OpportunityQuotationField.create({
+        ...base,
+        fieldValue: serialized,
+      })
+    }
   }
 
   private serialize(value: unknown) {
-    if (Array.isArray(value) || (typeof value === 'object' && value !== null)) return JSON.stringify(value)
+    if (Array.isArray(value) || (typeof value === 'object' && value !== null))
+      return JSON.stringify(value)
     return String(value)
   }
 
@@ -210,7 +291,10 @@ export class QuotationFieldsService {
   }
 
   private isBlob(field: FieldVO, serialized: string) {
-    return ['textarea', 'multiselect', 'checkbox', 'picture'].includes(field.type) || serialized.length > 255
+    return (
+      ['textarea', 'multiselect', 'checkbox', 'picture'].includes(field.type) ||
+      serialized.length > 255
+    )
   }
 
   private id() {

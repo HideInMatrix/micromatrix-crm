@@ -2,10 +2,13 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { OperationLogCleanupResultVO, OperationLogClearResultVO } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { OperationLogCleanupSource } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { resolveOperationLogCleanupConfig } from './operation-log-config'
-import { OperationLogSettingsService } from './operation-log-settings.service'
+import {
+  type OperationLogCleanupSource,
+  OperationLogCleanupSources,
+  OperationLogSettingsService,
+} from './operation-log-settings.service'
 
 export { resolveOperationLogCleanupConfig } from './operation-log-config'
 
@@ -38,12 +41,12 @@ export class OperationLogCleanupService {
   }
 
   async cleanupAllTenants(now = new Date()): Promise<number> {
-    const tenants = await this.prisma.tenant.findMany({ select: { id: true } })
+    const tenants = await this.prisma.client.orm.public.Tenants.select('id').all()
     let deleted = 0
 
     for (const tenant of tenants) {
       try {
-        deleted += (await this.cleanupTenant(tenant.id, now, OperationLogCleanupSource.AUTO))
+        deleted += (await this.cleanupTenant(tenant.id, now, OperationLogCleanupSources.AUTO))
           .deleted
       } catch (error) {
         this.logger.error(
@@ -60,7 +63,7 @@ export class OperationLogCleanupService {
   async cleanupTenant(
     tenantId: string,
     now = new Date(),
-    source: OperationLogCleanupSource = OperationLogCleanupSource.MANUAL,
+    source: OperationLogCleanupSource = OperationLogCleanupSources.MANUAL,
   ): Promise<OperationLogCleanupResultVO> {
     const policy = await this.settings.resolvePolicy(tenantId)
     if (policy.retentionDays === null) {
@@ -72,19 +75,9 @@ export class OperationLogCleanupService {
     let deleted = 0
 
     for (let batch = 0; batch < this.config.maxBatches; batch += 1) {
-      const rows = await this.prisma.operationLog.findMany({
-        where: { tenantId, createdAt: { lt: cutoff } },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        take: this.config.batchSize,
-        select: { id: true },
-      })
-      if (rows.length === 0) break
-
-      const result = await this.prisma.operationLog.deleteMany({
-        where: { tenantId, id: { in: rows.map(({ id }) => id) } },
-      })
-      deleted += result.count
-      if (rows.length < this.config.batchSize) break
+      const count = await this.deleteBatch(tenantId, cutoff, this.config.batchSize)
+      deleted += count
+      if (count < this.config.batchSize) break
     }
 
     const setting = await this.settings.recordCleanup(tenantId, deleted, source, now)
@@ -98,8 +91,33 @@ export class OperationLogCleanupService {
 
   /** 高风险人工操作：清空当前租户全部操作日志，不计入 retention 清理状态。 */
   async clearTenant(tenantId: string): Promise<OperationLogClearResultVO> {
-    const result = await this.prisma.operationLog.deleteMany({ where: { tenantId } })
-    this.logger.warn(`当前租户操作日志已全部清空: tenantId=${tenantId}, deleted=${result.count}`)
-    return { deleted: result.count }
+    const client = this.prisma.client
+    const query = client.raw.sql`DELETE FROM operation_logs
+      WHERE "tenantId" = ${tenantId}
+      RETURNING id`.returnsRow({ id: client.sql.public.operation_logs.columns.id })
+    let deleted = 0
+    for await (const _row of client.runtime().query(query.build())) deleted += 1
+    this.logger.warn(`当前租户操作日志已全部清空: tenantId=${tenantId}, deleted=${deleted}`)
+    return { deleted }
+  }
+
+  private async deleteBatch(tenantId: string, cutoff: Date, limit: number): Promise<number> {
+    const client = this.prisma.client
+    const cutoffIso = cutoff.toISOString()
+    const query = client.raw.sql`WITH candidates AS (
+        SELECT id
+        FROM operation_logs
+        WHERE "tenantId" = ${tenantId}
+          AND "createdAt" < ${cutoffIso}::timestamptz
+        ORDER BY "createdAt" ASC, id ASC
+        LIMIT ${limit}
+      )
+      DELETE FROM operation_logs AS log
+      USING candidates
+      WHERE log.id = candidates.id
+      RETURNING log.id`.returnsRow({ id: client.sql.public.operation_logs.columns.id })
+    let deleted = 0
+    for await (const _row of client.runtime().query(query.build())) deleted += 1
+    return deleted
   }
 }

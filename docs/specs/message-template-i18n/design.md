@@ -65,4 +65,4 @@ language?: MessageLanguage
 
 ## 6. Prisma driver adapter schema 一致性
 
-最终 fresh-schema 验收发现 Prisma CLI 能识别 `DATABASE_URL?schema=...`，但 `@prisma/adapter-pg` 运行时不会自动消费 Prisma 专用 `schema` 查询参数。现统一由 `createPrismaPgAdapter()` 提取 `schema` 并传入 adapter options，同时从 node-postgres connection string 删除该参数，使 migrate / Seed / API 对同一连接串保持一致；未指定 schema 时行为保持不变。
+最终 fresh-schema 验收发现 Prisma CLI 能识别 `DATABASE_URL?schema=...`，但 `legacy PostgreSQL adapter package` 运行时不会自动消费 Prisma 专用 `schema` 查询参数。现统一由 `createPrismaPgAdapter()` 提取 `schema` 并传入 adapter options，同时从 node-postgres connection string 删除该参数，使 migrate / Seed / API 对同一连接串保持一致；未指定 schema 时行为保持不变。

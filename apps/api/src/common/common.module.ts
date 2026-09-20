@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common'
+import { PrismaModule } from '../prisma/prisma.module.js'
 import { AuthContextCacheService } from './services/auth-context-cache.service'
 import { DataScopeService } from './services/data-scope.service'
 import { DistributedCoordinatorService } from './services/distributed-coordinator.service'
@@ -10,6 +11,7 @@ import { TenantDerivedCacheService } from './services/tenant-derived-cache.servi
 
 @Global()
 @Module({
+  imports: [PrismaModule],
   providers: [
     AuthContextCacheService,
     DataScopeService,

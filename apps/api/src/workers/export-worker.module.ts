@@ -8,6 +8,7 @@ import { LeadsModule } from '../modules/leads/leads.module'
 import { OpportunitiesModule } from '../modules/opportunities/opportunities.module'
 import { OrdersModule } from '../modules/orders/orders.module'
 import { ProductsModule } from '../modules/products/products.module'
+import { PrismaModule } from '../prisma/prisma.module.js'
 import { ExportWorkerService } from './export-worker.service'
 
 @Module({
@@ -21,6 +22,7 @@ import { ExportWorkerService } from './export-worker.service'
     ContractsModule,
     OrdersModule,
     CustomFormsModule,
+    PrismaModule,
   ],
   providers: [ExportWorkerService],
 })

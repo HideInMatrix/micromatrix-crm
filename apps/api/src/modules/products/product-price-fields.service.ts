@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { FieldVO, ProductPriceItemVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '../../generated/prisma/client'
+import type { PrismaClient } from '../../prisma/prisma-client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import type { ProductPriceItemDto } from './dto/product-price.dto'
 
 const FORM_KEY = 'price'
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
 export class ProductPriceFieldsService {
@@ -19,21 +21,29 @@ export class ProductPriceFieldsService {
     organizationId: string,
     resourceId: string,
     products: ProductPriceItemDto[],
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const { parent, productField, amountField } = this.requiredFields(fields)
     const productIds = [...new Set(products.map((item) => item.product))]
     if (productIds.length) {
-      const count = await tx.product.count({
-        where: { organizationId, id: { in: productIds } },
+      const { count } = await tx.orm.public.Product.where({
+        organizationId: organizationId,
       })
+        .where((row) => row.id.in(productIds))
+        .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== productIds.length) throw new BadRequestException('价格表包含不存在的产品')
     }
 
     await Promise.all([
-      tx.productPriceField.deleteMany({ where: { resourceId, refSubId: parent.id } }),
-      tx.productPriceFieldBlob.deleteMany({ where: { resourceId, refSubId: parent.id } }),
+      tx.orm.public.ProductPriceField.where({
+        resourceId: resourceId,
+        refSubId: parent.id,
+      }).deleteAll(),
+      tx.orm.public.ProductPriceFieldBlob.where({
+        resourceId: resourceId,
+        refSubId: parent.id,
+      }).deleteAll(),
     ])
 
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
@@ -66,17 +76,25 @@ export class ProductPriceFieldsService {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
     const { parent, productField, amountField } = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
-    const where = { resourceId: { in: ids }, refSubId: parent.id, resource: { organizationId } }
-    const select = {
-      resourceId: true,
-      fieldId: true,
-      fieldValue: true,
-      rowId: true,
-      bizId: true,
-    }
+    const allowedResources = await this.prisma.client.orm.public.ProductPrice.where({
+      organizationId: organizationId,
+    })
+      .where((row) => row.id.in(ids))
+      .select('id')
+      .all()
+    const allowedIds = allowedResources.map((row) => String(row.id))
+    if (!allowedIds.length) return result
+    const refSubId = parent.id
+    const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
-      this.prisma.productPriceField.findMany({ where, select }),
-      this.prisma.productPriceFieldBlob.findMany({ where, select }),
+      this.prisma.client.orm.public.ProductPriceField.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
+      this.prisma.client.orm.public.ProductPriceFieldBlob.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
     ])
     const groups = new Map<
       string,
@@ -109,12 +127,14 @@ export class ProductPriceFieldsService {
     }
     const rows = [...groups.values()].filter((row) => row.productId)
     const products = rows.length
-      ? await this.prisma.product.findMany({
-          where: { organizationId, id: { in: rows.map((row) => row.productId) } },
-          select: { id: true, name: true },
+      ? await this.prisma.client.orm.public.Product.where({
+          organizationId: organizationId,
         })
+          .where((row) => row.id.in([...new Set(rows.map((item) => item.productId))]))
+          .select('id', 'name')
+          .all()
       : []
-    const nameMap = new Map(products.map((product) => [product.id, product.name]))
+    const nameMap = new Map(products.map((product) => [String(product.id), String(product.name)]))
     for (const resourceId of ids) result.set(resourceId, [])
     for (const row of rows) {
       const list = result.get(row.resourceId) ?? []
@@ -143,7 +163,7 @@ export class ProductPriceFieldsService {
   }
 
   private async writeCell(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     resourceId: string,
     refSubId: string,
     rowId: string,
@@ -153,16 +173,22 @@ export class ProductPriceFieldsService {
   ) {
     if (value === undefined || value === null || value === '') return
     const serialized = this.serialize(value)
-    const data = {
-      resourceId,
+    const base = {
+      id: createLegacyId32(),
+      resourceId: resourceId,
       fieldId: field.id,
-      fieldValue: serialized,
-      refSubId,
-      rowId,
-      bizId,
+      refSubId: refSubId,
+      rowId: rowId,
+      bizId: bizId,
     }
-    if (this.isBlob(field, serialized)) await tx.productPriceFieldBlob.create({ data })
-    else await tx.productPriceField.create({ data })
+    if (this.isBlob(field, serialized)) {
+      await tx.orm.public.ProductPriceFieldBlob.create({ ...base, fieldValue: serialized })
+    } else {
+      await tx.orm.public.ProductPriceField.create({
+        ...base,
+        fieldValue: serialized,
+      })
+    }
   }
 
   private serialize(value: unknown) {

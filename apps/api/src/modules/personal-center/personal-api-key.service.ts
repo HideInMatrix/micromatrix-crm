@@ -8,6 +8,7 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate, instantToISOString } from '../../prisma/temporal'
 import type { UpdatePersonalApiKeyDto } from './dto/personal-api-key.dto'
 
 @Injectable()
@@ -18,23 +19,21 @@ export class PersonalApiKeyService {
   ) {}
 
   async list(user: AuthUser) {
-    const rows = await this.prisma.userApiKey.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-    })
+    const rows = await this.keys()
+      .where({ createUser: user.id })
+      .orderBy((row) => row.createTime.desc())
+      .all()
     return rows.map((row) => this.toVO(row))
   }
 
   async add(user: AuthUser): Promise<void> {
-    const count = await this.prisma.userApiKey.count({ where: { userId: user.id } })
+    const count = (await this.keys().where({ createUser: user.id }).select('id').all()).length
     if (count >= 5) throw new ConflictException('每个用户最多创建 5 个 API Key')
 
-    const created = await this.prisma.userApiKey.create({
-      data: {
-        userId: user.id,
-        accessKey: `ak_${randomBytes(15).toString('base64url')}`,
-        secretKey: `sk_${randomBytes(30).toString('base64url')}`,
-      },
+    const created = await this.keys().create({
+      createUser: user.id,
+      accessKey: `ak_${randomBytes(15).toString('base64url')}`,
+      secretKey: `sk_${randomBytes(30).toString('base64url')}`,
     })
     await this.changeLog.record(user, {
       module: 'personalApiKey',
@@ -54,14 +53,14 @@ export class PersonalApiKeyService {
       expireAt = new Date(dto.expireTime)
       if (Number.isNaN(expireAt.getTime())) throw new UnprocessableEntityException('到期时间无效')
     }
-    const updated = await this.prisma.userApiKey.update({
-      where: { id: current.id },
-      data: {
+    const updated = await this.keys()
+      .where({ id: current.id, createUser: user.id })
+      .update({
         forever: dto.forever,
-        expireAt,
+        expireTime: expireAt ? instantFromDate(expireAt) : null,
         description: dto.description?.trim() || null,
-      },
-    })
+      })
+    if (!updated) throw new NotFoundException('API Key 不存在')
     await this.changeLog.record(user, {
       module: 'personalApiKey',
       action: 'update',
@@ -74,7 +73,7 @@ export class PersonalApiKeyService {
 
   async remove(user: AuthUser, id: string): Promise<void> {
     const current = await this.getOwned(user.id, id)
-    await this.prisma.userApiKey.delete({ where: { id: current.id } })
+    await this.keys().where({ id: current.id, createUser: user.id }).delete()
     await this.changeLog.record(user, {
       module: 'personalApiKey',
       action: 'delete',
@@ -87,62 +86,66 @@ export class PersonalApiKeyService {
 
   async setEnabled(user: AuthUser, id: string, enabled: boolean): Promise<void> {
     const current = await this.getOwned(user.id, id)
-    const updated = await this.prisma.userApiKey.update({
-      where: { id: current.id },
-      data: { enabled },
+    const updated = await this.keys().where({ id: current.id, createUser: user.id }).update({
+      enable: enabled,
     })
+    if (!updated) throw new NotFoundException('API Key 不存在')
     await this.changeLog.record(user, {
       module: 'personalApiKey',
       action: enabled ? 'enable' : 'disable',
       targetId: updated.id,
       targetName: updated.accessKey,
-      before: { enabled: current.enabled },
-      after: { enabled: updated.enabled },
+      before: { enabled: current.enable },
+      after: { enabled: updated.enable },
     })
   }
 
   private async getOwned(userId: string, id: string) {
-    const row = await this.prisma.userApiKey.findFirst({ where: { id, userId } })
+    const row = await this.keys().where({ id, createUser: userId }).first()
     if (!row) throw new NotFoundException('API Key 不存在')
     return row
   }
 
+  private keys() {
+    return this.prisma.client.orm.public.UserKey
+  }
+
   private toVO(row: {
     id: string
-    userId: string
+    createUser: string
     accessKey: string
     secretKey: string
-    createdAt: Date
-    enabled: boolean
+    createTime: ReturnType<typeof instantFromDate>
+    enable: boolean
     forever: boolean
-    expireAt: Date | null
+    expireTime: ReturnType<typeof instantFromDate> | null
     description: string | null
   }) {
     return {
       id: row.id,
-      createUser: row.userId,
+      createUser: row.createUser,
       accessKey: row.accessKey,
       secretKey: row.secretKey,
-      createTime: row.createdAt.getTime(),
-      enable: row.enabled,
+      createTime: row.createTime.epochMilliseconds,
+      enable: row.enable,
       forever: row.forever,
-      expireTime: row.expireAt?.getTime() ?? null,
+      expireTime: row.expireTime ? row.expireTime.epochMilliseconds : null,
       description: row.description ?? '',
     }
   }
 
   private loggable(row: {
     accessKey: string
-    enabled: boolean
+    enable: boolean
     forever: boolean
-    expireAt: Date | null
+    expireTime: ReturnType<typeof instantFromDate> | null
     description: string | null
   }) {
     return {
       accessKey: row.accessKey,
-      enabled: row.enabled,
+      enabled: row.enable,
       forever: row.forever,
-      expireAt: row.expireAt,
+      expireAt: row.expireTime ? instantToISOString(row.expireTime) : null,
       description: row.description,
     }
   }

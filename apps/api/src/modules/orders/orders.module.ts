@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { PrismaModule } from '../../prisma/prisma.module'
 import { ImportExportModule } from '../import-export/import-export.module'
 import { ModuleFormsModule } from '../metadata/module-forms.module'
 import { UserViewsModule } from '../user-views/user-views.module'
@@ -9,7 +10,7 @@ import { OrdersController } from './orders.controller'
 import { OrdersService } from './orders.service'
 
 @Module({
-  imports: [ModuleFormsModule, UserViewsModule, ImportExportModule],
+  imports: [PrismaModule, ModuleFormsModule, UserViewsModule, ImportExportModule],
   controllers: [OrdersController, OrderStageController],
   providers: [OrdersService, OrderFieldsService, OrderStageService],
   exports: [OrdersService, OrderStageService],

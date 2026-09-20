@@ -1,4 +1,4 @@
-import type { DataScope } from '../generated/prisma/client'
+export type DataScope = 'ALL' | 'DEPT_AND_CHILD' | 'DEPT' | 'SELF' | 'CUSTOM'
 
 export interface AuthRole {
   id: string

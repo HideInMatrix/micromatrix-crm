@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { BusinessNotificationsService } from './business-notifications.service'
 
@@ -37,7 +37,7 @@ export class MessageExpiryService {
   }
 
   async run(now: Date): Promise<number> {
-    const tenants = await this.prisma.tenant.findMany({ select: { id: true } })
+    const tenants = await this.prisma.client.orm.public.Tenants.select('id').all()
     let delivered = 0
     for (const tenant of tenants) {
       try {
@@ -94,28 +94,44 @@ export class MessageExpiryService {
     days: number,
   ): Promise<number> {
     const { start, end } = this.dayWindow(now, days)
+    const startMs = BigInt(start.getTime())
+    const endMs = BigInt(end.getTime())
+    const client = this.prisma.client
     if (event.startsWith('BUSINESS_QUOTATION_')) {
-      const quotes = await this.prisma.opportunityQuotation.findMany({
-        where: {
-          organizationId: tenantId,
-          invalid: false,
-          untilTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
-        },
-        select: {
-          id: true,
-          name: true,
-          createUser: true,
-          untilTime: true,
-          opportunity: { select: { customer: { select: { name: true } } } },
-        },
+      const query = client.raw.sql`SELECT
+          quotation.id,
+          quotation.name,
+          quotation.create_user AS "createUser",
+          quotation.until_time AS "untilTime",
+          customer.name AS "customerName"
+        FROM opportunity_quotation AS quotation
+        JOIN opportunity AS opportunity ON opportunity.id = quotation.opportunity_id
+        LEFT JOIN customer AS customer ON customer.id = opportunity.customer_id
+        WHERE quotation.organization_id = ${tenantId}
+          AND quotation.invalid = false
+          AND quotation.until_time >= ${startMs}
+          AND quotation.until_time < ${endMs}`.returnsRow({
+        id: client.sql.public.opportunity_quotation.columns.id,
+        name: client.sql.public.opportunity_quotation.columns.name,
+        createUser: client.sql.public.opportunity_quotation.columns.create_user,
+        untilTime: client.sql.public.opportunity_quotation.columns.until_time,
+        customerName: client.sql.public.customer.columns.name,
       })
+      const quotes: Array<{
+        id: string
+        name: string
+        createUser: string
+        untilTime: bigint
+        customerName: string | null
+      }> = []
+      for await (const row of client.runtime().query(query.build())) quotes.push(row)
       return this.sendRows(
         tenantId,
         event,
         days,
         quotes.map((quote) => ({
           name: quote.name,
-          customerName: quote.opportunity.customer?.name ?? quote.name,
+          customerName: quote.customerName ?? quote.name,
           ownerId: quote.createUser,
           createUserId: quote.createUser,
           dueDate: new Date(Number(quote.untilTime)),
@@ -125,23 +141,46 @@ export class MessageExpiryService {
       )
     }
     if (event.startsWith('CONTRACT_PAYMENT_')) {
-      const plans = await this.prisma.contractPaymentPlan.findMany({
-        where: {
-          organizationId: tenantId,
-          planStatus: { not: 'COMPLETED' },
-          planEndTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
-        },
-        include: {
-          contract: { select: { name: true, customer: { select: { name: true } } } },
-        },
+      const query = client.raw.sql`SELECT
+          plan.id,
+          plan.name,
+          plan.owner,
+          plan.create_user AS "createUser",
+          plan.plan_end_time AS "planEndTime",
+          contract.name AS "contractName",
+          customer.name AS "customerName"
+        FROM contract_payment_plan AS plan
+        JOIN contract AS contract ON contract.id = plan.contract_id
+        JOIN customer AS customer ON customer.id = contract.customer_id
+        WHERE plan.organization_id = ${tenantId}
+          AND plan.plan_status <> 'COMPLETED'
+          AND plan.plan_end_time >= ${startMs}
+          AND plan.plan_end_time < ${endMs}`.returnsRow({
+        id: client.sql.public.contract_payment_plan.columns.id,
+        name: client.sql.public.contract_payment_plan.columns.name,
+        owner: client.sql.public.contract_payment_plan.columns.owner,
+        createUser: client.sql.public.contract_payment_plan.columns.create_user,
+        planEndTime: client.sql.public.contract_payment_plan.columns.plan_end_time,
+        contractName: client.sql.public.contract.columns.name,
+        customerName: client.sql.public.customer.columns.name,
       })
+      const plans: Array<{
+        id: string
+        name: string
+        owner: string
+        createUser: string
+        planEndTime: bigint | null
+        contractName: string
+        customerName: string
+      }> = []
+      for await (const row of client.runtime().query(query.build())) plans.push(row)
       return this.sendRows(
         tenantId,
         event,
         days,
         plans.map((plan) => ({
-          name: plan.name || `${plan.contract.name}回款计划`,
-          customerName: plan.contract.customer.name,
+          name: plan.name || `${plan.contractName}回款计划`,
+          customerName: plan.customerName,
           ownerId: plan.owner,
           createUserId: plan.createUser,
           dueDate: new Date(Number(plan.planEndTime!)),
@@ -151,32 +190,48 @@ export class MessageExpiryService {
       )
     }
 
-    const endStages = await this.prisma.contractStageConfig.findMany({
-      where: { organizationId: tenantId, type: 'END' },
-      select: { id: true },
+    const query = client.raw.sql`SELECT
+        contract.id,
+        contract.name,
+        contract.owner,
+        contract.create_user AS "createUser",
+        contract.end_time AS "endTime",
+        customer.name AS "customerName"
+      FROM contract AS contract
+      JOIN customer AS customer ON customer.id = contract.customer_id
+      WHERE contract.organization_id = ${tenantId}
+        AND contract.end_time >= ${startMs}
+        AND contract.end_time < ${endMs}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM contract_stage_config AS stage
+          WHERE stage.organization_id = ${tenantId}
+            AND stage.type = 'END'
+            AND stage.id = contract.stage
+        )`.returnsRow({
+      id: client.sql.public.contract.columns.id,
+      name: client.sql.public.contract.columns.name,
+      owner: client.sql.public.contract.columns.owner,
+      createUser: client.sql.public.contract.columns.create_user,
+      endTime: client.sql.public.contract.columns.end_time,
+      customerName: client.sql.public.customer.columns.name,
     })
-    const contracts = await this.prisma.contract.findMany({
-      where: {
-        organizationId: tenantId,
-        ...(endStages.length ? { stage: { notIn: endStages.map((item) => item.id) } } : {}),
-        endTime: { gte: BigInt(start.getTime()), lt: BigInt(end.getTime()) },
-      },
-      select: {
-        id: true,
-        name: true,
-        owner: true,
-        createUser: true,
-        endTime: true,
-        customer: { select: { name: true } },
-      },
-    })
+    const contracts: Array<{
+      id: string
+      name: string
+      owner: string
+      createUser: string
+      endTime: bigint | null
+      customerName: string
+    }> = []
+    for await (const row of client.runtime().query(query.build())) contracts.push(row)
     return this.sendRows(
       tenantId,
       event,
       days,
       contracts.map((contract) => ({
         name: contract.name,
-        customerName: contract.customer.name,
+        customerName: contract.customerName,
         ownerId: contract.owner,
         createUserId: contract.createUser,
         dueDate: new Date(Number(contract.endTime!)),

@@ -7,14 +7,28 @@ import type { MessageDeliveryService } from './message-delivery.service'
 import { MessageTemplateService } from './message-template.service'
 import type { NotificationsService } from './notifications.service'
 
+function users(options: {
+  many: Array<{ id: string }>
+  first: { name: string; language: string } | null
+}) {
+  const scope: Record<string, unknown> = {}
+  Object.assign(scope, {
+    where: () => scope,
+    select: () => scope,
+    all: async () => options.many,
+    first: async () => options.first,
+  })
+  return {
+    client: { orm: { public: { Users: { where: () => scope } } } },
+  } as unknown as PrismaService
+}
+
 test('业务通知去重、排除操作者并过滤非租户有效成员', async () => {
   const delivered: string[][] = []
-  const prisma = {
-    user: {
-      findMany: async () => [{ id: 'member-a' }],
-      findFirst: async () => ({ name: '操作者', language: 'zh-CN' }),
-    },
-  } as unknown as PrismaService
+  const prisma = users({
+    many: [{ id: 'member-a' }],
+    first: { name: '操作者', language: 'zh-CN' },
+  })
   const notifications = {
     notifyMany: async (_tenantId: string, userIds: string[]) => {
       delivered.push(userIds)
@@ -41,9 +55,7 @@ test('业务通知去重、排除操作者并过滤非租户有效成员', async
 })
 
 test('配置通知使用范围解析结果并隔离发送异常', async () => {
-  const prisma = {
-    user: { findMany: async () => [{ id: 'owner-a' }], findFirst: async () => null },
-  } as unknown as PrismaService
+  const prisma = users({ many: [{ id: 'owner-a' }], first: null })
   const notifications = {
     notifyMany: async () => {
       throw new Error('push failed')
@@ -68,12 +80,10 @@ test('配置通知使用范围解析结果并隔离发送异常', async () => {
 test('模板通知按操作者语言渲染，并保证站内与企微投递使用同一最终文本', async () => {
   const inSite: Array<{ title: string; content?: string }> = []
   const external: Array<{ title: string; content?: string }> = []
-  const prisma = {
-    user: {
-      findMany: async () => [{ id: 'owner-a' }],
-      findFirst: async () => ({ name: 'David', language: 'en-US' }),
-    },
-  } as unknown as PrismaService
+  const prisma = users({
+    many: [{ id: 'owner-a' }],
+    first: { name: 'David', language: 'en-US' },
+  })
   const notifications = {
     notifyMany: async (
       _tenantId: string,

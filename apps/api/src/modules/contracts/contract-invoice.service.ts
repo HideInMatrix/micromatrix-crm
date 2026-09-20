@@ -5,10 +5,12 @@ import {
   type FilterCondition,
   type ImportResultVO,
 } from '@micromatrix/shared'
+import { not, or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { formatForExport } from '../../common/export-format'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
+import { createLegacyId32 } from '../../common/legacy-id'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { ContractsService } from './contracts.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
@@ -39,46 +41,6 @@ function intersectIds(left: string[] | null, right: string[] | null): string[] |
   if (right === null) return left
   const set = new Set(right)
   return left.filter((id) => set.has(id))
-}
-
-function directClause(key: string, condition: FilterCondition): Record<string, unknown> | null {
-  if (condition.op === 'in' || condition.op === 'notIn') {
-    const values = Array.isArray(condition.value) ? condition.value : [condition.value]
-    const matches = values.map((value) => directClause(key, { ...condition, op: 'eq', value }))
-    if (!matches.length || matches.some((match) => !match)) return null
-    const OR = matches as Record<string, unknown>[]
-    return condition.op === 'notIn' ? { NOT: { OR } } : { OR }
-  }
-  if (condition.op === 'notContains') {
-    const match = directClause(key, { ...condition, op: 'contains' })
-    return match ? { NOT: match } : null
-  }
-  let value: unknown = condition.value
-  if (['amount', 'taxRate'].includes(key)) {
-    const number = Number(condition.value)
-    if (!Number.isFinite(number)) return null
-    value = number
-  } else if (['createTime', 'updateTime'].includes(key)) {
-    const direct = Number(condition.value)
-    const millis =
-      Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
-        ? direct
-        : new Date(String(condition.value)).getTime()
-    if (!Number.isFinite(millis)) return null
-    value = BigInt(Math.trunc(millis))
-  }
-  const v = value as never
-  if (condition.op === 'eq') return { [key]: { equals: v } }
-  if (condition.op === 'ne') return { NOT: { [key]: { equals: v } } }
-  if (condition.op === 'contains')
-    return { [key]: { contains: String(value ?? ''), mode: 'insensitive' } }
-  if (condition.op === 'gt') return { [key]: { gt: v } }
-  if (condition.op === 'gte') return { [key]: { gte: v } }
-  if (condition.op === 'lt') return { [key]: { lt: v } }
-  if (condition.op === 'lte') return { [key]: { lte: v } }
-  if (condition.op === 'isEmpty') return { [key]: null }
-  if (condition.op === 'notEmpty') return { NOT: { [key]: null } }
-  return null
 }
 
 function importNumber(values: Record<string, unknown>, key: string, label: string) {
@@ -123,36 +85,78 @@ export class ContractInvoiceService {
         : null,
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
-    const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
-    const where: Prisma.ContractInvoiceWhereInput = {
+    let query = this.prisma.client.orm.public.ContractInvoice.where({
       organizationId: user.tenantId,
-      AND: [scope as Prisma.ContractInvoiceWhereInput],
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(dto.contractId ? { contractId: dto.contractId } : {}),
-      ...(dto.customerId ? { contract: { customerId: dto.customerId } } : {}),
-      ...(dto.keyword
-        ? {
-            OR: [
-              { name: { contains: dto.keyword, mode: 'insensitive' } },
-              { contract: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-              { businessTitle: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+    })
+    const scope = await this.dataScope.directOwnerFilter(user, READ_PERMISSION)
+    const ownerScope = scope.owner
+    if (ownerScope) {
+      query =
+        typeof ownerScope === 'string'
+          ? query.where({ owner: ownerScope })
+          : query.where((row) => row.owner.in(ownerScope.in))
     }
-    const [rows, total] = await Promise.all([
-      this.prisma.contractInvoice.findMany({
-        where,
-        include: {
-          contract: { select: { name: true, customerId: true, amount: true } },
-          businessTitle: { select: { name: true } },
-        },
-        orderBy: [{ createTime: 'desc' }, { id: 'desc' }],
-        skip: (current - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.contractInvoice.count({ where }),
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
+    if (dto.contractId) query = query.where({ contractId: dto.contractId })
+    if (dto.customerId) {
+      const contracts = await this.prisma.client.orm.public.Contract.where({
+        organizationId: user.tenantId,
+        customerId: dto.customerId,
+      })
+        .select('id')
+        .all()
+      query = query.where((row) => row.contractId.in(contracts.map((item) => item.id)))
+    }
+    if (dto.keyword) {
+      const [contracts, titles] = await Promise.all([
+        this.prisma.client.orm.public.Contract.where({
+          organizationId: user.tenantId,
+        })
+          .where((row) => row.name.ilike(`%${dto.keyword}%`))
+          .select('id')
+          .all(),
+        this.prisma.client.orm.public.BusinessTitle.where({
+          organizationId: user.tenantId,
+        })
+          .where((row) => row.name.ilike(`%${dto.keyword}%`))
+          .select('id')
+          .all(),
+      ])
+      query = query.where((row) =>
+        or(
+          row.name.ilike(`%${dto.keyword}%`),
+          row.contractId.in(contracts.map((item) => item.id)),
+          row.businessTitleId.in(titles.map((item) => item.id)),
+        ),
+      )
+    }
+    const [rows, aggregate] = await Promise.all([
+      query
+        .orderBy([(row) => row.createTime.desc(), (row) => row.id.desc()])
+        .offset((current - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      query.aggregate((value) => ({ count: value.count() })),
     ])
+    const total = aggregate.count
+    const contractIds = [...new Set(rows.map((row) => row.contractId))]
+    const titleIds = [
+      ...new Set(rows.flatMap((row) => (row.businessTitleId ? [row.businessTitleId] : []))),
+    ]
+    const [contracts, titles] = await Promise.all([
+      contractIds.length
+        ? this.prisma.client.orm.public.Contract.where((row) => row.id.in(contractIds))
+            .select('id', 'name', 'customerId', 'amount')
+            .all()
+        : [],
+      titleIds.length
+        ? this.prisma.client.orm.public.BusinessTitle.where((row) => row.id.in(titleIds))
+            .select('id', 'name')
+            .all()
+        : [],
+    ])
+    const contractMap = new Map(contracts.map((item) => [item.id, item]))
+    const titleMap = new Map(titles.map((item) => [item.id, item.name]))
     const dynamic = await this.fieldValues.load(
       user.tenantId,
       'invoice',
@@ -163,15 +167,15 @@ export class ContractInvoiceService {
         id: row.id,
         name: row.name,
         contractId: row.contractId,
-        contractName: row.contract.name,
-        customerId: row.contract.customerId,
+        contractName: contractMap.get(row.contractId)?.name ?? '已删除合同',
+        customerId: contractMap.get(row.contractId)?.customerId ?? null,
         owner: row.owner,
         amount: row.amount === null ? null : Number(row.amount),
         invoiceType: row.invoiceType,
         taxRate: row.taxRate === null ? null : Number(row.taxRate),
         approvalStatus: row.approvalStatus,
         businessTitleId: row.businessTitleId,
-        businessTitleName: row.businessTitle?.name ?? null,
+        businessTitleName: row.businessTitleId ? (titleMap.get(row.businessTitleId) ?? null) : null,
         approved: row.approved,
         createTime: Number(row.createTime),
         updateTime: Number(row.updateTime),
@@ -230,24 +234,23 @@ export class ContractInvoiceService {
     await this.assertAmount(user, dto.contractId, dto.amount)
     const customData = await this.toCustomData(user.tenantId, dto.moduleFields)
     const now = BigInt(Date.now())
-    const row = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.contractInvoice.create({
-        data: {
-          name: dto.name.trim(),
-          contractId: dto.contractId,
-          owner,
-          amount: new Prisma.Decimal(dto.amount),
-          invoiceType: dto.invoiceType?.trim() || null,
-          taxRate: new Prisma.Decimal(dto.taxRate ?? 0),
-          approvalStatus: 'NONE',
-          businessTitleId,
-          organizationId: user.tenantId,
-          approved: false,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+    const row = await this.prisma.client.transaction(async (tx) => {
+      const created = await tx.orm.public.ContractInvoice.create({
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        contractId: dto.contractId,
+        owner: owner,
+        amount: numericValue(decimalString(dto.amount, 20, 10), 20, 10),
+        invoiceType: dto.invoiceType?.trim() ? dto.invoiceType.trim() : null,
+        taxRate: numericValue(decimalString(dto.taxRate ?? 0, 20, 10), 20, 10),
+        approvalStatus: 'NONE',
+        businessTitleId: businessTitleId ? businessTitleId : null,
+        organizationId: user.tenantId,
+        approved: false,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -292,21 +295,29 @@ export class ContractInvoiceService {
       dto.moduleFields === undefined
         ? null
         : await this.toCustomData(user.tenantId, dto.moduleFields)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.contractInvoice.update({
-        where: { id: dto.id },
-        data: {
-          name: dto.name?.trim(),
-          contractId: dto.contractId,
-          owner,
-          amount: dto.amount === undefined ? undefined : new Prisma.Decimal(dto.amount),
-          invoiceType: dto.invoiceType === undefined ? undefined : dto.invoiceType?.trim() || null,
-          taxRate: dto.taxRate === undefined ? undefined : new Prisma.Decimal(dto.taxRate),
-          businessTitleId: titleId,
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma.client.transaction(async (tx) => {
+      const updated = await tx.orm.public.ContractInvoice.where({
+        id: dto.id,
+      }).update({
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.contractId !== undefined ? { contractId: dto.contractId } : {}),
+        ...(owner !== undefined ? { owner: owner } : {}),
+        ...(dto.amount !== undefined
+          ? { amount: numericValue(decimalString(dto.amount, 20, 10), 20, 10) }
+          : {}),
+        ...(dto.invoiceType !== undefined
+          ? {
+              invoiceType: dto.invoiceType?.trim() ? dto.invoiceType.trim() : null,
+            }
+          : {}),
+        ...(dto.taxRate !== undefined
+          ? { taxRate: numericValue(decimalString(dto.taxRate, 20, 10), 20, 10) }
+          : {}),
+        ...(titleId !== undefined ? { businessTitleId: titleId ? titleId : null } : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
+      if (!updated) throw new NotFoundException('发票不存在')
       if (customData)
         await this.fieldValues.save(
           user.tenantId,
@@ -339,16 +350,21 @@ export class ContractInvoiceService {
       const approval = await this.approvals.submit(user, 'invoice', id, 'DELETE')
       return { id, name: row.name, approvalId: approval.id, pendingApproval: true }
     }
-    await this.prisma.contractInvoice.delete({ where: { id } })
+    await this.prisma.client.orm.public.ContractInvoice.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).delete()
     return { id, name: row.name, pendingApproval: false }
   }
 
   async batchDelete(user: AuthUser, ids: string[]) {
     const unique = [...new Set(ids)]
     if (!unique.length) throw new BadRequestException('请选择要删除的发票')
-    const rows = await this.prisma.contractInvoice.findMany({
-      where: { id: { in: unique }, organizationId: user.tenantId },
+    const rows = await this.prisma.client.orm.public.ContractInvoice.where({
+      organizationId: user.tenantId,
     })
+      .where((row) => row.id.in(unique))
+      .all()
     if (rows.length !== unique.length) throw new NotFoundException('部分发票不存在')
     for (const row of rows) {
       if (!(await this.dataScope.matchesDirectOwner(user, row.owner, 'CONTRACT_INVOICE:DELETE'))) {
@@ -374,9 +390,11 @@ export class ContractInvoiceService {
       }
     }
     if (directDeleteIds.length) {
-      await this.prisma.contractInvoice.deleteMany({
-        where: { id: { in: directDeleteIds }, organizationId: user.tenantId },
+      await this.prisma.client.orm.public.ContractInvoice.where({
+        organizationId: user.tenantId,
       })
+        .where((row) => row.id.in(directDeleteIds))
+        .deleteAll()
     }
     return { success: unique.length, fail: 0, skip: 0 }
   }
@@ -420,16 +438,14 @@ export class ContractInvoiceService {
   async contractStatistic(user: AuthUser, contractId: string) {
     const contract = await this.contracts.ensureInScope(user, contractId)
     const approvalEnabled = await this.approvals.moduleApprovalEnabled(user.tenantId, 'invoice')
-    const aggregate = await this.prisma.contractInvoice.aggregate({
-      where: {
-        organizationId: user.tenantId,
-        contractId,
-        ...(approvalEnabled ? { approvalStatus: 'APPROVED' } : {}),
-      },
-      _sum: { amount: true },
+    let invoices = this.prisma.client.orm.public.ContractInvoice.where({
+      organizationId: user.tenantId,
+      contractId: contractId,
     })
+    if (approvalEnabled) invoices = invoices.where({ approvalStatus: 'APPROVED' })
+    const aggregate = await invoices.aggregate((value) => ({ amount: value.sum('amount') }))
     const contractAmount = Number(contract.amount ?? 0)
-    const invoicedAmount = Number(aggregate._sum.amount ?? 0)
+    const invoicedAmount = Number(aggregate.amount ?? 0)
     return {
       contractAmount,
       invoicedAmount,
@@ -469,10 +485,11 @@ export class ContractInvoiceService {
 
   async getSnapshot(user: AuthUser, id: string) {
     await this.ensureInvoice(user, id)
-    const snapshot = await this.prisma.contractInvoiceSnapshot.findFirst({
-      where: { invoiceId: id },
-      orderBy: { id: 'desc' },
+    const snapshot = await this.prisma.client.orm.public.ContractInvoiceSnapshot.where({
+      invoiceId: id,
     })
+      .orderBy((row) => row.id.desc())
+      .first()
     if (!snapshot?.invoiceValue) return this.get(user, id)
     try {
       return JSON.parse(snapshot.invoiceValue)
@@ -483,10 +500,11 @@ export class ContractInvoiceService {
 
   async formSnapshot(user: AuthUser, id: string) {
     await this.ensureInvoice(user, id)
-    const snapshot = await this.prisma.contractInvoiceSnapshot.findFirst({
-      where: { invoiceId: id },
-      orderBy: { id: 'desc' },
+    const snapshot = await this.prisma.client.orm.public.ContractInvoiceSnapshot.where({
+      invoiceId: id,
     })
+      .orderBy((row) => row.id.desc())
+      .first()
     if (snapshot?.invoiceProp) {
       try {
         const value = JSON.parse(snapshot.invoiceProp)
@@ -499,35 +517,54 @@ export class ContractInvoiceService {
   }
 
   private async ensureInvoice(user: AuthUser, id: string, permission = READ_PERMISSION) {
-    const row = await this.prisma.contractInvoice.findFirst({
-      where: { id, organizationId: user.tenantId },
-      include: {
-        contract: { select: { name: true, customerId: true, amount: true } },
-        businessTitle: { select: { name: true } },
-      },
-    })
+    const row = await this.prisma.client.orm.public.ContractInvoice.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('发票不存在或不在你的数据范围内')
     }
-    return row
+    const [contract, businessTitle] = await Promise.all([
+      this.prisma.client.orm.public.Contract.where({
+        id: row.contractId,
+        organizationId: user.tenantId,
+      })
+        .select('name', 'customerId', 'amount')
+        .first(),
+      row.businessTitleId
+        ? this.prisma.client.orm.public.BusinessTitle.where({
+            id: row.businessTitleId,
+            organizationId: user.tenantId,
+          })
+            .select('name')
+            .first()
+        : null,
+    ])
+    if (!contract) throw new NotFoundException('发票关联合同不存在')
+    return { ...row, contract, businessTitle }
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     const id = ownerId || user.id
-    const owner = await this.prisma.user.findFirst({
-      where: { id, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true },
+    const owner = await this.prisma.client.orm.public.Users.where({
+      id,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner.id
   }
 
   private async resolveTitle(user: AuthUser, id?: string | null) {
     if (!id) return null
-    const title = await this.prisma.businessTitle.findFirst({
-      where: { id, organizationId: user.tenantId },
-      select: { id: true },
+    const title = await this.prisma.client.orm.public.BusinessTitle.where({
+      id: id,
+      organizationId: user.tenantId,
     })
+      .select('id')
+      .first()
     if (!title) throw new NotFoundException('工商抬头不存在')
     return title.id
   }
@@ -539,30 +576,28 @@ export class ContractInvoiceService {
     excludeId?: string,
   ) {
     const contract = await this.contracts.ensureInScope(user, contractId)
-    const aggregate = await this.prisma.contractInvoice.aggregate({
-      where: {
-        organizationId: user.tenantId,
-        contractId,
-        approvalStatus: { in: ['APPROVED', 'APPROVING'] },
-        ...(excludeId ? { id: { not: excludeId } } : {}),
-      },
-      _sum: { amount: true },
-    })
-    if (Number(aggregate._sum.amount ?? 0) + amount > Number(contract.amount ?? 0) + 1e-8) {
+    let invoices = this.prisma.client.orm.public.ContractInvoice.where({
+      organizationId: user.tenantId,
+      contractId: contractId,
+    }).where((row) => row.approvalStatus.in(['APPROVED', 'APPROVING']))
+    if (excludeId) invoices = invoices.where((row) => row.id.neq(excludeId))
+    const aggregate = await invoices.aggregate((value) => ({ amount: value.sum('amount') }))
+    if (Number(aggregate.amount ?? 0) + amount > Number(contract.amount ?? 0) + 1e-8) {
       throw new BadRequestException('发票总金额超过合同金额')
     }
   }
 
   private async writeSnapshot(user: AuthUser, id: string) {
     const [form, invoice] = await Promise.all([this.form(user), this.get(user, id)])
-    await this.prisma.$transaction(async (tx) => {
-      await tx.contractInvoiceSnapshot.deleteMany({ where: { invoiceId: id } })
-      await tx.contractInvoiceSnapshot.create({
-        data: {
-          invoiceId: id,
-          invoiceProp: JSON.stringify(form),
-          invoiceValue: JSON.stringify(invoice),
-        },
+    await this.prisma.client.transaction(async (tx) => {
+      await tx.orm.public.ContractInvoiceSnapshot.where({
+        invoiceId: id,
+      }).deleteAll()
+      await tx.orm.public.ContractInvoiceSnapshot.create({
+        id: createLegacyId32(),
+        invoiceId: id,
+        invoiceProp: JSON.stringify(form),
+        invoiceValue: JSON.stringify(invoice),
       })
     })
   }
@@ -774,27 +809,29 @@ export class ContractInvoiceService {
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
-          const users = await this.prisma.user.findMany({
-            where: { tenantId: organizationId, deptId: String(condition.value ?? '') },
-            select: { id: true },
+          const users = await this.prisma.client.orm.public.Users.where({
+            tenantId: organizationId,
+            deptId: String(condition.value ?? ''),
           })
-          const ownerIds = users.map((item) => item.id)
-          const rows = await this.prisma.contractInvoice.findMany({
-            where:
-              condition.op === 'ne'
-                ? { organizationId, NOT: { owner: { in: ownerIds } } }
-                : { organizationId, owner: { in: ownerIds } },
-            select: { id: true },
+            .select('id')
+            .all()
+          const ownerIds = users.map((item) => String(item.id))
+          let query = this.prisma.client.orm.public.ContractInvoice.where({
+            organizationId: organizationId,
           })
+          query =
+            condition.op === 'ne'
+              ? query.where((row) => not(row.owner.in(ownerIds)))
+              : query.where((row) => row.owner.in(ownerIds))
+          const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
-          const clause = directClause(condition.key, condition)
-          if (!clause) return new Set<string>()
-          const rows = await this.prisma.contractInvoice.findMany({
-            where: { organizationId, AND: [clause] } as Prisma.ContractInvoiceWhereInput,
-            select: { id: true },
+          let query = this.prisma.client.orm.public.ContractInvoice.where({
+            organizationId: organizationId,
           })
+          query = this.applyDirectFilter(query, condition.key, condition)
+          const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         const field = fieldMap.get(condition.key)
@@ -814,6 +851,139 @@ export class ContractInvoiceService {
         .slice(1)
         .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
+  }
+
+  private applyDirectFilter(
+    collection: ReturnType<typeof this.prisma.client.orm.public.ContractInvoice.where>,
+    key: string,
+    condition: FilterCondition,
+  ) {
+    const impossible = () => collection.where((row) => row.id.eq(''))
+    if (key === 'amount' || key === 'taxRate') {
+      if (condition.op === 'isEmpty') {
+        return collection.where((row) => (key === 'amount' ? row.amount : row.taxRate).isNull())
+      }
+      if (condition.op === 'notEmpty') {
+        return collection.where((row) => (key === 'amount' ? row.amount : row.taxRate).isNotNull())
+      }
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
+      const value = values[0]!
+      return collection.where((row) => {
+        const field = key === 'amount' ? row.amount : row.taxRate
+        if (condition.op === 'eq') return field.eq(value)
+        if (condition.op === 'ne') return field.neq(value)
+        if (condition.op === 'in') return field.in(values)
+        if (condition.op === 'notIn') return not(field.in(values))
+        if (condition.op === 'gt') return field.gt(value)
+        if (condition.op === 'gte') return field.gte(value)
+        if (condition.op === 'lt') return field.lt(value)
+        if (condition.op === 'lte') return field.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'createTime' || key === 'updateTime') {
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values: bigint[] = []
+      for (const raw of rawValues) {
+        const direct = Number(raw)
+        const millis =
+          Number.isFinite(direct) && String(raw ?? '').trim() !== ''
+            ? direct
+            : new Date(String(raw)).getTime()
+        if (!Number.isFinite(millis)) return impossible()
+        values.push(BigInt(Math.trunc(millis)))
+      }
+      const value = values[0]!
+      return collection.where((row) => {
+        const field = key === 'createTime' ? row.createTime : row.updateTime
+        if (condition.op === 'eq') return field.eq(value)
+        if (condition.op === 'ne') return field.neq(value)
+        if (condition.op === 'in') return field.in(values)
+        if (condition.op === 'notIn') return not(field.in(values))
+        if (condition.op === 'gt') return field.gt(value)
+        if (condition.op === 'gte') return field.gte(value)
+        if (condition.op === 'lt') return field.lt(value)
+        if (condition.op === 'lte') return field.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'name') {
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
+      )
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.name.eq(value)
+        if (condition.op === 'ne') return row.name.neq(value)
+        if (condition.op === 'in') return row.name.in(values)
+        if (condition.op === 'notIn') return not(row.name.in(values))
+        if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+
+    const nullable = ['invoiceType', 'businessTitleId', 'approvalStatus'].includes(key)
+    if (condition.op === 'isEmpty') {
+      if (!nullable) return impossible()
+      return collection.where((row) => {
+        const field =
+          key === 'invoiceType'
+            ? row.invoiceType
+            : key === 'businessTitleId'
+              ? row.businessTitleId
+              : row.approvalStatus
+        return field.isNull()
+      })
+    }
+    if (condition.op === 'notEmpty') {
+      if (!nullable) return collection
+      return collection.where((row) => {
+        const field =
+          key === 'invoiceType'
+            ? row.invoiceType
+            : key === 'businessTitleId'
+              ? row.businessTitleId
+              : row.approvalStatus
+        return field.isNotNull()
+      })
+    }
+    const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+    const values = rawValues.map((item) => String(item ?? ''))
+    const value = values[0]!
+    return collection.where((row) => {
+      const field =
+        key === 'contractId'
+          ? row.contractId
+          : key === 'owner'
+            ? row.owner
+            : key === 'invoiceType'
+              ? row.invoiceType
+              : key === 'businessTitleId'
+                ? row.businessTitleId
+                : key === 'approvalStatus'
+                  ? row.approvalStatus
+                  : key === 'updateUser'
+                    ? row.updateUser
+                    : row.createUser
+      if (condition.op === 'eq') return field.eq(value)
+      if (condition.op === 'ne') return field.neq(value)
+      if (condition.op === 'in') return field.in(values)
+      if (condition.op === 'notIn') return not(field.in(values))
+      if (condition.op === 'contains') return field.ilike(`%${String(condition.value ?? '')}%`)
+      if (condition.op === 'notContains')
+        return not(field.ilike(`%${String(condition.value ?? '')}%`))
+      return row.id.eq('')
+    })
   }
 
   private async toCustomData(

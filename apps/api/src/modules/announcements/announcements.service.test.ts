@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
 import type { NotificationsService } from '../notifications/notifications.service'
 import { AnnouncementsService } from './announcements.service'
 
@@ -10,8 +11,8 @@ type Row = {
   tenantId: string
   subject: string
   content: string
-  startAt: Date
-  endAt: Date
+  startAt: ReturnType<typeof nowInstant>
+  endAt: ReturnType<typeof nowInstant>
   url: string | null
   linkName: string | null
   departmentIds: string[]
@@ -20,16 +21,16 @@ type Row = {
   notice: boolean
   createUserId: string
   updateUserId: string
-  createdAt: Date
-  updatedAt: Date
+  createdAt: ReturnType<typeof nowInstant>
+  updatedAt: ReturnType<typeof nowInstant>
 }
 
 type AnnouncementWhere = {
   id?: string
   tenantId?: string
   notice?: boolean
-  startAt?: { lte?: Date }
-  endAt?: { gte?: Date }
+  startAt?: { lte?: ReturnType<typeof nowInstant> }
+  endAt?: { gte?: ReturnType<typeof nowInstant> }
   subject?: { contains?: string }
 }
 
@@ -85,8 +86,10 @@ function createFixture() {
     if (where?.id && row.id !== where.id) return false
     if (where?.tenantId && row.tenantId !== where.tenantId) return false
     if (where?.notice !== undefined && row.notice !== where.notice) return false
-    if (where?.startAt?.lte && row.startAt > where.startAt.lte) return false
-    if (where?.endAt?.gte && row.endAt < where.endAt.gte) return false
+    if (where?.startAt?.lte && row.startAt.epochMilliseconds > where.startAt.lte.epochMilliseconds)
+      return false
+    if (where?.endAt?.gte && row.endAt.epochMilliseconds < where.endAt.gte.epochMilliseconds)
+      return false
     const contains = where?.subject?.contains
     if (contains && !row.subject.toLowerCase().includes(String(contains).toLowerCase()))
       return false
@@ -102,8 +105,8 @@ function createFixture() {
           departmentIds: [...data.departmentIds],
           userIds: [...data.userIds],
           receiverUserIds: [...data.receiverUserIds],
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: nowInstant(),
+          updatedAt: nowInstant(),
         }
         rows.push(row)
         return { ...row }
@@ -127,12 +130,12 @@ function createFixture() {
         rows.filter((row) => matches(row, where)).length,
       update: async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
         const row = rows.find((item) => item.id === where.id)!
-        Object.assign(row, data, { updatedAt: new Date() })
+        Object.assign(row, data, { updatedAt: nowInstant() })
         return { ...row }
       },
       updateMany: async ({ where, data }: { where: AnnouncementWhere; data: Partial<Row> }) => {
         const targets = rows.filter((row) => matches(row, where))
-        targets.forEach((row) => Object.assign(row, data, { updatedAt: new Date() }))
+        targets.forEach((row) => Object.assign(row, data, { updatedAt: nowInstant() }))
         return { count: targets.length }
       },
       delete: async ({ where }: { where: { id: string } }) => {
@@ -163,6 +166,141 @@ function createFixture() {
           .map(({ tenantId: _tenantId, status: _status, ...item }) => item),
     },
     $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
+  } as unknown as Record<string, unknown>
+  void prisma
+
+  type RowPredicate = (row: Row) => boolean
+  const announcementCollection = (
+    predicates: RowPredicate[] = [],
+    offset = 0,
+    limit: number | null = null,
+  ) => ({
+    where(next: Partial<Row> | ((field: Record<string, any>) => RowPredicate)) {
+      if (typeof next === 'function') {
+        const fields = {
+          subject: {
+            ilike: (pattern: string) => (row: Row) =>
+              row.subject.toLowerCase().includes(pattern.replaceAll('%', '').toLowerCase()),
+          },
+          startAt: {
+            lte: (value: unknown) => (row: Row) =>
+              row.startAt.epochMilliseconds <=
+              (value as ReturnType<typeof nowInstant>).epochMilliseconds,
+          },
+          endAt: {
+            gte: (value: unknown) => (row: Row) =>
+              row.endAt.epochMilliseconds >=
+              (value as ReturnType<typeof nowInstant>).epochMilliseconds,
+          },
+        }
+        return announcementCollection([...predicates, next(fields)], offset, limit)
+      }
+      return announcementCollection(
+        [
+          ...predicates,
+          (row) => Object.entries(next).every(([key, value]) => row[key as keyof Row] === value),
+        ],
+        offset,
+        limit,
+      )
+    },
+    orderBy() {
+      return this
+    },
+    offset(value: number) {
+      return announcementCollection(predicates, value, limit)
+    },
+    limit(value: number) {
+      return announcementCollection(predicates, offset, value)
+    },
+    all: async () =>
+      rows
+        .filter((row) => predicates.every((predicate) => predicate(row)))
+        .slice(offset, limit === null ? undefined : offset + limit)
+        .map((row) => ({ ...row })),
+    first: async () => rows.find((row) => predicates.every((predicate) => predicate(row))) ?? null,
+    aggregate: async () => ({
+      count: rows.filter((row) => predicates.every((predicate) => predicate(row))).length,
+    }),
+    create: async (data: Record<string, unknown>) => {
+      const row: Row = {
+        ...(data as unknown as Row),
+        id: `announcement-${++sequence}`,
+        startAt: data['startAt'] as ReturnType<typeof nowInstant>,
+        endAt: data['endAt'] as ReturnType<typeof nowInstant>,
+        departmentIds: [...(data['departmentIds'] as string[])],
+        userIds: [...(data['userIds'] as string[])],
+        receiverUserIds: [...(data['receiverUserIds'] as string[])],
+        createdAt: nowInstant(),
+        updatedAt: nowInstant(),
+      }
+      rows.push(row)
+      return { ...row }
+    },
+    update: async (data: Record<string, unknown>) => {
+      const row = rows.find((item) => predicates.every((predicate) => predicate(item)))
+      if (!row) return null
+      const normalized = { ...data } as Record<string, unknown>
+      delete normalized['updatedAt']
+      Object.assign(row, normalized)
+      row.updatedAt = nowInstant()
+      return { ...row }
+    },
+    delete: async () => {
+      const index = rows.findIndex((row) => predicates.every((predicate) => predicate(row)))
+      return index >= 0 ? (rows.splice(index, 1)[0] ?? null) : null
+    },
+  })
+
+  const entityCollection = <
+    T extends { id: string; tenantId: string; status?: string; deptId?: string | null },
+  >(
+    source: T[],
+    predicates: Array<(row: T) => boolean> = [],
+    selected: string[] | null = null,
+  ) => ({
+    where(next: Record<string, unknown> | ((field: Record<string, any>) => (row: T) => boolean)) {
+      if (typeof next === 'function') {
+        const fields = {
+          id: { in: (values: string[]) => (row: T) => values.includes(row.id) },
+          deptId: {
+            in: (values: string[]) => (row: T) => !!row.deptId && values.includes(row.deptId),
+          },
+        }
+        return entityCollection(source, [...predicates, next(fields)], selected)
+      }
+      return entityCollection(
+        source,
+        [
+          ...predicates,
+          (row) => Object.entries(next).every(([key, value]) => row[key as keyof T] === value),
+        ],
+        selected,
+      )
+    },
+    select(...fields: string[]) {
+      return entityCollection(source, predicates, fields)
+    },
+    async all() {
+      return source
+        .filter((row) => predicates.every((predicate) => predicate(row)))
+        .map((row) =>
+          selected
+            ? Object.fromEntries(selected.map((field) => [field, row[field as keyof T]]))
+            : { ...row },
+        )
+    },
+  })
+  const prismaRuntime = {
+    client: {
+      orm: {
+        public: {
+          Announcements: announcementCollection(),
+          Departments: entityCollection(departments),
+          Users: entityCollection(users),
+        },
+      },
+    },
   } as unknown as PrismaService
 
   const notifications = {
@@ -183,7 +321,7 @@ function createFixture() {
   } as unknown as NotificationsService
 
   return {
-    service: new AnnouncementsService(prisma, notifications),
+    service: new AnnouncementsService(prismaRuntime, notifications),
     rows,
     dispatches,
     removals,

@@ -5,41 +5,114 @@ import type { MessageSettingsService } from '../message-settings/message-setting
 import type { BusinessNotificationsService } from './business-notifications.service'
 import { MessageExpiryService } from './message-expiry.service'
 
+type QueryKind = 'quotation' | 'payment' | 'contract'
+
+interface RawQueryHarness {
+  sql: string
+  values: unknown[]
+  returnsRow: () => RawQueryHarness
+  build: () => RawQueryHarness
+}
+
+function prismaFixture(
+  options: {
+    quotation?: (values: unknown[], sql: string) => unknown[]
+    payment?: (values: unknown[], sql: string) => unknown[]
+    contract?: (values: unknown[], sql: string) => unknown[]
+    onQuery?: (kind: QueryKind, values: unknown[], sql: string) => void
+  } = {},
+) {
+  const columns = {
+    opportunity_quotation: {
+      columns: { id: {}, name: {}, create_user: {}, until_time: {} },
+    },
+    contract_payment_plan: {
+      columns: { id: {}, name: {}, owner: {}, create_user: {}, plan_end_time: {} },
+    },
+    contract: { columns: { id: {}, name: {}, owner: {}, create_user: {}, end_time: {} } },
+    customer: { columns: { name: {} } },
+  }
+  return {
+    client: {
+      orm: {
+        public: {
+          Tenants: {
+            select() {
+              return this
+            },
+            all: async () => [],
+          },
+        },
+      },
+      raw: {
+        sql(strings: TemplateStringsArray, ...values: unknown[]) {
+          const query: RawQueryHarness = {
+            sql: strings.join('?'),
+            values,
+            returnsRow() {
+              return this
+            },
+            build() {
+              return this
+            },
+          }
+          return query
+        },
+      },
+      sql: { public: columns },
+      runtime: () => ({
+        query: async function* (query: RawQueryHarness) {
+          let kind: QueryKind
+          let rows: unknown[]
+          if (query.sql.includes('FROM opportunity_quotation AS quotation')) {
+            kind = 'quotation'
+            rows = options.quotation?.(query.values, query.sql) ?? []
+          } else if (query.sql.includes('FROM contract_payment_plan AS plan')) {
+            kind = 'payment'
+            rows = options.payment?.(query.values, query.sql) ?? []
+          } else {
+            kind = 'contract'
+            rows = options.contract?.(query.values, query.sql) ?? []
+          }
+          options.onQuery?.(kind, query.values, query.sql)
+          yield* rows
+        },
+      }),
+    },
+  } as unknown as PrismaService
+}
+
 test('到期执行器按配置提前天数发送并过滤已足额回款', async () => {
   const events: string[] = []
   const day = (value: Date) => value.getDate()
-  const prisma = {
-    opportunityQuotation: {
-      findMany: async ({ where }: { where: { untilTime: { gte: bigint } } }) =>
-        day(new Date(Number(where.untilTime.gte))) === 27
-          ? [
-              {
-                id: 'quote-a',
-                name: '年度报价',
-                createUser: 'owner-a',
-                untilTime: BigInt(new Date(2026, 7, 27).getTime()),
-                opportunity: { customer: { name: '示例客户' } },
-              },
-            ]
-          : [],
-    },
-    contractStageConfig: { findMany: async () => [] },
-    contract: { findMany: async () => [] },
-    contractPaymentPlan: {
-      findMany: async ({ where }: { where: { planEndTime: { gte: bigint } } }) =>
-        day(new Date(Number(where.planEndTime.gte))) === 24
-          ? [
-              {
-                name: '年度合同回款计划',
-                owner: 'owner-a',
-                planStatus: 'PENDING',
-                planEndTime: BigInt(new Date(2026, 7, 24).getTime()),
-                contract: { name: '年度合同', customer: { name: '示例客户' } },
-              },
-            ]
-          : [],
-    },
-  } as unknown as PrismaService
+  const prisma = prismaFixture({
+    quotation: (values) =>
+      day(new Date(Number(values[1]))) === 27
+        ? [
+            {
+              id: 'quote-a',
+              name: '年度报价',
+              createUser: 'owner-a',
+              untilTime: BigInt(new Date(2026, 7, 27).getTime()),
+              customerName: '示例客户',
+            },
+          ]
+        : [],
+    payment: (values) =>
+      day(new Date(Number(values[1]))) === 24
+        ? [
+            {
+              id: 'plan-a',
+              name: '年度合同回款计划',
+              owner: 'owner-a',
+              createUser: 'owner-a',
+              planEndTime: BigInt(new Date(2026, 7, 24).getTime()),
+              contractName: '年度合同',
+              customerName: '示例客户',
+            },
+          ]
+        : [],
+  })
   const settings = {
     getEffectiveSetting: async (_tenantId: string, event: string) => ({
       systemEnabled: true,
@@ -64,11 +137,7 @@ test('到期执行器按配置提前天数发送并过滤已足额回款', async
 
 test('关闭事件或清空提前时间时不查询业务数据', async () => {
   let queried = false
-  const prisma = {
-    opportunityQuotation: { findMany: async () => ((queried = true), []) },
-    contract: { findMany: async () => ((queried = true), []) },
-    contractPaymentPlan: { findMany: async () => ((queried = true), []) },
-  } as unknown as PrismaService
+  const prisma = prismaFixture({ onQuery: () => (queried = true) })
   const settings = {
     getEffectiveSetting: async (_tenantId: string, event: string) => ({
       systemEnabled: event.endsWith('_EXPIRING'),
@@ -90,7 +159,7 @@ test('到期执行器严格保持 Cordys 六个事件且不增加发票到期分
     },
   } as unknown as MessageSettingsService
   const service = new MessageExpiryService(
-    {} as PrismaService,
+    prismaFixture(),
     settings,
     {} as BusinessNotificationsService,
   )
@@ -110,40 +179,30 @@ test('到期执行器严格保持 Cordys 六个事件且不增加发票到期分
   )
 })
 
-test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合同', async () => {
-  const windows: Array<{ day: number; excludedStages: string[] }> = []
+test('合同到期按 3/7 天和当天窗口分别发送且通过 SQL 排除 END 阶段合同', async () => {
+  const windows: number[] = []
+  const sqls: string[] = []
   const delivered: Array<{
     event: string
     templateContext?: Record<string, unknown>
   }> = []
-  const prisma = {
-    opportunityQuotation: { findMany: async () => [] },
-    contractPaymentPlan: { findMany: async () => [] },
-    contractStageConfig: {
-      findMany: async () => [{ id: 'stage-end' }],
+  const prisma = prismaFixture({
+    contract: (values, sql) => {
+      const day = new Date(Number(values[1])).getDate()
+      windows.push(day)
+      sqls.push(sql)
+      return [
+        {
+          id: `contract-${day}`,
+          name: `合同-${day}`,
+          owner: 'owner-a',
+          createUser: 'creator-a',
+          endTime: values[1] as bigint,
+          customerName: '示例客户',
+        },
+      ]
     },
-    contract: {
-      findMany: async ({
-        where,
-      }: {
-        where: { stage: { notIn: string[] }; endTime: { gte: bigint } }
-      }) => {
-        windows.push({
-          day: new Date(Number(where.endTime.gte)).getDate(),
-          excludedStages: where.stage.notIn,
-        })
-        return [
-          {
-            id: `contract-${new Date(Number(where.endTime.gte)).getDate()}`,
-            name: `合同-${new Date(Number(where.endTime.gte)).getDate()}`,
-            owner: 'owner-a',
-            endTime: where.endTime.gte,
-            customer: { name: '示例客户' },
-          },
-        ]
-      },
-    },
-  } as unknown as PrismaService
+  })
   const settings = {
     getEffectiveSetting: async (_tenantId: string, event: string) => ({
       systemEnabled: event.startsWith('CONTRACT_'),
@@ -167,11 +226,9 @@ test('合同到期按 3/7 天和当天窗口分别发送且排除 END 阶段合�
   const service = new MessageExpiryService(prisma, settings, notifications)
 
   assert.equal(await service.runTenant('tenant-a', new Date(2026, 7, 24, 10)), 3)
-  assert.deepEqual(windows, [
-    { day: 27, excludedStages: ['stage-end'] },
-    { day: 31, excludedStages: ['stage-end'] },
-    { day: 24, excludedStages: ['stage-end'] },
-  ])
+  assert.deepEqual(windows, [27, 31, 24])
+  assert.ok(sqls.every((sql) => sql.includes('NOT EXISTS')))
+  assert.ok(sqls.every((sql) => sql.includes("stage.type = 'END'")))
   assert.deepEqual(
     delivered.map((item) => item.event),
     ['CONTRACT_EXPIRING', 'CONTRACT_EXPIRING', 'CONTRACT_EXPIRED'],
@@ -199,44 +256,38 @@ test('报价/合同/回款计划到期通知携带 direct createUser，且回款
     ownerId?: string | null
     createUserId?: string | null
   }> = []
-  const prisma = {
-    opportunityQuotation: {
-      findMany: async ({ where }: { where: { untilTime: { gte: bigint } } }) => [
-        {
-          id: 'quote-a',
-          name: '报价A',
-          createUser: 'quote-creator',
-          untilTime: where.untilTime.gte,
-          opportunity: { customer: { name: '客户A' } },
-        },
-      ],
-    },
-    contractPaymentPlan: {
-      findMany: async ({ where }: { where: { planEndTime: { gte: bigint } } }) => [
-        {
-          id: 'plan-a',
-          name: '计划A',
-          owner: 'plan-owner',
-          createUser: 'plan-creator',
-          planEndTime: where.planEndTime.gte,
-          contract: { name: '合同A', customer: { name: '客户A' } },
-        },
-      ],
-    },
-    contractStageConfig: { findMany: async () => [] },
-    contract: {
-      findMany: async ({ where }: { where: { endTime: { gte: bigint } } }) => [
-        {
-          id: 'contract-a',
-          name: '合同A',
-          owner: 'contract-owner',
-          createUser: 'contract-creator',
-          endTime: where.endTime.gte,
-          customer: { name: '客户A' },
-        },
-      ],
-    },
-  } as unknown as PrismaService
+  const prisma = prismaFixture({
+    quotation: (values) => [
+      {
+        id: 'quote-a',
+        name: '报价A',
+        createUser: 'quote-creator',
+        untilTime: values[1] as bigint,
+        customerName: '客户A',
+      },
+    ],
+    payment: (values) => [
+      {
+        id: 'plan-a',
+        name: '计划A',
+        owner: 'plan-owner',
+        createUser: 'plan-creator',
+        planEndTime: values[1] as bigint,
+        contractName: '合同A',
+        customerName: '客户A',
+      },
+    ],
+    contract: (values) => [
+      {
+        id: 'contract-a',
+        name: '合同A',
+        owner: 'contract-owner',
+        createUser: 'contract-creator',
+        endTime: values[1] as bigint,
+        customerName: '客户A',
+      },
+    ],
+  })
   const settings = {
     getEffectiveSetting: async (_tenantId: string, event: string) => ({
       systemEnabled: event.endsWith('_EXPIRING'),

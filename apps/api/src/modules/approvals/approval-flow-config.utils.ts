@@ -4,8 +4,17 @@ import type {
   ApprovalModule,
   ApprovalNodeConfig,
 } from '@micromatrix/shared'
-import { ApprovalFormType } from '../../generated/prisma/client'
 import { normalizeApprovalWebhookConfig } from './approval-webhook.utils'
+
+const ApprovalFormType = {
+  QUOTATION: 'QUOTATION',
+  CONTRACT: 'CONTRACT',
+  INVOICE: 'INVOICE',
+  ORDER: 'ORDER',
+  RECEIVABLE_RECORD_LEGACY: 'RECEIVABLE_RECORD_LEGACY',
+} as const
+
+type ApprovalFormType = (typeof ApprovalFormType)[keyof typeof ApprovalFormType]
 
 export const FORM_TYPE_PREFIX: Record<SharedApprovalFormType, string> = {
   quotation: 'QTE-APV',

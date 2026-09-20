@@ -4,9 +4,11 @@ import { BadRequestException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import type { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
 import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
 import type { AttachmentsService } from '../attachments/attachments.service'
 import { ResourceFieldAttachmentCleanupService } from './resource-field-attachment-cleanup.service'
 import type { ModuleFormsService } from './module-forms.service'
+import { createMemoryOrmTable, createTransactionStub } from './orm-test-stub'
 import { ResourceFieldValueService } from './resource-field-value.service'
 
 interface ValueRow {
@@ -24,7 +26,7 @@ interface AttachmentRow {
   mime: string | null
   targetType: string | null
   targetId: string | null
-  createdAt: Date
+  createdAt: ReturnType<typeof instantFromDate>
 }
 
 const fileFields = [
@@ -75,7 +77,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'application/pdf',
       targetType: null,
       targetId: null,
-      createdAt: new Date('2026-09-01T00:00:00Z'),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
     {
       id: 'picture-a',
@@ -86,7 +88,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'image/png',
       targetType: null,
       targetId: null,
-      createdAt: new Date('2026-09-01T00:00:00Z'),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
     {
       id: 'foreign-temp',
@@ -97,7 +99,7 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'application/pdf',
       targetType: null,
       targetId: null,
-      createdAt: new Date('2026-09-01T00:00:00Z'),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
     {
       id: 'bound-other',
@@ -108,107 +110,27 @@ function createLifecycleHarness(initialBlob: ValueRow[] = []) {
       mime: 'application/pdf',
       targetType: 'resourceField:customer',
       targetId: 'customer-b',
-      createdAt: new Date('2026-09-01T00:00:00Z'),
+      createdAt: instantFromDate(new Date('2026-09-01T00:00:00Z')),
     },
   ]
 
-  function fieldDelegate(rows: ValueRow[]) {
-    return {
-      findMany: async ({ where }: { where: { resourceId: { in: string[] } } }) =>
-        rows.filter((row) => where.resourceId.in.includes(row.resourceId)),
-      findFirst: async () => null,
-      deleteMany: async ({
-        where,
-      }: {
-        where: { resourceId: string; fieldId: { in: string[] } }
-      }) => {
-        for (let index = rows.length - 1; index >= 0; index--) {
-          const row = rows[index]
-          if (
-            row &&
-            row.resourceId === where.resourceId &&
-            where.fieldId.in.includes(row.fieldId)
-          ) {
-            rows.splice(index, 1)
-          }
-        }
-        return { count: 1 }
-      },
-      createMany: async ({ data }: { data: ValueRow[] }) => {
-        rows.push(...data)
-        return { count: data.length }
-      },
-    }
+  const publicNamespace = {
+    Customer: createMemoryOrmTable([{ id: 'customer-a', organizationId: 'tenant-a' }]),
+    CustomerField: createMemoryOrmTable(normal),
+    CustomerFieldBlob: createMemoryOrmTable(blob),
+    Attachments: createMemoryOrmTable(attachments),
   }
-
-  const prismaRecord = {
-    customer: {
-      findFirst: async ({ where }: { where: { id: string; organizationId: string } }) =>
-        where.id === 'customer-a' && where.organizationId === 'tenant-a' ? { id: where.id } : null,
-    },
-    customerField: fieldDelegate(normal),
-    customerFieldBlob: fieldDelegate(blob),
-    attachment: {
-      findMany: async ({ where }: { where: Record<string, unknown> }) => {
-        const ids = (where.id as { in?: string[] } | undefined)?.in
-        return attachments.filter((row) => {
-          if (ids && !ids.includes(row.id)) return false
-          if (where.tenantId && row.tenantId !== where.tenantId) return false
-          if (
-            'targetType' in where &&
-            typeof where.targetType === 'string' &&
-            row.targetType !== where.targetType
-          )
-            return false
-          if (
-            'targetId' in where &&
-            typeof where.targetId === 'string' &&
-            row.targetId !== where.targetId
-          )
-            return false
-          return true
-        })
-      },
-      updateMany: async ({
-        where,
-        data,
-      }: {
-        where: {
-          id: { in: string[] }
-          uploaderId: string
-          tenantId: string
-          targetType: null
-          targetId: null
-        }
-        data: { targetType: string; targetId: string }
-      }) => {
-        let count = 0
-        for (const row of attachments) {
-          if (
-            where.id.in.includes(row.id) &&
-            row.tenantId === where.tenantId &&
-            row.uploaderId === where.uploaderId &&
-            row.targetType === null &&
-            row.targetId === null
-          ) {
-            row.targetType = data.targetType
-            row.targetId = data.targetId
-            count++
-          }
-        }
-        return { count }
-      },
-    },
-    $queryRaw: async () => [],
-  }
+  const transaction = createTransactionStub(publicNamespace)
   const moduleForms = {
     listFields: async () => fileFields,
     listFieldsInTransaction: async () => fileFields,
   } as unknown as ModuleFormsService
-  const prisma = prismaRecord as unknown as PrismaService
+  const prisma = {
+    client: { orm: { public: publicNamespace } },
+  } as unknown as PrismaService
   return {
-    service: new ResourceFieldValueService(prisma, moduleForms),
-    tx: prismaRecord as never,
+    service: new ResourceFieldValueService(moduleForms, prisma),
+    tx: transaction as never,
     attachments,
     blob,
   }
@@ -332,13 +254,31 @@ test('资源字段附件清理器保留有效引用，删除孤儿和超过 24 �
     { id: 'temporary', tenantId: 'tenant-a', targetType: null, targetId: null },
   ]
   let queried = false
+  const query = {
+    returnsRow() {
+      return this
+    },
+    build() {
+      return {}
+    },
+  }
   const prisma = {
-    attachment: {
-      findMany: async () => {
-        if (queried) return []
-        queried = true
-        return rows
+    client: {
+      raw: { sql: () => query },
+      sql: {
+        public: {
+          attachments: {
+            columns: { id: {}, tenantId: {}, targetType: {}, targetId: {} },
+          },
+        },
       },
+      runtime: () => ({
+        query: async function* () {
+          if (queried) return
+          queried = true
+          yield* rows
+        },
+      }),
     },
   } as unknown as PrismaService
   const fields = {

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { MessageDelivery } from '../../generated/prisma/client'
 import type { PrismaService } from '../../prisma/prisma.service'
 import type {
   DingTalkClient,
@@ -11,6 +10,29 @@ import type { LarkClient, LarkMessageResult } from '../enterprise-integrations/l
 import type { WeComClient, WeComMessageResult } from '../enterprise-integrations/wecom.client'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { MessageDeliveryService } from './message-delivery.service'
+
+interface MessageDelivery {
+  id: string
+  tenantId: string
+  integrationId: string
+  channel: 'WECOM' | 'DINGTALK' | 'LARK' | 'EMAIL'
+  event: string
+  userId: string
+  externalSubject: string | null
+  title: string
+  content: string
+  link: string | null
+  status: 'PENDING' | 'SENDING' | 'SUCCEEDED' | 'FAILED' | 'DEAD'
+  attempts: number
+  maxAttempts: number
+  nextAttemptAt: Date | null
+  providerMessageId: string | null
+  errorCode: string | null
+  errorMessage: string | null
+  sentAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
 
 function delivery(
   id: string,
@@ -42,36 +64,124 @@ function delivery(
   }
 }
 
+function outbox(
+  rows: MessageDelivery[],
+  integrationForChannel: (channel: string) => { id: string } | null = () => ({
+    id: 'integration-a',
+  }),
+  mappings: Array<{ userId: string; externalId: string }> = [],
+): PrismaService {
+  const messageDeliveries = {
+    createAll: async (data: Array<Partial<MessageDelivery>>) =>
+      data.map((item) => {
+        const channel = (item.channel ?? 'WECOM') as 'WECOM' | 'DINGTALK' | 'LARK'
+        const row = {
+          ...delivery(`delivery-${rows.length + 1}`, item.externalSubject ?? null, channel),
+          ...item,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as MessageDelivery
+        rows.push(row)
+        return row
+      }),
+  }
+  const externalMappings = {
+    where: () => externalMappings,
+    select: () => externalMappings,
+    all: async () => mappings,
+  }
+  return {
+    client: {
+      orm: {
+        public: {
+          EnterpriseIntegrations: {
+            where: ({ provider }: { provider: string }) => ({
+              select: () => ({ first: async () => integrationForChannel(provider) }),
+            }),
+          },
+          ExternalUserMappings: externalMappings,
+          MessageDeliveries: messageDeliveries,
+        },
+      },
+      transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({ orm: { public: { MessageDeliveries: messageDeliveries } } }),
+    },
+  } as unknown as PrismaService
+}
+
+function workerRows(rows: Map<string, MessageDelivery>): PrismaService {
+  const collection = (id?: string) => ({
+    where(input: { id?: string }) {
+      return collection(input.id ?? id)
+    },
+    select() {
+      return this
+    },
+    first: async () => (id ? (rows.get(id) ?? null) : null),
+  })
+  return {
+    client: { orm: { public: { MessageDeliveries: collection() } } },
+  } as unknown as PrismaService
+}
+
+function installWorkerClaim(
+  service: MessageDeliveryService,
+  rows: Map<string, MessageDelivery>,
+): MessageDeliveryService {
+  const internals = service as unknown as {
+    claimDelivery(id: string): Promise<boolean>
+    completeDelivery(id: string, providerMessageId: string | null): Promise<void>
+    fail(
+      delivery: MessageDelivery,
+      errorCode: string,
+      errorMessage: string,
+      transient: boolean,
+    ): Promise<void>
+  }
+  internals.claimDelivery = async (id: string) => {
+    const row = rows.get(id)
+    if (!row || !['PENDING', 'FAILED'].includes(row.status)) return false
+    if (row.nextAttemptAt && row.nextAttemptAt.getTime() > Date.now()) return false
+    row.status = 'SENDING'
+    row.attempts += 1
+    row.nextAttemptAt = null
+    row.errorCode = null
+    row.errorMessage = null
+    row.updatedAt = new Date()
+    return true
+  }
+  internals.completeDelivery = async (id: string, providerMessageId: string | null) => {
+    const row = rows.get(id)
+    assert.ok(row)
+    row.status = 'SUCCEEDED'
+    row.providerMessageId = providerMessageId
+    row.sentAt = new Date()
+    row.errorCode = null
+    row.errorMessage = null
+    row.updatedAt = new Date()
+  }
+  internals.fail = async (
+    failedDelivery: MessageDelivery,
+    errorCode: string,
+    errorMessage: string,
+    transient: boolean,
+  ) => {
+    const row = rows.get(failedDelivery.id)
+    assert.ok(row)
+    const retryable = transient && failedDelivery.attempts < failedDelivery.maxAttempts
+    const delays = [60_000, 5 * 60_000, 15 * 60_000]
+    const delay = delays[Math.max(0, failedDelivery.attempts - 1)] ?? delays.at(-1)!
+    row.status = retryable ? 'FAILED' : 'DEAD'
+    row.nextAttemptAt = retryable ? new Date(Date.now() + delay) : null
+    row.errorCode = errorCode.slice(0, 100)
+    row.errorMessage = errorMessage.slice(0, 500)
+    row.updatedAt = new Date()
+  }
+  return service
+}
+
 function createWorker(result: WeComMessageResult) {
   const rows = new Map<string, MessageDelivery>()
-  const messageDelivery = {
-    updateMany: async ({
-      where,
-      data,
-    }: {
-      where: { id?: string }
-      data: Record<string, unknown>
-    }) => {
-      const row = where.id ? rows.get(where.id) : undefined
-      if (!row || !['PENDING', 'FAILED'].includes(row.status)) return { count: 0 }
-      Object.assign(row, data, {
-        attempts:
-          typeof data['attempts'] === 'object' && data['attempts']
-            ? row.attempts + 1
-            : row.attempts,
-        updatedAt: new Date(),
-      })
-      return { count: 1 }
-    },
-    findUnique: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
-    update: async ({ where, data }: { where: { id: string }; data: Partial<MessageDelivery> }) => {
-      const row = rows.get(where.id)
-      assert.ok(row)
-      Object.assign(row, data, { updatedAt: new Date() })
-      return row
-    },
-  }
-  const prisma = { messageDelivery } as unknown as PrismaService
   const settings = {} as MessageSettingsService
   const integrations = {
     getWeComRuntimeContext: async () => ({
@@ -82,24 +192,106 @@ function createWorker(result: WeComMessageResult) {
   const client = { sendTextMessage: async () => result } as unknown as WeComClient
   return {
     rows,
-    service: new MessageDeliveryService(prisma, settings, integrations, client),
+    service: installWorkerClaim(
+      new MessageDeliveryService(workerRows(rows), settings, integrations, client),
+      rows,
+    ),
   }
 }
 
+test('消息投递 Cron 通过 Prisma 恢复超时 SENDING，并保持 due 扫描边界', async () => {
+  const whereCalls: unknown[] = []
+  let updateData: Record<string, unknown> | undefined
+  let processedIds: string[] = []
+  let phase: 'recover' | 'due' = 'recover'
+  let selected: string[] = []
+  let orderByCalled = false
+  let limitValue: number | undefined
+  const collection = {
+    where(input: unknown) {
+      if (typeof input === 'function') {
+        if (phase === 'recover') {
+          whereCalls.push(
+            input({
+              channel: {
+                in: (values: unknown[]) => ({ op: 'in', field: 'channel', values }),
+              },
+              updatedAt: {
+                lt: (value: unknown) => ({ op: 'lt', field: 'updatedAt', value }),
+              },
+            }),
+          )
+        } else {
+          whereCalls.push({ phase: 'due', callback: true })
+        }
+      } else {
+        whereCalls.push(input)
+      }
+      return collection
+    },
+    async updateAll(data: Record<string, unknown>) {
+      updateData = data
+      phase = 'due'
+      return []
+    },
+    select(...fields: string[]) {
+      selected = fields
+      return collection
+    },
+    orderBy(_input: unknown) {
+      orderByCalled = true
+      return collection
+    },
+    limit(value: number) {
+      limitValue = value
+      return collection
+    },
+    async all() {
+      return [{ id: 'due-1' }]
+    },
+  }
+  const prisma = {
+    client: { orm: { public: { MessageDeliveries: collection } } },
+  } as unknown as PrismaService
+  const service = new MessageDeliveryService(
+    prisma,
+    {} as MessageSettingsService,
+    {} as EnterpriseIntegrationsService,
+    {} as WeComClient,
+  )
+  service.processIds = async (ids) => {
+    processedIds = ids
+  }
+
+  const count = await service.processDueDeliveries()
+
+  assert.equal(count, 1)
+  assert.deepEqual(whereCalls[0], { status: 'SENDING' })
+  assert.deepEqual(whereCalls[1], {
+    op: 'in',
+    field: 'channel',
+    values: ['WECOM', 'DINGTALK', 'LARK'],
+  })
+  assert.equal((whereCalls[2] as { op?: string }).op, 'lt')
+  assert.equal((whereCalls[2] as { field?: string }).field, 'updatedAt')
+  assert.equal(updateData?.['status'], 'FAILED')
+  assert.equal(updateData?.['errorCode'], 'WORKER_TIMEOUT')
+  assert.equal(updateData?.['errorMessage'], '投递处理超时，已恢复等待重试')
+  assert.ok(updateData?.['nextAttemptAt'])
+  assert.equal(updateData?.['nextAttemptAt'], updateData?.['updatedAt'])
+  assert.deepEqual(whereCalls.slice(3), [
+    { phase: 'due', callback: true },
+    { phase: 'due', callback: true },
+    { phase: 'due', callback: true },
+  ])
+  assert.deepEqual(selected, ['id'])
+  assert.equal(orderByCalled, true)
+  assert.equal(limitValue, 50)
+  assert.deepEqual(processedIds, ['due-1'])
+})
+
 test('企微 outbox 对缺失成员映射保留 DEAD 审计', async () => {
   const rows: MessageDelivery[] = []
-  const prisma = {
-    enterpriseIntegration: { findUnique: async () => ({ id: 'integration-a' }) },
-    externalUserMapping: { findMany: async () => [] },
-    messageDelivery: {
-      create: async ({ data }: { data: Partial<MessageDelivery> }) => {
-        const row = { ...delivery(`delivery-${rows.length + 1}`, null), ...data }
-        rows.push(row)
-        return row
-      },
-    },
-    $transaction: async (operations: Array<Promise<MessageDelivery>>) => Promise.all(operations),
-  } as unknown as PrismaService
   const settings = {
     isWeComEnabled: async () => true,
     isDingTalkEnabled: async () => false,
@@ -107,7 +299,7 @@ test('企微 outbox 对缺失成员映射保留 DEAD 审计', async () => {
     getWeComChannelGate: async () => ({ available: true }),
   } as unknown as MessageSettingsService
   const service = new MessageDeliveryService(
-    prisma,
+    outbox(rows, () => ({ id: 'integration-a' }), []),
     settings,
     {} as EnterpriseIntegrationsService,
     {} as WeComClient,
@@ -163,27 +355,6 @@ test('企微 outbox 条件认领并记录成功或退避结果', async (t) => {
 test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', async (t) => {
   await t.test('只开启钉钉时生成 DINGTALK 投递记录', async () => {
     const rows: MessageDelivery[] = []
-    const prisma = {
-      enterpriseIntegration: {
-        findUnique: async ({ where }: { where: { tenantId_provider: { provider: string } } }) =>
-          where.tenantId_provider.provider === 'DINGTALK' ? { id: 'ding-integration' } : null,
-      },
-      externalUserMapping: {
-        findMany: async () => [{ userId: 'user-a', externalId: 'ding-user-a' }],
-      },
-      messageDelivery: {
-        updateMany: async () => ({ count: 0 }),
-        create: async ({ data }: { data: Partial<MessageDelivery> }) => {
-          const row = {
-            ...delivery(`ding-${rows.length + 1}`, 'ding-user-a', 'DINGTALK'),
-            ...data,
-          }
-          rows.push(row)
-          return row
-        },
-      },
-      $transaction: async (operations: Array<Promise<MessageDelivery>>) => Promise.all(operations),
-    } as unknown as PrismaService
     const settings = {
       isWeComEnabled: async () => false,
       isDingTalkEnabled: async () => true,
@@ -191,11 +362,14 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
       getDingTalkChannelGate: async () => ({ available: true }),
     } as unknown as MessageSettingsService
     const service = new MessageDeliveryService(
-      prisma,
+      outbox(rows, (channel) => (channel === 'DINGTALK' ? { id: 'ding-integration' } : null), [
+        { userId: 'user-a', externalId: 'ding-user-a' },
+      ]),
       settings,
       {} as EnterpriseIntegrationsService,
       {} as WeComClient,
     )
+    service.processIds = async () => undefined
     const count = await service.enqueue({
       tenantId: 'tenant-a',
       event: 'CUSTOMER_ADD',
@@ -209,40 +383,6 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
 
   function createDingTalkWorker(result: DingTalkMessageResult) {
     const rows = new Map<string, MessageDelivery>()
-    const messageDelivery = {
-      updateMany: async ({
-        where,
-        data,
-      }: {
-        where: { id?: string }
-        data: Record<string, unknown>
-      }) => {
-        const row = where.id ? rows.get(where.id) : undefined
-        if (!row || !['PENDING', 'FAILED'].includes(row.status)) return { count: 0 }
-        Object.assign(row, data, {
-          attempts:
-            typeof data['attempts'] === 'object' && data['attempts']
-              ? row.attempts + 1
-              : row.attempts,
-          updatedAt: new Date(),
-        })
-        return { count: 1 }
-      },
-      findUnique: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
-      update: async ({
-        where,
-        data,
-      }: {
-        where: { id: string }
-        data: Partial<MessageDelivery>
-      }) => {
-        const row = rows.get(where.id)
-        assert.ok(row)
-        Object.assign(row, data, { updatedAt: new Date() })
-        return row
-      },
-    }
-    const prisma = { messageDelivery } as unknown as PrismaService
     const integrations = {
       getDingTalkRuntimeContext: async () => ({
         integration: { id: 'integration-a' },
@@ -257,13 +397,16 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
     const client = { sendTextMessage: async () => result } as unknown as DingTalkClient
     return {
       rows,
-      service: new MessageDeliveryService(
-        prisma,
-        {} as MessageSettingsService,
-        integrations,
-        {} as WeComClient,
-        undefined,
-        client,
+      service: installWorkerClaim(
+        new MessageDeliveryService(
+          workerRows(rows),
+          {} as MessageSettingsService,
+          integrations,
+          {} as WeComClient,
+          undefined,
+          client,
+        ),
+        rows,
       ),
     }
   }
@@ -301,27 +444,6 @@ test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', 
 test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机', async (t) => {
   await t.test('只开启飞书时生成 LARK 投递记录', async () => {
     const rows: MessageDelivery[] = []
-    const prisma = {
-      enterpriseIntegration: {
-        findUnique: async ({ where }: { where: { tenantId_provider: { provider: string } } }) =>
-          where.tenantId_provider.provider === 'LARK' ? { id: 'lark-integration' } : null,
-      },
-      externalUserMapping: {
-        findMany: async () => [{ userId: 'user-a', externalId: 'ou_user_a' }],
-      },
-      messageDelivery: {
-        updateMany: async () => ({ count: 0 }),
-        create: async ({ data }: { data: Partial<MessageDelivery> }) => {
-          const row = {
-            ...delivery(`lark-${rows.length + 1}`, 'ou_user_a', 'LARK'),
-            ...data,
-          }
-          rows.push(row)
-          return row
-        },
-      },
-      $transaction: async (operations: Array<Promise<MessageDelivery>>) => Promise.all(operations),
-    } as unknown as PrismaService
     const settings = {
       isWeComEnabled: async () => false,
       isDingTalkEnabled: async () => false,
@@ -329,11 +451,14 @@ test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机
       getLarkChannelGate: async () => ({ available: true }),
     } as unknown as MessageSettingsService
     const service = new MessageDeliveryService(
-      prisma,
+      outbox(rows, (channel) => (channel === 'LARK' ? { id: 'lark-integration' } : null), [
+        { userId: 'user-a', externalId: 'ou_user_a' },
+      ]),
       settings,
       {} as EnterpriseIntegrationsService,
       {} as WeComClient,
     )
+    service.processIds = async () => undefined
     const count = await service.enqueue({
       tenantId: 'tenant-a',
       event: 'CUSTOMER_ADD',
@@ -347,40 +472,6 @@ test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机
 
   function createLarkWorker(result: LarkMessageResult) {
     const rows = new Map<string, MessageDelivery>()
-    const messageDelivery = {
-      updateMany: async ({
-        where,
-        data,
-      }: {
-        where: { id?: string }
-        data: Record<string, unknown>
-      }) => {
-        const row = where.id ? rows.get(where.id) : undefined
-        if (!row || !['PENDING', 'FAILED'].includes(row.status)) return { count: 0 }
-        Object.assign(row, data, {
-          attempts:
-            typeof data['attempts'] === 'object' && data['attempts']
-              ? row.attempts + 1
-              : row.attempts,
-          updatedAt: new Date(),
-        })
-        return { count: 1 }
-      },
-      findUnique: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
-      update: async ({
-        where,
-        data,
-      }: {
-        where: { id: string }
-        data: Partial<MessageDelivery>
-      }) => {
-        const row = rows.get(where.id)
-        assert.ok(row)
-        Object.assign(row, data, { updatedAt: new Date() })
-        return row
-      },
-    }
-    const prisma = { messageDelivery } as unknown as PrismaService
     const integrations = {
       getLarkRuntimeContext: async () => ({
         integration: { id: 'integration-a' },
@@ -395,14 +486,17 @@ test('飞书 outbox 使用 LARK channel、open_id 映射与 message_id 状态机
     const client = { sendTextMessage: async () => result } as unknown as LarkClient
     return {
       rows,
-      service: new MessageDeliveryService(
-        prisma,
-        {} as MessageSettingsService,
-        integrations,
-        {} as WeComClient,
-        undefined,
-        undefined,
-        client,
+      service: installWorkerClaim(
+        new MessageDeliveryService(
+          workerRows(rows),
+          {} as MessageSettingsService,
+          integrations,
+          {} as WeComClient,
+          undefined,
+          undefined,
+          client,
+        ),
+        rows,
       ),
     }
   }

@@ -4,9 +4,16 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { OPERATION_LOG_RESULT_META } from '../../common/decorators/log-operation.decorator'
-import type { FollowUpPlan, FollowUpPlanComment } from '../../generated/prisma/client'
-import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
+import {
+  createFollowCommentPrismaHarness,
+  type HarnessUser,
+} from '../follow-ups/follow-comment.test-harness'
+import type { FollowCommentRow as FollowUpPlanComment } from '../follow-ups/follow-comment.service-base'
 import { FollowPlanCommentsService } from './follow-plan-comments.service'
+import type { FollowUpPlan } from './follow-up-plans.service'
+
+const instant = (value: string) => instantFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'user-1',
@@ -28,7 +35,7 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     contactId: null,
     content: '跟进计划',
     method: '电话',
-    estimatedAt: new Date('2026-09-07T03:00:00.000Z'),
+    estimatedAt: instant('2026-09-07T03:00:00.000Z'),
     status: 'PREPARED',
     converted: false,
     convertedRecordId: null,
@@ -38,8 +45,8 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     dueNotifiedAt: null,
     commentCount: 0,
     customData: {},
-    createdAt: new Date('2026-09-06T03:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T03:00:00.000Z'),
+    createdAt: instant('2026-09-06T03:00:00.000Z'),
+    updatedAt: instant('2026-09-06T03:00:00.000Z'),
     ...overrides,
   }
 }
@@ -54,72 +61,27 @@ function comment(overrides: Partial<FollowUpPlanComment> = {}): FollowUpPlanComm
     tenantId: user.tenantId,
     createdById: user.id,
     updatedById: user.id,
-    createdAt: new Date('2026-09-06T04:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T04:00:00.000Z'),
+    createdAt: instant('2026-09-06T04:00:00.000Z'),
+    updatedAt: instant('2026-09-06T04:00:00.000Z'),
     ...overrides,
   }
 }
 
-function users(ids: string[]) {
-  return ids.map((id) => ({
-    id,
-    name: `成员-${id}`,
-    status: 'ACTIVE' as const,
-    extension: { avatar: null },
-  }))
+function member(id: string, overrides: Partial<HarnessUser> = {}): HarnessUser {
+  return { id, ...overrides }
 }
 
 test('FollowPlan 评论原子写 Comment/Mention/commentCount，并通知负责人和 mention/reply', async () => {
   const notifications: Array<{ event: string; recipientIds: Array<string | null | undefined> }> = []
-  const calls: string[] = []
-  const created = comment({ replyToUserId: 'reply-1' })
-  const tx = {
-    followUpPlanComment: {
-      create: async () => {
-        calls.push('comment')
-        return created
-      },
-      count: async () => {
-        calls.push('count')
-        return 1
-      },
-    },
-    followUpPlanCommentMention: {
-      deleteMany: async () => {
-        calls.push('mention-delete')
-        return { count: 0 }
-      },
-      createMany: async () => {
-        calls.push('mention-create')
-        return { count: 1 }
-      },
-    },
-    followUpPlan: {
-      update: async () => {
-        calls.push('plan-count')
-        return plan({ commentCount: 1 })
-      },
-    },
-  }
-  const prisma = {
-    user: {
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) => users(where.id.in),
-      findFirst: async () => ({ id: 'reply-1' }),
-    },
-    followUpPlanComment: {
-      findFirst: async () => ({ id: 'parent-1', parentId: null }),
-    },
-    followUpPlanCommentMention: {
-      findMany: async () => [{ commentId: created.id, userId: 'mention-1' }],
-    },
-    customer: { findFirst: async () => ({ name: '客户A' }) },
-    clue: { findFirst: async () => null },
-    opportunity: { findFirst: async () => null },
-    $transaction: async (callback: (client: typeof tx) => Promise<FollowUpPlanComment>) =>
-      callback(tx),
-  }
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'plan',
+    tenantId: user.tenantId,
+    nextCreatedId: 'comment-1',
+    comments: [comment({ id: 'parent-1' })],
+    users: [member(user.id), member('mention-1'), member('reply-1')],
+  })
   const service = new FollowPlanCommentsService(
-    prisma as unknown as PrismaService,
+    harness.prisma,
     { assertPlanAccess: async () => plan() } as never,
     {
       send: async (input: { event: string; recipientIds: Array<string | null | undefined> }) => {
@@ -137,7 +99,13 @@ test('FollowPlan 评论原子写 Comment/Mention/commentCount，并通知负责�
     mentionedUserIds: ['mention-1', 'mention-1'],
   })
 
-  assert.deepEqual(calls, ['comment', 'mention-delete', 'mention-create', 'count', 'plan-count'])
+  assert.deepEqual(harness.calls, [
+    'comment',
+    'mention-delete',
+    'mention-create',
+    'count',
+    'plan-count',
+  ])
   assert.equal(result.content, '评论内容')
   assert.deepEqual(
     notifications.map((item) => [item.event, item.recipientIds]),
@@ -155,13 +123,14 @@ test('FollowPlan 评论原子写 Comment/Mention/commentCount，并通知负责�
 })
 
 test('FollowPlan 回复只允许挂在顶层评论', async () => {
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'plan',
+    tenantId: user.tenantId,
+    comments: [comment({ id: 'reply-1', parentId: 'parent-1' })],
+    users: [member('user-2')],
+  })
   const service = new FollowPlanCommentsService(
-    {
-      user: { findMany: async () => [], findFirst: async () => ({ id: 'user-2' }) },
-      followUpPlanComment: {
-        findFirst: async () => ({ id: 'reply-1', parentId: 'parent-1' }),
-      },
-    } as unknown as PrismaService,
+    harness.prisma,
     { assertPlanAccess: async () => plan() } as never,
     {} as never,
   )
@@ -179,13 +148,12 @@ test('FollowPlan 回复只允许挂在顶层评论', async () => {
 })
 
 test('FollowPlan 评论只有创建人可编辑', async () => {
-  const service = new FollowPlanCommentsService(
-    {
-      followUpPlanComment: { findFirst: async () => comment({ createdById: 'other-user' }) },
-    } as unknown as PrismaService,
-    {} as never,
-    {} as never,
-  )
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'plan',
+    tenantId: user.tenantId,
+    comments: [comment({ createdById: 'other-user' })],
+  })
+  const service = new FollowPlanCommentsService(harness.prisma, {} as never, {} as never)
 
   await assert.rejects(
     () => service.update(user, { id: 'comment-1', content: '越权修改' }),
@@ -201,22 +169,15 @@ test('FollowPlan 评论分页只统计顶层 total，commentCount 包含回复',
     createdById: 'reply-user',
     replyToUserId: user.id,
   })
-  const prisma = {
-    followUpPlanComment: {
-      findMany: async ({ where }: { where: { parentId: null | { in: string[] } } }) =>
-        where.parentId === null ? [parent] : [reply],
-      count: async () => 1,
-    },
-    followUpPlanCommentMention: {
-      findMany: async () => [{ commentId: reply.id, userId: 'mention-user' }],
-    },
-    user: {
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) => users(where.id.in),
-    },
-    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
-  }
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'plan',
+    tenantId: user.tenantId,
+    comments: [parent, reply],
+    mentions: [{ commentId: reply.id, userId: 'mention-user' }],
+    users: [member(user.id), member('reply-user'), member('mention-user')],
+  })
   const service = new FollowPlanCommentsService(
-    prisma as unknown as PrismaService,
+    harness.prisma,
     { assertPlanAccess: async () => plan({ commentCount: 2 }) } as never,
     {} as never,
   )
@@ -228,7 +189,8 @@ test('FollowPlan 评论分页只统计顶层 total，commentCount 包含回复',
 })
 
 test('FollowPlan 评论事件按 customer/lead/opportunity 与 added/mentioned 六类映射', () => {
-  const service = new FollowPlanCommentsService({} as PrismaService, {} as never, {} as never)
+  const harness = createFollowCommentPrismaHarness({ kind: 'plan', tenantId: user.tenantId })
+  const service = new FollowPlanCommentsService(harness.prisma, {} as never, {} as never)
   const event = (resource: FollowUpPlan, mentioned: boolean): MessageTaskEvent =>
     (
       service as unknown as {

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { PrismaModule } from '../../prisma/prisma.module'
 import { DictionariesModule } from '../dictionaries/dictionaries.module'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
@@ -9,7 +10,7 @@ import { ResourcePoolsService } from './resource-pools.service'
 import { ResourceRecycleConditionEvaluator } from './resource-recycle-condition-evaluator.service'
 
 @Module({
-  imports: [DictionariesModule],
+  imports: [PrismaModule, DictionariesModule],
   controllers: [PoolOptionsController],
   providers: [
     PoolRecycleService,

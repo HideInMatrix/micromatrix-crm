@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { RedisService } from '../../redis/redis.service'
 
 export type CoordinationSlot = 'DAILY' | 'MINUTE'
@@ -137,19 +136,44 @@ export class DistributedCoordinatorService {
     task: () => Promise<T>,
   ): Promise<CoordinationRunResult<T>> {
     this.metrics.postgresFallback += 1
-    return this.prisma.$transaction(
-      async (tx) => {
-        const rows = await tx.$queryRaw<Array<{ locked: boolean }>>(
-          Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${key}, 0)) AS locked`,
-        )
-        if (rows[0]?.locked !== true) {
-          this.metrics.postgresSkipped += 1
-          return { executed: false, source: 'POSTGRES', reason: 'BUSY' } as const
-        }
-        this.metrics.postgresAcquired += 1
-        return { executed: true, source: 'POSTGRES', value: await task() } as const
-      },
-      { maxWait: 5_000, timeout: FALLBACK_TRANSACTION_TIMEOUT_MS },
-    )
+    const client = this.prisma.client
+    return client.transaction(async (tx) => {
+      const query = client.raw.sql`SELECT pg_try_advisory_xact_lock(
+        hashtextextended(${key}, 0)
+      ) AS locked`.returnsRow({ locked: 'pg/bool@1' })
+      let locked = false
+      for await (const row of tx.query(query.build())) {
+        locked = row.locked
+        break
+      }
+      if (!locked) {
+        this.metrics.postgresSkipped += 1
+        return { executed: false, source: 'POSTGRES', reason: 'BUSY' } as const
+      }
+      this.metrics.postgresAcquired += 1
+      return {
+        executed: true,
+        source: 'POSTGRES',
+        value: await this.runFallbackTaskWithTimeout(task),
+      } as const
+    })
+  }
+
+  private async runFallbackTaskWithTimeout<T>(task: () => Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        task(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('PostgreSQL coordination fallback transaction timed out')),
+            FALLBACK_TRANSACTION_TIMEOUT_MS,
+          )
+          timer.unref()
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 }

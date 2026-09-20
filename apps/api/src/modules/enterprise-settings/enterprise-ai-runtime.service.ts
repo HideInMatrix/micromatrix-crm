@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma/prisma.service.js'
 
 export interface EnterpriseAiCompletionResult {
   text: string
@@ -29,9 +29,26 @@ export class EnterpriseAiRuntimeService {
     prompt: string,
     requestedMaxTokens = 512,
   ): Promise<EnterpriseAiCompletionResult> {
-    const model = await this.prisma.enterpriseAiModel.findFirst({
-      where: { id: modelId, tenantId },
+    const model = await this.prisma.client.orm.public.EnterpriseAiModels.where({
+      id: modelId,
+      tenantId,
     })
+      .select(
+        'id',
+        'displayName',
+        'modelName',
+        'provider',
+        'apiUrl',
+        'apiKeyCiphertext',
+        'apiKeyIv',
+        'apiKeyAuthTag',
+        'apiKeyKeyVersion',
+        'enable',
+        'temperature',
+        'maxTokens',
+        'topP',
+      )
+      .first()
     if (!model) throw new NotFoundException('模型不存在')
     if (!model.enable) throw new BadRequestException('模型当前未启用')
     if (!model.apiKeyCiphertext || !model.apiKeyIv || !model.apiKeyAuthTag) {

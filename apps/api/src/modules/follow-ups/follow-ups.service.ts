@@ -17,8 +17,16 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import { FollowUpRecord, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { not, or } from '@prisma/orm-postgres/orm-client'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import {
+  nowInstant,
+  instantFromDate,
+  instantFromISOString,
+  instantToISOString,
+} from '../../prisma/temporal.js'
+
 import { AttachmentsService } from '../attachments/attachments.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import {
@@ -30,9 +38,44 @@ import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
 import { CreateFollowUpDto, FollowUpRecordPageDto, UpdateFollowUpDto } from './dto/follow-up.dto'
 
+type FollowRecordSystemSort =
+  | 'targetType'
+  | 'targetId'
+  | 'ownerId'
+  | 'contactId'
+  | 'followedAt'
+  | 'type'
+  | 'createdAt'
+  | 'updatedAt'
+
 type FollowRecordResolvedSort =
-  | { kind: 'system'; orderBy: Prisma.FollowUpRecordOrderByWithRelationInput[] }
+  | {
+      kind: 'system'
+      field: FollowRecordSystemSort
+      direction: 'asc' | 'desc'
+      defaultSort?: boolean
+    }
   | { kind: 'dynamic'; field: FieldVO; direction: 'asc' | 'desc' }
+
+export type FollowRecord = {
+  id: string
+  tenantId: string
+  targetType: string
+  targetId: string
+  contactId: string | null
+  type: string | null
+  content: string
+  followedAt: ReturnType<typeof nowInstant> | null
+  ownerId: string
+  ownerName: string
+  deptId: string | null
+  createdById: string
+  commentCount: number
+  createdAt: ReturnType<typeof nowInstant>
+  updatedAt: ReturnType<typeof nowInstant>
+}
+
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 const FOLLOW_RECORD_DYNAMIC_SORT_TYPES = new Set<FieldType>([
   'text',
@@ -75,11 +118,10 @@ export class FollowUpsService {
     if (dto.targetId && !dto.targetType) {
       throw new BadRequestException('指定业务对象时必须同时提供类型')
     }
+    if (dto.targetType && dto.targetId) {
+      await this.assertTargetAccess(user, dto.targetType, dto.targetId, false)
+    }
 
-    const accessWhere =
-      dto.targetType && dto.targetId
-        ? await this.targetAccessWhere(user, dto.targetType, dto.targetId)
-        : await this.globalAccessWhere(user)
     const saved = dto.viewId
       ? await this.userViews.resolveFilters(
           user,
@@ -87,35 +129,30 @@ export class FollowUpsService {
           USER_VIEW_RESOURCE_TYPES.follow_record,
         )
       : null
-    const [savedIds, adHocIds, keywordWhere] = await Promise.all([
+    const [savedIds, adHocIds, keywordIds, accessIds] = await Promise.all([
       saved?.conditions.length
         ? this.filterIds(user.tenantId, saved.conditions, saved.searchMode)
         : null,
       dto.filters?.length
         ? this.filterIds(user.tenantId, dto.filters, dto.filterMode ?? 'AND')
         : null,
-      dto.keyword?.trim() ? this.keywordWhere(user.tenantId, dto.keyword.trim()) : null,
+      dto.keyword?.trim() ? this.keywordRecordIds(user.tenantId, dto.keyword.trim()) : null,
+      dto.targetType && dto.targetId ? null : this.globalAccessibleRecordIds(user),
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
+    let query = this.prisma.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId })
+    if (dto.targetType) query = query.where({ targetType: dto.targetType })
+    if (dto.targetId) query = query.where({ targetId: dto.targetId })
+    if (accessIds) query = query.where((row) => row.id.in(accessIds))
+    if (keywordIds) query = query.where((row) => row.id.in(keywordIds))
+    if (dto.mine) query = query.where({ ownerId: user.id })
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
 
-    const where: Prisma.FollowUpRecordWhereInput = {
-      tenantId: user.tenantId,
-      AND: [
-        accessWhere,
-        ...(dto.targetType ? [{ targetType: dto.targetType }] : []),
-        ...(keywordWhere ? [keywordWhere] : []),
-        ...(dto.mine ? [{ ownerId: user.id }] : []),
-        ...(filteredIds ? [{ id: { in: filteredIds } }] : []),
-      ],
-    }
     const sort = await this.resolveSort(user.tenantId, dto)
-    let records: FollowUpRecord[]
+    let records: FollowRecord[]
     let total: number
     if (sort.kind === 'dynamic') {
-      const candidateRows = await this.prisma.followUpRecord.findMany({
-        where,
-        select: { id: true },
-      })
+      const candidateRows = await query.select('id').all()
       total = candidateRows.length
       const orderedIds = await this.sortDynamicRecordIds(
         candidateRows.map((item) => item.id),
@@ -124,30 +161,28 @@ export class FollowUpsService {
       )
       const pageIds = orderedIds.slice((page - 1) * pageSize, page * pageSize)
       const rows = pageIds.length
-        ? await this.prisma.followUpRecord.findMany({ where: { ...where, id: { in: pageIds } } })
+        ? await this.prisma.client.orm.public.FollowUpRecords.where({ tenantId: user.tenantId })
+            .where((row) => row.id.in(pageIds))
+            .all()
         : []
-      const rowMap = new Map(rows.map((item) => [item.id, item]))
+      const rowMap = new Map(rows.map((item) => [item.id, this.toLegacyRecord(item)]))
       records = pageIds.flatMap((id) => {
         const row = rowMap.get(id)
         return row ? [row] : []
       })
     } else {
-      ;[records, total] = await this.prisma.$transaction([
-        this.prisma.followUpRecord.findMany({
-          where,
-          orderBy: sort.orderBy,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-        }),
-        this.prisma.followUpRecord.count({ where }),
+      const ordered = this.applySystemSort(query, sort)
+      const [rows, aggregate] = await Promise.all([
+        ordered
+          .offset((page - 1) * pageSize)
+          .limit(pageSize)
+          .all(),
+        query.aggregate((value) => ({ count: value.count() })),
       ])
+      records = rows.map((row) => this.toLegacyRecord(row))
+      total = aggregate.count
     }
-    return {
-      items: await this.toVOs(user, records),
-      total,
-      page,
-      pageSize,
-    }
+    return { items: await this.toVOs(user, records), total, page, pageSize }
   }
 
   private async resolveSort(
@@ -155,53 +190,90 @@ export class FollowUpsService {
     dto: FollowUpRecordPageDto,
   ): Promise<FollowRecordResolvedSort> {
     if (!dto.sort?.name) {
-      return {
-        kind: 'system',
-        orderBy: [{ followedAt: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
-      }
+      return { kind: 'system', field: 'followedAt', direction: 'desc', defaultSort: true }
     }
     const direction = dto.sort.type
-    const systemColumns: Record<string, keyof Prisma.FollowUpRecordOrderByWithRelationInput> = {
-      targetType: 'targetType',
-      targetId: 'targetId',
-      ownerId: 'ownerId',
-      contactId: 'contactId',
-      followedAt: 'followedAt',
-      type: 'type',
-      createdAt: 'createdAt',
-      updatedAt: 'updatedAt',
+    const systemColumns = new Set<FollowRecordSystemSort>([
+      'targetType',
+      'targetId',
+      'ownerId',
+      'contactId',
+      'followedAt',
+      'type',
+      'createdAt',
+      'updatedAt',
+    ])
+    if (systemColumns.has(dto.sort.name as FollowRecordSystemSort)) {
+      return { kind: 'system', field: dto.sort.name as FollowRecordSystemSort, direction }
     }
-    const directColumn = systemColumns[dto.sort.name]
-    if (directColumn) {
-      return {
-        kind: 'system',
-        orderBy: [
-          { [directColumn]: direction } as Prisma.FollowUpRecordOrderByWithRelationInput,
-          { id: 'asc' },
-        ],
-      }
-    }
-
     const fields = await this.moduleForms.listFields(tenantId, 'followRecord')
     const field = fields.find(
       (candidate) => candidate.id === dto.sort?.name || candidate.key === dto.sort?.name,
     )
     if (!field) throw new BadRequestException(`排序字段不存在：${dto.sort.name}`)
     if (field.system) {
-      const column = systemColumns[field.key]
-      if (!column) throw new BadRequestException(`「${field.label}」不支持排序`)
-      return {
-        kind: 'system',
-        orderBy: [
-          { [column]: direction } as Prisma.FollowUpRecordOrderByWithRelationInput,
-          { id: 'asc' },
-        ],
+      if (!systemColumns.has(field.key as FollowRecordSystemSort)) {
+        throw new BadRequestException(`「${field.label}」不支持排序`)
       }
+      return { kind: 'system', field: field.key as FollowRecordSystemSort, direction }
     }
     if (!FOLLOW_RECORD_DYNAMIC_SORT_TYPES.has(field.type)) {
       throw new BadRequestException(`「${field.label}」不支持排序`)
     }
     return { kind: 'dynamic', field, direction }
+  }
+
+  private applySystemSort(
+    query: ReturnType<typeof this.prisma.client.orm.public.FollowUpRecords.where>,
+    sort: Extract<FollowRecordResolvedSort, { kind: 'system' }>,
+  ) {
+    const asc = sort.direction === 'asc'
+    if (sort.defaultSort) {
+      return query.orderBy([
+        (row) => row.followedAt.desc(),
+        (row) => row.createdAt.desc(),
+        (row) => row.id.asc(),
+      ])
+    }
+    if (sort.field === 'targetType')
+      return query.orderBy([
+        (row) => (asc ? row.targetType.asc() : row.targetType.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (sort.field === 'targetId')
+      return query.orderBy([
+        (row) => (asc ? row.targetId.asc() : row.targetId.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (sort.field === 'ownerId')
+      return query.orderBy([
+        (row) => (asc ? row.ownerId.asc() : row.ownerId.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (sort.field === 'contactId')
+      return query.orderBy([
+        (row) => (asc ? row.contactId.asc() : row.contactId.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (sort.field === 'followedAt')
+      return query.orderBy([
+        (row) => (asc ? row.followedAt.asc() : row.followedAt.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (sort.field === 'type')
+      return query.orderBy([
+        (row) => (asc ? row._type.asc() : row._type.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (sort.field === 'createdAt')
+      return query.orderBy([
+        (row) => (asc ? row.createdAt.asc() : row.createdAt.desc()),
+        (row) => row.id.asc(),
+      ])
+    return query.orderBy([
+      (row) => (asc ? row.updatedAt.asc() : row.updatedAt.desc()),
+      (row) => row.id.asc(),
+    ])
   }
 
   private async sortDynamicRecordIds(
@@ -211,17 +283,19 @@ export class FollowUpsService {
   ): Promise<string[]> {
     if (recordIds.length <= 1) return recordIds
     const [normalRows, blobRows] = await Promise.all([
-      this.prisma.followUpRecordField.findMany({
-        where: { resourceId: { in: recordIds }, fieldId: field.id },
-        select: { resourceId: true, fieldValue: true },
-      }),
-      this.prisma.followUpRecordFieldBlob.findMany({
-        where: { resourceId: { in: recordIds }, fieldId: field.id },
-        select: { resourceId: true, fieldValue: true },
-      }),
+      this.prisma.client.orm.public.FollowUpRecordField.where({ fieldId: field.id })
+        .where((row) => row.resourceId.in(recordIds))
+        .select('resourceId', 'fieldValue')
+        .all(),
+      this.prisma.client.orm.public.FollowUpRecordFieldBlob.where({ fieldId: field.id })
+        .where((row) => row.resourceId.in(recordIds))
+        .select('resourceId', 'fieldValue')
+        .all(),
     ])
     const values = new Map(
-      [...normalRows, ...blobRows].map((item) => [item.resourceId, item.fieldValue] as const),
+      [...normalRows, ...blobRows].map(
+        (item) => [item.resourceId, String(item.fieldValue)] as const,
+      ),
     )
     const multiplier = direction === 'asc' ? 1 : -1
     return [...recordIds].sort((leftId, rightId) => {
@@ -270,33 +344,29 @@ export class FollowUpsService {
       user.tenantId,
       dto.moduleFields ?? [],
     )
-    const record = await this.prisma.$transaction(async (tx) => {
+    const record = await this.prisma.client.transaction(async (tx) => {
       if (sourcePlan) {
-        const claimed = await tx.followUpPlan.updateMany({
-          where: {
-            id: sourcePlan.id,
-            tenantId: user.tenantId,
-            status: 'COMPLETED',
-            converted: false,
-          },
-          data: { converted: true },
-        })
-        if (claimed.count !== 1) throw new ConflictException('该计划已转为跟进记录')
-      }
-      const created = await tx.followUpRecord.create({
-        data: {
+        const claimed = await tx.orm.public.FollowUpPlans.where({
+          id: sourcePlan.id,
           tenantId: user.tenantId,
-          targetType: dto.targetType,
-          targetId: dto.targetId,
-          contactId: dto.contactId ?? null,
-          type: dto.type ?? null,
-          content: dto.content,
-          followedAt: dto.followedAt ? new Date(dto.followedAt) : new Date(),
-          ownerId: owner.id,
-          ownerName: owner.name,
-          deptId: owner.deptId,
-          createdById: user.id,
-        },
+          status: 'COMPLETED',
+          converted: false,
+        }).updateAndCount({ converted: true, updatedAt: nowInstant() })
+        if (claimed !== 1) throw new ConflictException('该计划已转为跟进记录')
+      }
+      const created = await tx.orm.public.FollowUpRecords.create({
+        tenantId: user.tenantId,
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+        contactId: dto.contactId ?? null,
+        _type: dto.type ?? null,
+        content: dto.content,
+        followedAt: dto.followedAt ? instantFromISOString(dto.followedAt) : nowInstant(),
+        ownerId: owner.id,
+        ownerName: owner.name,
+        deptId: owner.deptId,
+        createdById: user.id,
+        updatedAt: nowInstant(),
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -309,12 +379,12 @@ export class FollowUpsService {
       )
       await this.touchTarget(tx, user.tenantId, dto.targetType, dto.targetId, owner.id)
       if (sourcePlan) {
-        await tx.followUpPlan.update({
-          where: { id: sourcePlan.id },
-          data: { convertedRecordId: created.id },
+        await tx.orm.public.FollowUpPlans.where({ id: sourcePlan.id }).update({
+          convertedRecordId: created.id,
+          updatedAt: nowInstant(),
         })
       }
-      return created
+      return this.toLegacyRecord(created)
     })
     return (await this.toVOs(user, [record]))[0]
   }
@@ -372,24 +442,23 @@ export class FollowUpsService {
       dto.moduleFields === undefined
         ? null
         : await this.moduleFieldsToDynamicValues(user.tenantId, dto.moduleFields)
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const record = await tx.followUpRecord.update({
-        where: { id },
-        data: {
-          targetType,
-          targetId,
-          contactId,
-          type: dto.type,
-          content: dto.content,
-          followedAt:
-            dto.followedAt === undefined
-              ? existing.followedAt
-              : dto.followedAt
-                ? new Date(dto.followedAt)
-                : null,
-          ...(owner ? { ownerId: owner.id, ownerName: owner.name, deptId: owner.deptId } : {}),
-        },
+    const updated = await this.prisma.client.transaction(async (tx) => {
+      const record = await tx.orm.public.FollowUpRecords.where({ id }).update({
+        targetType,
+        targetId,
+        contactId,
+        _type: dto.type,
+        content: dto.content,
+        followedAt:
+          dto.followedAt === undefined
+            ? existing.followedAt
+            : dto.followedAt
+              ? instantFromISOString(dto.followedAt)
+              : null,
+        ...(owner ? { ownerId: owner.id, ownerName: owner.name, deptId: owner.deptId } : {}),
+        updatedAt: nowInstant(),
       })
+      if (!record) throw new NotFoundException('跟进记录不存在')
       if (dynamicValues !== null) {
         await this.fieldValues.save(
           user.tenantId,
@@ -402,7 +471,7 @@ export class FollowUpsService {
         )
       }
       await this.touchTarget(tx, user.tenantId, targetType, targetId, owner?.id ?? existing.ownerId)
-      return record
+      return this.toLegacyRecord(record)
     })
     return (await this.toVOs(user, [updated]))[0]
   }
@@ -416,11 +485,14 @@ export class FollowUpsService {
       record.targetId,
       true,
     )
-    await this.prisma.followUpRecord.delete({ where: { id } })
+    await this.prisma.client.orm.public.FollowUpRecords.where({
+      id,
+      tenantId: user.tenantId,
+    }).delete()
     return { id }
   }
 
-  async assertRecordAccess(user: AuthUser, id: string, write = false): Promise<FollowUpRecord> {
+  async assertRecordAccess(user: AuthUser, id: string, write = false): Promise<FollowRecord> {
     const record = await this.ensureRecord(user, id)
     await this.assertTargetAccess(
       user,
@@ -452,19 +524,20 @@ export class FollowUpsService {
         throw new ForbiddenException('无客户跟进权限')
       return
     }
-
     if (targetType === 'lead') {
-      const lead = await this.prisma.clue.findFirst({
-        where: { id: targetId, organizationId: user.tenantId },
-        select: { owner: true, inSharedPool: true, poolId: true },
+      const lead = await this.prisma.client.orm.public.Clue.where({
+        id: targetId,
+        organizationId: user.tenantId,
       })
+        .select('owner', 'inSharedPool', 'poolId')
+        .first()
       if (!lead) throw new NotFoundException('线索不存在')
       if (lead.inSharedPool) {
         const permission = write ? 'leadPool:update' : 'leadPool:read'
         if (!hasPermission(user.permissions, permission))
           throw new ForbiddenException('无线索池跟进权限')
-        const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
-        if (!lead.poolId || !poolIds.includes(lead.poolId)) {
+        const poolIds = (await this.pools.options(user, 'lead')).map((pool) => String(pool.id))
+        if (!lead.poolId || !poolIds.includes(String(lead.poolId))) {
           throw new NotFoundException('线索不存在或无权访问')
         }
         return
@@ -472,46 +545,42 @@ export class FollowUpsService {
       const permission = write ? 'lead:update' : 'menu:lead'
       if (!hasPermission(user.permissions, permission))
         throw new ForbiddenException('无线索跟进权限')
-      if (!(await this.dataScope.matchesDirectOwner(user, lead.owner, permission))) {
+      if (
+        !(await this.dataScope.matchesDirectOwner(
+          user,
+          lead.owner ? String(lead.owner) : null,
+          permission,
+        ))
+      ) {
         throw new NotFoundException('线索不存在或不在你的数据范围内')
       }
       return
     }
-
     if (targetType === 'opportunity') {
       const permission = write ? 'opportunity:update' : 'menu:opportunity'
       if (!hasPermission(user.permissions, permission))
         throw new ForbiddenException('无商机跟进权限')
-      const opportunity = await this.prisma.opportunity.findFirst({
-        where: { id: targetId, organizationId: user.tenantId },
-        select: { owner: true },
+      const opportunity = await this.prisma.client.orm.public.Opportunity.where({
+        id: targetId,
+        organizationId: user.tenantId,
       })
+        .select('owner')
+        .first()
       if (
         !opportunity ||
-        !(await this.dataScope.matchesDirectOwner(user, opportunity.owner, permission))
+        !(await this.dataScope.matchesDirectOwner(user, String(opportunity.owner), permission))
       ) {
         throw new NotFoundException('商机不存在或不在你的数据范围内')
       }
-      return
     }
   }
 
-  private async targetAccessWhere(
-    user: AuthUser,
-    targetType: CreateFollowUpDto['targetType'],
-    targetId: string,
-  ): Promise<Prisma.FollowUpRecordWhereInput> {
-    await this.assertTargetAccess(user, targetType, targetId, false)
-    return { targetType, targetId }
-  }
-
-  private async globalAccessWhere(user: AuthUser): Promise<Prisma.FollowUpRecordWhereInput> {
+  private async globalAccessibleRecordIds(user: AuthUser): Promise<string[]> {
     const canLead = hasPermission(user.permissions, 'menu:lead')
     const canLeadPool = hasPermission(user.permissions, 'leadPool:read')
     const canCustomer = hasPermission(user.permissions, 'customer:read')
     const canCustomerPool = hasPermission(user.permissions, 'customerPool:read')
     const canOpportunity = hasPermission(user.permissions, 'menu:opportunity')
-
     const [leadScope, customerScope, opportunityScope, leadPoolOptions, customerPoolOptions] =
       await Promise.all([
         canLead ? this.dataScope.directOwnerFilter(user, 'menu:lead') : null,
@@ -520,9 +589,50 @@ export class FollowUpsService {
         canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
         canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
       ])
-
-    const leadPoolIds = leadPoolOptions.map((item) => item.id)
-    const customerPoolIds = customerPoolOptions.map((item) => item.id)
+    const applyOwnerScope = <T extends ReturnType<typeof this.prisma.client.orm.public.Clue.where>>(
+      query: T,
+      scope: any,
+    ): T => {
+      const owner = scope?.owner
+      if (!owner) return query
+      return (
+        typeof owner === 'string'
+          ? query.where({ owner: owner })
+          : query.where((row: any) => row.owner.in(owner.in))
+      ) as T
+    }
+    let directLeadQuery = this.prisma.client.orm.public.Clue.where({
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    })
+    if (leadScope) directLeadQuery = applyOwnerScope(directLeadQuery, leadScope)
+    let directCustomerQuery = this.prisma.client.orm.public.Customer.where({
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    })
+    const customerOwner = (customerScope as any)?.owner
+    if (customerOwner) {
+      directCustomerQuery =
+        typeof customerOwner === 'string'
+          ? directCustomerQuery.where({ owner: customerOwner })
+          : directCustomerQuery.where((row) => row.owner.in(customerOwner.in))
+    }
+    let opportunityQuery = this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+    })
+    const opportunityOwner = (opportunityScope as any)?.owner
+    if (opportunityOwner) {
+      opportunityQuery =
+        typeof opportunityOwner === 'string'
+          ? opportunityQuery.where({ owner: opportunityOwner })
+          : opportunityQuery.where((row) => row.owner.in(opportunityOwner.in))
+    }
+    const collaborationRows = canCustomer
+      ? await this.prisma.client.orm.public.CustomerCollaboration.where({ userId: user.id })
+          .select('customerId')
+          .all()
+      : []
+    const collaborationIds = collaborationRows.map((item) => String(item.customerId))
     const [
       directLeads,
       poolLeads,
@@ -531,110 +641,133 @@ export class FollowUpsService {
       poolCustomers,
       opportunities,
     ] = await Promise.all([
-      leadScope
-        ? this.prisma.clue.findMany({
-            where: {
-              organizationId: user.tenantId,
-              inSharedPool: false,
-              ...leadScope,
-            },
-            select: { id: true },
+      leadScope ? directLeadQuery.select('id').all() : Promise.resolve([]),
+      canLeadPool && leadPoolOptions.length
+        ? this.prisma.client.orm.public.Clue.where({
+            organizationId: user.tenantId,
+            inSharedPool: true,
           })
+            .where((row) => row.poolId.in(leadPoolOptions.map((item) => String(item.id))))
+            .select('id')
+            .all()
         : Promise.resolve([]),
-      canLeadPool && leadPoolIds.length
-        ? this.prisma.clue.findMany({
-            where: {
-              organizationId: user.tenantId,
-              inSharedPool: true,
-              poolId: { in: leadPoolIds },
-            },
-            select: { id: true },
+      customerScope ? directCustomerQuery.select('id').all() : Promise.resolve([]),
+      collaborationIds.length
+        ? this.prisma.client.orm.public.Customer.where({
+            organizationId: user.tenantId,
+            inSharedPool: false,
           })
+            .where((row) => row.id.in(collaborationIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
-      customerScope
-        ? this.prisma.customer.findMany({
-            where: {
-              organizationId: user.tenantId,
-              inSharedPool: false,
-              ...customerScope,
-            },
-            select: { id: true },
+      canCustomerPool && customerPoolOptions.length
+        ? this.prisma.client.orm.public.Customer.where({
+            organizationId: user.tenantId,
+            inSharedPool: true,
           })
+            .where((row) => row.poolId.in(customerPoolOptions.map((item) => String(item.id))))
+            .select('id')
+            .all()
         : Promise.resolve([]),
-      canCustomer
-        ? this.prisma.customerCollaboration.findMany({
-            where: {
-              userId: user.id,
-              customer: { organizationId: user.tenantId, inSharedPool: false },
-            },
-            select: { customerId: true },
+      opportunityScope ? opportunityQuery.select('id').all() : Promise.resolve([]),
+    ])
+    const leadIds = [...new Set([...directLeads, ...poolLeads].map((item) => String(item.id)))]
+    const customerIds = [
+      ...new Set(
+        [...directCustomers, ...collaborativeCustomers, ...poolCustomers].map((item) =>
+          String(item.id),
+        ),
+      ),
+    ]
+    const opportunityIds = opportunities.map((item) => String(item.id))
+    const groups = await Promise.all([
+      leadIds.length
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
+            tenantId: user.tenantId,
+            targetType: 'lead',
           })
+            .where((row) => row.targetId.in(leadIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
-      canCustomerPool && customerPoolIds.length
-        ? this.prisma.customer.findMany({
-            where: {
-              organizationId: user.tenantId,
-              inSharedPool: true,
-              poolId: { in: customerPoolIds },
-            },
-            select: { id: true },
+      customerIds.length
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
+            tenantId: user.tenantId,
+            targetType: 'customer',
           })
+            .where((row) => row.targetId.in(customerIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
-      opportunityScope
-        ? this.prisma.opportunity.findMany({
-            where: { organizationId: user.tenantId, ...opportunityScope },
-            select: { id: true },
+      opportunityIds.length
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
+            tenantId: user.tenantId,
+            targetType: 'opportunity',
           })
+            .where((row) => row.targetId.in(opportunityIds))
+            .select('id')
+            .all()
         : Promise.resolve([]),
     ])
-
-    const leadIds = [...new Set([...directLeads, ...poolLeads].map((item) => item.id))]
-    const customerIds = [
-      ...new Set([
-        ...directCustomers.map((item) => item.id),
-        ...collaborativeCustomers.map((item) => item.customerId),
-        ...poolCustomers.map((item) => item.id),
-      ]),
-    ]
-    const opportunityIds = opportunities.map((item) => item.id)
-    const clauses: Prisma.FollowUpRecordWhereInput[] = []
-    if (leadIds.length) clauses.push({ targetType: 'lead', targetId: { in: leadIds } })
-    if (customerIds.length) clauses.push({ targetType: 'customer', targetId: { in: customerIds } })
-    if (opportunityIds.length) {
-      clauses.push({ targetType: 'opportunity', targetId: { in: opportunityIds } })
-    }
-    return clauses.length ? { OR: clauses } : { id: { in: [] } }
+    return [...new Set(groups.flat().map((item) => item.id))]
   }
 
-  private async keywordWhere(
-    tenantId: string,
-    keyword: string,
-  ): Promise<Prisma.FollowUpRecordWhereInput> {
-    const contains = { contains: keyword, mode: 'insensitive' as const }
-    const [leads, customers, opportunities] = await Promise.all([
-      this.prisma.clue.findMany({
-        where: { organizationId: tenantId, name: contains },
-        select: { id: true },
-      }),
-      this.prisma.customer.findMany({
-        where: { organizationId: tenantId, name: contains },
-        select: { id: true },
-      }),
-      this.prisma.opportunity.findMany({
-        where: { organizationId: tenantId, name: contains },
-        select: { id: true },
-      }),
+  private async keywordRecordIds(tenantId: string, keyword: string): Promise<string[]> {
+    const [leads, customers, opportunities, direct] = await Promise.all([
+      this.prisma.client.orm.public.Clue.where({ organizationId: tenantId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma.client.orm.public.Customer.where({ organizationId: tenantId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma.client.orm.public.Opportunity.where({ organizationId: tenantId })
+        .where((row) => row.name.ilike(`%${keyword}%`))
+        .select('id')
+        .all(),
+      this.prisma.client.orm.public.FollowUpRecords.where({ tenantId })
+        .where((row) =>
+          or(
+            row.content.ilike(`%${keyword}%`),
+            row._type.ilike(`%${keyword}%`),
+            row.ownerName.ilike(`%${keyword}%`),
+          ),
+        )
+        .select('id')
+        .all(),
     ])
-    return {
-      OR: [
-        { content: contains },
-        { type: contains },
-        { ownerName: contains },
-        { targetType: 'lead', targetId: { in: leads.map((item) => item.id) } },
-        { targetType: 'customer', targetId: { in: customers.map((item) => item.id) } },
-        { targetType: 'opportunity', targetId: { in: opportunities.map((item) => item.id) } },
-      ],
-    }
+    const [leadRecords, customerRecords, opportunityRecords] = await Promise.all([
+      leads.length
+        ? this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'lead' })
+            .where((row) => row.targetId.in(leads.map((item) => String(item.id))))
+            .select('id')
+            .all()
+        : Promise.resolve([]),
+      customers.length
+        ? this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'customer' })
+            .where((row) => row.targetId.in(customers.map((item) => String(item.id))))
+            .select('id')
+            .all()
+        : Promise.resolve([]),
+      opportunities.length
+        ? this.prisma.client.orm.public.FollowUpRecords.where({
+            tenantId,
+            targetType: 'opportunity',
+          })
+            .where((row) => row.targetId.in(opportunities.map((item) => String(item.id))))
+            .select('id')
+            .all()
+        : Promise.resolve([]),
+    ])
+    return [
+      ...new Set(
+        [...direct, ...leadRecords, ...customerRecords, ...opportunityRecords].map(
+          (item) => item.id,
+        ),
+      ),
+    ]
   }
 
   private async filterIds(
@@ -659,20 +792,14 @@ export class FollowUpsService {
         if (!field.system) {
           return this.fieldValues.filterResourceIds(tenantId, 'followRecord', [condition])
         }
-        const rows = await this.prisma.followUpRecord.findMany({
-          where: {
-            tenantId,
-            ...this.systemFilterClause(field, condition),
-          },
-          select: { id: true },
-        })
+        let query = this.prisma.client.orm.public.FollowUpRecords.where({ tenantId })
+        query = this.applySystemFilter(query, field, condition)
+        const rows = await query.select('id').all()
         return rows.map((row) => row.id)
       }),
     )
     if (!conditionIds.length) return []
-    if (mode === 'OR') {
-      return [...new Set(conditionIds.flat())]
-    }
+    if (mode === 'OR') return [...new Set(conditionIds.flat())]
     let selected = new Set(conditionIds[0])
     for (const ids of conditionIds.slice(1)) {
       const current = new Set(ids)
@@ -681,10 +808,11 @@ export class FollowUpsService {
     return [...selected]
   }
 
-  private systemFilterClause(
+  private applySystemFilter(
+    collection: ReturnType<typeof this.prisma.client.orm.public.FollowUpRecords.where>,
     field: FieldVO,
     condition: FilterCondition,
-  ): Prisma.FollowUpRecordWhereInput {
+  ) {
     const key = field.key
     const allowed = new Set([
       'targetType',
@@ -696,80 +824,76 @@ export class FollowUpsService {
       'type',
     ])
     if (!allowed.has(key)) throw new BadRequestException(`筛选字段不支持：${key}`)
+    const impossible = () => collection.where((row) => row.id.eq(''))
 
-    const nullableText = new Set(['contactId', 'type'])
     if (condition.op === 'isEmpty') {
-      if (key === 'followedAt') return { followedAt: null }
-      if (nullableText.has(key)) {
-        return {
-          OR: [
-            { [key]: null } as Prisma.FollowUpRecordWhereInput,
-            { [key]: '' } as Prisma.FollowUpRecordWhereInput,
-          ],
-        }
+      if (key === 'followedAt') return collection.where((row) => row.followedAt.isNull())
+      if (key === 'contactId') {
+        return collection.where((row) => or(row.contactId.isNull(), row.contactId.eq('')))
       }
-      return { id: { in: [] } }
+      if (key === 'type') {
+        return collection.where((row) => or(row._type.isNull(), row._type.eq('')))
+      }
+      return impossible()
     }
     if (condition.op === 'notEmpty') {
-      if (key === 'followedAt') return { followedAt: { not: null } }
-      if (nullableText.has(key)) {
-        return {
-          AND: [
-            { [key]: { not: null } } as Prisma.FollowUpRecordWhereInput,
-            { [key]: { not: '' } } as Prisma.FollowUpRecordWhereInput,
-          ],
-        }
+      if (key === 'followedAt') return collection.where((row) => row.followedAt.isNotNull())
+      if (key === 'contactId') {
+        return collection.where((row) => not(or(row.contactId.isNull(), row.contactId.eq(''))))
       }
-      return {}
+      if (key === 'type') {
+        return collection.where((row) => not(or(row._type.isNull(), row._type.eq(''))))
+      }
+      return collection
     }
-
     if (condition.value === undefined || condition.value === null || condition.value === '') {
       throw new BadRequestException(`「${field.label}」筛选值不能为空`)
     }
     if (key === 'followedAt') {
       const value = new Date(String(condition.value))
       if (Number.isNaN(value.getTime())) throw new BadRequestException('跟进时间筛选值不合法')
-      if (condition.op === 'gte') return { followedAt: { gte: value } }
-      if (condition.op === 'lte') return { followedAt: { lte: value } }
+      const timestamp = instantFromDate(value)
+      if (condition.op === 'gte') return collection.where((row) => row.followedAt.gte(timestamp))
+      if (condition.op === 'lte') return collection.where((row) => row.followedAt.lte(timestamp))
       throw new BadRequestException('跟进时间不支持该筛选操作')
     }
-
-    const listValue = () => {
-      if (!Array.isArray(condition.value) || !condition.value.length) {
-        throw new BadRequestException(`「${field.label}」筛选值必须是非空数组`)
-      }
-      return condition.value.map((item) => String(item))
+    const values =
+      condition.op === 'in' || condition.op === 'notIn'
+        ? (() => {
+            if (!Array.isArray(condition.value) || !condition.value.length) {
+              throw new BadRequestException(`「${field.label}」筛选值必须是非空数组`)
+            }
+            return condition.value.map((item) => String(item))
+          })()
+        : [String(condition.value)]
+    if (
+      key === 'targetType' &&
+      values.some((value) => !['lead', 'customer', 'opportunity'].includes(value))
+    ) {
+      throw new BadRequestException('关联类型筛选值不合法')
     }
-    if (key === 'targetType') {
-      const values =
-        condition.op === 'in' || condition.op === 'notIn' ? listValue() : [String(condition.value)]
-      if (values.some((value) => !['lead', 'customer', 'opportunity'].includes(value))) {
-        throw new BadRequestException('关联类型筛选值不合法')
-      }
-    }
-
-    if (condition.op === 'in') {
-      return { [key]: { in: listValue() } } as Prisma.FollowUpRecordWhereInput
-    }
-    if (condition.op === 'notIn') {
-      return { [key]: { notIn: listValue() } } as Prisma.FollowUpRecordWhereInput
-    }
-    const value = String(condition.value)
-    if (condition.op === 'contains') {
-      return {
-        [key]: { contains: value, mode: 'insensitive' },
-      } as Prisma.FollowUpRecordWhereInput
-    }
-    if (condition.op === 'notContains') {
-      return {
-        [key]: { not: { contains: value, mode: 'insensitive' } },
-      } as Prisma.FollowUpRecordWhereInput
-    }
-    if (condition.op === 'eq') return { [key]: value } as Prisma.FollowUpRecordWhereInput
-    if (condition.op === 'ne') {
-      return { [key]: { not: value } } as Prisma.FollowUpRecordWhereInput
-    }
-    throw new BadRequestException(`「${field.label}」不支持该筛选操作`)
+    const value = values[0]!
+    return collection.where((row) => {
+      const column =
+        key === 'targetType'
+          ? row.targetType
+          : key === 'targetId'
+            ? row.targetId
+            : key === 'ownerId'
+              ? row.ownerId
+              : key === 'contactId'
+                ? row.contactId
+                : key === 'content'
+                  ? row.content
+                  : row._type
+      if (condition.op === 'eq') return column.eq(value)
+      if (condition.op === 'ne') return column.neq(value)
+      if (condition.op === 'in') return column.in(values)
+      if (condition.op === 'notIn') return not(column.in(values))
+      if (condition.op === 'contains') return column.ilike(`%${value}%`)
+      if (condition.op === 'notContains') return not(column.ilike(`%${value}%`))
+      return row.id.eq('')
+    })
   }
 
   private intersectIds(left: string[] | null, right: string[] | null): string[] | null {
@@ -779,24 +903,26 @@ export class FollowUpsService {
     return left.filter((id) => rightSet.has(id))
   }
 
-  private async ensureRecord(user: AuthUser, id: string): Promise<FollowUpRecord> {
-    const record = await this.prisma.followUpRecord.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
+  private async ensureRecord(user: AuthUser, id: string): Promise<FollowRecord> {
+    const record = await this.prisma.client.orm.public.FollowUpRecords.where({
+      id,
+      tenantId: user.tenantId,
+    }).first()
     if (!record) throw new NotFoundException('跟进记录不存在')
-    return record
+    return this.toLegacyRecord(record)
   }
 
-  private assertManageableRecord(user: AuthUser, record: FollowUpRecord): void {
+  private assertManageableRecord(user: AuthUser, record: FollowRecord): void {
     if (record.ownerId !== user.id && !hasPermission(user.permissions, '*')) {
       throw new ForbiddenException('只有跟进记录负责人可以执行此操作')
     }
   }
 
   private async ensureConvertiblePlan(user: AuthUser, id: string) {
-    const plan = await this.prisma.followUpPlan.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
+    const plan = await this.prisma.client.orm.public.FollowUpPlans.where({
+      id,
+      tenantId: user.tenantId,
+    }).first()
     if (!plan) throw new NotFoundException('跟进计划不存在')
     if (plan.ownerId !== user.id && !hasPermission(user.permissions, '*')) {
       throw new ForbiddenException('只有跟进计划负责人可以转为记录')
@@ -810,10 +936,13 @@ export class FollowUpsService {
     if (!ownerId || ownerId === user.id) {
       return { id: user.id, name: user.name, deptId: user.deptId }
     }
-    const owner = await this.prisma.user.findFirst({
-      where: { id: ownerId, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true, name: true, deptId: true },
+    const owner = await this.prisma.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id', 'name', 'deptId')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner
   }
@@ -827,53 +956,103 @@ export class FollowUpsService {
     if (!contactId) return
     let customerId: string | null = targetType === 'customer' ? targetId : null
     if (targetType === 'opportunity') {
-      customerId =
-        (
-          await this.prisma.opportunity.findFirst({
-            where: { id: targetId, organizationId: tenantId },
-            select: { customerId: true },
-          })
-        )?.customerId ?? null
+      const opportunity = await this.prisma.client.orm.public.Opportunity.where({
+        id: targetId,
+        organizationId: tenantId,
+      })
+        .select('customerId')
+        .first()
+      customerId = opportunity?.customerId ? String(opportunity.customerId) : null
     }
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma.customerContact.findFirst({
-      where: { id: contactId, organizationId: tenantId, customerId },
-      select: { id: true },
+    const contact = await this.prisma.client.orm.public.CustomerContact.where({
+      id: contactId,
+      organizationId: tenantId,
+      customerId: customerId,
     })
+      .select('id')
+      .first()
     if (!contact) throw new BadRequestException('联系人不属于当前客户')
   }
 
   /** 更新目标对象的最近跟进时间与跟进人；跟记录写入保持同一事务。 */
   private async touchTarget(
-    client: PrismaService | Prisma.TransactionClient,
+    tx: PrismaTransaction,
     tenantId: string,
     targetType: string,
     targetId: string,
     ownerId: string,
   ) {
-    const now = new Date()
-    const directNow = BigInt(now.getTime())
+    const directNow = BigInt(Date.now())
     switch (targetType) {
       case 'lead':
-        await client.clue.updateMany({
-          where: { id: targetId, organizationId: tenantId },
-          data: { followTime: directNow, follower: ownerId, updateTime: directNow },
+        await tx.orm.public.Clue.where({
+          id: targetId,
+          organizationId: tenantId,
+        }).updateAndCount({
+          followTime: directNow,
+          follower: ownerId,
+          updateTime: directNow,
         })
         break
       case 'customer':
-        await client.customer.updateMany({
-          where: { id: targetId, organizationId: tenantId },
-          data: { followTime: directNow, follower: ownerId, updateTime: directNow },
+        await tx.orm.public.Customer.where({
+          id: targetId,
+          organizationId: tenantId,
+        }).updateAndCount({
+          followTime: directNow,
+          follower: ownerId,
+          updateTime: directNow,
         })
         break
       case 'opportunity':
-        await client.opportunity.updateMany({
-          where: { id: targetId, organizationId: tenantId },
-          data: { followTime: directNow, follower: ownerId, updateTime: directNow },
+        await tx.orm.public.Opportunity.where({
+          id: targetId,
+          organizationId: tenantId,
+        }).updateAndCount({
+          followTime: directNow,
+          follower: ownerId,
+          updateTime: directNow,
         })
         break
       default:
         break
+    }
+  }
+
+  private toLegacyRecord(row: {
+    id: string
+    tenantId: string
+    targetType: string
+    targetId: string
+    contactId: string | null
+    _type: string | null
+    content: string
+    followedAt: ReturnType<typeof nowInstant> | null
+    ownerId: string
+    ownerName: string
+    deptId: string | null
+    createdById: string
+    commentCount: number
+    createdAt: ReturnType<typeof nowInstant>
+    updatedAt: ReturnType<typeof nowInstant>
+  }): FollowRecord {
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      contactId: row.contactId,
+      type: row._type,
+      content: row.content,
+      followedAt: row.followedAt,
+      ownerId: row.ownerId,
+      ownerName: row.ownerName,
+      deptId: row.deptId,
+      createdById: row.createdById,
+      commentCount: row.commentCount,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     }
   }
 
@@ -899,7 +1078,7 @@ export class FollowUpsService {
     return values
   }
 
-  private async toVOs(user: AuthUser, records: FollowUpRecord[]): Promise<FollowUpVO[]> {
+  private async toVOs(user: AuthUser, records: FollowRecord[]): Promise<FollowUpVO[]> {
     if (!records.length) return []
     const ids = records.map((record) => record.id)
     const leadIds = records
@@ -916,37 +1095,50 @@ export class FollowUpsService {
       this.moduleForms.listFields(user.tenantId, 'followRecord'),
       this.fieldValues.load(user.tenantId, 'followRecord', ids),
       leadIds.length
-        ? this.prisma.clue.findMany({
-            where: { id: { in: leadIds }, organizationId: user.tenantId },
-            select: { id: true, name: true },
+        ? this.prisma.client.orm.public.Clue.where({
+            organizationId: user.tenantId,
           })
+            .where((row) => row.id.in(leadIds))
+            .select('id', 'name')
+            .all()
         : Promise.resolve([]),
       customerIds.length
-        ? this.prisma.customer.findMany({
-            where: { id: { in: customerIds }, organizationId: user.tenantId },
-            select: { id: true, name: true },
+        ? this.prisma.client.orm.public.Customer.where({
+            organizationId: user.tenantId,
           })
+            .where((row) => row.id.in(customerIds))
+            .select('id', 'name')
+            .all()
         : Promise.resolve([]),
       opportunityIds.length
-        ? this.prisma.opportunity.findMany({
-            where: { id: { in: opportunityIds }, organizationId: user.tenantId },
-            select: { id: true, name: true, customerId: true },
+        ? this.prisma.client.orm.public.Opportunity.where({
+            organizationId: user.tenantId,
           })
+            .where((row) => row.id.in(opportunityIds))
+            .select('id', 'name', 'customerId')
+            .all()
         : Promise.resolve([]),
       contactIds.length
-        ? this.prisma.customerContact.findMany({
-            where: { id: { in: contactIds }, organizationId: user.tenantId },
-            select: { id: true, name: true },
+        ? this.prisma.client.orm.public.CustomerContact.where({
+            organizationId: user.tenantId,
           })
+            .where((row) => row.id.in(contactIds))
+            .select('id', 'name')
+            .all()
         : Promise.resolve([]),
     ])
     const targetNameMap = new Map<string, string>([
-      ...leads.map((item) => [`lead:${item.id}`, item.name] as const),
-      ...customers.map((item) => [`customer:${item.id}`, item.name] as const),
-      ...opportunities.map((item) => [`opportunity:${item.id}`, item.name] as const),
+      ...leads.map((item) => [`lead:${String(item.id)}`, item.name] as const),
+      ...customers.map((item) => [`customer:${String(item.id)}`, item.name] as const),
+      ...opportunities.map((item) => [`opportunity:${String(item.id)}`, item.name] as const),
     ])
-    const opportunityCustomerMap = new Map(opportunities.map((item) => [item.id, item.customerId]))
-    const contactMap = new Map(contacts.map((item) => [item.id, item.name]))
+    const opportunityCustomerMap = new Map(
+      opportunities.map((item) => [
+        String(item.id),
+        item.customerId ? String(item.customerId) : null,
+      ]),
+    )
+    const contactMap = new Map(contacts.map((item) => [String(item.id), item.name]))
     return records.map((record) => {
       const dynamicValues = dynamic.get(record.id) ?? {}
       return {
@@ -965,7 +1157,7 @@ export class FollowUpsService {
         contactName: record.contactId ? (contactMap.get(record.contactId) ?? null) : null,
         type: record.type,
         content: record.content,
-        followedAt: record.followedAt?.toISOString() ?? null,
+        followedAt: record.followedAt ? instantToISOString(record.followedAt) : null,
         ownerId: record.ownerId,
         ownerName: record.ownerName,
         canManage: record.ownerId === user.id || hasPermission(user.permissions, '*'),
@@ -976,8 +1168,8 @@ export class FollowUpsService {
               !field.system && Object.prototype.hasOwnProperty.call(dynamicValues, field.key),
           )
           .map((field) => ({ fieldId: field.id, fieldValue: dynamicValues[field.key] })),
-        createdAt: record.createdAt.toISOString(),
-        updatedAt: record.updatedAt.toISOString(),
+        createdAt: instantToISOString(record.createdAt),
+        updatedAt: instantToISOString(record.updatedAt),
       }
     })
   }

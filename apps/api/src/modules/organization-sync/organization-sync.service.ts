@@ -13,15 +13,14 @@ import type {
   OrganizationSyncItemVO,
   PaginatedResult,
 } from '@micromatrix/shared'
-import {
-  type EnterpriseIntegration,
-  type OrganizationSyncBatch,
-  type OrganizationSyncItem,
-  Prisma,
-} from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
-import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
+import { jsonValue } from '../../prisma/json-value'
+import {
+  EnterpriseIntegrationsService,
+  type EnterpriseIntegrationRow,
+} from '../enterprise-integrations/enterprise-integrations.service'
 import {
   DingTalkClient,
   type DingTalkConnectionInput,
@@ -43,20 +42,32 @@ import { OrganizationSyncPlanner, type OrganizationSyncPlanItem } from './organi
 
 export type OrganizationSyncProvider = 'WECOM' | 'DINGTALK' | 'LARK'
 
+type OrganizationSyncBatchRow = NonNullable<
+  Awaited<ReturnType<PrismaService['client']['orm']['public']['OrganizationSyncBatches']['first']>>
+>
+type OrganizationSyncItemRow = NonNullable<
+  Awaited<ReturnType<PrismaService['client']['orm']['public']['OrganizationSyncItems']['first']>>
+>
+type OrganizationSyncAction = OrganizationSyncItemRow['action']
+type OrganizationSyncItemCreate = Parameters<
+  PrismaService['client']['orm']['public']['OrganizationSyncItems']['createAll']
+>[0][number]
+type PrismaTransaction = Parameters<Parameters<PrismaService['client']['transaction']>[0]>[0]
+
 type ProviderSyncContext =
   | {
       provider: 'WECOM'
-      integration: EnterpriseIntegration
+      integration: EnterpriseIntegrationRow
       credentials: WeComConnectionInput
     }
   | {
       provider: 'DINGTALK'
-      integration: EnterpriseIntegration
+      integration: EnterpriseIntegrationRow
       credentials: DingTalkConnectionInput
     }
   | {
       provider: 'LARK'
-      integration: EnterpriseIntegration
+      integration: EnterpriseIntegrationRow
       credentials: LarkConnectionInput
     }
 
@@ -95,13 +106,15 @@ export class OrganizationSyncService {
           : await this.integrations.getWeCom(tenantId)
     const activePlatform = await this.integrations.getActivePlatform(tenantId)
     const providerName = this.providerName(provider)
-    let active: OrganizationSyncBatch | null = null
-    let latest: OrganizationSyncBatch | null = null
+    let active: OrganizationSyncBatchRow | null = null
+    let latest: OrganizationSyncBatchRow | null = null
 
     if (runtime?.batchId) {
-      const runtimeBatch = await this.prisma.organizationSyncBatch.findFirst({
-        where: { id: runtime.batchId, tenantId, provider },
-      })
+      const runtimeBatch = await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+        id: runtime.batchId,
+        tenantId,
+        provider,
+      }).first()
       if (
         runtimeBatch &&
         (runtimeBatch.status === 'FETCHING' || runtimeBatch.status === 'APPLYING')
@@ -111,21 +124,22 @@ export class OrganizationSyncService {
       }
     }
     if (!latest && runtime) {
-      latest = await this.prisma.organizationSyncBatch.findFirst({
-        where: { tenantId, provider },
-        orderBy: { createdAt: 'desc' },
+      latest = await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+        tenantId,
+        provider,
       })
+        .orderBy((row) => row.createdAt.desc())
+        .first()
     }
     if (!runtime) {
       ;[active, latest] = await Promise.all([
-        this.prisma.organizationSyncBatch.findFirst({
-          where: { tenantId, provider, status: { in: ['FETCHING', 'APPLYING'] } },
-          orderBy: { createdAt: 'desc' },
-        }),
-        this.prisma.organizationSyncBatch.findFirst({
-          where: { tenantId, provider },
-          orderBy: { createdAt: 'desc' },
-        }),
+        this.prisma.client.orm.public.OrganizationSyncBatches.where({ tenantId, provider })
+          .where((row) => row.status.in(['FETCHING', 'APPLYING']))
+          .orderBy((row) => row.createdAt.desc())
+          .first(),
+        this.prisma.client.orm.public.OrganizationSyncBatches.where({ tenantId, provider })
+          .orderBy((row) => row.createdAt.desc())
+          .first(),
       ])
     }
 
@@ -184,53 +198,58 @@ export class OrganizationSyncService {
     const context = await this.getProviderSyncContext(user.tenantId, provider)
     const { integration } = context
     await this.assertDefaultRole(user.tenantId, integration.syncDefaultRoleId)
-    const targetDepartment = await this.prisma.department.findFirst({
-      where: { id: dto.targetDepartmentId, tenantId: user.tenantId },
-      select: { id: true },
+    const targetDepartment = await this.prisma.client.orm.public.Departments.where({
+      id: dto.targetDepartmentId,
+      tenantId: user.tenantId,
     })
+      .select('id')
+      .first()
     if (!targetDepartment) throw new BadRequestException('同步目标部门不存在或不属于当前企业')
     const staleBefore = new Date(Date.now() - 30 * 60_000)
-    await this.prisma.organizationSyncBatch.updateMany({
-      where: {
-        tenantId: user.tenantId,
-        provider,
-        status: 'FETCHING',
-        updatedAt: { lt: staleBefore },
-      },
-      data: {
+    const staleNow = nowInstant()
+    await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+      tenantId: user.tenantId,
+      provider,
+      status: 'FETCHING',
+    })
+      .where((row) => row.updatedAt.lt(instantFromDate(staleBefore)))
+      .updateAndCount({
         status: 'FAILED',
         errorCode: 'FETCH_TIMEOUT',
         errorMessage: '同步预览获取超时，请重新生成',
-        finishedAt: new Date(),
-      },
-    })
-    await this.prisma.organizationSyncBatch.updateMany({
-      where: { tenantId: user.tenantId, provider, status: 'PREVIEW_READY' },
-      data: {
-        status: 'INVALIDATED',
-        errorCode: 'NEW_PREVIEW_CREATED',
-        errorMessage: '已生成新的同步预览',
-        finishedAt: new Date(),
-      },
+        finishedAt: staleNow,
+        updatedAt: staleNow,
+      })
+    const invalidatedAt = nowInstant()
+    await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+      tenantId: user.tenantId,
+      provider,
+      status: 'PREVIEW_READY',
+    }).updateAndCount({
+      status: 'INVALIDATED',
+      errorCode: 'NEW_PREVIEW_CREATED',
+      errorMessage: '已生成新的同步预览',
+      finishedAt: invalidatedAt,
+      updatedAt: invalidatedAt,
     })
 
-    let batch: OrganizationSyncBatch
+    let batch: OrganizationSyncBatchRow
     try {
-      batch = await this.prisma.organizationSyncBatch.create({
-        data: {
-          tenantId: user.tenantId,
-          integrationId: integration.id,
-          provider,
-          status: 'FETCHING',
-          targetDepartmentId: targetDepartment.id,
-          credentialVersion: integration.credentialVersion,
-          counts: EMPTY_COUNTS as unknown as Prisma.InputJsonValue,
-          createdById: user.id,
-          fetchStartedAt: new Date(),
-        },
+      const now = nowInstant()
+      batch = await this.prisma.client.orm.public.OrganizationSyncBatches.create({
+        tenantId: user.tenantId,
+        integrationId: integration.id,
+        provider,
+        status: 'FETCHING',
+        targetDepartmentId: targetDepartment.id,
+        credentialVersion: integration.credentialVersion,
+        counts: jsonValue(EMPTY_COUNTS),
+        createdById: user.id,
+        fetchStartedAt: now,
+        updatedAt: now,
       })
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if ((error as { sqlState?: string }).sqlState === '23505') {
         throw new ConflictException('当前正在执行组织同步任务')
       }
       throw error
@@ -240,14 +259,16 @@ export class OrganizationSyncService {
     try {
       const snapshot = await this.getProviderSnapshot(context)
       const [departments, users, departmentMappings, userMappings] = await Promise.all([
-        this.prisma.department.findMany({ where: { tenantId: user.tenantId } }),
-        this.prisma.user.findMany({ where: { tenantId: user.tenantId } }),
-        this.prisma.externalDepartmentMapping.findMany({
-          where: { tenantId: user.tenantId, provider },
-        }),
-        this.prisma.externalUserMapping.findMany({
-          where: { tenantId: user.tenantId, provider },
-        }),
+        this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId }).all(),
+        this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId }).all(),
+        this.prisma.client.orm.public.ExternalDepartmentMappings.where({
+          tenantId: user.tenantId,
+          provider,
+        }).all(),
+        this.prisma.client.orm.public.ExternalUserMappings.where({
+          tenantId: user.tenantId,
+          provider,
+        }).all(),
       ])
       const snapshotRoot = snapshot.departments.find((department) => department.isRoot)!
       this.assertTargetOutsideMappedTree(
@@ -267,43 +288,48 @@ export class OrganizationSyncService {
         userMappings,
       })
 
-      const current = await this.prisma.enterpriseIntegration.findFirst({
-        where: { id: integration.id, tenantId: user.tenantId },
-        select: { credentialVersion: true, syncEnabled: true },
+      const current = await this.prisma.client.orm.public.EnterpriseIntegrations.where({
+        id: integration.id,
+        tenantId: user.tenantId,
       })
+        .select('credentialVersion', 'syncEnabled')
+        .first()
       if (
         !current ||
         !current.syncEnabled ||
         current.credentialVersion !== integration.credentialVersion
       ) {
-        const invalidated = await this.prisma.organizationSyncBatch.update({
-          where: { id: batch.id },
-          data: {
-            status: 'INVALIDATED',
-            errorCode: 'CREDENTIALS_CHANGED',
-            errorMessage: `${this.providerName(provider)}配置已变化，请重新生成同步预览`,
-            finishedAt: new Date(),
-          },
+        const now = nowInstant()
+        const invalidated = await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+          id: batch.id,
+        }).update({
+          status: 'INVALIDATED',
+          errorCode: 'CREDENTIALS_CHANGED',
+          errorMessage: `${this.providerName(provider)}配置已变化，请重新生成同步预览`,
+          finishedAt: now,
+          updatedAt: now,
         })
+        if (!invalidated) throw new NotFoundException('同步批次不存在')
         return this.toBatchVO(invalidated)
       }
 
-      batch = await this.prisma.$transaction(async (tx) => {
+      batch = await this.prisma.client.transaction(async (tx) => {
         if (plan.items.length) {
-          await tx.organizationSyncItem.createMany({
-            data: plan.items.map((item) => this.toItemCreate(user.tenantId, batch.id, item)),
-          })
+          await tx.orm.public.OrganizationSyncItems.createAll(
+            plan.items.map((item) => this.toItemCreate(user.tenantId, batch.id, item)),
+          )
         }
-        return tx.organizationSyncBatch.update({
-          where: { id: batch.id },
-          data: {
-            status: 'PREVIEW_READY',
-            counts: plan.counts as unknown as Prisma.InputJsonValue,
-            previewedAt: new Date(),
-            errorCode: null,
-            errorMessage: null,
-          },
+        const now = nowInstant()
+        const updated = await tx.orm.public.OrganizationSyncBatches.where({ id: batch.id }).update({
+          status: 'PREVIEW_READY',
+          counts: jsonValue(plan.counts),
+          previewedAt: now,
+          errorCode: null,
+          errorMessage: null,
+          updatedAt: now,
         })
+        if (!updated) throw new NotFoundException('同步批次不存在')
+        return updated
       })
       return this.toBatchVO(batch)
     } catch (error) {
@@ -312,9 +338,17 @@ export class OrganizationSyncService {
         error instanceof OrganizationSnapshotError
           ? error.message.slice(0, 500)
           : '生成组织同步预览失败，请稍后重试'
-      await this.prisma.organizationSyncBatch.updateMany({
-        where: { id: batch.id, tenantId: user.tenantId, status: 'FETCHING' },
-        data: { status: 'FAILED', errorCode: code, errorMessage: message, finishedAt: new Date() },
+      const now = nowInstant()
+      await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+        id: batch.id,
+        tenantId: user.tenantId,
+        status: 'FETCHING',
+      }).updateAndCount({
+        status: 'FAILED',
+        errorCode: code,
+        errorMessage: message,
+        finishedAt: now,
+        updatedAt: now,
       })
       throw new ServiceUnavailableException(message)
     }
@@ -327,21 +361,25 @@ export class OrganizationSyncService {
   ): Promise<PaginatedResult<OrganizationSyncBatchVO>> {
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 10
-    const where = {
+    let batches = this.prisma.client.orm.public.OrganizationSyncBatches.where({
       tenantId,
       provider,
-      ...(query.status ? { status: query.status } : {}),
-    }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.organizationSyncBatch.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.organizationSyncBatch.count({ where }),
+    })
+    if (query.status) batches = batches.where({ status: query.status })
+    const [items, aggregate] = await Promise.all([
+      batches
+        .orderBy((row) => row.createdAt.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      batches.aggregate((agg) => ({ count: agg.count() })),
     ])
-    return { items: items.map((item) => this.toBatchVO(item)), total, page, pageSize }
+    return {
+      items: items.map((item) => this.toBatchVO(item)),
+      total: aggregate.count,
+      page,
+      pageSize,
+    }
   }
 
   async batch(
@@ -362,30 +400,49 @@ export class OrganizationSyncService {
     const page = query.page ?? 1
     const pageSize = query.pageSize ?? 10
     const keyword = query.keyword?.trim()
-    const where = {
-      tenantId,
-      batchId,
-      ...(query.resourceType ? { resourceType: query.resourceType } : {}),
-      ...(query.action ? { action: query.action } : {}),
-      ...(keyword
-        ? {
-            OR: [
-              { externalId: { contains: keyword, mode: 'insensitive' as const } },
-              { conflictMessage: { contains: keyword, mode: 'insensitive' as const } },
-              { sourceData: { path: ['name'], string_contains: keyword } },
-            ],
-          }
-        : {}),
+    let items: OrganizationSyncItemRow[]
+    let total: number
+    if (keyword) {
+      const result = await this.keywordItems(
+        tenantId,
+        batchId,
+        query.resourceType ?? null,
+        query.action ?? null,
+        keyword,
+        page,
+        pageSize,
+      )
+      total = result.total
+      if (result.ids.length === 0) {
+        items = []
+      } else {
+        const rows = await this.prisma.client.orm.public.OrganizationSyncItems.where((row) =>
+          row.id.in(result.ids),
+        ).all()
+        const rowMap = new Map(rows.map((row) => [row.id, row]))
+        items = result.ids.flatMap((id) => {
+          const row = rowMap.get(id)
+          return row ? [row] : []
+        })
+      }
+    } else {
+      let collection = this.prisma.client.orm.public.OrganizationSyncItems.where({
+        tenantId,
+        batchId,
+      })
+      if (query.resourceType) collection = collection.where({ resourceType: query.resourceType })
+      if (query.action) collection = collection.where({ action: query.action })
+      const [rows, aggregate] = await Promise.all([
+        collection
+          .orderBy([(row) => row.sort.asc(), (row) => row.createdAt.asc()])
+          .offset((page - 1) * pageSize)
+          .limit(pageSize)
+          .all(),
+        collection.aggregate((agg) => ({ count: agg.count() })),
+      ])
+      items = rows
+      total = aggregate.count
     }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.organizationSyncItem.findMany({
-        where,
-        orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.organizationSyncItem.count({ where }),
-    ])
     return { items: items.map((item) => this.toItemVO(item)), total, page, pageSize }
   }
 
@@ -399,13 +456,17 @@ export class OrganizationSyncService {
     if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能处理冲突')
     const ids = [...new Set(dto.items.map(({ itemId }) => itemId))]
     if (ids.length !== dto.items.length) throw new BadRequestException('冲突项不能重复提交')
-    const rows = await this.prisma.organizationSyncItem.findMany({
-      where: { tenantId: user.tenantId, batchId, id: { in: ids }, action: 'CONFLICT' },
+    const rows = await this.prisma.client.orm.public.OrganizationSyncItems.where({
+      tenantId: user.tenantId,
+      batchId,
+      action: 'CONFLICT',
     })
+      .where((row) => row.id.in(ids))
+      .all()
     if (rows.length !== ids.length) throw new BadRequestException('冲突项不存在或已处理')
     const rowMap = new Map(rows.map((row) => [row.id, row]))
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const skippedDepartmentKeys = new Set<string>()
       for (const input of dto.items) {
         const row = rowMap.get(input.itemId)!
@@ -413,25 +474,27 @@ export class OrganizationSyncService {
           if (!input.localId) throw new BadRequestException('绑定现有资源时必须选择目标')
           await this.assertBindingAvailable(tx, user.tenantId, row, input.localId, provider)
         }
-        await tx.organizationSyncItem.update({
-          where: { id: row.id },
-          data: {
-            resolution: input.resolution,
-            resolvedLocalId: input.resolution === 'BIND' ? input.localId : null,
-            localId: input.resolution === 'BIND' ? input.localId : row.localId,
-            action: input.resolution === 'BIND' ? 'UPDATE' : 'SKIP',
-            result: 'RESOLVED',
-          },
+        const now = nowInstant()
+        await tx.orm.public.OrganizationSyncItems.where({ id: row.id }).update({
+          resolution: input.resolution,
+          resolvedLocalId: input.resolution === 'BIND' ? input.localId : null,
+          localId: input.resolution === 'BIND' ? input.localId : row.localId,
+          action: input.resolution === 'BIND' ? 'UPDATE' : 'SKIP',
+          result: 'RESOLVED',
+          updatedAt: now,
         })
         if (row.resourceType === 'DEPARTMENT' && input.resolution === 'SKIP') {
           skippedDepartmentKeys.add(row.externalKey)
         }
       }
       if (skippedDepartmentKeys.size) {
-        const departmentItems = await tx.organizationSyncItem.findMany({
-          where: { tenantId: user.tenantId, batchId, resourceType: 'DEPARTMENT' },
-          select: { externalKey: true, parentExternalKey: true },
+        const departmentItems = await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+          resourceType: 'DEPARTMENT',
         })
+          .select('externalKey', 'parentExternalKey')
+          .all()
         let changed = true
         while (changed) {
           changed = false
@@ -446,57 +509,111 @@ export class OrganizationSyncService {
             }
           }
         }
-        await tx.organizationSyncItem.updateMany({
-          where: {
-            tenantId: user.tenantId,
-            batchId,
-            OR: [
-              { resourceType: 'DEPARTMENT', externalKey: { in: [...skippedDepartmentKeys] } },
-              { resourceType: 'USER', parentExternalKey: { in: [...skippedDepartmentKeys] } },
-            ],
-          },
-          data: {
-            action: 'SKIP',
-            result: 'RESOLVED',
-            resolution: 'SKIP',
-            resolvedLocalId: null,
-          },
+        const now = nowInstant()
+        const skipped = [...skippedDepartmentKeys]
+        const resolved = {
+          action: 'SKIP' as const,
+          result: 'RESOLVED' as const,
+          resolution: 'SKIP' as const,
+          resolvedLocalId: null,
+          updatedAt: now,
+        }
+        await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+          resourceType: 'DEPARTMENT',
         })
+          .where((row) => row.externalKey.in(skipped))
+          .updateAndCount(resolved)
+        await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+          resourceType: 'USER',
+        })
+          .where((row) => row.parentExternalKey.in(skipped))
+          .updateAndCount(resolved)
       }
-      const allItems = await tx.organizationSyncItem.findMany({
-        where: { tenantId: user.tenantId, batchId },
+      const allItems = await tx.orm.public.OrganizationSyncItems.where({
+        tenantId: user.tenantId,
+        batchId,
       })
-      await tx.organizationSyncBatch.update({
-        where: { id: batchId },
-        data: {
-          counts: this.countRows(
-            allItems.map((row) => row.action),
-          ) as unknown as Prisma.InputJsonValue,
-        },
+        .select('action')
+        .all()
+      await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
+        counts: jsonValue(this.countRows(allItems.map((row) => row.action))),
+        updatedAt: nowInstant(),
       })
     })
     return this.batch(user.tenantId, batchId, provider)
   }
 
-  private async assertBindingAvailable(
-    tx: Prisma.TransactionClient,
+  private async keywordItems(
     tenantId: string,
-    item: OrganizationSyncItem,
+    batchId: string,
+    resourceType: NonNullable<QueryOrganizationSyncItemsDto['resourceType']> | null,
+    action: NonNullable<QueryOrganizationSyncItemsDto['action']> | null,
+    keyword: string,
+    page: number,
+    pageSize: number,
+  ): Promise<{ ids: string[]; total: number }> {
+    const pattern = `%${keyword}%`
+    const resourceTypeFilter = resourceType ?? ''
+    const actionFilter = action ?? ''
+    const offset = (page - 1) * pageSize
+    const pageQuery = this.prisma.client.raw.sql`
+      SELECT id
+      FROM organization_sync_items
+      WHERE "tenantId" = ${tenantId}
+        AND "batchId" = ${batchId}
+        AND (${resourceTypeFilter} = '' OR "resourceType"::text = ${resourceTypeFilter})
+        AND (${actionFilter} = '' OR "action"::text = ${actionFilter})
+        AND (
+          "externalId" ILIKE ${pattern}
+          OR COALESCE("conflictMessage", '') ILIKE ${pattern}
+          OR COALESCE("sourceData" ->> 'name', '') ILIKE ${pattern}
+        )
+      ORDER BY sort ASC, "createdAt" ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `.returnsRow({ id: 'pg/text@1' })
+    const countQuery = this.prisma.client.raw.sql`
+      SELECT COUNT(*)::int4 AS total
+      FROM organization_sync_items
+      WHERE "tenantId" = ${tenantId}
+        AND "batchId" = ${batchId}
+        AND (${resourceTypeFilter} = '' OR "resourceType"::text = ${resourceTypeFilter})
+        AND (${actionFilter} = '' OR "action"::text = ${actionFilter})
+        AND (
+          "externalId" ILIKE ${pattern}
+          OR COALESCE("conflictMessage", '') ILIKE ${pattern}
+          OR COALESCE("sourceData" ->> 'name', '') ILIKE ${pattern}
+        )
+    `.returnsRow({ total: 'pg/int4@1' })
+    const ids: string[] = []
+    for await (const row of this.prisma.client.runtime().query(pageQuery.build())) ids.push(row.id)
+    let total = 0
+    for await (const row of this.prisma.client.runtime().query(countQuery.build()))
+      total = row.total
+    return { ids, total }
+  }
+
+  private async assertBindingAvailable(
+    tx: PrismaTransaction,
+    tenantId: string,
+    item: OrganizationSyncItemRow,
     localId: string,
     provider: OrganizationSyncProvider,
   ): Promise<void> {
     if (item.resourceType === 'DEPARTMENT') {
       const [local, occupied] = await Promise.all([
-        tx.department.findFirst({ where: { id: localId, tenantId }, select: { id: true } }),
-        tx.externalDepartmentMapping.findFirst({
-          where: {
-            tenantId,
-            provider,
-            departmentId: localId,
-            externalKey: { not: item.externalKey },
-          },
-          select: { id: true },
-        }),
+        tx.orm.public.Departments.where({ id: localId, tenantId }).select('id').first(),
+        tx.orm.public.ExternalDepartmentMappings.where({
+          tenantId,
+          provider,
+          departmentId: localId,
+        })
+          .where((row) => row.externalKey.neq(item.externalKey))
+          .select('id')
+          .first(),
       ])
       if (!local) throw new BadRequestException('绑定部门不存在或不属于当前企业')
       if (occupied)
@@ -504,16 +621,11 @@ export class OrganizationSyncService {
       return
     }
     const [local, occupied] = await Promise.all([
-      tx.user.findFirst({ where: { id: localId, tenantId }, select: { id: true } }),
-      tx.externalUserMapping.findFirst({
-        where: {
-          tenantId,
-          provider,
-          userId: localId,
-          externalKey: { not: item.externalKey },
-        },
-        select: { id: true },
-      }),
+      tx.orm.public.Users.where({ id: localId, tenantId }).select('id').first(),
+      tx.orm.public.ExternalUserMappings.where({ tenantId, provider, userId: localId })
+        .where((row) => row.externalKey.neq(item.externalKey))
+        .select('id')
+        .first(),
     ])
     if (!local) throw new BadRequestException('绑定成员不存在或不属于当前企业')
     if (occupied) throw new ConflictException(`该成员已绑定其他${this.providerName(provider)}成员`)
@@ -521,10 +633,9 @@ export class OrganizationSyncService {
 
   private async assertDefaultRole(tenantId: string, roleId: string | null): Promise<void> {
     if (!roleId) throw new BadRequestException('请选择新成员默认角色')
-    const role = await this.prisma.role.findFirst({
-      where: { id: roleId, tenantId },
-      select: { id: true },
-    })
+    const role = await this.prisma.client.orm.public.Roles.where({ id: roleId, tenantId })
+      .select('id')
+      .first()
     if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
   }
 
@@ -558,10 +669,12 @@ export class OrganizationSyncService {
     tenantId: string,
     id: string,
     provider: OrganizationSyncProvider,
-  ): Promise<OrganizationSyncBatch> {
-    const row = await this.prisma.organizationSyncBatch.findFirst({
-      where: { id, tenantId, provider },
-    })
+  ): Promise<OrganizationSyncBatchRow> {
+    const row = await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+      id,
+      tenantId,
+      provider,
+    }).first()
     if (!row) throw new NotFoundException('同步批次不存在')
     return row
   }
@@ -602,7 +715,8 @@ export class OrganizationSyncService {
     tenantId: string,
     batchId: string,
     item: OrganizationSyncPlanItem,
-  ): Prisma.OrganizationSyncItemCreateManyInput {
+  ): OrganizationSyncItemCreate {
+    const now = nowInstant()
     return {
       tenantId,
       batchId,
@@ -612,21 +726,22 @@ export class OrganizationSyncService {
       action: item.action,
       localId: item.localId,
       parentExternalKey: item.parentExternalKey,
-      sourceData: item.sourceData as Prisma.InputJsonValue,
-      changes: item.changes as Prisma.InputJsonValue | undefined,
+      sourceData: jsonValue(item.sourceData),
+      changes: item.changes === undefined ? null : jsonValue(item.changes),
       conflictType: item.conflictType,
       conflictMessage: item.conflictMessage,
       sort: item.sort,
+      updatedAt: now,
     }
   }
 
-  private countRows(actions: OrganizationSyncItem['action'][]): OrganizationSyncCounts {
+  private countRows(actions: OrganizationSyncAction[]): OrganizationSyncCounts {
     const counts = { ...EMPTY_COUNTS }
     for (const action of actions) counts[action.toLowerCase() as keyof OrganizationSyncCounts]++
     return counts
   }
 
-  private toBatchVO(row: OrganizationSyncBatch): OrganizationSyncBatchVO {
+  private toBatchVO(row: OrganizationSyncBatchRow): OrganizationSyncBatchVO {
     return {
       id: row.id,
       provider: row.provider,
@@ -638,16 +753,16 @@ export class OrganizationSyncService {
       errorMessage: row.errorMessage,
       createdById: row.createdById,
       appliedById: row.appliedById,
-      fetchStartedAt: row.fetchStartedAt?.toISOString() ?? null,
-      previewedAt: row.previewedAt?.toISOString() ?? null,
-      applyStartedAt: row.applyStartedAt?.toISOString() ?? null,
-      finishedAt: row.finishedAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
+      fetchStartedAt: row.fetchStartedAt ? instantToISOString(row.fetchStartedAt) : null,
+      previewedAt: row.previewedAt ? instantToISOString(row.previewedAt) : null,
+      applyStartedAt: row.applyStartedAt ? instantToISOString(row.applyStartedAt) : null,
+      finishedAt: row.finishedAt ? instantToISOString(row.finishedAt) : null,
+      createdAt: instantToISOString(row.createdAt),
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 
-  private toItemVO(row: OrganizationSyncItem): OrganizationSyncItemVO {
+  private toItemVO(row: OrganizationSyncItemRow): OrganizationSyncItemVO {
     return {
       id: row.id,
       resourceType: row.resourceType,
@@ -667,7 +782,7 @@ export class OrganizationSyncService {
     }
   }
 
-  private parseCounts(value: Prisma.JsonValue): OrganizationSyncCounts {
+  private parseCounts(value: unknown): OrganizationSyncCounts {
     const data = this.jsonObject(value)
     return {
       create: this.safeCount(data['create']),
@@ -680,7 +795,7 @@ export class OrganizationSyncService {
     }
   }
 
-  private jsonObject(value: Prisma.JsonValue): Record<string, unknown> {
+  private jsonObject(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {}

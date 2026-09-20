@@ -3,10 +3,9 @@ import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import type { EnterpriseIntegration } from '../../generated/prisma/client'
-import type { PrismaService } from '../../prisma/prisma.service'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
+import { createIntegrationPrismaHarness } from './enterprise-integrations.test-harness'
 import type { WeComClient, WeComConnectionResult } from './wecom.client'
 
 const user: AuthUser = {
@@ -20,87 +19,10 @@ const user: AuthUser = {
   permissions: ['system:setting', 'system:setting:update'],
 }
 
-interface UpsertArgs {
-  where: { tenantId_provider: { tenantId: string; provider: 'WECOM' } }
-  update: Record<string, unknown>
-  create: Record<string, unknown>
-}
-
 function createService(
   result: WeComConnectionResult = { success: true, message: '企业微信连接成功', providerCode: 0 },
 ) {
-  const rows: EnterpriseIntegration[] = []
-  const enterpriseIntegration = {
-    findUnique: async ({ where }: UpsertArgs) =>
-      rows.find(
-        (row) =>
-          row.tenantId === where.tenantId_provider.tenantId &&
-          row.provider === where.tenantId_provider.provider,
-      ) ?? null,
-    upsert: async ({ where, update, create }: UpsertArgs) => {
-      const existing = rows.find(
-        (row) =>
-          row.tenantId === where.tenantId_provider.tenantId &&
-          row.provider === where.tenantId_provider.provider,
-      )
-      if (existing) {
-        for (const [key, value] of Object.entries(update)) {
-          if (
-            value &&
-            typeof value === 'object' &&
-            'increment' in value &&
-            typeof value.increment === 'number'
-          ) {
-            const current = existing[key as keyof EnterpriseIntegration]
-            Object.assign(existing, {
-              [key]: (typeof current === 'number' ? current : 0) + value.increment,
-            })
-          } else {
-            Object.assign(existing, { [key]: value })
-          }
-        }
-        Object.assign(existing, { updatedAt: new Date() })
-        return existing
-      }
-      const now = new Date()
-      const row = {
-        lastTestSucceeded: null,
-        lastTestMessage: null,
-        lastTestedAt: null,
-        lastSyncStatus: null,
-        lastSyncMessage: null,
-        lastSyncedAt: null,
-        syncDefaultRoleId: null,
-        ...create,
-        id: `integration-${rows.length + 1}`,
-        createdAt: now,
-        updatedAt: now,
-      } as EnterpriseIntegration
-      rows.push(row)
-      return row
-    },
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-      const existing = rows.find((row) => row.id === where.id)
-      if (!existing) throw new Error('not found')
-      Object.assign(existing, data, { updatedAt: new Date() })
-      return existing
-    },
-    updateMany: async () => ({ count: 0 }),
-  }
-  const prismaMock = {
-    enterpriseIntegration,
-    tenant: {
-      findUnique: async () => ({ enterpriseSyncResource: 'WECOM', enterpriseSynced: false }),
-      updateMany: async () => ({ count: 1 }),
-    },
-    organizationSyncBatch: { updateMany: async () => ({ count: 0 }) },
-    role: {
-      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
-        where.id === 'role-a' && where.tenantId === 'tenant-a' ? { id: 'role-a' } : null,
-    },
-    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(prismaMock),
-  }
-  const prisma = prismaMock as unknown as PrismaService
+  const { prisma, rows } = createIntegrationPrismaHarness('WECOM')
   const cipher = new CredentialCipherService(
     new ConfigService({
       INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',

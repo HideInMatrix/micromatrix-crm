@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { PrismaModule } from '../../prisma/prisma.module'
 import {
   CluePoolUserViewsController,
   ClueUserViewsController,
@@ -17,6 +18,7 @@ import {
 import { UserViewsService } from './user-views.service'
 
 @Module({
+  imports: [PrismaModule],
   controllers: [
     ClueUserViewsController,
     CluePoolUserViewsController,

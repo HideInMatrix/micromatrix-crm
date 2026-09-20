@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import { TOP_NAVIGATION_DEFINITIONS } from '@micromatrix/shared'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma/prisma.service'
 import { ModuleConfigsService } from './module-configs.service'
 
 interface TopNavigationRow {
@@ -15,39 +15,44 @@ interface TopNavigationRow {
 
 function createService() {
   const rows: TopNavigationRow[] = []
-  const topNavigationConfig = {
-    createMany: async ({ data }: { data: Omit<TopNavigationRow, 'id'>[] }) => {
-      let count = 0
-      for (const item of data) {
-        if (rows.some((row) => row.tenantId === item.tenantId && row.key === item.key)) continue
-        rows.push({ ...item, id: `${item.tenantId}-${item.key}` })
-        count += 1
+  const topNavigationConfigs = {
+    where: (where: Partial<TopNavigationRow>) => {
+      const matches = (row: TopNavigationRow) =>
+        Object.entries(where).every(([key, value]) => row[key as keyof TopNavigationRow] === value)
+      const query = {
+        first: async () => rows.find(matches) ?? null,
+        update: async (data: Partial<TopNavigationRow>) => {
+          const row = rows.find(matches)
+          if (!row) return null
+          Object.assign(row, data)
+          return row
+        },
+        orderBy: () => query,
+        all: async () =>
+          rows.filter(matches).sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key)),
       }
-      return { count }
+      return query
     },
-    findMany: async ({ where }: { where: { tenantId: string } }) =>
-      rows
-        .filter((row) => row.tenantId === where.tenantId)
-        .sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key)),
-    update: async ({
-      where,
-      data,
-    }: {
-      where: { tenantId_key: { tenantId: string; key: string } }
-      data: { sort: number }
-    }) => {
-      const row = rows.find(
-        (item) =>
-          item.tenantId === where.tenantId_key.tenantId && item.key === where.tenantId_key.key,
-      )
-      assert.ok(row)
-      row.sort = data.sort
+    create: async (data: Omit<TopNavigationRow, 'id'>) => {
+      const row = { ...data, id: `${data.tenantId}-${data.key}` }
+      rows.push(row)
       return row
     },
   }
+  const publicOrm = {
+    ModuleConfigs: {
+      where: () => ({ first: async () => null }),
+      create: async () => null,
+    },
+    TopNavigationConfigs: topNavigationConfigs,
+  }
   const prisma = {
-    topNavigationConfig,
-    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
+    client: {
+      orm: { public: publicOrm },
+      transaction: async (
+        callback: (tx: { orm: { public: typeof publicOrm } }) => Promise<unknown>,
+      ) => callback({ orm: { public: publicOrm } }),
+    },
   } as unknown as PrismaService
   return { service: new ModuleConfigsService(prisma), rows }
 }

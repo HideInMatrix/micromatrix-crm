@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { MessageLanguage, MessageTaskEvent } from '@micromatrix/shared'
+import { or } from '@prisma/orm-postgres/orm-client'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
   APPROVAL_TEMPLATE_STATES,
@@ -78,13 +79,12 @@ export class MessageTemplateService {
 
     if (userLookups.length) {
       const values = [...new Set(userLookups.map(({ value }) => value))]
-      const users = await this.prisma.user.findMany({
-        where: {
-          tenantId,
-          OR: [{ email: { in: values, mode: 'insensitive' } }, { phone: { in: values } }],
-        },
-        select: { email: true, phone: true, name: true },
-      })
+      const users = await this.prisma.client.orm.public.Users.where({ tenantId })
+        .where((user) =>
+          or(user.phone.in(values), ...values.map((value) => user.email.ilike(value))),
+        )
+        .select('email', 'phone', 'name')
+        .all()
       const names = new Map<string, string>()
       for (const user of users) {
         if (user.email) names.set(user.email.toLowerCase(), user.name)

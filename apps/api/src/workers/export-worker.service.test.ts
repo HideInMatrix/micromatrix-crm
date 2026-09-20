@@ -33,20 +33,35 @@ function serviceFixture() {
       return true
     },
   }
+  const collection = (rows: any[]) => ({
+    where() {
+      return this
+    },
+    select() {
+      return this
+    },
+    first: async () => rows[0] ?? null,
+    all: async () => rows,
+  })
   const prisma = {
-    user: {
-      findUnique: async () => ({
-        id: 'user-a',
-        tenantId: 'tenant-a',
-        name: 'User',
-        email: 'u@example.com',
-        phone: null,
-        status: 'ACTIVE',
-        deptId: null,
-        leaderId: null,
-        authVersion: 0,
-        userRoles: [],
-      }),
+    client: {
+      orm: {
+        public: {
+          Users: collection([
+            {
+              id: 'user-a',
+              tenantId: 'tenant-a',
+              name: 'User',
+              email: 'u@example.com',
+              status: 'ACTIVE',
+              deptId: null,
+              leaderId: null,
+            },
+          ]),
+          UserRoles: collection([]),
+          Roles: collection([]),
+        },
+      },
     },
   }
   const jobs = { startExportWorker: () => ({}) }

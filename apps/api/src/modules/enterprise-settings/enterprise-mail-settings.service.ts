@@ -2,9 +2,12 @@ import { BadRequestException, Injectable } from '@nestjs/common'
 import type { EnterpriseMailSettingVO, EnterpriseMailTestVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma/prisma.service.js'
+import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal.js'
 import type { SaveEnterpriseMailSettingDto } from './dto/mail-setting.dto'
 import { SmtpProbeService } from './smtp-probe.service'
+
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 @Injectable()
 export class EnterpriseMailSettingsService {
@@ -15,7 +18,7 @@ export class EnterpriseMailSettingsService {
   ) {}
 
   async get(tenantId: string): Promise<EnterpriseMailSettingVO> {
-    const row = await this.prisma.enterpriseMailSetting.findUnique({ where: { tenantId } })
+    const row = await this.mailSettings().where({ tenantId }).first()
     if (!row) {
       return {
         configured: false,
@@ -41,55 +44,48 @@ export class EnterpriseMailSettingsService {
     input: SaveEnterpriseMailSettingDto,
   ): Promise<EnterpriseMailSettingVO> {
     this.validateTransport(input)
-    const existing = await this.prisma.enterpriseMailSetting.findUnique({
-      where: { tenantId: user.tenantId },
-    })
+    const existing = await this.mailSettings().where({ tenantId: user.tenantId }).first()
     const password = input.password?.trim() ?? ''
     const encrypted = password ? this.cipher.encrypt(password) : null
     const credential = encrypted ?? this.existingCredential(existing)
-
-    const row = await this.prisma.enterpriseMailSetting.upsert({
-      where: { tenantId: user.tenantId },
-      create: {
-        tenantId: user.tenantId,
-        host: input.host,
-        port: input.port,
-        account: input.account,
-        fromAddress: input.from,
-        recipient: input.recipient,
-        ssl: input.ssl,
-        tls: input.tls,
-        ...(credential && {
-          passwordCiphertext: credential.ciphertext,
-          passwordIv: credential.iv,
-          passwordAuthTag: credential.authTag,
-          passwordKeyVersion: credential.keyVersion,
-        }),
-      },
-      update: {
-        host: input.host,
-        port: input.port,
-        account: input.account,
-        fromAddress: input.from,
-        recipient: input.recipient,
-        ssl: input.ssl,
-        tls: input.tls,
-        ...(credential && {
-          passwordCiphertext: credential.ciphertext,
-          passwordIv: credential.iv,
-          passwordAuthTag: credential.authTag,
-          passwordKeyVersion: credential.keyVersion,
-        }),
-      },
-    })
+    const updatedAt = nowInstant()
+    const update = {
+      host: input.host,
+      port: input.port,
+      account: input.account,
+      fromAddress: input.from,
+      recipient: input.recipient,
+      ssl: input.ssl,
+      tls: input.tls,
+      updatedAt,
+      ...(credential && {
+        passwordCiphertext: credential.ciphertext,
+        passwordIv: credential.iv,
+        passwordAuthTag: credential.authTag,
+        passwordKeyVersion: credential.keyVersion,
+      }),
+    }
+    let row = existing ? await this.mailSettings().where({ id: existing.id }).update(update) : null
+    if (!row) {
+      try {
+        row = await this.mailSettings().create({
+          tenantId: user.tenantId,
+          ...update,
+        })
+      } catch (error) {
+        if ((error as { sqlState?: string }).sqlState !== '23505') throw error
+        const raced = await this.mailSettings().where({ tenantId: user.tenantId }).first()
+        if (!raced) throw error
+        row = await this.mailSettings().where({ id: raced.id }).update(update)
+      }
+    }
+    if (!row) throw new BadRequestException('企业邮箱配置保存失败')
     return this.toVO(row)
   }
 
   async test(user: AuthUser, input: SaveEnterpriseMailSettingDto): Promise<EnterpriseMailTestVO> {
     this.validateTransport(input)
-    const existing = await this.prisma.enterpriseMailSetting.findUnique({
-      where: { tenantId: user.tenantId },
-    })
+    const existing = await this.mailSettings().where({ tenantId: user.tenantId }).first()
     const submitted = input.password?.trim() ?? ''
     const password = submitted || this.decryptExisting(existing)
     const testedAt = new Date()
@@ -159,10 +155,19 @@ export class EnterpriseMailSettingsService {
     testedAt: Date,
   ) {
     if (!id) return
-    await this.prisma.enterpriseMailSetting.update({
-      where: { id, tenantId },
-      data: { lastTestSucceeded: success, lastTestMessage: message, lastTestedAt: testedAt },
-    })
+    const updated = await this.mailSettings()
+      .where({ id, tenantId })
+      .update({
+        lastTestSucceeded: success,
+        lastTestMessage: message,
+        lastTestedAt: instantFromDate(testedAt),
+        updatedAt: nowInstant(),
+      })
+    if (!updated) throw new Error('SMTP 配置不存在')
+  }
+
+  private mailSettings() {
+    return this.prisma.client.orm.public.EnterpriseMailSettings
   }
 
   private toVO(row: {
@@ -176,8 +181,8 @@ export class EnterpriseMailSettingsService {
     tls: boolean
     lastTestSucceeded: boolean | null
     lastTestMessage: string | null
-    lastTestedAt: Date | null
-    updatedAt: Date
+    lastTestedAt: InstantTimestamp | null
+    updatedAt: InstantTimestamp
   }): EnterpriseMailSettingVO {
     return {
       configured: true,
@@ -191,8 +196,8 @@ export class EnterpriseMailSettingsService {
       tls: row.tls,
       lastTestSucceeded: row.lastTestSucceeded,
       lastTestMessage: row.lastTestMessage,
-      lastTestedAt: row.lastTestedAt?.toISOString() ?? null,
-      updatedAt: row.updatedAt.toISOString(),
+      lastTestedAt: row.lastTestedAt ? instantToISOString(row.lastTestedAt) : null,
+      updatedAt: instantToISOString(row.updatedAt),
     }
   }
 }

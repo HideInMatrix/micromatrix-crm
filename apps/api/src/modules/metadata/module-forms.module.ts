@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { MetadataController } from './metadata.controller'
 import { MetadataService } from './metadata.service'
@@ -8,7 +9,7 @@ import { ResourceFieldValueService } from './resource-field-value.service'
 
 @Global()
 @Module({
-  imports: [AttachmentsModule],
+  imports: [AttachmentsModule, PrismaModule],
   controllers: [MetadataController],
   providers: [
     ModuleFormsService,

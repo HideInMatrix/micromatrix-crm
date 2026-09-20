@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ConflictException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { FollowUpPlan } from '../../generated/prisma/client'
-import type { PrismaService } from '../../prisma/prisma.service'
-import { FollowUpPlansService } from './follow-up-plans.service'
+import { instantFromDate } from '../../prisma/temporal'
+import { type FollowUpPlan, FollowUpPlansService } from './follow-up-plans.service'
+
+const instant = (value: string) => instantFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'owner-1',
@@ -26,7 +27,7 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     contactId: null,
     content: '今天完成回访',
     method: '电话',
-    estimatedAt: new Date('2026-08-22T02:00:00.000Z'),
+    estimatedAt: instant('2026-08-22T02:00:00.000Z'),
     status: 'COMPLETED',
     converted: false,
     convertedRecordId: null,
@@ -36,8 +37,8 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     dueNotifiedAt: null,
     commentCount: 0,
     customData: {},
-    createdAt: new Date('2026-08-21T00:00:00.000Z'),
-    updatedAt: new Date('2026-08-21T00:00:00.000Z'),
+    createdAt: instant('2026-08-21T00:00:00.000Z'),
+    updatedAt: instant('2026-08-21T00:00:00.000Z'),
     ...overrides,
   }
 }
@@ -50,13 +51,77 @@ function dependencies(
     input: { type: string; event?: string },
   ) => Promise<void> = async () => undefined,
   options: {
+    prismaRuntime?: Record<string, unknown>
     customerAccess?: Record<string, unknown>
     moduleForms?: Record<string, unknown>
     fieldValues?: Record<string, unknown>
   } = {},
 ) {
+  const legacy = prisma as {
+    followUpPlan?: {
+      findFirst?: () => Promise<FollowUpPlan | null>
+      update?: (input: unknown) => Promise<unknown>
+      delete?: (input: unknown) => Promise<unknown>
+    }
+    clue?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
+    customer?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
+    opportunity?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
+    user?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
+    customerContact?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
+  }
+  const collection = (load: () => Promise<Array<Record<string, unknown>>>) => {
+    const api = {
+      where: () => api,
+      select: () => api,
+      all: load,
+      first: async () => (await load())[0] ?? null,
+    }
+    return api
+  }
+  const followPlans = {
+    where: () => ({
+      first: async () => (legacy.followUpPlan?.findFirst ? legacy.followUpPlan.findFirst() : null),
+      update: async (data: Record<string, unknown>) =>
+        legacy.followUpPlan?.update ? legacy.followUpPlan.update({ data }) : null,
+      deleteAndCount: async () => {
+        if (!legacy.followUpPlan?.delete) return 0
+        await legacy.followUpPlan.delete({})
+        return 1
+      },
+    }),
+  }
+  const publicOrm = {
+    FollowUpPlans: followPlans,
+    Clue: collection(async () => (legacy.clue?.findMany ? legacy.clue.findMany() : [])),
+    Customer: collection(async () => (legacy.customer?.findMany ? legacy.customer.findMany() : [])),
+    Opportunity: collection(async () =>
+      legacy.opportunity?.findMany ? legacy.opportunity.findMany() : [],
+    ),
+    Users: collection(async () => (legacy.user?.findMany ? legacy.user.findMany() : [])),
+    CustomerContact: collection(async () =>
+      legacy.customerContact?.findMany ? legacy.customerContact.findMany() : [],
+    ),
+  }
+  const supplied = (options.prismaRuntime ?? {}) as {
+    client?: {
+      transaction?: (operation: (tx: unknown) => Promise<unknown>) => Promise<unknown>
+      orm?: { public?: Record<string, unknown> }
+    }
+  }
+  const prismaRuntime = {
+    ...supplied,
+    client: {
+      ...(supplied.client ?? {}),
+      orm: {
+        public: {
+          ...publicOrm,
+          ...(supplied.client?.orm?.public ?? {}),
+        },
+      },
+    },
+  }
   return new FollowUpPlansService(
-    prisma as unknown as PrismaService,
+    prismaRuntime as never,
     {} as never,
     (options.customerAccess ?? {}) as never,
     {} as never,
@@ -174,6 +239,7 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
     $transaction: async (operation: (tx: unknown) => Promise<unknown>) => operation(prisma),
     followUpPlan: {
       create: async () => createdPlan,
+      findFirst: async () => createdPlan,
     },
     customer: {
       findMany: async () => [{ id: 'customer-1', name: '测试客户' }],
@@ -183,7 +249,22 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
     user: { findMany: async () => [{ id: 'owner-1', name: '负责人' }] },
     customerContact: { findMany: async () => [] },
   }
+  const prismaRuntime = {
+    client: {
+      transaction: async (operation: (tx: unknown) => Promise<unknown>) =>
+        operation({
+          orm: {
+            public: {
+              FollowUpPlans: {
+                create: async () => ({ id: createdPlan.id }),
+              },
+            },
+          },
+        }),
+    },
+  }
   const service = dependencies(prisma, undefined, {
+    prismaRuntime,
     customerAccess: {
       assertCollaborateWrite: async () => ({
         customer: { name: '测试客户' },
@@ -211,9 +292,7 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
     targetType: 'customer',
     targetId: 'customer-1',
     content: '带产品的跟进计划',
-    moduleFields: [
-      { fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] },
-    ],
+    moduleFields: [{ fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] }],
   })
 
   assert.deepEqual(savedValues, { planProduct: ['product-a', 'product-b'] })
@@ -226,25 +305,26 @@ test('到期提醒覆盖他人代建计划、绑定事件并按日期抢占去�
   const row = plan({ status: 'PREPARED', converted: false })
   let claimed = false
   const notices: Array<{ tenantId: string; userId: string; type: string; event?: string }> = []
-  const prisma = {
-    followUpPlan: {
-      findMany: async () => (claimed ? [] : [row]),
-      updateMany: async () => {
-        if (claimed) return { count: 0 }
-        claimed = true
-        return { count: 1 }
-      },
-    },
-    customer: { findMany: async () => [{ id: 'customer-1', name: '测试客户' }] },
-    clue: { findMany: async () => [] },
-    opportunity: { findMany: async () => [] },
-  }
   const service = dependencies(
-    prisma,
+    {},
     async (tenantId, userId, input: { type: string; event?: string }) => {
       notices.push({ tenantId, userId, type: input.type, event: input.event })
     },
   )
+  const storage = service as unknown as {
+    loadDueReminderPlans: () => Promise<FollowUpPlan[]>
+    claimDueReminder: () => Promise<boolean>
+    releaseDueReminder: () => Promise<void>
+    targetNamesPrisma: () => Promise<Map<string, string>>
+  }
+  storage.loadDueReminderPlans = async () => (claimed ? [] : [row])
+  storage.claimDueReminder = async () => {
+    if (claimed) return false
+    claimed = true
+    return true
+  }
+  storage.releaseDueReminder = async () => undefined
+  storage.targetNamesPrisma = async () => new Map([['customer:customer-1', '测试客户']])
 
   const first = await service.runDueReminders(new Date('2026-08-22T03:00:00.000Z'))
   const second = await service.runDueReminders(new Date('2026-08-22T03:05:00.000Z'))

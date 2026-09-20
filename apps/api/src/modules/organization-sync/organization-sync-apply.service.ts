@@ -10,16 +10,36 @@ import {
 import * as bcrypt from 'bcryptjs'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import {
-  Prisma,
-  type OrganizationSyncBatch,
-  type OrganizationSyncItem,
-} from '../../generated/prisma/client'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { nowInstant } from '../../prisma/temporal.js'
+import { jsonValue } from '../../prisma/json-value.js'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import { OrganizationSyncCoordinationService } from './organization-sync-coordination.service'
 import type { OrganizationSyncProvider } from './organization-sync.service'
+
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
+
+type OrganizationSyncResourceType = 'DEPARTMENT' | 'USER'
+type OrganizationSyncAction = 'CREATE' | 'UPDATE' | 'DISABLE' | 'UNCHANGED' | 'CONFLICT' | 'SKIP'
+
+type InitialSyncBatch = {
+  status: string
+  integrationId: string
+}
+
+type OrganizationSyncItemLike = {
+  id: string
+  resourceType: OrganizationSyncResourceType
+  externalId: string
+  externalKey: string
+  action: OrganizationSyncAction
+  localId: string | null
+  parentExternalKey: string | null
+  sourceData: unknown
+  resolvedLocalId: string | null
+}
 
 @Injectable()
 export class OrganizationSyncApplyService {
@@ -38,9 +58,13 @@ export class OrganizationSyncApplyService {
     batchId: string,
     provider: OrganizationSyncProvider = 'WECOM',
   ): Promise<void> {
-    const initial = await this.prisma.organizationSyncBatch.findFirst({
-      where: { id: batchId, tenantId: user.tenantId, provider },
+    const initial = await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+      id: batchId,
+      tenantId: user.tenantId,
+      provider,
     })
+      .select('status', 'integrationId')
+      .first()
     if (!initial) throw new NotFoundException('同步批次不存在')
     if (initial.status === 'SUCCEEDED') return
     if (initial.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
@@ -60,145 +84,161 @@ export class OrganizationSyncApplyService {
   private async applyCore(
     user: AuthUser,
     batchId: string,
-    initial: OrganizationSyncBatch,
+    initial: InitialSyncBatch,
     provider: OrganizationSyncProvider,
   ): Promise<void> {
     const providerName =
       provider === 'DINGTALK' ? '钉钉' : provider === 'LARK' ? '飞书' : '企业微信'
     const disabledUserIds = (
-      await this.prisma.organizationSyncItem.findMany({
-        where: {
-          tenantId: user.tenantId,
-          batchId,
-          resourceType: 'USER',
-          action: 'DISABLE',
-          localId: { not: null },
-        },
-        select: { localId: true },
+      await this.prisma.client.orm.public.OrganizationSyncItems.where({
+        tenantId: user.tenantId,
+        batchId,
+        resourceType: 'USER',
+        action: 'DISABLE',
       })
+        .where((item) => item.localId.isNotNull())
+        .select('localId')
+        .all()
     )
       .map(({ localId }) => localId)
       .filter((id): id is string => Boolean(id))
     const subordinateIds = disabledUserIds.length
       ? (
-          await this.prisma.user.findMany({
-            where: { tenantId: user.tenantId, leaderId: { in: disabledUserIds } },
-            select: { id: true },
-          })
+          await this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
+            .where((member) => member.leaderId.in(disabledUserIds))
+            .select('id')
+            .all()
         ).map(({ id }) => id)
       : []
 
     let applyStarted = false
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${user.tenantId}:${provider}`}, 0))::text AS lock`
-          const batch = await tx.organizationSyncBatch.findFirst({
-            where: { id: batchId, tenantId: user.tenantId, provider },
-          })
-          if (!batch) throw new NotFoundException('同步批次不存在')
-          if (batch.status === 'SUCCEEDED') return
-          if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
+      const client = this.prisma.client
+      await client.transaction(async (tx) => {
+        const lockQuery = client.raw.sql`SELECT pg_advisory_xact_lock(
+            hashtextextended(${`${user.tenantId}:${provider}`}, 0)
+          )::text AS lock`.returnsRow({ lock: 'pg/text@1' })
+        for await (const _row of tx.query(lockQuery.build())) break
 
-          const integration = await tx.enterpriseIntegration.findFirst({
-            where: { id: batch.integrationId, tenantId: user.tenantId, provider },
-          })
-          if (!integration?.syncEnabled || integration.lastTestSucceeded !== true) {
-            throw new BadRequestException(`${providerName}同步配置当前不可用`)
-          }
-          if (integration.credentialVersion !== batch.credentialVersion) {
-            throw new BadRequestException(`${providerName}配置已变化，请重新生成同步预览`)
-          }
-          if (!integration.syncDefaultRoleId) throw new BadRequestException('请选择新成员默认角色')
-          const role = await tx.role.findFirst({
-            where: { id: integration.syncDefaultRoleId, tenantId: user.tenantId },
-            select: { id: true },
-          })
-          if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
-          const unresolved = await tx.organizationSyncItem.count({
-            where: { tenantId: user.tenantId, batchId, action: 'CONFLICT' },
-          })
-          if (unresolved > 0) throw new BadRequestException('仍有未处理的同步冲突')
+        const batch = await tx.orm.public.OrganizationSyncBatches.where({
+          id: batchId,
+          tenantId: user.tenantId,
+          provider,
+        }).first()
+        if (!batch) throw new NotFoundException('同步批次不存在')
+        if (batch.status === 'SUCCEEDED') return
+        if (batch.status !== 'PREVIEW_READY') throw new BadRequestException('当前批次不能应用')
 
-          applyStarted = true
-          await tx.organizationSyncBatch.update({
-            where: { id: batchId },
-            data: { status: 'APPLYING', appliedById: user.id, applyStartedAt: new Date() },
-          })
-          const items = await tx.organizationSyncItem.findMany({
-            where: { tenantId: user.tenantId, batchId },
-            orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
-          })
-          const departmentItems = items.filter((item) => item.resourceType === 'DEPARTMENT')
-          const userItems = items.filter((item) => item.resourceType === 'USER')
-          const departmentIds = await this.applyDepartments(
-            tx,
-            user.tenantId,
-            batchId,
-            batch.targetDepartmentId,
-            departmentItems,
-            provider,
-          )
-          await this.applyUsers(
-            tx,
-            user.tenantId,
-            batchId,
-            role.id,
-            userItems,
-            departmentIds,
-            provider,
-          )
+        const integration = await tx.orm.public.EnterpriseIntegrations.where({
+          id: batch.integrationId,
+          tenantId: user.tenantId,
+          provider,
+        }).first()
+        if (!integration?.syncEnabled || integration.lastTestSucceeded !== true) {
+          throw new BadRequestException(`${providerName}同步配置当前不可用`)
+        }
+        if (integration.credentialVersion !== batch.credentialVersion) {
+          throw new BadRequestException(`${providerName}配置已变化，请重新生成同步预览`)
+        }
+        if (!integration.syncDefaultRoleId) throw new BadRequestException('请选择新成员默认角色')
+        const role = await tx.orm.public.Roles.where({
+          id: integration.syncDefaultRoleId,
+          tenantId: user.tenantId,
+        })
+          .select('id')
+          .first()
+        if (!role) throw new BadRequestException('默认角色不存在或不属于当前企业')
+        const unresolved = await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+          action: 'CONFLICT',
+        })
+          .select('id')
+          .first()
+        if (unresolved) throw new BadRequestException('仍有未处理的同步冲突')
 
-          const finishedAt = new Date()
-          await tx.organizationSyncBatch.update({
-            where: { id: batchId },
-            data: {
-              status: 'SUCCEEDED',
-              errorCode: null,
-              errorMessage: null,
-              finishedAt,
-            },
-          })
-          await tx.enterpriseIntegration.update({
-            where: { id: integration.id },
-            data: {
-              lastSyncStatus: 'SUCCEEDED',
-              lastSyncMessage: `${providerName}组织架构同步成功`,
-              lastSyncedAt: finishedAt,
-              updatedById: user.id,
-            },
-          })
-          await tx.tenant.updateMany({
-            where: { id: user.tenantId, enterpriseSyncResource: provider },
-            data: { enterpriseSynced: true },
-          })
-        },
-        { maxWait: 10_000, timeout: 60_000 },
-      )
+        applyStarted = true
+        const applyStartedAt = nowInstant()
+        await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
+          status: 'APPLYING',
+          appliedById: user.id,
+          applyStartedAt,
+          updatedAt: applyStartedAt,
+        })
+        const items = await tx.orm.public.OrganizationSyncItems.where({
+          tenantId: user.tenantId,
+          batchId,
+        })
+          .orderBy([(item) => item.sort.asc(), (item) => item.createdAt.asc()])
+          .all()
+        const departmentItems = items.filter((item) => item.resourceType === 'DEPARTMENT')
+        const userItems = items.filter((item) => item.resourceType === 'USER')
+        const departmentIds = await this.applyDepartments(
+          tx,
+          user.tenantId,
+          batchId,
+          batch.targetDepartmentId,
+          departmentItems,
+          provider,
+        )
+        await this.applyUsers(
+          tx,
+          user.tenantId,
+          batchId,
+          role.id,
+          userItems,
+          departmentIds,
+          provider,
+        )
+
+        const finishedAt = nowInstant()
+        await tx.orm.public.OrganizationSyncBatches.where({ id: batchId }).update({
+          status: 'SUCCEEDED',
+          errorCode: null,
+          errorMessage: null,
+          finishedAt,
+          updatedAt: finishedAt,
+        })
+        await tx.orm.public.EnterpriseIntegrations.where({ id: integration.id }).update({
+          lastSyncStatus: 'SUCCEEDED',
+          lastSyncMessage: `${providerName}组织架构同步成功`,
+          lastSyncedAt: finishedAt,
+          updatedById: user.id,
+          updatedAt: finishedAt,
+        })
+        await tx.orm.public.Tenants.where({
+          id: user.tenantId,
+          enterpriseSyncResource: provider,
+        }).updateAll({ enterpriseSynced: true, updatedAt: finishedAt })
+      })
     } catch (error) {
       this.logger.error(
         `组织同步应用失败：${error instanceof Error ? error.message : 'unknown'}`,
         error instanceof Error ? error.stack : undefined,
       )
       if (applyStarted && !(error instanceof BadRequestException)) {
-        await this.prisma.organizationSyncBatch.updateMany({
-          where: { id: batchId, tenantId: user.tenantId, status: 'PREVIEW_READY' },
-          data: {
-            status: 'FAILED',
-            errorCode: 'APPLY_FAILED',
-            errorMessage: '应用组织同步失败，所有变更已回滚',
-            finishedAt: new Date(),
-          },
+        const failedAt = nowInstant()
+        await this.prisma.client.orm.public.OrganizationSyncBatches.where({
+          id: batchId,
+          tenantId: user.tenantId,
+          status: 'PREVIEW_READY',
+        }).updateAll({
+          status: 'FAILED',
+          errorCode: 'APPLY_FAILED',
+          errorMessage: '应用组织同步失败，所有变更已回滚',
+          finishedAt: failedAt,
+          updatedAt: failedAt,
         })
-        await this.prisma.enterpriseIntegration.updateMany({
-          where: { id: initial.integrationId, tenantId: user.tenantId },
-          data: {
-            lastSyncStatus: 'FAILED',
-            lastSyncMessage: '应用组织同步失败，所有变更已回滚',
-          },
+        await this.prisma.client.orm.public.EnterpriseIntegrations.where({
+          id: initial.integrationId,
+          tenantId: user.tenantId,
+        }).updateAll({
+          lastSyncStatus: 'FAILED',
+          lastSyncMessage: '应用组织同步失败，所有变更已回滚',
+          updatedAt: failedAt,
         })
-        await this.prisma.operationLog.create({
-          data: {
+        await this.prisma.client.transaction(async (tx) => {
+          const operationLog = await tx.orm.public.OperationLogs.create({
             tenantId: user.tenantId,
             userId: user.id,
             userName: user.name,
@@ -210,23 +250,25 @@ export class OrganizationSyncApplyService {
                   ? 'applyLarkFailed'
                   : 'applyWeComFailed',
             targetId: batchId,
-            blob: { create: { detail: { errorCode: 'APPLY_FAILED' } } },
-          },
+          })
+          await tx.orm.public.OperationLogBlobs.create({
+            operationLogId: operationLog.id,
+            detail: jsonValue({ errorCode: 'APPLY_FAILED' }),
+          })
         })
       }
       throw error
     }
 
-    const affectedUsers = await this.prisma.organizationSyncItem.findMany({
-      where: {
-        tenantId: user.tenantId,
-        batchId,
-        resourceType: 'USER',
-        result: 'APPLIED',
-        localId: { not: null },
-      },
-      select: { localId: true },
+    const affectedUsers = await this.prisma.client.orm.public.OrganizationSyncItems.where({
+      tenantId: user.tenantId,
+      batchId,
+      resourceType: 'USER',
+      result: 'APPLIED',
     })
+      .where((item) => item.localId.isNotNull())
+      .select('localId')
+      .all()
     await this.authCache?.invalidateMany([
       ...affectedUsers.map(({ localId }) => localId).filter((id): id is string => Boolean(id)),
       ...subordinateIds,
@@ -248,29 +290,32 @@ export class OrganizationSyncApplyService {
   }
 
   private async applyDepartments(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     tenantId: string,
     batchId: string,
     targetDepartmentId: string,
-    items: OrganizationSyncItem[],
+    items: OrganizationSyncItemLike[],
     provider: OrganizationSyncProvider,
   ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>()
-    const existingMappings = await tx.externalDepartmentMapping.findMany({
-      where: { tenantId, provider },
-    })
+    const existingMappings = await tx.orm.public.ExternalDepartmentMappings.where({
+      tenantId,
+      provider,
+    }).all()
     for (const mapping of existingMappings) resolved.set(mapping.externalKey, mapping.departmentId)
 
     for (const item of items) {
+      const updatedAt = nowInstant()
       if (item.action === 'SKIP') {
         await this.markItem(tx, item.id, 'SKIPPED')
         continue
       }
       if (item.action === 'DISABLE') {
-        await tx.externalDepartmentMapping.updateMany({
-          where: { tenantId, provider, externalKey: item.externalKey },
-          data: { active: false },
-        })
+        await tx.orm.public.ExternalDepartmentMappings.where({
+          tenantId,
+          provider,
+          externalKey: item.externalKey,
+        }).updateAll({ active: false, updatedAt })
         await this.markItem(tx, item.id, 'APPLIED')
         resolved.delete(item.externalKey)
         continue
@@ -285,36 +330,44 @@ export class OrganizationSyncApplyService {
       }
       let departmentId = item.resolvedLocalId ?? item.localId
       if (item.action === 'CREATE') {
-        const created = await tx.department.create({
-          data: {
-            tenantId,
-            name: this.requiredString(source, 'name'),
-            parentId,
-            sort: this.numberValue(source, 'order'),
-          },
+        const created = await tx.orm.public.Departments.create({
+          tenantId,
+          name: this.requiredString(source, 'name'),
+          parentId,
+          sort: this.numberValue(source, 'order'),
+          updatedAt,
         })
         departmentId = created.id
       } else {
         if (!departmentId) throw new Error(`同步部门缺少本地目标：${item.externalId}`)
-        const updated = await tx.department.updateMany({
-          where: { id: departmentId, tenantId },
-          data: {
-            name: this.requiredString(source, 'name'),
-            parentId,
-            sort: this.numberValue(source, 'order'),
-          },
+        const updated = await tx.orm.public.Departments.where({
+          id: departmentId,
+          tenantId,
+        }).update({
+          name: this.requiredString(source, 'name'),
+          parentId,
+          sort: this.numberValue(source, 'order'),
+          updatedAt,
         })
-        if (updated.count !== 1) throw new Error(`同步部门不存在：${item.externalId}`)
+        if (!updated) throw new Error(`同步部门不存在：${item.externalId}`)
       }
-      await tx.externalDepartmentMapping.upsert({
-        where: {
-          tenantId_provider_externalKey: {
-            tenantId,
-            provider,
-            externalKey: item.externalKey,
-          },
-        },
-        create: {
+      const mapping = await tx.orm.public.ExternalDepartmentMappings.where({
+        tenantId,
+        provider,
+        externalKey: item.externalKey,
+      })
+        .select('id')
+        .first()
+      if (mapping) {
+        await tx.orm.public.ExternalDepartmentMappings.where({ id: mapping.id }).update({
+          externalId: item.externalId,
+          departmentId: departmentId!,
+          active: true,
+          lastSeenBatchId: batchId,
+          updatedAt,
+        })
+      } else {
+        await tx.orm.public.ExternalDepartmentMappings.create({
           tenantId,
           provider,
           externalId: item.externalId,
@@ -322,14 +375,9 @@ export class OrganizationSyncApplyService {
           departmentId: departmentId!,
           active: true,
           lastSeenBatchId: batchId,
-        },
-        update: {
-          externalId: item.externalId,
-          departmentId: departmentId!,
-          active: true,
-          lastSeenBatchId: batchId,
-        },
-      })
+          updatedAt,
+        })
+      }
       resolved.set(item.externalKey, departmentId!)
       await this.markItem(tx, item.id, 'APPLIED', departmentId!)
     }
@@ -337,11 +385,11 @@ export class OrganizationSyncApplyService {
   }
 
   private async applyUsers(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     tenantId: string,
     batchId: string,
     defaultRoleId: string,
-    items: OrganizationSyncItem[],
+    items: OrganizationSyncItemLike[],
     departmentIds: Map<string, string>,
     provider: OrganizationSyncProvider,
   ): Promise<void> {
@@ -349,31 +397,31 @@ export class OrganizationSyncApplyService {
     const departmentsWithLeaderData = new Set<string>()
 
     for (const item of items) {
+      const updatedAt = nowInstant()
       if (item.action === 'SKIP') {
         await this.markItem(tx, item.id, 'SKIPPED')
         continue
       }
       if (item.action === 'DISABLE') {
         if (item.localId) {
-          await Promise.all([
-            tx.department.updateMany({
-              where: { tenantId, leaderId: item.localId },
-              data: { leaderId: null },
-            }),
-            tx.user.updateMany({
-              where: { tenantId, leaderId: item.localId },
-              data: { leaderId: null },
-            }),
-            tx.user.updateMany({
-              where: { tenantId, id: item.localId },
-              data: { status: 'DISABLED' },
-            }),
-          ])
+          await tx.orm.public.Departments.where({ tenantId, leaderId: item.localId }).updateAll({
+            leaderId: null,
+            updatedAt,
+          })
+          await tx.orm.public.Users.where({ tenantId, leaderId: item.localId }).updateAll({
+            leaderId: null,
+            updatedAt,
+          })
+          await tx.orm.public.Users.where({ tenantId, id: item.localId }).updateAll({
+            status: 'DISABLED',
+            updatedAt,
+          })
         }
-        await tx.externalUserMapping.updateMany({
-          where: { tenantId, provider, externalKey: item.externalKey },
-          data: { active: false },
-        })
+        await tx.orm.public.ExternalUserMappings.where({
+          tenantId,
+          provider,
+          externalKey: item.externalKey,
+        }).updateAll({ active: false, updatedAt })
         await this.markItem(tx, item.id, 'APPLIED')
         continue
       }
@@ -386,44 +434,54 @@ export class OrganizationSyncApplyService {
       let userId = item.resolvedLocalId ?? item.localId
       if (item.action === 'CREATE') {
         const passwordHash = await bcrypt.hash(randomBytes(32).toString('base64url'), 10)
-        const created = await tx.user.create({
-          data: {
-            tenantId,
-            email: this.nullableString(source, 'proposedEmail'),
-            passwordHash,
-            passwordLoginEnabled: false,
-            name: this.requiredString(source, 'name'),
-            status: 'ACTIVE',
-            deptId: departmentId,
-            position: this.nullableString(source, 'position'),
-            phone: this.nullableString(source, 'mobile'),
-            userRoles: { create: { tenantId, roleId: defaultRoleId } },
-          },
+        const created = await tx.orm.public.Users.create({
+          tenantId,
+          email: this.nullableString(source, 'proposedEmail'),
+          passwordHash,
+          passwordLoginEnabled: false,
+          name: this.requiredString(source, 'name'),
+          status: 'ACTIVE',
+          deptId: departmentId,
+          position: this.nullableString(source, 'position'),
+          phone: this.nullableString(source, 'mobile'),
+          updatedAt,
+        })
+        await tx.orm.public.UserRoles.create({
+          tenantId,
+          userId: created.id,
+          roleId: defaultRoleId,
+          updatedAt,
         })
         userId = created.id
       } else {
         if (!userId) throw new Error(`同步成员缺少本地目标：${item.externalId}`)
-        const updated = await tx.user.updateMany({
-          where: { id: userId, tenantId },
-          data: {
-            name: this.requiredString(source, 'name'),
-            status: 'ACTIVE',
-            deptId: departmentId,
-            position: this.nullableString(source, 'position'),
-            phone: this.nullableString(source, 'mobile'),
-          },
+        const updated = await tx.orm.public.Users.where({ id: userId, tenantId }).update({
+          name: this.requiredString(source, 'name'),
+          status: 'ACTIVE',
+          deptId: departmentId,
+          position: this.nullableString(source, 'position'),
+          phone: this.nullableString(source, 'mobile'),
+          updatedAt,
         })
-        if (updated.count !== 1) throw new Error(`同步成员不存在：${item.externalId}`)
+        if (!updated) throw new Error(`同步成员不存在：${item.externalId}`)
       }
-      await tx.externalUserMapping.upsert({
-        where: {
-          tenantId_provider_externalKey: {
-            tenantId,
-            provider,
-            externalKey: item.externalKey,
-          },
-        },
-        create: {
+      const mapping = await tx.orm.public.ExternalUserMappings.where({
+        tenantId,
+        provider,
+        externalKey: item.externalKey,
+      })
+        .select('id')
+        .first()
+      if (mapping) {
+        await tx.orm.public.ExternalUserMappings.where({ id: mapping.id }).update({
+          externalId: item.externalId,
+          userId: userId!,
+          active: true,
+          lastSeenBatchId: batchId,
+          updatedAt,
+        })
+      } else {
+        await tx.orm.public.ExternalUserMappings.create({
           tenantId,
           provider,
           externalId: item.externalId,
@@ -431,14 +489,9 @@ export class OrganizationSyncApplyService {
           userId: userId!,
           active: true,
           lastSeenBatchId: batchId,
-        },
-        update: {
-          externalId: item.externalId,
-          userId: userId!,
-          active: true,
-          lastSeenBatchId: batchId,
-        },
-      })
+          updatedAt,
+        })
+      }
       if (source['isLeader'] === true && !leaderByDepartment.has(departmentId)) {
         leaderByDepartment.set(departmentId, userId!)
       }
@@ -446,26 +499,27 @@ export class OrganizationSyncApplyService {
     }
 
     for (const departmentId of departmentsWithLeaderData) {
-      await tx.department.updateMany({
-        where: { id: departmentId, tenantId },
-        data: { leaderId: leaderByDepartment.get(departmentId) ?? null },
+      await tx.orm.public.Departments.where({ id: departmentId, tenantId }).updateAll({
+        leaderId: leaderByDepartment.get(departmentId) ?? null,
+        updatedAt: nowInstant(),
       })
     }
   }
 
   private markItem(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     id: string,
     result: 'APPLIED' | 'SKIPPED',
     localId?: string,
   ) {
-    return tx.organizationSyncItem.update({
-      where: { id },
-      data: { result, ...(localId ? { localId } : {}) },
+    return tx.orm.public.OrganizationSyncItems.where({ id }).update({
+      result,
+      ...(localId ? { localId } : {}),
+      updatedAt: nowInstant(),
     })
   }
 
-  private source(item: OrganizationSyncItem): Record<string, unknown> {
+  private source(item: OrganizationSyncItemLike): Record<string, unknown> {
     const value = item.sourceData
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error(`同步项快照无效：${item.id}`)

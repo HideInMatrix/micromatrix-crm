@@ -1,26 +1,41 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { PrismaClient } from '../generated/prisma/client'
-import { createPrismaPgAdapter } from './prisma-adapter'
+import { createPrismaClient, type PrismaClient } from './prisma-client.js'
 
+/** Canonical PostgreSQL ORM runtime for the API application. */
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService implements OnModuleInit, OnModuleDestroy {
+  private runtimeClient?: PrismaClient
+  private readonly connectionString: string
+
   constructor(config: ConfigService) {
-    // Prisma 7：通过驱动适配器直连 PostgreSQL
-    const connectionString = config.getOrThrow<string>('DATABASE_URL')
-    super({
-      adapter: createPrismaPgAdapter(connectionString),
-    })
+    this.connectionString = config.getOrThrow<string>('DATABASE_URL')
+  }
+
+  get client(): PrismaClient {
+    if (!this.runtimeClient) {
+      throw new Error('Prisma client is not initialized yet')
+    }
+    return this.runtimeClient
   }
 
   async onModuleInit() {
-    await this.$connect()
-    // Prisma 7 + driver adapter 的连接池可能是惰性建立的；执行一次轻量查询，
-    // 让错误凭据/不可达数据库在 API 启动阶段直接暴露，而不是拖到首次业务请求才返回 500。
-    await this.$queryRaw`SELECT 1`
+    this.runtimeClient = await createPrismaClient(this.connectionString)
+    await this.runtimeClient.connect()
+    await this.verifyConnection()
   }
 
   async onModuleDestroy() {
-    await this.$disconnect()
+    await this.runtimeClient?.close()
+    this.runtimeClient = undefined
+  }
+
+  private async verifyConnection(): Promise<void> {
+    const client = this.client
+    const query = client.raw.sql`SELECT '1'::text AS ok`.returnsRow({ ok: 'pg/text@1' })
+    for await (const row of client.runtime().query(query.build())) {
+      if (row.ok === '1') return
+    }
+    throw new Error('Prisma database startup probe returned no rows')
   }
 }

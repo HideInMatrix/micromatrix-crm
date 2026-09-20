@@ -13,8 +13,14 @@ const departments = [
 
 function service() {
   return new DataScopeService({
-    department: {
-      findMany: async () => departments,
+    client: {
+      orm: {
+        public: {
+          Departments: {
+            where: () => ({ select: () => ({ all: async () => departments }) }),
+          },
+        },
+      },
     },
   } as unknown as PrismaService)
 }
@@ -69,7 +75,10 @@ describe('DataScopeService multi-role merge', () => {
       await dataScope.matchesResource(actor(), 'other-user', 'sales-child', 'customer:update'),
       false,
     )
-    assert.equal(await dataScope.matchesResource(actor(), 'actor', 'service', 'customer:update'), true)
+    assert.equal(
+      await dataScope.matchesResource(actor(), 'actor', 'service', 'customer:update'),
+      true,
+    )
   })
 
   it('unions department scopes from multiple roles with the same permission', async () => {

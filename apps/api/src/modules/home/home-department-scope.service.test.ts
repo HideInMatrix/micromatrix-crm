@@ -26,11 +26,38 @@ function authUser(roles: Array<Record<string, unknown>>, deptId = 'sales') {
 function createService(scopeResult: Record<string, unknown>) {
   let requestedUserDeptIds: string[] = []
   const prisma = {
-    department: { findMany: async () => departments },
-    user: {
-      findMany: async ({ where }: any) => {
-        requestedUserDeptIds = [...(where.deptId?.in ?? [])]
-        return requestedUserDeptIds.map((deptId) => ({ id: `user-${deptId}` }))
+    client: {
+      orm: {
+        public: {
+          Departments: {
+            where: () => ({
+              orderBy: () => ({
+                select: () => ({ all: async () => departments }),
+              }),
+            }),
+          },
+          Users: {
+            where: () => ({
+              where: (predicate: any) => {
+                const field = {
+                  deptId: {
+                    in: (ids: string[]) => {
+                      requestedUserDeptIds = [...ids]
+                      return true
+                    },
+                  },
+                }
+                predicate(field)
+                return {
+                  select: () => ({
+                    all: async () =>
+                      requestedUserDeptIds.map((deptId) => ({ id: `user-${deptId}` })),
+                  }),
+                }
+              },
+            }),
+          },
+        },
       },
     },
   }

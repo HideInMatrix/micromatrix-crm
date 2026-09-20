@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { PrismaModule } from '../../prisma/prisma.module.js'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import { DingTalkOrganizationSyncController } from './dingtalk-organization-sync.controller'
 import { LarkOrganizationSyncController } from './lark-organization-sync.controller'
@@ -9,7 +10,7 @@ import { OrganizationSyncPlanner } from './organization-sync.planner'
 import { OrganizationSyncService } from './organization-sync.service'
 
 @Module({
-  imports: [EnterpriseIntegrationsModule],
+  imports: [EnterpriseIntegrationsModule, PrismaModule],
   controllers: [
     OrganizationSyncController,
     DingTalkOrganizationSyncController,

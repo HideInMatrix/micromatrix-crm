@@ -14,8 +14,10 @@ import { formatForExport } from '../../common/export-format'
 import { parseFilters } from '../../common/filter-builder'
 import type { ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { Opportunity, OpportunityStageConfig, Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { not } from '@prisma/orm-postgres/orm-client'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
+import { createLegacyId32 } from '../../common/legacy-id'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
 import {
@@ -53,17 +55,70 @@ import {
 
 const MODULE = 'opportunity'
 
+type Opportunity = {
+  id: string
+  customerId: string | null
+  name: string
+  amount: unknown
+  possible: unknown
+  products: string | null
+  organizationId: string
+  lastStage: string | null
+  stage: string
+  contactId: string | null
+  owner: string
+  updateUser: string
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  follower: string | null
+  followTime: bigint | null
+  expectedEndTime: bigint | null
+  actualEndTime: bigint | null
+  failureReason: string | null
+  pos: bigint | null
+}
+
+type OpportunityStageConfig = {
+  id: string
+  name: string
+  type: string
+  rate: string
+  afootRollBack: boolean
+  endRollBack: boolean
+  pos: bigint
+  organizationId: string
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
+}
+
+type OpportunityHomeClause = {
+  owner?: string | { in?: string[] }
+  stageConfig?: { type?: string; rate?: string }
+  createTime?: { gte?: bigint; lte?: bigint }
+  expectedEndTime?: { gte?: bigint; lte?: bigint }
+  actualEndTime?: { gte?: bigint; lte?: bigint }
+}
+
+type OpportunityHomeWhere = {
+  AND?: OpportunityHomeClause[]
+}
+
+type OpportunitySystemBatchUpdate =
+  | { kind: 'name'; value: string }
+  | { kind: 'owner'; value: string }
+  | { kind: 'amount' | 'possible'; value: number | null }
+  | { kind: 'expectedEndTime'; value: bigint | null }
+  | { kind: 'products'; value: string | null }
+  | { kind: 'customerId'; value: string | null }
+
 type OpportunityWithRefs = Opportunity & {
   customer: { name: string } | null
   contact: { name: string } | null
   stageConfig: OpportunityStageConfig
 }
-
-const refInclude = {
-  customer: { select: { name: true } },
-  contact: { select: { name: true } },
-  stageConfig: true,
-} as const
 
 const DEFAULT_STAGES = [
   { name: '新建', type: 'AFOOT', rate: '10', pos: 1 },
@@ -160,14 +215,14 @@ export class OpportunitiesService {
       possible: dto.possible,
     } as CreateOpportunityDto)
     if (dto.follower !== undefined || dto.followTime !== undefined) {
-      await this.prisma.opportunity.update({
-        where: { id: result.id },
-        data: {
-          follower: dto.follower ?? null,
-          followTime: dto.followTime === undefined ? null : BigInt(dto.followTime),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+      await this.prisma.client.orm.public.Opportunity.where({
+        id: result.id,
+        organizationId: user.tenantId,
+      }).update({
+        follower: dto.follower ? dto.follower : null,
+        followTime: dto.followTime === undefined ? null : BigInt(dto.followTime),
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
     }
     return this.findOne(user, result.id)
@@ -199,16 +254,16 @@ export class OpportunitiesService {
       possible: dto.possible,
     } as UpdateOpportunityDto)
     if (dto.follower !== undefined || dto.followTime !== undefined) {
-      await this.prisma.opportunity.update({
-        where: { id: dto.id },
-        data: {
-          ...(dto.follower !== undefined ? { follower: dto.follower ?? null } : {}),
-          ...(dto.followTime !== undefined
-            ? { followTime: dto.followTime === null ? null : BigInt(dto.followTime) }
-            : {}),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+      await this.prisma.client.orm.public.Opportunity.where({
+        id: dto.id,
+        organizationId: user.tenantId,
+      }).update({
+        ...(dto.follower !== undefined ? { follower: dto.follower ? dto.follower : null } : {}),
+        ...(dto.followTime !== undefined
+          ? { followTime: dto.followTime === null ? null : BigInt(dto.followTime) }
+          : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
     }
     return this.findOne(user, result.id)
@@ -218,18 +273,25 @@ export class OpportunitiesService {
     const owner = await this.resolveOwner(user, dto.owner)
     const rows = await this.assertBatchInScope(user, dto.ids, 'opportunity:transfer')
     const now = BigInt(Date.now())
-    await this.prisma.opportunity.updateMany({
-      where: { id: { in: rows.map((row) => row.id) }, organizationId: user.tenantId },
-      data: { owner: owner.id, updateTime: now, updateUser: user.id },
+    await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
     })
+      .where((row) => row.id.in(rows.map((item) => item.id)))
+      .updateAndCount({
+        owner: owner.id,
+        updateTime: now,
+        updateUser: user.id,
+      })
     return { count: rows.length }
   }
 
   async batchDelete(user: AuthUser, ids: string[]) {
     const rows = await this.assertBatchInScope(user, ids, 'opportunity:delete')
-    await this.prisma.opportunity.deleteMany({
-      where: { id: { in: rows.map((row) => row.id) }, organizationId: user.tenantId },
+    await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
     })
+      .where((row) => row.id.in(rows.map((item) => item.id)))
+      .deleteAll()
     return { count: rows.length }
   }
 
@@ -241,7 +303,7 @@ export class OpportunitiesService {
       throw new BadRequestException('字段不存在或不支持批量修改')
     }
     if (!field.system || isCustomFieldKey(field.key)) {
-      return this.prisma.$transaction(async (tx) =>
+      return this.prisma.client.transaction(async (tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'opportunity',
@@ -253,10 +315,11 @@ export class OpportunitiesService {
       )
     }
     const data = await this.systemBatchUpdateData(user, field.key, dto.fieldValue)
-    await this.prisma.opportunity.updateMany({
-      where: { id: { in: rows.map((row) => row.id) }, organizationId: user.tenantId },
-      data: { ...data, updateTime: BigInt(Date.now()), updateUser: user.id },
-    })
+    await this.applySystemBatchUpdate(
+      user,
+      rows.map((row) => row.id),
+      data,
+    )
     return { count: rows.length }
   }
 
@@ -268,15 +331,14 @@ export class OpportunitiesService {
   async contactList(user: AuthUser, opportunityId: string) {
     const opportunity = await this.ensureInScope(user, opportunityId, 'menu:opportunity')
     if (!opportunity.customerId) return { list: [] }
-    const contacts = await this.prisma.customerContact.findMany({
-      where: {
-        organizationId: user.tenantId,
-        customerId: opportunity.customerId,
-        enable: true,
-      },
-      select: { id: true, name: true, phone: true, owner: true },
-      orderBy: { createTime: 'asc' },
+    const contacts = await this.prisma.client.orm.public.CustomerContact.where({
+      organizationId: user.tenantId,
+      customerId: opportunity.customerId,
+      enable: true,
     })
+      .orderBy((row) => row.createTime.asc())
+      .select('id', 'name', 'phone', 'owner')
+      .all()
     const ownerMap = await this.ownerNames(contacts.map((contact) => contact.owner))
     const list = contacts.map((contact) => ({
       id: contact.id,
@@ -298,38 +360,42 @@ export class OpportunitiesService {
   async sortBoard(user: AuthUser, dto: OpportunityBoardSortDto) {
     const moving = await this.ensureInScope(user, dto.dragNodeId, 'opportunity:update')
     const targetStage = await this.ensureStage(user.tenantId, dto.stage)
-    const targetRows = await this.prisma.opportunity.findMany({
-      where: {
-        organizationId: user.tenantId,
-        stage: targetStage.id,
-        id: { not: moving.id },
-      },
-      orderBy: [{ pos: 'asc' }, { updateTime: 'asc' }],
-      select: { id: true },
+    const targetRows = await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+      stage: targetStage.id,
     })
-    const ordered = targetRows.map((row) => row.id)
+      .where((row) => row.id.neq(moving.id))
+      .orderBy([(row) => row.pos.asc(), (row) => row.updateTime.asc()])
+      .select('id')
+      .all()
+    const ordered = targetRows.map((row) => String(row.id))
     const targetIndex = dto.dropNodeId ? ordered.indexOf(dto.dropNodeId) : -1
     const insertAt =
       targetIndex < 0 ? ordered.length : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     ordered.splice(insertAt, 0, moving.id)
     const now = BigInt(Date.now())
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       for (const [index, id] of ordered.entries()) {
-        await tx.opportunity.update({
-          where: { id },
-          data: {
-            ...(id === moving.id
-              ? {
-                  lastStage: moving.stage === targetStage.id ? moving.lastStage : moving.stage,
-                  stage: targetStage.id,
-                  actualEndTime: targetStage.type === 'END' ? now : null,
-                }
-              : {}),
-            pos: BigInt(index + 1),
-            updateTime: now,
-            updateUser: user.id,
-          },
+        const updated = await tx.orm.public.Opportunity.where({
+          id: id,
+        }).update({
+          ...(id === moving.id
+            ? {
+                lastStage:
+                  moving.stage === targetStage.id
+                    ? moving.lastStage
+                      ? moving.lastStage
+                      : null
+                    : moving.stage,
+                stage: targetStage.id,
+                actualEndTime: targetStage.type === 'END' ? now : null,
+              }
+            : {}),
+          pos: BigInt(index + 1),
+          updateTime: now,
+          updateUser: user.id,
         })
+        if (!updated) throw new NotFoundException('商机不存在或无权访问')
       }
       if (dto.fields?.length) {
         await this.fieldValues.save(
@@ -495,27 +561,32 @@ export class OpportunitiesService {
 
   async listStages(organizationId: string): Promise<OpportunityStageVO[]> {
     await this.ensureDefaultStages(organizationId)
-    const rows = await this.prisma.opportunityStageConfig.findMany({
-      where: { organizationId },
-      orderBy: { pos: 'asc' },
+    const rows = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: organizationId,
     })
-    return rows.map((stage) => this.stageToVO(stage))
+      .orderBy((row) => row.pos.asc())
+      .all()
+    return rows.map((stage) => this.stageToVO(this.normalizeStage(stage)))
   }
 
   async getStageConfig(user: AuthUser) {
     await this.ensureDefaultStages(user.tenantId)
-    const [rows, grouped] = await Promise.all([
-      this.prisma.opportunityStageConfig.findMany({
-        where: { organizationId: user.tenantId },
-        orderBy: { pos: 'asc' },
+    const rawRows = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: user.tenantId,
+    })
+      .orderBy((row) => row.pos.asc())
+      .all()
+    const rows = rawRows.map((stage) => this.normalizeStage(stage))
+    const counts = new Map<string, number>()
+    await Promise.all(
+      rows.map(async (stage) => {
+        const aggregate = await this.prisma.client.orm.public.Opportunity.where({
+          organizationId: user.tenantId,
+          stage: stage.id,
+        }).aggregate((value) => ({ count: value.count() }))
+        counts.set(stage.id, aggregate.count)
       }),
-      this.prisma.opportunity.groupBy({
-        by: ['stage'],
-        where: { organizationId: user.tenantId },
-        _count: { _all: true },
-      }),
-    ])
-    const counts = new Map(grouped.map((item) => [item.stage, item._count._all]))
+    )
     const first = rows[0]
     return {
       stageConfigList: rows.map((stage) => ({
@@ -535,10 +606,12 @@ export class OpportunitiesService {
 
   async addStageConfig(user: AuthUser, dto: OpportunityStageAddDto) {
     await this.ensureDefaultStages(user.tenantId)
-    const stages = await this.prisma.opportunityStageConfig.findMany({
-      where: { organizationId: user.tenantId },
-      orderBy: { pos: 'asc' },
+    const rawStages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: user.tenantId,
     })
+      .orderBy((row) => row.pos.asc())
+      .all()
+    const stages = rawStages.map((stage) => this.normalizeStage(stage))
     if (stages.length >= 15) throw new BadRequestException('商机阶段最多配置 15 个')
     const rate = Number(dto.rate)
     if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
@@ -555,25 +628,24 @@ export class OpportunitiesService {
       targetIndex < 0 ? defaultInsertAt : Math.max(0, targetIndex + (dto.dropPosition > 0 ? 1 : 0))
     const first = stages[0]
     const now = BigInt(Date.now())
-    const created = await this.prisma.opportunityStageConfig.create({
-      data: {
-        name: dto.name.trim(),
-        type,
-        rate: String(rate),
-        afootRollBack: first?.afootRollBack ?? true,
-        endRollBack: first?.endRollBack ?? false,
-        pos: BigInt(insertAt + 1),
-        organizationId: user.tenantId,
-        createTime: now,
-        updateTime: now,
-        createUser: user.id,
-        updateUser: user.id,
-      },
+    const created = await this.prisma.client.orm.public.OpportunityStageConfig.create({
+      id: createLegacyId32(),
+      name: dto.name.trim(),
+      _type: type,
+      rate: String(rate),
+      afootRollBack: first?.afootRollBack ?? true,
+      endRollBack: first?.endRollBack ?? false,
+      pos: BigInt(insertAt + 1),
+      organizationId: user.tenantId,
+      createTime: now,
+      updateTime: now,
+      createUser: user.id,
+      updateUser: user.id,
     })
     const ordered = stages.map((stage) => stage.id)
-    ordered.splice(insertAt, 0, created.id)
+    ordered.splice(insertAt, 0, String(created.id))
     await this.sortStageIds(user, ordered)
-    return created.id
+    return String(created.id)
   }
 
   async updateStageConfig(user: AuthUser, dto: OpportunityStageEditDto) {
@@ -585,36 +657,36 @@ export class OpportunitiesService {
     if (stage.type === 'END' && rate !== undefined && rate !== 0 && rate !== 100) {
       throw new BadRequestException('完结阶段赢率只能为 0 或 100')
     }
-    await this.prisma.opportunityStageConfig.update({
-      where: { id: stage.id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(rate !== undefined ? { rate: String(rate) } : {}),
-        updateTime: BigInt(Date.now()),
-        updateUser: user.id,
-      },
+    await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      id: stage.id,
+      organizationId: user.tenantId,
+    }).update({
+      name: dto.name === undefined ? undefined : dto.name.trim(),
+      rate: rate === undefined ? undefined : String(rate),
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
     })
   }
 
   async updateStageRollback(user: AuthUser, dto: OpportunityStageRollbackDto) {
     await this.ensureDefaultStages(user.tenantId)
-    await this.prisma.opportunityStageConfig.updateMany({
-      where: { organizationId: user.tenantId },
-      data: {
-        afootRollBack: dto.afootRollBack,
-        endRollBack: dto.endRollBack,
-        updateTime: BigInt(Date.now()),
-        updateUser: user.id,
-      },
+    await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: user.tenantId,
+    }).updateAndCount({
+      afootRollBack: dto.afootRollBack,
+      endRollBack: dto.endRollBack,
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
     })
   }
 
   async sortStageIds(user: AuthUser, ids: string[]) {
-    const stages = await this.prisma.opportunityStageConfig.findMany({
-      where: { organizationId: user.tenantId },
-      select: { id: true },
+    const stages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: user.tenantId,
     })
-    const current = new Set(stages.map((stage) => stage.id))
+      .select('id')
+      .all()
+    const current = new Set(stages.map((stage) => String(stage.id)))
     if (
       ids.length !== current.size ||
       new Set(ids).size !== current.size ||
@@ -623,28 +695,37 @@ export class OpportunitiesService {
       throw new BadRequestException('阶段排序必须包含当前全部阶段且不能重复')
     }
     const now = BigInt(Date.now())
-    await this.prisma.$transaction(
-      ids.map((id, index) =>
-        this.prisma.opportunityStageConfig.update({
-          where: { id },
-          data: { pos: BigInt(index + 1), updateTime: now, updateUser: user.id },
-        }),
-      ),
-    )
+    await this.prisma.client.transaction(async (tx) => {
+      for (const [index, id] of ids.entries()) {
+        await tx.orm.public.OpportunityStageConfig.where({
+          id: id,
+          organizationId: user.tenantId,
+        }).update({
+          pos: BigInt(index + 1),
+          updateTime: now,
+          updateUser: user.id,
+        })
+      }
+    })
   }
 
   async removeStage(user: AuthUser, id: string) {
     const stage = await this.ensureStage(user.tenantId, id)
     if (stage.type === 'END') throw new BadRequestException('成功/失败阶段不可删除')
-    const runningCount = await this.prisma.opportunityStageConfig.count({
-      where: { organizationId: user.tenantId, type: 'AFOOT' },
-    })
-    if (runningCount <= 1) throw new BadRequestException('至少保留一个进行中阶段')
-    const count = await this.prisma.opportunity.count({
-      where: { organizationId: user.tenantId, stage: id },
-    })
-    if (count > 0) throw new BadRequestException('该阶段下存在商机，无法删除')
-    await this.prisma.opportunityStageConfig.delete({ where: { id } })
+    const runningAggregate = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: user.tenantId,
+      _type: 'AFOOT',
+    }).aggregate((value) => ({ count: value.count() }))
+    if (runningAggregate.count <= 1) throw new BadRequestException('至少保留一个进行中阶段')
+    const opportunityAggregate = await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+      stage: id,
+    }).aggregate((value) => ({ count: value.count() }))
+    if (opportunityAggregate.count > 0) throw new BadRequestException('该阶段下存在商机，无法删除')
+    await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).delete()
     await this.normalizeStagePositions(user.tenantId)
     return { id, name: stage.name }
   }
@@ -672,29 +753,39 @@ export class OpportunitiesService {
         : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
-    const homeFilter = this.homeFilters.parse(query.homeFilter, 'opportunity')
-    const homeClause = homeFilter ? await this.homeFilters.opportunityWhere(user, homeFilter) : null
-
-    const where: Prisma.OpportunityWhereInput = {
+    let db = this.prisma.client.orm.public.Opportunity.where({
       organizationId: user.tenantId,
-      AND: [scope as Prisma.OpportunityWhereInput, ...(homeClause ? [homeClause] : [])],
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(stageId ? { stage: stageId } : {}),
-      ...(customerId ? { customerId } : {}),
-      ...(keyword ? { name: { contains: keyword, mode: 'insensitive' } } : {}),
+    })
+    const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
+    const ownerScope = scope.owner
+    if (typeof ownerScope === 'string') {
+      db = db.where({ owner: ownerScope })
+    } else if (ownerScope?.in) {
+      const ownerIds = ownerScope.in
+      db = db.where((row) => row.owner.in(ownerIds))
     }
+    const homeFilter = this.homeFilters.parse(query.homeFilter, 'opportunity')
+    if (homeFilter) {
+      const homeWhere = (await this.homeFilters.opportunityWhere(
+        user,
+        homeFilter,
+      )) as unknown as OpportunityHomeWhere
+      db = await this.applyHomeOpportunityWhere(db, user.tenantId, homeWhere)
+    }
+    if (filteredIds) db = db.where((row) => row.id.in(filteredIds))
+    if (stageId) db = db.where({ stage: stageId })
+    if (customerId) db = db.where({ customerId: customerId })
+    if (keyword) db = db.where((row) => row.name.ilike('%' + keyword + '%'))
 
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.opportunity.findMany({
-        where,
-        include: refInclude,
-        orderBy: { createTime: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.opportunity.count({ where }),
+    const [baseRows, aggregate] = await Promise.all([
+      db
+        .orderBy((row) => row.createTime.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      db.aggregate((value) => ({ count: value.count() })),
     ])
+    const rows = await this.attachOpportunityRefs(baseRows as unknown as Opportunity[])
     const [ownerMap, values, reasonMap] = await Promise.all([
       this.ownerNames(rows.map((row) => row.owner)),
       this.fieldValues.load(
@@ -708,20 +799,16 @@ export class OpportunitiesService {
       items: rows.map((row) =>
         this.toVO(row, fields, ownerMap, values.get(row.id) ?? {}, reasonMap),
       ),
-      total,
+      total: aggregate.count,
       page,
       pageSize,
     }
   }
 
   async findOne(user: AuthUser, id: string): Promise<OpportunityVO> {
-    const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
-    const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id, organizationId: user.tenantId, AND: [scope as Prisma.OpportunityWhereInput] },
-      include: refInclude,
-    })
-    if (!opportunity) throw new NotFoundException('商机不存在或不在你的数据范围内')
-    return this.toSingleVO(user, opportunity)
+    const opportunity = await this.ensureInScope(user, id, 'menu:opportunity')
+    const full = await this.loadOpportunityWithRefs(opportunity)
+    return this.toSingleVO(user, full)
   }
 
   async kanban(user: AuthUser): Promise<{
@@ -733,12 +820,21 @@ export class OpportunitiesService {
       this.dataScope.directOwnerFilter(user, 'menu:opportunity'),
       this.metadata.listFields(user.tenantId, MODULE),
     ])
-    const rows = await this.prisma.opportunity.findMany({
-      where: { organizationId: user.tenantId, AND: [scope as Prisma.OpportunityWhereInput] },
-      include: refInclude,
-      orderBy: [{ stage: 'asc' }, { pos: 'asc' }, { updateTime: 'desc' }],
-      take: 500,
+    let db = this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
     })
+    const ownerScope = scope.owner
+    if (typeof ownerScope === 'string') {
+      db = db.where({ owner: ownerScope })
+    } else if (ownerScope?.in) {
+      const ownerIds = ownerScope.in
+      db = db.where((row) => row.owner.in(ownerIds))
+    }
+    const baseRows = await db
+      .orderBy([(row) => row.stage.asc(), (row) => row.pos.asc(), (row) => row.updateTime.desc()])
+      .limit(500)
+      .all()
+    const rows = await this.attachOpportunityRefs(baseRows as unknown as Opportunity[])
     const [ownerMap, values, reasonMap] = await Promise.all([
       this.ownerNames(rows.map((row) => row.owner)),
       this.fieldValues.load(
@@ -783,30 +879,28 @@ export class OpportunitiesService {
     const pos = await this.nextPosition(user.tenantId, stage.id)
     const customData = dto.customData ?? {}
 
-    const opportunity = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.opportunity.create({
-        data: {
-          customerId,
-          name: dto.name,
-          amount: dto.amount ?? null,
-          possible,
-          products: productIds.length ? JSON.stringify(productIds) : null,
-          organizationId: user.tenantId,
-          stage: stage.id,
-          contactId: dto.contactId ?? null,
-          owner: owner.id,
-          updateUser: user.id,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          expectedEndTime: dto.expectedCloseAt
-            ? BigInt(new Date(dto.expectedCloseAt).getTime())
-            : null,
-          actualEndTime: stage.type === 'END' ? now : null,
-          failureReason: null,
-          pos,
-        },
-        include: refInclude,
+    const opportunityId = await this.prisma.client.transaction(async (tx) => {
+      const created = await tx.orm.public.Opportunity.create({
+        id: createLegacyId32(),
+        customerId: customerId ? customerId : null,
+        name: dto.name,
+        amount: dto.amount == null ? null : numericValue(decimalString(dto.amount, 20, 10), 20, 10),
+        possible: possible == null ? null : numericValue(decimalString(possible, 20, 10), 20, 10),
+        products: productIds.length ? JSON.stringify(productIds) : null,
+        organizationId: user.tenantId,
+        stage: stage.id,
+        contactId: dto.contactId ? dto.contactId : null,
+        owner: owner.id,
+        updateUser: user.id,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        expectedEndTime: dto.expectedCloseAt
+          ? BigInt(new Date(dto.expectedCloseAt).getTime())
+          : null,
+        actualEndTime: stage.type === 'END' ? now : null,
+        failureReason: null,
+        pos,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -817,8 +911,14 @@ export class OpportunitiesService {
         tx,
         user.id,
       )
-      return created
+      return String(created.id)
     })
+    const createdRow = await this.prisma.client.orm.public.Opportunity.where({
+      id: opportunityId,
+      organizationId: user.tenantId,
+    }).first()
+    if (!createdRow) throw new NotFoundException('商机不存在')
+    const opportunity = await this.loadOpportunityWithRefs(createdRow as unknown as Opportunity)
 
     await this.notifications.send({
       tenantId: user.tenantId,
@@ -848,26 +948,42 @@ export class OpportunitiesService {
     const customData = dto.customData
     const possible = this.numberFromDto(dto, 'possible')
     const now = BigInt(Date.now())
-    const data: Prisma.OpportunityUncheckedUpdateInput = {
-      ...(dto.name !== undefined ? { name: dto.name } : {}),
-      ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
-      ...(possible !== undefined ? { possible } : {}),
-      ...(dto.customerId !== undefined ? { customerId } : {}),
-      ...(dto.contactId !== undefined || dto.customerId !== undefined ? { contactId } : {}),
-      ...(owner ? { owner: owner.id } : {}),
-      ...(productIds ? { products: productIds.length ? JSON.stringify(productIds) : null } : {}),
-      ...(dto.expectedCloseAt !== undefined
-        ? {
-            expectedEndTime: dto.expectedCloseAt
-              ? BigInt(new Date(dto.expectedCloseAt).getTime())
-              : null,
-          }
-        : {}),
-      updateTime: now,
-      updateUser: user.id,
-    }
-    const opportunity = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.opportunity.update({ where: { id }, data, include: refInclude })
+    await this.prisma.client.transaction(async (tx) => {
+      const updated = await tx.orm.public.Opportunity.where({ id: id }).update({
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.amount !== undefined
+          ? {
+              amount:
+                dto.amount == null ? null : numericValue(decimalString(dto.amount, 20, 10), 20, 10),
+            }
+          : {}),
+        ...(possible !== undefined
+          ? {
+              possible:
+                possible == null ? null : numericValue(decimalString(possible, 20, 10), 20, 10),
+            }
+          : {}),
+        ...(dto.customerId !== undefined ? { customerId: customerId ? customerId : null } : {}),
+        ...(dto.contactId !== undefined || dto.customerId !== undefined
+          ? { contactId: contactId ? contactId : null }
+          : {}),
+        ...(owner ? { owner: owner.id } : {}),
+        ...(productIds
+          ? {
+              products: productIds.length ? JSON.stringify(productIds) : null,
+            }
+          : {}),
+        ...(dto.expectedCloseAt !== undefined
+          ? {
+              expectedEndTime: dto.expectedCloseAt
+                ? BigInt(new Date(dto.expectedCloseAt).getTime())
+                : null,
+            }
+          : {}),
+        updateTime: now,
+        updateUser: user.id,
+      })
+      if (!updated) throw new NotFoundException('商机不存在或无权访问')
       if (customData !== undefined) {
         await this.fieldValues.save(
           user.tenantId,
@@ -879,8 +995,13 @@ export class OpportunitiesService {
           user.id,
         )
       }
-      return updated
     })
+    const updatedRow = await this.prisma.client.orm.public.Opportunity.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
+    if (!updatedRow) throw new NotFoundException('商机不存在')
+    const opportunity = await this.loadOpportunityWithRefs(updatedRow as unknown as Opportunity)
     if (owner && owner.id !== existing.owner) {
       await this.notifications.send({
         tenantId: user.tenantId,
@@ -923,17 +1044,17 @@ export class OpportunitiesService {
         )
       : null
     const now = BigInt(Date.now())
-    await this.prisma.opportunity.update({
-      where: { id },
-      data: {
-        lastStage: existing.stage,
-        stage: targetStage.id,
-        actualEndTime: targetStage.type === 'END' ? now : null,
-        failureReason: failureReason?.id ?? null,
-        pos: await this.nextPosition(user.tenantId, targetStage.id),
-        updateTime: now,
-        updateUser: user.id,
-      },
+    await this.prisma.client.orm.public.Opportunity.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).update({
+      lastStage: existing.stage,
+      stage: targetStage.id,
+      actualEndTime: targetStage.type === 'END' ? now : null,
+      failureReason: failureReason?.id ? failureReason.id : null,
+      pos: await this.nextPosition(user.tenantId, targetStage.id),
+      updateTime: now,
+      updateUser: user.id,
     })
     return { id, name: existing.name, stage: targetStage.name }
   }
@@ -945,7 +1066,10 @@ export class OpportunitiesService {
 
   async remove(user: AuthUser, id: string) {
     const opportunity = await this.ensureInScope(user, id, 'opportunity:delete')
-    await this.prisma.opportunity.delete({ where: { id } })
+    await this.prisma.client.orm.public.Opportunity.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).delete()
     await this.notifications.send({
       tenantId: user.tenantId,
       event: 'BUSINESS_DELETED',
@@ -960,66 +1084,86 @@ export class OpportunitiesService {
   }
 
   async ensureDefaultStages(organizationId: string) {
-    const count = await this.prisma.opportunityStageConfig.count({ where: { organizationId } })
-    if (count > 0) return
+    const aggregate = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: organizationId,
+    }).aggregate((value) => ({ count: value.count() }))
+    if (aggregate.count > 0) return
     const now = BigInt(Date.now())
-    await this.prisma.opportunityStageConfig.createMany({
-      data: DEFAULT_STAGES.map((stage) => ({
-        organizationId,
-        name: stage.name,
-        type: stage.type,
-        rate: stage.rate,
-        afootRollBack: true,
-        endRollBack: false,
-        pos: BigInt(stage.pos),
-        createTime: now,
-        updateTime: now,
-        createUser: 'system',
-        updateUser: 'system',
-      })),
+    await this.prisma.client.transaction(async (tx) => {
+      for (const stage of DEFAULT_STAGES) {
+        await tx.orm.public.OpportunityStageConfig.create({
+          id: createLegacyId32(),
+          organizationId: organizationId,
+          name: stage.name,
+          _type: stage.type,
+          rate: stage.rate,
+          afootRollBack: true,
+          endRollBack: false,
+          pos: BigInt(stage.pos),
+          createTime: now,
+          updateTime: now,
+          createUser: 'system',
+          updateUser: 'system',
+        })
+      }
     })
   }
 
   private async normalizeStagePositions(organizationId: string) {
-    const stages = await this.prisma.opportunityStageConfig.findMany({
-      where: { organizationId },
-      orderBy: { pos: 'asc' },
+    const rawStages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      organizationId: organizationId,
     })
+      .orderBy((row) => row.pos.asc())
+      .all()
+    const stages = rawStages.map((stage) => this.normalizeStage(stage))
     const running = stages.filter((stage) => stage.type === 'AFOOT')
     const ended = stages.filter((stage) => stage.type === 'END')
-    await this.prisma.$transaction(
-      [...running, ...ended].map((stage, index) =>
-        this.prisma.opportunityStageConfig.update({
-          where: { id: stage.id },
-          data: { pos: BigInt(index + 1) },
-        }),
-      ),
-    )
+    await this.prisma.client.transaction(async (tx) => {
+      for (const [index, stage] of [...running, ...ended].entries()) {
+        await tx.orm.public.OpportunityStageConfig.where({
+          id: stage.id,
+          organizationId: organizationId,
+        }).update({ pos: BigInt(index + 1) })
+      }
+    })
   }
 
   private async ensureStage(organizationId: string, id: string) {
-    const stage = await this.prisma.opportunityStageConfig.findFirst({
-      where: { id, organizationId },
-    })
+    const stage = await this.prisma.client.orm.public.OpportunityStageConfig.where({
+      id: id,
+      organizationId: organizationId,
+    }).first()
     if (!stage) throw new NotFoundException('商机阶段不存在')
-    return stage
+    return this.normalizeStage(stage)
   }
 
   private async ensureInScope(user: AuthUser, id: string, permission: string) {
     const scope = await this.dataScope.directOwnerFilter(user, permission)
-    const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id, organizationId: user.tenantId, AND: [scope as Prisma.OpportunityWhereInput] },
+    let query = this.prisma.client.orm.public.Opportunity.where({
+      id: id,
+      organizationId: user.tenantId,
     })
+    const ownerScope = scope.owner
+    if (typeof ownerScope === 'string') {
+      query = query.where({ owner: ownerScope })
+    } else if (ownerScope?.in) {
+      const ownerIds = ownerScope.in
+      query = query.where((row) => row.owner.in(ownerIds))
+    }
+    const opportunity = await query.first()
     if (!opportunity) throw new NotFoundException('商机不存在或不在你的数据范围内')
-    return opportunity
+    return opportunity as unknown as Opportunity
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id }
-    const owner = await this.prisma.user.findFirst({
-      where: { id: ownerId, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true },
+    const owner = await this.prisma.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner
   }
@@ -1028,18 +1172,25 @@ export class OpportunitiesService {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) throw new BadRequestException('请选择商机')
     const scope = await this.dataScope.directOwnerFilter(user, permission)
-    const rows = await this.prisma.opportunity.findMany({
-      where: {
-        id: { in: uniqueIds },
-        organizationId: user.tenantId,
-        AND: [scope as Prisma.OpportunityWhereInput],
-      },
-      select: { id: true, name: true, owner: true },
-    })
+    let query = this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+    }).where((row) => row.id.in(uniqueIds))
+    const ownerScope = scope.owner
+    if (typeof ownerScope === 'string') {
+      query = query.where({ owner: ownerScope })
+    } else if (ownerScope?.in) {
+      const ownerIds = ownerScope.in
+      query = query.where((row) => row.owner.in(ownerIds))
+    }
+    const rows = await query.select('id', 'name', 'owner').all()
     if (rows.length !== uniqueIds.length) {
       throw new BadRequestException('选中数据包含不存在或无权操作的商机')
     }
-    return rows
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      owner: String(row.owner),
+    }))
   }
 
   private async moduleFieldsToCustomData(
@@ -1069,44 +1220,99 @@ export class OpportunitiesService {
     user: AuthUser,
     key: string,
     value: unknown,
-  ): Promise<Prisma.OpportunityUncheckedUpdateManyInput> {
+  ): Promise<OpportunitySystemBatchUpdate> {
     if (key === 'name') {
       const name = String(value ?? '').trim()
       if (!name) throw new BadRequestException('商机名称不能为空')
-      return { name }
+      return { kind: 'name', value: name }
     }
     if (key === 'owner') {
       const owner = await this.resolveOwner(user, String(value ?? ''))
-      return { owner: owner.id }
+      return { kind: 'owner', value: owner.id }
     }
     if (key === 'amount' || key === 'possible') {
-      if (value === null || value === '') return { [key]: null }
+      if (value === null || value === '') return { kind: key, value: null }
       const number = Number(value)
       if (!Number.isFinite(number)) throw new BadRequestException('数值格式不正确')
-      return { [key]: number }
+      return { kind: key, value: number }
     }
     if (key === 'expectedEndTime') {
-      if (value === null || value === '') return { expectedEndTime: null }
+      if (value === null || value === '') return { kind: 'expectedEndTime', value: null }
       const millis = typeof value === 'number' ? value : new Date(String(value)).getTime()
       if (!Number.isFinite(millis)) throw new BadRequestException('结束时间格式不正确')
-      return { expectedEndTime: BigInt(millis) }
+      return { kind: 'expectedEndTime', value: BigInt(millis) }
     }
     if (key === 'products') {
       const ids = Array.isArray(value)
         ? [...new Set(value.filter((item): item is string => typeof item === 'string' && !!item))]
         : []
       await this.validateProducts(user.tenantId, ids)
-      return { products: ids.length ? JSON.stringify(ids) : null }
+      return { kind: 'products', value: ids.length ? JSON.stringify(ids) : null }
     }
     if (key === 'customerId') {
       const customerId = value ? String(value) : null
       if (customerId) await this.assertCustomer(user.tenantId, customerId)
-      return { customerId }
+      return { kind: 'customerId', value: customerId }
     }
     if (key === 'contactId') {
       throw new BadRequestException('联系人批量修改需要逐条校验客户关系，暂不支持')
     }
-    throw new BadRequestException(`字段「${key}」不支持批量修改`)
+    throw new BadRequestException('字段「' + key + '」不支持批量修改')
+  }
+
+  private async applySystemBatchUpdate(
+    user: AuthUser,
+    ids: string[],
+    data: OpportunitySystemBatchUpdate,
+  ) {
+    const query = this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+    }).where((row) => row.id.in(ids))
+    const common = {
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
+    }
+    if (data.kind === 'name') {
+      await query.updateAndCount({ ...common, name: data.value })
+      return
+    }
+    if (data.kind === 'owner') {
+      await query.updateAndCount({ ...common, owner: data.value })
+      return
+    }
+    if (data.kind === 'amount') {
+      await query.updateAndCount({
+        ...common,
+        amount:
+          data.value === null ? null : numericValue(decimalString(data.value, 20, 10), 20, 10),
+      })
+      return
+    }
+    if (data.kind === 'possible') {
+      await query.updateAndCount({
+        ...common,
+        possible:
+          data.value === null ? null : numericValue(decimalString(data.value, 20, 10), 20, 10),
+      })
+      return
+    }
+    if (data.kind === 'expectedEndTime') {
+      await query.updateAndCount({ ...common, expectedEndTime: data.value })
+      return
+    }
+    if (data.kind === 'products') {
+      await query.updateAndCount({
+        ...common,
+        products: data.value === null ? null : data.value,
+      })
+      return
+    }
+    if (data.kind === 'customerId') {
+      await query.updateAndCount({
+        ...common,
+        customerId: data.value === null ? null : data.value,
+      })
+    }
   }
 
   private async exportXlsx(
@@ -1320,13 +1526,157 @@ export class OpportunitiesService {
     return Math.min(...values)
   }
 
+  private normalizeStage(stage: {
+    id: string
+    name: string
+    _type: string
+    rate: string
+    afootRollBack: boolean
+    endRollBack: boolean
+    pos: bigint
+    organizationId: string
+    createTime: bigint
+    updateTime: bigint
+    createUser: string
+    updateUser: string
+  }): OpportunityStageConfig {
+    return {
+      id: String(stage.id),
+      name: String(stage.name),
+      type: String(stage._type),
+      rate: String(stage.rate),
+      afootRollBack: stage.afootRollBack,
+      endRollBack: stage.endRollBack,
+      pos: stage.pos,
+      organizationId: String(stage.organizationId),
+      createTime: stage.createTime,
+      updateTime: stage.updateTime,
+      createUser: String(stage.createUser),
+      updateUser: String(stage.updateUser),
+    }
+  }
+
+  private async attachOpportunityRefs(rows: Opportunity[]): Promise<OpportunityWithRefs[]> {
+    if (!rows.length) return []
+    const customerIds = [
+      ...new Set(rows.flatMap((row) => (row.customerId ? [String(row.customerId)] : []))),
+    ]
+    const contactIds = [
+      ...new Set(rows.flatMap((row) => (row.contactId ? [String(row.contactId)] : []))),
+    ]
+    const stageIds = [...new Set(rows.map((row) => String(row.stage)))]
+    const [customers, contacts, rawStages] = await Promise.all([
+      customerIds.length
+        ? this.prisma.client.orm.public.Customer.where((row) => row.id.in(customerIds))
+            .select('id', 'name')
+            .all()
+        : Promise.resolve([]),
+      contactIds.length
+        ? this.prisma.client.orm.public.CustomerContact.where((row) => row.id.in(contactIds))
+            .select('id', 'name')
+            .all()
+        : Promise.resolve([]),
+      this.prisma.client.orm.public.OpportunityStageConfig.where((row) =>
+        row.id.in(stageIds),
+      ).all(),
+    ])
+    const customerMap = new Map(customers.map((item) => [String(item.id), String(item.name)]))
+    const contactMap = new Map(contacts.map((item) => [String(item.id), String(item.name)]))
+    const stageMap = new Map(
+      rawStages.map((item) => {
+        const stage = this.normalizeStage(item)
+        return [stage.id, stage] as const
+      }),
+    )
+    return rows.flatMap((row) => {
+      const stageConfig = stageMap.get(String(row.stage))
+      if (!stageConfig) return []
+      return [
+        {
+          ...row,
+          customer: row.customerId ? { name: customerMap.get(String(row.customerId)) ?? '' } : null,
+          contact: row.contactId ? { name: contactMap.get(String(row.contactId)) ?? '' } : null,
+          stageConfig,
+        },
+      ]
+    })
+  }
+
+  private async loadOpportunityWithRefs(row: Opportunity): Promise<OpportunityWithRefs> {
+    const rows = await this.attachOpportunityRefs([row])
+    const full = rows[0]
+    if (!full) throw new NotFoundException('商机阶段不存在')
+    return full
+  }
+
+  private async applyHomeOpportunityWhere(
+    collection: ReturnType<typeof this.prisma.client.orm.public.Opportunity.where>,
+    organizationId: string,
+    where: OpportunityHomeWhere,
+  ) {
+    let query = collection
+    for (const clause of where.AND ?? []) {
+      const ownerScope = clause.owner
+      if (typeof ownerScope === 'string') {
+        query = query.where({ owner: ownerScope })
+      } else if (ownerScope?.in) {
+        const ownerIds = ownerScope.in
+        query = query.where((row) => row.owner.in(ownerIds))
+      }
+      if (clause.stageConfig) {
+        let stages = this.prisma.client.orm.public.OpportunityStageConfig.where({
+          organizationId: organizationId,
+        })
+        if (clause.stageConfig.type) {
+          stages = stages.where({
+            _type: clause.stageConfig.type,
+          })
+        }
+        if (clause.stageConfig.rate) {
+          stages = stages.where({
+            rate: clause.stageConfig.rate,
+          })
+        }
+        const stageRows = await stages.select('id').all()
+        const stageIds = stageRows.map((stage) => String(stage.id))
+        query = stageIds.length
+          ? query.where((row) => row.stage.in(stageIds))
+          : query.where((row) => row.id.eq(''))
+      }
+      if (clause.createTime?.gte !== undefined) {
+        const value = clause.createTime.gte
+        query = query.where((row) => row.createTime.gte(value))
+      }
+      if (clause.createTime?.lte !== undefined) {
+        const value = clause.createTime.lte
+        query = query.where((row) => row.createTime.lte(value))
+      }
+      if (clause.expectedEndTime?.gte !== undefined) {
+        const value = clause.expectedEndTime.gte
+        query = query.where((row) => row.expectedEndTime.gte(value))
+      }
+      if (clause.expectedEndTime?.lte !== undefined) {
+        const value = clause.expectedEndTime.lte
+        query = query.where((row) => row.expectedEndTime.lte(value))
+      }
+      if (clause.actualEndTime?.gte !== undefined) {
+        const value = clause.actualEndTime.gte
+        query = query.where((row) => row.actualEndTime.gte(value))
+      }
+      if (clause.actualEndTime?.lte !== undefined) {
+        const value = clause.actualEndTime.lte
+        query = query.where((row) => row.actualEndTime.lte(value))
+      }
+    }
+    return query
+  }
+
   private async ownerNames(ownerIds: string[]): Promise<Map<string, string>> {
     const ids = [...new Set(ownerIds.filter(Boolean))]
     if (!ids.length) return new Map()
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, name: true },
-    })
+    const users = await this.prisma.client.orm.public.Users.where((row) => row.id.in(ids))
+      .select('id', 'name')
+      .all()
     return new Map(users.map((user) => [user.id, user.name]))
   }
 
@@ -1436,10 +1786,12 @@ export class OpportunitiesService {
   }
 
   private async assertCustomer(organizationId: string, customerId: string) {
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, organizationId },
-      select: { id: true },
+    const customer = await this.prisma.client.orm.public.Customer.where({
+      id: customerId,
+      organizationId: organizationId,
     })
+      .select('id')
+      .first()
     if (!customer) throw new BadRequestException('客户不存在')
   }
 
@@ -1448,10 +1800,13 @@ export class OpportunitiesService {
     contactId: string,
     customerId: string,
   ) {
-    const contact = await this.prisma.customerContact.findFirst({
-      where: { id: contactId, organizationId, customerId },
-      select: { id: true },
+    const contact = await this.prisma.client.orm.public.CustomerContact.where({
+      id: contactId,
+      organizationId: organizationId,
+      customerId: customerId,
     })
+      .select('id')
+      .first()
     if (!contact) throw new BadRequestException('联系人不存在或不属于当前客户')
   }
 
@@ -1478,18 +1833,25 @@ export class OpportunitiesService {
 
   private async validateProducts(tenantId: string, productIds: string[]) {
     if (!productIds.length) return
-    const count = await this.prisma.product.count({
-      where: { organizationId: tenantId, id: { in: productIds } },
+    const aggregate = await this.prisma.client.orm.public.Product.where({
+      organizationId: tenantId,
     })
-    if (count !== productIds.length) throw new BadRequestException('意向产品包含不存在的数据')
+      .where((row) => row.id.in(productIds))
+      .aggregate((value) => ({ count: value.count() }))
+    if (aggregate.count !== productIds.length) {
+      throw new BadRequestException('意向产品包含不存在的数据')
+    }
   }
 
   private async nextPosition(organizationId: string, stage: string) {
-    const row = await this.prisma.opportunity.aggregate({
-      where: { organizationId, stage },
-      _max: { pos: true },
+    const row = await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: organizationId,
+      stage: stage,
     })
-    return (row._max.pos ?? 0n) + 1n
+      .orderBy((item) => item.pos.desc())
+      .select('pos')
+      .first()
+    return (row?.pos ?? 0n) + 1n
   }
 
   private numberFromDto(dto: object, key: string): number | null | undefined {
@@ -1501,51 +1863,214 @@ export class OpportunitiesService {
     return number
   }
 
-  private systemFilterClause(
+  private applyOpportunitySystemFilter(
+    collection: ReturnType<typeof this.prisma.client.orm.public.Opportunity.where>,
     field: FieldVO | undefined,
     condition: FilterCondition,
-  ): Prisma.OpportunityWhereInput | null {
-    if (!field || field.type === 'formula') return null
-    const key = condition.key as keyof Prisma.OpportunityWhereInput
-    const isDate = field.type === 'date' || field.type === 'datetime'
-    const isNumeric = ['number', 'currency', 'percent'].includes(field.type)
-    const rawValue = isDate
-      ? BigInt(new Date(String(condition.value)).getTime())
-      : isNumeric
-        ? Number(condition.value)
-        : condition.value
-    const value = rawValue as never
-    const listValues = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
-      (item) =>
-        (isDate
-          ? BigInt(new Date(String(item)).getTime())
-          : isNumeric
-            ? Number(item)
-            : item) as never,
-    )
-    if (condition.op === 'eq') return { [key]: { equals: value } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'ne')
-      return { NOT: { [key]: { equals: value } } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'in') return { [key]: { in: listValues } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'notIn')
-      return { [key]: { notIn: listValues } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'contains') {
-      return {
-        [key]: { contains: String(condition.value), mode: 'insensitive' },
-      } as Prisma.OpportunityWhereInput
+  ) {
+    const impossible = () => collection.where((row) => row.id.eq(''))
+    if (!field || field.type === 'formula') return impossible()
+    const key = condition.key === 'ownerId' ? 'owner' : condition.key
+    const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+    const nullableKeys = new Set([
+      'customerId',
+      'amount',
+      'possible',
+      'products',
+      'lastStage',
+      'contactId',
+      'follower',
+      'followTime',
+      'expectedEndTime',
+      'actualEndTime',
+      'failureReason',
+      'pos',
+    ])
+
+    if (condition.op === 'isEmpty') {
+      if (!nullableKeys.has(key)) return impossible()
+      if (key === 'customerId') return collection.where((row) => row.customerId.isNull())
+      if (key === 'amount') return collection.where((row) => row.amount.isNull())
+      if (key === 'possible') return collection.where((row) => row.possible.isNull())
+      if (key === 'products') return collection.where((row) => row.products.isNull())
+      if (key === 'lastStage') return collection.where((row) => row.lastStage.isNull())
+      if (key === 'contactId') return collection.where((row) => row.contactId.isNull())
+      if (key === 'follower') return collection.where((row) => row.follower.isNull())
+      if (key === 'followTime') return collection.where((row) => row.followTime.isNull())
+      if (key === 'expectedEndTime') return collection.where((row) => row.expectedEndTime.isNull())
+      if (key === 'actualEndTime') return collection.where((row) => row.actualEndTime.isNull())
+      if (key === 'failureReason') return collection.where((row) => row.failureReason.isNull())
+      return collection.where((row) => row.pos.isNull())
     }
-    if (condition.op === 'notContains') {
-      return {
-        NOT: { [key]: { contains: String(condition.value), mode: 'insensitive' } },
-      } as Prisma.OpportunityWhereInput
+    if (condition.op === 'notEmpty') {
+      if (!nullableKeys.has(key)) return collection
+      if (key === 'customerId') return collection.where((row) => row.customerId.isNotNull())
+      if (key === 'amount') return collection.where((row) => row.amount.isNotNull())
+      if (key === 'possible') return collection.where((row) => row.possible.isNotNull())
+      if (key === 'products') return collection.where((row) => row.products.isNotNull())
+      if (key === 'lastStage') return collection.where((row) => row.lastStage.isNotNull())
+      if (key === 'contactId') return collection.where((row) => row.contactId.isNotNull())
+      if (key === 'follower') return collection.where((row) => row.follower.isNotNull())
+      if (key === 'followTime') return collection.where((row) => row.followTime.isNotNull())
+      if (key === 'expectedEndTime')
+        return collection.where((row) => row.expectedEndTime.isNotNull())
+      if (key === 'actualEndTime') return collection.where((row) => row.actualEndTime.isNotNull())
+      if (key === 'failureReason') return collection.where((row) => row.failureReason.isNotNull())
+      return collection.where((row) => row.pos.isNotNull())
     }
-    if (condition.op === 'gt') return { [key]: { gt: value } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'gte') return { [key]: { gte: value } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'lt') return { [key]: { lt: value } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'lte') return { [key]: { lte: value } } as Prisma.OpportunityWhereInput
-    if (condition.op === 'isEmpty') return { [key]: null } as Prisma.OpportunityWhereInput
-    if (condition.op === 'notEmpty') return { NOT: { [key]: null } } as Prisma.OpportunityWhereInput
-    return null
+
+    if (key === 'amount' || key === 'possible') {
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
+      const value = values[0]!
+      if (key === 'amount') {
+        return collection.where((row) => {
+          if (condition.op === 'eq') return row.amount.eq(value)
+          if (condition.op === 'ne') return row.amount.neq(value)
+          if (condition.op === 'in') return row.amount.in(values)
+          if (condition.op === 'notIn') return not(row.amount.in(values))
+          if (condition.op === 'gt') return row.amount.gt(value)
+          if (condition.op === 'gte') return row.amount.gte(value)
+          if (condition.op === 'lt') return row.amount.lt(value)
+          if (condition.op === 'lte') return row.amount.lte(value)
+          return row.id.eq('')
+        })
+      }
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.possible.eq(value)
+        if (condition.op === 'ne') return row.possible.neq(value)
+        if (condition.op === 'in') return row.possible.in(values)
+        if (condition.op === 'notIn') return not(row.possible.in(values))
+        if (condition.op === 'gt') return row.possible.gt(value)
+        if (condition.op === 'gte') return row.possible.gte(value)
+        if (condition.op === 'lt') return row.possible.lt(value)
+        if (condition.op === 'lte') return row.possible.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (
+      key === 'followTime' ||
+      key === 'expectedEndTime' ||
+      key === 'actualEndTime' ||
+      key === 'createTime' ||
+      key === 'updateTime' ||
+      key === 'pos'
+    ) {
+      const values: bigint[] = []
+      for (const raw of rawValues) {
+        const direct = Number(raw)
+        const millis =
+          (key === 'pos' && Number.isFinite(direct)) ||
+          (Number.isFinite(direct) && String(raw ?? '').trim() !== '')
+            ? direct
+            : new Date(String(raw)).getTime()
+        if (!Number.isFinite(millis)) return impossible()
+        values.push(BigInt(Math.trunc(millis)))
+      }
+      const value = values[0]!
+      return collection.where((row) => {
+        const target =
+          key === 'followTime'
+            ? row.followTime
+            : key === 'expectedEndTime'
+              ? row.expectedEndTime
+              : key === 'actualEndTime'
+                ? row.actualEndTime
+                : key === 'createTime'
+                  ? row.createTime
+                  : key === 'updateTime'
+                    ? row.updateTime
+                    : row.pos
+        if (condition.op === 'eq') return target.eq(value)
+        if (condition.op === 'ne') return target.neq(value)
+        if (condition.op === 'in') return target.in(values)
+        if (condition.op === 'notIn') return not(target.in(values))
+        if (condition.op === 'gt') return target.gt(value)
+        if (condition.op === 'gte') return target.gte(value)
+        if (condition.op === 'lt') return target.lt(value)
+        if (condition.op === 'lte') return target.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'name') {
+      const values = rawValues.map((item) => String(item ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.name.eq(value)
+        if (condition.op === 'ne') return row.name.neq(value)
+        if (condition.op === 'in') return row.name.in(values)
+        if (condition.op === 'notIn') return not(row.name.in(values))
+        if (condition.op === 'contains')
+          return row.name.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains')
+          return not(row.name.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'products') {
+      const values = rawValues.map((item) => String(item ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.products.eq(value)
+        if (condition.op === 'ne') return row.products.neq(value)
+        if (condition.op === 'in') return row.products.in(values)
+        if (condition.op === 'notIn') return not(row.products.in(values))
+        if (condition.op === 'contains')
+          return row.products.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains')
+          return not(row.products.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'failureReason') {
+      const values = rawValues.map((item) => String(item ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.failureReason.eq(value)
+        if (condition.op === 'ne') return row.failureReason.neq(value)
+        if (condition.op === 'in') return row.failureReason.in(values)
+        if (condition.op === 'notIn') return not(row.failureReason.in(values))
+        if (condition.op === 'contains')
+          return row.failureReason.ilike('%' + String(condition.value ?? '') + '%')
+        if (condition.op === 'notContains')
+          return not(row.failureReason.ilike('%' + String(condition.value ?? '') + '%'))
+        return row.id.eq('')
+      })
+    }
+
+    const values = rawValues.map((item) => String(item ?? ''))
+    const value = values[0]!
+    return collection.where((row) => {
+      const target =
+        key === 'customerId'
+          ? row.customerId
+          : key === 'lastStage'
+            ? row.lastStage
+            : key === 'stage'
+              ? row.stage
+              : key === 'contactId'
+                ? row.contactId
+                : key === 'owner'
+                  ? row.owner
+                  : key === 'follower'
+                    ? row.follower
+                    : key === 'createUser'
+                      ? row.createUser
+                      : row.updateUser
+      if (condition.op === 'eq') return target.eq(value)
+      if (condition.op === 'ne') return target.neq(value)
+      if (condition.op === 'in') return target.in(values)
+      if (condition.op === 'notIn') return not(target.in(values))
+      if (condition.op === 'contains')
+        return target.ilike('%' + String(condition.value ?? '') + '%')
+      if (condition.op === 'notContains')
+        return not(target.ilike('%' + String(condition.value ?? '') + '%'))
+      return row.id.eq('')
+    })
   }
 
   private async filterIds(
@@ -1563,26 +2088,6 @@ export class OpportunitiesService {
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         const normalized = condition.key === 'ownerId' ? { ...condition, key: 'owner' } : condition
-        if (normalized.key === 'stage') {
-          const value = String(normalized.value ?? '')
-          const values = (
-            Array.isArray(normalized.value) ? normalized.value : [normalized.value]
-          ).map(String)
-          const rows = await this.prisma.opportunity.findMany({
-            where: {
-              organizationId,
-              ...(normalized.op === 'ne'
-                ? { NOT: { stage: value } }
-                : normalized.op === 'in'
-                  ? { stage: { in: values } }
-                  : normalized.op === 'notIn'
-                    ? { stage: { notIn: values } }
-                    : { stage: value }),
-            },
-            select: { id: true },
-          })
-          return new Set(rows.map((row) => row.id))
-        }
         const field = fieldMap.get(normalized.key)
         if (!field) return new Set<string>()
         if (!field.system || isCustomFieldKey(normalized.key)) {
@@ -1590,13 +2095,12 @@ export class OpportunitiesService {
             await this.fieldValues.filterResourceIds(organizationId, 'opportunity', [normalized]),
           )
         }
-        const clause = this.systemFilterClause(field, normalized)
-        if (!clause) return new Set<string>()
-        const rows = await this.prisma.opportunity.findMany({
-          where: { organizationId, AND: [clause] },
-          select: { id: true },
+        let query = this.prisma.client.orm.public.Opportunity.where({
+          organizationId: organizationId,
         })
-        return new Set(rows.map((row) => row.id))
+        query = this.applyOpportunitySystemFilter(query, field, normalized)
+        const rows = await query.select('id').all()
+        return new Set(rows.map((row) => String(row.id)))
       }),
     )
     if (!sets.length) return []

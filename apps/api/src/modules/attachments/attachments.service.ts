@@ -5,6 +5,7 @@ import path from 'node:path'
 import { AttachmentVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
+import { instantToISOString } from '../../prisma/temporal'
 import { LocalDiskStorage } from './storage/local-disk.storage'
 import type { StorageProvider } from './storage/storage-provider'
 
@@ -41,10 +42,10 @@ export class AttachmentsService {
 
   async list(user: AuthUser, targetType: string, targetId: string): Promise<AttachmentVO[]> {
     if (!targetType || !targetId) throw new BadRequestException('请指定挂载对象')
-    const rows = await this.prisma.attachment.findMany({
-      where: { tenantId: user.tenantId, targetType, targetId },
-      orderBy: { createdAt: 'desc' },
-    })
+    const rows = await this.attachments()
+      .where({ tenantId: user.tenantId, targetType, targetId })
+      .orderBy((row) => row.createdAt.desc())
+      .all()
     return rows.map((r) => this.toVO(r))
   }
 
@@ -55,10 +56,11 @@ export class AttachmentsService {
   ): Promise<Map<string, AttachmentVO[]>> {
     const map = new Map<string, AttachmentVO[]>()
     if (targetIds.length === 0) return map
-    const rows = await this.prisma.attachment.findMany({
-      where: { tenantId, targetType, targetId: { in: targetIds } },
-      orderBy: { createdAt: 'asc' },
-    })
+    const rows = await this.attachments()
+      .where({ tenantId, targetType })
+      .where((row) => row.targetId.in(targetIds))
+      .orderBy((row) => row.createdAt.asc())
+      .all()
     for (const row of rows) {
       if (!row.targetId) continue
       const list = map.get(row.targetId) ?? []
@@ -76,10 +78,11 @@ export class AttachmentsService {
   ): Promise<AttachmentVO[]> {
     const uniqueIds = [...new Set(ids)]
     if (!uniqueIds.length) return []
-    const rows = await this.prisma.attachment.findMany({
-      where: { tenantId, id: { in: uniqueIds }, targetType, targetId },
-      orderBy: { createdAt: 'asc' },
-    })
+    const rows = await this.attachments()
+      .where({ tenantId, targetType, targetId })
+      .where((row) => row.id.in(uniqueIds))
+      .orderBy((row) => row.createdAt.asc())
+      .all()
     return rows.map((row) => this.toVO(row))
   }
 
@@ -95,17 +98,15 @@ export class AttachmentsService {
     if (!ALLOWED_EXT.has(ext)) throw new BadRequestException('不支持的文件类型')
 
     const stored = await this.storage.save(user.tenantId, file.originalname, file.buffer)
-    const row = await this.prisma.attachment.create({
-      data: {
-        tenantId: user.tenantId,
-        uploaderId: user.id,
-        name: file.originalname,
-        path: stored.relativePath,
-        size: stored.size,
-        mime: file.mimetype,
-        targetType: targetType || null,
-        targetId: targetId || null,
-      },
+    const row = await this.attachments().create({
+      tenantId: user.tenantId,
+      uploaderId: user.id,
+      name: file.originalname,
+      path: stored.relativePath,
+      size: stored.size,
+      mime: file.mimetype,
+      targetType: targetType || null,
+      targetId: targetId || null,
     })
     return this.toVO(row)
   }
@@ -133,7 +134,7 @@ export class AttachmentsService {
     }
     await this.ensureNotApprovalBound(user.tenantId, id)
     await this.storage.remove(row.path)
-    await this.prisma.attachment.delete({ where: { id } })
+    await this.attachments().where({ id }).deleteAndCount()
     return { id, name: row.name }
   }
 
@@ -142,50 +143,48 @@ export class AttachmentsService {
    * 这里不使用 uploaderId 作为授权依据，调用方必须先验证目标对象归属。
    */
   async removeFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {
-    const row = await this.prisma.attachment.findFirst({
-      where: { id, tenantId, targetType, targetId },
-    })
+    const row = await this.attachments().where({ id, tenantId, targetType, targetId }).first()
     if (!row) return false
     await this.ensureNotApprovalBound(tenantId, id)
     await this.storage.remove(row.path)
-    await this.prisma.attachment.delete({ where: { id } })
+    await this.attachments().where({ id }).deleteAndCount()
     return true
   }
 
   async removeAllFromTargets(tenantId: string, targetType: string, targetIds: string[]) {
     const uniqueTargetIds = [...new Set(targetIds.filter(Boolean))]
     if (!uniqueTargetIds.length) return 0
-    const rows = await this.prisma.attachment.findMany({
-      where: { tenantId, targetType, targetId: { in: uniqueTargetIds } },
-      select: { id: true, path: true },
-    })
+    const rows = await this.attachments()
+      .where({ tenantId, targetType })
+      .where((row) => row.targetId.in(uniqueTargetIds))
+      .select('id', 'path')
+      .all()
     for (const row of rows) {
       await this.ensureNotApprovalBound(tenantId, row.id)
       await this.storage.remove(row.path)
     }
     if (rows.length) {
-      await this.prisma.attachment.deleteMany({
-        where: { tenantId, id: { in: rows.map((row) => row.id) } },
-      })
+      await this.attachments()
+        .where({ tenantId })
+        .where((row) => row.id.in(rows.map((item) => item.id)))
+        .deleteAndCount()
     }
     return rows.length
   }
 
   async removeTemporary(tenantId: string, id: string): Promise<boolean> {
-    const row = await this.prisma.attachment.findFirst({
-      where: { id, tenantId, targetType: null, targetId: null },
-    })
+    const row = await this.attachments()
+      .where({ id, tenantId, targetType: null, targetId: null })
+      .first()
     if (!row) return false
     await this.ensureNotApprovalBound(tenantId, id)
     await this.storage.remove(row.path)
-    await this.prisma.attachment.delete({ where: { id } })
+    await this.attachments().where({ id }).deleteAndCount()
     return true
   }
 
   async viewFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {
-    const row = await this.prisma.attachment.findFirst({
-      where: { id, tenantId, targetType, targetId },
-    })
+    const row = await this.attachments().where({ id, tenantId, targetType, targetId }).first()
     if (!row) throw new NotFoundException('附件不存在')
     const abs = this.storage.resolveAbsolute(row.path)
     return new StreamableFile(createReadStream(abs), {
@@ -195,9 +194,7 @@ export class AttachmentsService {
   }
 
   private async ensureOwned(user: AuthUser, id: string) {
-    const row = await this.prisma.attachment.findFirst({
-      where: { id, tenantId: user.tenantId },
-    })
+    const row = await this.attachments().where({ id, tenantId: user.tenantId }).first()
     if (!row) throw new NotFoundException('附件不存在')
     return row
   }
@@ -209,10 +206,15 @@ export class AttachmentsService {
   }
 
   private async ensureNotApprovalBound(tenantId: string, attachmentId: string) {
-    const linked = await this.prisma.approvalInstanceAttachment.count({
-      where: { tenantId, attachmentId },
-    })
-    if (linked > 0) throw new BadRequestException('审批历史附件不能删除')
+    const linked = await this.prisma.client.orm.public.ApprovalInstanceAttachments.where({
+      tenantId,
+      attachmentId,
+    }).aggregate((agg) => ({ count: agg.count() }))
+    if (linked.count > 0) throw new BadRequestException('审批历史附件不能删除')
+  }
+
+  private attachments() {
+    return this.prisma.client.orm.public.Attachments
   }
 
   private toVO(row: {
@@ -223,7 +225,7 @@ export class AttachmentsService {
     targetType: string | null
     targetId: string | null
     uploaderId: string | null
-    createdAt: Date
+    createdAt: Parameters<typeof instantToISOString>[0]
   }): AttachmentVO {
     return {
       id: row.id,
@@ -233,7 +235,7 @@ export class AttachmentsService {
       targetType: row.targetType,
       targetId: row.targetId,
       uploaderId: row.uploaderId,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: instantToISOString(row.createdAt),
     }
   }
 }

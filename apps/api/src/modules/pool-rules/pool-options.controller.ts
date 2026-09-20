@@ -2,12 +2,18 @@ import { Controller, Get, Query } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { AuthUser } from '../../common/auth-user'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
-import type { CluePool, CustomerPool } from '../../generated/prisma/client'
 import type { PoolModule, ResourcePoolRecycleCondition } from './pool-domain.types'
 import { parseStringArray } from './pool-repository.helpers'
 import { ResourcePoolsService } from './resource-pools.service'
 
-type PoolWithRelations = (CluePool | CustomerPool) & {
+type PoolWithRelations = {
+  [key: string]: unknown
+  id: string
+  name: string
+  scopeId: string
+  ownerId: string
+  enable: boolean
+  auto: boolean
   hiddenFields: Array<{ fieldId: string }>
   pickRule: {
     limitOnNumber: boolean

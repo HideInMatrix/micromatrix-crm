@@ -25,7 +25,8 @@ trap cleanup EXIT
 cd "$ROOT_DIR"
 
 echo '[docker-release] validating Web multi-platform build strategy'
-grep -Fq 'FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder' docker/web.Dockerfile
+grep -Fq 'FROM --platform=$BUILDPLATFORM node:25-bookworm-slim AS builder' docker/web.Dockerfile
+grep -Fq 'npm install --global pnpm@11.25.0' docker/web.Dockerfile
 grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/web...' docker/web.Dockerfile
 grep -Fq -- '--filter @micromatrix/mobile...' docker/web.Dockerfile
 grep -Fq 'COPY --from=builder /workspace/apps/mobile/dist /usr/share/nginx/html/mobile' docker/web.Dockerfile
@@ -35,7 +36,8 @@ if grep -Fq 'COPY apps/api/package.json apps/api/package.json' docker/web.Docker
 fi
 
 echo '[docker-release] validating API workspace dependency scope'
-grep -Fq 'FROM node:24-alpine AS base' docker/api.Dockerfile
+grep -Fq 'FROM node:25-alpine AS base' docker/api.Dockerfile
+grep -Fq 'npm install --global pnpm@11.25.0' docker/api.Dockerfile
 grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate --filter @micromatrix/api...' docker/api.Dockerfile
 grep -Fq 'pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod --no-optional deploy' docker/api.Dockerfile
 if grep -Fq 'COPY apps/web/package.json apps/web/package.json' docker/api.Dockerfile; then
@@ -48,10 +50,14 @@ if grep -Fq ' deploy --prod --legacy ' docker/api.Dockerfile; then
 fi
 
 echo '[docker-release] validating migration image isolation'
-grep -Fq 'FROM node:24-alpine AS base' docker/migrate.Dockerfile
+grep -Fq 'FROM node:25-alpine AS base' docker/migrate.Dockerfile
+grep -Fq 'npm install --global pnpm@11.25.0' docker/migrate.Dockerfile
 grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate... --filter @micromatrix/api...' docker/migrate.Dockerfile
 grep -Fq 'pnpm --filter @micromatrix/shared build' docker/migrate.Dockerfile
-grep -Fq 'COPY --from=builder --chown=node:node /workspace/apps/api/src/prisma/prisma-adapter.ts ./src/prisma/prisma-adapter.ts' docker/migrate.Dockerfile
+grep -Fq 'COPY apps/api/migrations apps/api/migrations' docker/migrate.Dockerfile
+grep -Fq 'COPY apps/api/prisma.config.ts apps/api/prisma.config.ts' docker/migrate.Dockerfile
+grep -Fq '&& prisma contract emit' docker/migrate.Dockerfile
+grep -Fq './node_modules/.bin/prisma db migrate' docker/release-init.sh
 grep -Fq 'ENTRYPOINT ["./release-init.sh"]' docker/migrate.Dockerfile
 
 echo '[docker-release] building API image'
@@ -100,30 +106,28 @@ echo '[docker-release] validating API runtime excludes build/migration tooling a
 docker run --rm --entrypoint sh "$API_IMAGE" -c 'test ! -f /app/.env && test ! -e /app/node_modules/.bin/prisma && test -f /app/dist/main.js && test -f /app/dist/worker.js'
 
 echo '[docker-release] applying Prisma migrations and bootstrap data from initialization image'
-docker run --rm --entrypoint sh "$MIGRATE_IMAGE" -c 'test ! -f /app/.env && test -x /app/node_modules/.bin/prisma && test -x /app/node_modules/.bin/tsx'
+docker run --rm --entrypoint sh "$MIGRATE_IMAGE" -c 'test ! -f /app/.env && test -x /app/node_modules/.bin/prisma && test -x /app/node_modules/.bin/tsx && test -f /app/prisma.config.ts && test -d /app/migrations'
 docker run --rm \
   --network "$NETWORK" \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
   "$MIGRATE_IMAGE"
 
-echo '[docker-release] validating migrated database matches Prisma schema'
+echo '[docker-release] validating migrated database marker and schema match Prisma 8 contract'
 docker run --rm \
   --network "$NETWORK" \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
   "$MIGRATE_IMAGE" \
-  ./node_modules/.bin/prisma migrate diff \
-  --exit-code \
-  --from-config-datasource \
-  --to-schema=prisma/schema.prisma
+  ./node_modules/.bin/prisma db verify
 
-echo '[docker-release] validating explicit legacy schema sync command'
+echo '[docker-release] validating Prisma 8 migration graph status'
 docker run --rm \
   --network "$NETWORK" \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
-  "$MIGRATE_IMAGE" legacy-sync
+  "$MIGRATE_IMAGE" \
+  ./node_modules/.bin/prisma migration status --ascii
 
 echo '[docker-release] starting worker entry from API image'
 docker run -d \

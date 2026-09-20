@@ -1,0 +1,3383 @@
+// use prisma-8
+// Contract inferred from the live database schema. Edit as needed, then run `prisma contract emit`.
+
+namespace public {
+  model Announcements {
+    id              String       @id(map: "announcements_pkey") @default(cuid(2))
+    tenantId        String
+    subject         String
+    content         String
+    startAt         Timestamptz(3)
+    endAt           Timestamptz(3)
+    url             String?
+    linkName        String?
+    departmentIds   Jsonb
+    userIds         Jsonb
+    receiverUserIds Jsonb
+    notice          Boolean      @default(false)
+    createUserId    String
+    updateUserId    String
+    createdAt       Timestamptz(3) @default(now())
+    updatedAt       Timestamptz(3)
+
+    @@index([tenantId, createdAt], map: "announcements_tenantId_createdAt_idx")
+    @@index([tenantId, notice, startAt, endAt], map: "announcements_tenantId_notice_startAt_endAt_idx")
+    @@map("announcements")
+  }
+
+  model ApprovalFlows {
+    id                    String                         @id(map: "approval_flows_pkey") @default(cuid(2))
+    tenantId              String
+    number                String
+    formType              pg.enum(ApprovalFormType)
+    currentVersionId      String?
+    name                  String
+    createExecute         Boolean                        @default(true)
+    updateExecute         Boolean                        @default(false)
+    deleteExecute         Boolean                        @default(false)
+    submitterCanRevoke    Boolean                        @default(true)
+    allowBatchProcess     Boolean                        @default(false)
+    allowWithdraw         Boolean                        @default(false)
+    allowAddSign          Boolean                        @default(false)
+    duplicateApproverRule pg.enum(DuplicateApproverRule) @default("FIRST_ONLY")
+    requireComment        Boolean                        @default(false)
+    enabled               Boolean                        @default(false)
+    description           String?
+    condition             Jsonb?
+    deletedAt             Timestamptz(3)?
+    createdById           String?
+    updatedById           String?
+    createdAt             Timestamptz(3)                   @default(now())
+    updatedAt             Timestamptz(3)
+    approvalFlowVersions  ApprovalFlowVersions[]
+    approvalInstances     ApprovalInstances[]
+    currentVersion        ApprovalFlowVersions?          @relation(fields: [currentVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_flows_currentVersionId_fkey", index: false)
+
+    @@index([tenantId, formType], map: "approval_flows_active_form_type_key", where: "(\"deletedAt\" IS NULL)", unique: true)
+    @@index([tenantId, enabled, deletedAt], map: "approval_flows_tenantId_enabled_deletedAt_idx")
+    @@index([tenantId, formType, deletedAt], map: "approval_flows_tenantId_formType_deletedAt_idx")
+    @@index([tenantId, number], map: "approval_flows_tenantId_number_key", unique: true)
+    @@check(expression: "char_length(\"description\") <= 1000", name: "text_len_df94ff2958")
+    @@map("approval_flows")
+  }
+
+  model ApprovalFlowVersions {
+    id                     String                   @id(map: "approval_flow_versions_pkey") @default(cuid(2))
+    flowId                 String
+    tenantId               String
+    version                Int
+    createdById            String?
+    createdAt              Timestamptz(3)             @default(now())
+    approvalFlows          ApprovalFlows[]
+    approvalInstances      ApprovalInstances[]
+    approvalNodeConditions ApprovalNodeConditions[]
+    approvalNodeLinks      ApprovalNodeLinks[]
+    approvalNodes          ApprovalNodes[]
+    flow                   ApprovalFlows            @relation(fields: [flowId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_flow_versions_flowId_fkey", index: false)
+
+    @@index([flowId, version], map: "approval_flow_versions_flowId_version_key", unique: true)
+    @@index([tenantId, flowId], map: "approval_flow_versions_tenantId_flowId_idx")
+    @@map("approval_flow_versions")
+  }
+
+  model ApprovalInstances {
+    id                          String                          @id(map: "approval_instances_pkey") @default(cuid(2))
+    tenantId                    String
+    flowId                      String?
+    flowVersionId               String?
+    executeTiming               pg.enum(ApprovalExecuteTiming)  @default("CREATE")
+    module                      String
+    targetId                    String
+    targetName                  String
+    summary                     String?
+    status                      pg.enum(ApprovalInstanceStatus) @default("PENDING")
+    currentNodeIndex            Int                             @default(0)
+    nodesSnapshot               Jsonb
+    comment                     String?
+    updateFields                String?                  @map("update_fields")
+    submitterId                 String
+    submitterName               String
+    finishedAt                  Timestamptz(3)?
+    createdAt                   Timestamptz(3)                    @default(now())
+    updatedAt                   Timestamptz(3)
+    approvalAddSignTasks        ApprovalAddSignTasks[]
+    approvalInstanceAttachments ApprovalInstanceAttachments[]
+    approvalRecords             ApprovalRecords[]
+    approvalReturnBackRecords   ApprovalReturnBackRecords[]
+    approvalTasks               ApprovalTasks[]
+    approvalWebhookDeliveries   ApprovalWebhookDeliveries[]
+    flow                        ApprovalFlows?                  @relation(fields: [flowId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_instances_flowId_fkey", index: false)
+    flowVersion                 ApprovalFlowVersions?           @relation(fields: [flowVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_instances_flowVersionId_fkey")
+
+    @@index([flowId, status], map: "approval_instances_flowId_status_idx")
+    @@index([flowVersionId], map: "approval_instances_flowVersionId_idx")
+    @@index([tenantId, module, targetId], map: "approval_instances_tenantId_module_targetId_idx")
+    @@index([tenantId, status], map: "approval_instances_tenantId_status_idx")
+    @@index([tenantId, submitterId], map: "approval_instances_tenantId_submitterId_idx")
+    @@check(expression: "char_length(\"update_fields\") <= 2000", name: "text_len_75cf003ed0")
+    @@map("approval_instances")
+  }
+
+  model ApprovalTasks {
+    id                                       String                       @id(map: "approval_tasks_pkey") @default(cuid(2))
+    tenantId                                 String
+    instanceId                               String
+    nodeId                                   String?                      @map("node_id")
+    nodeIndex                                Int
+    nodeRound                                Int                          @default(1) @map("node_round")
+    nodeName                                 String
+    approverId                               String
+    taskType                                 pg.enum(ApprovalTaskType)    @default("APPROVAL") @map("task_type")
+    status                                   pg.enum(ApprovalTaskStatus)  @default("PENDING")
+    action                                   pg.enum(ApprovalTaskAction)?
+    handledAt                                Timestamptz(3)?
+    createdAt                                Timestamptz(3)                 @default(now())
+    updatedAt                                Timestamptz(3)
+    approvalRecords                          ApprovalRecords[]
+    approvalReturnBackRecords                ApprovalReturnBackRecords[]
+    approvalAddSignTasks                     ApprovalAddSignTasks[]       @relation(name: "approval_add_sign_tasks_sign_task_id_fkey")
+    instance                                 ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_tasks_instanceId_fkey")
+
+    @@index([instanceId], map: "approval_tasks_instanceId_idx")
+    @@index([instanceId, nodeIndex, nodeRound], map: "approval_tasks_instanceId_nodeIndex_node_round_idx")
+    @@index([tenantId, approverId, status], map: "approval_tasks_tenantId_approverId_status_idx")
+    @@index([tenantId, approverId, taskType, status], map: "approval_tasks_tenantId_approverId_task_type_status_idx")
+    @@map("approval_tasks")
+  }
+
+  model ApprovalAddSignTasks {
+    id          String                       @id(map: "approval_add_sign_tasks_pkey") @default(cuid(2))
+    tenantId    String
+    instanceId  String
+    taskId      String                       @map("task_id")
+    signTaskId  String                       @map("sign_task_id")
+    _type       pg.enum(ApprovalAddSignType) @map("type")
+    rootTaskId  String                       @map("root_task_id")
+    sort        BigInt
+    comment     String?
+    createdById String                       @map("created_by_id")
+    createdAt   Timestamptz(3)                 @default(now()) @map("created_at")
+    updatedAt   Timestamptz(3)                 @map("updated_at")
+    instance    ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_instanceId_fkey", index: false)
+    signTask    ApprovalTasks                @relation(name: "approval_add_sign_tasks_sign_task_id_fkey", fields: [signTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_sign_task_id_fkey")
+    task        ApprovalTasks                @relation(name: "approval_add_sign_tasks_task_id_fkey", fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_task_id_fkey")
+
+    @@index([rootTaskId, sort], map: "approval_add_sign_tasks_root_task_id_sort_idx")
+    @@index([signTaskId], map: "approval_add_sign_tasks_sign_task_id_idx")
+    @@index([taskId], map: "approval_add_sign_tasks_task_id_key", unique: true)
+    @@index([tenantId, instanceId], map: "approval_add_sign_tasks_tenantId_instanceId_idx")
+    @@map("approval_add_sign_tasks")
+  }
+
+  model ApprovalFlowNumberCounters {
+    id        String                    @id(map: "approval_flow_number_counters_pkey") @default(cuid(2))
+    tenantId  String
+    formType  pg.enum(ApprovalFormType)
+    nextValue Int                       @default(1)
+    updatedAt Timestamptz(3)
+
+    @@index([tenantId, formType], map: "approval_flow_number_counters_tenantId_formType_key", unique: true)
+    @@map("approval_flow_number_counters")
+  }
+
+  model Attachments {
+    id                          String                        @id(map: "attachments_pkey") @default(cuid(2))
+    tenantId                    String
+    uploaderId                  String?
+    name                        String
+    path                        String
+    size                        Int                           @default(0)
+    mime                        String?
+    targetType                  String?
+    targetId                    String?
+    createdAt                   Timestamptz(3)                  @default(now())
+    approvalInstanceAttachments ApprovalInstanceAttachments[]
+
+    @@index([tenantId, targetType, targetId], map: "attachments_tenantId_targetType_targetId_idx")
+    @@map("attachments")
+  }
+
+  model ApprovalInstanceAttachments {
+    id           String            @id(map: "approval_instance_attachments_pkey") @default(cuid(2))
+    tenantId     String
+    instanceId   String            @map("instance_id")
+    elementId    String            @map("element_id")
+    attachmentId String            @map("attachment_id")
+    createdAt    Timestamptz(3)      @default(now()) @map("created_at")
+    attachment   Attachments       @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_instance_attachments_attachment_id_fkey")
+    instance     ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_instance_attachments_instance_id_fkey", index: false)
+
+    @@index([attachmentId], map: "approval_instance_attachments_attachment_id_idx")
+    @@index([elementId], map: "approval_instance_attachments_element_id_idx")
+    @@index([instanceId, elementId, attachmentId], map: "approval_instance_attachments_instance_id_element_id_attach_key", unique: true)
+    @@index([tenantId, instanceId, createdAt], map: "approval_instance_attachments_tenantId_instance_id_created__idx")
+    @@map("approval_instance_attachments")
+  }
+
+  model ApprovalNodes {
+    id                                 String                         @id(map: "approval_nodes_pkey") @default(cuid(2))
+    flowVersionId                      String
+    number                             String
+    name                               String
+    nodeType                           pg.enum(ApprovalNodeType)
+    executeTiming                      pg.enum(ApprovalExecuteTiming) @default("CREATE")
+    sort                               Int                            @default(0)
+    approvalNodeConditions             ApprovalNodeConditions?
+    approvalNodeLinks                  ApprovalNodeLinks[]            @relation(name: "approval_node_links_fromNodeId_fkey")
+    approvalNodeLinksApprovalNodeLinks ApprovalNodeLinks[]            @relation(name: "approval_node_links_toNodeId_fkey")
+    flowVersion                        ApprovalFlowVersions           @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_nodes_flowVersionId_fkey", index: false)
+
+    @@index([flowVersionId, executeTiming, sort], map: "approval_nodes_flowVersionId_executeTiming_sort_idx")
+    @@index([flowVersionId, number], map: "approval_nodes_flowVersionId_number_key", unique: true)
+    @@map("approval_nodes")
+  }
+
+  model ApprovalNodeApprovers {
+    id                  String                       @id(map: "approval_node_approvers_pkey") @default(cuid(2))
+    nodeId              String
+    approverType        pg.enum(ApproverType)
+    approverIds         String[]?                    @noCheck(elementNotNull)
+    ccUserIds           String[]?                    @noCheck(elementNotNull) @map("cc_user_ids")
+    mode                pg.enum(ApprovalMode)        @default("ANY")
+    emptyApproverAction pg.enum(EmptyApproverAction) @default("AUTO_PASS") @map("empty_approver_action")
+    fallbackApprover    String?                      @map("fallback_approver")
+    sameSubmitterAction pg.enum(SameSubmitterAction) @default("SKIP") @map("same_submitter_action")
+    approverDirection   pg.enum(ApproverDirection)   @default("BOTTOM_UP") @map("approver_direction")
+    fieldPermissions    Jsonb?                       @map("field_permissions")
+    passPostConfig      Jsonb?                       @map("pass_post_config")
+    rejectPostConfig    Jsonb?                       @map("reject_post_config")
+    node                ApprovalNodes                @relation(fields: [nodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_approvers_nodeId_fkey")
+
+    @@index([nodeId], map: "approval_node_approvers_nodeId_key", unique: true)
+    @@map("approval_node_approvers")
+  }
+
+  model ApprovalNodeConditions {
+    id              String               @id(map: "approval_node_conditions_pkey")
+    flowVersionId   String
+    conditionConfig Jsonb?               @map("condition_config")
+    flowVersion     ApprovalFlowVersions @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_conditions_flowVersionId_fkey")
+    approvalNodes   ApprovalNodes        @relation(fields: [id], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_conditions_id_fkey")
+
+    @@index([flowVersionId], map: "approval_node_conditions_flowVersionId_idx")
+    @@map("approval_node_conditions")
+  }
+
+  model ApprovalNodeLinks {
+    id            String               @id(map: "approval_node_links_pkey") @default(cuid(2))
+    flowVersionId String
+    fromNodeId    String
+    toNodeId      String
+    sort          Int                  @default(0)
+    flowVersion   ApprovalFlowVersions @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_flowVersionId_fkey", index: false)
+    fromNode      ApprovalNodes        @relation(name: "approval_node_links_fromNodeId_fkey", fields: [fromNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_fromNodeId_fkey")
+    toNode        ApprovalNodes        @relation(name: "approval_node_links_toNodeId_fkey", fields: [toNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_toNodeId_fkey")
+
+    @@index([flowVersionId, fromNodeId, toNodeId], map: "approval_node_links_flowVersionId_fromNodeId_toNodeId_key", unique: true)
+    @@index([flowVersionId, sort], map: "approval_node_links_flowVersionId_sort_idx")
+    @@index([fromNodeId], map: "approval_node_links_fromNodeId_idx")
+    @@index([toNodeId], map: "approval_node_links_toNodeId_idx")
+    @@map("approval_node_links")
+  }
+
+  model ApprovalRecords {
+    id          String                      @id(map: "approval_records_pkey") @default(cuid(2))
+    tenantId    String
+    instanceId  String
+    taskId      String?
+    nodeId      String?                     @map("node_id")
+    nodeRound   Int                         @default(1) @map("node_round")
+    result      pg.enum(ApprovalTaskAction)
+    comment     String?
+    createdById String                      @map("created_by_id")
+    createdAt   Timestamptz(3)                @default(now()) @map("created_at")
+    updatedAt   Timestamptz(3)                @map("updated_at")
+    instance    ApprovalInstances           @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_instanceId_fkey", index: false)
+    task        ApprovalTasks?              @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_taskId_fkey")
+
+    @@index([taskId], map: "approval_records_taskId_idx")
+    @@index([tenantId, instanceId, createdAt], map: "approval_records_tenantId_instanceId_created_at_idx")
+    @@map("approval_records")
+  }
+
+  model ApprovalResourceSnapshots {
+    id           String                    @id(map: "approval_resource_snapshots_pkey") @default(cuid(2))
+    tenantId     String
+    formType     pg.enum(ApprovalFormType)
+    resourceId   String
+    snapshotData Jsonb                     @map("snapshot_data")
+    createdById  String?                   @map("created_by_id")
+    updatedById  String?                   @map("updated_by_id")
+    createdAt    Timestamptz(3)              @default(now()) @map("created_at")
+    updatedAt    Timestamptz(3)              @map("updated_at")
+
+    @@index([tenantId, formType], map: "approval_resource_snapshots_tenantId_formType_idx")
+    @@index([tenantId, formType, resourceId], map: "approval_resource_snapshots_tenantId_formType_resourceId_key", unique: true)
+    @@map("approval_resource_snapshots")
+  }
+
+  model ApprovalReturnBackRecords {
+    id             String            @id(map: "approval_return_back_records_pkey") @default(cuid(2))
+    tenantId       String
+    instanceId     String            @map("instance_id")
+    taskId         String            @map("task_id")
+    returnToNodeId String            @map("return_to_node_id")
+    returnReason   String?           @map("return_reason")
+    returnUserId   String            @map("return_user_id")
+    createdAt      Timestamptz(3)      @default(now()) @map("created_at")
+    updatedAt      Timestamptz(3)      @map("updated_at")
+    instance       ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_instance_id_fkey", index: false)
+    task           ApprovalTasks     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_task_id_fkey")
+
+    @@index([instanceId, returnToNodeId], map: "approval_return_back_records_instance_id_return_to_node_id_key", unique: true)
+    @@index([taskId], map: "approval_return_back_records_task_id_idx")
+    @@index([tenantId, instanceId, createdAt], map: "approval_return_back_records_tenantId_instance_id_created_a_idx")
+    @@map("approval_return_back_records")
+  }
+
+  model ApprovalWebhookDeliveries {
+    id            String                                 @id(map: "approval_webhook_deliveries_pkey") @default(cuid(2))
+    tenantId      String                                 @map("tenant_id")
+    instanceId    String?                                @map("instance_id")
+    flowId        String?                                @map("flow_id")
+    flowVersionId String?                                @map("flow_version_id")
+    nodeId        String?                                @map("node_id")
+    nodeIndex     Int?                                   @map("node_index")
+    action        String?
+    source        pg.enum(ApprovalWebhookDeliverySource)
+    method        String
+    targetOrigin  String                                 @map("target_origin")
+    targetPath    String                                 @map("target_path")
+    status        pg.enum(ApprovalWebhookDeliveryStatus) @default("PENDING")
+    httpStatus    Int?                                   @map("http_status")
+    responseBytes Int?                                   @map("response_bytes")
+    durationMs    Int?                                   @map("duration_ms")
+    errorCode     String?                           @map("error_code")
+    errorMessage  String?                          @map("error_message")
+    createdById   String?                                @map("created_by_id")
+    startedAt     Timestamptz(3)?                          @map("started_at")
+    finishedAt    Timestamptz(3)?                          @map("finished_at")
+    createdAt     Timestamptz(3)                           @default(now()) @map("created_at")
+    updatedAt     Timestamptz(3)                           @map("updated_at")
+    instance      ApprovalInstances?                     @relation(fields: [instanceId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_webhook_deliveries_instance_id_fkey", index: false)
+
+    @@index([tenantId, flowId, createdAt], map: "approval_webhook_deliveries_tenant_id_flow_id_created_at_idx")
+    @@index([tenantId, instanceId, createdAt], map: "approval_webhook_deliveries_tenant_id_instance_id_created_a_idx")
+    @@index([tenantId, status, createdAt], map: "approval_webhook_deliveries_tenant_id_status_created_at_idx")
+    @@check(expression: "char_length(\"error_code\") <= 64", name: "text_len_5aa2aeb8b8")
+    @@check(expression: "char_length(\"error_message\") <= 500", name: "text_len_fb9be1e72a")
+    @@map("approval_webhook_deliveries")
+  }
+
+  model BiddingInfos {
+    id              String          @id(map: "bidding_infos_pkey") @default(cuid(2))
+    tenantId        String
+    title           String
+    _type           String?         @map("type")
+    region          String?
+    buyer           String?
+    budget          Numeric(16, 2)?
+    publishedAt     Timestamptz(3)?
+    deadline        Timestamptz(3)?
+    sourceUrl       String?
+    content         String?
+    source          String?
+    keyword         String?
+    hash            String
+    convertedLeadId String?
+    createdAt       Timestamptz(3)    @default(now())
+
+    @@index([tenantId, hash], map: "bidding_infos_tenantId_hash_key", unique: true)
+    @@index([tenantId, publishedAt], map: "bidding_infos_tenantId_publishedAt_idx")
+    @@map("bidding_infos")
+  }
+
+  model BiddingKeywordSubs {
+    id        String       @id(map: "bidding_keyword_subs_pkey") @default(cuid(2))
+    tenantId  String
+    keyword   String
+    enabled   Boolean      @default(true)
+    createdAt Timestamptz(3) @default(now())
+
+    @@index([tenantId, keyword], map: "bidding_keyword_subs_tenantId_keyword_key", unique: true)
+    @@map("bidding_keyword_subs")
+  }
+
+  model BiddingSources {
+    id          String        @id(map: "bidding_sources_pkey") @default(cuid(2))
+    tenantId    String
+    provider    String
+    name        String
+    credentials Jsonb?
+    enabled     Boolean       @default(false)
+    lastFetchAt Timestamptz(3)?
+    createdAt   Timestamptz(3)  @default(now())
+    updatedAt   Timestamptz(3)
+
+    @@index([tenantId, provider], map: "bidding_sources_tenantId_provider_key", unique: true)
+    @@map("bidding_sources")
+  }
+
+  model BusinessTitle {
+    id                   String       @id(map: "business_title_pkey")
+    name                 String
+    _type                String?      @map("type")
+    identificationNumber String?     @map("identification_number")
+    openingBank          String?     @map("opening_bank")
+    bankAccount          String?     @map("bank_account")
+    registrationAddress  String?     @map("registration_address")
+    phoneNumber          String?     @map("phone_number")
+    registeredCapital    String?     @map("registered_capital")
+    companySize          String?     @map("company_size")
+    registrationNumber   String?     @map("registration_number")
+    approvalStatus       String?      @map("approval_status")
+    unapprovedReason     String?     @map("unapproved_reason")
+    organizationId       String       @map("organization_id")
+    province             String?
+    city                 String?
+    scale                String?
+    industry             String?
+    remark               String?
+    companyNumber        BigInt            @default(autoincrement()) @map("company_number")
+    createTime           BigInt            @map("create_time")
+    updateTime           BigInt            @map("update_time")
+    createUser           String       @map("create_user")
+    updateUser           String       @map("update_user")
+    contractInvoices     ContractInvoice[]
+
+    @@index([companyNumber], map: "business_title_company_number_key", unique: true)
+    @@index([name], map: "business_title_name_idx")
+    @@index([organizationId], map: "business_title_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_4c939f1f55")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_8a0e0ccc3f")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_38a7b70462")
+    @@check(expression: "char_length(\"identification_number\") <= 255", name: "text_len_e21a1bf43d")
+    @@check(expression: "char_length(\"opening_bank\") <= 255", name: "text_len_d9b1de7555")
+    @@check(expression: "char_length(\"bank_account\") <= 255", name: "text_len_74f6e24f6b")
+    @@check(expression: "char_length(\"registration_address\") <= 255", name: "text_len_296b4255b4")
+    @@check(expression: "char_length(\"phone_number\") <= 255", name: "text_len_cd39cc4ea5")
+    @@check(expression: "char_length(\"registered_capital\") <= 255", name: "text_len_1ddbaad5ec")
+    @@check(expression: "char_length(\"company_size\") <= 255", name: "text_len_bba2dbcced")
+    @@check(expression: "char_length(\"registration_number\") <= 255", name: "text_len_3bc5a8cf69")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_e456928295")
+    @@check(expression: "char_length(\"unapproved_reason\") <= 255", name: "text_len_f9397e14f8")
+    @@check(expression: "char_length(\"organization_id\") <= 50", name: "text_len_974d8c6954")
+    @@check(expression: "char_length(\"province\") <= 255", name: "text_len_54be4c3f3e")
+    @@check(expression: "char_length(\"city\") <= 255", name: "text_len_3b5d26478f")
+    @@check(expression: "char_length(\"scale\") <= 255", name: "text_len_d6b9c9e2b9")
+    @@check(expression: "char_length(\"industry\") <= 255", name: "text_len_a64a49b90e")
+    @@check(expression: "char_length(\"remark\") <= 255", name: "text_len_312d42df31")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_fda5707cc6")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_9764cf9232")
+    @@map("business_title")
+  }
+
+  model BusinessTitleConfig {
+    id             String  @id(map: "business_title_config_pkey")
+    field          String
+    required       Boolean      @default(true)
+    organizationId String  @map("organization_id")
+
+    @@index([organizationId, field], map: "business_title_config_organization_id_field_key", unique: true)
+    @@index([organizationId], map: "business_title_config_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9779148724")
+    @@check(expression: "char_length(\"field\") <= 255", name: "text_len_a9ee41134d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_e56eb50932")
+    @@map("business_title_config")
+  }
+
+  model CluePool {
+    id                   String           @id(map: "clue_pool_pkey")
+    name                 String
+    scopeId              String                @map("scope_id")
+    organizationId       String           @map("organization_id")
+    ownerId              String                @map("owner_id")
+    enable               Boolean               @default(true)
+    auto                 Boolean               @default(false)
+    createTime           BigInt                @map("create_time")
+    updateTime           BigInt                @map("update_time")
+    createUser           String           @map("create_user")
+    updateUser           String           @map("update_user")
+    clues                Clue[]
+    cluePoolHiddenFields CluePoolHiddenField[]
+
+    @@index([organizationId], map: "clue_pool_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d855260c78")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_b21c5c965c")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_ae6adee81d")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_bde0b3e30c")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_3bcf493be7")
+    @@map("clue_pool")
+  }
+
+  model Clue {
+    id             String     @id(map: "clue_pkey")
+    name           String
+    owner          String?
+    lastStage      String?    @map("last_stage")
+    stage          String
+    collectionTime BigInt?         @map("collection_time")
+    contact        String?
+    phone          String?
+    products       String?
+    organizationId String     @map("organization_id")
+    createTime     BigInt          @map("create_time")
+    updateTime     BigInt          @map("update_time")
+    createUser     String     @map("create_user")
+    updateUser     String     @map("update_user")
+    transitionType String?    @default("NONE") @map("transition_type")
+    transitionId   String?    @map("transition_id")
+    inSharedPool   Boolean         @default(false) @map("in_shared_pool")
+    follower       String?
+    followTime     BigInt?         @map("follow_time")
+    poolId         String?    @map("pool_id")
+    reasonId       String?    @map("reason_id")
+    clueFields     ClueField[]
+    clueFieldBlobs ClueFieldBlob[]
+    clueOwners     ClueOwner[]
+    pool           CluePool?       @relation(fields: [poolId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "clue_pool_id_fkey")
+
+    @@index([followTime], map: "clue_follow_time_idx")
+    @@index([follower], map: "clue_follower_idx")
+    @@index([organizationId], map: "clue_organization_id_idx")
+    @@index([phone], map: "clue_phone_idx")
+    @@index([poolId], map: "clue_pool_id_idx")
+    @@index([reasonId], map: "clue_reason_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5d8d38cd59")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_360efc5562")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_f989239e7d")
+    @@check(expression: "char_length(\"last_stage\") <= 30", name: "text_len_28f6d7aae3")
+    @@check(expression: "char_length(\"stage\") <= 30", name: "text_len_8cb7c75bb9")
+    @@check(expression: "char_length(\"contact\") <= 255", name: "text_len_f3ddda20be")
+    @@check(expression: "char_length(\"phone\") <= 255", name: "text_len_29cbcd1af7")
+    @@check(expression: "char_length(\"products\") <= 1000", name: "text_len_d1404981a3")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_9ba2743780")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_e9e55e174e")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_35e9b081d8")
+    @@check(expression: "char_length(\"transition_type\") <= 30", name: "text_len_b72f21f367")
+    @@check(expression: "char_length(\"transition_id\") <= 32", name: "text_len_5aa451c91b")
+    @@check(expression: "char_length(\"follower\") <= 32", name: "text_len_b355c80a93")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_8fa85e5ccf")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_131df97257")
+    @@map("clue")
+  }
+
+  model ClueCapacity {
+    id             String @id(map: "clue_capacity_pkey")
+    organizationId String @map("organization_id")
+    scopeId        String      @map("scope_id")
+    capacity       Int?
+    createTime     BigInt      @map("create_time")
+    updateTime     BigInt      @map("update_time")
+    createUser     String @map("create_user")
+    updateUser     String @map("update_user")
+
+    @@index([organizationId], map: "clue_capacity_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d58d20420e")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_167aa9076e")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_ba6fbb1ec4")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_45b429662f")
+    @@map("clue_capacity")
+  }
+
+  model ClueField {
+    id         String  @id(map: "clue_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    resource   Clue         @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "clue_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "clue_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ba2e825adf")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_12d6567017")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_79907f5e10")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_faf642831b")
+    @@map("clue_field")
+  }
+
+  model ClueFieldBlob {
+    id         String @id(map: "clue_field_blob_pkey")
+    resourceId String @map("resource_id")
+    fieldId    String @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Clue        @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "clue_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "clue_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_fad371e96f")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_74b4216f6a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c3257a5300")
+    @@map("clue_field_blob")
+  }
+
+  model ClueOwner {
+    id             String  @id(map: "clue_owner_pkey")
+    clueId         String  @map("clue_id")
+    owner          String
+    collectionTime BigInt       @map("collection_time")
+    endTime        BigInt       @map("end_time")
+    operator       String
+    reasonId       String? @map("reason_id")
+    clue           Clue         @relation(fields: [clueId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_owner_clue_id_fkey")
+
+    @@index([clueId], map: "clue_owner_clue_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_97ddfa0ccc")
+    @@check(expression: "char_length(\"clue_id\") <= 32", name: "text_len_fe709dbb7e")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_15e228b16d")
+    @@check(expression: "char_length(\"operator\") <= 32", name: "text_len_2bb9524331")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_ef65a57220")
+    @@map("clue_owner")
+  }
+
+  model CluePoolHiddenField {
+    poolId  String  @map("pool_id")
+    fieldId String @map("field_id")
+    pool    CluePool     @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_hidden_field_pool_id_fkey", index: false)
+
+    @@id([poolId, fieldId], map: "clue_pool_hidden_field_pkey")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_18c3e411ae")
+    @@check(expression: "char_length(\"field_id\") <= 255", name: "text_len_be614803ff")
+    @@map("clue_pool_hidden_field")
+  }
+
+  model CluePoolPickRule {
+    id               String @id(map: "clue_pool_pick_rule_pkey")
+    poolId           String @map("pool_id")
+    limitOnNumber    Boolean     @default(true) @map("limit_on_number")
+    pickNumber       Int?        @map("pick_number")
+    limitPreOwner    Boolean     @default(true) @map("limit_pre_owner")
+    pickIntervalDays Int?        @map("pick_interval_days")
+    limitNew         Boolean     @default(false) @map("limit_new")
+    newPickInterval  Int?        @map("new_pick_interval")
+    createUser       String @map("create_user")
+    createTime       BigInt      @map("create_time")
+    updateUser       String @map("update_user")
+    updateTime       BigInt      @map("update_time")
+    pool             CluePool    @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_pick_rule_pool_id_fkey")
+
+    @@index([poolId], map: "clue_pool_pick_rule_pool_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d8971f36fe")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_8a003860a5")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_678c2241c7")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4ffb57d69f")
+    @@map("clue_pool_pick_rule")
+  }
+
+  model CluePoolRecycleRule {
+    id         String  @id(map: "clue_pool_recycle_rule_pkey")
+    poolId     String  @map("pool_id")
+    operator   String?
+    condition  String?
+    createTime BigInt       @map("create_time")
+    updateTime BigInt       @map("update_time")
+    createUser String  @map("create_user")
+    updateUser String  @map("update_user")
+    pool       CluePool     @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_recycle_rule_pool_id_fkey")
+
+    @@index([poolId], map: "clue_pool_recycle_rule_pool_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6c65b4dddb")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_f7c59dbca6")
+    @@check(expression: "char_length(\"operator\") <= 10", name: "text_len_3178afb6d7")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_617a2f5c77")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4e67bc0cb4")
+    @@map("clue_pool_recycle_rule")
+  }
+
+  model CustomerPool {
+    id                       String               @id(map: "customer_pool_pkey")
+    scopeId                  String                    @map("scope_id")
+    organizationId           String               @map("organization_id")
+    name                     String
+    ownerId                  String                    @map("owner_id")
+    enable                   Boolean                   @default(true)
+    auto                     Boolean                   @default(false)
+    createTime               BigInt                    @map("create_time")
+    updateTime               BigInt                    @map("update_time")
+    createUser               String               @map("create_user")
+    updateUser               String               @map("update_user")
+    customers                Customer[]
+    customerPoolHiddenFields CustomerPoolHiddenField[]
+
+    @@index([organizationId], map: "customer_pool_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ade0543e14")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_018fc885a9")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_ade3dab297")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_77a4f27cc0")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4ee70d0353")
+    @@map("customer_pool")
+  }
+
+  model Customer {
+    id                                String             @id(map: "customer_pkey")
+    name                              String
+    owner                             String?
+    collectionTime                    BigInt?                 @map("collection_time")
+    poolId                            String?            @map("pool_id")
+    createTime                        BigInt                  @map("create_time")
+    updateTime                        BigInt                  @map("update_time")
+    createUser                        String             @map("create_user")
+    updateUser                        String             @map("update_user")
+    inSharedPool                      Boolean                 @default(false) @map("in_shared_pool")
+    organizationId                    String             @map("organization_id")
+    follower                          String?
+    followTime                        BigInt?                 @map("follow_time")
+    reasonId                          String?            @map("reason_id")
+    contracts                         Contract[]
+    customerCollaborations            CustomerCollaboration[]
+    customerContacts                  CustomerContact[]
+    customerFields                    CustomerField[]
+    customerFieldBlobs                CustomerFieldBlob[]
+    customerOwners                    CustomerOwner[]
+    opportunities                     Opportunity[]
+    salesOrders                       SalesOrder[]
+    pool                              CustomerPool?           @relation(fields: [poolId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "customer_pool_id_fkey")
+    customerRelations                 CustomerRelation[]      @relation(name: "customer_relation_source_customer_id_fkey")
+    customerRelationsCustomerRelation CustomerRelation[]      @relation(name: "customer_relation_target_customer_id_fkey")
+
+    @@index([followTime], map: "customer_follow_time_idx")
+    @@index([follower], map: "customer_follower_idx")
+    @@index([organizationId], map: "customer_organization_id_idx")
+    @@index([poolId], map: "customer_pool_id_idx")
+    @@index([reasonId], map: "customer_reason_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_b399eff69d")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_4f0c824512")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_84a02e1683")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_f2a53d4739")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_88148555bd")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_1190301c5e")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_a22fa03651")
+    @@check(expression: "char_length(\"follower\") <= 32", name: "text_len_6b2dc039b3")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_91f507fc4e")
+    @@map("customer")
+  }
+
+  model Contract {
+    id                     String             @id(map: "contract_pkey")
+    name                   String
+    customerId             String             @map("customer_id")
+    owner                  String
+    amount                 Numeric(14, 2)
+    number                 String
+    approvalStatus         String             @default("NONE") @map("approval_status")
+    stage                  String
+    startTime              BigInt?                 @map("start_time")
+    endTime                BigInt?                 @map("end_time")
+    voidReason             String?           @map("void_reason")
+    organizationId         String             @map("organization_id")
+    pos                    BigInt?
+    approved               Boolean                 @default(false)
+    createTime             BigInt                  @map("create_time")
+    updateTime             BigInt                  @map("update_time")
+    createUser             String             @map("create_user")
+    updateUser             String             @map("update_user")
+    contractFields         ContractField[]
+    contractFieldBlobs     ContractFieldBlob[]
+    contractInvoices       ContractInvoice[]
+    contractPaymentPlans   ContractPaymentPlan[]
+    contractPaymentRecords ContractPaymentRecord[]
+    contractSnapshots      ContractSnapshot[]
+    salesOrders            SalesOrder[]
+    customer               Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "contract_customer_id_fkey")
+
+    @@index([approvalStatus], map: "contract_approval_status_idx")
+    @@index([createUser], map: "contract_create_user_idx")
+    @@index([customerId], map: "contract_customer_id_idx")
+    @@index([name], map: "contract_name_idx")
+    @@index([number], map: "contract_number_idx")
+    @@index([organizationId], map: "contract_organization_id_idx")
+    @@index([owner], map: "contract_owner_idx")
+    @@index([stage], map: "contract_stage_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_56120e0714")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_afc0945aab")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_a5b8df00e6")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_788d25593d")
+    @@check(expression: "char_length(\"number\") <= 50", name: "text_len_7eed87de6b")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_c4252110ef")
+    @@check(expression: "char_length(\"stage\") <= 32", name: "text_len_940c282d7e")
+    @@check(expression: "char_length(\"void_reason\") <= 255", name: "text_len_f38806daff")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_41fd6a1a50")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_5e1031eb1a")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_66ccabef66")
+    @@map("contract")
+  }
+
+  model ContractField {
+    id         String  @id(map: "contract_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    refSubId   String? @map("ref_sub_id")
+    rowId      String? @map("row_id")
+    bizId      String? @map("biz_id")
+    resource   Contract     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_field_resource_id_fkey")
+
+    @@index([refSubId], map: "contract_field_ref_sub_id_idx")
+    @@index([resourceId], map: "contract_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_56ee66777e")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_c037b4ad02")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_8e7644d5ab")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_106a7f9d0d")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_988f16b3c2")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_ca84939201")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_871757eff7")
+    @@map("contract_field")
+  }
+
+  model ContractFieldBlob {
+    id         String  @id(map: "contract_field_blob_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String       @map("field_value")
+    refSubId   String? @map("ref_sub_id")
+    rowId      String? @map("row_id")
+    bizId      String? @map("biz_id")
+    resource   Contract     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "contract_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "contract_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_blob_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_b62d8f360a")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_3518b9285c")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c440e4f485")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_5fbbbcdbdb")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_60c1f62fb1")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_99ac3ad7ef")
+    @@map("contract_field_blob")
+  }
+
+  model ContractInvoice {
+    id                        String                @id(map: "contract_invoice_pkey")
+    name                      String
+    contractId                String                @map("contract_id")
+    owner                     String
+    amount                    Numeric(20, 10)?
+    invoiceType               String?               @map("invoice_type")
+    taxRate                   Numeric(20, 10)?           @map("tax_rate")
+    approvalStatus            String?               @map("approval_status")
+    businessTitleId           String?               @map("business_title_id")
+    organizationId            String                @map("organization_id")
+    approved                  Boolean                    @default(false)
+    createTime                BigInt                     @map("create_time")
+    updateTime                BigInt                     @map("update_time")
+    createUser                String                @map("create_user")
+    updateUser                String                @map("update_user")
+    contractInvoiceFields     ContractInvoiceField[]
+    contractInvoiceFieldBlobs ContractInvoiceFieldBlob[]
+    contractInvoiceSnapshots  ContractInvoiceSnapshot[]
+    businessTitle             BusinessTitle?             @relation(fields: [businessTitleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "contract_invoice_business_title_id_fkey", index: false)
+    contract                  Contract                   @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_contract_id_fkey")
+
+    @@index([approvalStatus], map: "contract_invoice_approval_status_idx")
+    @@index([contractId], map: "contract_invoice_contract_id_idx")
+    @@index([createUser], map: "contract_invoice_create_user_idx")
+    @@index([organizationId], map: "contract_invoice_organization_id_idx")
+    @@index([owner], map: "contract_invoice_owner_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_bc9c0c9467")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_baa19ab9cb")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_252c1aa9a4")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_4632734042")
+    @@check(expression: "char_length(\"invoice_type\") <= 32", name: "text_len_47588c6051")
+    @@check(expression: "char_length(\"approval_status\") <= 32", name: "text_len_dac6310abe")
+    @@check(expression: "char_length(\"business_title_id\") <= 32", name: "text_len_73ac8e573b")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_6bb2067350")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_08eaea8311")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_339c1edf1c")
+    @@map("contract_invoice")
+  }
+
+  model ContractInvoiceField {
+    id         String     @id(map: "contract_invoice_field_pkey")
+    resourceId String     @map("resource_id")
+    fieldId    String     @map("field_id")
+    fieldValue String    @map("field_value")
+    resource   ContractInvoice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "contract_invoice_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "contract_invoice_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5b766d83f7")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_72b56c4b4f")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_2d9b33b29e")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_8c1da1c5d3")
+    @@map("contract_invoice_field")
+  }
+
+  model ContractInvoiceFieldBlob {
+    id         String     @id(map: "contract_invoice_field_blob_pkey")
+    resourceId String     @map("resource_id")
+    fieldId    String     @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   ContractInvoice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "contract_invoice_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "contract_invoice_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_c9b3c59dc6")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_74e273798d")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_8a84497c14")
+    @@map("contract_invoice_field_blob")
+  }
+
+  model ContractInvoiceSnapshot {
+    id           String     @id(map: "contract_invoice_snapshot_pkey")
+    invoiceId    String     @map("invoice_id")
+    invoiceProp  String?         @map("invoice_prop")
+    invoiceValue String?         @map("invoice_value")
+    invoice      ContractInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_snapshot_invoice_id_fkey")
+
+    @@index([invoiceId], map: "contract_invoice_snapshot_invoice_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_e97a56ef27")
+    @@check(expression: "char_length(\"invoice_id\") <= 32", name: "text_len_7d99d2bfcd")
+    @@map("contract_invoice_snapshot")
+  }
+
+  model ContractPaymentPlan {
+    id                            String                    @id(map: "contract_payment_plan_pkey")
+    name                          String
+    contractId                    String                    @map("contract_id")
+    owner                         String
+    planStatus                    String                    @default("PENDING") @map("plan_status")
+    planAmount                    Numeric(20, 10)?               @map("plan_amount")
+    planEndTime                   BigInt?                        @map("plan_end_time")
+    organizationId                String                    @map("organization_id")
+    createTime                    BigInt                         @map("create_time")
+    updateTime                    BigInt                         @map("update_time")
+    createUser                    String                    @map("create_user")
+    updateUser                    String                    @map("update_user")
+    contractPaymentPlanFields     ContractPaymentPlanField[]
+    contractPaymentPlanFieldBlobs ContractPaymentPlanFieldBlob[]
+    contractPaymentRecords        ContractPaymentRecord[]
+    contract                      Contract                       @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_plan_contract_id_fkey")
+
+    @@index([contractId], map: "contract_payment_plan_contract_id_idx")
+    @@index([createUser], map: "contract_payment_plan_create_user_idx")
+    @@index([organizationId], map: "contract_payment_plan_organization_id_idx")
+    @@index([owner], map: "contract_payment_plan_owner_idx")
+    @@index([planEndTime], map: "contract_payment_plan_plan_end_time_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_45ee8d804e")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_066d710409")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_9d2a085a70")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_b6fdb2ce8b")
+    @@check(expression: "char_length(\"plan_status\") <= 32", name: "text_len_0974a20cb4")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_36e3b31fc8")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_ded30a9d31")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_69d620eceb")
+    @@map("contract_payment_plan")
+  }
+
+  model ContractPaymentPlanField {
+    id         String         @id(map: "contract_payment_plan_field_pkey")
+    resourceId String         @map("resource_id")
+    fieldId    String         @map("field_id")
+    fieldValue String        @map("field_value")
+    resource   ContractPaymentPlan @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_plan_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "contract_payment_plan_field_resource_id_field_id_field_valu_idx")
+    @@index([resourceId, fieldId], map: "contract_payment_plan_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_00f909e7a2")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_af4b9ebcb8")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c78254d8ba")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_0efea9ac8d")
+    @@map("contract_payment_plan_field")
+  }
+
+  model ContractPaymentPlanFieldBlob {
+    id         String         @id(map: "contract_payment_plan_field_blob_pkey")
+    resourceId String         @map("resource_id")
+    fieldId    String         @map("field_id")
+    fieldValue String              @map("field_value")
+    resource   ContractPaymentPlan @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_plan_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "contract_payment_plan_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "contract_payment_plan_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_046b49eb9c")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_f09f5ca1d1")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_b159776927")
+    @@map("contract_payment_plan_field_blob")
+  }
+
+  model ContractPaymentRecord {
+    id                              String                      @id(map: "contract_payment_record_pkey")
+    name                            String
+    no                              String?
+    owner                           String
+    contractId                      String                      @map("contract_id")
+    paymentPlanId                   String?                     @map("payment_plan_id")
+    recordAmount                    Numeric(20, 10)?                 @map("record_amount")
+    recordEndTime                   BigInt?                          @map("record_end_time")
+    organizationId                  String                      @map("organization_id")
+    createTime                      BigInt                           @map("create_time")
+    updateTime                      BigInt                           @map("update_time")
+    createUser                      String                      @map("create_user")
+    updateUser                      String                      @map("update_user")
+    contractPaymentRecordFields     ContractPaymentRecordField[]
+    contractPaymentRecordFieldBlobs ContractPaymentRecordFieldBlob[]
+    contract                        Contract                         @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_record_contract_id_fkey")
+    paymentPlan                     ContractPaymentPlan?             @relation(fields: [paymentPlanId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "contract_payment_record_payment_plan_id_fkey")
+
+    @@index([contractId], map: "contract_payment_record_contract_id_idx")
+    @@index([createUser], map: "contract_payment_record_create_user_idx")
+    @@index([organizationId], map: "contract_payment_record_organization_id_idx")
+    @@index([owner], map: "contract_payment_record_owner_idx")
+    @@index([paymentPlanId], map: "contract_payment_record_payment_plan_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_27fc0e841e")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_6d192d0e6b")
+    @@check(expression: "char_length(\"no\") <= 50", name: "text_len_984607863d")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_722c98a357")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_68cbaf57ba")
+    @@check(expression: "char_length(\"payment_plan_id\") <= 32", name: "text_len_266428decb")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_303b0a68ae")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_60f941bbf2")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_a8a7baf037")
+    @@map("contract_payment_record")
+  }
+
+  model ContractPaymentRecordField {
+    id         String           @id(map: "contract_payment_record_field_pkey")
+    resourceId String           @map("resource_id")
+    fieldId    String           @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   ContractPaymentRecord @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_record_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "contract_payment_record_field_resource_id_field_id_field_va_idx")
+    @@index([resourceId, fieldId], map: "contract_payment_record_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ed8af117c9")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_eaa4b21a27")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_abe03a7ff5")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_d16102ec55")
+    @@map("contract_payment_record_field")
+  }
+
+  model ContractPaymentRecordFieldBlob {
+    id         String           @id(map: "contract_payment_record_field_blob_pkey")
+    resourceId String           @map("resource_id")
+    fieldId    String           @map("field_id")
+    fieldValue String                @map("field_value")
+    resource   ContractPaymentRecord @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_payment_record_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "contract_payment_record_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "contract_payment_record_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_03b1b49bf4")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_f9340a0143")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_57c78cf3f1")
+    @@map("contract_payment_record_field_blob")
+  }
+
+  model ContractSnapshot {
+    id            String @id(map: "contract_snapshot_pkey")
+    contractId    String @map("contract_id")
+    contractProp  String?     @map("contract_prop")
+    contractValue String?     @map("contract_value")
+    contract      Contract    @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_snapshot_contract_id_fkey")
+
+    @@index([contractId], map: "contract_snapshot_contract_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8a4d88be68")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_28ba57f5a3")
+    @@map("contract_snapshot")
+  }
+
+  model ContractStageConfig {
+    id              String  @id(map: "contract_stage_config_pkey")
+    name            String
+    _type           String  @map("type")
+    afootRollBack   Boolean      @default(true) @map("afoot_roll_back")
+    endRollBack     Boolean      @default(false) @map("end_roll_back")
+    pos             BigInt
+    organizationId  String  @map("organization_id")
+    circulationType String  @default("NORMAL") @map("circulation_type")
+    createTime      BigInt       @map("create_time")
+    updateTime      BigInt       @map("update_time")
+    createUser      String  @map("create_user")
+    updateUser      String  @map("update_user")
+
+    @@index([organizationId, pos], map: "contract_stage_config_organization_id_pos_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2f18dc68ef")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_e5090ecce9")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_35cbecc5dc")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_e3a263ec10")
+    @@check(expression: "char_length(\"circulation_type\") <= 50", name: "text_len_29b16df2cd")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_076d22c5e4")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_d624387c5e")
+    @@map("contract_stage_config")
+  }
+
+  model CustomForm {
+    id               String       @id(map: "custom_form_pkey")
+    name             String
+    enable           Boolean           @default(true)
+    organizationId   String       @map("organization_id")
+    createTime       BigInt            @map("create_time")
+    updateTime       BigInt            @map("update_time")
+    createUser       String       @map("create_user")
+    updateUser       String       @map("update_user")
+    customFormAdmins CustomFormAdmin[]
+    customFormData   CustomFormData[]
+    customFormRoles  CustomFormRole[]
+
+    @@index([organizationId, enable], map: "custom_form_organization_id_enable_idx")
+    @@index([organizationId], map: "custom_form_organization_id_idx")
+    @@index([organizationId, name], map: "custom_form_organization_id_name_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_02cc0e463a")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_77b087e829")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_56a74dce1d")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_6104e272e1")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_31fa96d6e5")
+    @@map("custom_form")
+  }
+
+  model CustomFormAdmin {
+    id           String @id(map: "custom_form_admin_pkey")
+    customFormId String @map("custom_form_id")
+    userId       String @map("user_id")
+    customForm   CustomForm  @relation(fields: [customFormId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_admin_custom_form_id_fkey", index: false)
+
+    @@index([customFormId, userId], map: "custom_form_admin_custom_form_id_user_id_key", unique: true)
+    @@index([userId], map: "custom_form_admin_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2d854b6005")
+    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "text_len_78337f7a4e")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_8e85aef444")
+    @@map("custom_form_admin")
+  }
+
+  model CustomFormData {
+    id                       String               @id(map: "custom_form_data_pkey")
+    customFormId             String               @map("custom_form_id")
+    name                     String
+    owner                    String
+    organizationId           String               @map("organization_id")
+    createTime               BigInt                    @map("create_time")
+    updateTime               BigInt                    @map("update_time")
+    createUser               String               @map("create_user")
+    updateUser               String               @map("update_user")
+    customFormDataFields     CustomFormDataField[]
+    customFormDataFieldBlobs CustomFormDataFieldBlob[]
+    customForm               CustomForm                @relation(fields: [customFormId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_data_custom_form_id_fkey")
+
+    @@index([customFormId, createTime], map: "custom_form_data_custom_form_id_create_time_idx")
+    @@index([customFormId], map: "custom_form_data_custom_form_id_idx")
+    @@index([customFormId, owner], map: "custom_form_data_custom_form_id_owner_idx")
+    @@index([organizationId], map: "custom_form_data_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_616ed80e2f")
+    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "text_len_087459b32c")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_0c094213b3")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_ba75f431bf")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_c2831652f6")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_08f1d646ab")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4f7567f6af")
+    @@map("custom_form_data")
+  }
+
+  model CustomFormDataField {
+    id         String    @id(map: "custom_form_data_field_pkey")
+    resourceId String    @map("resource_id")
+    fieldId    String    @map("field_id")
+    fieldValue String   @map("field_value")
+    refSubId   String?   @map("ref_sub_id")
+    rowId      Int?           @map("row_id")
+    bizId      String?   @map("biz_id")
+    resource   CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_data_field_resource_id_fkey", index: false)
+
+    @@index([bizId], map: "custom_form_data_field_biz_id_idx")
+    @@index([resourceId, fieldId, fieldValue], map: "custom_form_data_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, refSubId, rowId], map: "custom_form_data_field_resource_id_ref_sub_id_row_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "custom_form_data_field_sub_cell_key", where: "(ref_sub_id IS NOT NULL)", unique: true)
+    @@index([resourceId, fieldId], map: "custom_form_data_field_top_level_key", where: "(ref_sub_id IS NULL)", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9688d9652e")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_b530d748dd")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_988d2ff9d7")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_6541282633")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_167bf22228")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_7345939764")
+    @@map("custom_form_data_field")
+  }
+
+  model CustomFormDataFieldBlob {
+    id         String    @id(map: "custom_form_data_field_blob_pkey")
+    resourceId String    @map("resource_id")
+    fieldId    String    @map("field_id")
+    fieldValue String         @map("field_value")
+    refSubId   String?   @map("ref_sub_id")
+    rowId      Int?           @map("row_id")
+    bizId      String?   @map("biz_id")
+    resource   CustomFormData @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_data_field_blob_resource_id_fkey")
+
+    @@index([bizId], map: "custom_form_data_field_blob_biz_id_idx")
+    @@index([resourceId], map: "custom_form_data_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId], map: "custom_form_data_field_blob_resource_id_ref_sub_id_row_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "custom_form_data_field_blob_sub_cell_key", where: "(ref_sub_id IS NOT NULL)", unique: true)
+    @@index([resourceId, fieldId], map: "custom_form_data_field_blob_top_level_key", where: "(ref_sub_id IS NULL)", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_b1baf070f6")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_cf44909a38")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_d001350949")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_1cf47a622c")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_88cdb0ba2e")
+    @@map("custom_form_data_field_blob")
+  }
+
+  model CustomFormRole {
+    id                  String          @id(map: "custom_form_role_pkey")
+    name                String
+    customFormId        String          @map("custom_form_id")
+    internalKey         String          @map("internal_key")
+    createTime          BigInt               @map("create_time")
+    updateTime          BigInt               @map("update_time")
+    createUser          String          @map("create_user")
+    updateUser          String          @map("update_user")
+    customFormRoleUsers CustomFormRoleUser[]
+    customForm          CustomForm           @relation(fields: [customFormId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_role_custom_form_id_fkey")
+
+    @@index([customFormId], map: "custom_form_role_custom_form_id_idx")
+    @@index([customFormId, internalKey], map: "custom_form_role_custom_form_id_internal_key_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9264c91978")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_d81f39eb9b")
+    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "text_len_e374369e5d")
+    @@check(expression: "char_length(\"internal_key\") <= 50", name: "text_len_9b7fdbdb48")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_fab0e13bbe")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_e48d6bdb0c")
+    @@map("custom_form_role")
+  }
+
+  model CustomFormRoleUser {
+    id         String    @id(map: "custom_form_role_user_pkey")
+    roleId     String    @map("role_id")
+    userId     String    @map("user_id")
+    createTime BigInt         @map("create_time")
+    updateTime BigInt         @map("update_time")
+    createUser String    @map("create_user")
+    updateUser String    @map("update_user")
+    role       CustomFormRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "custom_form_role_user_role_id_fkey", index: false)
+
+    @@index([createTime], map: "custom_form_role_user_create_time_idx")
+    @@index([roleId, userId], map: "custom_form_role_user_role_id_user_id_key", unique: true)
+    @@index([userId], map: "custom_form_role_user_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_aff8d4a190")
+    @@check(expression: "char_length(\"role_id\") <= 32", name: "text_len_a3fa0255b8")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_dc3e0984f2")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_e66e43fdfa")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_d82a4387a2")
+    @@map("custom_form_role_user")
+  }
+
+  model CustomerCapacity {
+    id             String @id(map: "customer_capacity_pkey")
+    organizationId String @map("organization_id")
+    scopeId        String      @map("scope_id")
+    capacity       Int?
+    filter         String?
+    createTime     BigInt      @map("create_time")
+    updateTime     BigInt      @map("update_time")
+    createUser     String @map("create_user")
+    updateUser     String @map("update_user")
+
+    @@index([organizationId], map: "customer_capacity_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_10388ea7d7")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_bbc3159a64")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_0f14b33a2f")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_8a908cb267")
+    @@map("customer_capacity")
+  }
+
+  model CustomerCollaboration {
+    id                String @id(map: "customer_collaboration_pkey")
+    createTime        BigInt      @map("create_time")
+    updateTime        BigInt      @map("update_time")
+    createUser        String @map("create_user")
+    updateUser        String @map("update_user")
+    userId            String @map("user_id")
+    customerId        String @map("customer_id")
+    collaborationType String @map("collaboration_type")
+    customer          Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_collaboration_customer_id_fkey")
+
+    @@index([customerId], map: "customer_collaboration_customer_id_idx")
+    @@index([customerId, userId], map: "customer_collaboration_customer_id_user_id_key", unique: true)
+    @@index([userId], map: "customer_collaboration_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d94a8aa2e4")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_745404e782")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_646752b01e")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_d5eadb851f")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_c2dcb526d1")
+    @@check(expression: "char_length(\"collaboration_type\") <= 50", name: "text_len_2934ac6836")
+    @@map("customer_collaboration")
+  }
+
+  model CustomerContact {
+    id                        String                @id(map: "customer_contact_pkey")
+    customerId                String?               @map("customer_id")
+    name                      String
+    phone                     String?
+    owner                     String
+    createTime                BigInt                     @map("create_time")
+    updateTime                BigInt                     @map("update_time")
+    createUser                String                @map("create_user")
+    updateUser                String                @map("update_user")
+    enable                    Boolean                    @default(false)
+    disableReason             String?              @map("disable_reason")
+    organizationId            String                @map("organization_id")
+    customerContactFields     CustomerContactField[]
+    customerContactFieldBlobs CustomerContactFieldBlob[]
+    opportunities             Opportunity[]
+    customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "customer_contact_customer_id_fkey")
+
+    @@index([customerId], map: "customer_contact_customer_id_idx")
+    @@index([organizationId], map: "customer_contact_organization_id_idx")
+    @@index([phone], map: "customer_contact_phone_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_02c9381bd0")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_604b16465a")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_d66315c44d")
+    @@check(expression: "char_length(\"phone\") <= 30", name: "text_len_4c8af87865")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_5386c253de")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_debf02b9b3")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_eb84d5bc69")
+    @@check(expression: "char_length(\"disable_reason\") <= 255", name: "text_len_ed42946db6")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_9408accba8")
+    @@map("customer_contact")
+  }
+
+  model CustomerContactField {
+    id         String     @id(map: "customer_contact_field_pkey")
+    resourceId String     @map("resource_id")
+    fieldId    String     @map("field_id")
+    fieldValue String    @map("field_value")
+    resource   CustomerContact @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_contact_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "customer_contact_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "customer_contact_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2237660bfc")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_4ee8ab6d5a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_00250722f4")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_c5f9520a25")
+    @@map("customer_contact_field")
+  }
+
+  model CustomerContactFieldBlob {
+    id         String     @id(map: "customer_contact_field_blob_pkey")
+    resourceId String     @map("resource_id")
+    fieldId    String     @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   CustomerContact @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_contact_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "customer_contact_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "customer_contact_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_51d2e55e07")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_9ec8491e61")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_54e8572f96")
+    @@map("customer_contact_field_blob")
+  }
+
+  model CustomerField {
+    id         String  @id(map: "customer_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    resource   Customer     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "customer_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "customer_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_97608a00a8")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_04513c24c5")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_393f88ebe5")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_caf8026272")
+    @@map("customer_field")
+  }
+
+  model CustomerFieldBlob {
+    id         String @id(map: "customer_field_blob_pkey")
+    resourceId String @map("resource_id")
+    fieldId    String @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Customer    @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "customer_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "customer_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_a0898ab87b")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_8773ce2879")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_3960d42077")
+    @@map("customer_field_blob")
+  }
+
+  model CustomerOwner {
+    id             String  @id(map: "customer_owner_pkey")
+    customerId     String  @map("customer_id")
+    owner          String
+    collectionTime BigInt       @map("collection_time")
+    endTime        BigInt       @map("end_time")
+    operator       String
+    reasonId       String? @map("reason_id")
+    customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_owner_customer_id_fkey")
+
+    @@index([customerId], map: "customer_owner_customer_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_819f4c80a5")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_290cce0cd9")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_b78f06d1ab")
+    @@check(expression: "char_length(\"operator\") <= 32", name: "text_len_ef11ac197a")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_c7a95beb08")
+    @@map("customer_owner")
+  }
+
+  model CustomerPoolHiddenField {
+    poolId  String  @map("pool_id")
+    fieldId String  @map("field_id")
+    pool    CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_hidden_field_pool_id_fkey", index: false)
+
+    @@id([poolId, fieldId], map: "customer_pool_hidden_field_pkey")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_c821b6c95c")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_8659cb28cc")
+    @@map("customer_pool_hidden_field")
+  }
+
+  model CustomerPoolPickRule {
+    id               String  @id(map: "customer_pool_pick_rule_pkey")
+    poolId           String  @map("pool_id")
+    limitOnNumber    Boolean      @default(true) @map("limit_on_number")
+    pickNumber       Int?         @map("pick_number")
+    limitPreOwner    Boolean      @default(true) @map("limit_pre_owner")
+    pickIntervalDays Int?         @map("pick_interval_days")
+    limitNew         Boolean      @default(false) @map("limit_new")
+    newPickInterval  Int?         @map("new_pick_interval")
+    createUser       String  @map("create_user")
+    createTime       BigInt       @map("create_time")
+    updateUser       String  @map("update_user")
+    updateTime       BigInt       @map("update_time")
+    pool             CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_pick_rule_pool_id_fkey")
+
+    @@index([poolId], map: "customer_pool_pick_rule_pool_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8e1f4f0cbc")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_c45a299d51")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_a3e28d7fa8")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_e176d77522")
+    @@map("customer_pool_pick_rule")
+  }
+
+  model CustomerPoolRecycleRule {
+    id         String  @id(map: "customer_pool_recycle_rule_pkey")
+    poolId     String  @map("pool_id")
+    operator   String?
+    condition  String?
+    createTime BigInt       @map("create_time")
+    updateTime BigInt       @map("update_time")
+    createUser String  @map("create_user")
+    updateUser String  @map("update_user")
+    pool       CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_recycle_rule_pool_id_fkey")
+
+    @@index([poolId], map: "customer_pool_recycle_rule_pool_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_e344f054fb")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_58367e4ec0")
+    @@check(expression: "char_length(\"operator\") <= 10", name: "text_len_f52029aba9")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_226a9c0c41")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_e4be687f0f")
+    @@map("customer_pool_recycle_rule")
+  }
+
+  model CustomerRelation {
+    id               String @id(map: "customer_relation_pkey")
+    sourceCustomerId String @map("source_customer_id")
+    targetCustomerId String @map("target_customer_id")
+    createTime       BigInt      @map("create_time")
+    sourceCustomer   Customer    @relation(name: "customer_relation_source_customer_id_fkey", fields: [sourceCustomerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_relation_source_customer_id_fkey")
+    targetCustomer   Customer    @relation(name: "customer_relation_target_customer_id_fkey", fields: [targetCustomerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_relation_target_customer_id_fkey")
+
+    @@index([sourceCustomerId], map: "customer_relation_source_customer_id_idx")
+    @@index([sourceCustomerId, targetCustomerId], map: "customer_relation_source_customer_id_target_customer_id_key", unique: true)
+    @@index([targetCustomerId], map: "customer_relation_target_customer_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_eec575839d")
+    @@check(expression: "char_length(\"source_customer_id\") <= 32", name: "text_len_a01e50c009")
+    @@check(expression: "char_length(\"target_customer_id\") <= 32", name: "text_len_7f9b6ed5ba")
+    @@map("customer_relation")
+  }
+
+  model DashboardModule {
+    id             String  @id(map: "dashboard_module_pkey")
+    organizationId String  @map("organization_id")
+    name           String
+    parentId       String  @default("NONE") @map("parent_id")
+    pos            BigInt       @default(0)
+    createTime     BigInt       @map("create_time")
+    updateTime     BigInt       @map("update_time")
+    createUser     String  @map("create_user")
+    updateUser     String  @map("update_user")
+    dashboards     Dashboard[]
+
+    @@index([name], map: "dashboard_module_name_idx")
+    @@index([organizationId], map: "dashboard_module_organization_id_idx")
+    @@index([parentId], map: "dashboard_module_parent_id_idx")
+    @@index([pos], map: "dashboard_module_pos_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_7278e4f8d2")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_2e71bf6957")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_661fbd64b2")
+    @@check(expression: "char_length(\"parent_id\") <= 32", name: "text_len_aa72b16373")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_6fefe797e6")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_1669e3cb79")
+    @@map("dashboard_module")
+  }
+
+  model Dashboard {
+    id                   String           @id(map: "dashboard_pkey")
+    name                 String
+    resourceUrl          String          @map("resource_url")
+    dashboardModuleId    String           @map("dashboard_module_id")
+    organizationId       String           @map("organization_id")
+    pos                  BigInt                @default(0)
+    scopeId              String                @map("scope_id")
+    description          String?
+    createTime           BigInt                @map("create_time")
+    updateTime           BigInt                @map("update_time")
+    createUser           String           @map("create_user")
+    updateUser           String           @map("update_user")
+    dashboardCollections DashboardCollection[]
+    dashboardModule      DashboardModule       @relation(fields: [dashboardModuleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "dashboard_dashboard_module_id_fkey")
+
+    @@index([dashboardModuleId], map: "dashboard_dashboard_module_id_idx")
+    @@index([name], map: "dashboard_name_idx")
+    @@index([organizationId], map: "dashboard_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8cda8befd3")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_326f0ac9ca")
+    @@check(expression: "char_length(\"resource_url\") <= 500", name: "text_len_e7c672edc8")
+    @@check(expression: "char_length(\"dashboard_module_id\") <= 32", name: "text_len_4d12bb78d8")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_a5cf833252")
+    @@check(expression: "char_length(\"description\") <= 1000", name: "text_len_744584be9d")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_85c543a208")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_9a9fecf28d")
+    @@map("dashboard")
+  }
+
+  model DashboardCollection {
+    id          String @id(map: "dashboard_collection_pkey")
+    userId      String @map("user_id")
+    dashboardId String @map("dashboard_id")
+    createTime  BigInt      @map("create_time")
+    updateTime  BigInt      @map("update_time")
+    createUser  String @map("create_user")
+    updateUser  String @map("update_user")
+    dashboard   Dashboard   @relation(fields: [dashboardId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "dashboard_collection_dashboard_id_fkey", index: false)
+
+    @@index([userId, dashboardId], map: "dashboard_collection_user_id_dashboard_id_key", unique: true)
+    @@index([userId], map: "dashboard_collection_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_65c137704e")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_5d587b1c56")
+    @@check(expression: "char_length(\"dashboard_id\") <= 32", name: "text_len_d28598b508")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_34a31205a8")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_d82e7c03c1")
+    @@map("dashboard_collection")
+  }
+
+  model Tenants {
+    id                             String                                 @id(map: "tenants_pkey") @default(cuid(2))
+    name                           String
+    slug                           String
+    status                         pg.enum(TenantStatus)                  @default("ACTIVE")
+    createdAt                      Timestamptz(3)                           @default(now())
+    updatedAt                      Timestamptz(3)
+    enterpriseSyncResource         pg.enum(EnterpriseIntegrationProvider) @default("WECOM")
+    enterpriseSynced               Boolean                                @default(false)
+    departments                    Departments[]
+    enterpriseAiModelRoutes        EnterpriseAiModelRoutes[]
+    enterpriseAiModels             EnterpriseAiModels[]
+    enterpriseGlobalTaskExecutions EnterpriseGlobalTaskExecutions[]
+    enterpriseGlobalTasks          EnterpriseGlobalTasks[]
+    enterpriseIntegrations         EnterpriseIntegrations[]
+    enterpriseTermCategories       EnterpriseTermCategories[]
+    enterpriseTermDiscoveries      EnterpriseTermDiscoveries[]
+    enterpriseTerms                EnterpriseTerms[]
+    externalDepartmentMappings     ExternalDepartmentMappings[]
+    externalIdentities             ExternalIdentities[]
+    externalOauthStates            ExternalOauthStates[]
+    externalUserMappings           ExternalUserMappings[]
+    messageDeliveries              MessageDeliveries[]
+    messageTaskSettings            MessageTaskSettings[]
+    moduleConfigs                  ModuleConfigs[]
+    operationLogSettings           OperationLogSettings?
+    organizationSyncBatches        OrganizationSyncBatches[]
+    roles                          Roles[]
+    subscriptions                  Subscriptions[]
+    topNavigationConfigs           TopNavigationConfigs[]
+    userRoles                      UserRoles[]
+    users                          Users[]
+
+    @@index([slug], map: "tenants_slug_key", unique: true)
+    @@map("tenants")
+  }
+
+  model Departments {
+    id                         String                       @id(map: "departments_pkey") @default(cuid(2))
+    tenantId                   String
+    name                       String
+    parentId                   String?
+    leaderId                   String?
+    sort                       Int                          @default(0)
+    createdAt                  Timestamptz(3)                 @default(now())
+    updatedAt                  Timestamptz(3)
+    externalDepartmentMappings ExternalDepartmentMappings[]
+    users                      Users[]
+    parent                     Departments?                 @relation(name: "departments_parentId_fkey", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "departments_parentId_fkey", index: false)
+    departments                Departments[]                @relation(name: "departments_parentId_fkey")
+    tenant                     Tenants                      @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "departments_tenantId_fkey")
+
+    @@index([tenantId], map: "departments_tenantId_idx")
+    @@index([tenantId, parentId], map: "departments_tenantId_parentId_idx")
+    @@map("departments")
+  }
+
+  model EnterpriseAiModelRoutes {
+    id        String       @id(map: "enterprise_ai_model_routes_pkey") @default(cuid(2))
+    tenantId  String
+    modelId   String
+    sort      Int
+    createdAt Timestamptz(3) @default(now())
+    updatedAt Timestamptz(3)
+    tenant    Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ai_model_routes_tenantId_fkey")
+
+    @@index([tenantId], map: "enterprise_ai_model_routes_tenantId_idx")
+    @@index([tenantId, modelId], map: "enterprise_ai_model_routes_tenantId_modelId_key", unique: true)
+    @@index([tenantId, sort], map: "enterprise_ai_model_routes_tenantId_sort_key", unique: true)
+    @@map("enterprise_ai_model_routes")
+  }
+
+  model EnterpriseAiModels {
+    id                    String                  @id(map: "enterprise_ai_models_pkey") @default(cuid(2))
+    tenantId              String
+    displayName           String
+    modelName             String
+    provider              String
+    apiUrl                String
+    apiKeyCiphertext      String?
+    apiKeyIv              String?
+    apiKeyAuthTag         String?
+    apiKeyKeyVersion      Int?
+    enable                Boolean                 @default(false)
+    temperature           Float                   @default(0.7)
+    maxTokens             Int                     @default(2048)
+    topP                  Float                   @default(0.9)
+    globalDailyLimit      Int?
+    userDailyLimit        Int?
+    createdById           String
+    updatedById           String
+    createdAt             Timestamptz(3)            @default(now())
+    updatedAt             Timestamptz(3)
+    enterpriseGlobalTasks EnterpriseGlobalTasks[]
+    tenant                Tenants                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ai_models_tenantId_fkey", index: false)
+
+    @@index([tenantId, displayName], map: "enterprise_ai_models_tenantId_displayName_key", unique: true)
+    @@index([tenantId, enable], map: "enterprise_ai_models_tenantId_enable_idx")
+    @@map("enterprise_ai_models")
+  }
+
+  model EnterpriseGlobalTasks {
+    id                             String                           @id(map: "enterprise_global_tasks_pkey") @default(cuid(2))
+    tenantId                       String
+    name                           String
+    triggerType                    String                           @default("manual")
+    executionCondition             String                           @default("")
+    executionAction                String                           @default("")
+    confirmationLevel              String                           @default("ask")
+    applicableModelId              String?
+    enable                         Boolean                          @default(true)
+    createdById                    String
+    updatedById                    String
+    createdAt                      Timestamptz(3)                     @default(now())
+    updatedAt                      Timestamptz(3)
+    enterpriseGlobalTaskExecutions EnterpriseGlobalTaskExecutions[]
+    applicableModel                EnterpriseAiModels?              @relation(fields: [applicableModelId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "enterprise_global_tasks_applicableModelId_fkey")
+    tenant                         Tenants                          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_tasks_tenantId_fkey", index: false)
+
+    @@index([applicableModelId], map: "enterprise_global_tasks_applicableModelId_idx")
+    @@index([tenantId, enable], map: "enterprise_global_tasks_tenantId_enable_idx")
+    @@index([tenantId, name], map: "enterprise_global_tasks_tenantId_name_key", unique: true)
+    @@map("enterprise_global_tasks")
+  }
+
+  model EnterpriseGlobalTaskExecutions {
+    id           String                @id(map: "enterprise_global_task_executions_pkey") @default(cuid(2))
+    tenantId     String
+    taskId       String
+    status       String                @default("PENDING")
+    input        Jsonb?
+    output       Jsonb?
+    errorMessage String?
+    startedAt    Timestamptz(3)?
+    finishedAt   Timestamptz(3)?
+    createdAt    Timestamptz(3)          @default(now())
+    updatedAt    Timestamptz(3)
+    task         EnterpriseGlobalTasks @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_task_executions_taskId_fkey", index: false)
+    tenant       Tenants               @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_global_task_executions_tenantId_fkey", index: false)
+
+    @@index([taskId, createdAt], map: "enterprise_global_task_executions_taskId_createdAt_idx")
+    @@index([tenantId, createdAt], map: "enterprise_global_task_executions_tenantId_createdAt_idx")
+    @@map("enterprise_global_task_executions")
+  }
+
+  model Roles {
+    id                     String                   @id(map: "roles_pkey") @default(cuid(2))
+    tenantId               String
+    name                   String
+    permissions            String[]?                @noCheck(elementNotNull)
+    dataScope              pg.enum(DataScope)       @default("SELF")
+    scopeDeptIds           String[]?                @noCheck(elementNotNull)
+    isSystem               Boolean                  @default(false)
+    remark                 String?
+    createdAt              Timestamptz(3)             @default(now())
+    updatedAt              Timestamptz(3)
+    enterpriseIntegrations EnterpriseIntegrations[]
+    userRoles              UserRoles[]
+    tenant                 Tenants                  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "roles_tenantId_fkey")
+
+    @@index([tenantId], map: "roles_tenantId_idx")
+    @@index([tenantId, name], map: "roles_tenantId_name_key", unique: true)
+    @@map("roles")
+  }
+
+  model EnterpriseIntegrations {
+    id                      String                                 @id(map: "enterprise_integrations_pkey") @default(cuid(2))
+    tenantId                String
+    provider                pg.enum(EnterpriseIntegrationProvider)
+    corpId                  String
+    agentId                 String
+    secretCiphertext        String
+    secretIv                String
+    secretAuthTag           String
+    secretKeyVersion        Int                                    @default(1)
+    credentialVersion       Int                                    @default(1)
+    syncEnabled             Boolean                                @default(false)
+    syncDefaultRoleId       String?
+    lastTestSucceeded       Boolean?
+    lastTestMessage         String?
+    lastTestedAt            Timestamptz(3)?
+    lastSyncStatus          pg.enum(OrganizationSyncStatus)?
+    lastSyncMessage         String?
+    lastSyncedAt            Timestamptz(3)?
+    createdById             String
+    updatedById             String
+    createdAt               Timestamptz(3)                           @default(now())
+    updatedAt               Timestamptz(3)
+    clientId                String?
+    redirectUrl             String?
+    externalIdentities      ExternalIdentities[]
+    externalOauthStates     ExternalOauthStates[]
+    messageDeliveries       MessageDeliveries[]
+    organizationSyncBatches OrganizationSyncBatches[]
+    syncDefaultRole         Roles?                                 @relation(fields: [syncDefaultRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "enterprise_integrations_syncDefaultRoleId_fkey")
+    tenant                  Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_integrations_tenantId_fkey")
+
+    @@index([syncDefaultRoleId], map: "enterprise_integrations_syncDefaultRoleId_idx")
+    @@index([tenantId], map: "enterprise_integrations_tenantId_idx")
+    @@index([tenantId, provider], map: "enterprise_integrations_tenantId_provider_key", unique: true)
+    @@map("enterprise_integrations")
+  }
+
+  model EnterpriseMailSettings {
+    id                 String        @id(map: "enterprise_mail_settings_pkey") @default(cuid(2))
+    tenantId           String
+    host               String
+    port               Int
+    account            String
+    passwordCiphertext String?
+    passwordIv         String?
+    passwordAuthTag    String?
+    passwordKeyVersion Int?
+    fromAddress        String        @default("")
+    recipient          String        @default("")
+    ssl                Boolean       @default(false)
+    tls                Boolean       @default(false)
+    lastTestSucceeded  Boolean?
+    lastTestMessage    String?
+    lastTestedAt       Timestamptz(3)?
+    createdAt          Timestamptz(3)  @default(now())
+    updatedAt          Timestamptz(3)
+    tenant             Tenants       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_mail_settings_tenantId_fkey")
+
+    @@index([tenantId], map: "enterprise_mail_settings_tenantId_key", unique: true)
+    @@map("enterprise_mail_settings")
+  }
+
+  model EnterpriseTermCategories {
+    id              String            @id(map: "enterprise_term_categories_pkey") @default(cuid(2))
+    tenantId        String
+    name            String
+    sort            Int               @default(0)
+    createdAt       Timestamptz(3)      @default(now())
+    updatedAt       Timestamptz(3)
+    enterpriseTerms EnterpriseTerms[]
+    tenant          Tenants           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_term_categories_tenantId_fkey", index: false)
+
+    @@index([tenantId, name], map: "enterprise_term_categories_tenantId_name_key", unique: true)
+    @@index([tenantId, sort], map: "enterprise_term_categories_tenantId_sort_idx")
+    @@map("enterprise_term_categories")
+  }
+
+  model EnterpriseTermDiscoveries {
+    id            String       @id(map: "enterprise_term_discoveries_pkey") @default(cuid(2))
+    tenantId      String
+    discovered    String
+    source        String       @default("")
+    context       String       @default("")
+    status        String       @default("PENDING")
+    adoptedTermId String?
+    createdAt     Timestamptz(3) @default(now())
+    updatedAt     Timestamptz(3)
+    tenant        Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_term_discoveries_tenantId_fkey", index: false)
+
+    @@index([tenantId, status], map: "enterprise_term_discoveries_tenantId_status_idx")
+    @@map("enterprise_term_discoveries")
+  }
+
+  model EnterpriseTerms {
+    id              String                   @id(map: "enterprise_terms_pkey") @default(cuid(2))
+    tenantId        String
+    categoryId      String
+    standardTerm    String
+    alsoCalled      String                   @default("")
+    avoidThese      String                   @default("")
+    useCase         String                   @default("")
+    systemReference String                   @default("")
+    enable          Boolean                  @default(true)
+    createdById     String
+    updatedById     String
+    createdAt       Timestamptz(3)             @default(now())
+    updatedAt       Timestamptz(3)
+    category        EnterpriseTermCategories @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_terms_categoryId_fkey")
+    tenant          Tenants                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_terms_tenantId_fkey", index: false)
+
+    @@index([categoryId], map: "enterprise_terms_categoryId_idx")
+    @@index([tenantId, categoryId, standardTerm], map: "enterprise_terms_tenantId_categoryId_standardTerm_key", unique: true)
+    @@index([tenantId, enable], map: "enterprise_terms_tenantId_enable_idx")
+    @@map("enterprise_terms")
+  }
+
+  model EnterpriseUiSettings {
+    id                       String       @id(map: "enterprise_ui_settings_pkey") @default(cuid(2))
+    tenantId                 String
+    theme                    String       @default("default")
+    customTheme              String       @default("#008d91")
+    style                    String       @default("default")
+    customStyle              String       @default("#f9fbfb")
+    title                    String       @default("MicroMatrix CRM")
+    slogan                   String       @default("让客户关系更清晰，让销售协作更高效")
+    helpDoc                  String       @default("")
+    iconAttachmentId         String?
+    loginLogoAttachmentId    String?
+    loginImageAttachmentId   String?
+    platformLogoAttachmentId String?
+    createdAt                Timestamptz(3) @default(now())
+    updatedAt                Timestamptz(3)
+    tenant                   Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ui_settings_tenantId_fkey")
+
+    @@index([tenantId], map: "enterprise_ui_settings_tenantId_key", unique: true)
+    @@map("enterprise_ui_settings")
+  }
+
+  model ExportTasks {
+    id           String        @id(map: "export_tasks_pkey") @default(cuid(2))
+    tenantId     String
+    userId       String
+    module       String
+    fileName     String
+    filePath     String?
+    status       String        @default("PENDING")
+    rowCount     Int           @default(0)
+    fileSize     Int?
+    errorMessage String?
+    payload      Jsonb?
+    startedAt    Timestamptz(3)?
+    attempts     Int           @default(0)
+    completedAt  Timestamptz(3)?
+    expiresAt    Timestamptz(3)
+    createdAt    Timestamptz(3)  @default(now())
+
+    @@index([expiresAt], map: "export_tasks_expiresAt_idx")
+    @@index([tenantId, userId, createdAt], map: "export_tasks_tenantId_userId_createdAt_idx")
+    @@map("export_tasks")
+  }
+
+  model OrganizationSyncBatches {
+    id                         String                                 @id(map: "organization_sync_batches_pkey") @default(cuid(2))
+    tenantId                   String
+    integrationId              String
+    provider                   pg.enum(EnterpriseIntegrationProvider)
+    status                     pg.enum(OrganizationSyncStatus)
+    targetDepartmentId         String
+    credentialVersion          Int
+    counts                     Jsonb
+    errorCode                  String?
+    errorMessage               String?
+    createdById                String
+    appliedById                String?
+    fetchStartedAt             Timestamptz(3)?
+    previewedAt                Timestamptz(3)?
+    applyStartedAt             Timestamptz(3)?
+    finishedAt                 Timestamptz(3)?
+    createdAt                  Timestamptz(3)                           @default(now())
+    updatedAt                  Timestamptz(3)
+    externalDepartmentMappings ExternalDepartmentMappings[]
+    externalUserMappings       ExternalUserMappings[]
+    organizationSyncItems      OrganizationSyncItems[]
+    integration                EnterpriseIntegrations                 @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_batches_integrationId_fkey", index: false)
+    tenant                     Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_batches_tenantId_fkey", index: false)
+
+    @@index([tenantId, provider], map: "organization_sync_batches_active_key", where: "(status = ANY (ARRAY['FETCHING'::\"OrganizationSyncStatus\", 'APPLYING'::\"OrganizationSyncStatus\"]))", unique: true)
+    @@index([integrationId, status], map: "organization_sync_batches_integrationId_status_idx")
+    @@index([tenantId, provider, createdAt], map: "organization_sync_batches_tenantId_provider_createdAt_idx")
+    @@index([tenantId, targetDepartmentId, createdAt], map: "organization_sync_batches_tenantId_targetDepartmentId_creat_idx")
+    @@map("organization_sync_batches")
+  }
+
+  model ExternalDepartmentMappings {
+    id              String                                 @id(map: "external_department_mappings_pkey") @default(cuid(2))
+    tenantId        String
+    provider        pg.enum(EnterpriseIntegrationProvider)
+    externalId      String
+    externalKey     String
+    departmentId    String
+    active          Boolean                                @default(true)
+    lastSeenBatchId String?
+    createdAt       Timestamptz(3)                           @default(now())
+    updatedAt       Timestamptz(3)
+    department      Departments                            @relation(fields: [departmentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_department_mappings_departmentId_fkey", index: false)
+    lastSeenBatch   OrganizationSyncBatches?               @relation(fields: [lastSeenBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "external_department_mappings_lastSeenBatchId_fkey")
+    tenant          Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_department_mappings_tenantId_fkey", index: false)
+
+    @@index([lastSeenBatchId], map: "external_department_mappings_lastSeenBatchId_idx")
+    @@index([tenantId, provider, active], map: "external_department_mappings_tenantId_provider_active_idx")
+    @@index([tenantId, provider, departmentId], map: "external_department_mappings_tenantId_provider_departmentId_key", unique: true)
+    @@index([tenantId, provider, externalKey], map: "external_department_mappings_tenantId_provider_externalKey_key", unique: true)
+    @@map("external_department_mappings")
+  }
+
+  model Users {
+    id                   String                 @id(map: "users_pkey") @default(cuid(2))
+    tenantId             String
+    email                String?
+    passwordHash         String
+    name                 String
+    status               pg.enum(UserStatus)    @default("ACTIVE")
+    deptId               String?
+    leaderId             String?
+    position             String?
+    phone                String?
+    gender               Boolean                @default(false)
+    passwordLoginEnabled Boolean                @default(true)
+    defaultPwd           Boolean                @default(false) @map("default_pwd")
+    authVersion          Int                    @default(0) @map("auth_version")
+    createdAt            Timestamptz(3)           @default(now())
+    updatedAt            Timestamptz(3)
+    language             String                 @default("zh-CN")
+    externalIdentities   ExternalIdentities[]
+    externalUserMappings ExternalUserMappings[]
+    messageDeliveries    MessageDeliveries[]
+    userExtensions       UserExtensions?
+    userKeys             UserKey[]
+    userRoles            UserRoles[]
+    dept                 Departments?           @relation(fields: [deptId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_deptId_fkey", index: false)
+    tenant               Tenants                @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "users_tenantId_fkey")
+
+    @@index([email], map: "users_email_idx")
+    @@index([tenantId, deptId], map: "users_tenantId_deptId_idx")
+    @@index([tenantId], map: "users_tenantId_idx")
+    @@map("users")
+  }
+
+  model ExternalUserMappings {
+    id                 String                                 @id(map: "external_user_mappings_pkey") @default(cuid(2))
+    tenantId           String
+    provider           pg.enum(EnterpriseIntegrationProvider)
+    externalId         String
+    externalKey        String
+    userId             String
+    active             Boolean                                @default(true)
+    lastSeenBatchId    String?
+    createdAt          Timestamptz(3)                           @default(now())
+    updatedAt          Timestamptz(3)
+    lastSeenBatch      OrganizationSyncBatches?               @relation(fields: [lastSeenBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "external_user_mappings_lastSeenBatchId_fkey")
+    tenant             Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_user_mappings_tenantId_fkey", index: false)
+    user               Users                                  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_user_mappings_userId_fkey", index: false)
+
+    @@index([lastSeenBatchId], map: "external_user_mappings_lastSeenBatchId_idx")
+    @@index([tenantId, provider, active], map: "external_user_mappings_tenantId_provider_active_idx")
+    @@index([tenantId, provider, externalKey], map: "external_user_mappings_tenantId_provider_externalKey_key", unique: true)
+    @@index([tenantId, provider, userId], map: "external_user_mappings_tenantId_provider_userId_key", unique: true)
+    @@map("external_user_mappings")
+  }
+
+  model ExternalIdentities {
+    id              String                                 @id(map: "external_identities_pkey") @default(cuid(2))
+    tenantId        String
+    integrationId   String
+    mappingId       String
+    provider        pg.enum(EnterpriseIntegrationProvider)
+    externalSubject String
+    userId          String
+    status          pg.enum(ExternalIdentityStatus)        @default("ACTIVE")
+    bindingSource   String                                 @default("LOGIN")
+    boundById       String?
+    boundAt         Timestamptz(3)                           @default(now())
+    revokedById     String?
+    revokedAt       Timestamptz(3)?
+    lastLoginAt     Timestamptz(3)?
+    createdAt       Timestamptz(3)                           @default(now())
+    updatedAt       Timestamptz(3)
+    integration     EnterpriseIntegrations                 @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_integrationId_fkey")
+    mapping         ExternalUserMappings                   @relation(fields: [mappingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_mappingId_fkey")
+    tenant          Tenants                                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_tenantId_fkey", index: false)
+    user            Users                                  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_identities_userId_fkey", index: false)
+
+    @@index([integrationId], map: "external_identities_integrationId_idx")
+    @@index([mappingId], map: "external_identities_mappingId_key", unique: true)
+    @@index([tenantId, provider, externalSubject], map: "external_identities_tenantId_provider_externalSubject_key", unique: true)
+    @@index([tenantId, provider, status], map: "external_identities_tenantId_provider_status_idx")
+    @@index([tenantId, provider, userId], map: "external_identities_tenantId_provider_userId_key", unique: true)
+    @@map("external_identities")
+  }
+
+  model ExternalOauthStates {
+    id               String                     @id(map: "external_oauth_states_pkey") @default(cuid(2))
+    tenantId         String
+    integrationId    String
+    flow             pg.enum(ExternalOAuthFlow)
+    stateHash        String
+    browserNonceHash String
+    returnPath       String
+    expiresAt        Timestamptz(3)
+    consumedAt       Timestamptz(3)?
+    createdAt        Timestamptz(3)               @default(now())
+    integration      EnterpriseIntegrations     @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_oauth_states_integrationId_fkey", index: false)
+    tenant           Tenants                    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "external_oauth_states_tenantId_fkey", index: false)
+
+    @@index([expiresAt, consumedAt], map: "external_oauth_states_expiresAt_consumedAt_idx")
+    @@index([stateHash], map: "external_oauth_states_stateHash_key", unique: true)
+    @@index([tenantId, flow, expiresAt], map: "external_oauth_states_tenantId_flow_expiresAt_idx")
+    @@map("external_oauth_states")
+  }
+
+  model FollowUpPlans {
+    id                     String                      @id(map: "follow_up_plans_pkey") @default(cuid(2))
+    tenantId               String
+    targetType             String
+    targetId               String
+    contactId              String?
+    content                String
+    method                 String?
+    estimatedAt            Timestamptz(3)?
+    status                 pg.enum(FollowUpPlanStatus) @default("PREPARED")
+    converted              Boolean                     @default(false)
+    convertedRecordId      String?
+    ownerId                String
+    deptId                 String?
+    createdById            String
+    dueNotifiedAt          Timestamptz(3)?
+    commentCount           Int                         @default(0)
+    customData             Jsonb?
+    createdAt              Timestamptz(3)                @default(now())
+    updatedAt              Timestamptz(3)
+    followUpPlanComments   FollowUpPlanComment[]
+    followUpPlanFields     FollowUpPlanField[]
+    followUpPlanFieldBlobs FollowUpPlanFieldBlob[]
+
+    @@index([tenantId, estimatedAt, status], map: "follow_up_plans_tenantId_estimatedAt_status_idx")
+    @@index([tenantId, ownerId, status], map: "follow_up_plans_tenantId_ownerId_status_idx")
+    @@index([tenantId, targetType, targetId], map: "follow_up_plans_tenantId_targetType_targetId_idx")
+    @@map("follow_up_plans")
+  }
+
+  model FollowUpPlanComment {
+    id                          String                  @id(map: "follow_up_plan_comment_pkey")
+    resourceId                  String                       @map("resource_id")
+    parentId                    String?                 @map("parent_id")
+    replyToUserId               String?                 @map("reply_to_user_id")
+    content                     String
+    organizationId              String                  @map("organization_id")
+    createUser                  String                  @map("create_user")
+    updateUser                  String                  @map("update_user")
+    createTime                  Timestamptz(3)                 @default(now()) @map("create_time")
+    updateTime                  Timestamptz(3)                 @map("update_time")
+    followUpPlanCommentMentions FollowUpPlanCommentMention[]
+    parent                      FollowUpPlanComment?         @relation(name: "follow_up_plan_comment_parent_id_fkey", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_parent_id_fkey")
+    followUpPlanComments        FollowUpPlanComment[]        @relation(name: "follow_up_plan_comment_parent_id_fkey")
+    resource                    FollowUpPlans                @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_resource_id_fkey", index: false)
+
+    @@index([organizationId, resourceId, parentId, createTime], map: "follow_plan_comment_page_idx")
+    @@index([parentId], map: "follow_up_plan_comment_parent_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ec4cf66f8e")
+    @@check(expression: "char_length(\"parent_id\") <= 32", name: "text_len_0d615a219b")
+    @@check(expression: "char_length(\"reply_to_user_id\") <= 32", name: "text_len_b9f00240c9")
+    @@check(expression: "char_length(\"content\") <= 3000", name: "text_len_6070f1b64d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_e45eb10af1")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_0877041f2d")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_7e3ce45786")
+    @@map("follow_up_plan_comment")
+  }
+
+  model FollowUpPlanCommentMention {
+    id        String         @id(map: "follow_up_plan_comment_mention_pkey")
+    commentId String         @map("comment_id")
+    userId    String         @map("user_id")
+    comment   FollowUpPlanComment @relation(fields: [commentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_comment_mention_comment_id_fkey")
+
+    @@index([commentId], map: "follow_up_plan_comment_mention_comment_id_idx")
+    @@index([commentId, userId], map: "follow_up_plan_comment_mention_comment_id_user_id_key", unique: true)
+    @@index([userId], map: "follow_up_plan_comment_mention_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_10921ebfee")
+    @@check(expression: "char_length(\"comment_id\") <= 32", name: "text_len_7439c4bfe0")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_1c71ffcaa8")
+    @@map("follow_up_plan_comment_mention")
+  }
+
+  model FollowUpPlanField {
+    id         String   @id(map: "follow_up_plan_field_pkey")
+    resourceId String        @map("resource_id")
+    fieldId    String   @map("field_id")
+    fieldValue String  @map("field_value")
+    resource   FollowUpPlans @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "follow_up_plan_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "follow_up_plan_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ef5f9fe26a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_70a1def1ae")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_dfa876535d")
+    @@map("follow_up_plan_field")
+  }
+
+  model FollowUpPlanFieldBlob {
+    id         String   @id(map: "follow_up_plan_field_blob_pkey")
+    resourceId String        @map("resource_id")
+    fieldId    String   @map("field_id")
+    fieldValue String        @map("field_value")
+    resource   FollowUpPlans @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_plan_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "follow_up_plan_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "follow_up_plan_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_0d37f37cce")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_7344f45836")
+    @@map("follow_up_plan_field_blob")
+  }
+
+  model FollowUpRecords {
+    id                       String                    @id(map: "follow_up_records_pkey") @default(cuid(2))
+    tenantId                 String
+    targetType               String
+    targetId                 String
+    contactId                String?
+    _type                    String?                   @map("type")
+    content                  String
+    followedAt               Timestamptz(3)?
+    ownerId                  String
+    ownerName                String
+    deptId                   String?
+    createdById              String
+    commentCount             Int                       @default(0)
+    createdAt                Timestamptz(3)              @default(now())
+    updatedAt                Timestamptz(3)
+    followUpRecordComments   FollowUpRecordComment[]
+    followUpRecordFields     FollowUpRecordField[]
+    followUpRecordFieldBlobs FollowUpRecordFieldBlob[]
+
+    @@index([tenantId, ownerId, followedAt], map: "follow_up_records_tenantId_ownerId_followedAt_idx")
+    @@index([tenantId, targetType, targetId], map: "follow_up_records_tenantId_targetType_targetId_idx")
+    @@map("follow_up_records")
+  }
+
+  model FollowUpRecordComment {
+    id                            String                    @id(map: "follow_up_record_comment_pkey")
+    resourceId                    String                         @map("resource_id")
+    parentId                      String?                   @map("parent_id")
+    replyToUserId                 String?                   @map("reply_to_user_id")
+    content                       String
+    organizationId                String                    @map("organization_id")
+    createUser                    String                    @map("create_user")
+    updateUser                    String                    @map("update_user")
+    createTime                    Timestamptz(3)                   @default(now()) @map("create_time")
+    updateTime                    Timestamptz(3)                   @map("update_time")
+    followUpRecordCommentMentions FollowUpRecordCommentMention[]
+    parent                        FollowUpRecordComment?         @relation(name: "follow_up_record_comment_parent_id_fkey", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_parent_id_fkey")
+    followUpRecordComments        FollowUpRecordComment[]        @relation(name: "follow_up_record_comment_parent_id_fkey")
+    resource                      FollowUpRecords                @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_resource_id_fkey", index: false)
+
+    @@index([organizationId, resourceId, parentId, createTime], map: "follow_record_comment_page_idx")
+    @@index([parentId], map: "follow_up_record_comment_parent_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_950fdc82da")
+    @@check(expression: "char_length(\"parent_id\") <= 32", name: "text_len_84c895a804")
+    @@check(expression: "char_length(\"reply_to_user_id\") <= 32", name: "text_len_d3473ec9cd")
+    @@check(expression: "char_length(\"content\") <= 3000", name: "text_len_aa5012c0ec")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_1a708d4f84")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_946797fe57")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_904bf1225c")
+    @@map("follow_up_record_comment")
+  }
+
+  model FollowUpRecordCommentMention {
+    id        String           @id(map: "follow_up_record_comment_mention_pkey")
+    commentId String           @map("comment_id")
+    userId    String           @map("user_id")
+    comment   FollowUpRecordComment @relation(fields: [commentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_comment_mention_comment_id_fkey")
+
+    @@index([commentId], map: "follow_up_record_comment_mention_comment_id_idx")
+    @@index([commentId, userId], map: "follow_up_record_comment_mention_comment_id_user_id_key", unique: true)
+    @@index([userId], map: "follow_up_record_comment_mention_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_db822e9027")
+    @@check(expression: "char_length(\"comment_id\") <= 32", name: "text_len_96f2ca837a")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_5e06a4cdc9")
+    @@map("follow_up_record_comment_mention")
+  }
+
+  model FollowUpRecordField {
+    id         String     @id(map: "follow_up_record_field_pkey")
+    resourceId String          @map("resource_id")
+    fieldId    String     @map("field_id")
+    fieldValue String    @map("field_value")
+    resource   FollowUpRecords @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "follow_up_record_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "follow_up_record_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_97e7e6742a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_7a908f8024")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_ab079fafa7")
+    @@map("follow_up_record_field")
+  }
+
+  model FollowUpRecordFieldBlob {
+    id         String     @id(map: "follow_up_record_field_blob_pkey")
+    resourceId String          @map("resource_id")
+    fieldId    String     @map("field_id")
+    fieldValue String          @map("field_value")
+    resource   FollowUpRecords @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "follow_up_record_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "follow_up_record_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "follow_up_record_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_eadaad40bd")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_14f0f2cee8")
+    @@map("follow_up_record_field_blob")
+  }
+
+  model LoginLogs {
+    id                 String       @id(map: "login_logs_pkey") @default(cuid(2))
+    tenantId           String?
+    userId             String?
+    email              String
+    authType           String       @default("PASSWORD")
+    externalSubject    String?
+    externalIdentityId String?
+    ip                 String?
+    userAgent          String?
+    success            Boolean
+    message            String?
+    createdAt          Timestamptz(3) @default(now())
+
+    @@index([tenantId, authType, createdAt], map: "login_logs_tenantId_authType_createdAt_idx")
+    @@index([tenantId, createdAt], map: "login_logs_tenantId_createdAt_idx")
+    @@map("login_logs")
+  }
+
+  model MessageDeliveries {
+    id                String                          @id(map: "message_deliveries_pkey") @default(cuid(2))
+    tenantId          String
+    integrationId     String?
+    channel           pg.enum(MessageDeliveryChannel)
+    event             String
+    userId            String?
+    externalSubject   String?
+    title             String
+    content           String?
+    link              String?
+    status            pg.enum(MessageDeliveryStatus)  @default("PENDING")
+    attempts          Int                             @default(0)
+    maxAttempts       Int                             @default(3)
+    nextAttemptAt     Timestamptz(3)?
+    providerMessageId String?
+    errorCode         String?
+    errorMessage      String?
+    sentAt            Timestamptz(3)?
+    createdAt         Timestamptz(3)                    @default(now())
+    updatedAt         Timestamptz(3)
+    integration       EnterpriseIntegrations?         @relation(fields: [integrationId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "message_deliveries_integrationId_fkey", index: false)
+    tenant            Tenants                         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "message_deliveries_tenantId_fkey", index: false)
+    user              Users?                          @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "message_deliveries_userId_fkey", index: false)
+
+    @@index([tenantId, event, createdAt], map: "message_deliveries_tenantId_event_createdAt_idx")
+    @@index([tenantId, status, nextAttemptAt], map: "message_deliveries_tenantId_status_nextAttemptAt_idx")
+    @@index([tenantId, userId, createdAt], map: "message_deliveries_tenantId_userId_createdAt_idx")
+    @@map("message_deliveries")
+  }
+
+  model MessageTaskSettings {
+    id              String       @id(map: "message_task_settings_pkey") @default(cuid(2))
+    tenantId        String
+    module          String
+    event           String
+    systemEnabled   Boolean      @default(true)
+    emailEnabled    Boolean      @default(false)
+    weComEnabled    Boolean      @default(false)
+    config          Jsonb?
+    createdAt       Timestamptz(3) @default(now())
+    updatedAt       Timestamptz(3)
+    dingTalkEnabled Boolean      @default(false)
+    larkEnabled     Boolean      @default(false)
+    tenant          Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "message_task_settings_tenantId_fkey", index: false)
+
+    @@index([tenantId, module, event], map: "message_task_settings_tenantId_module_event_key", unique: true)
+    @@index([tenantId, module], map: "message_task_settings_tenantId_module_idx")
+    @@map("message_task_settings")
+  }
+
+  model ModuleConfigs {
+    id       String  @id(map: "module_configs_pkey") @default(cuid(2))
+    tenantId String
+    key      String
+    enabled  Boolean @default(true)
+    sort     Int
+    tenant   Tenants @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "module_configs_tenantId_fkey", index: false)
+
+    @@index([tenantId, key], map: "module_configs_tenantId_key_key", unique: true)
+    @@index([tenantId, sort], map: "module_configs_tenantId_sort_idx")
+    @@map("module_configs")
+  }
+
+  model Notifications {
+    id         String        @id(map: "notifications_pkey") @default(cuid(2))
+    tenantId   String
+    userId     String
+    _type      String        @map("type")
+    title      String
+    content    String?
+    link       String?
+    readAt     Timestamptz(3)?
+    createdAt  Timestamptz(3)  @default(now())
+    linkLabel  String?
+    sourceId   String?
+    sourceType String?
+
+    @@index([tenantId, sourceType, sourceId], map: "notifications_tenantId_sourceType_sourceId_idx")
+    @@index([tenantId, userId, readAt], map: "notifications_tenantId_userId_readAt_idx")
+    @@index([tenantId, userId, sourceType, sourceId], map: "notifications_tenantId_userId_sourceType_sourceId_key", unique: true)
+    @@map("notifications")
+  }
+
+  model OperationLogs {
+    id                String             @id(map: "operation_logs_pkey") @default(cuid(2))
+    tenantId          String
+    userId            String?
+    userName          String?
+    module            String
+    action            String
+    targetId          String?
+    targetName        String?
+    ip                String?
+    createdAt         Timestamptz(3)       @default(now())
+    operationLogBlobs OperationLogBlobs?
+
+    @@index([createdAt], map: "operation_logs_createdAt_idx")
+    @@index([tenantId, createdAt], map: "operation_logs_tenantId_createdAt_idx")
+    @@index([tenantId, module], map: "operation_logs_tenantId_module_idx")
+    @@map("operation_logs")
+  }
+
+  model OperationLogBlobs {
+    operationLogId String        @id(map: "operation_log_blobs_pkey")
+    detail         Jsonb
+    operationLog   OperationLogs @relation(fields: [operationLogId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "operation_log_blobs_operationLogId_fkey")
+
+    @@map("operation_log_blobs")
+  }
+
+  model OperationLogSettings {
+    tenantId           String                              @id(map: "operation_log_settings_pkey")
+    retentionDays      Int?
+    lastCleanupAt      Timestamptz(3)?
+    lastCleanupDeleted Int                                 @default(0)
+    lastCleanupSource  pg.enum(OperationLogCleanupSource)?
+    updatedAt          Timestamptz(3)
+    tenant             Tenants                             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "operation_log_settings_tenantId_fkey")
+
+    @@map("operation_log_settings")
+  }
+
+  model OpportunityStageConfig {
+    id             String   @id(map: "opportunity_stage_config_pkey")
+    name           String
+    _type          String   @map("type")
+    rate           String
+    afootRollBack  Boolean       @default(false) @map("afoot_roll_back")
+    endRollBack    Boolean       @default(false) @map("end_roll_back")
+    pos            BigInt
+    organizationId String   @map("organization_id")
+    createTime     BigInt        @map("create_time")
+    updateTime     BigInt        @map("update_time")
+    createUser     String   @map("create_user")
+    updateUser     String   @map("update_user")
+    opportunities  Opportunity[]
+
+    @@index([organizationId], map: "opportunity_stage_config_organization_id_idx")
+    @@index([organizationId, pos], map: "opportunity_stage_config_organization_id_pos_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5b2b3efd29")
+    @@check(expression: "char_length(\"name\") <= 16", name: "text_len_48d9074b29")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_abe0591377")
+    @@check(expression: "char_length(\"rate\") <= 10", name: "text_len_eaea764b98")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_341230bc69")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_defcf24112")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_91ed7eb9f3")
+    @@map("opportunity_stage_config")
+  }
+
+  model Opportunity {
+    id                     String            @id(map: "opportunity_pkey")
+    customerId             String?           @map("customer_id")
+    name                   String
+    amount                 Numeric(20, 10)?
+    possible               Numeric(20, 10)?
+    products               String?
+    organizationId         String            @map("organization_id")
+    lastStage              String?           @map("last_stage")
+    stage                  String
+    contactId              String?           @map("contact_id")
+    owner                  String
+    updateUser             String            @map("update_user")
+    createTime             BigInt                 @map("create_time")
+    updateTime             BigInt                 @map("update_time")
+    createUser             String            @map("create_user")
+    follower               String?
+    followTime             BigInt?                @map("follow_time")
+    expectedEndTime        BigInt?                @map("expected_end_time")
+    actualEndTime          BigInt?                @map("actual_end_time")
+    failureReason          String?           @map("failure_reason")
+    pos                    BigInt?
+    opportunityFields      OpportunityField[]
+    opportunityFieldBlobs  OpportunityFieldBlob[]
+    opportunityQuotations  OpportunityQuotation[]
+    contact                CustomerContact?       @relation(fields: [contactId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "opportunity_contact_id_fkey", index: false)
+    customer               Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "opportunity_customer_id_fkey")
+    opportunityStageConfig OpportunityStageConfig @relation(fields: [stage], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "opportunity_stage_fkey")
+
+    @@index([customerId], map: "opportunity_customer_id_idx")
+    @@index([followTime], map: "opportunity_follow_time_idx")
+    @@index([follower], map: "opportunity_follower_idx")
+    @@index([organizationId], map: "opportunity_organization_id_idx")
+    @@index([owner], map: "opportunity_owner_idx")
+    @@index([stage], map: "opportunity_stage_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ec449b1762")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_3b2aac4e23")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_622820f915")
+    @@check(expression: "char_length(\"products\") <= 1000", name: "text_len_b47f4f693d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_d3ee6d3659")
+    @@check(expression: "char_length(\"last_stage\") <= 32", name: "text_len_3a8d46a44c")
+    @@check(expression: "char_length(\"stage\") <= 32", name: "text_len_551b7054c2")
+    @@check(expression: "char_length(\"contact_id\") <= 32", name: "text_len_d9736c3478")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_84a3997faf")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_34ff7ed1a5")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_3c8fda6f6a")
+    @@check(expression: "char_length(\"follower\") <= 32", name: "text_len_f396842bff")
+    @@check(expression: "char_length(\"failure_reason\") <= 50", name: "text_len_63f564f968")
+    @@map("opportunity")
+  }
+
+  model OpportunityField {
+    id         String  @id(map: "opportunity_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    resource   Opportunity  @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "opportunity_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "opportunity_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_613c27c1ca")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_de3bb3d551")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_80fa4ffac4")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_818d61db28")
+    @@map("opportunity_field")
+  }
+
+  model OpportunityFieldBlob {
+    id         String @id(map: "opportunity_field_blob_pkey")
+    resourceId String @map("resource_id")
+    fieldId    String @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Opportunity @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "opportunity_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "opportunity_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_22dc803e87")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_859068ac0d")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_ae29841842")
+    @@map("opportunity_field_blob")
+  }
+
+  model OpportunityQuotation {
+    id                             String                     @id(map: "opportunity_quotation_pkey")
+    name                           String
+    opportunityId                  String                     @map("opportunity_id")
+    untilTime                      BigInt                          @map("until_time")
+    amount                         Numeric(14, 2)
+    approvalStatus                 String                     @default("NONE") @map("approval_status")
+    invalid                        Boolean                         @default(false)
+    organizationId                 String                     @map("organization_id")
+    createTime                     BigInt                          @map("create_time")
+    updateTime                     BigInt                          @map("update_time")
+    createUser                     String                     @map("create_user")
+    updateUser                     String                     @map("update_user")
+    approved                       Boolean                         @default(false)
+    opportunityQuotationFields     OpportunityQuotationField[]
+    opportunityQuotationFieldBlobs OpportunityQuotationFieldBlob[]
+    opportunityQuotationSnapshots  OpportunityQuotationSnapshot[]
+    opportunity                    Opportunity                     @relation(fields: [opportunityId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "opportunity_quotation_opportunity_id_fkey")
+
+    @@index([approvalStatus], map: "opportunity_quotation_approval_status_idx")
+    @@index([createUser], map: "opportunity_quotation_create_user_idx")
+    @@index([opportunityId], map: "opportunity_quotation_opportunity_id_idx")
+    @@index([organizationId], map: "opportunity_quotation_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_dd6a73b1c2")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_24e2248239")
+    @@check(expression: "char_length(\"opportunity_id\") <= 32", name: "text_len_05c1a9898f")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_6e903123f7")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_c25e0a61f9")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_f5a7a74355")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_74c8118038")
+    @@map("opportunity_quotation")
+  }
+
+  model OpportunityQuotationField {
+    id         String          @id(map: "opportunity_quotation_field_pkey")
+    resourceId String          @map("resource_id")
+    fieldId    String          @map("field_id")
+    fieldValue String         @map("field_value")
+    refSubId   String?         @map("ref_sub_id")
+    rowId      String?         @map("row_id")
+    bizId      String?         @map("biz_id")
+    resource   OpportunityQuotation @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_field_resource_id_fkey")
+
+    @@index([refSubId], map: "opportunity_quotation_field_ref_sub_id_idx")
+    @@index([resourceId], map: "opportunity_quotation_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8f0a30dacd")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_84e21673f1")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_20b1188e43")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_5eeb95236b")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_fd32dcd147")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_e20ad687d9")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_9b05ad5692")
+    @@map("opportunity_quotation_field")
+  }
+
+  model OpportunityQuotationFieldBlob {
+    id         String          @id(map: "opportunity_quotation_field_blob_pkey")
+    resourceId String          @map("resource_id")
+    fieldId    String          @map("field_id")
+    fieldValue String               @map("field_value")
+    refSubId   String?         @map("ref_sub_id")
+    rowId      String?         @map("row_id")
+    bizId      String?         @map("biz_id")
+    resource   OpportunityQuotation @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "opportunity_quotation_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "opportunity_quotation_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_blob_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d23f86bb9f")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_40dd514b08")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_fcc1c191ff")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_24f4683c3e")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_56861e657f")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_2f824cb4bd")
+    @@map("opportunity_quotation_field_blob")
+  }
+
+  model OpportunityQuotationSnapshot {
+    id             String          @id(map: "opportunity_quotation_snapshot_pkey")
+    quotationId    String          @map("quotation_id")
+    quotationProp  String?              @map("quotation_prop")
+    quotationValue String?              @map("quotation_value")
+    quotation      OpportunityQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_snapshot_quotation_id_fkey")
+
+    @@index([quotationId], map: "opportunity_quotation_snapshot_quotation_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9e8c52df5d")
+    @@check(expression: "char_length(\"quotation_id\") <= 32", name: "text_len_2ce426a80b")
+    @@map("opportunity_quotation_snapshot")
+  }
+
+  model OpportunityRule {
+    id             String  @id(map: "opportunity_rule_pkey")
+    name           String
+    organizationId String  @map("organization_id")
+    ownerId        String       @map("owner_id")
+    scopeId        String       @map("scope_id")
+    enable         Boolean      @default(true)
+    auto           Boolean      @default(false)
+    operator       String?
+    condition      String?
+    createTime     BigInt       @map("create_time")
+    updateTime     BigInt       @map("update_time")
+    createUser     String  @map("create_user")
+    updateUser     String  @map("update_user")
+
+    @@index([organizationId], map: "opportunity_rule_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_691c2aa5d0")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_05806e4984")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_38bca8ed0f")
+    @@check(expression: "char_length(\"operator\") <= 10", name: "text_len_bf0fb603cc")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_a4760807e7")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_18c2d15c27")
+    @@map("opportunity_rule")
+  }
+
+  model OrganizationSyncItems {
+    id                String                                @id(map: "organization_sync_items_pkey") @default(cuid(2))
+    tenantId          String
+    batchId           String
+    resourceType      pg.enum(OrganizationSyncResourceType)
+    externalId        String
+    externalKey       String
+    action            pg.enum(OrganizationSyncAction)
+    result            pg.enum(OrganizationSyncItemResult)   @default("PENDING")
+    localId           String?
+    parentExternalKey String?
+    sourceData        Jsonb
+    changes           Jsonb?
+    conflictType      String?
+    conflictMessage   String?
+    resolution        pg.enum(OrganizationSyncResolution)?
+    resolvedLocalId   String?
+    errorMessage      String?
+    sort              Int                                   @default(0)
+    createdAt         Timestamptz(3)                          @default(now())
+    updatedAt         Timestamptz(3)
+    batch             OrganizationSyncBatches               @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "organization_sync_items_batchId_fkey", index: false)
+
+    @@index([batchId, resourceType, externalKey], map: "organization_sync_items_batchId_resourceType_externalKey_key", unique: true)
+    @@index([tenantId, batchId, resourceType, action], map: "organization_sync_items_tenantId_batchId_resourceType_actio_idx")
+    @@map("organization_sync_items")
+  }
+
+  model Plans {
+    id            String          @id(map: "plans_pkey") @default(cuid(2))
+    code          String
+    name          String
+    price         Numeric(10, 2)
+    maxUsers      Int             @default(10)
+    features      Jsonb?
+    createdAt     Timestamptz(3)    @default(now())
+    updatedAt     Timestamptz(3)
+    subscriptions Subscriptions[]
+
+    @@index([code], map: "plans_code_key", unique: true)
+    @@map("plans")
+  }
+
+  model Product {
+    id                String        @id(map: "product_pkey")
+    name              String
+    price             Numeric(14, 4)?
+    status            String
+    pos               BigInt
+    organizationId    String        @map("organization_id")
+    createTime        BigInt             @map("create_time")
+    updateTime        BigInt             @map("update_time")
+    createUser        String        @map("create_user")
+    updateUser        String        @map("update_user")
+    productFields     ProductField[]
+    productFieldBlobs ProductFieldBlob[]
+
+    @@index([name], map: "product_name_idx")
+    @@index([organizationId], map: "product_organization_id_idx")
+    @@index([organizationId, pos], map: "product_organization_id_pos_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_05f010ec36")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_dc1ea77438")
+    @@check(expression: "char_length(\"status\") <= 32", name: "text_len_00cd50f630")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_3e6f44e077")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_fe700ff710")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_0e7493741b")
+    @@map("product")
+  }
+
+  model ProductField {
+    id         String  @id(map: "product_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    resource   Product      @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_field_resource_id_fkey", index: false)
+
+    @@index([resourceId, fieldId, fieldValue], map: "product_field_resource_id_field_id_field_value_idx")
+    @@index([resourceId, fieldId], map: "product_field_resource_id_field_id_key", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_31591b8b6b")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_e97ecf50f8")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_d4bf21cfa5")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_a526a646b4")
+    @@map("product_field")
+  }
+
+  model ProductFieldBlob {
+    id         String @id(map: "product_field_blob_pkey")
+    resourceId String @map("resource_id")
+    fieldId    String @map("field_id")
+    fieldValue String      @map("field_value")
+    resource   Product     @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_field_blob_resource_id_fkey")
+
+    @@index([resourceId, fieldId], map: "product_field_blob_resource_id_field_id_key", unique: true)
+    @@index([resourceId], map: "product_field_blob_resource_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d401ee3ab2")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_ae92d4d529")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_ca73d1618f")
+    @@map("product_field_blob")
+  }
+
+  model ProductPrice {
+    id                     String             @id(map: "product_price_pkey")
+    name                   String
+    status                 String
+    pos                    BigInt
+    organizationId         String             @map("organization_id")
+    createTime             BigInt                  @map("create_time")
+    updateTime             BigInt                  @map("update_time")
+    createUser             String             @map("create_user")
+    updateUser             String             @map("update_user")
+    productPriceFields     ProductPriceField[]
+    productPriceFieldBlobs ProductPriceFieldBlob[]
+
+    @@index([organizationId], map: "product_price_organization_id_idx")
+    @@index([organizationId, pos], map: "product_price_organization_id_pos_idx")
+    @@index([status], map: "product_price_status_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_87555357e9")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_3bc824f60d")
+    @@check(expression: "char_length(\"status\") <= 32", name: "text_len_e922f06826")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_41edf107c2")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_f7df8a8a1b")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_6215f8473b")
+    @@map("product_price")
+  }
+
+  model ProductPriceField {
+    id         String  @id(map: "product_price_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    refSubId   String? @map("ref_sub_id")
+    rowId      String? @map("row_id")
+    bizId      String? @map("biz_id")
+    resource   ProductPrice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_price_field_resource_id_fkey")
+
+    @@index([refSubId], map: "product_price_field_ref_sub_id_idx")
+    @@index([resourceId], map: "product_price_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_045d0fd445")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_1bbeb4acc1")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c09c2086b4")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_212d6874c4")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_70d962ae79")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_7f1d2dd48c")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_64d9060f8d")
+    @@map("product_price_field")
+  }
+
+  model ProductPriceFieldBlob {
+    id         String  @id(map: "product_price_field_blob_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String       @map("field_value")
+    refSubId   String? @map("ref_sub_id")
+    rowId      String? @map("row_id")
+    bizId      String? @map("biz_id")
+    resource   ProductPrice @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "product_price_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "product_price_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "product_price_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_blob_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8074ecc6ab")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_d112550aa2")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_7156f6463c")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_74dbe9077d")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_8c64cefc7b")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_95d0bbb912")
+    @@map("product_price_field_blob")
+  }
+
+  model SalesOrder {
+    id                   String           @id(map: "sales_order_pkey")
+    number               String
+    name                 String
+    customerId           String?          @map("customer_id")
+    contractId           String?          @map("contract_id")
+    owner                String?
+    amount               Numeric(20, 10)?
+    stage                String
+    approvalStatus       String           @default("NONE") @map("approval_status")
+    organizationId       String           @map("organization_id")
+    pos                  BigInt?
+    approved             Boolean               @default(false)
+    createTime           BigInt                @map("create_time")
+    updateTime           BigInt                @map("update_time")
+    createUser           String           @map("create_user")
+    updateUser           String           @map("update_user")
+    salesOrderFields     SalesOrderField[]
+    salesOrderFieldBlobs SalesOrderFieldBlob[]
+    salesOrderSnapshots  SalesOrderSnapshot[]
+    contract             Contract?             @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "sales_order_contract_id_fkey")
+    customer             Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "sales_order_customer_id_fkey")
+
+    @@index([approvalStatus], map: "sales_order_approval_status_idx")
+    @@index([contractId], map: "sales_order_contract_id_idx")
+    @@index([createUser], map: "sales_order_create_user_idx")
+    @@index([customerId], map: "sales_order_customer_id_idx")
+    @@index([name], map: "sales_order_name_idx")
+    @@index([number], map: "sales_order_number_idx")
+    @@index([organizationId], map: "sales_order_organization_id_idx")
+    @@index([owner], map: "sales_order_owner_idx")
+    @@index([stage], map: "sales_order_stage_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_eb6f382418")
+    @@check(expression: "char_length(\"number\") <= 50", name: "text_len_79010a404f")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_0fac2a9972")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_b7ba4ed88a")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_a3bef44295")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_271e9f4b09")
+    @@check(expression: "char_length(\"stage\") <= 50", name: "text_len_47f28982a6")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_aab042246d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_b0c9fdabaf")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_22b473b34b")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_1c040c4672")
+    @@map("sales_order")
+  }
+
+  model SalesOrderField {
+    id         String  @id(map: "sales_order_field_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String @map("field_value")
+    refSubId   String? @map("ref_sub_id")
+    rowId      String? @map("row_id")
+    bizId      String? @map("biz_id")
+    resource   SalesOrder   @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_field_resource_id_fkey")
+
+    @@index([refSubId], map: "sales_order_field_ref_sub_id_idx")
+    @@index([resourceId], map: "sales_order_field_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9526a44864")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_24950e5be0")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_eec05d0ecf")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_fd4b4e480c")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_be98eb82de")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_c90eee19b0")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_2189819737")
+    @@map("sales_order_field")
+  }
+
+  model SalesOrderFieldBlob {
+    id         String  @id(map: "sales_order_field_blob_pkey")
+    resourceId String  @map("resource_id")
+    fieldId    String  @map("field_id")
+    fieldValue String       @map("field_value")
+    refSubId   String? @map("ref_sub_id")
+    rowId      String? @map("row_id")
+    bizId      String? @map("biz_id")
+    resource   SalesOrder   @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_field_blob_resource_id_fkey")
+
+    @@index([refSubId], map: "sales_order_field_blob_ref_sub_id_idx")
+    @@index([resourceId], map: "sales_order_field_blob_resource_id_idx")
+    @@index([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_blob_cell", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6d4ff0fa43")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_bbba703c45")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_1c47cb3bdd")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_f96cf21409")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_928333822a")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_8741da9ff1")
+    @@map("sales_order_field_blob")
+  }
+
+  model SalesOrderSnapshot {
+    id         String @id(map: "sales_order_snapshot_pkey")
+    orderId    String @map("order_id")
+    orderProp  String?     @map("order_prop")
+    orderValue String?     @map("order_value")
+    order      SalesOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_snapshot_order_id_fkey")
+
+    @@index([orderId], map: "sales_order_snapshot_order_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_7cd485c4cb")
+    @@check(expression: "char_length(\"order_id\") <= 32", name: "text_len_f3084b6bb0")
+    @@map("sales_order_snapshot")
+  }
+
+  model SalesOrderStageConfig {
+    id              String  @id(map: "sales_order_stage_config_pkey")
+    name            String
+    _type           String  @map("type")
+    afootRollBack   Boolean      @default(true) @map("afoot_roll_back")
+    endRollBack     Boolean      @default(false) @map("end_roll_back")
+    pos             BigInt
+    organizationId  String  @map("organization_id")
+    circulationType String  @default("NORMAL") @map("circulation_type")
+    createTime      BigInt       @map("create_time")
+    updateTime      BigInt       @map("update_time")
+    createUser      String  @map("create_user")
+    updateUser      String  @map("update_user")
+
+    @@index([organizationId, pos], map: "sales_order_stage_config_organization_id_pos_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2ea342a36a")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_950116ab36")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_393a2e2418")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_a2e778d5c0")
+    @@check(expression: "char_length(\"circulation_type\") <= 50", name: "text_len_3c0557013b")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_90e58bdf00")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_a12199c79c")
+    @@map("sales_order_stage_config")
+  }
+
+  model StageAdvancedConfig {
+    id             String @id(map: "stage_advanced_config_pkey")
+    originId       String @map("origin_id")
+    targetId       String @map("target_id")
+    enable         Boolean     @default(false)
+    fieldConfig    String?     @map("field_config")
+    moduleType     String @map("module_type")
+    organizationId String @map("organization_id")
+    createTime     BigInt      @map("create_time")
+    updateTime     BigInt      @map("update_time")
+    createUser     String @map("create_user")
+    updateUser     String @map("update_user")
+
+    @@index([moduleType], map: "idx_stage_advanced_type")
+    @@index([organizationId, moduleType], map: "stage_advanced_config_organization_id_module_type_idx")
+    @@index([organizationId, moduleType, originId, targetId], map: "uk_stage_advanced_transition", unique: true)
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_68376ebf2e")
+    @@check(expression: "char_length(\"origin_id\") <= 32", name: "text_len_0a62ea5a42")
+    @@check(expression: "char_length(\"target_id\") <= 32", name: "text_len_5c076ce4d0")
+    @@check(expression: "char_length(\"module_type\") <= 20", name: "text_len_e615dd3a44")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_b68b1bb494")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_a96f9d882c")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_517f795671")
+    @@map("stage_advanced_config")
+  }
+
+  model Subscriptions {
+    id                 String                      @id(map: "subscriptions_pkey") @default(cuid(2))
+    tenantId           String
+    planId             String
+    status             pg.enum(SubscriptionStatus) @default("TRIALING")
+    currentPeriodStart Timestamptz(3)
+    currentPeriodEnd   Timestamptz(3)
+    createdAt          Timestamptz(3)                @default(now())
+    updatedAt          Timestamptz(3)
+    plan               Plans                       @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "subscriptions_planId_fkey", index: false)
+    tenant             Tenants                     @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "subscriptions_tenantId_fkey")
+
+    @@index([tenantId], map: "subscriptions_tenantId_idx")
+    @@map("subscriptions")
+  }
+
+  model SysDict {
+    id             String  @id(map: "sys_dict_pkey")
+    name           String
+    module         String
+    _type          String  @default("TEXT") @map("type")
+    pos            BigInt
+    organizationId String  @map("organization_id")
+    createTime     BigInt       @map("create_time")
+    updateTime     BigInt       @map("update_time")
+    createUser     String  @map("create_user")
+    updateUser     String  @map("update_user")
+
+    @@index([organizationId, module, pos], map: "sys_dict_organization_id_module_pos_idx")
+    @@index([organizationId, name], map: "sys_dict_organization_id_name_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_f1d6ad0788")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_f047ae1ac7")
+    @@check(expression: "char_length(\"module\") <= 20", name: "text_len_dbbac9e846")
+    @@check(expression: "char_length(\"type\") <= 10", name: "text_len_21ddcac428")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_d43fa79cb9")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_0c203ac26a")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_bf2aed7d8a")
+    @@map("sys_dict")
+  }
+
+  model SysDictConfig {
+    module         String
+    organizationId String @map("organization_id")
+    enabled        Boolean     @default(false)
+
+    @@id([module, organizationId], map: "sys_dict_config_pkey")
+    @@check(expression: "char_length(\"module\") <= 20", name: "text_len_89fae4789f")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_cffd86eac0")
+    @@map("sys_dict_config")
+  }
+
+  model SysModuleForm {
+    id                String        @id(map: "sys_module_form_pkey")
+    formKey           String        @map("form_key")
+    organizationId    String        @map("organization_id")
+    createTime        BigInt             @map("create_time")
+    updateTime        BigInt             @map("update_time")
+    createUser        String        @map("create_user")
+    updateUser        String        @map("update_user")
+    sysModuleFields   SysModuleField[]
+    sysModuleFormBlob SysModuleFormBlob?
+
+    @@index([organizationId, formKey], map: "sys_module_form_organization_id_form_key_key", unique: true)
+    @@index([organizationId], map: "sys_module_form_organization_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6abccafc27")
+    @@check(expression: "char_length(\"form_key\") <= 50", name: "text_len_d9e172c479")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_d166cde218")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_067b8b56a7")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_b9bb5f72a5")
+    @@map("sys_module_form")
+  }
+
+  model SysModuleField {
+    id                 String         @id(map: "sys_module_field_pkey")
+    formId             String         @map("form_id")
+    internalKey        String?       @map("internal_key")
+    name               String
+    _type              String         @map("type")
+    mobile             Boolean             @default(false)
+    pos                BigInt
+    createUser         String         @map("create_user")
+    createTime         BigInt              @map("create_time")
+    updateUser         String         @map("update_user")
+    updateTime         BigInt              @map("update_time")
+    sysModuleFieldBlob SysModuleFieldBlob?
+    form               SysModuleForm       @relation(fields: [formId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_field_form_id_fkey", index: false)
+
+    @@index([formId, internalKey], map: "sys_module_field_form_id_internal_key_idx")
+    @@index([mobile], map: "sys_module_field_mobile_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_cb3414a8a8")
+    @@check(expression: "char_length(\"form_id\") <= 32", name: "text_len_8495fda9c6")
+    @@check(expression: "char_length(\"internal_key\") <= 255", name: "text_len_7552706619")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_376ea96536")
+    @@check(expression: "char_length(\"type\") <= 20", name: "text_len_333696dc88")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_00c8265091")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_75e3d9b067")
+    @@map("sys_module_field")
+  }
+
+  model SysModuleFieldBlob {
+    id             String    @id(map: "sys_module_field_blob_pkey")
+    prop           String?
+    sysModuleField SysModuleField @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_field_blob_id_fkey")
+
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_a77b03c46e")
+    @@map("sys_module_field_blob")
+  }
+
+  model SysModuleFormBlob {
+    id            String   @id(map: "sys_module_form_blob_pkey")
+    prop          String?
+    sysModuleForm SysModuleForm @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_form_blob_id_fkey")
+
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6c53e9d0f2")
+    @@map("sys_module_form_blob")
+  }
+
+  model SysUserView {
+    id                    String            @id(map: "sys_user_view_pkey")
+    userId                String            @map("user_id")
+    name                  String
+    fixed                 Boolean                @default(false)
+    resourceType          String            @map("resource_type")
+    organizationId        String            @map("organization_id")
+    pos                   BigInt
+    enable                Boolean                @default(true)
+    searchMode            String            @default("AND") @map("search_mode")
+    createTime            BigInt                 @map("create_time")
+    updateTime            BigInt                 @map("update_time")
+    createUser            String            @map("create_user")
+    updateUser            String            @map("update_user")
+    sysUserViewConditions SysUserViewCondition[]
+
+    @@index([name], map: "sys_user_view_name_idx")
+    @@index([organizationId], map: "sys_user_view_organization_id_idx")
+    @@index([organizationId, userId, resourceType, name], map: "sys_user_view_organization_id_user_id_resource_type_name_key", unique: true)
+    @@index([resourceType], map: "sys_user_view_resource_type_idx")
+    @@index([userId], map: "sys_user_view_user_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_bcb25539fb")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_86235f6ef0")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_9183e947ff")
+    @@check(expression: "char_length(\"resource_type\") <= 50", name: "text_len_03d696169b")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_bc3356a9a8")
+    @@check(expression: "char_length(\"search_mode\") <= 10", name: "text_len_b7658ab2cb")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_81834f47ea")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_5d1424fa80")
+    @@map("sys_user_view")
+  }
+
+  model SysUserViewCondition {
+    id            String  @id(map: "sys_user_view_condition_pkey")
+    sysUserViewId String  @map("sys_user_view_id")
+    name          String
+    value         String?
+    valueType     String?      @map("value_type")
+    _type         String? @map("type")
+    multipleValue Boolean      @default(false) @map("multiple_value")
+    operator      String?
+    childrenValue String?      @map("children_value")
+    createTime    BigInt       @map("create_time")
+    updateTime    BigInt       @map("update_time")
+    createUser    String  @map("create_user")
+    updateUser    String  @map("update_user")
+    sysUserView   SysUserView  @relation(fields: [sysUserViewId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_user_view_condition_sys_user_view_id_fkey")
+
+    @@index([sysUserViewId], map: "sys_user_view_condition_sys_user_view_id_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_fa9c03a5ba")
+    @@check(expression: "char_length(\"sys_user_view_id\") <= 32", name: "text_len_e26c14f1c6")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_14ef5b0f9c")
+    @@check(expression: "char_length(\"type\") <= 20", name: "text_len_76f1867d2c")
+    @@check(expression: "char_length(\"operator\") <= 20", name: "text_len_f3eae91a07")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_f6b51655ac")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_ab2c9a41ea")
+    @@map("sys_user_view_condition")
+  }
+
+  model TopNavigationConfigs {
+    id       String  @id(map: "top_navigation_configs_pkey") @default(cuid(2))
+    tenantId String
+    key      String
+    enabled  Boolean @default(true)
+    sort     Int
+    tenant   Tenants @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "top_navigation_configs_tenantId_fkey", index: false)
+
+    @@index([tenantId, key], map: "top_navigation_configs_tenantId_key_key", unique: true)
+    @@index([tenantId, sort], map: "top_navigation_configs_tenantId_sort_idx")
+    @@map("top_navigation_configs")
+  }
+
+  model UserExtensions {
+    id           String  @id(map: "user_extensions_pkey")
+    avatar       String?
+    platformInfo Bytes?
+    users        Users   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_extensions_id_fkey")
+
+    @@map("user_extensions")
+  }
+
+  model UserKey {
+    id          String        @id(map: "user_key_pkey") @default(cuid(2))
+    createUser  String        @map("create_user")
+    accessKey   String        @map("access_key")
+    secretKey   String        @map("secret_key")
+    createTime  Timestamptz(3)  @default(now()) @map("create_time")
+    enable      Boolean       @default(true)
+    forever     Boolean       @default(true)
+    expireTime  Timestamptz(3)? @map("expire_time")
+    description String?
+    users       Users         @relation(fields: [createUser], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_key_create_user_fkey")
+
+    @@index([accessKey], map: "user_key_access_key_key", unique: true)
+    @@index([createUser], map: "user_key_create_user_idx")
+    @@map("user_key")
+  }
+
+  model UserRoles {
+    id        String       @id(map: "user_roles_pkey") @default(cuid(2))
+    tenantId  String
+    userId    String
+    roleId    String
+    createdAt Timestamptz(3) @default(now())
+    updatedAt Timestamptz(3)
+    role      Roles        @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_roleId_fkey", index: false)
+    tenant    Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_tenantId_fkey", index: false)
+    user      Users        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "user_roles_userId_fkey", index: false)
+
+    @@index([tenantId, roleId], map: "user_roles_tenantId_roleId_idx")
+    @@index([tenantId, userId], map: "user_roles_tenantId_userId_idx")
+    @@index([userId, roleId], map: "user_roles_userId_roleId_key", unique: true)
+    @@map("user_roles")
+  }
+
+  native_enum ApprovalAddSignType {
+    BEFORE = "BEFORE"
+    AFTER = "AFTER"
+  }
+
+  native_enum ApprovalExecuteTiming {
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+  }
+
+  native_enum ApprovalFormType {
+    QUOTATION = "QUOTATION"
+    CONTRACT = "CONTRACT"
+    INVOICE = "INVOICE"
+    ORDER = "ORDER"
+    RECEIVABLE_RECORD_LEGACY = "RECEIVABLE_RECORD_LEGACY"
+  }
+
+  native_enum ApprovalInstanceStatus {
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELED = "CANCELED"
+  }
+
+  native_enum ApprovalMode {
+    ALL = "ALL"
+    ANY = "ANY"
+  }
+
+  native_enum ApprovalNodeType {
+    START = "START"
+    APPROVER = "APPROVER"
+    CONDITION = "CONDITION"
+    DEFAULT = "DEFAULT"
+    END = "END"
+  }
+
+  native_enum ApprovalTaskAction {
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    SIGN = "SIGN"
+    BACK = "BACK"
+  }
+
+  native_enum ApprovalTaskStatus {
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    SKIPPED = "SKIPPED"
+  }
+
+  native_enum ApprovalTaskType {
+    APPROVAL = "APPROVAL"
+    CC = "CC"
+    SIGN = "SIGN"
+    BACK = "BACK"
+  }
+
+  native_enum ApprovalWebhookDeliverySource {
+    TEST = "TEST"
+    RUNTIME = "RUNTIME"
+  }
+
+  native_enum ApprovalWebhookDeliveryStatus {
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+  }
+
+  native_enum ApproverDirection {
+    BOTTOM_UP = "BOTTOM_UP"
+    TOP_DOWN = "TOP_DOWN"
+  }
+
+  native_enum ApproverType {
+    USER = "USER"
+    ROLE = "ROLE"
+    DEPT_LEADER = "DEPT_LEADER"
+    DIRECT_LEADER = "DIRECT_LEADER"
+    MULTIPLE_DEPT_LEADER = "MULTIPLE_DEPT_LEADER"
+    MULTIPLE_DIRECT_LEADER = "MULTIPLE_DIRECT_LEADER"
+  }
+
+  native_enum DataScope {
+    ALL = "ALL"
+    DEPT_AND_CHILD = "DEPT_AND_CHILD"
+    DEPT = "DEPT"
+    SELF = "SELF"
+    CUSTOM = "CUSTOM"
+  }
+
+  native_enum DuplicateApproverRule {
+    FIRST_ONLY = "FIRST_ONLY"
+    SEQUENTIAL_ALL = "SEQUENTIAL_ALL"
+    EACH = "EACH"
+  }
+
+  native_enum EmptyApproverAction {
+    AUTO_PASS = "AUTO_PASS"
+    ASSIGN_SPECIFIC = "ASSIGN_SPECIFIC"
+    ASSIGN_ADMIN = "ASSIGN_ADMIN"
+  }
+
+  native_enum EnterpriseIntegrationProvider {
+    WECOM = "WECOM"
+    DINGTALK = "DINGTALK"
+    LARK = "LARK"
+  }
+
+  native_enum ExternalIdentityStatus {
+    ACTIVE = "ACTIVE"
+    REVOKED = "REVOKED"
+  }
+
+  native_enum ExternalOAuthFlow {
+    QR_WECOM = "QR_WECOM"
+    WECOM = "WECOM"
+    QR_DINGTALK = "QR_DINGTALK"
+    DINGTALK = "DINGTALK"
+    QR_LARK = "QR_LARK"
+    LARK = "LARK"
+    LARK_MOBILE = "LARK_MOBILE"
+  }
+
+  native_enum FollowUpPlanStatus {
+    PREPARED = "PREPARED"
+    UNDERWAY = "UNDERWAY"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+  }
+
+  native_enum MessageDeliveryChannel {
+    WECOM = "WECOM"
+    DINGTALK = "DINGTALK"
+    LARK = "LARK"
+    EMAIL = "EMAIL"
+  }
+
+  native_enum MessageDeliveryStatus {
+    PENDING = "PENDING"
+    SENDING = "SENDING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    DEAD = "DEAD"
+  }
+
+  native_enum OperationLogCleanupSource {
+    AUTO = "AUTO"
+    MANUAL = "MANUAL"
+  }
+
+  native_enum OrganizationSyncAction {
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DISABLE = "DISABLE"
+    UNCHANGED = "UNCHANGED"
+    CONFLICT = "CONFLICT"
+    SKIP = "SKIP"
+  }
+
+  native_enum OrganizationSyncItemResult {
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
+    APPLIED = "APPLIED"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+  }
+
+  native_enum OrganizationSyncResolution {
+    BIND = "BIND"
+    SKIP = "SKIP"
+  }
+
+  native_enum OrganizationSyncResourceType {
+    DEPARTMENT = "DEPARTMENT"
+    USER = "USER"
+  }
+
+  native_enum OrganizationSyncStatus {
+    FETCHING = "FETCHING"
+    PREVIEW_READY = "PREVIEW_READY"
+    APPLYING = "APPLYING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    INVALIDATED = "INVALIDATED"
+  }
+
+  native_enum SameSubmitterAction {
+    SKIP = "SKIP"
+    ALLOW = "ALLOW"
+    ASSIGN_SUPERIOR = "ASSIGN_SUPERIOR"
+  }
+
+  native_enum SubscriptionStatus {
+    TRIALING = "TRIALING"
+    ACTIVE = "ACTIVE"
+    PAST_DUE = "PAST_DUE"
+    CANCELED = "CANCELED"
+  }
+
+  native_enum TenantStatus {
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+  }
+
+  native_enum UserStatus {
+    ACTIVE = "ACTIVE"
+    DISABLED = "DISABLED"
+  }
+}

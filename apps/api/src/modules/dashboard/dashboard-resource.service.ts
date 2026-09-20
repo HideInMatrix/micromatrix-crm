@@ -1,7 +1,12 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { Dashboard, Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { DashboardAccessService } from './dashboard-access.service'
 import {
   DashboardAddDto,
@@ -13,10 +18,24 @@ import {
 
 const POS_STEP = 1024n
 
-type DashboardWithModule = Dashboard & {
+type DashboardWithModule = {
+  id: string
+  name: string
+  resourceUrl: string
+  dashboardModuleId: string
+  organizationId: string
+  pos: bigint
+  scopeId: string
+  description: string | null
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
   module: { id: string; name: string }
   collections?: Array<{ id: string }>
 }
+
+type DashboardRow = Omit<DashboardWithModule, 'module' | 'collections'>
 
 @Injectable()
 export class DashboardResourceService {
@@ -26,31 +45,39 @@ export class DashboardResourceService {
   ) {}
 
   private async assertModule(user: AuthUser, id: string) {
-    const module = await this.prisma.dashboardModule.findFirst({
-      where: { id, organizationId: user.tenantId },
-    })
+    const module = await this.prisma.client.orm.public.DashboardModule.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
     if (!module) throw new NotFoundException('仪表板文件夹不存在')
     return module
   }
 
-  private async assertNameUnique(user: AuthUser, moduleId: string, name: string, excludeId?: string) {
-    const count = await this.prisma.dashboard.count({
-      where: {
-        organizationId: user.tenantId,
-        dashboardModuleId: moduleId,
-        name: name.trim(),
-        ...(excludeId ? { id: { not: excludeId } } : {}),
-      },
+  private async assertNameUnique(
+    user: AuthUser,
+    moduleId: string,
+    name: string,
+    excludeId?: string,
+  ) {
+    const duplicate = await this.prisma.client.orm.public.Dashboard.where({
+      organizationId: user.tenantId,
+      dashboardModuleId: moduleId,
+      name: name.trim(),
     })
-    if (count > 0) throw new ConflictException('同一文件夹下已存在同名仪表板')
+      .select('id')
+      .first()
+    if (duplicate && duplicate.id !== excludeId) {
+      throw new ConflictException('同一文件夹下已存在同名仪表板')
+    }
   }
 
   private async nextPos(moduleId: string) {
-    const max = await this.prisma.dashboard.aggregate({
-      where: { dashboardModuleId: moduleId },
-      _max: { pos: true },
+    const rows = await this.prisma.client.orm.public.Dashboard.where({
+      dashboardModuleId: moduleId,
     })
-    return (max._max.pos ?? 0n) + POS_STEP
+      .select('pos')
+      .all()
+    return rows.reduce((max, row) => (row.pos > max ? row.pos : max), 0n) + POS_STEP
   }
 
   private normalizeUrl(value: string) {
@@ -76,12 +103,55 @@ export class DashboardResourceService {
 
   private async creatorNames(ids: string[]) {
     const users = ids.length
-      ? await this.prisma.user.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, name: true } })
+      ? await this.prisma.client.orm.public.Users.where((row) => row.id.in([...new Set(ids)]))
+          .select('id', 'name')
+          .all()
       : []
     return new Map(users.map((item) => [item.id, item.name]))
   }
 
-  private async toResponse(user: AuthUser, row: DashboardWithModule, userNames?: Map<string, string>) {
+  private async attachRelations(
+    user: AuthUser,
+    rows: DashboardRow[],
+  ): Promise<DashboardWithModule[]> {
+    if (rows.length === 0) return []
+    const moduleIds = [...new Set(rows.map((row) => row.dashboardModuleId))]
+    const dashboardIds = rows.map((row) => row.id)
+    const [modules, collections] = await Promise.all([
+      this.prisma.client.orm.public.DashboardModule.where({
+        organizationId: user.tenantId,
+      })
+        .where((row) => row.id.in(moduleIds))
+        .select('id', 'name')
+        .all(),
+      this.prisma.client.orm.public.DashboardCollection.where({
+        userId: user.id,
+      })
+        .where((row) => row.dashboardId.in(dashboardIds))
+        .select('id', 'dashboardId')
+        .all(),
+    ])
+    const moduleMap = new Map<string, { id: string; name: string }>(
+      modules.map((item) => [item.id, item]),
+    )
+    const collectionMap = new Map<string, Array<{ id: string }>>()
+    for (const item of collections) {
+      const list = collectionMap.get(item.dashboardId) ?? []
+      list.push({ id: item.id })
+      collectionMap.set(item.dashboardId, list)
+    }
+    return rows.map((row) => {
+      const module = moduleMap.get(row.dashboardModuleId)
+      if (!module) throw new NotFoundException('仪表板文件夹不存在')
+      return { ...row, module, collections: collectionMap.get(row.id) ?? [] }
+    })
+  }
+
+  private async toResponse(
+    user: AuthUser,
+    row: DashboardWithModule,
+    userNames?: Map<string, string>,
+  ) {
     const scopeIds = this.access.parseScope(row.scopeId)
     const names = userNames ?? (await this.creatorNames([row.createUser, row.updateUser]))
     return {
@@ -107,92 +177,98 @@ export class DashboardResourceService {
   }
 
   async add(user: AuthUser, dto: DashboardAddDto) {
-    await this.assertModule(user, dto.dashboardModuleId)
+    const module = await this.assertModule(user, dto.dashboardModuleId)
     await this.assertNameUnique(user, dto.dashboardModuleId, dto.name)
     const scopeIds = await this.access.validateScopeIds(user, dto.scopeIds)
     const now = BigInt(Date.now())
-    const row = await this.prisma.dashboard.create({
-      data: {
-        name: dto.name.trim(),
-        resourceUrl: this.normalizeUrl(dto.resourceUrl),
-        dashboardModuleId: dto.dashboardModuleId,
-        organizationId: user.tenantId,
-        pos: await this.nextPos(dto.dashboardModuleId),
-        scopeId: JSON.stringify(scopeIds),
-        description: dto.description?.trim() || null,
-        createTime: now,
-        updateTime: now,
-        createUser: user.id,
-        updateUser: user.id,
-      },
-      include: { module: true },
+    const row = await this.prisma.client.orm.public.Dashboard.create({
+      id: createLegacyId32(),
+      name: dto.name.trim(),
+      resourceUrl: this.normalizeUrl(dto.resourceUrl),
+      dashboardModuleId: dto.dashboardModuleId,
+      organizationId: user.tenantId,
+      pos: await this.nextPos(dto.dashboardModuleId),
+      scopeId: JSON.stringify(scopeIds),
+      description: dto.description?.trim() ? dto.description.trim() : null,
+      createTime: now,
+      updateTime: now,
+      createUser: user.id,
+      updateUser: user.id,
     })
-    return this.toResponse(user, row)
+    return this.toResponse(user, { ...row, module })
   }
 
   async detail(user: AuthUser, id: string) {
     const visible = await this.access.assertVisibleDashboard(user, id)
-    const row = await this.prisma.dashboard.findUnique({
-      where: { id: visible.id },
-      include: { module: true, collections: { where: { userId: user.id }, select: { id: true } } },
+    const collections = await this.prisma.client.orm.public.DashboardCollection.where({
+      userId: user.id,
+      dashboardId: visible.id,
     })
-    if (!row) throw new NotFoundException('仪表板不存在')
-    return this.toResponse(user, row)
+      .select('id')
+      .all()
+    return this.toResponse(user, { ...visible, collections })
   }
 
   async update(user: AuthUser, dto: DashboardUpdateDto) {
     const original = await this.access.assertVisibleDashboard(user, dto.id)
-    await this.assertModule(user, dto.dashboardModuleId)
+    const module = await this.assertModule(user, dto.dashboardModuleId)
     await this.assertNameUnique(user, dto.dashboardModuleId, dto.name, dto.id)
     const scopeIds = await this.access.validateScopeIds(user, dto.scopeIds)
     const moduleChanged = original.dashboardModuleId !== dto.dashboardModuleId
-    const row = await this.prisma.dashboard.update({
-      where: { id: dto.id },
-      data: {
-        name: dto.name.trim(),
-        resourceUrl: this.normalizeUrl(dto.resourceUrl),
-        dashboardModuleId: dto.dashboardModuleId,
-        ...(moduleChanged ? { pos: await this.nextPos(dto.dashboardModuleId) } : {}),
-        scopeId: JSON.stringify(scopeIds),
-        description: dto.description?.trim() || null,
-        updateTime: BigInt(Date.now()),
-        updateUser: user.id,
-      },
-      include: { module: true },
+    const row = await this.prisma.client.orm.public.Dashboard.where({
+      id: dto.id,
+      organizationId: user.tenantId,
+    }).update({
+      name: dto.name.trim(),
+      resourceUrl: this.normalizeUrl(dto.resourceUrl),
+      dashboardModuleId: dto.dashboardModuleId,
+      ...(moduleChanged ? { pos: await this.nextPos(dto.dashboardModuleId) } : {}),
+      scopeId: JSON.stringify(scopeIds),
+      description: dto.description?.trim() ? dto.description.trim() : null,
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
     })
-    return this.toResponse(user, row)
+    if (!row) throw new NotFoundException('仪表板不存在')
+    return this.toResponse(user, { ...row, module })
   }
 
   async rename(user: AuthUser, dto: DashboardRenameDto) {
     const original = await this.access.assertVisibleDashboard(user, dto.id)
-    await this.assertModule(user, dto.dashboardModuleId)
+    const module = await this.assertModule(user, dto.dashboardModuleId)
     await this.assertNameUnique(user, dto.dashboardModuleId, dto.name, dto.id)
     const moduleChanged = original.dashboardModuleId !== dto.dashboardModuleId
-    const row = await this.prisma.dashboard.update({
-      where: { id: dto.id },
-      data: {
-        name: dto.name.trim(),
-        dashboardModuleId: dto.dashboardModuleId,
-        ...(moduleChanged ? { pos: await this.nextPos(dto.dashboardModuleId) } : {}),
-        updateTime: BigInt(Date.now()),
-        updateUser: user.id,
-      },
-      include: { module: true },
+    const row = await this.prisma.client.orm.public.Dashboard.where({
+      id: dto.id,
+      organizationId: user.tenantId,
+    }).update({
+      name: dto.name.trim(),
+      dashboardModuleId: dto.dashboardModuleId,
+      ...(moduleChanged ? { pos: await this.nextPos(dto.dashboardModuleId) } : {}),
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
     })
-    return this.toResponse(user, row)
+    if (!row) throw new NotFoundException('仪表板不存在')
+    return this.toResponse(user, { ...row, module })
   }
 
   async remove(user: AuthUser, id: string) {
     const row = await this.access.assertVisibleDashboard(user, id)
-    await this.prisma.dashboard.delete({ where: { id: row.id } })
+    await this.prisma.client.orm.public.Dashboard.where({
+      id: row.id,
+      organizationId: user.tenantId,
+    }).delete()
     return { id: row.id, name: row.name }
   }
 
-  private sortRows<T extends { name: string; createTime: bigint; pos: bigint; module: { name: string }; createUser: string }>(
-    rows: T[],
-    dto: DashboardPageDto,
-    userNames: Map<string, string>,
-  ) {
+  private sortRows<
+    T extends {
+      name: string
+      createTime: bigint
+      pos: bigint
+      module: { name: string }
+      createUser: string
+    },
+  >(rows: T[], dto: DashboardPageDto, userNames: Map<string, string>) {
     const direction = dto.sort?.type?.toLowerCase() === 'asc' ? 1 : -1
     const field = dto.sort?.name ?? 'create_time'
     return [...rows].sort((a, b) => {
@@ -211,7 +287,8 @@ export class DashboardResourceService {
         left = a.pos
         right = b.pos
       }
-      if (typeof left === 'bigint' && typeof right === 'bigint') return left === right ? 0 : left > right ? direction : -direction
+      if (typeof left === 'bigint' && typeof right === 'bigint')
+        return left === right ? 0 : left > right ? direction : -direction
       return String(left).localeCompare(String(right), 'zh-CN') * direction
     })
   }
@@ -220,20 +297,21 @@ export class DashboardResourceService {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
     const keyword = dto.keyword?.trim()
-    const rows = await this.prisma.dashboard.findMany({
-      where: {
-        organizationId: user.tenantId,
-        ...(keyword ? { name: { contains: keyword, mode: 'insensitive' } } : {}),
-        ...(dto.dashboardModuleIds?.length ? { dashboardModuleId: { in: dto.dashboardModuleIds } } : {}),
-      },
-      include: {
-        module: true,
-        collections: { where: { userId: user.id }, select: { id: true } },
-      },
+    const query = this.prisma.client.orm.public.Dashboard.where({
+      organizationId: user.tenantId,
     })
+    const rawRows = dto.dashboardModuleIds?.length
+      ? await query.where((row) => row.dashboardModuleId.in(dto.dashboardModuleIds!)).all()
+      : await query.all()
+    const keywordRows = keyword
+      ? rawRows.filter((row) => row.name.toLocaleLowerCase().includes(keyword.toLocaleLowerCase()))
+      : rawRows
+    const rows = await this.attachRelations(user, keywordRows)
     const visibleIds = await this.access.visibleDashboardIds(user, rows)
     const visible = rows.filter((row) => visibleIds.has(row.id))
-    const userNames = await this.creatorNames(visible.flatMap((row) => [row.createUser, row.updateUser]))
+    const userNames = await this.creatorNames(
+      visible.flatMap((row) => [row.createUser, row.updateUser]),
+    )
     const sorted = this.sortRows(visible, dto, userNames)
     const total = sorted.length
     const pageRows = sorted.slice((current - 1) * pageSize, current * pageSize)
@@ -247,29 +325,24 @@ export class DashboardResourceService {
 
   async collect(user: AuthUser, id: string) {
     const dashboard = await this.access.assertVisibleDashboard(user, id)
-    const exists = await this.prisma.dashboardCollection.findUnique({
-      where: { userId_dashboardId: { userId: user.id, dashboardId: dashboard.id } },
-    })
+    const exists = await this.prisma.client.orm.public.DashboardCollection.where({
+      userId: user.id,
+      dashboardId: dashboard.id,
+    }).first()
     if (exists) throw new ConflictException('仪表板已收藏')
     const now = BigInt(Date.now())
     try {
-      await this.prisma.dashboardCollection.create({
-        data: {
-          userId: user.id,
-          dashboardId: dashboard.id,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+      await this.prisma.client.orm.public.DashboardCollection.create({
+        id: createLegacyId32(),
+        userId: user.id,
+        dashboardId: dashboard.id,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
       })
     } catch (error) {
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'P2002'
-      ) {
+      if ((error as { sqlState?: string }).sqlState === '23505') {
         throw new ConflictException('仪表板已收藏')
       }
       throw error
@@ -279,9 +352,10 @@ export class DashboardResourceService {
 
   async unCollect(user: AuthUser, id: string) {
     const dashboard = await this.access.assertVisibleDashboard(user, id)
-    await this.prisma.dashboardCollection.deleteMany({
-      where: { userId: user.id, dashboardId: dashboard.id },
-    })
+    await this.prisma.client.orm.public.DashboardCollection.where({
+      userId: user.id,
+      dashboardId: dashboard.id,
+    }).deleteAll()
     return { id: dashboard.id, name: dashboard.name, collected: false }
   }
 
@@ -289,23 +363,27 @@ export class DashboardResourceService {
     const current = dto.current ?? 1
     const pageSize = dto.pageSize ?? 10
     const keyword = dto.keyword?.trim()
-    const collections = await this.prisma.dashboardCollection.findMany({
-      where: {
-        userId: user.id,
-        dashboard: {
-          organizationId: user.tenantId,
-          ...(keyword ? { name: { contains: keyword, mode: 'insensitive' } } : {}),
-          ...(dto.dashboardModuleIds?.length
-            ? { dashboardModuleId: { in: dto.dashboardModuleIds } }
-            : {}),
-        },
-      },
-      include: { dashboard: { include: { module: true } } },
+    const collections = await this.prisma.client.orm.public.DashboardCollection.where({
+      userId: user.id,
     })
-    const rows = collections.map((item) => ({
-      ...item.dashboard,
-      collections: [{ id: item.id }],
-    }))
+      .select('id', 'dashboardId')
+      .all()
+    const collectionDashboardIds = collections.map((item) => item.dashboardId)
+    const dashboardQuery = this.prisma.client.orm.public.Dashboard.where({
+      organizationId: user.tenantId,
+    })
+    const scopedRows = collectionDashboardIds.length
+      ? await dashboardQuery.where((row) => row.id.in(collectionDashboardIds)).all()
+      : []
+    const moduleRows = dto.dashboardModuleIds?.length
+      ? scopedRows.filter((row) => dto.dashboardModuleIds!.includes(row.dashboardModuleId))
+      : scopedRows
+    const keywordRows = keyword
+      ? moduleRows.filter((row) =>
+          row.name.toLocaleLowerCase().includes(keyword.toLocaleLowerCase()),
+        )
+      : moduleRows
+    const rows = await this.attachRelations(user, keywordRows)
     const visibleIds = await this.access.visibleDashboardIds(user, rows)
     const visible = rows.filter((row) => visibleIds.has(row.id))
     const userNames = await this.creatorNames(
@@ -337,22 +415,14 @@ export class DashboardResourceService {
     }
   }
 
-  private async reindex(tx: Prisma.TransactionClient, moduleId: string, orderedIds: string[]) {
-    for (let index = 0; index < orderedIds.length; index++) {
-      await tx.dashboard.update({
-        where: { id: orderedIds[index]! },
-        data: { pos: BigInt(index + 1) * POS_STEP },
-      })
-    }
-  }
-
   async move(user: AuthUser, dto: DashboardEditPosDto) {
     const moved = await this.access.assertVisibleDashboard(user, dto.moveId)
     await this.assertModule(user, dto.dashboardModuleId)
     if (moved.dashboardModuleId !== dto.dashboardModuleId) {
       await this.assertNameUnique(user, dto.dashboardModuleId, moved.name, moved.id)
     }
-    if (dto.moveMode !== 'APPEND' && dto.targetId === dto.moveId) return { id: moved.id, name: moved.name }
+    if (dto.moveMode !== 'APPEND' && dto.targetId === dto.moveId)
+      return { id: moved.id, name: moved.name }
 
     if (dto.moveMode !== 'APPEND') {
       const target = await this.access.assertVisibleDashboard(user, dto.targetId)
@@ -361,23 +431,29 @@ export class DashboardResourceService {
       }
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const sourceRows = await tx.dashboard.findMany({
-        where: { organizationId: user.tenantId, dashboardModuleId: moved.dashboardModuleId },
-        orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
-        select: { id: true },
+    await this.prisma.client.transaction(async (tx) => {
+      const sourceRows = await tx.orm.public.Dashboard.where({
+        organizationId: user.tenantId,
+        dashboardModuleId: moved.dashboardModuleId,
       })
+        .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
+        .select('id')
+        .all()
       const targetRows =
         moved.dashboardModuleId === dto.dashboardModuleId
           ? sourceRows
-          : await tx.dashboard.findMany({
-              where: { organizationId: user.tenantId, dashboardModuleId: dto.dashboardModuleId },
-              orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
-              select: { id: true },
+          : await tx.orm.public.Dashboard.where({
+              organizationId: user.tenantId,
+              dashboardModuleId: dto.dashboardModuleId,
             })
+              .orderBy([(row) => row.pos.asc(), (row) => row.createTime.asc()])
+              .select('id')
+              .all()
 
-      const sourceIds = sourceRows.map((row) => row.id).filter((id) => id !== moved.id)
-      const destinationIds = targetRows.map((row) => row.id).filter((id) => id !== moved.id)
+      const sourceIds: string[] = sourceRows.map((row) => row.id).filter((id) => id !== moved.id)
+      const destinationIds: string[] = targetRows
+        .map((row) => row.id)
+        .filter((id) => id !== moved.id)
       let insertIndex = destinationIds.length
       if (dto.moveMode !== 'APPEND') {
         const targetIndex = destinationIds.indexOf(dto.targetId)
@@ -386,16 +462,25 @@ export class DashboardResourceService {
       }
       destinationIds.splice(insertIndex, 0, moved.id)
 
-      await tx.dashboard.update({
-        where: { id: moved.id },
-        data: {
-          dashboardModuleId: dto.dashboardModuleId,
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+      const updated = await tx.orm.public.Dashboard.where({
+        id: moved.id,
+        organizationId: user.tenantId,
+      }).update({
+        dashboardModuleId: dto.dashboardModuleId,
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
-      if (moved.dashboardModuleId !== dto.dashboardModuleId) await this.reindex(tx, moved.dashboardModuleId, sourceIds)
-      await this.reindex(tx, dto.dashboardModuleId, destinationIds)
+      if (!updated) throw new NotFoundException('仪表板不存在')
+      const reindex = async (orderedIds: readonly string[]) => {
+        for (let index = 0; index < orderedIds.length; index++) {
+          await tx.orm.public.Dashboard.where({
+            id: orderedIds[index]!,
+            organizationId: user.tenantId,
+          }).update({ pos: BigInt(index + 1) * POS_STEP })
+        }
+      }
+      if (moved.dashboardModuleId !== dto.dashboardModuleId) await reindex(sourceIds)
+      await reindex(destinationIds)
     })
 
     return { id: moved.id, name: moved.name }

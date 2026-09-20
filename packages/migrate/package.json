@@ -4,11 +4,11 @@
   "private": true,
   "dependencies": {
     "@micromatrix/shared": "workspace:*",
-    "@prisma/adapter-pg": "^7.9.1",
-    "@prisma/client": "^7.9.1",
+    "@js-temporal/polyfill": "^0.5.1",
+    "@prisma/orm-postgres": "8.0.0-rc.10",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
-    "prisma": "^7.9.1",
-    "tsx": "^4.23.12"
+    "tsx": "^4.23.12",
+    "prisma": "8.0.0-rc.14"
   }
 }

@@ -1,14 +1,18 @@
 import { Injectable } from '@nestjs/common'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { FollowUpRecord, Prisma } from '../../generated/prisma/client'
+import type { PrismaClient } from '../../prisma/prisma-client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant } from '../../prisma/temporal'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { FollowCommentServiceBase } from './follow-comment.service-base'
-import { FollowUpsService } from './follow-ups.service'
+import { type FollowRecord, FollowUpsService } from './follow-ups.service'
+
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
-export class FollowCommentsService extends FollowCommentServiceBase<FollowUpRecord> {
+export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord> {
   protected readonly resourceLabel = '跟进记录评论'
   protected readonly notificationType = 'follow_record_comment'
   protected readonly notificationTitle = '跟进记录'
@@ -31,39 +35,51 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowUpReco
     page: number,
     pageSize: number,
   ) {
-    const where = { tenantId, resourceId, parentId: null }
-    const [parents, total] = await this.prisma.$transaction([
-      this.prisma.followUpRecordComment.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.followUpRecordComment.count({ where }),
+    const collection = this.comments().where({
+      organizationId: tenantId,
+      resourceId,
+      parentId: null,
+    })
+    const [parents, aggregate] = await Promise.all([
+      collection
+        .orderBy((row) => row.createTime.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      collection.aggregate((aggregate) => ({ count: aggregate.count() })),
     ])
-    return { parents, total }
+    return { parents: parents.map((row) => this.toCommentRow(row)), total: aggregate.count }
   }
 
-  protected loadReplies(tenantId: string, resourceId: string, parentIds: string[]) {
-    return this.prisma.followUpRecordComment.findMany({
-      where: { tenantId, resourceId, parentId: { in: parentIds } },
-      orderBy: { createdAt: 'asc' },
-    })
+  protected async loadReplies(tenantId: string, resourceId: string, parentIds: string[]) {
+    const rows = await this.comments()
+      .where({ organizationId: tenantId, resourceId })
+      .where((row) => row.parentId.in(parentIds))
+      .orderBy((row) => row.createTime.asc())
+      .all()
+    return rows.map((row) => this.toCommentRow(row))
   }
 
   protected findComment(tenantId: string, id: string) {
-    return this.prisma.followUpRecordComment.findFirst({ where: { id, tenantId } })
+    return this.comments()
+      .where({ id: id, organizationId: tenantId })
+      .first()
+      .then((row) => (row ? this.toCommentRow(row) : null))
   }
 
   protected findReplyParent(tenantId: string, resourceId: string, parentId: string) {
-    return this.prisma.followUpRecordComment.findFirst({
-      where: { id: parentId, tenantId, resourceId },
-      select: { id: true, parentId: true },
-    })
+    return this.comments()
+      .where({
+        id: parentId,
+        organizationId: tenantId,
+        resourceId,
+      })
+      .select('id', 'parentId')
+      .first()
   }
 
   protected createComment(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     input: {
       resourceId: string
       parentId: string | null
@@ -74,49 +90,75 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowUpReco
       updatedById: string
     },
   ) {
-    return tx.followUpRecordComment.create({ data: input })
+    return tx.orm.public.FollowUpRecordComment.create({
+      id: createLegacyId32(),
+      resourceId: input.resourceId,
+      parentId: input.parentId ? input.parentId : null,
+      replyToUserId: input.replyToUserId ? input.replyToUserId : null,
+      content: input.content,
+      organizationId: input.tenantId,
+      createUser: input.createdById,
+      updateUser: input.updatedById,
+      updateTime: nowInstant(),
+    }).then((row) => this.toCommentRow(row))
   }
 
-  protected updateComment(
-    tx: Prisma.TransactionClient,
-    id: string,
-    content: string,
-    updatedById: string,
-  ) {
-    return tx.followUpRecordComment.update({ where: { id }, data: { content, updatedById } })
+  protected updateComment(tx: PrismaTransaction, id: string, content: string, updatedById: string) {
+    return tx.orm.public.FollowUpRecordComment.where({ id: id })
+      .update({
+        content: content,
+        updateUser: updatedById,
+        updateTime: nowInstant(),
+      })
+      .then((row) => {
+        if (!row) throw new Error('评论不存在')
+        return this.toCommentRow(row)
+      })
   }
 
-  protected async deleteComment(tx: Prisma.TransactionClient, id: string): Promise<void> {
-    await tx.followUpRecordComment.delete({ where: { id } })
+  protected async deleteComment(tx: PrismaTransaction, id: string): Promise<void> {
+    await tx.orm.public.FollowUpRecordComment.where({ id: id }).delete()
   }
 
-  protected async replaceMentions(
-    tx: Prisma.TransactionClient,
-    commentId: string,
-    userIds: string[],
-  ) {
-    await tx.followUpRecordCommentMention.deleteMany({ where: { commentId } })
+  protected async replaceMentions(tx: PrismaTransaction, commentId: string, userIds: string[]) {
+    await tx.orm.public.FollowUpRecordCommentMention.where({
+      commentId: commentId,
+    }).deleteAndCount()
     if (!userIds.length) return
-    await tx.followUpRecordCommentMention.createMany({
-      data: userIds.map((userId) => ({ commentId, userId })),
-      skipDuplicates: true,
-    })
+    await tx.orm.public.FollowUpRecordCommentMention.createAll(
+      userIds.map((userId) => ({
+        id: createLegacyId32(),
+        commentId: commentId,
+        userId: userId,
+      })),
+    )
   }
 
-  protected loadMentions(commentIds: string[]) {
-    return this.prisma.followUpRecordCommentMention.findMany({
-      where: { commentId: { in: commentIds } },
-      select: { commentId: true, userId: true },
-    })
+  protected async loadMentions(commentIds: string[]) {
+    return await this.prisma.client.orm.public.FollowUpRecordCommentMention.where((row) =>
+      row.commentId.in(commentIds),
+    )
+      .select('commentId', 'userId')
+      .all()
   }
 
-  protected async recount(tx: Prisma.TransactionClient, tenantId: string, resourceId: string) {
-    const commentCount = await tx.followUpRecordComment.count({ where: { tenantId, resourceId } })
-    await tx.followUpRecord.update({ where: { id: resourceId }, data: { commentCount } })
+  protected async recount(tx: PrismaTransaction, tenantId: string, resourceId: string) {
+    const { count: commentCount } = await tx.orm.public.FollowUpRecordComment.where({
+      organizationId: tenantId,
+      resourceId,
+    }).aggregate((aggregate) => ({ count: aggregate.count() }))
+    await tx.orm.public.FollowUpRecords.where({ id: resourceId, tenantId }).update({
+      commentCount,
+      updatedAt: nowInstant(),
+    })
     return commentCount
   }
 
-  protected commentEvent(record: FollowUpRecord, mentioned: boolean): MessageTaskEvent {
+  private comments() {
+    return this.prisma.client.orm.public.FollowUpRecordComment
+  }
+
+  protected commentEvent(record: FollowRecord, mentioned: boolean): MessageTaskEvent {
     if (record.targetType === 'lead') {
       return mentioned
         ? 'CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED'

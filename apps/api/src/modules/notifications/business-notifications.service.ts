@@ -55,19 +55,20 @@ export class BusinessNotificationsService {
       ]
       if (candidateIds.length === 0) return 0
       const [users, operator] = await Promise.all([
-        this.prisma.user.findMany({
-          where: {
-            tenantId: input.tenantId,
-            status: 'ACTIVE',
-            id: { in: candidateIds },
-          },
-          select: { id: true },
-        }),
+        this.prisma.client.orm.public.Users.where({
+          tenantId: input.tenantId,
+          status: 'ACTIVE',
+        })
+          .where((user) => user.id.in(candidateIds))
+          .select('id')
+          .all(),
         input.operatorId
-          ? this.prisma.user.findFirst({
-              where: { id: input.operatorId, tenantId: input.tenantId },
-              select: { name: true, language: true },
+          ? this.prisma.client.orm.public.Users.where({
+              id: input.operatorId,
+              tenantId: input.tenantId,
             })
+              .select('name', 'language')
+              .first()
           : null,
       ])
       const userIds = users.map((user) => user.id)

@@ -42,11 +42,12 @@ export class HomeDepartmentScopeService {
     )
     if (!relevantRoles.length) return []
 
-    const departments = await this.prisma.department.findMany({
-      where: { tenantId: user.tenantId },
-      orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
-      select: { id: true, name: true, parentId: true },
+    const departments = await this.prisma.client.orm.public.Departments.where({
+      tenantId: user.tenantId,
     })
+      .orderBy([(row) => row.sort.asc(), (row) => row.createdAt.asc()])
+      .select('id', 'name', 'parentId')
+      .all()
     const allIds = new Set(departments.map((department) => department.id))
     if (relevantRoles.some((role) => role.dataScope === 'ALL')) {
       return this.buildTree(departments, allIds)
@@ -100,10 +101,13 @@ export class HomeDepartmentScopeService {
         : { all: false, self: false, deptIds: [], userIds: [] }
     }
 
-    const scopedUsers = await this.prisma.user.findMany({
-      where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: deptIds } },
-      select: { id: true },
+    const scopedUsers = await this.prisma.client.orm.public.Users.where({
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .where((row) => row.deptId.in(deptIds))
+      .select('id')
+      .all()
     const userIds = new Set(scopedUsers.map((member) => member.id))
     if (searchType === 'ALL') userIds.add(user.id)
     return { all: false, self: false, deptIds, userIds: [...userIds] }

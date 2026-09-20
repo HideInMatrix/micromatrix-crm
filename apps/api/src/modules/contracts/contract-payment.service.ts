@@ -8,8 +8,11 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import { formatForExport } from '../../common/export-format'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { not, or } from '@prisma/orm-postgres/orm-client'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { decimalString, numericValue, tryNumericValues } from '../../prisma/numeric-value.js'
+import { createLegacyId32 } from '../../common/legacy-id'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
 import {
@@ -40,7 +43,7 @@ const PLAN_READ_PERMISSION = 'CONTRACT_PAYMENT_PLAN:READ'
 const RECORD_READ_PERMISSION = 'CONTRACT_PAYMENT_RECORD:READ'
 const PLAN_STATUSES = new Set(['PENDING', 'PARTIALLY_COMPLETED', 'COMPLETED'])
 
-type PaymentResourceType = 'contractPaymentPlan' | 'contractPaymentRecord'
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 function intersectIds(left: string[] | null, right: string[] | null): string[] | null {
   if (left === null) return right
@@ -86,66 +89,6 @@ function importedMillis(values: Record<string, unknown>, key: string, label: str
   return millis
 }
 
-function parseFilterValue(
-  key: string,
-  condition: FilterCondition,
-  dateKeys: Set<string>,
-  numberKeys: Set<string>,
-) {
-  let raw: unknown = condition.value
-  if (dateKeys.has(key)) {
-    const direct = Number(condition.value)
-    const millis =
-      Number.isFinite(direct) && String(condition.value ?? '').trim() !== ''
-        ? direct
-        : new Date(String(condition.value)).getTime()
-    if (!Number.isFinite(millis)) return null
-    raw = BigInt(Math.trunc(millis))
-  } else if (numberKeys.has(key)) {
-    const number = Number(condition.value)
-    if (!Number.isFinite(number)) return null
-    raw = number
-  }
-  return raw
-}
-
-function directFilterClause<T extends object>(
-  key: string,
-  condition: FilterCondition,
-  dateKeys: Set<string>,
-  numberKeys: Set<string>,
-): T | null {
-  if (condition.op === 'in' || condition.op === 'notIn') {
-    const values = Array.isArray(condition.value) ? condition.value : [condition.value]
-    const matches = values.map((value) =>
-      directFilterClause<T>(key, { ...condition, op: 'eq', value }, dateKeys, numberKeys),
-    )
-    if (!matches.length || matches.some((match) => !match)) return null
-    const OR = matches as T[]
-    return (condition.op === 'notIn' ? { NOT: { OR } } : { OR }) as T
-  }
-  if (condition.op === 'notContains') {
-    const match = directFilterClause<T>(key, { ...condition, op: 'contains' }, dateKeys, numberKeys)
-    return match ? ({ NOT: match } as T) : null
-  }
-  const raw = parseFilterValue(key, condition, dateKeys, numberKeys)
-  if (raw === null) return null
-  const value = raw as never
-  if (condition.op === 'eq') return { [key]: { equals: value } } as T
-  if (condition.op === 'ne') return { NOT: { [key]: { equals: value } } } as T
-  if (condition.op === 'contains') {
-    if (dateKeys.has(key) || numberKeys.has(key)) return null
-    return { [key]: { contains: String(condition.value ?? ''), mode: 'insensitive' } } as T
-  }
-  if (condition.op === 'gt') return { [key]: { gt: value } } as T
-  if (condition.op === 'gte') return { [key]: { gte: value } } as T
-  if (condition.op === 'lt') return { [key]: { lt: value } } as T
-  if (condition.op === 'lte') return { [key]: { lte: value } } as T
-  if (condition.op === 'isEmpty') return { [key]: null } as T
-  if (condition.op === 'notEmpty') return { NOT: { [key]: null } } as T
-  return null
-}
-
 @Injectable()
 export class ContractPaymentPlanService {
   constructor(
@@ -184,32 +127,56 @@ export class ContractPaymentPlanService {
         : null,
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
-    const scope = await this.dataScope.directOwnerFilter(user, PLAN_READ_PERMISSION)
-    const where: Prisma.ContractPaymentPlanWhereInput = {
+    let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
       organizationId: user.tenantId,
-      AND: [scope as Prisma.ContractPaymentPlanWhereInput],
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(dto.contractId ? { contractId: dto.contractId } : {}),
-      ...(dto.customerId ? { contract: { customerId: dto.customerId } } : {}),
-      ...(dto.keyword
-        ? {
-            OR: [
-              { name: { contains: dto.keyword, mode: 'insensitive' } },
-              { contract: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+    })
+    const scope = await this.dataScope.directOwnerFilter(user, PLAN_READ_PERMISSION)
+    const ownerScope = scope.owner
+    if (ownerScope) {
+      query =
+        typeof ownerScope === 'string'
+          ? query.where({ owner: ownerScope })
+          : query.where((row) => row.owner.in(ownerScope.in))
     }
-    const [rows, total] = await Promise.all([
-      this.prisma.contractPaymentPlan.findMany({
-        where,
-        include: { contract: { select: { name: true, customerId: true } } },
-        orderBy: [{ createTime: 'desc' }, { id: 'desc' }],
-        skip: (current - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.contractPaymentPlan.count({ where }),
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
+    if (dto.contractId) query = query.where({ contractId: dto.contractId })
+    if (dto.customerId) {
+      const contracts = await this.prisma.client.orm.public.Contract.where({
+        organizationId: user.tenantId,
+        customerId: dto.customerId,
+      })
+        .select('id')
+        .all()
+      query = query.where((row) => row.contractId.in(contracts.map((item) => item.id)))
+    }
+    if (dto.keyword) {
+      const contracts = await this.prisma.client.orm.public.Contract.where({
+        organizationId: user.tenantId,
+      })
+        .where((row) => row.name.ilike(`%${dto.keyword}%`))
+        .select('id')
+        .all()
+      query = query.where((row) =>
+        or(row.name.ilike(`%${dto.keyword}%`), row.contractId.in(contracts.map((item) => item.id))),
+      )
+    }
+    const [rows, aggregate] = await Promise.all([
+      query
+        .orderBy([(row) => row.createTime.desc(), (row) => row.id.desc()])
+        .offset((current - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      query.aggregate((value) => ({ count: value.count() })),
     ])
+    const total = aggregate.count
+    const contracts = rows.length
+      ? await this.prisma.client.orm.public.Contract.where((row) =>
+          row.id.in([...new Set(rows.map((item) => item.contractId))]),
+        )
+          .select('id', 'name', 'customerId')
+          .all()
+      : []
+    const contractMap = new Map(contracts.map((item) => [String(item.id), item]))
     const [dynamic, people] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
@@ -223,8 +190,8 @@ export class ContractPaymentPlanService {
         id: row.id,
         name: row.name,
         contractId: row.contractId,
-        contractName: row.contract.name,
-        customerId: row.contract.customerId,
+        contractName: contractMap.get(String(row.contractId))?.name ?? '已删除合同',
+        customerId: contractMap.get(String(row.contractId))?.customerId ?? null,
         owner: row.owner,
         ownerName: people.get(row.owner)?.name ?? null,
         departmentId: people.get(row.owner)?.deptId ?? null,
@@ -287,21 +254,20 @@ export class ContractPaymentPlanService {
       dto.moduleFields,
     )
     const now = BigInt(Date.now())
-    const created = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.contractPaymentPlan.create({
-        data: {
-          name: dto.name.trim(),
-          contractId: dto.contractId,
-          owner,
-          planStatus: dto.planStatus ?? 'PENDING',
-          planAmount: new Prisma.Decimal(dto.planAmount),
-          planEndTime: BigInt(dto.planEndTime),
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+    const created = await this.prisma.client.transaction(async (tx) => {
+      const row = await tx.orm.public.ContractPaymentPlan.create({
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        contractId: dto.contractId,
+        owner: owner,
+        planStatus: dto.planStatus ?? 'PENDING',
+        planAmount: numericValue(decimalString(dto.planAmount, 20, 10), 20, 10),
+        planEndTime: BigInt(dto.planEndTime),
+        organizationId: user.tenantId,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -330,20 +296,22 @@ export class ContractPaymentPlanService {
       dto.moduleFields === undefined
         ? null
         : await this.moduleFieldsToCustomData(user.tenantId, PLAN_FORM_KEY, dto.moduleFields)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.contractPaymentPlan.update({
-        where: { id: dto.id },
-        data: {
-          name: dto.name?.trim(),
-          contractId: dto.contractId,
-          owner,
-          planStatus: dto.planStatus,
-          planAmount: dto.planAmount === undefined ? undefined : new Prisma.Decimal(dto.planAmount),
-          planEndTime: dto.planEndTime === undefined ? undefined : BigInt(dto.planEndTime),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma.client.transaction(async (tx) => {
+      const updated = await tx.orm.public.ContractPaymentPlan.where({
+        id: dto.id,
+      }).update({
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.contractId !== undefined ? { contractId: dto.contractId } : {}),
+        ...(owner !== undefined ? { owner: owner } : {}),
+        ...(dto.planStatus !== undefined ? { planStatus: dto.planStatus } : {}),
+        ...(dto.planAmount !== undefined
+          ? { planAmount: numericValue(decimalString(dto.planAmount, 20, 10), 20, 10) }
+          : {}),
+        ...(dto.planEndTime !== undefined ? { planEndTime: BigInt(dto.planEndTime) } : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
+      if (!updated) throw new NotFoundException('回款计划不存在')
       if (customData) {
         await this.fieldValues.save(
           user.tenantId,
@@ -361,7 +329,10 @@ export class ContractPaymentPlanService {
 
   async remove(user: AuthUser, id: string) {
     const current = await this.ensureInScope(user, id, 'CONTRACT_PAYMENT_PLAN:DELETE')
-    await this.prisma.contractPaymentPlan.delete({ where: { id } })
+    await this.prisma.client.orm.public.ContractPaymentPlan.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).delete()
     return { id, name: current.name }
   }
 
@@ -373,22 +344,32 @@ export class ContractPaymentPlanService {
     if (field.system) {
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
-        await this.prisma.contractPaymentPlan.updateMany({
-          where: { id: { in: rows.map((row) => row.id) }, organizationId: user.tenantId },
-          data: { owner, updateTime: BigInt(Date.now()), updateUser: user.id },
+        await this.prisma.client.orm.public.ContractPaymentPlan.where({
+          organizationId: user.tenantId,
         })
+          .where((row) => row.id.in(rows.map((item) => item.id)))
+          .updateAndCount({
+            owner: owner,
+            updateTime: BigInt(Date.now()),
+            updateUser: user.id,
+          })
       } else if (field.key === 'planStatus') {
         const status = String(dto.fieldValue ?? '')
         if (!PLAN_STATUSES.has(status)) throw new BadRequestException('回款计划状态不合法')
-        await this.prisma.contractPaymentPlan.updateMany({
-          where: { id: { in: rows.map((row) => row.id) }, organizationId: user.tenantId },
-          data: { planStatus: status, updateTime: BigInt(Date.now()), updateUser: user.id },
+        await this.prisma.client.orm.public.ContractPaymentPlan.where({
+          organizationId: user.tenantId,
         })
+          .where((row) => row.id.in(rows.map((item) => item.id)))
+          .updateAndCount({
+            planStatus: status,
+            updateTime: BigInt(Date.now()),
+            updateUser: user.id,
+          })
       } else {
         throw new BadRequestException('该系统字段不支持批量修改')
       }
     } else {
-      await this.prisma.$transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'contractPaymentPlan',
@@ -627,21 +608,32 @@ export class ContractPaymentPlanService {
   }
 
   private async ensureInScope(user: AuthUser, id: string, permission = PLAN_READ_PERMISSION) {
-    const row = await this.prisma.contractPaymentPlan.findFirst({
-      where: { id, organizationId: user.tenantId },
-      include: { contract: { select: { name: true, customerId: true } } },
-    })
+    const row = await this.prisma.client.orm.public.ContractPaymentPlan.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('回款计划不存在或不在你的数据范围内')
     }
-    return row
+    const contract = await this.prisma.client.orm.public.Contract.where({
+      id: row.contractId,
+      organizationId: user.tenantId,
+    })
+      .select('name', 'customerId')
+      .first()
+    if (!contract) throw new NotFoundException('回款计划关联合同不存在')
+    return { ...row, contract }
   }
 
   private async assertBatchInScope(user: AuthUser, ids: string[], permission: string) {
     const unique = [...new Set(ids)]
-    const rows = await this.prisma.contractPaymentPlan.findMany({
-      where: { id: { in: unique }, organizationId: user.tenantId },
-    })
+    const rows = unique.length
+      ? await this.prisma.client.orm.public.ContractPaymentPlan.where({
+          organizationId: user.tenantId,
+        })
+          .where((row) => row.id.in(unique))
+          .all()
+      : []
     if (rows.length !== unique.length) throw new NotFoundException('部分回款计划不存在')
     for (const row of rows) {
       if (!(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
@@ -669,27 +661,15 @@ export class ContractPaymentPlanService {
       'createTime',
       'updateTime',
     ])
-    return this.filterResourceIds(
-      organizationId,
-      fields,
-      conditions,
-      mode,
-      directKeys,
-      new Set(['planEndTime', 'createTime', 'updateTime']),
-      new Set(['planAmount']),
-      'contractPaymentPlan',
-    )
+    return this.filterPlanResourceIds(organizationId, fields, conditions, mode, directKeys)
   }
 
-  private async filterResourceIds(
+  private async filterPlanResourceIds(
     organizationId: string,
     fields: FieldVO[],
     conditions: FilterCondition[],
     mode: 'AND' | 'OR',
     directKeys: Set<string>,
-    dateKeys: Set<string>,
-    numberKeys: Set<string>,
-    resourceType: PaymentResourceType,
   ) {
     const fieldMap = new Map(
       fields.flatMap((field) => [
@@ -700,34 +680,29 @@ export class ContractPaymentPlanService {
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
-          const users = await this.prisma.user.findMany({
-            where: { tenantId: organizationId, deptId: String(condition.value ?? '') },
-            select: { id: true },
+          const users = await this.prisma.client.orm.public.Users.where({
+            tenantId: organizationId,
+            deptId: String(condition.value ?? ''),
           })
-          const ownerIds = users.map((item) => item.id)
-          const where =
+            .select('id')
+            .all()
+          const ownerIds = users.map((item) => String(item.id))
+          let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
+            organizationId: organizationId,
+          })
+          query =
             condition.op === 'ne'
-              ? { organizationId, NOT: { owner: { in: ownerIds } } }
-              : { organizationId, owner: { in: ownerIds } }
-          const rows =
-            resourceType === 'contractPaymentPlan'
-              ? await this.prisma.contractPaymentPlan.findMany({ where, select: { id: true } })
-              : await this.prisma.contractPaymentRecord.findMany({ where, select: { id: true } })
+              ? query.where((row) => not(row.owner.in(ownerIds)))
+              : query.where((row) => row.owner.in(ownerIds))
+          const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
-          const clause = directFilterClause<Record<string, unknown>>(
-            condition.key,
-            condition,
-            dateKeys,
-            numberKeys,
-          )
-          if (!clause) return new Set<string>()
-          const where = { organizationId, AND: [clause] }
-          const rows =
-            resourceType === 'contractPaymentPlan'
-              ? await this.prisma.contractPaymentPlan.findMany({ where, select: { id: true } })
-              : await this.prisma.contractPaymentRecord.findMany({ where, select: { id: true } })
+          let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
+            organizationId: organizationId,
+          })
+          query = this.applyPlanDirectFilter(query, condition.key, condition)
+          const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         const field = fieldMap.get(condition.key)
@@ -737,7 +712,9 @@ export class ContractPaymentPlanService {
         const normalized =
           field.key === condition.key ? condition : { ...condition, key: field.key }
         return new Set(
-          await this.fieldValues.filterResourceIds(organizationId, resourceType, [normalized]),
+          await this.fieldValues.filterResourceIds(organizationId, 'contractPaymentPlan', [
+            normalized,
+          ]),
         )
       }),
     )
@@ -748,6 +725,130 @@ export class ContractPaymentPlanService {
         .slice(1)
         .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
+  }
+
+  private applyPlanDirectFilter(
+    collection: ReturnType<typeof this.prisma.client.orm.public.ContractPaymentPlan.where>,
+    key: string,
+    condition: FilterCondition,
+  ) {
+    const impossible = () => collection.where((row) => row.id.eq(''))
+
+    if (key === 'planAmount') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.planAmount.isNull())
+      if (condition.op === 'notEmpty') return collection.where((row) => row.planAmount.isNotNull())
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.planAmount.eq(value)
+        if (condition.op === 'ne') return row.planAmount.neq(value)
+        if (condition.op === 'in') return row.planAmount.in(values)
+        if (condition.op === 'notIn') return not(row.planAmount.in(values))
+        if (condition.op === 'gt') return row.planAmount.gt(value)
+        if (condition.op === 'gte') return row.planAmount.gte(value)
+        if (condition.op === 'lt') return row.planAmount.lt(value)
+        if (condition.op === 'lte') return row.planAmount.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'planEndTime' || key === 'createTime' || key === 'updateTime') {
+      if (condition.op === 'isEmpty') {
+        return key === 'planEndTime'
+          ? collection.where((row) => row.planEndTime.isNull())
+          : impossible()
+      }
+      if (condition.op === 'notEmpty') {
+        return key === 'planEndTime'
+          ? collection.where((row) => row.planEndTime.isNotNull())
+          : collection
+      }
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values: bigint[] = []
+      for (const raw of rawValues) {
+        const direct = Number(raw)
+        const millis =
+          Number.isFinite(direct) && String(raw ?? '').trim() !== ''
+            ? direct
+            : new Date(String(raw)).getTime()
+        if (!Number.isFinite(millis)) return impossible()
+        values.push(BigInt(Math.trunc(millis)))
+      }
+      const value = values[0]!
+      if (key === 'planEndTime') {
+        return collection.where((row) => {
+          if (condition.op === 'eq') return row.planEndTime.eq(value)
+          if (condition.op === 'ne') return row.planEndTime.neq(value)
+          if (condition.op === 'in') return row.planEndTime.in(values)
+          if (condition.op === 'notIn') return not(row.planEndTime.in(values))
+          if (condition.op === 'gt') return row.planEndTime.gt(value)
+          if (condition.op === 'gte') return row.planEndTime.gte(value)
+          if (condition.op === 'lt') return row.planEndTime.lt(value)
+          if (condition.op === 'lte') return row.planEndTime.lte(value)
+          return row.id.eq('')
+        })
+      }
+      return collection.where((row) => {
+        const field = key === 'createTime' ? row.createTime : row.updateTime
+        if (condition.op === 'eq') return field.eq(value)
+        if (condition.op === 'ne') return field.neq(value)
+        if (condition.op === 'in') return field.in(values)
+        if (condition.op === 'notIn') return not(field.in(values))
+        if (condition.op === 'gt') return field.gt(value)
+        if (condition.op === 'gte') return field.gte(value)
+        if (condition.op === 'lt') return field.lt(value)
+        if (condition.op === 'lte') return field.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'name') {
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
+      )
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.name.eq(value)
+        if (condition.op === 'ne') return row.name.neq(value)
+        if (condition.op === 'in') return row.name.in(values)
+        if (condition.op === 'notIn') return not(row.name.in(values))
+        if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+
+    if (condition.op === 'isEmpty') return impossible()
+    if (condition.op === 'notEmpty') return collection
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (item) => String(item ?? ''),
+    )
+    const value = values[0]!
+    return collection.where((row) => {
+      const field =
+        key === 'contractId'
+          ? row.contractId
+          : key === 'owner'
+            ? row.owner
+            : key === 'planStatus'
+              ? row.planStatus
+              : key === 'updateUser'
+                ? row.updateUser
+                : row.createUser
+      if (condition.op === 'eq') return field.eq(value)
+      if (condition.op === 'ne') return field.neq(value)
+      if (condition.op === 'in') return field.in(values)
+      if (condition.op === 'notIn') return not(field.in(values))
+      if (condition.op === 'contains') return field.ilike(`%${String(condition.value ?? '')}%`)
+      if (condition.op === 'notContains')
+        return not(field.ilike(`%${String(condition.value ?? '')}%`))
+      return row.id.eq('')
+    })
   }
 
   private async moduleFieldsToCustomData(
@@ -774,10 +875,13 @@ export class ContractPaymentPlanService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     const id = ownerId || user.id
-    const owner = await this.prisma.user.findFirst({
-      where: { id, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true },
+    const owner = await this.prisma.client.orm.public.Users.where({
+      id,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner.id
   }
@@ -785,28 +889,26 @@ export class ContractPaymentPlanService {
   private async people(ids: string[]) {
     const unique = [...new Set(ids.filter(Boolean))]
     const users = unique.length
-      ? await this.prisma.user.findMany({
-          where: { id: { in: unique } },
-          select: { id: true, name: true, deptId: true },
-        })
+      ? await this.prisma.client.orm.public.Users.where((row) => row.id.in(unique))
+          .select('id', 'name', 'deptId')
+          .all()
       : []
     const deptIds = [
-      ...new Set(users.map((item) => item.deptId).filter((id): id is string => !!id)),
+      ...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : []))),
     ]
     const depts = deptIds.length
-      ? await this.prisma.department.findMany({
-          where: { id: { in: deptIds } },
-          select: { id: true, name: true },
-        })
+      ? await this.prisma.client.orm.public.Departments.where((row) => row.id.in(deptIds))
+          .select('id', 'name')
+          .all()
       : []
-    const deptMap = new Map(depts.map((item) => [item.id, item.name]))
+    const deptMap = new Map(depts.map((item) => [String(item.id), item.name]))
     return new Map(
       users.map((item) => [
-        item.id,
+        String(item.id),
         {
           name: item.name,
-          deptId: item.deptId,
-          deptName: item.deptId ? (deptMap.get(item.deptId) ?? null) : null,
+          deptId: item.deptId ? String(item.deptId) : null,
+          deptName: item.deptId ? (deptMap.get(String(item.deptId)) ?? null) : null,
         },
       ]),
     )
@@ -851,36 +953,72 @@ export class ContractPaymentRecordService {
         : null,
     ])
     const filteredIds = intersectIds(savedIds, adHocIds)
-    const scope = await this.dataScope.directOwnerFilter(user, RECORD_READ_PERMISSION)
-    const where: Prisma.ContractPaymentRecordWhereInput = {
+    let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
       organizationId: user.tenantId,
-      AND: [scope as Prisma.ContractPaymentRecordWhereInput],
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(dto.contractId ? { contractId: dto.contractId } : {}),
-      ...(dto.customerId ? { contract: { customerId: dto.customerId } } : {}),
-      ...(dto.keyword
-        ? {
-            OR: [
-              { name: { contains: dto.keyword, mode: 'insensitive' } },
-              { no: { contains: dto.keyword, mode: 'insensitive' } },
-              { contract: { name: { contains: dto.keyword, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+    })
+    const scope = await this.dataScope.directOwnerFilter(user, RECORD_READ_PERMISSION)
+    const ownerScope = scope.owner
+    if (ownerScope) {
+      query =
+        typeof ownerScope === 'string'
+          ? query.where({ owner: ownerScope })
+          : query.where((row) => row.owner.in(ownerScope.in))
     }
-    const [rows, total] = await Promise.all([
-      this.prisma.contractPaymentRecord.findMany({
-        where,
-        include: {
-          contract: { select: { name: true, customerId: true } },
-          paymentPlan: { select: { name: true } },
-        },
-        orderBy: [{ createTime: 'desc' }, { id: 'desc' }],
-        skip: (current - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.contractPaymentRecord.count({ where }),
+    if (filteredIds) query = query.where((row) => row.id.in(filteredIds))
+    if (dto.contractId) query = query.where({ contractId: dto.contractId })
+    if (dto.customerId) {
+      const contracts = await this.prisma.client.orm.public.Contract.where({
+        organizationId: user.tenantId,
+        customerId: dto.customerId,
+      })
+        .select('id')
+        .all()
+      query = query.where((row) => row.contractId.in(contracts.map((item) => item.id)))
+    }
+    if (dto.keyword) {
+      const contracts = await this.prisma.client.orm.public.Contract.where({
+        organizationId: user.tenantId,
+      })
+        .where((row) => row.name.ilike(`%${dto.keyword}%`))
+        .select('id')
+        .all()
+      query = query.where((row) =>
+        or(
+          row.name.ilike(`%${dto.keyword}%`),
+          row.no.ilike(`%${dto.keyword}%`),
+          row.contractId.in(contracts.map((item) => item.id)),
+        ),
+      )
+    }
+    const [rows, aggregate] = await Promise.all([
+      query
+        .orderBy([(row) => row.createTime.desc(), (row) => row.id.desc()])
+        .offset((current - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      query.aggregate((value) => ({ count: value.count() })),
     ])
+    const total = aggregate.count
+    const contractIds = [...new Set(rows.map((row) => row.contractId))]
+    const paymentPlanIds = [
+      ...new Set(rows.flatMap((row) => (row.paymentPlanId ? [row.paymentPlanId] : []))),
+    ]
+    const [contracts, paymentPlans] = await Promise.all([
+      contractIds.length
+        ? this.prisma.client.orm.public.Contract.where((row) => row.id.in(contractIds))
+            .select('id', 'name', 'customerId')
+            .all()
+        : [],
+      paymentPlanIds.length
+        ? this.prisma.client.orm.public.ContractPaymentPlan.where((row) =>
+            row.id.in(paymentPlanIds),
+          )
+            .select('id', 'name')
+            .all()
+        : [],
+    ])
+    const contractMap = new Map(contracts.map((item) => [String(item.id), item]))
+    const paymentPlanMap = new Map(paymentPlans.map((item) => [String(item.id), item.name]))
     const [dynamic, people] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
@@ -895,10 +1033,12 @@ export class ContractPaymentRecordService {
         name: row.name,
         no: row.no,
         contractId: row.contractId,
-        contractName: row.contract.name,
-        customerId: row.contract.customerId,
+        contractName: contractMap.get(String(row.contractId))?.name ?? '已删除合同',
+        customerId: contractMap.get(String(row.contractId))?.customerId ?? null,
         paymentPlanId: row.paymentPlanId,
-        paymentPlanName: row.paymentPlan?.name ?? null,
+        paymentPlanName: row.paymentPlanId
+          ? (paymentPlanMap.get(String(row.paymentPlanId)) ?? null)
+          : null,
         owner: row.owner,
         ownerName: people.get(row.owner)?.name ?? null,
         departmentId: people.get(row.owner)?.deptId ?? null,
@@ -958,23 +1098,22 @@ export class ContractPaymentRecordService {
     const owner = await this.resolveOwner(user, dto.owner)
     const customData = await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
     const now = BigInt(Date.now())
-    const created = await this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.client.transaction(async (tx) => {
       const no = dto.no?.trim() || (await this.nextRecordNo(tx, user.tenantId, dto.recordEndTime))
-      const row = await tx.contractPaymentRecord.create({
-        data: {
-          name: dto.name.trim(),
-          no,
-          owner,
-          contractId: dto.contractId,
-          paymentPlanId: dto.paymentPlanId || null,
-          recordAmount: new Prisma.Decimal(dto.recordAmount),
-          recordEndTime: BigInt(dto.recordEndTime),
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
+      const row = await tx.orm.public.ContractPaymentRecord.create({
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        no: no,
+        owner: owner,
+        contractId: dto.contractId,
+        paymentPlanId: dto.paymentPlanId ? dto.paymentPlanId : null,
+        recordAmount: numericValue(decimalString(dto.recordAmount, 20, 10), 20, 10),
+        recordEndTime: BigInt(dto.recordEndTime),
+        organizationId: user.tenantId,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -1003,23 +1142,28 @@ export class ContractPaymentRecordService {
       dto.moduleFields === undefined
         ? null
         : await this.moduleFieldsToCustomData(user.tenantId, dto.moduleFields)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.contractPaymentRecord.update({
-        where: { id: dto.id },
-        data: {
-          name: dto.name?.trim(),
-          // Cordys update explicitly preserves the original serial number.
-          no: current.no,
-          owner,
-          contractId: dto.contractId,
-          paymentPlanId: dto.paymentPlanId === undefined ? undefined : dto.paymentPlanId || null,
-          recordAmount:
-            dto.recordAmount === undefined ? undefined : new Prisma.Decimal(dto.recordAmount),
-          recordEndTime: dto.recordEndTime === undefined ? undefined : BigInt(dto.recordEndTime),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    await this.prisma.client.transaction(async (tx) => {
+      const updated = await tx.orm.public.ContractPaymentRecord.where({
+        id: dto.id,
+      }).update({
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        // Cordys update explicitly preserves the original serial number.
+        no: current.no ? current.no : null,
+        ...(owner !== undefined ? { owner: owner } : {}),
+        ...(dto.contractId !== undefined ? { contractId: dto.contractId } : {}),
+        ...(dto.paymentPlanId !== undefined
+          ? {
+              paymentPlanId: dto.paymentPlanId ? dto.paymentPlanId : null,
+            }
+          : {}),
+        ...(dto.recordAmount !== undefined
+          ? { recordAmount: numericValue(decimalString(dto.recordAmount, 20, 10), 20, 10) }
+          : {}),
+        ...(dto.recordEndTime !== undefined ? { recordEndTime: BigInt(dto.recordEndTime) } : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
+      if (!updated) throw new NotFoundException('回款记录不存在')
       if (customData) {
         await this.fieldValues.save(
           user.tenantId,
@@ -1037,7 +1181,10 @@ export class ContractPaymentRecordService {
 
   async remove(user: AuthUser, id: string) {
     const current = await this.ensureInScope(user, id, 'CONTRACT_PAYMENT_RECORD:DELETE')
-    await this.prisma.contractPaymentRecord.delete({ where: { id } })
+    await this.prisma.client.orm.public.ContractPaymentRecord.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).delete()
     return { id, name: current.name }
   }
 
@@ -1049,15 +1196,20 @@ export class ContractPaymentRecordService {
     if (field.system) {
       if (field.key === 'owner') {
         const owner = await this.resolveOwner(user, String(dto.fieldValue ?? ''))
-        await this.prisma.contractPaymentRecord.updateMany({
-          where: { id: { in: rows.map((row) => row.id) }, organizationId: user.tenantId },
-          data: { owner, updateTime: BigInt(Date.now()), updateUser: user.id },
+        await this.prisma.client.orm.public.ContractPaymentRecord.where({
+          organizationId: user.tenantId,
         })
+          .where((row) => row.id.in(rows.map((item) => item.id)))
+          .updateAndCount({
+            owner: owner,
+            updateTime: BigInt(Date.now()),
+            updateUser: user.id,
+          })
       } else {
         throw new BadRequestException('该系统字段不支持批量修改')
       }
     } else {
-      await this.prisma.$transaction(async (tx) => {
+      await this.prisma.client.transaction(async (tx) => {
         await this.fieldValues.saveBatch(
           user.tenantId,
           'contractPaymentRecord',
@@ -1309,33 +1461,54 @@ export class ContractPaymentRecordService {
     if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('回款金额必须大于 0')
     await this.contracts.ensureInScope(user, contractId)
     if (paymentPlanId) {
-      const plan = await this.prisma.contractPaymentPlan.findFirst({
-        where: { id: paymentPlanId, organizationId: user.tenantId, contractId },
-        select: { id: true },
+      const plan = await this.prisma.client.orm.public.ContractPaymentPlan.where({
+        id: paymentPlanId,
+        organizationId: user.tenantId,
+        contractId: contractId,
       })
+        .select('id')
+        .first()
       if (!plan) throw new BadRequestException('回款计划不存在或不属于当前合同')
     }
   }
 
   private async ensureInScope(user: AuthUser, id: string, permission = RECORD_READ_PERMISSION) {
-    const row = await this.prisma.contractPaymentRecord.findFirst({
-      where: { id, organizationId: user.tenantId },
-      include: {
-        contract: { select: { name: true, customerId: true } },
-        paymentPlan: { select: { name: true } },
-      },
-    })
+    const row = await this.prisma.client.orm.public.ContractPaymentRecord.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
     if (!row || !(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
       throw new NotFoundException('回款记录不存在或不在你的数据范围内')
     }
-    return row
+    const [contract, paymentPlan] = await Promise.all([
+      this.prisma.client.orm.public.Contract.where({
+        id: row.contractId,
+        organizationId: user.tenantId,
+      })
+        .select('name', 'customerId')
+        .first(),
+      row.paymentPlanId
+        ? this.prisma.client.orm.public.ContractPaymentPlan.where({
+            id: row.paymentPlanId,
+            organizationId: user.tenantId,
+          })
+            .select('name')
+            .first()
+        : null,
+    ])
+    if (!contract) throw new NotFoundException('回款记录关联合同不存在')
+    return { ...row, contract, paymentPlan }
   }
 
   private async assertBatchInScope(user: AuthUser, ids: string[], permission: string) {
     const unique = [...new Set(ids)]
-    const rows = await this.prisma.contractPaymentRecord.findMany({
-      where: { id: { in: unique }, organizationId: user.tenantId },
-    })
+    const rows = unique.length
+      ? await this.prisma.client.orm.public.ContractPaymentRecord.where({
+          organizationId: user.tenantId,
+        })
+          .where((row) => row.id.in(unique))
+          .all()
+      : []
     if (rows.length !== unique.length) throw new NotFoundException('部分回款记录不存在')
     for (const row of rows) {
       if (!(await this.dataScope.matchesDirectOwner(user, row.owner, permission))) {
@@ -1370,39 +1543,32 @@ export class ContractPaymentRecordService {
         [field.id, field],
       ]),
     )
-    const dateKeys = new Set(['recordEndTime', 'createTime', 'updateTime'])
-    const numberKeys = new Set(['recordAmount'])
     const sets = await Promise.all(
       conditions.map(async (condition) => {
         if (condition.key === 'departmentId') {
-          const users = await this.prisma.user.findMany({
-            where: { tenantId: organizationId, deptId: String(condition.value ?? '') },
-            select: { id: true },
+          const users = await this.prisma.client.orm.public.Users.where({
+            tenantId: organizationId,
+            deptId: String(condition.value ?? ''),
           })
-          const ownerIds = users.map((item) => item.id)
-          const rows = await this.prisma.contractPaymentRecord.findMany({
-            where: {
-              organizationId,
-              ...(condition.op === 'ne'
-                ? { NOT: { owner: { in: ownerIds } } }
-                : { owner: { in: ownerIds } }),
-            },
-            select: { id: true },
+            .select('id')
+            .all()
+          const ownerIds = users.map((item) => String(item.id))
+          let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
+            organizationId: organizationId,
           })
+          query =
+            condition.op === 'ne'
+              ? query.where((row) => not(row.owner.in(ownerIds)))
+              : query.where((row) => row.owner.in(ownerIds))
+          const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         if (directKeys.has(condition.key)) {
-          const clause = directFilterClause<Prisma.ContractPaymentRecordWhereInput>(
-            condition.key,
-            condition,
-            dateKeys,
-            numberKeys,
-          )
-          if (!clause) return new Set<string>()
-          const rows = await this.prisma.contractPaymentRecord.findMany({
-            where: { organizationId, AND: [clause] },
-            select: { id: true },
+          let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
+            organizationId: organizationId,
           })
+          query = this.applyRecordDirectFilter(query, condition.key, condition)
+          const rows = await query.select('id').all()
           return new Set(rows.map((row) => row.id))
         }
         const field = fieldMap.get(condition.key)
@@ -1425,6 +1591,155 @@ export class ContractPaymentRecordService {
         .slice(1)
         .reduce((result, set) => new Set([...result].filter((id) => set.has(id))), sets[0]!),
     ]
+  }
+
+  private applyRecordDirectFilter(
+    collection: ReturnType<typeof this.prisma.client.orm.public.ContractPaymentRecord.where>,
+    key: string,
+    condition: FilterCondition,
+  ) {
+    const impossible = () => collection.where((row) => row.id.eq(''))
+
+    if (key === 'recordAmount') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.recordAmount.isNull())
+      if (condition.op === 'notEmpty')
+        return collection.where((row) => row.recordAmount.isNotNull())
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values = tryNumericValues(rawValues, 20, 10)
+      if (!values) return impossible()
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.recordAmount.eq(value)
+        if (condition.op === 'ne') return row.recordAmount.neq(value)
+        if (condition.op === 'in') return row.recordAmount.in(values)
+        if (condition.op === 'notIn') return not(row.recordAmount.in(values))
+        if (condition.op === 'gt') return row.recordAmount.gt(value)
+        if (condition.op === 'gte') return row.recordAmount.gte(value)
+        if (condition.op === 'lt') return row.recordAmount.lt(value)
+        if (condition.op === 'lte') return row.recordAmount.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'recordEndTime' || key === 'createTime' || key === 'updateTime') {
+      if (condition.op === 'isEmpty') {
+        return key === 'recordEndTime'
+          ? collection.where((row) => row.recordEndTime.isNull())
+          : impossible()
+      }
+      if (condition.op === 'notEmpty') {
+        return key === 'recordEndTime'
+          ? collection.where((row) => row.recordEndTime.isNotNull())
+          : collection
+      }
+      const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+      const values: bigint[] = []
+      for (const raw of rawValues) {
+        const direct = Number(raw)
+        const millis =
+          Number.isFinite(direct) && String(raw ?? '').trim() !== ''
+            ? direct
+            : new Date(String(raw)).getTime()
+        if (!Number.isFinite(millis)) return impossible()
+        values.push(BigInt(Math.trunc(millis)))
+      }
+      const value = values[0]!
+      if (key === 'recordEndTime') {
+        return collection.where((row) => {
+          if (condition.op === 'eq') return row.recordEndTime.eq(value)
+          if (condition.op === 'ne') return row.recordEndTime.neq(value)
+          if (condition.op === 'in') return row.recordEndTime.in(values)
+          if (condition.op === 'notIn') return not(row.recordEndTime.in(values))
+          if (condition.op === 'gt') return row.recordEndTime.gt(value)
+          if (condition.op === 'gte') return row.recordEndTime.gte(value)
+          if (condition.op === 'lt') return row.recordEndTime.lt(value)
+          if (condition.op === 'lte') return row.recordEndTime.lte(value)
+          return row.id.eq('')
+        })
+      }
+      return collection.where((row) => {
+        const field = key === 'createTime' ? row.createTime : row.updateTime
+        if (condition.op === 'eq') return field.eq(value)
+        if (condition.op === 'ne') return field.neq(value)
+        if (condition.op === 'in') return field.in(values)
+        if (condition.op === 'notIn') return not(field.in(values))
+        if (condition.op === 'gt') return field.gt(value)
+        if (condition.op === 'gte') return field.gte(value)
+        if (condition.op === 'lt') return field.lt(value)
+        if (condition.op === 'lte') return field.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'name') {
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
+      )
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.name.eq(value)
+        if (condition.op === 'ne') return row.name.neq(value)
+        if (condition.op === 'in') return row.name.in(values)
+        if (condition.op === 'notIn') return not(row.name.in(values))
+        if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'no') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.no.isNull())
+      if (condition.op === 'notEmpty') return collection.where((row) => row.no.isNotNull())
+      const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+        (item) => String(item ?? ''),
+      )
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.no.eq(value)
+        if (condition.op === 'ne') return row.no.neq(value)
+        if (condition.op === 'in') return row.no.in(values)
+        if (condition.op === 'notIn') return not(row.no.in(values))
+        if (condition.op === 'contains') return row.no.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.no.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+
+    const nullable = key === 'paymentPlanId'
+    if (condition.op === 'isEmpty') {
+      return nullable ? collection.where((row) => row.paymentPlanId.isNull()) : impossible()
+    }
+    if (condition.op === 'notEmpty') {
+      return nullable ? collection.where((row) => row.paymentPlanId.isNotNull()) : collection
+    }
+    const values = (Array.isArray(condition.value) ? condition.value : [condition.value]).map(
+      (item) => String(item ?? ''),
+    )
+    const value = values[0]!
+    return collection.where((row) => {
+      const field =
+        key === 'contractId'
+          ? row.contractId
+          : key === 'paymentPlanId'
+            ? row.paymentPlanId
+            : key === 'owner'
+              ? row.owner
+              : key === 'updateUser'
+                ? row.updateUser
+                : row.createUser
+      if (condition.op === 'eq') return field.eq(value)
+      if (condition.op === 'ne') return field.neq(value)
+      if (condition.op === 'in') return field.in(values)
+      if (condition.op === 'notIn') return not(field.in(values))
+      if (condition.op === 'contains') return field.ilike(`%${String(condition.value ?? '')}%`)
+      if (condition.op === 'notContains')
+        return not(field.ilike(`%${String(condition.value ?? '')}%`))
+      return row.id.eq('')
+    })
   }
 
   private async moduleFieldsToCustomData(
@@ -1450,10 +1765,13 @@ export class ContractPaymentRecordService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     const id = ownerId || user.id
-    const owner = await this.prisma.user.findFirst({
-      where: { id, tenantId: user.tenantId, status: 'ACTIVE' },
-      select: { id: true },
+    const owner = await this.prisma.client.orm.public.Users.where({
+      id,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .select('id')
+      .first()
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner.id
   }
@@ -1461,51 +1779,57 @@ export class ContractPaymentRecordService {
   private async people(ids: string[]) {
     const unique = [...new Set(ids.filter(Boolean))]
     const users = unique.length
-      ? await this.prisma.user.findMany({
-          where: { id: { in: unique } },
-          select: { id: true, name: true, deptId: true },
-        })
+      ? await this.prisma.client.orm.public.Users.where((row) => row.id.in(unique))
+          .select('id', 'name', 'deptId')
+          .all()
       : []
     const deptIds = [
-      ...new Set(users.map((item) => item.deptId).filter((id): id is string => !!id)),
+      ...new Set(users.flatMap((item) => (item.deptId ? [String(item.deptId)] : []))),
     ]
     const depts = deptIds.length
-      ? await this.prisma.department.findMany({
-          where: { id: { in: deptIds } },
-          select: { id: true, name: true },
-        })
+      ? await this.prisma.client.orm.public.Departments.where((row) => row.id.in(deptIds))
+          .select('id', 'name')
+          .all()
       : []
-    const deptMap = new Map(depts.map((item) => [item.id, item.name]))
+    const deptMap = new Map(depts.map((item) => [String(item.id), item.name]))
     return new Map(
       users.map((item) => [
-        item.id,
+        String(item.id),
         {
           name: item.name,
-          deptId: item.deptId,
-          deptName: item.deptId ? (deptMap.get(item.deptId) ?? null) : null,
+          deptId: item.deptId ? String(item.deptId) : null,
+          deptName: item.deptId ? (deptMap.get(String(item.deptId)) ?? null) : null,
         },
       ]),
     )
   }
 
-  private async nextRecordNo(
-    tx: Prisma.TransactionClient,
-    organizationId: string,
-    recordEndTime: number,
-  ) {
+  private async nextRecordNo(tx: PrismaTransaction, organizationId: string, recordEndTime: number) {
     const date = new Date(recordEndTime)
     if (Number.isNaN(date.getTime())) throw new BadRequestException('回款时间不合法')
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const prefix = `PAY-${year}${month}-`
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`payment-record:${organizationId}:${year}${month}`}))`
-    const latest = await tx.contractPaymentRecord.findFirst({
-      where: { organizationId, no: { startsWith: prefix } },
-      orderBy: { no: 'desc' },
-      select: { no: true },
-    })
-    const current = latest?.no?.startsWith(prefix)
-      ? Number.parseInt(latest.no.slice(prefix.length), 10)
+    const lockQuery = this.prisma.client.raw.sql`
+      SELECT 1::int4 AS locked
+      FROM pg_advisory_xact_lock(hashtext(${`payment-record:${organizationId}:${year}${month}`}))
+    `.returnsRow({ locked: 'pg/int4@1' })
+    for await (const _row of tx.query(lockQuery.build())) break
+    const latestQuery = this.prisma.client.raw.sql`
+      SELECT no::text AS no
+      FROM contract_payment_record
+      WHERE organization_id = ${organizationId}
+        AND no LIKE ${`${prefix}%`}
+      ORDER BY no DESC
+      LIMIT 1
+    `.returnsRow({ no: 'pg/text@1' })
+    let latestNo: string | null = null
+    for await (const row of tx.query(latestQuery.build())) {
+      latestNo = row.no
+      break
+    }
+    const current = latestNo?.startsWith(prefix)
+      ? Number.parseInt(latestNo.slice(prefix.length), 10)
       : 0
     const next = Number.isFinite(current) ? current + 1 : 1
     return `${prefix}${String(next).padStart(6, '0')}`

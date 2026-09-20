@@ -1,13 +1,19 @@
 import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { Clue, Customer } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
-import { loadUserScopeTokens, scopeMatches } from './pool-repository.helpers'
+import { loadUserScopeTokensPrisma, scopeMatches } from './pool-repository.helpers'
 import { ResourceRecycleConditionEvaluator } from './resource-recycle-condition-evaluator.service'
+
+interface RecycleResource {
+  createTime: bigint
+  collectionTime: bigint | null
+  followTime: bigint | null
+}
 
 /** Cordys 分域自动回收：只读取 clue_pool/customer_pool 及其直接规则。 */
 @Injectable()
@@ -31,16 +37,12 @@ export class PoolRecycleService {
 
   async recycleAll() {
     const [clueOrganizations, customerOrganizations] = await Promise.all([
-      this.prisma.cluePool.findMany({
-        where: { enable: true, auto: true },
-        select: { organizationId: true },
-        distinct: ['organizationId'],
-      }),
-      this.prisma.customerPool.findMany({
-        where: { enable: true, auto: true },
-        select: { organizationId: true },
-        distinct: ['organizationId'],
-      }),
+      this.prisma.client.orm.public.CluePool.where({ enable: true, auto: true })
+        .select('organizationId')
+        .all(),
+      this.prisma.client.orm.public.CustomerPool.where({ enable: true, auto: true })
+        .select('organizationId')
+        .all(),
     ])
     const organizationIds = [
       ...new Set([...clueOrganizations, ...customerOrganizations].map((row) => row.organizationId)),
@@ -65,21 +67,33 @@ export class PoolRecycleService {
   }
 
   private async recycleClues(organizationId: string): Promise<number> {
-    const [pools, clues] = await Promise.all([
-      this.prisma.cluePool.findMany({
-        where: { organizationId, enable: true, auto: true },
-        include: { recycleRule: true },
-        orderBy: { createTime: 'desc' },
-      }),
-      this.prisma.clue.findMany({
-        where: {
-          organizationId,
-          inSharedPool: false,
-          owner: { not: null },
-          transitionId: null,
-        },
-      }),
+    const organization = organizationId
+    const [poolRows, clues] = await Promise.all([
+      this.prisma.client.orm.public.CluePool.where({
+        organizationId: organization,
+        enable: true,
+        auto: true,
+      })
+        .orderBy((pool) => pool.createTime.desc())
+        .all(),
+      this.prisma.client.orm.public.Clue.where({
+        organizationId: organization,
+        inSharedPool: false,
+        transitionId: null,
+      })
+        .where((clue) => clue.owner.isNotNull())
+        .all(),
     ])
+    const rules = poolRows.length
+      ? await this.prisma.client.orm.public.CluePoolRecycleRule.where((rule) =>
+          rule.poolId.in(poolRows.map((pool) => pool.id)),
+        ).all()
+      : []
+    const ruleByPool = new Map(rules.map((rule) => [String(rule.poolId), rule]))
+    const pools = poolRows.map((pool) => ({
+      ...pool,
+      recycleRule: ruleByPool.get(String(pool.id)) ?? null,
+    }))
     let count = 0
     for (const clue of clues) {
       const pool = await this.resolvePool(organizationId, clue.owner, pools)
@@ -106,16 +120,32 @@ export class PoolRecycleService {
   }
 
   private async recycleCustomers(organizationId: string): Promise<number> {
-    const [pools, customers] = await Promise.all([
-      this.prisma.customerPool.findMany({
-        where: { organizationId, enable: true, auto: true },
-        include: { recycleRule: true },
-        orderBy: { createTime: 'desc' },
-      }),
-      this.prisma.customer.findMany({
-        where: { organizationId, inSharedPool: false, owner: { not: null } },
-      }),
+    const organization = organizationId
+    const [poolRows, customers] = await Promise.all([
+      this.prisma.client.orm.public.CustomerPool.where({
+        organizationId: organization,
+        enable: true,
+        auto: true,
+      })
+        .orderBy((pool) => pool.createTime.desc())
+        .all(),
+      this.prisma.client.orm.public.Customer.where({
+        organizationId: organization,
+        inSharedPool: false,
+      })
+        .where((customer) => customer.owner.isNotNull())
+        .all(),
     ])
+    const rules = poolRows.length
+      ? await this.prisma.client.orm.public.CustomerPoolRecycleRule.where((rule) =>
+          rule.poolId.in(poolRows.map((pool) => pool.id)),
+        ).all()
+      : []
+    const ruleByPool = new Map(rules.map((rule) => [String(rule.poolId), rule]))
+    const pools = poolRows.map((pool) => ({
+      ...pool,
+      recycleRule: ruleByPool.get(String(pool.id)) ?? null,
+    }))
     let count = 0
     for (const customer of customers) {
       const pool = await this.resolvePool(organizationId, customer.owner, pools)
@@ -144,7 +174,7 @@ export class PoolRecycleService {
   private matches(
     operator: string | null,
     rawCondition: string | null,
-    resource: Clue | Customer,
+    resource: RecycleResource,
   ): boolean {
     let conditions: unknown
     try {
@@ -166,8 +196,8 @@ export class PoolRecycleService {
     pools: T[],
   ): Promise<T | null> {
     if (!ownerId) return null
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, organizationId, ownerId),
+    const tokens = await this.prisma.client.transaction((tx) =>
+      loadUserScopeTokensPrisma(tx, organizationId, ownerId),
     )
     return pools.find((pool) => scopeMatches(pool.scopeId, tokens)) ?? null
   }

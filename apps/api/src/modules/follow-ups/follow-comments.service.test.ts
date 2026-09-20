@@ -3,9 +3,13 @@ import test from 'node:test'
 import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import { OPERATION_LOG_RESULT_META } from '../../common/decorators/log-operation.decorator'
 import type { AuthUser } from '../../common/auth-user'
-import type { FollowUpRecord, FollowUpRecordComment } from '../../generated/prisma/client'
-import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
+import { createFollowCommentPrismaHarness, type HarnessUser } from './follow-comment.test-harness'
+import type { FollowCommentRow as FollowUpRecordComment } from './follow-comment.service-base'
 import { FollowCommentsService } from './follow-comments.service'
+import type { FollowRecord as FollowUpRecord } from './follow-ups.service'
+
+const instant = (value: string) => instantFromDate(new Date(value))
 
 const user: AuthUser = {
   id: 'user-1',
@@ -27,14 +31,14 @@ function record(overrides: Partial<FollowUpRecord> = {}): FollowUpRecord {
     contactId: null,
     type: '电话',
     content: '跟进记录',
-    followedAt: new Date('2026-09-06T03:00:00.000Z'),
+    followedAt: instant('2026-09-06T03:00:00.000Z'),
     ownerId: 'owner-1',
     ownerName: '负责人',
     deptId: 'dept-1',
     createdById: user.id,
     commentCount: 0,
-    createdAt: new Date('2026-09-06T03:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T03:00:00.000Z'),
+    createdAt: instant('2026-09-06T03:00:00.000Z'),
+    updatedAt: instant('2026-09-06T03:00:00.000Z'),
     ...overrides,
   }
 }
@@ -49,72 +53,27 @@ function comment(overrides: Partial<FollowUpRecordComment> = {}): FollowUpRecord
     tenantId: user.tenantId,
     createdById: user.id,
     updatedById: user.id,
-    createdAt: new Date('2026-09-06T04:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T04:00:00.000Z'),
+    createdAt: instant('2026-09-06T04:00:00.000Z'),
+    updatedAt: instant('2026-09-06T04:00:00.000Z'),
     ...overrides,
   }
 }
 
-function users(ids: string[]) {
-  return ids.map((id) => ({
-    id,
-    name: `成员-${id}`,
-    status: 'ACTIVE' as const,
-    extension: { avatar: null },
-  }))
+function member(id: string, overrides: Partial<HarnessUser> = {}): HarnessUser {
+  return { id, ...overrides }
 }
 
 test('新增评论原子写 Comment/Mention/commentCount，并分别发送负责人和 mention/reply 事件', async () => {
   const notifications: Array<{ event: string; recipientIds: Array<string | null | undefined> }> = []
-  const calls: string[] = []
-  const created = comment({ replyToUserId: 'reply-1' })
-  const tx = {
-    followUpRecordComment: {
-      create: async () => {
-        calls.push('comment')
-        return created
-      },
-      count: async () => {
-        calls.push('count')
-        return 1
-      },
-    },
-    followUpRecordCommentMention: {
-      deleteMany: async () => {
-        calls.push('mention-delete')
-        return { count: 0 }
-      },
-      createMany: async () => {
-        calls.push('mention-create')
-        return { count: 1 }
-      },
-    },
-    followUpRecord: {
-      update: async () => {
-        calls.push('record-count')
-        return record({ commentCount: 1 })
-      },
-    },
-  }
-  const prisma = {
-    user: {
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) => users(where.id.in),
-      findFirst: async () => ({ id: 'reply-1' }),
-    },
-    followUpRecordComment: {
-      findFirst: async () => ({ id: 'parent-1', parentId: null }),
-    },
-    followUpRecordCommentMention: {
-      findMany: async () => [{ commentId: created.id, userId: 'mention-1' }],
-    },
-    customer: { findFirst: async () => ({ name: '客户A' }) },
-    clue: { findFirst: async () => null },
-    opportunity: { findFirst: async () => null },
-    $transaction: async (callback: (client: typeof tx) => Promise<FollowUpRecordComment>) =>
-      callback(tx),
-  }
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'record',
+    tenantId: user.tenantId,
+    nextCreatedId: 'comment-1',
+    comments: [comment({ id: 'parent-1' })],
+    users: [member(user.id), member('mention-1'), member('reply-1')],
+  })
   const service = new FollowCommentsService(
-    prisma as unknown as PrismaService,
+    harness.prisma,
     { assertRecordAccess: async () => record() } as never,
     {
       send: async (input: { event: string; recipientIds: Array<string | null | undefined> }) => {
@@ -132,7 +91,13 @@ test('新增评论原子写 Comment/Mention/commentCount，并分别发送负责
     mentionedUserIds: ['mention-1', 'mention-1'],
   })
 
-  assert.deepEqual(calls, ['comment', 'mention-delete', 'mention-create', 'count', 'record-count'])
+  assert.deepEqual(harness.calls, [
+    'comment',
+    'mention-delete',
+    'mention-create',
+    'count',
+    'record-count',
+  ])
   assert.equal(result.content, '评论内容')
   assert.deepEqual(
     notifications.map((item) => [item.event, item.recipientIds]),
@@ -151,13 +116,14 @@ test('新增评论原子写 Comment/Mention/commentCount，并分别发送负责
 })
 
 test('回复只允许挂在顶层评论，禁止形成第三级', async () => {
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'record',
+    tenantId: user.tenantId,
+    comments: [comment({ id: 'reply-1', parentId: 'parent-1' })],
+    users: [member('user-2')],
+  })
   const service = new FollowCommentsService(
-    {
-      user: { findMany: async () => [], findFirst: async () => ({ id: 'user-2' }) },
-      followUpRecordComment: {
-        findFirst: async () => ({ id: 'reply-1', parentId: 'parent-1' }),
-      },
-    } as unknown as PrismaService,
+    harness.prisma,
     { assertRecordAccess: async () => record() } as never,
     {} as never,
   )
@@ -175,12 +141,13 @@ test('回复只允许挂在顶层评论，禁止形成第三级', async () => {
 })
 
 test('mention 必须全部属于当前租户 ACTIVE 用户', async () => {
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'record',
+    tenantId: user.tenantId,
+    users: [member('valid-user')],
+  })
   const service = new FollowCommentsService(
-    {
-      user: {
-        findMany: async () => [{ id: 'valid-user' }],
-      },
-    } as unknown as PrismaService,
+    harness.prisma,
     { assertRecordAccess: async () => record() } as never,
     {} as never,
   )
@@ -198,43 +165,34 @@ test('mention 必须全部属于当前租户 ACTIVE 用户', async () => {
 
 test('编辑评论只允许创建人，并在日志元数据中保留正文 before/after', async () => {
   const own = comment({ content: '旧内容' })
-  const updated = comment({ content: '新内容', updatedAt: new Date('2026-09-06T05:00:00.000Z') })
-  const tx = {
-    followUpRecordComment: { update: async () => updated },
-    followUpRecordCommentMention: {
-      deleteMany: async () => ({ count: 0 }),
-      createMany: async () => ({ count: 0 }),
-    },
-  }
-  const prisma = {
-    followUpRecordComment: { findFirst: async () => own },
-    followUpRecordCommentMention: { findMany: async () => [] },
-    user: { findMany: async () => users([user.id]) },
-    customer: { findFirst: async () => ({ name: '客户A' }) },
-    clue: { findFirst: async () => null },
-    opportunity: { findFirst: async () => null },
-    $transaction: async (callback: (client: typeof tx) => Promise<FollowUpRecordComment>) =>
-      callback(tx),
-  }
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'record',
+    tenantId: user.tenantId,
+    comments: [own],
+    users: [member(user.id)],
+  })
   const service = new FollowCommentsService(
-    prisma as unknown as PrismaService,
+    harness.prisma,
     { assertRecordAccess: async () => record({ ownerId: user.id }) } as never,
     { send: async () => 0 } as never,
   )
-  const result = await service.update(user, { id: own.id, content: '新内容', mentionedUserIds: [] })
+  const result = await service.update(user, {
+    id: own.id,
+    content: '新内容',
+    mentionedUserIds: [],
+  })
   const logMeta = (result as typeof result & { [OPERATION_LOG_RESULT_META]?: unknown })[
     OPERATION_LOG_RESULT_META
   ] as { detail: { before: { content: string }; after: { content: string } } }
   assert.equal(logMeta.detail.before.content, '旧内容')
   assert.equal(logMeta.detail.after.content, '新内容')
 
-  const foreignService = new FollowCommentsService(
-    {
-      followUpRecordComment: { findFirst: async () => comment({ createdById: 'other-user' }) },
-    } as unknown as PrismaService,
-    {} as never,
-    {} as never,
-  )
+  const foreignHarness = createFollowCommentPrismaHarness({
+    kind: 'record',
+    tenantId: user.tenantId,
+    comments: [comment({ createdById: 'other-user' })],
+  })
+  const foreignService = new FollowCommentsService(foreignHarness.prisma, {} as never, {} as never)
   await assert.rejects(
     () => foreignService.update(user, { id: 'comment-1', content: '越权修改' }),
     ForbiddenException,
@@ -249,22 +207,15 @@ test('分页只统计顶层 total，但 commentCount 包含回复并批量装配
     createdById: 'reply-user',
     replyToUserId: user.id,
   })
-  const prisma = {
-    followUpRecordComment: {
-      findMany: async ({ where }: { where: { parentId: null | { in: string[] } } }) =>
-        where.parentId === null ? [parent] : [reply],
-      count: async () => 1,
-    },
-    followUpRecordCommentMention: {
-      findMany: async () => [{ commentId: reply.id, userId: 'mention-user' }],
-    },
-    user: {
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) => users(where.id.in),
-    },
-    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
-  }
+  const harness = createFollowCommentPrismaHarness({
+    kind: 'record',
+    tenantId: user.tenantId,
+    comments: [parent, reply],
+    mentions: [{ commentId: reply.id, userId: 'mention-user' }],
+    users: [member(user.id), member('reply-user'), member('mention-user')],
+  })
   const service = new FollowCommentsService(
-    prisma as unknown as PrismaService,
+    harness.prisma,
     { assertRecordAccess: async () => record({ commentCount: 2 }) } as never,
     {} as never,
   )

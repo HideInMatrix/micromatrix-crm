@@ -5,11 +5,21 @@ import type {
   HomeStatisticRequest,
   HomeStatisticValue,
 } from '@micromatrix/shared'
+import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { Prisma } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomePeriodService } from './home-period.service'
+
+type HomeClueWhere = {
+  organizationId?: string
+  owner?: string | { in: string[] }
+  createUser?: { in: string[] }
+  createTime?: { gte: bigint; lte: bigint }
+  inSharedPool?: boolean
+  AND?: Array<HomeClueWhere | { OR: Array<{ transitionId: string | null }> }>
+}
 
 const PERIOD_KEY: Record<HomeStatisticPeriod, keyof HomeLeadStatistic> = {
   TODAY: 'todayClue',
@@ -48,19 +58,55 @@ export class HomeClueStatisticQuery {
       request.deptIds ?? [],
     )
     const range = this.periods.range(period)
-    const where = this.where(user, request, scope, range.start, range.end)
-    const value = await this.prisma.clue.count({ where })
+    const value = await this.countRange(user, request, scope, range.start, range.end)
     if (!request.priorPeriodEnable) return { value, priorPeriodCompareRate: null }
-    const previousWhere = this.where(user, request, scope, range.previousStart, range.previousEnd)
-    const previous = await this.prisma.clue.count({ where: previousWhere })
+    const previous = await this.countRange(
+      user,
+      request,
+      scope,
+      range.previousStart,
+      range.previousEnd,
+    )
     return { value, priorPeriodCompareRate: this.compare(value, previous) }
+  }
+
+  private async countRange(
+    user: AuthUser,
+    request: HomeStatisticRequest,
+    scope: Awaited<ReturnType<HomeDepartmentScopeService['resolve']>>,
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const userField = request.userField ?? 'OWNER'
+    if (!scope.all && !scope.self && (scope.userIds?.length ?? 0) === 0) return 0
+
+    let query = this.prisma.client.orm.public.Clue.where({
+      organizationId: user.tenantId,
+      ...(userField === 'OWNER' ? { inSharedPool: false } : {}),
+    })
+      .where((row) => row.createTime.gte(BigInt(start.getTime())))
+      .where((row) => row.createTime.lte(BigInt(end.getTime())))
+      .where((row) => or(row.transitionId.isNull(), row.transitionId.eq('')))
+
+    if (!scope.all) {
+      if (scope.self) {
+        query = query.where({ owner: user.id })
+      } else if (userField === 'CREATE_USER') {
+        query = query.where((row) => row.createUser.in(scope.userIds ?? []))
+      } else {
+        query = query.where((row) => row.owner.in(scope.userIds ?? []))
+      }
+    }
+
+    const aggregate = await query.aggregate((agg) => ({ total: agg.count() }))
+    return aggregate.total
   }
 
   async whereForPeriod(
     user: AuthUser,
     request: HomeStatisticRequest,
     period: HomeStatisticPeriod,
-  ): Promise<Prisma.ClueWhereInput> {
+  ): Promise<HomeClueWhere> {
     const scope = await this.scopes.resolve(
       user,
       'menu:lead',
@@ -77,9 +123,9 @@ export class HomeClueStatisticQuery {
     scope: Awaited<ReturnType<HomeDepartmentScopeService['resolve']>>,
     start: Date,
     end: Date,
-  ): Prisma.ClueWhereInput {
+  ): HomeClueWhere {
     const userField = request.userField ?? 'OWNER'
-    const identityFilter: Prisma.ClueWhereInput = scope.all
+    const identityFilter: HomeClueWhere = scope.all
       ? {}
       : scope.self
         ? { owner: user.id }

@@ -7,8 +7,10 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { withOperationLogResult } from '../../common/decorators/log-operation.decorator'
-import type { Prisma } from '../../generated/prisma/client'
+import type { PrismaClient } from '../../prisma/prisma-client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { instantToISOString } from '../../prisma/temporal'
+
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import type {
   AddFollowCommentDto,
@@ -25,8 +27,8 @@ export interface FollowCommentRow {
   tenantId: string
   createdById: string
   updatedById: string
-  createdAt: Date
-  updatedAt: Date
+  createdAt: Parameters<typeof instantToISOString>[0]
+  updatedAt: Parameters<typeof instantToISOString>[0]
 }
 
 export interface FollowCommentResource {
@@ -51,6 +53,9 @@ interface CreateCommentInput {
   createdById: string
   updatedById: string
 }
+
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
+type InstantTimestamp = Parameters<typeof instantToISOString>[0]
 
 /** FollowRecord / FollowPlan 共用评论业务内核，子类仅提供资源、表和事件差异。 */
 export abstract class FollowCommentServiceBase<TResource extends FollowCommentResource> {
@@ -86,24 +91,24 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     parentId: string,
   ): Promise<{ id: string; parentId: string | null } | null>
   protected abstract createComment(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     input: CreateCommentInput,
   ): Promise<FollowCommentRow>
   protected abstract updateComment(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     id: string,
     content: string,
     updatedById: string,
   ): Promise<FollowCommentRow>
-  protected abstract deleteComment(tx: Prisma.TransactionClient, id: string): Promise<void>
+  protected abstract deleteComment(tx: PrismaTransaction, id: string): Promise<void>
   protected abstract replaceMentions(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     commentId: string,
     userIds: string[],
   ): Promise<void>
   protected abstract loadMentions(commentIds: string[]): Promise<MentionRow[]>
   protected abstract recount(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     tenantId: string,
     resourceId: string,
   ): Promise<number>
@@ -136,7 +141,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     const mentionedUserIds = await this.validateMentionUsers(user.tenantId, dto.mentionedUserIds)
     await this.validateReply(user.tenantId, dto.resourceId, dto.parentId, dto.replyToUserId)
 
-    const comment = await this.prisma.$transaction(async (tx) => {
+    const comment = await this.prisma.client.transaction(async (tx) => {
       const created = await this.createComment(tx, {
         resourceId: dto.resourceId,
         parentId: dto.parentId ?? null,
@@ -170,7 +175,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     const content = this.normalizeContent(dto.content)
     const mentionedUserIds = await this.validateMentionUsers(user.tenantId, dto.mentionedUserIds)
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.client.transaction(async (tx) => {
       const row = await this.updateComment(tx, comment.id, content, user.id)
       await this.replaceMentions(tx, row.id, mentionedUserIds)
       return row
@@ -197,7 +202,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
   async remove(user: AuthUser, id: string): Promise<{ id: string; commentCount: number }> {
     const comment = await this.getOwnComment(user, id)
     await this.assertResourceAccess(user, comment.resourceId, false)
-    const commentCount = await this.prisma.$transaction(async (tx) => {
+    const commentCount = await this.prisma.client.transaction(async (tx) => {
       await this.deleteComment(tx, comment.id)
       return this.recount(tx, user.tenantId, comment.resourceId)
     })
@@ -242,19 +247,22 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     const normalized = userIds.map((id) => id.trim())
     if (normalized.some((id) => !id)) throw new BadRequestException('存在无效的@成员')
     const distinct = [...new Set(normalized)]
-    const users = await this.prisma.user.findMany({
-      where: { tenantId, status: 'ACTIVE', id: { in: distinct } },
-      select: { id: true },
-    })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId, status: 'ACTIVE' })
+      .where((row) => row.id.in(distinct))
+      .select('id')
+      .all()
     if (users.length !== distinct.length) throw new BadRequestException('存在无效或已停用的@成员')
     return distinct
   }
 
   private async assertActiveUser(tenantId: string, userId: string, label: string): Promise<void> {
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, tenantId, status: 'ACTIVE' },
-      select: { id: true },
+    const user = await this.prisma.client.orm.public.Users.where({
+      id: userId,
+      tenantId,
+      status: 'ACTIVE',
     })
+      .select('id')
+      .first()
     if (!user) throw new BadRequestException(`${label}不存在或已停用`)
   }
 
@@ -280,16 +288,23 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       if (comment.replyToUserId) userIds.add(comment.replyToUserId)
     })
     mentions.forEach((mention) => userIds.add(mention.userId))
-    const users = await this.prisma.user.findMany({
-      where: { tenantId: user.tenantId, id: { in: [...userIds] } },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        extension: { select: { avatar: true } },
-      },
-    })
-    const userMap = new Map(users.map((item) => [item.id, item]))
+    const ids = [...userIds]
+    const [users, extensions] = await Promise.all([
+      this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
+        .where((row) => row.id.in(ids))
+        .select('id', 'name', 'status')
+        .all(),
+      this.prisma.client.orm.public.UserExtensions.where((row) => row.id.in(ids))
+        .select('id', 'avatar')
+        .all(),
+    ])
+    const avatarMap = new Map(extensions.map((item) => [item.id, item.avatar]))
+    const userMap = new Map(
+      users.map((item) => [
+        item.id,
+        { ...item, extension: { avatar: avatarMap.get(item.id) ?? null } },
+      ]),
+    )
     const mentionMap = new Map<string, string[]>()
     for (const mention of mentions) {
       const ids = mentionMap.get(mention.commentId) ?? []
@@ -323,8 +338,8 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         }),
         replies: [],
         replyCount: 0,
-        createdAt: comment.createdAt.toISOString(),
-        updatedAt: comment.updatedAt.toISOString(),
+        createdAt: instantToISOString(comment.createdAt),
+        updatedAt: instantToISOString(comment.updatedAt),
       }
     }
 
@@ -383,31 +398,63 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     if (resource.targetType === 'lead') {
       return (
         (
-          await this.prisma.clue.findFirst({
-            where: { id: resource.targetId, organizationId: tenantId },
-            select: { name: true },
+          await this.prisma.client.orm.public.Clue.where({
+            id: resource.targetId,
+            organizationId: tenantId,
           })
+            .select('name')
+            .first()
         )?.name ?? '线索'
       )
     }
     if (resource.targetType === 'opportunity') {
       return (
         (
-          await this.prisma.opportunity.findFirst({
-            where: { id: resource.targetId, organizationId: tenantId },
-            select: { name: true },
+          await this.prisma.client.orm.public.Opportunity.where({
+            id: resource.targetId,
+            organizationId: tenantId,
           })
+            .select('name')
+            .first()
         )?.name ?? '商机'
       )
     }
     return (
       (
-        await this.prisma.customer.findFirst({
-          where: { id: resource.targetId, organizationId: tenantId },
-          select: { name: true },
+        await this.prisma.client.orm.public.Customer.where({
+          id: resource.targetId,
+          organizationId: tenantId,
         })
+          .select('name')
+          .first()
       )?.name ?? '客户'
     )
+  }
+
+  protected toCommentRow(row: {
+    id: string
+    resourceId: string
+    parentId: string | null
+    replyToUserId: string | null
+    content: string
+    organizationId: string
+    createUser: string
+    updateUser: string
+    createTime: InstantTimestamp
+    updateTime: InstantTimestamp
+  }): FollowCommentRow {
+    return {
+      id: row.id,
+      resourceId: row.resourceId,
+      parentId: row.parentId,
+      replyToUserId: row.replyToUserId,
+      content: row.content,
+      tenantId: row.organizationId,
+      createdById: row.createUser,
+      updatedById: row.updateUser,
+      createdAt: row.createTime,
+      updatedAt: row.updateTime,
+    }
   }
 
   private targetLink(resource: TResource): string {

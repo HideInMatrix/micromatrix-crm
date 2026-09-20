@@ -1,12 +1,22 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { Dashboard } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 
 export interface DashboardScopeMember {
   id: string
   name: string
   type: 'USER' | 'DEPARTMENT'
+}
+
+interface DashboardVisibilityRow {
+  id: string
+  scopeId: string
+  createUser: string
 }
 
 @Injectable()
@@ -33,10 +43,9 @@ export class DashboardAccessService {
 
   async departmentPathIds(user: AuthUser): Promise<string[]> {
     if (!user.deptId) return []
-    const rows = await this.prisma.department.findMany({
-      where: { tenantId: user.tenantId },
-      select: { id: true, parentId: true },
-    })
+    const rows = await this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
+      .select('id', 'parentId')
+      .all()
     const map = new Map(rows.map((row) => [row.id, row.parentId]))
     const result: string[] = []
     const visited = new Set<string>()
@@ -49,7 +58,11 @@ export class DashboardAccessService {
     return result
   }
 
-  isVisible(row: Pick<Dashboard, 'scopeId' | 'createUser'>, user: AuthUser, departmentIds: string[]) {
+  isVisible(
+    row: Pick<DashboardVisibilityRow, 'scopeId' | 'createUser'>,
+    user: AuthUser,
+    departmentIds: string[],
+  ) {
     if (this.hasWildcard(user) || row.createUser === user.id) return true
     const scopeIds = this.tryParseScope(row.scopeId)
     if (scopeIds === null) return false
@@ -59,52 +72,63 @@ export class DashboardAccessService {
   }
 
   async assertVisibleDashboard(user: AuthUser, id: string) {
-    const row = await this.prisma.dashboard.findFirst({
-      where: { id, organizationId: user.tenantId },
-      include: { module: true },
-    })
+    const row = await this.prisma.client.orm.public.Dashboard.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
     if (!row) throw new NotFoundException('仪表板不存在')
     const departmentIds = await this.departmentPathIds(user)
     if (!this.isVisible(row, user, departmentIds)) throw new ForbiddenException('无权访问该仪表板')
-    return row
+    const module = await this.prisma.client.orm.public.DashboardModule.where({
+      id: row.dashboardModuleId,
+      organizationId: user.tenantId,
+    }).first()
+    if (!module) throw new NotFoundException('仪表板文件夹不存在')
+    return { ...row, module }
   }
 
-  async visibleDashboardIds(user: AuthUser, rows: Dashboard[]): Promise<Set<string>> {
+  async visibleDashboardIds<T extends DashboardVisibilityRow>(
+    user: AuthUser,
+    rows: T[],
+  ): Promise<Set<string>> {
     if (this.hasWildcard(user)) return new Set(rows.map((row) => row.id))
     const departmentIds = await this.departmentPathIds(user)
-    return new Set(rows.filter((row) => this.isVisible(row, user, departmentIds)).map((row) => row.id))
+    return new Set(
+      rows.filter((row) => this.isVisible(row, user, departmentIds)).map((row) => row.id),
+    )
   }
 
   async validateScopeIds(user: AuthUser, rawIds: string[]) {
     const ids = [...new Set(rawIds.map((item) => item.trim()).filter(Boolean))]
     if (ids.length === 0) return []
     const [users, departments] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { tenantId: user.tenantId, id: { in: ids } },
-        select: { id: true },
-      }),
-      this.prisma.department.findMany({
-        where: { tenantId: user.tenantId, id: { in: ids } },
-        select: { id: true },
-      }),
+      this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
+        .where((row) => row.id.in(ids))
+        .select('id')
+        .all(),
+      this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
+        .where((row) => row.id.in(ids))
+        .select('id')
+        .all(),
     ])
     const found = new Set([...users.map((item) => item.id), ...departments.map((item) => item.id)])
     const missing = ids.filter((id) => !found.has(id))
-    if (missing.length) throw new BadRequestException(`仪表板成员范围包含无效 ID: ${missing.join(', ')}`)
+    if (missing.length)
+      throw new BadRequestException(`仪表板成员范围包含无效 ID: ${missing.join(', ')}`)
     return ids
   }
 
   async resolveScopeMembers(user: AuthUser, scopeIds: string[]): Promise<DashboardScopeMember[]> {
     if (scopeIds.length === 0) return []
     const [users, departments] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { tenantId: user.tenantId, id: { in: scopeIds } },
-        select: { id: true, name: true },
-      }),
-      this.prisma.department.findMany({
-        where: { tenantId: user.tenantId, id: { in: scopeIds } },
-        select: { id: true, name: true },
-      }),
+      this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
+        .where((row) => row.id.in(scopeIds))
+        .select('id', 'name')
+        .all(),
+      this.prisma.client.orm.public.Departments.where({ tenantId: user.tenantId })
+        .where((row) => row.id.in(scopeIds))
+        .select('id', 'name')
+        .all(),
     ])
     const userMap = new Map(users.map((item) => [item.id, item.name]))
     const deptMap = new Map(departments.map((item) => [item.id, item.name]))

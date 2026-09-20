@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '../../generated/prisma/client'
+import type { PrismaClient } from '../../prisma/prisma-client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { createLegacyId32 } from '../../common/legacy-id'
 import { ModuleFormsService } from '../metadata/module-forms.service'
 
 const FORM_KEY = 'order'
+type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 export interface OrderProductInput {
   product: string
@@ -39,18 +41,28 @@ export class OrderFieldsService {
     organizationId: string,
     resourceId: string,
     products: OrderProductInput[],
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
   ) {
     const fields = await this.moduleForms.listFieldsInTransaction(tx, organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const productIds = [...new Set(products.map((item) => item.product))]
     if (productIds.length) {
-      const count = await tx.product.count({ where: { organizationId, id: { in: productIds } } })
+      const { count } = await tx.orm.public.Product.where({
+        organizationId: organizationId,
+      })
+        .where((row) => row.id.in(productIds))
+        .aggregate((aggregate) => ({ count: aggregate.count() }))
       if (count !== productIds.length) throw new BadRequestException('订单包含不存在的产品')
     }
     await Promise.all([
-      tx.orderField.deleteMany({ where: { resourceId, refSubId: required.parent.id } }),
-      tx.orderFieldBlob.deleteMany({ where: { resourceId, refSubId: required.parent.id } }),
+      tx.orm.public.SalesOrderField.where({
+        resourceId: resourceId,
+        refSubId: required.parent.id,
+      }).deleteAll(),
+      tx.orm.public.SalesOrderFieldBlob.where({
+        resourceId: resourceId,
+        refSubId: required.parent.id,
+      }).deleteAll(),
     ])
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
     const reserved = new Set([
@@ -95,15 +107,25 @@ export class OrderFieldsService {
     const fields = await this.moduleForms.listFields(organizationId, FORM_KEY)
     const required = this.requiredFields(fields)
     const fieldMap = new Map(fields.map((field) => [field.id, field]))
-    const where = {
-      resourceId: { in: ids },
-      refSubId: required.parent.id,
-      resource: { organizationId },
-    }
-    const select = { resourceId: true, fieldId: true, fieldValue: true, rowId: true, bizId: true }
+    const allowedResources = await this.prisma.client.orm.public.SalesOrder.where({
+      organizationId: organizationId,
+    })
+      .where((row) => row.id.in(ids))
+      .select('id')
+      .all()
+    const allowedIds = allowedResources.map((row) => String(row.id))
+    if (!allowedIds.length) return result
+    const refSubId = required.parent.id
+    const resourceIdFilter = allowedIds
     const [normal, blob] = await Promise.all([
-      this.prisma.orderField.findMany({ where, select }),
-      this.prisma.orderFieldBlob.findMany({ where, select }),
+      this.prisma.client.orm.public.SalesOrderField.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
+      this.prisma.client.orm.public.SalesOrderFieldBlob.where({ refSubId })
+        .where((row) => row.resourceId.in(resourceIdFilter))
+        .select('resourceId', 'fieldId', 'fieldValue', 'rowId', 'bizId')
+        .all(),
     ])
     const rows = new Map<string, OrderProductValue & { resourceId: string }>()
     for (const cell of [...normal, ...blob]) {
@@ -122,8 +144,10 @@ export class OrderFieldsService {
       const field = fieldMap.get(cell.fieldId)
       if (!field) continue
       if (field.id === required.productField.id) row.productId = cell.fieldValue
-      else if (field.id === required.productPriceField.id) row.productPrice = Number(cell.fieldValue)
-      else if (field.id === required.productNumberField.id) row.productNumber = Number(cell.fieldValue)
+      else if (field.id === required.productPriceField.id)
+        row.productPrice = Number(cell.fieldValue)
+      else if (field.id === required.productNumberField.id)
+        row.productNumber = Number(cell.fieldValue)
       else if (field.id === required.productAmountField.id) row.amount = Number(cell.fieldValue)
       else row.values[field.key] = this.deserialize(field, cell.fieldValue)
       rows.set(key, row)
@@ -131,12 +155,14 @@ export class OrderFieldsService {
     const validRows = [...rows.values()].filter((row) => row.productId)
     const productIds = [...new Set(validRows.map((row) => row.productId))]
     const products = productIds.length
-      ? await this.prisma.product.findMany({
-          where: { organizationId, id: { in: productIds } },
-          select: { id: true, name: true },
+      ? await this.prisma.client.orm.public.Product.where({
+          organizationId: organizationId,
         })
+          .where((row) => row.id.in(productIds))
+          .select('id', 'name')
+          .all()
       : []
-    const names = new Map(products.map((item) => [item.id, item.name]))
+    const names = new Map(products.map((item) => [String(item.id), String(item.name)]))
     for (const row of validRows) {
       const { resourceId, ...value } = row
       result.get(resourceId)?.push({ ...value, productName: names.get(row.productId) })
@@ -151,14 +177,20 @@ export class OrderFieldsService {
     const productPriceField = fields.find((field) => field.key === 'orderProductPrice')
     const productNumberField = fields.find((field) => field.key === 'orderProductNumber')
     const productAmountField = fields.find((field) => field.key === 'orderProductAmount')
-    if (!parent || !productField || !productPriceField || !productNumberField || !productAmountField) {
+    if (
+      !parent ||
+      !productField ||
+      !productPriceField ||
+      !productNumberField ||
+      !productAmountField
+    ) {
       throw new BadRequestException('订单产品子表字段配置不完整')
     }
     return { parent, productField, productPriceField, productNumberField, productAmountField }
   }
 
   private async writeCell(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     resourceId: string,
     refSubId: string,
     rowId: string,
@@ -168,13 +200,27 @@ export class OrderFieldsService {
   ) {
     if (value === undefined || value === null || value === '') return
     const serialized = this.serialize(value)
-    const data = { resourceId, fieldId: field.id, fieldValue: serialized, refSubId, rowId, bizId }
-    if (this.isBlob(field, serialized)) await tx.orderFieldBlob.create({ data })
-    else await tx.orderField.create({ data })
+    const base = {
+      id: createLegacyId32(),
+      resourceId: resourceId,
+      fieldId: field.id,
+      refSubId: refSubId,
+      rowId: rowId,
+      bizId: bizId,
+    }
+    if (this.isBlob(field, serialized)) {
+      await tx.orm.public.SalesOrderFieldBlob.create({ ...base, fieldValue: serialized })
+    } else {
+      await tx.orm.public.SalesOrderField.create({
+        ...base,
+        fieldValue: serialized,
+      })
+    }
   }
 
   private serialize(value: unknown) {
-    if (Array.isArray(value) || (typeof value === 'object' && value !== null)) return JSON.stringify(value)
+    if (Array.isArray(value) || (typeof value === 'object' && value !== null))
+      return JSON.stringify(value)
     return String(value)
   }
 
@@ -192,7 +238,10 @@ export class OrderFieldsService {
   }
 
   private isBlob(field: FieldVO, serialized: string) {
-    return ['textarea', 'multiselect', 'checkbox', 'picture'].includes(field.type) || serialized.length > 255
+    return (
+      ['textarea', 'multiselect', 'checkbox', 'picture'].includes(field.type) ||
+      serialized.length > 255
+    )
   }
 
   private lineAmount(price: number, quantity: number) {

@@ -15,11 +15,12 @@ import {
 import type { AuthUser } from '../../common/auth-user'
 import type { BatchAffectResult, ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
-import { buildFilterClauses, parseFilters } from '../../common/filter-builder'
+import { parseFilters } from '../../common/filter-builder'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import { Prisma, type CustomerContact } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { not, or } from '@prisma/orm-postgres/orm-client'
+import { createLegacyId32 } from '../../common/legacy-id'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import {
   ExportTasksService,
   type ExportBuildResult,
@@ -46,11 +47,25 @@ import {
 } from './dto/contact.dto'
 
 const MODULE = 'contact'
-const contactInclude = {
-  customer: { select: { name: true, owner: true } },
-} as const
 
-type ContactWithRelations = Prisma.CustomerContactGetPayload<{ include: typeof contactInclude }>
+type ContactRow = {
+  id: string
+  customerId: string | null
+  name: string
+  phone: string | null
+  owner: string
+  createTime: bigint
+  updateTime: bigint
+  createUser: string
+  updateUser: string
+  enable: boolean
+  disableReason: string | null
+  organizationId: string
+}
+
+type ContactWithRelations = ContactRow & {
+  customer: { name: string; owner: string | null } | null
+}
 
 @Injectable()
 export class ContactsService {
@@ -127,7 +142,6 @@ export class ContactsService {
     const { page = 1, pageSize = 10, keyword } = query
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const adHoc = parseFilters(query.filters)
-    const builtInView = query.scopeView
     const saved = query.viewId
       ? await this.userViews.resolveFilters(user, query.viewId, USER_VIEW_RESOURCE_TYPES.contact)
       : null
@@ -138,34 +152,28 @@ export class ContactsService {
       adHoc.length ? this.filterIds(user.tenantId, adHoc, query.filterMode ?? 'AND') : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    const scope = await this.resolveListScope(user, builtInView)
-    const where: Prisma.CustomerContactWhereInput = {
+    const ownerIds = await this.resolveListOwnerIds(user, query.scopeView)
+    let dbQuery = this.prisma.client.orm.public.CustomerContact.where({
       organizationId: user.tenantId,
-      AND: [scope],
-      ...(filteredIds ? { id: { in: filteredIds } } : {}),
-      ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(query.enable !== undefined ? { enable: query.enable === 'true' } : {}),
-      ...(keyword
-        ? {
-            OR: [
-              { name: { contains: keyword, mode: 'insensitive' } },
-              { phone: { contains: keyword } },
-            ],
-          }
-        : {}),
+    })
+    if (ownerIds) dbQuery = dbQuery.where((row) => row.owner.in(ownerIds))
+    if (filteredIds) dbQuery = dbQuery.where((row) => row.id.in(filteredIds))
+    if (query.customerId) dbQuery = dbQuery.where({ customerId: query.customerId })
+    if (query.enable !== undefined) dbQuery = dbQuery.where({ enable: query.enable === 'true' })
+    if (keyword) {
+      dbQuery = dbQuery.where((row) =>
+        or(row.name.ilike(`%${keyword}%`), row.phone.ilike(`%${keyword}%`)),
+      )
     }
-
-    const orderBy = this.contactOrderBy(sort, fields)
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.customerContact.findMany({
-        where,
-        include: contactInclude,
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.customerContact.count({ where }),
+    const ordered = this.applyContactSort(dbQuery, sort, fields)
+    const [baseRows, aggregate] = await Promise.all([
+      ordered
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      dbQuery.aggregate((value) => ({ count: value.count() })),
     ])
+    const items = await this.attachCustomers(baseRows)
     const [values, ownerNames] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
@@ -178,7 +186,7 @@ export class ContactsService {
       items: items.map((item) =>
         this.toVO(item, fields, values.get(item.id) ?? {}, ownerNames.get(item.owner) ?? null),
       ),
-      total,
+      total: aggregate.count,
       page,
       pageSize,
     }
@@ -265,27 +273,25 @@ export class ContactsService {
   async listByCustomer(user: AuthUser, customerId: string): Promise<ContactVO[]> {
     if (!customerId) throw new BadRequestException('缺少 customerId')
     const access = await this.customerAccess.assertRead(user, customerId)
-    const rows = await this.prisma.customerContact.findMany({
-      where: {
-        organizationId: user.tenantId,
-        customerId,
-        ...(!access.dataScope && access.collaborationType === 'COLLABORATION'
-          ? { owner: user.id }
-          : {}),
-      },
-      include: contactInclude,
-      orderBy: { createTime: 'asc' },
+    let query = this.prisma.client.orm.public.CustomerContact.where({
+      organizationId: user.tenantId,
+      customerId: customerId,
     })
+    if (!access.dataScope && access.collaborationType === 'COLLABORATION') {
+      query = query.where({ owner: user.id })
+    }
+    const rows = await query.orderBy((row) => row.createTime.asc()).all()
+    const items = await this.attachCustomers(rows)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const [values, ownerNames] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
         'customerContact',
-        rows.map((item) => item.id),
+        items.map((item) => item.id),
       ),
-      this.userNames(rows.map((item) => item.owner)),
+      this.userNames(items.map((item) => item.owner)),
     ])
-    return rows.map((item) =>
+    return items.map((item) =>
       this.toVO(item, fields, values.get(item.id) ?? {}, ownerNames.get(item.owner) ?? null),
     )
   }
@@ -310,22 +316,20 @@ export class ContactsService {
     })
     await this.assertContactUniqueRules(user.tenantId, data)
     const now = BigInt(Date.now())
-    const contact = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.customerContact.create({
-        data: {
-          customerId: data.customerId ?? null,
-          name: data.name,
-          phone: data.phone ?? null,
-          owner: owner.id,
-          enable: true,
-          disableReason: null,
-          organizationId: user.tenantId,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-        },
-        include: contactInclude,
+    const contactId = await this.prisma.client.transaction(async (tx) => {
+      const created = await tx.orm.public.CustomerContact.create({
+        id: createLegacyId32(),
+        customerId: data.customerId ? data.customerId : null,
+        name: data.name,
+        phone: data.phone ? data.phone : null,
+        owner: owner.id,
+        enable: true,
+        disableReason: null,
+        organizationId: user.tenantId,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
       })
       await this.fieldValues.save(
         user.tenantId,
@@ -336,8 +340,9 @@ export class ContactsService {
         tx,
         user.id,
       )
-      return created
+      return String(created.id)
     })
+    const contact = await this.loadContactWithRelations(user.tenantId, contactId)
     await this.notifications.send({
       tenantId: user.tenantId,
       event: 'CUSTOMER_CONCAT_ADD',
@@ -369,19 +374,18 @@ export class ContactsService {
     })
     await this.assertContactUniqueRules(user.tenantId, rest, existing.id)
     const owner = ownerId ? await this.resolveOwner(user, ownerId) : null
-    const contact = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.customerContact.update({
-        where: { id },
-        data: {
-          ...(rest.name !== undefined ? { name: rest.name } : {}),
-          ...(rest.phone !== undefined ? { phone: rest.phone } : {}),
-          ...(customerId ? { customerId } : {}),
-          ...(owner ? { owner: owner.id } : {}),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
-        include: contactInclude,
+    await this.prisma.client.transaction(async (tx) => {
+      const updated = await tx.orm.public.CustomerContact.where({
+        id: id,
+      }).update({
+        ...(rest.name !== undefined ? { name: rest.name } : {}),
+        ...(rest.phone !== undefined ? { phone: rest.phone ? rest.phone : null } : {}),
+        ...(customerId ? { customerId: customerId } : {}),
+        ...(owner ? { owner: owner.id } : {}),
+        updateTime: BigInt(Date.now()),
+        updateUser: user.id,
       })
+      if (!updated) throw new NotFoundException('联系人不存在')
       if (customData) {
         await this.fieldValues.save(
           user.tenantId,
@@ -393,8 +397,8 @@ export class ContactsService {
           user.id,
         )
       }
-      return updated
     })
+    const contact = await this.loadContactWithRelations(user.tenantId, id)
     return this.toSingleVO(user, contact)
   }
 
@@ -405,17 +409,17 @@ export class ContactsService {
       existing,
       this.pickPermission(user, 'contact:update', 'customer:update'),
     )
-    const contact = await this.prisma.customerContact.update({
-      where: { id },
-      data: {
-        enable: true,
-        disableReason: null,
-        updateTime: BigInt(Date.now()),
-        updateUser: user.id,
-      },
-      include: contactInclude,
+    const updated = await this.prisma.client.orm.public.CustomerContact.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).update({
+      enable: true,
+      disableReason: null,
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
     })
-    return this.toSingleVO(user, contact)
+    if (!updated) throw new NotFoundException('联系人不存在')
+    return this.toSingleVO(user, await this.loadContactWithRelations(user.tenantId, id))
   }
 
   async disable(user: AuthUser, id: string, reason: string): Promise<ContactVO> {
@@ -427,25 +431,26 @@ export class ContactsService {
     )
     const normalized = reason.trim()
     if (!normalized) throw new BadRequestException('请填写停用原因')
-    const contact = await this.prisma.customerContact.update({
-      where: { id },
-      data: {
-        enable: false,
-        disableReason: normalized,
-        updateTime: BigInt(Date.now()),
-        updateUser: user.id,
-      },
-      include: contactInclude,
+    const updated = await this.prisma.client.orm.public.CustomerContact.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).update({
+      enable: false,
+      disableReason: normalized,
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
     })
-    return this.toSingleVO(user, contact)
+    if (!updated) throw new NotFoundException('联系人不存在')
+    return this.toSingleVO(user, await this.loadContactWithRelations(user.tenantId, id))
   }
 
   async checkOpportunity(user: AuthUser, id: string): Promise<{ linked: boolean; count: number }> {
     await this.ensureReadable(user, id)
-    const count = await this.prisma.opportunity.count({
-      where: { organizationId: user.tenantId, contactId: id },
-    })
-    return { linked: count > 0, count }
+    const aggregate = await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+      contactId: id,
+    }).aggregate((value) => ({ count: value.count() }))
+    return { linked: aggregate.count > 0, count: aggregate.count }
   }
 
   async remove(user: AuthUser, id: string) {
@@ -455,19 +460,23 @@ export class ContactsService {
       contact,
       this.pickPermission(user, 'contact:delete', 'customer:delete'),
     )
-    const linked = await this.prisma.opportunity.count({
-      where: { organizationId: user.tenantId, contactId: id },
-    })
-    if (linked > 0) throw new BadRequestException('联系人已关联商机，请先在商机中解除联系人关联')
-    await this.prisma.$transaction(async (tx) => {
+    const linked = await this.prisma.client.orm.public.Opportunity.where({
+      organizationId: user.tenantId,
+      contactId: id,
+    }).aggregate((value) => ({ count: value.count() }))
+    if (linked.count > 0)
+      throw new BadRequestException('联系人已关联商机，请先在商机中解除联系人关联')
+    await this.prisma.client.transaction(async (tx) => {
       await Promise.all([
-        tx.customerContactField.deleteMany({ where: { resourceId: id } }),
-        tx.customerContactFieldBlob.deleteMany({ where: { resourceId: id } }),
-        tx.attachment.deleteMany({
-          where: { tenantId: user.tenantId, targetType: 'contact', targetId: id },
-        }),
+        tx.orm.public.CustomerContactField.where({ resourceId: id }).deleteAll(),
+        tx.orm.public.CustomerContactFieldBlob.where({ resourceId: id }).deleteAll(),
+        tx.orm.public.Attachments.where({
+          tenantId: user.tenantId,
+          targetType: 'contact',
+          targetId: id,
+        }).deleteAll(),
       ])
-      await tx.customerContact.delete({ where: { id } })
+      await tx.orm.public.CustomerContact.where({ id: id }).deleteAndCount()
     })
     return { id, name: contact.name }
   }
@@ -475,51 +484,51 @@ export class ContactsService {
   async batchUpdate(user: AuthUser, dto: ResourceBatchEditDto): Promise<BatchAffectResult> {
     const field = await this.metadata.resolveEditableField(user.tenantId, MODULE, dto.fieldId)
     this.metadata.validateBatchFieldValue(field, dto.fieldValue)
-    const scope = (await this.dataScope.directOwnerFilter(
-      user,
-      'contact:read',
-    )) as Prisma.CustomerContactWhereInput
-    const contacts = await this.prisma.customerContact.findMany({
-      where: { organizationId: user.tenantId, id: { in: dto.ids }, AND: [scope] },
-    })
-    if (contacts.length !== dto.ids.length) {
+    const uniqueIds = [...new Set(dto.ids)]
+    const contacts = uniqueIds.length
+      ? await this.prisma.client.orm.public.CustomerContact.where({
+          organizationId: user.tenantId,
+        })
+          .where((row) => row.id.in(uniqueIds))
+          .all()
+      : []
+    if (contacts.length !== uniqueIds.length) {
       throw new ForbiddenException('选中联系人包含不存在或不在你数据范围内的数据')
     }
+    for (const contact of contacts) {
+      if (!(await this.dataScope.matchesDirectOwner(user, contact.owner, 'contact:read'))) {
+        throw new ForbiddenException('选中联系人包含不存在或不在你数据范围内的数据')
+      }
+    }
+    const base = this.prisma.client.orm.public.CustomerContact.where({
+      organizationId: user.tenantId,
+    }).where((row) => row.id.in(uniqueIds))
+    const audit = { updateTime: BigInt(Date.now()), updateUser: user.id }
 
     if (field.key === 'owner' || field.key === 'ownerId') {
       if (typeof dto.fieldValue !== 'string') throw new BadRequestException('负责人值无效')
       const owner = await this.resolveOwner(user, dto.fieldValue)
-      await this.prisma.customerContact.updateMany({
-        where: { organizationId: user.tenantId, id: { in: dto.ids } },
-        data: { owner: owner.id, updateTime: BigInt(Date.now()), updateUser: user.id },
-      })
+      await base.updateAndCount({ owner: owner.id, ...audit })
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
     if (field.key === 'customerId') {
       if (typeof dto.fieldValue !== 'string') throw new BadRequestException('客户值无效')
       await this.customerAccess.assertCollaborateWrite(user, dto.fieldValue, 'contact:update')
-      await this.prisma.customerContact.updateMany({
-        where: { organizationId: user.tenantId, id: { in: dto.ids } },
-        data: { customerId: dto.fieldValue, updateTime: BigInt(Date.now()), updateUser: user.id },
-      })
+      await base.updateAndCount({ customerId: dto.fieldValue, ...audit })
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
     if (field.key === 'enable') {
       const enable = Boolean(dto.fieldValue)
-      await this.prisma.customerContact.updateMany({
-        where: { organizationId: user.tenantId, id: { in: dto.ids } },
-        data: {
-          enable,
-          ...(enable ? { disableReason: null } : {}),
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+      await base.updateAndCount({
+        enable,
+        ...(enable ? { disableReason: null } : {}),
+        ...audit,
       })
       return { success: dto.ids.length, fail: 0, failedIds: [] }
     }
 
     if (!field.system) {
-      await this.prisma.$transaction((tx) =>
+      await this.prisma.client.transaction((tx) =>
         this.fieldValues.saveBatch(
           user.tenantId,
           'customerContact',
@@ -529,14 +538,18 @@ export class ContactsService {
           tx,
         ),
       )
-    } else if (field.key === 'name' || field.key === 'phone') {
-      await this.prisma.customerContact.updateMany({
-        where: { organizationId: user.tenantId, id: { in: dto.ids } },
-        data: {
-          [field.key]: dto.fieldValue,
-          updateTime: BigInt(Date.now()),
-          updateUser: user.id,
-        },
+    } else if (field.key === 'name') {
+      await base.updateAndCount({
+        name: String(dto.fieldValue ?? ''),
+        ...audit,
+      })
+    } else if (field.key === 'phone') {
+      await base.updateAndCount({
+        phone:
+          dto.fieldValue === null || dto.fieldValue === undefined || dto.fieldValue === ''
+            ? null
+            : String(dto.fieldValue),
+        ...audit,
       })
     } else {
       throw new BadRequestException('该系统字段不支持批量修改')
@@ -608,14 +621,14 @@ export class ContactsService {
           } else {
             if (!row.resourceId) throw new BadRequestException('唯一ID不能为空')
             await this.update(user, row.resourceId, prepared)
-            await this.prisma.customerContact.update({
-              where: { id: row.resourceId },
-              data: {
-                enable: true,
-                disableReason: null,
-                updateTime: BigInt(Date.now()),
-                updateUser: user.id,
-              },
+            await this.prisma.client.orm.public.CustomerContact.where({
+              id: row.resourceId,
+              organizationId: user.tenantId,
+            }).update({
+              enable: true,
+              disableReason: null,
+              updateTime: BigInt(Date.now()),
+              updateUser: user.id,
             })
           }
           successCount++
@@ -759,12 +772,46 @@ export class ContactsService {
     return selected
   }
 
+  private async attachCustomers<T extends ContactRow>(
+    rows: T[],
+  ): Promise<Array<T & { customer: { name: string; owner: string | null } | null }>> {
+    const customerIds = [
+      ...new Set(rows.flatMap((row) => (row.customerId ? [String(row.customerId)] : []))),
+    ]
+    const customers = customerIds.length
+      ? await this.prisma.client.orm.public.Customer.where((row) => row.id.in(customerIds))
+          .select('id', 'name', 'owner')
+          .all()
+      : []
+    const customerMap = new Map(customers.map((item) => [String(item.id), item]))
+    return rows.map((row) => ({
+      ...row,
+      customer: row.customerId
+        ? (() => {
+            const customer = customerMap.get(String(row.customerId))
+            return customer
+              ? { name: customer.name, owner: customer.owner ? String(customer.owner) : null }
+              : null
+          })()
+        : null,
+    }))
+  }
+
+  private async loadContactWithRelations(
+    organizationId: string,
+    id: string,
+  ): Promise<ContactWithRelations> {
+    const row = await this.prisma.client.orm.public.CustomerContact.where({
+      id: id,
+      organizationId: organizationId,
+    }).first()
+    if (!row) throw new NotFoundException('联系人不存在')
+    const [contact] = await this.attachCustomers([row])
+    return contact!
+  }
+
   private async ensureReadable(user: AuthUser, id: string): Promise<ContactWithRelations> {
-    const contact = await this.prisma.customerContact.findFirst({
-      where: { id, organizationId: user.tenantId },
-      include: contactInclude,
-    })
-    if (!contact) throw new NotFoundException('联系人不存在')
+    const contact = await this.loadContactWithRelations(user.tenantId, id)
     if (
       hasPermission(user.permissions, 'contact:read') &&
       (await this.dataScope.matchesDirectOwner(user, contact.owner, 'contact:read'))
@@ -778,7 +825,7 @@ export class ContactsService {
     throw new NotFoundException('联系人不存在或无权访问')
   }
 
-  private async assertWrite(user: AuthUser, contact: CustomerContact, permission: string) {
+  private async assertWrite(user: AuthUser, contact: ContactRow, permission: string) {
     if (await this.dataScope.matchesDirectOwner(user, contact.owner, permission)) return
     if (!contact.customerId) throw new ForbiddenException('联系人尚未关联客户')
     const access = await this.customerAccess.assertRead(user, contact.customerId)
@@ -788,101 +835,109 @@ export class ContactsService {
   }
 
   private async ensureIndependentInScope(user: AuthUser, id: string) {
-    const scope = (await this.dataScope.directOwnerFilter(
-      user,
-      'contact:import',
-    )) as Prisma.CustomerContactWhereInput
-    return this.prisma.customerContact.findFirst({
-      where: { id, organizationId: user.tenantId, AND: [scope] },
-    })
+    const row = await this.prisma.client.orm.public.CustomerContact.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
+    if (!row) return null
+    return (await this.dataScope.matchesDirectOwner(user, row.owner, 'contact:import')) ? row : null
   }
 
-  private async resolveListScope(
+  private async resolveListOwnerIds(
     user: AuthUser,
     builtInView?: string,
-  ): Promise<Prisma.CustomerContactWhereInput> {
+  ): Promise<string[] | null> {
     if (!builtInView) {
-      return (await this.dataScope.directOwnerFilter(
-        user,
-        'contact:read',
-      )) as Prisma.CustomerContactWhereInput
+      const scope = await this.dataScope.directOwnerFilter(user, 'contact:read')
+      const owner = scope.owner
+      if (!owner) return null
+      return typeof owner === 'string' ? [owner] : [...owner.in]
     }
-    if (builtInView === 'SELF') return { owner: user.id }
+    if (builtInView === 'SELF') return [user.id]
     if (builtInView === 'ALL') {
       const effective = await this.dataScope.resolveScope(user, 'contact:read')
       if (!effective.all) throw new ForbiddenException('当前角色没有全部联系人数据权限')
-      return {}
+      return null
     }
     if (builtInView === 'DEPT') {
       const effective = await this.dataScope.resolveScope(user, 'contact:read')
       if (!effective.all && effective.deptIds.length === 0) {
         throw new ForbiddenException('当前角色没有部门联系人数据权限')
       }
-      if (effective.all) return {}
-      const deptIds = effective.deptIds
-      if (deptIds.length === 0) return { owner: user.id }
-      const owners = await this.prisma.user.findMany({
-        where: { tenantId: user.tenantId, status: 'ACTIVE', deptId: { in: deptIds } },
-        select: { id: true },
+      if (effective.all) return null
+      if (effective.deptIds.length === 0) return [user.id]
+      const owners = await this.prisma.client.orm.public.Users.where({
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
       })
-      return { owner: { in: [...new Set([user.id, ...owners.map((item) => item.id)])] } }
+        .where((row) => row.deptId.in(effective.deptIds))
+        .select('id')
+        .all()
+      return [...new Set([user.id, ...owners.map((item) => item.id)])]
     }
-    return (await this.dataScope.directOwnerFilter(
-      user,
-      'contact:read',
-    )) as Prisma.CustomerContactWhereInput
+    const scope = await this.dataScope.directOwnerFilter(user, 'contact:read')
+    const owner = scope.owner
+    if (!owner) return null
+    return typeof owner === 'string' ? [owner] : [...owner.in]
   }
 
   private pickPermission(user: AuthUser, preferred: string, fallback: string) {
     return hasPermission(user.permissions, preferred) ? preferred : fallback
   }
 
-  private async ensureExists(user: AuthUser, id: string) {
-    const contact = await this.prisma.customerContact.findFirst({
-      where: { id, organizationId: user.tenantId },
-    })
+  private async ensureExists(user: AuthUser, id: string): Promise<ContactRow> {
+    const contact = await this.prisma.client.orm.public.CustomerContact.where({
+      id: id,
+      organizationId: user.tenantId,
+    }).first()
     if (!contact) throw new NotFoundException('联系人不存在')
     return contact
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const direct = await this.prisma.user.findFirst({
-      where: {
-        tenantId: user.tenantId,
-        status: 'ACTIVE',
-        OR: [{ id: ownerId }, { email: { equals: ownerId, mode: 'insensitive' } }],
-      },
-      select: { id: true, deptId: true },
+    const direct = await this.prisma.client.orm.public.Users.where({
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
     })
+      .where((row) => or(row.id.eq(ownerId), row.email.ilike(ownerId)))
+      .select('id', 'deptId')
+      .first()
     if (direct) return direct
-    const byName = await this.prisma.user.findMany({
-      where: { tenantId: user.tenantId, status: 'ACTIVE', name: ownerId },
-      select: { id: true, deptId: true },
-      take: 2,
+    const byName = await this.prisma.client.orm.public.Users.where({
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+      name: ownerId,
     })
+      .select('id', 'deptId')
+      .limit(2)
+      .all()
     if (byName.length === 0) throw new BadRequestException('联系人负责人不存在或已禁用')
     if (byName.length > 1) throw new BadRequestException('负责人名称不唯一，请填写邮箱')
-    return byName[0]
+    return byName[0]!
   }
 
   private async resolveImportCustomer(user: AuthUser, value: string) {
     const input = value.trim()
     if (!input) throw new BadRequestException('客户不能为空')
-    const direct = await this.prisma.customer.findFirst({
-      where: { organizationId: user.tenantId, id: input },
-      select: { id: true },
+    const direct = await this.prisma.client.orm.public.Customer.where({
+      organizationId: user.tenantId,
+      id: input,
     })
+      .select('id')
+      .first()
     if (direct) return direct.id
-    const matches = await this.prisma.customer.findMany({
-      where: { organizationId: user.tenantId, name: input },
-      select: { id: true },
-      take: 2,
+    const matches = await this.prisma.client.orm.public.Customer.where({
+      organizationId: user.tenantId,
+      name: input,
     })
+      .select('id')
+      .limit(2)
+      .all()
     if (matches.length === 0) throw new BadRequestException(`客户「${input}」不存在`)
     if (matches.length > 1)
       throw new BadRequestException(`客户名称「${input}」不唯一，请填写客户 ID`)
-    return matches[0].id
+    return matches[0]!.id
   }
 
   private assertIndependentReadPermission(user: AuthUser) {
@@ -905,14 +960,12 @@ export class ContactsService {
         continue
       const value = raw.trim()
       if (!value) continue
-      const duplicate = await this.prisma.customerContact.findFirst({
-        where: {
-          organizationId: tenantId,
-          ...(excludeId ? { id: { not: excludeId } } : {}),
-          ...(key === 'name' ? { name: value } : { phone: value }),
-        },
-        select: { id: true },
+      let query = this.prisma.client.orm.public.CustomerContact.where({
+        organizationId: tenantId,
       })
+      if (excludeId) query = query.where((row) => row.id.neq(excludeId))
+      query = key === 'name' ? query.where({ name: value }) : query.where({ phone: value })
+      const duplicate = await query.select('id').first()
       if (duplicate) throw new BadRequestException(`「${fields.get(key)?.label ?? key}」不能重复`)
     }
   }
@@ -946,27 +999,52 @@ export class ContactsService {
     return result
   }
 
-  private contactOrderBy(
+  private applyContactSort(
+    query: ReturnType<typeof this.prisma.client.orm.public.CustomerContact.where>,
     sort: ContactSortDto | undefined,
     fields: FieldVO[],
-  ): Prisma.CustomerContactOrderByWithRelationInput[] {
-    if (!sort) return [{ createTime: 'desc' }, { id: 'asc' }]
-    const field = fields.find((item) => item.id === sort.fieldId || item.key === sort.fieldId)
-    if (!field || field.key.startsWith('cf_')) return [{ createTime: 'desc' }, { id: 'asc' }]
-    const direction = sort.direction.toLowerCase() as Prisma.SortOrder
-    const keyMap: Record<string, keyof Prisma.CustomerContactOrderByWithRelationInput> = {
-      name: 'name',
-      phone: 'phone',
-      owner: 'owner',
-      ownerId: 'owner',
-      customerId: 'customerId',
-      enable: 'enable',
-      createTime: 'createTime',
-      updateTime: 'updateTime',
+  ) {
+    if (!sort) {
+      return query.orderBy([(row) => row.createTime.desc(), (row) => row.id.asc()])
     }
-    const key = keyMap[field.key]
-    if (!key) return [{ createTime: 'desc' }, { id: 'asc' }]
-    return [{ [key]: direction } as Prisma.CustomerContactOrderByWithRelationInput, { id: 'asc' }]
+    const field = fields.find((item) => item.id === sort.fieldId || item.key === sort.fieldId)
+    if (!field || field.key.startsWith('cf_')) {
+      return query.orderBy([(row) => row.createTime.desc(), (row) => row.id.asc()])
+    }
+    const asc = sort.direction.toLowerCase() === 'asc'
+    if (field.key === 'name')
+      return query.orderBy([
+        (row) => (asc ? row.name.asc() : row.name.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (field.key === 'phone')
+      return query.orderBy([
+        (row) => (asc ? row.phone.asc() : row.phone.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (field.key === 'owner' || field.key === 'ownerId')
+      return query.orderBy([
+        (row) => (asc ? row.owner.asc() : row.owner.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (field.key === 'customerId')
+      return query.orderBy([
+        (row) => (asc ? row.customerId.asc() : row.customerId.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (field.key === 'enable')
+      return query.orderBy([(row) => row.createTime.desc(), (row) => row.id.asc()])
+    if (field.key === 'updateTime')
+      return query.orderBy([
+        (row) => (asc ? row.updateTime.asc() : row.updateTime.desc()),
+        (row) => row.id.asc(),
+      ])
+    if (field.key === 'createTime')
+      return query.orderBy([
+        (row) => (asc ? row.createTime.asc() : row.createTime.desc()),
+        (row) => row.id.asc(),
+      ])
+    return query.orderBy([(row) => row.createTime.desc(), (row) => row.id.asc()])
   }
 
   private chartFieldValue(item: ContactVO, key: string): unknown {
@@ -1023,12 +1101,14 @@ export class ContactsService {
           )
         }
         const normalized = condition.key === 'ownerId' ? { ...condition, key: 'owner' } : condition
-        const clauses = buildFilterClauses(fieldMap, [normalized])
-        const rows = await this.prisma.customerContact.findMany({
-          where: { organizationId, AND: clauses as Prisma.CustomerContactWhereInput[] },
-          select: { id: true },
+        const field = fieldMap.get(normalized.key)
+        let query = this.prisma.client.orm.public.CustomerContact.where({
+          organizationId: organizationId,
         })
-        return new Set(rows.map((row) => row.id))
+        if (field && field.type !== 'formula')
+          query = this.applyContactDirectFilter(query, normalized, field)
+        const rows = await query.select('id').all()
+        return new Set(rows.map((row) => String(row.id)))
       }),
     )
     if (mode === 'OR') return [...new Set(sets.flatMap((set) => [...set]))]
@@ -1042,6 +1122,129 @@ export class ContactsService {
     ]
   }
 
+  private applyContactDirectFilter(
+    collection: ReturnType<typeof this.prisma.client.orm.public.CustomerContact.where>,
+    condition: FilterCondition,
+    _field: FieldVO,
+  ) {
+    const key = condition.key
+    const impossible = () => collection.where((row) => row.id.eq(''))
+    const rawValues = Array.isArray(condition.value) ? condition.value : [condition.value]
+
+    if (key === 'enable') {
+      const values = rawValues.map((value) => value === true || value === 'true')
+      const value = values[0]!
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.enable.eq(value)
+        if (condition.op === 'ne') return row.enable.neq(value)
+        if (condition.op === 'in') return row.enable.in(values)
+        if (condition.op === 'notIn') return not(row.enable.in(values))
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'createTime' || key === 'updateTime') {
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      const values: bigint[] = []
+      for (const raw of rawValues) {
+        const direct = Number(raw)
+        const millis =
+          Number.isFinite(direct) && String(raw ?? '').trim() !== ''
+            ? direct
+            : new Date(String(raw)).getTime()
+        if (!Number.isFinite(millis)) return impossible()
+        values.push(BigInt(Math.trunc(millis)))
+      }
+      const value = values[0]!
+      return collection.where((row) => {
+        const column = key === 'createTime' ? row.createTime : row.updateTime
+        if (condition.op === 'eq') return column.eq(value)
+        if (condition.op === 'ne') return column.neq(value)
+        if (condition.op === 'in') return column.in(values)
+        if (condition.op === 'notIn') return not(column.in(values))
+        if (condition.op === 'gt') return column.gt(value)
+        if (condition.op === 'gte') return column.gte(value)
+        if (condition.op === 'lt') return column.lt(value)
+        if (condition.op === 'lte') return column.lte(value)
+        return row.id.eq('')
+      })
+    }
+
+    if (key === 'name') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.name.eq(''))
+      if (condition.op === 'notEmpty') return collection.where((row) => row.name.neq(''))
+      const values = rawValues.map((value) => String(value ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.name.eq(value)
+        if (condition.op === 'ne') return row.name.neq(value)
+        if (condition.op === 'in') return row.name.in(values)
+        if (condition.op === 'notIn') return not(row.name.in(values))
+        if (condition.op === 'contains') return row.name.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.name.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+    if (key === 'phone') {
+      if (condition.op === 'isEmpty')
+        return collection.where((row) => or(row.phone.isNull(), row.phone.eq('')))
+      if (condition.op === 'notEmpty')
+        return collection.where((row) => not(or(row.phone.isNull(), row.phone.eq(''))))
+      const values = rawValues.map((value) => String(value ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.phone.eq(value)
+        if (condition.op === 'ne') return row.phone.neq(value)
+        if (condition.op === 'in') return row.phone.in(values)
+        if (condition.op === 'notIn') return not(row.phone.in(values))
+        if (condition.op === 'contains')
+          return row.phone.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.phone.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+    if (key === 'customerId') {
+      if (condition.op === 'isEmpty') return collection.where((row) => row.customerId.isNull())
+      if (condition.op === 'notEmpty') return collection.where((row) => row.customerId.isNotNull())
+      const values = rawValues.map((value) => String(value ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.customerId.eq(value)
+        if (condition.op === 'ne') return row.customerId.neq(value)
+        if (condition.op === 'in') return row.customerId.in(values)
+        if (condition.op === 'notIn') return not(row.customerId.in(values))
+        if (condition.op === 'contains')
+          return row.customerId.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.customerId.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+    if (key === 'owner') {
+      if (condition.op === 'isEmpty') return impossible()
+      if (condition.op === 'notEmpty') return collection
+      const values = rawValues.map((value) => String(value ?? ''))
+      const value = values[0]!
+      return collection.where((row) => {
+        if (condition.op === 'eq') return row.owner.eq(value)
+        if (condition.op === 'ne') return row.owner.neq(value)
+        if (condition.op === 'in') return row.owner.in(values)
+        if (condition.op === 'notIn') return not(row.owner.in(values))
+        if (condition.op === 'contains')
+          return row.owner.ilike(`%${String(condition.value ?? '')}%`)
+        if (condition.op === 'notContains')
+          return not(row.owner.ilike(`%${String(condition.value ?? '')}%`))
+        return row.id.eq('')
+      })
+    }
+    return collection
+  }
+
   private intersectIds(left: string[] | null, right: string[] | null): string[] | null {
     if (left === null) return right
     if (right === null) return left
@@ -1052,10 +1255,9 @@ export class ContactsService {
   private async userNames(ids: Array<string | null>): Promise<Map<string | null, string>> {
     const userIds = [...new Set(ids.filter((id): id is string => Boolean(id)))]
     const users = userIds.length
-      ? await this.prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: { id: true, name: true },
-        })
+      ? await this.prisma.client.orm.public.Users.where((row) => row.id.in(userIds))
+          .select('id', 'name')
+          .all()
       : []
     return new Map(users.map((user) => [user.id, user.name]))
   }

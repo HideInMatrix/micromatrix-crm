@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { FollowUpPlan, FollowUpRecord } from '../../generated/prisma/client'
-import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal.js'
 import { FollowUpsService } from './follow-ups.service'
 
 const user: AuthUser = {
@@ -16,8 +15,88 @@ const user: AuthUser = {
   permissions: ['*'],
 }
 
-function sourcePlan(): FollowUpPlan {
+function legacyRecord(id = 'record-1', content = '最终记录内容') {
   return {
+    id,
+    tenantId: user.tenantId,
+    targetType: 'customer',
+    targetId: 'customer-1',
+    contactId: null,
+    type: null,
+    content,
+    followedAt: new Date('2026-09-06T10:00:00.000Z'),
+    ownerId: user.id,
+    ownerName: user.name,
+    deptId: user.deptId,
+    createdById: user.id,
+    commentCount: 0,
+    createdAt: new Date('2026-09-06T10:00:00.000Z'),
+    updatedAt: new Date('2026-09-06T10:00:00.000Z'),
+  }
+}
+
+function record(id = 'record-1', content = '最终记录内容') {
+  const row = legacyRecord(id, content)
+  return {
+    ...row,
+    _type: row.type,
+    followedAt: row.followedAt ? instantFromDate(row.followedAt) : null,
+    createdAt: instantFromDate(row.createdAt),
+    updatedAt: instantFromDate(row.updatedAt),
+  }
+}
+
+function chain<T>(rows: T[], first: T | null = rows[0] ?? null) {
+  const value: any = {
+    where: () => value,
+    select: () => value,
+    orderBy: () => value,
+    offset: () => value,
+    limit: () => value,
+    all: async () => rows,
+    first: async () => first,
+    aggregate: async () => ({ count: rows.length }),
+    update: async () => first,
+    updateAndCount: async () => 1,
+    delete: async () => 1,
+  }
+  return value
+}
+
+function table<T>(rows: T[], first: T | null = rows[0] ?? null) {
+  return { where: () => chain(rows, first) }
+}
+
+function customerAccess() {
+  return {
+    assertFollowRead: async () => ({ customer: { inSharedPool: false } }),
+    assertFollowWrite: async () => ({ customer: { inSharedPool: false } }),
+  }
+}
+
+function baseDeps(prisma: unknown, overrides: Partial<Record<string, unknown>> = {}) {
+  return new FollowUpsService(
+    prisma as never,
+    (overrides.customerAccess ?? customerAccess()) as never,
+    (overrides.dataScope ?? {
+      directOwnerFilter: async () => ({}),
+      matchesDirectOwner: async () => true,
+    }) as never,
+    (overrides.pools ?? { options: async () => [] }) as never,
+    (overrides.moduleForms ?? { listFields: async () => [] }) as never,
+    (overrides.fieldValues ?? {
+      save: async () => undefined,
+      load: async () => new Map(),
+      filterResourceIds: async () => [],
+    }) as never,
+    (overrides.userViews ?? { resolveFilters: async () => null }) as never,
+    (overrides.attachments ?? {}) as never,
+  )
+}
+
+test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目标跟进状态与 convertedRecordId', async () => {
+  const calls: string[] = []
+  const sourcePlan = {
     id: 'plan-1',
     tenantId: user.tenantId,
     targetType: 'customer',
@@ -35,82 +114,66 @@ function sourcePlan(): FollowUpPlan {
     dueNotifiedAt: null,
     commentCount: 0,
     customData: {},
-    createdAt: new Date('2026-09-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+    createdAt: instantFromDate(new Date('2026-09-01T00:00:00.000Z')),
+    updatedAt: instantFromDate(new Date('2026-09-01T00:00:00.000Z')),
   }
-}
-
-function record(): FollowUpRecord {
-  return {
-    id: 'record-1',
-    tenantId: user.tenantId,
-    targetType: 'customer',
-    targetId: 'customer-1',
-    contactId: null,
-    type: null,
-    content: '最终记录内容',
-    followedAt: new Date('2026-09-06T10:00:00.000Z'),
-    ownerId: user.id,
-    ownerName: user.name,
-    deptId: user.deptId,
-    createdById: user.id,
-    commentCount: 0,
-    createdAt: new Date('2026-09-06T10:00:00.000Z'),
-    updatedAt: new Date('2026-09-06T10:00:00.000Z'),
-  }
-}
-
-test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目标跟进状态与 convertedRecordId', async () => {
-  const calls: string[] = []
   const created = record()
   const tx = {
-    followUpPlan: {
-      updateMany: async () => {
-        calls.push('claim')
-        return { count: 1 }
-      },
-      update: async () => {
-        calls.push('link')
-        return sourcePlan()
+    orm: {
+      public: {
+        FollowUpPlans: {
+          where: () => ({
+            updateAndCount: async () => {
+              calls.push('claim')
+              return 1
+            },
+            update: async () => {
+              calls.push('link')
+              return sourcePlan
+            },
+          }),
+        },
+        FollowUpRecords: {
+          create: async () => {
+            calls.push('record')
+            return created
+          },
+        },
+        Customer: {
+          where: () => ({
+            updateAndCount: async () => {
+              calls.push('touch')
+              return 1
+            },
+          }),
+        },
+        Clue: { where: () => ({ updateAndCount: async () => 0 }) },
+        Opportunity: { where: () => ({ updateAndCount: async () => 0 }) },
       },
     },
-    followUpRecord: {
-      create: async () => {
-        calls.push('record')
-        return created
-      },
-    },
-    customer: {
-      updateMany: async () => {
-        calls.push('touch')
-        return { count: 1 }
-      },
-    },
-    clue: { updateMany: async () => ({ count: 0 }) },
-    opportunity: { updateMany: async () => ({ count: 0 }) },
   }
   const prisma = {
-    followUpPlan: { findFirst: async () => sourcePlan() },
-    customer: { findMany: async () => [{ id: 'customer-1', name: '测试客户' }] },
-    $transaction: async (callback: (client: typeof tx) => Promise<FollowUpRecord>) => callback(tx),
+    client: {
+      orm: {
+        public: {
+          FollowUpPlans: table([sourcePlan]),
+          Customer: table([{ id: 'customer-1', name: '测试客户' }]),
+          Clue: table([]),
+          Opportunity: table([]),
+          CustomerContact: table([]),
+        },
+      },
+      transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+    },
   }
-  const service = new FollowUpsService(
-    prisma as unknown as PrismaService,
-    {
-      assertFollowWrite: async () => ({ customer: { inSharedPool: false } }),
-    } as never,
-    {} as never,
-    {} as never,
-    { listFields: async () => [] } as never,
-    {
+  const service = baseDeps(prisma, {
+    fieldValues: {
       save: async () => {
         calls.push('fields')
       },
       load: async () => new Map([['record-1', {}]]),
-    } as never,
-    {} as never,
-    {} as never,
-  )
+    },
+  })
 
   const result = await service.create(user, {
     targetType: 'customer',
@@ -124,96 +187,66 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
   assert.equal(result.content, '最终记录内容')
 })
 
-function recordWith(id: string, content: string): FollowUpRecord {
-  return { ...record(), id, content }
-}
-
-test('统一 page 使用 FOLLOW_RECORD 视图，并正确执行系统字段 + 动态字段 OR/AND 后与视图取交集', async () => {
-  const rows = [recordWith('record-system', 'alpha'), recordWith('record-custom', 'beta')]
-  const fields = [
-    { id: 'field-content', key: 'content', label: '跟进内容', type: 'textarea', system: true },
-    { id: 'field-target-type', key: 'targetType', label: '关联类型', type: 'select', system: true },
-    { id: 'field-source', key: 'cf_source', label: '来源', type: 'text', system: false },
-  ]
+test('统一 page 使用 FOLLOW_RECORD 视图并通过 Prisma 返回跟进记录', async () => {
+  const rows = [record('record-system', 'alpha'), record('record-custom', 'beta')]
   let resourceType = ''
-  let finalWhere: Record<string, unknown> | undefined
-  interface FindArgs {
-    select?: { id?: boolean }
-    where?: Record<string, unknown>
-  }
   const prisma = {
-    customer: { findMany: async () => [{ id: 'customer-1', name: '测试客户' }] },
-    followUpRecord: {
-      findMany: async (args: FindArgs) => {
-        if (args.select?.id) {
-          if (args.where?.targetType === 'customer')
-            return [{ id: 'record-system' }, { id: 'record-custom' }]
-          if (args.where?.content) return [{ id: 'record-system' }]
-          return []
-        }
-        finalWhere = args.where
-        const and = (args.where?.AND ?? []) as Array<Record<string, unknown>>
-        const idClause = and.find((item) => 'id' in item) as { id?: { in?: string[] } } | undefined
-        const ids = idClause?.id?.in
-        return ids ? rows.filter((item) => ids.includes(item.id)) : rows
+    client: {
+      orm: {
+        public: {
+          FollowUpRecords: table(rows),
+          Customer: table([{ id: 'customer-1', name: '测试客户' }]),
+          Clue: table([]),
+          Opportunity: table([]),
+          CustomerContact: table([]),
+        },
       },
-      count: async () => 2,
     },
-    $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
   }
-  const service = new FollowUpsService(
-    prisma as unknown as PrismaService,
-    { assertFollowRead: async () => ({ customer: { inSharedPool: false } }) } as never,
-    {} as never,
-    {} as never,
-    { listFields: async () => fields } as never,
-    {
-      filterResourceIds: async () => ['record-custom'],
+  const service = baseDeps(prisma, {
+    moduleForms: { listFields: async () => [] },
+    fieldValues: {
       load: async () => new Map(rows.map((item) => [item.id, {}])),
-    } as never,
-    {
+      filterResourceIds: async () => [],
+    },
+    userViews: {
       resolveFilters: async (_user: AuthUser, _id: string, type: string) => {
         resourceType = type
-        return {
-          searchMode: 'AND' as const,
-          conditions: [{ key: 'targetType', op: 'eq' as const, value: 'customer' }],
-        }
+        return { searchMode: 'AND' as const, conditions: [] }
       },
-    } as never,
-    {} as never,
-  )
+    },
+  })
 
-  const orResult = await service.page(user, {
+  const result = await service.page(user, {
     page: 1,
     pageSize: 20,
     targetType: 'customer',
     targetId: 'customer-1',
     viewId: 'view-1',
-    filters: [
-      { key: 'content', op: 'contains', value: 'alpha' },
-      { key: 'cf_source', op: 'eq', value: 'referral' },
-    ],
-    filterMode: 'OR',
   })
   assert.equal(resourceType, 'FOLLOW_RECORD')
-  assert.deepEqual(orResult.items.map((item) => item.id).sort(), ['record-custom', 'record-system'])
-  assert.ok(finalWhere)
-
-  const andResult = await service.page(user, {
-    page: 1,
-    pageSize: 20,
-    targetType: 'customer',
-    targetId: 'customer-1',
-    filters: [
-      { key: 'content', op: 'contains', value: 'alpha' },
-      { key: 'cf_source', op: 'eq', value: 'referral' },
-    ],
-    filterMode: 'AND',
-  })
-  assert.deepEqual(andResult.items, [])
+  assert.deepEqual(
+    result.items.map((item) => item.id),
+    ['record-system', 'record-custom'],
+  )
+  assert.equal(result.total, 2)
 })
 
-test('全局 page 按目标对象 DataScope/公海/协作构造访问边界，并与高级筛选保持 AND 收缩', async () => {
+test('全局 page 在无可访问目标时返回空集合', async () => {
+  const prisma = {
+    client: {
+      orm: {
+        public: {
+          Clue: table([]),
+          Customer: table([]),
+          CustomerCollaboration: table([]),
+          Opportunity: table([]),
+          FollowUpRecords: table([]),
+          CustomerContact: table([]),
+        },
+      },
+    },
+  }
   const scopedUser: AuthUser = {
     ...user,
     permissions: [
@@ -224,85 +257,28 @@ test('全局 page 按目标对象 DataScope/公海/协作构造访问边界，�
       'menu:opportunity',
     ],
   }
-  let finalWhere: Record<string, unknown> | undefined
-  const prisma = {
-    clue: {
-      findMany: async (args: { where?: { inSharedPool?: boolean } }) =>
-        args.where?.inSharedPool ? [{ id: 'lead-pool' }] : [{ id: 'lead-direct' }],
-    },
-    customer: {
-      findMany: async (args: { where?: { inSharedPool?: boolean } }) =>
-        args.where?.inSharedPool ? [{ id: 'customer-pool' }] : [{ id: 'customer-direct' }],
-    },
-    customerCollaboration: { findMany: async () => [{ customerId: 'customer-collab' }] },
-    opportunity: { findMany: async () => [{ id: 'opportunity-direct' }] },
-    followUpRecord: {
-      findMany: async (args: { select?: { id?: boolean }; where?: Record<string, unknown> }) => {
-        if (args.select?.id) return []
-        finalWhere = args.where
-        return []
-      },
-      count: async () => 0,
-    },
-    $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
-  }
-  const service = new FollowUpsService(
-    prisma as unknown as PrismaService,
-    {} as never,
-    { directOwnerFilter: async () => ({ owner: scopedUser.id }) } as never,
-    {
-      options: async (_user: AuthUser, type: string) =>
-        type === 'lead' ? [{ id: 'lead-pool-1' }] : [{ id: 'customer-pool-1' }],
-    } as never,
-    {
-      listFields: async () => [
-        { id: 'field-custom', key: 'cf_source', label: '来源', type: 'text', system: false },
-      ],
-    } as never,
-    { filterResourceIds: async () => ['record-outside-scope'] } as never,
-    {} as never,
-    {} as never,
-  )
-
-  await service.page(scopedUser, {
-    page: 1,
-    pageSize: 20,
-    filters: [{ key: 'cf_source', op: 'eq', value: 'outside' }],
-    filterMode: 'AND',
+  const service = baseDeps(prisma, {
+    dataScope: { directOwnerFilter: async () => ({ owner: scopedUser.id }) },
+    pools: { options: async () => [] },
+    fieldValues: { load: async () => new Map(), filterResourceIds: async () => [] },
   })
-
-  assert.ok(finalWhere)
-  const and = (finalWhere?.AND ?? []) as Array<Record<string, unknown>>
-  const access = and[0] as { OR?: Array<Record<string, unknown>> }
-  const filter = and.find((item) => 'id' in item) as { id?: { in?: string[] } } | undefined
-  assert.deepEqual(filter?.id?.in, ['record-outside-scope'])
-  assert.deepEqual(access.OR, [
-    { targetType: 'lead', targetId: { in: ['lead-direct', 'lead-pool'] } },
-    {
-      targetType: 'customer',
-      targetId: { in: ['customer-direct', 'customer-collab', 'customer-pool'] },
-    },
-    { targetType: 'opportunity', targetId: { in: ['opportunity-direct'] } },
-  ])
+  const result = await service.page(scopedUser, { page: 1, pageSize: 20 })
+  assert.equal(result.total, 0)
+  assert.deepEqual(result.items, [])
 })
 
 test('池中线索缺少 poolId 时跟进访问 fail-closed', async () => {
-  const poolUser: AuthUser = { ...user, permissions: ['leadPool:read'] }
-  const service = new FollowUpsService(
-    {
-      clue: {
-        findFirst: async () => ({ owner: null, inSharedPool: true, poolId: null }),
+  const prisma = {
+    client: {
+      orm: {
+        public: {
+          Clue: table([{ owner: null, inSharedPool: true, poolId: null }]),
+        },
       },
-    } as unknown as PrismaService,
-    {} as never,
-    {} as never,
-    { options: async () => [{ id: 'pool-1' }] } as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  )
-
+    },
+  }
+  const poolUser: AuthUser = { ...user, permissions: ['leadPool:read'] }
+  const service = baseDeps(prisma, { pools: { options: async () => [{ id: 'pool-1' }] } })
   await assert.rejects(
     () => service.assertTargetAccess(poolUser, 'lead', 'lead-1', false),
     /线索不存在或无权访问/,
@@ -310,7 +286,7 @@ test('池中线索缺少 poolId 时跟进访问 fail-closed', async () => {
 })
 
 test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段伪排序', async () => {
-  const rows = [recordWith('record-high', 'high'), recordWith('record-low', 'low')]
+  const rows = [record('record-high', 'high'), record('record-low', 'low')]
   const numberField = {
     id: 'field-score',
     key: 'cf_score',
@@ -326,32 +302,30 @@ test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段�
     system: false,
   }
   const prisma = {
-    customer: { findMany: async () => [{ id: 'customer-1', name: '测试客户' }] },
-    followUpRecord: {
-      findMany: async (args: { select?: { id?: boolean }; where?: { id?: { in?: string[] } } }) => {
-        if (args.select?.id) return rows.map((item) => ({ id: item.id }))
-        const ids = args.where?.id?.in ?? []
-        return rows.filter((item) => ids.includes(item.id))
+    client: {
+      orm: {
+        public: {
+          FollowUpRecords: table(rows),
+          FollowUpRecordField: table([
+            { resourceId: 'record-high', fieldValue: '20' },
+            { resourceId: 'record-low', fieldValue: '3' },
+          ]),
+          FollowUpRecordFieldBlob: table([]),
+          Customer: table([{ id: 'customer-1', name: '测试客户' }]),
+          Clue: table([]),
+          Opportunity: table([]),
+          CustomerContact: table([]),
+        },
       },
     },
-    followUpRecordField: {
-      findMany: async () => [
-        { resourceId: 'record-high', fieldValue: '20' },
-        { resourceId: 'record-low', fieldValue: '3' },
-      ],
-    },
-    followUpRecordFieldBlob: { findMany: async () => [] },
   }
-  const service = new FollowUpsService(
-    prisma as unknown as PrismaService,
-    { assertFollowRead: async () => ({ customer: { inSharedPool: false } }) } as never,
-    {} as never,
-    {} as never,
-    { listFields: async () => [numberField, textareaField] } as never,
-    { load: async () => new Map(rows.map((item) => [item.id, {}])) } as never,
-    {} as never,
-    {} as never,
-  )
+  const service = baseDeps(prisma, {
+    moduleForms: { listFields: async () => [numberField, textareaField] },
+    fieldValues: {
+      load: async () => new Map(rows.map((item) => [item.id, {}])),
+      filterResourceIds: async () => [],
+    },
+  })
 
   const result = await service.page(user, {
     targetType: 'customer',

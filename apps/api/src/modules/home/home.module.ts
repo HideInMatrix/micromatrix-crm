@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { PrismaModule } from '../../prisma/prisma.module'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomeFilterService } from './home-filter.service'
@@ -10,6 +11,7 @@ import { HomeStatisticController } from './home-statistic.controller'
 import { HomeStatisticService } from './home-statistic.service'
 
 @Module({
+  imports: [PrismaModule],
   controllers: [HomeStatisticController, HomeOverviewController],
   providers: [
     HomePeriodService,

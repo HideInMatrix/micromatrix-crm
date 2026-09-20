@@ -43,7 +43,7 @@ import { UserViewsModule } from './modules/user-views/user-views.module'
 import { WeComSsoModule } from './modules/wecom-sso/wecom-sso.module'
 import { DingTalkSsoModule } from './modules/dingtalk-sso/dingtalk-sso.module'
 import { LarkSsoModule } from './modules/lark-sso/lark-sso.module'
-import { PrismaModule } from './prisma/prisma.module'
+import { PrismaModule } from './prisma/prisma.module.js'
 import { RedisModule } from './redis/redis.module'
 
 @Module({

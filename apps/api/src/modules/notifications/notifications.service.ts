@@ -9,8 +9,8 @@ import {
 } from '@nestjs/common'
 import { type MessageTaskEvent, NotificationBizType, NotificationVO } from '@micromatrix/shared'
 import { finalize, interval, map, merge, Observable, Subject } from 'rxjs'
-import { Notification } from '../../generated/prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { RedisService } from '../../redis/redis.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import {
@@ -120,8 +120,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     input: NotifyInput,
   ): Promise<void> {
     const { event: _event, ...data } = input
-    const notification = await this.prisma.notification.create({
-      data: { tenantId, userId, ...data },
+    const notification = await this.notifications().create({
+      tenantId,
+      userId,
+      _type: data.type,
+      title: data.title,
+      content: data.content ?? null,
+      link: data.link ?? null,
+      linkLabel: data.linkLabel ?? null,
+      sourceType: data.sourceType ?? null,
+      sourceId: data.sourceId ?? null,
     })
     await this.bumpCacheVersion(tenantId, userId)
     const event: NotificationRealtimeEvent = {
@@ -159,10 +167,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const unique = [...new Set(userIds)]
     if (unique.length === 0) return 0
 
-    const existing = await this.prisma.notification.findMany({
-      where: { tenantId, sourceType, sourceId, userId: { in: unique } },
-      select: { userId: true },
-    })
+    const existing = await this.notifications()
+      .where({ tenantId, sourceType, sourceId })
+      .where((notification) => notification.userId.in(unique))
+      .select('userId')
+      .all()
     const existingUsers = new Set(existing.map((item) => item.userId))
     const missing = unique.filter((userId) => !existingUsers.has(userId))
 
@@ -175,7 +184,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
             return 1
           } catch (error) {
             // 多实例极端竞态下，source 唯一键已经由另一实例写入时视为幂等成功。
-            if ((error as { code?: string } | null)?.code === 'P2002') return 0
+            if ((error as { sqlState?: string } | null)?.sqlState === '23505') return 0
             throw error
           }
         }),
@@ -187,23 +196,19 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   /** 删除一个来源资源产生的全部通知，并主动失效相关用户缓存/SSE。 */
   async removeBySource(tenantId: string, sourceType: string, sourceId: string): Promise<number> {
-    const affected = await this.prisma.notification.findMany({
-      where: { tenantId, sourceType, sourceId },
-      distinct: ['userId'],
-      select: { userId: true },
-    })
-    const result = await this.prisma.notification.deleteMany({
-      where: { tenantId, sourceType, sourceId },
-    })
-    if (result.count === 0) return 0
+    const scope = { tenantId, sourceType, sourceId }
+    const affectedRows = await this.notifications().where(scope).select('userId').all()
+    const affected = [...new Set(affectedRows.map((row) => row.userId))]
+    const count = await this.notifications().where(scope).deleteAndCount()
+    if (count === 0) return 0
 
-    for (const { userId } of affected) {
+    for (const userId of affected) {
       await this.bumpCacheVersion(tenantId, userId)
       const event = this.stateChangedEvent(tenantId, userId)
       this.deliverRealtimeEvent(event)
       await this.publishRealtimeEvent(event)
     }
-    return result.count
+    return count
   }
 
   async list(
@@ -223,20 +228,21 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }>(cacheKey)
     if (cached) return cached
 
-    const where = {
-      tenantId,
-      userId,
-      ...(unreadOnly ? { readAt: null } : {}),
+    const scoped = () => {
+      const notifications = this.notifications().where({ tenantId, userId })
+      return unreadOnly
+        ? notifications.where((notification) => notification.readAt.isNull())
+        : notifications
     }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.notification.count({ where }),
+    const [items, aggregate] = await Promise.all([
+      scoped()
+        .orderBy((notification) => notification.createdAt.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      scoped().aggregate((aggregate) => ({ count: aggregate.count() })),
     ])
+    const total = aggregate.count
     const result = { items: items.map((n) => this.toVO(n)), total, page, pageSize }
     await this.redis?.setJson(cacheKey, result, NOTIFICATION_CACHE_TTL_SECONDS)
     return result
@@ -248,20 +254,22 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const cached = await this.redis?.getJson<{ count: number }>(cacheKey)
     if (cached) return cached
 
-    const count = await this.prisma.notification.count({
-      where: { tenantId, userId, readAt: null },
-    })
+    const aggregate = await this.notifications()
+      .where({ tenantId, userId })
+      .where((notification) => notification.readAt.isNull())
+      .aggregate((value) => ({ count: value.count() }))
+    const count = aggregate.count
     const result = { count }
     await this.redis?.setJson(cacheKey, result, NOTIFICATION_CACHE_TTL_SECONDS)
     return result
   }
 
   async markRead(tenantId: string, userId: string, id: string) {
-    const result = await this.prisma.notification.updateMany({
-      where: { id, tenantId, userId, readAt: null },
-      data: { readAt: new Date() },
-    })
-    if (result.count > 0) {
+    const count = await this.notifications()
+      .where({ id, tenantId, userId })
+      .where((notification) => notification.readAt.isNull())
+      .updateAndCount({ readAt: nowInstant() })
+    if (count > 0) {
       await this.bumpCacheVersion(tenantId, userId)
       const event = this.stateChangedEvent(tenantId, userId)
       this.deliverRealtimeEvent(event)
@@ -271,17 +279,17 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async markAllRead(tenantId: string, userId: string) {
-    const result = await this.prisma.notification.updateMany({
-      where: { tenantId, userId, readAt: null },
-      data: { readAt: new Date() },
-    })
-    if (result.count > 0) {
+    const count = await this.notifications()
+      .where({ tenantId, userId })
+      .where((notification) => notification.readAt.isNull())
+      .updateAndCount({ readAt: nowInstant() })
+    if (count > 0) {
       await this.bumpCacheVersion(tenantId, userId)
       const event = this.stateChangedEvent(tenantId, userId)
       this.deliverRealtimeEvent(event)
       await this.publishRealtimeEvent(event)
     }
-    return { count: result.count }
+    return { count }
   }
 
   private async cacheVersion(tenantId: string, userId: string): Promise<string> {
@@ -403,16 +411,29 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     this.logger.warn(message)
   }
 
-  private toVO(n: Notification): NotificationVO {
+  private notifications() {
+    return this.prisma.client.orm.public.Notifications
+  }
+
+  private toVO(n: {
+    id: string
+    _type: string
+    title: string
+    content: string | null
+    link: string | null
+    linkLabel: string | null
+    readAt: ReturnType<typeof nowInstant> | null
+    createdAt: ReturnType<typeof nowInstant>
+  }): NotificationVO {
     return {
       id: n.id,
-      type: n.type as NotificationBizType,
+      type: n._type as NotificationBizType,
       title: n.title,
       content: n.content,
       link: n.link,
       linkLabel: n.linkLabel ?? null,
-      readAt: n.readAt?.toISOString() ?? null,
-      createdAt: n.createdAt.toISOString(),
+      readAt: n.readAt ? instantToISOString(n.readAt) : null,
+      createdAt: instantToISOString(n.createdAt),
     }
   }
 }

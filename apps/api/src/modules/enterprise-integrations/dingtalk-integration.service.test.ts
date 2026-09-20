@@ -3,11 +3,10 @@ import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import type { EnterpriseIntegration } from '../../generated/prisma/client'
-import type { PrismaService } from '../../prisma/prisma.service'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
 import type { DingTalkClient, DingTalkConnectionResult } from './dingtalk.client'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
+import { createIntegrationPrismaHarness } from './enterprise-integrations.test-harness'
 import type { WeComClient } from './wecom.client'
 
 const user: AuthUser = {
@@ -24,90 +23,7 @@ const user: AuthUser = {
 function createService(
   result: DingTalkConnectionResult = { success: true, message: '钉钉连接成功', providerCode: 0 },
 ) {
-  const rows: EnterpriseIntegration[] = []
-  const enterpriseIntegration = {
-    findUnique: async ({
-      where,
-    }: {
-      where: { tenantId_provider: { tenantId: string; provider: 'DINGTALK' | 'WECOM' } }
-    }) =>
-      rows.find(
-        (row) =>
-          row.tenantId === where.tenantId_provider.tenantId &&
-          row.provider === where.tenantId_provider.provider,
-      ) ?? null,
-    upsert: async ({
-      where,
-      update,
-      create,
-    }: {
-      where: { tenantId_provider: { tenantId: string; provider: 'DINGTALK' } }
-      update: Record<string, unknown>
-      create: Record<string, unknown>
-    }) => {
-      const existing = rows.find(
-        (row) => row.tenantId === where.tenantId_provider.tenantId && row.provider === 'DINGTALK',
-      )
-      if (existing) {
-        for (const [key, value] of Object.entries(update)) {
-          if (
-            value &&
-            typeof value === 'object' &&
-            'increment' in value &&
-            typeof value.increment === 'number'
-          ) {
-            const current = existing[key as keyof EnterpriseIntegration]
-            Object.assign(existing, {
-              [key]: (typeof current === 'number' ? current : 0) + value.increment,
-            })
-          } else {
-            Object.assign(existing, { [key]: value })
-          }
-        }
-        existing.updatedAt = new Date()
-        return existing
-      }
-      const now = new Date()
-      const row = {
-        lastTestSucceeded: null,
-        lastTestMessage: null,
-        lastTestedAt: null,
-        lastSyncStatus: null,
-        lastSyncMessage: null,
-        lastSyncedAt: null,
-        syncDefaultRoleId: null,
-        ...create,
-        id: `integration-${rows.length + 1}`,
-        createdAt: now,
-        updatedAt: now,
-      } as EnterpriseIntegration
-      rows.push(row)
-      return row
-    },
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-      const row = rows.find((item) => item.id === where.id)
-      assert.ok(row)
-      Object.assign(row, data, { updatedAt: new Date() })
-      return row
-    },
-    updateMany: async () => ({ count: 0 }),
-  }
-  const prismaRecord: Record<string, unknown> = {
-    enterpriseIntegration,
-    tenant: {
-      findUnique: async () => ({ enterpriseSyncResource: 'DINGTALK', enterpriseSynced: false }),
-      updateMany: async () => ({ count: 1 }),
-    },
-    organizationSyncBatch: { updateMany: async () => ({ count: 0 }) },
-    role: {
-      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
-        where.id === 'role-a' && where.tenantId === user.tenantId ? { id: 'role-a' } : null,
-    },
-  }
-  prismaRecord['$transaction'] = async (operation: unknown) => {
-    if (Array.isArray(operation)) return Promise.all(operation)
-    return (operation as (tx: Record<string, unknown>) => Promise<unknown>)(prismaRecord)
-  }
+  const { prisma, rows } = createIntegrationPrismaHarness('DINGTALK')
   const cipher = new CredentialCipherService(
     new ConfigService({
       INTEGRATION_CREDENTIALS_KEY: 'test_integration_credentials_key_more_than_32_chars',
@@ -116,7 +32,7 @@ function createService(
   )
   const dingTalkClient = { testConnection: async () => result } as unknown as DingTalkClient
   const service = new EnterpriseIntegrationsService(
-    prismaRecord as unknown as PrismaService,
+    prisma,
     cipher,
     {} as WeComClient,
     dingTalkClient,

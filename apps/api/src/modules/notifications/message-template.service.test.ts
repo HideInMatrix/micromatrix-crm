@@ -6,10 +6,14 @@ import { MessageTemplateService } from './message-template.service'
 function serviceWithUsers(
   users: Array<{ email: string | null; phone: string | null; name: string }> = [],
 ) {
+  const scope: Record<string, unknown> = {}
+  Object.assign(scope, {
+    where: () => scope,
+    select: () => scope,
+    all: async () => users,
+  })
   const prisma = {
-    user: {
-      findMany: async () => users,
-    },
+    client: { orm: { public: { Users: { where: () => scope } } } },
   } as unknown as PrismaService
   return new MessageTemplateService(prisma)
 }

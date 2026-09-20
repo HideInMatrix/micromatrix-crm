@@ -2,9 +2,152 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { MessageEvent } from '@nestjs/common'
 import type { PrismaService } from '../../prisma/prisma.service'
+import { instantFromDate } from '../../prisma/temporal'
 import type { RedisService } from '../../redis/redis.service'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
+
+type Timestamp = ReturnType<typeof instantFromDate>
+
+interface TestNotification {
+  id: string
+  tenantId: string
+  userId: string
+  _type: string
+  title: string
+  content: string | null
+  link: string | null
+  linkLabel: string | null
+  sourceType: string | null
+  sourceId: string | null
+  readAt: Timestamp | null
+  createdAt: Timestamp
+}
+
+function createNotificationStore(initialRows: Partial<TestNotification>[] = []) {
+  let sequence = 0
+  const rows: TestNotification[] = initialRows.map((row) => ({
+    id: row.id ?? `notification-${++sequence}`,
+    tenantId: row.tenantId ?? 'tenant-a',
+    userId: row.userId ?? 'user-a',
+    _type: row._type ?? 'system',
+    title: row.title ?? '测试通知',
+    content: row.content ?? null,
+    link: row.link ?? null,
+    linkLabel: row.linkLabel ?? null,
+    sourceType: row.sourceType ?? null,
+    sourceId: row.sourceId ?? null,
+    readAt: row.readAt ?? null,
+    createdAt: row.createdAt ?? instantFromDate(new Date('2026-09-03T00:00:00.000Z')),
+  }))
+  const metrics = { creates: 0, lists: 0, aggregates: 0, updates: 0, deletes: 0 }
+
+  type Predicate = (row: TestNotification) => boolean
+  const makeCollection = (
+    predicates: Predicate[] = [],
+    selected: string[] | null = null,
+    offset = 0,
+    limit: number | null = null,
+  ) => ({
+    where(input: Record<string, unknown> | ((row: Record<string, any>) => Predicate)) {
+      let predicate: Predicate
+      if (typeof input === 'function') {
+        const fields = new Proxy(
+          {},
+          {
+            get: (_target, field: string) => ({
+              in: (values: unknown[]) => (row: TestNotification) =>
+                values.includes(row[field as keyof TestNotification]),
+              isNull: () => (row: TestNotification) =>
+                row[field as keyof TestNotification] === null,
+            }),
+          },
+        ) as Record<string, any>
+        predicate = input(fields)
+      } else {
+        predicate = (row) =>
+          Object.entries(input).every(
+            ([key, value]) => row[key as keyof TestNotification] === value,
+          )
+      }
+      return makeCollection([...predicates, predicate], selected, offset, limit)
+    },
+    select(...fields: string[]) {
+      return makeCollection(predicates, fields, offset, limit)
+    },
+    orderBy() {
+      return makeCollection(predicates, selected, offset, limit)
+    },
+    offset(value: number) {
+      return makeCollection(predicates, selected, value, limit)
+    },
+    limit(value: number) {
+      return makeCollection(predicates, selected, offset, value)
+    },
+    async all() {
+      metrics.lists += 1
+      const matched = rows.filter((row) => predicates.every((predicate) => predicate(row)))
+      const sliced = matched.slice(offset, limit === null ? undefined : offset + limit)
+      if (!selected) return sliced.map((row) => ({ ...row }))
+      return sliced.map((row) =>
+        Object.fromEntries(selected.map((field) => [field, row[field as keyof TestNotification]])),
+      )
+    },
+    async aggregate() {
+      metrics.aggregates += 1
+      return { count: rows.filter((row) => predicates.every((predicate) => predicate(row))).length }
+    },
+    async updateAndCount(data: Partial<TestNotification>) {
+      metrics.updates += 1
+      let count = 0
+      for (const row of rows) {
+        if (!predicates.every((predicate) => predicate(row))) continue
+        Object.assign(row, data)
+        count += 1
+      }
+      return count
+    },
+    async deleteAndCount() {
+      metrics.deletes += 1
+      let count = 0
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (!predicates.every((predicate) => predicate(rows[index]!))) continue
+        rows.splice(index, 1)
+        count += 1
+      }
+      return count
+    },
+    async create(input: Omit<TestNotification, 'id' | 'readAt' | 'createdAt'>) {
+      metrics.creates += 1
+      if (
+        input.sourceType &&
+        input.sourceId &&
+        rows.some(
+          (row) =>
+            row.tenantId === input.tenantId &&
+            row.userId === input.userId &&
+            row.sourceType === input.sourceType &&
+            row.sourceId === input.sourceId,
+        )
+      ) {
+        throw Object.assign(new Error('duplicate'), { sqlState: '23505' })
+      }
+      const row: TestNotification = {
+        ...input,
+        id: `notification-${++sequence}`,
+        readAt: null,
+        createdAt: instantFromDate(new Date('2026-09-03T00:00:00.000Z')),
+      }
+      rows.push(row)
+      return { ...row }
+    },
+  })
+
+  const prisma = {
+    client: { orm: { public: { Notifications: makeCollection() } } },
+  } as unknown as PrismaService
+  return { prisma, rows, metrics }
+}
 
 function createRedisCache() {
   const values = new Map<string, string>()
@@ -74,25 +217,7 @@ function createRealtimeRedisBus() {
 }
 
 test('事件关闭时不落库，未绑定事件的兼容通知仍发送', async () => {
-  let created = 0
-  const prisma = {
-    notification: {
-      create: async () => {
-        created += 1
-        return {
-          id: `notification-${created}`,
-          tenantId: 'tenant-a',
-          userId: 'user-a',
-          type: 'system',
-          title: '兼容通知',
-          content: null,
-          link: null,
-          readAt: null,
-          createdAt: new Date('2026-09-03T00:00:00.000Z'),
-        }
-      },
-    },
-  } as unknown as PrismaService
+  const { prisma, metrics } = createNotificationStore()
   const messageSettings = {
     isSystemEnabled: async () => false,
   } as unknown as MessageSettingsService
@@ -103,44 +228,22 @@ test('事件关闭时不落库，未绑定事件的兼容通知仍发送', async
     title: '到期提醒',
     event: 'CUSTOMER_FOLLOW_UP_PLAN_DUE',
   })
-  assert.equal(created, 0)
+  assert.equal(metrics.creates, 0)
 
   await service.notify('tenant-a', 'user-a', { type: 'system', title: '兼容通知' })
-  assert.equal(created, 1)
+  assert.equal(metrics.creates, 1)
 })
 
 test('通知列表与未读数命中 Redis，写操作通过版本号使旧缓存失效', async () => {
-  let listQueries = 0
-  let countQueries = 0
-  let readUpdates = 0
-  const notification = {
-    id: 'notification-a',
-    tenantId: 'tenant-a',
-    userId: 'user-a',
-    type: 'system',
-    title: '测试通知',
-    content: null,
-    link: null,
-    readAt: null,
-    createdAt: new Date('2026-09-03T00:00:00.000Z'),
-  }
-  const prisma = {
-    notification: {
-      findMany: async () => {
-        listQueries += 1
-        return [notification]
-      },
-      count: async ({ where }: { where: { readAt?: null } }) => {
-        countQueries += 1
-        return where.readAt === null ? 1 : 1
-      },
-      updateMany: async () => {
-        readUpdates += 1
-        return { count: 1 }
-      },
+  const { prisma, metrics } = createNotificationStore([
+    {
+      id: 'notification-a',
+      tenantId: 'tenant-a',
+      userId: 'user-a',
+      _type: 'system',
+      title: '测试通知',
     },
-    $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
-  } as unknown as PrismaService
+  ])
   const messageSettings = {} as MessageSettingsService
   const { redis } = createRedisCache()
   const service = new NotificationsService(prisma, messageSettings, redis)
@@ -148,46 +251,32 @@ test('通知列表与未读数命中 Redis，写操作通过版本号使旧缓�
   const firstList = await service.list('tenant-a', 'user-a', 1, 5, true)
   const secondList = await service.list('tenant-a', 'user-a', 1, 5, true)
   assert.deepEqual(secondList, firstList)
-  assert.equal(listQueries, 1)
-  assert.equal(countQueries, 1)
+  assert.equal(metrics.lists, 1)
+  assert.equal(metrics.aggregates, 1)
 
   assert.deepEqual(await service.unreadCount('tenant-a', 'user-a'), { count: 1 })
   assert.deepEqual(await service.unreadCount('tenant-a', 'user-a'), { count: 1 })
-  assert.equal(countQueries, 2)
+  assert.equal(metrics.aggregates, 2)
 
   await service.markRead('tenant-a', 'user-a', 'notification-a')
-  assert.equal(readUpdates, 1)
+  assert.equal(metrics.updates, 1)
   await service.unreadCount('tenant-a', 'user-a')
-  assert.equal(countQueries, 3)
+  assert.equal(metrics.aggregates, 3)
 })
 
 test('Redis Pub/Sub 将新通知跨 API 实例送达且来源实例不重复', async () => {
   const bus = createRealtimeRedisBus()
-  let sequence = 0
-  const createPrisma = () =>
-    ({
-      notification: {
-        create: async ({
-          data,
-        }: {
-          data: { tenantId: string; userId: string; title: string }
-        }) => ({
-          id: `notification-${++sequence}`,
-          tenantId: data.tenantId,
-          userId: data.userId,
-          type: 'system',
-          title: data.title,
-          content: null,
-          link: null,
-          readAt: null,
-          createdAt: new Date('2026-09-03T01:00:00.000Z'),
-        }),
-        updateMany: async () => ({ count: 1 }),
-      },
-    }) as unknown as PrismaService
   const messageSettings = { isSystemEnabled: async () => true } as unknown as MessageSettingsService
-  const serviceA = new NotificationsService(createPrisma(), messageSettings, bus.createRedis())
-  const serviceB = new NotificationsService(createPrisma(), messageSettings, bus.createRedis())
+  const serviceA = new NotificationsService(
+    createNotificationStore().prisma,
+    messageSettings,
+    bus.createRedis(),
+  )
+  const serviceB = new NotificationsService(
+    createNotificationStore().prisma,
+    messageSettings,
+    bus.createRedis(),
+  )
   await serviceA.onModuleInit()
   await serviceB.onModuleInit()
 
@@ -213,9 +302,10 @@ test('Redis Pub/Sub 将新通知跨 API 实例送达且来源实例不重复', a
 
 test('通知已读状态通过 Pub/Sub 跨实例发送 refresh event', async () => {
   const bus = createRealtimeRedisBus()
-  const prisma = {
-    notification: { updateMany: async () => ({ count: 1 }) },
-  } as unknown as PrismaService
+  const { prisma } = createNotificationStore([
+    { id: 'notification-a', tenantId: 'tenant-a', userId: 'user-a' },
+    { id: 'notification-b', tenantId: 'tenant-a', userId: 'user-a' },
+  ])
   const messageSettings = {} as MessageSettingsService
   const serviceA = new NotificationsService(prisma, messageSettings, bus.createRedis())
   const serviceB = new NotificationsService(prisma, messageSettings, bus.createRedis())
@@ -251,21 +341,7 @@ test('Redis 发布不可用时仍保持本实例 SSE，非法事件不影响后�
       return async () => handlers.delete(handler)
     },
   } as unknown as RedisService
-  const prisma = {
-    notification: {
-      create: async () => ({
-        id: 'notification-local',
-        tenantId: 'tenant-a',
-        userId: 'user-a',
-        type: 'system',
-        title: '本地降级',
-        content: null,
-        link: null,
-        readAt: null,
-        createdAt: new Date('2026-09-03T02:00:00.000Z'),
-      }),
-    },
-  } as unknown as PrismaService
+  const { prisma } = createNotificationStore()
   const service = new NotificationsService(prisma, {} as MessageSettingsService, redis)
   await service.onModuleInit()
   const events: MessageEvent[] = []
@@ -323,69 +399,7 @@ test('Redis 发布不可用时仍保持本实例 SSE，非法事件不影响后�
 })
 
 test('来源通知按 tenant/user/source 幂等派发，重复调用只补缺失接收人', async () => {
-  const rows: Array<{
-    id: string
-    tenantId: string
-    userId: string
-    sourceType: string | null
-    sourceId: string | null
-    type: string
-    title: string
-    content: string | null
-    link: string | null
-    linkLabel: string | null
-    readAt: Date | null
-    createdAt: Date
-  }> = []
-  let sequence = 0
-  const prisma = {
-    notification: {
-      findMany: async ({
-        where,
-      }: {
-        where: { tenantId: string; sourceType: string; sourceId: string; userId: { in: string[] } }
-      }) =>
-        rows
-          .filter(
-            (row) =>
-              row.tenantId === where.tenantId &&
-              row.sourceType === where.sourceType &&
-              row.sourceId === where.sourceId &&
-              where.userId.in.includes(row.userId),
-          )
-          .map((row) => ({ userId: row.userId })),
-      create: async ({
-        data,
-      }: {
-        data: Omit<(typeof rows)[number], 'id' | 'readAt' | 'createdAt'>
-      }) => {
-        if (
-          rows.some(
-            (row) =>
-              row.tenantId === data.tenantId &&
-              row.userId === data.userId &&
-              row.sourceType === data.sourceType &&
-              row.sourceId === data.sourceId,
-          )
-        ) {
-          throw Object.assign(new Error('duplicate'), { code: 'P2002' })
-        }
-        const row = {
-          ...data,
-          id: `source-notification-${++sequence}`,
-          content: data.content ?? null,
-          link: data.link ?? null,
-          linkLabel: data.linkLabel ?? null,
-          sourceType: data.sourceType ?? null,
-          sourceId: data.sourceId ?? null,
-          readAt: null,
-          createdAt: new Date('2026-09-07T06:00:00.000Z'),
-        }
-        rows.push(row)
-        return row
-      },
-    },
-  } as unknown as PrismaService
+  const { prisma, rows } = createNotificationStore()
   const service = new NotificationsService(prisma, {} as MessageSettingsService)
 
   assert.equal(
@@ -419,50 +433,11 @@ test('来源通知按 tenant/user/source 幂等派发，重复调用只补缺失
 test('删除来源通知会清理全部 source 行并逐用户失效通知缓存', async () => {
   const versions = new Map<string, number>()
   const published: string[] = []
-  const rows = [
+  const { prisma, rows } = createNotificationStore([
     { tenantId: 'tenant-a', userId: 'user-a', sourceType: 'announcement', sourceId: 'a-1' },
     { tenantId: 'tenant-a', userId: 'user-b', sourceType: 'announcement', sourceId: 'a-1' },
     { tenantId: 'tenant-a', userId: 'user-a', sourceType: 'announcement', sourceId: 'a-2' },
-  ]
-  const prisma = {
-    notification: {
-      findMany: async ({
-        where,
-      }: {
-        where: { tenantId: string; sourceType: string; sourceId: string }
-      }) =>
-        [
-          ...new Set(
-            rows
-              .filter(
-                (row) =>
-                  row.tenantId === where.tenantId &&
-                  row.sourceType === where.sourceType &&
-                  row.sourceId === where.sourceId,
-              )
-              .map((row) => row.userId),
-          ),
-        ].map((userId) => ({ userId })),
-      deleteMany: async ({
-        where,
-      }: {
-        where: { tenantId: string; sourceType: string; sourceId: string }
-      }) => {
-        const before = rows.length
-        for (let index = rows.length - 1; index >= 0; index -= 1) {
-          const row = rows[index]!
-          if (
-            row.tenantId === where.tenantId &&
-            row.sourceType === where.sourceType &&
-            row.sourceId === where.sourceId
-          ) {
-            rows.splice(index, 1)
-          }
-        }
-        return { count: before - rows.length }
-      },
-    },
-  } as unknown as PrismaService
+  ])
   const redis = {
     increment: async (key: string) => {
       const next = (versions.get(key) ?? 0) + 1

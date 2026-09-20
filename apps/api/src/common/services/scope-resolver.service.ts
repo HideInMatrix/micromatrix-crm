@@ -21,10 +21,11 @@ export class ScopeResolverService {
     const deptTokens = scopeIds.filter((id) => id.startsWith('dept:')).map((id) => id.slice(5))
     if (deptTokens.length === 0) return false
 
-    const departments = await this.prisma.department.findMany({
-      where: { tenantId: user.tenantId },
-      select: { id: true, parentId: true },
+    const departments = await this.prisma.client.orm.public.Departments.where({
+      tenantId: user.tenantId,
     })
+      .select('id', 'parentId')
+      .all()
     const parentMap = new Map(departments.map((item) => [item.id, item.parentId]))
     let current: string | null = user.deptId
     while (current) {
@@ -40,16 +41,14 @@ export class ScopeResolverService {
    */
   async resolveUserIds(tenantId: string, scopeIds: string[]): Promise<string[]> {
     if (scopeIds.length === 0) return []
-    const users = await this.prisma.user.findMany({
-      where: { tenantId },
-      select: { id: true, deptId: true },
-    })
+    const users = await this.prisma.client.orm.public.Users.where({ tenantId })
+      .select('id', 'deptId')
+      .all()
     if (scopeIds.includes('*')) return users.map((user) => user.id)
 
-    const departments = await this.prisma.department.findMany({
-      where: { tenantId },
-      select: { id: true, parentId: true },
-    })
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
     const userIds = new Set(users.map((user) => user.id))
     const deptIds = new Set(departments.map((dept) => dept.id))
     const selectedUsers = new Set<string>()

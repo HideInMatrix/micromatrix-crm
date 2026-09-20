@@ -19,16 +19,35 @@ import {
   type ModuleFormProp,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import type { Prisma } from '../../generated/prisma/client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaClient } from '../../prisma/prisma-client.js'
+import { createLegacyId32 } from '../../common/legacy-id'
+import { PrismaService } from '../../prisma/prisma.service.js'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
 
 const SYSTEM_ACTOR = 'SYSTEM'
 const CACHE_TTL_SECONDS = 10 * 60
 
-type DatabaseClient = PrismaService | Prisma.TransactionClient
-type FieldWithBlob = Prisma.SysModuleFieldGetPayload<{ include: { blob: true } }>
+export type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
+
+interface FieldWithBlob {
+  id: string
+  formId: string
+  internalKey: string | null
+  name: string
+  type: string
+  mobile: boolean
+  pos: bigint
+  createUser: string
+  createTime: bigint
+  updateUser: string
+  updateTime: bigint
+  blob: { id: string; prop: string | null } | null
+}
+
+interface FieldWithForm extends FieldWithBlob {
+  form: { id: string; formKey: string; organizationId: string }
+}
 
 interface StoredFieldProp {
   key: string
@@ -81,10 +100,10 @@ export class ModuleFormsService {
   }
 
   private async loadConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey)
       const [blob, fields] = await Promise.all([
-        tx.sysModuleFormBlob.findUnique({ where: { id: form.id } }),
+        tx.orm.public.SysModuleFormBlob.where({ id: form.id }).first(),
         this.findFields(tx, form.id),
       ])
       return {
@@ -100,7 +119,7 @@ export class ModuleFormsService {
   }
 
   async listFieldsInTransaction(
-    tx: Prisma.TransactionClient,
+    tx: PrismaTransaction,
     organizationId: string,
     formKey: string,
   ): Promise<FieldVO[]> {
@@ -134,17 +153,17 @@ export class ModuleFormsService {
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     await this.validateFormPropLinkage(organizationId, formKey, formProp)
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const now = BigInt(Date.now())
-      await tx.sysModuleForm.update({
-        where: { id: form.id },
-        data: { updateUser: actorId, updateTime: now },
+      await tx.orm.public.SysModuleForm.where({ id: form.id }).update({
+        updateUser: actorId,
+        updateTime: now,
       })
-      await tx.sysModuleFormBlob.upsert({
-        where: { id: form.id },
+      await tx.orm.public.SysModuleFormBlob.upsert({
         create: { id: form.id, prop: JSON.stringify(formProp) },
         update: { prop: JSON.stringify(formProp) },
+        conflictOn: { id: form.id },
       })
     })
     await this.invalidateForm(organizationId, formKey)
@@ -158,18 +177,20 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
     this.validateFieldInput(dto)
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
-      const duplicated = await tx.sysModuleField.findFirst({
-        where: { formId: form.id, name: dto.label.trim() },
-        select: { id: true },
+      const duplicated = await tx.orm.public.SysModuleField.where({
+        formId: form.id,
+        name: dto.label.trim(),
       })
+        .select('id')
+        .first()
       if (duplicated) throw new BadRequestException('字段名称不能重复')
 
-      const max = await tx.sysModuleField.aggregate({
-        where: { formId: form.id },
-        _max: { pos: true },
-      })
+      const max = await tx.orm.public.SysModuleField.where({ formId: form.id })
+        .select('pos')
+        .orderBy((field) => field.pos.desc())
+        .first()
       const key = `cf_${randomBytes(6).toString('hex')}`
       const now = BigInt(Date.now())
       const storedProp = this.dtoToProp(key, dto, false)
@@ -177,22 +198,25 @@ export class ModuleFormsService {
         this.validateStoredSubFields(storedProp.subFields ?? [])
         this.validateSubTableColumns(storedProp.config, storedProp.subFields ?? [])
       }
-      const created = await tx.sysModuleField.create({
-        data: {
-          formId: form.id,
-          internalKey: key,
-          name: dto.label.trim(),
-          type: dto.type,
-          mobile: dto.mobile ?? true,
-          pos: (max._max.pos ?? -1n) + 1n,
-          createUser: actorId,
-          updateUser: actorId,
-          createTime: now,
-          updateTime: now,
-          blob: { create: { prop: JSON.stringify(storedProp) } },
-        },
-        include: { blob: true },
+      const fieldId = createLegacyId32()
+      const createdRow = await tx.orm.public.SysModuleField.create({
+        id: fieldId,
+        formId: form.id,
+        internalKey: key,
+        name: dto.label.trim(),
+        _type: dto.type,
+        mobile: dto.mobile ?? true,
+        pos: (max?.pos ?? -1n) + 1n,
+        createUser: actorId,
+        updateUser: actorId,
+        createTime: now,
+        updateTime: now,
       })
+      const blob = await tx.orm.public.SysModuleFieldBlob.create({
+        id: fieldId,
+        prop: JSON.stringify(storedProp),
+      })
+      const created = this.fieldWithBlob(createdRow, blob)
       const result = this.toVO(created, formKey)
       const allFields = (await this.findFields(tx, form.id)).map((item) => this.toVO(item, formKey))
       this.validateFormLinkage(allFields)
@@ -209,14 +233,17 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
     this.validateFieldInput(dto)
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       const current = this.parseProp(field)
       if (dto.label && dto.label.trim() !== field.name) {
-        const duplicated = await tx.sysModuleField.findFirst({
-          where: { formId: field.formId, name: dto.label.trim(), NOT: { id } },
-          select: { id: true },
+        const duplicated = await tx.orm.public.SysModuleField.where({
+          formId: field.formId,
+          name: dto.label.trim(),
         })
+          .where((candidate) => candidate.id.neq(id))
+          .select('id')
+          .first()
         if (duplicated) throw new BadRequestException('字段名称不能重复')
       }
 
@@ -280,23 +307,25 @@ export class ModuleFormsService {
       } else {
         next.subFields = null
       }
-      const updated = await tx.sysModuleField.update({
-        where: { id },
-        data: {
-          name: dto.label?.trim(),
-          type: current.system ? undefined : dto.type,
-          mobile: dto.mobile,
-          updateUser: actorId,
-          updateTime: BigInt(Date.now()),
-          blob: {
-            upsert: {
-              create: { prop: JSON.stringify(next) },
-              update: { prop: JSON.stringify(next) },
-            },
-          },
-        },
-        include: { blob: true },
+      const updateData: Parameters<
+        ReturnType<typeof tx.orm.public.SysModuleField.where>['update']
+      >[0] = {
+        updateUser: actorId,
+        updateTime: BigInt(Date.now()),
+      }
+      if (dto.label !== undefined) updateData.name = dto.label.trim()
+      if (!current.system && dto.type !== undefined) updateData._type = dto.type
+      if (dto.mobile !== undefined) updateData.mobile = dto.mobile
+      const updatedRow = await tx.orm.public.SysModuleField.where({
+        id: id,
+      }).update(updateData)
+      if (!updatedRow) throw new NotFoundException('字段不存在')
+      const updatedBlob = await tx.orm.public.SysModuleFieldBlob.upsert({
+        create: { id: id, prop: JSON.stringify(next) },
+        update: { prop: JSON.stringify(next) },
+        conflictOn: { id: id },
       })
+      const updated = this.fieldWithBlob(updatedRow, updatedBlob)
       const result = this.toVO(updated, field.form.formKey)
       const allFields = (await this.findFields(tx, field.formId)).map((item) =>
         this.toVO(item, field.form.formKey),
@@ -309,27 +338,19 @@ export class ModuleFormsService {
   }
 
   async deleteField(organizationId: string, id: string): Promise<{ id: string; name: string }> {
-    const deleted = await this.prisma.$transaction(async (tx) => {
+    const deleted = await this.prisma.client.transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       const prop = this.parseProp(field)
       if (prop.system) throw new BadRequestException('系统字段不可删除')
       if (field.type === 'sub_product') {
         const childIds = prop.subFields?.map((subField) => subField.id) ?? []
         await Promise.all([
-          tx.customFormDataField.deleteMany({
-            where: {
-              OR: [{ refSubId: id }, ...(childIds.length ? [{ fieldId: { in: childIds } }] : [])],
-            },
-          }),
-          tx.customFormDataFieldBlob.deleteMany({
-            where: {
-              OR: [{ refSubId: id }, ...(childIds.length ? [{ fieldId: { in: childIds } }] : [])],
-            },
-          }),
+          this.deleteCustomSubFieldValues(tx, false, id, childIds),
+          this.deleteCustomSubFieldValues(tx, true, id, childIds),
         ])
       }
       await this.deleteFieldValues(tx, id)
-      await tx.sysModuleField.delete({ where: { id } })
+      await tx.orm.public.SysModuleField.where({ id: id }).delete()
       return { result: { id, name: field.name }, formKey: field.form.formKey }
     })
     await this.invalidateForm(organizationId, deleted.formKey)
@@ -342,13 +363,12 @@ export class ModuleFormsService {
     orderedIds: string[],
     actorId = SYSTEM_ACTOR,
   ): Promise<{ count: number }> {
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
-      const fields = await tx.sysModuleField.findMany({
-        where: { formId: form.id },
-        select: { id: true },
-      })
-      const existing = new Set(fields.map((field) => field.id))
+      const fields = await tx.orm.public.SysModuleField.where({ formId: form.id })
+        .select('id')
+        .all()
+      const existing = new Set<string>(fields.map((field) => String(field.id)))
       const uniqueIds = [...new Set(orderedIds)]
       if (uniqueIds.length !== fields.length || uniqueIds.some((id) => !existing.has(id))) {
         throw new BadRequestException('字段排序必须包含当前表单的全部字段且不能重复')
@@ -356,9 +376,10 @@ export class ModuleFormsService {
       const now = BigInt(Date.now())
       await Promise.all(
         uniqueIds.map((id, index) =>
-          tx.sysModuleField.update({
-            where: { id },
-            data: { pos: BigInt(index), updateTime: now, updateUser: actorId },
+          tx.orm.public.SysModuleField.where({ id: id }).update({
+            pos: BigInt(index),
+            updateTime: now,
+            updateUser: actorId,
           }),
         ),
       )
@@ -395,24 +416,40 @@ export class ModuleFormsService {
   }
 
   private async ensureForm(
-    tx: DatabaseClient,
+    tx: PrismaTransaction,
     organizationId: string,
     formKey: string,
     actorId = SYSTEM_ACTOR,
   ) {
     const now = BigInt(Date.now())
-    const form = await tx.sysModuleForm.upsert({
-      where: { organizationId_formKey: { organizationId, formKey } },
+    let form = await tx.orm.public.SysModuleForm.where({
+      organizationId: organizationId,
+      formKey: formKey,
+    }).first()
+    if (!form) {
+      try {
+        form = await tx.orm.public.SysModuleForm.create({
+          id: createLegacyId32(),
+          organizationId: organizationId,
+          formKey: formKey,
+          createTime: now,
+          updateTime: now,
+          createUser: actorId,
+          updateUser: actorId,
+        })
+      } catch (error) {
+        if ((error as { sqlState?: string }).sqlState !== '23505') throw error
+        form = await tx.orm.public.SysModuleForm.where({
+          organizationId: organizationId,
+          formKey: formKey,
+        }).first()
+        if (!form) throw error
+      }
+    }
+    await tx.orm.public.SysModuleFormBlob.upsert({
+      create: { id: form.id, prop: '{}' },
       update: {},
-      create: {
-        organizationId,
-        formKey,
-        createTime: now,
-        updateTime: now,
-        createUser: actorId,
-        updateUser: actorId,
-        blob: { create: { prop: '{}' } },
-      },
+      conflictOn: { id: form.id },
     })
     await this.ensureSystemFields(tx, form.id, formKey, actorId)
     return form
@@ -427,54 +464,95 @@ export class ModuleFormsService {
   }
 
   private async ensureSystemFields(
-    tx: DatabaseClient,
+    tx: PrismaTransaction,
     formId: string,
     formKey: string,
     actorId: string,
   ): Promise<void> {
     const templates = MODULE_SYSTEM_FIELDS[formKey]
     if (!templates?.length) return
-    const existing = await tx.sysModuleField.findMany({
-      where: { formId, internalKey: { in: templates.map((field) => field.key) } },
-      select: { internalKey: true },
-    })
-    const existingKeys = new Set(existing.map((field) => field.internalKey))
+    const existing = await tx.orm.public.SysModuleField.where({ formId: formId })
+      .where((field) => field.internalKey.in(templates.map((template) => template.key)))
+      .select('internalKey')
+      .all()
+    const existingKeys = new Set(existing.map((field) => String(field.internalKey)))
     const now = BigInt(Date.now())
     for (const template of templates) {
       if (existingKeys.has(template.key)) continue
-      await tx.sysModuleField.create({
-        data: {
-          formId,
-          internalKey: template.key,
-          name: template.label,
-          type: template.type,
-          mobile: template.mobile ?? false,
-          pos: BigInt(template.sort),
-          createUser: actorId,
-          updateUser: actorId,
-          createTime: now,
-          updateTime: now,
-          blob: { create: { prop: JSON.stringify(this.templateToProp(template)) } },
-        },
+      const id = createLegacyId32()
+      await tx.orm.public.SysModuleField.create({
+        id,
+        formId: formId,
+        internalKey: template.key,
+        name: template.label,
+        _type: template.type,
+        mobile: template.mobile ?? false,
+        pos: BigInt(template.sort),
+        createUser: actorId,
+        updateUser: actorId,
+        createTime: now,
+        updateTime: now,
+      })
+      await tx.orm.public.SysModuleFieldBlob.create({
+        id,
+        prop: JSON.stringify(this.templateToProp(template)),
       })
     }
   }
 
-  private findFields(tx: DatabaseClient, formId: string): Promise<FieldWithBlob[]> {
-    return tx.sysModuleField.findMany({
-      where: { formId },
-      include: { blob: true },
-      orderBy: [{ pos: 'asc' }, { createTime: 'asc' }],
-    })
+  private async findFields(tx: PrismaTransaction, formId: string): Promise<FieldWithBlob[]> {
+    const rows = await tx.orm.public.SysModuleField.where({ formId: formId })
+      .orderBy([(field) => field.pos.asc(), (field) => field.createTime.asc()])
+      .all()
+    if (!rows.length) return []
+    const blobs = await tx.orm.public.SysModuleFieldBlob.where((blob) =>
+      blob.id.in(rows.map((row) => row.id)),
+    ).all()
+    const blobMap = new Map(blobs.map((blob) => [blob.id, blob]))
+    return rows.map((row) => this.fieldWithBlob(row, blobMap.get(row.id) ?? null))
   }
 
-  private async ensureField(tx: DatabaseClient, organizationId: string, id: string) {
-    const field = await tx.sysModuleField.findFirst({
-      where: { id, form: { organizationId } },
-      include: { blob: true, form: true },
-    })
-    if (!field) throw new NotFoundException('字段不存在')
-    return field
+  private async ensureField(
+    tx: PrismaTransaction,
+    organizationId: string,
+    id: string,
+  ): Promise<FieldWithForm> {
+    const row = await tx.orm.public.SysModuleField.where({ id: id }).first()
+    if (!row) throw new NotFoundException('字段不存在')
+    const [form, blob] = await Promise.all([
+      tx.orm.public.SysModuleForm.where({
+        id: row.formId,
+        organizationId: organizationId,
+      }).first(),
+      tx.orm.public.SysModuleFieldBlob.where({ id: row.id }).first(),
+    ])
+    if (!form) throw new NotFoundException('字段不存在')
+    return {
+      ...this.fieldWithBlob(row, blob),
+      form: { id: form.id, formKey: form.formKey, organizationId: form.organizationId },
+    }
+  }
+
+  private fieldWithBlob(
+    row: NonNullable<
+      Awaited<ReturnType<PrismaService['client']['orm']['public']['SysModuleField']['first']>>
+    >,
+    blob: { id: string; prop: string | null } | null,
+  ): FieldWithBlob {
+    return {
+      id: row.id,
+      formId: row.formId,
+      internalKey: row.internalKey,
+      name: row.name,
+      type: row._type,
+      mobile: row.mobile,
+      pos: row.pos,
+      createUser: row.createUser,
+      createTime: row.createTime,
+      updateUser: row.updateUser,
+      updateTime: row.updateTime,
+      blob,
+    }
   }
 
   private parseProp(field: Pick<FieldWithBlob, 'internalKey' | 'blob'>): StoredFieldProp {
@@ -944,7 +1022,7 @@ export class ModuleFormsService {
   }
 
   private async reconcileSubFieldValues(
-    tx: DatabaseClient,
+    tx: PrismaTransaction,
     current: StoredSubFieldProp[],
     next: StoredSubFieldProp[],
   ): Promise<void> {
@@ -1079,75 +1157,160 @@ export class ModuleFormsService {
     }
   }
 
-  private async countFieldValues(tx: DatabaseClient, fieldId: string): Promise<number> {
+  private async countFieldValues(tx: PrismaTransaction, fieldId: string): Promise<number> {
+    const id = fieldId
     const counts = await Promise.all([
-      tx.clueField.count({ where: { fieldId } }),
-      tx.clueFieldBlob.count({ where: { fieldId } }),
-      tx.customerField.count({ where: { fieldId } }),
-      tx.customerFieldBlob.count({ where: { fieldId } }),
-      tx.customerContactField.count({ where: { fieldId } }),
-      tx.customerContactFieldBlob.count({ where: { fieldId } }),
-      tx.opportunityField.count({ where: { fieldId } }),
-      tx.opportunityFieldBlob.count({ where: { fieldId } }),
-      tx.productField.count({ where: { fieldId } }),
-      tx.productFieldBlob.count({ where: { fieldId } }),
-      tx.productPriceField.count({ where: { fieldId } }),
-      tx.productPriceFieldBlob.count({ where: { fieldId } }),
-      tx.opportunityQuotationField.count({ where: { fieldId } }),
-      tx.opportunityQuotationFieldBlob.count({ where: { fieldId } }),
-      tx.contractField.count({ where: { fieldId } }),
-      tx.contractFieldBlob.count({ where: { fieldId } }),
-      tx.contractPaymentPlanField.count({ where: { fieldId } }),
-      tx.contractPaymentPlanFieldBlob.count({ where: { fieldId } }),
-      tx.contractPaymentRecordField.count({ where: { fieldId } }),
-      tx.contractPaymentRecordFieldBlob.count({ where: { fieldId } }),
-      tx.contractInvoiceField.count({ where: { fieldId } }),
-      tx.contractInvoiceFieldBlob.count({ where: { fieldId } }),
-      tx.orderField.count({ where: { fieldId } }),
-      tx.orderFieldBlob.count({ where: { fieldId } }),
-      tx.followUpPlanField.count({ where: { fieldId } }),
-      tx.followUpPlanFieldBlob.count({ where: { fieldId } }),
-      tx.followUpRecordField.count({ where: { fieldId } }),
-      tx.followUpRecordFieldBlob.count({ where: { fieldId } }),
-      tx.customFormDataField.count({ where: { fieldId } }),
-      tx.customFormDataFieldBlob.count({ where: { fieldId } }),
+      tx.orm.public.ClueField.where({ fieldId: id }).aggregate((agg) => ({ count: agg.count() })),
+      tx.orm.public.ClueFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.CustomerField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.CustomerFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.CustomerContactField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.CustomerContactFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.OpportunityField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.OpportunityFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ProductField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ProductFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ProductPriceField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ProductPriceFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.OpportunityQuotationField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.OpportunityQuotationFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractPaymentPlanField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractPaymentPlanFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractPaymentRecordField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractPaymentRecordFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractInvoiceField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.ContractInvoiceFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.SalesOrderField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.SalesOrderFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.FollowUpPlanField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.FollowUpPlanFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.FollowUpRecordField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.FollowUpRecordFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.CustomFormDataField.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      tx.orm.public.CustomFormDataFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
     ])
-    return counts.reduce((sum, count) => sum + count, 0)
+    return counts.reduce((sum, item) => sum + item.count, 0)
   }
 
-  private async deleteFieldValues(tx: DatabaseClient, fieldId: string): Promise<void> {
+  private async deleteFieldValues(tx: PrismaTransaction, fieldId: string): Promise<void> {
+    const id = fieldId
     await Promise.all([
-      tx.clueField.deleteMany({ where: { fieldId } }),
-      tx.clueFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.customerField.deleteMany({ where: { fieldId } }),
-      tx.customerFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.customerContactField.deleteMany({ where: { fieldId } }),
-      tx.customerContactFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.opportunityField.deleteMany({ where: { fieldId } }),
-      tx.opportunityFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.productField.deleteMany({ where: { fieldId } }),
-      tx.productFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.productPriceField.deleteMany({ where: { fieldId } }),
-      tx.productPriceFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.opportunityQuotationField.deleteMany({ where: { fieldId } }),
-      tx.opportunityQuotationFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.contractField.deleteMany({ where: { fieldId } }),
-      tx.contractFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.contractPaymentPlanField.deleteMany({ where: { fieldId } }),
-      tx.contractPaymentPlanFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.contractPaymentRecordField.deleteMany({ where: { fieldId } }),
-      tx.contractPaymentRecordFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.contractInvoiceField.deleteMany({ where: { fieldId } }),
-      tx.contractInvoiceFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.orderField.deleteMany({ where: { fieldId } }),
-      tx.orderFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.followUpPlanField.deleteMany({ where: { fieldId } }),
-      tx.followUpPlanFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.followUpRecordField.deleteMany({ where: { fieldId } }),
-      tx.followUpRecordFieldBlob.deleteMany({ where: { fieldId } }),
-      tx.customFormDataField.deleteMany({ where: { fieldId } }),
-      tx.customFormDataFieldBlob.deleteMany({ where: { fieldId } }),
+      tx.orm.public.ClueField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ClueFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.CustomerField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.CustomerFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.CustomerContactField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.CustomerContactFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.OpportunityField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.OpportunityFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ProductField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ProductFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ProductPriceField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ProductPriceFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.OpportunityQuotationField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.OpportunityQuotationFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractPaymentPlanField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractPaymentPlanFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractPaymentRecordField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractPaymentRecordFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractInvoiceField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.ContractInvoiceFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.SalesOrderField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.SalesOrderFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.FollowUpPlanField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.FollowUpPlanFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.FollowUpRecordField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.FollowUpRecordFieldBlob.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.CustomFormDataField.where({ fieldId: id }).deleteAll(),
+      tx.orm.public.CustomFormDataFieldBlob.where({ fieldId: id }).deleteAll(),
     ])
+  }
+
+  private async deleteCustomSubFieldValues(
+    tx: PrismaTransaction,
+    blob: boolean,
+    parentId: string,
+    childIds: string[],
+  ): Promise<void> {
+    if (blob) {
+      await tx.orm.public.CustomFormDataFieldBlob.where({
+        refSubId: parentId,
+      }).deleteAll()
+      if (childIds.length) {
+        await tx.orm.public.CustomFormDataFieldBlob.where((row) =>
+          row.fieldId.in(childIds),
+        ).deleteAll()
+      }
+      return
+    }
+    await tx.orm.public.CustomFormDataField.where({
+      refSubId: parentId,
+    }).deleteAll()
+    if (childIds.length) {
+      await tx.orm.public.CustomFormDataField.where((row) => row.fieldId.in(childIds)).deleteAll()
+    }
   }
 
   private isBlobType(type: FieldType): boolean {

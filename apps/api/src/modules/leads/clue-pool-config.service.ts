@@ -2,14 +2,11 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma/prisma.service'
+
 import { MetadataService } from '../metadata/metadata.service'
 import { CluePoolRepository } from '../pool-rules/clue-pool.repository'
 import type { DirectPoolConfigurationInput } from '../pool-rules/pool-domain.types'
-import {
-  loadUserScopeTokens,
-  parseStringArray,
-  scopeMatches,
-} from '../pool-rules/pool-repository.helpers'
+import { parseStringArray, scopeMatches } from '../pool-rules/pool-repository.helpers'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import type {
   ClueCapacityAddDto,
@@ -36,7 +33,7 @@ export class CluePoolConfigService {
       this.pools.options(user, 'lead'),
       this.metadata.listFields(user.tenantId, 'lead'),
     ])
-    return this.mapPools(user, rows, fields)
+    return this.mapPools(user, rows as CluePoolRow[], fields)
   }
 
   async page(user: AuthUser, dto: CluePoolPageRequestDto) {
@@ -76,11 +73,12 @@ export class CluePoolConfigService {
 
   async noPick(user: AuthUser, poolId: string) {
     await this.assertPoolExists(user.tenantId, poolId)
-    return (
-      (await this.prisma.clue.count({
-        where: { organizationId: user.tenantId, poolId, inSharedPool: true },
-      })) > 0
-    )
+    const aggregate = await this.prisma.client.orm.public.Clue.where({
+      organizationId: user.tenantId,
+      poolId: poolId,
+      inSharedPool: true,
+    }).aggregate((agg) => ({ total: agg.count() }))
+    return aggregate.total > 0
   }
 
   async remove(user: AuthUser, poolId: string) {
@@ -158,9 +156,7 @@ export class CluePoolConfigService {
   private async assertPoolManager(user: AuthUser, poolId: string) {
     const pool = await this.assertPoolExists(user.tenantId, poolId)
     if (user.permissions.includes('*')) return
-    const tokens = await this.prisma.$transaction((tx) =>
-      loadUserScopeTokens(tx, user.tenantId, user.id),
-    )
+    const tokens = await this.loadUserScopeTokens(user.tenantId, user.id)
     if (!scopeMatches(pool.ownerId, tokens)) {
       throw new ForbiddenException('只有线索池管理员可以快捷保存该线索池')
     }
@@ -177,21 +173,24 @@ export class CluePoolConfigService {
     const userIds = [
       ...new Set(rows.flatMap((row) => [row.createUser, row.updateUser]).filter(Boolean)),
     ]
-    const users = await this.prisma.user.findMany({
-      where: { tenantId: user.tenantId, id: { in: userIds } },
-      select: { id: true, name: true },
-    })
+    const users = userIds.length
+      ? await this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
+          .where((member) => member.id.in(userIds))
+          .select('id', 'name')
+          .all()
+      : []
     const userMap = new Map(users.map((item) => [item.id, item.name]))
     const tokens = user.permissions.includes('*')
       ? null
-      : await this.prisma.$transaction((tx) => loadUserScopeTokens(tx, user.tenantId, user.id))
+      : await this.loadUserScopeTokens(user.tenantId, user.id)
 
     return rows.map((pool) => {
       const scopeIds = parseStringArray(pool.scopeId)
       const ownerIds = parseStringArray(pool.ownerId)
-      const hiddenFieldIds = pool.hiddenFields.map((item) => item.fieldId)
+      const hiddenFieldIds = pool.hiddenFields.map((item) => String(item.fieldId))
       const hidden = new Set(hiddenFieldIds)
-      const editable = user.permissions.includes('*') || Boolean(tokens && scopeMatches(pool.ownerId, tokens))
+      const editable =
+        user.permissions.includes('*') || Boolean(tokens && scopeMatches(pool.ownerId, tokens))
       return {
         id: pool.id,
         name: pool.name,
@@ -231,6 +230,42 @@ export class CluePoolConfigService {
         updateTime: Number(pool.updateTime),
       }
     })
+  }
+
+  private async loadUserScopeTokens(tenantId: string, userId: string): Promise<Set<string>> {
+    const user = await this.prisma.client.orm.public.Users.where({
+      id: userId,
+      tenantId,
+      status: 'ACTIVE',
+    })
+      .select('id', 'deptId')
+      .first()
+    if (!user) return new Set()
+
+    const tokens = new Set([user.id, `user:${user.id}`])
+    const links = await this.prisma.client.orm.public.UserRoles.where({
+      tenantId,
+      userId: user.id,
+    })
+      .select('roleId')
+      .all()
+    for (const link of links) {
+      tokens.add(link.roleId)
+      tokens.add(`role:${link.roleId}`)
+    }
+    if (!user.deptId) return tokens
+
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
+      .select('id', 'parentId')
+      .all()
+    const parentMap = new Map(departments.map((department) => [department.id, department.parentId]))
+    let departmentId: string | null = user.deptId
+    while (departmentId) {
+      tokens.add(departmentId)
+      tokens.add(`dept:${departmentId}`)
+      departmentId = parentMap.get(departmentId) ?? null
+    }
+    return tokens
   }
 
   private parseRecycleConditions(raw: string | null): CluePoolRecycleConditionDto[] {

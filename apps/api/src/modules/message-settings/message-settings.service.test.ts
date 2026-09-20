@@ -2,68 +2,114 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import type { MessageTaskConfig } from '@micromatrix/shared'
-import type { MessageTaskSetting } from '../../generated/prisma/client'
 import type { PrismaService } from '../../prisma/prisma.service'
 import { MessageSettingsService } from './message-settings.service'
 
+interface TestMessageTaskSetting {
+  id: string
+  tenantId: string
+  module: string
+  event: string
+  systemEnabled: boolean
+  emailEnabled: boolean
+  weComEnabled: boolean
+  dingTalkEnabled: boolean
+  larkEnabled: boolean
+  config: unknown
+}
+
 function createService() {
-  const rows: MessageTaskSetting[] = []
+  const rows: TestMessageTaskSetting[] = []
   let activeProvider: 'WECOM' | 'DINGTALK' | 'LARK' = 'WECOM'
-  const find = (tenantId: string, module: string, event: string) =>
-    rows.find((row) => row.tenantId === tenantId && row.module === module && row.event === event)
-  const messageTaskSetting = {
-    findMany: async ({ where }: { where: { tenantId: string } }) =>
-      rows.filter((row) => row.tenantId === where.tenantId),
-    findFirst: async ({ where }: { where: { tenantId: string; module: string; event: string } }) =>
-      find(where.tenantId, where.module, where.event) ?? null,
-    upsert: async ({
-      where,
-      update,
-      create,
-    }: {
-      where: { tenantId_module_event: { tenantId: string; module: string; event: string } }
-      update: Partial<MessageTaskSetting>
-      create: Omit<MessageTaskSetting, 'id' | 'createdAt' | 'updatedAt'>
-    }) => {
-      const key = where.tenantId_module_event
-      const existing = find(key.tenantId, key.module, key.event)
-      if (existing) {
-        Object.assign(existing, update, { updatedAt: new Date() })
-        return existing
-      }
-      const row: MessageTaskSetting = {
-        id: `setting-${rows.length + 1}`,
-        tenantId: create.tenantId,
-        module: create.module,
-        event: create.event,
-        systemEnabled: create.systemEnabled ?? true,
-        emailEnabled: create.emailEnabled ?? false,
-        weComEnabled: create.weComEnabled ?? false,
-        dingTalkEnabled: create.dingTalkEnabled ?? false,
-        larkEnabled: create.larkEnabled ?? false,
-        config: create.config ?? null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
+  let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = {
+    lastTestSucceeded: true,
+    syncEnabled: true,
+  }
+  const messageSettingsCollection = (criteria: Record<string, unknown> = {}) => ({
+    where(next: Record<string, unknown> | ((row: unknown) => unknown)) {
+      return typeof next === 'function'
+        ? messageSettingsCollection(criteria)
+        : messageSettingsCollection({ ...criteria, ...next })
+    },
+    select() {
+      return messageSettingsCollection(criteria)
+    },
+    async all() {
+      return rows.filter((row) =>
+        Object.entries(criteria).every(
+          ([key, value]) => row[key as keyof TestMessageTaskSetting] === value,
+        ),
+      )
+    },
+    async first() {
+      return (
+        rows.find((row) =>
+          Object.entries(criteria).every(
+            ([key, value]) => row[key as keyof TestMessageTaskSetting] === value,
+          ),
+        ) ?? null
+      )
+    },
+    async update(data: Partial<TestMessageTaskSetting>) {
+      const row = rows.find((candidate) =>
+        Object.entries(criteria).every(
+          ([key, value]) => candidate[key as keyof TestMessageTaskSetting] === value,
+        ),
+      )
+      if (!row) return null
+      Object.assign(row, data)
+      return row
+    },
+    async create(data: Omit<TestMessageTaskSetting, 'id'>) {
+      const row: TestMessageTaskSetting = { id: `setting-${rows.length + 1}`, ...data }
       rows.push(row)
       return row
     },
+  })
+
+  const orm = {
+    public: {
+      MessageTaskSettings: messageSettingsCollection(),
+      EnterpriseIntegrations: {
+        where: () => ({ first: async () => integration }),
+      },
+      Tenants: {
+        where: () => ({
+          select: () => ({ first: async () => ({ enterpriseSyncResource: activeProvider }) }),
+        }),
+      },
+      UserRoles: {
+        where: () => ({ where: () => ({ select: () => ({ all: async () => [] }) }) }),
+      },
+      Users: {
+        where: () => ({
+          where: () => ({ select: () => ({ all: async () => [] }) }),
+          select: () => ({ first: async () => null }),
+        }),
+      },
+      Departments: {
+        where: () => ({ select: () => ({ first: async () => null }) }),
+      },
+      Roles: {
+        where: () => ({ where: () => ({ select: () => ({ all: async () => [] }) }) }),
+      },
+    },
   }
   const prisma = {
-    messageTaskSetting,
-    enterpriseIntegration: {
-      findUnique: async () => ({ lastTestSucceeded: true, syncEnabled: true }),
+    client: {
+      orm,
+      transaction: async (callback: (tx: { orm: typeof orm }) => Promise<unknown>) =>
+        callback({ orm }),
     },
-    tenant: { findUnique: async () => ({ enterpriseSyncResource: activeProvider }) },
-    user: { count: async () => 0 },
-    role: { count: async () => 0 },
-    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
   } as unknown as PrismaService
   return {
     service: new MessageSettingsService(prisma),
     rows,
     setActiveProvider: (provider: 'WECOM' | 'DINGTALK' | 'LARK') => {
       activeProvider = provider
+    },
+    setIntegration: (value: typeof integration) => {
+      integration = value
     },
   }
 }
@@ -117,36 +163,29 @@ test('单项与批量开关按租户持久化', async () => {
 })
 
 test('企业微信开关由配置、连接测试和同步开关共同控制', async () => {
-  let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = null
-  const prisma = {
-    enterpriseIntegration: { findUnique: async () => integration },
-    tenant: { findUnique: async () => ({ enterpriseSyncResource: 'WECOM' }) },
-  } as unknown as PrismaService
-  const service = new MessageSettingsService(prisma)
+  const { service, setIntegration } = createService()
+  setIntegration(null)
 
   assert.equal((await service.getWeComChannelGate('tenant-a')).reason, '请先配置企业微信')
-  integration = { lastTestSucceeded: false, syncEnabled: false }
+  setIntegration({ lastTestSucceeded: false, syncEnabled: false })
   assert.equal((await service.getWeComChannelGate('tenant-a')).available, false)
-  integration = { lastTestSucceeded: true, syncEnabled: false }
+  setIntegration({ lastTestSucceeded: true, syncEnabled: false })
   assert.equal((await service.getWeComChannelGate('tenant-a')).reason, '请先开启企业微信组织同步')
-  integration = { lastTestSucceeded: true, syncEnabled: true }
+  setIntegration({ lastTestSucceeded: true, syncEnabled: true })
   assert.equal((await service.getWeComChannelGate('tenant-a')).available, true)
 })
 
 test('飞书开关由配置、连接测试和同步开关共同控制', async () => {
-  let integration: { lastTestSucceeded: boolean; syncEnabled: boolean } | null = null
-  const prisma = {
-    enterpriseIntegration: { findUnique: async () => integration },
-    tenant: { findUnique: async () => ({ enterpriseSyncResource: 'LARK' }) },
-  } as unknown as PrismaService
-  const service = new MessageSettingsService(prisma)
+  const { service, setIntegration, setActiveProvider } = createService()
+  setActiveProvider('LARK')
+  setIntegration(null)
 
   assert.equal((await service.getLarkChannelGate('tenant-a')).reason, '请先配置飞书')
-  integration = { lastTestSucceeded: false, syncEnabled: false }
+  setIntegration({ lastTestSucceeded: false, syncEnabled: false })
   assert.equal((await service.getLarkChannelGate('tenant-a')).available, false)
-  integration = { lastTestSucceeded: true, syncEnabled: false }
+  setIntegration({ lastTestSucceeded: true, syncEnabled: false })
   assert.equal((await service.getLarkChannelGate('tenant-a')).reason, '请先开启飞书组织同步')
-  integration = { lastTestSucceeded: true, syncEnabled: true }
+  setIntegration({ lastTestSucceeded: true, syncEnabled: true })
   assert.equal((await service.getLarkChannelGate('tenant-a')).available, true)
 })
 
@@ -206,29 +245,47 @@ test('配置接收范围合并负责人、成员、角色和部门负责人层�
     roleEnable: true,
   }
   const activeIds = new Set(['owner-a', 'member-a', 'role-member', 'leader-a', 'leader-root'])
-  const prisma = {
-    messageTaskSetting: {
-      findFirst: async () => ({
-        systemEnabled: true,
-        emailEnabled: false,
-        weComEnabled: false,
-        config,
-      }),
+  let departmentReads = 0
+  const orm = {
+    public: {
+      MessageTaskSettings: {
+        where: () => ({
+          first: async () => ({
+            systemEnabled: true,
+            emailEnabled: false,
+            weComEnabled: false,
+            dingTalkEnabled: false,
+            larkEnabled: false,
+            config,
+          }),
+        }),
+      },
+      UserRoles: {
+        where: () => ({
+          where: () => ({ select: () => ({ all: async () => [{ userId: 'role-member' }] }) }),
+        }),
+      },
+      Users: {
+        where: () => ({
+          select: () => ({ first: async () => ({ deptId: 'dept-a' }) }),
+          where: () => ({
+            select: () => ({ all: async () => [...activeIds].map((id) => ({ id })) }),
+          }),
+        }),
+      },
+      Departments: {
+        where: () => ({
+          select: () => ({
+            first: async () =>
+              departmentReads++ === 0
+                ? { leaderId: 'leader-a', parentId: 'dept-root' }
+                : { leaderId: 'leader-root', parentId: null },
+          }),
+        }),
+      },
     },
-    userRole: { findMany: async () => [{ userId: 'role-member' }] },
-    user: {
-      findFirst: async () => ({ deptId: 'dept-a' }),
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
-        where.id.in.filter((id) => activeIds.has(id)).map((id) => ({ id })),
-    },
-    department: {
-      findFirst: async ({ where }: { where: { id: string } }) =>
-        where.id === 'dept-a'
-          ? { leaderId: 'leader-a', parentId: 'dept-root' }
-          : { leaderId: 'leader-root', parentId: null },
-    },
-  } as unknown as PrismaService
-  const service = new MessageSettingsService(prisma)
+  }
+  const service = new MessageSettingsService({ client: { orm } } as unknown as PrismaService)
 
   const recipients = await service.resolveRecipients('tenant-a', 'CONTRACT_EXPIRING', {
     ownerId: 'owner-a',

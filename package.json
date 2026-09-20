@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.25.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=25 <26"
   },
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
@@ -11,27 +11,32 @@
     "dev:infra:down": "docker compose -f docker-compose.dev.yml down",
     "build": "pnpm --filter @micromatrix/shared build && pnpm --filter @micromatrix/frontend-shared typecheck && pnpm --filter @micromatrix/api build && pnpm --filter @micromatrix/web build && pnpm --filter @micromatrix/mobile build",
     "typecheck": "pnpm --filter @micromatrix/shared build && pnpm --filter @micromatrix/shared typecheck && pnpm --filter @micromatrix/frontend-shared typecheck && pnpm --filter @micromatrix/api typecheck && pnpm --filter @micromatrix/web typecheck && pnpm --filter @micromatrix/mobile typecheck",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "node tools/eslint-ts6.mjs .",
+    "lint:fix": "node tools/eslint-ts6.mjs . --fix",
     "format": "prettier --write .",
     "smoke:docker-release": "bash docker/release-smoke.sh",
     "prisma:generate": "pnpm --filter @micromatrix/api prisma:generate",
+    "prisma:infer": "pnpm --filter @micromatrix/api prisma:infer",
+    "prisma:emit": "pnpm --filter @micromatrix/api prisma:emit",
+    "prisma:test": "pnpm --filter @micromatrix/api test:prisma",
     "db:migrate": "pnpm --filter @micromatrix/api prisma:deploy",
     "db:deploy": "pnpm --filter @micromatrix/api prisma:deploy",
     "db:migrate:dev": "pnpm --filter @micromatrix/api prisma:migrate",
     "db:status": "pnpm --filter @micromatrix/api prisma:status",
-    "db:legacy-sync": "pnpm --filter @micromatrix/api prisma:legacy-sync",
-    "db:verify-migrations": "node docker/verify-prisma-migrations.mjs"
+    "db:verify": "pnpm --filter @micromatrix/api prisma:verify",
+    "db:verify-migrations": "pnpm --filter @micromatrix/api prisma:migration-check"
   },
   "devDependencies": {
+    "@typescript/old": "npm:typescript@6.0.3",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.11.0",
     "prettier": "^3.9.6",
-    "prisma": "^7.9.1",
-    "typescript": "~6.0.3",
-    "typescript-eslint": "^8.67.0"
+    "prisma": "8.0.0-rc.14",
+    "typescript": "7.0.2",
+    "typescript-eslint": "^8.67.0",
+    "vue-tsc": "3.3.11"
   }
 }
