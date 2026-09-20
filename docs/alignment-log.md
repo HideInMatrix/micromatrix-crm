@@ -13,10 +13,18 @@
 - 时间治理完成：126/126 absolute instant 字段从 `timestamp without time zone` 迁为 `timestamptz`，existing DB 迁移前后 UTC epoch 指纹一致；应用 runtime 统一 `Temporal.Instant` / ISO instant 边界，旧 `Temporal.PlainDateTime` 与 `Temporal -> Date -> ISO` compatibility 往返归零。
 - VarChar/ID 治理完成：476/476 `varchar(n)` 字段迁为 PostgreSQL `text + CHECK(char_length <= n)`，existing DB 2467 个非空值指纹 0 mismatch；历史 ID 保持字符串语义，业务 helper 收口为 `createLegacyId32()`，不错误整体迁为 UUID。
 - Numeric/JSON domain 完成：Numeric 写入统一 `DecimalString -> numericValue()` precision/scale 校验，JSONB 写入统一 `jsonValue()` normalization；migration-only values helper 删除。
-- 当前正式 Prisma 8 migration graph 为 `20260918T0338_baseline` **672** + `20260918T0826_timestamp_absolute_instants` **126** + `20260918T0923_varchar_text_length_constraints` **952**，合计 **3 migrations / 1750 operations**；current storage hash 为 `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`。existing/fresh PostgreSQL migration/Seed/verify/status 全绿。
+- 当前正式 Prisma 8 migration graph 为 `20260918T0338_baseline` **672** + `20260918T0826_timestamp_absolute_instants` **126** + `20260918T0923_varchar_text_length_constraints` **952** + `20260920T0347_canonical_check_constraint_names` **476**，合计 **4 migrations / 2226 operations**；current storage hash 为 `dee42ec15d90123679a39e92cd8468c445ed20dea1161a6b69ba8c615206c7b1`。existing/fresh PostgreSQL migration/Seed/verify/status 全绿。
 - 最终工程门禁：root typecheck/build exit 0，lint **0 error / 80 warnings**，API Rules **348/348 PASS、0 fail、0 skip**；仓库原始 `docker/release-smoke.sh` **STATUS=0 / PASS**。release smoke 过程中发现并修复 migration image 仍 COPY 已删除 `prisma8-*` 文件的发布漏洞。
 - Desktop Host 隔离 Browser 真实覆盖 bootstrap admin 登录/Dashboard、商机高级筛选编辑交互、客户 48 条列表与 Customer Overview Drawer、线索关键词搜索；同一 canonical build 独立端口 runtime gate 重放 login/auth-me/Dashboard/Opportunity/Customer/detail/Lead 请求全部 2xx，retained logs 中 Nest ERROR / Exception / Unhandled / TypeError / RangeError / codec / Prisma runtime error 均为 **0**。
 - P0～P5.7 全部完成，`PRISMA8-002` 正式切换为 **`VERIFIED`**；当前执行指针：无。
+
+### 2026-09-20：Generated contract CHECK wire-name 补充收口
+
+- 用户复核 `apps/api/src/prisma/generated/` 时发现，字段类型虽然已经是 text/timestamptz canonical contract，但 476 个长度 CHECK 的 generated wire name 仍由上游 `contract.prisma` 的 `p3_varchar_len_*` 迁移期 prefix 派生；此前 P5 canonicalization 只清理了 runtime/helper/test 命名，遗漏了数据库 constraint wire name。
+- generated 文件没有手工编辑；上游 476 个 `@@check(name:)` 改为 `text_len_*`，单约束 rehearsal 与正式 planner 均确认只产生 rename。新增 `20260920T0347_canonical_check_constraint_names` 精确 **476 widening rename operations / 0 non-rename**。
+- existing DB：应用 476 rename 后 `text_len_* = 476`、`p3_varchar_len_* = 0`，`db verify` PASS、migration status Up to date、`db` ref 前移；fresh PostgreSQL 从空库执行 **4 migrations / 2226 operations**，Seed/verify/status 全绿并得到同样 constraint 计数。
+- generated model fields 对 `CodecTypes['pg/varchar@1']` 实际引用为 **0**；codec catalog 中保留的 `pg/varchar@1` 是 Prisma PostgreSQL target 的通用能力声明，不属于当前 schema 字段。
+- API typecheck/build exit 0，完整 Rules **348/348 PASS、0 fail、0 skip**，`git diff --check` PASS。PRISMA8-002 继续保持 **`VERIFIED`**。
 
 ## 2026-09-18：PRISMA8-001 最终封板
 

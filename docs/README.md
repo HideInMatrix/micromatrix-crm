@@ -24,7 +24,7 @@
 - 项目定位：以项目内 `CordysCRM/` 作为功能、业务规则和交互行为参考基准，使用 NestJS + Prisma + Vue 独立实现，先内部使用，架构预留商业化能力
 - 已交付里程碑：M1 平台底座 → M2 元数据引擎 → M3 销售核心 → M4 交易链路 → M5 审批流 → M6 标讯 → M7 工作台报表 → M8 移动端 → 收尾（导入导出/开放 API/本地验收）
 - 当前主线：既有 Cordys 功能主线与 **TOOLCHAIN-001 / UI-001 / DB-007 / DB-008 / DB-015A / DB-015B / PRISMA8-001 / PRISMA8-002** 均已完成并封板；DB-023 继续 `DEFERRED`。
-- 当前 Prisma 8 migration graph 以 `apps/api/migrations/` 为 canonical：`20260918T0338_baseline`（672 operations）+ `20260918T0826_timestamp_absolute_instants`（126）+ `20260918T0923_varchar_text_length_constraints`（952），合计 **1750 operations**；后续结构变化只新增 forward migration。
+- 当前 Prisma 8 migration graph 以 `apps/api/migrations/` 为 canonical：`20260918T0338_baseline`（672 operations）+ `20260918T0826_timestamp_absolute_instants`（126）+ `20260918T0923_varchar_text_length_constraints`（952）+ `20260920T0347_canonical_check_constraint_names`（476），合计 **2226 operations**；后续结构变化只新增 forward migration。
 - 当前发布基线：`v0.0.13` 指向 `63e846f`；项目 packageManager 已统一为 pnpm 11.25.0，TOOLCHAIN-001 已完成本地/CI/Docker 三端迁移与完整 Docker release smoke，并正式封板为 `VERIFIED`。
 - 整体剩余范围与完成标准见 [project-progress.md](./project-progress.md)；DataEase provider/token 继续由 DB-023 deferred，AI/License/MCP/商业标讯等明确排除项不计入当前 CRM 核心完成标准。
 - 数据模型唯一真相：`apps/api/prisma/contract.prisma`；Prisma 8 generated contract 位于 `apps/api/src/prisma/generated/`，migration graph 位于 `apps/api/migrations/`。

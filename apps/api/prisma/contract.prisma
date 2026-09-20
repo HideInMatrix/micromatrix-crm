@@ -57,7 +57,7 @@ namespace public {
     @@index([tenantId, enabled, deletedAt], map: "approval_flows_tenantId_enabled_deletedAt_idx")
     @@index([tenantId, formType, deletedAt], map: "approval_flows_tenantId_formType_deletedAt_idx")
     @@index([tenantId, number], map: "approval_flows_tenantId_number_key", unique: true)
-    @@check(expression: "char_length(\"description\") <= 1000", name: "p3_varchar_len_df94ff2958")
+    @@check(expression: "char_length(\"description\") <= 1000", name: "text_len_df94ff2958")
     @@map("approval_flows")
   }
 
@@ -114,7 +114,7 @@ namespace public {
     @@index([tenantId, module, targetId], map: "approval_instances_tenantId_module_targetId_idx")
     @@index([tenantId, status], map: "approval_instances_tenantId_status_idx")
     @@index([tenantId, submitterId], map: "approval_instances_tenantId_submitterId_idx")
-    @@check(expression: "char_length(\"update_fields\") <= 2000", name: "p3_varchar_len_75cf003ed0")
+    @@check(expression: "char_length(\"update_fields\") <= 2000", name: "text_len_75cf003ed0")
     @@map("approval_instances")
   }
 
@@ -364,8 +364,8 @@ namespace public {
     @@index([tenantId, flowId, createdAt], map: "approval_webhook_deliveries_tenant_id_flow_id_created_at_idx")
     @@index([tenantId, instanceId, createdAt], map: "approval_webhook_deliveries_tenant_id_instance_id_created_a_idx")
     @@index([tenantId, status, createdAt], map: "approval_webhook_deliveries_tenant_id_status_created_at_idx")
-    @@check(expression: "char_length(\"error_code\") <= 64", name: "p3_varchar_len_5aa2aeb8b8")
-    @@check(expression: "char_length(\"error_message\") <= 500", name: "p3_varchar_len_fb9be1e72a")
+    @@check(expression: "char_length(\"error_code\") <= 64", name: "text_len_5aa2aeb8b8")
+    @@check(expression: "char_length(\"error_message\") <= 500", name: "text_len_fb9be1e72a")
     @@map("approval_webhook_deliveries")
   }
 
@@ -448,27 +448,27 @@ namespace public {
     @@index([companyNumber], map: "business_title_company_number_key", unique: true)
     @@index([name], map: "business_title_name_idx")
     @@index([organizationId], map: "business_title_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_4c939f1f55")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_8a0e0ccc3f")
-    @@check(expression: "char_length(\"type\") <= 50", name: "p3_varchar_len_38a7b70462")
-    @@check(expression: "char_length(\"identification_number\") <= 255", name: "p3_varchar_len_e21a1bf43d")
-    @@check(expression: "char_length(\"opening_bank\") <= 255", name: "p3_varchar_len_d9b1de7555")
-    @@check(expression: "char_length(\"bank_account\") <= 255", name: "p3_varchar_len_74f6e24f6b")
-    @@check(expression: "char_length(\"registration_address\") <= 255", name: "p3_varchar_len_296b4255b4")
-    @@check(expression: "char_length(\"phone_number\") <= 255", name: "p3_varchar_len_cd39cc4ea5")
-    @@check(expression: "char_length(\"registered_capital\") <= 255", name: "p3_varchar_len_1ddbaad5ec")
-    @@check(expression: "char_length(\"company_size\") <= 255", name: "p3_varchar_len_bba2dbcced")
-    @@check(expression: "char_length(\"registration_number\") <= 255", name: "p3_varchar_len_3bc5a8cf69")
-    @@check(expression: "char_length(\"approval_status\") <= 50", name: "p3_varchar_len_e456928295")
-    @@check(expression: "char_length(\"unapproved_reason\") <= 255", name: "p3_varchar_len_f9397e14f8")
-    @@check(expression: "char_length(\"organization_id\") <= 50", name: "p3_varchar_len_974d8c6954")
-    @@check(expression: "char_length(\"province\") <= 255", name: "p3_varchar_len_54be4c3f3e")
-    @@check(expression: "char_length(\"city\") <= 255", name: "p3_varchar_len_3b5d26478f")
-    @@check(expression: "char_length(\"scale\") <= 255", name: "p3_varchar_len_d6b9c9e2b9")
-    @@check(expression: "char_length(\"industry\") <= 255", name: "p3_varchar_len_a64a49b90e")
-    @@check(expression: "char_length(\"remark\") <= 255", name: "p3_varchar_len_312d42df31")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_fda5707cc6")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_9764cf9232")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_4c939f1f55")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_8a0e0ccc3f")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_38a7b70462")
+    @@check(expression: "char_length(\"identification_number\") <= 255", name: "text_len_e21a1bf43d")
+    @@check(expression: "char_length(\"opening_bank\") <= 255", name: "text_len_d9b1de7555")
+    @@check(expression: "char_length(\"bank_account\") <= 255", name: "text_len_74f6e24f6b")
+    @@check(expression: "char_length(\"registration_address\") <= 255", name: "text_len_296b4255b4")
+    @@check(expression: "char_length(\"phone_number\") <= 255", name: "text_len_cd39cc4ea5")
+    @@check(expression: "char_length(\"registered_capital\") <= 255", name: "text_len_1ddbaad5ec")
+    @@check(expression: "char_length(\"company_size\") <= 255", name: "text_len_bba2dbcced")
+    @@check(expression: "char_length(\"registration_number\") <= 255", name: "text_len_3bc5a8cf69")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_e456928295")
+    @@check(expression: "char_length(\"unapproved_reason\") <= 255", name: "text_len_f9397e14f8")
+    @@check(expression: "char_length(\"organization_id\") <= 50", name: "text_len_974d8c6954")
+    @@check(expression: "char_length(\"province\") <= 255", name: "text_len_54be4c3f3e")
+    @@check(expression: "char_length(\"city\") <= 255", name: "text_len_3b5d26478f")
+    @@check(expression: "char_length(\"scale\") <= 255", name: "text_len_d6b9c9e2b9")
+    @@check(expression: "char_length(\"industry\") <= 255", name: "text_len_a64a49b90e")
+    @@check(expression: "char_length(\"remark\") <= 255", name: "text_len_312d42df31")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_fda5707cc6")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_9764cf9232")
     @@map("business_title")
   }
 
@@ -480,9 +480,9 @@ namespace public {
 
     @@index([organizationId, field], map: "business_title_config_organization_id_field_key", unique: true)
     @@index([organizationId], map: "business_title_config_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_9779148724")
-    @@check(expression: "char_length(\"field\") <= 255", name: "p3_varchar_len_a9ee41134d")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_e56eb50932")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9779148724")
+    @@check(expression: "char_length(\"field\") <= 255", name: "text_len_a9ee41134d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_e56eb50932")
     @@map("business_title_config")
   }
 
@@ -502,11 +502,11 @@ namespace public {
     cluePoolHiddenFields CluePoolHiddenField[]
 
     @@index([organizationId], map: "clue_pool_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_d855260c78")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_b21c5c965c")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_ae6adee81d")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_bde0b3e30c")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_3bcf493be7")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d855260c78")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_b21c5c965c")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_ae6adee81d")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_bde0b3e30c")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_3bcf493be7")
     @@map("clue_pool")
   }
 
@@ -543,22 +543,22 @@ namespace public {
     @@index([phone], map: "clue_phone_idx")
     @@index([poolId], map: "clue_pool_id_idx")
     @@index([reasonId], map: "clue_reason_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_5d8d38cd59")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_360efc5562")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_f989239e7d")
-    @@check(expression: "char_length(\"last_stage\") <= 30", name: "p3_varchar_len_28f6d7aae3")
-    @@check(expression: "char_length(\"stage\") <= 30", name: "p3_varchar_len_8cb7c75bb9")
-    @@check(expression: "char_length(\"contact\") <= 255", name: "p3_varchar_len_f3ddda20be")
-    @@check(expression: "char_length(\"phone\") <= 255", name: "p3_varchar_len_29cbcd1af7")
-    @@check(expression: "char_length(\"products\") <= 1000", name: "p3_varchar_len_d1404981a3")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_9ba2743780")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_e9e55e174e")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_35e9b081d8")
-    @@check(expression: "char_length(\"transition_type\") <= 30", name: "p3_varchar_len_b72f21f367")
-    @@check(expression: "char_length(\"transition_id\") <= 32", name: "p3_varchar_len_5aa451c91b")
-    @@check(expression: "char_length(\"follower\") <= 32", name: "p3_varchar_len_b355c80a93")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_8fa85e5ccf")
-    @@check(expression: "char_length(\"reason_id\") <= 32", name: "p3_varchar_len_131df97257")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5d8d38cd59")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_360efc5562")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_f989239e7d")
+    @@check(expression: "char_length(\"last_stage\") <= 30", name: "text_len_28f6d7aae3")
+    @@check(expression: "char_length(\"stage\") <= 30", name: "text_len_8cb7c75bb9")
+    @@check(expression: "char_length(\"contact\") <= 255", name: "text_len_f3ddda20be")
+    @@check(expression: "char_length(\"phone\") <= 255", name: "text_len_29cbcd1af7")
+    @@check(expression: "char_length(\"products\") <= 1000", name: "text_len_d1404981a3")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_9ba2743780")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_e9e55e174e")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_35e9b081d8")
+    @@check(expression: "char_length(\"transition_type\") <= 30", name: "text_len_b72f21f367")
+    @@check(expression: "char_length(\"transition_id\") <= 32", name: "text_len_5aa451c91b")
+    @@check(expression: "char_length(\"follower\") <= 32", name: "text_len_b355c80a93")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_8fa85e5ccf")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_131df97257")
     @@map("clue")
   }
 
@@ -573,10 +573,10 @@ namespace public {
     updateUser     String @map("update_user")
 
     @@index([organizationId], map: "clue_capacity_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_d58d20420e")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_167aa9076e")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_ba6fbb1ec4")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_45b429662f")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d58d20420e")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_167aa9076e")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_ba6fbb1ec4")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_45b429662f")
     @@map("clue_capacity")
   }
 
@@ -589,10 +589,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "clue_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "clue_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_ba2e825adf")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_12d6567017")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_79907f5e10")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_faf642831b")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ba2e825adf")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_12d6567017")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_79907f5e10")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_faf642831b")
     @@map("clue_field")
   }
 
@@ -605,9 +605,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "clue_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "clue_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_fad371e96f")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_74b4216f6a")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_c3257a5300")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_fad371e96f")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_74b4216f6a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c3257a5300")
     @@map("clue_field_blob")
   }
 
@@ -622,11 +622,11 @@ namespace public {
     clue           Clue         @relation(fields: [clueId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_owner_clue_id_fkey")
 
     @@index([clueId], map: "clue_owner_clue_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_97ddfa0ccc")
-    @@check(expression: "char_length(\"clue_id\") <= 32", name: "p3_varchar_len_fe709dbb7e")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_15e228b16d")
-    @@check(expression: "char_length(\"operator\") <= 32", name: "p3_varchar_len_2bb9524331")
-    @@check(expression: "char_length(\"reason_id\") <= 32", name: "p3_varchar_len_ef65a57220")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_97ddfa0ccc")
+    @@check(expression: "char_length(\"clue_id\") <= 32", name: "text_len_fe709dbb7e")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_15e228b16d")
+    @@check(expression: "char_length(\"operator\") <= 32", name: "text_len_2bb9524331")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_ef65a57220")
     @@map("clue_owner")
   }
 
@@ -636,8 +636,8 @@ namespace public {
     pool    CluePool     @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_hidden_field_pool_id_fkey", index: false)
 
     @@id([poolId, fieldId], map: "clue_pool_hidden_field_pkey")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_18c3e411ae")
-    @@check(expression: "char_length(\"field_id\") <= 255", name: "p3_varchar_len_be614803ff")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_18c3e411ae")
+    @@check(expression: "char_length(\"field_id\") <= 255", name: "text_len_be614803ff")
     @@map("clue_pool_hidden_field")
   }
 
@@ -657,10 +657,10 @@ namespace public {
     pool             CluePool    @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_pick_rule_pool_id_fkey")
 
     @@index([poolId], map: "clue_pool_pick_rule_pool_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_d8971f36fe")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_8a003860a5")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_678c2241c7")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_4ffb57d69f")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d8971f36fe")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_8a003860a5")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_678c2241c7")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4ffb57d69f")
     @@map("clue_pool_pick_rule")
   }
 
@@ -676,11 +676,11 @@ namespace public {
     pool       CluePool     @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "clue_pool_recycle_rule_pool_id_fkey")
 
     @@index([poolId], map: "clue_pool_recycle_rule_pool_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_6c65b4dddb")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_f7c59dbca6")
-    @@check(expression: "char_length(\"operator\") <= 10", name: "p3_varchar_len_3178afb6d7")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_617a2f5c77")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_4e67bc0cb4")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6c65b4dddb")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_f7c59dbca6")
+    @@check(expression: "char_length(\"operator\") <= 10", name: "text_len_3178afb6d7")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_617a2f5c77")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4e67bc0cb4")
     @@map("clue_pool_recycle_rule")
   }
 
@@ -700,11 +700,11 @@ namespace public {
     customerPoolHiddenFields CustomerPoolHiddenField[]
 
     @@index([organizationId], map: "customer_pool_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_ade0543e14")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_018fc885a9")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_ade3dab297")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_77a4f27cc0")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_4ee70d0353")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ade0543e14")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_018fc885a9")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_ade3dab297")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_77a4f27cc0")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4ee70d0353")
     @@map("customer_pool")
   }
 
@@ -740,15 +740,15 @@ namespace public {
     @@index([organizationId], map: "customer_organization_id_idx")
     @@index([poolId], map: "customer_pool_id_idx")
     @@index([reasonId], map: "customer_reason_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_b399eff69d")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_4f0c824512")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_84a02e1683")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_f2a53d4739")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_88148555bd")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_1190301c5e")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_a22fa03651")
-    @@check(expression: "char_length(\"follower\") <= 32", name: "p3_varchar_len_6b2dc039b3")
-    @@check(expression: "char_length(\"reason_id\") <= 32", name: "p3_varchar_len_91f507fc4e")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_b399eff69d")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_4f0c824512")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_84a02e1683")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_f2a53d4739")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_88148555bd")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_1190301c5e")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_a22fa03651")
+    @@check(expression: "char_length(\"follower\") <= 32", name: "text_len_6b2dc039b3")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_91f507fc4e")
     @@map("customer")
   }
 
@@ -788,17 +788,17 @@ namespace public {
     @@index([organizationId], map: "contract_organization_id_idx")
     @@index([owner], map: "contract_owner_idx")
     @@index([stage], map: "contract_stage_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_56120e0714")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_afc0945aab")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "p3_varchar_len_a5b8df00e6")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_788d25593d")
-    @@check(expression: "char_length(\"number\") <= 50", name: "p3_varchar_len_7eed87de6b")
-    @@check(expression: "char_length(\"approval_status\") <= 50", name: "p3_varchar_len_c4252110ef")
-    @@check(expression: "char_length(\"stage\") <= 32", name: "p3_varchar_len_940c282d7e")
-    @@check(expression: "char_length(\"void_reason\") <= 255", name: "p3_varchar_len_f38806daff")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_41fd6a1a50")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_5e1031eb1a")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_66ccabef66")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_56120e0714")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_afc0945aab")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_a5b8df00e6")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_788d25593d")
+    @@check(expression: "char_length(\"number\") <= 50", name: "text_len_7eed87de6b")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_c4252110ef")
+    @@check(expression: "char_length(\"stage\") <= 32", name: "text_len_940c282d7e")
+    @@check(expression: "char_length(\"void_reason\") <= 255", name: "text_len_f38806daff")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_41fd6a1a50")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_5e1031eb1a")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_66ccabef66")
     @@map("contract")
   }
 
@@ -815,13 +815,13 @@ namespace public {
     @@index([refSubId], map: "contract_field_ref_sub_id_idx")
     @@index([resourceId], map: "contract_field_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_56ee66777e")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_c037b4ad02")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_8e7644d5ab")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_106a7f9d0d")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_988f16b3c2")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_ca84939201")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_871757eff7")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_56ee66777e")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_c037b4ad02")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_8e7644d5ab")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_106a7f9d0d")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_988f16b3c2")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_ca84939201")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_871757eff7")
     @@map("contract_field")
   }
 
@@ -838,12 +838,12 @@ namespace public {
     @@index([refSubId], map: "contract_field_blob_ref_sub_id_idx")
     @@index([resourceId], map: "contract_field_blob_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_contract_field_blob_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_b62d8f360a")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_3518b9285c")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_c440e4f485")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_5fbbbcdbdb")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_60c1f62fb1")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_99ac3ad7ef")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_b62d8f360a")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_3518b9285c")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c440e4f485")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_5fbbbcdbdb")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_60c1f62fb1")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_99ac3ad7ef")
     @@map("contract_field_blob")
   }
 
@@ -874,16 +874,16 @@ namespace public {
     @@index([createUser], map: "contract_invoice_create_user_idx")
     @@index([organizationId], map: "contract_invoice_organization_id_idx")
     @@index([owner], map: "contract_invoice_owner_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_bc9c0c9467")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_baa19ab9cb")
-    @@check(expression: "char_length(\"contract_id\") <= 32", name: "p3_varchar_len_252c1aa9a4")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_4632734042")
-    @@check(expression: "char_length(\"invoice_type\") <= 32", name: "p3_varchar_len_47588c6051")
-    @@check(expression: "char_length(\"approval_status\") <= 32", name: "p3_varchar_len_dac6310abe")
-    @@check(expression: "char_length(\"business_title_id\") <= 32", name: "p3_varchar_len_73ac8e573b")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_6bb2067350")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_08eaea8311")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_339c1edf1c")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_bc9c0c9467")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_baa19ab9cb")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_252c1aa9a4")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_4632734042")
+    @@check(expression: "char_length(\"invoice_type\") <= 32", name: "text_len_47588c6051")
+    @@check(expression: "char_length(\"approval_status\") <= 32", name: "text_len_dac6310abe")
+    @@check(expression: "char_length(\"business_title_id\") <= 32", name: "text_len_73ac8e573b")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_6bb2067350")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_08eaea8311")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_339c1edf1c")
     @@map("contract_invoice")
   }
 
@@ -896,10 +896,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "contract_invoice_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "contract_invoice_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_5b766d83f7")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_72b56c4b4f")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_2d9b33b29e")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_8c1da1c5d3")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5b766d83f7")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_72b56c4b4f")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_2d9b33b29e")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_8c1da1c5d3")
     @@map("contract_invoice_field")
   }
 
@@ -912,9 +912,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "contract_invoice_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "contract_invoice_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_c9b3c59dc6")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_74e273798d")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_8a84497c14")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_c9b3c59dc6")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_74e273798d")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_8a84497c14")
     @@map("contract_invoice_field_blob")
   }
 
@@ -926,8 +926,8 @@ namespace public {
     invoice      ContractInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_invoice_snapshot_invoice_id_fkey")
 
     @@index([invoiceId], map: "contract_invoice_snapshot_invoice_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_e97a56ef27")
-    @@check(expression: "char_length(\"invoice_id\") <= 32", name: "p3_varchar_len_7d99d2bfcd")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_e97a56ef27")
+    @@check(expression: "char_length(\"invoice_id\") <= 32", name: "text_len_7d99d2bfcd")
     @@map("contract_invoice_snapshot")
   }
 
@@ -954,14 +954,14 @@ namespace public {
     @@index([organizationId], map: "contract_payment_plan_organization_id_idx")
     @@index([owner], map: "contract_payment_plan_owner_idx")
     @@index([planEndTime], map: "contract_payment_plan_plan_end_time_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_45ee8d804e")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_066d710409")
-    @@check(expression: "char_length(\"contract_id\") <= 32", name: "p3_varchar_len_9d2a085a70")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_b6fdb2ce8b")
-    @@check(expression: "char_length(\"plan_status\") <= 32", name: "p3_varchar_len_0974a20cb4")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_36e3b31fc8")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_ded30a9d31")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_69d620eceb")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_45ee8d804e")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_066d710409")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_9d2a085a70")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_b6fdb2ce8b")
+    @@check(expression: "char_length(\"plan_status\") <= 32", name: "text_len_0974a20cb4")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_36e3b31fc8")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_ded30a9d31")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_69d620eceb")
     @@map("contract_payment_plan")
   }
 
@@ -974,10 +974,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "contract_payment_plan_field_resource_id_field_id_field_valu_idx")
     @@index([resourceId, fieldId], map: "contract_payment_plan_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_00f909e7a2")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_af4b9ebcb8")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_c78254d8ba")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_0efea9ac8d")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_00f909e7a2")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_af4b9ebcb8")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c78254d8ba")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_0efea9ac8d")
     @@map("contract_payment_plan_field")
   }
 
@@ -990,9 +990,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "contract_payment_plan_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "contract_payment_plan_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_046b49eb9c")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_f09f5ca1d1")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_b159776927")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_046b49eb9c")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_f09f5ca1d1")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_b159776927")
     @@map("contract_payment_plan_field_blob")
   }
 
@@ -1020,15 +1020,15 @@ namespace public {
     @@index([organizationId], map: "contract_payment_record_organization_id_idx")
     @@index([owner], map: "contract_payment_record_owner_idx")
     @@index([paymentPlanId], map: "contract_payment_record_payment_plan_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_27fc0e841e")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_6d192d0e6b")
-    @@check(expression: "char_length(\"no\") <= 50", name: "p3_varchar_len_984607863d")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_722c98a357")
-    @@check(expression: "char_length(\"contract_id\") <= 32", name: "p3_varchar_len_68cbaf57ba")
-    @@check(expression: "char_length(\"payment_plan_id\") <= 32", name: "p3_varchar_len_266428decb")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_303b0a68ae")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_60f941bbf2")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_a8a7baf037")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_27fc0e841e")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_6d192d0e6b")
+    @@check(expression: "char_length(\"no\") <= 50", name: "text_len_984607863d")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_722c98a357")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_68cbaf57ba")
+    @@check(expression: "char_length(\"payment_plan_id\") <= 32", name: "text_len_266428decb")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_303b0a68ae")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_60f941bbf2")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_a8a7baf037")
     @@map("contract_payment_record")
   }
 
@@ -1041,10 +1041,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "contract_payment_record_field_resource_id_field_id_field_va_idx")
     @@index([resourceId, fieldId], map: "contract_payment_record_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_ed8af117c9")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_eaa4b21a27")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_abe03a7ff5")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_d16102ec55")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ed8af117c9")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_eaa4b21a27")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_abe03a7ff5")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_d16102ec55")
     @@map("contract_payment_record_field")
   }
 
@@ -1057,9 +1057,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "contract_payment_record_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "contract_payment_record_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_03b1b49bf4")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_f9340a0143")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_57c78cf3f1")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_03b1b49bf4")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_f9340a0143")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_57c78cf3f1")
     @@map("contract_payment_record_field_blob")
   }
 
@@ -1071,8 +1071,8 @@ namespace public {
     contract      Contract    @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "contract_snapshot_contract_id_fkey")
 
     @@index([contractId], map: "contract_snapshot_contract_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_8a4d88be68")
-    @@check(expression: "char_length(\"contract_id\") <= 32", name: "p3_varchar_len_28ba57f5a3")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8a4d88be68")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_28ba57f5a3")
     @@map("contract_snapshot")
   }
 
@@ -1091,13 +1091,13 @@ namespace public {
     updateUser      String  @map("update_user")
 
     @@index([organizationId, pos], map: "contract_stage_config_organization_id_pos_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_2f18dc68ef")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_e5090ecce9")
-    @@check(expression: "char_length(\"type\") <= 50", name: "p3_varchar_len_35cbecc5dc")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_e3a263ec10")
-    @@check(expression: "char_length(\"circulation_type\") <= 50", name: "p3_varchar_len_29b16df2cd")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_076d22c5e4")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_d624387c5e")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2f18dc68ef")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_e5090ecce9")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_35cbecc5dc")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_e3a263ec10")
+    @@check(expression: "char_length(\"circulation_type\") <= 50", name: "text_len_29b16df2cd")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_076d22c5e4")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_d624387c5e")
     @@map("contract_stage_config")
   }
 
@@ -1117,11 +1117,11 @@ namespace public {
     @@index([organizationId, enable], map: "custom_form_organization_id_enable_idx")
     @@index([organizationId], map: "custom_form_organization_id_idx")
     @@index([organizationId, name], map: "custom_form_organization_id_name_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_02cc0e463a")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_77b087e829")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_56a74dce1d")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_6104e272e1")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_31fa96d6e5")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_02cc0e463a")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_77b087e829")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_56a74dce1d")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_6104e272e1")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_31fa96d6e5")
     @@map("custom_form")
   }
 
@@ -1133,9 +1133,9 @@ namespace public {
 
     @@index([customFormId, userId], map: "custom_form_admin_custom_form_id_user_id_key", unique: true)
     @@index([userId], map: "custom_form_admin_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_2d854b6005")
-    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "p3_varchar_len_78337f7a4e")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_8e85aef444")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2d854b6005")
+    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "text_len_78337f7a4e")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_8e85aef444")
     @@map("custom_form_admin")
   }
 
@@ -1157,13 +1157,13 @@ namespace public {
     @@index([customFormId], map: "custom_form_data_custom_form_id_idx")
     @@index([customFormId, owner], map: "custom_form_data_custom_form_id_owner_idx")
     @@index([organizationId], map: "custom_form_data_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_616ed80e2f")
-    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "p3_varchar_len_087459b32c")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_0c094213b3")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_ba75f431bf")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_c2831652f6")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_08f1d646ab")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_4f7567f6af")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_616ed80e2f")
+    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "text_len_087459b32c")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_0c094213b3")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_ba75f431bf")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_c2831652f6")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_08f1d646ab")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_4f7567f6af")
     @@map("custom_form_data")
   }
 
@@ -1182,12 +1182,12 @@ namespace public {
     @@index([resourceId, refSubId, rowId], map: "custom_form_data_field_resource_id_ref_sub_id_row_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "custom_form_data_field_sub_cell_key", where: "(ref_sub_id IS NOT NULL)", unique: true)
     @@index([resourceId, fieldId], map: "custom_form_data_field_top_level_key", where: "(ref_sub_id IS NULL)", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_9688d9652e")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_b530d748dd")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_988d2ff9d7")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_6541282633")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_167bf22228")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_7345939764")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9688d9652e")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_b530d748dd")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_988d2ff9d7")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_6541282633")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_167bf22228")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_7345939764")
     @@map("custom_form_data_field")
   }
 
@@ -1206,11 +1206,11 @@ namespace public {
     @@index([resourceId, refSubId, rowId], map: "custom_form_data_field_blob_resource_id_ref_sub_id_row_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "custom_form_data_field_blob_sub_cell_key", where: "(ref_sub_id IS NOT NULL)", unique: true)
     @@index([resourceId, fieldId], map: "custom_form_data_field_blob_top_level_key", where: "(ref_sub_id IS NULL)", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_b1baf070f6")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_cf44909a38")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_d001350949")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_1cf47a622c")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_88cdb0ba2e")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_b1baf070f6")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_cf44909a38")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_d001350949")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_1cf47a622c")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_88cdb0ba2e")
     @@map("custom_form_data_field_blob")
   }
 
@@ -1228,12 +1228,12 @@ namespace public {
 
     @@index([customFormId], map: "custom_form_role_custom_form_id_idx")
     @@index([customFormId, internalKey], map: "custom_form_role_custom_form_id_internal_key_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_9264c91978")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_d81f39eb9b")
-    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "p3_varchar_len_e374369e5d")
-    @@check(expression: "char_length(\"internal_key\") <= 50", name: "p3_varchar_len_9b7fdbdb48")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_fab0e13bbe")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_e48d6bdb0c")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9264c91978")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_d81f39eb9b")
+    @@check(expression: "char_length(\"custom_form_id\") <= 32", name: "text_len_e374369e5d")
+    @@check(expression: "char_length(\"internal_key\") <= 50", name: "text_len_9b7fdbdb48")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_fab0e13bbe")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_e48d6bdb0c")
     @@map("custom_form_role")
   }
 
@@ -1250,11 +1250,11 @@ namespace public {
     @@index([createTime], map: "custom_form_role_user_create_time_idx")
     @@index([roleId, userId], map: "custom_form_role_user_role_id_user_id_key", unique: true)
     @@index([userId], map: "custom_form_role_user_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_aff8d4a190")
-    @@check(expression: "char_length(\"role_id\") <= 32", name: "p3_varchar_len_a3fa0255b8")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_dc3e0984f2")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_e66e43fdfa")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_d82a4387a2")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_aff8d4a190")
+    @@check(expression: "char_length(\"role_id\") <= 32", name: "text_len_a3fa0255b8")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_dc3e0984f2")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_e66e43fdfa")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_d82a4387a2")
     @@map("custom_form_role_user")
   }
 
@@ -1270,10 +1270,10 @@ namespace public {
     updateUser     String @map("update_user")
 
     @@index([organizationId], map: "customer_capacity_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_10388ea7d7")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_bbc3159a64")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_0f14b33a2f")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_8a908cb267")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_10388ea7d7")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_bbc3159a64")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_0f14b33a2f")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_8a908cb267")
     @@map("customer_capacity")
   }
 
@@ -1291,12 +1291,12 @@ namespace public {
     @@index([customerId], map: "customer_collaboration_customer_id_idx")
     @@index([customerId, userId], map: "customer_collaboration_customer_id_user_id_key", unique: true)
     @@index([userId], map: "customer_collaboration_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_d94a8aa2e4")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_745404e782")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_646752b01e")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_d5eadb851f")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "p3_varchar_len_c2dcb526d1")
-    @@check(expression: "char_length(\"collaboration_type\") <= 50", name: "p3_varchar_len_2934ac6836")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d94a8aa2e4")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_745404e782")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_646752b01e")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_d5eadb851f")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_c2dcb526d1")
+    @@check(expression: "char_length(\"collaboration_type\") <= 50", name: "text_len_2934ac6836")
     @@map("customer_collaboration")
   }
 
@@ -1321,15 +1321,15 @@ namespace public {
     @@index([customerId], map: "customer_contact_customer_id_idx")
     @@index([organizationId], map: "customer_contact_organization_id_idx")
     @@index([phone], map: "customer_contact_phone_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_02c9381bd0")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "p3_varchar_len_604b16465a")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_d66315c44d")
-    @@check(expression: "char_length(\"phone\") <= 30", name: "p3_varchar_len_4c8af87865")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_5386c253de")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_debf02b9b3")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_eb84d5bc69")
-    @@check(expression: "char_length(\"disable_reason\") <= 255", name: "p3_varchar_len_ed42946db6")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_9408accba8")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_02c9381bd0")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_604b16465a")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_d66315c44d")
+    @@check(expression: "char_length(\"phone\") <= 30", name: "text_len_4c8af87865")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_5386c253de")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_debf02b9b3")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_eb84d5bc69")
+    @@check(expression: "char_length(\"disable_reason\") <= 255", name: "text_len_ed42946db6")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_9408accba8")
     @@map("customer_contact")
   }
 
@@ -1342,10 +1342,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "customer_contact_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "customer_contact_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_2237660bfc")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_4ee8ab6d5a")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_00250722f4")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_c5f9520a25")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2237660bfc")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_4ee8ab6d5a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_00250722f4")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_c5f9520a25")
     @@map("customer_contact_field")
   }
 
@@ -1358,9 +1358,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "customer_contact_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "customer_contact_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_51d2e55e07")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_9ec8491e61")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_54e8572f96")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_51d2e55e07")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_9ec8491e61")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_54e8572f96")
     @@map("customer_contact_field_blob")
   }
 
@@ -1373,10 +1373,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "customer_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "customer_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_97608a00a8")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_04513c24c5")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_393f88ebe5")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_caf8026272")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_97608a00a8")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_04513c24c5")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_393f88ebe5")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_caf8026272")
     @@map("customer_field")
   }
 
@@ -1389,9 +1389,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "customer_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "customer_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_a0898ab87b")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_8773ce2879")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_3960d42077")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_a0898ab87b")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_8773ce2879")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_3960d42077")
     @@map("customer_field_blob")
   }
 
@@ -1406,11 +1406,11 @@ namespace public {
     customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_owner_customer_id_fkey")
 
     @@index([customerId], map: "customer_owner_customer_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_819f4c80a5")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "p3_varchar_len_290cce0cd9")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_b78f06d1ab")
-    @@check(expression: "char_length(\"operator\") <= 32", name: "p3_varchar_len_ef11ac197a")
-    @@check(expression: "char_length(\"reason_id\") <= 32", name: "p3_varchar_len_c7a95beb08")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_819f4c80a5")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_290cce0cd9")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_b78f06d1ab")
+    @@check(expression: "char_length(\"operator\") <= 32", name: "text_len_ef11ac197a")
+    @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_c7a95beb08")
     @@map("customer_owner")
   }
 
@@ -1420,8 +1420,8 @@ namespace public {
     pool    CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_hidden_field_pool_id_fkey", index: false)
 
     @@id([poolId, fieldId], map: "customer_pool_hidden_field_pkey")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_c821b6c95c")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_8659cb28cc")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_c821b6c95c")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_8659cb28cc")
     @@map("customer_pool_hidden_field")
   }
 
@@ -1441,10 +1441,10 @@ namespace public {
     pool             CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_pick_rule_pool_id_fkey")
 
     @@index([poolId], map: "customer_pool_pick_rule_pool_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_8e1f4f0cbc")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_c45a299d51")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_a3e28d7fa8")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_e176d77522")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8e1f4f0cbc")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_c45a299d51")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_a3e28d7fa8")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_e176d77522")
     @@map("customer_pool_pick_rule")
   }
 
@@ -1460,11 +1460,11 @@ namespace public {
     pool       CustomerPool @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_pool_recycle_rule_pool_id_fkey")
 
     @@index([poolId], map: "customer_pool_recycle_rule_pool_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_e344f054fb")
-    @@check(expression: "char_length(\"pool_id\") <= 32", name: "p3_varchar_len_58367e4ec0")
-    @@check(expression: "char_length(\"operator\") <= 10", name: "p3_varchar_len_f52029aba9")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_226a9c0c41")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_e4be687f0f")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_e344f054fb")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_58367e4ec0")
+    @@check(expression: "char_length(\"operator\") <= 10", name: "text_len_f52029aba9")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_226a9c0c41")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_e4be687f0f")
     @@map("customer_pool_recycle_rule")
   }
 
@@ -1479,9 +1479,9 @@ namespace public {
     @@index([sourceCustomerId], map: "customer_relation_source_customer_id_idx")
     @@index([sourceCustomerId, targetCustomerId], map: "customer_relation_source_customer_id_target_customer_id_key", unique: true)
     @@index([targetCustomerId], map: "customer_relation_target_customer_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_eec575839d")
-    @@check(expression: "char_length(\"source_customer_id\") <= 32", name: "p3_varchar_len_a01e50c009")
-    @@check(expression: "char_length(\"target_customer_id\") <= 32", name: "p3_varchar_len_7f9b6ed5ba")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_eec575839d")
+    @@check(expression: "char_length(\"source_customer_id\") <= 32", name: "text_len_a01e50c009")
+    @@check(expression: "char_length(\"target_customer_id\") <= 32", name: "text_len_7f9b6ed5ba")
     @@map("customer_relation")
   }
 
@@ -1501,12 +1501,12 @@ namespace public {
     @@index([organizationId], map: "dashboard_module_organization_id_idx")
     @@index([parentId], map: "dashboard_module_parent_id_idx")
     @@index([pos], map: "dashboard_module_pos_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_7278e4f8d2")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_2e71bf6957")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_661fbd64b2")
-    @@check(expression: "char_length(\"parent_id\") <= 32", name: "p3_varchar_len_aa72b16373")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_6fefe797e6")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_1669e3cb79")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_7278e4f8d2")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_2e71bf6957")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_661fbd64b2")
+    @@check(expression: "char_length(\"parent_id\") <= 32", name: "text_len_aa72b16373")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_6fefe797e6")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_1669e3cb79")
     @@map("dashboard_module")
   }
 
@@ -1529,14 +1529,14 @@ namespace public {
     @@index([dashboardModuleId], map: "dashboard_dashboard_module_id_idx")
     @@index([name], map: "dashboard_name_idx")
     @@index([organizationId], map: "dashboard_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_8cda8befd3")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_326f0ac9ca")
-    @@check(expression: "char_length(\"resource_url\") <= 500", name: "p3_varchar_len_e7c672edc8")
-    @@check(expression: "char_length(\"dashboard_module_id\") <= 32", name: "p3_varchar_len_4d12bb78d8")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_a5cf833252")
-    @@check(expression: "char_length(\"description\") <= 1000", name: "p3_varchar_len_744584be9d")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_85c543a208")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_9a9fecf28d")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8cda8befd3")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_326f0ac9ca")
+    @@check(expression: "char_length(\"resource_url\") <= 500", name: "text_len_e7c672edc8")
+    @@check(expression: "char_length(\"dashboard_module_id\") <= 32", name: "text_len_4d12bb78d8")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_a5cf833252")
+    @@check(expression: "char_length(\"description\") <= 1000", name: "text_len_744584be9d")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_85c543a208")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_9a9fecf28d")
     @@map("dashboard")
   }
 
@@ -1552,11 +1552,11 @@ namespace public {
 
     @@index([userId, dashboardId], map: "dashboard_collection_user_id_dashboard_id_key", unique: true)
     @@index([userId], map: "dashboard_collection_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_65c137704e")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_5d587b1c56")
-    @@check(expression: "char_length(\"dashboard_id\") <= 32", name: "p3_varchar_len_d28598b508")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_34a31205a8")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_d82e7c03c1")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_65c137704e")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_5d587b1c56")
+    @@check(expression: "char_length(\"dashboard_id\") <= 32", name: "text_len_d28598b508")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_34a31205a8")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_d82e7c03c1")
     @@map("dashboard_collection")
   }
 
@@ -2094,13 +2094,13 @@ namespace public {
 
     @@index([organizationId, resourceId, parentId, createTime], map: "follow_plan_comment_page_idx")
     @@index([parentId], map: "follow_up_plan_comment_parent_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_ec4cf66f8e")
-    @@check(expression: "char_length(\"parent_id\") <= 32", name: "p3_varchar_len_0d615a219b")
-    @@check(expression: "char_length(\"reply_to_user_id\") <= 32", name: "p3_varchar_len_b9f00240c9")
-    @@check(expression: "char_length(\"content\") <= 3000", name: "p3_varchar_len_6070f1b64d")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_e45eb10af1")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_0877041f2d")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_7e3ce45786")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ec4cf66f8e")
+    @@check(expression: "char_length(\"parent_id\") <= 32", name: "text_len_0d615a219b")
+    @@check(expression: "char_length(\"reply_to_user_id\") <= 32", name: "text_len_b9f00240c9")
+    @@check(expression: "char_length(\"content\") <= 3000", name: "text_len_6070f1b64d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_e45eb10af1")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_0877041f2d")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_7e3ce45786")
     @@map("follow_up_plan_comment")
   }
 
@@ -2113,9 +2113,9 @@ namespace public {
     @@index([commentId], map: "follow_up_plan_comment_mention_comment_id_idx")
     @@index([commentId, userId], map: "follow_up_plan_comment_mention_comment_id_user_id_key", unique: true)
     @@index([userId], map: "follow_up_plan_comment_mention_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_10921ebfee")
-    @@check(expression: "char_length(\"comment_id\") <= 32", name: "p3_varchar_len_7439c4bfe0")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_1c71ffcaa8")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_10921ebfee")
+    @@check(expression: "char_length(\"comment_id\") <= 32", name: "text_len_7439c4bfe0")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_1c71ffcaa8")
     @@map("follow_up_plan_comment_mention")
   }
 
@@ -2128,9 +2128,9 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "follow_up_plan_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "follow_up_plan_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_ef5f9fe26a")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_70a1def1ae")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_dfa876535d")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ef5f9fe26a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_70a1def1ae")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_dfa876535d")
     @@map("follow_up_plan_field")
   }
 
@@ -2143,8 +2143,8 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "follow_up_plan_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "follow_up_plan_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_0d37f37cce")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_7344f45836")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_0d37f37cce")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_7344f45836")
     @@map("follow_up_plan_field_blob")
   }
 
@@ -2191,13 +2191,13 @@ namespace public {
 
     @@index([organizationId, resourceId, parentId, createTime], map: "follow_record_comment_page_idx")
     @@index([parentId], map: "follow_up_record_comment_parent_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_950fdc82da")
-    @@check(expression: "char_length(\"parent_id\") <= 32", name: "p3_varchar_len_84c895a804")
-    @@check(expression: "char_length(\"reply_to_user_id\") <= 32", name: "p3_varchar_len_d3473ec9cd")
-    @@check(expression: "char_length(\"content\") <= 3000", name: "p3_varchar_len_aa5012c0ec")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_1a708d4f84")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_946797fe57")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_904bf1225c")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_950fdc82da")
+    @@check(expression: "char_length(\"parent_id\") <= 32", name: "text_len_84c895a804")
+    @@check(expression: "char_length(\"reply_to_user_id\") <= 32", name: "text_len_d3473ec9cd")
+    @@check(expression: "char_length(\"content\") <= 3000", name: "text_len_aa5012c0ec")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_1a708d4f84")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_946797fe57")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_904bf1225c")
     @@map("follow_up_record_comment")
   }
 
@@ -2210,9 +2210,9 @@ namespace public {
     @@index([commentId], map: "follow_up_record_comment_mention_comment_id_idx")
     @@index([commentId, userId], map: "follow_up_record_comment_mention_comment_id_user_id_key", unique: true)
     @@index([userId], map: "follow_up_record_comment_mention_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_db822e9027")
-    @@check(expression: "char_length(\"comment_id\") <= 32", name: "p3_varchar_len_96f2ca837a")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_5e06a4cdc9")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_db822e9027")
+    @@check(expression: "char_length(\"comment_id\") <= 32", name: "text_len_96f2ca837a")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_5e06a4cdc9")
     @@map("follow_up_record_comment_mention")
   }
 
@@ -2225,9 +2225,9 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "follow_up_record_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "follow_up_record_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_97e7e6742a")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_7a908f8024")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_ab079fafa7")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_97e7e6742a")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_7a908f8024")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_ab079fafa7")
     @@map("follow_up_record_field")
   }
 
@@ -2240,8 +2240,8 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "follow_up_record_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "follow_up_record_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_eadaad40bd")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_14f0f2cee8")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_eadaad40bd")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_14f0f2cee8")
     @@map("follow_up_record_field_blob")
   }
 
@@ -2404,13 +2404,13 @@ namespace public {
 
     @@index([organizationId], map: "opportunity_stage_config_organization_id_idx")
     @@index([organizationId, pos], map: "opportunity_stage_config_organization_id_pos_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_5b2b3efd29")
-    @@check(expression: "char_length(\"name\") <= 16", name: "p3_varchar_len_48d9074b29")
-    @@check(expression: "char_length(\"type\") <= 50", name: "p3_varchar_len_abe0591377")
-    @@check(expression: "char_length(\"rate\") <= 10", name: "p3_varchar_len_eaea764b98")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_341230bc69")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_defcf24112")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_91ed7eb9f3")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5b2b3efd29")
+    @@check(expression: "char_length(\"name\") <= 16", name: "text_len_48d9074b29")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_abe0591377")
+    @@check(expression: "char_length(\"rate\") <= 10", name: "text_len_eaea764b98")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_341230bc69")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_defcf24112")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_91ed7eb9f3")
     @@map("opportunity_stage_config")
   }
 
@@ -2449,19 +2449,19 @@ namespace public {
     @@index([organizationId], map: "opportunity_organization_id_idx")
     @@index([owner], map: "opportunity_owner_idx")
     @@index([stage], map: "opportunity_stage_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_ec449b1762")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "p3_varchar_len_3b2aac4e23")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_622820f915")
-    @@check(expression: "char_length(\"products\") <= 1000", name: "p3_varchar_len_b47f4f693d")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_d3ee6d3659")
-    @@check(expression: "char_length(\"last_stage\") <= 32", name: "p3_varchar_len_3a8d46a44c")
-    @@check(expression: "char_length(\"stage\") <= 32", name: "p3_varchar_len_551b7054c2")
-    @@check(expression: "char_length(\"contact_id\") <= 32", name: "p3_varchar_len_d9736c3478")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_84a3997faf")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_34ff7ed1a5")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_3c8fda6f6a")
-    @@check(expression: "char_length(\"follower\") <= 32", name: "p3_varchar_len_f396842bff")
-    @@check(expression: "char_length(\"failure_reason\") <= 50", name: "p3_varchar_len_63f564f968")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_ec449b1762")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_3b2aac4e23")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_622820f915")
+    @@check(expression: "char_length(\"products\") <= 1000", name: "text_len_b47f4f693d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_d3ee6d3659")
+    @@check(expression: "char_length(\"last_stage\") <= 32", name: "text_len_3a8d46a44c")
+    @@check(expression: "char_length(\"stage\") <= 32", name: "text_len_551b7054c2")
+    @@check(expression: "char_length(\"contact_id\") <= 32", name: "text_len_d9736c3478")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_84a3997faf")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_34ff7ed1a5")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_3c8fda6f6a")
+    @@check(expression: "char_length(\"follower\") <= 32", name: "text_len_f396842bff")
+    @@check(expression: "char_length(\"failure_reason\") <= 50", name: "text_len_63f564f968")
     @@map("opportunity")
   }
 
@@ -2474,10 +2474,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "opportunity_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "opportunity_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_613c27c1ca")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_de3bb3d551")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_80fa4ffac4")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_818d61db28")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_613c27c1ca")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_de3bb3d551")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_80fa4ffac4")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_818d61db28")
     @@map("opportunity_field")
   }
 
@@ -2490,9 +2490,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "opportunity_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "opportunity_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_22dc803e87")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_859068ac0d")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_ae29841842")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_22dc803e87")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_859068ac0d")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_ae29841842")
     @@map("opportunity_field_blob")
   }
 
@@ -2519,13 +2519,13 @@ namespace public {
     @@index([createUser], map: "opportunity_quotation_create_user_idx")
     @@index([opportunityId], map: "opportunity_quotation_opportunity_id_idx")
     @@index([organizationId], map: "opportunity_quotation_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_dd6a73b1c2")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_24e2248239")
-    @@check(expression: "char_length(\"opportunity_id\") <= 32", name: "p3_varchar_len_05c1a9898f")
-    @@check(expression: "char_length(\"approval_status\") <= 50", name: "p3_varchar_len_6e903123f7")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_c25e0a61f9")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_f5a7a74355")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_74c8118038")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_dd6a73b1c2")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_24e2248239")
+    @@check(expression: "char_length(\"opportunity_id\") <= 32", name: "text_len_05c1a9898f")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_6e903123f7")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_c25e0a61f9")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_f5a7a74355")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_74c8118038")
     @@map("opportunity_quotation")
   }
 
@@ -2542,13 +2542,13 @@ namespace public {
     @@index([refSubId], map: "opportunity_quotation_field_ref_sub_id_idx")
     @@index([resourceId], map: "opportunity_quotation_field_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_8f0a30dacd")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_84e21673f1")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_20b1188e43")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_5eeb95236b")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_fd32dcd147")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_e20ad687d9")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_9b05ad5692")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8f0a30dacd")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_84e21673f1")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_20b1188e43")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_5eeb95236b")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_fd32dcd147")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_e20ad687d9")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_9b05ad5692")
     @@map("opportunity_quotation_field")
   }
 
@@ -2565,12 +2565,12 @@ namespace public {
     @@index([refSubId], map: "opportunity_quotation_field_blob_ref_sub_id_idx")
     @@index([resourceId], map: "opportunity_quotation_field_blob_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_opp_quotation_field_blob_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_d23f86bb9f")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_40dd514b08")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_fcc1c191ff")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_24f4683c3e")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_56861e657f")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_2f824cb4bd")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d23f86bb9f")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_40dd514b08")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_fcc1c191ff")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_24f4683c3e")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_56861e657f")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_2f824cb4bd")
     @@map("opportunity_quotation_field_blob")
   }
 
@@ -2582,8 +2582,8 @@ namespace public {
     quotation      OpportunityQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "opportunity_quotation_snapshot_quotation_id_fkey")
 
     @@index([quotationId], map: "opportunity_quotation_snapshot_quotation_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_9e8c52df5d")
-    @@check(expression: "char_length(\"quotation_id\") <= 32", name: "p3_varchar_len_2ce426a80b")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9e8c52df5d")
+    @@check(expression: "char_length(\"quotation_id\") <= 32", name: "text_len_2ce426a80b")
     @@map("opportunity_quotation_snapshot")
   }
 
@@ -2603,12 +2603,12 @@ namespace public {
     updateUser     String  @map("update_user")
 
     @@index([organizationId], map: "opportunity_rule_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_691c2aa5d0")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_05806e4984")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_38bca8ed0f")
-    @@check(expression: "char_length(\"operator\") <= 10", name: "p3_varchar_len_bf0fb603cc")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_a4760807e7")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_18c2d15c27")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_691c2aa5d0")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_05806e4984")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_38bca8ed0f")
+    @@check(expression: "char_length(\"operator\") <= 10", name: "text_len_bf0fb603cc")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_a4760807e7")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_18c2d15c27")
     @@map("opportunity_rule")
   }
 
@@ -2672,12 +2672,12 @@ namespace public {
     @@index([name], map: "product_name_idx")
     @@index([organizationId], map: "product_organization_id_idx")
     @@index([organizationId, pos], map: "product_organization_id_pos_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_05f010ec36")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_dc1ea77438")
-    @@check(expression: "char_length(\"status\") <= 32", name: "p3_varchar_len_00cd50f630")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_3e6f44e077")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_fe700ff710")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_0e7493741b")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_05f010ec36")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_dc1ea77438")
+    @@check(expression: "char_length(\"status\") <= 32", name: "text_len_00cd50f630")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_3e6f44e077")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_fe700ff710")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_0e7493741b")
     @@map("product")
   }
 
@@ -2690,10 +2690,10 @@ namespace public {
 
     @@index([resourceId, fieldId, fieldValue], map: "product_field_resource_id_field_id_field_value_idx")
     @@index([resourceId, fieldId], map: "product_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_31591b8b6b")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_e97ecf50f8")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_d4bf21cfa5")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_a526a646b4")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_31591b8b6b")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_e97ecf50f8")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_d4bf21cfa5")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_a526a646b4")
     @@map("product_field")
   }
 
@@ -2706,9 +2706,9 @@ namespace public {
 
     @@index([resourceId, fieldId], map: "product_field_blob_resource_id_field_id_key", unique: true)
     @@index([resourceId], map: "product_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_d401ee3ab2")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_ae92d4d529")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_ca73d1618f")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_d401ee3ab2")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_ae92d4d529")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_ca73d1618f")
     @@map("product_field_blob")
   }
 
@@ -2728,12 +2728,12 @@ namespace public {
     @@index([organizationId], map: "product_price_organization_id_idx")
     @@index([organizationId, pos], map: "product_price_organization_id_pos_idx")
     @@index([status], map: "product_price_status_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_87555357e9")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_3bc824f60d")
-    @@check(expression: "char_length(\"status\") <= 32", name: "p3_varchar_len_e922f06826")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_41edf107c2")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_f7df8a8a1b")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_6215f8473b")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_87555357e9")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_3bc824f60d")
+    @@check(expression: "char_length(\"status\") <= 32", name: "text_len_e922f06826")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_41edf107c2")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_f7df8a8a1b")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_6215f8473b")
     @@map("product_price")
   }
 
@@ -2750,13 +2750,13 @@ namespace public {
     @@index([refSubId], map: "product_price_field_ref_sub_id_idx")
     @@index([resourceId], map: "product_price_field_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_045d0fd445")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_1bbeb4acc1")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_c09c2086b4")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_212d6874c4")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_70d962ae79")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_7f1d2dd48c")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_64d9060f8d")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_045d0fd445")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_1bbeb4acc1")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_c09c2086b4")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_212d6874c4")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_70d962ae79")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_7f1d2dd48c")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_64d9060f8d")
     @@map("product_price_field")
   }
 
@@ -2773,12 +2773,12 @@ namespace public {
     @@index([refSubId], map: "product_price_field_blob_ref_sub_id_idx")
     @@index([resourceId], map: "product_price_field_blob_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_price_field_blob_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_8074ecc6ab")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_d112550aa2")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_7156f6463c")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_74dbe9077d")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_8c64cefc7b")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_95d0bbb912")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_8074ecc6ab")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_d112550aa2")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_7156f6463c")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_74dbe9077d")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_8c64cefc7b")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_95d0bbb912")
     @@map("product_price_field_blob")
   }
 
@@ -2814,17 +2814,17 @@ namespace public {
     @@index([organizationId], map: "sales_order_organization_id_idx")
     @@index([owner], map: "sales_order_owner_idx")
     @@index([stage], map: "sales_order_stage_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_eb6f382418")
-    @@check(expression: "char_length(\"number\") <= 50", name: "p3_varchar_len_79010a404f")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_0fac2a9972")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "p3_varchar_len_b7ba4ed88a")
-    @@check(expression: "char_length(\"contract_id\") <= 32", name: "p3_varchar_len_a3bef44295")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "p3_varchar_len_271e9f4b09")
-    @@check(expression: "char_length(\"stage\") <= 50", name: "p3_varchar_len_47f28982a6")
-    @@check(expression: "char_length(\"approval_status\") <= 50", name: "p3_varchar_len_aab042246d")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_b0c9fdabaf")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_22b473b34b")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_1c040c4672")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_eb6f382418")
+    @@check(expression: "char_length(\"number\") <= 50", name: "text_len_79010a404f")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_0fac2a9972")
+    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_b7ba4ed88a")
+    @@check(expression: "char_length(\"contract_id\") <= 32", name: "text_len_a3bef44295")
+    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_271e9f4b09")
+    @@check(expression: "char_length(\"stage\") <= 50", name: "text_len_47f28982a6")
+    @@check(expression: "char_length(\"approval_status\") <= 50", name: "text_len_aab042246d")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_b0c9fdabaf")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_22b473b34b")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_1c040c4672")
     @@map("sales_order")
   }
 
@@ -2841,13 +2841,13 @@ namespace public {
     @@index([refSubId], map: "sales_order_field_ref_sub_id_idx")
     @@index([resourceId], map: "sales_order_field_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_9526a44864")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_24950e5be0")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_eec05d0ecf")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "p3_varchar_len_fd4b4e480c")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_be98eb82de")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_c90eee19b0")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_2189819737")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_9526a44864")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_24950e5be0")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_eec05d0ecf")
+    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_fd4b4e480c")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_be98eb82de")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_c90eee19b0")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_2189819737")
     @@map("sales_order_field")
   }
 
@@ -2864,12 +2864,12 @@ namespace public {
     @@index([refSubId], map: "sales_order_field_blob_ref_sub_id_idx")
     @@index([resourceId], map: "sales_order_field_blob_resource_id_idx")
     @@index([resourceId, refSubId, rowId, fieldId], map: "uk_order_field_blob_cell", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_6d4ff0fa43")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "p3_varchar_len_bbba703c45")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "p3_varchar_len_1c47cb3bdd")
-    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "p3_varchar_len_f96cf21409")
-    @@check(expression: "char_length(\"row_id\") <= 32", name: "p3_varchar_len_928333822a")
-    @@check(expression: "char_length(\"biz_id\") <= 32", name: "p3_varchar_len_8741da9ff1")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6d4ff0fa43")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_bbba703c45")
+    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_1c47cb3bdd")
+    @@check(expression: "char_length(\"ref_sub_id\") <= 32", name: "text_len_f96cf21409")
+    @@check(expression: "char_length(\"row_id\") <= 32", name: "text_len_928333822a")
+    @@check(expression: "char_length(\"biz_id\") <= 32", name: "text_len_8741da9ff1")
     @@map("sales_order_field_blob")
   }
 
@@ -2881,8 +2881,8 @@ namespace public {
     order      SalesOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sales_order_snapshot_order_id_fkey")
 
     @@index([orderId], map: "sales_order_snapshot_order_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_7cd485c4cb")
-    @@check(expression: "char_length(\"order_id\") <= 32", name: "p3_varchar_len_f3084b6bb0")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_7cd485c4cb")
+    @@check(expression: "char_length(\"order_id\") <= 32", name: "text_len_f3084b6bb0")
     @@map("sales_order_snapshot")
   }
 
@@ -2901,13 +2901,13 @@ namespace public {
     updateUser      String  @map("update_user")
 
     @@index([organizationId, pos], map: "sales_order_stage_config_organization_id_pos_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_2ea342a36a")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_950116ab36")
-    @@check(expression: "char_length(\"type\") <= 50", name: "p3_varchar_len_393a2e2418")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_a2e778d5c0")
-    @@check(expression: "char_length(\"circulation_type\") <= 50", name: "p3_varchar_len_3c0557013b")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_90e58bdf00")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_a12199c79c")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2ea342a36a")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_950116ab36")
+    @@check(expression: "char_length(\"type\") <= 50", name: "text_len_393a2e2418")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_a2e778d5c0")
+    @@check(expression: "char_length(\"circulation_type\") <= 50", name: "text_len_3c0557013b")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_90e58bdf00")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_a12199c79c")
     @@map("sales_order_stage_config")
   }
 
@@ -2927,13 +2927,13 @@ namespace public {
     @@index([moduleType], map: "idx_stage_advanced_type")
     @@index([organizationId, moduleType], map: "stage_advanced_config_organization_id_module_type_idx")
     @@index([organizationId, moduleType, originId, targetId], map: "uk_stage_advanced_transition", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_68376ebf2e")
-    @@check(expression: "char_length(\"origin_id\") <= 32", name: "p3_varchar_len_0a62ea5a42")
-    @@check(expression: "char_length(\"target_id\") <= 32", name: "p3_varchar_len_5c076ce4d0")
-    @@check(expression: "char_length(\"module_type\") <= 20", name: "p3_varchar_len_e615dd3a44")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_b68b1bb494")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_a96f9d882c")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_517f795671")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_68376ebf2e")
+    @@check(expression: "char_length(\"origin_id\") <= 32", name: "text_len_0a62ea5a42")
+    @@check(expression: "char_length(\"target_id\") <= 32", name: "text_len_5c076ce4d0")
+    @@check(expression: "char_length(\"module_type\") <= 20", name: "text_len_e615dd3a44")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_b68b1bb494")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_a96f9d882c")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_517f795671")
     @@map("stage_advanced_config")
   }
 
@@ -2967,13 +2967,13 @@ namespace public {
 
     @@index([organizationId, module, pos], map: "sys_dict_organization_id_module_pos_idx")
     @@index([organizationId, name], map: "sys_dict_organization_id_name_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_f1d6ad0788")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_f047ae1ac7")
-    @@check(expression: "char_length(\"module\") <= 20", name: "p3_varchar_len_dbbac9e846")
-    @@check(expression: "char_length(\"type\") <= 10", name: "p3_varchar_len_21ddcac428")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_d43fa79cb9")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_0c203ac26a")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_bf2aed7d8a")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_f1d6ad0788")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_f047ae1ac7")
+    @@check(expression: "char_length(\"module\") <= 20", name: "text_len_dbbac9e846")
+    @@check(expression: "char_length(\"type\") <= 10", name: "text_len_21ddcac428")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_d43fa79cb9")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_0c203ac26a")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_bf2aed7d8a")
     @@map("sys_dict")
   }
 
@@ -2983,8 +2983,8 @@ namespace public {
     enabled        Boolean     @default(false)
 
     @@id([module, organizationId], map: "sys_dict_config_pkey")
-    @@check(expression: "char_length(\"module\") <= 20", name: "p3_varchar_len_89fae4789f")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_cffd86eac0")
+    @@check(expression: "char_length(\"module\") <= 20", name: "text_len_89fae4789f")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_cffd86eac0")
     @@map("sys_dict_config")
   }
 
@@ -3001,11 +3001,11 @@ namespace public {
 
     @@index([organizationId, formKey], map: "sys_module_form_organization_id_form_key_key", unique: true)
     @@index([organizationId], map: "sys_module_form_organization_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_6abccafc27")
-    @@check(expression: "char_length(\"form_key\") <= 50", name: "p3_varchar_len_d9e172c479")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_d166cde218")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_067b8b56a7")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_b9bb5f72a5")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6abccafc27")
+    @@check(expression: "char_length(\"form_key\") <= 50", name: "text_len_d9e172c479")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_d166cde218")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_067b8b56a7")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_b9bb5f72a5")
     @@map("sys_module_form")
   }
 
@@ -3026,13 +3026,13 @@ namespace public {
 
     @@index([formId, internalKey], map: "sys_module_field_form_id_internal_key_idx")
     @@index([mobile], map: "sys_module_field_mobile_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_cb3414a8a8")
-    @@check(expression: "char_length(\"form_id\") <= 32", name: "p3_varchar_len_8495fda9c6")
-    @@check(expression: "char_length(\"internal_key\") <= 255", name: "p3_varchar_len_7552706619")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_376ea96536")
-    @@check(expression: "char_length(\"type\") <= 20", name: "p3_varchar_len_333696dc88")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_00c8265091")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_75e3d9b067")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_cb3414a8a8")
+    @@check(expression: "char_length(\"form_id\") <= 32", name: "text_len_8495fda9c6")
+    @@check(expression: "char_length(\"internal_key\") <= 255", name: "text_len_7552706619")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_376ea96536")
+    @@check(expression: "char_length(\"type\") <= 20", name: "text_len_333696dc88")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_00c8265091")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_75e3d9b067")
     @@map("sys_module_field")
   }
 
@@ -3041,7 +3041,7 @@ namespace public {
     prop           String?
     sysModuleField SysModuleField @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_field_blob_id_fkey")
 
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_a77b03c46e")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_a77b03c46e")
     @@map("sys_module_field_blob")
   }
 
@@ -3050,7 +3050,7 @@ namespace public {
     prop          String?
     sysModuleForm SysModuleForm @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_module_form_blob_id_fkey")
 
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_6c53e9d0f2")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_6c53e9d0f2")
     @@map("sys_module_form_blob")
   }
 
@@ -3075,14 +3075,14 @@ namespace public {
     @@index([organizationId, userId, resourceType, name], map: "sys_user_view_organization_id_user_id_resource_type_name_key", unique: true)
     @@index([resourceType], map: "sys_user_view_resource_type_idx")
     @@index([userId], map: "sys_user_view_user_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_bcb25539fb")
-    @@check(expression: "char_length(\"user_id\") <= 32", name: "p3_varchar_len_86235f6ef0")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_9183e947ff")
-    @@check(expression: "char_length(\"resource_type\") <= 50", name: "p3_varchar_len_03d696169b")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "p3_varchar_len_bc3356a9a8")
-    @@check(expression: "char_length(\"search_mode\") <= 10", name: "p3_varchar_len_b7658ab2cb")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_81834f47ea")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_5d1424fa80")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_bcb25539fb")
+    @@check(expression: "char_length(\"user_id\") <= 32", name: "text_len_86235f6ef0")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_9183e947ff")
+    @@check(expression: "char_length(\"resource_type\") <= 50", name: "text_len_03d696169b")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_bc3356a9a8")
+    @@check(expression: "char_length(\"search_mode\") <= 10", name: "text_len_b7658ab2cb")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_81834f47ea")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_5d1424fa80")
     @@map("sys_user_view")
   }
 
@@ -3103,13 +3103,13 @@ namespace public {
     sysUserView   SysUserView  @relation(fields: [sysUserViewId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "sys_user_view_condition_sys_user_view_id_fkey")
 
     @@index([sysUserViewId], map: "sys_user_view_condition_sys_user_view_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "p3_varchar_len_fa9c03a5ba")
-    @@check(expression: "char_length(\"sys_user_view_id\") <= 32", name: "p3_varchar_len_e26c14f1c6")
-    @@check(expression: "char_length(\"name\") <= 255", name: "p3_varchar_len_14ef5b0f9c")
-    @@check(expression: "char_length(\"type\") <= 20", name: "p3_varchar_len_76f1867d2c")
-    @@check(expression: "char_length(\"operator\") <= 20", name: "p3_varchar_len_f3eae91a07")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "p3_varchar_len_f6b51655ac")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "p3_varchar_len_ab2c9a41ea")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_fa9c03a5ba")
+    @@check(expression: "char_length(\"sys_user_view_id\") <= 32", name: "text_len_e26c14f1c6")
+    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_14ef5b0f9c")
+    @@check(expression: "char_length(\"type\") <= 20", name: "text_len_76f1867d2c")
+    @@check(expression: "char_length(\"operator\") <= 20", name: "text_len_f3eae91a07")
+    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_f6b51655ac")
+    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_ab2c9a41ea")
     @@map("sys_user_view_condition")
   }
 

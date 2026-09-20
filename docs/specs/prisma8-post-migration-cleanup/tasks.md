@@ -50,6 +50,7 @@
 - [x] P5.5 Docker release smoke。
 - [x] P5.6 Browser 代表性回归与 API runtime log 扫描。
 - [x] P5.7 文档封板为 `VERIFIED`。
+- [x] P5.8 Generated contract CHECK wire-name canonicalization。
 
 ## 当前执行指针
 
@@ -235,9 +236,19 @@ P5.7 最终文档封板已完成：
 - `docs/specs/README.md`、`docs/README.md`、`docs/project-progress.md`、`docs/alignment-log.md` 已同步 PRISMA8-002 最终事实；
 - `docs/architecture.md` 已删除过时的 `Prisma8Module / Prisma8Service` 与 fixture adapter 描述，改为 canonical `PrismaModule / PrismaService` + native PostgreSQL tests；
 - `docs/prisma-migration-policy.md` 已更新当前 migration graph 与 storage hash，同时保留 PRISMA8-001 handoff 时的历史证据语义；
-- 当前 canonical storage hash 为 `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`；
-- 当前正式 migration graph 为 baseline **672** + timestamp **126** + varchar **952**，合计 **3 migrations / 1750 operations**；
+- 当前 canonical storage hash 为 `dee42ec15d90123679a39e92cd8468c445ed20dea1161a6b69ba8c615206c7b1`；
+- 当前正式 migration graph 为 baseline **672** + timestamp **126** + varchar **952** + CHECK wire-name rename **476**，合计 **4 migrations / 2226 operations**；
 - 最终工程基线：root typecheck/build exit 0，lint **0 errors / 80 warnings**，API Rules **348/348 PASS、0 fail、0 skip**，existing/fresh PostgreSQL verify/status 全绿，原始 Docker release smoke **STATUS=0 / PASS**，Browser/runtime log gate 全绿；
 - 最终文档变更 `git diff --check` **PASS**；
 - `PRISMA8-002` 当前执行指针归零，不保留后续迁移期 cleanup task。
+
+P5.8 post-seal generated contract naming correction 已完成：
+
+- 用户审计发现 `apps/api/src/prisma/generated/contract.json` 虽已使用 text/timestamptz 正式类型，但 476 个长度 CHECK 的 wire prefix 仍继承 P3 迁移期命名 `p3_varchar_len_*`；
+- generated 文件没有被直接编辑；上游 `contract.prisma` 的 476 个 `@@check(name:)` 统一改为 canonical `text_len_*`，重新 `contract emit` 后 generated 中 `p3_varchar_len_*` **0 refs**；
+- 单约束 rehearsal 证明 Prisma planner 生成 `ALTER TABLE ... RENAME CONSTRAINT`；正式 migration `20260920T0347_canonical_check_constraint_names` 精确为 **476 operations / 476 widening renames / 0 non-rename**，不 drop/recreate CHECK、不修改列和数据；
+- existing DB 应用 **1 migration / 476 operations** 后，`db verify` PASS、`migration status` Up to date，`db` ref 前移到 `dee42ec15d90123679a39e92cd8468c445ed20dea1161a6b69ba8c615206c7b1`；物理 constraint 统计 `text_len_* = 476`、`p3_varchar_len_* = 0`；
+- fresh PostgreSQL 从空库重放 **4 migrations / 2226 operations**，bootstrap Seed / verify / status 全绿，constraint 统计同样为 `476 / 0 / 476`，临时数据库已删除；
+- generated model fields 对 `CodecTypes['pg/varchar@1']` 实际引用 **0**；`pg/varchar@1` 若出现在 generated codec catalog 中，仅是 Prisma PostgreSQL target 的通用 codec 能力声明，不代表当前 schema 使用 varchar；
+- API typecheck/build **exit 0**，完整 API Rules **348/348 PASS、0 fail、0 skip**，`git diff --check` PASS。
 
