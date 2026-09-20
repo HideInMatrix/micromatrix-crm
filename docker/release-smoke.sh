@@ -38,7 +38,7 @@ fi
 echo '[docker-release] validating API workspace dependency scope'
 grep -Fq 'FROM node:25-alpine AS base' docker/api.Dockerfile
 grep -Fq 'npm install --global pnpm@11.25.0' docker/api.Dockerfile
-grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate --filter @micromatrix/api...' docker/api.Dockerfile
+grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/api...' docker/api.Dockerfile
 grep -Fq 'pnpm --config.inject-workspace-packages=true --filter @micromatrix/api --prod --no-optional deploy' docker/api.Dockerfile
 if grep -Fq 'COPY apps/web/package.json apps/web/package.json' docker/api.Dockerfile; then
   echo '[docker-release] API image must not install Web workspace dependencies' >&2
@@ -52,12 +52,13 @@ fi
 echo '[docker-release] validating migration image isolation'
 grep -Fq 'FROM node:25-alpine AS base' docker/migrate.Dockerfile
 grep -Fq 'npm install --global pnpm@11.25.0' docker/migrate.Dockerfile
-grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate... --filter @micromatrix/api...' docker/migrate.Dockerfile
+grep -Fq 'pnpm install --frozen-lockfile --filter @micromatrix/migrate...' docker/migrate.Dockerfile
 grep -Fq 'pnpm --filter @micromatrix/shared build' docker/migrate.Dockerfile
+grep -Fq -- '--filter @micromatrix/migrate --prod deploy' docker/migrate.Dockerfile
 grep -Fq 'COPY apps/api/migrations apps/api/migrations' docker/migrate.Dockerfile
 grep -Fq 'COPY apps/api/prisma.config.ts apps/api/prisma.config.ts' docker/migrate.Dockerfile
-grep -Fq '&& prisma contract emit' docker/migrate.Dockerfile
-grep -Fq './node_modules/.bin/prisma db migrate' docker/release-init.sh
+grep -Fq 'RUN node ./prisma-orm.mjs contract emit' docker/migrate.Dockerfile
+grep -Fq 'node ./prisma-orm.mjs db migrate' docker/release-init.sh
 grep -Fq 'ENTRYPOINT ["./release-init.sh"]' docker/migrate.Dockerfile
 
 echo '[docker-release] building API image'
@@ -106,7 +107,18 @@ echo '[docker-release] validating API runtime excludes build/migration tooling a
 docker run --rm --entrypoint sh "$API_IMAGE" -c 'test ! -f /app/.env && test ! -e /app/node_modules/.bin/prisma && test -f /app/dist/main.js && test -f /app/dist/worker.js'
 
 echo '[docker-release] applying Prisma migrations and bootstrap data from initialization image'
-docker run --rm --entrypoint sh "$MIGRATE_IMAGE" -c 'test ! -f /app/.env && test -x /app/node_modules/.bin/prisma && test -x /app/node_modules/.bin/tsx && test -f /app/prisma.config.ts && test -d /app/migrations'
+docker run --rm --entrypoint sh "$MIGRATE_IMAGE" -c '
+  test ! -f /app/.env &&
+  test ! -e /app/node_modules/.bin/prisma &&
+  test ! -e /app/node_modules/prisma &&
+  test -f /app/prisma-orm.mjs &&
+  node /app/prisma-orm.mjs db sign --help >/dev/null &&
+  test -x /app/node_modules/.bin/tsx &&
+  test -f /app/prisma.config.ts &&
+  test -d /app/migrations &&
+  ! find /app/node_modules/.pnpm -maxdepth 1 -type d |
+    grep -Eq "/(alchemy@|@prisma\+composer-cli@|@distilled\.cloud\+aws@|@distilled\.cloud\+cloudflare@|@cloudflare\+workerd-)"
+'
 docker run --rm \
   --network "$NETWORK" \
   -e NODE_ENV=production \
@@ -119,7 +131,7 @@ docker run --rm \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
   "$MIGRATE_IMAGE" \
-  ./node_modules/.bin/prisma db verify
+  node ./prisma-orm.mjs db verify
 
 echo '[docker-release] validating Prisma 8 migration graph status'
 docker run --rm \
@@ -127,7 +139,7 @@ docker run --rm \
   -e NODE_ENV=production \
   -e DATABASE_URL="$DATABASE_URL" \
   "$MIGRATE_IMAGE" \
-  ./node_modules/.bin/prisma migration status --ascii
+  node ./prisma-orm.mjs migration status --ascii
 
 echo '[docker-release] starting worker entry from API image'
 docker run -d \

@@ -38,9 +38,17 @@ git push origin v0.0.1
 
 `@micromatrix/shared` 的 `main` / `types` 都指向 `packages/shared/dist`。GitHub Runner 是全新 checkout，不存在开发机残留的 `dist`，因此源码校验必须先生成 shared 构建产物再校验 API/Web。根 `pnpm typecheck` 和 `pnpm build` 均按 `shared → api → web` 的依赖顺序执行，避免本地缓存掩盖 workspace 跨包问题。
 
-镜像构建阶段继续收窄 workspace 依赖：API builder 安装 `@micromatrix/migrate` 与 `@micromatrix/api...` 所需依赖；Migration builder 以 `@micromatrix/migrate...` 带入 shared，并先构建 `@micromatrix/shared` 后执行 production deploy；Web builder 只安装 PC/Mobile + frontend-shared/shared 依赖。API runtime 使用 Alpine + pnpm dedicated-lockfile `--prod --no-optional` deploy，不再携带 Prisma CLI、Studio、TypeScript 等构建/迁移工具。
+镜像构建阶段继续收窄 workspace 依赖：API builder 只安装 `@micromatrix/api...`（包含 shared）所需依赖；Migration builder 只安装 `@micromatrix/migrate...`（包含 shared），并先构建 `@micromatrix/shared` 后执行 production deploy；Web builder 只安装 PC/Mobile + frontend-shared/shared 依赖。API runtime 使用 Alpine + pnpm dedicated-lockfile `--prod --no-optional` deploy，不携带 Prisma CLI、Studio、TypeScript 等构建/迁移工具。Migration runtime 保留 ORM toolchain 声明的 platform optional binaries（例如 esbuild 对应平台 binding），不通过 `--no-optional` 冒险裁剪执行依赖。
 
-独立 Migration 镜像负责 `prisma migrate deploy + bootstrap Seed`。Seed 当前复用 shared 的消息任务定义，因此 `@micromatrix/migrate` 必须显式依赖 `@micromatrix/shared`；Docker builder 也必须 COPY/build shared，禁止依赖开发机残留的 `packages/shared/dist`。
+独立 Migration 镜像负责 Prisma 8 `db migrate + bootstrap Seed`。为避免完整 Prisma Platform CLI 把 Composer/Alchemy/AWS/Cloudflare 工具链带入生产镜像，Migration runtime 使用仓库内 `packages/migrate/prisma-orm.mjs`，仅挂载 `@prisma/orm-toolchain` 的 contract/db/migration command family；完整 `prisma` CLI 仍保留在开发/CI 工具链。Seed 当前复用 shared 的消息任务定义，因此 `@micromatrix/migrate` 必须显式依赖 `@micromatrix/shared`；Docker builder 也必须 COPY/build shared，禁止依赖开发机残留的 `packages/shared/dist`。
+
+Migration runtime 瘦身基线（2026-09-20）：
+
+- 优化前 release-smoke Migration image 展开后的 `/app` 约 **1.0 GiB**，其中 `/app/node_modules/.pnpm` 约 **1021.2 MiB**；主要膨胀来自顶层 `prisma@8.0.0-rc.14` 间接引入的 Composer / Alchemy / AWS / Cloudflare / Workerd 平台工具链，而不是 migration graph 本身。
+- 优化后 `@micromatrix/migrate` 不再把顶层 `prisma` 作为 production dependency；发布 runtime 直接使用公开的 `@prisma/cli-engine` + `@prisma/orm-toolchain/cli`，只注册 `contract emit`、`db migrate`、`db sign`、`db verify`、`migration check`、`migration status`。
+- 按当前已安装 package 的 production dependency + peer + platform optional dependency 实体计算，新 runtime closure 为约 **120 packages / 124.9 MiB package payload**；Composer / Alchemy / `@distilled.cloud/*` / `@cloudflare/*` 可达依赖为 **0**。该数值用于依赖闭包审计，不等同于最终 registry 压缩镜像大小。
+- Migration image 保留 ORM toolchain 自身声明的平台 optional binaries；不得使用 `--no-optional` 强删 esbuild 等执行依赖。Release smoke 会显式拒绝 Prisma Platform / Alchemy / AWS / Cloudflare 相关 package 再进入 Migration runtime。
+- Thin ORM CLI 已通过 existing PostgreSQL no-op migrate/verify/status、fresh PostgreSQL **4 migrations / 2226 operations**、bootstrap Seed、`migration check`、`db sign --no-advance-ref` 和 marker verify。最终 Docker layer 压缩体积仍以实际 build/registry 产物为准。
 
 以 `v0.0.1` 为例，至少可使用：
 

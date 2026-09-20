@@ -11,14 +11,14 @@ RUN npm install --global pnpm@11.25.0
 WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY apps/api/package.json apps/api/package.json
 COPY packages/migrate/package.json packages/migrate/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
-  pnpm install --frozen-lockfile --filter @micromatrix/migrate... --filter @micromatrix/api...
+  pnpm install --frozen-lockfile --filter @micromatrix/migrate...
 
 COPY packages/shared packages/shared
+COPY packages/migrate packages/migrate
 
 COPY apps/api/prisma apps/api/prisma
 COPY apps/api/migrations apps/api/migrations
@@ -31,10 +31,7 @@ COPY apps/api/src/prisma/generated/contract.json apps/api/src/prisma/generated/c
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
   pnpm --filter @micromatrix/shared build \
-  && pnpm --config.inject-workspace-packages=true --filter @micromatrix/migrate --prod deploy /opt/micromatrix-migrate \
-  && export PATH=/workspace/packages/migrate/node_modules/.bin:$PATH \
-  && cd apps/api \
-  && prisma contract emit
+  && pnpm --config.inject-workspace-packages=true --filter @micromatrix/migrate --prod deploy /opt/micromatrix-migrate
 
 FROM base AS runtime
 
@@ -49,6 +46,8 @@ COPY --from=builder --chown=node:node /workspace/apps/api/prisma.config.ts ./pri
 COPY --from=builder --chown=node:node /workspace/apps/api/src/modules/metadata/system-fields.ts ./src/modules/metadata/system-fields.ts
 COPY --from=builder --chown=node:node /workspace/apps/api/src/prisma ./src/prisma
 COPY --chown=node:node --chmod=755 docker/release-init.sh ./release-init.sh
+
+RUN node ./prisma-orm.mjs contract emit
 
 USER node
 

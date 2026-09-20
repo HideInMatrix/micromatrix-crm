@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { definePrismaConfig } from 'prisma/config'
+import { definePrismaConfig } from '@prisma/cli-engine'
 import { defineConfig as definePostgresConfig } from '@prisma/orm-postgres/config'
 
 export default definePrismaConfig({
