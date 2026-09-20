@@ -7,16 +7,6 @@
 
 # 功能对齐记录
 
-## 2026-09-20：PRISMA8-003 Prisma 8 Generated Contract 语义核实
-
-- 用户复核 `apps/api/src/prisma/generated/` 后提出该目录为何仍只有 `contract.json / contract.d.ts`。进一步按 Prisma 8 官方文档核实后确认：这两份文件本身就是 Prisma 8 正式 generated contract artifact，并非迁移未完成。
-- 当前 production runtime 仍由 `prisma-client.ts` 手工加载 `generated/contract.json` + `Contract`，并构造 `PostgresClient<Contract>`；现有业务约 `.orm.public.` **2746 calls / 168 files**，transaction 约 **167 calls / 49 files**，因此本次按独立基础设施单元治理，不做无计划 big-bang。
-- Prisma 8 官方 PostgreSQL runtime 直接加载 contract JSON/type 并通过 `postgres<Contract>()` 创建 client，模型从 `.orm.public` 访问；当前项目 runtime 与该正式架构一致。
-- 传统 `provider = "prisma-client"` generator 的确支持 `moduleFormat = "cjs"`，但该配置属于旧/传统 generated-client architecture，不属于 Prisma 8 contract config；不得为了 CJS 将项目回退到另一套 ORM architecture。
-- PRISMA8-003 继续固定单 source-of-truth：只维护 `apps/api/prisma/contract.prisma`，不新增第二份 schema。
-- 当前 database graph 保持 **4 migrations / 2226 operations**、storage hash `dee42ec15d90123679a39e92cd8468c445ed20dea1161a6b69ba8c615206c7b1`；本任务默认不产生 DDL，也不重写任何已发布 migration。
-- 最终决策：**NO-GO traditional generated-client revert**。不修改 production `PrismaService`、Worker、Seed 或业务模块；PRISMA8-003 状态为 `VERIFIED`，当前执行指针：无。
-
 ## 2026-09-20：PRISMA8-002 最终封板
 
 - Prisma 8 迁移后 compatibility cleanup 已完成：Prisma 7 风格 `createPrismaFixtureClient` facade 与 5523 行静态 fixture metadata 删除，业务测试直接使用 native Prisma 8 ORM + 真实 PostgreSQL；`Prisma8*` / `prisma8*` 迁移期 runtime/helper/test 命名完成 canonicalization。
