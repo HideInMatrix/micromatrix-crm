@@ -7,14 +7,15 @@
 
 # 功能对齐记录
 
-## 2026-09-20：PRISMA8-003 Generated Prisma Client / CommonJS 立项
+## 2026-09-20：PRISMA8-003 Prisma 8 Generated Contract 语义核实
 
-- 用户复核 `apps/api/src/prisma/generated/` 后确认：该目录当前仍只有 `contract.json / contract.d.ts`，属于 `@prisma/orm-postgres` contract emit，而不是官方 generated Prisma Client；此前 PRISMA8-002 解决的是 contract/runtime compatibility 与存储语义，不等于 generated client cutover。
+- 用户复核 `apps/api/src/prisma/generated/` 后提出该目录为何仍只有 `contract.json / contract.d.ts`。进一步按 Prisma 8 官方文档核实后确认：这两份文件本身就是 Prisma 8 正式 generated contract artifact，并非迁移未完成。
 - 当前 production runtime 仍由 `prisma-client.ts` 手工加载 `generated/contract.json` + `Contract`，并构造 `PostgresClient<Contract>`；现有业务约 `.orm.public.` **2746 calls / 168 files**，transaction 约 **167 calls / 49 files**，因此本次按独立基础设施单元治理，不做无计划 big-bang。
-- 已核实官方 `provider = "prisma-client"` generator 支持显式 output 与 `moduleFormat = "cjs"`；但当前项目 root `prisma@8.0.0-rc.14` + `@prisma/orm-postgres@8.0.0-rc.10` 的 contract config 没有 `moduleFormat`，其 output 只用于 contract artifact，不能直接把该选项加进现有 `definePostgresConfig()`。
-- PRISMA8-003 固定单 source-of-truth 原则：不得人工维护第二份 schema。优先验证同一 canonical contract 直接 generated client；若 toolchain 只接受传统 client schema，只允许从 canonical contract deterministic 机械生成并增加 drift gate。
+- Prisma 8 官方 PostgreSQL runtime 直接加载 contract JSON/type 并通过 `postgres<Contract>()` 创建 client，模型从 `.orm.public` 访问；当前项目 runtime 与该正式架构一致。
+- 传统 `provider = "prisma-client"` generator 的确支持 `moduleFormat = "cjs"`，但该配置属于旧/传统 generated-client architecture，不属于 Prisma 8 contract config；不得为了 CJS 将项目回退到另一套 ORM architecture。
+- PRISMA8-003 继续固定单 source-of-truth：只维护 `apps/api/prisma/contract.prisma`，不新增第二份 schema。
 - 当前 database graph 保持 **4 migrations / 2226 operations**、storage hash `dee42ec15d90123679a39e92cd8468c445ed20dea1161a6b69ba8c615206c7b1`；本任务默认不产生 DDL，也不重写任何已发布 migration。
-- 当前执行指针：**P0.5 → P1.1**，先做 isolated generated-client feasibility spike；GO gate 之前不修改 production `PrismaService`、Worker、Seed 或业务模块。
+- 最终决策：**NO-GO traditional generated-client revert**。不修改 production `PrismaService`、Worker、Seed 或业务模块；PRISMA8-003 状态为 `VERIFIED`，当前执行指针：无。
 
 ## 2026-09-20：PRISMA8-002 最终封板
 
