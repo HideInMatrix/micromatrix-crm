@@ -7,6 +7,15 @@
 
 # 功能对齐记录
 
+## 2026-09-20：PRISMA8-003 Generated Prisma Client / CommonJS 立项
+
+- 用户复核 `apps/api/src/prisma/generated/` 后确认：该目录当前仍只有 `contract.json / contract.d.ts`，属于 `@prisma/orm-postgres` contract emit，而不是官方 generated Prisma Client；此前 PRISMA8-002 解决的是 contract/runtime compatibility 与存储语义，不等于 generated client cutover。
+- 当前 production runtime 仍由 `prisma-client.ts` 手工加载 `generated/contract.json` + `Contract`，并构造 `PostgresClient<Contract>`；现有业务约 `.orm.public.` **2746 calls / 168 files**，transaction 约 **167 calls / 49 files**，因此本次按独立基础设施单元治理，不做无计划 big-bang。
+- 已核实官方 `provider = "prisma-client"` generator 支持显式 output 与 `moduleFormat = "cjs"`；但当前项目 root `prisma@8.0.0-rc.14` + `@prisma/orm-postgres@8.0.0-rc.10` 的 contract config 没有 `moduleFormat`，其 output 只用于 contract artifact，不能直接把该选项加进现有 `definePostgresConfig()`。
+- PRISMA8-003 固定单 source-of-truth 原则：不得人工维护第二份 schema。优先验证同一 canonical contract 直接 generated client；若 toolchain 只接受传统 client schema，只允许从 canonical contract deterministic 机械生成并增加 drift gate。
+- 当前 database graph 保持 **4 migrations / 2226 operations**、storage hash `dee42ec15d90123679a39e92cd8468c445ed20dea1161a6b69ba8c615206c7b1`；本任务默认不产生 DDL，也不重写任何已发布 migration。
+- 当前执行指针：**P0.5 → P1.1**，先做 isolated generated-client feasibility spike；GO gate 之前不修改 production `PrismaService`、Worker、Seed 或业务模块。
+
 ## 2026-09-20：PRISMA8-002 最终封板
 
 - Prisma 8 迁移后 compatibility cleanup 已完成：Prisma 7 风格 `createPrismaFixtureClient` facade 与 5523 行静态 fixture metadata 删除，业务测试直接使用 native Prisma 8 ORM + 真实 PostgreSQL；`Prisma8*` / `prisma8*` 迁移期 runtime/helper/test 命名完成 canonicalization。
