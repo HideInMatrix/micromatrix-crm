@@ -91,10 +91,6 @@ type CustomerListScope = {
   ids?: string[]
 }
 
-type CustomerQueryInput = Omit<QueryCustomersDto, 'filters'> & {
-  filters?: string | FilterCondition[]
-}
-
 @Injectable()
 export class CustomersService {
   constructor(
