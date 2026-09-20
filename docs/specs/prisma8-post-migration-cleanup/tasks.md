@@ -1,6 +1,6 @@
 # PRISMA8-002 执行任务
 
-状态：`IN_PROGRESS`
+状态：`VERIFIED`
 
 ## P0 基线与规则
 
@@ -48,12 +48,12 @@
 - [x] P5.3 全量 typecheck/lint/build/API Rules。
 - [x] P5.4 existing/fresh PostgreSQL migration/seed/verify/status。
 - [x] P5.5 Docker release smoke。
-- [ ] P5.6 Browser 代表性回归与 API runtime log 扫描。
-- [ ] P5.7 文档封板为 `VERIFIED`。
+- [x] P5.6 Browser 代表性回归与 API runtime log 扫描。
+- [x] P5.7 文档封板为 `VERIFIED`。
 
 ## 当前执行指针
 
-当前执行 **P5.6**。P1-P4、P5 canonical naming、最终工程门禁、existing/fresh PostgreSQL 与 Docker release smoke 已全部完成；下一阶段执行 Browser 代表性真实回归与 API runtime log 扫描，完成后进入最终文档封板。
+当前执行指针：**无**。P1-P5 全部完成，`PRISMA8-002` 已正式封板为 `VERIFIED`。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -215,4 +215,29 @@ P5.5 Docker release smoke 已完成：
 - DinD 与 smoke 临时资源已全部清理，无本地归档/容器残留。
 
 P5.5 完成后执行指针进入 **P5.6**。
+
+P5.6 Browser 代表性真实回归与 API runtime log gate 已完成：
+
+- 使用 Desktop Host 隔离 Browser profile 登录真实本地 CRM，bootstrap administrator 登录成功并进入 Dashboard，首页真实数据正常加载；
+- 商机页真实加载 `测试线索变更-商机`；高级筛选 popover、字段/操作符、添加条件与文本输入交互均完成实际 Browser 覆盖且无页面/runtime 异常。由于 Element Plus teleported popover 在 Host automation 下 selector/ref 会随响应式刷新失效，本次不把负向筛选结果声明为自动化断言，只记录已真实覆盖的筛选编辑交互链；
+- 客户页真实加载 **48** 条数据，第一条 `测试线索变更` 的 Customer Overview Drawer 正常打开，客户基础信息、负责人及 12 个 Customer 360 关联 tab 正常装配；
+- 线索页使用 `搜索名称 / 手机号` 输入 `测试线索变更` 并回车，真实返回 **1** 条匹配线索；
+- 当前 3000 dev API 的 stdout/stderr 最终由 dev runner 写入 `/dev/ttys002`，无可检索日志文件；因此另以本次 Workbench 实时探测到的项目 Node **25.7.0** 启动同一 canonical `dist/main.js` 于隔离端口 3001，并捕获完整 stdout/stderr；
+- 3001 runtime gate：`/api/health` 200，Redis / coordination / async-jobs ready；随后重放 login、auth-me、Dashboard page、Opportunity page、Customer page/detail、Lead keyword page，全部返回 2xx，数据量与 Browser 会话一致（Opportunity **1**、Customer **48**、Lead **1**）；
+- 3001 stdout 约 169 KB / stderr 340 B 的 retained log 扫描：Nest ERROR **0**、Exception **0**、Unhandled **0**、TypeError **0**、RangeError **0**、codec error **0**、Prisma runtime error **0**；
+- 临时 3001 API、一次性 runtime-gate 脚本与隔离 Browser session 均已关闭/删除，无测试资源残留。
+
+P5.6 完成后执行指针进入 **P5.7**。
+
+P5.7 最终文档封板已完成：
+
+- `requirements.md / design.md / tasks.md` 状态统一切换为 **`VERIFIED`**；
+- `docs/specs/README.md`、`docs/README.md`、`docs/project-progress.md`、`docs/alignment-log.md` 已同步 PRISMA8-002 最终事实；
+- `docs/architecture.md` 已删除过时的 `Prisma8Module / Prisma8Service` 与 fixture adapter 描述，改为 canonical `PrismaModule / PrismaService` + native PostgreSQL tests；
+- `docs/prisma-migration-policy.md` 已更新当前 migration graph 与 storage hash，同时保留 PRISMA8-001 handoff 时的历史证据语义；
+- 当前 canonical storage hash 为 `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`；
+- 当前正式 migration graph 为 baseline **672** + timestamp **126** + varchar **952**，合计 **3 migrations / 1750 operations**；
+- 最终工程基线：root typecheck/build exit 0，lint **0 errors / 80 warnings**，API Rules **348/348 PASS、0 fail、0 skip**，existing/fresh PostgreSQL verify/status 全绿，原始 Docker release smoke **STATUS=0 / PASS**，Browser/runtime log gate 全绿；
+- 最终文档变更 `git diff --check` **PASS**；
+- `PRISMA8-002` 当前执行指针归零，不保留后续迁移期 cleanup task。
 

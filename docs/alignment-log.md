@@ -7,6 +7,17 @@
 
 # 功能对齐记录
 
+## 2026-09-20：PRISMA8-002 最终封板
+
+- Prisma 8 迁移后 compatibility cleanup 已完成：Prisma 7 风格 `createPrismaFixtureClient` facade 与 5523 行静态 fixture metadata 删除，业务测试直接使用 native Prisma 8 ORM + 真实 PostgreSQL；`Prisma8*` / `prisma8*` 迁移期 runtime/helper/test 命名完成 canonicalization。
+- 时间治理完成：126/126 absolute instant 字段从 `timestamp without time zone` 迁为 `timestamptz`，existing DB 迁移前后 UTC epoch 指纹一致；应用 runtime 统一 `Temporal.Instant` / ISO instant 边界，旧 `Temporal.PlainDateTime` 与 `Temporal -> Date -> ISO` compatibility 往返归零。
+- VarChar/ID 治理完成：476/476 `varchar(n)` 字段迁为 PostgreSQL `text + CHECK(char_length <= n)`，existing DB 2467 个非空值指纹 0 mismatch；历史 ID 保持字符串语义，业务 helper 收口为 `createLegacyId32()`，不错误整体迁为 UUID。
+- Numeric/JSON domain 完成：Numeric 写入统一 `DecimalString -> numericValue()` precision/scale 校验，JSONB 写入统一 `jsonValue()` normalization；migration-only values helper 删除。
+- 当前正式 Prisma 8 migration graph 为 `20260918T0338_baseline` **672** + `20260918T0826_timestamp_absolute_instants` **126** + `20260918T0923_varchar_text_length_constraints` **952**，合计 **3 migrations / 1750 operations**；current storage hash 为 `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`。existing/fresh PostgreSQL migration/Seed/verify/status 全绿。
+- 最终工程门禁：root typecheck/build exit 0，lint **0 error / 80 warnings**，API Rules **348/348 PASS、0 fail、0 skip**；仓库原始 `docker/release-smoke.sh` **STATUS=0 / PASS**。release smoke 过程中发现并修复 migration image 仍 COPY 已删除 `prisma8-*` 文件的发布漏洞。
+- Desktop Host 隔离 Browser 真实覆盖 bootstrap admin 登录/Dashboard、商机高级筛选编辑交互、客户 48 条列表与 Customer Overview Drawer、线索关键词搜索；同一 canonical build 独立端口 runtime gate 重放 login/auth-me/Dashboard/Opportunity/Customer/detail/Lead 请求全部 2xx，retained logs 中 Nest ERROR / Exception / Unhandled / TypeError / RangeError / codec / Prisma runtime error 均为 **0**。
+- P0～P5.7 全部完成，`PRISMA8-002` 正式切换为 **`VERIFIED`**；当前执行指针：无。
+
 ## 2026-09-18：PRISMA8-001 最终封板
 
 - Prisma 8 已成为唯一 production/runtime/migration owner：canonical contract 为 `apps/api/prisma/contract.prisma`，generated contract 位于 `apps/api/src/prisma/generated/`，正式 migration graph 位于 `apps/api/migrations/`；legacy Prisma Client、PostgreSQL adapter、`PrismaService` / module / adapter 与旧 generated client 已删除，旧执行标识全仓扫描归零。

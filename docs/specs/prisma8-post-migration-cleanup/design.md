@@ -1,5 +1,7 @@
 # PRISMA8-002 技术设计
 
+状态：`VERIFIED`
+
 ## 1. 原则
 
 本单元不是再次迁移 ORM，而是把迁移过程中为降低风险保留的 compatibility boundary 逐步替换成正式架构。

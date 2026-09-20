@@ -1,6 +1,6 @@
 # PRISMA8-002 Prisma 8 迁移后兼容层收口需求
 
-状态：`IN_PROGRESS`
+状态：`VERIFIED`
 
 ## 1. 目标
 

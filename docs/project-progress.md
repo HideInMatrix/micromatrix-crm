@@ -1,6 +1,6 @@
 # MicroMatrix CRM 当前项目进度与整体收口路线
 
-最近对齐：2026-09-18。
+最近对齐：2026-09-20。
 
 本文只记录“当前事实”和“后续收口路线”，历史实施细节继续以各阶段 `requirements/design/tasks`、专项验收文档和 `alignment-log.md` 为准。
 
@@ -10,8 +10,9 @@
 - 当前发布标签：`v0.0.13`
 - W3.7 高级审批深化已经完成最终封板：DB-010、DB-011、DB-012 均为 `VERIFIED`，9.5 最终专项/Browser/空库/静态/legacy scan 全绿。W3.7 后两个独立 Redis 工程化执行单元 `CACHE-001 / Redis 平台缓存第一批` 与 `CACHE-002 / 租户读模型与首页统计缓存` 均已完成最终验收；它们没有预设 W3.8 编号，也不改变 Cordys parity 已关闭结论。
 - UI-001 PC/Mobile UI 重构 **T1～T14 均已 VERIFIED**：Header Top Menu、列表工具区、设置域页面级导航、首页按钮间距、全局 Drawer Header/Body 节奏以及审批流程复杂 Drawer/工具区均已完成 Browser 与工程门禁封板。
-- 当前数据库 migration ownership 已由 Prisma 8 接管，canonical migration graph 为 `apps/api/migrations/`，当前正式 baseline 仅保留 `20260918T0338_baseline`（672 operations）；storage contract 为 `apps/api/prisma/contract.prisma`，hash `651134f9ccfda014c4a27d235488e56b4640ad20fbf307fe0acaa0b8e39566de`。
+- 当前数据库 migration ownership 已由 Prisma 8 接管，canonical migration graph 为 `apps/api/migrations/`：`20260918T0338_baseline`（672）+ `20260918T0826_timestamp_absolute_instants`（126）+ `20260918T0923_varchar_text_length_constraints`（952），合计 **3 migrations / 1750 operations**；storage contract 为 `apps/api/prisma/contract.prisma`，当前 hash `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`。
 - `PRISMA8-001`：`VERIFIED`。Prisma 8 已成为唯一 production/runtime/migration owner；legacy Prisma Client/adapter/service/module/generated artifacts 与旧脚本标识归零；fresh PostgreSQL baseline + bootstrap Seed + verify/status 全绿；API Rules **346/346 PASS**，root typecheck/lint/build 均 exit 0；原始 Docker release smoke exit 0；代表性 Browser 回归覆盖登录、Dashboard、商机高级筛选、客户列表/详情与线索关键词搜索，API 运行期间未发现 5xx/runtime exception。
+- `PRISMA8-002`：`VERIFIED`。Prisma 7 风格 test fixture facade 与 5k+ 静态 metadata 已删除；126 个 absolute instant 字段迁为 timestamptz；476 个 VarChar 字段迁为 text + 等价长度 CHECK；Numeric/JSON 正式 domain、canonical Prisma 命名与 native PostgreSQL tests 已收口。最终 API Rules **348/348 PASS**，root typecheck/build exit 0、lint 0 error，existing/fresh PostgreSQL、原始 Docker release smoke、Browser 代表性回归与独立 API runtime log gate 全绿。
 
 ## 2. 已关闭主里程碑
 
@@ -42,6 +43,7 @@
 | LOG-002                   | 操作日志主表/Blob、列表/详情分离、租户 retention 网页策略、手工清理                                                     | `VERIFIED`                                                |
 | LOG-003                   | 操作日志“清理过期”与“清空全部”语义拆分、租户级危险清空入口                                                              | `VERIFIED`                                                |
 | TOOLCHAIN-001             | pnpm 11.25.0 workspace / CI / API-Migration-Web Docker builder 与完整 release smoke                                     | `VERIFIED`                                                |
+| PRISMA8-001 / PRISMA8-002 | Prisma 8 ownership handoff、compatibility cleanup、timestamp/varchar forward migrations、Numeric/JSON domain 与 canonicalization | `VERIFIED`                                                |
 | UI-001                    | PC/Mobile 双应用 UI、Header Top Menu、PC 列表工具区、设置域导航与 Drawer Header 治理                                    | T1～T14 `VERIFIED`                                        |
 | FORM-001                  | 自定义表单核心、导入导出、列表增强，以及 F1 LOCATION/ATTACHMENT、F2 DATA_SOURCE、F3 SUB_PRODUCT、F4 显隐/联动           | `VERIFIED`                                                |
 | PLAN-FORM-001             | FollowPlan 单一 ModuleForm、完整 system/custom FormDesign、planProduct、PC/Mobile create context 与 formProp            | `VERIFIED`                                                |
@@ -52,16 +54,16 @@
 
 当前执行状态：
 
-> **DB-015B Lark Provider 已正式封板为 `VERIFIED`。DB-015A/015B 均已完成，父 backlog DB-015 同步关闭为 `VERIFIED`；DB-023 继续 `DEFERRED`。**
+> **PRISMA8-002 已正式封板为 `VERIFIED`，当前无 Prisma 迁移后 cleanup 执行指针；DB-015A/015B 与父 backlog DB-015 维持 `VERIFIED`，DB-023 继续 `DEFERRED`。**
 
-W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001`、`DB-007`、`DB-008`、`DB-015A` 与 `DB-015B` 均已在各自 tasks 文档完成封板。已发布 migration 保持不可变，当前 migration 历史为 `20260905084900_baseline` + `20260911153000_lark_provider_schema` + `20260914152000_enterprise_platform_state`；完整 API Rules 基线为 **263/263 PASS**。
+W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/tasks.md` 关闭。当前 DB-010、DB-011、DB-012 均为 `VERIFIED`。`CACHE-001`、`CACHE-002`、`EVENT-001`、`COORD-001`、`ASYNC-001`、`LOG-001`、`LOG-002`、`LOG-003`、`TOOLCHAIN-001`、`FORM-001`、`FOLLOW-001`、`PLAN-COMMENT-001`、`PLAN-FORM-001`、`DB-007`、`DB-008`、`DB-015A`、`DB-015B`、`PRISMA8-001` 与 `PRISMA8-002` 均已在各自 tasks 文档完成封板。当前正式数据库结构只由 Prisma 8 migration graph 管理；最新完整 API Rules 基线为 **348/348 PASS、0 fail、0 skip**。
 
 当前 deferred backlog 共 23 项：**22 项 VERIFIED、0 项 IN_PROGRESS、0 项 PLANNED、0 项 DISCOVERED、1 项 DEFERRED（DB-023）**。DB-015A/015B 属于 DB-015 内部分拆，不额外增加 backlog 总数。
 
 ## 4. 当前质量基线
 
-- TOOLCHAIN-001：Node `v24.5.0` / pnpm `11.25.0`；`pnpm install --frozen-lockfile` PASS；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；API Rules **227/227 PASS**；完整 `pnpm smoke:docker-release` PASS，真实构建 API/Migration/Web 三镜像并验证唯一 baseline migration、bootstrap Seed、Redis cache、Worker/API/Web、管理员改密缓存失效、重复初始化保护、PC/Mobile SPA fallback 与 `/api` proxy；相关 Prettier、Shell syntax、`git diff --check` PASS。
-- 当前 Prisma migration 历史为 **3 条**：`20260905084900_baseline`、`20260911153000_lark_provider_schema`、`20260914152000_enterprise_platform_state`。2026-09-14 修复 CI 时恢复了被误改的 immutable baseline，并将 `Tenant.enterpriseSyncResource / enterpriseSynced` 改为独立 forward migration；本地库因结构已提前存在，先确认 DB→Schema diff 为空后仅执行 `migrate resolve --applied` 对齐 ledger。`pnpm db:verify-migrations`、`prisma validate`、`migrate status`、`migrate deploy` 均 PASS。
+- 当前工具链：Node `25.7.0` / pnpm `11.25.0`；root typecheck/build PASS；lint **0 error / 80 warnings**；API Rules **348/348 PASS、0 fail、0 skip**；原始 `docker/release-smoke.sh` **STATUS=0 / PASS**，API/Migration/Web image、3 migrations/1750 operations、bootstrap、Redis、Worker/API/Web、重复初始化保护、PC/Mobile SPA fallback 与 `/api` proxy 全绿。
+- 当前 Prisma 8 migration graph 为 **3 条 / 1750 operations**：`20260918T0338_baseline`（672）、`20260918T0826_timestamp_absolute_instants`（126）、`20260918T0923_varchar_text_length_constraints`（952）；existing/fresh PostgreSQL `db verify` / `migration status` 全绿，current storage hash 为 `0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`。
 - FORM-001 F4：公共 Form Runtime **7/7 PASS**、F4 Service **16/16 PASS**、F4 Browser **13/13 PASS**；相邻 Browser 原 FORM-001 + E **31/31**、F1 **16/16**、F2 **14/14**、F3 **12/12** 全绿，相邻 Service 核心 FORM-001、F1 **26/26**、F2 **23/23**、F3 **23/23** 全绿。pre-release baseline reset + seed、Prisma validate/diff、root typecheck/build、当前变更集 Prettier 与 `git diff --check` PASS，lint **0 error / 8 个既有 warning**。
 - PLAN-FORM-001：PC/Mobile 专项 Browser **54/54 PASS**，真实覆盖 FollowPlan 表单属性 `labelPos/viewSize`、完整 ModuleForm system/custom 混排、`planProduct` 多选保存/编辑回显和配置恢复；Lead/Opportunity/FollowRecord 相邻 Browser **19/19 PASS**，Customer 创建链路由专项 Smoke 同轮覆盖；fresh baseline reset + seed、Prisma validate/diff=`No difference detected.`、FollowPlan mobile metadata 与 6 条 partial unique index 实查 PASS；API Rules **227/227**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；Prettier 与 `git diff --check` PASS。
 - UI-001 T14：本地真实 API/Web + headless CDP Browser **28/28 PASS**；普通 440px Drawer 实测 Header `margin-bottom:0`、Body 24px，审批流程 Drawer 实测 1440px 视口 min-width=1080px、2560px 视口 width=50%，流程工具区两行/baseline/nowrap/无溢出全绿；API 5xx=0、Runtime exception=0。首次验收发现 Body 仍被 Element Plus 覆盖为 20px，已通过全局 `padding:24px !important` 修正并复验。
@@ -70,8 +72,8 @@ W3.7 的 9.2 / 9.3 / 9.4 / 9.5 已全部在 `docs/specs/process-settings-parity/
 - DB-015A：**VERIFIED**。DingTalk/邻接专项 **26/26 PASS**，其中 MessageDelivery 双 provider outbox **8/8 PASS**；完整 API Rules **250/250 PASS**，frontend-shared `/auth/me` refresh 专项 **4/4 PASS**。fresh PostgreSQL 隔离 schema 从零应用唯一 baseline + Seed PASS，database→schema diff=`No difference detected.`。真实 Nest + fresh PostgreSQL + local DingTalk mock Provider API smoke **33/33 PASS**，覆盖配置/Secret/连接测试、组织 snapshot→preview→apply、DINGTALK mapping、QR/Workbench OAuth state/nonce/replay fail-closed、unionId→userid→ExternalIdentity、`CUSTOMER_ADD` DingTalk channel、outbox/task_id/retry 审计。新版 Workbench Host Browser（`desktop_chromium_cdp`）真实验证 DingTalk 登录入口、配置/连接成功、组织树/成员、重复同步预览 `新增0/更新0/禁用0/不变3`、OAuth callback→JWT→Dashboard、消息设置与“已送达”投递记录；Mobile workbench OAuth 后端由 33/33 runtime 覆盖，Mobile typecheck/production build PASS。最终 root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prisma format/validate、Prettier 与 `git diff --check` PASS。
 - DB-015B：**VERIFIED**。当前开发库增量 migration deploy PASS 且 DB→Schema=`No difference detected.`；隔离 `db015b_final` fresh DB 顺序执行 baseline + `20260911153000_lark_provider_schema`、Seed PASS、DB→Schema=`No difference detected.`。完整 API Rules **263/263 PASS**；local Lark mock + 真实 Nest/PostgreSQL/HTTP smoke **36/36 PASS**，覆盖企业 ID/App ID/redirectUrl/Secret、连接测试、组织 preview/apply、open_department_id/open_id、QR/Web/Mobile OAuth、state/nonce/replay fail-closed、ExternalIdentity、LARK channel/outbox/message_id。新版 Workbench Host Browser 真实验证连接测试、组织幂等预览 `新增0/更新0/禁用0/不变3` → apply `SUCCEEDED`、成员 `ou_lark_user_1` 外部身份与最近登录、消息设置 LARK gate 及“新建客户→飞书测试成员→已送达”投递记录。root typecheck/build PASS，lint **0 error / 8 个既有 warning**，Prisma validate、当前变更集 Prettier 与 `git diff --check` PASS。
 - UI-001 T12：本地真实 API/Web `3000/5173` 下 CDP Browser **79/79 PASS**；root typecheck/build PASS；lint **0 error / 8 个既有 warning**；相关 Prettier 与 staged/unstaged `git diff --check` PASS。
-- Root Smoke：最近既有基线 **227/227**；DB-007 未修改该独立 Smoke 脚本集合。
-- Rules：当前 **263/263 PASS**。DB-015A/015B 的 DingTalk/Lark Client、配置生命周期、SSO state/identity 与多 provider outbox 回归后，Announcement/Notification source、DB-008 模板、FOLLOW-001、PLAN-COMMENT-001、PLAN-FORM-001、CACHE-001/002、EVENT-001、COORD-001、ASYNC-001、LOG-001/002/003、FORM-001 F4 回归均保持全绿。
+- Root/production gate：root typecheck/build exit 0，lint **0 error / 80 warnings**，原始 Docker release smoke **STATUS=0 / PASS**。
+- Rules：当前 **348/348 PASS、0 fail、0 skip**；PRISMA8-002 native PostgreSQL test migration、time/value-domain 与 canonicalization 回归后，既有业务规则保持全绿。
 - CACHE-002 专项：API typecheck PASS；公共缓存 + ModuleConfig/MessageSettings/Enterprise/Home/OrganizationSync 相邻回归 **37/37 PASS**；缓存数据源写入口审计未发现本批失效边界遗漏。
 - EVENT-001 专项：通知双实例/降级/非法消息/去重 **5/5 PASS**；真实 Redis command + Pub/Sub + subscriber `CLIENT KILL` 自动重连/重订阅 PASS；API/Web typecheck、Web build **4145 modules** 全绿。
 - COORD-001 专项：coordinator **4/4 PASS**、6 个 Cron wrapper **1/1 PASS**、OrganizationSync 协调相关 **4 个新增断言 PASS**；真实 Redis lease/renew/safe-release/reacquire/slot claim PASS；API typecheck 与 `git diff --check` 全绿。

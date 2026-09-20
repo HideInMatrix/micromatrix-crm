@@ -10,11 +10,15 @@
 - Prisma 8 config：`apps/api/prisma.config.ts`
 - Migration graph：`apps/api/migrations/`
 - 当前 app baseline：`apps/api/migrations/app/20260918T0338_baseline`
-- 当前 storage contract hash：`651134f9ccfda014c4a27d235488e56b4640ad20fbf307fe0acaa0b8e39566de`
+- 当前 forward migrations：
+  - `20260918T0826_timestamp_absolute_instants`（126 operations）
+  - `20260918T0923_varchar_text_length_constraints`（952 operations）
+- 当前 migration graph：**3 migrations / 1750 operations**
+- 当前 storage contract hash：`0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`
 - 当前 baseline migration hash：`8664ea14548a7cf8419205988976d641f350b773488a2072c1f8f32e9d0312dd`
 - 正式 ref：`apps/api/migrations/app/refs/db.json`，必须指向当前正式 contract hash。
 
-Prisma 7 的 `apps/api/prisma/schema.prisma`、`apps/api/prisma/migrations/` 与数据库中的 `_prisma_migrations` 从此只属于 legacy 历史。Phase 5 删除 legacy 工具链前可以暂时保留这些文件供旧 Client generate/runtime 兼容，但**禁止再用 Prisma 7 生成、修改、部署、resolve 或 db push 任何正式数据库结构**。
+Prisma 7 legacy Client/schema/migration runtime 已完成清理；历史 `_prisma_migrations` 只属于 handoff 前事实，不再承担正式 migration ownership。**禁止再用 Prisma 7 生成、修改、部署、resolve 或 db push 任何正式数据库结构**。
 
 ## 2. Handoff 基线
 
@@ -23,7 +27,7 @@ Phase 4 已完成以下 handoff 证据：
 - 隔离验证库 `db015b_validation_0910`：最终 contract `db sign` PASS，`db` ref 指向 baseline，完整 `db verify` PASS，`migration status` 为 `Up to date`。
 - 隔离库 additive 演练：从正式 baseline 增加一个 nullable 测试列，只生成 **1 个 additive operation**；`db migrate --advance-ref db`、完整 `db verify`、`migration status` 全部 PASS，旧 Prisma 7 Client 仍可读取同库。
 - 开发主库 `default`：Prisma 7 历史在 handoff 前确认 3 migrations / schema up-to-date；随后 Prisma 8 `db sign`、`db ref`、完整 `db verify`、`migration status` 全部 PASS。
-- 正式 baseline graph 当前为单一根 migration，`migration check` PASS。
+- PRISMA8-001 handoff 当时的正式 graph 为单一根 baseline，`migration check` PASS；PRISMA8-002 后续严格通过新增 forward migration 完成 timestamp/varchar schema 治理，没有改写已冻结 baseline。
 
 Handoff 之后 migration ownership 是单向切换：不得因为旧环境仍保留 Prisma 7 Client 就恢复 Prisma 7 migration workflow。
 

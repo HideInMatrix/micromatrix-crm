@@ -41,7 +41,7 @@ flowchart LR
 
 monorepo：`apps/api`（NestJS CJS + Prisma 8 PostgreSQL ORM）、`apps/web`（单一 Vite ESM 前端，内部同时承载 PC + Mobile）、`packages/shared`（前后端共享类型/权限树/公式求值器）。
 
-数据库层已完成 Prisma 8 migration ownership handoff：canonical storage contract 为 `apps/api/prisma/contract.prisma`，生成产物位于 `apps/api/src/prisma/generated/`，正式 migration graph 位于 `apps/api/migrations/`。运行时统一由 `Prisma8Module / Prisma8Service` 提供，业务代码与真库测试不再依赖 legacy Prisma Client；测试 fixture 通过 Prisma 8 ORM 适配器复用既有 CRUD 风格，避免重新引入旧运行时。
+数据库层已完成 Prisma 8 migration ownership handoff 与迁移后 compatibility cleanup：canonical storage contract 为 `apps/api/prisma/contract.prisma`，生成产物位于 `apps/api/src/prisma/generated/`，正式 migration graph 位于 `apps/api/migrations/`。运行时统一由 canonical `PrismaModule / PrismaService` 提供；业务代码与真实 PostgreSQL tests 均直接使用正式 Prisma 8 ORM contract，不再保留 legacy Prisma Client、Prisma 7 风格 fixture facade、静态 fixture metadata 或 `Prisma8*` 迁移期命名。
 
 前端运行时不再维护两个独立应用。`apps/web/src/router/index.ts` 在根路由按当前 viewport 选择布局与页面：所有路由页面统一归档在 `src/views/<业务模块>/`，同模块移动页面进入 `mobile/` 子目录；桌面使用 `DefaultLayout`，移动端使用 `MobileTabbarLayout`。移动专用 API、组件、Layout 与样式不再放独立 `src/mobile` 根目录，而是分别进入 `src/api`、`src/components`、`src/layouts`、`src/styles`，并以 `Mobile` 文件名/组件名前缀区分。两端共用同一套 Pinia、JWT token、HTTP 拦截器、Vite 代理与构建产物；Chrome DevTools 切换到手机设备模式后刷新即可进入 Mobile 页面，不设置 `?client=` 一类调试路由参数。
 
