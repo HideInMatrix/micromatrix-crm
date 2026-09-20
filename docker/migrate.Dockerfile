@@ -24,9 +24,9 @@ COPY apps/api/prisma apps/api/prisma
 COPY apps/api/migrations apps/api/migrations
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
 COPY apps/api/src/modules/metadata/system-fields.ts apps/api/src/modules/metadata/system-fields.ts
-COPY apps/api/src/prisma/prisma8-client.ts apps/api/src/prisma/prisma8-client.ts
-COPY apps/api/src/prisma/prisma8-temporal.ts apps/api/src/prisma/prisma8-temporal.ts
-COPY apps/api/src/prisma/prisma8-values.ts apps/api/src/prisma/prisma8-values.ts
+COPY apps/api/src/prisma/prisma-client.ts apps/api/src/prisma/prisma-client.ts
+COPY apps/api/src/prisma/temporal.ts apps/api/src/prisma/temporal.ts
+COPY apps/api/src/prisma/numeric-value.ts apps/api/src/prisma/numeric-value.ts
 COPY apps/api/src/prisma/generated/contract.json apps/api/src/prisma/generated/contract.json
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \

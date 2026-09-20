@@ -46,14 +46,14 @@
 - [x] P5.1 `Prisma8Client/Service/Module` 改为正式 canonical 名称。
 - [x] P5.2 删除 migration-only `prisma8*` 文件名和测试命名。
 - [x] P5.3 全量 typecheck/lint/build/API Rules。
-- [ ] P5.4 existing/fresh PostgreSQL migration/seed/verify/status。
-- [ ] P5.5 Docker release smoke。
+- [x] P5.4 existing/fresh PostgreSQL migration/seed/verify/status。
+- [x] P5.5 Docker release smoke。
 - [ ] P5.6 Browser 代表性回归与 API runtime log 扫描。
 - [ ] P5.7 文档封板为 `VERIFIED`。
 
 ## 当前执行指针
 
-当前执行 **P5.4**。P1-P4、P5 canonical naming 与最终工程门禁已完成；下一阶段复验 existing/fresh PostgreSQL migration / seed / verify / status，随后进入 Docker release smoke 与 Browser 代表性回归。
+当前执行 **P5.6**。P1-P4、P5 canonical naming、最终工程门禁、existing/fresh PostgreSQL 与 Docker release smoke 已全部完成；下一阶段执行 Browser 代表性真实回归与 API runtime log 扫描，完成后进入最终文档封板。
 
 第一批已完成 native 化并通过真实 PostgreSQL：
 
@@ -181,4 +181,38 @@ P5.3 最终工程门禁已完成：
 - `git diff --check` PASS。
 
 P5.3 完成后执行指针进入 **P5.4**。
+
+P5.4 existing/fresh PostgreSQL 最终复验已完成：
+
+- canonical contract storage hash：`0d036f3fcbf3d2169c7530c49e3d96ae1c1961b75c8d3bbfe89bddebb274e0fe`；
+- existing DB：`contract emit / db verify / migration status / migration check` 全部 **exit 0**，marker/current/target 三者一致；
+- migration graph 精确为：
+  - `20260918T0338_baseline`：**672 operations**；
+  - `20260918T0826_timestamp_absolute_instants`：**126 operations**；
+  - `20260918T0923_varchar_text_length_constraints`：**952 operations**；
+  - 合计 **1750 operations**；
+- fresh PostgreSQL 从空库执行三段 migration：**3/3 applied、1750/1750 operations**；
+- fresh bootstrap Seed、`db verify`、`migration status` 全绿；
+- fresh Seed 后：tenant **1**、users **4**、roles **3**、departments **4**、plans **2**；
+- fresh schema 物理核验：`timestamptz` 列 **126**，P3 `char_length` CHECK **476**；
+- fresh 临时数据库已正常删除，无残留。
+
+P5.4 完成后执行指针进入 **P5.5**。
+
+P5.5 Docker release smoke 已完成：
+
+- 仓库原始 `docker/release-smoke.sh` 在隔离 Docker-in-Docker daemon 中最终 **STATUS=0 / PASS**；
+- API / Migration / Web 三张 release image 均完成真实构建；
+- release smoke 首轮暴露 `docker/migrate.Dockerfile` 仍引用 P5.2 已删除的 `prisma8-client.ts / prisma8-temporal.ts / prisma8-values.ts`，已精确修正为 canonical `prisma-client.ts / temporal.ts / numeric-value.ts`；
+- 修正后的 migration image 专项构建成功，并在最终完整 smoke 中再次通过；
+- fresh PostgreSQL 中三段 migration **3/3 applied、1750 operations**，marker hash 为 canonical storage hash；
+- bootstrap initialization、`db verify`、`migration status` 全绿；
+- Worker entry 与 API image 均正常启动；
+- bootstrap administrator login 与 Redis-backed read cache 验证通过；
+- 重复 initialization 不会重置 administrator password；
+- Web image 启动后 PC/Mobile SPA fallback 与 `/api` proxy 验证通过；
+- 最终脚本输出：`PASS: slim API/worker runtime, Redis cache integration, automatic bootstrap initialization, PC/Mobile SPA fallback and /api proxy are healthy`；
+- DinD 与 smoke 临时资源已全部清理，无本地归档/容器残留。
+
+P5.5 完成后执行指针进入 **P5.6**。
 
