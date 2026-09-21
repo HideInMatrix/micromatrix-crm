@@ -10,6 +10,7 @@ import { useRoute } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { logApi } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
+import { operationActionLabel, operationModuleLabel } from '@/utils/operation-log-label'
 
 interface ChangeRow {
   field: string
@@ -250,8 +251,16 @@ watch(() => route.path, loadCurrentLogPage)
         <el-table-column label="操作人" width="120">
           <template #default="{ row }">{{ row.userName || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="module" label="模块" width="120" />
-        <el-table-column prop="action" label="动作" width="130" />
+        <el-table-column label="模块" width="140">
+          <template #default="{ row }">
+            <span :title="row.module">{{ operationModuleLabel(row.module) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="动作" width="180">
+          <template #default="{ row }">
+            <span :title="row.action">{{ operationActionLabel(row.action) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作对象" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.targetName || '-' }}</template>
         </el-table-column>
@@ -344,7 +353,10 @@ watch(() => route.path, loadCurrentLogPage)
             operationDetail.userName || '-'
           }}</el-descriptions-item>
           <el-descriptions-item label="模块 / 动作">
-            {{ operationDetail.module }} / {{ operationDetail.action }}
+            <span :title="`${operationDetail.module} / ${operationDetail.action}`">
+              {{ operationModuleLabel(operationDetail.module) }} /
+              {{ operationActionLabel(operationDetail.action) }}
+            </span>
           </el-descriptions-item>
           <el-descriptions-item label="操作对象">
             {{ operationDetail.targetName || operationDetail.targetId || '-' }}

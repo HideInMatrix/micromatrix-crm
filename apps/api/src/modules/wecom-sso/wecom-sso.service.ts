@@ -660,7 +660,9 @@ export class WeComSsoService {
     if (!publicUrl) throw new BadRequestException('无法确认企业微信工作台回跳域名')
     const publicOrigin = new URL(this.validHttpUrl(publicUrl)).origin
     if (targetUrl.origin !== publicOrigin) {
-      throw new BadRequestException('企业微信工作台回跳地址必须与 CRM 网页同域')
+      throw new BadRequestException(
+        `企业微信工作台回跳地址必须与 CRM 网页同域（当前 CRM 域名：${publicOrigin}）`,
+      )
     }
     return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`.slice(0, 500)
   }

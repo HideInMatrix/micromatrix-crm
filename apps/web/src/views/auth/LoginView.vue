@@ -198,8 +198,8 @@ async function handleSubmit() {
 
     <el-dialog
       v-model="qrDialogVisible"
-      title="企业微信扫码登录"
       width="420px"
+      class="wecom-login-dialog"
       destroy-on-close
       align-center
     >
@@ -212,3 +212,9 @@ async function handleSubmit() {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+:deep(.wecom-login-dialog .el-dialog__body) {
+  padding: 0;
+}
+</style>

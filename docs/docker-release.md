@@ -119,7 +119,9 @@ docker compose \
 
 根目录 `docker-compose.yml` 是当前生产部署入口。
 
-当前 Compose 的 HTTP 拓扑固定为浏览器/客户端 → `web` Nginx → `api`，因此 API 默认设置 `TRUST_PROXY_HOPS=1`。Nest/Express 只信任最近一跳代理后再计算 `request.ip` / `@Ip()`，业务代码不直接解析原始 forwarding header。若未来在 Nginx 前新增 CDN、LB 或其它受控代理，必须按真实代理层数显式调整 `TRUST_PROXY_HOPS` 并重新验证客户端 IP；本地直接 `pnpm dev` 时默认不配置该变量，即不信任代理头。
+当前 Compose 自身的 HTTP 拓扑为浏览器/客户端 → `web` Nginx → `api`，因此直接暴露 Compose Web 端口时 API 使用 `TRUST_PROXY_HOPS=1`。Nest/Express 只信任配置数量的最近代理 hop，再计算 `request.ip` / `@Ip()`，业务代码不直接解析原始 forwarding header。
+
+如果生产宿主机还使用 1Panel/Nginx 反向代理到 Compose Web 端口，则真实拓扑变为 `client -> 1Panel Nginx -> web/Nginx -> api`，此时必须在部署 `.env` 中设置 `TRUST_PROXY_HOPS=2`。否则 API 只信任最内层 `web` Nginx，操作日志会把第二层代理/宿主 bridge 地址（常见为 `172.x`）识别成客户端 IP。外层与内层 Nginx 都应继续使用 `X-Forwarded-For $proxy_add_x_forwarded_for`，不要在业务代码中直接信任客户端传入的 forwarding header。若再增加 CDN、LB 等受控代理，应按实际可信代理层数继续调整；本地直接 `pnpm dev` 时默认不配置该变量，即不信任代理头。
 
 `OperationLog` 未保存租户策略时默认保留 180 天，`OPERATION_LOG_RETENTION_DAYS` 现在只作为未配置租户的部署默认值；管理员可在 `/system/logs` 为当前租户设置 30～3650 天或永久保留，无需重启 API。API 每天 04:15 进入一次分布式协调清理，默认每租户每批最多 1000 条、单轮最多 20 批；`OPERATION_LOG_CLEANUP_BATCH_SIZE`、`OPERATION_LOG_CLEANUP_MAX_BATCHES` 继续属于运维安全参数，不在网页开放。清理只作用于操作日志，不删除登录日志。
 

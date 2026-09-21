@@ -64,12 +64,18 @@ function resolveWorkbenchTarget(value?: string): URL | null {
 }
 
 const workbenchHomeUrl = computed(() => {
-  const target = resolveWorkbenchTarget(form.redirectUrl)
+  const configuredTarget = form.redirectUrl?.trim()
+  const target = resolveWorkbenchTarget(configuredTarget)
   if (!target) return ''
   const url = new URL('/api/auth/wecom/workbench/entry', window.location.origin)
   const tenantSlug = auth.user?.tenantSlug
   if (tenantSlug) url.searchParams.set('tenant', tenantSlug)
-  url.searchParams.set('target', target.toString())
+  url.searchParams.set(
+    'target',
+    configuredTarget?.startsWith('/')
+      ? `${target.pathname}${target.search}${target.hash}`
+      : target.toString(),
+  )
   return url.toString()
 })
 
