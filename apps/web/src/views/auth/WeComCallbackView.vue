@@ -29,6 +29,10 @@ onMounted(async () => {
     if (!callback) throw new Error('企业微信登录状态类型无效')
     const { data } = await callback({ code, state })
     auth.acceptLoginResult(data)
+    if (data.returnPath?.startsWith('/mobile/')) {
+      window.location.replace(data.returnPath)
+      return
+    }
     await router.replace(data.returnPath || '/')
   } catch (error) {
     errorMessage.value = extractErrorMessage(error)
