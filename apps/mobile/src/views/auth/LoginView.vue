@@ -2,12 +2,17 @@
 import { showSuccessToast, showFailToast } from 'vant'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { startDingTalkWorkbenchLogin, startLarkMobileLogin } from '@/api/auth'
+import {
+  startDingTalkWorkbenchLogin,
+  startLarkMobileLogin,
+  startWeComWorkbenchLogin,
+} from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import { useLoginBranding } from '@/composables/useLoginBranding'
 import { useAuthStore } from '@/stores/auth'
 import { isDingTalkWorkbenchBrowser } from '@/utils/dingtalk'
 import { isLarkBrowser } from '@/utils/lark'
+import { isWeComWorkbenchBrowser } from '@/utils/wecom'
 
 const router = useRouter()
 const route = useRoute()
@@ -15,7 +20,7 @@ const auth = useAuthStore()
 
 const loading = ref(false)
 const thirdPartyLoading = ref(false)
-const form = reactive({ email: 'admin@demo.com', password: 'admin123' })
+const form = reactive({ email: '', password: '' })
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant.trim() || undefined : undefined,
 )
@@ -38,18 +43,19 @@ onMounted(async () => {
   if (route.query.manual === '1') return
   const lark = isLarkBrowser()
   const dingTalk = isDingTalkWorkbenchBrowser()
-  if (!lark && !dingTalk) return
+  const weCom = isWeComWorkbenchBrowser()
+  if (!lark && !dingTalk && !weCom) return
   thirdPartyLoading.value = true
   try {
+    const payload = {
+      tenantSlug: tenantSlug.value,
+      returnPath: '/mobile/home',
+    }
     const { data } = lark
-      ? await startLarkMobileLogin({
-          tenantSlug: tenantSlug.value,
-          returnPath: '/mobile/home',
-        })
-      : await startDingTalkWorkbenchLogin({
-          tenantSlug: tenantSlug.value,
-          returnPath: '/mobile/home',
-        })
+      ? await startLarkMobileLogin(payload)
+      : dingTalk
+        ? await startDingTalkWorkbenchLogin(payload)
+        : await startWeComWorkbenchLogin(payload)
     window.location.replace(data.authorizationUrl)
   } catch (error) {
     showFailToast(extractErrorMessage(error))
@@ -105,6 +111,5 @@ onMounted(async () => {
       </div>
     </van-form>
 
-    <p class="text-xs text-gray-400 mt-6 text-center">演示账号：admin@demo.com / admin123</p>
   </div>
 </template>
