@@ -274,12 +274,28 @@ test('企微登录 code 只解析已认证成员 UserId', async (t) => {
           JSON.stringify(
             String(input).includes('/gettoken')
               ? { errcode: 0, access_token: 'temporary-token' }
-              : { errcode: 0, UserId: 'ZhangSan' },
+              : { errcode: 0, userid: 'ZhangSan' },
           ),
         )
       const identity = await new WeComClient().exchangeLoginCode(
         { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
         'single-use-code',
+      )
+      assert.deepEqual(identity, { userId: 'ZhangSan', externalKey: 'zhangsan' })
+    })
+
+    await t.test('兼容历史 UserId 字段大小写', async () => {
+      globalThis.fetch = async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input).includes('/gettoken')
+              ? { errcode: 0, access_token: 'temporary-token' }
+              : { errcode: 0, UserId: 'ZhangSan' },
+          ),
+        )
+      const identity = await new WeComClient().exchangeLoginCode(
+        { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
+        'legacy-code',
       )
       assert.deepEqual(identity, { userId: 'ZhangSan', externalKey: 'zhangsan' })
     })
@@ -313,7 +329,7 @@ test('企微登录 code 只解析已认证成员 UserId', async (t) => {
         }
         if (url.includes('/auth/getuserinfo')) {
           return new Response(
-            JSON.stringify({ errcode: 0, UserId: 'ZhangSan', user_ticket: 'user-ticket' }),
+            JSON.stringify({ errcode: 0, userid: 'ZhangSan', user_ticket: 'user-ticket' }),
           )
         }
         if (url.includes('/auth/getuserdetail')) {

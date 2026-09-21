@@ -142,7 +142,9 @@ export class WeComClient {
     identityUrl.searchParams.set('access_token', accessToken)
     identityUrl.searchParams.set('code', code)
     const identityPayload = await this.requestData(identityUrl, 'LOGIN_IDENTITY_REQUEST_FAILED')
-    const userId = this.stringValue(identityPayload['UserId'], 128)
+    const userId =
+      this.stringValue(identityPayload['userid'], 128) ??
+      this.stringValue(identityPayload['UserId'], 128)
     if (!userId) {
       throw new WeComSnapshotError('LOGIN_IDENTITY_MISSING', '未获取到企业微信成员身份')
     }
@@ -161,7 +163,9 @@ export class WeComClient {
     identityUrl.searchParams.set('access_token', accessToken)
     identityUrl.searchParams.set('code', code)
     const identityPayload = await this.requestData(identityUrl, 'LOGIN_IDENTITY_REQUEST_FAILED')
-    const userId = this.stringValue(identityPayload['UserId'], 128)
+    const userId =
+      this.stringValue(identityPayload['userid'], 128) ??
+      this.stringValue(identityPayload['UserId'], 128)
     if (!userId) {
       throw new WeComSnapshotError('LOGIN_IDENTITY_MISSING', '未获取到企业微信成员身份')
     }
