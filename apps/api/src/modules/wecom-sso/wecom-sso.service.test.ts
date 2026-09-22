@@ -264,6 +264,16 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
   assert.equal(workbenchUrl.searchParams.get('scope'), 'snsapi_base')
   await assert.rejects(
     () =>
+      service.callbackWorkbench(
+        { code: 'missing-nonce-code', state: workbench.value.state },
+        undefined,
+        { ip: '127.0.0.1', userAgent: 'wxwork node-test' },
+      ),
+    UnauthorizedException,
+  )
+  assert.equal(oauthState.consumedAt, null)
+  await assert.rejects(
+    () =>
       service.callback(
         { code: 'wrong-flow-code', state: workbench.value.state },
         workbench.browserNonce,
@@ -271,6 +281,7 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
       ),
     UnauthorizedException,
   )
+  assert.equal(oauthState.consumedAt, null)
   const workbenchResult = await service.callbackWorkbench(
     { code: 'workbench-code', state: workbench.value.state },
     workbench.browserNonce,

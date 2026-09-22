@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   UnauthorizedException,
@@ -70,6 +71,8 @@ type MappingWithUser = MappingRow & { user: UserRow }
 
 @Injectable()
 export class WeComSsoService {
+  private readonly logger = new Logger(WeComSsoService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -291,6 +294,9 @@ export class WeComSsoService {
     statePrefix: string,
   ): Promise<LoginResult & { returnPath: string }> {
     const state = await this.consumeState(input.state, browserNonce, context, flow, statePrefix)
+    this.logger.log(
+      `[WECOM-OAUTH] state accepted flow=${flow} tenantId=${state.tenantId}; exchanging provider code`,
+    )
     let externalSubject: string | undefined
     let mapping: MappingWithUser | null = null
     let identity: IdentityRow | null = null
@@ -307,18 +313,31 @@ export class WeComSsoService {
       } else {
         external = await this.weComClient.exchangeLoginCode(runtime.credentials, input.code)
       }
+      this.logger.log(
+        `[WECOM-OAUTH] provider identity exchange succeeded flow=${flow} tenantId=${state.tenantId}`,
+      )
       externalSubject = external.userId
       const mapped = await this.prisma.client.orm.public.ExternalUserMappings.where({
         tenantId: state.tenantId,
         provider: PROVIDER,
         externalKey: external.externalKey,
       }).first()
-      if (!mapped?.active) throw new UnauthorizedException('企业微信成员未同步或映射已失效')
+      if (!mapped?.active) {
+        this.logger.warn(
+          `[WECOM-OAUTH] local mapping failed reason=mapping_missing flow=${flow} tenantId=${state.tenantId}`,
+        )
+        throw new UnauthorizedException('企业微信成员未同步或映射已失效')
+      }
       const mappedUser = await this.prisma.client.orm.public.Users.where({
         id: mapped.userId,
         tenantId: state.tenantId,
       }).first()
-      if (!mappedUser) throw new UnauthorizedException('企业微信成员未同步或映射已失效')
+      if (!mappedUser) {
+        this.logger.warn(
+          `[WECOM-OAUTH] local mapping failed reason=user_missing flow=${flow} tenantId=${state.tenantId}`,
+        )
+        throw new UnauthorizedException('企业微信成员未同步或映射已失效')
+      }
       mapping = { ...mapped, user: mappedUser }
       if (mapping.user.status !== 'ACTIVE') throw new ForbiddenException('账号已被禁用')
 
@@ -336,6 +355,9 @@ export class WeComSsoService {
           externalIdentityId: identity.id,
         },
         context,
+      )
+      this.logger.log(
+        `[WECOM-OAUTH] local JWT issued flow=${flow} tenantId=${state.tenantId}`,
       )
       const lastLoginAt = nowInstant()
       await this.prisma.client.orm.public.ExternalIdentities.where({ id: identity.id }).update({
@@ -494,37 +516,60 @@ export class WeComSsoService {
     if (!state.startsWith(`${statePrefix}.`)) {
       throw new UnauthorizedException('企业微信登录状态无效或已过期')
     }
-    const result = await this.prisma.client.transaction(async (tx) => {
-      const found = await tx.orm.public.ExternalOauthStates.where({
-        stateHash: this.hash(state),
-      }).first()
-      if (!found) return null
-      const consumed = await tx.orm.public.ExternalOauthStates.where({
-        id: found.id,
-        consumedAt: null,
-      }).updateAndCount({ consumedAt: nowInstant() })
-      return { row: found, consumed: consumed === 1 }
-    })
-    const row = result?.row
-    if (
-      !row ||
-      !result.consumed ||
-      row.flow !== flow ||
-      row.expiresAt.epochMilliseconds < Date.now() ||
-      !browserNonce ||
-      row.browserNonceHash !== this.hash(browserNonce)
-    ) {
-      if (row) {
-        await this.auth.recordExternalLoginFailure(
-          {
-            tenantId: row.tenantId,
-            email: 'WECOM:unknown',
-            authType: flow === WORKBENCH_FLOW ? 'WECOM_OAUTH2' : 'WECOM',
-          },
-          '企业微信登录状态无效、已过期或已被使用',
-          context,
-        )
-      }
+    const row = await this.prisma.client.orm.public.ExternalOauthStates.where({
+      stateHash: this.hash(state),
+    }).first()
+    if (!row) {
+      this.logger.warn(`[WECOM-OAUTH] state validation failed reason=state_missing flow=${flow}`)
+      throw new UnauthorizedException('企业微信登录状态无效或已过期')
+    }
+
+    const validationFailure =
+      row.flow !== flow
+        ? 'flow_mismatch'
+        : row.expiresAt.epochMilliseconds < Date.now()
+          ? 'state_expired'
+          : row.consumedAt
+            ? 'state_used'
+            : !browserNonce
+              ? 'nonce_missing'
+              : row.browserNonceHash !== this.hash(browserNonce)
+                ? 'nonce_mismatch'
+                : null
+
+    if (validationFailure) {
+      this.logger.warn(
+        `[WECOM-OAUTH] state validation failed reason=${validationFailure} flow=${flow} tenantId=${row.tenantId}`,
+      )
+      await this.auth.recordExternalLoginFailure(
+        {
+          tenantId: row.tenantId,
+          email: 'WECOM:unknown',
+          authType: flow === WORKBENCH_FLOW ? 'WECOM_OAUTH2' : 'WECOM',
+        },
+        `企业微信登录状态校验失败：${validationFailure}`,
+        context,
+      )
+      throw new UnauthorizedException('企业微信登录状态无效或已过期')
+    }
+
+    const consumed = await this.prisma.client.orm.public.ExternalOauthStates.where({
+      id: row.id,
+      consumedAt: null,
+    }).updateAndCount({ consumedAt: nowInstant() })
+    if (consumed !== 1) {
+      this.logger.warn(
+        `[WECOM-OAUTH] state validation failed reason=state_used flow=${flow} tenantId=${row.tenantId}`,
+      )
+      await this.auth.recordExternalLoginFailure(
+        {
+          tenantId: row.tenantId,
+          email: 'WECOM:unknown',
+          authType: flow === WORKBENCH_FLOW ? 'WECOM_OAUTH2' : 'WECOM',
+        },
+        '企业微信登录状态已被使用',
+        context,
+      )
       throw new UnauthorizedException('企业微信登录状态无效或已过期')
     }
     return row

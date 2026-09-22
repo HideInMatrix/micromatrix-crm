@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { callbackWeComWorkbench } from '@/api/auth'
+import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 
@@ -123,9 +124,13 @@ function mobileRouteFromInternalPath(value: string) {
 
 function debugErrorSummary(error: unknown) {
   if (error instanceof Error) {
-    return { name: error.name, message: error.message }
+    return {
+      name: error.name,
+      message: error.message,
+      serverMessage: extractErrorMessage(error),
+    }
   }
-  return { message: String(error) }
+  return { message: String(error), serverMessage: extractErrorMessage(error) }
 }
 
 router.beforeEach(async (to) => {
