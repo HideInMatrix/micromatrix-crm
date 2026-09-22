@@ -35,8 +35,10 @@ const WORKBENCH_FLOW = 'WECOM' as const
 const QR_STATE_PREFIX = 'qr-wecom'
 const WORKBENCH_STATE_PREFIX = 'wecom'
 const STATE_TTL_MS = 10 * 60 * 1_000
+const WORKBENCH_CALLBACK_REUSE_MS = 15_000
 
 type ExternalOAuthFlow = typeof QR_FLOW | typeof WORKBENCH_FLOW
+type WeComCallbackResult = LoginResult & { returnPath: string }
 type UserRow = {
   id: string
   tenantId: string
@@ -72,6 +74,10 @@ type MappingWithUser = MappingRow & { user: UserRow }
 @Injectable()
 export class WeComSsoService {
   private readonly logger = new Logger(WeComSsoService.name)
+  private readonly workbenchCallbackFlights = new Map<
+    string,
+    { promise: Promise<WeComCallbackResult>; expiresAt: number }
+  >()
 
   constructor(
     private readonly prisma: PrismaService,
@@ -276,14 +282,55 @@ export class WeComSsoService {
     input: WeComLoginCallbackDto,
     browserNonce: string | undefined,
     context: LoginContext,
-  ): Promise<LoginResult & { returnPath: string }> {
-    return this.callbackForFlow(
+  ): Promise<WeComCallbackResult> {
+    if (!browserNonce) {
+      return this.callbackForFlow(
+        input,
+        browserNonce,
+        context,
+        WORKBENCH_FLOW,
+        WORKBENCH_STATE_PREFIX,
+      )
+    }
+
+    const key = `${this.hash(input.state)}:${this.hash(browserNonce)}`
+    const now = Date.now()
+    const existing = this.workbenchCallbackFlights.get(key)
+    if (existing && existing.expiresAt > now) {
+      this.logger.log('[WECOM-OAUTH] reusing workbench callback result')
+      return existing.promise
+    }
+    if (existing) this.workbenchCallbackFlights.delete(key)
+
+    const promise = this.callbackForFlow(
       input,
       browserNonce,
       context,
       WORKBENCH_FLOW,
       WORKBENCH_STATE_PREFIX,
     )
+    this.workbenchCallbackFlights.set(key, {
+      promise,
+      expiresAt: Number.POSITIVE_INFINITY,
+    })
+    void promise.then(
+      () => {
+        const current = this.workbenchCallbackFlights.get(key)
+        if (current?.promise === promise) {
+          current.expiresAt = Date.now() + WORKBENCH_CALLBACK_REUSE_MS
+        }
+        const timer = setTimeout(() => {
+          const latest = this.workbenchCallbackFlights.get(key)
+          if (latest?.promise === promise) this.workbenchCallbackFlights.delete(key)
+        }, WORKBENCH_CALLBACK_REUSE_MS)
+        timer.unref()
+      },
+      () => {
+        const current = this.workbenchCallbackFlights.get(key)
+        if (current?.promise === promise) this.workbenchCallbackFlights.delete(key)
+      },
+    )
+    return promise
   }
 
   private async callbackForFlow(

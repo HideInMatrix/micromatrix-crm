@@ -292,6 +292,27 @@ test('企微 OAuth state 绑定浏览器、只消费一次并复用本地账号'
   assert.deepEqual(updatedProfile, { phone: '13800000001', gender: true })
   assert.equal(updatedAvatar, 'https://example.com/avatar.png')
 
+  const concurrentWorkbench = await service.startWorkbench({ returnPath: '/mobile/home' })
+  const concurrentInput = {
+    code: 'concurrent-workbench-code',
+    state: concurrentWorkbench.value.state,
+  }
+  const [concurrentA, concurrentB] = await Promise.all([
+    service.callbackWorkbench(concurrentInput, concurrentWorkbench.browserNonce, {
+      ip: '127.0.0.1',
+      userAgent: 'wxwork node-test',
+    }),
+    service.callbackWorkbench(concurrentInput, concurrentWorkbench.browserNonce, {
+      ip: '127.0.0.1',
+      userAgent: 'wxwork node-test',
+    }),
+  ])
+  assert.equal(concurrentA.returnPath, '/mobile/home')
+  assert.equal(concurrentB.returnPath, '/mobile/home')
+  assert.equal(concurrentA.accessToken, 'access-token')
+  assert.equal(concurrentB.accessToken, 'access-token')
+  assert.equal(loginCalls, 3)
+
   const entry = await service.startWorkbenchEntry(
     { target: 'http://localhost:5173/teacher?source=wecom#overview' },
     'http://localhost:5173',
