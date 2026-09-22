@@ -9,6 +9,7 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': false
   '@swc/core': true
+  core-js: false
   esbuild: true
   msgpackr-extract: false
   prisma: true
