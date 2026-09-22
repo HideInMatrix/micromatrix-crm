@@ -133,6 +133,23 @@ function debugErrorSummary(error: unknown) {
   return { message: String(error), serverMessage: extractErrorMessage(error) }
 }
 
+const weComCallbackRequests = new Map<string, ReturnType<typeof callbackWeComWorkbench>>()
+
+function callbackWeComWorkbenchOnce(code: string, state: string) {
+  const existing = weComCallbackRequests.get(state)
+  if (existing) {
+    console.info('[WECOM-DEBUG][mobile-router][wecom-callback-reuse]')
+    return existing
+  }
+
+  console.info('[WECOM-DEBUG][mobile-router][wecom-callback-dispatch]', {
+    codeLength: code.length,
+  })
+  const request = callbackWeComWorkbench({ code, state })
+  weComCallbackRequests.set(state, request)
+  return request
+}
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const enterpriseUi = useEnterpriseUiStore()
@@ -184,7 +201,7 @@ router.beforeEach(async (to) => {
       nestedRedirect: nestedRedirect || undefined,
     })
     try {
-      const { data } = await callbackWeComWorkbench({ code, state })
+      const { data } = await callbackWeComWorkbenchOnce(code, state)
       auth.acceptLoginResult(data)
       console.info('[WECOM-DEBUG][mobile-router][wecom-callback-success]', {
         returnPath: data.returnPath,
