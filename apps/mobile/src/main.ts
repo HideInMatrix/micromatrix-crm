@@ -19,9 +19,8 @@ const accessToken = localStorage.getItem('mmx_access_token') ?? ''
 const refreshToken = localStorage.getItem('mmx_refresh_token') ?? ''
 
 console.info('[WECOM-DEBUG][mobile-bootstrap]', {
-  href: window.location.href,
   pathname: window.location.pathname,
-  search: window.location.search,
+  queryKeys: [...bootUrl.searchParams.keys()],
   userAgent: window.navigator.userAgent,
   codePresent: Boolean(bootCode),
   codeLength: bootCode.length,

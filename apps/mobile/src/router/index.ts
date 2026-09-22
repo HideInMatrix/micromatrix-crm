@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { callbackWeComWorkbench } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 
@@ -94,17 +95,64 @@ declare module 'vue-router' {
   }
 }
 
+function mobileRouteFromReturnPath(returnPath: string) {
+  const url = new URL(returnPath || '/mobile/home', window.location.origin)
+  if (!url.pathname.startsWith('/mobile/')) {
+    return { path: '/home' }
+  }
+  return {
+    path: url.pathname.slice('/mobile'.length) || '/',
+    query: Object.fromEntries(url.searchParams.entries()),
+    hash: url.hash,
+    replace: true,
+  }
+}
+
+function mobileRouteFromInternalPath(value: string) {
+  const url = new URL(value || '/home', window.location.origin)
+  const path = url.pathname.startsWith('/mobile/')
+    ? url.pathname.slice('/mobile'.length) || '/'
+    : url.pathname
+  return {
+    path,
+    query: Object.fromEntries(url.searchParams.entries()),
+    hash: url.hash,
+    replace: true,
+  }
+}
+
+function debugErrorSummary(error: unknown) {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message }
+  }
+  return { message: String(error) }
+}
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const enterpriseUi = useEnterpriseUiStore()
   const requestedTenant = typeof to.query.tenant === 'string' ? to.query.tenant.trim() : ''
-  const code = typeof to.query.code === 'string' ? to.query.code : ''
-  const state = typeof to.query.state === 'string' ? to.query.state : ''
+  let code = typeof to.query.code === 'string' ? to.query.code : ''
+  let state = typeof to.query.state === 'string' ? to.query.state : ''
+  let nestedRedirect = ''
+
+  if ((!code || !state) && typeof to.query.redirect === 'string') {
+    const redirectUrl = new URL(to.query.redirect, window.location.origin)
+    const redirectCode = redirectUrl.searchParams.get('code') ?? ''
+    const redirectState = redirectUrl.searchParams.get('state') ?? ''
+    if (redirectCode && redirectState.startsWith('wecom.')) {
+      code = redirectCode
+      state = redirectState
+      redirectUrl.searchParams.delete('code')
+      redirectUrl.searchParams.delete('state')
+      nestedRedirect = `${redirectUrl.pathname}${redirectUrl.search}${redirectUrl.hash}`
+    }
+  }
 
   console.info('[WECOM-DEBUG][mobile-router][beforeEach]', {
     name: to.name,
     path: to.path,
-    fullPath: to.fullPath,
+    queryKeys: Object.keys(to.query),
     codePresent: Boolean(code),
     codeLength: code.length,
     statePresent: Boolean(state),
@@ -112,6 +160,53 @@ router.beforeEach(async (to) => {
     isAuthenticated: auth.isAuthenticated,
     hasUser: Boolean(auth.user),
   })
+
+  if (code && state.startsWith('wecom.')) {
+    if (auth.isAuthenticated) {
+      console.info('[WECOM-DEBUG][mobile-router][wecom-already-authenticated]', {
+        path: to.path,
+      })
+      if (nestedRedirect) return mobileRouteFromInternalPath(nestedRedirect)
+      const query = { ...to.query }
+      delete query.code
+      delete query.state
+      return { path: to.path, query, hash: to.hash, replace: true }
+    }
+
+    console.info('[WECOM-DEBUG][mobile-router][wecom-callback-start]', {
+      codeLength: code.length,
+      statePrefix: state.split('.')[0],
+      nestedRedirect: nestedRedirect || undefined,
+    })
+    try {
+      const { data } = await callbackWeComWorkbench({ code, state })
+      auth.acceptLoginResult(data)
+      console.info('[WECOM-DEBUG][mobile-router][wecom-callback-success]', {
+        returnPath: data.returnPath,
+        accessTokenPresent: Boolean(data.accessToken),
+        accessTokenLength: data.accessToken?.length ?? 0,
+        refreshTokenPresent: Boolean(data.refreshToken),
+        refreshTokenLength: data.refreshToken?.length ?? 0,
+        localAccessTokenPresent: Boolean(localStorage.getItem('mmx_access_token')),
+        localRefreshTokenPresent: Boolean(localStorage.getItem('mmx_refresh_token')),
+      })
+      return mobileRouteFromReturnPath(data.returnPath || '/mobile/home')
+    } catch (error) {
+      console.error(
+        '[WECOM-DEBUG][mobile-router][wecom-callback-failed]',
+        debugErrorSummary(error),
+      )
+      return {
+        name: 'mobile-login',
+        query: {
+          manual: '1',
+          redirect: nestedRedirect || to.path,
+          wecomError: '1',
+        },
+        replace: true,
+      }
+    }
+  }
 
   if (!auth.isAuthenticated && to.name === 'mobile-login') {
     await enterpriseUi
@@ -123,7 +218,7 @@ router.beforeEach(async (to) => {
 
   if (!to.meta.public && !auth.isAuthenticated) {
     console.warn('[WECOM-DEBUG][mobile-router][redirect-login]', {
-      from: to.fullPath,
+      from: to.path,
       reason: 'protected-route-without-local-token',
       codePresent: Boolean(code),
       statePrefix: state ? state.split('.')[0] : '',
@@ -135,12 +230,12 @@ router.beforeEach(async (to) => {
   if (auth.isAuthenticated && !auth.user) {
     console.info('[WECOM-DEBUG][mobile-router][fetch-me-start]')
     await auth.fetchMe().catch((error) => {
-      console.error('[WECOM-DEBUG][mobile-router][fetch-me-failed]', error)
+      console.error('[WECOM-DEBUG][mobile-router][fetch-me-failed]', debugErrorSummary(error))
       auth.logout()
     })
     if (!auth.user) {
       console.warn('[WECOM-DEBUG][mobile-router][redirect-login]', {
-        from: to.fullPath,
+        from: to.path,
         reason: 'fetch-me-did-not-restore-user',
       })
       return { name: 'mobile-login' }

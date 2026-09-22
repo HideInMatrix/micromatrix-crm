@@ -43,9 +43,10 @@ onMounted(async () => {
   const refreshToken = localStorage.getItem('mmx_refresh_token') ?? ''
 
   console.info('[WECOM-DEBUG][mobile-login]', {
-    href: window.location.href,
-    routeFullPath: route.fullPath,
-    redirect,
+    pathname: window.location.pathname,
+    routePath: route.path,
+    queryKeys: Object.keys(route.query),
+    redirectPath: redirectUrl.pathname,
     redirectCodePresent: Boolean(redirectCode),
     redirectCodeLength: redirectCode.length,
     redirectStatePresent: Boolean(redirectState),
