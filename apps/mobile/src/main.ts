@@ -12,4 +12,25 @@ import VConsole from "vconsole";
 if (import.meta.env.DEV) void import('@vant/touch-emulator')
 new VConsole({ theme: "dark" });
 
+const bootUrl = new URL(window.location.href)
+const bootCode = bootUrl.searchParams.get('code') ?? ''
+const bootState = bootUrl.searchParams.get('state') ?? ''
+const accessToken = localStorage.getItem('mmx_access_token') ?? ''
+const refreshToken = localStorage.getItem('mmx_refresh_token') ?? ''
+
+console.info('[WECOM-DEBUG][mobile-bootstrap]', {
+  href: window.location.href,
+  pathname: window.location.pathname,
+  search: window.location.search,
+  userAgent: window.navigator.userAgent,
+  codePresent: Boolean(bootCode),
+  codeLength: bootCode.length,
+  statePresent: Boolean(bootState),
+  statePrefix: bootState ? bootState.split('.')[0] : '',
+  accessTokenPresent: Boolean(accessToken),
+  accessTokenLength: accessToken.length,
+  refreshTokenPresent: Boolean(refreshToken),
+  refreshTokenLength: refreshToken.length,
+})
+
 createApp(App).use(createPinia()).use(router).mount('#app')

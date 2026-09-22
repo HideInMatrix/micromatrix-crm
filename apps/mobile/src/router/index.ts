@@ -98,6 +98,20 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const enterpriseUi = useEnterpriseUiStore()
   const requestedTenant = typeof to.query.tenant === 'string' ? to.query.tenant.trim() : ''
+  const code = typeof to.query.code === 'string' ? to.query.code : ''
+  const state = typeof to.query.state === 'string' ? to.query.state : ''
+
+  console.info('[WECOM-DEBUG][mobile-router][beforeEach]', {
+    name: to.name,
+    path: to.path,
+    fullPath: to.fullPath,
+    codePresent: Boolean(code),
+    codeLength: code.length,
+    statePresent: Boolean(state),
+    statePrefix: state ? state.split('.')[0] : '',
+    isAuthenticated: auth.isAuthenticated,
+    hasUser: Boolean(auth.user),
+  })
 
   if (!auth.isAuthenticated && to.name === 'mobile-login') {
     await enterpriseUi
@@ -108,13 +122,32 @@ router.beforeEach(async (to) => {
   }
 
   if (!to.meta.public && !auth.isAuthenticated) {
+    console.warn('[WECOM-DEBUG][mobile-router][redirect-login]', {
+      from: to.fullPath,
+      reason: 'protected-route-without-local-token',
+      codePresent: Boolean(code),
+      statePrefix: state ? state.split('.')[0] : '',
+    })
     return { name: 'mobile-login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'mobile-login' && auth.isAuthenticated) return { path: '/' }
 
   if (auth.isAuthenticated && !auth.user) {
-    await auth.fetchMe().catch(() => auth.logout())
-    if (!auth.user) return { name: 'mobile-login' }
+    console.info('[WECOM-DEBUG][mobile-router][fetch-me-start]')
+    await auth.fetchMe().catch((error) => {
+      console.error('[WECOM-DEBUG][mobile-router][fetch-me-failed]', error)
+      auth.logout()
+    })
+    if (!auth.user) {
+      console.warn('[WECOM-DEBUG][mobile-router][redirect-login]', {
+        from: to.fullPath,
+        reason: 'fetch-me-did-not-restore-user',
+      })
+      return { name: 'mobile-login' }
+    }
+    console.info('[WECOM-DEBUG][mobile-router][fetch-me-success]', {
+      tenantSlug: auth.user.tenantSlug,
+    })
   }
   if (auth.user?.tenantSlug) {
     await enterpriseUi.load(auth.user.tenantSlug).catch(() => undefined)

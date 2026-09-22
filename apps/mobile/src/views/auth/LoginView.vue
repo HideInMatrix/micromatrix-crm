@@ -35,6 +35,27 @@ async function handleSubmit() {
 }
 
 onMounted(async () => {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  const redirectUrl = new URL(redirect || '/', window.location.origin)
+  const redirectCode = redirectUrl.searchParams.get('code') ?? ''
+  const redirectState = redirectUrl.searchParams.get('state') ?? ''
+  const accessToken = localStorage.getItem('mmx_access_token') ?? ''
+  const refreshToken = localStorage.getItem('mmx_refresh_token') ?? ''
+
+  console.info('[WECOM-DEBUG][mobile-login]', {
+    href: window.location.href,
+    routeFullPath: route.fullPath,
+    redirect,
+    redirectCodePresent: Boolean(redirectCode),
+    redirectCodeLength: redirectCode.length,
+    redirectStatePresent: Boolean(redirectState),
+    redirectStatePrefix: redirectState ? redirectState.split('.')[0] : '',
+    accessTokenPresent: Boolean(accessToken),
+    accessTokenLength: accessToken.length,
+    refreshTokenPresent: Boolean(refreshToken),
+    refreshTokenLength: refreshToken.length,
+  })
+
   if (route.query.manual === '1') return
   const lark = isLarkBrowser()
   const dingTalk = isDingTalkWorkbenchBrowser()
