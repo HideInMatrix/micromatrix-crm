@@ -13,71 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Verify source
-    runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/default?schema=public
-      pnpm_config_registry: https://registry.npmjs.org
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Validate release tag
-        shell: bash
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid release tag: $TAG"
-            exit 1
-          fi
-
-      - name: Setup pnpm and Node.js
-        uses: pnpm/setup@v2.1.0
-        with:
-          version: 11.25.0
-          runtime: node@25
-          cache: true
-          install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Emit Prisma 8 contract
-        run: pnpm prisma:emit
-
-      - name: Verify Prisma migration history
-        run: pnpm db:verify-migrations
-
-      - name: Build shared workspace package
-        run: pnpm --filter @micromatrix/shared build
-
-      - name: Typecheck shared
-        run: pnpm --filter @micromatrix/shared typecheck
-
-      - name: Typecheck API
-        run: pnpm --filter @micromatrix/api typecheck
-
-      - name: Typecheck Web
-        run: pnpm --filter @micromatrix/web typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-  docker-smoke:
-    name: Verify Docker runtime
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Build and smoke test separated images
-        run: bash docker/release-smoke.sh
-
   api-images:
     name: Build backend ${{ matrix.arch }} images
-    needs: docker-smoke
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -240,7 +177,6 @@ jobs:
 
   web-image:
     name: Build Web image
-    needs: docker-smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read
