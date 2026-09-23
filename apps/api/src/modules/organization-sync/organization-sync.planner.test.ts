@@ -151,7 +151,7 @@ test('无映射成员发生租户内邮箱碰撞时生成冲突，缺失邮箱�
   assert.equal(item?.sourceData['proposedEmail'], null)
 })
 
-test('企微可见根新增到选中部门之下且不修改选中部门本身', () => {
+test('多根组织下企微可见根新增到选中部门之下且不修改选中部门本身', () => {
   const planner = new OrganizationSyncPlanner()
   const plan = planner.plan({
     tenantId: 'tenant-a',
@@ -173,6 +173,7 @@ test('企微可见根新增到选中部门之下且不修改选中部门本身',
     departments: [
       { id: 'root', name: '微矩阵科技', parentId: null, sort: 0 },
       { id: 'support', name: '技术支持', parentId: 'root', sort: 99_991_000 },
+      { id: 'second-root', name: '第二事业部', parentId: null, sort: 1 },
     ],
     users: [],
     departmentMappings: [],

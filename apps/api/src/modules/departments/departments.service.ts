@@ -115,7 +115,6 @@ export class DepartmentsService {
 
   async remove(tenantId: string, id: string) {
     const dept = await this.ensureExists(tenantId, id)
-    if (!dept.parentId) throw new BadRequestException('组织根部门不可删除')
     const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()

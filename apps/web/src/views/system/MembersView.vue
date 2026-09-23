@@ -487,7 +487,7 @@ onMounted(() => {
                     编辑部门
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="data.parentId && auth.hasPerm('system:dept:delete')"
+                    v-if="auth.hasPerm('system:dept:delete')"
                     command="delete"
                     divided
                   >

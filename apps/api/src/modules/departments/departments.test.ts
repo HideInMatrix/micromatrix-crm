@@ -14,7 +14,7 @@ import { DepartmentsService } from './departments.service'
 const databaseUrl = process.env['DATABASE_URL']
 
 test(
-  'Departments 使用 Prisma 保持树、主管、环校验与子树删除保护',
+  'Departments 使用 Prisma 保持多根树、主管、环校验与子树删除保护',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
@@ -29,6 +29,10 @@ test(
       const root = await createPrismaTestDepartment(prismaClient, {
         tenantId: tenant.id,
         name: '总部',
+      })
+      const secondRoot = await createPrismaTestDepartment(prismaClient, {
+        tenantId: tenant.id,
+        name: '第二事业部',
       })
       const service = new DepartmentsService({ client: prismaClient } as PrismaService)
 
@@ -63,6 +67,7 @@ test(
       assert.ok(stored.updatedAt)
 
       const tree = await service.tree(tenant.id)
+      assert.equal(tree.length, 2)
       const rootNode = tree.find((item) => item.id === root.id)
       const childNode = rootNode?.children?.find((item) => item.id === child.id)
       assert.equal(childNode?.leaderName, '研发主管')
@@ -106,6 +111,17 @@ test(
         .select('id')
         .all()
       assert.equal(remaining.length, 0)
+
+      const removedRoot = await service.remove(tenant.id, secondRoot.id)
+      assert.equal(removedRoot.id, secondRoot.id)
+      assert.equal(removedRoot.deletedCount, 1)
+      const deletedRoot = await prismaClient.orm.public.Departments.where({
+        id: secondRoot.id,
+        tenantId: tenant.id,
+      })
+        .select('id')
+        .first()
+      assert.equal(deletedRoot, null)
     } finally {
       if (tenantId) {
         await prismaClient.orm.public.UserRoles.where({ tenantId }).deleteAll()
