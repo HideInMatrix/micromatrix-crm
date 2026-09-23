@@ -59,7 +59,14 @@ onMounted(load)
 
     <div class="min-h-0 flex-1 overflow-auto p-[12px]">
       <van-cell-group class="mb-4 px-5 py-4" :border="false">
-        <van-cell :border="false" class="!py-0">
+        <van-cell
+          :border="false"
+          style="
+            --van-cell-vertical-padding: 0;
+            --van-cell-horizontal-padding: 0;
+            padding: var(--van-cell-vertical-padding) var(--van-cell-horizontal-padding);
+          "
+        >
           <template #title>
             <div class="font-semibold text-[var(--text-n1)]">快捷入口</div>
           </template>
@@ -78,14 +85,30 @@ onMounted(load)
       </van-cell-group>
 
       <van-cell-group class="px-5 py-4" :border="false">
-        <van-cell :border="false" class="!py-0">
+        <van-cell
+          :border="false"
+          style="
+            --van-cell-vertical-padding: 0;
+            --van-cell-horizontal-padding: 0;
+            padding: var(--van-cell-vertical-padding) var(--van-cell-horizontal-padding);
+          "
+        >
           <template #title>
             <div class="font-semibold text-[var(--text-n1)]">消息通知</div>
           </template>
           <template #value>
-            <span class="text-[var(--text-n4)]" @click="router.push('/mine/message')">
-              {{ unreadCount > 0 ? `未读 ${unreadCount}` : '全部已读' }}
-            </span>
+            <van-button
+              plain
+              type="primary"
+              size="small"
+              class="!h-7 !rounded-[6px] !px-2.5"
+              @click.stop="router.push('/mine/message')"
+            >
+              <span class="flex items-center gap-1">
+                {{ unreadCount > 0 ? `未读 ${unreadCount}` : '全部已读' }}
+                <van-icon name="arrow" size="12" />
+              </span>
+            </van-button>
           </template>
         </van-cell>
 

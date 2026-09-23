@@ -16,8 +16,8 @@ const transitionName = ref('transition-none')
 
 const tabs = [
   { name: 'mobile-home', title: '首页', icon: House, path: '/home' },
-  { name: 'customers', title: '客户', icon: Users, path: '/customers', perm: 'menu:customer' },
   { name: 'leads', title: '线索', icon: Lightbulb, path: '/leads', perm: 'menu:lead' },
+  { name: 'customers', title: '客户', icon: Users, path: '/customers', perm: 'menu:customer' },
   { name: 'mobile-mine', title: '我的', icon: UserRound, path: '/mine' },
 ]
 
