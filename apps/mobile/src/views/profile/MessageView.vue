@@ -92,7 +92,7 @@ onMounted(() => {
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
     <div class="relative shrink-0">
-      <van-tabs v-model:active="activeTab" border class="message-tabs">
+      <van-tabs v-model:active="activeTab" border>
         <van-tab name="all">
           <template #title>
             <div class="text-base" :class="activeTab === 'all' ? 'text-[var(--primary-8)]' : ''">
@@ -101,13 +101,11 @@ onMounted(() => {
           </template>
         </van-tab>
 
-        <van-tab name="unread">
+        <van-tab name="unread" :badge="unreadCount || undefined">
           <template #title>
-            <van-badge :content="unreadCount" class="">
-              <span class="text-base" :class="activeTab === 'unread' ? 'text-[var(--primary-8)]' : ''">
-                未读消息
-              </span>
-            </van-badge>
+            <span class="text-base" :class="activeTab === 'unread' ? 'text-[var(--primary-8)]' : ''">
+              未读消息
+            </span>
           </template>
         </van-tab>
       </van-tabs>
@@ -165,9 +163,3 @@ onMounted(() => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.message-tabs :deep(.van-tab__text--ellipsis) {
-  overflow: visible !important;
-}
-</style>
