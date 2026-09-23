@@ -23,6 +23,8 @@ COPY packages/shared packages/shared
 COPY packages/frontend-shared packages/frontend-shared
 COPY apps/web apps/web
 COPY apps/mobile apps/mobile
+# Mobile build 会先执行仓库级 UI 规范门禁，Docker builder 必须显式携带该脚本。
+COPY tools/check-mobile-ui.mjs tools/check-mobile-ui.mjs
 
 RUN pnpm --filter @micromatrix/web build && pnpm --filter @micromatrix/mobile build
 
