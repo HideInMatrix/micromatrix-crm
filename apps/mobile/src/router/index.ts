@@ -1,3 +1,4 @@
+import type { CurrentUser } from '@micromatrix/shared'
 import { createRouter, createWebHistory } from 'vue-router'
 import { callbackWeComWorkbench } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
@@ -28,7 +29,7 @@ const router = createRouter({
           path: 'home',
           name: 'mobile-home',
           component: () => import('@/views/home/HomeView.vue'),
-          meta: { title: '工作台', depth: 1 },
+          meta: { title: '首页', depth: 1 },
         },
         {
           path: 'leads',
@@ -37,22 +38,58 @@ const router = createRouter({
           meta: { title: '线索管理', perm: 'menu:lead', depth: 1 },
         },
         {
+          path: 'leads/create',
+          name: 'mobile-lead-create',
+          component: () => import('@/views/leads/LeadFormView.vue'),
+          meta: { title: '新建线索', perm: 'lead:create', depth: 2 },
+        },
+        {
+          path: 'leads/:id/edit',
+          name: 'mobile-lead-edit',
+          component: () => import('@/views/leads/LeadFormView.vue'),
+          meta: { title: '编辑线索', perm: 'lead:update', depth: 2 },
+        },
+        {
           path: 'customers',
           name: 'customers',
           component: () => import('@/views/customers/CustomersView.vue'),
           meta: { title: '客户管理', perm: 'menu:customer', depth: 1 },
         },
         {
-          path: 'approvals',
-          name: 'approvals',
-          component: () => import('@/views/approvals/ApprovalsView.vue'),
-          meta: { title: '审批中心', perm: 'menu:approval', depth: 1 },
+          path: 'customers/create',
+          name: 'mobile-customer-create',
+          component: () => import('@/views/customers/CustomerFormView.vue'),
+          meta: { title: '新建客户', perm: 'customer:create', depth: 2 },
+        },
+        {
+          path: 'customers/:id/edit',
+          name: 'mobile-customer-edit',
+          component: () => import('@/views/customers/CustomerFormView.vue'),
+          meta: { title: '编辑客户', perm: 'customer:update', depth: 2 },
+        },
+        {
+          path: 'select/search',
+          name: 'mobile-search-select',
+          component: () => import('@/views/common/MobileSearchSelectView.vue'),
+          meta: { title: '选择', depth: 3 },
+        },
+        {
+          path: 'opportunities',
+          name: 'opportunities',
+          component: () => import('@/views/opportunities/OpportunitiesView.vue'),
+          meta: { title: '商机', perm: 'menu:opportunity', depth: 1 },
         },
         {
           path: 'mine',
           name: 'mobile-mine',
           component: () => import('@/views/profile/MineView.vue'),
           meta: { title: '我的', depth: 1 },
+        },
+        {
+          path: 'mine/message',
+          name: 'mobile-mine-message',
+          component: () => import('@/views/profile/MessageView.vue'),
+          meta: { title: '消息通知', depth: 2 },
         },
         {
           path: 'leads/:id/convert',
@@ -255,7 +292,8 @@ router.beforeEach(async (to) => {
       console.error('[WECOM-DEBUG][mobile-router][fetch-me-failed]', debugErrorSummary(error))
       auth.logout()
     })
-    if (!auth.user) {
+    const restoredUser = auth.user as CurrentUser | null
+    if (!restoredUser) {
       console.warn('[WECOM-DEBUG][mobile-router][redirect-login]', {
         from: to.path,
         reason: 'fetch-me-did-not-restore-user',
@@ -263,7 +301,7 @@ router.beforeEach(async (to) => {
       return { name: 'mobile-login' }
     }
     console.info('[WECOM-DEBUG][mobile-router][fetch-me-success]', {
-      tenantSlug: auth.user.tenantSlug,
+      tenantSlug: restoredUser.tenantSlug,
     })
   }
   if (auth.user?.tenantSlug) {

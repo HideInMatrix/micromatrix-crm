@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import type { CustomerVO } from '@micromatrix/shared'
+import type { CustomerVO, FieldVO } from '@micromatrix/shared'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import { listCustomers, poolBatchDeleteCustomers } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
+import MobileCustomerListCard from '@/components/customer/MobileCustomerListCard.vue'
+import { showActionConfirm } from '@/utils/dialog'
+import { showSuccessFeedback } from '@/utils/feedback'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { fetchFields } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -21,6 +25,7 @@ const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
+const fields = ref<FieldVO[]>([])
 
 const actionShow = ref(false)
 const actionTarget = ref<CustomerVO | null>(null)
@@ -29,13 +34,30 @@ const assignShow = ref(false)
 const memberColumns = computed(() =>
   fieldRefs.members.value.map((item) => ({ text: item.name, value: item.id })),
 )
+const currentPool = computed(
+  () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
+)
+const listFields = computed(() => {
+  const hiddenIds = new Set(currentPool.value?.hiddenFieldIds ?? [])
+  const visible = fields.value.filter(
+    (field) => field.showInList && !field.hidden && (field.key === 'name' || !hiddenIds.has(field.id)),
+  )
+  const nameField = fields.value.find((field) => field.key === 'name' && !field.hidden)
+  if (nameField && !visible.some((field) => field.key === 'name')) visible.unshift(nameField)
+  return visible
+})
 
 async function initPools() {
   try {
-    const { data } = await resourcePoolApi.options('customer')
-    pools.value = data
-    if (!selectedPoolId.value || !data.some((item) => item.id === selectedPoolId.value)) {
-      selectedPoolId.value = data[0]?.id ?? ''
+    const [{ data: poolData }, { data: fieldData }] = await Promise.all([
+      resourcePoolApi.options('customer'),
+      fetchFields('customer'),
+      fieldRefs.load(),
+    ])
+    pools.value = poolData
+    fields.value = fieldData
+    if (!selectedPoolId.value || !poolData.some((item) => item.id === selectedPoolId.value)) {
+      selectedPoolId.value = poolData[0]?.id ?? ''
     }
     reload()
   } catch (error) {
@@ -44,7 +66,7 @@ async function initPools() {
 }
 
 async function loadMore() {
-  if (!selectedPoolId.value || loading.value || finished.value) return
+  if (!selectedPoolId.value || finished.value) return
   loading.value = true
   try {
     const { data } = await listCustomers({
@@ -54,10 +76,6 @@ async function loadMore() {
       scope: 'sea',
       poolId: selectedPoolId.value,
     })
-    if (refreshing.value) {
-      items.value = []
-      refreshing.value = false
-    }
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
     page.value += 1
@@ -74,6 +92,17 @@ function reload() {
   items.value = []
   finished.value = false
   if (selectedPoolId.value) loadMore()
+}
+
+async function handleRefresh() {
+  page.value = 1
+  items.value = []
+  finished.value = false
+  try {
+    if (selectedPoolId.value) await loadMore()
+  } finally {
+    refreshing.value = false
+  }
 }
 
 function selectPool(poolId: string) {
@@ -97,7 +126,7 @@ function openActions(customer: CustomerVO) {
 async function claim(customer: CustomerVO) {
   try {
     await customerExtraApi.claim(customer.id, customer.poolId ?? selectedPoolId.value)
-    showSuccessToast(`已领取「${customer.name}」`)
+    showSuccessFeedback(`已领取「${customer.name}」`)
     actionShow.value = false
     reload()
   } catch (error) {
@@ -121,7 +150,7 @@ async function assign({ selectedValues }: { selectedValues: string[] }) {
   if (!userId || !actionTarget.value) return
   try {
     await customerExtraApi.assign(actionTarget.value.id, userId, true)
-    showSuccessToast('客户已分配')
+    showSuccessFeedback('客户已分配')
     assignShow.value = false
     reload()
   } catch (error) {
@@ -130,18 +159,15 @@ async function assign({ selectedValues }: { selectedValues: string[] }) {
 }
 
 async function remove(customer: CustomerVO) {
-  const confirmed = await showConfirmDialog({
+  const confirmed = await showActionConfirm({
     title: '删除公海客户',
     message: `确认删除「${customer.name}」？存在关联业务数据时会拒绝删除。`,
     confirmButtonText: '删除',
-    confirmButtonColor: 'var(--error-red)',
   })
-    .then(() => true)
-    .catch(() => false)
   if (!confirmed) return
   try {
     await poolBatchDeleteCustomers([customer.id])
-    showSuccessToast('客户已删除')
+    showSuccessFeedback('客户已删除')
     actionShow.value = false
     reload()
   } catch (error) {
@@ -155,83 +181,84 @@ defineExpose({ reload, initPools })
 
 <template>
   <div class="h-full min-h-0 flex flex-col overflow-hidden bg-[var(--mobile-page-background)]">
-    <div class="bg-white px-3 pt-2">
+    <div class="bg-[var(--text-n10)] p-[8px_16px]">
       <van-search
         v-model="keyword"
         shape="round"
-        placeholder="搜索客户名称 / 电话 / 邮箱"
+        placeholder="请输入客户名称"
+        class="!p-0"
         @search="reload"
         @clear="reload"
       />
-      <div v-if="pools.length" class="flex gap-2 overflow-x-auto px-3 pb-3">
-        <van-button
-          v-for="pool in pools"
-          :key="pool.id"
-          size="small"
-          round
-          :type="selectedPoolId === pool.id ? 'primary' : 'default'"
-          :plain="selectedPoolId !== pool.id"
-          @click="selectPool(pool.id)"
-        >
-          {{ pool.name }}
-        </van-button>
-      </div>
+    </div>
+    <div
+      v-if="pools.length"
+      class="flex min-h-12 gap-2 overflow-x-auto whitespace-nowrap border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-1 py-2"
+    >
+      <van-button
+        v-for="pool in pools"
+        :key="pool.id"
+        round
+        size="small"
+        class="!border-none !px-4 !py-1 !text-sm"
+        :class="
+          selectedPoolId === pool.id
+            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
+            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
+        "
+        @click="selectPool(pool.id)"
+      >
+        {{ pool.name }}
+      </van-button>
     </div>
 
     <van-empty v-if="!pools.length" description="暂无可访问的客户公海" />
-    <van-pull-refresh v-else v-model="refreshing" class="flex-1 overflow-auto" @refresh="reload">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="loadMore"
+    <div v-else class="min-h-0 flex-1 overflow-auto">
+      <van-pull-refresh
+        v-model="refreshing"
+        class="min-h-full"
+        @refresh="handleRefresh"
       >
-        <van-cell-group v-for="item in items" :key="item.id" inset class="crm-mobile-list-card">
-          <van-cell
-            :title="item.name"
-            :label="item.industry ?? '行业未填写'"
-            is-link
-            @click="goDetail(item)"
+        <van-list
+          v-model:loading="loading"
+          :finished="finished"
+          finished-text="已经到底部啦~"
+          class="flex flex-col gap-4 p-4"
+          @load="loadMore"
+        >
+          <MobileCustomerListCard
+            v-for="item in items"
+            :key="item.id"
+            :customer="item"
+            :fields="listFields"
+            :member-map="fieldRefs.memberMap.value"
+            :dept-map="fieldRefs.deptMap.value"
+            @open="goDetail"
           >
-            <template #value
-              ><span class="text-xs">{{ item.phone || '-' }}</span></template
-            >
-          </van-cell>
-          <van-cell>
-            <template #title>
-              <span class="text-xs text-gray-400">
-                入池：{{
-                  item.poolEnteredAt ? new Date(item.poolEnteredAt).toLocaleDateString() : '-'
-                }}
-              </span>
+            <template #actions>
+              <van-button
+                v-if="auth.hasPerm('customerPool:pick')"
+                icon="friends-o"
+                size="small"
+                type="primary"
+                plain
+                class="!border-0"
+                @click.stop="claim(item)"
+              >领取</van-button>
+              <van-button
+                v-if="auth.hasPerm('customerPool:assign') || auth.hasPerm('customerPool:delete')"
+                icon="ellipsis"
+                size="small"
+                type="primary"
+                plain
+                class="!border-0"
+                @click.stop="openActions(item)"
+              >更多</van-button>
             </template>
-            <template #value>
-              <div class="flex gap-2 justify-end">
-                <van-button
-                  v-if="auth.hasPerm('customerPool:pick')"
-                  size="small"
-                  plain
-                  type="primary"
-                  @click="claim(item)"
-                  >领取</van-button
-                >
-                <van-button
-                  v-if="
-                    auth.hasPerm('customerPool:pick') ||
-                    auth.hasPerm('customerPool:assign') ||
-                    auth.hasPerm('customerPool:delete')
-                  "
-                  size="small"
-                  plain
-                  @click="openActions(item)"
-                  >更多</van-button
-                >
-              </div>
-            </template>
-          </van-cell>
-        </van-cell-group>
-      </van-list>
-    </van-pull-refresh>
+          </MobileCustomerListCard>
+        </van-list>
+      </van-pull-refresh>
+    </div>
 
     <van-action-sheet v-model:show="actionShow" title="客户公海操作">
       <div v-if="actionTarget" class="p-4 space-y-3">

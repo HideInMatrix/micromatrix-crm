@@ -8,6 +8,8 @@ import { extractErrorMessage } from '@/api/http'
 const props = defineProps<{
   field: FieldVO
   modelValue?: string | string[]
+  name?: string
+  rules?: Array<{ required?: boolean; message?: string }>
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string | string[] | undefined] }>()
 
@@ -112,6 +114,8 @@ watch(
 <template>
   <van-field
     :model-value="displayText"
+    :name="name"
+    :rules="rules"
     :label="field.label"
     :placeholder="`请选择${field.label}`"
     :required="field.required"
@@ -122,7 +126,7 @@ watch(
     @click="open"
   />
 
-  <van-popup v-model:show="show" position="bottom" round :style="{ height: '72%' }">
+  <van-popup v-model:show="show" position="bottom" round class="h-[72%]">
     <div class="h-full flex flex-col">
       <div class="px-4 pt-4 pb-2 text-center font-medium">选择{{ field.label }}</div>
       <van-search v-model="keyword" placeholder="搜索" @search="reload" @clear="reload" />

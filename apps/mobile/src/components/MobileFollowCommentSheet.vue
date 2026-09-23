@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { FollowCommentVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
-import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
+import { showActionConfirm } from '@/utils/dialog'
+import { showSuccessFeedback } from '@/utils/feedback'
 import {
   followPlanCommentApi,
   followRecordCommentApi,
@@ -10,6 +12,7 @@ import {
   type FollowCommentUpdatePayload,
 } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import MobileVantPickerField from '@/components/MobileVantPickerField.vue'
 
 const props = defineProps<{
   resourceType: 'record' | 'plan'
@@ -94,7 +97,7 @@ async function submit() {
         mentionedUserIds: mentionedUserIds.value,
       }
       await currentApi.value.update(payload)
-      showSuccessToast('评论已更新')
+      showSuccessFeedback('评论已更新')
     } else {
       const payload: FollowCommentAddPayload = {
         resourceId: props.resourceId,
@@ -106,7 +109,7 @@ async function submit() {
         payload.replyToUserId = editorTarget.value.createdById
       }
       await currentApi.value.add(payload)
-      showSuccessToast(editorMode.value === 'reply' ? '回复已发送' : '评论已发送')
+      showSuccessFeedback(editorMode.value === 'reply' ? '回复已发送' : '评论已发送')
     }
     resetEditor()
     await load(true)
@@ -118,17 +121,16 @@ async function submit() {
 }
 
 async function remove(comment: FollowCommentVO) {
-  const confirmed = await showConfirmDialog({
+  const confirmed = await showActionConfirm({
     title: '删除评论',
     message: comment.parentId ? '确认删除这条回复？' : '确认删除这条评论及其回复？',
+    confirmButtonText: '删除',
   })
-    .then(() => true)
-    .catch(() => false)
   if (!confirmed) return
   submitting.value = true
   try {
     await currentApi.value.remove(comment.id)
-    showSuccessToast('评论已删除')
+    showSuccessFeedback('评论已删除')
     resetEditor()
     await load(true)
   } catch (error) {
@@ -158,7 +160,7 @@ watch(
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round :style="{ height: '82%' }">
+  <van-popup v-model:show="show" position="bottom" round class="h-[82%]">
     <div class="flex h-full flex-col" data-testid="mobile-follow-comment-sheet">
       <div class="border-b border-gray-100 px-4 py-3 text-center font-medium">
         评论 {{ commentCount }}
@@ -246,20 +248,13 @@ watch(
           show-word-limit
           placeholder="输入评论内容"
         />
-        <van-field label="@成员">
-          <template #input>
-            <select
-              v-model="mentionedUserIds"
-              multiple
-              class="min-h-10 w-full bg-transparent text-sm"
-              data-testid="mobile-follow-comment-mentions"
-            >
-              <option v-for="member in fieldRefs.members.value" :key="member.id" :value="member.id">
-                {{ member.name }}
-              </option>
-            </select>
-          </template>
-        </van-field>
+        <MobileVantPickerField
+          v-model="mentionedUserIds"
+          label="@成员"
+          multiple
+          testid="mobile-follow-comment-mentions"
+          :options="fieldRefs.members.value.map((member) => ({ text: member.name, value: member.id }))"
+        />
         <van-button
           block
           type="primary"

@@ -5,6 +5,9 @@ import router from './router'
 
 import '@unocss/reset/tailwind-compat.css'
 import '@micromatrix/frontend-shared/styles/tokens.css'
+import 'vant/es/toast/style'
+import 'vant/es/dialog/style'
+import 'vant/es/image-preview/style'
 import 'virtual:uno.css'
 import './styles/index.css'
 import VConsole from "vconsole";

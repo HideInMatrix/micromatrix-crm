@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showSuccessFeedback } from '@/utils/feedback'
 import { callbackLarkMobile } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
@@ -22,7 +23,7 @@ onMounted(async () => {
   try {
     const { data } = await callbackLarkMobile({ code, state })
     auth.acceptLoginResult(data)
-    showSuccessToast('飞书登录成功')
+    showSuccessFeedback('飞书登录成功')
     await router.replace(
       data.returnPath?.startsWith('/mobile/') ? data.returnPath.slice(7) : '/home',
     )

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ClipboardCheck, House, Lightbulb, UserRound, Users } from 'lucide-vue-next'
+import { House, Lightbulb, UserRound, Users } from 'lucide-vue-next'
 import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -10,16 +10,9 @@ const auth = useAuthStore()
 const transitionName = ref('transition-none')
 
 const tabs = [
-  { name: 'mobile-home', title: '工作台', icon: House, path: '/home' },
-  { name: 'leads', title: '线索', icon: Lightbulb, path: '/leads', perm: 'menu:lead' },
+  { name: 'mobile-home', title: '首页', icon: House, path: '/home' },
   { name: 'customers', title: '客户', icon: Users, path: '/customers', perm: 'menu:customer' },
-  {
-    name: 'approvals',
-    title: '审批',
-    icon: ClipboardCheck,
-    path: '/approvals',
-    perm: 'menu:approval',
-  },
+  { name: 'leads', title: '线索', icon: Lightbulb, path: '/leads', perm: 'menu:lead' },
   { name: 'mobile-mine', title: '我的', icon: UserRound, path: '/mine' },
 ]
 
@@ -43,15 +36,19 @@ const active = computed({
   get: () => (route.name as string) ?? 'home',
   set: (name: string) => {
     const tab = visibleTabs.value.find((t) => t.name === name)
-    if (tab && route.path !== tab.path) router.push(tab.path)
+    if (tab && route.path !== tab.path) router.replace(tab.path)
   },
 })
 </script>
 
 <template>
-  <div class="crm-mobile-layout min-h-full" :class="{ 'crm-mobile-layout--tabbar': showTabbar }">
+  <div
+    class="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--mobile-page-background)]"
+  >
     <router-view v-slot="{ Component, route: viewRoute }">
-      <div class="crm-mobile-view">
+      <div
+        class="relative min-h-0 flex-1 overflow-hidden bg-[var(--mobile-page-background)]"
+      >
         <transition :name="transitionName">
           <keep-alive v-if="viewRoute.meta.depth === 1">
             <component :is="Component" :key="String(viewRoute.name)" />
@@ -63,11 +60,22 @@ const active = computed({
     <van-tabbar
       v-if="showTabbar"
       v-model="active"
+      :fixed="false"
       :z-index="100"
       safe-area-inset-bottom
-      class="crm-mobile-tabbar"
+      class="relative box-content h-10 shrink-0 gap-2 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)]"
     >
-      <van-tabbar-item v-for="tab in visibleTabs" :key="tab.name" :name="tab.name">
+      <van-tabbar-item
+        v-for="tab in visibleTabs"
+        :key="tab.name"
+        :name="tab.name"
+        class="!m-0 !rounded-full !text-[10px]"
+        :class="
+          active === tab.name
+            ? '!text-[var(--primary-8)]'
+            : '!text-[var(--text-n4)]'
+        "
+      >
         <template #icon="{ active: tabActive }">
           <component
             :is="tab.icon"

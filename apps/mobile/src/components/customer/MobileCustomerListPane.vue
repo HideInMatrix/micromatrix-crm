@@ -1,30 +1,43 @@
 <script setup lang="ts">
-import { isCustomFieldKey, type CustomerVO, type FieldVO } from '@micromatrix/shared'
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { showFailToast, showSuccessToast } from 'vant'
+import type { CustomerVO, FieldVO } from '@micromatrix/shared'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { showFailToast } from 'vant'
+import { listCustomers, removeCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
-import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
-import { createCustomer, fetchFields, listCustomers } from '@/api/mobile'
+import MobileCustomerListCard from '@/components/customer/MobileCustomerListCard.vue'
+import { showActionConfirm } from '@/utils/dialog'
+import { showSuccessFeedback } from '@/utils/feedback'
+import { useFieldRefs } from '@/composables/useFieldRefs'
+import { fetchFields } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+const fieldRefs = useFieldRefs()
 
-const keyword = ref('')
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const items = ref<CustomerVO[]>([])
 const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
+const activeView = ref<'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'>('ALL')
+const viewButtons = [
+  { value: 'ALL' as const, label: '全部' },
+  { value: 'SELF' as const, label: '我的客户' },
+  { value: 'DEPARTMENT' as const, label: '部门客户' },
+  { value: 'COLLABORATION' as const, label: '协作客户' },
+]
 
 const followShow = ref(false)
 const followTarget = ref<CustomerVO | null>(null)
-const createShow = ref(false)
 const fields = ref<FieldVO[]>([])
-const formModel = ref<Record<string, unknown>>({})
-const saving = ref(false)
+const listFields = computed(() =>
+  fields.value.filter((field) => field.showInList && !field.hidden),
+)
 
 async function loadMore() {
   loading.value = true
@@ -33,11 +46,8 @@ async function loadMore() {
       page: page.value,
       pageSize: 20,
       keyword: keyword.value.trim() || undefined,
+      view: activeView.value,
     })
-    if (refreshing.value) {
-      items.value = []
-      refreshing.value = false
-    }
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
     page.value += 1
@@ -56,8 +66,36 @@ function reload() {
   loadMore()
 }
 
+async function handleRefresh() {
+  page.value = 1
+  items.value = []
+  finished.value = false
+  try {
+    await loadMore()
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function setView(value: typeof activeView.value) {
+  if (activeView.value === value) return
+  activeView.value = value
+  reload()
+}
+
 function goDetail(customer: CustomerVO) {
   router.push({ path: '/customers/detail', query: { id: customer.id, name: customer.name } })
+}
+
+function goEdit(customer: CustomerVO) {
+  router.push(`/customers/${customer.id}/edit`)
+}
+
+function goTransfer(customer: CustomerVO) {
+  router.push({
+    path: '/customers/detail',
+    query: { id: customer.id, name: customer.name, action: 'transfer' },
+  })
 }
 
 function openFollow(customer: CustomerVO) {
@@ -65,100 +103,158 @@ function openFollow(customer: CustomerVO) {
   followShow.value = true
 }
 
-async function openCreate() {
-  if (fields.value.length === 0) {
-    const { data } = await fetchFields('customer')
-    fields.value = data
-  }
-  formModel.value = {}
-  createShow.value = true
-}
+async function handleDelete(customer: CustomerVO) {
+  const confirmed = await showActionConfirm({
+    title: '删除客户',
+    message: `确认删除「${customer.name}」？`,
+    confirmButtonText: '删除',
+  })
+  if (!confirmed) return
 
-async function handleCreate() {
-  if (!formModel.value.name || String(formModel.value.name).trim() === '') {
-    showFailToast('请填写客户名称')
-    return
-  }
-  saving.value = true
   try {
-    const payload: Record<string, unknown> = { customData: {} }
-    for (const [key, value] of Object.entries(formModel.value)) {
-      if (value === undefined || value === '') continue
-      if (isCustomFieldKey(key)) (payload.customData as Record<string, unknown>)[key] = value
-      else payload[key] = value
-    }
-    await createCustomer(payload)
-    showSuccessToast('客户已创建')
-    createShow.value = false
+    await removeCustomer(customer.id)
+    showSuccessFeedback('客户已删除')
     reload()
   } catch (error) {
     showFailToast(extractErrorMessage(error))
-  } finally {
-    saving.value = false
+  }
+}
+
+function openCreate() {
+  router.push('/customers/create')
+}
+
+async function loadMetadata() {
+  try {
+    const [{ data }] = await Promise.all([fetchFields('customer'), fieldRefs.load()])
+    fields.value = data
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
   }
 }
 
 defineExpose({ reload })
+
+onMounted(async () => {
+  await loadMetadata()
+  if (keyword.value) reload()
+})
 </script>
 
 <template>
   <div class="h-full min-h-0 flex flex-col overflow-hidden bg-[var(--mobile-page-background)]">
-    <div class="bg-white px-3 pt-2">
+    <div
+      class="flex items-center gap-3 border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 py-2"
+    >
+      <van-button
+        v-if="auth.hasPerm('customer:create')"
+        plain
+        icon="plus"
+        type="primary"
+        size="small"
+        @click="openCreate"
+      />
       <van-search
         v-model="keyword"
         shape="round"
-        placeholder="搜索名称 / 电话 / 邮箱"
+        placeholder="请输入客户名称"
+        class="min-w-0 flex-1 !p-0"
         @search="reload"
         @clear="reload"
       />
-      <div v-if="auth.hasPerm('customer:create')" class="px-3 pb-2">
-        <van-button type="primary" plain block size="small" @click="openCreate"
-          >新建客户</van-button
-        >
-      </div>
+    </div>
+    <div
+      class="flex min-h-12 gap-2 overflow-x-auto whitespace-nowrap border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-1 py-2"
+    >
+      <van-button
+        v-for="button in viewButtons"
+        :key="button.value"
+        round
+        size="small"
+        class="!border-none !px-4 !py-1 !text-sm"
+        :class="
+          activeView === button.value
+            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
+            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
+        "
+        @click="setView(button.value)"
+      >
+        {{ button.label }}
+      </van-button>
     </div>
 
-    <van-pull-refresh v-model="refreshing" class="flex-1 overflow-auto" @refresh="reload">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="loadMore"
+    <div class="min-h-0 flex-1 overflow-auto">
+      <van-pull-refresh
+        v-model="refreshing"
+        class="min-h-full"
+        @refresh="handleRefresh"
       >
-        <van-cell-group v-for="item in items" :key="item.id" inset class="crm-mobile-list-card">
-          <van-cell
-            :title="item.name"
-            :label="item.industry ?? '行业未填写'"
-            is-link
-            @click="goDetail(item)"
+        <van-list
+          v-model:loading="loading"
+          :finished="finished"
+          finished-text="已经到底部啦~"
+          class="flex flex-col gap-4 p-4"
+          @load="loadMore"
+        >
+          <MobileCustomerListCard
+            v-for="item in items"
+            :key="item.id"
+            :customer="item"
+            :fields="listFields"
+            :member-map="fieldRefs.memberMap.value"
+            :dept-map="fieldRefs.deptMap.value"
+            @open="goDetail"
           >
-            <template #value
-              ><span class="text-xs">{{ item.ownerName ?? '-' }}</span></template
-            >
-          </van-cell>
-          <van-cell>
-            <template #title>
-              <span class="text-xs text-gray-400">{{ item.phone || '无电话' }}</span>
+            <template #actions>
+              <van-button
+                v-if="auth.hasPerm('customer:update')"
+                icon="edit"
+                size="small"
+                type="primary"
+                plain
+                class="!border-0"
+                @click.stop="goEdit(item)"
+              >
+                编辑
+              </van-button>
+              <van-button
+                v-if="auth.hasPerm('customer:transfer')"
+                icon="exchange"
+                size="small"
+                type="primary"
+                plain
+                class="!border-0"
+                @click.stop="goTransfer(item)"
+              >
+                转移
+              </van-button>
+              <van-button
+                v-if="auth.hasPerm('customer:update')"
+                icon="edit"
+                size="small"
+                type="primary"
+                plain
+                class="!border-0"
+                @click.stop="openFollow(item)"
+              >
+                写跟进
+              </van-button>
+              <van-button
+                v-if="auth.hasPerm('customer:delete')"
+                icon="delete-o"
+                size="small"
+                type="danger"
+                plain
+                class="!border-0"
+                @click.stop="handleDelete(item)"
+              >
+                删除
+              </van-button>
             </template>
-            <template #value>
-              <div class="flex gap-2 justify-end">
-                <a v-if="item.phone" :href="`tel:${item.phone}`">
-                  <van-button size="small" plain>拨打</van-button>
-                </a>
-                <van-button
-                  v-if="auth.hasPerm('customer:update')"
-                  size="small"
-                  plain
-                  type="primary"
-                  @click="openFollow(item)"
-                  >跟进</van-button
-                >
-              </div>
-            </template>
-          </van-cell>
-        </van-cell-group>
-      </van-list>
-    </van-pull-refresh>
+          </MobileCustomerListCard>
+        </van-list>
+      </van-pull-refresh>
+    </div>
 
     <MobileFollowUpSheet
       v-model="followShow"
@@ -168,16 +264,5 @@ defineExpose({ reload })
       @followed="reload"
     />
 
-    <van-popup v-model:show="createShow" position="bottom" round :style="{ height: '85%' }">
-      <div class="h-full flex flex-col">
-        <div class="p-4 text-center font-medium">新建客户</div>
-        <div class="flex-1 overflow-auto">
-          <MobileDynamicForm v-model="formModel" :fields="fields" />
-        </div>
-        <div class="p-4">
-          <van-button type="primary" block :loading="saving" @click="handleCreate">保存</van-button>
-        </div>
-      </div>
-    </van-popup>
   </div>
 </template>

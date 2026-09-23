@@ -3,6 +3,7 @@ import {
   FIELD_TYPE_OPTIONS,
   MODULE_LABELS,
   formulaVariables,
+  supportsMobileSearchSelect,
   type FieldOption,
   type FieldVO,
   type ModuleFormProp,
@@ -71,6 +72,14 @@ const needOptions = computed(() =>
   ['select', 'multiselect', 'radio', 'checkbox'].includes(form.type),
 )
 const isFormula = computed(() => form.type === 'formula')
+const supportsMobileSelectMode = computed(() => supportsMobileSearchSelect(form.type))
+const mobileSelectMode = computed({
+  get: () => form.config?.mobileSelectMode ?? 'popup',
+  set: (value: 'popup' | 'searchPage') => {
+    form.config ??= {}
+    form.config.mobileSelectMode = value
+  },
+})
 const supportsUnique = computed(() => {
   if (!['lead', 'customer', 'contact'].includes(activeModule.value)) return false
   if (!['text', 'phone', 'email'].includes(form.type)) return false
@@ -197,12 +206,18 @@ async function handleSave() {
 
   saving.value = true
   try {
+    const config = { ...(form.config ?? {}) }
+    if (supportsMobileSearchSelect(form.type)) {
+      config.mobileSelectMode ??= 'popup'
+    } else {
+      delete config.mobileSelectMode
+    }
     const payload: FieldForm = {
       label: form.label.trim(),
       type: form.type,
       required: form.required,
       options: normalizedOptions,
-      config: form.config,
+      config,
       span: form.span,
       showInList: form.showInList,
       listWidth: form.listWidth,
@@ -393,6 +408,16 @@ watch(
 
         <el-form-item label="占位提示">
           <el-input v-model="form.config!.placeholder" placeholder="输入框占位文案" />
+        </el-form-item>
+
+        <el-form-item v-if="supportsMobileSelectMode" label="移动端选择方式">
+          <el-radio-group v-model="mobileSelectMode">
+            <el-radio-button value="popup">弹出选择器</el-radio-button>
+            <el-radio-button value="searchPage">搜索选择页面</el-radio-button>
+          </el-radio-group>
+          <div class="mt-1 text-xs leading-5 text-[var(--el-text-color-placeholder)]">
+            搜索选择页面适用于候选数据较多的字段，Mobile 端会进入二级页面搜索并选择。
+          </div>
         </el-form-item>
 
         <div class="grid grid-cols-2 gap-4">

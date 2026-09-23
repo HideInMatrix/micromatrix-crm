@@ -1,22 +1,34 @@
 <script setup lang="ts">
-import { CalendarClock } from 'lucide-vue-next'
+import type { NotificationVO } from '@micromatrix/shared'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { dashboardSummary, type MobileSummary } from '@/api/mobile'
+import { notificationApi } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
-const summary = ref<MobileSummary | null>(null)
-const loading = ref(false)
+const keyword = ref('')
+const notifications = ref<NotificationVO[]>([])
+const unreadCount = ref(0)
 
 async function load() {
-  loading.value = true
-  try {
-    const { data } = await dashboardSummary()
-    summary.value = data
-  } finally {
-    loading.value = false
+  const [notificationRes, unreadRes] = await Promise.all([
+    notificationApi.list({ page: 1, pageSize: 4 }),
+    notificationApi.unreadCount(),
+  ])
+  notifications.value = notificationRes.data.items
+  unreadCount.value = unreadRes.data.count
+}
+
+function goSearch() {
+  router.push({ path: '/customers', query: keyword.value.trim() ? { keyword: keyword.value.trim() } : undefined })
+}
+
+async function markNotificationRead(item: NotificationVO) {
+  if (!item.readAt) {
+    await notificationApi.markRead(item.id)
+    item.readAt = new Date().toISOString()
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
   }
 }
 
@@ -24,81 +36,91 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="crm-mobile-page">
-    <div class="bg-[var(--van-primary-color)] px-4 pt-7 pb-12 text-white">
-      <div class="text-lg font-medium">你好，{{ auth.user?.name || '朋友' }}</div>
-      <div class="mt-1 text-xs opacity-80">微矩阵 CRM · 移动工作台</div>
+  <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
+    <div class="flex items-center justify-between gap-3 bg-[var(--text-n10)] px-3 py-1">
+      <div
+        class="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--text-n9)] text-base text-[var(--text-n2)]"
+        @click="router.push('/mine')"
+      >
+        {{ auth.user?.name?.slice(0, 1) || 'M' }}
+      </div>
+      <van-search
+        v-model="keyword"
+        shape="round"
+        placeholder="请输入客户名或手机号"
+        class="flex-1 !p-0"
+        @search="goSearch"
+      />
+      <van-badge :dot="unreadCount > 0">
+        <van-icon name="bell" size="21" @click="router.push('/mine/message')" />
+      </van-badge>
     </div>
 
-    <div
-      class="mx-4 -mt-6 overflow-hidden rounded-[var(--border-radius-medium)] border border-[var(--text-n8)] bg-white"
-    >
-      <div class="grid grid-cols-3 p-4">
-        <button
-          type="button"
-          class="border-0 bg-transparent text-center"
-          @click="router.push('/leads')"
-        >
-          <div class="text-xl font-semibold text-[var(--text-n1)]">
-            {{ summary?.newLeads ?? '-' }}
-          </div>
-          <div class="mt-1 text-xs text-[var(--text-n4)]">本月新线索</div>
-        </button>
-        <button
-          type="button"
-          class="border-0 bg-transparent text-center"
-          @click="router.push('/customers')"
-        >
-          <div class="text-xl font-semibold text-[var(--text-n1)]">
-            {{ summary?.newCustomers ?? '-' }}
-          </div>
-          <div class="mt-1 text-xs text-[var(--text-n4)]">本月新客户</div>
-        </button>
-        <div class="text-center">
-          <div class="text-xl font-semibold text-[var(--text-n1)]">
-            {{ summary?.newOpportunities ?? '-' }}
-          </div>
-          <div class="mt-1 text-xs text-[var(--text-n4)]">本月新商机</div>
-        </div>
-      </div>
-      <div class="grid grid-cols-2 border-t border-[var(--text-n8)] py-3">
-        <div class="text-center">
-          <div class="text-base font-semibold text-[var(--error-red)]">
-            ¥{{ (summary?.wonAmount ?? 0).toLocaleString('zh-CN') }}
-          </div>
-          <div class="mt-1 text-xs text-[var(--text-n4)]">本月赢单</div>
-        </div>
-        <div class="border-l border-[var(--text-n8)] text-center">
-          <div class="text-base font-semibold text-[var(--success-green)]">
-            ¥{{ (summary?.receivedAmount ?? 0).toLocaleString('zh-CN') }}
-          </div>
-          <div class="mt-1 text-xs text-[var(--text-n4)]">本月回款</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="mx-4 mt-4">
-      <van-cell-group inset>
-        <van-cell title="我的跟进计划" is-link @click="router.push('/follow-plans')">
-          <template #icon><CalendarClock :size="19" class="mr-2" aria-hidden="true" /></template>
+    <div class="min-h-0 flex-1 overflow-auto p-[12px]">
+      <van-cell-group class="mb-4 px-5 py-4" :border="false">
+        <van-cell :border="false" class="!py-0">
+          <template #title>
+            <div class="font-semibold text-[var(--text-n1)]">快捷入口</div>
+          </template>
         </van-cell>
-        <van-cell
-          title="待我审批"
-          is-link
-          :value="summary?.pendingApprovals ? `${summary.pendingApprovals} 条` : '无'"
-          @click="router.push('/approvals')"
+        <van-grid :border="false" :column-num="3" class="mt-3">
+          <van-grid-item text="新建线索" @click="router.push('/leads/create')">
+            <template #icon><van-icon name="records-o" size="30" color="#ff9f0a" /></template>
+          </van-grid-item>
+          <van-grid-item text="新建客户" @click="router.push('/customers/create')">
+            <template #icon><van-icon name="manager-o" size="30" color="#07c160" /></template>
+          </van-grid-item>
+          <van-grid-item text="新建联系人" @click="router.push({ path: '/customers', query: { tab: 'contact', create: 'contact' } })">
+            <template #icon><van-icon name="friends-o" size="30" color="#3b82f6" /></template>
+          </van-grid-item>
+        </van-grid>
+      </van-cell-group>
+
+      <van-cell-group class="px-5 py-4" :border="false">
+        <van-cell :border="false" class="!py-0">
+          <template #title>
+            <div class="font-semibold text-[var(--text-n1)]">消息通知</div>
+          </template>
+          <template #value>
+            <span class="text-[var(--text-n4)]" @click="router.push('/mine/message')">
+              {{ unreadCount > 0 ? `未读 ${unreadCount}` : '全部已读' }}
+            </span>
+          </template>
+        </van-cell>
+
+        <van-empty
+          v-if="notifications.length === 0"
+          image-size="48"
+          description="暂无消息"
+          class="!py-5"
         />
         <van-cell
-          title="近期待跟进"
-          is-link
-          :value="summary?.upcomingFollows ? `${summary.upcomingFollows} 条` : '无'"
-          @click="router.push('/customers')"
-        />
-        <van-cell
-          title="逾期回款计划"
-          :value="summary?.overduePlans ? `${summary.overduePlans} 条` : '无'"
-          :value-class="summary?.overduePlans ? '!text-[var(--error-red)]' : ''"
-        />
+          v-for="item in notifications"
+          v-else
+          :key="item.id"
+          class="!px-4"
+          clickable
+          @click="markNotificationRead(item)"
+        >
+          <template #title>
+            <div class="flex min-w-0 items-center gap-2">
+              <van-badge :dot="!item.readAt">
+                <van-icon name="volume-o" size="18" color="var(--primary-8)" />
+              </van-badge>
+              <div class="min-w-0 flex-1 truncate text-sm text-[var(--text-n1)]">
+                {{ item.title }}
+              </div>
+            </div>
+          </template>
+          <template #label>
+            <div class="mt-1 line-clamp-2 text-xs text-[var(--text-n4)]">
+              {{ item.content || '暂无详细内容' }}
+            </div>
+            <div class="mt-1 text-xs text-[var(--text-n5)]">
+              {{ new Date(item.createdAt).toLocaleString('zh-CN') }}
+            </div>
+          </template>
+        </van-cell>
       </van-cell-group>
     </div>
   </div>

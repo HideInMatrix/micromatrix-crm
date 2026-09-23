@@ -56,8 +56,13 @@
 - 通知统一走 `NotificationsService.notify()`（type: assign/approval/receivable/pool/system + link 路由）
 - 审批挂接：直接生效操作前调 `approvals.flowRequired()` 拦截；生效副作用写在 `ApprovalsService.effectApproved()`
 
-## 前端约定（单 Web 工程：PC + Mobile）
+## 前端约定（适用于所有前端项目）
 
+- 本节适用于仓库内所有现有和后续前端工程，不仅限于 `apps/web` / `apps/mobile`。路由页、业务页、管理端、移动端、独立 H5 等都必须遵守同一套组件化 / 函数化边界。
+- **路由 View 只做页面编排**：负责 Layout、领域组件组合、路由参数和顶层事件串联；禁止在一个 View 内同时长期维护列表、分页、筛选、表单、详情、附件、评论等多套独立状态。
+- **稳定 UI 区域必须组件化**：筛选栏、列表项、详情区、表单 Sheet/Drawer/Dialog、动作区、空状态等只要具有独立职责或可复用语义，就拆到 `components/`，通过 props / emits / v-model 通信；禁止靠继续扩张单文件解决需求。
+- **业务流程必须函数化 / composable 化**：分页加载、搜索/筛选同步、表单初始化与载荷转换、引用数据加载、监听/副作用、跨组件共享状态优先放 `composables/useXxx.ts`；无响应式依赖的格式化、映射、校验和载荷转换放独立纯函数/`utils`，模板事件只调用命名函数，不在模板内堆多步业务表达式。
+- **API 调用归领域层**：页面和展示组件不得复制相同 HTTP 流程；API client 统一进入 `src/api/`，复杂调用流程由 composable 组织。组件只有在其职责本身就是一个完整自包含业务控件时才允许调用对应 composable。
 - 路由页面必须按业务模块归档到 `apps/web/src/views/<module>/`，禁止继续把 `*View.vue` 散放在 `src/views` 根目录；移动端路由页放同模块 `mobile/` 子目录。系统设置等大模块可继续按子域细分，例如 `src/views/system/enterprise-settings/SettingsView.vue` + `components/`。
 - 共用 API 优先放 `src/api/<域>.ts`；移动端专用组合接口同样放在 `src/api/`，文件名体现 `mobile` 语义。跨页面可复用的响应式状态、加载流程、监听/副作用和 UI 行为必须优先抽成 `src/composables/useXxx.ts`；页面只保留页面编排与业务交互，不重复实现相同品牌加载、主题应用、筛选同步等逻辑。
 - 前端布局与视觉样式优先使用项目已配置的 UnoCSS + presetWind4 utility；除全局样式、第三方组件无法通过 utility 覆盖的底层规则外，不新增页面级 scoped CSS 来维护普通布局、尺寸、间距、颜色和响应式样式。

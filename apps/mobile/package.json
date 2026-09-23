@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
-    "build": "vite build",
+    "dev": "node ../../tools/check-mobile-ui.mjs && vite --host",
+    "build": "node ../../tools/check-mobile-ui.mjs && vite build",
     "preview": "vite preview",
-    "typecheck": "node ../../tools/vue-tsc.mjs --noEmit -p tsconfig.app.json"
+    "typecheck": "node ../../tools/check-mobile-ui.mjs && node ../../tools/vue-tsc.mjs --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@micromatrix/frontend-shared": "workspace:*",

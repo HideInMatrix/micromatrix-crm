@@ -142,6 +142,11 @@ export interface ModuleFormProp {
 export interface FieldConfig {
   placeholder?: string
   defaultValue?: unknown
+  /**
+   * Mobile 端大候选集字段的选择交互。
+   * popup：当前页弹层选择；searchPage：进入可搜索的二级选择页。
+   */
+  mobileSelectMode?: MobileSelectMode
   /** Cordys rules.unique 的等价配置。 */
   unique?: boolean
   /** formula 类型的表达式，变量为同对象字段 key，如 "amount * discount / 100" */
@@ -180,6 +185,20 @@ export interface FieldConfig {
   fixedColumn?: 1 | 2 | 3
   /** Cordys SUB_PRODUCT 汇总列，值为子字段 ID。 */
   sumColumns?: string[]
+}
+
+export const MOBILE_SELECT_MODES = ['popup', 'searchPage'] as const
+export type MobileSelectMode = (typeof MOBILE_SELECT_MODES)[number]
+
+export const MOBILE_SEARCH_SELECT_FIELD_TYPES = [
+  'member',
+  'dept',
+  'data_source',
+  'data_source_multiple',
+] as const satisfies readonly FieldType[]
+
+export function supportsMobileSearchSelect(type: FieldType): boolean {
+  return (MOBILE_SEARCH_SELECT_FIELD_TYPES as readonly string[]).includes(type)
 }
 
 export const SUB_TABLE_FIELD_TYPES = [

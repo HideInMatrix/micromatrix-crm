@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import { useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
+import { showActionConfirm } from '@/utils/dialog'
+import { showSuccessFeedback } from '@/utils/feedback'
 import {
   getPersonalInfo,
   resetPersonalPassword,
@@ -55,7 +57,7 @@ async function saveInfo() {
     info.value = data
     await auth.fetchMe(true)
     editVisible.value = false
-    showSuccessToast('个人信息已更新')
+    showSuccessFeedback('个人信息已更新')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   } finally {
@@ -80,11 +82,11 @@ async function savePassword() {
       originPassword: passwordForm.originPassword,
       password: passwordForm.password,
     })
-    showSuccessToast('密码已修改，请重新登录')
+    showSuccessFeedback('密码已修改，请重新登录')
     const tenant = auth.user?.tenantSlug
     auth.logout()
     passwordVisible.value = false
-    await router.push({ name: 'login', query: tenant ? { tenant } : undefined })
+    await router.push({ name: 'mobile-login', query: tenant ? { tenant } : undefined })
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   } finally {
@@ -93,61 +95,70 @@ async function savePassword() {
 }
 
 async function handleLogout() {
-  const confirmed = await showConfirmDialog({ title: '退出登录', message: '确定退出当前账号？' })
-    .then(() => true)
-    .catch(() => false)
+  const confirmed = await showActionConfirm({ title: '退出登录', message: '确定退出当前账号？' })
   if (!confirmed) return
   const tenant = auth.user?.tenantSlug
   auth.logout()
-  router.push({ name: 'login', query: tenant ? { tenant } : undefined })
+  router.push({ name: 'mobile-login', query: tenant ? { tenant } : undefined })
 }
 
 onMounted(loadInfo)
 </script>
 
 <template>
-  <div class="min-h-full">
-    <van-nav-bar title="我的" fixed placeholder />
-
-    <div class="bg-white p-5 flex items-center gap-4 mb-3">
-      <van-image v-if="info?.avatarUrl" round width="56" height="56" :src="info.avatarUrl" />
-      <div
-        v-else
-        class="w-14 h-14 rounded-full bg-[var(--van-primary-color)] text-white flex items-center justify-center text-xl font-bold"
-      >
-        {{ info?.userName?.slice(0, 1) ?? auth.user?.name?.slice(0, 1) ?? '?' }}
-      </div>
-      <div class="min-w-0 flex-1">
-        <div class="font-medium truncate">{{ info?.userName ?? auth.user?.name ?? '-' }}</div>
-        <div class="text-xs text-gray-500 mt-1 truncate">
-          {{ info?.departmentName || '未分配部门' }}
+  <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
+    <van-nav-bar title="我的" />
+    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
+      <div class="flex items-center gap-4 rounded-[12px] bg-white p-4">
+        <van-image v-if="info?.avatarUrl" round width="64" height="64" :src="info.avatarUrl" />
+        <div
+          v-else
+          class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary-7)] text-xl font-semibold text-[var(--primary-8)]"
+        >
+          {{ info?.userName?.slice(0, 1) ?? auth.user?.name?.slice(0, 1) ?? '?' }}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-base font-semibold text-[var(--text-n1)]">
+            {{ info?.userName ?? auth.user?.name ?? '-' }}
+          </div>
+          <div
+            class="mt-2 inline-flex max-w-full truncate rounded-[6px] bg-[var(--text-n9)] px-2 py-1 text-xs text-[var(--text-n1)]"
+          >
+            {{ info?.departmentName || '未分配部门' }}
+          </div>
         </div>
       </div>
-    </div>
 
-    <van-cell-group inset>
-      <van-cell title="手机号" :value="info?.phone || '-'" is-link @click="openEdit" />
-      <van-cell title="邮箱" :value="info?.email || '-'" is-link @click="openEdit" />
-      <van-cell
-        title="通知语言"
-        :value="info?.language === 'en-US' ? 'English' : '简体中文'"
-        is-link
-        @click="openEdit"
-      />
-    </van-cell-group>
+      <van-cell-group inset class="!mx-0">
+        <van-cell class="!p-4" title="手机号" :value="info?.phone || '-'" is-link @click="openEdit" />
+        <van-cell class="!p-4" title="邮箱" :value="info?.email || '-'" is-link @click="openEdit" />
+        <van-cell
+          class="!p-4"
+          title="通知语言"
+          :value="info?.language === 'en-US' ? 'English' : '简体中文'"
+          is-link
+          @click="openEdit"
+        />
+      </van-cell-group>
 
-    <van-cell-group v-if="info?.passwordLoginEnabled !== false" inset class="mt-3">
-      <van-cell title="修改密码" is-link @click="openPassword" />
-    </van-cell-group>
+      <van-cell-group v-if="info?.passwordLoginEnabled !== false" inset class="!mx-0">
+        <van-cell class="!p-4" title="修改密码" is-link @click="openPassword" />
+      </van-cell-group>
 
-    <div class="p-4 mt-4">
-      <van-button block :loading="loading" @click="handleLogout">退出登录</van-button>
+      <div>
+        <van-button block type="primary" :loading="loading" @click="handleLogout">退出登录</van-button>
+      </div>
     </div>
 
     <van-popup v-model:show="editVisible" position="bottom" round>
-      <div class="p-4 pb-8">
-        <div class="text-base font-medium mb-4">编辑个人信息</div>
-        <van-cell-group inset>
+      <div class="flex h-full flex-col bg-[var(--text-n10)]">
+        <div
+          class="flex min-h-12 items-center justify-center border-b-[0.5px] border-[var(--text-n8)] px-4 text-base font-medium text-[var(--text-n1)]"
+        >
+          编辑个人信息
+        </div>
+        <div class="py-4">
+          <van-cell-group inset>
           <van-field
             v-model="editForm.phone"
             label="手机号"
@@ -163,8 +174,11 @@ onMounted(loadInfo)
               </van-radio-group>
             </template>
           </van-field>
-        </van-cell-group>
-        <div class="mt-4 flex gap-3">
+          </van-cell-group>
+        </div>
+        <div
+          class="flex gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
+        >
           <van-button block @click="editVisible = false">取消</van-button>
           <van-button block type="primary" :loading="saving" @click="saveInfo">更新</van-button>
         </div>
@@ -172,14 +186,22 @@ onMounted(loadInfo)
     </van-popup>
 
     <van-popup v-model:show="passwordVisible" position="bottom" round>
-      <div class="p-4 pb-8">
-        <div class="text-base font-medium mb-4">修改密码</div>
-        <van-cell-group inset>
+      <div class="flex h-full flex-col bg-[var(--text-n10)]">
+        <div
+          class="flex min-h-12 items-center justify-center border-b-[0.5px] border-[var(--text-n8)] px-4 text-base font-medium text-[var(--text-n1)]"
+        >
+          修改密码
+        </div>
+        <div class="py-4">
+          <van-cell-group inset>
           <van-field v-model="passwordForm.originPassword" type="password" label="当前密码" />
           <van-field v-model="passwordForm.password" type="password" label="新密码" />
           <van-field v-model="passwordForm.confirmPassword" type="password" label="确认新密码" />
-        </van-cell-group>
-        <div class="mt-4 flex gap-3">
+          </van-cell-group>
+        </div>
+        <div
+          class="flex gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
+        >
           <van-button block @click="passwordVisible = false">取消</van-button>
           <van-button block type="primary" :loading="saving" @click="savePassword">保存</van-button>
         </div>

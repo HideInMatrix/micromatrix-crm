@@ -7,6 +7,8 @@ import {
   formulaVariables,
   isFormLinkFieldCompatible,
   isSubTableFieldType,
+  MOBILE_SELECT_MODES,
+  supportsMobileSearchSelect,
   type DataSourceSubFieldLinkField,
   type FieldConfig,
   type FieldLinkOption,
@@ -456,7 +458,7 @@ export class ModuleFormsService {
   }
 
   private cacheNamespace(formKey: string): string {
-    return `metadata:${formKey}`
+    return `metadata:v2:${formKey}`
   }
 
   private async invalidateForm(organizationId: string, formKey: string): Promise<void> {
@@ -473,12 +475,23 @@ export class ModuleFormsService {
     if (!templates?.length) return
     const existing = await tx.orm.public.SysModuleField.where({ formId: formId })
       .where((field) => field.internalKey.in(templates.map((template) => template.key)))
-      .select('internalKey')
+      .select('id', 'internalKey', 'mobile', 'createUser', 'updateUser', 'createTime', 'updateTime')
       .all()
-    const existingKeys = new Set(existing.map((field) => String(field.internalKey)))
+    const existingByKey = new Map(existing.map((field) => [String(field.internalKey), field]))
     const now = BigInt(Date.now())
     for (const template of templates) {
-      if (existingKeys.has(template.key)) continue
+      const current = existingByKey.get(template.key)
+      if (current) {
+        const untouched =
+          current.createUser === current.updateUser && current.createTime === current.updateTime
+        if (template.mobile !== false && current.mobile === false && untouched) {
+          await tx.orm.public.SysModuleField.where({ id: current.id }).update({
+            mobile: true,
+            updateTime: now,
+          })
+        }
+        continue
+      }
       const id = createLegacyId32()
       await tx.orm.public.SysModuleField.create({
         id,
@@ -486,7 +499,7 @@ export class ModuleFormsService {
         internalKey: template.key,
         name: template.label,
         _type: template.type,
-        mobile: template.mobile ?? false,
+        mobile: template.mobile ?? true,
         pos: BigInt(template.sort),
         createUser: actorId,
         updateUser: actorId,
@@ -627,6 +640,14 @@ export class ModuleFormsService {
   }
 
   private validateFieldSpecificConfig(type: FieldType, config?: FieldConfig | null): void {
+    if (config?.mobileSelectMode !== undefined) {
+      if (!supportsMobileSearchSelect(type)) {
+        throw new BadRequestException('当前字段类型不支持配置移动端选择方式')
+      }
+      if (!(MOBILE_SELECT_MODES as readonly string[]).includes(config.mobileSelectMode)) {
+        throw new BadRequestException('移动端选择方式不正确')
+      }
+    }
     if (type === 'data_source' || type === 'data_source_multiple') {
       if (typeof config?.dataSourceType !== 'string' || !config.dataSourceType.trim()) {
         throw new BadRequestException('数据源字段必须配置数据源类型')

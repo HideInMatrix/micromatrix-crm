@@ -40,12 +40,10 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="crm-mobile-page min-h-screen bg-[var(--mobile-page-background)]">
+  <div class="h-full overflow-auto bg-[var(--mobile-page-background)]">
     <van-nav-bar
       :title="opportunity?.name ?? '商机详情'"
       left-arrow
-      fixed
-      placeholder
       @click-left="router.back()"
     />
     <van-tabs v-model:active="activeTab" sticky :offset-top="46">

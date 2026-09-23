@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
+import {
+  supportsMobileSearchSelect,
+  type DepartmentVO,
+  type FieldVO,
+} from '@micromatrix/shared'
 import { computed, ref } from 'vue'
 import MobileDataSourceFieldInput from './MobileDataSourceFieldInput.vue'
+import MobileSearchPageSelectField from './MobileSearchPageSelectField.vue'
+import MobileVantDateTimeField from './MobileVantDateTimeField.vue'
 
 const props = defineProps<{
   fields: FieldVO[]
   members?: Array<{ id: string; name: string }>
   deptTree?: DepartmentVO[]
   fieldFilter?: (field: FieldVO) => boolean
+}>()
+const emit = defineEmits<{
+  (event: 'search-select', field: FieldVO): void
 }>()
 const model = defineModel<Record<string, unknown>>({ required: true })
 
@@ -47,6 +56,13 @@ function openPicker(field: FieldVO) {
   } else {
     showPicker.value = true
   }
+}
+
+function usesSearchPage(field: FieldVO) {
+  return (
+    supportsMobileSearchSelect(field.type) &&
+    field.config?.mobileSelectMode === 'searchPage'
+  )
 }
 
 function onPickerConfirm({ selectedValues }: { selectedValues: string[] }) {
@@ -90,16 +106,6 @@ const pickerColumns = computed(() => {
   return field.options?.map((o) => ({ text: o.label, value: o.value })) ?? []
 })
 
-function datetimeLocalValue(field: FieldVO) {
-  const value = model.value[field.key]
-  if (typeof value !== 'string' || !value) return ''
-  return value.replace(' ', 'T').slice(0, 16)
-}
-
-function updateDatetime(field: FieldVO, value: string) {
-  model.value[field.key] = value ? `${value.replace('T', ' ')}:00` : undefined
-}
-
 function setFieldValue(field: FieldVO, value: unknown) {
   model.value[field.key] = value
 }
@@ -111,10 +117,35 @@ function isDataSourceField(field: FieldVO) {
 function dataSourceValue(field: FieldVO): string | string[] | undefined {
   return model.value[field.key] as string | string[] | undefined
 }
+
+function searchPageValue(field: FieldVO): string | string[] | undefined {
+  return model.value[field.key] as string | string[] | undefined
+}
+
+function fieldRules(field: FieldVO) {
+  if (!field.required) return []
+  return [{ required: true, message: `请填写${field.label}` }]
+}
+
+function textInputType(field: FieldVO) {
+  if (field.type === 'phone') return 'tel'
+  if (field.type === 'email') return 'email'
+  return 'text'
+}
 </script>
 
 <template>
-  <van-cell-group inset class="crm-mobile-form">
+  <van-empty
+    v-if="visibleFields.length === 0"
+    image-size="64"
+    description="当前没有可在移动端显示的字段"
+    class="!py-10"
+  />
+  <van-cell-group
+    v-else
+    inset
+    class="!mx-4 overflow-hidden rounded-[6px] border border-[var(--text-n8)] bg-[var(--text-n10)] [&_.van-cell]:!px-4 [&_.van-cell]:!py-3 [&_.van-field__control]:text-[var(--text-n1)] [&_.van-field__label]:!w-[84px] [&_.van-field__label]:text-[var(--text-n2)]"
+  >
     <template v-for="field in visibleFields" :key="field.key">
       <slot
         v-if="field.system && $slots['system-field']"
@@ -123,10 +154,23 @@ function dataSourceValue(field: FieldVO): string | string[] | undefined {
         :value="model[field.key]"
         :set-value="(value: unknown) => setFieldValue(field, value)"
       />
+      <MobileSearchPageSelectField
+        v-else-if="usesSearchPage(field)"
+        :field="field"
+        :model-value="searchPageValue(field)"
+        :members="members"
+        :dept-tree="deptTree"
+        :name="field.key"
+        :rules="fieldRules(field)"
+        @open="emit('search-select', field)"
+        @update:model-value="model[field.key] = $event"
+      />
       <!-- 选项/日期类：只读点击唤起选择器 -->
       <van-field
         v-else-if="['select', 'radio', 'date', 'member', 'dept'].includes(field.type)"
         :model-value="displayValue(field)"
+        :name="field.key"
+        :rules="fieldRules(field)"
         :label="field.label"
         :placeholder="`请选择${field.label}`"
         :required="field.required"
@@ -135,24 +179,22 @@ function dataSourceValue(field: FieldVO): string | string[] | undefined {
         @click="openPicker(field)"
       />
       <!-- 日期时间 -->
-      <van-field
+      <MobileVantDateTimeField
         v-else-if="field.type === 'datetime'"
+        :model-value="(model[field.key] as string | undefined) ?? ''"
+        :name="field.key"
+        :rules="fieldRules(field)"
+        format="space"
         :label="field.label"
         :required="field.required"
-      >
-        <template #input>
-          <input
-            :value="datetimeLocalValue(field)"
-            type="datetime-local"
-            class="w-full bg-transparent"
-            @input="updateDatetime(field, ($event.target as HTMLInputElement).value)"
-          />
-        </template>
-      </van-field>
+        @update:model-value="model[field.key] = $event || undefined"
+      />
       <!-- 数字类 -->
       <van-field
         v-else-if="['number', 'currency', 'percent'].includes(field.type)"
         :model-value="(model[field.key] as string) ?? ''"
+        :name="field.key"
+        :rules="fieldRules(field)"
         type="number"
         :label="field.label"
         :placeholder="`请输入${field.label}`"
@@ -163,6 +205,8 @@ function dataSourceValue(field: FieldVO): string | string[] | undefined {
       <van-field
         v-else-if="field.type === 'textarea'"
         :model-value="(model[field.key] as string) ?? ''"
+        :name="field.key"
+        :rules="fieldRules(field)"
         type="textarea"
         rows="2"
         autosize
@@ -184,6 +228,9 @@ function dataSourceValue(field: FieldVO): string | string[] | undefined {
       <!-- 多选类 -->
       <van-field
         v-else-if="field.type === 'multiselect' || field.type === 'checkbox'"
+        :model-value="displayValue(field)"
+        :name="field.key"
+        :rules="fieldRules(field)"
         :label="field.label"
         :required="field.required"
       >
@@ -208,11 +255,16 @@ function dataSourceValue(field: FieldVO): string | string[] | undefined {
         v-else-if="isDataSourceField(field)"
         :field="field"
         :model-value="dataSourceValue(field)"
+        :name="field.key"
+        :rules="fieldRules(field)"
         @update:model-value="model[field.key] = $event"
       />
       <van-field
         v-else
         :model-value="(model[field.key] as string) ?? ''"
+        :name="field.key"
+        :rules="fieldRules(field)"
+        :type="textInputType(field)"
         :label="field.label"
         :placeholder="`请输入${field.label}`"
         :required="field.required"

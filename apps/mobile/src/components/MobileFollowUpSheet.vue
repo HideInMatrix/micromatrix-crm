@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { FOLLOW_UP_TYPES, type FollowUpVO } from '@micromatrix/shared'
-import { showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import { reactive, ref, watch } from 'vue'
 import { createFollowUp, pageFollowUps } from '@/api/mobile'
+import { showSuccessFeedback } from '@/utils/feedback'
 import { extractErrorMessage } from '@/api/http'
 
 const props = defineProps<{
@@ -49,7 +50,7 @@ async function submit() {
       content: form.content.trim(),
     })
     form.content = ''
-    showSuccessToast('已记录')
+    showSuccessFeedback('已记录')
     load()
     emit('followed')
   } catch (error) {
@@ -61,7 +62,7 @@ async function submit() {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round :style="{ height: '75%' }">
+  <van-popup v-model:show="show" position="bottom" round class="h-[75%]">
     <div class="p-4 h-full flex flex-col">
       <div class="text-center font-medium mb-3">跟进 · {{ props.targetName ?? '' }}</div>
 

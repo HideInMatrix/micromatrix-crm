@@ -6,10 +6,13 @@ import {
   type FollowUpVO,
 } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
-import { showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
+import { showSuccessFeedback } from '@/utils/feedback'
 import { contactApi, followUpApi, followUpPlanApi } from '@/api/sales'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import MobileVantDateTimeField from '@/components/MobileVantDateTimeField.vue'
+import MobileVantPickerField from '@/components/MobileVantPickerField.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 
 const props = defineProps<{
@@ -37,6 +40,18 @@ const form = reactive({
 const dynamicFields = computed(() =>
   fields.value.filter((field) => !field.system && !field.hidden && field.type !== 'formula'),
 )
+const contactOptions = computed(() => [
+  { text: '不关联联系人', value: '' },
+  ...contacts.value.map((item) => ({ text: item.name, value: item.id })),
+])
+const typeOptions = computed(() => [
+  { text: '未设置', value: '' },
+  ...FOLLOW_UP_TYPES.map((item) => ({ text: item, value: item })),
+])
+const ownerOptions = computed(() => [
+  { text: '沿用计划负责人', value: '' },
+  ...fieldRefs.members.value.map((item) => ({ text: item.name, value: item.id })),
+])
 
 function stringValue(value: unknown) {
   return typeof value === 'string' ? value : ''
@@ -146,7 +161,7 @@ async function save() {
       sourcePlanId: plan.id,
       moduleFields: moduleFieldsPayload(),
     })
-    showSuccessToast('已转为跟进记录')
+    showSuccessFeedback('已转为跟进记录')
     show.value = false
     emit('saved', data)
   } catch (error) {
@@ -162,7 +177,7 @@ watch(show, (open) => {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round :style="{ height: '82%' }">
+  <van-popup v-model:show="show" position="bottom" round class="h-[82%]">
     <div class="h-full flex flex-col">
       <div class="p-4 text-center font-medium">计划转跟进记录</div>
       <div v-if="plan" class="flex-1 overflow-auto px-4 pb-4 space-y-3">
@@ -171,45 +186,19 @@ watch(show, (open) => {
         </div>
         <template v-else>
           <van-field label="关联对象" :model-value="plan.targetName" readonly />
-          <van-field v-if="contacts.length" label="联系人">
-            <template #input>
-              <select v-model="form.contactId" class="w-full bg-transparent">
-                <option value="">不关联联系人</option>
-                <option v-for="item in contacts" :key="item.id" :value="item.id">
-                  {{ item.name }}
-                </option>
-              </select>
-            </template>
-          </van-field>
-          <van-field label="跟进方式">
-            <template #input>
-              <select v-model="form.type" class="w-full bg-transparent">
-                <option value="">未设置</option>
-                <option v-for="item in FOLLOW_UP_TYPES" :key="item" :value="item">
-                  {{ item }}
-                </option>
-              </select>
-            </template>
-          </van-field>
-          <van-field label="负责人">
-            <template #input>
-              <select v-model="form.ownerId" class="w-full bg-transparent">
-                <option value="">沿用计划负责人</option>
-                <option v-for="item in fieldRefs.members.value" :key="item.id" :value="item.id">
-                  {{ item.name }}
-                </option>
-              </select>
-            </template>
-          </van-field>
-          <van-field label="跟进时间">
-            <template #input>
-              <input
-                v-model="form.followedAt"
-                type="datetime-local"
-                class="w-full bg-transparent"
-              />
-            </template>
-          </van-field>
+          <MobileVantPickerField
+            v-if="contacts.length"
+            v-model="form.contactId"
+            label="联系人"
+            :options="contactOptions"
+          />
+          <MobileVantPickerField v-model="form.type" label="跟进方式" :options="typeOptions" />
+          <MobileVantPickerField v-model="form.ownerId" label="负责人" :options="ownerOptions" />
+          <MobileVantDateTimeField
+            v-model="form.followedAt"
+            label="跟进时间"
+            format="local"
+          />
           <van-field
             v-model="form.content"
             label="跟进内容"

@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./api/*": "./src/api/*.ts",
     "./device": "./src/device.ts",
+    "./field-display": "./src/field-display.ts",
     "./http": "./src/http.ts",
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./token-storage": "./src/token-storage.ts"

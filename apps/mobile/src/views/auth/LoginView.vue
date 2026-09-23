@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { showSuccessToast, showFailToast } from 'vant'
+import { showFailToast } from 'vant'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showSuccessFeedback } from '@/utils/feedback'
 import { startDingTalkWorkbenchLogin, startLarkMobileLogin } from '@/api/auth'
 import { extractErrorMessage } from '@/api/http'
 import { useLoginBranding } from '@/composables/useLoginBranding'
@@ -25,7 +26,7 @@ async function handleSubmit() {
   loading.value = true
   try {
     await auth.login(form)
-    showSuccessToast('登录成功')
+    showSuccessFeedback('登录成功')
     router.push((route.query.redirect as string) ?? '/')
   } catch (error) {
     showFailToast(extractErrorMessage(error))

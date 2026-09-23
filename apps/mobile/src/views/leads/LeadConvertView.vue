@@ -107,17 +107,17 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="min-h-full bg-white pb-[88px]">
-    <van-nav-bar title="转换为" left-arrow fixed placeholder @click-left="router.back()" />
+  <div class="h-full overflow-auto bg-[var(--mobile-page-background)] pb-[88px]">
+    <van-nav-bar title="转换为" left-arrow @click-left="router.back()" />
 
-    <div class="px-4">
+    <div class="px-4 pb-4">
       <div class="my-[14px] text-base font-semibold">线索转换为</div>
       <div class="flex gap-3">
-        <button
+        <van-button
           v-for="card in cards"
           :key="card.key"
-          type="button"
-          class="relative flex h-[74px] flex-1 items-center justify-center overflow-hidden rounded-md border bg-white text-sm"
+          plain
+          class="relative !h-[74px] !flex-1 overflow-hidden !rounded-md !bg-white !text-sm"
           :class="[
             card.active
               ? 'border-[var(--van-primary-color)] text-[var(--van-primary-color)]'
@@ -133,7 +133,7 @@ onMounted(load)
             ✓
           </span>
           {{ card.label }}
-        </button>
+        </van-button>
       </div>
 
       <van-form v-if="withOpportunity" class="mt-4">
@@ -148,7 +148,7 @@ onMounted(load)
         />
       </van-form>
 
-      <div class="mt-6 rounded-[var(--border-radius-medium)] bg-[var(--text-n9)] px-5 py-4">
+      <div class="mt-6 rounded-[var(--border-radius-medium)] bg-white px-5 py-4">
         <div class="mb-1 font-medium">备注</div>
         <div class="text-xs leading-6 text-gray-500">
           <div>转换后会创建客户和联系人，并保留原线索。</div>
@@ -160,7 +160,7 @@ onMounted(load)
     </div>
 
     <div
-      class="fixed bottom-0 left-0 right-0 z-20 flex gap-4 border-t border-[var(--text-n8)] bg-[var(--text-n10)] p-4"
+      class="fixed right-0 bottom-0 left-0 z-20 flex gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
     >
       <van-button block :disabled="loading" @click="router.back()">取消</van-button>
       <van-button

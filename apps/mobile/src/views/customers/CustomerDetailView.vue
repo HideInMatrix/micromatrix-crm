@@ -6,17 +6,15 @@ import {
   type FollowUpVO,
   type OwnerHistoryVO,
   type TeamMemberVO,
-  isCustomFieldKey,
 } from '@micromatrix/shared'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
+import { showFailToast } from 'vant'
 import {
   listCustomerOptions,
   listCustomerRelations,
   removeCustomer,
   replaceCustomerRelations,
-  updateCustomer,
   type CustomerRelationVO,
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
@@ -25,7 +23,8 @@ import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileFollowUpPlanList from '@/components/MobileFollowUpPlanList.vue'
-import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import { showActionConfirm } from '@/utils/dialog'
+import { showSuccessFeedback } from '@/utils/feedback'
 import { fetchFields, getCustomer, listCustomerContacts, pageFollowUps } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
@@ -47,9 +46,6 @@ const relations = ref<CustomerRelationVO[]>([])
 const collaborators = ref<TeamMemberVO[]>([])
 
 const followShow = ref(false)
-const editShow = ref(false)
-const editSaving = ref(false)
-const editModel = ref<Record<string, unknown>>({})
 const moreShow = ref(false)
 const transferShow = ref(false)
 const relationShow = ref(false)
@@ -122,30 +118,6 @@ function displayField(field: FieldVO) {
   })
 }
 
-function buildEditModel() {
-  if (!customer.value) return {}
-  const model: Record<string, unknown> = {}
-  for (const field of fields.value) {
-    if (field.type === 'formula') continue
-    model[field.key] = isCustomFieldKey(field.key)
-      ? customer.value.customData[field.key]
-      : (customer.value as unknown as Record<string, unknown>)[field.key]
-  }
-  return model
-}
-
-function modelToPayload(model: Record<string, unknown>) {
-  const payload: Record<string, unknown> = {}
-  const customData: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(model)) {
-    if (value === undefined || value === '') continue
-    if (isCustomFieldKey(key)) customData[key] = value
-    else payload[key] = value
-  }
-  payload.customData = customData
-  return payload
-}
-
 async function load() {
   if (!customerId.value) {
     router.replace('/customers')
@@ -198,27 +170,8 @@ async function reloadRecords() {
   }
 }
 
-function openEdit() {
-  editModel.value = buildEditModel()
-  editShow.value = true
-}
-
-async function saveEdit() {
-  if (!editModel.value.name || String(editModel.value.name).trim() === '') {
-    showFailToast('请填写客户名称')
-    return
-  }
-  editSaving.value = true
-  try {
-    await updateCustomer(customerId.value, modelToPayload(editModel.value))
-    showSuccessToast('客户已更新')
-    editShow.value = false
-    await load()
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  } finally {
-    editSaving.value = false
-  }
+function goEdit() {
+  router.push(`/customers/${customerId.value}/edit`)
 }
 
 async function transferOwner({ selectedValues }: { selectedValues: string[] }) {
@@ -226,7 +179,7 @@ async function transferOwner({ selectedValues }: { selectedValues: string[] }) {
   if (!userId) return
   try {
     await customerExtraApi.assign(customerId.value, userId)
-    showSuccessToast('客户已转移')
+    showSuccessFeedback('客户已转移')
     transferShow.value = false
     moreShow.value = false
     await load()
@@ -237,16 +190,14 @@ async function transferOwner({ selectedValues }: { selectedValues: string[] }) {
 
 async function moveToSea() {
   moreShow.value = false
-  const confirmed = await showConfirmDialog({
+  const confirmed = await showActionConfirm({
     title: '移入客户公海',
     message: `确认将「${customer.value?.name ?? ''}」移入客户公海？`,
   })
-    .then(() => true)
-    .catch(() => false)
   if (!confirmed) return
   try {
     await customerExtraApi.toSea(customerId.value)
-    showSuccessToast('已移入客户公海')
+    showSuccessFeedback('已移入客户公海')
     router.replace('/customers')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
@@ -255,18 +206,15 @@ async function moveToSea() {
 
 async function handleDelete() {
   moreShow.value = false
-  const confirmed = await showConfirmDialog({
+  const confirmed = await showActionConfirm({
     title: '删除客户',
     message: `确认删除「${customer.value?.name ?? ''}」？`,
     confirmButtonText: '删除',
-    confirmButtonColor: 'var(--error-red)',
   })
-    .then(() => true)
-    .catch(() => false)
   if (!confirmed) return
   try {
     await removeCustomer(customerId.value)
-    showSuccessToast('客户已删除')
+    showSuccessFeedback('客户已删除')
     router.replace('/customers')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
@@ -305,7 +253,7 @@ async function saveRelation() {
     const { data } = await replaceCustomerRelations(customerId.value, next)
     relations.value = data
     relationShow.value = false
-    showSuccessToast(relationEditingId.value ? '客户关系已更新' : '客户关系已添加')
+    showSuccessFeedback(relationEditingId.value ? '客户关系已更新' : '客户关系已添加')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
@@ -318,7 +266,7 @@ async function deleteRelation(relation: CustomerRelationVO) {
       .map((item) => ({ relationType: item.relationType, customerId: item.customerId }))
     const { data } = await replaceCustomerRelations(customerId.value, next)
     relations.value = data
-    showSuccessToast('客户关系已删除')
+    showSuccessFeedback('客户关系已删除')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
@@ -358,7 +306,7 @@ async function saveCollaborator() {
     const { data } = await customerExtraApi.teamList(customerId.value)
     collaborators.value = data
     collaboratorShow.value = false
-    showSuccessToast(collaboratorEditingId.value ? '协作设置已更新' : '协作人已添加')
+    showSuccessFeedback(collaboratorEditingId.value ? '协作设置已更新' : '协作人已添加')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
@@ -368,22 +316,36 @@ async function deleteCollaborator(member: TeamMemberVO) {
   try {
     await customerExtraApi.teamRemove(customerId.value, member.id)
     collaborators.value = collaborators.value.filter((item) => item.id !== member.id)
-    showSuccessToast('协作人已移除')
+    showSuccessFeedback('协作人已移除')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (!customer.value) return
+  if (
+    route.query.action === 'transfer' &&
+    canMainAction.value &&
+    auth.hasPerm('customer:transfer')
+  ) {
+    transferShow.value = true
+  }
+})
 </script>
 
 <template>
-  <div class="crm-mobile-page h-full min-h-screen flex flex-col bg-[var(--mobile-page-background)]">
+  <div class="flex h-full flex-col bg-[var(--mobile-page-background)]">
     <van-nav-bar :title="customer?.name ?? '客户详情'" left-arrow @click-left="router.back()" />
 
     <van-loading v-if="loading" class="py-16 text-center" />
     <template v-else-if="customer">
-      <van-tabs v-model:active="activeTab" border class="detail-tabs flex-1 min-h-0">
+      <van-tabs
+        v-model:active="activeTab"
+        border
+        class="min-h-0 flex-1 [&_.van-tabs__content]:h-full [&_.van-tabs__content]:overflow-hidden [&_.van-tab__panel]:h-full"
+      >
         <van-tab v-for="tab in detailTabs" :key="tab.name" :name="tab.name" :title="tab.title">
           <div class="h-full overflow-auto pb-4">
             <template v-if="tab.name === 'info'">
@@ -517,9 +479,9 @@ onMounted(load)
             auth.hasPerm('customer:recycle') ||
             auth.hasPerm('customer:delete'))
         "
-        class="shrink-0 bg-[var(--text-n10)] border-t border-[var(--text-n8)] p-3 flex gap-3"
+        class="flex shrink-0 gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
       >
-        <van-button v-if="auth.hasPerm('customer:update')" block type="primary" @click="openEdit"
+        <van-button v-if="auth.hasPerm('customer:update')" block type="primary" @click="goEdit"
           >编辑</van-button
         >
         <van-button
@@ -543,18 +505,6 @@ onMounted(load)
       :target-name="customer?.name"
       @followed="reloadRecords"
     />
-
-    <van-popup v-model:show="editShow" position="bottom" round :style="{ height: '88%' }">
-      <div class="h-full flex flex-col">
-        <div class="p-4 text-center font-medium">编辑客户</div>
-        <div class="flex-1 overflow-auto">
-          <MobileDynamicForm v-model="editModel" :fields="fields" />
-        </div>
-        <div class="p-4">
-          <van-button type="primary" block :loading="editSaving" @click="saveEdit">保存</van-button>
-        </div>
-      </div>
-    </van-popup>
 
     <van-action-sheet v-model:show="moreShow" title="更多操作">
       <div class="p-4 space-y-3">
@@ -630,14 +580,3 @@ onMounted(load)
     </van-popup>
   </div>
 </template>
-
-<style scoped>
-.detail-tabs :deep(.van-tabs__content),
-.detail-tabs :deep(.van-tab__panel) {
-  height: 100%;
-}
-
-.detail-tabs :deep(.van-tabs__content) {
-  overflow: hidden;
-}
-</style>
