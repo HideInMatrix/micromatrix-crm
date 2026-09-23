@@ -164,6 +164,7 @@ onMounted(init)
     </div>
 
     <div
+      v-if="pools.length > 0"
       class="flex min-h-12 gap-2 overflow-x-auto whitespace-nowrap border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-1 py-2"
     >
       <van-button
