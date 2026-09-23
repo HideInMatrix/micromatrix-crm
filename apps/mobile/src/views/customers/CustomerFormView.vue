@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FieldVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import MobileCustomerForm from '@/components/customer/MobileCustomerForm.vue'
 import { useCustomerForm } from '@/composables/useCustomerForm'
 import { useSearchSelectStore } from '@/stores/search-select'
@@ -55,12 +55,14 @@ watch(
   initialize,
   { immediate: true },
 )
+
+onBeforeRouteLeave((to) => {
+  if (to.name !== 'mobile-search-select') searchSelect.clearDraft(draftKey.value)
+})
 </script>
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n10)]">
-    <van-nav-bar :title="form.title.value" left-arrow @click-left="cancel" />
-
     <div class="min-h-0 flex-1 overflow-auto bg-[var(--text-n10)] py-4">
       <van-loading v-if="form.loading.value" class="!flex !justify-center !py-10" />
       <MobileCustomerForm

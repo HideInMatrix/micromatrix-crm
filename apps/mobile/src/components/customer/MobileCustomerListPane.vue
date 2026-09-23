@@ -3,15 +3,17 @@ import type { CustomerVO, FieldVO } from '@micromatrix/shared'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
-import { listCustomers, removeCustomer } from '@/api/customers'
+import { getCustomerTabs, listCustomers, removeCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
+import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileCustomerListCard from '@/components/customer/MobileCustomerListCard.vue'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { fetchFields } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
+import type { MobileViewSelection } from '@/types/mobile-view'
 
 const router = useRouter()
 const route = useRoute()
@@ -24,13 +26,13 @@ const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
-const activeView = ref<'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'>('ALL')
-const viewButtons = [
-  { value: 'ALL' as const, label: '全部' },
-  { value: 'SELF' as const, label: '我的客户' },
-  { value: 'DEPARTMENT' as const, label: '部门客户' },
-  { value: 'COLLABORATION' as const, label: '协作客户' },
-]
+type CustomerSystemView = 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
+const activeView = ref<CustomerSystemView | ''>('SELF')
+const activeSavedViewId = ref('')
+const systemViews = ref<{ id: CustomerSystemView; label: string }[]>([])
+const systemViewsReady = ref(false)
+const savedViewsReady = ref(false)
+const viewsReady = computed(() => systemViewsReady.value && savedViewsReady.value)
 
 const followShow = ref(false)
 const followTarget = ref<CustomerVO | null>(null)
@@ -40,13 +42,15 @@ const listFields = computed(() =>
 )
 
 async function loadMore() {
+  if (!viewsReady.value) return
   loading.value = true
   try {
     const { data } = await listCustomers({
       page: page.value,
       pageSize: 20,
       keyword: keyword.value.trim() || undefined,
-      view: activeView.value,
+      view: activeView.value || undefined,
+      viewId: activeSavedViewId.value || undefined,
     })
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
@@ -77,9 +81,47 @@ async function handleRefresh() {
   }
 }
 
-function setView(value: typeof activeView.value) {
-  if (activeView.value === value) return
-  activeView.value = value
+async function loadSystemViews() {
+  try {
+    const { data } = await getCustomerTabs()
+    const next: { id: CustomerSystemView; label: string }[] = []
+    if (data.all) next.push({ id: 'ALL', label: '全部客户' })
+    next.push({ id: 'SELF', label: '我的客户' })
+    if (data.dept) next.push({ id: 'DEPARTMENT', label: '部门客户' })
+    next.push({ id: 'COLLABORATION', label: '协作客户' })
+    systemViews.value = next
+    if (!next.some((item) => item.id === activeView.value)) {
+      activeView.value = next[0]?.id ?? 'SELF'
+    }
+  } catch (error) {
+    systemViews.value = [
+      { id: 'SELF', label: '我的客户' },
+      { id: 'COLLABORATION', label: '协作客户' },
+    ]
+    activeView.value = 'SELF'
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    systemViewsReady.value = true
+  }
+}
+
+function applyViewSelection(selection: MobileViewSelection) {
+  if (selection.type === 'saved') {
+    activeSavedViewId.value = selection.id
+    activeView.value = ''
+  } else if (selection.type === 'system') {
+    activeSavedViewId.value = ''
+    activeView.value = selection.id as CustomerSystemView
+  }
+}
+
+function handleViewReady(selection: MobileViewSelection) {
+  applyViewSelection(selection)
+  savedViewsReady.value = true
+}
+
+function handleViewChange(selection: MobileViewSelection) {
+  applyViewSelection(selection)
   reload()
 }
 
@@ -136,8 +178,7 @@ async function loadMetadata() {
 defineExpose({ reload })
 
 onMounted(async () => {
-  await loadMetadata()
-  if (keyword.value) reload()
+  await Promise.all([loadMetadata(), loadSystemViews()])
 })
 </script>
 
@@ -163,28 +204,18 @@ onMounted(async () => {
         @clear="reload"
       />
     </div>
-    <div
-      class="flex min-h-12 gap-2 overflow-x-auto whitespace-nowrap border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-1 py-2"
-    >
-      <van-button
-        v-for="button in viewButtons"
-        :key="button.value"
-        round
-        size="small"
-        class="!border-none !px-4 !py-1 !text-sm"
-        :class="
-          activeView === button.value
-            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
-            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
-        "
-        @click="setView(button.value)"
-      >
-        {{ button.label }}
-      </van-button>
-    </div>
+    <MobileViewBar
+      v-if="systemViewsReady"
+      module="customer"
+      :system-views="systemViews"
+      :system-view="activeView"
+      @ready="handleViewReady"
+      @change="handleViewChange"
+    />
 
     <div class="min-h-0 flex-1 overflow-auto">
       <van-pull-refresh
+        v-if="viewsReady"
         v-model="refreshing"
         class="min-h-full"
         @refresh="handleRefresh"
@@ -254,6 +285,7 @@ onMounted(async () => {
           </MobileCustomerListCard>
         </van-list>
       </van-pull-refresh>
+      <van-loading v-else class="!flex !justify-center !py-10" />
     </div>
 
     <MobileFollowUpSheet

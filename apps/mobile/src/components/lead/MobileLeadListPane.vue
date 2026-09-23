@@ -7,11 +7,13 @@ import { extractErrorMessage } from '@/api/http'
 import { fetchFields } from '@/api/mobile'
 import { leadApi } from '@/api/sales'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
+import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
+import type { MobileViewSelection } from '@/types/mobile-view'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -24,6 +26,8 @@ const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
+const activeSavedViewId = ref('')
+const viewsReady = ref(false)
 const followShow = ref(false)
 const followTarget = ref<LeadVO | null>(null)
 
@@ -32,6 +36,7 @@ const listFields = computed(() =>
 )
 
 async function loadMore() {
+  if (!viewsReady.value) return
   loading.value = true
   try {
     const { data } = await leadApi.list({
@@ -39,6 +44,7 @@ async function loadMore() {
       pageSize: 20,
       scope: 'mine',
       keyword: keyword.value.trim() || undefined,
+      viewId: activeSavedViewId.value || undefined,
     })
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
@@ -77,6 +83,13 @@ function openEdit(lead: LeadVO) {
   router.push('/leads/' + lead.id + '/edit')
 }
 
+function openDetail(lead: LeadVO) {
+  router.push({
+    path: '/leads/detail',
+    query: { id: lead.id, name: lead.name },
+  })
+}
+
 function openFollow(lead: LeadVO) {
   followTarget.value = lead
   followShow.value = true
@@ -84,6 +97,20 @@ function openFollow(lead: LeadVO) {
 
 function openConvert(lead: LeadVO) {
   router.push('/leads/' + lead.id + '/convert')
+}
+
+function applyViewSelection(selection: MobileViewSelection) {
+  activeSavedViewId.value = selection.type === 'saved' ? selection.id : ''
+}
+
+function handleViewReady(selection: MobileViewSelection) {
+  applyViewSelection(selection)
+  viewsReady.value = true
+}
+
+function handleViewChange(selection: MobileViewSelection) {
+  applyViewSelection(selection)
+  reload()
 }
 
 async function remove(lead: LeadVO) {
@@ -139,8 +166,19 @@ onMounted(loadMetadata)
       />
     </div>
 
+    <MobileViewBar
+      module="lead"
+      @ready="handleViewReady"
+      @change="handleViewChange"
+    />
+
     <div class="min-h-0 flex-1 overflow-auto">
-      <van-pull-refresh v-model="refreshing" class="min-h-full" @refresh="handleRefresh">
+      <van-pull-refresh
+        v-if="viewsReady"
+        v-model="refreshing"
+        class="min-h-full"
+        @refresh="handleRefresh"
+      >
         <van-list
           v-model:loading="loading"
           :finished="finished"
@@ -155,6 +193,7 @@ onMounted(loadMetadata)
             :fields="listFields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
+            @click="openDetail(item)"
           >
             <template #actions>
               <van-button
@@ -200,6 +239,7 @@ onMounted(loadMetadata)
           </MobileLeadListCard>
         </van-list>
       </van-pull-refresh>
+      <van-loading v-else class="!flex !justify-center !py-10" />
     </div>
 
     <MobileFollowUpSheet

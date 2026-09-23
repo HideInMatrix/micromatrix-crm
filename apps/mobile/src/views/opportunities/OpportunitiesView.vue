@@ -119,7 +119,6 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
-    <van-nav-bar title="商机" />
     <div
       class="flex items-center gap-3 border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 py-2"
     >

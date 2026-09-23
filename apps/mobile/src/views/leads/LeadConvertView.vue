@@ -108,8 +108,6 @@ onMounted(load)
 
 <template>
   <div class="h-full overflow-auto bg-[var(--mobile-page-background)] pb-[88px]">
-    <van-nav-bar title="转换为" left-arrow @click-left="router.back()" />
-
     <div class="px-4 pb-4">
       <div class="my-[14px] text-base font-semibold">线索转换为</div>
       <div class="flex gap-3">

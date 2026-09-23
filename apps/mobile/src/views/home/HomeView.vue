@@ -20,8 +20,8 @@ async function load() {
   unreadCount.value = unreadRes.data.count
 }
 
-function goSearch() {
-  router.push({ path: '/customers', query: keyword.value.trim() ? { keyword: keyword.value.trim() } : undefined })
+function openSearch() {
+  router.push('/search')
 }
 
 async function markNotificationRead(item: NotificationVO) {
@@ -47,9 +47,10 @@ onMounted(load)
       <van-search
         v-model="keyword"
         shape="round"
-        placeholder="请输入客户名或手机号"
+        placeholder="搜索"
+        readonly
         class="flex-1 !p-0"
-        @search="goSearch"
+        @click="openSearch"
       />
       <van-badge :dot="unreadCount > 0">
         <van-icon name="bell" size="21" @click="router.push('/mine/message')" />
@@ -70,7 +71,7 @@ onMounted(load)
           <van-grid-item text="新建客户" @click="router.push('/customers/create')">
             <template #icon><van-icon name="manager-o" size="30" color="#07c160" /></template>
           </van-grid-item>
-          <van-grid-item text="新建联系人" @click="router.push({ path: '/customers', query: { tab: 'contact', create: 'contact' } })">
+          <van-grid-item text="新建联系人" @click="router.push('/contacts/create')">
             <template #icon><van-icon name="friends-o" size="30" color="#3b82f6" /></template>
           </van-grid-item>
         </van-grid>

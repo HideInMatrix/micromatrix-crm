@@ -6,12 +6,14 @@ import { showFailToast } from 'vant'
 import { listCustomers, poolBatchDeleteCustomers } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
+import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileCustomerListCard from '@/components/customer/MobileCustomerListCard.vue'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { fetchFields } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
+import type { MobileViewSelection } from '@/types/mobile-view'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -26,6 +28,10 @@ const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
 const fields = ref<FieldVO[]>([])
+const activeSavedViewId = ref('')
+const poolsReady = ref(false)
+const savedViewsReady = ref(false)
+const viewsReady = computed(() => poolsReady.value && savedViewsReady.value)
 
 const actionShow = ref(false)
 const actionTarget = ref<CustomerVO | null>(null)
@@ -59,14 +65,15 @@ async function initPools() {
     if (!selectedPoolId.value || !poolData.some((item) => item.id === selectedPoolId.value)) {
       selectedPoolId.value = poolData[0]?.id ?? ''
     }
-    reload()
   } catch (error) {
     showFailToast(extractErrorMessage(error))
+  } finally {
+    poolsReady.value = true
   }
 }
 
 async function loadMore() {
-  if (!selectedPoolId.value || finished.value) return
+  if (!viewsReady.value || !selectedPoolId.value || finished.value) return
   loading.value = true
   try {
     const { data } = await listCustomers({
@@ -75,6 +82,7 @@ async function loadMore() {
       keyword: keyword.value.trim() || undefined,
       scope: 'sea',
       poolId: selectedPoolId.value,
+      viewId: activeSavedViewId.value || undefined,
     })
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
@@ -91,7 +99,7 @@ function reload() {
   page.value = 1
   items.value = []
   finished.value = false
-  if (selectedPoolId.value) loadMore()
+  if (viewsReady.value && selectedPoolId.value) loadMore()
 }
 
 async function handleRefresh() {
@@ -108,6 +116,20 @@ async function handleRefresh() {
 function selectPool(poolId: string) {
   if (selectedPoolId.value === poolId) return
   selectedPoolId.value = poolId
+  reload()
+}
+
+function applyViewSelection(selection: MobileViewSelection) {
+  activeSavedViewId.value = selection.type === 'saved' ? selection.id : ''
+}
+
+function handleViewReady(selection: MobileViewSelection) {
+  applyViewSelection(selection)
+  savedViewsReady.value = true
+}
+
+function handleViewChange(selection: MobileViewSelection) {
+  applyViewSelection(selection)
   reload()
 }
 
@@ -212,8 +234,15 @@ defineExpose({ reload, initPools })
       </van-button>
     </div>
 
-    <van-empty v-if="!pools.length" description="暂无可访问的客户公海" />
-    <div v-else class="min-h-0 flex-1 overflow-auto">
+    <MobileViewBar
+      v-if="poolsReady"
+      module="customer_pool"
+      @ready="handleViewReady"
+      @change="handleViewChange"
+    />
+
+    <van-empty v-if="poolsReady && !pools.length" description="暂无可访问的客户公海" />
+    <div v-else-if="viewsReady" class="min-h-0 flex-1 overflow-auto">
       <van-pull-refresh
         v-model="refreshing"
         class="min-h-full"
@@ -259,6 +288,7 @@ defineExpose({ reload, initPools })
         </van-list>
       </van-pull-refresh>
     </div>
+    <van-loading v-else class="!flex !justify-center !py-10" />
 
     <van-action-sheet v-model:show="actionShow" title="客户公海操作">
       <div v-if="actionTarget" class="p-4 space-y-3">

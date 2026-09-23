@@ -337,8 +337,6 @@ onMounted(async () => {
 
 <template>
   <div class="flex h-full flex-col bg-[var(--mobile-page-background)]">
-    <van-nav-bar :title="customer?.name ?? '客户详情'" left-arrow @click-left="router.back()" />
-
     <van-loading v-if="loading" class="py-16 text-center" />
     <template v-else-if="customer">
       <van-tabs

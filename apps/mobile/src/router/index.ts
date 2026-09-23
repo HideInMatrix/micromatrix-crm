@@ -5,6 +5,12 @@ import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useEnterpriseUiStore } from '@/stores/enterprise-ui'
 
+interface MobileHeaderMeta {
+  back?: boolean
+  titleQuery?: string
+  titleSource?: 'search-select'
+}
+
 const router = createRouter({
   history: createWebHistory('/mobile/'),
   routes: [
@@ -32,6 +38,17 @@ const router = createRouter({
           meta: { title: '首页', depth: 1 },
         },
         {
+          path: 'search',
+          name: 'mobile-global-search',
+          component: () => import('@/views/home/SearchView.vue'),
+          meta: {
+            title: '搜索',
+            depth: 2,
+            mobileHeader: { back: true },
+            stableViewKey: true,
+          },
+        },
+        {
           path: 'leads',
           name: 'leads',
           component: () => import('@/views/leads/LeadsView.vue'),
@@ -41,13 +58,45 @@ const router = createRouter({
           path: 'leads/create',
           name: 'mobile-lead-create',
           component: () => import('@/views/leads/LeadFormView.vue'),
-          meta: { title: '新建线索', perm: 'lead:create', depth: 2 },
+          meta: {
+            title: '新建线索',
+            perm: 'lead:create',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
         },
         {
           path: 'leads/:id/edit',
           name: 'mobile-lead-edit',
           component: () => import('@/views/leads/LeadFormView.vue'),
-          meta: { title: '编辑线索', perm: 'lead:update', depth: 2 },
+          meta: {
+            title: '编辑线索',
+            perm: 'lead:update',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
+        },
+        {
+          path: 'leads/detail',
+          name: 'mobile-lead-detail',
+          component: () => import('@/views/leads/LeadDetailView.vue'),
+          meta: {
+            title: '线索详情',
+            perm: 'menu:lead',
+            depth: 2,
+            mobileHeader: { back: true, titleQuery: 'name' },
+          },
+        },
+        {
+          path: 'leads/pool-detail',
+          name: 'mobile-lead-pool-detail',
+          component: () => import('@/views/leads/LeadDetailView.vue'),
+          meta: {
+            title: '线索池详情',
+            perm: 'leadPool:read',
+            depth: 2,
+            mobileHeader: { back: true, titleQuery: 'name' },
+          },
         },
         {
           path: 'customers',
@@ -59,61 +108,128 @@ const router = createRouter({
           path: 'customers/create',
           name: 'mobile-customer-create',
           component: () => import('@/views/customers/CustomerFormView.vue'),
-          meta: { title: '新建客户', perm: 'customer:create', depth: 2 },
+          meta: {
+            title: '新建客户',
+            perm: 'customer:create',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
         },
         {
           path: 'customers/:id/edit',
           name: 'mobile-customer-edit',
           component: () => import('@/views/customers/CustomerFormView.vue'),
-          meta: { title: '编辑客户', perm: 'customer:update', depth: 2 },
+          meta: {
+            title: '编辑客户',
+            perm: 'customer:update',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
+        },
+        {
+          path: 'contacts/detail',
+          name: 'mobile-contact-detail',
+          component: () => import('@/views/contacts/ContactDetailView.vue'),
+          meta: {
+            title: '联系人详情',
+            perm: 'contact:read',
+            depth: 2,
+            mobileHeader: { back: true, titleQuery: 'name' },
+          },
+        },
+        {
+          path: 'contacts/create',
+          name: 'mobile-contact-create',
+          component: () => import('@/views/contacts/ContactFormView.vue'),
+          meta: {
+            title: '新建联系人',
+            perm: 'contact:create',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
+        },
+        {
+          path: 'contacts/:id/edit',
+          name: 'mobile-contact-edit',
+          component: () => import('@/views/contacts/ContactFormView.vue'),
+          meta: {
+            title: '编辑联系人',
+            perm: 'contact:update',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
         },
         {
           path: 'select/search',
           name: 'mobile-search-select',
           component: () => import('@/views/common/MobileSearchSelectView.vue'),
-          meta: { title: '选择', depth: 3 },
+          meta: {
+            title: '选择',
+            depth: 3,
+            mobileHeader: { back: true, titleSource: 'search-select' },
+          },
         },
         {
           path: 'opportunities',
           name: 'opportunities',
           component: () => import('@/views/opportunities/OpportunitiesView.vue'),
-          meta: { title: '商机', perm: 'menu:opportunity', depth: 1 },
+          meta: {
+            title: '商机',
+            perm: 'menu:opportunity',
+            depth: 1,
+            mobileHeader: {},
+          },
         },
         {
           path: 'mine',
           name: 'mobile-mine',
           component: () => import('@/views/profile/MineView.vue'),
-          meta: { title: '我的', depth: 1 },
+          meta: { title: '我的', depth: 1, mobileHeader: {} },
         },
         {
           path: 'mine/message',
           name: 'mobile-mine-message',
           component: () => import('@/views/profile/MessageView.vue'),
-          meta: { title: '消息通知', depth: 2 },
+          meta: { title: '消息通知', depth: 2, mobileHeader: { back: true } },
         },
         {
           path: 'leads/:id/convert',
           name: 'mobile-lead-convert',
           component: () => import('@/views/leads/LeadConvertView.vue'),
-          meta: { title: '转换线索', perm: 'lead:update', depth: 2 },
+          meta: {
+            title: '转换为',
+            perm: 'lead:update',
+            depth: 2,
+            mobileHeader: { back: true },
+          },
         },
         {
           path: 'customers/detail',
           name: 'mobile-customer-detail',
           component: () => import('@/views/customers/CustomerDetailView.vue'),
-          meta: { title: '客户详情', perm: 'menu:customer', depth: 2 },
+          meta: {
+            title: '客户详情',
+            perm: 'menu:customer',
+            depth: 2,
+            mobileHeader: { back: true, titleQuery: 'name' },
+          },
         },
         {
           path: 'opportunities/detail',
           name: 'mobile-opportunity-detail',
           component: () => import('@/views/opportunities/OpportunityDetailView.vue'),
-          meta: { title: '商机详情', perm: 'menu:opportunity', depth: 2 },
+          meta: {
+            title: '商机详情',
+            perm: 'menu:opportunity',
+            depth: 2,
+            mobileHeader: { back: true, titleQuery: 'name' },
+          },
         },
         {
           path: 'follow-plans',
           name: 'follow-plans',
           component: () => import('@/views/follow-plans/FollowUpPlansView.vue'),
-          meta: { title: '跟进计划', depth: 2 },
+          meta: { title: '跟进计划', depth: 2, mobileHeader: { back: true } },
         },
       ],
     },
@@ -130,6 +246,8 @@ declare module 'vue-router' {
     title?: string
     perm?: string
     depth?: number
+    mobileHeader?: MobileHeaderMeta
+    stableViewKey?: boolean
   }
 }
 

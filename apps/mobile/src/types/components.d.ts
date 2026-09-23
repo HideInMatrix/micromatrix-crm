@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    MobileContactForm: typeof import('./../components/contact/MobileContactForm.vue')['default']
     MobileContactListPane: typeof import('./../components/customer/MobileContactListPane.vue')['default']
     MobileCustomerForm: typeof import('./../components/customer/MobileCustomerForm.vue')['default']
     MobileCustomerListCard: typeof import('./../components/customer/MobileCustomerListCard.vue')['default']
@@ -26,6 +27,7 @@ declare module 'vue' {
     MobileFollowUpPlanSystemField: typeof import('./../components/MobileFollowUpPlanSystemField.vue')['default']
     MobileFollowUpPlanToolbar: typeof import('./../components/follow-up-plan/MobileFollowUpPlanToolbar.vue')['default']
     MobileFollowUpSheet: typeof import('./../components/MobileFollowUpSheet.vue')['default']
+    MobileHeader: typeof import('./../components/MobileHeader.vue')['default']
     MobileLeadForm: typeof import('./../components/lead/MobileLeadForm.vue')['default']
     MobileLeadListCard: typeof import('./../components/lead/MobileLeadListCard.vue')['default']
     MobileLeadListPane: typeof import('./../components/lead/MobileLeadListPane.vue')['default']
@@ -33,6 +35,7 @@ declare module 'vue' {
     MobileSearchPageSelectField: typeof import('./../components/MobileSearchPageSelectField.vue')['default']
     MobileVantDateTimeField: typeof import('./../components/MobileVantDateTimeField.vue')['default']
     MobileVantPickerField: typeof import('./../components/MobileVantPickerField.vue')['default']
+    MobileViewBar: typeof import('./../components/MobileViewBar.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     VanActionSheet: typeof import('vant/es')['ActionSheet']
@@ -42,6 +45,8 @@ declare module 'vue' {
     VanCellGroup: typeof import('vant/es')['CellGroup']
     VanCheckbox: typeof import('vant/es')['Checkbox']
     VanCheckboxGroup: typeof import('vant/es')['CheckboxGroup']
+    VanCollapse: typeof import('vant/es')['Collapse']
+    VanCollapseItem: typeof import('vant/es')['CollapseItem']
     VanCountDown: typeof import('vant/es')['CountDown']
     VanDatePicker: typeof import('vant/es')['DatePicker']
     VanDialog: typeof import('vant/es')['Dialog']

@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import type { FieldVO, LeadVO } from '@micromatrix/shared'
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
 import { fetchFields } from '@/api/mobile'
 import { leadApi, type ResourcePoolVO } from '@/api/sales'
+import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 import { showSuccessFeedback } from '@/utils/feedback'
+import type { MobileViewSelection } from '@/types/mobile-view'
 
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
+const router = useRouter()
 
 const keyword = ref('')
 const pools = ref<ResourcePoolVO[]>([])
@@ -22,6 +26,10 @@ const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
+const activeSavedViewId = ref('')
+const poolsReady = ref(false)
+const savedViewsReady = ref(false)
+const viewsReady = computed(() => poolsReady.value && savedViewsReady.value)
 
 const currentPool = computed(
   () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
@@ -52,11 +60,13 @@ async function init() {
     if (!selectedPoolId.value) finished.value = true
   } catch (error) {
     showFailToast(extractErrorMessage(error))
+  } finally {
+    poolsReady.value = true
   }
 }
 
 async function loadMore() {
-  if (!selectedPoolId.value || finished.value) return
+  if (!viewsReady.value || !selectedPoolId.value || finished.value) return
   loading.value = true
   try {
     const { data } = await leadApi.list({
@@ -65,6 +75,7 @@ async function loadMore() {
       scope: 'pool',
       poolId: selectedPoolId.value,
       keyword: keyword.value.trim() || undefined,
+      viewId: activeSavedViewId.value || undefined,
     })
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
@@ -81,7 +92,7 @@ function reload() {
   page.value = 1
   items.value = []
   finished.value = !selectedPoolId.value
-  if (selectedPoolId.value) void loadMore()
+  if (viewsReady.value && selectedPoolId.value) void loadMore()
 }
 
 async function handleRefresh() {
@@ -98,6 +109,27 @@ async function handleRefresh() {
 function setPool(poolId: string) {
   if (selectedPoolId.value === poolId) return
   selectedPoolId.value = poolId
+  reload()
+}
+
+function openDetail(lead: LeadVO) {
+  router.push({
+    path: '/leads/pool-detail',
+    query: { id: lead.id, name: lead.name },
+  })
+}
+
+function applyViewSelection(selection: MobileViewSelection) {
+  activeSavedViewId.value = selection.type === 'saved' ? selection.id : ''
+}
+
+function handleViewReady(selection: MobileViewSelection) {
+  applyViewSelection(selection)
+  savedViewsReady.value = true
+}
+
+function handleViewChange(selection: MobileViewSelection) {
+  applyViewSelection(selection)
   reload()
 }
 
@@ -149,8 +181,20 @@ onMounted(init)
       >{{ pool.name }}</van-button>
     </div>
 
+    <MobileViewBar
+      v-if="poolsReady"
+      module="lead_pool"
+      @ready="handleViewReady"
+      @change="handleViewChange"
+    />
+
     <div class="min-h-0 flex-1 overflow-auto">
-      <van-pull-refresh v-model="refreshing" class="min-h-full" @refresh="handleRefresh">
+      <van-pull-refresh
+        v-if="viewsReady"
+        v-model="refreshing"
+        class="min-h-full"
+        @refresh="handleRefresh"
+      >
         <van-list
           v-model:loading="loading"
           :finished="finished"
@@ -165,6 +209,7 @@ onMounted(init)
             :fields="listFields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
+            @click="openDetail(item)"
           >
             <template #actions>
               <van-button
@@ -180,6 +225,7 @@ onMounted(init)
           </MobileLeadListCard>
         </van-list>
       </van-pull-refresh>
+      <van-loading v-else class="!flex !justify-center !py-10" />
     </div>
   </div>
 </template>

@@ -2,11 +2,16 @@
 import { House, Lightbulb, UserRound, Users } from 'lucide-vue-next'
 import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import MobileHeader from '@/components/MobileHeader.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSearchSelectStore } from '@/stores/search-select'
+import { isWeComWorkbenchBrowser } from '@/utils/wecom'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const searchSelect = useSearchSelectStore()
+const isWeCom = isWeComWorkbenchBrowser()
 const transitionName = ref('transition-none')
 
 const tabs = [
@@ -18,6 +23,24 @@ const tabs = [
 
 const visibleTabs = computed(() => tabs.filter((tab) => !tab.perm || auth.hasPerm(tab.perm)))
 const showTabbar = computed(() => route.meta.depth === 1)
+const headerConfig = computed(() => route.meta.mobileHeader)
+const showHeader = computed(() => Boolean(headerConfig.value) && !isWeCom)
+const headerTitle = computed(() => {
+  const config = headerConfig.value
+  if (!config) return ''
+
+  if (config.titleSource === 'search-select') {
+    return `选择${searchSelect.context?.field.label ?? '内容'}`
+  }
+
+  if (config.titleQuery) {
+    const queryTitle = route.query[config.titleQuery]
+    if (typeof queryTitle === 'string' && queryTitle.trim()) return queryTitle.trim()
+  }
+
+  return route.meta.title ?? ''
+})
+const headerBack = computed(() => headerConfig.value?.back === true)
 
 const removeTransitionGuard = router.beforeEach((to, from) => {
   const toDepth = to.meta.depth ?? 0
@@ -45,6 +68,13 @@ const active = computed({
   <div
     class="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--mobile-page-background)]"
   >
+    <MobileHeader
+      v-if="showHeader"
+      :title="headerTitle"
+      :left-arrow="headerBack"
+      class="shrink-0"
+      @back="router.back()"
+    />
     <router-view v-slot="{ Component, route: viewRoute }">
       <div
         class="relative min-h-0 flex-1 overflow-hidden bg-[var(--mobile-page-background)]"
@@ -53,7 +83,11 @@ const active = computed({
           <keep-alive v-if="viewRoute.meta.depth === 1">
             <component :is="Component" :key="String(viewRoute.name)" />
           </keep-alive>
-          <component :is="Component" v-else :key="viewRoute.fullPath" />
+          <component
+            :is="Component"
+            v-else
+            :key="viewRoute.meta.stableViewKey ? String(viewRoute.name) : viewRoute.fullPath"
+          />
         </transition>
       </div>
     </router-view>
@@ -69,12 +103,6 @@ const active = computed({
         v-for="tab in visibleTabs"
         :key="tab.name"
         :name="tab.name"
-        class="!m-0 !rounded-full !text-[10px]"
-        :class="
-          active === tab.name
-            ? '!text-[var(--primary-8)]'
-            : '!text-[var(--text-n4)]'
-        "
       >
         <template #icon="{ active: tabActive }">
           <component

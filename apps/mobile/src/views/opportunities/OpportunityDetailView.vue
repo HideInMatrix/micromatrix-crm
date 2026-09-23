@@ -41,12 +41,7 @@ onMounted(load)
 
 <template>
   <div class="h-full overflow-auto bg-[var(--mobile-page-background)]">
-    <van-nav-bar
-      :title="opportunity?.name ?? '商机详情'"
-      left-arrow
-      @click-left="router.back()"
-    />
-    <van-tabs v-model:active="activeTab" sticky :offset-top="46">
+    <van-tabs v-model:active="activeTab" sticky>
       <van-tab title="详情" name="info">
         <van-loading v-if="loading" class="py-12 text-center" />
         <van-cell-group v-else-if="opportunity" inset class="!mt-4 !mb-4">

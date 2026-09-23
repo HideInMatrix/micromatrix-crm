@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { isCustomFieldKey, type ContactVO, type FieldVO } from '@micromatrix/shared'
+import type { ContactVO } from '@micromatrix/shared'
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
-import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { contactApi } from '@/api/sales'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
-import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
-import { fetchFields } from '@/api/mobile'
+import MobileViewBar from '@/components/MobileViewBar.vue'
 import { useAuthStore } from '@/stores/auth'
+import type { MobileViewSelection } from '@/types/mobile-view'
 
 const auth = useAuthStore()
-const route = useRoute()
+const router = useRouter()
 
 const keyword = ref('')
 const items = ref<ContactVO[]>([])
@@ -21,34 +20,16 @@ const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
-const activeView = ref<'ALL' | 'SELF' | 'DEPT'>('ALL')
-const viewButtons = [
-  { value: 'ALL' as const, label: '全部联系人' },
-  { value: 'SELF' as const, label: '我的联系人' },
-  { value: 'DEPT' as const, label: '部门联系人' },
-]
-
-const createShow = ref(false)
-const customerPickerShow = ref(false)
-const fields = ref<FieldVO[]>([])
-const formModel = ref<Record<string, unknown>>({})
-const customerId = ref('')
-const customerOptions = ref<{ id: string; name: string }[]>([])
-const saving = ref(false)
-
-const editableFields = computed(() =>
-  fields.value.filter(
-    (field) => field.key === 'name' || field.key === 'phone' || isCustomFieldKey(field.key),
-  ),
-)
-const customerColumns = computed(() =>
-  customerOptions.value.map((item) => ({ text: item.name, value: item.id })),
-)
-const selectedCustomerName = computed(
-  () => customerOptions.value.find((item) => item.id === customerId.value)?.name ?? '',
-)
+type ContactSystemView = 'ALL' | 'SELF' | 'DEPT'
+const activeView = ref<ContactSystemView>('SELF')
+const activeSavedViewId = ref('')
+const systemViews = ref<{ id: ContactSystemView; label: string }[]>([])
+const systemViewsReady = ref(false)
+const savedViewsReady = ref(false)
+const viewsReady = computed(() => systemViewsReady.value && savedViewsReady.value)
 
 async function loadMore() {
+  if (!viewsReady.value) return
   loading.value = true
   try {
     const { data } = await contactApi.page({
@@ -56,6 +37,7 @@ async function loadMore() {
       pageSize: 20,
       keyword: keyword.value.trim() || undefined,
       scopeView: activeView.value,
+      viewId: activeSavedViewId.value || undefined,
     })
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
@@ -86,9 +68,44 @@ async function handleRefresh() {
   }
 }
 
-function setView(value: typeof activeView.value) {
-  if (activeView.value === value) return
-  activeView.value = value
+async function loadSystemViews() {
+  try {
+    const { data } = await contactApi.tab()
+    systemViews.value = [
+      { id: 'SELF', label: '我的联系人' },
+      ...(data.dept ? [{ id: 'DEPT' as const, label: '部门联系人' }] : []),
+      ...(data.all ? [{ id: 'ALL' as const, label: '全部联系人' }] : []),
+    ]
+    if (!systemViews.value.some((item) => item.id === activeView.value)) {
+      activeView.value = 'SELF'
+    }
+  } catch (error) {
+    systemViews.value = [{ id: 'SELF', label: '我的联系人' }]
+    activeView.value = 'SELF'
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    systemViewsReady.value = true
+  }
+}
+
+function applyViewSelection(selection: MobileViewSelection) {
+  if (selection.type === 'saved') {
+    activeSavedViewId.value = selection.id
+    return
+  }
+  if (selection.type === 'system') {
+    activeSavedViewId.value = ''
+    activeView.value = selection.id as ContactSystemView
+  }
+}
+
+function handleViewReady(selection: MobileViewSelection) {
+  applyViewSelection(selection)
+  savedViewsReady.value = true
+}
+
+function handleViewChange(selection: MobileViewSelection) {
+  applyViewSelection(selection)
   reload()
 }
 
@@ -117,71 +134,25 @@ async function removeContact(item: ContactVO) {
   }
 }
 
-async function openCreate() {
-  try {
-    if (fields.value.length === 0) {
-      const [{ data: fieldList }, { data: customers }] = await Promise.all([
-        fetchFields('contact'),
-        listCustomerOptions(),
-      ])
-      fields.value = fieldList
-      customerOptions.value = customers
-    } else if (customerOptions.value.length === 0) {
-      const { data } = await listCustomerOptions()
-      customerOptions.value = data
-    }
-    customerId.value = ''
-    formModel.value = {}
-    createShow.value = true
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
+function openCreate() {
+  router.push('/contacts/create')
 }
 
-function selectCustomer({ selectedValues }: { selectedValues: string[] }) {
-  customerId.value = selectedValues[0] ?? ''
-  customerPickerShow.value = false
+function openEdit(item: ContactVO) {
+  router.push('/contacts/' + item.id + '/edit')
 }
 
-async function handleCreate() {
-  if (!customerId.value) {
-    showFailToast('请选择所属客户')
-    return
-  }
-  const name = String(formModel.value.name ?? '').trim()
-  if (!name) {
-    showFailToast('请填写联系人姓名')
-    return
-  }
-
-  const customData: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(formModel.value)) {
-    if (!isCustomFieldKey(key) || value === undefined || value === '') continue
-    customData[key] = value
-  }
-
-  saving.value = true
-  try {
-    await contactApi.create({
-      customerId: customerId.value,
-      name,
-      phone: formModel.value.phone ? String(formModel.value.phone) : undefined,
-      customData,
-    })
-    showSuccessFeedback('联系人已创建')
-    createShow.value = false
-    reload()
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  } finally {
-    saving.value = false
-  }
+function openDetail(item: ContactVO) {
+  router.push({
+    path: '/contacts/detail',
+    query: { id: item.id, name: item.name },
+  })
 }
 
 defineExpose({ reload })
 
 onMounted(() => {
-  if (route.query.create === 'contact') void openCreate()
+  void loadSystemViews()
 })
 </script>
 
@@ -207,28 +178,18 @@ onMounted(() => {
         @clear="reload"
       />
     </div>
-    <div
-      class="flex min-h-12 gap-2 overflow-x-auto whitespace-nowrap border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-1 py-2"
-    >
-      <van-button
-        v-for="button in viewButtons"
-        :key="button.value"
-        round
-        size="small"
-        class="!border-none !px-4 !py-1 !text-sm"
-        :class="
-          activeView === button.value
-            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
-            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
-        "
-        @click="setView(button.value)"
-      >
-        {{ button.label }}
-      </van-button>
-    </div>
+    <MobileViewBar
+      v-if="systemViewsReady"
+      module="contact"
+      :system-views="systemViews"
+      :system-view="activeView"
+      @ready="handleViewReady"
+      @change="handleViewChange"
+    />
 
     <div class="min-h-0 flex-1 overflow-auto">
       <van-pull-refresh
+        v-if="viewsReady"
         v-model="refreshing"
         class="min-h-full"
         @refresh="handleRefresh"
@@ -243,7 +204,8 @@ onMounted(() => {
           <div
             v-for="item in items"
             :key="item.id"
-            class="flex w-full items-center gap-4 overflow-hidden rounded-[6px] bg-white p-4"
+            class="flex w-full items-center gap-4 overflow-hidden rounded-[6px] bg-white p-4 active:opacity-70"
+            @click="openDetail(item)"
           >
             <div class="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-[var(--text-n9)] text-xl text-[var(--text-n2)]">
               {{ item.name?.slice(0, 1) || '?' }}
@@ -260,15 +222,26 @@ onMounted(() => {
                   >正常</van-tag>
                   <van-tag v-else type="warning" plain>已停用</van-tag>
                 </div>
-                <van-button
-                  v-if="auth.hasPerm('contact:delete')"
-                  icon="delete-o"
-                  size="small"
-                  type="danger"
-                  plain
-                  class="!border-0 !px-1"
-                  @click.stop="removeContact(item)"
-                />
+                <div class="flex items-center gap-1">
+                  <van-button
+                    v-if="auth.hasPerm('contact:update')"
+                    icon="edit"
+                    size="small"
+                    type="primary"
+                    plain
+                    class="!border-0 !px-1"
+                    @click.stop="openEdit(item)"
+                  />
+                  <van-button
+                    v-if="auth.hasPerm('contact:delete')"
+                    icon="delete-o"
+                    size="small"
+                    type="danger"
+                    plain
+                    class="!border-0 !px-1"
+                    @click.stop="removeContact(item)"
+                  />
+                </div>
               </div>
               <div class="flex items-center gap-1 text-xs text-[var(--primary-8)]">
                 <a v-if="item.phone" :href="'tel:' + item.phone" class="flex items-center gap-1" @click.stop>
@@ -281,41 +254,7 @@ onMounted(() => {
           </div>
         </van-list>
       </van-pull-refresh>
+      <van-loading v-else class="!flex !justify-center !py-10" />
     </div>
-
-    <van-popup v-model:show="createShow" position="bottom" round class="h-[88%]">
-      <div class="flex h-full flex-col bg-[var(--text-n10)]">
-        <div
-          class="flex min-h-12 items-center justify-center border-b-[0.5px] border-[var(--text-n8)] px-4 text-base font-medium text-[var(--text-n1)]"
-        >
-          新建联系人
-        </div>
-        <div class="min-h-0 flex-1 overflow-auto py-4">
-          <van-cell-group inset class="!mb-3">
-            <van-cell
-              title="所属客户"
-              :value="selectedCustomerName || '请选择'"
-              is-link
-              @click="customerPickerShow = true"
-            />
-          </van-cell-group>
-          <MobileDynamicForm v-model="formModel" :fields="editableFields" />
-        </div>
-        <div
-          class="flex gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
-        >
-          <van-button block @click="createShow = false">取消</van-button>
-          <van-button type="primary" block :loading="saving" @click="handleCreate">保存</van-button>
-        </div>
-      </div>
-    </van-popup>
-
-    <van-popup v-model:show="customerPickerShow" position="bottom" round>
-      <van-picker
-        :columns="customerColumns"
-        @confirm="selectCustomer"
-        @cancel="customerPickerShow = false"
-      />
-    </van-popup>
   </div>
 </template>

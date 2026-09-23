@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useMobileSearchSelect } from '@/composables/useMobileSearchSelect'
 import type { MobileSearchSelectOption } from '@/utils/search-select'
 
@@ -19,20 +19,17 @@ function confirm() {
   router.back()
 }
 
-function cancel() {
-  select.cancel()
-  router.back()
-}
-
 onMounted(() => {
   if (!select.store.context) router.back()
+})
+
+onBeforeRouteLeave(() => {
+  if (select.store.context) select.cancel()
 })
 </script>
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n10)]">
-    <van-nav-bar :title="select.title.value" left-arrow @click-left="cancel" />
-
     <div class="shrink-0 px-4 py-3">
       <van-search
         v-model="select.keyword.value"

@@ -89,7 +89,7 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
 
   function setDocumentTitle(pageTitle?: string) {
     const productTitle = branding.value.title.trim() || DEFAULT_BRANDING.title
-    document.title = pageTitle ? `${pageTitle} · ${productTitle}` : productTitle
+    document.title = pageTitle || productTitle
   }
 
   function acceptBranding(value: EnterpriseUiBrandingVO) {

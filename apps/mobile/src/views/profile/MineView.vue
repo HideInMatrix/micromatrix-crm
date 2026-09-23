@@ -107,7 +107,6 @@ onMounted(loadInfo)
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
-    <van-nav-bar title="我的" />
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
       <div class="flex items-center gap-4 rounded-[12px] bg-white p-4">
         <van-image v-if="info?.avatarUrl" round width="64" height="64" :src="info.avatarUrl" />

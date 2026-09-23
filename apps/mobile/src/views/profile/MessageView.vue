@@ -4,7 +4,6 @@ import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
-import { showSuccessFeedback } from '@/utils/feedback'
 import { notificationApi } from '@/api/system'
 
 type MessageTab = 'all' | 'unread'
@@ -31,10 +30,6 @@ async function loadMore() {
       pageSize: 20,
       unreadOnly: activeTab.value === 'unread' || undefined,
     })
-    if (refreshing.value) {
-      items.value = []
-      refreshing.value = false
-    }
     items.value.push(...data.items)
     finished.value = items.value.length >= data.total
     page.value += 1
@@ -52,6 +47,17 @@ function reload() {
   finished.value = false
   void loadMore()
   void loadUnreadCount()
+}
+
+async function handleRefresh() {
+  page.value = 1
+  items.value = []
+  finished.value = false
+  try {
+    await Promise.all([loadMore(), loadUnreadCount()])
+  } finally {
+    refreshing.value = false
+  }
 }
 
 async function openItem(item: NotificationVO) {
@@ -77,20 +83,6 @@ async function openItem(item: NotificationVO) {
   }
 }
 
-async function markAllRead() {
-  try {
-    await notificationApi.markAllRead()
-    unreadCount.value = 0
-    items.value.forEach((item) => {
-      item.readAt ||= new Date().toISOString()
-    })
-    if (activeTab.value === 'unread') items.value = []
-    showSuccessFeedback('已全部标记为已读')
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
 watch(activeTab, reload)
 onMounted(() => {
   void loadUnreadCount()
@@ -99,15 +91,7 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
-    <van-nav-bar
-      title="消息通知"
-      left-arrow
-      right-text="全部已读"
-      @click-left="router.back()"
-      @click-right="markAllRead"
-    />
-
-    <van-tabs v-model:active="activeTab" border>
+    <van-tabs v-model:active="activeTab" border class="shrink-0">
       <van-tab name="all">
         <template #title>
           <div class="text-base" :class="activeTab === 'all' ? 'text-[var(--primary-8)]' : ''">
@@ -117,30 +101,36 @@ onMounted(() => {
       </van-tab>
       <van-tab name="unread">
         <template #title>
-          <van-badge :content="unreadCount || undefined" :show-zero="false">
-            <div
+          <div class="inline-flex items-center gap-1.5">
+            <span
               class="text-base"
               :class="activeTab === 'unread' ? 'text-[var(--primary-8)]' : ''"
             >
               未读消息
-            </div>
-          </van-badge>
+            </span>
+            <van-badge
+              v-if="unreadCount > 0"
+              :content="unreadCount"
+              class="[&_.van-badge]:!static [&_.van-badge]:!translate-x-0 [&_.van-badge]:!translate-y-0"
+            />
+          </div>
         </template>
       </van-tab>
     </van-tabs>
 
-    <van-pull-refresh
-      v-model="refreshing"
-      class="min-h-0 flex-1 overflow-auto"
-      @refresh="reload"
-    >
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="已经到底部啦~"
-        class="flex flex-col gap-4 p-4"
-        @load="loadMore"
+    <div class="min-h-0 flex-1 overflow-auto">
+      <van-pull-refresh
+        v-model="refreshing"
+        class="min-h-full"
+        @refresh="handleRefresh"
       >
+        <van-list
+          v-model:loading="loading"
+          :finished="finished"
+          finished-text="已经到底部啦~"
+          class="flex flex-col gap-4 p-4"
+          @load="loadMore"
+        >
         <van-empty
           v-if="items.length === 0 && finished"
           image-size="64"
@@ -187,7 +177,8 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </van-list>
-    </van-pull-refresh>
+        </van-list>
+      </van-pull-refresh>
+    </div>
   </div>
 </template>
