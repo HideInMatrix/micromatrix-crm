@@ -67,6 +67,7 @@ export class DepartmentsService {
     const name = dto.name.trim()
     const parentId = dto.parentId || null
     if (parentId) await this.ensureExists(tenantId, parentId)
+    else await this.ensureSingleRoot(tenantId)
     await this.ensureNameFree(tenantId, name, parentId)
     if (dto.leaderId) {
       throw new BadRequestException('请先创建部门并将成员加入该部门，再设置部门主管')
@@ -90,6 +91,8 @@ export class DepartmentsService {
       if (parentId === id) throw new BadRequestException('不能将自身设为上级部门')
       await this.ensureExists(tenantId, parentId)
       await this.ensureNotDescendant(tenantId, id, parentId)
+    } else if (dto.parentId !== undefined) {
+      await this.ensureSingleRoot(tenantId, id)
     }
     const name = dto.name?.trim() ?? current.name
     if (name !== current.name || parentId !== current.parentId) {
@@ -115,6 +118,7 @@ export class DepartmentsService {
 
   async remove(tenantId: string, id: string) {
     const dept = await this.ensureExists(tenantId, id)
+    if (!dept.parentId) throw new BadRequestException('组织根部门不可删除')
     const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
       .select('id', 'parentId')
       .all()
@@ -170,6 +174,18 @@ export class DepartmentsService {
       .first()
     if (duplicate && duplicate.id !== excludeId) {
       throw new BadRequestException('同一上级部门下已存在同名部门')
+    }
+  }
+
+  private async ensureSingleRoot(tenantId: string, excludeId?: string) {
+    const roots = await this.prisma.client.orm.public.Departments.where({
+      tenantId,
+      parentId: null,
+    })
+      .select('id')
+      .all()
+    if (roots.some((root) => root.id !== excludeId)) {
+      throw new BadRequestException('组织根部门必须且只能有一个，请选择上级部门')
     }
   }
 

@@ -80,6 +80,8 @@ export class OrganizationSyncPlanner {
     const mappingByKey = new Map(
       input.departmentMappings.map((mapping) => [mapping.externalKey, mapping]),
     )
+    const roots = input.departments.filter((department) => department.parentId === null)
+    if (roots.length !== 1) throw new Error('当前企业必须且只能有一个组织根部门')
     const target = localById.get(input.targetDepartmentId)
     if (!target) throw new Error('同步目标部门不存在')
 

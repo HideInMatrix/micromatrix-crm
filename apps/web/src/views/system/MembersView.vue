@@ -172,7 +172,7 @@ function openDeptCreate(parentId?: string) {
   deptEditingId.value = null
   Object.assign(deptForm, {
     name: '',
-    parentId: parentId ?? null,
+    parentId: parentId ?? deptTree.value[0]?.id ?? null,
     leaderId: null,
     sort: 0,
   })
@@ -487,7 +487,7 @@ onMounted(() => {
                     编辑部门
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="auth.hasPerm('system:dept:delete')"
+                    v-if="data.parentId && auth.hasPerm('system:dept:delete')"
                     command="delete"
                     divided
                   >

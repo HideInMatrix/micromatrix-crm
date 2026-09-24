@@ -46,7 +46,12 @@ async function loadData() {
 
 function openCreate(parentId?: string) {
   editingId.value = null
-  Object.assign(form, { name: '', parentId: parentId ?? null, leaderId: null, sort: 0 })
+  Object.assign(form, {
+    name: '',
+    parentId: parentId ?? tree.value[0]?.id ?? null,
+    leaderId: null,
+    sort: 0,
+  })
   dialogVisible.value = true
 }
 
@@ -103,7 +108,7 @@ onMounted(loadData)
   <el-card shadow="never">
     <div class="flex-between mb-4">
       <span class="text-sm text-[var(--el-text-color-secondary)]">
-        组织架构树，支持多个顶级部门和多级部门
+        组织架构树，根部门唯一，支持多级部门
       </span>
       <el-button v-if="auth.hasPerm('system:dept:create')" type="primary" @click="openCreate()">
         新建部门
@@ -142,7 +147,7 @@ onMounted(loadData)
             编辑
           </el-button>
           <el-button
-            v-if="auth.hasPerm('system:dept:delete')"
+            v-if="row.parentId && auth.hasPerm('system:dept:delete')"
             link
             type="danger"
             @click="handleDelete(row as DepartmentVO)"

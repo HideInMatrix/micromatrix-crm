@@ -14,7 +14,7 @@ import { DepartmentsService } from './departments.service'
 const databaseUrl = process.env['DATABASE_URL']
 
 test(
-  'Departments 使用 Prisma 保持多根树、主管、环校验与子树删除保护',
+  'Departments 使用 Prisma 保持唯一根、主管、环校验与子树删除保护',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
@@ -30,12 +30,12 @@ test(
         tenantId: tenant.id,
         name: '总部',
       })
-      const secondRoot = await createPrismaTestDepartment(prismaClient, {
-        tenantId: tenant.id,
-        name: '第二事业部',
-      })
       const service = new DepartmentsService({ client: prismaClient } as PrismaService)
 
+      await assert.rejects(
+        () => service.create(tenant.id, { name: '第二事业部', parentId: null, sort: 0 }),
+        /组织根部门必须且只能有一个/,
+      )
       const child = await service.create(tenant.id, {
         name: '研发部',
         parentId: root.id,
@@ -67,7 +67,7 @@ test(
       assert.ok(stored.updatedAt)
 
       const tree = await service.tree(tenant.id)
-      assert.equal(tree.length, 2)
+      assert.equal(tree.length, 1)
       const rootNode = tree.find((item) => item.id === root.id)
       const childNode = rootNode?.children?.find((item) => item.id === child.id)
       assert.equal(childNode?.leaderName, '研发主管')
@@ -77,6 +77,14 @@ test(
       await assert.rejects(
         () => service.update(tenant.id, child.id, { parentId: grandchild.id }),
         /不能移动到自己的下级部门/,
+      )
+      await assert.rejects(
+        () => service.update(tenant.id, child.id, { parentId: null }),
+        /组织根部门必须且只能有一个/,
+      )
+      await assert.rejects(
+        () => service.remove(tenant.id, root.id),
+        /组织根部门不可删除/,
       )
       await assert.rejects(
         () => service.remove(tenant.id, child.id),
@@ -111,17 +119,6 @@ test(
         .select('id')
         .all()
       assert.equal(remaining.length, 0)
-
-      const removedRoot = await service.remove(tenant.id, secondRoot.id)
-      assert.equal(removedRoot.id, secondRoot.id)
-      assert.equal(removedRoot.deletedCount, 1)
-      const deletedRoot = await prismaClient.orm.public.Departments.where({
-        id: secondRoot.id,
-        tenantId: tenant.id,
-      })
-        .select('id')
-        .first()
-      assert.equal(deletedRoot, null)
     } finally {
       if (tenantId) {
         await prismaClient.orm.public.UserRoles.where({ tenantId }).deleteAll()
