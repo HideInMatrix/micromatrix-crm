@@ -98,7 +98,7 @@
   - 商机 → 报价使用 `?fromOpportunity=` 深链并预填；报价 → 合同使用 `?fromQuote=` 深链，合同页反查商机客户并预选已审批报价。
   - `smoke:w362-quotation-browser` **28/28** 全绿，无 API 5xx / Runtime exception；Web typecheck 全绿。
 - [x] 3.5 回查 `/system/modules` 商机卡片“报价表单设置”，确认直接字段模型已真实消费。
-  - 商机卡片“报价表单设置”保持 REAL：真实进入 `/system/modules/fields?module=quote`，统一字段设置页支持 `quote`。
+  - 商机卡片“报价表单设置”保持 REAL：模块设置内通用全屏表单设计 Drawer 支持 `quote`。
   - 页面真实加载 direct 报价字段：报价、商机、联系人、报价日期、有效期至、累计金额，并确认旧“报价单号/报价状态”字段不存在。
   - 独立 `smoke:w362-quotation-module-settings-browser` **5/5** 全绿，无 API 5xx / Runtime exception。
 - [x] 3.6 专项验收与提交。
@@ -129,7 +129,7 @@
   - [x] 4.3D 合同详情/业务快照/表单快照、已审批未作废报价 `fromQuote` 深链、CREATE/UPDATE/DELETE Approval、NORMAL/ADVANCED 阶段流转与作废原因全部走 Cordys 契约；Browser 已验证真实 drag/drop 调用 `/contract/update/stage` 并持久化真实 stage id。
   - [x] 4.3E 隔离 direct HTTP Smoke 全绿；Browser Smoke **56/56**；DataScope **ALL/DEPT/SELF** 全绿；静态扫描 `ContractStatus=0`、合同页 `row.status=0`、`row.items=0`，旧主 `/contracts` REST 404，Web `/contracts` 仅剩页面路由与 W3.6.4 临时回款/发票/工商抬头子域。
 - [x] 4.4 `/system/modules` 合同卡片：合同表单、回款计划表单、回款记录表单、工商抬头必填、发票表单、合同阶段按依赖关闭缺口。
-  - 合同表单设置继续直连 `/system/modules/fields?module=contract`，消费 direct contract metadata；合同阶段设置已接真实 `ContractStageSettingsDrawer` 与 `/contract/stage/*`，两项均为 REAL。
+  - 合同表单设置通过模块设置内通用全屏表单设计 Drawer 消费 direct contract metadata；合同阶段设置已接真实 `ContractStageSettingsDrawer` 与 `/contract/stage/*`，两项均为 REAL。
   - 回款计划、回款记录、工商抬头必填、发票四项经 Cordys 源码与 MicroMatrix metadata/runtime 双向审计，确认必须等待 W3.6.4 direct model；页面明确标记 `W3.6.4`、保持不可执行，不用旧模型或空表单伪装 REAL。
   - 合同模块设置 Browser Smoke **14/14**：合同表单 direct 字段、四项 deferred、合同阶段 direct 配置/回退/流转模式、API 5xx=0、Runtime exception=0 全绿。
 - [x] 4.5 专项验收与提交。
@@ -206,10 +206,10 @@
     - 根 `pnpm smoke` **227/227**；`pnpm smoke:w345-empty-db` 从零应用全部 **51 migrations**、双次 Seed、旧表/关键索引审计与隔离 API/Web 启动均 exit 0。
     - 最终 runtime legacy 扫描为 0，非测试 runtime 的 invoice expiry 扫描为 0；`/system/modules` 合同卡片四项保持 REAL 且 `deferred:` 实例为 0；Browser 夹具清理后 `W364 Browser` 临时审批流 / 发票 / 工商抬头均为 0；`git diff --check` 通过。
 - [x] 5.4 回查 `/system/modules` 合同卡片的回款计划、回款记录、工商抬头必填、发票入口全部 REAL。
-  - [x] 回款计划表单设置：`contractPaymentPlan` metadata 真实接入，可进入 `/system/modules/fields?module=contractPaymentPlan`。
-  - [x] 回款记录表单设置：`contractPaymentRecord` metadata 真实接入，可进入 `/system/modules/fields?module=contractPaymentRecord`。
+  - [x] 回款计划表单设置：`contractPaymentPlan` metadata 真实接入，可由模块设置内通用表单设计 Drawer 打开。
+  - [x] 回款记录表单设置：`contractPaymentRecord` metadata 真实接入，可由模块设置内通用表单设计 Drawer 打开。
   - [x] 工商抬头必填设置：真实 Drawer 消费 `/business-title/config/get|switch/:id`，按 `system:module:update` 控制 14 项 required 开关。
-  - [x] 发票入口：`invoice` 已加入 ModuleKey/字段设置模块，可进入 `/system/modules/fields?module=invoice`，合同卡片不再保留 deferred 占位。
+  - [x] 发票入口：`invoice` 已加入 ModuleKey/通用表单设计器，合同卡片不再保留 deferred 占位。
 - [x] 5.5 专项验收与提交。
   - 最终封版证据：[W3.6.4 回款与发票最终专项验收](./w364-final-acceptance.md)。
   - `smoke:w364-contract-payment`、`smoke:w364-invoice`、`smoke:w364-invoice-approval` 全绿；Browser **31/31**，根 Smoke **227/227**，Rules **117/117**。
@@ -257,7 +257,7 @@
     - `pnpm smoke:w365-order-browser` 6.2E 初验 **29/29**；6.3 加入模块设置验收后最终扩展为 **37/37**。独立页、审批、客户 360、合同详情、合同转订单及 `/system/modules` 均全绿，API 5xx / Runtime exception = 0；Web typecheck/build exit 0，`pnpm smoke:w365-order` PASS。
     - 证据：[W3.6.5 订单独立页 / 关联消费 / legacy exit 专项验收](./order-page-runtime-acceptance.md)。
 - [x] 6.3 `/system/modules` 订单卡片：订单表单 + 订单状态流全部 REAL。
-  - [x] 订单表单设置消费 direct order metadata；Browser Smoke 实际点击 `/system/modules/fields?module=order` 并确认请求 `/api/metadata/order/fields`。
+  - [x] 订单表单设置消费 direct order metadata；当前由模块设置内通用全屏表单设计 Drawer 加载 `/api/metadata/order/form`。
   - [x] 订单状态流设置已接真实 `OrderStageSettingsDrawer + /order/stage/*`，覆盖 CRUD/sort/rollback/NORMAL/ADVANCED；不再是 label-only 占位。
   - `pnpm smoke:w365-order-browser` 扩展后 **37/37**，订单模块设置两项均真实可点击，API 5xx / Runtime exception = 0；Web typecheck/build exit 0。
   - 证据：[W3.6.5 订单 `/system/modules` 专项验收](./order-module-settings-acceptance.md)。

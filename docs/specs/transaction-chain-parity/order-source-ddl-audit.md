@@ -286,7 +286,7 @@ Cordys `configCard.vue` 对订单明确提供：
 
 当前 MicroMatrix `NavigationModulesView.vue`：
 
-- `订单表单设置` 已有 `/system/modules/fields?module=order` 路径，但当前 order metadata 仍基于旧模型，需要随 6.2 direct model 真正对齐。
+- `订单表单设置` 由模块设置中的通用全屏表单设计 Drawer 承载；order metadata 需要随 6.2 direct model 真正对齐。
 - `订单状态流设置` 只有 label，没有 path/drawer，是明确的 PLACEHOLDER/MISSING。
 
 6.3 关闭条件必须是两项都 REAL，不能只把按钮做成可点击的空壳。

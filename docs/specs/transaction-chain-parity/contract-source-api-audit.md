@@ -197,7 +197,7 @@ Cordys `configCard.vue` 的合同卡片固定暴露六个入口。四个表单 D
 
 | 入口 | Cordys 证据 | MicroMatrix 关闭策略 | 状态 |
 | --- | --- | --- | --- |
-| 合同表单设置 | `ContractFormFormDrawer -> CONTRACT` | `/system/modules/fields?module=contract` 已消费 direct contract metadata | REAL |
+| 合同表单设置 | `ContractFormFormDrawer -> CONTRACT` | 模块设置内通用全屏表单设计 Drawer 已消费 direct contract metadata | REAL |
 | 回款计划表单设置 | `ContractPaymentPlanFormDrawer -> CONTRACT_PAYMENT` | `ReceivablePlan` 仍是旧模型，W3.6.4 direct model + runtime form consumption 后开放 | DEFERRED W3.6.4 |
 | 回款记录表单设置 | `ContractPaymentRecordFormDrawer -> CONTRACT_PAYMENT_RECORD` | `ReceivableRecord` 仍是旧模型，W3.6.4 关闭 | DEFERRED W3.6.4 |
 | 工商抬头表单必填设置 | `businessTitleValidate.vue`；`GET /business-title/config/get` + `GET /business-title/config/switch/{id}` | 当前 `InvoiceTitle` 仍是旧模型且没有 Cordys config API；随 W3.6.4 direct 化关闭 | DEFERRED W3.6.4 |

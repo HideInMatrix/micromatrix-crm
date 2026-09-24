@@ -6,6 +6,7 @@ import type { ModuleFormsService } from './module-forms.service'
 
 test('formProp PATCH 只覆盖提交属性并保留既有 linkProp/扩展键', async () => {
   const original: ModuleFormProp = {
+    layout: 2,
     labelPos: 'top',
     viewSize: 'small',
     linkProp: {
@@ -26,12 +27,13 @@ test('formProp PATCH 只覆盖提交属性并保留既有 linkProp/扩展键', a
   await service.updateFormProp(
     'tenant-1',
     'followPlan',
-    { labelPos: 'left', viewSize: 'large' },
+    { layout: 3, labelPos: 'left', viewSize: 'large' },
     'user-1',
   )
 
   assert.deepEqual(saved, {
     ...original,
+    layout: 3,
     labelPos: 'left',
     viewSize: 'large',
   })

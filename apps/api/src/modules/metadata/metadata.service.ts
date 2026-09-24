@@ -11,6 +11,7 @@ import {
   type ModuleFormProp,
 } from '@micromatrix/shared'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
+import type { SaveModuleFormDto } from './dto/field.dto'
 import { ModuleFormsService } from './module-forms.service'
 
 /**
@@ -32,7 +33,7 @@ export class MetadataService {
   async updateFormProp(
     organizationId: string,
     module: string,
-    patch: Pick<ModuleFormProp, 'labelPos' | 'viewSize'>,
+    patch: Pick<ModuleFormProp, 'layout' | 'labelPos' | 'viewSize'>,
     actorId: string,
   ) {
     const current = await this.moduleForms.getConfig(organizationId, module)
@@ -163,6 +164,15 @@ export class MetadataService {
     actorId?: string,
   ): Promise<FieldVO> {
     return this.moduleForms.updateField(organizationId, id, dto, actorId)
+  }
+
+  saveFormDesign(
+    organizationId: string,
+    module: string,
+    dto: SaveModuleFormDto,
+    actorId: string,
+  ) {
+    return this.moduleForms.saveDesign(organizationId, module, dto.fields, dto.formProp, actorId)
   }
 
   deleteField(organizationId: string, id: string) {

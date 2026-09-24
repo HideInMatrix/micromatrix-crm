@@ -24,7 +24,7 @@ import { TenantDerivedCacheService } from '../../common/services/tenant-derived-
 import type { PrismaClient } from '../../prisma/prisma-client.js'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { PrismaService } from '../../prisma/prisma.service.js'
-import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
+import { CreateFieldDto, type SaveFormFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
 
 const SYSTEM_ACTOR = 'SYSTEM'
@@ -154,6 +154,7 @@ export class ModuleFormsService {
     formProp: ModuleFormProp,
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
+    this.validateFormPropInput(formProp)
     await this.validateFormPropLinkage(organizationId, formKey, formProp)
     await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
@@ -170,6 +171,188 @@ export class ModuleFormsService {
     })
     await this.invalidateForm(organizationId, formKey)
     return this.getConfig(organizationId, formKey)
+  }
+
+  async saveDesign(
+    organizationId: string,
+    formKey: string,
+    fields: SaveFormFieldDto[],
+    formProp: ModuleFormProp,
+    actorId: string,
+  ): Promise<ModuleFormConfigVO> {
+    this.validateFormPropInput(formProp)
+    const labels = fields.map((field) => field.label.trim())
+    if (labels.some((label) => !label)) throw new BadRequestException('字段名称不能为空')
+    if (new Set(labels).size !== labels.length) throw new BadRequestException('字段名称不能重复')
+    const requestedIds = fields.flatMap((field) => (field.id ? [field.id] : []))
+    if (new Set(requestedIds).size !== requestedIds.length) {
+      throw new BadRequestException('字段 ID 不能重复')
+    }
+    fields.forEach((field) => this.validateFieldInput(field))
+
+    const result = await this.prisma.client.transaction(async (tx) => {
+      const form = await this.ensureForm(tx, organizationId, formKey, actorId)
+      const currentFields = await this.findFields(tx, form.id)
+      const currentById = new Map(currentFields.map((field) => [field.id, field]))
+      const requestedIdSet = new Set(requestedIds)
+
+      for (const fieldId of requestedIds) {
+        if (!currentById.has(fieldId)) throw new BadRequestException('表单包含不存在的字段')
+      }
+      for (const current of currentFields) {
+        if (this.parseProp(current).system && !requestedIdSet.has(current.id)) {
+          throw new BadRequestException('系统字段不可删除')
+        }
+      }
+
+      const now = BigInt(Date.now())
+      for (const [index, dto] of fields.entries()) {
+        if (!dto.id) {
+          const key = `cf_${randomBytes(6).toString('hex')}`
+          const storedProp = this.dtoToProp(key, dto, false)
+          if (dto.type === 'sub_product') {
+            this.validateStoredSubFields(storedProp.subFields ?? [])
+            this.validateSubTableColumns(storedProp.config, storedProp.subFields ?? [])
+          }
+          const id = createLegacyId32()
+          await tx.orm.public.SysModuleField.create({
+            id,
+            formId: form.id,
+            internalKey: key,
+            name: dto.label.trim(),
+            _type: dto.type,
+            mobile: dto.mobile ?? true,
+            pos: BigInt(index),
+            createUser: actorId,
+            updateUser: actorId,
+            createTime: now,
+            updateTime: now,
+          })
+          await tx.orm.public.SysModuleFieldBlob.create({
+            id,
+            prop: JSON.stringify(storedProp),
+          })
+          continue
+        }
+
+        const currentField = currentById.get(dto.id)
+        if (!currentField) throw new BadRequestException('表单包含不存在的字段')
+        const current = this.parseProp(currentField)
+        if (current.system && dto.type !== currentField.type) {
+          throw new BadRequestException('系统字段不可修改类型')
+        }
+        if (
+          dto.type !== currentField.type &&
+          this.isBlobType(dto.type) !== this.isBlobType(currentField.type as FieldType)
+        ) {
+          const count = await this.countFieldValues(tx, dto.id)
+          if (count > 0) throw new BadRequestException('字段已有数据，不能切换普通值与大字段存储类型')
+        }
+        if (dto.type !== currentField.type && dto.type === 'sub_product') {
+          const count = await this.countFieldValues(tx, dto.id)
+          if (count > 0) throw new BadRequestException('字段已有数据，不能切换为子表格类型')
+        }
+        if (dto.type !== currentField.type && currentField.type === 'sub_product') {
+          const subIds = current.subFields?.map((subField) => subField.id) ?? []
+          const counts = await Promise.all(subIds.map((subId) => this.countFieldValues(tx, subId)))
+          if (counts.some((count) => count > 0)) {
+            throw new BadRequestException('子表格已有数据，不能修改父字段类型')
+          }
+        }
+
+        const next: StoredFieldProp = {
+          ...current,
+          required: dto.type === 'sub_product' ? false : (dto.required ?? current.required),
+          hidden: dto.hidden ?? current.hidden,
+          options: dto.options === undefined ? current.options : dto.options,
+          config: dto.config === undefined ? current.config : dto.config,
+          span: dto.type === 'sub_product' ? 24 : (dto.span ?? current.span),
+          showInList: dto.type === 'sub_product' ? false : (dto.showInList ?? current.showInList),
+          listWidth:
+            dto.type === 'sub_product'
+              ? null
+              : dto.listWidth === undefined
+                ? current.listWidth
+                : dto.listWidth,
+          subFields:
+            dto.subFields === undefined
+              ? current.subFields
+              : this.normalizeSubFields(dto.subFields, current.subFields),
+        }
+        if (
+          ['data_source', 'data_source_multiple'].includes(currentField.type) &&
+          current.config?.dataSourceType &&
+          next.config?.dataSourceType !== current.config.dataSourceType
+        ) {
+          throw new BadRequestException('已保存的数据源字段不能修改数据源类型，请删除字段后重建')
+        }
+        this.validateFieldSpecificConfig(dto.type, next.config)
+        if (dto.type === 'sub_product') {
+          this.validateStoredSubFields(next.subFields ?? [])
+          this.validateSubTableColumns(next.config, next.subFields ?? [])
+          await this.reconcileSubFieldValues(tx, current.subFields ?? [], next.subFields ?? [])
+        } else {
+          next.subFields = null
+        }
+
+        const updateData: Parameters<
+          ReturnType<typeof tx.orm.public.SysModuleField.where>['update']
+        >[0] = {
+          name: dto.label.trim(),
+          mobile: dto.mobile ?? currentField.mobile,
+          pos: BigInt(index),
+          updateUser: actorId,
+          updateTime: now,
+        }
+        if (!current.system) updateData._type = dto.type
+        await tx.orm.public.SysModuleField.where({ id: dto.id }).update(updateData)
+        await tx.orm.public.SysModuleFieldBlob.upsert({
+          create: { id: dto.id, prop: JSON.stringify(next) },
+          update: { prop: JSON.stringify(next) },
+          conflictOn: { id: dto.id },
+        })
+      }
+
+      for (const currentField of currentFields) {
+        if (requestedIdSet.has(currentField.id)) continue
+        const current = this.parseProp(currentField)
+        if (current.system) throw new BadRequestException('系统字段不可删除')
+        if (currentField.type === 'sub_product') {
+          const childIds = current.subFields?.map((subField) => subField.id) ?? []
+          await Promise.all([
+            this.deleteCustomSubFieldValues(tx, false, currentField.id, childIds),
+            this.deleteCustomSubFieldValues(tx, true, currentField.id, childIds),
+          ])
+        }
+        await this.deleteFieldValues(tx, currentField.id)
+        await tx.orm.public.SysModuleField.where({ id: currentField.id }).delete()
+      }
+
+      await tx.orm.public.SysModuleForm.where({ id: form.id }).update({
+        updateUser: actorId,
+        updateTime: now,
+      })
+      await tx.orm.public.SysModuleFormBlob.upsert({
+        create: { id: form.id, prop: JSON.stringify(formProp) },
+        update: { prop: JSON.stringify(formProp) },
+        conflictOn: { id: form.id },
+      })
+
+      const savedFields = (await this.findFields(tx, form.id)).map((field) =>
+        this.toVO(field, formKey),
+      )
+      this.validateFormLinkage(savedFields)
+      await this.validateFormPropLinkageInTransaction(
+        tx,
+        organizationId,
+        formKey,
+        savedFields,
+        formProp,
+      )
+      return { formKey, formProp, fields: savedFields }
+    })
+    await this.invalidateForm(organizationId, formKey)
+    return result
   }
 
   async createField(
@@ -636,6 +819,21 @@ export class ModuleFormsService {
       if (new Set(labels).size !== labels.length || new Set(values).size !== values.length) {
         throw new BadRequestException('同一字段的选项名称和值不能重复')
       }
+    }
+  }
+
+  private validateFormPropInput(formProp: ModuleFormProp): void {
+    if (formProp.layout !== undefined && ![1, 2, 3, 4].includes(formProp.layout)) {
+      throw new BadRequestException('表单布局配置不正确')
+    }
+    if (formProp.labelPos !== undefined && !['top', 'left'].includes(formProp.labelPos)) {
+      throw new BadRequestException('字段标题位置配置不正确')
+    }
+    if (
+      formProp.viewSize !== undefined &&
+      !['small', 'medium', 'large'].includes(formProp.viewSize)
+    ) {
+      throw new BadRequestException('PC 表单尺寸配置不正确')
     }
   }
 
@@ -1356,6 +1554,31 @@ export class ModuleFormsService {
     const targetFields = await this.listFields(organizationId, targetFormKey)
     for (const sourceFormKey of sourceKeys) {
       const sourceFields = await this.listFields(organizationId, sourceFormKey)
+      const scenarios = linkProp[sourceFormKey] ?? []
+      if (new Set(scenarios.map((scenario) => scenario.key)).size !== scenarios.length) {
+        throw new BadRequestException(`表单联动场景重复：${sourceFormKey}`)
+      }
+      scenarios.forEach((scenario) =>
+        this.validateFormLinkScenario(targetFields, sourceFields, scenario),
+      )
+    }
+  }
+
+  private async validateFormPropLinkageInTransaction(
+    tx: PrismaTransaction,
+    organizationId: string,
+    targetFormKey: string,
+    targetFields: FieldVO[],
+    formProp: Record<string, unknown>,
+  ): Promise<void> {
+    const linkProp = this.parseFormLinkProp(formProp['linkProp'])
+    const sourceKeys = Object.keys(linkProp)
+    if (!sourceKeys.length) return
+    for (const sourceFormKey of sourceKeys) {
+      const sourceFields =
+        sourceFormKey === targetFormKey
+          ? targetFields
+          : await this.listFieldsInTransaction(tx, organizationId, sourceFormKey)
       const scenarios = linkProp[sourceFormKey] ?? []
       if (new Set(scenarios.map((scenario) => scenario.key)).size !== scenarios.length) {
         throw new BadRequestException(`表单联动场景重复：${sourceFormKey}`)

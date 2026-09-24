@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
-import type { FieldConfig, FieldType } from '@micromatrix/shared'
+import type { FieldConfig, FieldType, ModuleFormProp } from '@micromatrix/shared'
 import { Type } from 'class-transformer'
 import {
   IsArray,
@@ -163,7 +163,7 @@ export class CreateFieldDto {
   @ApiPropertyOptional()
   @IsInt()
   @IsOptional()
-  listWidth?: number
+  listWidth?: number | null
 
   @ApiPropertyOptional({ default: false })
   @IsBoolean()
@@ -186,6 +186,11 @@ export class ReorderFieldsDto {
 }
 
 export class UpdateFormPropDto {
+  @ApiPropertyOptional({ enum: [1, 2, 3, 4], description: 'PC 表单列布局' })
+  @IsIn([1, 2, 3, 4])
+  @IsOptional()
+  layout?: 1 | 2 | 3 | 4
+
   @ApiPropertyOptional({ enum: ['top', 'left'], description: 'PC 表单字段标题位置' })
   @IsIn(['top', 'left'])
   @IsOptional()
@@ -195,4 +200,23 @@ export class UpdateFormPropDto {
   @IsIn(['small', 'medium', 'large'])
   @IsOptional()
   viewSize?: 'small' | 'medium' | 'large'
+}
+
+export class SaveFormFieldDto extends CreateFieldDto {
+  @ApiPropertyOptional({ description: '既有字段 ID；新增字段不传' })
+  @IsString()
+  @IsOptional()
+  id?: string
+}
+
+export class SaveModuleFormDto {
+  @ApiProperty({ type: [SaveFormFieldDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveFormFieldDto)
+  fields!: SaveFormFieldDto[]
+
+  @ApiProperty({ description: '完整表单属性' })
+  @IsObject()
+  formProp!: ModuleFormProp
 }

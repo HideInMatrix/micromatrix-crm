@@ -12,7 +12,7 @@
     - [x] 用户确认纳入 `planProduct`；继续源码审计确认 Cordys 通过 `moduleFields` 保存，不存在独立 productIds 核心模型。
 
 - [x] B. 表单设置入口与 shared runtime 契约。
-  - [x] B1 `followPlan` 加入 ModulesView 可配置模块。
+  - [x] B1 `followPlan` 加入通用 ModuleFormDesigner 可配置模块。
   - [x] B2 Customer 模块增加真实“跟进计划表单设置”入口。
   - [x] B3 抽取 FollowPlan create-context/system-field runtime 契约，PC/Mobile 共用。
   - [x] B4 Rules/typecheck 验证。
@@ -31,7 +31,7 @@
   - [x] D4 Mobile 通用 DataSource 单选/多选控件支持 `planProduct` 选择与回显，不写产品专属临时选择器。
 
 - [x] E. formProp / 高级 FormDesign 收口。
-  - [x] E1 审计当前 ModulesView 与 Cordys formProp 的剩余差异。
+  - [x] E1 审计通用 ModuleFormDesigner 与 Cordys formProp 的剩余差异。
   - [x] E2 在通用 Metadata/FormDesign 层补齐本任务需要的 formProp，不写 FollowPlan 专属配置孤岛。
   - [x] E3 Service/API/Browser 回归。
 

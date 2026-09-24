@@ -4,7 +4,7 @@
 
 ## 1. 订单表单设置
 
-订单卡片“订单表单设置”继续使用 `/system/modules/fields?module=order`。Browser Smoke 已实际点击并确认页面请求 `GET /api/metadata/order/fields`，消费当前 direct order metadata，而不是旧订单 JSON 字段模型。
+订单卡片“订单表单设置”当前统一使用模块设置内的全屏表单设计 Drawer。表单设计器读取 `GET /api/metadata/order/form` 并消费当前 direct order metadata，而不是旧订单 JSON 字段模型。
 
 ## 2. 订单状态流设置
 

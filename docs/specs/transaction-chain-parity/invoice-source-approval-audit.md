@@ -302,7 +302,7 @@ Cordys permission tree：
 
 - `BusinessTitleService` 已真实提供 page/get/option/add/update/delete/invoice-check/approval/revoke；`CUSTOM -> APPROVING`，审核通过后才进入发票 option。
 - `/business-title/config/get|switch/:id` 已真实消费 `business_title_config`，保持 14 项/租户 required 配置。
-- `/system/modules` 合同卡片的“工商抬头表单必填设置”已替换 deferred 为真实 Drawer；“发票表单设置”已进入 `/system/modules/fields?module=invoice`。
+- `/system/modules` 合同卡片的“工商抬头表单必填设置”已替换 deferred 为真实 Drawer；“发票表单设置”统一进入模块设置内的全屏表单设计 Drawer。
 
 ### 15.3 caller 与旧真相退出进度
 
@@ -378,7 +378,7 @@ Cordys permission tree：
 - Rules：**114/114**；根级 `pnpm typecheck`、`pnpm lint`、`pnpm build` 全绿。
 - `pnpm smoke:w345-empty-db`：隔离空库从零应用全部 **51 migrations**，Seed 连续两次幂等，旧表删除审计、隔离 API/Web 启动均通过。
 - runtime 扫描范围 `apps/api/src + prisma/schema.prisma + seed + apps/web/src + packages/shared/src` 中，`InvoiceStatus / InvoiceVO / InvoiceTitleVO / InvoicesService / invoiceRecord / invoiceTitle / /contracts/invoices / /contracts/invoice-titles / invoice:manage / invoiceTitle:manage` **0 匹配**。
-- `/system/modules` 合同卡片复查：工商抬头 required 使用真实 drawer，发票表单进入 `/system/modules/fields?module=invoice`，均无 deferred；`git diff --check` 通过。
+- `/system/modules` 合同卡片复查：工商抬头 required 使用真实 drawer，发票表单使用通用全屏表单设计 Drawer，均无 deferred；`git diff --check` 通过。
 
 5.2A～5.2E 到此全部关闭，W3.6.4 发票 direct model 与审批运行时不存在 legacy 第二真相源。下一步进入 5.3 页面、通知/到期任务对齐；5.5 仍保留最终专项验收与提交。
 

@@ -37,7 +37,7 @@ Cordys `useFormCreateApi.specialFormFieldInit()`：
 
 PLAN-FORM-001 已完成单一 `followPlan` ModuleForm、FollowUpPlan Field/Blob、完整 system/custom runtime 与 PC/Mobile 共用 create-context 语义：
 
-1. `followPlan` 已进入 `ModulesView.vue`，Customer 模块也已有真实“跟进计划表单设置”入口；
+1. `followPlan` 已进入通用 `ModuleFormDesigner`，Customer 模块也已有真实“跟进计划表单设置”入口；
 2. PC `FollowUpPlanDialog.vue` 已按同一 `fields[]` 顺序混排 system/custom，system field 通过专用 adapter 保留业务选择器；
 3. Mobile 已按 `hidden / mobile / required` 消费同一 ModuleForm，并补齐负责人、联系人、意向产品；
 4. `planProduct` 已作为 `data_source_multiple(PRODUCT)` 标准扩展 ModuleField 使用现有 FollowUpPlan Field/Blob；

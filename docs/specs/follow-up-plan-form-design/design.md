@@ -31,9 +31,9 @@ Customer / Lead / Opportunity 的 context 只负责 targetType/targetId 初始�
 
 ## 4. 表单设置入口
 
-在 Customer 模块动作中增加 Cordys 对应的“跟进计划表单设置”，跳转现有 `/system/modules/fields?module=followPlan`。
+在 Customer 模块动作中保留 Cordys 对应的“跟进计划表单设置”，由模块设置内的通用全屏表单设计 Drawer 打开 `followPlan`。
 
-`ModulesView` 增加 `followPlan` 作为可配置 ModuleKey。仍编辑单一 ModuleForm，不引入 planClue/planBusiness。
+通用 `ModuleFormDesigner` 支持 `followPlan` ModuleKey。仍编辑单一 ModuleForm，不引入 planClue/planBusiness。
 
 ## 5. System/custom 混排
 

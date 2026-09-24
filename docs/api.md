@@ -45,6 +45,19 @@
 - 响应体 Schema 未逐接口建模（VO 为 TS interface，无运行时元数据）：响应结构以 `packages/shared/src` 中的 `*VO` 类型为准；后续如需完整响应 Schema，可将 VO 改为带 `@ApiProperty` 的 class 或引入 nest CLI swagger 插件（需恢复 nest build 链路）
 - SSE 接口（`GET /api/notifications/stream?token=`）无法在 Swagger UI 中调试，请用浏览器 EventSource 或 curl 验证
 
+## 模块表单设计
+
+```text
+GET  /metadata/{module}/form
+POST /metadata/{module}/form
+```
+
+- `GET` 返回完整 `formProp + fields`，供业务表单运行时和模块设置中的通用表单设计器使用。
+- `POST` 需要 `system:module:update`，按 Cordys 表单设计语义一次保存完整草稿：字段新增、属性修改、排序、删除与表单属性在同一事务内提交；既有字段 ID 保持稳定，避免破坏已经保存的业务字段值。
+- `formProp.layout` 支持一列、两列、三列、四列（`1 / 2 / 3 / 4`）；切换布局时普通字段宽度同步为 `24 / 12 / 8 / 6` 栅格，附件与子表格保持特殊宽度。字段自身的 `span` 在设计器中命名为“字段宽度”，可继续单独调整。
+- 系统字段不可从设计草稿中删除，也不可修改字段类型；自定义字段删除会同步清理该字段已保存的业务值。
+- PC 模块设置不再使用独立字段配置路由；各模块统一从 `/system/modules` 打开全屏表单设计 Drawer，复用同一 `ModuleFormDesigner`。
+
 ## 组织、成员与角色（R6 / R7 多角色）
 
 ```text

@@ -3,13 +3,13 @@ import {
   NAVIGATION_MODULES,
   TOP_NAVIGATION_DEFINITIONS,
   type ModuleConfigVO,
+  type ModuleKey,
   type NavigationModuleKey,
   type TopNavigationConfigVO,
   type TopNavigationKey,
 } from '@micromatrix/shared'
 import { GripVertical } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import draggable from 'vuedraggable'
 import { extractErrorMessage } from '@/api/http'
 import { moduleIconOf, topNavigationIconOf } from '@/router/navigation-icons'
@@ -27,11 +27,11 @@ import OrderStageSettingsDrawer from './components/OrderStageSettingsDrawer.vue'
 import OpportunityCloseRuleSettingsDrawer from './components/OpportunityCloseRuleSettingsDrawer.vue'
 import OpportunityFailureReasonSettingsDrawer from './components/OpportunityFailureReasonSettingsDrawer.vue'
 import OpportunityStageSettingsDrawer from './components/OpportunityStageSettingsDrawer.vue'
+import ModuleFormSettingsDrawer from './components/ModuleFormSettingsDrawer.vue'
 
 interface ModuleAction {
   label: string
-  path?: string
-  query?: Record<string, string>
+  formModule?: ModuleKey
   deferred?: string
   drawer?:
     | 'lead-pool'
@@ -56,7 +56,7 @@ interface ModuleActionGroup {
 const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   lead: {
     primary: [
-      { label: '线索表单设置', path: '/system/modules/fields', query: { module: 'lead' } },
+      { label: '线索表单设置', formModule: 'lead' },
       { label: '线索池设置', drawer: 'lead-pool' },
       { label: '线索库容设置', drawer: 'lead-capacity' },
     ],
@@ -64,8 +64,8 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   },
   customer: {
     primary: [
-      { label: '客户表单设置', path: '/system/modules/fields', query: { module: 'customer' } },
-      { label: '联系人表单设置', path: '/system/modules/fields', query: { module: 'contact' } },
+      { label: '客户表单设置', formModule: 'customer' },
+      { label: '联系人表单设置', formModule: 'contact' },
       { label: '公海设置', drawer: 'customer-pool' },
     ],
     more: [
@@ -73,27 +73,26 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
       { label: '移入公海原因设置', drawer: 'customer-reason' },
       {
         label: '跟进计划表单设置',
-        path: '/system/modules/fields',
-        query: { module: 'followPlan' },
+        formModule: 'followPlan',
       },
     ],
   },
   contract: {
     primary: [
-      { label: '合同表单设置', path: '/system/modules/fields', query: { module: 'contract' } },
-      { label: '回款计划表单设置', path: '/system/modules/fields', query: { module: 'contractPaymentPlan' } },
-      { label: '回款记录表单设置', path: '/system/modules/fields', query: { module: 'contractPaymentRecord' } },
+      { label: '合同表单设置', formModule: 'contract' },
+      { label: '回款计划表单设置', formModule: 'contractPaymentPlan' },
+      { label: '回款记录表单设置', formModule: 'contractPaymentRecord' },
     ],
     more: [
       { label: '工商抬头表单必填设置', drawer: 'business-title-required' },
-      { label: '发票表单设置', path: '/system/modules/fields', query: { module: 'invoice' } },
+      { label: '发票表单设置', formModule: 'invoice' },
       { label: '合同阶段设置', drawer: 'contract-stage' },
     ],
   },
   opportunity: {
     primary: [
-      { label: '商机表单设置', path: '/system/modules/fields', query: { module: 'opportunity' } },
-      { label: '报价表单设置', path: '/system/modules/fields', query: { module: 'quote' } },
+      { label: '商机表单设置', formModule: 'opportunity' },
+      { label: '报价表单设置', formModule: 'quote' },
       { label: '商机阶段设置', drawer: 'opportunity-stage' },
     ],
     more: [
@@ -103,19 +102,18 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   },
   order: {
     primary: [
-      { label: '订单表单设置', path: '/system/modules/fields', query: { module: 'order' } },
+      { label: '订单表单设置', formModule: 'order' },
       { label: '订单状态流设置', drawer: 'order-stage' },
     ],
   },
   product: {
     primary: [
-      { label: '产品表单设置', path: '/system/modules/fields', query: { module: 'product' } },
-      { label: '价格表表单设置', path: '/system/modules/fields', query: { module: 'price' } },
+      { label: '产品表单设置', formModule: 'product' },
+      { label: '价格表表单设置', formModule: 'price' },
     ],
   },
 }
 
-const router = useRouter()
 const auth = useAuthStore()
 const moduleConfig = useModuleConfigStore()
 const loading = ref(false)
@@ -135,6 +133,9 @@ const orderStageVisible = ref(false)
 const opportunityStageVisible = ref(false)
 const opportunityRuleVisible = ref(false)
 const opportunityReasonVisible = ref(false)
+const formSettingsVisible = ref(false)
+const formSettingsModule = ref<ModuleKey | null>(null)
+const formSettingsTitle = ref('')
 
 const canUpdate = computed(() => auth.hasPerm('system:module:update'))
 const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item]))
@@ -246,8 +247,10 @@ async function handleTopNavigationDragEnd() {
 }
 
 function openAction(action: ModuleAction) {
-  if (action.path) {
-    router.push({ path: action.path, query: action.query })
+  if (action.formModule) {
+    formSettingsModule.value = action.formModule
+    formSettingsTitle.value = action.label
+    formSettingsVisible.value = true
     return
   }
   if (action.drawer === 'lead-pool') leadPoolVisible.value = true
@@ -353,7 +356,7 @@ onMounted(load)
                 <el-tooltip
                   v-for="action in actionsOf(item.moduleKey).primary"
                   :key="action.label"
-                  :disabled="Boolean(action.path || action.drawer)"
+                  :disabled="Boolean(action.formModule || action.drawer)"
                   :content="unavailableActionTip(action)"
                   placement="top"
                 >
@@ -361,7 +364,7 @@ onMounted(load)
                     <el-button
                       link
                       type="primary"
-                      :disabled="(!action.path && !action.drawer) || !canUpdate"
+                      :disabled="(!action.formModule && !action.drawer) || !canUpdate"
                       @click="openAction(action)"
                     >
                       {{ action.label }}
@@ -381,7 +384,7 @@ onMounted(load)
                         v-for="action in actionsOf(item.moduleKey).more"
                         :key="action.label"
                         :command="action"
-                        :disabled="!action.path && !action.drawer"
+                        :disabled="!action.formModule && !action.drawer"
                         :title="action.deferred"
                       >
                         {{ action.label }}{{ action.deferred ? '（W3.6.4）' : '' }}
@@ -422,6 +425,11 @@ onMounted(load)
     <OpportunityStageSettingsDrawer v-model="opportunityStageVisible" />
     <OpportunityCloseRuleSettingsDrawer v-model="opportunityRuleVisible" />
     <OpportunityFailureReasonSettingsDrawer v-model="opportunityReasonVisible" />
+    <ModuleFormSettingsDrawer
+      v-model="formSettingsVisible"
+      :module="formSettingsModule"
+      :title="formSettingsTitle"
+    />
   </div>
 </template>
 

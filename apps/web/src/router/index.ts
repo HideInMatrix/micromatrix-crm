@@ -301,15 +301,6 @@ const router = createRouter({
           meta: { title: '模块设置', perm: 'system:module' },
         },
         {
-          path: 'system/modules/fields',
-          component: () => import('@/views/system/ModulesView.vue'),
-          meta: {
-            title: '表单设置',
-            perm: 'system:module',
-            activeMenu: '/system/modules',
-          },
-        },
-        {
           path: 'system/sales-settings',
           component: () => import('@/views/system/SalesSettingsView.vue'),
           meta: { title: '销售设置', perm: 'system:module' },

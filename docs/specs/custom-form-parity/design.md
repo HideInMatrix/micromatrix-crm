@@ -174,7 +174,7 @@ CustomFormConfigDrawer
   └─ 成员权限
 ```
 
-设计 Tab 第一阶段使用 `vuedraggable + 字段编辑 Drawer`，与当前 `ModulesView` 的 FieldVO 编辑契约保持一致；不复制 Cordys Naive UI 组件。
+设计 Tab 第一阶段使用 `vuedraggable` 并复用通用 ModuleFormDesigner 的 FieldVO 编辑契约；不复制 Cordys Naive UI 组件。
 
 成员权限 Tab：顶部管理员多选；下方三个固定角色分别选择成员。
 

@@ -26,7 +26,7 @@ export interface FieldForm {
   config?: FieldConfig
   span?: number
   showInList?: boolean
-  listWidth?: number
+  listWidth?: number | null
   hidden?: boolean
   mobile?: boolean
   subFields?: SubFieldForm[]
@@ -38,9 +38,23 @@ export interface ModuleFormConfigVO {
   fields: FieldVO[]
 }
 
+export interface SaveModuleFormField extends FieldForm {
+  id?: string
+}
+
+export interface SaveModuleFormInput {
+  fields: SaveModuleFormField[]
+  formProp: ModuleFormProp
+}
+
 export const metadataApi = {
   formConfig: (module: string) => http.get<ModuleFormConfigVO>(`/metadata/${module}/form`),
-  updateFormProp: (module: string, data: Pick<ModuleFormProp, 'labelPos' | 'viewSize'>) =>
+  saveFormDesign: (module: string, data: SaveModuleFormInput) =>
+    http.post<ModuleFormConfigVO>(`/metadata/${module}/form`, data),
+  updateFormProp: (
+    module: string,
+    data: Pick<ModuleFormProp, 'layout' | 'labelPos' | 'viewSize'>,
+  ) =>
     http.patch<ModuleFormConfigVO>(`/metadata/${module}/form-prop`, data),
   fields: (module: string) => http.get<FieldVO[]>(`/metadata/${module}/fields`),
   createField: (module: string, data: FieldForm) =>

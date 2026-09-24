@@ -131,6 +131,7 @@ export type FormLinkProp = Record<string, FormLinkScenario[]>
 
 /** MicroMatrix 当前正式消费的表单级 FormDesign 属性。 */
 export interface ModuleFormProp {
+  layout?: 1 | 2 | 3 | 4
   labelPos?: 'top' | 'left'
   viewSize?: 'small' | 'medium' | 'large'
   /** 既有跨表单联动配置；PLAN-FORM-001 不新增其设计器 UI。 */

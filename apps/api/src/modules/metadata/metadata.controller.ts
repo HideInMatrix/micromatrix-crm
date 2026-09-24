@@ -7,6 +7,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import {
   CreateFieldDto,
   ReorderFieldsDto,
+  SaveModuleFormDto,
   UpdateFieldDto,
   UpdateFormPropDto,
 } from './dto/field.dto'
@@ -22,6 +23,18 @@ export class MetadataController {
   @ApiOperation({ summary: '模块表单配置（字段 + formProp）' })
   formConfig(@CurrentUser() user: AuthUser, @Param('module') module: string) {
     return this.metadataService.getFormConfig(user.tenantId, module)
+  }
+
+  @Post(':module/form')
+  @RequirePermissions('system:module:update')
+  @LogOperation('metadata', 'saveFormDesign')
+  @ApiOperation({ summary: '保存完整模块表单设计' })
+  saveFormDesign(
+    @CurrentUser() user: AuthUser,
+    @Param('module') module: string,
+    @Body() dto: SaveModuleFormDto,
+  ) {
+    return this.metadataService.saveFormDesign(user.tenantId, module, dto, user.id)
   }
 
   @Patch(':module/form-prop')

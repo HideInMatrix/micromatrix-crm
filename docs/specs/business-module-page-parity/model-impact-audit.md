@@ -166,7 +166,7 @@ Mapper 证明 `scope_id` 是 JSON/范围 token 文本而不是 PostgreSQL 数组
 
 ### 5.4 FieldDefinition 与 customData
 
-- 唯一直接 DB Service：`apps/api/src/modules/metadata/metadata.service.ts`；`ModulesView.vue` 当前删除提示也明确依赖 customData。
+- 唯一直接 DB Service：`apps/api/src/modules/metadata/metadata.service.ts`；通用 ModuleFormDesigner 的字段删除确认明确提示会同步删除已保存业务值。
 - 目标域后端：customers/leads/contacts Service 与 DTO，bidding 创建线索时写 `cf_source`。
 - 公共基础设施：`apps/api/src/common/filter-builder.ts`、`export-format.ts`、`apps/web/src/components/form-engine/DynamicForm.vue`、`AdvancedFilter.vue`、`field-display.ts`、`CsvImportDialog.vue`。
 - Web/shared：Leads/Customers/Contacts 及 Mobile 页面、`packages/shared/src/metadata.ts`、`sales.ts`、`index.ts`。
