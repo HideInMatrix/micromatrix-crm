@@ -60,6 +60,7 @@ test(
       tenantId = registered.user.tenantId
       assert.equal(registered.user.email, email)
       assert.equal(registered.user.tenantName, tenantName)
+      assert.match(registered.user.tenantSlug, /^org-[a-f0-9]{32}$/)
       assert.equal(registered.user.deptName, tenantName)
       assert.deepEqual(registered.user.permissions, ['*'])
       assert.equal(registered.user.roles[0]?.name, '管理员')

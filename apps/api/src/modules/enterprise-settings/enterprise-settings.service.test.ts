@@ -125,7 +125,8 @@ test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', as
           Tenants: {
             where: ({ slug }: { slug?: string }) => ({
               select: () => ({
-                first: async () => (slug === 'demo' ? { id: 'tenant-a', slug: 'demo' } : null),
+                first: async () =>
+                  slug === 'org-test' ? { id: 'tenant-a', slug: 'org-test' } : null,
               }),
             }),
           },
@@ -141,9 +142,9 @@ test('公开品牌配置按 tenantSlug 读取且只暴露品牌展示状态', as
   const attachments = {} as any
   const service = new EnterpriseUiSettingsService(prisma, attachments)
 
-  const branding = await service.getBranding('demo')
+  const branding = await service.getBranding('org-test')
   assert.equal(branding.title, '一草一木 CRM')
-  assert.equal(branding.tenantSlug, 'demo')
+  assert.equal(branding.tenantSlug, 'org-test')
   assert.equal(branding.iconConfigured, true)
   assert.equal(branding.loginLogoConfigured, false)
   assert.equal(branding.loginImageConfigured, true)
@@ -182,7 +183,7 @@ test('登录页品牌配置可在未登录时按邮箱解析所属租户', async
             where: ({ id }: { id?: string }) => ({
               select: () => ({
                 first: async () =>
-                  id === 'tenant-a' ? { id: 'tenant-a', slug: 'demo', status: 'ACTIVE' } : null,
+                  id === 'tenant-a' ? { id: 'tenant-a', slug: 'org-test', status: 'ACTIVE' } : null,
               }),
             }),
           },
@@ -198,7 +199,7 @@ test('登录页品牌配置可在未登录时按邮箱解析所属租户', async
   const service = new EnterpriseUiSettingsService(prisma, {} as any)
 
   const branding = await service.getLoginBranding({ email: 'admin@demo.com' })
-  assert.equal(branding.tenantSlug, 'demo')
+  assert.equal(branding.tenantSlug, 'org-test')
   assert.equal(branding.title, '一草一木 CRM')
 })
 

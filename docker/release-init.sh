@@ -6,7 +6,7 @@ run_migrate() {
 }
 
 run_seed() {
-  SEED_MODE=bootstrap ./node_modules/.bin/tsx src/prisma/seed.ts
+  ./node_modules/.bin/tsx src/prisma/seed.ts
 }
 
 case "${1:-init}" in

@@ -74,8 +74,8 @@ pnpm dev:infra
 # 应用当前 Prisma 8 migration graph
 pnpm db:deploy
 
-# 空库初始化基础数据；已有用户时 bootstrap 会跳过
-SEED_MODE=bootstrap pnpm --filter @micromatrix/api run db:seed
+# 初始化基础数据；空库只创建默认企业、根部门、管理员角色和 admin@demo.com；已有用户时仅校准默认 Pro 套餐
+pnpm --filter @micromatrix/api run db:seed
 
 # 启动 API / PC / Mobile
 pnpm dev

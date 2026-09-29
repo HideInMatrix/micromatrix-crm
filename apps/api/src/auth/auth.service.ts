@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config'
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt'
 import { CurrentUser, LoginResult } from '@micromatrix/shared'
 import * as bcrypt from 'bcryptjs'
+import { createTenantSlug } from '../common/tenant-slug'
 import { AuthContextCacheService } from '../common/services/auth-context-cache.service'
 import { PrismaService } from '../prisma.service'
 import { nowInstant, instantFromDate } from '../prisma/temporal'
@@ -73,7 +74,7 @@ export class AuthService {
     if (exists) throw new ConflictException('该邮箱已被注册')
 
     const passwordHash = await bcrypt.hash(dto.password, 10)
-    const slug = await this.generateTenantSlug(dto.tenantName)
+    const slug = createTenantSlug()
 
     const userId = await this.prisma.client.transaction(async (tx) => {
       const tenant = await tx.orm.public.Tenants.create({
@@ -109,12 +110,12 @@ export class AuthService {
         updatedAt: nowInstant(),
       })
 
-      const freePlan = await tx.orm.public.Plans.where({ code: 'free' }).select('id').first()
-      if (freePlan) {
+      const defaultPlan = await tx.orm.public.Plans.where({ code: 'pro' }).select('id').first()
+      if (defaultPlan) {
         const periodStart = new Date()
         await tx.orm.public.Subscriptions.create({
           tenantId: tenant.id,
-          planId: freePlan.id,
+          planId: defaultPlan.id,
           status: 'TRIALING',
           currentPeriodStart: instantFromDate(periodStart),
           currentPeriodEnd: instantFromDate(
@@ -351,19 +352,6 @@ export class AuthService {
       deptId: user.deptId,
       deptName: user.dept?.name ?? null,
     }
-  }
-
-  private async generateTenantSlug(name: string): Promise<string> {
-    const base =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'tenant'
-    let slug = base
-    while (await this.prisma.client.orm.public.Tenants.where({ slug }).select('id').first()) {
-      slug = `${base}-${Math.random().toString(36).slice(2, 6)}`
-    }
-    return slug
   }
 
   private async loadUserWithRelations(userId: string): Promise<UserWithRelations | null> {

@@ -265,7 +265,7 @@ GET   /message-deliveries
 POST  /message-deliveries/{id}/retry
 ```
 
-PC 通用登录入口通过 API 服务的 `WECOM_DEFAULT_TENANT_SLUG` 指定默认企业；企业专属地址仍可用 `/login?tenant={slug}` 覆盖。多租户部署必须显式配置默认值，避免把企业选择暴露给普通用户。
+`tenantSlug` 是系统自动生成、不可由普通用户编辑的稳定企业标识。单企业部署无需配置 `WECOM_DEFAULT_TENANT_SLUG`，后端会自动解析唯一启用的企业微信租户；多租户部署如需固定通用登录入口，可由运维显式配置某个内部 slug。企业专属地址仍可使用 `/login?tenant={slug}`。
 
 - `discovery/start/callback` 为 PC 官方 SDK 扫码公共接口，使用 `QR_WECOM` flow、`qr-wecom` state 和独立 nonce cookie；`workbench/start/callback` 为 `wxwork` 网页 OAuth 接口，使用 `WECOM` flow、`wecom` state、`snsapi_base` 和另一枚 nonce cookie。两套 callback 不能交叉消费 state。
 - 两套 start 均生成 256 位随机 state，只持久化 SHA-256，并设置 10 分钟 HttpOnly/SameSite=Lax 浏览器 nonce cookie；callback 原子消费，过期、浏览器不匹配和重放均拒绝。

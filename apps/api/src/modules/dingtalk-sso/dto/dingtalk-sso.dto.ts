@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger'
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator'
 
 export class DingTalkDiscoveryQueryDto {
-  @ApiProperty({ required: false, example: 'demo' })
+  @ApiProperty({ required: false, example: 'org-7f3a8c2d...' })
   @IsOptional()
   @IsString()
   @MaxLength(128)
@@ -10,7 +10,7 @@ export class DingTalkDiscoveryQueryDto {
 }
 
 export class StartDingTalkLoginDto {
-  @ApiProperty({ required: false, example: 'demo' })
+  @ApiProperty({ required: false, example: 'org-7f3a8c2d...' })
   @IsOptional()
   @IsString()
   @MaxLength(128)

@@ -84,7 +84,7 @@ pnpm db:verify
 
 ```bash
 pnpm db:deploy
-SEED_MODE=bootstrap pnpm --filter @micromatrix/api run db:seed
+pnpm --filter @micromatrix/api run db:seed
 pnpm db:verify
 pnpm db:status
 ```

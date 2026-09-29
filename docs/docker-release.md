@@ -45,7 +45,7 @@ Workflow 会分别原生构建 amd64 / arm64 的 API 与 Migration 镜像，再�
 
 ```text
 prisma db migrate
-SEED_MODE=bootstrap tsx src/prisma/seed.ts
+tsx src/prisma/seed.ts
 ```
 
 Migration 是一次性服务；数据库结构升级成功后才允许 API / worker / Web 进入后续启动阶段。
