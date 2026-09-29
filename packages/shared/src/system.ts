@@ -541,7 +541,6 @@ export const TOP_NAVIGATION_DEFINITIONS: TopNavigationDefinition[] = [
   },
   { key: 'event', label: '记录/计划', defaultEnabled: true, status: 'available' },
   { key: 'notify', label: '消息通知', defaultEnabled: true, status: 'available' },
-  { key: 'about', label: '关于', defaultEnabled: true, status: 'available' },
   { key: 'help', label: '帮助中心', defaultEnabled: true, status: 'available' },
 ]
 

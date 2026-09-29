@@ -42,7 +42,6 @@ html:not(.dark) {
 .el-card {
   --el-card-border-radius: var(--border-radius-medium);
   --el-card-border-color: var(--el-border-color-light);
-  border-radius: var(--border-radius-medium);
 }
 
 .el-card__header {
@@ -66,10 +65,13 @@ html:not(.dark) {
   font-weight: 500;
 }
 
+.el-drawer {
+  --el-drawer-padding-primary: 20px;
+}
+
 .el-drawer__header {
-  margin-bottom: 0 !important;
-  padding: 16px 24px;
-  padding-bottom: var(--el-drawer-padding-primary) !important;
+  margin-bottom: 0;
+  padding-bottom: var(--el-drawer-padding-primary);
   border-bottom: 1px solid var(--el-border-color-light);
 }
 
@@ -80,22 +82,18 @@ html:not(.dark) {
   color: var(--el-text-color-primary);
 }
 
-.el-drawer__body {
-  padding: 24px !important;
-}
-
 .el-dialog {
-  border-radius: var(--border-radius-medium);
+  --el-dialog-border-radius: var(--border-radius-medium);
 }
 
 .el-dialog__header {
-  padding: 16px 24px;
+  padding: 0 16px;
 }
 
 .el-dialog__body {
-  padding: 8px 24px 24px;
+  padding: 8px 12px 24px;
 }
 
 .el-dialog__footer {
-  padding: 0 24px 24px;
+  padding: 0 12px 12px;
 }

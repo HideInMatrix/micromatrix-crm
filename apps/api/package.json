@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "prisma contract emit && tsc -p tsconfig.build.json && concurrently -k -n tsc,api \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --watch dist/main.js\"",
+    "dev": "node ../../tools/api-dev.mjs",
     "build": "prisma contract emit && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "prisma contract emit && tsc --noEmit",
@@ -45,7 +45,6 @@
     "@nestjs/schematics": "^11.1.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
-    "concurrently": "^10.0.4",
     "prisma": "8.0.0-rc.14",
     "tsx": "^4.23.12",
     "typescript": "7.0.2"

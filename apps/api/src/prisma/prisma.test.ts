@@ -134,14 +134,15 @@ test(
 )
 
 test(
-  'PrismaService wraps the Prisma 8 singleton, probes it on startup and closes it cleanly',
+  'PrismaService wraps the Prisma 8 singleton, lazy-connects on first use and closes it cleanly',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
     const service = new PrismaService()
 
     assert.equal(service.client, db)
-    await service.onModuleInit()
+    const rows = await service.client.orm.public.Tenants.limit(1).all()
+    assert.ok(Array.isArray(rows))
     await service.onModuleDestroy()
   },
 )

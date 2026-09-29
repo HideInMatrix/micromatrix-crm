@@ -10,6 +10,7 @@ import {
 } from '@micromatrix/shared'
 import { GripVertical } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import draggable from 'vuedraggable'
 import { extractErrorMessage } from '@/api/http'
 import { moduleIconOf, topNavigationIconOf } from '@/router/navigation-icons'
@@ -82,6 +83,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
 
 const auth = useAuthStore()
 const moduleConfig = useModuleConfigStore()
+const route = useRoute()
 const loading = ref(false)
 const savingOrder = ref(false)
 const savingTopNavigationOrder = ref(false)
@@ -230,7 +232,16 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-home-analytics') customerHomeAnalyticsVisible.value = true
 }
 
-onMounted(load)
+function openDeepLinkedAction() {
+  const action = typeof route.query.action === 'string' ? route.query.action : ''
+  if (action === 'lead-home-analytics') leadHomeAnalyticsVisible.value = true
+  if (action === 'customer-home-analytics') customerHomeAnalyticsVisible.value = true
+}
+
+onMounted(async () => {
+  await load()
+  openDeepLinkedAction()
+})
 </script>
 
 <template>

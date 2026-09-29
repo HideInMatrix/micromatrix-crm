@@ -350,8 +350,9 @@ CordysCRM 大量复杂编辑采用 Drawer，而不是在列表页中展开巨型
 - 简单确认：Dialog / Popconfirm。
 - 中大型配置：Drawer。
 - 复杂对象详情：Drawer 或独立 Detail 页面。
-- Drawer Header 统一保留底部分隔线，强制 `margin-bottom: 0`，底部 padding 使用 Element Plus 的 `--el-drawer-padding-primary`；页面不得单独覆盖这两个值。
-- Drawer Body 默认 `padding: 24px`；Drawer 宽度由具体页面按信息密度决定，不做全局百分比覆盖。审批流程等复杂编辑允许采用百分比宽度并设置最小宽度，例如 `50% + min-width:1080px`。
+- Element Plus 已提供 CSS Variable 的视觉参数必须优先通过变量调整，例如 Drawer 使用 `--el-drawer-padding-primary`、Dialog 使用 `--el-dialog-padding-primary / --el-dialog-border-radius`、Card 使用 `--el-card-*`；不要为了改 padding / radius 再直接覆盖组件内部 DOM。只有组件没有对应变量、且确有统一视觉要求时，才允许最小化覆盖内部选择器；`!important` 只作为最后手段。
+- Drawer Header 统一保留底部分隔线，`margin-bottom: 0`；底部 padding 直接引用 `--el-drawer-padding-primary`。Drawer Body 默认沿用 Element Plus 自身的 `--el-drawer-padding-primary`，只有类似全屏内容画布这类明确场景才允许页面局部设为 `padding: 0`。
+- Drawer 宽度由具体页面按信息密度决定，不做全局百分比覆盖。审批流程等复杂编辑允许采用百分比宽度并设置最小宽度，例如 `50% + min-width:1080px`。
 - 长表单保存按钮固定在底部操作栏。
 - 底部操作栏白底，并用非常轻的顶部阴影与正文区分隔。
 

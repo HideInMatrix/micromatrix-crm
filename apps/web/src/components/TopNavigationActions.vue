@@ -30,7 +30,7 @@ async function loadPendingApprovalCount() {
 }
 
 function openHelp() {
-  window.open('/api/docs', '_blank', 'noopener,noreferrer')
+  window.open('/api/docs/', '_blank', 'noopener,noreferrer')
 }
 
 onMounted(() => {

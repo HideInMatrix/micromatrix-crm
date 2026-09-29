@@ -123,7 +123,7 @@ export function setupSwagger(app: INestApplication): void {
 
   SwaggerModule.setup('api/docs', app, document, {
     customSiteTitle: '微矩阵 CRM API 文档',
-    jsonDocumentUrl: 'api/docs-json',
+    jsonDocumentUrl: '/api/docs-json',
     swaggerOptions: {
       // 刷新页面保留已填的令牌
       persistAuthorization: true,

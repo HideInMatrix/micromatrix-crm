@@ -762,7 +762,7 @@ onBeforeUnmount(() => {
           <el-button
             v-if="auth.hasPerm('system:module')"
             data-testid="home-analytics-settings"
-            @click="router.push('/system/sales-settings')"
+            @click="router.push({ path: '/system/modules', query: { action: 'lead-home-analytics' } })"
           >
             <Settings2 :size="16" aria-hidden="true" />
           </el-button>

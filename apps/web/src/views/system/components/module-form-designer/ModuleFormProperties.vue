@@ -269,10 +269,14 @@ function changeLayout(layout: 1 | 2 | 3 | 4) {
               <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
                 字段宽度
               </div>
-              <el-radio-group v-model="field.span" :disabled="field.type === 'sub_product'">
-                <el-radio-button :value="6">1/4 行</el-radio-button>
-                <el-radio-button :value="8">1/3 行</el-radio-button>
-                <el-radio-button :value="12">半行</el-radio-button>
+              <el-radio-group
+                v-model="field.span"
+                size="small"
+                :disabled="field.type === 'sub_product'"
+              >
+                <el-radio-button :value="6">1/4</el-radio-button>
+                <el-radio-button :value="8">1/3</el-radio-button>
+                <el-radio-button :value="12">1/2</el-radio-button>
                 <el-radio-button :value="24">整行</el-radio-button>
               </el-radio-group>
             </section>
