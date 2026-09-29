@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { EnterpriseGlobalTaskExecutionVO, EnterpriseGlobalTaskVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import type { SaveEnterpriseGlobalTaskDto } from './dto/global-task.dto'

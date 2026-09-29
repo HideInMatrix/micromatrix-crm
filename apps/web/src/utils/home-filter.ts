@@ -30,7 +30,11 @@ export function consumeHomeFilter(key: unknown, expectedModule: HomeFilterModule
   try {
     const value = JSON.parse(raw) as Record<string, unknown>
     if (value.module !== expectedModule) return null
-    if (!HOME_STATISTIC_PERIODS.includes(value.period as never)) return null
+    if (
+      value.period !== undefined &&
+      !HOME_STATISTIC_PERIODS.includes(value.period as never)
+    )
+      return null
     if (!HOME_SEARCH_TYPES.includes(value.searchType as never)) return null
     if (!Array.isArray(value.deptIds) || value.deptIds.some((id) => typeof id !== 'string'))
       return null
@@ -39,6 +43,18 @@ export function consumeHomeFilter(key: unknown, expectedModule: HomeFilterModule
     if (value.timeField !== undefined && !HOME_TIME_FIELDS.includes(value.timeField as never))
       return null
     if (value.status !== undefined && value.status !== 'AFOOT' && value.status !== 'SUCCESS')
+      return null
+    if (value.leadStageKey !== undefined && typeof value.leadStageKey !== 'string') return null
+    if (value.converted !== undefined && typeof value.converted !== 'boolean') return null
+    if (value.overdue !== undefined && typeof value.overdue !== 'boolean') return null
+    if (
+      value.filters !== undefined &&
+      (!Array.isArray(value.filters) ||
+        value.filters.length > 50 ||
+        value.filters.some(
+          (item) => !item || typeof item !== 'object' || Array.isArray(item),
+        ))
+    )
       return null
     return value as unknown as HomeFilterPayload
   } catch {

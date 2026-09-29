@@ -7,7 +7,7 @@ import type {
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { nowInstant, instantToISOString } from '../../prisma/temporal.js'
 import type { SaveEnterpriseAiModelDto } from './dto/ai-model.dto'
 

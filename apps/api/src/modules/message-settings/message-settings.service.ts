@@ -13,7 +13,7 @@ import {
   type UpdateMessageTaskSettingInput,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 

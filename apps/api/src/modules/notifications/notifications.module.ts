@@ -1,9 +1,8 @@
 import { Global, Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module.js'
+import { PrismaModule } from '../../prisma.module.js'
 import { MessageSettingsModule } from '../message-settings/message-settings.module'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import { BusinessNotificationsService } from './business-notifications.service'
-import { MessageExpiryService } from './message-expiry.service'
 import { MessageTemplateService } from './message-template.service'
 import { NotificationsController } from './notifications.controller'
 import { NotificationsService } from './notifications.service'
@@ -19,7 +18,6 @@ import { MessageDeliveryService } from './message-delivery.service'
     NotificationsService,
     BusinessNotificationsService,
     MessageTemplateService,
-    MessageExpiryService,
     MessageDeliveryService,
   ],
   exports: [

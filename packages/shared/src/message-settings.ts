@@ -1,4 +1,4 @@
-export type MessageTaskModule = 'CUSTOMER' | 'CLUE' | 'OPPORTUNITY' | 'ORDER' | 'CONTRACT'
+export type MessageTaskModule = 'CUSTOMER' | 'CLUE'
 
 export type MessageLanguage = 'zh-CN' | 'en-US'
 
@@ -17,10 +17,10 @@ export type MessageTaskEvent =
   | 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED'
   | 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_MENTIONED'
   | 'CLUE_ADD'
+  | 'CLUE_FOLLOW_UP_OVERDUE'
   | 'CLUE_AUTOMATIC_MOVE_POOL'
   | 'CLUE_MOVED_POOL'
   | 'CLUE_CONVERT_CUSTOMER'
-  | 'CLUE_CONVERT_BUSINESS'
   | 'TRANSFER_CLUE'
   | 'CLUE_DELETED'
   | 'CLUE_DISTRIBUTED'
@@ -29,27 +29,6 @@ export type MessageTaskEvent =
   | 'CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED'
   | 'CLUE_FOLLOW_UP_RECORD_COMMENT_ADDED'
   | 'CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED'
-  | 'BUSINESS_ADD'
-  | 'BUSINESS_DELETED'
-  | 'BUSINESS_TRANSFER'
-  | 'BUSINESS_FOLLOW_UP_PLAN_DUE'
-  | 'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED'
-  | 'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_MENTIONED'
-  | 'OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_ADDED'
-  | 'OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_MENTIONED'
-  | 'BUSINESS_QUOTATION_APPROVAL'
-  | 'BUSINESS_QUOTATION_DELETED'
-  | 'BUSINESS_QUOTATION_EXPIRED'
-  | 'BUSINESS_QUOTATION_EXPIRING'
-  | 'ORDER_APPROVAL'
-  | 'CONTRACT_ARCHIVED'
-  | 'CONTRACT_VOID'
-  | 'CONTRACT_EXPIRED'
-  | 'CONTRACT_EXPIRING'
-  | 'CONTRACT_PAYMENT_EXPIRED'
-  | 'CONTRACT_PAYMENT_EXPIRING'
-  | 'CONTRACT_APPROVAL'
-  | 'INVOICE_APPROVAL'
 
 export type MessageTimeUnit = 'DAY'
 
@@ -148,9 +127,6 @@ export interface MessageDeliveryVO {
 const MODULE_NAMES: Record<MessageTaskModule, string> = {
   CUSTOMER: '客户管理',
   CLUE: '线索管理',
-  OPPORTUNITY: '商机管理',
-  ORDER: '订单管理',
-  CONTRACT: '合同管理',
 }
 
 const EVENT_GROUPS: Array<{
@@ -179,10 +155,10 @@ const EVENT_GROUPS: Array<{
     module: 'CLUE',
     events: [
       ['CLUE_ADD', '新建线索'],
+      ['CLUE_FOLLOW_UP_OVERDUE', '线索跟进超时'],
       ['CLUE_AUTOMATIC_MOVE_POOL', '自动移入线索池'],
       ['CLUE_MOVED_POOL', '被动移入线索池'],
       ['CLUE_CONVERT_CUSTOMER', '转为客户'],
-      ['CLUE_CONVERT_BUSINESS', '转为商机'],
       ['TRANSFER_CLUE', '转移线索'],
       ['CLUE_DELETED', '删除线索'],
       ['CLUE_DISTRIBUTED', '分配线索'],
@@ -193,55 +169,11 @@ const EVENT_GROUPS: Array<{
       ['CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED', '跟进记录评论@提醒'],
     ],
   },
-  {
-    module: 'OPPORTUNITY',
-    events: [
-      ['BUSINESS_ADD', '新建商机'],
-      ['BUSINESS_DELETED', '商机删除'],
-      ['BUSINESS_TRANSFER', '商机转移'],
-      ['BUSINESS_FOLLOW_UP_PLAN_DUE', '跟进计划到期'],
-      ['OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED', '跟进计划评论提醒'],
-      ['OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_MENTIONED', '跟进计划评论@提醒'],
-      ['OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_ADDED', '跟进记录评论提醒'],
-      ['OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_MENTIONED', '跟进记录评论@提醒'],
-      ['BUSINESS_QUOTATION_APPROVAL', '报价审批'],
-      ['BUSINESS_QUOTATION_DELETED', '报价删除'],
-      ['BUSINESS_QUOTATION_EXPIRED', '报价到期'],
-      ['BUSINESS_QUOTATION_EXPIRING', '报价即将到期'],
-    ],
-  },
-  { module: 'ORDER', events: [['ORDER_APPROVAL', '订单审批']] },
-  {
-    module: 'CONTRACT',
-    events: [
-      ['CONTRACT_ARCHIVED', '合同归档'],
-      ['CONTRACT_VOID', '合同作废'],
-      ['CONTRACT_EXPIRED', '合同到期'],
-      ['CONTRACT_EXPIRING', '合同即将到期'],
-      ['CONTRACT_PAYMENT_EXPIRED', '回款计划到期'],
-      ['CONTRACT_PAYMENT_EXPIRING', '回款计划即将到期'],
-      ['CONTRACT_APPROVAL', '合同审批'],
-      ['INVOICE_APPROVAL', '发票审批'],
-    ],
-  },
 ]
 
-const CONFIGURABLE_EVENTS = new Set<MessageTaskEvent>([
-  'BUSINESS_QUOTATION_EXPIRED',
-  'BUSINESS_QUOTATION_EXPIRING',
-  'CONTRACT_ARCHIVED',
-  'CONTRACT_VOID',
-  'CONTRACT_EXPIRED',
-  'CONTRACT_EXPIRING',
-  'CONTRACT_PAYMENT_EXPIRED',
-  'CONTRACT_PAYMENT_EXPIRING',
-])
+const CONFIGURABLE_EVENTS = new Set<MessageTaskEvent>()
 
-const TIME_CONFIGURABLE_EVENTS = new Set<MessageTaskEvent>([
-  'BUSINESS_QUOTATION_EXPIRING',
-  'CONTRACT_EXPIRING',
-  'CONTRACT_PAYMENT_EXPIRING',
-])
+const TIME_CONFIGURABLE_EVENTS = new Set<MessageTaskEvent>()
 
 /** 与 Cordys `task/message_task.json` 的模块和事件顺序一致。 */
 export const MESSAGE_TASK_DEFINITIONS: MessageTaskDefinition[] = EVENT_GROUPS.flatMap(

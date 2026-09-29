@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,

@@ -3,7 +3,8 @@ import { PoolRulesModule } from '../modules/pool-rules/pool-rules.module'
 import { UserViewsModule } from '../modules/user-views/user-views.module'
 import { ImportExportModule } from '../modules/import-export/import-export.module'
 import { DictionariesModule } from '../modules/dictionaries/dictionaries.module'
-import { PrismaModule } from '../prisma/prisma.module'
+import { HomeModule } from '../modules/home/home.module'
+import { PrismaModule } from '../prisma.module'
 import { AccountCollaborationController } from './account-collaboration.controller'
 import { AccountCapacityController } from './account-capacity.controller'
 import { AccountController } from './account.controller'
@@ -16,7 +17,14 @@ import { CustomersService } from './customers.service'
 import { PoolAccountController } from './pool-account.controller'
 
 @Module({
-  imports: [PoolRulesModule, UserViewsModule, ImportExportModule, DictionariesModule, PrismaModule],
+  imports: [
+    PoolRulesModule,
+    UserViewsModule,
+    ImportExportModule,
+    DictionariesModule,
+    HomeModule,
+    PrismaModule,
+  ],
   controllers: [
     AccountController,
     AccountCollaborationController,

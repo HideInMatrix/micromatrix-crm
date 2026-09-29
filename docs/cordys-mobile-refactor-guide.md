@@ -20,7 +20,7 @@
 | src/views/clue/index.vue | 线索 / 线索池使用 van-tabs |
 | src/views/clue/clue/index.vue | 线索搜索、系统视图筛选、卡片动作 |
 | src/views/clue/pool/index.vue | 线索池搜索、池筛选 |
-| src/views/opportunity/index.vue | 商机一级页面、搜索、筛选、列表 |
+| src/views/opportunity/index.vue | 仅作为上游历史信息架构参考；当前产品不实现商机模块 |
 | src/components/pure/crm-list-common-item/index.vue | 通用业务卡片精确尺寸和字段层级 |
 | crm-form-create/components/basic/pick.vue | 单选必须 Field + Popup + Picker |
 | crm-form-create/components/basic/multiplePick.vue | 多选必须 Popup + CheckboxGroup |
@@ -84,9 +84,9 @@ van-tabs: 客户 | 联系人 | 公海
 - round Search。
 - 资源池以 van-button round size=small 横向筛选。
 
-### 2.4 商机模块
+### 2.4 已退出模块
 
-商机业务能力保留，但不作为 Mobile 一级菜单，也不放在首页快捷入口中。
+商机已退出当前招生 CRM，不提供 Mobile 路由、一级菜单或首页快捷入口。上游 Cordys 的商机页面只用于理解通用移动交互，不作为恢复该业务模块的依据。
 
 ## 3. 首页
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { NotFoundException } from '@nestjs/common'
 import { Temporal } from '@js-temporal/polyfill'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { LogsService } from './logs.service'
 
 test('操作日志分页列表只选择轻量字段且不读取 Blob', async () => {

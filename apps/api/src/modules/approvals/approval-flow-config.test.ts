@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
   openPrismaTestDatabase,
 } from '../../testing/prisma-test-db'
-import type { ModuleFormsService } from '../metadata/module-forms.service'
 import { ApprovalFlowConfigService } from './approval-flow-config.service'
 import type { CreateApprovalFlowDto, UpdateApprovalFlowDto } from './dto/approval.dto'
 
@@ -36,8 +35,7 @@ test('ApprovalFlowConfig 使用 Prisma 保持流程图版本、排序与编号�
     roles: [],
     permissions: ['*'],
   } as AuthUser
-  const moduleForms = { listFields: async () => [] } as unknown as ModuleFormsService
-  const service = new ApprovalFlowConfigService(prisma, moduleForms)
+  const service = new ApprovalFlowConfigService(prisma)
 
   const createDto = (name: string): CreateApprovalFlowDto => ({
     formType: 'contract',

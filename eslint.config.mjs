@@ -20,6 +20,11 @@ export default tseslint.config(
       '.tmp/**',
       // CordysCRM/ 是只读上游参考源码，不属于 MicroMatrix 的 lint 范围。
       'CordysCRM/**',
+      // Prisma agent skills 是同步的第三方工具资产，不属于应用源码 lint 范围。
+      '.agents/**',
+      '.claude/**',
+      '.cursor/**',
+      '.devin/**',
     ],
   },
   js.configs.recommended,

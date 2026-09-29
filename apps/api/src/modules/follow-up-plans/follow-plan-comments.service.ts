@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common'
 import type { MessageTaskEvent } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaClient } from '../../prisma/prisma-client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaClient } from '../../prisma/db'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
@@ -163,11 +163,6 @@ export class FollowPlanCommentsService extends FollowCommentServiceBase<FollowUp
       return mentioned
         ? 'CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED'
         : 'CLUE_FOLLOW_UP_PLAN_COMMENT_ADDED'
-    }
-    if (plan.targetType === 'opportunity') {
-      return mentioned
-        ? 'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_MENTIONED'
-        : 'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED'
     }
     return mentioned
       ? 'CUSTOMER_FOLLOW_UP_PLAN_COMMENT_MENTIONED'

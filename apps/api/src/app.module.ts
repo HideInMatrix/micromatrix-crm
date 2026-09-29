@@ -8,13 +8,11 @@ import { ApprovalsModule } from './modules/approvals/approvals.module'
 import { AnnouncementsModule } from './modules/announcements/announcements.module'
 import { AttachmentsModule } from './modules/attachments/attachments.module'
 import { ImportExportModule } from './modules/import-export/import-export.module'
-import { BiddingModule } from './modules/bidding/bidding.module'
 import { AuthGuard } from './common/guards/auth.guard'
 import { OperationLogInterceptor } from './common/interceptors/operation-log.interceptor'
 import { CustomersModule } from './customers/customers.module'
 import { HealthController } from './health/health.controller'
 import { ContactsModule } from './modules/contacts/contacts.module'
-import { ContractsModule } from './modules/contracts/contracts.module'
 import { CustomFormsModule } from './modules/custom-forms/custom-forms.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { DepartmentsModule } from './modules/departments/departments.module'
@@ -22,20 +20,17 @@ import { DictionariesModule } from './modules/dictionaries/dictionaries.module'
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module'
 import { EnterpriseIntegrationsModule } from './modules/enterprise-integrations/enterprise-integrations.module'
 import { EnterpriseSettingsModule } from './modules/enterprise-settings/enterprise-settings.module'
+import { ExternalEventsModule } from './modules/external-events/external-events.module'
 import { FollowUpPlansModule } from './modules/follow-up-plans/follow-up-plans.module'
 import { PersonalCenterModule } from './modules/personal-center/personal-center.module'
 import { HomeModule } from './modules/home/home.module'
 import { LeadsModule } from './modules/leads/leads.module'
-import { OrdersModule } from './modules/orders/orders.module'
-import { ProductsModule } from './modules/products/products.module'
-import { QuotesModule } from './modules/quotes/quotes.module'
 import { LogsModule } from './modules/logs/logs.module'
 import { MembersModule } from './modules/members/members.module'
 import { MessageSettingsModule } from './modules/message-settings/message-settings.module'
 import { ModuleFormsModule } from './modules/metadata/module-forms.module'
 import { ModuleConfigsModule } from './modules/module-configs/module-configs.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
-import { OpportunitiesModule } from './modules/opportunities/opportunities.module'
 import { OrganizationSyncModule } from './modules/organization-sync/organization-sync.module'
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
 import { RolesModule } from './modules/roles/roles.module'
@@ -43,7 +38,7 @@ import { UserViewsModule } from './modules/user-views/user-views.module'
 import { WeComSsoModule } from './modules/wecom-sso/wecom-sso.module'
 import { DingTalkSsoModule } from './modules/dingtalk-sso/dingtalk-sso.module'
 import { LarkSsoModule } from './modules/lark-sso/lark-sso.module'
-import { PrismaModule } from './prisma/prisma.module.js'
+import { PrismaModule } from './prisma.module.js'
 import { RedisModule } from './redis/redis.module'
 
 @Module({
@@ -65,6 +60,7 @@ import { RedisModule } from './redis/redis.module'
     FollowUpsModule,
     EnterpriseIntegrationsModule,
     EnterpriseSettingsModule,
+    ExternalEventsModule,
     WeComSsoModule,
     DingTalkSsoModule,
     LarkSsoModule,
@@ -74,13 +70,7 @@ import { RedisModule } from './redis/redis.module'
     HomeModule,
     AttachmentsModule,
     ImportExportModule,
-    OpportunitiesModule,
-    ProductsModule,
-    QuotesModule,
-    ContractsModule,
     CustomFormsModule,
-    OrdersModule,
-    BiddingModule,
     DashboardModule,
     PoolRulesModule,
     DepartmentsModule,

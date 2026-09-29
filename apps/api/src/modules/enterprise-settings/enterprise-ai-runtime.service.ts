@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 
 export interface EnterpriseAiCompletionResult {
   text: string

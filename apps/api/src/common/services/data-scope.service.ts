@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { hasPermission } from '@micromatrix/shared'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import type { AuthUser } from '../auth-user'
 
 /**

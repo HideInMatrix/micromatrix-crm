@@ -55,12 +55,6 @@ export class ClueAddDto {
   @MaxLength(30)
   phone?: string
 
-  @ApiPropertyOptional({ description: '意向产品 ID', type: [String] })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  products?: string[]
-
   @ApiPropertyOptional({ description: '动态字段', type: [ModuleFieldValueDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -88,9 +82,11 @@ export class ClueStatusUpdateDto {
   @IsNotEmpty()
   id!: string
 
-  @ApiProperty({ enum: ['NEW', 'FOLLOWING', 'INTERESTED', 'SUCCESS', 'FAIL'] })
-  @IsIn(['NEW', 'FOLLOWING', 'INTERESTED', 'SUCCESS', 'FAIL'])
-  stage!: 'NEW' | 'FOLLOWING' | 'INTERESTED' | 'SUCCESS' | 'FAIL'
+  @ApiProperty({ description: '线索阶段 key；必须存在于当前租户 Lead 阶段配置中' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  stage!: string
 }
 
 export class ClueSortDto {
@@ -243,17 +239,6 @@ export class TransformClueDto {
   @IsString()
   @IsNotEmpty()
   clueId!: string
-
-  @ApiPropertyOptional({ description: '是否同时创建商机' })
-  @IsBoolean()
-  @IsOptional()
-  oppCreated?: boolean
-
-  @ApiPropertyOptional({ description: '商机名称；oppCreated=true 时必填' })
-  @IsString()
-  @MaxLength(255)
-  @IsOptional()
-  oppName?: string
 }
 
 /** Cordys ClueTransitionCustomerRequest：客户新增表单 + clueId。 */

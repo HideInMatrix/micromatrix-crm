@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { DashboardAccessService } from './dashboard-access.service'
 import {

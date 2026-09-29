@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { MessageEvent } from '@nestjs/common'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { instantFromDate } from '../../prisma/temporal'
 import type { RedisService } from '../../redis/redis.service'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'

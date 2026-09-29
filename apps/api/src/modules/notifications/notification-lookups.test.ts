@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import {
   createPrismaTestTenant,

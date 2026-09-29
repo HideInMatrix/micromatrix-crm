@@ -9,7 +9,7 @@ import {
 import { computed, reactive, ref, watch } from 'vue'
 import { attachmentApi } from '@/api/attachments'
 import { extractErrorMessage } from '@/api/http'
-import { contactApi, followUpApi, followUpPlanApi, opportunityApi } from '@/api/sales'
+import { contactApi, followUpApi, followUpPlanApi } from '@/api/sales'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 
@@ -86,10 +86,7 @@ async function loadContacts() {
 
 async function resolveCustomerId() {
   if (props.targetType === 'customer') return props.targetId
-  if (props.targetType !== 'opportunity') return null
-  if (props.customerId) return props.customerId
-  const { data } = await opportunityApi.get(props.targetId)
-  return data.customerId ?? null
+  return null
 }
 
 async function reset() {

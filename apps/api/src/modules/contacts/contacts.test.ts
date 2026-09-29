@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
@@ -194,10 +194,6 @@ test(
       assert.equal(enabled.enable, true)
       assert.equal(enabled.disableReason, null)
 
-      assert.deepEqual(await service.checkOpportunity(user, contact.id), {
-        linked: false,
-        count: 0,
-      })
       const removed = await service.remove(user, contact.id)
       assert.equal(removed.id, contact.id)
       assert.equal(

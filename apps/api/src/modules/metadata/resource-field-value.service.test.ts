@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException, ConflictException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import type { ModuleFormsService } from './module-forms.service'
 import { createMemoryOrmTable, createTransactionStub } from './orm-test-stub'
 import { ResourceFieldValueService } from './resource-field-value.service'
@@ -130,16 +130,16 @@ const fields: FieldVO[] = [
     listWidth: null,
   },
   {
-    id: 'field-products',
+    id: 'field-related-customers',
     module: 'customer',
-    key: 'cf_products',
-    label: '意向产品',
+    key: 'cf_related_customers',
+    label: '关联客户',
     type: 'data_source_multiple',
     required: false,
     system: false,
     hidden: false,
     options: null,
-    config: { dataSourceType: 'PRODUCT' },
+    config: { dataSourceType: 'CUSTOMER' },
     sort: 7,
     span: 12,
     showInList: false,
@@ -304,17 +304,17 @@ test('多选数据源按 JSON 数组进入 Blob 并能原样恢复', async () =>
     'tenant-a',
     'customer',
     'customer-a',
-    { cf_required: '有值', cf_products: ['product-a', 'product-b'] },
+    { cf_required: '有值', cf_related_customers: ['customer-b', 'customer-c'] },
     'create',
     tx,
     'user-a',
   )
   assert.equal(
-    blob.find((row) => row.fieldId === 'field-products')?.fieldValue,
-    '["product-a","product-b"]',
+    blob.find((row) => row.fieldId === 'field-related-customers')?.fieldValue,
+    '["customer-b","customer-c"]',
   )
   const loaded = await service.load('tenant-a', 'customer', ['customer-a'])
-  assert.deepEqual(loaded.get('customer-a')?.cf_products, ['product-a', 'product-b'])
+  assert.deepEqual(loaded.get('customer-a')?.cf_related_customers, ['customer-b', 'customer-c'])
 })
 
 test('唯一字段按组织隔离，更新当前资源时排除自身', async () => {
@@ -351,6 +351,68 @@ test('唯一字段按组织隔离，更新当前资源时排除自身', async ()
     'update',
     tx,
     'user-a',
+  )
+})
+
+test('线索唯一字段按目标线索池隔离，不同池允许同值且同池仍拒绝重复', async () => {
+  const clueFields: FieldVO[] = [
+    {
+      id: 'clue-phone',
+      module: 'lead',
+      key: 'cf_phone',
+      label: '手机号',
+      type: 'phone',
+      required: false,
+      system: false,
+      hidden: false,
+      options: null,
+      config: { unique: true },
+      sort: 0,
+      span: 12,
+      showInList: true,
+      listWidth: null,
+    },
+  ]
+  const clues = [
+    { id: 'clue-a', organizationId: 'tenant-a', poolId: 'pool-a', inSharedPool: true },
+    { id: 'clue-b', organizationId: 'tenant-a', poolId: 'pool-b', inSharedPool: true },
+  ]
+  const values: ValueRow[] = [
+    { resourceId: 'clue-a', fieldId: 'clue-phone', fieldValue: '13800000000' },
+  ]
+  const publicNamespace = {
+    Clue: createMemoryOrmTable(clues),
+    ClueField: createMemoryOrmTable(values),
+    ClueFieldBlob: createMemoryOrmTable([] as ValueRow[]),
+  }
+  const moduleForms = {
+    listFields: async () => clueFields,
+    listFieldsInTransaction: async () => clueFields,
+  } as unknown as ModuleFormsService
+  const service = new ResourceFieldValueService(moduleForms, createPrismaStub(publicNamespace))
+
+  await service.validate(
+    'tenant-a',
+    'clue',
+    { cf_phone: '13800000000' },
+    { mode: 'create', uniqueScope: { type: 'resourcePool', poolId: 'pool-b' } },
+  )
+
+  await assert.rejects(
+    () =>
+      service.validate(
+        'tenant-a',
+        'clue',
+        { cf_phone: '13800000000' },
+        { mode: 'create', uniqueScope: { type: 'resourcePool', poolId: 'pool-a' } },
+      ),
+    ConflictException,
+  )
+
+  await assert.rejects(
+    () =>
+      service.validate('tenant-a', 'clue', { cf_phone: '13800000000' }, { mode: 'create' }),
+    ConflictException,
   )
 })
 

@@ -7,12 +7,7 @@ export type UserViewModule =
   | 'customer'
   | 'contact'
   | 'customer_pool'
-  | 'opportunity'
   | 'follow_record'
-  | 'quote'
-  | 'contract'
-  | 'invoice'
-  | 'order'
 
 export interface UserViewConditionVO {
   name: string
@@ -50,12 +45,7 @@ const RESOURCE_PATHS: Record<UserViewModule, string> = {
   customer: '/account/view',
   contact: '/account/contact/view',
   customer_pool: '/pool/account/view',
-  opportunity: '/opportunity/view',
   follow_record: '/follow/record/view',
-  quote: '/opportunity/quotation/view',
-  contract: '/contract/view',
-  invoice: '/invoice/view',
-  order: '/order/view',
 }
 
 function resourcePath(module: string) {

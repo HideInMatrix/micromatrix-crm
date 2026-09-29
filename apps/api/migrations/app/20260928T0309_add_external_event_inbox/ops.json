@@ -1,0 +1,158 @@
+[
+  {
+    "id": "table.external_event_inbox",
+    "label": "Create table \"external_event_inbox\"",
+    "summary": "Creates table \"external_event_inbox\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "external_event_inbox"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"external_event_inbox\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"external_event_inbox\"",
+        "sql": "CREATE TABLE \"public\".\"external_event_inbox\" (\n  \"api_key_user_id\" text NOT NULL,\n  \"attempts\" int4 DEFAULT 1 NOT NULL,\n  \"completed_at\" timestamptz(3),\n  \"customer_id\" text,\n  \"error_code\" text,\n  \"error_message\" text,\n  \"external_event_id\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"organization_id\" text NOT NULL,\n  \"received_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"request_hash\" text NOT NULL,\n  \"resolved_id\" text,\n  \"resolved_type\" text,\n  \"source\" text NOT NULL,\n  \"started_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"status\" text DEFAULT 'PROCESSING' NOT NULL,\n  \"updated_at\" timestamptz(3) NOT NULL,\n  CONSTRAINT \"external_event_inbox_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"eei_resolved_type_domain_rule_70bfae9d\" CHECK (\"resolved_type\" IS NULL OR \"resolved_type\" IN ('CUSTOMER','LEAD')),\n  CONSTRAINT \"eei_status_domain_rule_7683d47e\" CHECK (\"status\" IN ('PROCESSING','SUCCESS','FAILED')),\n  CONSTRAINT \"external_event_inbox_api_key_user_id_len_4cd2417e\" CHECK (char_length(\"api_key_user_id\") <= 32),\n  CONSTRAINT \"external_event_inbox_customer_id_len_98c57c01\" CHECK (char_length(\"customer_id\") <= 32),\n  CONSTRAINT \"external_event_inbox_error_code_len_b877baec\" CHECK (char_length(\"error_code\") <= 100),\n  CONSTRAINT \"external_event_inbox_error_message_len_808566f9\" CHECK (char_length(\"error_message\") <= 2000),\n  CONSTRAINT \"external_event_inbox_external_event_id_len_40c71264\" CHECK (char_length(\"external_event_id\") <= 200),\n  CONSTRAINT \"external_event_inbox_organization_id_len_0ac99d67\" CHECK (char_length(\"organization_id\") <= 32),\n  CONSTRAINT \"external_event_inbox_request_hash_len_3f9094fd\" CHECK (char_length(\"request_hash\") = 64),\n  CONSTRAINT \"external_event_inbox_resolved_id_len_c4e1f55c\" CHECK (char_length(\"resolved_id\") <= 32),\n  CONSTRAINT \"external_event_inbox_source_len_060042c0\" CHECK (char_length(\"source\") <= 100)\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"external_event_inbox\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_inbox.external_event_inbox_org_customer_completed_at_idx",
+    "label": "Create index \"external_event_inbox_org_customer_completed_at_idx\" on \"external_event_inbox\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_inbox_org_customer_completed_at_idx",
+        "table": "external_event_inbox"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_inbox_org_customer_completed_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox_org_customer_completed_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_inbox_org_customer_completed_at_idx\"",
+        "sql": "CREATE INDEX \"external_event_inbox_org_customer_completed_at_idx\" ON \"public\".\"external_event_inbox\" (\"organization_id\", \"customer_id\", \"completed_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_inbox_org_customer_completed_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox_org_customer_completed_at_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_inbox.external_event_inbox_org_source_event_key",
+    "label": "Create index \"external_event_inbox_org_source_event_key\" on \"external_event_inbox\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_inbox_org_source_event_key",
+        "table": "external_event_inbox"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_inbox_org_source_event_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox_org_source_event_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_inbox_org_source_event_key\"",
+        "sql": "CREATE UNIQUE INDEX \"external_event_inbox_org_source_event_key\" ON \"public\".\"external_event_inbox\" (\"organization_id\", \"source\", \"external_event_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_inbox_org_source_event_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox_org_source_event_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_inbox.external_event_inbox_org_status_updated_at_idx",
+    "label": "Create index \"external_event_inbox_org_status_updated_at_idx\" on \"external_event_inbox\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_inbox_org_status_updated_at_idx",
+        "table": "external_event_inbox"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_inbox_org_status_updated_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox_org_status_updated_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_inbox_org_status_updated_at_idx\"",
+        "sql": "CREATE INDEX \"external_event_inbox_org_status_updated_at_idx\" ON \"public\".\"external_event_inbox\" (\"organization_id\", \"status\", \"updated_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_inbox_org_status_updated_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_inbox_org_status_updated_at_idx\""
+        ]
+      }
+    ]
+  }
+]

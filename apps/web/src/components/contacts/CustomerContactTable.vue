@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { isCustomFieldKey, type ContactVO, type FieldVO } from '@micromatrix/shared'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { contactApi } from '@/api/sales'
@@ -16,7 +15,6 @@ const props = defineProps<{
 }>()
 
 const auth = useAuthStore()
-const router = useRouter()
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
 const loading = ref(false)
@@ -159,23 +157,6 @@ async function confirmDeactivate() {
 
 async function remove(row: ContactVO) {
   try {
-    const { data } = await contactApi.checkOpportunity(row.id)
-    if (data) {
-      await ElMessageBox.confirm(
-        `联系人「${row.name}」已关联商机，请先处理商机关联后再删除。`,
-        '联系人已关联商机',
-        {
-          type: 'warning',
-          confirmButtonText: '知道了',
-          cancelButtonText: '去处理',
-          distinguishCancelAndClose: true,
-        },
-      ).catch((action) => {
-        if (action === 'cancel') router.push('/opportunities')
-        return false
-      })
-      return
-    }
     const confirmed = await ElMessageBox.confirm(
       `删除联系人「${row.name}」后不可恢复，确定继续？`,
       '删除联系人',

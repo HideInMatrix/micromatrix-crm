@@ -1,14 +1,10 @@
 import { Injectable } from '@nestjs/common'
 import type { MessageLanguage, MessageTaskEvent } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import {
-  APPROVAL_TEMPLATE_STATES,
-  APPROVAL_TEMPLATE_TYPES,
   MESSAGE_SUBJECT_SUFFIX,
   MESSAGE_TEMPLATE_RESOURCES,
-  type ApprovalTemplateState,
-  type ApprovalTemplateType,
 } from './message-template.resources'
 
 export interface RenderedMessageTemplate {
@@ -33,10 +29,7 @@ export class MessageTemplateService {
   ): Promise<RenderedMessageTemplate> {
     const normalizedLanguage = this.normalizeLanguage(language)
     const resource = MESSAGE_TEMPLATE_RESOURCES[normalizedLanguage][event]
-    const normalizedContext = this.localizeSemanticContext(
-      normalizedLanguage,
-      await this.normalizeContext(tenantId, context),
-    )
+    const normalizedContext = await this.normalizeContext(tenantId, context)
     return {
       language: normalizedLanguage,
       title: this.substitute(
@@ -101,28 +94,6 @@ export class MessageTemplateService {
     return template.replace(/\$\{([^}]+)\}/g, (token, key: string) =>
       Object.prototype.hasOwnProperty.call(context, key) ? context[key]! : token,
     )
-  }
-
-  private localizeSemanticContext(
-    language: MessageLanguage,
-    context: Record<string, string>,
-  ): Record<string, string> {
-    const localized = { ...context }
-    if (localized.type && this.isApprovalTemplateType(localized.type)) {
-      localized.type = APPROVAL_TEMPLATE_TYPES[language][localized.type]
-    }
-    if (localized.state && this.isApprovalTemplateState(localized.state)) {
-      localized.state = APPROVAL_TEMPLATE_STATES[language][localized.state]
-    }
-    return localized
-  }
-
-  private isApprovalTemplateType(value: string): value is ApprovalTemplateType {
-    return ['quotation', 'contract', 'order', 'invoice'].includes(value)
-  }
-
-  private isApprovalTemplateState(value: string): value is ApprovalTemplateState {
-    return value === 'APPROVED' || value === 'UNAPPROVED'
   }
 
   private formatTime(value: unknown): string {

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator'
 
-export const DICTIONARY_MODULES = ['CLUE_POOL_RS', 'CUSTOMER_POOL_RS', 'OPPORTUNITY_FAIL_RS'] as const
+export const DICTIONARY_MODULES = ['CLUE_POOL_RS', 'CUSTOMER_POOL_RS'] as const
 export type DictionaryModule = (typeof DICTIONARY_MODULES)[number]
 
 export class DictionaryAddDto {

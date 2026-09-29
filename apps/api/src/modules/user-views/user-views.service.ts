@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FilterCondition, FilterOp } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   CreateUserViewDto,

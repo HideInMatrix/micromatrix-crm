@@ -4,13 +4,6 @@ export const USER_VIEW_RESOURCE_TYPES = {
   customer: 'CUSTOMER',
   contact: 'CUSTOMER_CONTACT',
   customer_pool: 'CUSTOMER_POOL',
-  opportunity: 'OPPORTUNITY',
-  quote: 'OPPORTUNITY_QUOTATION',
-  contract: 'CONTRACT',
-  contract_payment_plan: 'CONTRACT_PAYMENT_PLAN',
-  contract_payment_record: 'CONTRACT_PAYMENT_RECORD',
-  invoice: 'CONTRACT_INVOICE',
-  order: 'ORDER',
   follow_record: 'FOLLOW_RECORD',
 } as const
 
@@ -43,33 +36,6 @@ export const USER_VIEW_RESOURCE_ROUTES: Array<{
     path: 'pool/account/view',
     label: '客户公海视图',
   },
-  {
-    module: 'opportunity',
-    resourceType: 'OPPORTUNITY',
-    path: 'opportunity/view',
-    label: '商机视图',
-  },
-  {
-    module: 'quote',
-    resourceType: 'OPPORTUNITY_QUOTATION',
-    path: 'opportunity/quotation/view',
-    label: '报价单视图',
-  },
-  { module: 'contract', resourceType: 'CONTRACT', path: 'contract/view', label: '合同视图' },
-  {
-    module: 'contract_payment_plan',
-    resourceType: 'CONTRACT_PAYMENT_PLAN',
-    path: 'contract/payment-plan/view',
-    label: '回款计划视图',
-  },
-  {
-    module: 'contract_payment_record',
-    resourceType: 'CONTRACT_PAYMENT_RECORD',
-    path: 'contract/payment-record/view',
-    label: '回款记录视图',
-  },
-  { module: 'invoice', resourceType: 'CONTRACT_INVOICE', path: 'invoice/view', label: '发票视图' },
-  { module: 'order', resourceType: 'ORDER', path: 'order/view', label: '订单视图' },
   {
     module: 'follow_record',
     resourceType: 'FOLLOW_RECORD',

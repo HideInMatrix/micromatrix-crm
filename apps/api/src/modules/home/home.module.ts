@@ -1,26 +1,24 @@
 import { Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
+import { PoolRulesModule } from '../pool-rules/pool-rules.module'
+import { HomeAnalyticsService } from './home-analytics.service'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
 import { HomeDepartmentScopeService } from './home-department-scope.service'
 import { HomeFilterService } from './home-filter.service'
-import { HomeOpportunityStatisticQuery } from './home-opportunity-statistic.query'
-import { HomeOverviewController } from './home-overview.controller'
-import { HomeOverviewService } from './home-overview.service'
 import { HomePeriodService } from './home-period.service'
 import { HomeStatisticController } from './home-statistic.controller'
 import { HomeStatisticService } from './home-statistic.service'
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [HomeStatisticController, HomeOverviewController],
+  imports: [PrismaModule, PoolRulesModule],
+  controllers: [HomeStatisticController],
   providers: [
     HomePeriodService,
     HomeDepartmentScopeService,
     HomeFilterService,
     HomeClueStatisticQuery,
-    HomeOpportunityStatisticQuery,
+    HomeAnalyticsService,
     HomeStatisticService,
-    HomeOverviewService,
   ],
   exports: [HomeFilterService],
 })

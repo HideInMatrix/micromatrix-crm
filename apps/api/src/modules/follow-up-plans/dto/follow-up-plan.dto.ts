@@ -14,7 +14,7 @@ import {
 } from 'class-validator'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
-export const FOLLOW_UP_PLAN_TARGET_TYPES = ['lead', 'customer', 'opportunity'] as const
+export const FOLLOW_UP_PLAN_TARGET_TYPES = ['lead', 'customer'] as const
 export const FOLLOW_UP_PLAN_STATUSES = [
   'PREPARED',
   'UNDERWAY',

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'

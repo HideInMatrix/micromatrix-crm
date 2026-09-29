@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 

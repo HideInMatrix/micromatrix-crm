@@ -12,19 +12,8 @@ import {
   type FilterOp,
 } from '@micromatrix/shared'
 import { getCustomer, getCustomerModuleForm, listCustomers } from './customers'
-import {
-  businessTitleApi,
-  contractApi,
-  contractInvoiceApi,
-  contractPaymentPlanApi,
-  contractPaymentRecordApi,
-  orderApi,
-  productApi,
-  productPriceApi,
-  quoteApi,
-} from './deal'
 import { customFormApi } from './custom-form'
-import { contactApi, leadApi, opportunityApi } from './sales'
+import { contactApi, leadApi } from './sales'
 
 export interface DataSourcePageQuery {
   current?: number
@@ -82,20 +71,6 @@ function optionsOf(values: unknown[]): DataSourceOptionVO[] {
   })
 }
 
-function cordysPage(data: {
-  list: unknown[]
-  total: number
-  current: number
-  pageSize: number
-}): DataSourcePageVO {
-  return {
-    list: optionsOf(data.list),
-    total: data.total,
-    current: data.current,
-    pageSize: data.pageSize,
-  }
-}
-
 async function fetchDataSourceFields(sourceType: DataSourceType): Promise<FieldVO[]> {
   if (!isBuiltinDataSourceType(sourceType)) {
     return (await customFormApi.config(sourceType)).data.fields
@@ -106,28 +81,8 @@ async function fetchDataSourceFields(sourceType: DataSourceType): Promise<FieldV
       return (await getCustomerModuleForm()).data.fields
     case 'CONTACT':
       return (await contactApi.moduleForm()).data.fields
-    case 'OPPORTUNITY':
-      return (await opportunityApi.moduleForm()).data.fields
     case 'CLUE':
       return (await leadApi.moduleForm()).data.fields
-    case 'PRODUCT':
-      return (await productApi.moduleForm()).data.fields
-    case 'PRICE':
-      return (await productPriceApi.moduleForm()).data.fields
-    case 'QUOTATION':
-      return (await quoteApi.moduleForm()).data.fields
-    case 'CONTRACT':
-      return (await contractApi.moduleForm()).data.fields
-    case 'INVOICE':
-      return (await contractInvoiceApi.moduleForm()).data.fields
-    case 'BUSINESS_TITLE':
-      return (await businessTitleApi.moduleForm()).data.fields
-    case 'PAYMENT_PLAN':
-      return (await contractPaymentPlanApi.moduleForm()).data.fields
-    case 'CONTRACT_PAYMENT_RECORD':
-      return (await contractPaymentRecordApi.moduleForm()).data.fields
-    case 'ORDER':
-      return (await orderApi.moduleForm()).data.fields
   }
 }
 
@@ -232,21 +187,6 @@ export async function loadDataSourcePage(
         pageSize: data.pageSize,
       }
     }
-    case 'OPPORTUNITY': {
-      const { data } = await opportunityApi.list({
-        page: current,
-        pageSize,
-        keyword,
-        filters: serializedFilters,
-        filterMode,
-      })
-      return {
-        list: optionsOf(data.items),
-        total: data.total,
-        current: data.page,
-        pageSize: data.pageSize,
-      }
-    }
     case 'CLUE': {
       const { data } = await leadApi.list({
         page: current,
@@ -262,72 +202,6 @@ export async function loadDataSourcePage(
         pageSize: data.pageSize,
       }
     }
-    case 'PRODUCT': {
-      const { data } = await productApi.page({ current, pageSize, keyword, filters, filterMode })
-      return cordysPage(data)
-    }
-    case 'PRICE': {
-      const { data } = await productPriceApi.page({
-        current,
-        pageSize,
-        keyword,
-        filters,
-        filterMode,
-      })
-      return cordysPage(data)
-    }
-    case 'QUOTATION': {
-      const { data } = await quoteApi.page({ current, pageSize, keyword, filters, filterMode })
-      return cordysPage(data)
-    }
-    case 'CONTRACT': {
-      const { data } = await contractApi.page({ current, pageSize, keyword, filters, filterMode })
-      return cordysPage(data)
-    }
-    case 'INVOICE': {
-      const { data } = await contractInvoiceApi.page({
-        current,
-        pageSize,
-        keyword,
-        filters,
-        filterMode,
-      })
-      return cordysPage(data)
-    }
-    case 'BUSINESS_TITLE': {
-      const { data } = await businessTitleApi.page({
-        current,
-        pageSize,
-        keyword,
-        filters,
-        filterMode,
-      })
-      return cordysPage(data)
-    }
-    case 'PAYMENT_PLAN': {
-      const { data } = await contractPaymentPlanApi.page({
-        current,
-        pageSize,
-        keyword,
-        filters,
-        filterMode,
-      })
-      return cordysPage(data)
-    }
-    case 'CONTRACT_PAYMENT_RECORD': {
-      const { data } = await contractPaymentRecordApi.page({
-        current,
-        pageSize,
-        keyword,
-        filters,
-        filterMode,
-      })
-      return cordysPage(data)
-    }
-    case 'ORDER': {
-      const { data } = await orderApi.page({ current, pageSize, keyword, filters, filterMode })
-      return cordysPage(data)
-    }
   }
 }
 
@@ -341,28 +215,8 @@ async function loadBuiltinDataSourceOption(
         return optionOf((await getCustomer(id)).data)
       case 'CONTACT':
         return optionOf((await contactApi.get(id)).data)
-      case 'OPPORTUNITY':
-        return optionOf((await opportunityApi.get(id)).data)
       case 'CLUE':
         return optionOf((await leadApi.get(id)).data)
-      case 'PRODUCT':
-        return optionOf((await productApi.detail(id)).data)
-      case 'PRICE':
-        return optionOf((await productPriceApi.detail(id)).data)
-      case 'QUOTATION':
-        return optionOf((await quoteApi.detail(id)).data)
-      case 'CONTRACT':
-        return optionOf((await contractApi.detail(id)).data)
-      case 'INVOICE':
-        return optionOf((await contractInvoiceApi.detail(id)).data)
-      case 'BUSINESS_TITLE':
-        return optionOf((await businessTitleApi.detail(id)).data)
-      case 'PAYMENT_PLAN':
-        return optionOf((await contractPaymentPlanApi.detail(id)).data)
-      case 'CONTRACT_PAYMENT_RECORD':
-        return optionOf((await contractPaymentRecordApi.detail(id)).data)
-      case 'ORDER':
-        return optionOf((await orderApi.detail(id)).data)
       default:
         return null
     }
@@ -416,28 +270,8 @@ async function loadBuiltinDataSourceRaw(sourceType: DataSourceType, id: string):
       return (await getCustomer(id)).data
     case 'CONTACT':
       return (await contactApi.get(id)).data
-    case 'OPPORTUNITY':
-      return (await opportunityApi.get(id)).data
     case 'CLUE':
       return (await leadApi.get(id)).data
-    case 'PRODUCT':
-      return (await productApi.detail(id)).data
-    case 'PRICE':
-      return (await productPriceApi.detail(id)).data
-    case 'QUOTATION':
-      return (await quoteApi.detail(id)).data
-    case 'CONTRACT':
-      return (await contractApi.detail(id)).data
-    case 'INVOICE':
-      return (await contractInvoiceApi.detail(id)).data
-    case 'BUSINESS_TITLE':
-      return (await businessTitleApi.detail(id)).data
-    case 'PAYMENT_PLAN':
-      return (await contractPaymentPlanApi.detail(id)).data
-    case 'CONTRACT_PAYMENT_RECORD':
-      return (await contractPaymentRecordApi.detail(id)).data
-    case 'ORDER':
-      return (await orderApi.detail(id)).data
     default:
       return null
   }

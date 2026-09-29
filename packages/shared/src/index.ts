@@ -1,7 +1,5 @@
 export * from './approval'
-export * from './bidding'
 export * from './custom-form'
-export * from './deal'
 export * from './enterprise-settings'
 export * from './form-runtime'
 export * from './home'
@@ -13,7 +11,6 @@ export * from './sales'
 export * from './system'
 
 import type { FollowUpVO, TeamMemberVO } from './sales'
-import type { ContractInvoiceApprovalStatus, ContractPaymentPlanStatus } from './deal'
 import type { MessageLanguage } from './message-settings'
 
 // ============ 通用分页 ============
@@ -101,13 +98,12 @@ export interface CustomerVO {
   updatedAt: string
 }
 
-export type DuplicateSource = 'customer' | 'contact' | 'lead' | 'opportunity'
+export type DuplicateSource = 'customer' | 'contact' | 'lead'
 
 export const DUPLICATE_SOURCE_LABELS: Record<DuplicateSource, string> = {
   customer: '客户',
   contact: '联系人',
   lead: '线索',
-  opportunity: '商机',
 }
 
 export interface DuplicateHitVO {
@@ -122,125 +118,11 @@ export interface DuplicateHitVO {
 }
 
 export interface CustomerRelatedVO {
-  stats: {
-    opportunityCount: number
-    opportunityAmount: number
-    contractCount: number
-    contractAmount: number
-    paidAmount: number
-  }
   contacts: {
     id: string
     name: string
     phone: string | null
   }[]
-  opportunities: {
-    id: string
-    name: string
-    amount: number | null
-    stageName: string
-    ownerName: string | null
-    createdAt: string
-  }[]
-  contracts: {
-    id: string
-    name: string
-    amount: number
-    paidAmount: number
-    status: string
-    createdAt: string
-  }[]
   followUps: FollowUpVO[]
   team: TeamMemberVO[]
-}
-
-export type Customer360Resource =
-  | 'opportunities'
-  | 'contracts'
-  | 'contractPaymentPlans'
-  | 'contractPaymentRecords'
-  | 'invoices'
-  | 'orders'
-
-export interface Customer360OpportunityVO {
-  id: string
-  name: string
-  amount: number | null
-  stageName: string
-  ownerName: string | null
-  createdAt: string
-}
-
-export interface Customer360ContractVO {
-  id: string
-  number: string
-  name: string
-  amount: number
-  paidAmount: number
-  stage: string
-  stageName: string
-  approvalStatus: string
-  ownerName: string | null
-  createTime: number
-}
-
-export interface Customer360ContractPaymentPlanVO {
-  id: string
-  name: string
-  contractId: string
-  contractName: string
-  owner: string
-  ownerName: string | null
-  planStatus: ContractPaymentPlanStatus
-  planAmount: number | null
-  planEndTime: number | null
-  createTime: number
-}
-
-export interface Customer360ContractPaymentRecordVO {
-  id: string
-  name: string
-  no: string | null
-  contractId: string
-  contractName: string
-  paymentPlanId: string | null
-  paymentPlanName: string | null
-  owner: string
-  ownerName: string | null
-  recordAmount: number | null
-  recordEndTime: number | null
-  createTime: number
-}
-
-export interface Customer360InvoiceVO {
-  id: string
-  name: string
-  contractId: string
-  contractName: string
-  businessTitleId: string | null
-  businessTitleName: string | null
-  owner: string
-  ownerName: string | null
-  amount: number | null
-  invoiceType: string | null
-  taxRate: number | null
-  approvalStatus: ContractInvoiceApprovalStatus | null
-  approved: boolean
-  createTime: number
-}
-
-export interface Customer360OrderVO {
-  id: string
-  number: string
-  name: string
-  customerId: string | null
-  contractId: string | null
-  contractName: string | null
-  amount: number | null
-  stage: string
-  stageName: string | null
-  approvalStatus: string
-  approved: boolean
-  ownerName: string | null
-  createTime: number
 }

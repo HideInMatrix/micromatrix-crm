@@ -11,8 +11,6 @@ import type {
   FollowUpPlanVO,
   FollowUpVO,
   LeadVO,
-  OpportunityStageVO,
-  OpportunityVO,
   OwnerHistoryVO,
   PageQuery,
   PaginatedResult,
@@ -447,13 +445,16 @@ export const leadApi = {
       poolId,
       ids,
     }),
-  markFailed: (id: string) => http.post('/lead/status/update', { id, stage: 'FAIL' }),
-  transform: (data: { clueId: string; oppCreated?: boolean; oppName?: string }) =>
+  updateStage: (id: string, stage: string) =>
+    http.post<{ id: string; stage: string; lastStage: string | null }>('/lead/status/update', {
+      id,
+      stage,
+    }),
+  transform: (data: { clueId: string }) =>
     http.post<{
       clueId: string
       customerId: string
       contactId: string | null
-      opportunityId: string | null
     }>('/lead/transform', data),
   transitionCustomer: (data: Record<string, unknown> & { clueId: string }) =>
     http.post<{ clueId: string; customerId: string; contactId: string | null }>(
@@ -626,196 +627,6 @@ export const followUpPlanApi = {
   remove: (id: string) => http.delete(`/follow-up-plans/${id}`),
 }
 
-// ===== 商机 =====
-
-export interface OpportunityListParams extends PageQuery {
-  stageId?: string
-  customerId?: string
-  viewId?: string
-  filters?: string
-  filterMode?: 'AND' | 'OR'
-  homeFilter?: string
-}
-
-interface OpportunityStageConfigRow {
-  id: string
-  name: string
-  type: 'AFOOT' | 'END'
-  rate: string
-  pos: number
-}
-
-interface OpportunityStageConfigResponse {
-  stageConfigList: OpportunityStageConfigRow[]
-  afootRollBack: boolean
-  endRollBack: boolean
-}
-
-function parseOpportunityFilters(raw?: string) {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function opportunityPageBody(params: OpportunityListParams, board = false) {
-  const filters = parseOpportunityFilters(params.filters)
-  if (params.stageId) filters.push({ key: 'stage', op: 'eq', value: params.stageId })
-  if (params.customerId) filters.push({ key: 'customerId', op: 'eq', value: params.customerId })
-  return {
-    current: params.page ?? 1,
-    pageSize: params.pageSize ?? 10,
-    keyword: params.keyword,
-    viewId: params.viewId,
-    homeFilter: params.homeFilter,
-    filters,
-    filterMode: params.filterMode,
-    board,
-  }
-}
-
-function opportunityWriteBody(data: Record<string, unknown>) {
-  const customData =
-    data.customData && typeof data.customData === 'object' && !Array.isArray(data.customData)
-      ? (data.customData as Record<string, unknown>)
-      : undefined
-  const legacyItems = Array.isArray(data.items) ? data.items : undefined
-  const products = Array.isArray(data.products)
-    ? data.products
-    : legacyItems
-      ? legacyItems
-          .map((item) =>
-            item && typeof item === 'object'
-              ? (item as Record<string, unknown>).productId
-              : undefined,
-          )
-          .filter((id): id is string => typeof id === 'string' && !!id)
-      : undefined
-  const expectedCloseAt = data.expectedCloseAt
-  return {
-    name: data.name,
-    customerId: data.customerId,
-    contactId: data.contactId,
-    amount: data.amount,
-    possible: data.possible,
-    products,
-    owner: data.owner ?? data.ownerId,
-    expectedEndTime:
-      typeof data.expectedEndTime === 'number'
-        ? data.expectedEndTime
-        : expectedCloseAt
-          ? new Date(String(expectedCloseAt)).getTime()
-          : undefined,
-    moduleFields: customData
-      ? Object.entries(customData).map(([fieldId, fieldValue]) => ({ fieldId, fieldValue }))
-      : undefined,
-  }
-}
-
-async function opportunityListRequest(
-  params: OpportunityListParams,
-): Promise<AxiosResponse<PaginatedResult<OpportunityVO>>> {
-  const response = await http.post<CordysPager<OpportunityVO>>(
-    '/opportunity/page',
-    opportunityPageBody(params),
-  )
-  return {
-    ...response,
-    data: {
-      items: response.data.list,
-      total: response.data.total,
-      page: response.data.current,
-      pageSize: response.data.pageSize,
-    },
-  }
-}
-
-async function opportunityStagesRequest(): Promise<AxiosResponse<OpportunityStageVO[]>> {
-  const response = await http.get<OpportunityStageConfigResponse>('/opportunity/stage/get')
-  return {
-    ...response,
-    data: response.data.stageConfigList.map((stage) => ({
-      id: stage.id,
-      name: stage.name,
-      probability: Number(stage.rate),
-      sort: stage.pos,
-      isWon: stage.type === 'END' && Number(stage.rate) === 100,
-      isLost: stage.type === 'END' && Number(stage.rate) === 0,
-      system: stage.type === 'END',
-    })),
-  }
-}
-
-export const opportunityApi = {
-  moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
-      '/opportunity/module/form',
-    ),
-  list: opportunityListRequest,
-  get: (id: string) => http.get<OpportunityVO>(`/opportunity/get/${id}`),
-  kanban: async (params: OpportunityListParams = {}) => {
-    const response = await http.post<{
-      list: Record<string, OpportunityVO[]>
-      stages: OpportunityStageVO[]
-      total: number
-    }>('/opportunity/page', opportunityPageBody({ ...params, page: 1, pageSize: 500 }, true))
-    return { ...response, data: { stages: response.data.stages, items: response.data.list } }
-  },
-  create: async (data: Record<string, unknown>) => {
-    const response = await http.post<OpportunityVO>('/opportunity/add', opportunityWriteBody(data))
-    if (
-      typeof data.stageId === 'string' &&
-      data.stageId &&
-      data.stageId !== response.data.stageId
-    ) {
-      await http.post('/opportunity/update/stage', { id: response.data.id, stage: data.stageId })
-      return http.get<OpportunityVO>(`/opportunity/get/${response.data.id}`)
-    }
-    return response
-  },
-  update: (id: string, data: Record<string, unknown>) =>
-    http.post<OpportunityVO>('/opportunity/update', { id, ...opportunityWriteBody(data) }),
-  remove: (id: string) => http.get(`/opportunity/delete/${id}`),
-  changeStage: (id: string, stageId: string, lostReason?: string) =>
-    http.post('/opportunity/update/stage', { id, stage: stageId, failureReason: lostReason }),
-  batchTransfer: (ids: string[], owner: string) =>
-    http.post('/opportunity/batch/transfer', { ids, owner }),
-  batchDelete: (ids: string[]) => http.post('/opportunity/batch/delete', ids),
-  batchUpdate: (ids: string[], fieldId: string, fieldValue: unknown) =>
-    http.post('/opportunity/batch/update', { ids, fieldId, fieldValue }),
-  contacts: (id: string) => http.get<{ list: ContactVO[] }>(`/opportunity/contact/list/${id}`),
-  stages: opportunityStagesRequest,
-  createStage: async (data: { name: string; probability: number }) => {
-    await http.post<string>('/opportunity/stage/add', {
-      name: data.name,
-      type: 'AFOOT',
-      rate: String(data.probability),
-      dropPosition: 1,
-    })
-    const stages = await opportunityStagesRequest()
-    const created = [...stages.data]
-      .reverse()
-      .find((stage) => !stage.system && stage.name === data.name)
-    if (!created) throw new Error('商机阶段创建成功但未能读取新阶段')
-    return { ...stages, data: created }
-  },
-  updateStage: async (id: string, data: { name?: string; probability?: number }) => {
-    await http.post('/opportunity/stage/update', {
-      id,
-      name: data.name,
-      rate: data.probability === undefined ? undefined : String(data.probability),
-    })
-    const stages = await opportunityStagesRequest()
-    const updated = stages.data.find((stage) => stage.id === id)
-    if (!updated) throw new Error('商机阶段更新成功但未能读取阶段')
-    return { ...stages, data: updated }
-  },
-  removeStage: (id: string) => http.get(`/opportunity/stage/delete/${id}`),
-}
-
 // ===== 联系人 =====
 
 export interface ContactListParams extends PageQuery {
@@ -905,7 +716,6 @@ export const contactApi = {
   enable: (id: string) => http.get<ContactVO>(`/account/contact/enable/${id}`),
   disable: (id: string, reason: string) =>
     http.post<ContactVO>(`/account/contact/disable/${id}`, { reason }),
-  checkOpportunity: (id: string) => http.get<boolean>(`/account/contact/opportunity/check/${id}`),
   tab: () => http.get<{ all: boolean; dept: boolean }>('/account/contact/tab'),
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>(

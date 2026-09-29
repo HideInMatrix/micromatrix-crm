@@ -18,9 +18,6 @@ const COMMENT_RECORD_ADDED_EN =
   '[Comment Reminder] ${OPERATOR} added a comment to the follow-up record for [${name}]'
 const COMMENT_RECORD_MENTIONED_EN =
   '[Comment Reminder] ${OPERATOR} added a comment to the follow-up record for [${name}] and @ed you as well'
-const APPROVAL_RESULT_ZH = '【审批结果】您发起的${type}单据 ${name} ，审批${state}。'
-const APPROVAL_RESULT_EN =
-  '[Approval Result] The ${type} document ${name} you submitted has been ${state}.'
 
 const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
   CUSTOMER_ADD: {
@@ -76,6 +73,10 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     template: COMMENT_RECORD_MENTIONED_ZH,
   },
   CLUE_ADD: { eventName: '新建线索', template: '请注意！${OPERATOR}新建${name}线索给您，请知悉！' },
+  CLUE_FOLLOW_UP_OVERDUE: {
+    eventName: '线索跟进超时',
+    template: '【跟进提醒】您负责的线索 ${name} 已超过当前线索池配置的跟进时限，请及时跟进。',
+  },
   CLUE_AUTOMATIC_MOVE_POOL: {
     eventName: '自动移入线索池',
     template: '请注意！根据系统规则，您负责的${name}的销售线索，已被移入线索池！',
@@ -87,10 +88,6 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
   CLUE_CONVERT_CUSTOMER: {
     eventName: '转为客户',
     template: '请注意！您负责的 ${name} 线索，已成功转为客户！请知悉！',
-  },
-  CLUE_CONVERT_BUSINESS: {
-    eventName: '转为商机',
-    template: '请注意！您负责的 ${name} 线索，已成功转为商机！请知悉！',
   },
   TRANSFER_CLUE: {
     eventName: '转移线索',
@@ -124,66 +121,6 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     eventName: '跟进记录评论@提醒',
     template: COMMENT_RECORD_MENTIONED_ZH,
   },
-  BUSINESS_ADD: {
-    eventName: '新建商机',
-    template: '请注意！${OPERATOR}新建${name}商机给您，请知悉！',
-  },
-  BUSINESS_DELETED: {
-    eventName: '商机删除',
-    template: '请注意！您负责的${name}商机，已被${OPERATOR}删除！',
-  },
-  BUSINESS_TRANSFER: {
-    eventName: '商机转移',
-    template: '请注意！${OPERATOR}将${name}商机转移给您，请知悉！',
-  },
-  BUSINESS_FOLLOW_UP_PLAN_DUE: {
-    eventName: '跟进计划到期',
-    template: '请注意！您创建的${name}商机跟进计划，已到预定时间，请及时跟进！',
-  },
-  OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED: {
-    eventName: '跟进计划评论提醒',
-    template: COMMENT_PLAN_ADDED_ZH,
-  },
-  OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_MENTIONED: {
-    eventName: '跟进计划评论@提醒',
-    template: COMMENT_PLAN_MENTIONED_ZH,
-  },
-  OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_ADDED: {
-    eventName: '跟进记录评论提醒',
-    template: COMMENT_RECORD_ADDED_ZH,
-  },
-  OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_MENTIONED: {
-    eventName: '跟进记录评论@提醒',
-    template: COMMENT_RECORD_MENTIONED_ZH,
-  },
-  BUSINESS_QUOTATION_APPROVAL: { eventName: '报价审批', template: APPROVAL_RESULT_ZH },
-  BUSINESS_QUOTATION_DELETED: { eventName: '报价删除', template: '${OPERATOR}删除了${name}报价' },
-  BUSINESS_QUOTATION_EXPIRED: {
-    eventName: '报价到期',
-    template: '您负责的${customerName}的报价已经到期',
-  },
-  BUSINESS_QUOTATION_EXPIRING: {
-    eventName: '报价即将到期',
-    template: '您负责的${customerName}报价还有${expireDays}天到期',
-  },
-  ORDER_APPROVAL: { eventName: '订单审批', template: APPROVAL_RESULT_ZH },
-  CONTRACT_ARCHIVED: { eventName: '合同归档', template: '您负责的${customerName}合同已被归档' },
-  CONTRACT_VOID: { eventName: '合同作废', template: '您负责的${customerName}合同已被作废' },
-  CONTRACT_EXPIRED: { eventName: '合同到期', template: '您负责的${customerName}合同已经到期' },
-  CONTRACT_EXPIRING: {
-    eventName: '合同即将到期',
-    template: '您负责的${customerName}合同还有${expireDays}天到期',
-  },
-  CONTRACT_PAYMENT_EXPIRED: {
-    eventName: '回款计划到期',
-    template: '您负责的${customerName}合同的回款计划已经到期',
-  },
-  CONTRACT_PAYMENT_EXPIRING: {
-    eventName: '回款计划即将到期',
-    template: '您负责的${customerName}合同的回款计划还有${expireDays}天到期',
-  },
-  CONTRACT_APPROVAL: { eventName: '合同审批', template: APPROVAL_RESULT_ZH },
-  INVOICE_APPROVAL: { eventName: '发票审批', template: APPROVAL_RESULT_ZH },
 }
 
 const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
@@ -248,6 +185,11 @@ const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
     eventName: 'Create new lead',
     template: 'Attention! ${OPERATOR} created a new lead ${name} for you, please be informed!',
   },
+  CLUE_FOLLOW_UP_OVERDUE: {
+    eventName: 'Lead follow-up overdue',
+    template:
+      '[Follow-up Reminder] Your lead ${name} has exceeded the configured follow-up window. Please follow up promptly.',
+  },
   CLUE_AUTOMATIC_MOVE_POOL: {
     eventName: 'Lead automatically moved to pool',
     template:
@@ -261,10 +203,6 @@ const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
   CLUE_CONVERT_CUSTOMER: {
     eventName: 'Converted to account',
     template: 'Attention！Your lead ${name} has been converted to account！please be informed!',
-  },
-  CLUE_CONVERT_BUSINESS: {
-    eventName: 'Converted to opportunity',
-    template: 'Attention！Your lead ${name} has been converted to opportunity！please be informed!',
   },
   TRANSFER_CLUE: {
     eventName: 'Transferred lead',
@@ -300,83 +238,6 @@ const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
     eventName: 'Follow-up record comment mention',
     template: COMMENT_RECORD_MENTIONED_EN,
   },
-  BUSINESS_ADD: {
-    eventName: 'Opportunity created',
-    template:
-      'Attention! ${OPERATOR} created a new opportunity ${name} for you, please be informed!',
-  },
-  BUSINESS_DELETED: {
-    eventName: 'Opportunity deleted',
-    template: 'Attention! Your opportunity ${name} has been deleted by ${OPERATOR}!',
-  },
-  BUSINESS_TRANSFER: {
-    eventName: 'Opportunity transferred',
-    template: 'Attention! ${OPERATOR} transferred opportunity ${name} to you, please be informed!',
-  },
-  BUSINESS_FOLLOW_UP_PLAN_DUE: {
-    eventName: 'Opportunity follow-up plan due',
-    template:
-      'Attention! The follow-up plan you created for opportunity ${name} is due, please follow up promptly!',
-  },
-  OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED: {
-    eventName: 'New follow-up plan comment',
-    template: COMMENT_PLAN_ADDED_EN,
-  },
-  OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_MENTIONED: {
-    eventName: 'Follow-up plan comment mention',
-    template: COMMENT_PLAN_MENTIONED_EN,
-  },
-  OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_ADDED: {
-    eventName: 'New follow-up record comment',
-    template: COMMENT_RECORD_ADDED_EN,
-  },
-  OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_MENTIONED: {
-    eventName: 'Follow-up record comment mention',
-    template: COMMENT_RECORD_MENTIONED_EN,
-  },
-  BUSINESS_QUOTATION_APPROVAL: {
-    eventName: 'Opportunity quotation approved',
-    template: APPROVAL_RESULT_EN,
-  },
-  BUSINESS_QUOTATION_DELETED: {
-    eventName: 'Opportunity quotation deleted',
-    template: '${OPERATOR} deleted ${name} quotation',
-  },
-  BUSINESS_QUOTATION_EXPIRED: {
-    eventName: 'Opportunity quotation expired',
-    template: 'Your ${customerName} quotation has expired',
-  },
-  BUSINESS_QUOTATION_EXPIRING: {
-    eventName: 'Opportunity quotation expiring',
-    template: 'Your ${customerName} quotation is expiring in ${expireDays} days',
-  },
-  ORDER_APPROVAL: { eventName: 'order approval', template: APPROVAL_RESULT_EN },
-  CONTRACT_ARCHIVED: {
-    eventName: 'Contract archived',
-    template: 'Your ${customerName} contract has been archived',
-  },
-  CONTRACT_VOID: {
-    eventName: 'Contract voided',
-    template: 'Your ${customerName} contract has been voided',
-  },
-  CONTRACT_EXPIRED: {
-    eventName: 'Contract expired',
-    template: 'Your ${customerName} contract has expired',
-  },
-  CONTRACT_EXPIRING: {
-    eventName: 'Contract expiring',
-    template: 'Your ${customerName} contract is expiring in ${expireDays} days',
-  },
-  CONTRACT_PAYMENT_EXPIRED: {
-    eventName: 'Payment plan expired',
-    template: 'Your ${customerName} contract payment plan has expired',
-  },
-  CONTRACT_PAYMENT_EXPIRING: {
-    eventName: 'Payment plan expiring',
-    template: 'Your ${customerName} contract payment plan is expiring in ${expireDays} days',
-  },
-  CONTRACT_APPROVAL: { eventName: 'contract approval', template: APPROVAL_RESULT_EN },
-  INVOICE_APPROVAL: { eventName: 'invoice approval', template: APPROVAL_RESULT_EN },
 }
 
 export const MESSAGE_TEMPLATE_RESOURCES: Record<
@@ -390,23 +251,4 @@ export const MESSAGE_TEMPLATE_RESOURCES: Record<
 export const MESSAGE_SUBJECT_SUFFIX: Record<MessageLanguage, string> = {
   'zh-CN': '通知',
   'en-US': 'Notification',
-}
-
-export type ApprovalTemplateType = 'quotation' | 'contract' | 'order' | 'invoice'
-export type ApprovalTemplateState = 'APPROVED' | 'UNAPPROVED'
-
-export const APPROVAL_TEMPLATE_TYPES: Record<
-  MessageLanguage,
-  Record<ApprovalTemplateType, string>
-> = {
-  'zh-CN': { quotation: '报价', contract: '合同', order: '订单', invoice: '发票' },
-  'en-US': { quotation: 'Quotation', contract: 'Contract', order: 'Order', invoice: 'Invoice' },
-}
-
-export const APPROVAL_TEMPLATE_STATES: Record<
-  MessageLanguage,
-  Record<ApprovalTemplateState, string>
-> = {
-  'zh-CN': { APPROVED: '已通过', UNAPPROVED: '已驳回' },
-  'en-US': { APPROVED: 'Approved', UNAPPROVED: 'Unapproved' },
 }

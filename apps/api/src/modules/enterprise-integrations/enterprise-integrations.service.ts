@@ -12,7 +12,7 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
 import type { SaveWeComIntegrationDto, UpdateWeComSyncDto } from './dto/wecom-integration.dto'
 import type {

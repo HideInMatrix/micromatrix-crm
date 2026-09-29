@@ -4,7 +4,7 @@ import {
   type MessageTaskEvent,
   type NotificationBizType,
 } from '@micromatrix/shared'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import { NotificationsService } from './notifications.service'
 import { MessageDeliveryService } from './message-delivery.service'

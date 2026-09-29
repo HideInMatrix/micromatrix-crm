@@ -7,6 +7,7 @@ import { setupSwagger } from './swagger'
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
+  app.enableShutdownHooks()
   app.set('trust proxy', parseTrustProxyHops(process.env.TRUST_PROXY_HOPS))
 
   app.setGlobalPrefix('api')

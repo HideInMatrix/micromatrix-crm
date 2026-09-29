@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { AuthModule } from '../../auth/auth.module'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { FollowUpPlansModule } from '../follow-up-plans/follow-up-plans.module'
 import { PersonalApiKeyController } from './personal-api-key.controller'
 import { PersonalApiKeyService } from './personal-api-key.service'

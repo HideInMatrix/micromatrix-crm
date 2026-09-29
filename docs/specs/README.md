@@ -1,40 +1,39 @@
 # 规格文档索引
 
-项目需求、技术设计和实施任务统一归档在本目录；每个主题均使用 `requirements.md`、`design.md`、`tasks.md` 三件套保持需求到实现的可追溯性。
+本目录按当前长期领域组织，不再按历史任务编号、`*-parity`、Wave 或验收阶段拆分。实施过程、完成状态、一次性 audit/acceptance/plan 由 Git 历史追溯。
 
-| 主题                                  | 需求                                                                    | 设计                                                        | 任务                                                                                |
-| ------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 公共底座对齐                          | [requirements](./public-foundation-parity/requirements.md)              | [design](./public-foundation-parity/design.md)              | [tasks](./public-foundation-parity/tasks.md)                                        |
-| 多角色 RBAC                           | [requirements](./multi-role-rbac/requirements.md)                       | [design](./multi-role-rbac/design.md)                       | [tasks](./multi-role-rbac/tasks.md)                                                 |
-| 顶部导航对齐                          | [requirements](./top-navigation-parity/requirements.md)                 | [design](./top-navigation-parity/design.md)                 | [tasks](./top-navigation-parity/tasks.md)                                           |
-| 跟进计划对齐                          | [requirements](./follow-up-plan-parity/requirements.md)                 | [design](./follow-up-plan-parity/design.md)                 | [tasks](./follow-up-plan-parity/tasks.md)                                           |
-| 消息设置底座                          | [requirements](./message-settings-parity/requirements.md)               | [design](./message-settings-parity/design.md)               | [tasks](./message-settings-parity/tasks.md)                                         |
-| DB-007 公告能力对齐                   | [requirements](./announcement-parity/requirements.md)                   | [design](./announcement-parity/design.md)                   | [tasks（VERIFIED）](./announcement-parity/tasks.md)                                 |
-| DB-008 消息模板与多语言资源           | [requirements](./message-template-i18n/requirements.md)                 | [design](./message-template-i18n/design.md)                 | [tasks（VERIFIED）](./message-template-i18n/tasks.md)                               |
-| DB-015A 钉钉 Provider 对齐            | [requirements](./dingtalk-provider-parity/requirements.md)              | [design](./dingtalk-provider-parity/design.md)              | [tasks（VERIFIED）](./dingtalk-provider-parity/tasks.md)                            |
-| W2.4 业务消息触发链路                 | [requirements](./business-message-trigger-parity/requirements.md)       | [design](./business-message-trigger-parity/design.md)       | [tasks](./business-message-trigger-parity/tasks.md)                                 |
-| W2.5 流程设置管理底座                 | [requirements](./process-settings-parity/requirements.md)               | [design](./process-settings-parity/design.md)               | [tasks](./process-settings-parity/tasks.md)                                         |
-| W3.1 企业微信集成底座                 | [requirements](./wecom-integration-foundation/requirements.md)          | [design](./wecom-integration-foundation/design.md)          | [tasks](./wecom-integration-foundation/tasks.md)                                    |
-| W3.2 企微组织同步                     | [requirements](./wecom-organization-sync/requirements.md)               | [design](./wecom-organization-sync/design.md)               | [tasks（已完成）](./wecom-organization-sync/tasks.md)                               |
-| W3.3 企微登录与消息                   | [requirements](./wecom-sso-message-channel/requirements.md)             | [design](./wecom-sso-message-channel/design.md)             | [tasks（已完成）](./wecom-sso-message-channel/tasks.md)                             |
-| W3.4-D Docker 发布链路                | [requirements](./docker-release/requirements.md)                        | [design](./docker-release/design.md)                        | [tasks（已完成）](./docker-release/tasks.md)                                        |
-| W3.4 图中业务模块逐页对齐             | [requirements（已确认）](./business-module-page-parity/requirements.md) | [design（已确认）](./business-module-page-parity/design.md) | [tasks（W3.4.0～W3.4.5 已完成 / VERIFIED）](./business-module-page-parity/tasks.md) |
-| W3.5 用户个人中心对齐                 | [requirements](./personal-center-parity/requirements.md)                | [design](./personal-center-parity/design.md)                | [tasks（已完成 / VERIFIED）](./personal-center-parity/tasks.md)                     |
-| W3.6 交易链深度对齐                   | [requirements](./transaction-chain-parity/requirements.md)              | [design](./transaction-chain-parity/design.md)              | [tasks（W3.6.0～W3.6.6 已完成）](./transaction-chain-parity/tasks.md)               |
-| W3.7 高级审批深化                     | [requirements](./process-settings-parity/requirements.md)               | [design](./process-settings-parity/design.md)               | [tasks（已完成 / VERIFIED）](./process-settings-parity/tasks.md)                    |
-| CACHE-001 Redis 平台缓存第一批        | [requirements](./redis-cache-foundation/requirements.md)                | [design](./redis-cache-foundation/design.md)                | [tasks（已完成 / VERIFIED）](./redis-cache-foundation/tasks.md)                     |
-| CACHE-002 租户读模型与首页统计缓存    | [requirements](./redis-cache-read-models/requirements.md)               | [design](./redis-cache-read-models/design.md)               | [tasks（已完成 / VERIFIED）](./redis-cache-read-models/tasks.md)                    |
-| EVENT-001 Redis Pub/Sub 与多实例 SSE  | [requirements](./redis-pubsub-sse/requirements.md)                      | [design](./redis-pubsub-sse/design.md)                      | [tasks（已完成 / VERIFIED）](./redis-pubsub-sse/tasks.md)                           |
-| COORD-001 Redis 组织同步与 Cron 协调  | [requirements](./redis-coordination/requirements.md)                    | [design](./redis-coordination/design.md)                    | [tasks（已完成 / VERIFIED）](./redis-coordination/tasks.md)                         |
-| ASYNC-001 BullMQ 异步导出中心         | [requirements](./bullmq-export-center/requirements.md)                  | [design](./bullmq-export-center/design.md)                  | [tasks（已完成 / VERIFIED）](./bullmq-export-center/tasks.md)                       |
-| LOG-001 操作日志与运行日志治理        | [requirements](./operation-log-governance/requirements.md)              | [design](./operation-log-governance/design.md)              | [tasks（已完成 / VERIFIED）](./operation-log-governance/tasks.md)                   |
-| TOOLCHAIN-001 pnpm 11 工具链迁移      | [requirements](./pnpm11-migration/requirements.md)                      | [design](./pnpm11-migration/design.md)                      | [tasks（已完成 / VERIFIED）](./pnpm11-migration/tasks.md)                           |
-| PRISMA8-001 Prisma 7→8 迁移           | [requirements](./prisma8-migration/requirements.md)                     | [design](./prisma8-migration/design.md)                     | [tasks（已完成 / VERIFIED；测试计划见 testing.md）](./prisma8-migration/tasks.md)   |
-| PRISMA8-002 Prisma 8 兼容层收口       | [requirements](./prisma8-post-migration-cleanup/requirements.md)        | [design](./prisma8-post-migration-cleanup/design.md)        | [tasks（已完成 / VERIFIED）](./prisma8-post-migration-cleanup/tasks.md)             |
-| LOG-002 操作日志详情与生命周期管理    | [requirements](./operation-log-management/requirements.md)              | [design](./operation-log-management/design.md)              | [tasks（已完成 / VERIFIED）](./operation-log-management/tasks.md)                   |
-| LOG-003 操作日志全量清空              | [requirements](./operation-log-clear/requirements.md)                   | [design](./operation-log-clear/design.md)                   | [tasks（已完成 / VERIFIED）](./operation-log-clear/tasks.md)                        |
-| UI-001 PC / Mobile 双应用重构         | [requirements](./frontend-dual-app-refactor/requirements.md)            | [design](./frontend-dual-app-refactor/design.md)            | [tasks（已完成 / VERIFIED）](./frontend-dual-app-refactor/tasks.md)                 |
-| FORM-001 自定义表单对齐               | [requirements](./custom-form-parity/requirements.md)                    | [design](./custom-form-parity/design.md)                    | [tasks（已完成 / VERIFIED）](./custom-form-parity/tasks.md)                         |
-| FOLLOW-001 跟进记录协同闭环           | [requirements](./follow-up-record-collaboration/requirements.md)        | [design](./follow-up-record-collaboration/design.md)        | [tasks（已完成 / VERIFIED）](./follow-up-record-collaboration/tasks.md)             |
-| PLAN-COMMENT-001 跟进计划评论协同     | [requirements](./follow-up-plan-comment-collaboration/requirements.md)  | [design](./follow-up-plan-comment-collaboration/design.md)  | [tasks（已完成 / VERIFIED）](./follow-up-plan-comment-collaboration/tasks.md)       |
-| PLAN-FORM-001 跟进计划完整 FormDesign | [requirements](./follow-up-plan-form-design/requirements.md)            | [design](./follow-up-plan-form-design/design.md)            | [tasks（已完成 / VERIFIED）](./follow-up-plan-form-design/tasks.md)                 |
+当前业务边界、最新验收状态和剩余事项只以 `admissions-crm-transformation` 为主线任务源。
+
+## 当前主线
+
+| 主题                        | 需求                                                            | 设计                                                | 当前任务                                          |
+| --------------------------- | --------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
+| ADMISSIONS-001 通用招生 CRM | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) | [tasks](./admissions-crm-transformation/tasks.md) |
+
+## 长期领域规格
+
+| 领域                                                                         | 需求                                                     | 设计                                         |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| Platform Foundation：组织、成员、RBAC、DataScope、模块配置、个人账号/API Key | [requirements](./platform-foundation/requirements.md)    | [design](./platform-foundation/design.md)    |
+| Form Engine：ModuleForm、动态字段、Data Source、子表、联动、自定义表单       | [requirements](./form-engine/requirements.md)            | [design](./form-engine/design.md)            |
+| Follow-up：跟进计划、跟进记录、评论、提醒、计划转记录                        | [requirements](./follow-up/requirements.md)              | [design](./follow-up/design.md)              |
+| Approval Engine：流程、版本、任务、动作、快照、Webhook                       | [requirements](./approval-engine/requirements.md)        | [design](./approval-engine/design.md)        |
+| Enterprise Platform：企业设置、WeCom/DingTalk/Lark、组织同步、SSO、外部消息  | [requirements](./enterprise-platform/requirements.md)    | [design](./enterprise-platform/design.md)    |
+| Infrastructure Runtime：Redis、缓存、SSE、协调、BullMQ Worker                | [requirements](./infrastructure-runtime/requirements.md) | [design](./infrastructure-runtime/design.md) |
+| Messaging：MessageTaskEvent、模板/i18n、Notification、公告                   | [requirements](./messaging/requirements.md)              | [design](./messaging/design.md)              |
+| Operation Log：审计、详情 Blob、Retention、清理、真实客户端 IP               | [requirements](./operation-log/requirements.md)          | [design](./operation-log/design.md)          |
+
+## 审计文档
+
+`admissions-crm-transformation` 下仍保留两份专项 audit：
+
+- `external-financial-integration-audit.md`：外部财务事件 API、幂等与安全边界审计。
+- `legacy-module-dependency-audit.md`：旧销售链物理删除和 destructive migration 依赖审计；正式环境 migration precheck 完成前必须保留。
+
+## 文档保留规则
+
+- `requirements.md` 描述当前必须满足的业务/安全约束。
+- `design.md` 描述当前实现边界、数据流和维护原则。
+- 只有仍在推进的主线保留 `tasks.md`；完成专项任务日志不长期保留。
+- 历史阶段编号、VERIFIED/PASS 数量、当时的 migration 数量、一次性 Smoke 结果不进入长期领域文档。
+- 删除业务能力时同步清理领域规格、事件、导航和 API 文档；需要历史证据时使用 Git。

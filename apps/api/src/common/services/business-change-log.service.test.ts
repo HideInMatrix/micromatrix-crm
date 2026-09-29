@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { BusinessChangeLogService } from './business-change-log.service'
 
 test('业务字段变更日志把 before/after diff 写入独立 Blob 而不是主表 detail', async () => {

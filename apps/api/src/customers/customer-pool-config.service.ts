@@ -3,16 +3,12 @@ import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
 import { MetadataService } from '../modules/metadata/metadata.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
-import { PrismaService } from '../prisma/prisma.service'
+import { PrismaService } from '../prisma.service'
 
-import type {
-  CapacityExclusionCondition,
-  DirectPoolConfigurationInput,
-} from '../modules/pool-rules/pool-domain.types'
+import type { DirectPoolConfigurationInput } from '../modules/pool-rules/pool-domain.types'
 import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
 import type {
   AccountCapacityAddDto,
-  AccountCapacityFilterDto,
   AccountCapacityUpdateDto,
   AccountPoolAddDto,
   AccountPoolPageDto,
@@ -87,7 +83,7 @@ export class CustomerPoolConfigService {
         scopeIds,
         members: scopeIds,
         capacity: row.capacity,
-        filters: this.parseCapacityFilters(row.filter),
+        filters: [],
         createTime: Number(row.createTime),
         updateTime: Number(row.updateTime),
       }
@@ -95,20 +91,16 @@ export class CustomerPoolConfigService {
   }
 
   async addCapacity(user: AuthUser, dto: AccountCapacityAddDto) {
-    const filters = await this.normalizeCapacityFilters(user, dto.capacity ?? null, dto.filters)
     await this.customerPools.createCapacity(user.tenantId, user.id, {
       scopeIds: dto.scopeIds,
       capacity: dto.capacity ?? null,
-      filters,
     })
   }
 
   async updateCapacity(user: AuthUser, dto: AccountCapacityUpdateDto) {
-    const filters = await this.normalizeCapacityFilters(user, dto.capacity ?? null, dto.filters)
     await this.customerPools.updateCapacity(user.tenantId, dto.id, user.id, {
       scopeIds: dto.scopeIds,
       capacity: dto.capacity ?? null,
-      filters,
     })
   }
 
@@ -161,32 +153,6 @@ export class CustomerPoolConfigService {
     if (name && hiddenFieldIds.includes(name.id)) {
       throw new BadRequestException('客户名称固定显示，不能隐藏')
     }
-  }
-
-  private async normalizeCapacityFilters(
-    user: AuthUser,
-    capacity: number | null,
-    filters?: AccountCapacityFilterDto[],
-  ): Promise<CapacityExclusionCondition[]> {
-    if (capacity === null || capacity === 0) return []
-    const values = filters ?? []
-    if (!values.length) return []
-    if (values.length > 1) throw new BadRequestException('客户库容最多配置一条排除条件')
-    const filter = values[0]
-    if (!filter || filter.column !== 'stage')
-      throw new BadRequestException('客户库容仅支持按商机阶段排除')
-    if (!filter.value.length) throw new BadRequestException('请选择要排除的商机阶段')
-    const stageIds = [...new Set(filter.value)]
-    const stages = await this.prisma.client.orm.public.OpportunityStageConfig.where({
-      organizationId: user.tenantId,
-    })
-      .where((stage) => stage.id.in(stageIds))
-      .select('id')
-      .all()
-    if (stages.length !== stageIds.length) {
-      throw new BadRequestException('客户库容排除条件包含不存在的商机阶段')
-    }
-    return [{ column: 'stage', operator: filter.operator, value: [...filter.value] }]
   }
 
   private async assertPoolExists(organizationId: string, poolId: string) {
@@ -264,13 +230,4 @@ export class CustomerPoolConfigService {
     }
   }
 
-  private parseCapacityFilters(raw: string | null): CapacityExclusionCondition[] {
-    if (!raw) return []
-    try {
-      const value: unknown = JSON.parse(raw)
-      return Array.isArray(value) ? (value as CapacityExclusionCondition[]) : []
-    } catch {
-      return []
-    }
-  }
 }

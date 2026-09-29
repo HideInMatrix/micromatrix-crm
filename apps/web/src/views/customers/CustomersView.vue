@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import {
+  type HomeFilterPayload,
   isCustomFieldKey,
   type CustomerVO,
   type FieldVO,
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   batchDeleteCustomers,
   batchTransferCustomers,
@@ -41,9 +42,11 @@ import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 import { confirmIfDuplicates } from '@/utils/duplicate'
+import { consumeHomeFilter } from '@/utils/home-filter'
 
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const fieldRefs = useFieldRefs()
 const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 const homeQuickCreate = useHomeQuickCreate()
@@ -57,6 +60,7 @@ const items = ref<CustomerVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '' })
 const filters = ref<FilterCondition[]>([])
+const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 
@@ -136,6 +140,7 @@ async function loadData() {
       view: activeSystemView.value || undefined,
       filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
       viewId: activeSavedViewId.value || undefined,
+      homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
     })
     items.value = data.items
     total.value = data.total
@@ -188,6 +193,40 @@ function handleSavedColumns(keys: string[]) {
 
 function clearTemporaryFilters() {
   filters.value = []
+}
+
+const homeFilterSummary = computed(() => {
+  if (!activeHomeFilter.value) return ''
+  const scopeLabel =
+    activeHomeFilter.value.searchType === 'SELF'
+      ? '本人'
+      : activeHomeFilter.value.searchType === 'ALL'
+        ? '全部有权数据'
+        : '指定部门'
+  return `来自工作台：${scopeLabel}`
+})
+
+function clearHomeFilter() {
+  activeHomeFilter.value = null
+  filters.value = []
+  query.page = 1
+  loadData()
+}
+
+async function consumeRouteHomeFilter() {
+  const token = route.query.homeFilter
+  if (!token) return
+  const payload = consumeHomeFilter(token, 'customer')
+  const nextQuery = { ...route.query }
+  delete nextQuery.homeFilter
+  await router.replace({ path: route.path, query: nextQuery })
+  if (!payload) {
+    ElMessage.warning('工作台筛选已失效或格式不正确')
+    return
+  }
+  activeHomeFilter.value = payload
+  filters.value = [...(payload.filters ?? [])]
+  query.page = 1
 }
 
 function handleSelectionChange(rows: CustomerVO[]) {
@@ -438,6 +477,7 @@ async function openFollow(row: CustomerVO) {
 
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadSystemViews()])
+  await consumeRouteHomeFilter()
   await homeQuickCreate.consume(openCreate)
   if (typeof route.query.id === 'string') {
     overviewCustomerId.value = route.query.id
@@ -450,6 +490,15 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never">
+    <el-alert
+      v-if="activeHomeFilter"
+      :title="homeFilterSummary"
+      type="info"
+      show-icon
+      class="mb-4"
+      closable
+      @close="clearHomeFilter"
+    />
     <div
       class="mb-4 flex flex-wrap items-center justify-between gap-3"
       data-testid="crm-table-primary-toolbar"

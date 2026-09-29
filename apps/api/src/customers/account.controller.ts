@@ -31,7 +31,6 @@ import {
   AccountExportSelectDto,
   AccountOptionPageDto,
   AccountPageDto,
-  AccountResourcePageDto,
   AccountToPoolDto,
   AccountUpdateDto,
 } from './dto/account.dto'
@@ -167,66 +166,6 @@ export class AccountController {
     return this.service.chart(user, dto)
   }
 
-  @Post('opportunity/page')
-  @RequirePermissions('customer:read')
-  opportunities(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'opportunities')
-  }
-
-  @Post('contract/page')
-  @RequirePermissions('customer:read')
-  contracts(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'contracts')
-  }
-
-  @Post('contract/payment-plan/page')
-  @RequirePermissions('customer:read')
-  plans(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'contractPaymentPlans')
-  }
-
-  @Post('contract/payment-record/page')
-  @RequirePermissions('customer:read')
-  records(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'contractPaymentRecords')
-  }
-
-  @Post('invoice/page')
-  @RequirePermissions('customer:read')
-  invoices(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'invoices')
-  }
-
-  @Post('order/page')
-  @RequirePermissions('customer:read')
-  orders(@CurrentUser() user: AuthUser, @Body() dto: AccountResourcePageDto) {
-    return this.resource(user, dto, 'orders')
-  }
-
-  @Get('contract/statistic/:accountId')
-  @RequirePermissions('customer:read')
-  contractStatistic(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string) {
-    return this.service.resourceStatistic(user, accountId, 'contracts')
-  }
-
-  @Get('contract/payment-plan/statistic/:accountId')
-  @RequirePermissions('customer:read')
-  planStatistic(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string) {
-    return this.service.resourceStatistic(user, accountId, 'contractPaymentPlans')
-  }
-
-  @Get('contract/payment-record/statistic/:accountId')
-  @RequirePermissions('customer:read')
-  recordStatistic(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string) {
-    return this.service.resourceStatistic(user, accountId, 'contractPaymentRecords')
-  }
-
-  @Get('invoice/statistic/:accountId')
-  @RequirePermissions('customer:read')
-  invoiceStatistic(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string) {
-    return this.service.resourceStatistic(user, accountId, 'invoices')
-  }
-
   @Post('export-all')
   @RequirePermissions('customer:export')
   @LogOperation('customer', 'exportAll')
@@ -296,30 +235,4 @@ export class AccountController {
     return this.service.importXlsx(user, file.buffer, importType)
   }
 
-  private async resource(
-    user: AuthUser,
-    dto: AccountResourcePageDto,
-    resource:
-      | 'opportunities'
-      | 'contracts'
-      | 'contractPaymentPlans'
-      | 'contractPaymentRecords'
-      | 'invoices'
-      | 'orders',
-  ) {
-    const result = await this.service.relatedResource(
-      user,
-      dto.accountId,
-      resource,
-      dto.current,
-      dto.pageSize,
-    )
-    return {
-      list: result.items,
-      total: result.total,
-      current: result.page,
-      pageSize: result.pageSize,
-      optionMap: {},
-    }
-  }
 }

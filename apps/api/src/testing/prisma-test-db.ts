@@ -1,14 +1,22 @@
 import { randomUUID } from 'node:crypto'
-import { createPrismaClient, type PrismaClient } from '../prisma/prisma-client'
-import { nowInstant } from '../prisma/temporal'
+import postgres from '@prisma/orm-postgres/runtime'
+import contractJson from '../prisma/contract.json'
+import type { Contract } from '../prisma/contract'
+import type { PrismaClient } from '../prisma/db'
+import { ensureTemporalRuntime, nowInstant } from '../prisma/temporal'
 
 export interface PrismaTestDatabase {
   client: PrismaClient
   close(): Promise<void>
 }
 
+export function createPrismaTestClient(databaseUrl: string): PrismaClient {
+  ensureTemporalRuntime()
+  return postgres<Contract>({ contractJson, url: databaseUrl })
+}
+
 export async function openPrismaTestDatabase(databaseUrl: string): Promise<PrismaTestDatabase> {
-  const client = await createPrismaClient(databaseUrl)
+  const client = createPrismaTestClient(databaseUrl)
   await client.connect()
   return {
     client,

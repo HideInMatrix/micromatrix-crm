@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { AuthUser } from '../auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 
 /**
  * 通用范围 token 解析器。

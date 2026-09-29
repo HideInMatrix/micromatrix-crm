@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { BusinessNotificationsService } from './business-notifications.service'
 import type { MessageDeliveryService } from './message-delivery.service'
@@ -68,10 +68,10 @@ test('配置通知使用范围解析结果并隔离发送异常', async () => {
 
   const count = await service.sendConfigured({
     tenantId: 'tenant-a',
-    event: 'CONTRACT_EXPIRING',
+    event: 'CUSTOMER_FOLLOW_UP_PLAN_DUE',
     ownerId: 'owner-a',
     type: 'system',
-    title: '合同即将到期',
+    title: '客户跟进计划到期',
   })
 
   assert.equal(count, 0)

@@ -21,12 +21,9 @@ import LeadPoolSettingsDrawer from './components/LeadPoolSettingsDrawer.vue'
 import CustomerCapacitySettingsDrawer from './components/CustomerCapacitySettingsDrawer.vue'
 import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSettingsDrawer.vue'
 import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
-import BusinessTitleRequiredSettingsDrawer from './components/BusinessTitleRequiredSettingsDrawer.vue'
-import ContractStageSettingsDrawer from './components/ContractStageSettingsDrawer.vue'
-import OrderStageSettingsDrawer from './components/OrderStageSettingsDrawer.vue'
-import OpportunityCloseRuleSettingsDrawer from './components/OpportunityCloseRuleSettingsDrawer.vue'
-import OpportunityFailureReasonSettingsDrawer from './components/OpportunityFailureReasonSettingsDrawer.vue'
-import OpportunityStageSettingsDrawer from './components/OpportunityStageSettingsDrawer.vue'
+import HomeAnalyticsSettingsDrawer from './components/HomeAnalyticsSettingsDrawer.vue'
+import LeadDedupSettingsDrawer from './components/LeadDedupSettingsDrawer.vue'
+import LeadStageSettingsDrawer from './components/LeadStageSettingsDrawer.vue'
 import ModuleFormSettingsDrawer from './components/ModuleFormSettingsDrawer.vue'
 
 interface ModuleAction {
@@ -40,12 +37,10 @@ interface ModuleAction {
     | 'customer-pool'
     | 'customer-capacity'
     | 'customer-reason'
-    | 'business-title-required'
-    | 'contract-stage'
-    | 'order-stage'
-    | 'opportunity-stage'
-    | 'opportunity-rule'
-    | 'opportunity-reason'
+    | 'lead-dedup'
+    | 'lead-stage'
+    | 'lead-home-analytics'
+    | 'customer-home-analytics'
 }
 
 interface ModuleActionGroup {
@@ -57,10 +52,15 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   lead: {
     primary: [
       { label: '线索表单设置', formModule: 'lead' },
+      { label: '线索判重设置', drawer: 'lead-dedup' },
       { label: '线索池设置', drawer: 'lead-pool' },
-      { label: '线索库容设置', drawer: 'lead-capacity' },
     ],
-    more: [{ label: '移入线索池原因设置', drawer: 'lead-reason' }],
+    more: [
+      { label: '线索库容设置', drawer: 'lead-capacity' },
+      { label: '移入线索池原因设置', drawer: 'lead-reason' },
+      { label: '线索阶段设置', drawer: 'lead-stage' },
+      { label: '首页渠道统计设置', drawer: 'lead-home-analytics' },
+    ],
   },
   customer: {
     primary: [
@@ -75,41 +75,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
         label: '跟进计划表单设置',
         formModule: 'followPlan',
       },
-    ],
-  },
-  contract: {
-    primary: [
-      { label: '合同表单设置', formModule: 'contract' },
-      { label: '回款计划表单设置', formModule: 'contractPaymentPlan' },
-      { label: '回款记录表单设置', formModule: 'contractPaymentRecord' },
-    ],
-    more: [
-      { label: '工商抬头表单必填设置', drawer: 'business-title-required' },
-      { label: '发票表单设置', formModule: 'invoice' },
-      { label: '合同阶段设置', drawer: 'contract-stage' },
-    ],
-  },
-  opportunity: {
-    primary: [
-      { label: '商机表单设置', formModule: 'opportunity' },
-      { label: '报价表单设置', formModule: 'quote' },
-      { label: '商机阶段设置', drawer: 'opportunity-stage' },
-    ],
-    more: [
-      { label: '商机关闭规则', drawer: 'opportunity-rule' },
-      { label: '商机失败原因设置', drawer: 'opportunity-reason' },
-    ],
-  },
-  order: {
-    primary: [
-      { label: '订单表单设置', formModule: 'order' },
-      { label: '订单状态流设置', drawer: 'order-stage' },
-    ],
-  },
-  product: {
-    primary: [
-      { label: '产品表单设置', formModule: 'product' },
-      { label: '价格表表单设置', formModule: 'price' },
+      { label: '首页结果统计设置', drawer: 'customer-home-analytics' },
     ],
   },
 }
@@ -127,12 +93,10 @@ const leadReasonVisible = ref(false)
 const customerPoolVisible = ref(false)
 const customerCapacityVisible = ref(false)
 const customerReasonVisible = ref(false)
-const businessTitleRequiredVisible = ref(false)
-const contractStageVisible = ref(false)
-const orderStageVisible = ref(false)
-const opportunityStageVisible = ref(false)
-const opportunityRuleVisible = ref(false)
-const opportunityReasonVisible = ref(false)
+const leadDedupVisible = ref(false)
+const leadStageVisible = ref(false)
+const leadHomeAnalyticsVisible = ref(false)
+const customerHomeAnalyticsVisible = ref(false)
 const formSettingsVisible = ref(false)
 const formSettingsModule = ref<ModuleKey | null>(null)
 const formSettingsTitle = ref('')
@@ -142,8 +106,9 @@ const definitionMap = new Map(NAVIGATION_MODULES.map((item) => [item.key, item])
 const topNavigationDefinitionMap = new Map(
   TOP_NAVIGATION_DEFINITIONS.map((item) => [item.key, item]),
 )
+const visibleProductModules = new Set<NavigationModuleKey>(['lead', 'customer'])
 const moduleCardConfigs = computed(() =>
-  orderedConfigs.value.filter((item) => item.moduleKey !== 'system'),
+  orderedConfigs.value.filter((item) => visibleProductModules.has(item.moduleKey)),
 )
 
 function labelOf(moduleKey: NavigationModuleKey) {
@@ -259,12 +224,10 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-pool') customerPoolVisible.value = true
   if (action.drawer === 'customer-capacity') customerCapacityVisible.value = true
   if (action.drawer === 'customer-reason') customerReasonVisible.value = true
-  if (action.drawer === 'business-title-required') businessTitleRequiredVisible.value = true
-  if (action.drawer === 'contract-stage') contractStageVisible.value = true
-  if (action.drawer === 'order-stage') orderStageVisible.value = true
-  if (action.drawer === 'opportunity-stage') opportunityStageVisible.value = true
-  if (action.drawer === 'opportunity-rule') opportunityRuleVisible.value = true
-  if (action.drawer === 'opportunity-reason') opportunityReasonVisible.value = true
+  if (action.drawer === 'lead-dedup') leadDedupVisible.value = true
+  if (action.drawer === 'lead-stage') leadStageVisible.value = true
+  if (action.drawer === 'lead-home-analytics') leadHomeAnalyticsVisible.value = true
+  if (action.drawer === 'customer-home-analytics') customerHomeAnalyticsVisible.value = true
 }
 
 onMounted(load)
@@ -419,12 +382,10 @@ onMounted(load)
     <CustomerPoolSettingsDrawer v-model="customerPoolVisible" />
     <CustomerCapacitySettingsDrawer v-model="customerCapacityVisible" />
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
-    <BusinessTitleRequiredSettingsDrawer v-model="businessTitleRequiredVisible" />
-    <ContractStageSettingsDrawer v-model="contractStageVisible" />
-    <OrderStageSettingsDrawer v-model="orderStageVisible" />
-    <OpportunityStageSettingsDrawer v-model="opportunityStageVisible" />
-    <OpportunityCloseRuleSettingsDrawer v-model="opportunityRuleVisible" />
-    <OpportunityFailureReasonSettingsDrawer v-model="opportunityReasonVisible" />
+    <LeadDedupSettingsDrawer v-model="leadDedupVisible" />
+    <LeadStageSettingsDrawer v-model="leadStageVisible" />
+    <HomeAnalyticsSettingsDrawer v-model="leadHomeAnalyticsVisible" section="lead" />
+    <HomeAnalyticsSettingsDrawer v-model="customerHomeAnalyticsVisible" section="customer" />
     <ModuleFormSettingsDrawer
       v-model="formSettingsVisible"
       :module="formSettingsModule"

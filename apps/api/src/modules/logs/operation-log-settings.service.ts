@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import type { OperationLogSettingVO } from '@micromatrix/shared'
 import { instantToISOString } from '../../prisma/temporal.js'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { resolveOperationLogCleanupConfig } from './operation-log-config'
 
 const PERMANENT_SENTINEL = 0

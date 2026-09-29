@@ -35,7 +35,7 @@ const statusTypes: Record<FollowUpPlanStatus, 'info' | 'primary' | 'success' | '
   COMPLETED: 'success',
   CANCELLED: 'warning',
 }
-const targetLabels = { lead: '线索', customer: '客户', opportunity: '商机' } as const
+const targetLabels = { lead: '线索', customer: '客户' } as const
 
 function asPlan(value: unknown): FollowUpPlanVO {
   return value as FollowUpPlanVO

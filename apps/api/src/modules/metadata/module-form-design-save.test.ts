@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { FieldVO, SubTableFieldType } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,

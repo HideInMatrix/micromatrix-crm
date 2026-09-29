@@ -170,17 +170,6 @@ const router = createRouter({
           },
         },
         {
-          path: 'opportunities',
-          name: 'opportunities',
-          component: () => import('@/views/opportunities/OpportunitiesView.vue'),
-          meta: {
-            title: '商机',
-            perm: 'menu:opportunity',
-            depth: 1,
-            mobileHeader: {},
-          },
-        },
-        {
           path: 'mine',
           name: 'mobile-mine',
           component: () => import('@/views/profile/MineView.vue'),
@@ -215,17 +204,6 @@ const router = createRouter({
           },
         },
         {
-          path: 'opportunities/detail',
-          name: 'mobile-opportunity-detail',
-          component: () => import('@/views/opportunities/OpportunityDetailView.vue'),
-          meta: {
-            title: '商机详情',
-            perm: 'menu:opportunity',
-            depth: 2,
-            mobileHeader: { back: true, titleQuery: 'name' },
-          },
-        },
-        {
           path: 'follow-plans',
           name: 'follow-plans',
           component: () => import('@/views/follow-plans/FollowUpPlansView.vue'),
@@ -245,6 +223,8 @@ declare module 'vue-router' {
     public?: boolean
     title?: string
     perm?: string
+    /** 路由实现暂时保留，但当前产品不对用户开放。 */
+    productEnabled?: boolean
     depth?: number
     mobileHeader?: MobileHeaderMeta
     stableViewKey?: boolean
@@ -425,6 +405,7 @@ router.beforeEach(async (to) => {
   if (auth.user?.tenantSlug) {
     await enterpriseUi.load(auth.user.tenantSlug).catch(() => undefined)
   }
+  if (to.meta.productEnabled === false) return { path: '/' }
   if (to.meta.perm && !auth.hasPerm(to.meta.perm)) return { path: '/' }
 })
 

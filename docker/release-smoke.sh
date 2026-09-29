@@ -57,8 +57,10 @@ grep -Fq 'pnpm --filter @micromatrix/shared build' docker/migrate.Dockerfile
 grep -Fq -- '--filter @micromatrix/migrate --prod deploy' docker/migrate.Dockerfile
 grep -Fq 'COPY apps/api/migrations apps/api/migrations' docker/migrate.Dockerfile
 grep -Fq 'COPY apps/api/prisma.config.ts apps/api/prisma.config.ts' docker/migrate.Dockerfile
+grep -Fq 'COPY apps/api/src/prisma/contract.prisma apps/api/src/prisma/contract.prisma' docker/migrate.Dockerfile
 grep -Fq 'RUN node ./prisma-orm.mjs contract emit' docker/migrate.Dockerfile
 grep -Fq 'node ./prisma-orm.mjs db migrate' docker/release-init.sh
+grep -Fq 'tsx src/prisma/seed.ts' docker/release-init.sh
 grep -Fq 'ENTRYPOINT ["./release-init.sh"]' docker/migrate.Dockerfile
 
 echo '[docker-release] building API image'

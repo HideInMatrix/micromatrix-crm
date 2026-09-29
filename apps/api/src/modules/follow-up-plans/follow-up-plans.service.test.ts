@@ -65,7 +65,6 @@ function dependencies(
     }
     clue?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
     customer?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
-    opportunity?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
     user?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
     customerContact?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
   }
@@ -94,9 +93,6 @@ function dependencies(
     FollowUpPlans: followPlans,
     Clue: collection(async () => (legacy.clue?.findMany ? legacy.clue.findMany() : [])),
     Customer: collection(async () => (legacy.customer?.findMany ? legacy.customer.findMany() : [])),
-    Opportunity: collection(async () =>
-      legacy.opportunity?.findMany ? legacy.opportunity.findMany() : [],
-    ),
     Users: collection(async () => (legacy.user?.findMany ? legacy.user.findMany() : [])),
     CustomerContact: collection(async () =>
       legacy.customerContact?.findMany ? legacy.customerContact.findMany() : [],
@@ -215,19 +211,19 @@ test('计划转记录预填只执行显式 PLAN_TO_RECORD formLink，不产生�
   assert.equal(sourceValues.cf_source_custom, '来源动态值')
 })
 
-test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO 原样回读', async () => {
+test('创建计划时多选数据源扩展字段作为标准 moduleField 写入并在 VO 原样回读', async () => {
   let savedValues: Record<string, unknown> = {}
-  const productField = {
-    id: 'plan-product-field',
+  const relatedCustomerField = {
+    id: 'plan-related-customer-field',
     module: 'followPlan',
-    key: 'planProduct',
-    label: '意向产品',
+    key: 'cf_related_customers',
+    label: '关联客户',
     type: 'data_source_multiple' as const,
     required: false,
     system: false,
     hidden: false,
     options: null,
-    config: { dataSourceType: 'PRODUCT' as const },
+    config: { dataSourceType: 'CUSTOMER' as const },
     sort: 6,
     span: 12,
     showInList: false,
@@ -245,7 +241,6 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
       findMany: async () => [{ id: 'customer-1', name: '测试客户' }],
     },
     clue: { findMany: async () => [] },
-    opportunity: { findMany: async () => [] },
     user: { findMany: async () => [{ id: 'owner-1', name: '负责人' }] },
     customerContact: { findMany: async () => [] },
   }
@@ -273,7 +268,7 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
       }),
     },
     moduleForms: {
-      listFields: async () => [productField],
+      listFields: async () => [relatedCustomerField],
     },
     fieldValues: {
       save: async (
@@ -291,13 +286,15 @@ test('创建计划时 planProduct 作为标准扩展 moduleField 写入并在 VO
   const result = await service.create(user, {
     targetType: 'customer',
     targetId: 'customer-1',
-    content: '带产品的跟进计划',
-    moduleFields: [{ fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] }],
+    content: '带关联客户的跟进计划',
+    moduleFields: [
+      { fieldId: 'plan-related-customer-field', fieldValue: ['customer-b', 'customer-c'] },
+    ],
   })
 
-  assert.deepEqual(savedValues, { planProduct: ['product-a', 'product-b'] })
+  assert.deepEqual(savedValues, { cf_related_customers: ['customer-b', 'customer-c'] })
   assert.deepEqual(result.moduleFields, [
-    { fieldId: 'plan-product-field', fieldValue: ['product-a', 'product-b'] },
+    { fieldId: 'plan-related-customer-field', fieldValue: ['customer-b', 'customer-c'] },
   ])
 })
 

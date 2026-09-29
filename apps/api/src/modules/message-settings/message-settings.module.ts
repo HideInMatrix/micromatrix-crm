@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { MessageSettingsController } from './message-settings.controller'
 import { MessageSettingsService } from './message-settings.service'
 

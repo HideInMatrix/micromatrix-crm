@@ -17,15 +17,9 @@ import type {
 import { or } from '@prisma/orm-postgres/orm-client'
 import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
-
-import { ModuleFormsService } from '../metadata/module-forms.service'
-import {
-  APPROVAL_FORM_METADATA_KEY,
-  isApprovalEditableField,
-} from './approval-field-permission.utils'
 import {
   ApprovalWebhookConfigError,
   normalizeApprovalWebhookConfig,
@@ -74,10 +68,7 @@ type FlowCollection = ReturnType<PrismaService['client']['orm']['public']['Appro
 
 @Injectable()
 export class ApprovalFlowConfigService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly moduleForms: ModuleFormsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async list(
     user: AuthUser,
@@ -452,8 +443,8 @@ export class ApprovalFlowConfigService {
   }
 
   private async validateFieldPermissions(
-    tenantId: string,
-    formType: SharedApprovalFormType,
+    _tenantId: string,
+    _formType: SharedApprovalFormType,
     nodes: FlowNodeDto[],
   ) {
     const approverNodes = nodes.filter(
@@ -467,29 +458,12 @@ export class ApprovalFlowConfigService {
     )
     if (!approverNodes.length) return
 
-    const fields = await this.moduleForms.listFields(tenantId, APPROVAL_FORM_METADATA_KEY[formType])
-    const fieldMap = new Map(fields.map((field) => [field.id, field]))
     for (const node of approverNodes) {
       const permissions = node.fieldPermissions ?? []
-      const fieldIds = permissions.map((permission) => permission.fieldId.trim())
-      if (fieldIds.some((fieldId) => !fieldId)) {
-        throw new BadRequestException(`节点「${node.name}」存在空字段权限引用`)
-      }
-      if (new Set(fieldIds).size !== fieldIds.length) {
-        throw new BadRequestException(`节点「${node.name}」存在重复字段权限`)
-      }
-      for (const permission of permissions) {
-        const fieldId = permission.fieldId.trim()
-        const field = fieldMap.get(fieldId)
-        if (!field) {
-          throw new BadRequestException(`节点「${node.name}」存在无效字段权限引用`)
-        }
-        if (field.hidden && permission.permissionType !== 'HIDDEN') {
-          throw new BadRequestException(`字段「${field.label}」在当前表单中不可见，只能配置为隐藏`)
-        }
-        if (permission.permissionType === 'EDIT' && !isApprovalEditableField(formType, field)) {
-          throw new BadRequestException(`字段「${field.label}」不支持审批中编辑`)
-        }
+      if (permissions.length) {
+        throw new BadRequestException(
+          `节点「${node.name}」配置了业务字段权限，但当前产品未注册审批业务资源适配器`,
+        )
       }
       for (const [actionName, config] of [
         ['通过后', node.passPostConfig],
@@ -504,25 +478,10 @@ export class ApprovalFlowConfigService {
           throw error
         }
         const updates = config?.fieldUpdateConfigs ?? []
-        const updateFieldIds = updates.map((item) => item.fieldId.trim())
-        if (updateFieldIds.some((fieldId) => !fieldId)) {
-          throw new BadRequestException(`节点「${node.name}」${actionName}存在空字段引用`)
-        }
-        if (new Set(updateFieldIds).size !== updateFieldIds.length) {
-          throw new BadRequestException(`节点「${node.name}」${actionName}存在重复字段更新`)
-        }
-        for (const update of updates) {
-          const field = fieldMap.get(update.fieldId.trim())
-          if (!field) {
-            throw new BadRequestException(`节点「${node.name}」${actionName}存在无效字段引用`)
-          }
-          if (!update.enable) continue
-          if (update.fieldValue === undefined || update.fieldValue === null) {
-            throw new BadRequestException(`字段「${field.label}」${actionName}更新值不能为空`)
-          }
-          if (!isApprovalEditableField(formType, field)) {
-            throw new BadRequestException(`字段「${field.label}」不支持审批后置更新`)
-          }
+        if (updates.length) {
+          throw new BadRequestException(
+            `节点「${node.name}」${actionName}配置了业务字段更新，但当前产品未注册审批业务资源适配器`,
+          )
         }
       }
     }
@@ -1084,34 +1043,12 @@ export class ApprovalFlowConfigService {
   }
 
   private async resetBusinessStatuses(
-    tx: PrismaTransaction,
-    tenantId: string,
-    instances: Array<{ module: string; targetId: string }>,
+    _tx: PrismaTransaction,
+    _tenantId: string,
+    _instances: Array<{ module: string; targetId: string }>,
   ) {
-    const quoteIds = instances
-      .filter((item) => item.module === 'quote')
-      .map((item) => item.targetId)
-    const contractIds = instances
-      .filter((item) => item.module === 'contract')
-      .map((item) => item.targetId)
-    const orderIds = instances
-      .filter((item) => item.module === 'order')
-      .map((item) => item.targetId)
-    if (quoteIds.length) {
-      await tx.orm.public.OpportunityQuotation.where({ organizationId: tenantId })
-        .where((row) => row.id.in(quoteIds))
-        .updateAndCount({ approvalStatus: 'NONE' })
-    }
-    if (contractIds.length) {
-      await tx.orm.public.Contract.where({ organizationId: tenantId })
-        .where((row) => row.id.in(contractIds))
-        .updateAndCount({ approvalStatus: 'NONE' })
-    }
-    if (orderIds.length) {
-      await tx.orm.public.SalesOrder.where({ organizationId: tenantId })
-        .where((row) => row.id.in(orderIds))
-        .updateAndCount({ approvalStatus: 'NONE' })
-    }
+    // 旧交易资源已退出。流程停用/删除只处理审批自身状态，
+    // 不再反向写报价、合同、订单等业务表。
   }
 
   private isUniqueError(error: unknown): boolean {

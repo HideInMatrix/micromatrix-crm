@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { ConfigService } from '@nestjs/config'
 import { Temporal } from '@js-temporal/polyfill'
 import { openPrismaTestDatabase } from '../testing/prisma-test-db'
-import { PrismaService } from './prisma.service.js'
+import { db } from './db.js'
+import { PrismaService } from '../prisma.service.js'
 import { nowInstant } from './temporal.js'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -134,21 +134,14 @@ test(
 )
 
 test(
-  'PrismaService startup lifecycle performs the Prisma database probe and closes cleanly',
+  'PrismaService wraps the Prisma 8 singleton, probes it on startup and closes it cleanly',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
-    const config = {
-      getOrThrow: (key: string) => {
-        assert.equal(key, 'DATABASE_URL')
-        return databaseUrl
-      },
-    } as unknown as ConfigService
-    const service = new PrismaService(config)
+    const service = new PrismaService()
 
+    assert.equal(service.client, db)
     await service.onModuleInit()
-    assert.ok(service.client)
     await service.onModuleDestroy()
-    assert.throws(() => service.client, /not initialized/)
   },
 )

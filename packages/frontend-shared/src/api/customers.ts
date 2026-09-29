@@ -1,11 +1,4 @@
 import type {
-  Customer360ContractVO,
-  Customer360ContractPaymentPlanVO,
-  Customer360ContractPaymentRecordVO,
-  Customer360InvoiceVO,
-  Customer360OpportunityVO,
-  Customer360OrderVO,
-  Customer360Resource,
   CustomerVO,
   DuplicateHitVO,
   FieldVO,
@@ -31,6 +24,7 @@ export interface CustomerListParams extends PageQuery {
   view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
   poolId?: string
   viewId?: string
+  homeFilter?: string
 }
 
 export interface CustomerTabVO {
@@ -72,9 +66,6 @@ export interface CustomerMergePreviewVO {
     contacts: number
     contactsWillMove: number
     contactsWillSkip: number
-    opportunities: number
-    quotes: number
-    contracts: number
     followUps: number
     followUpPlans: number
     attachments: number
@@ -121,6 +112,7 @@ function customerPageBody(params: CustomerListParams) {
     viewId: params.viewId,
     filters: parseCustomerFilters(params.filters),
     filterMode: params.filterMode,
+    homeFilter: params.homeFilter,
   }
 }
 
@@ -216,45 +208,6 @@ export function poolBatchAssignCustomers(ids: string[], ownerId: string) {
 
 export function poolDeleteCustomer(id: string) {
   return http.get(`/pool/account/delete/${id}`)
-}
-
-export interface Customer360ResourceMap {
-  opportunities: Customer360OpportunityVO
-  contracts: Customer360ContractVO
-  contractPaymentPlans: Customer360ContractPaymentPlanVO
-  contractPaymentRecords: Customer360ContractPaymentRecordVO
-  invoices: Customer360InvoiceVO
-  orders: Customer360OrderVO
-}
-
-export function getCustomer360Resource<T extends Customer360Resource>(
-  id: string,
-  resource: T,
-  params: PageQuery = {},
-) {
-  const paths: Record<Customer360Resource, string> = {
-    opportunities: '/account/opportunity/page',
-    contracts: '/account/contract/page',
-    contractPaymentPlans: '/account/contract/payment-plan/page',
-    contractPaymentRecords: '/account/contract/payment-record/page',
-    invoices: '/account/invoice/page',
-    orders: '/account/order/page',
-  }
-  return http
-    .post<CordysPager<Customer360ResourceMap[T]>>(paths[resource], {
-      accountId: id,
-      current: params.page ?? 1,
-      pageSize: params.pageSize ?? 10,
-    })
-    .then((response): AxiosResponse<PaginatedResult<Customer360ResourceMap[T]>> => ({
-      ...response,
-      data: {
-        items: response.data.list,
-        total: response.data.total,
-        page: response.data.current,
-        pageSize: response.data.pageSize,
-      },
-    }))
 }
 
 export function checkDuplicate(params: { name?: string; phone?: string }) {

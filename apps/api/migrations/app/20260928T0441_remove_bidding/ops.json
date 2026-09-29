@@ -1,0 +1,113 @@
+[
+  {
+    "id": "dropTable.bidding_infos",
+    "label": "Drop table \"bidding_infos\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "bidding_infos"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"bidding_infos\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bidding_infos\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"bidding_infos\"",
+        "sql": "DROP TABLE \"public\".\"bidding_infos\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"bidding_infos\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bidding_infos\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.bidding_keyword_subs",
+    "label": "Drop table \"bidding_keyword_subs\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "bidding_keyword_subs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"bidding_keyword_subs\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bidding_keyword_subs\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"bidding_keyword_subs\"",
+        "sql": "DROP TABLE \"public\".\"bidding_keyword_subs\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"bidding_keyword_subs\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bidding_keyword_subs\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.bidding_sources",
+    "label": "Drop table \"bidding_sources\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "bidding_sources"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"bidding_sources\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bidding_sources\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"bidding_sources\"",
+        "sql": "DROP TABLE \"public\".\"bidding_sources\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"bidding_sources\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bidding_sources\""
+        ]
+      }
+    ]
+  }
+]

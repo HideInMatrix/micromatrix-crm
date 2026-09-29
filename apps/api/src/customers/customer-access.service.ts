@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { AuthUser } from '../common/auth-user'
 import { DataScopeService } from '../common/services/data-scope.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
-import { PrismaService } from '../prisma/prisma.service'
+import { PrismaService } from '../prisma.service'
 
 export type CustomerCollaborationAccess = 'READ_ONLY' | 'COLLABORATION' | null
 

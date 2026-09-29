@@ -7,7 +7,7 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { AttachmentsService } from '../attachments/attachments.service'
 import type { UpdateEnterpriseUiSettingDto } from './dto/ui-setting.dto'

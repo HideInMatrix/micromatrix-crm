@@ -18,8 +18,8 @@ import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import type { PrismaClient } from '../../prisma/db.js'
+import { PrismaService } from '../../prisma.service.js'
 import {
   nowInstant,
   instantFromDate,
@@ -556,23 +556,6 @@ export class FollowUpsService {
       }
       return
     }
-    if (targetType === 'opportunity') {
-      const permission = write ? 'opportunity:update' : 'menu:opportunity'
-      if (!hasPermission(user.permissions, permission))
-        throw new ForbiddenException('无商机跟进权限')
-      const opportunity = await this.prisma.client.orm.public.Opportunity.where({
-        id: targetId,
-        organizationId: user.tenantId,
-      })
-        .select('owner')
-        .first()
-      if (
-        !opportunity ||
-        !(await this.dataScope.matchesDirectOwner(user, String(opportunity.owner), permission))
-      ) {
-        throw new NotFoundException('商机不存在或不在你的数据范围内')
-      }
-    }
   }
 
   private async globalAccessibleRecordIds(user: AuthUser): Promise<string[]> {
@@ -580,12 +563,10 @@ export class FollowUpsService {
     const canLeadPool = hasPermission(user.permissions, 'leadPool:read')
     const canCustomer = hasPermission(user.permissions, 'customer:read')
     const canCustomerPool = hasPermission(user.permissions, 'customerPool:read')
-    const canOpportunity = hasPermission(user.permissions, 'menu:opportunity')
-    const [leadScope, customerScope, opportunityScope, leadPoolOptions, customerPoolOptions] =
+    const [leadScope, customerScope, leadPoolOptions, customerPoolOptions] =
       await Promise.all([
         canLead ? this.dataScope.directOwnerFilter(user, 'menu:lead') : null,
         canCustomer ? this.dataScope.directOwnerFilter(user, 'customer:read') : null,
-        canOpportunity ? this.dataScope.directOwnerFilter(user, 'menu:opportunity') : null,
         canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
         canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
       ])
@@ -617,30 +598,14 @@ export class FollowUpsService {
           ? directCustomerQuery.where({ owner: customerOwner })
           : directCustomerQuery.where((row) => row.owner.in(customerOwner.in))
     }
-    let opportunityQuery = this.prisma.client.orm.public.Opportunity.where({
-      organizationId: user.tenantId,
-    })
-    const opportunityOwner = (opportunityScope as any)?.owner
-    if (opportunityOwner) {
-      opportunityQuery =
-        typeof opportunityOwner === 'string'
-          ? opportunityQuery.where({ owner: opportunityOwner })
-          : opportunityQuery.where((row) => row.owner.in(opportunityOwner.in))
-    }
     const collaborationRows = canCustomer
       ? await this.prisma.client.orm.public.CustomerCollaboration.where({ userId: user.id })
           .select('customerId')
           .all()
       : []
     const collaborationIds = collaborationRows.map((item) => String(item.customerId))
-    const [
-      directLeads,
-      poolLeads,
-      directCustomers,
-      collaborativeCustomers,
-      poolCustomers,
-      opportunities,
-    ] = await Promise.all([
+    const [directLeads, poolLeads, directCustomers, collaborativeCustomers, poolCustomers] =
+      await Promise.all([
       leadScope ? directLeadQuery.select('id').all() : Promise.resolve([]),
       canLeadPool && leadPoolOptions.length
         ? this.prisma.client.orm.public.Clue.where({
@@ -670,7 +635,6 @@ export class FollowUpsService {
             .select('id')
             .all()
         : Promise.resolve([]),
-      opportunityScope ? opportunityQuery.select('id').all() : Promise.resolve([]),
     ])
     const leadIds = [...new Set([...directLeads, ...poolLeads].map((item) => String(item.id)))]
     const customerIds = [
@@ -680,7 +644,6 @@ export class FollowUpsService {
         ),
       ),
     ]
-    const opportunityIds = opportunities.map((item) => String(item.id))
     const groups = await Promise.all([
       leadIds.length
         ? this.prisma.client.orm.public.FollowUpRecords.where({
@@ -700,30 +663,17 @@ export class FollowUpsService {
             .select('id')
             .all()
         : Promise.resolve([]),
-      opportunityIds.length
-        ? this.prisma.client.orm.public.FollowUpRecords.where({
-            tenantId: user.tenantId,
-            targetType: 'opportunity',
-          })
-            .where((row) => row.targetId.in(opportunityIds))
-            .select('id')
-            .all()
-        : Promise.resolve([]),
     ])
     return [...new Set(groups.flat().map((item) => item.id))]
   }
 
   private async keywordRecordIds(tenantId: string, keyword: string): Promise<string[]> {
-    const [leads, customers, opportunities, direct] = await Promise.all([
+    const [leads, customers, direct] = await Promise.all([
       this.prisma.client.orm.public.Clue.where({ organizationId: tenantId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
       this.prisma.client.orm.public.Customer.where({ organizationId: tenantId })
-        .where((row) => row.name.ilike(`%${keyword}%`))
-        .select('id')
-        .all(),
-      this.prisma.client.orm.public.Opportunity.where({ organizationId: tenantId })
         .where((row) => row.name.ilike(`%${keyword}%`))
         .select('id')
         .all(),
@@ -738,7 +688,7 @@ export class FollowUpsService {
         .select('id')
         .all(),
     ])
-    const [leadRecords, customerRecords, opportunityRecords] = await Promise.all([
+    const [leadRecords, customerRecords] = await Promise.all([
       leads.length
         ? this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, targetType: 'lead' })
             .where((row) => row.targetId.in(leads.map((item) => String(item.id))))
@@ -751,21 +701,10 @@ export class FollowUpsService {
             .select('id')
             .all()
         : Promise.resolve([]),
-      opportunities.length
-        ? this.prisma.client.orm.public.FollowUpRecords.where({
-            tenantId,
-            targetType: 'opportunity',
-          })
-            .where((row) => row.targetId.in(opportunities.map((item) => String(item.id))))
-            .select('id')
-            .all()
-        : Promise.resolve([]),
     ])
     return [
       ...new Set(
-        [...direct, ...leadRecords, ...customerRecords, ...opportunityRecords].map(
-          (item) => item.id,
-        ),
+        [...direct, ...leadRecords, ...customerRecords].map((item) => item.id),
       ),
     ]
   }
@@ -868,7 +807,7 @@ export class FollowUpsService {
         : [String(condition.value)]
     if (
       key === 'targetType' &&
-      values.some((value) => !['lead', 'customer', 'opportunity'].includes(value))
+      values.some((value) => !['lead', 'customer'].includes(value))
     ) {
       throw new BadRequestException('关联类型筛选值不合法')
     }
@@ -954,16 +893,7 @@ export class FollowUpsService {
     contactId?: string,
   ): Promise<void> {
     if (!contactId) return
-    let customerId: string | null = targetType === 'customer' ? targetId : null
-    if (targetType === 'opportunity') {
-      const opportunity = await this.prisma.client.orm.public.Opportunity.where({
-        id: targetId,
-        organizationId: tenantId,
-      })
-        .select('customerId')
-        .first()
-      customerId = opportunity?.customerId ? String(opportunity.customerId) : null
-    }
+    const customerId: string | null = targetType === 'customer' ? targetId : null
     if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
     const contact = await this.prisma.client.orm.public.CustomerContact.where({
       id: contactId,
@@ -997,16 +927,6 @@ export class FollowUpsService {
         break
       case 'customer':
         await tx.orm.public.Customer.where({
-          id: targetId,
-          organizationId: tenantId,
-        }).updateAndCount({
-          followTime: directNow,
-          follower: ownerId,
-          updateTime: directNow,
-        })
-        break
-      case 'opportunity':
-        await tx.orm.public.Opportunity.where({
           id: targetId,
           organizationId: tenantId,
         }).updateAndCount({
@@ -1087,11 +1007,8 @@ export class FollowUpsService {
     const customerIds = records
       .filter((record) => record.targetType === 'customer')
       .map((record) => record.targetId)
-    const opportunityIds = records
-      .filter((record) => record.targetType === 'opportunity')
-      .map((record) => record.targetId)
     const contactIds = records.flatMap((record) => (record.contactId ? [record.contactId] : []))
-    const [fields, dynamic, leads, customers, opportunities, contacts] = await Promise.all([
+    const [fields, dynamic, leads, customers, contacts] = await Promise.all([
       this.moduleForms.listFields(user.tenantId, 'followRecord'),
       this.fieldValues.load(user.tenantId, 'followRecord', ids),
       leadIds.length
@@ -1110,14 +1027,6 @@ export class FollowUpsService {
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
-      opportunityIds.length
-        ? this.prisma.client.orm.public.Opportunity.where({
-            organizationId: user.tenantId,
-          })
-            .where((row) => row.id.in(opportunityIds))
-            .select('id', 'name', 'customerId')
-            .all()
-        : Promise.resolve([]),
       contactIds.length
         ? this.prisma.client.orm.public.CustomerContact.where({
             organizationId: user.tenantId,
@@ -1130,14 +1039,7 @@ export class FollowUpsService {
     const targetNameMap = new Map<string, string>([
       ...leads.map((item) => [`lead:${String(item.id)}`, item.name] as const),
       ...customers.map((item) => [`customer:${String(item.id)}`, item.name] as const),
-      ...opportunities.map((item) => [`opportunity:${String(item.id)}`, item.name] as const),
     ])
-    const opportunityCustomerMap = new Map(
-      opportunities.map((item) => [
-        String(item.id),
-        item.customerId ? String(item.customerId) : null,
-      ]),
-    )
     const contactMap = new Map(contacts.map((item) => [String(item.id), item.name]))
     return records.map((record) => {
       const dynamicValues = dynamic.get(record.id) ?? {}
@@ -1150,9 +1052,7 @@ export class FollowUpsService {
         customerId:
           record.targetType === 'customer'
             ? record.targetId
-            : record.targetType === 'opportunity'
-              ? (opportunityCustomerMap.get(record.targetId) ?? null)
-              : null,
+            : null,
         contactId: record.contactId,
         contactName: record.contactId ? (contactMap.get(record.contactId) ?? null) : null,
         type: record.type,

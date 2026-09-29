@@ -20,14 +20,14 @@ RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
 COPY packages/shared packages/shared
 COPY packages/migrate packages/migrate
 
-COPY apps/api/prisma apps/api/prisma
 COPY apps/api/migrations apps/api/migrations
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
-COPY apps/api/src/modules/metadata/system-fields.ts apps/api/src/modules/metadata/system-fields.ts
-COPY apps/api/src/prisma/prisma-client.ts apps/api/src/prisma/prisma-client.ts
+COPY apps/api/src/prisma/contract.prisma apps/api/src/prisma/contract.prisma
+COPY apps/api/src/prisma/db.ts apps/api/src/prisma/db.ts
+COPY apps/api/src/prisma/seed.ts apps/api/src/prisma/seed.ts
+COPY apps/api/src/prisma/seed-bootstrap.ts apps/api/src/prisma/seed-bootstrap.ts
 COPY apps/api/src/prisma/temporal.ts apps/api/src/prisma/temporal.ts
 COPY apps/api/src/prisma/numeric-value.ts apps/api/src/prisma/numeric-value.ts
-COPY apps/api/src/prisma/generated/contract.json apps/api/src/prisma/generated/contract.json
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
   pnpm --filter @micromatrix/shared build \
@@ -40,10 +40,8 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY --from=builder --chown=node:node /opt/micromatrix-migrate ./
-COPY --from=builder --chown=node:node /workspace/apps/api/prisma ./prisma
 COPY --from=builder --chown=node:node /workspace/apps/api/migrations ./migrations
 COPY --from=builder --chown=node:node /workspace/apps/api/prisma.config.ts ./prisma.config.ts
-COPY --from=builder --chown=node:node /workspace/apps/api/src/modules/metadata/system-fields.ts ./src/modules/metadata/system-fields.ts
 COPY --from=builder --chown=node:node /workspace/apps/api/src/prisma ./src/prisma
 COPY --chown=node:node --chmod=755 docker/release-init.sh ./release-init.sh
 

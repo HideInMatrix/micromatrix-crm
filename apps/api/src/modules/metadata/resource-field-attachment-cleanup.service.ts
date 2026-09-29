@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { AttachmentsService } from '../attachments/attachments.service'
 import {
   RESOURCE_FIELD_ATTACHMENT_TARGET_PREFIX,

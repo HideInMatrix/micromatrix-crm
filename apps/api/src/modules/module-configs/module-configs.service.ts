@@ -8,7 +8,7 @@ import {
   type TopNavigationKey,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 
 const definitionMap = new Map(NAVIGATION_MODULES.map((definition) => [definition.key, definition]))
 const topNavigationDefinitionMap = new Map(
@@ -43,7 +43,11 @@ export class ModuleConfigsService {
       .orderBy((row) => row.sort.asc())
       .orderBy((row) => row.key.asc())
       .all()
-    return rows.map((row) => this.toVO(row))
+    // 历史版本可能仍保留已经退出产品的模块配置行。
+    // 模块定义是当前产品边界的唯一真相；未知历史 key 只忽略，不能让整个模块配置页失效。
+    return rows
+      .filter((row) => definitionMap.has(row.key as NavigationModuleKey))
+      .map((row) => this.toVO(row))
   }
 
   async update(tenantId: string, moduleKey: string, enabled: boolean): Promise<ModuleConfigVO> {
@@ -101,7 +105,11 @@ export class ModuleConfigsService {
       .orderBy((row) => row.sort.asc())
       .orderBy((row) => row.key.asc())
       .all()
-    return rows.map((row) => this.toTopNavigationVO(row))
+    // 历史版本可能仍保留已经退出产品的顶部导航配置行。
+    // 与主导航一致，只返回当前产品定义中的入口，避免旧 key 让配置页整体失效。
+    return rows
+      .filter((row) => topNavigationDefinitionMap.has(row.key as TopNavigationKey))
+      .map((row) => this.toTopNavigationVO(row))
   }
 
   async reorderTopNavigation(

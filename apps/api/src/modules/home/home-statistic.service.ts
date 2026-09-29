@@ -1,18 +1,18 @@
 import { Injectable, Optional } from '@nestjs/common'
-import type { HomeStatisticRequest } from '@micromatrix/shared'
+import type { HomeLeadSlaStatistic, HomeStatisticRequest } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
+import { LeadPoolSlaService } from '../pool-rules/lead-pool-sla.service'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
 import { homeCacheUserContext } from './home-cache-context'
 import { HomeDepartmentScopeService } from './home-department-scope.service'
-import { HomeOpportunityStatisticQuery } from './home-opportunity-statistic.query'
 
 @Injectable()
 export class HomeStatisticService {
   constructor(
     private readonly departments: HomeDepartmentScopeService,
     private readonly clues: HomeClueStatisticQuery,
-    private readonly opportunities: HomeOpportunityStatisticQuery,
+    private readonly leadSla: LeadPoolSlaService,
     @Optional() private readonly cache?: TenantDerivedCacheService,
   ) {}
 
@@ -24,22 +24,18 @@ export class HomeStatisticService {
     return this.remember(user, 'lead', request, () => this.clues.execute(user, request))
   }
 
-  opportunity(user: AuthUser, request: HomeStatisticRequest) {
-    return this.remember(user, 'opportunity', request, () =>
-      this.opportunities.execute(user, request, 'ALL'),
-    )
-  }
-
-  underwayOpportunity(user: AuthUser, request: HomeStatisticRequest) {
-    return this.remember(user, 'opportunity-underway', request, () =>
-      this.opportunities.execute(user, request, 'UNDERWAY'),
-    )
-  }
-
-  successOpportunity(user: AuthUser, request: HomeStatisticRequest) {
-    return this.remember(user, 'opportunity-success', request, () =>
-      this.opportunities.execute(user, request, 'SUCCESS'),
-    )
+  overdueLead(user: AuthUser, request: HomeStatisticRequest) {
+    return this.remember(user, 'lead-overdue', request, async (): Promise<HomeLeadSlaStatistic> => {
+      const scope = await this.departments.resolve(
+        user,
+        'menu:lead',
+        request.searchType,
+        request.deptIds ?? [],
+      )
+      const ownerIds = scope.all ? null : (scope.userIds ?? [])
+      const overdue = await this.leadSla.overdue(user.tenantId, ownerIds)
+      return { overdueClue: overdue.length }
+    })
   }
 
   private remember<T>(

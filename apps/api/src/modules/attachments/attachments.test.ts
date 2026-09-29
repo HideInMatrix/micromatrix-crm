@@ -5,7 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,

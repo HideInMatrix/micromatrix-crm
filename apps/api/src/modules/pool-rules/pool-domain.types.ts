@@ -22,12 +22,6 @@ export interface DirectOwnerHistory {
   endTime: bigint
 }
 
-export interface CapacityExclusionCondition {
-  column: 'stage'
-  operator: 'IN' | 'NOT_IN'
-  value: string[]
-}
-
 export interface DirectPoolConfigurationInput {
   name: string
   scopeIds: string[]

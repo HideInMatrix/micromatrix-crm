@@ -12,23 +12,13 @@ import { toAuthUser } from '../common/auth-user'
 import { CustomersService } from '../customers/customers.service'
 import { ContactsService } from '../modules/contacts/contacts.service'
 import { CustomFormsService } from '../modules/custom-forms/custom-forms.service'
-import { BusinessTitleService } from '../modules/contracts/business-title.service'
-import { ContractInvoiceService } from '../modules/contracts/contract-invoice.service'
-import {
-  ContractPaymentPlanService,
-  ContractPaymentRecordService,
-} from '../modules/contracts/contract-payment.service'
 import type {
   ExportBuildResult,
   QueuedExportTaskPayload,
 } from '../modules/import-export/export-tasks.service'
 import { ExportTasksService } from '../modules/import-export/export-tasks.service'
 import { LeadsService } from '../modules/leads/leads.service'
-import { OpportunitiesService } from '../modules/opportunities/opportunities.service'
-import { OrdersService } from '../modules/orders/orders.service'
-import { ProductPriceService } from '../modules/products/product-price.service'
-import { ProductsService } from '../modules/products/products.service'
-import { PrismaService } from '../prisma/prisma.service.js'
+import { PrismaService } from '../prisma.service.js'
 import { AsyncJobsService, type ExportJobData } from '../async-jobs/async-jobs.service'
 
 @Injectable()
@@ -42,14 +32,6 @@ export class ExportWorkerService implements OnApplicationBootstrap {
     private readonly customers: CustomersService,
     private readonly contacts: ContactsService,
     private readonly leads: LeadsService,
-    private readonly opportunities: OpportunitiesService,
-    private readonly products: ProductsService,
-    private readonly prices: ProductPriceService,
-    private readonly businessTitles: BusinessTitleService,
-    private readonly contractInvoices: ContractInvoiceService,
-    private readonly paymentPlans: ContractPaymentPlanService,
-    private readonly paymentRecords: ContractPaymentRecordService,
-    private readonly orders: OrdersService,
     private readonly customForms: CustomFormsService,
   ) {}
 
@@ -95,22 +77,6 @@ export class ExportWorkerService implements OnApplicationBootstrap {
       case 'lead':
       case 'lead_pool':
         return this.leads.buildQueuedExport(user, payload)
-      case 'opportunity':
-        return this.opportunities.buildQueuedExport(user, payload)
-      case 'product':
-        return this.products.buildQueuedExport(user, payload)
-      case 'price':
-        return this.prices.buildQueuedExport(user, payload)
-      case 'businessTitle':
-        return this.businessTitles.buildQueuedExport(user, payload)
-      case 'contractInvoice':
-        return this.contractInvoices.buildQueuedExport(user, payload)
-      case 'contractPaymentPlan':
-        return this.paymentPlans.buildQueuedExport(user, payload)
-      case 'contractPaymentRecord':
-        return this.paymentRecords.buildQueuedExport(user, payload)
-      case 'order':
-        return this.orders.buildQueuedExport(user, payload)
       case 'customFormData':
         return this.customForms.buildQueuedExport(user, payload)
       default:

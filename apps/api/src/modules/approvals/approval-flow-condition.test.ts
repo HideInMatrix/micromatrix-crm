@@ -59,9 +59,9 @@ test('Condition 子表字段按任一行命中，未知 COUNT operator fail-clos
     runtime.matchCondition(
       {
         searchMode: 'AND',
-        conditions: [{ name: 'products.amount', operator: 'GT', value: 500 }],
+        conditions: [{ name: 'rows.amount', operator: 'GT', value: 500 }],
       },
-      { 'products.amount': ['100', '800'] },
+      { 'rows.amount': ['100', '800'] },
       new Set(),
     ),
     true,
@@ -70,9 +70,9 @@ test('Condition 子表字段按任一行命中，未知 COUNT operator fail-clos
     runtime.matchCondition(
       {
         searchMode: 'AND',
-        conditions: [{ name: 'products.amount', operator: 'COUNT_GT', value: 1 }],
+        conditions: [{ name: 'rows.amount', operator: 'COUNT_GT', value: 1 }],
       },
-      { 'products.amount': ['100', '800'] },
+      { 'rows.amount': ['100', '800'] },
       new Set(),
     ),
     false,

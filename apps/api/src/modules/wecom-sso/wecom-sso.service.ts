@@ -19,7 +19,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { or } from '@prisma/orm-postgres/orm-client'
 import { AuthService, type LoginContext } from '../../auth/auth.service'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import {

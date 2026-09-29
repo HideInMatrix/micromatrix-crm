@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { AuthUser } from '../auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { DataScopeService } from './data-scope.service'
 
 const departments = [
@@ -33,7 +33,7 @@ function actor(): AuthUser {
     name: 'Actor',
     deptId: 'service',
     leaderId: null,
-    permissions: ['menu:customer', 'customer:update', 'menu:opportunity'],
+    permissions: ['menu:customer', 'customer:update', 'menu:lead'],
     roles: [
       {
         id: 'customer-view',
@@ -50,9 +50,9 @@ function actor(): AuthUser {
         scopeDeptIds: [],
       },
       {
-        id: 'opportunity-all',
-        name: '商机全部',
-        permissions: ['menu:opportunity'],
+        id: 'lead-all',
+        name: '线索全部',
+        permissions: ['menu:lead'],
         dataScope: 'ALL',
         scopeDeptIds: [],
       },

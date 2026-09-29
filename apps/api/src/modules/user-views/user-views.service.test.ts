@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { UserViewsService } from './user-views.service'
 
 interface ConditionRow {

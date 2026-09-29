@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
 import { TOP_NAVIGATION_DEFINITIONS } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { ModuleConfigsService } from './module-configs.service'
 
 interface TopNavigationRow {
@@ -70,6 +70,26 @@ test('顶部导航默认补种幂等并保持 Cordys 最终顺序', async () => 
   )
   assert.deepEqual(second, first)
   assert.equal(rows.length, expected.length)
+})
+
+test('顶部导航忽略已经退出产品的历史配置行', async () => {
+  const { service, rows } = createService()
+  rows.push({
+    id: 'tenant-a-search',
+    tenantId: 'tenant-a',
+    key: 'search',
+    enabled: true,
+    sort: 1,
+  })
+
+  const result = await service.listTopNavigation('tenant-a')
+  const expected = TOP_NAVIGATION_DEFINITIONS.map(({ key }) => key)
+
+  assert.deepEqual(
+    result.map(({ navigationKey }) => navigationKey),
+    expected,
+  )
+  assert.equal(rows.some(({ key }) => key === 'search'), true)
 })
 
 test('顶部导航完整排序在事务后持久化', async () => {

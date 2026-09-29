@@ -20,7 +20,7 @@ import {
   instantFromDate,
   instantToISOString,
 } from '../../prisma/temporal.js'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { DingTalkClient } from '../enterprise-integrations/dingtalk.client'
 import { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import { LarkClient } from '../enterprise-integrations/lark.client'

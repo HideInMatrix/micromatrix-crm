@@ -102,14 +102,9 @@ export interface DataSourceSubFieldLinkField extends DataSourceLinkField {
 export const FORM_LINK_SCENARIO_KEYS = [
   'CLUE_TO_CUSTOMER',
   'CLUE_TO_CONTACT',
-  'CLUE_TO_OPPORTUNITY',
-  'CUSTOMER_TO_OPPORTUNITY',
   'CLUE_TO_RECORD',
   'CUSTOMER_TO_RECORD',
-  'OPPORTUNITY_TO_RECORD',
   'PLAN_TO_RECORD',
-  'CONTRACT_TO_INVOICE',
-  'CONTRACT_TO_ORDER',
 ] as const
 
 export type FormLinkScenarioKey = (typeof FORM_LINK_SCENARIO_KEYS)[number]
@@ -129,11 +124,47 @@ export interface FormLinkScenario {
 /** key 为来源 formKey；配置保存在目标表单 formProp.linkProp。 */
 export type FormLinkProp = Record<string, FormLinkScenario[]>
 
+export type LeadStageKind = 'ACTIVE' | 'SUCCESS' | 'FAILURE'
+
+export interface LeadStageConfig {
+  key: string
+  name: string
+  kind: LeadStageKind
+  enabled?: boolean
+}
+
+/**
+ * 首页业务分析配置。
+ *
+ * 全部字段都引用现有 Metadata field key，不引入招生专用字段。
+ * customerResultValues 为空时表示“结果字段非空即计入结果”。
+ */
+export interface HomeAnalyticsConfig {
+  leadSourceFieldKey?: string
+  customerResultFieldKey?: string
+  customerResultValues?: string[]
+  customerResultTimeFieldKey?: string
+  customerResultAmountFieldKey?: string
+}
+
 /** MicroMatrix 当前正式消费的表单级 FormDesign 属性。 */
 export interface ModuleFormProp {
   layout?: 1 | 2 | 3 | 4
   labelPos?: 'top' | 'left'
   viewSize?: 'small' | 'medium' | 'large'
+  /**
+   * Lead 模块 unique 字段的入库校验范围。
+   * RESOURCE_POOL：进入具体线索池时只在该池内校验；没有目标池时仍按组织级校验。
+   * ORGANIZATION：沿用历史行为，在整个组织的 Lead 范围内校验。
+   */
+  leadUniqueScope?: 'RESOURCE_POOL' | 'ORGANIZATION'
+  /** Lead 当前阶段定义；顺序即流程顺序，第一个启用项作为新建 Lead 默认阶段。 */
+  leadStages?: LeadStageConfig[]
+  /**
+   * 工作台/首页分析维度配置。
+   * Lead formProp 只保存 leadSourceFieldKey；Customer formProp 保存 customerResult*。
+   */
+  homeAnalytics?: HomeAnalyticsConfig
   /** 既有跨表单联动配置；PLAN-FORM-001 不新增其设计器 UI。 */
   linkProp?: FormLinkProp
   /** 保留未识别扩展键，避免局部 PATCH 覆盖其它 formProp 能力。 */
@@ -226,17 +257,7 @@ export function isSubTableFieldType(type: FieldType): type is SubTableFieldType 
 export const BUILTIN_DATA_SOURCE_TYPES = [
   'CUSTOMER',
   'CONTACT',
-  'OPPORTUNITY',
-  'PRODUCT',
   'CLUE',
-  'PRICE',
-  'CONTRACT',
-  'QUOTATION',
-  'PAYMENT_PLAN',
-  'CONTRACT_PAYMENT_RECORD',
-  'BUSINESS_TITLE',
-  'ORDER',
-  'INVOICE',
 ] as const
 
 export type BuiltinDataSourceType = (typeof BUILTIN_DATA_SOURCE_TYPES)[number]
@@ -268,17 +289,7 @@ export interface DataSourcePageVO {
 export const BUILTIN_DATA_SOURCE_OPTIONS: DataSourceTypeOption[] = [
   { value: 'CUSTOMER', label: '客户' },
   { value: 'CONTACT', label: '联系人' },
-  { value: 'OPPORTUNITY', label: '商机' },
-  { value: 'PRODUCT', label: '产品' },
   { value: 'CLUE', label: '线索' },
-  { value: 'PRICE', label: '价格表' },
-  { value: 'CONTRACT', label: '合同' },
-  { value: 'QUOTATION', label: '报价单' },
-  { value: 'PAYMENT_PLAN', label: '回款计划' },
-  { value: 'CONTRACT_PAYMENT_RECORD', label: '回款记录' },
-  { value: 'BUSINESS_TITLE', label: '工商抬头' },
-  { value: 'ORDER', label: '订单' },
-  { value: 'INVOICE', label: '发票' },
 ]
 
 export function isBuiltinDataSourceType(value?: string | null): value is BuiltinDataSourceType {

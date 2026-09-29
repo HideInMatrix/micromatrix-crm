@@ -3,7 +3,7 @@ import test from 'node:test'
 import { ConfigService } from '@nestjs/config'
 import type { AuthUser } from '../../common/auth-user'
 import { CredentialCipherService } from '../../common/services/credential-cipher.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import {

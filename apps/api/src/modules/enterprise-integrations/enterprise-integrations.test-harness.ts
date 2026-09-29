@@ -1,5 +1,5 @@
 import type { EnterpriseIntegrationProvider } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 
 type Row = Record<string, any>

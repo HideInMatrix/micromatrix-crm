@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import test from 'node:test'
 import type { ConfigService } from '@nestjs/config'
 import type { AuthService } from '../../auth/auth.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import {
   createPrismaTestTenant,

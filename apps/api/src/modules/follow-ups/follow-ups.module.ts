@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { CustomersModule } from '../../customers/customers.module'
-import { PrismaModule } from '../../prisma/prisma.module.js'
+import { PrismaModule } from '../../prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
 import { UserViewsModule } from '../user-views/user-views.module'

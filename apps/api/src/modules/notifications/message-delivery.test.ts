@@ -4,7 +4,7 @@ import test from 'node:test'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { WeComClient } from '../enterprise-integrations/wecom.client'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant, instantFromDate } from '../../prisma/temporal'
 import {
   createPrismaTestTenant,

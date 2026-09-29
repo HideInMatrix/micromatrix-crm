@@ -1,0 +1,1455 @@
+[
+  {
+    "id": "dropCheckConstraint.clue.text_len_d1404981a3_007536a6",
+    "label": "Drop check constraint \"text_len_d1404981a3_007536a6\" on \"clue\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "text_len_d1404981a3_007536a6",
+        "table": "clue"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"text_len_d1404981a3_007536a6\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "text_len_d1404981a3_007536a6",
+          "public",
+          "\"public\".\"clue\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop check constraint \"text_len_d1404981a3_007536a6\"",
+        "sql": "ALTER TABLE \"public\".\"clue\" DROP CONSTRAINT \"text_len_d1404981a3_007536a6\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"text_len_d1404981a3_007536a6\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "text_len_d1404981a3_007536a6",
+          "public",
+          "\"public\".\"clue\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.clue.products",
+    "label": "Drop column \"products\" from \"clue\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "products",
+        "table": "clue"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"products\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "clue",
+          "products"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"products\"",
+        "sql": "ALTER TABLE \"public\".\"clue\" DROP COLUMN \"products\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"products\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "clue",
+          "products"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.business_title_config",
+    "label": "Drop table \"business_title_config\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "business_title_config"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"business_title_config\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"business_title_config\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"business_title_config\"",
+        "sql": "DROP TABLE \"public\".\"business_title_config\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"business_title_config\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"business_title_config\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_field",
+    "label": "Drop table \"contract_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_field\"",
+        "sql": "DROP TABLE \"public\".\"contract_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_field_blob",
+    "label": "Drop table \"contract_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"contract_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_invoice_field",
+    "label": "Drop table \"contract_invoice_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_invoice_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_invoice_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_invoice_field\"",
+        "sql": "DROP TABLE \"public\".\"contract_invoice_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_invoice_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_invoice_field_blob",
+    "label": "Drop table \"contract_invoice_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_invoice_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_invoice_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_invoice_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"contract_invoice_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_invoice_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_invoice_snapshot",
+    "label": "Drop table \"contract_invoice_snapshot\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_invoice_snapshot"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_invoice_snapshot\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice_snapshot\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_invoice_snapshot\"",
+        "sql": "DROP TABLE \"public\".\"contract_invoice_snapshot\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_invoice_snapshot\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice_snapshot\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_payment_plan_field",
+    "label": "Drop table \"contract_payment_plan_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_payment_plan_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_payment_plan_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_plan_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_payment_plan_field\"",
+        "sql": "DROP TABLE \"public\".\"contract_payment_plan_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_payment_plan_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_plan_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_payment_plan_field_blob",
+    "label": "Drop table \"contract_payment_plan_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_payment_plan_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_payment_plan_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_plan_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_payment_plan_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"contract_payment_plan_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_payment_plan_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_plan_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_payment_record_field",
+    "label": "Drop table \"contract_payment_record_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_payment_record_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_payment_record_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_record_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_payment_record_field\"",
+        "sql": "DROP TABLE \"public\".\"contract_payment_record_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_payment_record_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_record_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_payment_record_field_blob",
+    "label": "Drop table \"contract_payment_record_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_payment_record_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_payment_record_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_record_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_payment_record_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"contract_payment_record_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_payment_record_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_record_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_snapshot",
+    "label": "Drop table \"contract_snapshot\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_snapshot"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_snapshot\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_snapshot\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_snapshot\"",
+        "sql": "DROP TABLE \"public\".\"contract_snapshot\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_snapshot\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_snapshot\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_stage_config",
+    "label": "Drop table \"contract_stage_config\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_stage_config"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_stage_config\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_stage_config\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_stage_config\"",
+        "sql": "DROP TABLE \"public\".\"contract_stage_config\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_stage_config\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_stage_config\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_field",
+    "label": "Drop table \"opportunity_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_field\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_field_blob",
+    "label": "Drop table \"opportunity_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_quotation_field",
+    "label": "Drop table \"opportunity_quotation_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_quotation_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_quotation_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_quotation_field\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_quotation_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_quotation_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_quotation_field_blob",
+    "label": "Drop table \"opportunity_quotation_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_quotation_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_quotation_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_quotation_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_quotation_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_quotation_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_quotation_snapshot",
+    "label": "Drop table \"opportunity_quotation_snapshot\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_quotation_snapshot"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_quotation_snapshot\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation_snapshot\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_quotation_snapshot\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_quotation_snapshot\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_quotation_snapshot\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation_snapshot\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_rule",
+    "label": "Drop table \"opportunity_rule\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_rule"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_rule\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_rule\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_rule\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_rule\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_rule\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_rule\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.product_field",
+    "label": "Drop table \"product_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "product_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"product_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"product_field\"",
+        "sql": "DROP TABLE \"public\".\"product_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"product_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.product_field_blob",
+    "label": "Drop table \"product_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "product_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"product_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"product_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"product_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"product_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.product_price_field",
+    "label": "Drop table \"product_price_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "product_price_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"product_price_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_price_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"product_price_field\"",
+        "sql": "DROP TABLE \"public\".\"product_price_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"product_price_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_price_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.product_price_field_blob",
+    "label": "Drop table \"product_price_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "product_price_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"product_price_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_price_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"product_price_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"product_price_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"product_price_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_price_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.sales_order_field",
+    "label": "Drop table \"sales_order_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sales_order_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"sales_order_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"sales_order_field\"",
+        "sql": "DROP TABLE \"public\".\"sales_order_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"sales_order_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.sales_order_field_blob",
+    "label": "Drop table \"sales_order_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sales_order_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"sales_order_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"sales_order_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"sales_order_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"sales_order_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.sales_order_snapshot",
+    "label": "Drop table \"sales_order_snapshot\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sales_order_snapshot"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"sales_order_snapshot\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_snapshot\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"sales_order_snapshot\"",
+        "sql": "DROP TABLE \"public\".\"sales_order_snapshot\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"sales_order_snapshot\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_snapshot\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.sales_order_stage_config",
+    "label": "Drop table \"sales_order_stage_config\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sales_order_stage_config"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"sales_order_stage_config\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_stage_config\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"sales_order_stage_config\"",
+        "sql": "DROP TABLE \"public\".\"sales_order_stage_config\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"sales_order_stage_config\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order_stage_config\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_invoice",
+    "label": "Drop table \"contract_invoice\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_invoice"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_invoice\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_invoice\"",
+        "sql": "DROP TABLE \"public\".\"contract_invoice\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_invoice\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_invoice\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_payment_record",
+    "label": "Drop table \"contract_payment_record\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_payment_record"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_payment_record\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_record\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_payment_record\"",
+        "sql": "DROP TABLE \"public\".\"contract_payment_record\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_payment_record\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_record\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_quotation",
+    "label": "Drop table \"opportunity_quotation\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_quotation"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_quotation\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_quotation\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_quotation\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_quotation\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_quotation\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.product",
+    "label": "Drop table \"product\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "product"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"product\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"product\"",
+        "sql": "DROP TABLE \"public\".\"product\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"product\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.product_price",
+    "label": "Drop table \"product_price\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "product_price"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"product_price\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_price\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"product_price\"",
+        "sql": "DROP TABLE \"public\".\"product_price\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"product_price\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"product_price\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.sales_order",
+    "label": "Drop table \"sales_order\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sales_order"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"sales_order\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"sales_order\"",
+        "sql": "DROP TABLE \"public\".\"sales_order\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"sales_order\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"sales_order\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.business_title",
+    "label": "Drop table \"business_title\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "business_title"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"business_title\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"business_title\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"business_title\"",
+        "sql": "DROP TABLE \"public\".\"business_title\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"business_title\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"business_title\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract_payment_plan",
+    "label": "Drop table \"contract_payment_plan\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract_payment_plan"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract_payment_plan\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_plan\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract_payment_plan\"",
+        "sql": "DROP TABLE \"public\".\"contract_payment_plan\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract_payment_plan\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract_payment_plan\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity",
+    "label": "Drop table \"opportunity\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity\"",
+        "sql": "DROP TABLE \"public\".\"opportunity\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.contract",
+    "label": "Drop table \"contract\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "contract"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"contract\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"contract\"",
+        "sql": "DROP TABLE \"public\".\"contract\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"contract\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"contract\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.opportunity_stage_config",
+    "label": "Drop table \"opportunity_stage_config\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "opportunity_stage_config"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"opportunity_stage_config\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_stage_config\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"opportunity_stage_config\"",
+        "sql": "DROP TABLE \"public\".\"opportunity_stage_config\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"opportunity_stage_config\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"opportunity_stage_config\""
+        ]
+      }
+    ]
+  }
+]

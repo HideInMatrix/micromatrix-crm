@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { DictionariesController } from './dictionaries.controller'
 import { DictionariesService } from './dictionaries.service'
 

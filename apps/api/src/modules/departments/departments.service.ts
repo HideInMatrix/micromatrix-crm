@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { DepartmentVO } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto'
 

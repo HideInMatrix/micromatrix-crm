@@ -3,7 +3,7 @@ import { hasPermission, type HomeDepartmentNode, type HomeSearchType } from '@mi
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { homeCacheUserContext } from './home-cache-context'
 
 export interface HomeResolvedScope {
@@ -38,7 +38,7 @@ export class HomeDepartmentScopeService {
     const relevantRoles = user.roles.filter(
       (role) =>
         hasPermission(role.permissions, 'menu:lead') ||
-        hasPermission(role.permissions, 'menu:opportunity'),
+        hasPermission(role.permissions, 'menu:customer'),
     )
     if (!relevantRoles.length) return []
 

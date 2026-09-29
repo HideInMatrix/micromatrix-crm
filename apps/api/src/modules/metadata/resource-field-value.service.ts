@@ -11,10 +11,10 @@ import {
   type FieldVO,
   type FilterCondition,
 } from '@micromatrix/shared'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 import { instantToISOString } from '../../prisma/temporal.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { ModuleFormsService } from './module-forms.service'
 
 type PrismaRawExpression = ReturnType<ReturnType<PrismaService['client']['raw']['sql']>['returns']>
@@ -25,32 +25,25 @@ export type ResourceFieldType =
   | 'clue'
   | 'customer'
   | 'customerContact'
-  | 'opportunity'
-  | 'product'
-  | 'productPrice'
-  | 'quotation'
-  | 'contract'
-  | 'contractPaymentPlan'
-  | 'contractPaymentRecord'
-  | 'invoice'
-  | 'order'
   | 'followRecord'
   | 'followPlan'
 export type ResourceFieldSaveMode = 'create' | 'update'
+
+export interface ResourceFieldUniqueScope {
+  type: 'resourcePool'
+  poolId: string
+}
+
+interface ResourceFieldValidationOptions {
+  mode: ResourceFieldSaveMode
+  resourceId?: string
+  uniqueScope?: ResourceFieldUniqueScope
+}
 
 export const RESOURCE_FIELD_TYPES: ResourceFieldType[] = [
   'clue',
   'customer',
   'customerContact',
-  'opportunity',
-  'product',
-  'productPrice',
-  'quotation',
-  'contract',
-  'contractPaymentPlan',
-  'contractPaymentRecord',
-  'invoice',
-  'order',
   'followRecord',
   'followPlan',
 ]
@@ -60,60 +53,24 @@ interface ResourceConfig {
     | 'lead'
     | 'customer'
     | 'contact'
-    | 'opportunity'
-    | 'product'
-    | 'price'
-    | 'quote'
-    | 'contract'
-    | 'contractPaymentPlan'
-    | 'contractPaymentRecord'
-    | 'invoice'
-    | 'order'
     | 'followRecord'
     | 'followPlan'
   resourceTable:
     | 'clue'
     | 'customer'
     | 'customer_contact'
-    | 'opportunity'
-    | 'product'
-    | 'product_price'
-    | 'opportunity_quotation'
-    | 'contract'
-    | 'contract_payment_plan'
-    | 'contract_payment_record'
-    | 'contract_invoice'
-    | 'sales_order'
     | 'follow_up_records'
     | 'follow_up_plans'
   normalTable:
     | 'clue_field'
     | 'customer_field'
     | 'customer_contact_field'
-    | 'opportunity_field'
-    | 'product_field'
-    | 'product_price_field'
-    | 'opportunity_quotation_field'
-    | 'contract_field'
-    | 'contract_payment_plan_field'
-    | 'contract_payment_record_field'
-    | 'contract_invoice_field'
-    | 'sales_order_field'
     | 'follow_up_record_field'
     | 'follow_up_plan_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
     | 'customer_contact_field_blob'
-    | 'opportunity_field_blob'
-    | 'product_field_blob'
-    | 'product_price_field_blob'
-    | 'opportunity_quotation_field_blob'
-    | 'contract_field_blob'
-    | 'contract_payment_plan_field_blob'
-    | 'contract_payment_record_field_blob'
-    | 'contract_invoice_field_blob'
-    | 'sales_order_field_blob'
     | 'follow_up_record_field_blob'
     | 'follow_up_plan_field_blob'
   organizationColumn?: 'organization_id' | '"tenantId"'
@@ -152,60 +109,6 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     normalTable: 'customer_contact_field',
     blobTable: 'customer_contact_field_blob',
   },
-  opportunity: {
-    formKey: 'opportunity',
-    resourceTable: 'opportunity',
-    normalTable: 'opportunity_field',
-    blobTable: 'opportunity_field_blob',
-  },
-  product: {
-    formKey: 'product',
-    resourceTable: 'product',
-    normalTable: 'product_field',
-    blobTable: 'product_field_blob',
-  },
-  productPrice: {
-    formKey: 'price',
-    resourceTable: 'product_price',
-    normalTable: 'product_price_field',
-    blobTable: 'product_price_field_blob',
-  },
-  quotation: {
-    formKey: 'quote',
-    resourceTable: 'opportunity_quotation',
-    normalTable: 'opportunity_quotation_field',
-    blobTable: 'opportunity_quotation_field_blob',
-  },
-  contract: {
-    formKey: 'contract',
-    resourceTable: 'contract',
-    normalTable: 'contract_field',
-    blobTable: 'contract_field_blob',
-  },
-  contractPaymentPlan: {
-    formKey: 'contractPaymentPlan',
-    resourceTable: 'contract_payment_plan',
-    normalTable: 'contract_payment_plan_field',
-    blobTable: 'contract_payment_plan_field_blob',
-  },
-  contractPaymentRecord: {
-    formKey: 'contractPaymentRecord',
-    resourceTable: 'contract_payment_record',
-    normalTable: 'contract_payment_record_field',
-    blobTable: 'contract_payment_record_field_blob',
-  },
-  invoice: {
-    formKey: 'invoice',
-    resourceTable: 'contract_invoice',
-    normalTable: 'contract_invoice_field',
-    blobTable: 'contract_invoice_field_blob',
-  },
-  order: {
-    formKey: 'order',
-    resourceTable: 'sales_order',
-    normalTable: 'sales_order_field',
-    blobTable: 'sales_order_field_blob',
-  },
   followPlan: {
     formKey: 'followPlan',
     resourceTable: 'follow_up_plans',
@@ -233,7 +136,7 @@ export class ResourceFieldValueService {
     organizationId: string,
     resourceType: ResourceFieldType,
     values: Record<string, unknown>,
-    options: { mode: ResourceFieldSaveMode; resourceId?: string },
+    options: ResourceFieldValidationOptions,
   ): Promise<Record<string, unknown>> {
     const fields = await this.moduleForms.listFields(
       organizationId,
@@ -262,6 +165,7 @@ export class ResourceFieldValueService {
     mode: ResourceFieldSaveMode,
     tx: PrismaTransaction,
     actorId: string,
+    uniqueScope?: ResourceFieldUniqueScope,
   ): Promise<Record<string, unknown>> {
     await this.assertResource(tx, organizationId, resourceType, resourceId)
     const fields = await this.moduleForms.listFieldsInTransaction(
@@ -275,7 +179,7 @@ export class ResourceFieldValueService {
       resourceType,
       fields,
       values,
-      { mode, resourceId },
+      { mode, resourceId, uniqueScope },
     )
 
     await this.claimResourceFieldAttachments(
@@ -291,9 +195,11 @@ export class ResourceFieldValueService {
     for (const item of validated.filter(
       (value) => value.field.config?.unique && value.serialized !== null,
     )) {
-      const lockKey = `${organizationId}:${resourceType}:${item.field.id}:${item.serialized}`
+      const scopeKey =
+        uniqueScope?.type === 'resourcePool' ? `pool:${uniqueScope.poolId}` : 'organization'
+      const lockKey = `${organizationId}:${resourceType}:${scopeKey}:${item.field.id}:${item.serialized}`
       await this.acquireUniqueLock(tx, lockKey)
-      await this.assertUnique(tx, organizationId, resourceType, item, resourceId)
+      await this.assertUnique(tx, organizationId, resourceType, item, resourceId, uniqueScope)
     }
 
     const fieldIds = validated.map((item) => item.field.id)
@@ -531,51 +437,6 @@ export class ResourceFieldValueService {
           WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
           id: client.sql.public.customer_contact.columns.id,
         })
-      case 'opportunity':
-        return client.raw.sql`SELECT resource.id FROM opportunity AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.opportunity.columns.id,
-        })
-      case 'product':
-        return client.raw.sql`SELECT resource.id FROM product AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.product.columns.id,
-        })
-      case 'productPrice':
-        return client.raw.sql`SELECT resource.id FROM product_price AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.product_price.columns.id,
-        })
-      case 'quotation':
-        return client.raw.sql`SELECT resource.id FROM opportunity_quotation AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.opportunity_quotation.columns.id,
-        })
-      case 'contract':
-        return client.raw.sql`SELECT resource.id FROM contract AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.contract.columns.id,
-        })
-      case 'contractPaymentPlan':
-        return client.raw.sql`SELECT resource.id FROM contract_payment_plan AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.contract_payment_plan.columns.id,
-        })
-      case 'contractPaymentRecord':
-        return client.raw.sql`SELECT resource.id FROM contract_payment_record AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.contract_payment_record.columns.id,
-        })
-      case 'invoice':
-        return client.raw.sql`SELECT resource.id FROM contract_invoice AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.contract_invoice.columns.id,
-        })
-      case 'order':
-        return client.raw.sql`SELECT resource.id FROM sales_order AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.sales_order.columns.id,
-        })
       case 'followRecord':
         return client.raw.sql`SELECT resource.id FROM follow_up_records AS resource
           WHERE resource."tenantId" = ${organizationId} AND (${predicate})`.returnsRow({
@@ -659,186 +520,6 @@ export class ResourceFieldValueService {
                 .sql`EXISTS (SELECT 1 FROM customer_contact_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
                 'pg/bool@1',
               )
-      case 'opportunity':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'product':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM product_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM product_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM product_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM product_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'productPrice':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM product_price_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM product_price_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM product_price_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM product_price_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'quotation':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_quotation_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_quotation_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_quotation_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM opportunity_quotation_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'contract':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'contractPaymentPlan':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_plan_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_plan_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_plan_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_plan_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'contractPaymentRecord':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_record_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_record_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_record_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_payment_record_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'invoice':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_invoice_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_invoice_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_invoice_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM contract_invoice_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'order':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM sales_order_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM sales_order_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM sales_order_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM sales_order_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
       case 'followRecord':
         return blob
           ? predicate
@@ -888,7 +569,7 @@ export class ResourceFieldValueService {
     resourceType: ResourceFieldType,
     fields: FieldVO[],
     values: Record<string, unknown>,
-    options: { mode: ResourceFieldSaveMode; resourceId?: string },
+    options: ResourceFieldValidationOptions,
   ): Promise<ValidatedFieldValue[]> {
     const customFields = fields.filter((field) => !field.system && field.type !== 'formula')
     const fieldMap = new Map(
@@ -933,7 +614,14 @@ export class ResourceFieldValueService {
       if (field.required && this.isEmpty(value))
         throw new BadRequestException(`「${field.label}」为必填项`)
       if (field.config?.unique && serialized !== null) {
-        await this.assertUnique(client, organizationId, resourceType, item, options.resourceId)
+        await this.assertUnique(
+          client,
+          organizationId,
+          resourceType,
+          item,
+          options.resourceId,
+          options.uniqueScope,
+        )
       }
       result.push(item)
     }
@@ -1219,6 +907,7 @@ export class ResourceFieldValueService {
     organizationId: string,
     resourceType: ResourceFieldType,
     resourceIds: string[],
+    uniqueScope?: ResourceFieldUniqueScope,
   ): Promise<string[]> {
     const ids = [...new Set(resourceIds)]
     if (!ids.length) return []
@@ -1226,6 +915,18 @@ export class ResourceFieldValueService {
       (await rows).map((row) => String(row.id))
     switch (resourceType) {
       case 'clue':
+        if (uniqueScope?.type === 'resourcePool') {
+          return selectIds(
+            client.orm.public.Clue.where({
+              organizationId: organizationId,
+              poolId: uniqueScope.poolId,
+              inSharedPool: true,
+            })
+              .where((row) => row.id.in(ids))
+              .select('id')
+              .all(),
+          )
+        }
         return selectIds(
           client.orm.public.Clue.where({ organizationId: organizationId })
             .where((row) => row.id.in(ids))
@@ -1242,69 +943,6 @@ export class ResourceFieldValueService {
       case 'customerContact':
         return selectIds(
           client.orm.public.CustomerContact.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'opportunity':
-        return selectIds(
-          client.orm.public.Opportunity.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'product':
-        return selectIds(
-          client.orm.public.Product.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'productPrice':
-        return selectIds(
-          client.orm.public.ProductPrice.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'quotation':
-        return selectIds(
-          client.orm.public.OpportunityQuotation.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'contract':
-        return selectIds(
-          client.orm.public.Contract.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'contractPaymentPlan':
-        return selectIds(
-          client.orm.public.ContractPaymentPlan.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'contractPaymentRecord':
-        return selectIds(
-          client.orm.public.ContractPaymentRecord.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'invoice':
-        return selectIds(
-          client.orm.public.ContractInvoice.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
-      case 'order':
-        return selectIds(
-          client.orm.public.SalesOrder.where({ organizationId: organizationId })
             .where((row) => row.id.in(ids))
             .select('id')
             .all(),
@@ -1332,6 +970,7 @@ export class ResourceFieldValueService {
     resourceType: ResourceFieldType,
     item: ValidatedFieldValue,
     excludeResourceId?: string,
+    uniqueScope?: ResourceFieldUniqueScope,
   ): Promise<void> {
     if (item.serialized === null) return
     const candidates = await this.matchingFieldResourceIds(
@@ -1343,7 +982,13 @@ export class ResourceFieldValueService {
       excludeResourceId,
     )
     if (!candidates.length) return
-    const owned = await this.ownedResourceIds(client, organizationId, resourceType, candidates)
+    const owned = await this.ownedResourceIds(
+      client,
+      organizationId,
+      resourceType,
+      candidates,
+      uniqueScope,
+    )
     if (owned.length) throw new ConflictException(`「${item.field.label}」的值不能重复`)
   }
 
@@ -1401,147 +1046,6 @@ export class ResourceFieldValueService {
           return read(rows.select('resourceId').all())
         }
         let rows = client.orm.public.CustomerContactField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'opportunity': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.OpportunityFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.OpportunityField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'product': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.ProductFieldBlob.where({ fieldId: fieldIdValue, fieldValue })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.ProductField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'productPrice': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.ProductPriceFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.ProductPriceField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'quotation': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.OpportunityQuotationFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.OpportunityQuotationField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'contract': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.ContractFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.ContractField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'contractPaymentPlan': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.ContractPaymentPlanFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.ContractPaymentPlanField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'contractPaymentRecord': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.ContractPaymentRecordFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.ContractPaymentRecordField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'invoice': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.ContractInvoiceFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.ContractInvoiceField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
-      case 'order': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.SalesOrderFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.SalesOrderField.where({
           fieldId: fieldIdValue,
           fieldValue: normalValue,
         })
@@ -1623,96 +1127,6 @@ export class ResourceFieldValueService {
             .deleteAll(),
         ])
         return
-      case 'opportunity':
-        await Promise.all([
-          tx.orm.public.OpportunityField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.OpportunityFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'product':
-        await Promise.all([
-          tx.orm.public.ProductField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.ProductFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'productPrice':
-        await Promise.all([
-          tx.orm.public.ProductPriceField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.ProductPriceFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'quotation':
-        await Promise.all([
-          tx.orm.public.OpportunityQuotationField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.OpportunityQuotationFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'contract':
-        await Promise.all([
-          tx.orm.public.ContractField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.ContractFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'contractPaymentPlan':
-        await Promise.all([
-          tx.orm.public.ContractPaymentPlanField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.ContractPaymentPlanFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'contractPaymentRecord':
-        await Promise.all([
-          tx.orm.public.ContractPaymentRecordField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.ContractPaymentRecordFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'invoice':
-        await Promise.all([
-          tx.orm.public.ContractInvoiceField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.ContractInvoiceFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
-      case 'order':
-        await Promise.all([
-          tx.orm.public.SalesOrderField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.SalesOrderFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
       case 'followRecord':
         await Promise.all([
           tx.orm.public.FollowUpRecordField.where({ resourceId: resource })
@@ -1767,42 +1181,6 @@ export class ResourceFieldValueService {
       case 'customerContact':
         if (normalData.length) await tx.orm.public.CustomerContactField.createAll(normalData)
         if (blobData.length) await tx.orm.public.CustomerContactFieldBlob.createAll(blobData)
-        return
-      case 'opportunity':
-        if (normalData.length) await tx.orm.public.OpportunityField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.OpportunityFieldBlob.createAll(blobData)
-        return
-      case 'product':
-        if (normalData.length) await tx.orm.public.ProductField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.ProductFieldBlob.createAll(blobData)
-        return
-      case 'productPrice':
-        if (normalData.length) await tx.orm.public.ProductPriceField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.ProductPriceFieldBlob.createAll(blobData)
-        return
-      case 'quotation':
-        if (normalData.length) await tx.orm.public.OpportunityQuotationField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.OpportunityQuotationFieldBlob.createAll(blobData)
-        return
-      case 'contract':
-        if (normalData.length) await tx.orm.public.ContractField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.ContractFieldBlob.createAll(blobData)
-        return
-      case 'contractPaymentPlan':
-        if (normalData.length) await tx.orm.public.ContractPaymentPlanField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.ContractPaymentPlanFieldBlob.createAll(blobData)
-        return
-      case 'contractPaymentRecord':
-        if (normalData.length) await tx.orm.public.ContractPaymentRecordField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.ContractPaymentRecordFieldBlob.createAll(blobData)
-        return
-      case 'invoice':
-        if (normalData.length) await tx.orm.public.ContractInvoiceField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.ContractInvoiceFieldBlob.createAll(blobData)
-        return
-      case 'order':
-        if (normalData.length) await tx.orm.public.SalesOrderField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.SalesOrderFieldBlob.createAll(blobData)
         return
       case 'followRecord':
         if (normalData.length) await tx.orm.public.FollowUpRecordField.createAll(normalData)
@@ -1875,123 +1253,6 @@ export class ResourceFieldValueService {
           ),
           selectRows(
             client.orm.public.CustomerContactFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'opportunity':
-        return Promise.all([
-          selectRows(
-            client.orm.public.OpportunityField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.OpportunityFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'product':
-        return Promise.all([
-          selectRows(
-            client.orm.public.ProductField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.ProductFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'productPrice':
-        return Promise.all([
-          selectRows(
-            client.orm.public.ProductPriceField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.ProductPriceFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'quotation':
-        return Promise.all([
-          selectRows(
-            client.orm.public.OpportunityQuotationField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.OpportunityQuotationFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'contract':
-        return Promise.all([
-          selectRows(
-            client.orm.public.ContractField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.ContractFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'contractPaymentPlan':
-        return Promise.all([
-          selectRows(
-            client.orm.public.ContractPaymentPlanField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.ContractPaymentPlanFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'contractPaymentRecord':
-        return Promise.all([
-          selectRows(
-            client.orm.public.ContractPaymentRecordField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.ContractPaymentRecordFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'invoice':
-        return Promise.all([
-          selectRows(
-            client.orm.public.ContractInvoiceField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.ContractInvoiceFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'order':
-        return Promise.all([
-          selectRows(
-            client.orm.public.SalesOrderField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.SalesOrderFieldBlob.where((row) => row.resourceId.in(ids))
               .select('resourceId', 'fieldId', 'fieldValue')
               .all(),
           ),

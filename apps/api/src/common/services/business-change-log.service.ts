@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { AuthUser } from '../auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { jsonValue } from '../../prisma/json-value'
 
 export interface FieldChange {

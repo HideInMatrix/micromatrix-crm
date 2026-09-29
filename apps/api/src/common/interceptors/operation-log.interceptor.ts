@@ -2,7 +2,7 @@ import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } fr
 import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { Observable, tap } from 'rxjs'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { jsonValue } from '../../prisma/json-value'
 import {
   LOG_OPERATION_KEY,

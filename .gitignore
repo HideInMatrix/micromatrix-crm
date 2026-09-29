@@ -41,3 +41,9 @@ bugs/
 # Workbench / Browser 验收运行时产物，仅用于本地验证，不纳入 Git
 /.micromatrix-workbench/
 /.tmp/
+
+# Prisma skills sync / Agent 编辑器技能目录，仅本地使用，不纳入 Git
+/.agents/
+/.claude/
+/.cursor/
+/.devin/

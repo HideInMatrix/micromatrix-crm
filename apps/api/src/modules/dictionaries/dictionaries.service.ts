@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaClient } from '../../prisma/prisma-client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaClient } from '../../prisma/db'
+import { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   DictionaryAddDto,
@@ -47,7 +47,7 @@ export class DictionariesService {
         ...dictList,
         {
           id: 'system',
-          name: module === 'OPPORTUNITY_FAIL_RS' ? '系统自动关闭' : '系统自动回收',
+          name: '系统自动回收',
           module,
           type: 'TEXT',
           pos: BigInt(dictList.length + 1),
@@ -199,12 +199,7 @@ export class DictionariesService {
       })
       .first()
     if (!config?.enabled) return null
-    const label =
-      module === 'OPPORTUNITY_FAIL_RS'
-        ? '商机失败原因'
-        : module === 'CUSTOMER_POOL_RS'
-          ? '移入客户公海原因'
-          : '移入线索池原因'
+    const label = module === 'CUSTOMER_POOL_RS' ? '移入客户公海原因' : '移入线索池原因'
     if (!reasonId || reasonId === 'system') throw new BadRequestException(`请选择${label}`)
     const reason = await this.dicts()
       .where({

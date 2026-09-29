@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { MessageTemplateService } from './message-template.service'
 
 function serviceWithUsers(
@@ -59,11 +59,11 @@ test('消息模板处理 null、Time、User，并保留缺失变量占位符', a
   )
   assert.equal(result, '负责人|2026-09-07 12:34:56||${missing}')
 
-  const rendered = await service.render('tenant-a', 'BUSINESS_QUOTATION_DELETED', {
+  const rendered = await service.render('tenant-a', 'CLUE_DELETED', {
     OPERATOR: null,
-    name: 'Q-001',
+    name: '线索A',
   })
-  assert.equal(rendered.content, '删除了Q-001报价')
+  assert.equal(rendered.content, '请注意！您负责的线索A线索，已被删除！')
 
   const customer = await service.render('tenant-a', 'CUSTOMER_ADD', {
     OPERATOR: '${missing}',
@@ -72,25 +72,4 @@ test('消息模板处理 null、Time、User，并保留缺失变量占位符', a
     createTime: new Date(2026, 8, 7, 12, 34, 56),
   })
   assert.equal(customer.content, '请注意！${missing}新建客户A客户给您，请知悉！')
-})
-
-test('审批模板 type/state 使用语义值并按语言资源本地化', async () => {
-  const service = serviceWithUsers()
-  const zh = await service.render('tenant-a', 'CONTRACT_APPROVAL', {
-    type: 'contract',
-    name: 'C-001',
-    state: 'UNAPPROVED',
-  })
-  assert.equal(zh.content, '【审批结果】您发起的合同单据 C-001 ，审批已驳回。')
-
-  const en = await service.render(
-    'tenant-a',
-    'BUSINESS_QUOTATION_APPROVAL',
-    { type: 'quotation', name: 'Q-001', state: 'APPROVED' },
-    'en-US',
-  )
-  assert.equal(
-    en.content,
-    '[Approval Result] The Quotation document Q-001 you submitted has been Approved.',
-  )
 })

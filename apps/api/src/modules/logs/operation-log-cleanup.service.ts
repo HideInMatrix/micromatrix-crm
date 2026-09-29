@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import type { OperationLogCleanupResultVO, OperationLogClearResultVO } from '@micromatrix/shared'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { resolveOperationLogCleanupConfig } from './operation-log-config'
 import {
   type OperationLogCleanupSource,

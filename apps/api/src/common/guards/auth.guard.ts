@@ -11,8 +11,9 @@ import { Reflector } from '@nestjs/core'
 import { JwtService } from '@nestjs/jwt'
 import { hasPermission } from '@micromatrix/shared'
 import type { Request } from 'express'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { toAuthUser } from '../auth-user'
+import { API_KEY_ONLY_KEY } from '../decorators/api-key-only.decorator'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from '../decorators/require-permissions.decorator'
 import { AuthContextCacheService } from '../services/auth-context-cache.service'
@@ -44,6 +45,11 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>()
     const accessKey = this.header(request, 'x-access-key')
     const secretKey = this.header(request, 'x-secret-key')
+    const apiKeyOnly =
+      this.reflector.getAllAndOverride<boolean>(API_KEY_ONLY_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? false
     let userId: string
     let jwtAuthVersion: number | undefined
     let jwtCredential = false
@@ -59,6 +65,7 @@ export class AuthGuard implements CanActivate {
       }
       userId = apiKey.createUser
     } else {
+      if (apiKeyOnly) throw new UnauthorizedException('该接口仅支持 API Key 认证')
       const token = this.extractToken(request)
       if (!token) throw new UnauthorizedException('缺少访问令牌')
       let payload: { sub: string; authVersion?: number }

@@ -14,7 +14,7 @@ import {
 } from 'class-validator'
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
-const TARGET_TYPES = ['lead', 'customer', 'opportunity'] as const
+const TARGET_TYPES = ['lead', 'customer'] as const
 
 export class FollowUpRecordModuleFieldValueDto {
   @ApiProperty({ description: '动态字段 ID 或 key' })

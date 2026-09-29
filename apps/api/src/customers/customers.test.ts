@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../common/auth-user'
-import type { PrismaService } from '../prisma/prisma.service'
+import type { PrismaService } from '../prisma.service'
 
 import {
   createPrismaTestTenant,
@@ -134,6 +134,7 @@ test(
         {} as never,
         {} as never,
         {} as never,
+        { parse: () => null } as never,
       )
 
       const parent = await service.create(user, {

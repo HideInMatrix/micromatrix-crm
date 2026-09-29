@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import type { PrismaClient } from '../../prisma/prisma-client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaClient } from '../../prisma/db'
+import { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import type {
   DirectCapacityConfigurationInput,
@@ -411,7 +411,6 @@ export class CluePoolRepository {
         inSharedPool: false,
         owner: input.ownerId,
         collectionTime: now,
-        stage: 'FOLLOWING',
         updateUser: input.ownerId,
         updateTime: now,
       })

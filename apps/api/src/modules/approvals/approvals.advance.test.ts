@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
@@ -99,7 +99,6 @@ test(
             notified.push({ recipients, title: message.title })
           },
         } as never,
-        {} as never,
         {} as never,
         {} as never,
       )

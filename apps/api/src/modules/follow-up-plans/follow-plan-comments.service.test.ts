@@ -188,7 +188,7 @@ test('FollowPlan 评论分页只统计顶层 total，commentCount 包含回复',
   assert.equal(result.items[0].replies[0].mentionUsers[0].id, 'mention-user')
 })
 
-test('FollowPlan 评论事件按 customer/lead/opportunity 与 added/mentioned 六类映射', () => {
+test('FollowPlan 评论事件按 customer/lead 与 added/mentioned 四类映射', () => {
   const harness = createFollowCommentPrismaHarness({ kind: 'plan', tenantId: user.tenantId })
   const service = new FollowPlanCommentsService(harness.prisma, {} as never, {} as never)
   const event = (resource: FollowUpPlan, mentioned: boolean): MessageTaskEvent =>
@@ -208,12 +208,4 @@ test('FollowPlan 评论事件按 customer/lead/opportunity 与 added/mentioned �
   )
   assert.equal(event(plan({ targetType: 'lead' }), false), 'CLUE_FOLLOW_UP_PLAN_COMMENT_ADDED')
   assert.equal(event(plan({ targetType: 'lead' }), true), 'CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED')
-  assert.equal(
-    event(plan({ targetType: 'opportunity' }), false),
-    'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED',
-  )
-  assert.equal(
-    event(plan({ targetType: 'opportunity' }), true),
-    'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_MENTIONED',
-  )
 })

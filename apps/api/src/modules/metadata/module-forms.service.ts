@@ -18,17 +18,39 @@ import {
   type FormLinkProp,
   type FormLinkScenario,
   type FormLinkScenarioKey,
+  type HomeAnalyticsConfig,
   type ModuleFormProp,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { CreateFieldDto, type SaveFormFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
 
 const SYSTEM_ACTOR = 'SYSTEM'
 const CACHE_TTL_SECONDS = 10 * 60
+const HOME_ANALYTICS_DIMENSION_TYPES = new Set<FieldType>([
+  'text',
+  'select',
+  'radio',
+])
+const HOME_ANALYTICS_RESULT_TYPES = new Set<FieldType>([
+  'text',
+  'number',
+  'currency',
+  'percent',
+  'date',
+  'datetime',
+  'select',
+  'radio',
+  'switch',
+  'phone',
+  'email',
+  'data_source',
+])
+const HOME_ANALYTICS_TIME_TYPES = new Set<FieldType>(['date', 'datetime'])
+const HOME_ANALYTICS_AMOUNT_TYPES = new Set<FieldType>(['number', 'currency'])
 
 export type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
@@ -155,6 +177,8 @@ export class ModuleFormsService {
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     this.validateFormPropInput(formProp)
+    await this.validateLeadStageUsage(organizationId, formKey, formProp)
+    await this.validateHomeAnalyticsUsage(organizationId, formKey, formProp)
     await this.validateFormPropLinkage(organizationId, formKey, formProp)
     await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
@@ -181,6 +205,8 @@ export class ModuleFormsService {
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     this.validateFormPropInput(formProp)
+    await this.validateLeadStageUsage(organizationId, formKey, formProp)
+    await this.validateHomeAnalyticsDesignChange(organizationId, formKey, fields, formProp)
     const labels = fields.map((field) => field.label.trim())
     if (labels.some((label) => !label)) throw new BadRequestException('字段名称不能为空')
     if (new Set(labels).size !== labels.length) throw new BadRequestException('字段名称不能重复')
@@ -527,6 +553,12 @@ export class ModuleFormsService {
       const field = await this.ensureField(tx, organizationId, id)
       const prop = this.parseProp(field)
       if (prop.system) throw new BadRequestException('系统字段不可删除')
+      await this.assertHomeAnalyticsFieldNotReferenced(
+        tx,
+        organizationId,
+        field.form.formKey,
+        prop.key || field.internalKey || field.id,
+      )
       if (field.type === 'sub_product') {
         const childIds = prop.subFields?.map((subField) => subField.id) ?? []
         await Promise.all([
@@ -822,6 +854,239 @@ export class ModuleFormsService {
     }
   }
 
+  private async validateLeadStageUsage(
+    organizationId: string,
+    formKey: string,
+    formProp: ModuleFormProp,
+  ): Promise<void> {
+    if (formKey !== 'lead' || !formProp.leadStages) return
+    const configuredKeys = new Set(formProp.leadStages.map((stage) => stage.key))
+    const used = await this.prisma.client.orm.public.Clue.where({
+      organizationId,
+    })
+      .select('stage')
+      .all()
+    const removedInUse = [
+      ...new Set(used.map((item) => item.stage).filter((key) => !configuredKeys.has(key))),
+    ]
+    if (removedInUse.length) {
+      throw new BadRequestException(
+        `仍有线索使用阶段 ${removedInUse.join('、')}，请先迁移这些线索或停用阶段，不能直接删除阶段 key`,
+      )
+    }
+  }
+
+  private async validateHomeAnalyticsUsage(
+    organizationId: string,
+    formKey: string,
+    formProp: ModuleFormProp,
+  ): Promise<void> {
+    const config = formProp.homeAnalytics
+    if (config === undefined) return
+    if (formKey !== 'lead' && formKey !== 'customer') {
+      throw new BadRequestException('首页分析配置只能保存在 Lead 或 Customer 表单属性中')
+    }
+    const fields = await this.listFields(organizationId, formKey)
+    this.validateHomeAnalyticsModuleFields(formKey, config, fields)
+  }
+
+  private async validateHomeAnalyticsDesignChange(
+    organizationId: string,
+    formKey: string,
+    fields: SaveFormFieldDto[],
+    formProp: ModuleFormProp,
+  ): Promise<void> {
+    if (formKey !== 'lead' && formKey !== 'customer') return
+    let config = formProp.homeAnalytics
+    if (config === undefined && formKey === 'customer') {
+      const legacyLeadConfig = await this.getConfig(organizationId, 'lead')
+      config = legacyLeadConfig.formProp.homeAnalytics
+    }
+    if (!config) return
+
+    const currentFields = await this.listFields(organizationId, formKey)
+    const requestedById = new Map(
+      fields.flatMap((field) => (field.id ? [[field.id, field] as const] : [])),
+    )
+    const referenced: Array<{
+      key: string | undefined
+      label: string
+      allowed: Set<FieldType>
+    }> =
+      formKey === 'lead'
+        ? [
+            {
+              key: config.leadSourceFieldKey,
+              label: '渠道字段',
+              allowed: HOME_ANALYTICS_DIMENSION_TYPES,
+            },
+          ]
+        : [
+            {
+              key: config.customerResultFieldKey,
+              label: '结果字段',
+              allowed: HOME_ANALYTICS_RESULT_TYPES,
+            },
+            {
+              key: config.customerResultTimeFieldKey,
+              label: '结果时间字段',
+              allowed: HOME_ANALYTICS_TIME_TYPES,
+            },
+            {
+              key: config.customerResultAmountFieldKey,
+              label: '结果金额字段',
+              allowed: HOME_ANALYTICS_AMOUNT_TYPES,
+            },
+          ]
+
+    for (const item of referenced) {
+      if (!item.key) continue
+      const current = currentFields.find((field) => field.key === item.key)
+      if (!current) {
+        throw new BadRequestException(`首页分析${item.label}不存在：${item.key}`)
+      }
+      const requested = requestedById.get(current.id)
+      if (!requested) {
+        throw new BadRequestException(`「${current.label}」正在被首页分析使用，不能删除`)
+      }
+      if (!item.allowed.has(requested.type)) {
+        throw new BadRequestException(
+          `「${current.label}」正在被首页分析使用，不能修改为当前字段类型`,
+        )
+      }
+    }
+  }
+
+  private validateHomeAnalyticsModuleFields(
+    formKey: 'lead' | 'customer',
+    config: HomeAnalyticsConfig,
+    fields: FieldVO[],
+  ): void {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new BadRequestException('首页分析配置格式不正确')
+    }
+
+    if (formKey === 'lead') {
+      const source = this.resolveHomeAnalyticsField(
+        fields,
+        config.leadSourceFieldKey,
+        '渠道字段',
+        HOME_ANALYTICS_DIMENSION_TYPES,
+      )
+      if (source?.system) {
+        throw new BadRequestException('首页渠道字段必须使用可配置的 Lead 动态字段')
+      }
+      return
+    }
+
+    const result = this.resolveHomeAnalyticsField(
+      fields,
+      config.customerResultFieldKey,
+      '结果字段',
+      HOME_ANALYTICS_RESULT_TYPES,
+    )
+    if (result?.system) {
+      throw new BadRequestException('首页结果字段必须使用 Customer 动态字段')
+    }
+
+    const resultValues = config.customerResultValues
+    if (resultValues !== undefined) {
+      if (
+        !Array.isArray(resultValues) ||
+        resultValues.length > 50 ||
+        resultValues.some((value) => typeof value !== 'string' || !value.trim())
+      ) {
+        throw new BadRequestException('首页结果命中值配置不正确')
+      }
+      if (new Set(resultValues).size !== resultValues.length) {
+        throw new BadRequestException('首页结果命中值不能重复')
+      }
+      if (!result && resultValues.length) {
+        throw new BadRequestException('配置结果命中值前必须先选择 Customer 结果字段')
+      }
+      if (result?.options?.length && resultValues.length) {
+        const allowed = new Set(result.options.map((option) => option.value))
+        if (resultValues.some((value) => !allowed.has(value))) {
+          throw new BadRequestException('首页结果命中值包含字段选项以外的值')
+        }
+      }
+    }
+
+    const resultTime = this.resolveHomeAnalyticsField(
+      fields,
+      config.customerResultTimeFieldKey,
+      '结果时间字段',
+      HOME_ANALYTICS_TIME_TYPES,
+    )
+    if (resultTime?.system) {
+      throw new BadRequestException('首页结果时间字段必须使用 Customer 动态字段')
+    }
+    const resultAmount = this.resolveHomeAnalyticsField(
+      fields,
+      config.customerResultAmountFieldKey,
+      '结果金额字段',
+      HOME_ANALYTICS_AMOUNT_TYPES,
+    )
+    if (resultAmount?.system) {
+      throw new BadRequestException('首页结果金额字段必须使用 Customer 动态字段')
+    }
+    if ((resultTime || resultAmount) && !result) {
+      throw new BadRequestException('配置结果时间或金额字段前必须先选择 Customer 结果字段')
+    }
+  }
+
+  private resolveHomeAnalyticsField(
+    fields: FieldVO[],
+    key: string | undefined,
+    label: string,
+    allowed: Set<FieldType>,
+  ): FieldVO | null {
+    if (key === undefined) return null
+    const normalized = key.trim()
+    if (!normalized || normalized.length > 100) {
+      throw new BadRequestException(`首页分析${label}配置不正确`)
+    }
+    const field = fields.find((item) => item.key === normalized)
+    if (!field) throw new BadRequestException(`首页分析${label}不存在：${normalized}`)
+    if (!allowed.has(field.type)) {
+      throw new BadRequestException(`「${field.label}」不能作为首页分析${label}`)
+    }
+    return field
+  }
+
+  private async assertHomeAnalyticsFieldNotReferenced(
+    tx: PrismaTransaction,
+    organizationId: string,
+    formKey: string,
+    fieldKey: string,
+  ): Promise<void> {
+    if (formKey !== 'lead' && formKey !== 'customer') return
+    const form = await this.ensureForm(tx, organizationId, formKey)
+    const blob = await tx.orm.public.SysModuleFormBlob.where({ id: form.id }).first()
+    const formProp = this.parseObject(blob?.prop)
+    const raw = formProp['homeAnalytics']
+    let config = this.isRecord(raw) ? raw : null
+    // 兼容此前错误存放在 Lead formProp 中的 Customer 首页分析引用。
+    if (!config && formKey === 'customer') {
+      const leadForm = await this.ensureForm(tx, organizationId, 'lead')
+      const leadBlob = await tx.orm.public.SysModuleFormBlob.where({ id: leadForm.id }).first()
+      const legacy = this.parseObject(leadBlob?.prop)['homeAnalytics']
+      config = this.isRecord(legacy) ? legacy : null
+    }
+    if (!config) return
+    const references =
+      formKey === 'lead'
+        ? [config?.['leadSourceFieldKey']]
+        : [
+            config?.['customerResultFieldKey'],
+            config?.['customerResultTimeFieldKey'],
+            config?.['customerResultAmountFieldKey'],
+          ]
+    if (references.some((value) => value === fieldKey)) {
+      throw new BadRequestException('该字段正在被首页分析使用，请先修改首页分析设置')
+    }
+  }
+
   private validateFormPropInput(formProp: ModuleFormProp): void {
     if (formProp.layout !== undefined && ![1, 2, 3, 4].includes(formProp.layout)) {
       throw new BadRequestException('表单布局配置不正确')
@@ -834,6 +1099,43 @@ export class ModuleFormsService {
       !['small', 'medium', 'large'].includes(formProp.viewSize)
     ) {
       throw new BadRequestException('PC 表单尺寸配置不正确')
+    }
+    if (
+      formProp.leadUniqueScope !== undefined &&
+      !['RESOURCE_POOL', 'ORGANIZATION'].includes(formProp.leadUniqueScope)
+    ) {
+      throw new BadRequestException('线索判重范围配置不正确')
+    }
+    if (formProp.leadStages !== undefined) {
+      if (!Array.isArray(formProp.leadStages) || formProp.leadStages.length === 0) {
+        throw new BadRequestException('线索阶段至少需要配置一项')
+      }
+      if (formProp.leadStages.length > 50) throw new BadRequestException('线索阶段最多配置 50 项')
+      const keys = new Set<string>()
+      const names = new Set<string>()
+      let enabledCount = 0
+      for (const stage of formProp.leadStages) {
+        if (!stage || typeof stage !== 'object') throw new BadRequestException('线索阶段配置不正确')
+        if (typeof stage.key !== 'string' || !/^[A-Za-z0-9_-]{1,30}$/.test(stage.key)) {
+          throw new BadRequestException('线索阶段 key 只能包含字母、数字、下划线或短横线，且最长 30 位')
+        }
+        const name = typeof stage.name === 'string' ? stage.name.trim() : ''
+        if (!name || name.length > 100) {
+          throw new BadRequestException('线索阶段名称不能为空且最长 100 字')
+        }
+        if (!['ACTIVE', 'SUCCESS', 'FAILURE'].includes(stage.kind)) {
+          throw new BadRequestException('线索阶段类型配置不正确')
+        }
+        if (stage.enabled !== undefined && typeof stage.enabled !== 'boolean') {
+          throw new BadRequestException('线索阶段启用状态配置不正确')
+        }
+        if (keys.has(stage.key)) throw new BadRequestException('线索阶段 key 不能重复')
+        if (names.has(name)) throw new BadRequestException('线索阶段名称不能重复')
+        keys.add(stage.key)
+        names.add(name)
+        if (stage.enabled !== false) enabledCount++
+      }
+      if (enabledCount === 0) throw new BadRequestException('至少需要保留一个启用的线索阶段')
     }
   }
 
@@ -1395,60 +1697,6 @@ export class ModuleFormsService {
       tx.orm.public.CustomerContactFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
         count: agg.count(),
       })),
-      tx.orm.public.OpportunityField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.OpportunityFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ProductField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ProductFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ProductPriceField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ProductPriceFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.OpportunityQuotationField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.OpportunityQuotationFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractPaymentPlanField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractPaymentPlanFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractPaymentRecordField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractPaymentRecordFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractInvoiceField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.ContractInvoiceFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.SalesOrderField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.SalesOrderFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
       tx.orm.public.FollowUpPlanField.where({ fieldId: id }).aggregate((agg) => ({
         count: agg.count(),
       })),
@@ -1480,24 +1728,6 @@ export class ModuleFormsService {
       tx.orm.public.CustomerFieldBlob.where({ fieldId: id }).deleteAll(),
       tx.orm.public.CustomerContactField.where({ fieldId: id }).deleteAll(),
       tx.orm.public.CustomerContactFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.OpportunityField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.OpportunityFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ProductField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ProductFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ProductPriceField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ProductPriceFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.OpportunityQuotationField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.OpportunityQuotationFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractPaymentPlanField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractPaymentPlanFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractPaymentRecordField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractPaymentRecordFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractInvoiceField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.ContractInvoiceFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.SalesOrderField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.SalesOrderFieldBlob.where({ fieldId: id }).deleteAll(),
       tx.orm.public.FollowUpPlanField.where({ fieldId: id }).deleteAll(),
       tx.orm.public.FollowUpPlanFieldBlob.where({ fieldId: id }).deleteAll(),
       tx.orm.public.FollowUpRecordField.where({ fieldId: id }).deleteAll(),

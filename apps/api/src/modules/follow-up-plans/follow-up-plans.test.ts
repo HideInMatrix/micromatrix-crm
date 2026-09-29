@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant, instantFromDate } from '../../prisma/temporal'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {

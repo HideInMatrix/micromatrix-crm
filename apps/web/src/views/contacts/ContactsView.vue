@@ -6,7 +6,7 @@ import {
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { listCustomerOptions, type CustomerOptionVO } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
@@ -26,7 +26,6 @@ import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
-const router = useRouter()
 const route = useRoute()
 const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
@@ -323,23 +322,6 @@ async function confirmDeactivate() {
 
 async function handleDelete(row: ContactVO) {
   try {
-    const { data } = await contactApi.checkOpportunity(row.id)
-    if (data) {
-      await ElMessageBox.confirm(
-        `联系人「${row.name}」已关联商机，请先处理商机关联后再删除。`,
-        '联系人已关联商机',
-        {
-          type: 'warning',
-          confirmButtonText: '知道了',
-          cancelButtonText: '去处理',
-          distinguishCancelAndClose: true,
-        },
-      ).catch((action) => {
-        if (action === 'cancel') router.push('/opportunities')
-        return false
-      })
-      return
-    }
     const confirmed = await ElMessageBox.confirm(
       `删除联系人「${row.name}」后不可恢复，确定继续？`,
       '删除联系人',

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { EnterpriseIntegrationsController } from './enterprise-integrations.controller'
 import { EnterpriseIntegrationsService } from './enterprise-integrations.service'
 import { DingTalkClient } from './dingtalk.client'

@@ -1,9 +1,7 @@
 import { Global, Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module.js'
+import { PrismaModule } from '../../prisma.module.js'
 import { ApprovalsController } from './approvals.controller'
 import { ApprovalFlowConfigService } from './approval-flow-config.service'
-import { ApprovalResourceCaptureService } from './approval-resource-capture.service'
-import { ApprovalResourceRestoreService } from './approval-resource-restore.service'
 import { ApprovalResourceService } from './approval-resource.service'
 import { ApprovalResourceSnapshotService } from './approval-resource-snapshot.service'
 import { ApprovalWebhookClient } from './approval-webhook.client'
@@ -18,8 +16,6 @@ import { ApprovalsService } from './approvals.service'
   providers: [
     ApprovalsService,
     ApprovalFlowConfigService,
-    ApprovalResourceCaptureService,
-    ApprovalResourceRestoreService,
     ApprovalResourceSnapshotService,
     ApprovalResourceService,
     ApprovalWebhookClient,

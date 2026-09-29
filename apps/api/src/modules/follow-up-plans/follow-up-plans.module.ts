@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { CustomersModule } from '../../customers/customers.module'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
 import { FollowPlanCommentsController } from './follow-plan-comments.controller'
 import { FollowPlanCommentsService } from './follow-plan-comments.service'

@@ -72,14 +72,6 @@ function serviceFixture() {
     handler('customer', calls) as never,
     handler('contact', calls) as never,
     handler('lead', calls) as never,
-    handler('opportunity', calls) as never,
-    handler('product', calls) as never,
-    handler('price', calls) as never,
-    handler('businessTitle', calls) as never,
-    handler('contractInvoice', calls) as never,
-    handler('contractPaymentPlan', calls) as never,
-    handler('contractPaymentRecord', calls) as never,
-    handler('order', calls) as never,
     handler('customFormData', calls) as never,
   )
   return { instance, calls, failures, completed, task, tasks }
@@ -88,7 +80,7 @@ function serviceFixture() {
 const payload = { version: 1, query: {}, input: {} } as const
 const user = { id: 'user-a', tenantId: 'tenant-a' } as never
 
-test('14 个导出 module key 全部路由到对应业务 handler', async () => {
+test('当前保留的导出 module key 全部路由到对应业务 handler', async () => {
   const { instance, calls } = serviceFixture()
   const routes = [
     ['customer', 'customer'],
@@ -96,14 +88,6 @@ test('14 个导出 module key 全部路由到对应业务 handler', async () => 
     ['contact', 'contact'],
     ['lead', 'lead'],
     ['lead_pool', 'lead'],
-    ['opportunity', 'opportunity'],
-    ['product', 'product'],
-    ['price', 'price'],
-    ['businessTitle', 'businessTitle'],
-    ['contractInvoice', 'contractInvoice'],
-    ['contractPaymentPlan', 'contractPaymentPlan'],
-    ['contractPaymentRecord', 'contractPaymentRecord'],
-    ['order', 'order'],
     ['customFormData', 'customFormData'],
   ] as const
   for (const [module] of routes) await instance.route(module, user, payload)

@@ -11,7 +11,7 @@ import * as bcrypt from 'bcryptjs'
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 
 import { RolesService } from '../roles/roles.service'
@@ -240,12 +240,6 @@ export class MembersService {
       customers,
       contacts,
       clues,
-      opportunities,
-      quotations,
-      contracts,
-      payments,
-      invoices,
-      orders,
       followUps,
       collaborations,
       approvalInstances,
@@ -263,33 +257,6 @@ export class MembersService {
           count: agg.count(),
         }),
       ),
-      this.prisma.client.orm.public.Opportunity.where({
-        organizationId,
-        owner: memberId,
-      }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma.client.orm.public.OpportunityQuotation.where({
-        organizationId,
-        createUser: memberId,
-      }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma.client.orm.public.Contract.where({ organizationId, owner: memberId }).aggregate(
-        (agg) => ({
-          count: agg.count(),
-        }),
-      ),
-      this.prisma.client.orm.public.ContractPaymentRecord.where({
-        organizationId,
-        owner: memberId,
-      }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma.client.orm.public.ContractInvoice.where({
-        organizationId,
-        owner: memberId,
-      }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma.client.orm.public.SalesOrder.where({
-        organizationId,
-        owner: memberId,
-      }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
       this.prisma.client.orm.public.FollowUpRecords.where({ tenantId, ownerId: id }).aggregate(
         (agg) => ({
           count: agg.count(),
@@ -314,12 +281,6 @@ export class MembersService {
       customers.count,
       contacts.count,
       clues.count,
-      opportunities.count,
-      quotations.count,
-      contracts.count,
-      payments.count,
-      invoices.count,
-      orders.count,
       followUps.count,
       collaborations.count,
       approvalInstances.count,

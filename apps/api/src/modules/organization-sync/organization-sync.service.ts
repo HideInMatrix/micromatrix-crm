@@ -14,7 +14,7 @@ import type {
   PaginatedResult,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import {

@@ -4,15 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { not } from '@prisma/orm-postgres/orm-client'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { PrismaService } from '../../prisma/prisma.service.js'
-import type {
-  CapacityExclusionCondition,
-  DirectCapacityConfigurationInput,
-  DirectPoolConfigurationInput,
-} from './pool-domain.types'
+import { PrismaService } from '../../prisma.service.js'
+import type { DirectCapacityConfigurationInput, DirectPoolConfigurationInput } from './pool-domain.types'
 import {
   loadUserScopeTokensPrisma,
   parseStringArray,
@@ -185,7 +180,7 @@ export class CustomerPoolRepository {
   createCapacity(
     organizationId: string,
     operatorId: string,
-    input: DirectCapacityConfigurationInput & { filters?: CapacityExclusionCondition[] },
+    input: DirectCapacityConfigurationInput,
   ) {
     return this.saveCapacity(organizationId, operatorId, input)
   }
@@ -194,7 +189,7 @@ export class CustomerPoolRepository {
     organizationId: string,
     capacityId: string,
     operatorId: string,
-    input: DirectCapacityConfigurationInput & { filters?: CapacityExclusionCondition[] },
+    input: DirectCapacityConfigurationInput,
   ) {
     return this.saveCapacity(organizationId, operatorId, input, capacityId)
   }
@@ -247,15 +242,7 @@ export class CustomerPoolRepository {
       owner: input.ownerId,
       inSharedPool: false,
     }).aggregate((aggregate) => ({ count: aggregate.count() }))
-    const excludedOwnedCount = capacity
-      ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
-      : 0
-    this.calculator.assertCapacity(
-      capacity?.capacity ?? null,
-      ownedCount.count,
-      excludedOwnedCount,
-      1,
-    )
+    this.calculator.assertCapacity(capacity?.capacity ?? null, ownedCount.count, 0, 1)
     await this.appendOwnerHistoryPrisma(tx, customer, input.operatorId, input.reasonId, now)
     await tx.orm.public.CustomerContact.where({
       organizationId: input.organizationId,
@@ -332,10 +319,6 @@ export class CustomerPoolRepository {
         .orderBy((row) => row.collectionTime.desc())
         .first(),
     ])
-    const excludedOwnedCount = capacity
-      ? await this.countExcludedOwned(tx, input.organizationId, input.ownerId, capacity.filter)
-      : 0
-
     this.calculator.assertClaimAllowed({
       rule: enforcePickRule ? this.pickRuleSnapshot(pickRule) : null,
       claimantId: input.ownerId,
@@ -345,7 +328,7 @@ export class CustomerPoolRepository {
       poolEnteredAt: customer.updateTime,
       capacity: capacity?.capacity ?? null,
       ownedCount: ownedCount.count,
-      excludedOwnedCount,
+      excludedOwnedCount: 0,
       poolAdmin: input.poolAdmin ?? false,
       poolAdminStillChecksPreviousOwner: false,
       now,
@@ -445,7 +428,7 @@ export class CustomerPoolRepository {
   private async saveCapacity(
     organizationId: string,
     operatorId: string,
-    input: DirectCapacityConfigurationInput & { filters?: CapacityExclusionCondition[] },
+    input: DirectCapacityConfigurationInput,
     capacityId?: string,
   ) {
     if (!input.scopeIds.length) throw new BadRequestException('库容适用范围不能为空')
@@ -474,14 +457,13 @@ export class CustomerPoolRepository {
         if ([...incoming].some((userId) => members.has(userId)))
           throw new BadRequestException('库容适用范围与已有规则命中相同成员，不能重复')
       }
-      const filter = input.filters?.length ? JSON.stringify(input.filters) : null
       if (!capacityId)
         return tx.orm.public.CustomerCapacity.create({
           id: createLegacyId32(),
           organizationId: organizationId,
           scopeId: JSON.stringify(input.scopeIds),
           capacity: input.capacity,
-          filter,
+          filter: null,
           createTime: now,
           updateTime: now,
           createUser: operatorId,
@@ -496,7 +478,7 @@ export class CustomerPoolRepository {
       const updated = await tx.orm.public.CustomerCapacity.where({ id }).update({
         scopeId: JSON.stringify(input.scopeIds),
         capacity: input.capacity,
-        filter,
+        filter: null,
         updateTime: now,
         updateUser: operatorId,
       })
@@ -582,64 +564,6 @@ export class CustomerPoolRepository {
     }).first()
     if (!pool) throw new NotFoundException('客户公海不存在')
     return pool
-  }
-
-  private async countExcludedOwned(
-    tx: PrismaTransaction,
-    organizationId: string,
-    ownerId: string,
-    rawFilter: string | null,
-  ): Promise<number> {
-    const conditions = this.parseCapacityFilters(rawFilter)
-    if (!conditions.length) return 0
-    const owned = await tx.orm.public.Customer.where({
-      organizationId: organizationId,
-      owner: ownerId,
-      inSharedPool: false,
-    })
-      .select('id')
-      .all()
-    let matches = new Set(owned.map((customer) => String(customer.id)))
-    if (!matches.size) return 0
-    for (const condition of conditions) {
-      const customerIds = [...matches]
-      if (!customerIds.length) return 0
-      const stageIds = condition.value
-      let opportunities = tx.orm.public.Opportunity.where({
-        organizationId: organizationId,
-      }).where((row) => row.customerId.in(customerIds))
-      opportunities =
-        condition.operator === 'IN'
-          ? opportunities.where((row) => row.stage.in(stageIds))
-          : opportunities.where((row) => not(row.stage.in(stageIds)))
-      const rows = await opportunities.select('customerId').all()
-      const hitIds = new Set(
-        rows.flatMap((row) => (row.customerId ? [String(row.customerId)] : [])),
-      )
-      matches = new Set([...matches].filter((customerId) => hitIds.has(customerId)))
-    }
-    return matches.size
-  }
-
-  private parseCapacityFilters(rawFilter: string | null): CapacityExclusionCondition[] {
-    if (!rawFilter) return []
-    try {
-      const parsed: unknown = JSON.parse(rawFilter)
-      if (!Array.isArray(parsed)) return []
-      return parsed.filter((condition): condition is CapacityExclusionCondition => {
-        if (!condition || typeof condition !== 'object') return false
-        const item = condition as Partial<CapacityExclusionCondition>
-        return (
-          item.column === 'stage' &&
-          (item.operator === 'IN' || item.operator === 'NOT_IN') &&
-          Array.isArray(item.value) &&
-          item.value.length > 0 &&
-          item.value.every((value) => typeof value === 'string')
-        )
-      })
-    } catch {
-      return []
-    }
   }
 
   private appendOwnerHistoryPrisma(

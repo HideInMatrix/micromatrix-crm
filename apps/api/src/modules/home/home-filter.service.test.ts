@@ -6,29 +6,31 @@ import { HomeFilterService } from './home-filter.service'
 
 const user = { id: 'user-a', tenantId: 'tenant-a' } as any
 
-function createService() {
+function createService(options?: {
+  scope?: { all: boolean; userIds: string[] | null }
+  overdue?: Array<{ id: string }>
+}) {
   const clues = {
     whereForPeriod: async (_user: unknown, payload: unknown, period: string) => ({
       payload,
       period,
     }),
   }
-  const opportunities = {
-    whereForPeriod: async (_user: unknown, payload: unknown, period: string, scenario: string) => ({
-      payload,
-      period,
-      scenario,
-    }),
+  const scopes = {
+    resolve: async () => options?.scope ?? ({ all: true, userIds: null } as const),
   }
-  return new HomeFilterService(clues as any, opportunities as any)
+  const leadSla = {
+    overdue: async () => options?.overdue ?? [],
+  }
+  return new HomeFilterService(clues as any, scopes as any, leadSla as any)
 }
 
-test('首页一次性筛选协议拒绝目标模块不匹配、非法周期和非法状态', () => {
+test('首页一次性筛选协议拒绝目标模块不匹配和非法周期', () => {
   const service = createService()
   assert.throws(
     () =>
       service.parse(
-        JSON.stringify({ module: 'opportunity', period: 'TODAY', searchType: 'SELF', deptIds: [] }),
+        JSON.stringify({ module: 'customer', period: 'TODAY', searchType: 'SELF', deptIds: [] }),
         'lead',
       ),
     BadRequestException,
@@ -41,25 +43,11 @@ test('首页一次性筛选协议拒绝目标模块不匹配、非法周期和�
       ),
     BadRequestException,
   )
-  assert.throws(
-    () =>
-      service.parse(
-        JSON.stringify({
-          module: 'opportunity',
-          period: 'TODAY',
-          searchType: 'SELF',
-          deptIds: [],
-          status: 'FAIL',
-        }),
-        'opportunity',
-      ),
-    BadRequestException,
-  )
 })
 
-test('线索创建人维度仅展示统计，后端拒绝伪造跳转列表', () => {
+test('线索创建人维度仅展示统计，后端拒绝伪造跳转列表', async () => {
   const service = createService()
-  assert.throws(
+  await assert.rejects(
     () =>
       service.clueWhere(user, {
         module: 'lead',
@@ -72,18 +60,38 @@ test('线索创建人维度仅展示统计，后端拒绝伪造跳转列表', ()
   )
 })
 
-test('商机首页筛选把 SUCCESS/AFOOT 分别映射到与统计相同的场景查询', async () => {
-  const service = createService()
-  const base = {
-    module: 'opportunity' as const,
-    period: 'THIS_MONTH' as const,
-    searchType: 'DEPARTMENT' as const,
-    deptIds: ['sales'],
-    timeField: 'EXPECTED_END_TIME' as const,
-  }
-  const success = await service.opportunityWhere(user, { ...base, status: 'SUCCESS' })
-  const underway = await service.opportunityWhere(user, { ...base, status: 'AFOOT' })
-  assert.equal((success as any).scenario, 'SUCCESS')
-  assert.equal((underway as any).scenario, 'UNDERWAY')
-  assert.equal((success as any).period, 'THIS_MONTH')
+test('线索工作台筛选支持阶段、已转客户和 SLA 超时真实列表', async () => {
+  const service = createService({
+    scope: { all: false, userIds: ['owner-a'] },
+    overdue: [{ id: 'lead-overdue-1' }],
+  })
+  const where = await service.clueWhere(user, {
+    module: 'lead',
+    searchType: 'DEPARTMENT',
+    deptIds: ['dept-a'],
+    userField: 'OWNER',
+    leadStageKey: 'VISITED',
+    converted: true,
+    overdue: true,
+  })
+
+  assert.equal((where as any).stage, 'VISITED')
+  assert.equal((where as any).converted, true)
+  assert.deepEqual((where as any).ids, ['lead-overdue-1'])
+})
+
+test('Customer 工作台筛选复用当前部门范围，不继承 Lead 专用条件', async () => {
+  const service = createService({
+    scope: { all: false, userIds: ['customer-owner-a'] },
+  })
+  const where = await service.customerWhere(user, {
+    module: 'customer',
+    searchType: 'DEPARTMENT',
+    deptIds: ['dept-a'],
+    filters: [{ key: 'cf_status', op: 'eq', value: 'PAID' }],
+  })
+
+  assert.equal((where as any).organizationId, 'tenant-a')
+  assert.equal((where as any).inSharedPool, false)
+  assert.deepEqual((where as any).owner, { in: ['customer-owner-a'] })
 })

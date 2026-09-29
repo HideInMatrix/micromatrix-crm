@@ -17,23 +17,6 @@ export const MENUS: MenuItem[] = [
   { path: '/leads', title: '线索', moduleKey: 'lead', perm: 'menu:lead' },
   { path: '/customers', title: '客户', moduleKey: 'customer', perm: 'menu:customer' },
   {
-    path: '/opportunities',
-    title: '商机',
-    moduleKey: 'opportunity',
-    perm: 'menu:opportunity',
-  },
-  { path: '/products', title: '产品', moduleKey: 'product', perm: 'menu:product' },
-  { path: '/reports', title: '仪表板', moduleKey: 'dashboard', perm: 'menu:dashboard' },
-  { path: '/contracts', title: '合同', moduleKey: 'contract', perm: 'menu:contract' },
-  {
-    path: '/custom-forms',
-    title: '自定义表单',
-    moduleKey: 'customForm',
-    perm: 'menu:customForm',
-  },
-  { path: '/bidding', title: '标讯', moduleKey: 'bidding', perm: 'menu:bidding' },
-  { path: '/order/index', title: '订单', moduleKey: 'order', perm: 'ORDER:READ' },
-  {
     path: '/system',
     title: '系统',
     moduleKey: 'system',
@@ -62,12 +45,6 @@ export const MENUS: MenuItem[] = [
         title: '消息设置',
         moduleKey: 'system',
         perm: 'system:message',
-      },
-      {
-        path: '/system/approval-flows',
-        title: '流程设置',
-        moduleKey: 'system',
-        perm: 'system:process',
       },
       {
         path: '/system/settings',

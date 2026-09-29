@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BadRequestException } from '@nestjs/common'
-import type { MessageTaskConfig } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { MessageSettingsService } from './message-settings.service'
 
 interface TestMessageTaskSetting {
@@ -119,15 +118,13 @@ test('完整返回当前 Cordys 事件目录并合并默认开关', async () => 
 
   const groups = await service.list('tenant-a')
 
-  assert.equal(groups.length, 5)
+  assert.equal(groups.length, 2)
   const items = groups.flatMap((group) => group.items)
-  assert.equal(items.length, 47)
+  assert.equal(items.length, 26)
   assert.ok(items.some((item) => item.event === 'CUSTOMER_FOLLOW_UP_PLAN_COMMENT_ADDED'))
   assert.ok(items.some((item) => item.event === 'CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED'))
-  assert.ok(items.some((item) => item.event === 'OPPORTUNITY_FOLLOW_UP_PLAN_COMMENT_ADDED'))
   assert.ok(items.some((item) => item.event === 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED'))
   assert.ok(items.some((item) => item.event === 'CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED'))
-  assert.ok(items.some((item) => item.event === 'OPPORTUNITY_FOLLOW_UP_RECORD_COMMENT_ADDED'))
   assert.ok(items.every((item) => item.systemEnabled))
   assert.ok(items.every((item) => !item.emailEnabled))
   assert.ok(items.every((item) => !item.weComEnabled))
@@ -189,10 +186,10 @@ test('飞书开关由配置、连接测试和同步开关共同控制', async ()
   assert.equal((await service.getLarkChannelGate('tenant-a')).available, true)
 })
 
-test('到期配置校验模块、时间重复和固定负责人', async () => {
+test('当前招生消息事件拒绝旧交易范围配置并校验模块归属', async () => {
   const { service } = createService()
-  const config: MessageTaskConfig = {
-    timeList: [{ timeValue: 3, timeUnit: 'DAY' }],
+  const legacyConfig = {
+    timeList: [{ timeValue: 3, timeUnit: 'DAY' as const }],
     userIds: ['OWNER'],
     roleIds: [],
     ownerEnable: false,
@@ -200,96 +197,30 @@ test('到期配置校验模块、时间重复和固定负责人', async () => {
     roleEnable: false,
   }
 
-  await service.update('tenant-a', 'CONTRACT_EXPIRING', { module: 'CONTRACT', config })
-  assert.deepEqual(await service.getConfig('tenant-a', 'CONTRACT_EXPIRING'), config)
+  assert.equal(await service.getConfig('tenant-a', 'CUSTOMER_ADD'), null)
 
   await assert.rejects(
     () =>
-      service.update('tenant-a', 'CONTRACT_EXPIRING', {
+      service.update('tenant-a', 'CUSTOMER_ADD', {
+        module: 'CLUE',
+        systemEnabled: false,
+      }),
+    BadRequestException,
+  )
+  await assert.rejects(
+    () =>
+      service.update('tenant-a', 'CUSTOMER_ADD', {
         module: 'CUSTOMER',
-        config,
-      }),
-    BadRequestException,
-  )
-  await assert.rejects(
-    () =>
-      service.update('tenant-a', 'CONTRACT_EXPIRING', {
-        module: 'CONTRACT',
-        config: {
-          ...config,
-          timeList: [
-            { timeValue: 3, timeUnit: 'DAY' },
-            { timeValue: 3, timeUnit: 'DAY' },
-          ],
-        },
-      }),
-    BadRequestException,
-  )
-  await assert.rejects(
-    () =>
-      service.update('tenant-a', 'CONTRACT_EXPIRING', {
-        module: 'CONTRACT',
-        config: { ...config, userIds: [] },
+        config: legacyConfig,
       }),
     BadRequestException,
   )
 })
 
-test('配置接收范围合并负责人、成员、角色和部门负责人层级', async () => {
-  const config: MessageTaskConfig = {
-    timeList: [{ timeValue: 3, timeUnit: 'DAY' }],
-    userIds: ['OWNER', 'member-a'],
-    roleIds: ['role-a'],
-    ownerEnable: true,
-    ownerLevel: 2,
-    roleEnable: true,
-  }
-  const activeIds = new Set(['owner-a', 'member-a', 'role-member', 'leader-a', 'leader-root'])
-  let departmentReads = 0
-  const orm = {
-    public: {
-      MessageTaskSettings: {
-        where: () => ({
-          first: async () => ({
-            systemEnabled: true,
-            emailEnabled: false,
-            weComEnabled: false,
-            dingTalkEnabled: false,
-            larkEnabled: false,
-            config,
-          }),
-        }),
-      },
-      UserRoles: {
-        where: () => ({
-          where: () => ({ select: () => ({ all: async () => [{ userId: 'role-member' }] }) }),
-        }),
-      },
-      Users: {
-        where: () => ({
-          select: () => ({ first: async () => ({ deptId: 'dept-a' }) }),
-          where: () => ({
-            select: () => ({ all: async () => [...activeIds].map((id) => ({ id })) }),
-          }),
-        }),
-      },
-      Departments: {
-        where: () => ({
-          select: () => ({
-            first: async () =>
-              departmentReads++ === 0
-                ? { leaderId: 'leader-a', parentId: 'dept-root' }
-                : { leaderId: 'leader-root', parentId: null },
-          }),
-        }),
-      },
-    },
-  }
-  const service = new MessageSettingsService({ client: { orm } } as unknown as PrismaService)
-
-  const recipients = await service.resolveRecipients('tenant-a', 'CONTRACT_EXPIRING', {
-    ownerId: 'owner-a',
-  })
-
-  assert.deepEqual(new Set(recipients), activeIds)
+test('当前招生消息事件不再暴露旧交易范围收件人解析', async () => {
+  const { service } = createService()
+  await assert.rejects(
+    () => service.resolveRecipients('tenant-a', 'CUSTOMER_ADD', { ownerId: 'owner-a' }),
+    BadRequestException,
+  )
 })

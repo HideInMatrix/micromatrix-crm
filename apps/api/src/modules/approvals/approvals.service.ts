@@ -6,16 +6,14 @@ import {
   ApprovalInstanceVO,
   ApprovalModule,
   ApprovalNodeConfig,
-  type MessageTaskEvent,
   PaginatedResult,
 } from '@micromatrix/shared'
 import { and, not, or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 import { nowInstant, instantFromDate, instantToISOString } from '../../prisma/temporal.js'
 import { jsonValue } from '../../prisma/json-value.js'
-import { PrismaService } from '../../prisma/prisma.service.js'
-import { BusinessNotificationsService } from '../notifications/business-notifications.service'
+import { PrismaService } from '../../prisma.service.js'
 import { NotificationsService } from '../notifications/notifications.service'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'
 import { ApprovalResourceService } from './approval-resource.service'
@@ -90,7 +88,6 @@ export class ApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly businessNotifications: BusinessNotificationsService,
     private readonly resources: ApprovalResourceService,
     private readonly webhooks: ApprovalWebhookService,
   ) {}
@@ -1310,38 +1307,12 @@ export class ApprovalsService {
     })
   }
 
-  private approvalResultEvent(module: string): MessageTaskEvent | undefined {
-    if (module === 'quote') return 'BUSINESS_QUOTATION_APPROVAL'
-    if (module === 'contract') return 'CONTRACT_APPROVAL'
-    if (module === 'order') return 'ORDER_APPROVAL'
-    if (module === 'invoice') return 'INVOICE_APPROVAL'
-    return undefined
-  }
-
   private async sendApprovalResult(
     instance: ApprovalInstance,
-    operatorId: string | undefined,
-    state: 'APPROVED' | 'UNAPPROVED',
+    _operatorId: string | undefined,
+    _state: 'APPROVED' | 'UNAPPROVED',
     message: { title: string; content: string },
   ) {
-    const event = this.approvalResultEvent(instance.module)
-    if (event) {
-      await this.businessNotifications.send({
-        tenantId: instance.tenantId,
-        event,
-        operatorId,
-        recipientIds: [instance.submitterId],
-        excludeSelf: true,
-        type: 'approval',
-        templateContext: {
-          type: instance.module === 'quote' ? 'quotation' : instance.module,
-          name: instance.targetName,
-          state,
-        },
-        link: '/approvals',
-      })
-      return
-    }
     await this.notifications.notify(instance.tenantId, instance.submitterId, {
       type: 'approval',
       ...message,

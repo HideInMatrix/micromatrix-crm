@@ -40,7 +40,7 @@ export class AccountContactController {
   constructor(private readonly service: ContactsService) {}
 
   @Get('module/form')
-  @RequireAnyPermissions('customer:read', 'contact:read', 'menu:opportunity')
+  @RequireAnyPermissions('customer:read', 'contact:read')
   @ApiOperation({ summary: '获取联系人表单配置' })
   moduleForm(@CurrentUser() user: AuthUser) {
     return this.service.getModuleForm(user)
@@ -113,12 +113,6 @@ export class AccountContactController {
   @LogOperation('contact', 'delete')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.remove(user, id)
-  }
-
-  @Get('opportunity/check/:id')
-  @RequireAnyPermissions('customer:delete', 'contact:delete')
-  async checkOpportunity(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return (await this.service.checkOpportunity(user, id)).linked
   }
 
   @Get('tab')

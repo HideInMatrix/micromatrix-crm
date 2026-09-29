@@ -1,16 +1,21 @@
 // ============ 销售核心：线索 / 跟进 / 商机 / 公海 ============
 
-import type { LineItemVO } from './deal'
+import type { LeadStageConfig } from './metadata'
 
-export type LeadStatus = 'NEW' | 'FOLLOWING' | 'INTERESTED' | 'SUCCESS' | 'FAIL'
+export const DEFAULT_LEAD_STAGES = [
+  { key: 'NEW', name: '新建', kind: 'ACTIVE', enabled: true },
+  { key: 'FOLLOWING', name: '跟进中', kind: 'ACTIVE', enabled: true },
+  { key: 'INTERESTED', name: '感兴趣', kind: 'ACTIVE', enabled: true },
+  { key: 'SUCCESS', name: '成功', kind: 'SUCCESS', enabled: true },
+  { key: 'FAIL', name: '失败', kind: 'FAILURE', enabled: true },
+] as const satisfies readonly LeadStageConfig[]
 
-export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
-  NEW: '新建',
-  FOLLOWING: '跟进中',
-  INTERESTED: '感兴趣',
-  SUCCESS: '成功',
-  FAIL: '失败',
-}
+export type LeadStatus = string
+
+/** 旧调用方兼容；新页面应优先读取租户 leadStages 配置。 */
+export const LEAD_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  DEFAULT_LEAD_STAGES.map((stage) => [stage.key, stage.name]),
+)
 
 export interface LeadVO {
   id: string
@@ -36,7 +41,7 @@ export interface LeadVO {
 
 // ============ 跟进记录 ============
 
-export type FollowTargetType = 'lead' | 'customer' | 'opportunity'
+export type FollowTargetType = 'lead' | 'customer'
 
 export const FOLLOW_UP_TYPES = ['电话', '拜访', '微信', '邮件', '会议', '其他'] as const
 
@@ -112,7 +117,7 @@ export interface FollowCommentPageVO {
 
 // ============ 跟进计划 ============
 
-export type FollowUpPlanTargetType = 'lead' | 'customer' | 'opportunity'
+export type FollowUpPlanTargetType = 'lead' | 'customer'
 export type FollowUpPlanStatus = 'PREPARED' | 'UNDERWAY' | 'COMPLETED' | 'CANCELLED'
 
 export const FOLLOW_UP_PLAN_SYSTEM_FIELD_KEYS = [
@@ -135,7 +140,6 @@ export const FOLLOW_UP_PLAN_CREATE_CONTEXT_BY_TARGET: Record<
 > = {
   customer: 'customer',
   lead: 'clue',
-  opportunity: 'business',
 }
 
 export function isFollowUpPlanSystemFieldKey(key: string): key is FollowUpPlanSystemFieldKey {
@@ -176,61 +180,6 @@ export interface FollowUpPlanVO {
   canManage: boolean
   createdAt: string
   updatedAt: string
-}
-
-// ============ 商机 ============
-
-export interface OpportunityStageVO {
-  id: string
-  name: string
-  probability: number
-  sort: number
-  isWon: boolean
-  isLost: boolean
-  system: boolean
-  count?: number
-  amountSum?: number
-}
-
-export interface OpportunityVO {
-  id: string
-  name: string
-  customerId: string
-  customerName?: string
-  contactId?: string | null
-  contactName?: string | null
-  stageId: string
-  stageName?: string
-  stageProbability?: number
-  isWon?: boolean
-  isLost?: boolean
-  amount: number | null
-  expectedCloseAt: string | null
-  lostReason: string | null
-  remark: string | null
-  ownerId: string | null
-  ownerName?: string | null
-  deptId: string | null
-  customData: Record<string, unknown>
-  items?: LineItemVO[]
-  wonAt: string | null
-  lostAt: string | null
-  createdAt: string
-  updatedAt: string
-  /** Cordys 直接商机字段；旧 Web 适配字段保留到 W3.6.0 页面切换完成。 */
-  possible?: number | null
-  products?: string[]
-  expectedEndTime?: number | null
-  actualEndTime?: number | null
-  failureReason?: string | null
-  owner?: string
-  createTime?: number
-  updateTime?: number
-  createUser?: string
-  updateUser?: string
-  follower?: string | null
-  followTime?: number | null
-  pos?: number | null
 }
 
 export interface StageLogVO {

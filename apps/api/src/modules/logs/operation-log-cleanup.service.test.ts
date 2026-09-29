@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import {
   OperationLogCleanupService,
   resolveOperationLogCleanupConfig,

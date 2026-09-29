@@ -1,4 +1,4 @@
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { instantFromDate, instantFromISOString } from '../../prisma/temporal'
 
 export interface HarnessComment {
@@ -28,7 +28,7 @@ interface HarnessOptions {
   comments?: HarnessComment[]
   mentions?: Array<{ commentId: string; userId: string }>
   users?: HarnessUser[]
-  targetNames?: Partial<Record<'customer' | 'lead' | 'opportunity', string>>
+  targetNames?: Partial<Record<'customer' | 'lead', string>>
   nextCreatedId?: string
 }
 
@@ -185,7 +185,6 @@ export function createFollowCommentPrismaHarness(options: HarnessOptions) {
   const targetNames = {
     customer: '客户A',
     lead: '线索A',
-    opportunity: '商机A',
     ...options.targetNames,
   }
   let createdSequence = 0
@@ -244,9 +243,6 @@ export function createFollowCommentPrismaHarness(options: HarnessOptions) {
     ]),
     Clue: makeCollection([
       { id: 'lead-1', organizationId: options.tenantId, name: targetNames.lead },
-    ]),
-    Opportunity: makeCollection([
-      { id: 'opportunity-1', organizationId: options.tenantId, name: targetNames.opportunity },
     ]),
   }
   if (options.kind === 'record') {

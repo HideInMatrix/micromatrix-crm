@@ -10,7 +10,7 @@ import { showFailToast } from 'vant'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { showSuccessFeedback } from '@/utils/feedback'
-import { contactApi, followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
+import { contactApi, followUpPlanApi, leadApi } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -41,7 +41,7 @@ export function useMobileFollowUpPlanForm(
   const targetLocked = computed(() => Boolean(targetType.value && targetId.value))
   const currentTargetType = computed<FollowUpPlanTargetType>(() => {
     const value = formModel.value.targetType
-    return value === 'lead' || value === 'opportunity' || value === 'customer' ? value : 'customer'
+    return value === 'lead' || value === 'customer' ? value : 'customer'
   })
   const currentTargetId = computed(() => stringValue('targetId'))
   const writableDynamicFields = computed(() =>
@@ -125,38 +125,15 @@ export function useMobileFollowUpPlanForm(
         targets.value = data
         return
       }
-      const { data } = await opportunityApi.list({ page: 1, pageSize: 100 })
-      targets.value = data.items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        customerId: item.customerId,
-      }))
     } catch (error) {
       showFailToast(extractErrorMessage(error))
-    }
-  }
-
-  async function resolveOpportunityCustomerId() {
-    const fromOptions = targets.value.find(
-      (item) => item.id === currentTargetId.value,
-    )?.customerId
-    if (fromOptions) return fromOptions
-    if (!currentTargetId.value) return ''
-    try {
-      return (await opportunityApi.get(currentTargetId.value)).data.customerId
-    } catch (error) {
-      showFailToast(extractErrorMessage(error))
-      return ''
     }
   }
 
   async function loadContacts() {
     contacts.value = []
     if (currentTargetType.value === 'lead') return
-    const customerId =
-      currentTargetType.value === 'customer'
-        ? currentTargetId.value
-        : await resolveOpportunityCustomerId()
+    const customerId = currentTargetId.value
     if (!customerId) return
     try {
       const { data } = await contactApi.list(customerId)

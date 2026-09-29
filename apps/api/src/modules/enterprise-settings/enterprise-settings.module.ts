@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module.js'
+import { PrismaModule } from '../../prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { EnterpriseAiModelsController } from './enterprise-ai-models.controller'
 import { EnterpriseAiModelsService } from './enterprise-ai-models.service'

@@ -9,7 +9,7 @@ import {
 import { computed, ref, watch } from 'vue'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { contactApi, followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
+import { contactApi, followUpPlanApi, leadApi } from '@/api/sales'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import FollowUpPlanSystemField from '@/components/follow-plans/FollowUpPlanSystemField.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -66,7 +66,7 @@ const writableCustomFields = computed(() =>
 )
 const currentTargetType = computed<FollowUpPlanTargetType>(() => {
   const value = formModel.value.targetType
-  return value === 'lead' || value === 'opportunity' || value === 'customer' ? value : 'customer'
+  return value === 'lead' || value === 'customer' ? value : 'customer'
 })
 const currentTargetId = computed(() => stringValue('targetId'))
 
@@ -93,13 +93,6 @@ async function loadTargets() {
     } else if (currentTargetType.value === 'customer') {
       const { data } = await listCustomerOptions()
       targets.value = data
-    } else {
-      const { data } = await opportunityApi.list({ page: 1, pageSize: 100 })
-      targets.value = data.items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        customerId: item.customerId,
-      }))
     }
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -111,18 +104,7 @@ async function loadTargets() {
 async function loadContacts() {
   contacts.value = []
   if (currentTargetType.value === 'lead') return
-  let customerId = currentTargetType.value === 'customer' ? currentTargetId.value : ''
-  if (currentTargetType.value === 'opportunity') {
-    customerId = targets.value.find((item) => item.id === currentTargetId.value)?.customerId ?? ''
-    if (!customerId && currentTargetId.value) {
-      try {
-        customerId = (await opportunityApi.get(currentTargetId.value)).data.customerId
-      } catch (error) {
-        ElMessage.error(extractErrorMessage(error))
-        return
-      }
-    }
-  }
+  const customerId = currentTargetId.value
   if (!customerId) return
   try {
     const { data } = await contactApi.list(customerId)

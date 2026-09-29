@@ -6,7 +6,7 @@ import type {
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import type { SaveEnterpriseTermCategoryDto, SaveEnterpriseTermDto } from './dto/term-setting.dto'
 

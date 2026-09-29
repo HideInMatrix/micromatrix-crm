@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { createPrismaClient } from '../../prisma/prisma-client'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import type { RedisService } from '../../redis/redis.service'
+import { createPrismaTestClient } from '../../testing/prisma-test-db'
 import { DistributedCoordinatorService } from './distributed-coordinator.service'
 
 const databaseUrl = process.env['DATABASE_URL']
@@ -200,8 +200,8 @@ test(
     const secondRedis = fakeRedis()
     firstRedis.setUnavailable(true)
     secondRedis.setUnavailable(true)
-    const firstClient = await createPrismaClient(databaseUrl)
-    const secondClient = await createPrismaClient(databaseUrl)
+    const firstClient = createPrismaTestClient(databaseUrl)
+    const secondClient = createPrismaTestClient(databaseUrl)
     await firstClient.connect()
     await secondClient.connect()
     const first = new DistributedCoordinatorService(firstRedis.redis, {

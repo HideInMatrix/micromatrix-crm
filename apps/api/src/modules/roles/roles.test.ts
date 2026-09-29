@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
 import type { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import {
   createPrismaTestDepartment,

@@ -18,9 +18,9 @@ import {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { BatchIdsDto, ResourceBatchEditDto } from '../../common/dto/resource-batch.dto'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { AttachmentsService } from '../attachments/attachments.service'
 import {
   ExportTasksService,
@@ -74,16 +74,7 @@ const CUSTOM_FORM_ATTACHMENT_TARGET = 'customFormData'
 const BUILTIN_DATA_SOURCE_FORM_KEYS: Partial<Record<BuiltinDataSourceType, string>> = {
   CUSTOMER: 'customer',
   CONTACT: 'contact',
-  OPPORTUNITY: 'opportunity',
-  PRODUCT: 'product',
   CLUE: 'lead',
-  PRICE: 'price',
-  CONTRACT: 'contract',
-  QUOTATION: 'quote',
-  PAYMENT_PLAN: 'contractPaymentPlan',
-  CONTRACT_PAYMENT_RECORD: 'contractPaymentRecord',
-  ORDER: 'order',
-  INVOICE: 'invoice',
 }
 
 function dataSourceReferenceKey(sourceType: string, id: string): string {
@@ -1972,82 +1963,12 @@ export class CustomFormsService {
             id: client.sql.public.customer_contact.columns.id,
             name: client.sql.public.customer_contact.columns.name,
           })
-        case 'OPPORTUNITY':
-          return client.raw.sql`SELECT id, name FROM opportunity
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.opportunity.columns.id,
-            name: client.sql.public.opportunity.columns.name,
-          })
-        case 'PRODUCT':
-          return client.raw.sql`SELECT id, name FROM product
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.product.columns.id,
-            name: client.sql.public.product.columns.name,
-          })
         case 'CLUE':
           return client.raw.sql`SELECT id, name FROM clue
             WHERE organization_id = ${tenantId}
               AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
             id: client.sql.public.clue.columns.id,
             name: client.sql.public.clue.columns.name,
-          })
-        case 'PRICE':
-          return client.raw.sql`SELECT id, name FROM product_price
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.product_price.columns.id,
-            name: client.sql.public.product_price.columns.name,
-          })
-        case 'CONTRACT':
-          return client.raw.sql`SELECT id, name FROM contract
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.contract.columns.id,
-            name: client.sql.public.contract.columns.name,
-          })
-        case 'QUOTATION':
-          return client.raw.sql`SELECT id, name FROM opportunity_quotation
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.opportunity_quotation.columns.id,
-            name: client.sql.public.opportunity_quotation.columns.name,
-          })
-        case 'PAYMENT_PLAN':
-          return client.raw.sql`SELECT id, name FROM contract_payment_plan
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.contract_payment_plan.columns.id,
-            name: client.sql.public.contract_payment_plan.columns.name,
-          })
-        case 'CONTRACT_PAYMENT_RECORD':
-          return client.raw.sql`SELECT id, name FROM contract_payment_record
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.contract_payment_record.columns.id,
-            name: client.sql.public.contract_payment_record.columns.name,
-          })
-        case 'BUSINESS_TITLE':
-          return client.raw.sql`SELECT id, name FROM business_title
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.business_title.columns.id,
-            name: client.sql.public.business_title.columns.name,
-          })
-        case 'ORDER':
-          return client.raw.sql`SELECT id, name FROM sales_order
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.sales_order.columns.id,
-            name: client.sql.public.sales_order.columns.name,
-          })
-        case 'INVOICE':
-          return client.raw.sql`SELECT id, name FROM contract_invoice
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.contract_invoice.columns.id,
-            name: client.sql.public.contract_invoice.columns.name,
           })
       }
     })()
@@ -2076,71 +1997,11 @@ export class CustomFormsService {
             id: client.sql.public.customer_contact.columns.id,
             name: client.sql.public.customer_contact.columns.name,
           })
-        case 'OPPORTUNITY':
-          return client.raw.sql`SELECT id, name FROM opportunity
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.opportunity.columns.id,
-            name: client.sql.public.opportunity.columns.name,
-          })
-        case 'PRODUCT':
-          return client.raw.sql`SELECT id, name FROM product
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.product.columns.id,
-            name: client.sql.public.product.columns.name,
-          })
         case 'CLUE':
           return client.raw.sql`SELECT id, name FROM clue
             WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
             id: client.sql.public.clue.columns.id,
             name: client.sql.public.clue.columns.name,
-          })
-        case 'PRICE':
-          return client.raw.sql`SELECT id, name FROM product_price
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.product_price.columns.id,
-            name: client.sql.public.product_price.columns.name,
-          })
-        case 'CONTRACT':
-          return client.raw.sql`SELECT id, name FROM contract
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.contract.columns.id,
-            name: client.sql.public.contract.columns.name,
-          })
-        case 'QUOTATION':
-          return client.raw.sql`SELECT id, name FROM opportunity_quotation
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.opportunity_quotation.columns.id,
-            name: client.sql.public.opportunity_quotation.columns.name,
-          })
-        case 'PAYMENT_PLAN':
-          return client.raw.sql`SELECT id, name FROM contract_payment_plan
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.contract_payment_plan.columns.id,
-            name: client.sql.public.contract_payment_plan.columns.name,
-          })
-        case 'CONTRACT_PAYMENT_RECORD':
-          return client.raw.sql`SELECT id, name FROM contract_payment_record
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.contract_payment_record.columns.id,
-            name: client.sql.public.contract_payment_record.columns.name,
-          })
-        case 'BUSINESS_TITLE':
-          return client.raw.sql`SELECT id, name FROM business_title
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.business_title.columns.id,
-            name: client.sql.public.business_title.columns.name,
-          })
-        case 'ORDER':
-          return client.raw.sql`SELECT id, name FROM sales_order
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.sales_order.columns.id,
-            name: client.sql.public.sales_order.columns.name,
-          })
-        case 'INVOICE':
-          return client.raw.sql`SELECT id, name FROM contract_invoice
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.contract_invoice.columns.id,
-            name: client.sql.public.contract_invoice.columns.name,
           })
       }
     })()

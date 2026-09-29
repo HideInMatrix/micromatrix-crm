@@ -3,7 +3,6 @@ import type {
   FollowTargetType,
   FollowUpVO,
   LeadVO,
-  OpportunityVO,
   PageQuery,
   PaginatedResult,
 } from '@micromatrix/shared'
@@ -56,17 +55,12 @@ export function createLead(data: Record<string, unknown>) {
   return http.post<LeadVO>('/lead/add', data)
 }
 
-export function transformLead(data: { clueId: string; oppCreated?: boolean; oppName?: string }) {
+export function transformLead(data: { clueId: string }) {
   return http.post<{
     clueId: string
     customerId: string
     contactId: string | null
-    opportunityId: string | null
   }>('/lead/transform', data)
-}
-
-export function getOpportunity(id: string) {
-  return http.get<OpportunityVO>(`/opportunity/get/${id}`)
 }
 
 export function pageFollowUps(targetType: FollowTargetType, targetId: string) {

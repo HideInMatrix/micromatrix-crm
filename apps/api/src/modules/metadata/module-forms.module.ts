@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module.js'
+import { PrismaModule } from '../../prisma.module.js'
 import { AttachmentsModule } from '../attachments/attachments.module'
 import { MetadataController } from './metadata.controller'
 import { MetadataService } from './metadata.service'

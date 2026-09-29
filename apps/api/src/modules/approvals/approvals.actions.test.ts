@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import {
@@ -65,7 +65,6 @@ test(
       const resources = { setBizStatus: async () => undefined }
       const service = new ApprovalsService(
         { client: prismaClient } as PrismaService,
-        {} as never,
         {} as never,
         resources as never,
         {} as never,
@@ -293,7 +292,6 @@ test(
             notifications.push({ tenantId, userIds, message })
           },
         } as never,
-        {} as never,
         {} as never,
         {} as never,
       )

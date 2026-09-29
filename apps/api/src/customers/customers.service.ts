@@ -1,11 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
 import {
-  Customer360Resource,
   CustomerRelatedVO,
   CustomerVO,
   DuplicateHitVO,
@@ -38,16 +38,17 @@ import {
 } from '../modules/import-export/export-tasks.service'
 import type { ImportType } from '../modules/import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../modules/import-export/spreadsheet.service'
+import { HomeFilterService } from '../modules/home/home-filter.service'
 import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
 import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
 import { USER_VIEW_RESOURCE_TYPES } from '../modules/user-views/user-views.constants'
 import { UserViewsService } from '../modules/user-views/user-views.service'
-import type { PrismaClient } from '../prisma/prisma-client.js'
+import type { PrismaClient } from '../prisma/db.js'
 import { instantToISOString } from '../prisma/temporal.js'
 import { createLegacyId32 } from '../common/legacy-id'
-import { PrismaService } from '../prisma/prisma.service.js'
+import { PrismaService } from '../prisma.service.js'
 import { CustomerAccessService } from './customer-access.service'
 import type {
   AccountAddDto,
@@ -67,6 +68,7 @@ type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[
 
 type CustomerQueryInput = Omit<QueryCustomersDto, 'filters'> & {
   filters?: string | FilterCondition[]
+  homeFilter?: string
 }
 
 type Customer = {
@@ -108,6 +110,7 @@ export class CustomersService {
     private readonly spreadsheet: SpreadsheetService,
     private readonly exportTasks: ExportTasksService,
     private readonly dictionaries: DictionariesService,
+    private readonly homeFilters: HomeFilterService,
   ) {}
 
   getModuleForm(user: AuthUser) {
@@ -123,6 +126,7 @@ export class CustomersService {
       view: dto.view,
       filters: dto.filters,
       filterMode: dto.filterMode,
+      homeFilter: dto.homeFilter,
     })
     return {
       list: result.items,
@@ -338,6 +342,7 @@ export class CustomersService {
     const adHocConditions = Array.isArray(query.filters)
       ? query.filters
       : parseFilters(query.filters)
+    const homeFilter = this.homeFilters.parse(query.homeFilter, 'customer')
     const viewResourceType = poolMode
       ? USER_VIEW_RESOURCE_TYPES.customer_pool
       : USER_VIEW_RESOURCE_TYPES.customer
@@ -358,6 +363,7 @@ export class CustomersService {
       organizationId: user.tenantId,
     })
     if (poolMode) {
+      if (homeFilter) throw new BadRequestException('首页统计筛选不能用于客户公海')
       const options = await this.pools.options(user, 'customer')
       const accessiblePoolIds = options.map((pool) => String(pool.id))
       if (query.poolId && !accessiblePoolIds.includes(query.poolId)) {
@@ -370,6 +376,16 @@ export class CustomersService {
         db = accessiblePoolIds.length
           ? db.where((row) => row.poolId.in(accessiblePoolIds))
           : db.where((row) => row.id.eq(''))
+      }
+    } else if (homeFilter) {
+      const homeWhere = await this.homeFilters.customerWhere(user, homeFilter)
+      const ownerScope = homeWhere.owner
+      db = db.where({ inSharedPool: false })
+      if (typeof ownerScope === 'string') {
+        db = db.where({ owner: ownerScope })
+      } else if (ownerScope?.in) {
+        const ownerIds = ownerScope.in
+        db = db.where((row) => row.owner.in(ownerIds))
       }
     } else {
       db = db.where({ inSharedPool: false })
@@ -625,18 +641,10 @@ export class CustomersService {
       leadQuery = leadQuery.where({ phone: phone })
     }
 
-    const [customerRows, contactRows, leadRows, opportunityRows] = await Promise.all([
+    const [customerRows, contactRows, leadRows] = await Promise.all([
       customerQuery.limit(10).all(),
       contactQuery.limit(10).all(),
       leadQuery.limit(10).all(),
-      name
-        ? this.prisma.client.orm.public.Opportunity.where({
-            organizationId: user.tenantId,
-          })
-            .where((row) => row.name.ilike('%' + name + '%'))
-            .limit(10)
-            .all()
-        : Promise.resolve([]),
     ])
     const customers = customerRows as unknown as Customer[]
     const contactCustomerIds = [
@@ -644,12 +652,7 @@ export class CustomersService {
         contactRows.flatMap((contact) => (contact.customerId ? [String(contact.customerId)] : [])),
       ),
     ]
-    const opportunityCustomerIds = [
-      ...new Set(
-        opportunityRows.flatMap((item) => (item.customerId ? [String(item.customerId)] : [])),
-      ),
-    ]
-    const refCustomerIds = [...new Set([...contactCustomerIds, ...opportunityCustomerIds])]
+    const refCustomerIds = contactCustomerIds
     const refCustomers = refCustomerIds.length
       ? await this.prisma.client.orm.public.Customer.where((row) => row.id.in(refCustomerIds))
           .select('id', 'name', 'owner', 'inSharedPool')
@@ -682,33 +685,20 @@ export class CustomersService {
       owner: lead.owner ? String(lead.owner) : null,
       inSharedPool: lead.inSharedPool,
     }))
-    const opportunities = opportunityRows.map((item) => ({
-      id: String(item.id),
-      name: String(item.name),
-      owner: String(item.owner),
-      customer: item.customerId ? (customerRefMap.get(String(item.customerId)) ?? null) : null,
-    }))
-
     const customerIds = [
       ...customers.map((customer) => customer.id),
       ...contacts.flatMap((contact) => (contact.customerId ? [contact.customerId] : [])),
     ]
-    const [inScopeCustomers, inScopeLeads, inScopeOpps, ownerMap, customerValues] =
-      await Promise.all([
+    const [inScopeCustomers, inScopeLeads, ownerMap, customerValues] = await Promise.all([
         this.inScopeCustomerIds(user, customerIds),
         this.inScopeLeadIds(
           user,
           leads.map((lead) => lead.id),
         ),
-        this.inScopeOpportunityIds(
-          user,
-          opportunities.map((item) => item.id),
-        ),
         this.userNames([
           ...customers.map((customer) => customer.owner),
           ...contacts.map((contact) => contact.customer?.owner),
           ...leads.map((lead) => lead.owner),
-          ...opportunities.map((item) => item.owner),
         ]),
         this.fieldValues.load(
           user.tenantId,
@@ -755,18 +745,6 @@ export class CustomersService {
         inScope,
       })
     }
-    for (const row of opportunities) {
-      const inScope = inScopeOpps.has(row.id)
-      hits.push({
-        id: row.id,
-        source: 'opportunity',
-        name: inScope ? row.name + (row.customer ? '（' + row.customer.name + '）' : '') : null,
-        phone: null,
-        ownerName: ownerMap.get(row.owner) ?? null,
-        inSea: false,
-        inScope,
-      })
-    }
     return hits.slice(0, 20)
   }
 
@@ -777,17 +755,7 @@ export class CustomersService {
       !isOpenSea &&
       hasPermission(user.permissions, 'contact:read') &&
       (access.dataScope || access.pool || access.collaborationType === 'COLLABORATION')
-    const canReadOpportunities = !isOpenSea && hasPermission(user.permissions, 'menu:opportunity')
-    const canReadContracts = !isOpenSea && hasPermission(user.permissions, 'menu:contract')
     const canReadTeam = !isOpenSea && access.collaborationType === null
-    const [opportunityScope, contractScope] = await Promise.all([
-      canReadOpportunities
-        ? this.dataScope.directOwnerFilter(user, 'menu:opportunity')
-        : Promise.resolve(null),
-      canReadContracts
-        ? this.dataScope.directOwnerFilter(user, 'menu:contract')
-        : Promise.resolve(null),
-    ])
 
     let contactQuery = this.prisma.client.orm.public.CustomerContact.where({
       organizationId: user.tenantId,
@@ -796,48 +764,10 @@ export class CustomersService {
     if (!access.dataScope && !access.pool && access.collaborationType === 'COLLABORATION') {
       contactQuery = contactQuery.where({ owner: user.id })
     }
-    let opportunityQuery = this.prisma.client.orm.public.Opportunity.where({
-      organizationId: user.tenantId,
-      customerId: id,
-    })
-    if (opportunityScope) {
-      const ownerScope = opportunityScope.owner
-      if (typeof ownerScope === 'string') {
-        opportunityQuery = opportunityQuery.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        opportunityQuery = opportunityQuery.where((row) => row.owner.in(ownerIds))
-      }
-    }
-    let contractQuery = this.prisma.client.orm.public.Contract.where({
-      organizationId: user.tenantId,
-      customerId: id,
-    })
-    if (contractScope) {
-      const ownerScope = contractScope.owner
-      if (typeof ownerScope === 'string') {
-        contractQuery = contractQuery.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        contractQuery = contractQuery.where((row) => row.owner.in(ownerIds))
-      }
-    }
 
-    const [contacts, opportunityRows, contracts, followUps, team] = await Promise.all([
+    const [contacts, followUps, team] = await Promise.all([
       canReadContacts
         ? contactQuery.orderBy((row) => row.createTime.asc()).all()
-        : Promise.resolve([]),
-      canReadOpportunities
-        ? opportunityQuery
-            .orderBy((row) => row.createTime.desc())
-            .limit(50)
-            .all()
-        : Promise.resolve([]),
-      canReadContracts
-        ? contractQuery
-            .orderBy((row) => row.createTime.desc())
-            .limit(50)
-            .all()
         : Promise.resolve([]),
       this.prisma.client.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
@@ -856,72 +786,14 @@ export class CustomersService {
         : Promise.resolve([]),
     ])
 
-    const stageIds = [...new Set(opportunityRows.map((item) => String(item.stage)))]
-    const contractIds = contracts.map((item) => String(item.id))
-    const [stageRows, paymentRecords, ownerMap] = await Promise.all([
-      stageIds.length
-        ? this.prisma.client.orm.public.OpportunityStageConfig.where((row) => row.id.in(stageIds))
-            .select('id', 'name')
-            .all()
-        : Promise.resolve([]),
-      contractIds.length
-        ? this.prisma.client.orm.public.ContractPaymentRecord.where((row) =>
-            row.contractId.in(contractIds),
-          )
-            .select('contractId', 'recordAmount')
-            .all()
-        : Promise.resolve([]),
-      this.userNames([
-        ...opportunityRows.map((item) => String(item.owner)),
-        ...team.map((item) => String(item.userId)),
-      ]),
-    ])
-    const stageMap = new Map(stageRows.map((stage) => [String(stage.id), String(stage.name)]))
-    const paidMap = new Map<string, number>()
-    for (const record of paymentRecords) {
-      const contractId = String(record.contractId)
-      paidMap.set(contractId, (paidMap.get(contractId) ?? 0) + Number(record.recordAmount ?? 0))
-    }
-
-    const contractRows = contracts.map((contract) => {
-      const contractId = String(contract.id)
-      return {
-        id: contractId,
-        name: String(contract.name),
-        amount: Number(contract.amount),
-        paidAmount: Math.round((paidMap.get(contractId) ?? 0) * 100) / 100,
-        status: String(contract.stage),
-        createdAt: new Date(Number(contract.createTime)).toISOString(),
-      }
-    })
+    const ownerMap = await this.userNames(team.map((item) => String(item.userId)))
 
     return {
-      stats: {
-        opportunityCount: opportunityRows.length,
-        opportunityAmount:
-          Math.round(
-            opportunityRows.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) * 100,
-          ) / 100,
-        contractCount: contracts.length,
-        contractAmount:
-          Math.round(contractRows.reduce((sum, item) => sum + item.amount, 0) * 100) / 100,
-        paidAmount:
-          Math.round(contractRows.reduce((sum, item) => sum + item.paidAmount, 0) * 100) / 100,
-      },
       contacts: contacts.map((contact) => ({
         id: String(contact.id),
         name: String(contact.name),
         phone: contact.phone ? String(contact.phone) : null,
       })),
-      opportunities: opportunityRows.map((item) => ({
-        id: String(item.id),
-        name: String(item.name),
-        amount: item.amount === null ? null : Number(item.amount),
-        stageName: stageMap.get(String(item.stage)) ?? String(item.stage),
-        ownerName: ownerMap.get(String(item.owner)) ?? null,
-        createdAt: new Date(Number(item.createTime)).toISOString(),
-      })),
-      contracts: contractRows,
       followUps: followUps.map((record) => ({
         id: record.id,
         targetType: record.targetType as 'customer',
@@ -946,463 +818,6 @@ export class CustomersService {
         collaborationType: String(member.collaborationType) as 'READ_ONLY' | 'COLLABORATION',
         createdAt: new Date(Number(member.createTime)).toISOString(),
       })),
-    }
-  }
-
-  async relatedResource(
-    user: AuthUser,
-    id: string,
-    resource: Customer360Resource,
-    page = 1,
-    pageSize = 10,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const access = await this.customerAccess.assertRead(user, id)
-    if (access.customer.inSharedPool) {
-      throw new ForbiddenException('客户公海详情不提供该 360 业务资源')
-    }
-    this.assert360ResourcePermission(user, resource)
-    const resourceScope = (await this.customer360ResourceScope(user, resource)) as CustomerListScope
-    const ownerScope = resourceScope.owner
-    const take = Math.min(Math.max(pageSize, 1), 100)
-    const currentPage = Math.max(page, 1)
-    const skip = (currentPage - 1) * take
-
-    if (resource === 'opportunities') {
-      let query = this.prisma.client.orm.public.Opportunity.where({
-        organizationId: user.tenantId,
-        customerId: id,
-      })
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const [rows, aggregate] = await Promise.all([
-        query
-          .orderBy((row) => row.createTime.desc())
-          .offset(skip)
-          .limit(take)
-          .all(),
-        query.aggregate((row) => ({ count: row.count() })),
-      ])
-      const stageIds = [...new Set(rows.map((row) => String(row.stage)))]
-      const [ownerMap, stages] = await Promise.all([
-        this.userNames(rows.map((row) => String(row.owner))),
-        stageIds.length
-          ? this.prisma.client.orm.public.OpportunityStageConfig.where((row) => row.id.in(stageIds))
-              .select('id', 'name')
-              .all()
-          : Promise.resolve([]),
-      ])
-      const stageMap = new Map(stages.map((stage) => [String(stage.id), String(stage.name)]))
-      return {
-        items: rows.map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          amount: row.amount === null ? null : Number(row.amount),
-          stageName: stageMap.get(String(row.stage)) ?? String(row.stage),
-          ownerName: ownerMap.get(String(row.owner)) ?? null,
-          createdAt: new Date(Number(row.createTime)).toISOString(),
-        })),
-        total: aggregate.count,
-        page: currentPage,
-        pageSize: take,
-      }
-    }
-
-    if (resource === 'contracts') {
-      let query = this.prisma.client.orm.public.Contract.where({
-        organizationId: user.tenantId,
-        customerId: id,
-      })
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const [rows, aggregate] = await Promise.all([
-        query
-          .orderBy((row) => row.createTime.desc())
-          .offset(skip)
-          .limit(take)
-          .all(),
-        query.aggregate((row) => ({ count: row.count() })),
-      ])
-      const contractIds = rows.map((row) => String(row.id))
-      const [ownerMap, stageConfigs, paymentRecords] = await Promise.all([
-        this.userNames(rows.map((row) => String(row.owner))),
-        this.prisma.client.orm.public.ContractStageConfig.where({
-          organizationId: user.tenantId,
-        })
-          .select('id', 'name')
-          .all(),
-        contractIds.length
-          ? this.prisma.client.orm.public.ContractPaymentRecord.where((row) =>
-              row.contractId.in(contractIds),
-            )
-              .select('contractId', 'recordAmount')
-              .all()
-          : Promise.resolve([]),
-      ])
-      const stageMap = new Map(stageConfigs.map((stage) => [String(stage.id), String(stage.name)]))
-      const paidMap = new Map<string, number>()
-      for (const record of paymentRecords) {
-        const contractId = String(record.contractId)
-        paidMap.set(contractId, (paidMap.get(contractId) ?? 0) + Number(record.recordAmount ?? 0))
-      }
-      return {
-        items: rows.map((row) => ({
-          id: String(row.id),
-          number: String(row.number),
-          name: String(row.name),
-          amount: Number(row.amount),
-          paidAmount: Math.round((paidMap.get(String(row.id)) ?? 0) * 100) / 100,
-          stage: String(row.stage),
-          stageName: stageMap.get(String(row.stage)) ?? String(row.stage),
-          approvalStatus: String(row.approvalStatus),
-          ownerName: ownerMap.get(String(row.owner)) ?? null,
-          createTime: Number(row.createTime),
-        })),
-        total: aggregate.count,
-        page: currentPage,
-        pageSize: take,
-      }
-    }
-
-    const contractRows = await this.prisma.client.orm.public.Contract.where({
-      organizationId: user.tenantId,
-      customerId: id,
-    })
-      .select('id', 'name')
-      .all()
-    const contractIds = contractRows.map((row) => String(row.id))
-    const contractMap = new Map(contractRows.map((row) => [String(row.id), String(row.name)]))
-
-    if (resource === 'contractPaymentPlans') {
-      let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
-        organizationId: user.tenantId,
-      })
-      query = contractIds.length
-        ? query.where((row) => row.contractId.in(contractIds))
-        : query.where((row) => row.id.eq(''))
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const [rows, aggregate] = await Promise.all([
-        query
-          .orderBy([(row) => row.planEndTime.asc(), (row) => row.createTime.asc()])
-          .offset(skip)
-          .limit(take)
-          .all(),
-        query.aggregate((row) => ({ count: row.count() })),
-      ])
-      const ownerMap = await this.userNames(rows.map((row) => String(row.owner)))
-      return {
-        items: rows.map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          contractId: String(row.contractId),
-          contractName: contractMap.get(String(row.contractId)) ?? '',
-          owner: String(row.owner),
-          ownerName: ownerMap.get(String(row.owner)) ?? null,
-          planStatus: String(row.planStatus),
-          planAmount: row.planAmount === null ? null : Number(row.planAmount),
-          planEndTime: row.planEndTime === null ? null : Number(row.planEndTime),
-          createTime: Number(row.createTime),
-        })),
-        total: aggregate.count,
-        page: currentPage,
-        pageSize: take,
-      }
-    }
-
-    if (resource === 'contractPaymentRecords') {
-      let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
-        organizationId: user.tenantId,
-      })
-      query = contractIds.length
-        ? query.where((row) => row.contractId.in(contractIds))
-        : query.where((row) => row.id.eq(''))
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const [rows, aggregate] = await Promise.all([
-        query
-          .orderBy((row) => row.recordEndTime.desc())
-          .offset(skip)
-          .limit(take)
-          .all(),
-        query.aggregate((row) => ({ count: row.count() })),
-      ])
-      const planIds = [
-        ...new Set(rows.flatMap((row) => (row.paymentPlanId ? [String(row.paymentPlanId)] : []))),
-      ]
-      const [ownerMap, plans] = await Promise.all([
-        this.userNames(rows.map((row) => String(row.owner))),
-        planIds.length
-          ? this.prisma.client.orm.public.ContractPaymentPlan.where((row) => row.id.in(planIds))
-              .select('id', 'name')
-              .all()
-          : Promise.resolve([]),
-      ])
-      const planMap = new Map(plans.map((plan) => [String(plan.id), String(plan.name)]))
-      return {
-        items: rows.map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          no: row.no ? String(row.no) : null,
-          contractId: String(row.contractId),
-          contractName: contractMap.get(String(row.contractId)) ?? '',
-          paymentPlanId: row.paymentPlanId ? String(row.paymentPlanId) : null,
-          paymentPlanName: row.paymentPlanId
-            ? (planMap.get(String(row.paymentPlanId)) ?? null)
-            : null,
-          owner: String(row.owner),
-          ownerName: ownerMap.get(String(row.owner)) ?? null,
-          recordAmount: row.recordAmount === null ? null : Number(row.recordAmount),
-          recordEndTime: row.recordEndTime === null ? null : Number(row.recordEndTime),
-          createTime: Number(row.createTime),
-        })),
-        total: aggregate.count,
-        page: currentPage,
-        pageSize: take,
-      }
-    }
-
-    if (resource === 'invoices') {
-      let query = this.prisma.client.orm.public.ContractInvoice.where({
-        organizationId: user.tenantId,
-      })
-      query = contractIds.length
-        ? query.where((row) => row.contractId.in(contractIds))
-        : query.where((row) => row.id.eq(''))
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const [rows, aggregate] = await Promise.all([
-        query
-          .orderBy((row) => row.createTime.desc())
-          .offset(skip)
-          .limit(take)
-          .all(),
-        query.aggregate((row) => ({ count: row.count() })),
-      ])
-      const titleIds = [
-        ...new Set(
-          rows.flatMap((row) => (row.businessTitleId ? [String(row.businessTitleId)] : [])),
-        ),
-      ]
-      const [ownerMap, titles] = await Promise.all([
-        this.userNames(rows.map((row) => String(row.owner))),
-        titleIds.length
-          ? this.prisma.client.orm.public.BusinessTitle.where((row) => row.id.in(titleIds))
-              .select('id', 'name')
-              .all()
-          : Promise.resolve([]),
-      ])
-      const titleMap = new Map(titles.map((title) => [String(title.id), String(title.name)]))
-      return {
-        items: rows.map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          contractId: String(row.contractId),
-          contractName: contractMap.get(String(row.contractId)) ?? '',
-          businessTitleId: row.businessTitleId ? String(row.businessTitleId) : null,
-          businessTitleName: row.businessTitleId
-            ? (titleMap.get(String(row.businessTitleId)) ?? null)
-            : null,
-          owner: String(row.owner),
-          ownerName: ownerMap.get(String(row.owner)) ?? null,
-          amount: row.amount === null ? null : Number(row.amount),
-          invoiceType: String(row.invoiceType),
-          taxRate: row.taxRate === null ? null : Number(row.taxRate),
-          approvalStatus: String(row.approvalStatus),
-          approved: row.approved,
-          createTime: Number(row.createTime),
-        })),
-        total: aggregate.count,
-        page: currentPage,
-        pageSize: take,
-      }
-    }
-
-    let query = this.prisma.client.orm.public.SalesOrder.where({
-      organizationId: user.tenantId,
-      customerId: id,
-    })
-    if (typeof ownerScope === 'string') {
-      query = query.where({ owner: ownerScope })
-    } else if (ownerScope?.in) {
-      const ownerIds = ownerScope.in
-      query = query.where((row) => row.owner.in(ownerIds))
-    }
-    const [rows, aggregate] = await Promise.all([
-      query
-        .orderBy((row) => row.createTime.desc())
-        .offset(skip)
-        .limit(take)
-        .all(),
-      query.aggregate((row) => ({ count: row.count() })),
-    ])
-    const orderContractIds = [
-      ...new Set(rows.flatMap((row) => (row.contractId ? [String(row.contractId)] : []))),
-    ]
-    const orderContracts = orderContractIds.length
-      ? await this.prisma.client.orm.public.Contract.where((row) => row.id.in(orderContractIds))
-          .select('id', 'name')
-          .all()
-      : []
-    const orderContractMap = new Map(
-      orderContracts.map((contract) => [String(contract.id), String(contract.name)]),
-    )
-    const ownerMap = await this.userNames(
-      rows.flatMap((row) => (row.owner ? [String(row.owner)] : [])),
-    )
-    return {
-      items: rows.map((row) => ({
-        id: String(row.id),
-        number: String(row.number),
-        name: String(row.name),
-        contractId: row.contractId ? String(row.contractId) : null,
-        contractName: row.contractId
-          ? (orderContractMap.get(String(row.contractId)) ?? null)
-          : null,
-        amount: row.amount === null ? null : Number(row.amount),
-        stage: String(row.stage),
-        approvalStatus: String(row.approvalStatus),
-        approved: row.approved,
-        owner: row.owner ? String(row.owner) : null,
-        ownerName: row.owner ? (ownerMap.get(String(row.owner)) ?? null) : null,
-        createTime: Number(row.createTime),
-      })),
-      total: aggregate.count,
-      page: currentPage,
-      pageSize: take,
-    }
-  }
-
-  async resourceStatistic(
-    user: AuthUser,
-    customerId: string,
-    resource: 'contracts' | 'contractPaymentPlans' | 'contractPaymentRecords' | 'invoices',
-  ) {
-    await this.customerAccess.assertRead(user, customerId)
-    this.assert360ResourcePermission(user, resource)
-    const resourceScope = (await this.customer360ResourceScope(user, resource)) as CustomerListScope
-    const contractScope =
-      resource === 'invoices'
-        ? ((await this.dataScope.directOwnerFilter(user, 'menu:contract')) as CustomerListScope)
-        : resourceScope
-
-    let contractQuery = this.prisma.client.orm.public.Contract.where({
-      organizationId: user.tenantId,
-      customerId: customerId,
-    })
-    const contractOwner = contractScope.owner
-    if (typeof contractOwner === 'string') {
-      contractQuery = contractQuery.where({ owner: contractOwner })
-    } else if (contractOwner?.in) {
-      const ownerIds = contractOwner.in
-      contractQuery = contractQuery.where((row) => row.owner.in(ownerIds))
-    }
-    const contractAggregate = await contractQuery.aggregate((agg) => ({
-      amount: agg.sum('amount'),
-    }))
-    const contractAmount = Number(contractAggregate.amount ?? 0)
-    if (resource === 'contracts') return { totalAmount: contractAmount }
-
-    const customerContracts = await this.prisma.client.orm.public.Contract.where({
-      organizationId: user.tenantId,
-      customerId: customerId,
-    })
-      .select('id')
-      .all()
-    const contractIds = customerContracts.map((row) => String(row.id))
-
-    if (resource === 'contractPaymentPlans') {
-      let query = this.prisma.client.orm.public.ContractPaymentPlan.where({
-        organizationId: user.tenantId,
-      })
-      query = contractIds.length
-        ? query.where((row) => row.contractId.in(contractIds))
-        : query.where((row) => row.id.eq(''))
-      const ownerScope = resourceScope.owner
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const result = await query.aggregate((agg) => ({ amount: agg.sum('planAmount') }))
-      return { totalPlanAmount: Number(result.amount ?? 0) }
-    }
-
-    if (resource === 'contractPaymentRecords') {
-      let query = this.prisma.client.orm.public.ContractPaymentRecord.where({
-        organizationId: user.tenantId,
-      })
-      query = contractIds.length
-        ? query.where((row) => row.contractId.in(contractIds))
-        : query.where((row) => row.id.eq(''))
-      const ownerScope = resourceScope.owner
-      if (typeof ownerScope === 'string') {
-        query = query.where({ owner: ownerScope })
-      } else if (ownerScope?.in) {
-        const ownerIds = ownerScope.in
-        query = query.where((row) => row.owner.in(ownerIds))
-      }
-      const result = await query.aggregate((agg) => ({ amount: agg.sum('recordAmount') }))
-      const receivedAmount = Number(result.amount ?? 0)
-      return {
-        totalAmount: contractAmount,
-        receivedAmount,
-        pendingAmount: Math.max(0, contractAmount - receivedAmount),
-      }
-    }
-
-    const invoiceApprovalAggregate = await this.prisma.client.orm.public.ApprovalFlows.where({
-      tenantId: user.tenantId,
-      formType: 'INVOICE',
-      enabled: true,
-    })
-      .where((row) => row.deletedAt.isNull())
-      .where((row) => row.currentVersionId.isNotNull())
-      .aggregate((agg) => ({ count: agg.count() }))
-    const invoiceApprovalEnabled = invoiceApprovalAggregate.count > 0
-
-    let invoiceQuery = this.prisma.client.orm.public.ContractInvoice.where({
-      organizationId: user.tenantId,
-    })
-    invoiceQuery = contractIds.length
-      ? invoiceQuery.where((row) => row.contractId.in(contractIds))
-      : invoiceQuery.where((row) => row.id.eq(''))
-    const ownerScope = resourceScope.owner
-    if (typeof ownerScope === 'string') {
-      invoiceQuery = invoiceQuery.where({ owner: ownerScope })
-    } else if (ownerScope?.in) {
-      const ownerIds = ownerScope.in
-      invoiceQuery = invoiceQuery.where((row) => row.owner.in(ownerIds))
-    }
-    if (invoiceApprovalEnabled) {
-      invoiceQuery = invoiceQuery.where({ approvalStatus: 'APPROVED' })
-    }
-    const result = await invoiceQuery.aggregate((agg) => ({ amount: agg.sum('amount') }))
-    const invoicedAmount = Number(result.amount ?? 0)
-    return {
-      contractAmount,
-      invoicedAmount,
-      uninvoicedAmount: Math.max(0, contractAmount - invoicedAmount),
     }
   }
 
@@ -1475,6 +890,95 @@ export class CustomersService {
   async update(user: AuthUser, id: string, dto: UpdateCustomerDto): Promise<CustomerVO> {
     const existing = await this.ensureInScope(user, id, 'customer:update')
     return this.updateExisting(user, existing, dto)
+  }
+
+  /** 将外部 field id/key 归一成当前 Customer 表单的稳定动态字段 key。 */
+  async normalizeWritableDynamicFields(user: AuthUser, input: Record<string, unknown>) {
+    const entries = Object.entries(input)
+    if (entries.length === 0) throw new BadRequestException('至少需要一个客户更新字段')
+    const fields = await this.metadata.listFields(user.tenantId, MODULE)
+    const fieldMap = new Map(
+      fields.flatMap((field) => [
+        [field.id, field] as const,
+        [field.key, field] as const,
+      ]),
+    )
+    const values: Record<string, unknown> = {}
+    for (const [identity, value] of entries) {
+      const field = fieldMap.get(identity)
+      if (!field) throw new BadRequestException(`客户字段不存在：${identity}`)
+      if (field.system) {
+        throw new BadRequestException(`系统字段「${field.label}」不允许通过动态更新写入`)
+      }
+      if (field.hidden) throw new BadRequestException(`「${field.label}」当前不可编辑`)
+      if (field.type === 'formula') throw new BadRequestException('计算字段不支持外部写入')
+      if (field.type === 'sub_product') throw new BadRequestException('子表格不支持外部写入')
+      if (Object.prototype.hasOwnProperty.call(values, field.key)) {
+        throw new BadRequestException(`字段「${field.label}」被重复指定`)
+      }
+      this.metadata.validateBatchFieldValue(field, value)
+      values[field.key] = value
+    }
+    return values
+  }
+
+  /**
+   * 为需要由调用方统一持有事务的集成场景准备 Customer 动态字段更新。
+   * 只接受当前 Customer 表单中的非系统可写字段，并把 field id/key 归一成稳定 key。
+   */
+  async prepareDynamicFieldUpdate(
+    user: AuthUser,
+    id: string,
+    input: Record<string, unknown>,
+  ) {
+    const existing = await this.ensureInScope(user, id, 'customer:update')
+    const values = await this.normalizeWritableDynamicFields(user, input)
+    await this.fieldValues.validate(user.tenantId, 'customer', values, {
+      mode: 'update',
+      resourceId: existing.id,
+    })
+    return { existing, values }
+  }
+
+  /**
+   * 应用已准备的动态字段更新；事务由上层持有。
+   * 如果准备后 Customer 被转移到其它负责人/公海，拒绝用旧权限快照继续写入。
+   */
+  async applyPreparedDynamicFieldUpdateInTransaction(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<CustomersService['prepareDynamicFieldUpdate']>>,
+    tx: PrismaTransaction,
+  ) {
+    const current = await tx.orm.public.Customer.where({
+      id: prepared.existing.id,
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    }).first()
+    if (!current) throw new NotFoundException('客户不存在或已不在可更新范围')
+    if (
+      current.owner !== prepared.existing.owner ||
+      current.updateTime !== prepared.existing.updateTime
+    ) {
+      throw new ConflictException({
+        code: 'CUSTOMER_CHANGED_RETRY',
+        message: '客户在更新前已发生变化，请重新定位后重试',
+      })
+    }
+    const updated = await tx.orm.public.Customer.where({ id: current.id }).update({
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
+    })
+    if (!updated) throw new NotFoundException('客户不存在')
+    await this.fieldValues.save(
+      user.tenantId,
+      'customer',
+      current.id,
+      prepared.values,
+      'update',
+      tx,
+      user.id,
+    )
+    return updated
   }
 
   private async updateExisting(
@@ -2282,18 +1786,8 @@ export class CustomersService {
     const context = await this.prepareMergeContext(user, dto)
     const sourceIds = context.sourceIds
     const sourceVarchars = sourceIds
-    const sourceOpportunities = await this.prisma.client.orm.public.Opportunity.where({
-      organizationId: user.tenantId,
-    })
-      .where((row) => row.customerId.in(sourceVarchars))
-      .select('id')
-      .all()
-    const opportunityIds = sourceOpportunities.map((row) => String(row.id))
     const [
       ownerMap,
-      opportunityAggregate,
-      quoteAggregate,
-      contractAggregate,
       followUpAggregate,
       followUpPlanAggregate,
       attachmentAggregate,
@@ -2305,23 +1799,6 @@ export class CustomersService {
         ...context.sources.map((item) => item.owner),
         context.newOwner.id,
       ]),
-      this.prisma.client.orm.public.Opportunity.where({
-        organizationId: user.tenantId,
-      })
-        .where((row) => row.customerId.in(sourceVarchars))
-        .aggregate((row) => ({ count: row.count() })),
-      opportunityIds.length
-        ? this.prisma.client.orm.public.OpportunityQuotation.where({
-            organizationId: user.tenantId,
-          })
-            .where((row) => row.opportunityId.in(opportunityIds))
-            .aggregate((row) => ({ count: row.count() }))
-        : Promise.resolve({ count: 0 }),
-      this.prisma.client.orm.public.Contract.where({
-        organizationId: user.tenantId,
-      })
-        .where((row) => row.customerId.in(sourceVarchars))
-        .aggregate((row) => ({ count: row.count() })),
       this.prisma.client.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',
@@ -2371,9 +1848,6 @@ export class CustomersService {
         contacts: context.sourceContacts.length,
         contactsWillMove: context.sourceContacts.length - context.skipContactIds.length,
         contactsWillSkip: context.skipContactIds.length,
-        opportunities: opportunityAggregate.count,
-        quotes: quoteAggregate.count,
-        contracts: contractAggregate.count,
         followUps: followUpAggregate.count,
         followUpPlans: followUpPlanAggregate.count,
         attachments: attachmentAggregate.count,
@@ -2421,10 +1895,6 @@ export class CustomersService {
           if (!skipContactIds.includes(conflict.sourceContactId)) continue
           const targetContactId = conflict.targetContactIds[0]
           if (targetContactId) {
-            await tx.orm.public.Opportunity.where({
-              organizationId: user.tenantId,
-              contactId: conflict.sourceContactId,
-            }).updateAndCount({ contactId: targetContactId })
             await tx.orm.public.FollowUpPlans.where({
               tenantId: user.tenantId,
               contactId: conflict.sourceContactId,
@@ -2456,16 +1926,6 @@ export class CustomersService {
           updateTime: now,
           updateUser: user.id,
         })
-      await tx.orm.public.Opportunity.where({
-        organizationId: user.tenantId,
-      })
-        .where((row) => row.customerId.in(sourceVarchars))
-        .updateAndCount({ customerId: dto.toMergeId })
-      await tx.orm.public.Contract.where({
-        organizationId: user.tenantId,
-      })
-        .where((row) => row.customerId.in(sourceVarchars))
-        .updateAndCount({ customerId: dto.toMergeId })
       await tx.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',
@@ -2730,35 +2190,6 @@ export class CustomersService {
     return new Map(users.map((user) => [user.id, user.name]))
   }
 
-  private assert360ResourcePermission(user: AuthUser, resource: Customer360Resource) {
-    const permission = this.customer360ResourcePermission(resource)
-    if (!hasPermission(user.permissions, permission)) {
-      throw new ForbiddenException('没有查看该客户关联数据的权限')
-    }
-  }
-
-  private customer360ResourceScope(user: AuthUser, resource: Customer360Resource) {
-    const permission = this.customer360ResourcePermission(resource)
-    return resource === 'opportunities' ||
-      resource === 'contracts' ||
-      resource === 'contractPaymentPlans' ||
-      resource === 'contractPaymentRecords' ||
-      resource === 'invoices' ||
-      resource === 'orders'
-      ? this.dataScope.directOwnerFilter(user, permission)
-      : this.dataScope.scopeFilter(user, permission)
-  }
-
-  private customer360ResourcePermission(resource: Customer360Resource) {
-    return resource === 'opportunities'
-      ? 'menu:opportunity'
-      : resource === 'invoices'
-        ? 'CONTRACT_INVOICE:READ'
-        : resource === 'orders'
-          ? 'ORDER:READ'
-          : 'menu:contract'
-  }
-
   private async buildCustomerRelation(
     user: AuthUser,
     customerId: string,
@@ -2997,24 +2428,6 @@ export class CustomersService {
             : row.id.in(unique)
       return or(row.inSharedPool.eq(true), direct)
     })
-    const rows = await query.select('id').all()
-    return new Set(rows.map((row) => String(row.id)))
-  }
-
-  private async inScopeOpportunityIds(user: AuthUser, ids: string[]): Promise<Set<string>> {
-    const unique = [...new Set(ids)]
-    if (unique.length === 0) return new Set()
-    const scope = await this.dataScope.directOwnerFilter(user, 'menu:opportunity')
-    let query = this.prisma.client.orm.public.Opportunity.where({
-      organizationId: user.tenantId,
-    }).where((row) => row.id.in(unique))
-    const ownerScope = scope.owner
-    if (typeof ownerScope === 'string') {
-      query = query.where({ owner: ownerScope })
-    } else if (ownerScope?.in) {
-      const ownerIds = ownerScope.in
-      query = query.where((row) => row.owner.in(ownerIds))
-    }
     const rows = await query.select('id').all()
     return new Set(rows.map((row) => String(row.id)))
   }
@@ -3415,45 +2828,16 @@ export class CustomersService {
     return selected
   }
 
-  /**
-   * Cordys 在删除客户前会阻止仍被 Contact / Opportunity 引用的客户。
-   * 报价通过商机关联客户；Contract 仍有旧直接外键，因此一起保护，避免把业务拒绝退化成数据库 FK 500。
-   */
+  /** Cordys 在删除客户前会阻止仍被 Contact 引用的客户。 */
   private async assertCustomersDeletable(tenantId: string, ids: string[]) {
     const customerIds = ids
-    const opportunityRows = await this.prisma.client.orm.public.Opportunity.where({
+    const contacts = await this.prisma.client.orm.public.CustomerContact.where({
       organizationId: tenantId,
     })
       .where((row) => row.customerId.in(customerIds))
-      .select('id')
-      .all()
-    const opportunityIds = opportunityRows.map((row) => String(row.id))
-    const [contacts, opportunities, quotes, contracts] = await Promise.all([
-      this.prisma.client.orm.public.CustomerContact.where({
-        organizationId: tenantId,
-      })
-        .where((row) => row.customerId.in(customerIds))
-        .aggregate((row) => ({ count: row.count() })),
-      this.prisma.client.orm.public.Opportunity.where({
-        organizationId: tenantId,
-      })
-        .where((row) => row.customerId.in(customerIds))
-        .aggregate((row) => ({ count: row.count() })),
-      opportunityIds.length
-        ? this.prisma.client.orm.public.OpportunityQuotation.where({
-            organizationId: tenantId,
-          })
-            .where((row) => row.opportunityId.in(opportunityIds))
-            .aggregate((row) => ({ count: row.count() }))
-        : Promise.resolve({ count: 0 }),
-      this.prisma.client.orm.public.Contract.where({
-        organizationId: tenantId,
-      })
-        .where((row) => row.customerId.in(customerIds))
-        .aggregate((row) => ({ count: row.count() })),
-    ])
-    if (contacts.count + opportunities.count + quotes.count + contracts.count > 0) {
-      throw new BadRequestException('客户已关联联系人、商机或交易数据，不能删除')
+      .aggregate((row) => ({ count: row.count() }))
+    if (contacts.count > 0) {
+      throw new BadRequestException('客户已关联联系人，不能删除')
     }
   }
 

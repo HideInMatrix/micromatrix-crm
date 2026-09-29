@@ -24,6 +24,8 @@ declare module 'vue-router' {
     topMenuActivePath?: string
     /** Cordys 已有、当前项目待实现的页面说明。 */
     plannedFeature?: string
+    /** 路由实现暂时保留，但当前产品不对用户开放。 */
+    productEnabled?: boolean
   }
 }
 
@@ -86,7 +88,7 @@ const router = createRouter({
         {
           path: 'reports',
           component: () => import('@/views/home/ReportsView.vue'),
-          meta: { title: '仪表板', perm: 'menu:dashboard' },
+          meta: { title: '仪表板', perm: 'menu:dashboard', productEnabled: false },
         },
         {
           path: 'leads',
@@ -164,98 +166,6 @@ const router = createRouter({
           },
         },
         {
-          path: 'opportunities',
-          name: 'opportunities',
-          component: () => import('@/views/opportunities/OpportunitiesView.vue'),
-          meta: {
-            title: '商机管理',
-            perm: 'menu:opportunity',
-            topMenuGroup: 'opportunity',
-            topMenuLabel: '商机',
-            topMenuOrder: 10,
-          },
-        },
-        {
-          path: 'products',
-          name: 'products',
-          component: () => import('@/views/products/ProductsView.vue'),
-          meta: {
-            title: '产品管理',
-            perm: 'menu:product',
-            topMenuGroup: 'product',
-            topMenuLabel: '产品',
-            topMenuOrder: 10,
-          },
-        },
-        {
-          path: 'products/prices',
-          name: 'product-prices',
-          component: () => import('@/views/products/ProductsView.vue'),
-          meta: {
-            title: '价格表',
-            perm: 'price:read',
-            activeMenu: '/products',
-            topMenuGroup: 'product',
-            topMenuLabel: '价格表',
-            topMenuOrder: 20,
-          },
-        },
-        {
-          path: 'quotes',
-          component: () => import('@/views/quotes/QuotesView.vue'),
-          meta: {
-            title: '报价管理',
-            perm: 'menu:quote',
-            activeMenu: '/opportunities',
-            topMenuGroup: 'opportunity',
-            topMenuLabel: '报价',
-            topMenuOrder: 20,
-          },
-        },
-        {
-          path: 'contracts',
-          component: () => import('@/views/contracts/ContractsView.vue'),
-          meta: {
-            title: '合同管理',
-            perm: 'menu:contract',
-            topMenuGroup: 'contract',
-            topMenuLabel: '合同',
-            topMenuOrder: 10,
-          },
-        },
-        {
-          path: 'contract/contractInvoice',
-          name: 'contract-invoice',
-          component: () => import('@/views/contracts/InvoicesView.vue'),
-          meta: {
-            title: '发票',
-            perm: 'CONTRACT_INVOICE:READ',
-            activeMenu: '/contracts',
-            topMenuGroup: 'contract',
-            topMenuLabel: '发票',
-            topMenuOrder: 20,
-          },
-        },
-        {
-          path: 'contract/contractBusinessName',
-          name: 'contract-business-title',
-          component: () => import('@/views/contracts/BusinessTitlesView.vue'),
-          meta: {
-            title: '工商抬头',
-            perm: 'CONTRACT_BUSINESS_TITLE:READ',
-            activeMenu: '/contracts',
-            topMenuGroup: 'contract',
-            topMenuLabel: '工商抬头',
-            topMenuOrder: 30,
-          },
-        },
-        {
-          path: 'order/index',
-          name: 'order-index',
-          component: () => import('@/views/orders/OrdersView.vue'),
-          meta: { title: '订单管理', perm: 'ORDER:READ' },
-        },
-        {
           path: 'approvals',
           name: 'approvals',
           component: () => import('@/views/approvals/ApprovalsView.vue'),
@@ -268,16 +178,12 @@ const router = createRouter({
           meta: { title: '跟进计划' },
         },
         {
-          path: 'bidding',
-          component: () => import('@/views/bidding/BiddingView.vue'),
-          meta: { title: '标讯', perm: 'menu:bidding' },
-        },
-        {
           path: 'custom-forms',
           component: () => import('@/views/custom-forms/CustomFormsView.vue'),
           meta: {
             title: '自定义表单',
             perm: 'menu:customForm',
+            productEnabled: false,
           },
         },
         {
@@ -299,16 +205,6 @@ const router = createRouter({
           path: 'system/modules',
           component: () => import('@/views/system/NavigationModulesView.vue'),
           meta: { title: '模块设置', perm: 'system:module' },
-        },
-        {
-          path: 'system/sales-settings',
-          component: () => import('@/views/system/SalesSettingsView.vue'),
-          meta: { title: '销售设置', perm: 'system:module' },
-        },
-        {
-          path: 'system/approval-flows',
-          component: () => import('@/views/system/ApprovalFlowsView.vue'),
-          meta: { title: '流程设置', perm: 'system:process' },
         },
         {
           path: 'system/messages',
@@ -492,6 +388,9 @@ router.beforeEach(async (to) => {
   }
   if (auth.user?.tenantSlug) {
     await enterpriseUi.load(auth.user.tenantSlug).catch(() => undefined)
+  }
+  if (to.meta.productEnabled === false) {
+    return { path: '/' }
   }
   if (to.meta.perm && !auth.hasPerm(to.meta.perm)) {
     return { path: '/' }

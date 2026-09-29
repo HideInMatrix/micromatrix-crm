@@ -155,22 +155,6 @@ export class AccountPoolUpdateDto extends AccountPoolAddDto {
   id!: string
 }
 
-export class AccountCapacityFilterDto {
-  @ApiProperty({ enum: ['stage'] })
-  @IsIn(['stage'])
-  column!: 'stage'
-
-  @ApiProperty({ enum: ['IN', 'NOT_IN'] })
-  @IsIn(['IN', 'NOT_IN'])
-  operator!: 'IN' | 'NOT_IN'
-
-  @ApiProperty({ type: [String] })
-  @IsArray()
-  @ArrayUnique()
-  @IsString({ each: true })
-  value!: string[]
-}
-
 export class AccountCapacityAddDto {
   @ApiProperty({ type: [String] })
   @IsArray()
@@ -184,12 +168,6 @@ export class AccountCapacityAddDto {
   @IsOptional()
   capacity?: number | null
 
-  @ApiPropertyOptional({ type: [AccountCapacityFilterDto] })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => AccountCapacityFilterDto)
-  @IsOptional()
-  filters?: AccountCapacityFilterDto[]
 }
 
 export class AccountCapacityUpdateDto extends AccountCapacityAddDto {

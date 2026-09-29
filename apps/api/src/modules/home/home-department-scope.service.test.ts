@@ -99,7 +99,7 @@ test('首页部门树 DEPT_AND_CHILD 只保留本部门及下级且移除无权�
   })
   const tree = await service.tree(
     authUser([
-      { permissions: ['menu:opportunity'], dataScope: 'DEPT_AND_CHILD', scopeDeptIds: [] },
+      { permissions: ['menu:lead'], dataScope: 'DEPT_AND_CHILD', scopeDeptIds: [] },
     ]),
   )
   assert.deepEqual(tree, [

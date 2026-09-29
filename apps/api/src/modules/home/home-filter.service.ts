@@ -9,13 +9,15 @@ import {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
-import { HomeOpportunityStatisticQuery } from './home-opportunity-statistic.query'
+import { HomeDepartmentScopeService } from './home-department-scope.service'
+import { LeadPoolSlaService } from '../pool-rules/lead-pool-sla.service'
 
 @Injectable()
 export class HomeFilterService {
   constructor(
     private readonly clues: HomeClueStatisticQuery,
-    private readonly opportunities: HomeOpportunityStatisticQuery,
+    private readonly scopes: HomeDepartmentScopeService,
+    private readonly leadSla: LeadPoolSlaService,
   ) {}
 
   parse(raw: string | undefined, expectedModule: HomeFilterModule): HomeFilterPayload | null {
@@ -31,7 +33,10 @@ export class HomeFilterService {
     }
     const candidate = value as Record<string, unknown>
     if (candidate.module !== expectedModule) throw new BadRequestException('首页筛选目标模块不匹配')
-    if (!HOME_STATISTIC_PERIODS.includes(candidate.period as never)) {
+    if (
+      candidate.period !== undefined &&
+      !HOME_STATISTIC_PERIODS.includes(candidate.period as never)
+    ) {
       throw new BadRequestException('首页筛选周期无效')
     }
     if (!HOME_SEARCH_TYPES.includes(candidate.searchType as never)) {
@@ -55,28 +60,76 @@ export class HomeFilterService {
     ) {
       throw new BadRequestException('首页筛选时间字段无效')
     }
+    if (candidate.leadStageKey !== undefined && typeof candidate.leadStageKey !== 'string') {
+      throw new BadRequestException('首页阶段筛选无效')
+    }
+    if (candidate.converted !== undefined && typeof candidate.converted !== 'boolean') {
+      throw new BadRequestException('首页转化筛选无效')
+    }
+    if (candidate.overdue !== undefined && typeof candidate.overdue !== 'boolean') {
+      throw new BadRequestException('首页超时筛选无效')
+    }
     if (
-      candidate.status !== undefined &&
-      candidate.status !== 'AFOOT' &&
-      candidate.status !== 'SUCCESS'
+      candidate.filters !== undefined &&
+      (!Array.isArray(candidate.filters) ||
+        candidate.filters.length > 50 ||
+        candidate.filters.some(
+          (item) => !item || typeof item !== 'object' || Array.isArray(item),
+        ))
     ) {
-      throw new BadRequestException('首页筛选状态无效')
+      throw new BadRequestException('首页附加筛选格式错误')
     }
     return candidate as unknown as HomeFilterPayload
   }
 
-  clueWhere(user: AuthUser, payload: HomeFilterPayload) {
+  async clueWhere(user: AuthUser, payload: HomeFilterPayload) {
     if (payload.module !== 'lead') throw new BadRequestException('首页筛选目标模块不匹配')
     if ((payload.userField ?? 'OWNER') !== 'OWNER') {
       throw new BadRequestException('创建人维度仅用于首页展示，不支持跳转线索列表')
     }
-    return this.clues.whereForPeriod(user, payload, payload.period)
+    const where = payload.period
+      ? await this.clues.whereForPeriod(user, payload, payload.period)
+      : await this.scopeOnlyWhere(user, payload, 'menu:lead')
+    const result = {
+      ...where,
+      ...(payload.leadStageKey ? { stage: payload.leadStageKey } : {}),
+      ...(payload.converted === true ? { converted: true } : {}),
+    }
+    if (!payload.overdue) return result
+    const scope = await this.scopes.resolve(
+      user,
+      'menu:lead',
+      payload.searchType,
+      payload.deptIds ?? [],
+    )
+    const overdue = await this.leadSla.overdue(
+      user.tenantId,
+      scope.all ? null : (scope.userIds ?? []),
+    )
+    return { ...result, ids: overdue.map((item) => item.id) }
   }
 
-  opportunityWhere(user: AuthUser, payload: HomeFilterPayload) {
-    if (payload.module !== 'opportunity') throw new BadRequestException('首页筛选目标模块不匹配')
-    const scenario =
-      payload.status === 'SUCCESS' ? 'SUCCESS' : payload.status === 'AFOOT' ? 'UNDERWAY' : 'ALL'
-    return this.opportunities.whereForPeriod(user, payload, payload.period, scenario)
+  async customerWhere(user: AuthUser, payload: HomeFilterPayload) {
+    if (payload.module !== 'customer') throw new BadRequestException('首页筛选目标模块不匹配')
+    return this.scopeOnlyWhere(user, payload, 'menu:customer')
+  }
+
+  private async scopeOnlyWhere(
+    user: AuthUser,
+    payload: HomeFilterPayload,
+    permission: string,
+  ) {
+    const scope = await this.scopes.resolve(
+      user,
+      permission,
+      payload.searchType,
+      payload.deptIds ?? [],
+    )
+    if (scope.all) return { organizationId: user.tenantId, inSharedPool: false }
+    return {
+      organizationId: user.tenantId,
+      inSharedPool: false,
+      owner: { in: scope.userIds ?? [] },
+    }
   }
 }

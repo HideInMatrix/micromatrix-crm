@@ -148,7 +148,6 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
           }),
         },
         Clue: { where: () => ({ updateAndCount: async () => 0 }) },
-        Opportunity: { where: () => ({ updateAndCount: async () => 0 }) },
       },
     },
   }
@@ -159,7 +158,6 @@ test('sourcePlanId 创建记录时在同一事务完成 claim、Field/Blob、目
           FollowUpPlans: table([sourcePlan]),
           Customer: table([{ id: 'customer-1', name: '测试客户' }]),
           Clue: table([]),
-          Opportunity: table([]),
           CustomerContact: table([]),
         },
       },
@@ -197,7 +195,6 @@ test('统一 page 使用 FOLLOW_RECORD 视图并通过 Prisma 返回跟进记录
           FollowUpRecords: table(rows),
           Customer: table([{ id: 'customer-1', name: '测试客户' }]),
           Clue: table([]),
-          Opportunity: table([]),
           CustomerContact: table([]),
         },
       },
@@ -240,7 +237,6 @@ test('全局 page 在无可访问目标时返回空集合', async () => {
           Clue: table([]),
           Customer: table([]),
           CustomerCollaboration: table([]),
-          Opportunity: table([]),
           FollowUpRecords: table([]),
           CustomerContact: table([]),
         },
@@ -254,7 +250,6 @@ test('全局 page 在无可访问目标时返回空集合', async () => {
       'leadPool:read',
       'customer:read',
       'customerPool:read',
-      'menu:opportunity',
     ],
   }
   const service = baseDeps(prisma, {
@@ -313,7 +308,6 @@ test('FollowRecord page 支持动态标量字段排序，并拒绝复杂字段�
           FollowUpRecordFieldBlob: table([]),
           Customer: table([{ id: 'customer-1', name: '测试客户' }]),
           Clue: table([]),
-          Opportunity: table([]),
           CustomerContact: table([]),
         },
       },

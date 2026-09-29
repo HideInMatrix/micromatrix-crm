@@ -17,6 +17,40 @@
 
 长期集成（脚本/第三方系统）统一到「个人中心 → API Key」创建 AK/SK，并通过 `X-Access-Key` / `X-Secret-Key` 请求头调用。企业设置的第三方集成只用于企微等企业级外部系统配置，不再提供另一套开发 API 凭证。
 
+### 外部财务状态同步
+
+```text
+POST /external-events/customer-sync
+X-Access-Key: ...
+X-Secret-Key: ...
+```
+
+该接口**仅允许 API Key**，Bearer JWT 会返回 `401`。API Key 继续使用创建用户当前的角色、权限和数据范围。
+
+请求示例：
+
+```json
+{
+  "source": "finance-system",
+  "externalEventId": "PAY-20260928-00001",
+  "where": {
+    "studentName": "张三",
+    "phone": "13800000000"
+  },
+  "set": {
+    "status": "已缴费"
+  }
+}
+```
+
+- `where`：field key 或 field id，全部条件固定 AND 精确匹配；Customer 优先，0 条后再查 Lead。
+- `set`：只允许当前 Customer 表单中已存在、可写的动态字段，不允许直接写系统字段。
+- Customer 命中 1 条时直接更新；Lead 命中 1 条时复用正式 Lead → Customer 转换，再把 `set` 写入 Customer。
+- 0 条返回 `NOT_FOUND`；多条返回 `NON_UNIQUE_MATCH`，调用方自行增加更多 where 字段。
+- 幂等键为当前组织 + `source + externalEventId`。同一幂等键使用不同 payload 返回 `IDEMPOTENCY_KEY_REUSED`。
+- SUCCESS 重试不会重复转换或更新；处理中返回 `EVENT_PROCESSING`；FAILED 与超时 PROCESSING 可安全重试。
+- CRM 不保存完整财务 payload，也没有 Payment/ConversionResult 财务账本模型。
+
 ## 导入到 Apifox / Postman
 
 - **Apifox**：新建项目 → 导入数据 → OpenAPI/Swagger → URL 导入 `http://localhost:3000/api/docs-json`，可开启定时同步
@@ -132,7 +166,7 @@ DELETE /follow-up-plans/{id}
 ```
 
 - 列表支持 `page / pageSize / keyword / status / mine / targetType / targetId`；指定 `targetId` 时必须同时指定类型。
-- 目标类型为 `lead / customer / opportunity`，状态为 `PREPARED / UNDERWAY / COMPLETED / CANCELLED`。
+- 目标类型仅为 `lead / customer`，状态为 `PREPARED / UNDERWAY / COMPLETED / CANCELLED`。
 - 新建与目标读取复用对应模块权限和数据范围；客户额外复用 READ_ONLY/COLLABORATION 协作语义。
 - 编辑、删除、状态变更和转换仅限负责人或管理员。`COMPLETED + converted=true` 后拒绝再次变更状态或转换。
 - `/convert` 在单一事务中创建 `FollowUpRecord`、刷新目标最近跟进时间并回写 `convertedRecordId`；重复转换返回 `409`。
@@ -149,12 +183,10 @@ POST  /message-settings/batch             body: { systemEnabled?, emailEnabled? 
 ```
 
 - 读取要求 `system:message`，写入要求 `system:message:update`；动作权限自动补齐系统菜单与读取祖先权限。
-- 列表固定返回 Cordys 五组 35 个事件，数据库只保存租户覆盖值；默认 `systemEnabled=true / emailEnabled=false`。
+- 招生 CRM 当前固定返回 Customer / Lead 两组 26 个事件，数据库只保存租户覆盖值；默认 `systemEnabled=true / emailEnabled=false`。
 - `config` 包含 `timeList / userIds / roleIds / ownerEnable / ownerLevel / roleEnable`。负责人 `OWNER` 必须保留；成员和角色必须属于当前租户。
-- 仅 8 个报价/合同事件接受范围配置，仅 `BUSINESS_QUOTATION_EXPIRING / CONTRACT_EXPIRING / CONTRACT_PAYMENT_EXPIRING` 接受 1 至 10 条不重复的提前天数。
+- 商机、报价、合同、回款、发票和订单专属事件已随旧交易链退出；消息基础设施仍保留，后续业务事件通过同一发送链扩展。
 - `NotificationsService` 的业务发送输入可带事件编码；系统消息关闭时不落库且不触发 SSE。`BusinessNotificationsService` 统一处理业务接收人去重、排除操作者、租户/成员状态过滤和发送异常隔离。
-- W2.4 已接入当前模型可准确表达的 29 个业务事件；连同 W2.3 三类跟进计划事件共 32/35。合同归档、合同作废和发票审批没有等价领域动作，禁止使用其他动作冒充。
-- 报价、合同和回款计划的即将到期/当天到期由每天 08:00 的内部任务执行；任务读取同一设置接口保存的开关、`timeList` 和接收范围，不新增公开的手工触发 API。
 - 当前邮件发送器未接入，Web 明确禁用邮件开关；公告和第三方平台通知不属于本阶段。
 
 ## 流程设置管理底座（W2.5）
@@ -168,13 +200,12 @@ PATCH  /approvals/flows/{id}/enabled      body: { enabled: boolean }
 DELETE /approvals/flows/{id}
 ```
 
-- 列表支持 `page / pageSize / keyword / formType / enabled / sortBy / sortOrder`，只返回当前租户未软删除的报价、合同、发票、订单流程。
-- 权限分别为 `system:process / system:process:add / system:process:update / system:process:delete`；菜单、按钮和后端 Guard 使用同一语义。
+- Approval Engine、实例、任务、节点、Webhook 与历史流程读取能力保留；招生 CRM 当前未注册报价/合同/发票/订单业务资源适配器，Web 不再暴露“流程设置”入口。
+- API 仍由 `system:process / system:process:add / system:process:update / system:process:delete` 保护，作为后续通用审批资源适配器的基础设施边界。
 - 新建会在事务中生成类型前缀编号、版本 1、开始/审批/结束节点和线性连接；同租户同一表单类型只允许一条未删除流程。
 - 更新锁定表单类型。仅节点定义发生规范化差异时创建新版本；改名、描述或状态不会制造空版本。
-- 启用要求 `createExecute=true` 且至少有一个有效审批节点。发票运行时在 DB-003 完成前返回 `409`；`updateExecute/deleteExecute=true` 和未接入的高级设置返回 `422`。
+- 旧交易业务字段权限和审批后置字段更新已退出；配置这两类能力会明确拒绝。Webhook 与通用审批节点能力保留。
 - 仅停用流程可软删除；删除会取消该流程仍在处理中的实例、跳过待办并恢复对应业务对象审批状态，已完成实例和历史版本不物理删除。
-- 运行时 `POST /approvals/submit` 只接受 `quote / contract / order`。新实例绑定 `flowId + flowVersionId + CREATE`，同时保留 `nodesSnapshot`；`receivableRecord` 只保留历史读取兼容。
 
 ## 企业微信集成底座（W3.1）
 
@@ -236,7 +267,7 @@ POST  /message-deliveries/{id}/retry
 
 PC 通用登录入口通过 API 服务的 `WECOM_DEFAULT_TENANT_SLUG` 指定默认企业；企业专属地址仍可用 `/login?tenant={slug}` 覆盖。多租户部署必须显式配置默认值，避免把企业选择暴露给普通用户。
 
-- `discovery/start/callback` 为 PC 官方 SDK 扫码公共接口，使用 Cordys `QR_WECOM` flow、`qr-wecom` state 和独立 nonce cookie；`workbench/start/callback` 为 `wxwork` 网页 OAuth 接口，使用 Cordys `WECOM` flow、`wecom` state、`snsapi_privateinfo` 和另一枚 nonce cookie。两套 callback 不能交叉消费 state。
+- `discovery/start/callback` 为 PC 官方 SDK 扫码公共接口，使用 `QR_WECOM` flow、`qr-wecom` state 和独立 nonce cookie；`workbench/start/callback` 为 `wxwork` 网页 OAuth 接口，使用 `WECOM` flow、`wecom` state、`snsapi_base` 和另一枚 nonce cookie。两套 callback 不能交叉消费 state。
 - 两套 start 均生成 256 位随机 state，只持久化 SHA-256，并设置 10 分钟 HttpOnly/SameSite=Lax 浏览器 nonce cookie；callback 原子消费，过期、浏览器不匹配和重放均拒绝。
 - 企微 `userid` 只按当前租户的 ACTIVE `ExternalUserMapping` 识别本地成员，未知成员不自动注册。成功后复用现有 access/refresh JWT；PC 扫码写 `WECOM` 登录日志，工作台写 `WECOM_OAUTH2`。工作台可用 `user_ticket` 在邮箱为空时补全邮箱，并更新手机号、Boolean 性别和独立用户扩展表中的头像，但不覆盖已有邮箱或密码。
 - 外部身份查询要求 `system:member`，绑定/恢复/解绑要求 `system:member:update`。禁用密码登录的同步成员不能解绑其最后登录方式。
@@ -317,7 +348,6 @@ POST /contacts/update                     更新联系人
 GET  /contacts/enable/{id}                启用联系人
 POST /contacts/disable/{id}               停用联系人（reason 必填）
 GET  /contacts/delete/{id}                删除联系人
-GET  /contacts/opportunity/check/{id}     删除前商机关联检查
 GET  /contacts/tab                        ALL/DEPT 数据视图显隐
 POST /contacts/batch/update               批量修改一个字段
 GET  /contacts/template/download          xlsx 导入模板
@@ -330,13 +360,12 @@ POST /contacts/export-select              导出选中任务
 - Contact 核心固定字段按 Cordys 收口为 `customerId / ownerId / name / phone / enable / disableReason`；额外字段走 Metadata `customData`，不再保留早期页面驱动的固定 `position/email`。
 - 新增时 `ownerId` 可省略并默认当前用户；负责人变化同步 `deptId`。
 - 独立联系人页使用 Contact 自己的 owner/dept 数据范围；客户详情内嵌列表继续按客户资源访问语义处理。仅依靠 `COLLABORATION` 访问客户时，只能管理自己负责的联系人；`READ_ONLY` 不获得联系人子域写能力。
-- Opportunity 可通过 `contactId` 绑定当前客户下的联系人；联系人被商机引用时 Service 层拒绝删除。
 - 联系人批量能力与 Cordys 一致，仅提供“导出选中 + 批量编辑”，不新增批量删除。
 
 ### 线索转换（R4，按 Cordys `/lead/*` 转换边界）
 
 ```text
-POST /lead/transform                     自动转换：客户+联系人固定，商机可选
+POST /lead/transform                     自动转换：创建/复用客户并创建联系人
 POST /lead/transition/account            使用客户新增表单新建客户并关联线索
 POST /lead/re-transition/account         一条/批量线索关联已有客户
 POST /lead/transition/account/page       关联客户全屏抽屉的候选客户分页
@@ -347,21 +376,19 @@ GET  /lead/get/{id}                      线索详情（含 transitionType/trans
 
 ```json
 {
-  "clueId": "lead-id",
-  "oppCreated": true,
-  "oppName": "2026 年升级项目"
+  "clueId": "lead-id"
 }
 ```
 
 转换规则：
 
-- 自动转换固定处理客户和联系人；商机是唯一可选项。商机名称最大 255 字符，不再接受旧实现中的“创建联系人开关/商机金额”。
+- 自动转换只处理 Customer/Contact 与通用跟进资产，不再创建 Opportunity，也不接受 `oppCreated / oppName`。
 - Lead 成功关联客户后写 `transitionType=CUSTOMER / transitionId=customerId`；旧 `convertedCustomerId` 与旧 `/api/leads` 转换入口已移除。
 - 客户 `name` 开启 Metadata `config.unique` 时，自动转换才复用同名客户；多条同名客户优先选择“不在公海且负责人=线索负责人”的记录，否则取第一条。未开启 unique 时同名仍创建新客户。
 - 联系人 `name/phone` 的 `config.unique` 分别决定是否执行姓名/电话唯一校验。按 Cordys 实际 SQL，唯一范围是当前租户而非单个客户；命中重复时跳过本次联系人创建。
 - 关联已有客户的候选范围为：正常客户数据范围 + 当前用户协作客户 + 当前用户可访问公海；`READ_ONLY` 协作客户会返回但 `selectable=false`，直接绕过 UI 调接口也会被 Service 拒绝。
 - 关联公海客户前先执行领取规则；领取失败则不继续转换。
-- 线索负责人不是客户负责人且尚未在团队中时，自动补 `COLLABORATION`；商机绑定本次新建联系人；线索 FollowUpRecord 复制到客户且原记录保留，同时刷新客户 `lastFollowedAt`。
+- 线索负责人不是客户负责人且尚未在团队中时，自动补 `COLLABORATION`；线索 FollowUpRecord 复制到客户且原记录保留，同时刷新客户 `lastFollowedAt`。
 - W3.4.2 已按 Cordys 三条路径拆分转换副作用：`/lead/transform` 与 `/lead/re-transition/account` 复制 FollowUpRecord/FollowUpPlan 并保留原线索记录/计划，`/lead/transition/account` 不复制 Follow、不额外创建 Collaboration；复制计划会映射新 Contact 与 `convertedRecordId`。Cordys `FormLinkScenario` 显式跨字段映射配置仍未实现，动态字段迁移不得用静态映射冒充。
 
 ## Cordys 用户视图 UserView
@@ -429,57 +456,21 @@ GET /customers?view=COLLABORATION
 - 个人 UserView 使用 `/api/account/view/*`；选中个人视图时先执行角色默认数据范围，再叠加 UserView 条件。
 - 客户公海个人视图使用 `/api/pool/account/view/*`，业务页面仍只在独立 `/customers/open-sea` 页面使用。
 
-## 客户 360（R5）
+## 客户详情
 
-客户详情保留轻量聚合接口：
+招生 CRM 收敛后，客户详情只保留通用客户关系能力，不再暴露商机、报价、合同、回款、发票和订单等传统交易资源聚合接口。
 
-```text
-GET /customers/{id}/related
-```
+PC 客户概览保留以下业务区域：
 
-该接口用于兼容已有统计/轻量关联读取，但 R5 起会按当前用户模块权限裁剪：
+- 客户 Metadata 字段；
+- 联系人；
+- 跟进记录；
+- 跟进计划；
+- 负责人记录；
+- 客户关系；
+- 协作人。
 
-- 联系人需要 `contact:read`，并继续服从客户协作子域规则。
-- 商机需要 `menu:opportunity`。
-- 合同聚合需要 `menu:contract`。
-- 当前访问依赖 `READ_ONLY/COLLABORATION` 协作关系时，不通过该聚合接口泄露完整协作成员列表。
-
-客户 360 的大列表使用独立分页接口：
-
-```text
-GET /customers/{id}/360/opportunities
-GET /customers/{id}/360/contracts
-GET /customers/{id}/360/receivablePlans
-GET /customers/{id}/360/receivableRecords
-GET /customers/{id}/360/invoices
-GET /customers/{id}/360/orders
-```
-
-通用分页参数：`page`、`pageSize`，`pageSize` 最大 100。返回统一 `PaginatedResult`：
-
-```json
-{
-  "items": [],
-  "total": 0,
-  "page": 1,
-  "pageSize": 10
-}
-```
-
-权限边界：
-
-- 所有 360 资源首先经过 `CustomerAccessService.assertRead()`，无客户读取权时不会因关联模块权限而旁路读取。
-- `opportunities` 需要 `menu:opportunity`。
-- `contracts / receivablePlans / receivableRecords / invoices` 需要 `menu:contract`。
-- `orders` 需要 `menu:order`。
-- `resource` 使用服务端白名单，未知值返回 400，不允许落入默认资源分支。
-- 公海客户不开放上述普通客户 360 业务资源；即使用户可读取该公海客户，直接请求 `/360/*` 仍返回 403。公海详情只提供客户信息、跟进记录和负责人记录。
-
-UI 对齐：
-
-- PC 客户列表详情使用 100% 客户概览 Drawer；左侧为 Metadata 客户字段，右侧为 360 Tab，并支持左右/上下布局与 Tab 本地显隐偏好。
-- Mobile `/customers` 按 Cordys 使用 `客户 / 联系人 / 客户公海` 三页签；普通客户详情使用全页 Tab，公海客户详情只显示客户信息 / 跟进记录 / 负责人记录。
-- W2.2 已在 PC/Mobile 客户详情加入真实跟进计划 Tab，支持列表、新建、编辑、状态、转记录和删除；公海/协作权限继续由 `CustomerAccessService` 裁决。
+Mobile `/customers` 继续使用 `客户 / 联系人 / 客户公海` 三页签；公海客户详情只提供当前公海场景允许的客户信息、跟进记录和负责人记录。客户及其子资源仍统一由 `CustomerAccessService` 和相应资源权限裁决。
 
 ## 客户集团 / 子公司关系
 
@@ -536,22 +527,21 @@ POST /account/merge
 }
 ```
 
-Cordys 合并请求只有 `mergeIds / toMergeId / ownerId` 三个字段。联系人姓名或电话字段启用 unique 后，命中主客户已有唯一值的源联系人自动去重；关联商机、跟进计划与附件会先转挂到匹配主联系人。
+Cordys 合并请求只有 `mergeIds / toMergeId / ownerId` 三个字段。联系人姓名或电话字段启用 unique 后，命中主客户已有唯一值的源联系人自动去重；跟进计划与附件会先转挂到匹配主联系人。
 
 负责人规则对齐 Cordys：
 
 - `toMergeId` 属于 `mergeIds`：最终负责人只能选择这批已选客户当前已有负责人。
 - `toMergeId` 不属于 `mergeIds`：表示使用其它可见客户作为主客户，`ownerId` 必须保持该主客户原负责人。
 
-preview 不修改任何数据，返回：
+preview 不修改任何数据，返回目标客户、源客户、最终负责人、联系人冲突以及影响计数：
 
 ```text
 target / sources / finalOwner
-customersToDelete
-contacts / contactsWillMove / contactsWillSkip
-opportunities / quotes / contracts
-followUps / followUpPlans / attachments / collaborations
-relationsToRemove
+counts.customersToDelete
+counts.contacts / contactsWillMove / contactsWillSkip
+counts.followUps / followUpPlans / attachments / collaborations
+counts.relationsToRemove
 contactConflicts[]
 ```
 
@@ -600,7 +590,7 @@ POST /customers/batch/delete
 - fixed/custom 字段统一先解析元数据；hidden/formula 不允许批改。
 - `ownerId` 是特殊字段，会复用负责人分配链路，不会绕过库容、部门同步、负责人历史和通知。
 - 普通批量修改/删除先校验整批数据范围；任一记录无权操作时不会先写入其它记录。
-- Customer 删除前检查 Contact / Opportunity，并额外保护 MicroMatrix 直接外键 Quote / Contract；命中任一引用时整批拒绝。
+- Customer 删除前检查 Contact 引用；命中联系人引用时整批拒绝。跟进记录、跟进计划、附件、协作关系和客户关系等当前通用资源由删除事务统一清理。
 
 线索池 / 客户公海接口使用独立权限：
 

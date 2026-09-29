@@ -6,7 +6,7 @@ import {
   PaginatedResult,
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { instantToISOString } from '../../prisma/temporal.js'
 import { QueryLoginLogsDto, QueryOperationLogsDto } from './dto/query-logs.dto'
 

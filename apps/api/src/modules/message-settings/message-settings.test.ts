@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { MessageTaskConfig } from '@micromatrix/shared'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
 import { MessageSettingsService } from './message-settings.service'
@@ -42,48 +41,38 @@ test(
       })
 
       const service = new MessageSettingsService({ client: prismaClient } as PrismaService)
-      const config: MessageTaskConfig = {
-        timeList: [{ timeValue: 3, timeUnit: 'DAY' }],
-        userIds: ['OWNER'],
-        roleIds: [],
-        ownerEnable: false,
-        ownerLevel: 0,
-        roleEnable: false,
-      }
-
-      const updated = await service.update(tenant.id, 'CONTRACT_EXPIRING', {
-        module: 'CONTRACT',
+      const updated = await service.update(tenant.id, 'CUSTOMER_ADD', {
+        module: 'CUSTOMER',
         systemEnabled: false,
-        config,
       })
       assert.equal(updated.systemEnabled, false)
-      assert.deepEqual(updated.config, config)
+      assert.equal(updated.config, null)
 
       const stored = await prismaClient.orm.public.MessageTaskSettings.where({
         tenantId: tenant.id,
-        module: 'CONTRACT',
-        event: 'CONTRACT_EXPIRING',
+        module: 'CUSTOMER',
+        event: 'CUSTOMER_ADD',
       })
         .select('systemEnabled', 'config')
         .first()
       assert.ok(stored)
       assert.equal(stored.systemEnabled, false)
-      assert.deepEqual(stored.config, config)
+      assert.equal(stored.config, null)
 
       const gate = await service.getWeComChannelGate(tenant.id)
       assert.equal(gate.available, true)
       assert.equal(gate.enabled, true)
 
       const groups = await service.batchUpdate(tenant.id, { systemEnabled: true })
-      assert.equal(groups.flatMap((group) => group.items).length, 47)
+      assert.equal(groups.flatMap((group) => group.items).length, 26)
       assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
       const allRows = await prismaClient.orm.public.MessageTaskSettings.where({
         tenantId: tenant.id,
       })
         .select('systemEnabled')
         .all()
-      assert.equal(allRows.length, 47)
-      assert.equal(allRows.filter((item) => item.systemEnabled).length, 47)
+      assert.equal(allRows.length, 26)
+      assert.equal(allRows.filter((item) => item.systemEnabled).length, 26)
     } finally {
       if (tenantId) {
         await prismaClient.orm.public.MessageTaskSettings.where({ tenantId }).deleteAll()

@@ -112,6 +112,7 @@ function createService(options: {
     {} as never,
     {} as never,
     {} as never,
+    { parse: () => null } as never,
   )
 }
 

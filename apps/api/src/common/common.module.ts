@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common'
-import { PrismaModule } from '../prisma/prisma.module.js'
+import { PrismaModule } from '../prisma.module.js'
 import { AuthContextCacheService } from './services/auth-context-cache.service'
 import { DataScopeService } from './services/data-scope.service'
 import { DistributedCoordinatorService } from './services/distributed-coordinator.service'

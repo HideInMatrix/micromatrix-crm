@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 
 import {
   createPrismaTestTenant,
@@ -53,6 +53,19 @@ test(
         listFields: async () => [],
         computeFormulas: () => ({}),
       }
+      const moduleForms = {
+        getConfig: async () => ({
+          formKey: 'lead',
+          formProp: {
+            leadStages: [
+              { key: 'PENDING', name: '待联系', kind: 'ACTIVE', enabled: true },
+              { key: 'VISITED', name: '已到访', kind: 'ACTIVE', enabled: true },
+              { key: 'PAID', name: '已转化', kind: 'SUCCESS', enabled: true },
+            ],
+          },
+          fields: [],
+        }),
+      }
       const fieldValues = {
         validate: async () => undefined,
         save: async () => undefined,
@@ -72,10 +85,9 @@ test(
         prisma,
         dataScope as never,
         metadata as never,
-        {} as never,
+        moduleForms as never,
         fieldValues as never,
         notifications as never,
-        {} as never,
         pools as never,
         {} as never,
         {} as never,
@@ -97,7 +109,19 @@ test(
       })
       assert.equal(created.name, 'Prisma 线索')
       assert.equal(created.ownerId, actor.id)
-      assert.equal(created.status, 'NEW')
+      assert.equal(created.status, 'PENDING')
+      const createdEvents = await prismaClient.orm.public.LeadStageEvent.where({
+        organizationId: tenant.id,
+        leadId: created.id,
+      })
+        .orderBy((event) => event.occurredAt.asc())
+        .all()
+      assert.equal(createdEvents.length, 1)
+      assert.equal(createdEvents[0]?.fromStageKey, null)
+      assert.equal(createdEvents[0]?.toStageKey, 'PENDING')
+      assert.equal(createdEvents[0]?.operatorId, actor.id)
+      assert.equal(createdEvents[0]?.ownerId, actor.id)
+      assert.equal(createdEvents[0]?.source, 'MANUAL')
 
       const page = await service.findAll(user, {
         page: 1,
@@ -111,17 +135,27 @@ test(
       assert.equal(detail.name, 'Prisma 线索')
       assert.equal(detail.phone, '13800138000')
 
-      const status = await service.updateStatus(user, { id: created.id, stage: 'FOLLOWING' })
-      assert.equal(status.stage, 'FOLLOWING')
-      assert.equal(status.lastStage, 'NEW')
+      const status = await service.updateStatus(user, { id: created.id, stage: 'VISITED' })
+      assert.equal(status.stage, 'VISITED')
+      assert.equal(status.lastStage, 'PENDING')
       const oracle = await prismaClient.orm.public.Clue.where({
         id: created.id,
       })
         .select('stage', 'lastStage')
         .first()
       assert.ok(oracle)
-      assert.equal(oracle.stage, 'FOLLOWING')
-      assert.equal(oracle.lastStage, 'NEW')
+      assert.equal(oracle.stage, 'VISITED')
+      assert.equal(oracle.lastStage, 'PENDING')
+      const stageEvents = await prismaClient.orm.public.LeadStageEvent.where({
+        organizationId: tenant.id,
+        leadId: created.id,
+      })
+        .orderBy((event) => event.occurredAt.asc())
+        .all()
+      assert.equal(stageEvents.length, 2)
+      assert.equal(stageEvents[1]?.fromStageKey, 'PENDING')
+      assert.equal(stageEvents[1]?.toStageKey, 'VISITED')
+      assert.equal(stageEvents[1]?.source, 'MANUAL')
 
       const removed = await service.remove(user, created.id)
       assert.equal(removed.id, created.id)
@@ -135,8 +169,18 @@ test(
         ).length,
         0,
       )
+      assert.equal(
+        (
+          await prismaClient.orm.public.LeadStageEvent.where({
+            organizationId: tenant.id,
+            leadId: created.id,
+          }).all()
+        ).length,
+        2,
+      )
     } finally {
       if (tenantId) {
+        await prismaClient.orm.public.LeadStageEvent.where({ organizationId: tenantId }).deleteAll()
         await prismaClient.orm.public.Clue.where({ organizationId: tenantId }).deleteAll()
         await prismaClient.orm.public.Users.where({ tenantId }).deleteAll()
         await prismaClient.orm.public.Tenants.where({ id: tenantId }).deleteAll()

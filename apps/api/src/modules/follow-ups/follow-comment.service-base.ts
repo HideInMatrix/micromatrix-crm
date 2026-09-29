@@ -7,8 +7,8 @@ import type {
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { withOperationLogResult } from '../../common/decorators/log-operation.decorator'
-import type { PrismaClient } from '../../prisma/prisma-client'
-import { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaClient } from '../../prisma/db'
+import { PrismaService } from '../../prisma.service'
 import { instantToISOString } from '../../prisma/temporal'
 
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
@@ -407,18 +407,6 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         )?.name ?? '线索'
       )
     }
-    if (resource.targetType === 'opportunity') {
-      return (
-        (
-          await this.prisma.client.orm.public.Opportunity.where({
-            id: resource.targetId,
-            organizationId: tenantId,
-          })
-            .select('name')
-            .first()
-        )?.name ?? '商机'
-      )
-    }
     return (
       (
         await this.prisma.client.orm.public.Customer.where({
@@ -459,7 +447,6 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
 
   private targetLink(resource: TResource): string {
     if (resource.targetType === 'lead') return '/leads'
-    if (resource.targetType === 'opportunity') return '/opportunities'
     return '/customers'
   }
 }

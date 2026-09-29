@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { AttachmentsController } from './attachments.controller'
 import { AttachmentsService } from './attachments.service'
 

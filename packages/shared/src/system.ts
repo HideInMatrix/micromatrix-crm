@@ -476,30 +476,12 @@ export type ModuleKey =
   | 'lead'
   | 'customer'
   | 'contact'
-  | 'opportunity'
-  | 'product'
-  | 'price'
-  | 'quote'
-  | 'contract'
-  | 'contractPaymentPlan'
-  | 'contractPaymentRecord'
-  | 'invoice'
-  | 'order'
   | 'followPlan'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   lead: '线索',
   customer: '客户',
   contact: '联系人',
-  opportunity: '商机',
-  product: '产品',
-  price: '价格表',
-  quote: '报价',
-  contract: '合同',
-  contractPaymentPlan: '回款计划',
-  contractPaymentRecord: '回款记录',
-  invoice: '发票',
-  order: '订单',
   followPlan: '跟进计划',
 }
 
@@ -509,14 +491,6 @@ export type NavigationModuleKey =
   | 'home'
   | 'lead'
   | 'customer'
-  | 'opportunity'
-  | 'product'
-  | 'dashboard'
-  | 'agent'
-  | 'contract'
-  | 'customForm'
-  | 'bidding'
-  | 'order'
   | 'system'
 
 export interface NavigationModuleDefinition {
@@ -526,19 +500,11 @@ export interface NavigationModuleDefinition {
   configurable: boolean
 }
 
-/** 顺序与当前 Cordys 实例的主导航配置一致。 */
+/** 当前产品实际落地的主导航入口。 */
 export const NAVIGATION_MODULES: NavigationModuleDefinition[] = [
   { key: 'home', label: '首页', defaultEnabled: true, configurable: true },
   { key: 'lead', label: '线索', defaultEnabled: true, configurable: true },
   { key: 'customer', label: '客户', defaultEnabled: true, configurable: true },
-  { key: 'opportunity', label: '商机', defaultEnabled: false, configurable: true },
-  { key: 'product', label: '产品', defaultEnabled: false, configurable: true },
-  { key: 'dashboard', label: '仪表板', defaultEnabled: true, configurable: true },
-  { key: 'agent', label: '智能体', defaultEnabled: false, configurable: false },
-  { key: 'contract', label: '合同', defaultEnabled: false, configurable: true },
-  { key: 'customForm', label: '自定义表单', defaultEnabled: true, configurable: true },
-  { key: 'bidding', label: '标讯', defaultEnabled: false, configurable: true },
-  { key: 'order', label: '订单', defaultEnabled: true, configurable: true },
   { key: 'system', label: '系统', defaultEnabled: true, configurable: false },
 ]
 
@@ -552,8 +518,7 @@ export interface ModuleConfigVO {
 
 // ============ 顶部导航配置 ============
 
-export type TopNavigationKey =
-  'search' | 'task' | 'event' | 'agent' | 'notify' | 'about' | 'language' | 'help'
+export type TopNavigationKey = 'task' | 'event' | 'notify' | 'about' | 'help'
 
 export type TopNavigationCapabilityStatus = 'available' | 'planned' | 'excluded'
 
@@ -565,12 +530,8 @@ export interface TopNavigationDefinition {
   requiredPermission?: string
 }
 
-/**
- * 顺序来自 Cordys sys_navigation 的 1.2.1、1.2.3、1.7.1 迁移叠加结果。
- * status 描述 MicroMatrix 当前迁移状态，不改变 Cordys 的持久化 key。
- */
+/** 当前产品实际落地的顶部导航入口，顺序沿用 Cordys 对应入口的相对顺序。 */
 export const TOP_NAVIGATION_DEFINITIONS: TopNavigationDefinition[] = [
-  { key: 'search', label: '搜索', defaultEnabled: true, status: 'planned' },
   {
     key: 'task',
     label: '待办',
@@ -579,10 +540,8 @@ export const TOP_NAVIGATION_DEFINITIONS: TopNavigationDefinition[] = [
     requiredPermission: 'menu:approval',
   },
   { key: 'event', label: '记录/计划', defaultEnabled: true, status: 'available' },
-  { key: 'agent', label: '智能体', defaultEnabled: true, status: 'excluded' },
   { key: 'notify', label: '消息通知', defaultEnabled: true, status: 'available' },
   { key: 'about', label: '关于', defaultEnabled: true, status: 'available' },
-  { key: 'language', label: '语言', defaultEnabled: true, status: 'planned' },
   { key: 'help', label: '帮助中心', defaultEnabled: true, status: 'available' },
 ]
 

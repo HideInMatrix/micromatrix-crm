@@ -6,7 +6,7 @@ import { ConfigService } from '@nestjs/config'
 import { ServiceUnavailableException } from '@nestjs/common'
 import type { AsyncJobsService } from '../../async-jobs/async-jobs.service'
 import { instantFromDate } from '../../prisma/temporal'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { ExportTasksService } from './export-tasks.service'
 
 type Row = {

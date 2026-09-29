@@ -3,7 +3,7 @@ import test from 'node:test'
 import * as bcrypt from 'bcryptjs'
 import type { AuthUser } from '../../common/auth-user'
 import type { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {

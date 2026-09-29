@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import {
+  DEFAULT_LEAD_STAGES,
   type HomeFilterPayload,
-  LEAD_STATUS_LABELS,
   isCustomFieldKey,
   type FieldVO,
   type FilterCondition,
+  type LeadStageConfig,
   type LeadVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -44,6 +45,7 @@ const isPoolMode = computed(() => route.name === 'lead-pool')
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
 const fields = ref<FieldVO[]>([])
+const leadStages = ref<LeadStageConfig[]>([])
 const loading = ref(false)
 const items = ref<LeadVO[]>([])
 const total = ref(0)
@@ -89,6 +91,9 @@ const savedViewModule = computed(() => (isPoolMode.value ? 'lead_pool' : 'lead')
 const currentPool = computed(
   () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
 )
+const leadStageByKey = computed(
+  () => new Map(leadStages.value.map((stage) => [stage.key, stage])),
+)
 const canImport = computed(() =>
   isPoolMode.value ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
 )
@@ -118,8 +123,34 @@ const listColumns = computed(() => {
 })
 
 async function loadFields() {
-  const { data } = await metadataApi.fields('lead')
-  fields.value = data
+  const { data } = await metadataApi.formConfig('lead')
+  fields.value = data.fields
+  leadStages.value = (data.formProp.leadStages?.length
+    ? data.formProp.leadStages
+    : DEFAULT_LEAD_STAGES
+  ).map((stage) => ({ ...stage, enabled: stage.enabled !== false }))
+}
+
+function leadStageLabel(stageKey: string) {
+  return leadStageByKey.value.get(stageKey)?.name ?? stageKey
+}
+
+function leadStageTagType(stageKey: string): 'primary' | 'success' | 'info' {
+  const kind = leadStageByKey.value.get(stageKey)?.kind
+  if (kind === 'SUCCESS') return 'success'
+  if (kind === 'FAILURE') return 'info'
+  return 'primary'
+}
+
+async function handleStageChange(row: LeadVO, stageKey: string) {
+  if (!stageKey || row.status === stageKey) return
+  try {
+    const { data } = await leadApi.updateStage(row.id, stageKey)
+    row.status = data.stage
+    ElMessage.success('线索阶段已更新')
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 async function loadPoolOptions() {
@@ -616,12 +647,14 @@ function openTransitionCustomer(ids: string[]) {
 
 const homeFilterSummary = computed(() => {
   if (!activeHomeFilter.value) return ''
-  const periodLabel = {
-    TODAY: '今天',
-    THIS_WEEK: '本周',
-    THIS_MONTH: '本月',
-    THIS_YEAR: '本年',
-  }[activeHomeFilter.value.period]
+  const periodLabel = activeHomeFilter.value.period
+    ? {
+        TODAY: '今天',
+        THIS_WEEK: '本周',
+        THIS_MONTH: '本月',
+        THIS_YEAR: '本年',
+      }[activeHomeFilter.value.period]
+    : '工作台筛选'
   const scopeLabel =
     activeHomeFilter.value.searchType === 'SELF'
       ? '本人'
@@ -633,6 +666,7 @@ const homeFilterSummary = computed(() => {
 
 function clearHomeFilter() {
   activeHomeFilter.value = null
+  filters.value = []
   query.page = 1
   loadData()
 }
@@ -652,6 +686,7 @@ async function consumeRouteHomeFilter() {
     await router.replace('/leads')
   }
   activeHomeFilter.value = payload
+  filters.value = [...(payload.filters ?? [])]
   query.page = 1
 }
 
@@ -769,14 +804,14 @@ onMounted(async () => {
           v-model="query.status"
           clearable
           placeholder="状态"
-          class="!w-28"
+          class="!w-32"
           @change="handleSearch"
         >
           <el-option
-            v-for="(label, value) in LEAD_STATUS_LABELS"
-            :key="value"
-            :label="label"
-            :value="value"
+            v-for="stage in leadStages"
+            :key="stage.key"
+            :label="stage.enabled === false ? stage.name + '（已停用）' : stage.name"
+            :value="stage.key"
           />
         </el-select>
         <AdvancedFilter
@@ -916,21 +951,25 @@ onMounted(async () => {
           </template>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90">
+      <el-table-column label="阶段" width="150">
         <template #default="{ row }">
-          <el-tag
-            :type="
-              row.status === 'SUCCESS'
-                ? 'success'
-                : row.status === 'FAIL'
-                  ? 'info'
-                  : row.status === 'INTERESTED'
-                    ? 'warning'
-                    : 'primary'
-            "
+          <el-select
+            v-if="!isPoolMode && auth.hasPerm('lead:update') && !row.transitionId"
+            :model-value="row.status"
             size="small"
+            class="w-full"
+            @change="handleStageChange(row as LeadVO, String($event))"
           >
-            {{ LEAD_STATUS_LABELS[row.status as keyof typeof LEAD_STATUS_LABELS] }}
+            <el-option
+              v-for="stage in leadStages"
+              :key="stage.key"
+              :label="stage.name"
+              :value="stage.key"
+              :disabled="stage.enabled === false"
+            />
+          </el-select>
+          <el-tag v-else :type="leadStageTagType(row.status)" size="small">
+            {{ leadStageLabel(row.status) }}
           </el-tag>
         </template>
       </el-table-column>

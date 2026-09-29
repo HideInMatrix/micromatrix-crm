@@ -1,22 +1,13 @@
 <script setup lang="ts">
 import {
-  CONTRACT_INVOICE_APPROVAL_STATUS_LABELS,
-  CONTRACT_PAYMENT_PLAN_STATUS_LABELS,
   isCustomFieldKey,
-  type Customer360ContractVO,
-  type Customer360ContractPaymentPlanVO,
-  type Customer360ContractPaymentRecordVO,
-  type Customer360InvoiceVO,
-  type Customer360OpportunityVO,
-  type Customer360Resource,
   type CustomerVO,
   type FieldVO,
   type TeamMemberVO,
 } from '@micromatrix/shared'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   getCustomer,
-  getCustomer360Resource,
   poolDeleteCustomer,
   removeCustomer,
   updateCustomer,
@@ -24,7 +15,6 @@ import {
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { customerExtraApi } from '@/api/sales'
-import ContractDetailDrawer from '@/components/ContractDetailDrawer.vue'
 import FollowUpPlanPanel from '@/components/follow-plans/FollowUpPlanPanel.vue'
 import FollowRecordPanel from '@/components/follow-records/FollowRecordPanel.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
@@ -32,8 +22,6 @@ import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import CustomerContactTable from '@/components/contacts/CustomerContactTable.vue'
 import CustomerMoveToPoolDialog from '@/components/customer/CustomerMoveToPoolDialog.vue'
-import OpportunityDetailDrawer from '@/components/opportunities/OpportunityDetailDrawer.vue'
-import OrderTable from '@/components/order/OrderTable.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -45,13 +33,7 @@ type TabName =
   | 'contact'
   | 'headRecord'
   | 'relation'
-  | 'opportunityInfo'
   | 'collaborator'
-  | 'contract'
-  | 'contractPayment'
-  | 'contractPaymentRecord'
-  | 'invoice'
-  | 'order'
 
 const props = defineProps<{
   customerId: string
@@ -92,50 +74,6 @@ const teamCollaborationType = ref<'READ_ONLY' | 'COLLABORATION'>('COLLABORATION'
 const teamRows = ref<TeamMemberVO[]>([])
 const teamLoading = ref(false)
 
-const resourcePage = reactive<Record<Customer360Resource, number>>({
-  opportunities: 1,
-  contracts: 1,
-  contractPaymentPlans: 1,
-  contractPaymentRecords: 1,
-  invoices: 1,
-  orders: 1,
-})
-const resourceTotal = reactive<Record<Customer360Resource, number>>({
-  opportunities: 0,
-  contracts: 0,
-  contractPaymentPlans: 0,
-  contractPaymentRecords: 0,
-  invoices: 0,
-  orders: 0,
-})
-const resourceLoading = reactive<Record<Customer360Resource, boolean>>({
-  opportunities: false,
-  contracts: false,
-  contractPaymentPlans: false,
-  contractPaymentRecords: false,
-  invoices: false,
-  orders: false,
-})
-const resourceLoaded = reactive<Record<Customer360Resource, boolean>>({
-  opportunities: false,
-  contracts: false,
-  contractPaymentPlans: false,
-  contractPaymentRecords: false,
-  invoices: false,
-  orders: false,
-})
-
-const opportunities = ref<Customer360OpportunityVO[]>([])
-const contracts = ref<Customer360ContractVO[]>([])
-const contractPaymentPlans = ref<Customer360ContractPaymentPlanVO[]>([])
-const contractPaymentRecords = ref<Customer360ContractPaymentRecordVO[]>([])
-const invoices = ref<Customer360InvoiceVO[]>([])
-
-const opportunityDetailVisible = ref(false)
-const opportunityDetailId = ref<string | null>(null)
-const contractDetailVisible = ref(false)
-const contractDetailId = ref<string | null>(null)
-
 const canMainAction = computed(
   () =>
     !props.pool &&
@@ -162,39 +100,9 @@ const allTabs = computed<{ name: TabName; label: string; visible: boolean }[]>((
   { name: 'headRecord', label: '负责人记录', visible: true },
   { name: 'relation', label: '客户关系', visible: !props.pool && customer.value?.inSea !== true },
   {
-    name: 'opportunityInfo',
-    label: '商机',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:opportunity'),
-  },
-  {
     name: 'collaborator',
     label: '协作人',
     visible: !props.pool && customer.value?.inSea !== true && !customer.value?.collaborationType,
-  },
-  {
-    name: 'contract',
-    label: '合同',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
-  },
-  {
-    name: 'contractPayment',
-    label: '回款计划',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
-  },
-  {
-    name: 'contractPaymentRecord',
-    label: '回款记录',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
-  },
-  {
-    name: 'invoice',
-    label: '发票',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:contract'),
-  },
-  {
-    name: 'order',
-    label: '订单',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('menu:order'),
   },
 ])
 
@@ -216,15 +124,6 @@ function displayField(field: FieldVO) {
     memberMap: fieldRefs.memberMap.value,
     deptMap: fieldRefs.deptMap.value,
   })
-}
-
-function formatAmount(value: number | null | undefined) {
-  if (value === null || value === undefined) return '-'
-  return `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function invoiceApprovalLabel(status: Customer360InvoiceVO['approvalStatus']) {
-  return status ? CONTRACT_INVOICE_APPROVAL_STATUS_LABELS[status] : '-'
 }
 
 function buildEditModel() {
@@ -282,66 +181,6 @@ async function loadTeam() {
   } finally {
     teamLoading.value = false
   }
-}
-
-function rowsRef(resource: Customer360Resource) {
-  switch (resource) {
-    case 'opportunities':
-      return opportunities
-    case 'contracts':
-      return contracts
-    case 'contractPaymentPlans':
-      return contractPaymentPlans
-    case 'contractPaymentRecords':
-      return contractPaymentRecords
-    case 'invoices':
-      return invoices
-    case 'orders':
-      throw new Error('orders use direct OrderTable')
-  }
-}
-
-async function loadResource(resource: Customer360Resource, force = false) {
-  if (resourceLoaded[resource] && !force) return
-  resourceLoading[resource] = true
-  try {
-    const { data } = await getCustomer360Resource(props.customerId, resource, {
-      page: resourcePage[resource],
-      pageSize: 10,
-    })
-    ;(rowsRef(resource).value as unknown[]) = data.items as unknown[]
-    resourceTotal[resource] = data.total
-    resourceLoaded[resource] = true
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    resourceLoading[resource] = false
-  }
-}
-
-function tabResource(tab: TabName): Customer360Resource | null {
-  switch (tab) {
-    case 'opportunityInfo':
-      return 'opportunities'
-    case 'contract':
-      return 'contracts'
-    case 'contractPayment':
-      return 'contractPaymentPlans'
-    case 'contractPaymentRecord':
-      return 'contractPaymentRecords'
-    case 'invoice':
-      return 'invoices'
-    case 'order':
-      return null
-    default:
-      return null
-  }
-}
-
-async function handleResourcePage(resource: Customer360Resource, page: number) {
-  resourcePage[resource] = page
-  resourceLoaded[resource] = false
-  await loadResource(resource, true)
 }
 
 function openEdit() {
@@ -512,16 +351,6 @@ async function removeTeamMember(member: TeamMemberVO) {
   }
 }
 
-function openOpportunity(id: string) {
-  opportunityDetailId.value = id
-  opportunityDetailVisible.value = true
-}
-
-function openContract(id: string) {
-  contractDetailId.value = id
-  contractDetailVisible.value = true
-}
-
 function saveTabSetting() {
   localStorage.setItem('crm-customer-overview-hidden-tabs', JSON.stringify(hiddenTabs.value))
   if (!visibleTabs.value.some((tab) => tab.name === activeTab.value)) {
@@ -536,23 +365,13 @@ function setLayout(value: 'horizontal' | 'vertical') {
 
 watch(activeTab, async (tab) => {
   if (tab === 'collaborator') await loadTeam()
-  const resource = tabResource(tab)
-  if (resource) await loadResource(resource)
 })
 
 watch(
   () => props.customerId,
   async () => {
-    Object.keys(resourceLoaded).forEach((key) => {
-      resourceLoaded[key as Customer360Resource] = false
-      resourcePage[key as Customer360Resource] = 1
-    })
     await loadBase()
     if (activeTab.value === 'collaborator') await loadTeam()
-    else {
-      const resource = tabResource(activeTab.value)
-      if (resource) await loadResource(resource)
-    }
   },
 )
 
@@ -567,10 +386,6 @@ onMounted(async () => {
   await fieldRefs.load()
   await loadBase()
   if (activeTab.value === 'collaborator') await loadTeam()
-  else {
-    const resource = tabResource(activeTab.value)
-    if (resource) await loadResource(resource)
-  }
 })
 </script>
 
@@ -753,48 +568,6 @@ onMounted(async () => {
                   :readonly="!canEditRelations"
                 />
 
-                <template v-else-if="tab.name === 'opportunityInfo'">
-                  <el-table
-                    v-loading="resourceLoading.opportunities"
-                    :data="opportunities"
-                    stripe
-                    class="w-full"
-                  >
-                    <el-table-column
-                      prop="name"
-                      label="商机名称"
-                      min-width="220"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column prop="stageName" label="阶段" min-width="120" />
-                    <el-table-column label="预计金额" min-width="140" align="right">
-                      <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
-                    </el-table-column>
-                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
-                    <el-table-column label="创建时间" min-width="160">
-                      <template #default="{ row }">{{
-                        new Date(row.createdAt).toLocaleString()
-                      }}</template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="80" fixed="right">
-                      <template #default="{ row }"
-                        ><el-button link type="primary" @click="openOpportunity(row.id)"
-                          >详情</el-button
-                        ></template
-                      >
-                    </el-table-column>
-                  </el-table>
-                  <div class="flex justify-end mt-3">
-                    <el-pagination
-                      layout="total, prev, pager, next"
-                      :total="resourceTotal.opportunities"
-                      :page-size="10"
-                      :current-page="resourcePage.opportunities"
-                      @current-change="handleResourcePage('opportunities', $event)"
-                    />
-                  </div>
-                </template>
-
                 <template v-else-if="tab.name === 'collaborator'">
                   <div class="flex justify-end mb-3">
                     <el-button
@@ -837,207 +610,6 @@ onMounted(async () => {
                   </el-table>
                 </template>
 
-                <template v-else-if="tab.name === 'contract'">
-                  <el-table
-                    v-loading="resourceLoading.contracts"
-                    :data="contracts"
-                    stripe
-                    class="w-full"
-                  >
-                    <el-table-column prop="number" label="合同编号" min-width="150" />
-                    <el-table-column
-                      prop="name"
-                      label="合同名称"
-                      min-width="220"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column prop="stageName" label="阶段" min-width="120" />
-                    <el-table-column label="合同金额" min-width="130" align="right">
-                      <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
-                    </el-table-column>
-                    <el-table-column label="已回款" min-width="130" align="right">
-                      <template #default="{ row }">{{ formatAmount(row.paidAmount) }}</template>
-                    </el-table-column>
-                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
-                    <el-table-column label="创建时间" min-width="160">
-                      <template #default="{ row }">{{
-                        new Date(row.createTime).toLocaleString()
-                      }}</template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="80" fixed="right">
-                      <template #default="{ row }"
-                        ><el-button link type="primary" @click="openContract(row.id)"
-                          >详情</el-button
-                        ></template
-                      >
-                    </el-table-column>
-                  </el-table>
-                  <div class="flex justify-end mt-3">
-                    <el-pagination
-                      layout="total, prev, pager, next"
-                      :total="resourceTotal.contracts"
-                      :page-size="10"
-                      :current-page="resourcePage.contracts"
-                      @current-change="handleResourcePage('contracts', $event)"
-                    />
-                  </div>
-                </template>
-
-                <template v-else-if="tab.name === 'contractPayment'">
-                  <el-table
-                    v-loading="resourceLoading.contractPaymentPlans"
-                    :data="contractPaymentPlans"
-                    stripe
-                    class="w-full"
-                  >
-                    <el-table-column
-                      prop="contractName"
-                      label="合同"
-                      min-width="220"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column
-                      prop="name"
-                      label="计划名称"
-                      min-width="180"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column label="计划金额" min-width="130" align="right"
-                      ><template #default="{ row }">{{
-                        formatAmount(row.planAmount ?? 0)
-                      }}</template></el-table-column
-                    >
-                    <el-table-column label="状态" min-width="110"
-                      ><template #default="{ row }">{{
-                        CONTRACT_PAYMENT_PLAN_STATUS_LABELS[
-                          row.planStatus as keyof typeof CONTRACT_PAYMENT_PLAN_STATUS_LABELS
-                        ]
-                      }}</template></el-table-column
-                    >
-                    <el-table-column label="计划日期" min-width="120"
-                      ><template #default="{ row }">{{
-                        row.planEndTime ? new Date(row.planEndTime).toLocaleDateString() : '-'
-                      }}</template></el-table-column
-                    >
-                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
-                  </el-table>
-                  <div class="flex justify-end mt-3">
-                    <el-pagination
-                      layout="total, prev, pager, next"
-                      :total="resourceTotal.contractPaymentPlans"
-                      :page-size="10"
-                      :current-page="resourcePage.contractPaymentPlans"
-                      @current-change="handleResourcePage('contractPaymentPlans', $event)"
-                    />
-                  </div>
-                </template>
-
-                <template v-else-if="tab.name === 'contractPaymentRecord'">
-                  <el-table
-                    v-loading="resourceLoading.contractPaymentRecords"
-                    :data="contractPaymentRecords"
-                    stripe
-                    class="w-full"
-                  >
-                    <el-table-column
-                      prop="contractName"
-                      label="合同"
-                      min-width="220"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column
-                      prop="name"
-                      label="记录名称"
-                      min-width="180"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column prop="no" label="回款编码" min-width="160" />
-                    <el-table-column
-                      prop="paymentPlanName"
-                      label="回款计划"
-                      min-width="160"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column label="回款金额" min-width="130" align="right"
-                      ><template #default="{ row }">{{
-                        formatAmount(row.recordAmount ?? 0)
-                      }}</template></el-table-column
-                    >
-                    <el-table-column label="回款日期" min-width="120"
-                      ><template #default="{ row }">{{
-                        row.recordEndTime ? new Date(row.recordEndTime).toLocaleDateString() : '-'
-                      }}</template></el-table-column
-                    >
-                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
-                  </el-table>
-                  <div class="flex justify-end mt-3">
-                    <el-pagination
-                      layout="total, prev, pager, next"
-                      :total="resourceTotal.contractPaymentRecords"
-                      :page-size="10"
-                      :current-page="resourcePage.contractPaymentRecords"
-                      @current-change="handleResourcePage('contractPaymentRecords', $event)"
-                    />
-                  </div>
-                </template>
-
-                <template v-else-if="tab.name === 'invoice'">
-                  <el-table
-                    v-loading="resourceLoading.invoices"
-                    :data="invoices"
-                    stripe
-                    class="w-full"
-                  >
-                    <el-table-column
-                      prop="name"
-                      label="发票名称"
-                      min-width="180"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column
-                      prop="contractName"
-                      label="合同"
-                      min-width="220"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column
-                      prop="businessTitleName"
-                      label="工商抬头"
-                      min-width="180"
-                      show-overflow-tooltip
-                    />
-                    <el-table-column prop="invoiceType" label="发票类型" min-width="150" />
-                    <el-table-column label="金额" min-width="130" align="right"
-                      ><template #default="{ row }">{{
-                        formatAmount(row.amount ?? 0)
-                      }}</template></el-table-column
-                    >
-                    <el-table-column label="税率" min-width="100"
-                      ><template #default="{ row }">{{
-                        row.taxRate == null ? '-' : `${row.taxRate}%`
-                      }}</template></el-table-column
-                    >
-                    <el-table-column label="审批状态" min-width="110"
-                      ><template #default="{ row }">{{
-                        invoiceApprovalLabel(row.approvalStatus)
-                      }}</template></el-table-column
-                    >
-                    <el-table-column prop="ownerName" label="负责人" min-width="120" />
-                  </el-table>
-                  <div class="flex justify-end mt-3">
-                    <el-pagination
-                      layout="total, prev, pager, next"
-                      :total="resourceTotal.invoices"
-                      :page-size="10"
-                      :current-page="resourcePage.invoices"
-                      @current-change="handleResourcePage('invoices', $event)"
-                    />
-                  </div>
-                </template>
-
-                <template v-else-if="tab.name === 'order'">
-                  <OrderTable :standalone="false" :customer-id="customerId" />
-                </template>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -1111,23 +683,6 @@ onMounted(async () => {
         <el-button type="primary" @click="saveTeamMember">保存</el-button>
       </template>
     </el-dialog>
-    <OpportunityDetailDrawer
-      v-model="opportunityDetailVisible"
-      :opportunity-id="opportunityDetailId"
-    />
-    <ContractDetailDrawer
-      v-model="contractDetailVisible"
-      :contract-id="contractDetailId"
-      @changed="
-        () => {
-          resourceLoaded.contracts = false
-          resourceLoaded.contractPaymentPlans = false
-          resourceLoaded.contractPaymentRecords = false
-          resourceLoaded.invoices = false
-          loadResource(tabResource(activeTab) ?? 'contracts', true)
-        }
-      "
-    />
   </div>
 </template>
 

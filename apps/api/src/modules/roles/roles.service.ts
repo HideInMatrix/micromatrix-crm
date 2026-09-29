@@ -16,7 +16,7 @@ import { or } from '@prisma/orm-postgres/orm-client'
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { DataScopeService } from '../../common/services/data-scope.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { CreateRoleDto, QueryRoleMembersDto, UpdateRoleDto } from './dto/role.dto'
 

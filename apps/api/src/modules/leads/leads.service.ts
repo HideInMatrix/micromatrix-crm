@@ -1,13 +1,16 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
 import {
+  DEFAULT_LEAD_STAGES,
   FieldVO,
   type FilterCondition,
   ImportResultVO,
+  type LeadStageConfig,
   LeadVO,
   type MessageTaskEvent,
   PaginatedResult,
@@ -25,15 +28,18 @@ import { parseFilters } from '../../common/filter-builder'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
-import type { PrismaClient } from '../../prisma/prisma-client.js'
+import type { PrismaClient } from '../../prisma/db.js'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { CustomersService } from '../../customers/customers.service'
 import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
-import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
+import {
+  ResourceFieldValueService,
+  type ResourceFieldUniqueScope,
+} from '../metadata/resource-field-value.service'
 import {
   ExportTasksService,
   type ExportBuildResult,
@@ -42,12 +48,19 @@ import {
 import type { ImportType } from '../import-export/dto/import-export.dto'
 import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
-import { OpportunitiesService } from '../opportunities/opportunities.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import { CluePoolRepository } from '../pool-rules/clue-pool.repository'
 import { CustomerPoolRepository } from '../pool-rules/customer-pool.repository'
+import {
+  acquirePoolTransactionLocksPrisma,
+  poolTransactionLockKeys,
+} from '../pool-rules/pool-transaction-lock'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
+import {
+  recordLeadStageEvent,
+  type LeadStageEventSource,
+} from './lead-stage-event'
 import {
   ClueAddDto,
   ClueChartDto,
@@ -78,7 +91,6 @@ type Lead = {
   collectionTime: bigint | null
   contact: string | null
   phone: string | null
-  products: string | null
   organizationId: string
   createTime: bigint
   updateTime: bigint
@@ -109,6 +121,9 @@ type LeadSortColumn =
 type LeadHomeWhere = {
   inSharedPool?: boolean
   createTime?: { gte?: bigint; lte?: bigint }
+  ids?: string[]
+  stage?: string
+  converted?: boolean
   AND?: Array<{
     owner?: string | { in?: string[] }
     createUser?: string | { in?: string[] }
@@ -120,14 +135,14 @@ interface LeadCreateInput {
   name: string
   contactName?: string
   phone?: string
-  products?: string[]
   ownerId?: string
   customData?: Record<string, unknown>
   toPool?: boolean
   poolId?: string
+  stageEventSource?: LeadStageEventSource
 }
 
-type LeadUpdateInput = Partial<LeadCreateInput>
+type LeadUpdateInput = Partial<Omit<LeadCreateInput, 'stageEventSource'>>
 
 interface LeadQueryInput {
   page?: number
@@ -135,7 +150,7 @@ interface LeadQueryInput {
   keyword?: string
   scope?: 'mine' | 'pool'
   poolId?: string
-  status?: 'NEW' | 'FOLLOWING' | 'INTERESTED' | 'SUCCESS' | 'FAIL'
+  status?: string
   filters?: string | FilterCondition[]
   filterMode?: 'AND' | 'OR'
   viewId?: string
@@ -151,9 +166,7 @@ interface LeadAssociationPrepared {
   contactNameUnique: boolean
   contactPhoneUnique: boolean
   contactCustomData: Map<string, Record<string, unknown>>
-  opportunityCustomData: Record<string, unknown>
   ownerMap: Map<string, { id: string; deptId: string | null }>
-  firstStage: { id: string } | null
 }
 
 @Injectable()
@@ -165,7 +178,6 @@ export class LeadsService {
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
     private readonly notifications: BusinessNotificationsService,
-    private readonly opportunities: OpportunitiesService,
     private readonly pools: ResourcePoolsService,
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
@@ -231,7 +243,6 @@ export class LeadsService {
       ownerId: dto.owner,
       contactName: dto.contact,
       phone: dto.phone,
-      products: dto.products,
       customData: await this.moduleFieldsToCustomData(user, dto.moduleFields),
     })
   }
@@ -242,7 +253,6 @@ export class LeadsService {
       ownerId: dto.owner,
       contactName: dto.contact,
       phone: dto.phone,
-      products: dto.products,
       customData:
         dto.moduleFields === undefined
           ? undefined
@@ -252,20 +262,39 @@ export class LeadsService {
 
   async updateStatus(
     user: AuthUser,
-    dto: { id: string; stage: 'NEW' | 'FOLLOWING' | 'INTERESTED' | 'SUCCESS' | 'FAIL' },
+    dto: { id: string; stage: string },
+    source: LeadStageEventSource = 'MANUAL',
   ) {
     const lead = await this.ensureInScope(user, dto.id, 'lead:update')
     if (lead.transitionId) throw new BadRequestException('已转换线索不能继续修改状态')
-    const updated = await this.prisma.client.orm.public.Clue.where({
-      id: lead.id,
-      organizationId: user.tenantId,
-    }).update({
-      lastStage: lead.stage,
-      stage: dto.stage,
-      updateUser: user.id,
-      updateTime: BigInt(Date.now()),
+    const stage = await this.resolveLeadStage(user.tenantId, dto.stage, true)
+    if (lead.stage === stage.key) {
+      return { id: lead.id, stage: lead.stage, lastStage: lead.lastStage }
+    }
+    const now = BigInt(Date.now())
+    const updated = await this.prisma.client.transaction(async (tx) => {
+      const row = await tx.orm.public.Clue.where({
+        id: lead.id,
+        organizationId: user.tenantId,
+      }).update({
+        lastStage: lead.stage,
+        stage: stage.key,
+        updateUser: user.id,
+        updateTime: now,
+      })
+      if (!row) throw new NotFoundException('线索不存在')
+      await recordLeadStageEvent(tx, {
+        organizationId: user.tenantId,
+        leadId: lead.id,
+        fromStageKey: lead.stage,
+        toStageKey: stage.key,
+        occurredAt: now,
+        operatorId: user.id,
+        ownerId: lead.owner,
+        source,
+      })
+      return row
     })
-    if (!updated) throw new NotFoundException('线索不存在')
     await this.changeLog.record(user, {
       module: 'lead',
       action: 'updateStatus',
@@ -628,6 +657,18 @@ export class LeadsService {
     if (where.createTime?.lte !== undefined) {
       query = query.where((row) => row.createTime.lte(where.createTime!.lte!))
     }
+    if (where.ids) {
+      query = where.ids.length
+        ? query.where((row) => row.id.in(where.ids!))
+        : query.where((row) => row.id.eq(''))
+    }
+    if (where.stage) query = query.where({ stage: where.stage })
+    if (where.converted) {
+      query = query
+        .where({ transitionType: 'CUSTOMER' })
+        .where((row) => row.transitionId.isNotNull())
+        .where((row) => row.transitionId.neq(''))
+    }
     for (const clause of where.AND ?? []) {
       const ownerScope = clause.owner
       if (typeof ownerScope === 'string') {
@@ -689,12 +730,15 @@ export class LeadsService {
   }
 
   async create(user: AuthUser, dto: LeadCreateInput): Promise<LeadVO> {
-    const { customData, ownerId, toPool, poolId } = dto
+    const { customData, ownerId, toPool, poolId, stageEventSource = 'MANUAL' } = dto
+    const targetPool = toPool ? await this.pools.resolveTargetPool(user, 'lead', poolId) : null
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
+    const initialStage = await this.resolveInitialLeadStage(user.tenantId)
     await this.fieldValues.validate(user.tenantId, 'clue', customData ?? {}, {
       mode: 'create',
+      uniqueScope,
     })
     const owner = toPool ? null : await this.resolveOwner(user, ownerId)
-    const targetPool = toPool ? await this.pools.resolveTargetPool(user, 'lead', poolId) : null
     const now = BigInt(Date.now())
     if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
 
@@ -704,8 +748,7 @@ export class LeadsService {
         name: dto.name,
         contact: dto.contactName ? dto.contactName : null,
         phone: dto.phone ? dto.phone : null,
-        products: dto.products?.length ? JSON.stringify(dto.products) : null,
-        stage: 'NEW',
+        stage: initialStage.key,
         organizationId: user.tenantId,
         inSharedPool: Boolean(toPool),
         poolId: targetPool?.id ? targetPool.id : null,
@@ -724,7 +767,18 @@ export class LeadsService {
         'create',
         tx,
         user.id,
+        uniqueScope,
       )
+      await recordLeadStageEvent(tx, {
+        organizationId: user.tenantId,
+        leadId: created.id,
+        fromStageKey: null,
+        toStageKey: initialStage.key,
+        occurredAt: now,
+        operatorId: user.id,
+        ownerId: created.owner,
+        source: stageEventSource,
+      })
       return created
     })
     if (owner && owner.id !== user.id) {
@@ -744,9 +798,11 @@ export class LeadsService {
     dto: LeadUpdateInput,
   ): Promise<LeadVO> {
     const { customData, ownerId } = dto
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, existing.poolId)
     await this.fieldValues.validate(user.tenantId, 'clue', customData ?? {}, {
       mode: 'update',
       resourceId: existing.id,
+      uniqueScope,
     })
     let transferredOwnerId: string | null = null
     if (ownerId && ownerId !== existing.owner) {
@@ -777,11 +833,6 @@ export class LeadsService {
           ? { contact: dto.contactName ? dto.contactName : null }
           : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone ? dto.phone : null } : {}),
-        ...(dto.products !== undefined
-          ? {
-              products: dto.products.length ? JSON.stringify(dto.products) : null,
-            }
-          : {}),
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
       })
@@ -795,6 +846,7 @@ export class LeadsService {
           'update',
           tx,
           user.id,
+          uniqueScope,
         )
       }
       return updated
@@ -825,6 +877,13 @@ export class LeadsService {
     if (lead.transitionId) throw new BadRequestException('已转换线索不能移入线索池')
     await this.dictionaries.validateReason(user.tenantId, 'CLUE_POOL_RS', reasonId)
     const pool = await this.pools.resolveMoveTargetPool(user.tenantId, 'lead', lead.owner, poolId)
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, pool.id)
+    const currentValues = (await this.fieldValues.load(user.tenantId, 'clue', [lead.id])).get(lead.id)
+    await this.fieldValues.validate(user.tenantId, 'clue', currentValues ?? {}, {
+      mode: 'update',
+      resourceId: lead.id,
+      uniqueScope,
+    })
     await this.cluePools.moveToPool({
       organizationId: user.tenantId,
       clueId: id,
@@ -1183,26 +1242,129 @@ export class LeadsService {
 
   async markInvalid(user: AuthUser, id: string) {
     const lead = await this.ensureInScope(user, id, 'lead:update')
-    await this.prisma.client.orm.public.Clue.where({
-      id: id,
-      organizationId: user.tenantId,
-    }).update({
-      lastStage: lead.stage,
-      stage: 'FAIL',
-      updateTime: BigInt(Date.now()),
-      updateUser: user.id,
-    })
+    const failureStage = (await this.resolveLeadStages(user.tenantId)).find(
+      (stage) => stage.enabled !== false && stage.kind === 'FAILURE',
+    )
+    if (!failureStage) throw new BadRequestException('未配置启用的失败阶段')
+    await this.updateStatus(user, { id, stage: failureStage.key })
     return { id, name: lead.name }
   }
 
-  /** Cordys /lead/transform：客户+联系人固定创建，商机可选。 */
+  /**
+   * 机器集成使用的明确 Lead 转换准备阶段。
+   * 不执行 selectTransformCustomer；customerCustomData 必须已归一成 Customer 稳定字段 key。
+   */
+  async prepareResolvedLeadConversion(
+    user: AuthUser,
+    leadId: string,
+    customerCustomData: Record<string, unknown> = {},
+  ) {
+    this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
+    const lead = await this.ensureInScope(user, leadId, 'lead:update')
+    if (lead.transitionId || lead.transitionType === 'CUSTOMER') {
+      throw new ConflictException({
+        code: 'LEAD_ALREADY_TRANSITIONED',
+        message: '线索已转客户，请重新定位后继续处理',
+      })
+    }
+    if (!lead.owner) throw new BadRequestException('线索暂无负责人，无法转换')
+
+    const mapped = await this.mapLeadCustomData(user.tenantId, 'customer', lead, true)
+    const customerCreateDto = {
+      name: lead.name,
+      ownerId: lead.owner,
+      customData: { ...mapped, ...customerCustomData },
+    }
+    const customerPrepared = await this.customers.prepareCreateForTransaction(
+      user,
+      customerCreateDto,
+    )
+    const associationPrepared = await this.prepareLeadAssociation(user, [lead])
+    return { lead, customerCreateDto, customerPrepared, associationPrepared }
+  }
+
+  /**
+   * 转换调用方已明确定位的 Lead；事务由上层持有。
+   * 锁内重新确认 transition / owner / updateTime，避免并发重复创建 Customer。
+   */
+  async convertResolvedLeadInTransaction(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<LeadsService['prepareResolvedLeadConversion']>>,
+    tx: PrismaTransaction,
+  ) {
+    const ownerId = prepared.lead.owner
+    if (!ownerId) throw new BadRequestException('线索暂无负责人，无法转换')
+    await acquirePoolTransactionLocksPrisma(
+      this.prisma.client,
+      tx,
+      poolTransactionLockKeys('clue', user.tenantId, prepared.lead.id, ownerId),
+    )
+    const current = await tx.orm.public.Clue.where({
+      id: prepared.lead.id,
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    }).first()
+    if (!current) throw new NotFoundException('线索不存在或已不在可转换范围')
+
+    if (current.transitionId) {
+      if (current.transitionType === 'CUSTOMER') {
+        throw new ConflictException({
+          code: 'LEAD_ALREADY_TRANSITIONED_RETRY',
+          message: '线索已被并发转换，请重新定位后继续处理',
+        })
+      }
+      throw new ConflictException({
+        code: 'UNSUPPORTED_TRANSITION',
+        message: '线索已转换为非 Customer 资源',
+      })
+    }
+    if (
+      current.owner !== prepared.lead.owner ||
+      current.updateTime !== prepared.lead.updateTime
+    ) {
+      throw new ConflictException({
+        code: 'LEAD_CHANGED_RETRY',
+        message: '线索在转换前已发生变化，请重新定位后重试',
+      })
+    }
+
+    const createdCustomer = await this.customers.createPreparedInTransaction(
+      user,
+      prepared.customerCreateDto,
+      prepared.customerPrepared,
+      tx,
+    )
+    const associated = await this.associateLeadsToCustomerInTransaction(
+      tx,
+      user,
+      [current as unknown as Lead],
+      createdCustomer.id,
+      { copyFollowArtifacts: true },
+      prepared.associationPrepared,
+    )
+    return {
+      customerId: String(createdCustomer.id),
+      contactIds: associated.contactIds,
+      createdCustomer,
+    }
+  }
+
+  async notifyResolvedLeadConversion(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<LeadsService['prepareResolvedLeadConversion']>>,
+    result: Awaited<ReturnType<LeadsService['convertResolvedLeadInTransaction']>>,
+  ) {
+    await this.customers.notifyCreatedCustomer(
+      user,
+      result.createdCustomer,
+      prepared.customerPrepared.owner.id,
+    )
+    await this.notifyLeadAssociation(user, [prepared.lead], result.customerId)
+  }
+
+  /** Lead → Customer：创建/复用客户并迁移联系人、跟进与附件，不创建传统销售商机。 */
   async transform(user: AuthUser, dto: TransformClueDto) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
-    if (dto.oppCreated) {
-      this.assertFunctionalPermission(user, 'opportunity:create', '无新建商机权限')
-      if (!dto.oppName?.trim()) throw new BadRequestException('请输入商机名称')
-      await this.opportunities.listStages(user.tenantId)
-    }
 
     const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
     if (lead.transitionId || lead.transitionType === 'CUSTOMER') {
@@ -1221,11 +1383,29 @@ export class LeadsService {
     const customerPrepared = customerCreateDto
       ? await this.customers.prepareCreateForTransaction(user, customerCreateDto)
       : null
-    const associationPrepared = await this.prepareLeadAssociation(user, [lead], {
-      opportunityName: dto.oppCreated ? dto.oppName?.trim() : undefined,
-    })
+    const associationPrepared = await this.prepareLeadAssociation(user, [lead])
 
     const transactionResult = await this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
+        tx,
+        poolTransactionLockKeys('clue', user.tenantId, lead.id, lead.owner!),
+      )
+      const current = await tx.orm.public.Clue.where({
+        id: lead.id,
+        organizationId: user.tenantId,
+        inSharedPool: false,
+      }).first()
+      if (!current) throw new NotFoundException('线索不存在或已不在可转换范围')
+      if (current.transitionId || current.transitionType === 'CUSTOMER') {
+        throw new BadRequestException('线索已转客户')
+      }
+      if (current.owner !== lead.owner || current.updateTime !== lead.updateTime) {
+        throw new ConflictException({
+          code: 'LEAD_CHANGED_RETRY',
+          message: '线索在转换前已发生变化，请重新加载后重试',
+        })
+      }
       const createdCustomer =
         customerCreateDto && customerPrepared
           ? await this.customers.createPreparedInTransaction(
@@ -1240,12 +1420,9 @@ export class LeadsService {
       const associated = await this.associateLeadsToCustomerInTransaction(
         tx,
         user,
-        [lead],
+        [current as unknown as Lead],
         customerId,
-        {
-          opportunityName: dto.oppCreated ? dto.oppName?.trim() : undefined,
-          copyFollowArtifacts: true,
-        },
+        { copyFollowArtifacts: true },
         associationPrepared,
       )
       return { customerId, createdCustomer, associated }
@@ -1258,18 +1435,11 @@ export class LeadsService {
         customerPrepared.owner.id,
       )
     }
-    await this.notifyLeadAssociation(
-      user,
-      [lead],
-      transactionResult.customerId,
-      transactionResult.associated.opportunityId,
-      dto.oppCreated ? dto.oppName?.trim() : undefined,
-    )
+    await this.notifyLeadAssociation(user, [lead], transactionResult.customerId)
     return {
       clueId: lead.id,
       customerId: transactionResult.customerId,
       contactId: transactionResult.associated.contactIds[0] ?? null,
-      opportunityId: transactionResult.associated.opportunityId,
     }
   }
 
@@ -1327,7 +1497,7 @@ export class LeadsService {
       return { customer, contactId }
     })
     await this.customers.notifyCreatedCustomer(user, result.customer, prepared.owner.id)
-    await this.notifyLeadAssociation(user, [lead], result.customer.id, null)
+    await this.notifyLeadAssociation(user, [lead], result.customer.id)
     return {
       clueId: lead.id,
       customerId: result.customer.id,
@@ -1399,7 +1569,7 @@ export class LeadsService {
         associationPrepared,
       )
     })
-    await this.notifyLeadAssociation(user, validLeads, customer.id, null)
+    await this.notifyLeadAssociation(user, validLeads, customer.id)
     return {
       customerId: customer.id,
       success: validLeads.length,
@@ -1457,7 +1627,6 @@ export class LeadsService {
   private async prepareLeadAssociation(
     user: AuthUser,
     leads: Lead[],
-    options: { opportunityName?: string } = {},
   ): Promise<LeadAssociationPrepared> {
     // 新租户首次访问 contact 表单时 listFields 会惰性 ensureForm；这里必须串行，
     // 否则两个并发 ensureForm 可能同时 upsert 同一 (organizationId, formKey) 触发 P2002。
@@ -1471,10 +1640,6 @@ export class LeadsService {
         await this.mapLeadCustomData(user.tenantId, 'contact', lead, true),
       )
     }
-    const opportunityCustomData =
-      options.opportunityName && leads.length === 1
-        ? await this.mapLeadCustomData(user.tenantId, 'opportunity', leads[0], true)
-        : {}
     const ownerIds = [
       ...new Set(leads.map((lead) => lead.owner).filter((id): id is string => !!id)),
     ]
@@ -1491,25 +1656,11 @@ export class LeadsService {
     if (ownerMap.size !== ownerIds.length) {
       throw new BadRequestException('线索负责人不存在或已禁用')
     }
-    const firstStage = options.opportunityName
-      ? await this.prisma.client.orm.public.OpportunityStageConfig.where({
-          organizationId: user.tenantId,
-          _type: 'AFOOT',
-        })
-          .orderBy((row) => row.pos.asc())
-          .select('id')
-          .first()
-      : null
-    if (options.opportunityName && !firstStage) {
-      throw new BadRequestException('请先在商机管理中初始化商机阶段')
-    }
     return {
       contactNameUnique,
       contactPhoneUnique,
       contactCustomData,
-      opportunityCustomData,
       ownerMap,
-      firstStage,
     }
   }
 
@@ -1518,11 +1669,11 @@ export class LeadsService {
     user: AuthUser,
     leads: Lead[],
     customerId: string,
-    options: { opportunityName?: string; copyFollowArtifacts?: boolean } = {},
+    options: { copyFollowArtifacts?: boolean } = {},
     prepared: LeadAssociationPrepared,
   ) {
     if (leads.length === 0) {
-      return { contactIds: [] as string[], opportunityId: null as string | null }
+      return { contactIds: [] as string[] }
     }
     const customer = await tx.orm.public.Customer.where({
       id: customerId,
@@ -1531,7 +1682,6 @@ export class LeadsService {
     if (!customer) throw new NotFoundException('客户不存在')
 
     const contactIds: string[] = []
-    let opportunityId: string | null = null
     let newestFollowedAt = customer.followTime
     let newestFollower: string | null = customer.follower ? String(customer.follower) : null
 
@@ -1615,44 +1765,6 @@ export class LeadsService {
         }
       }
 
-      if (options.opportunityName && prepared.firstStage && leads.length === 1) {
-        const now = BigInt(Date.now())
-        const latest = await tx.orm.public.Opportunity.where({
-          organizationId: user.tenantId,
-          stage: prepared.firstStage.id,
-        })
-          .select('pos')
-          .orderBy((row) => row.pos.desc())
-          .first()
-        const opportunity = await tx.orm.public.Opportunity.create({
-          id: createLegacyId32(),
-          organizationId: user.tenantId,
-          name: options.opportunityName,
-          customerId: customerId,
-          contactId: contactId ? contactId : null,
-          stage: prepared.firstStage.id,
-          owner: lead.owner,
-          products: lead.products ? lead.products : null,
-          follower: lead.follower ? lead.follower : null,
-          followTime: lead.followTime,
-          createTime: now,
-          updateTime: now,
-          createUser: user.id,
-          updateUser: user.id,
-          pos: (latest?.pos ?? 0n) + 1n,
-        })
-        await this.fieldValues.save(
-          user.tenantId,
-          'opportunity',
-          opportunity.id,
-          prepared.opportunityCustomData,
-          'create',
-          tx,
-          user.id,
-        )
-        opportunityId = String(opportunity.id)
-      }
-
       if (options.copyFollowArtifacts) {
         await this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId, contactId)
       }
@@ -1686,7 +1798,7 @@ export class LeadsService {
       if (!updatedCustomer) throw new NotFoundException('客户不存在')
     }
 
-    return { contactIds, opportunityId }
+    return { contactIds }
   }
 
   private async copyLeadFollowArtifactsInTransaction(
@@ -1818,8 +1930,6 @@ export class LeadsService {
     user: AuthUser,
     leads: Lead[],
     customerId: string,
-    opportunityId: string | null,
-    opportunityName?: string,
   ) {
     for (const lead of leads) {
       if (!lead.owner) continue
@@ -1833,18 +1943,6 @@ export class LeadsService {
         templateContext: { name: lead.name },
         link: `/customers/${customerId}`,
       })
-      if (opportunityId && opportunityName) {
-        await this.notifications.send({
-          tenantId: user.tenantId,
-          event: 'CLUE_CONVERT_BUSINESS',
-          operatorId: user.id,
-          recipientIds: [lead.owner],
-          excludeSelf: true,
-          type: 'system',
-          templateContext: { name: lead.name },
-          link: `/opportunities?id=${opportunityId}`,
-        })
-      }
     }
   }
 
@@ -1867,7 +1965,7 @@ export class LeadsService {
 
   private async mapLeadCustomData(
     tenantId: string,
-    module: 'customer' | 'contact' | 'opportunity',
+    module: 'customer' | 'contact',
     lead: Lead,
     _requireAll: boolean,
   ) {
@@ -1879,12 +1977,7 @@ export class LeadsService {
       owner: lead.owner,
       ...(values.get(lead.id) ?? {}),
     }
-    const scenario =
-      module === 'customer'
-        ? 'CLUE_TO_CUSTOMER'
-        : module === 'contact'
-          ? 'CLUE_TO_CONTACT'
-          : 'CLUE_TO_OPPORTUNITY'
+    const scenario = module === 'customer' ? 'CLUE_TO_CUSTOMER' : 'CLUE_TO_CONTACT'
     const linkedValues = await this.moduleForms.resolveFormLink(
       tenantId,
       module,
@@ -1915,16 +2008,10 @@ export class LeadsService {
     const result = await this.findAll(user, { ...query, page: 1, pageSize: 5000 })
 
     const headers = [...columns.map((c) => c.label), '状态', '创建时间']
-    const statusLabels: Record<string, string> = {
-      NEW: '新建',
-      FOLLOWING: '跟进中',
-      INTERESTED: '感兴趣',
-      SUCCESS: '成功',
-      FAIL: '失败',
-    }
+    const statusLabels = await this.leadStageLabelMap(user.tenantId)
     const rows = result.items.map((item) => [
       ...columns.map((c) => formatForExport(c, item as unknown as Record<string, unknown>)),
-      statusLabels[item.status] ?? item.status,
+      statusLabels.get(item.status) ?? item.status,
       item.createdAt.slice(0, 10),
     ])
     return {
@@ -2021,6 +2108,7 @@ export class LeadsService {
             await this.create(user, {
               ...prepared.dto,
               ...(poolId ? { toPool: true, poolId } : {}),
+              stageEventSource: 'IMPORT',
             } as LeadCreateInput)
           } else if (poolId) {
             if (!prepared.existing) throw new BadRequestException('线索不存在或不属于当前线索池')
@@ -2099,20 +2187,16 @@ export class LeadsService {
       if (!field && !extraLabel) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
       return { key, label: field?.label ?? (extraLabel as string) }
     })
-    const statusLabels: Record<string, string> = {
-      NEW: '新建',
-      FOLLOWING: '跟进中',
-      INTERESTED: '感兴趣',
-      SUCCESS: '成功',
-      FAIL: '失败',
-    }
+    const statusLabels = await this.leadStageLabelMap(user.tenantId)
     const rows = items.map((item) => {
       const source = item as unknown as Record<string, unknown>
       return Object.fromEntries(
         columns.map((column) => {
           const field = fieldMap.get(column.key)
           if (field) return [column.key, formatForExport(field, source)]
-          if (column.key === 'status') return [column.key, statusLabels[item.status] ?? item.status]
+          if (column.key === 'status') {
+            return [column.key, statusLabels.get(item.status) ?? item.status]
+          }
           return [column.key, source[column.key] ?? '']
         }),
       )
@@ -2141,6 +2225,7 @@ export class LeadsService {
           phone: rest.phone ? String(rest.phone) : undefined,
           toPool: rest.toPool === true,
           customData,
+          stageEventSource: 'IMPORT',
         })
         success++
       } catch (e) {
@@ -2163,6 +2248,8 @@ export class LeadsService {
     resourceId?: string,
     poolId?: string,
   ): Promise<{ dto: LeadUpdateInput; existing?: Lead }> {
+    const targetPool = poolId ? await this.pools.resolveTargetPool(user, 'lead', poolId) : null
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
     const fieldMap = new Map(fields.map((field) => [field.key, field]))
     const dto: LeadUpdateInput = {}
     const customData: Record<string, unknown> = {}
@@ -2186,6 +2273,7 @@ export class LeadsService {
     await this.fieldValues.validate(user.tenantId, 'clue', customData, {
       mode: importType === 'ADD' ? 'create' : 'update',
       ...(resourceId ? { resourceId } : {}),
+      uniqueScope,
     })
 
     if (importType === 'ADD') {
@@ -2193,7 +2281,6 @@ export class LeadsService {
       if (!name) throw new BadRequestException('线索名称不能为空')
       if (!poolId)
         await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId ?? user.id)
-      else await this.pools.resolveTargetPool(user, 'lead', poolId)
       return { dto }
     }
 
@@ -2211,6 +2298,54 @@ export class LeadsService {
       await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId)
     }
     return { dto, existing }
+  }
+
+  private async resolveLeadStages(organizationId: string): Promise<LeadStageConfig[]> {
+    const { formProp } = await this.moduleForms.getConfig(organizationId, MODULE)
+    const configured = formProp.leadStages
+    const source = configured?.length ? configured : DEFAULT_LEAD_STAGES
+    return source.map((stage) => ({
+      key: stage.key,
+      name: stage.name,
+      kind: stage.kind,
+      enabled: stage.enabled !== false,
+    }))
+  }
+
+  private async resolveLeadStage(
+    organizationId: string,
+    stageKey: string,
+    requireEnabled = false,
+  ): Promise<LeadStageConfig> {
+    const key = stageKey.trim()
+    const stage = (await this.resolveLeadStages(organizationId)).find((item) => item.key === key)
+    if (!stage || (requireEnabled && stage.enabled === false)) {
+      throw new BadRequestException('线索阶段不存在或已停用')
+    }
+    return stage
+  }
+
+  private async resolveInitialLeadStage(organizationId: string): Promise<LeadStageConfig> {
+    const stage = (await this.resolveLeadStages(organizationId)).find(
+      (item) => item.enabled !== false,
+    )
+    if (!stage) throw new BadRequestException('请先配置至少一个启用的线索阶段')
+    return stage
+  }
+
+  private async leadStageLabelMap(organizationId: string): Promise<Map<string, string>> {
+    return new Map((await this.resolveLeadStages(organizationId)).map((stage) => [stage.key, stage.name]))
+  }
+
+  private async resolveLeadUniqueScope(
+    organizationId: string,
+    poolId?: string | null,
+  ): Promise<ResourceFieldUniqueScope | undefined> {
+    if (!poolId) return undefined
+    const { formProp } = await this.moduleForms.getConfig(organizationId, MODULE)
+    const scope = formProp.leadUniqueScope ?? 'RESOURCE_POOL'
+    if (scope !== 'RESOURCE_POOL') return undefined
+    return { type: 'resourcePool', poolId }
   }
 
   private async resolveImportOwner(user: AuthUser, value: string): Promise<string> {
@@ -2424,7 +2559,6 @@ export class LeadsService {
       'collectionTime',
       'contact',
       'phone',
-      'products',
       'transitionType',
       'transitionId',
       'follower',
@@ -2448,11 +2582,6 @@ export class LeadsService {
         return textEmpty
           ? collection.where((row) => or(row.phone.isNull(), row.phone.eq('')))
           : collection.where((row) => row.phone.isNull())
-      }
-      if (key === 'products') {
-        return textEmpty
-          ? collection.where((row) => or(row.products.isNull(), row.products.eq('')))
-          : collection.where((row) => row.products.isNull())
       }
       if (key === 'lastStage') return collection.where((row) => row.lastStage.isNull())
       if (key === 'collectionTime') return collection.where((row) => row.collectionTime.isNull())
@@ -2479,11 +2608,6 @@ export class LeadsService {
         return textEmpty
           ? collection.where((row) => not(or(row.phone.isNull(), row.phone.eq(''))))
           : collection.where((row) => row.phone.isNotNull())
-      }
-      if (key === 'products') {
-        return textEmpty
-          ? collection.where((row) => not(or(row.products.isNull(), row.products.eq(''))))
-          : collection.where((row) => row.products.isNotNull())
       }
       if (key === 'lastStage') return collection.where((row) => row.lastStage.isNotNull())
       if (key === 'collectionTime') return collection.where((row) => row.collectionTime.isNotNull())
@@ -2604,22 +2728,6 @@ export class LeadsService {
           return row.phone.ilike('%' + String(condition.value ?? '') + '%')
         if (condition.op === 'notContains')
           return not(row.phone.ilike('%' + String(condition.value ?? '') + '%'))
-        return row.id.eq('')
-      })
-    }
-
-    if (key === 'products') {
-      const values = rawValues.map((item) => String(item ?? ''))
-      const value = values[0]!
-      return collection.where((row) => {
-        if (condition.op === 'eq') return row.products.eq(value)
-        if (condition.op === 'ne') return row.products.neq(value)
-        if (condition.op === 'in') return row.products.in(values)
-        if (condition.op === 'notIn') return not(row.products.in(values))
-        if (condition.op === 'contains')
-          return row.products.ilike('%' + String(condition.value ?? '') + '%')
-        if (condition.op === 'notContains')
-          return not(row.products.ilike('%' + String(condition.value ?? '') + '%'))
         return row.id.eq('')
       })
     }

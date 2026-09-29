@@ -1,0 +1,197 @@
+[
+  {
+    "id": "table.lead_stage_event",
+    "label": "Create table \"lead_stage_event\"",
+    "summary": "Creates table \"lead_stage_event\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "lead_stage_event"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"lead_stage_event\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"lead_stage_event\"",
+        "sql": "CREATE TABLE \"public\".\"lead_stage_event\" (\n  \"from_stage_key\" text,\n  \"id\" text NOT NULL,\n  \"lead_id\" text NOT NULL,\n  \"occurred_at\" int8 NOT NULL,\n  \"operator_id\" text NOT NULL,\n  \"organization_id\" text NOT NULL,\n  \"owner_id\" text,\n  \"source\" text NOT NULL,\n  \"to_stage_key\" text NOT NULL,\n  CONSTRAINT \"lead_stage_event_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"lead_stage_event_from_stage_key_len_fbe4a7ae\" CHECK (char_length(\"from_stage_key\") <= 30),\n  CONSTRAINT \"lead_stage_event_id_len_3d66fb56\" CHECK (char_length(\"id\") <= 32),\n  CONSTRAINT \"lead_stage_event_lead_id_len_014967bd\" CHECK (char_length(\"lead_id\") <= 32),\n  CONSTRAINT \"lead_stage_event_operator_id_len_436760a5\" CHECK (char_length(\"operator_id\") <= 32),\n  CONSTRAINT \"lead_stage_event_organization_id_len_0ac99d67\" CHECK (char_length(\"organization_id\") <= 32),\n  CONSTRAINT \"lead_stage_event_owner_id_len_dc83cd8f\" CHECK (char_length(\"owner_id\") <= 32),\n  CONSTRAINT \"lead_stage_event_source_len_5b27430a\" CHECK (char_length(\"source\") <= 30),\n  CONSTRAINT \"lead_stage_event_to_stage_key_len_f854f770\" CHECK (char_length(\"to_stage_key\") <= 30)\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"lead_stage_event\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.lead_stage_event.lead_stage_event_lead_id_occurred_at_idx",
+    "label": "Create index \"lead_stage_event_lead_id_occurred_at_idx\" on \"lead_stage_event\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "lead_stage_event_lead_id_occurred_at_idx",
+        "table": "lead_stage_event"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"lead_stage_event_lead_id_occurred_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_lead_id_occurred_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"lead_stage_event_lead_id_occurred_at_idx\"",
+        "sql": "CREATE INDEX \"lead_stage_event_lead_id_occurred_at_idx\" ON \"public\".\"lead_stage_event\" (\"lead_id\", \"occurred_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"lead_stage_event_lead_id_occurred_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_lead_id_occurred_at_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.lead_stage_event.lead_stage_event_organization_id_occurred_at_idx",
+    "label": "Create index \"lead_stage_event_organization_id_occurred_at_idx\" on \"lead_stage_event\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "lead_stage_event_organization_id_occurred_at_idx",
+        "table": "lead_stage_event"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"lead_stage_event_organization_id_occurred_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_organization_id_occurred_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"lead_stage_event_organization_id_occurred_at_idx\"",
+        "sql": "CREATE INDEX \"lead_stage_event_organization_id_occurred_at_idx\" ON \"public\".\"lead_stage_event\" (\"organization_id\", \"occurred_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"lead_stage_event_organization_id_occurred_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_organization_id_occurred_at_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.lead_stage_event.lead_stage_event_organization_id_owner_id_occurred_at_idx",
+    "label": "Create index \"lead_stage_event_organization_id_owner_id_occurred_at_idx\" on \"lead_stage_event\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "lead_stage_event_organization_id_owner_id_occurred_at_idx",
+        "table": "lead_stage_event"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"lead_stage_event_organization_id_owner_id_occurred_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_organization_id_owner_id_occurred_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"lead_stage_event_organization_id_owner_id_occurred_at_idx\"",
+        "sql": "CREATE INDEX \"lead_stage_event_organization_id_owner_id_occurred_at_idx\" ON \"public\".\"lead_stage_event\" (\"organization_id\", \"owner_id\", \"occurred_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"lead_stage_event_organization_id_owner_id_occurred_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_organization_id_owner_id_occurred_at_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.lead_stage_event.lead_stage_event_organization_id_to_stage_key_occurred_at_idx",
+    "label": "Create index \"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\" on \"lead_stage_event\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "lead_stage_event_organization_id_to_stage_key_occurred_at_idx",
+        "table": "lead_stage_event"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\"",
+        "sql": "CREATE INDEX \"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\" ON \"public\".\"lead_stage_event\" (\"organization_id\", \"to_stage_key\", \"occurred_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event_organization_id_to_stage_key_occurred_at_idx\""
+        ]
+      }
+    ]
+  }
+]

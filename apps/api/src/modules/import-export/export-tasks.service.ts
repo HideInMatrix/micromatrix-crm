@@ -5,7 +5,7 @@ import type { ExportTaskVO } from '@micromatrix/shared'
 import { createReadStream, promises as fs } from 'node:fs'
 import path from 'node:path'
 import { jsonValue } from '../../prisma/json-value'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { nowInstant, instantToISOString } from '../../prisma/temporal.js'
 import { AsyncJobsService } from '../../async-jobs/async-jobs.service'
 

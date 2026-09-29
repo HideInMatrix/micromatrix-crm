@@ -67,6 +67,11 @@ export class AccountPageDto {
   @IsOptional()
   filters?: FilterCondition[]
 
+  @ApiPropertyOptional({ description: '首页工作台筛选上下文（HomeFilterPayload JSON）' })
+  @IsString()
+  @IsOptional()
+  homeFilter?: string
+
   @ApiPropertyOptional({ enum: ['AND', 'OR'], default: 'AND', description: '筛选条件组合方式' })
   @IsIn(['AND', 'OR'])
   @IsOptional()
@@ -313,24 +318,6 @@ export class AccountChartDto {
   @ValidateNested()
   @Type(() => AccountChartConfigDto)
   chartConfig!: AccountChartConfigDto
-}
-
-export class AccountResourcePageDto {
-  @ApiProperty({ description: '客户 ID' })
-  @IsString()
-  @IsNotEmpty()
-  accountId!: string
-
-  @ApiPropertyOptional({ default: 1 })
-  @Min(1)
-  @IsOptional()
-  current?: number
-
-  @ApiPropertyOptional({ default: 10, maximum: 100 })
-  @Min(1)
-  @Max(100)
-  @IsOptional()
-  pageSize?: number
 }
 
 export class PoolAccountPageDto extends AccountPageDto {

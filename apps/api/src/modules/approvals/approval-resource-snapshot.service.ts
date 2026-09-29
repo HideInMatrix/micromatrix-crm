@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type { ApprovalModule } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import { MODULE_TO_FORM_TYPE, toDbFormType } from './approval-flow-config.utils'

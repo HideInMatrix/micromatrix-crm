@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import {
   FOLLOW_UP_PLAN_STATUS_LABELS,
-  type ContractVO,
+  type FilterCondition,
   type FollowUpPlanVO,
+  type HomeAnalyticsVO,
   type HomeDepartmentNode,
-  type HomeLeadStatistic,
-  type HomeOpportunityFilterStatus,
-  type HomeOpportunityStatistic,
-  type HomeStatisticPeriod,
   type HomeStatisticRequest,
-  type HomeStatisticValue,
-  type HomeTimeField,
-  type HomeUserField,
   type NotificationVO,
 } from '@micromatrix/shared'
 import {
@@ -22,14 +16,10 @@ import {
   ClipboardCheck,
   ContactRound,
   FileCheck2,
-  FileSignature,
-  Handshake,
   MessageSquareText,
   Plus,
-  ReceiptText,
   RefreshCw,
   Settings2,
-  ShoppingCart,
   Target,
 } from 'lucide-vue-next'
 import { ElButton } from 'element-plus'
@@ -39,13 +29,13 @@ import { useRouter } from 'vue-router'
 import { approvalApi } from '@/api/approvals'
 import { changePassword } from '@/api/auth'
 import { listCustomerOptions } from '@/api/customers'
-import { businessTitleApi, contractApi, contractInvoiceApi } from '@/api/deal'
 import { homeApi } from '@/api/home'
 import { extractErrorMessage } from '@/api/http'
-import { followUpPlanApi, leadApi, opportunityApi } from '@/api/sales'
+import { followUpPlanApi, leadApi } from '@/api/sales'
 import { notificationApi } from '@/api/system'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
+import EChart from '@/components/EChart.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
 import { storeHomeFilter } from '@/utils/home-filter'
@@ -54,55 +44,15 @@ const auth = useAuthStore()
 const moduleConfig = useModuleConfigStore()
 const router = useRouter()
 
-const periods: Array<{ key: HomeStatisticPeriod; label: string }> = [
-  { key: 'TODAY', label: '今天' },
-  { key: 'THIS_WEEK', label: '本周' },
-  { key: 'THIS_MONTH', label: '本月' },
-  { key: 'THIS_YEAR', label: '本年' },
-]
-
-const leadPeriodKeys: Record<HomeStatisticPeriod, keyof HomeLeadStatistic> = {
-  TODAY: 'todayClue',
-  THIS_WEEK: 'thisWeekClue',
-  THIS_MONTH: 'thisMonthClue',
-  THIS_YEAR: 'thisYearClue',
-}
-
-const opportunityPeriodKeys: Record<
-  HomeStatisticPeriod,
-  { count: keyof HomeOpportunityStatistic; amount: keyof HomeOpportunityStatistic }
-> = {
-  TODAY: { count: 'todayOpportunity', amount: 'todayOpportunityAmount' },
-  THIS_WEEK: { count: 'thisWeekOpportunity', amount: 'thisWeekOpportunityAmount' },
-  THIS_MONTH: { count: 'thisMonthOpportunity', amount: 'thisMonthOpportunityAmount' },
-  THIS_YEAR: { count: 'thisYearOpportunity', amount: 'thisYearOpportunityAmount' },
-}
-
-const overviewConfig = reactive<{
-  userField: HomeUserField
-  timeField: Exclude<HomeTimeField, 'ACTUAL_END_TIME'>
-  winOrderTimeField: Extract<HomeTimeField, 'EXPECTED_END_TIME' | 'ACTUAL_END_TIME'>
-  priorPeriodEnable: boolean
-}>({
-  userField: 'OWNER',
-  timeField: 'CREATE_TIME',
-  winOrderTimeField: 'EXPECTED_END_TIME',
-  priorPeriodEnable: true,
-})
-
-const overviewSettingTab = ref<'clue' | 'opportunity' | 'win'>('clue')
 const departmentTree = ref<HomeDepartmentNode[]>([])
 const activeDeptId = ref('SELF')
 const searchType = ref<HomeStatisticRequest['searchType']>('SELF')
 const selectedDeptIds = ref<string[]>([])
 const statisticLoading = ref(false)
-const leadStatistic = ref<HomeLeadStatistic | null>(null)
-const opportunityStatistic = ref<HomeOpportunityStatistic | null>(null)
-const underwayStatistic = ref<HomeOpportunityStatistic | null>(null)
-const successStatistic = ref<HomeOpportunityStatistic | null>(null)
+const analytics = ref<HomeAnalyticsVO | null>(null)
 
 const hasLeadRead = computed(() => auth.hasPerm('menu:lead'))
-const hasOpportunityRead = computed(() => auth.hasPerm('menu:opportunity'))
+const hasCustomerRead = computed(() => auth.hasPerm('menu:customer'))
 
 interface DepartmentSelectNode {
   value: string
@@ -134,40 +84,6 @@ function findDepartment(nodes: HomeDepartmentNode[], id: string): HomeDepartment
     if (child) return child
   }
   return null
-}
-
-function overviewStorageKey() {
-  return `micromatrix:home-overview:${auth.user?.id ?? 'anonymous'}`
-}
-
-function loadOverviewConfig() {
-  try {
-    const raw = localStorage.getItem(overviewStorageKey())
-    if (!raw) return
-    const saved = JSON.parse(raw) as Partial<typeof overviewConfig>
-    if (saved.userField === 'OWNER' || saved.userField === 'CREATE_USER') {
-      overviewConfig.userField = saved.userField
-    }
-    if (saved.timeField === 'CREATE_TIME' || saved.timeField === 'EXPECTED_END_TIME') {
-      overviewConfig.timeField = saved.timeField
-    }
-    if (
-      saved.winOrderTimeField === 'EXPECTED_END_TIME' ||
-      saved.winOrderTimeField === 'ACTUAL_END_TIME'
-    ) {
-      overviewConfig.winOrderTimeField = saved.winOrderTimeField
-    }
-    if (typeof saved.priorPeriodEnable === 'boolean') {
-      overviewConfig.priorPeriodEnable = saved.priorPeriodEnable
-    }
-  } catch {
-    localStorage.removeItem(overviewStorageKey())
-  }
-}
-
-async function persistOverviewConfig() {
-  localStorage.setItem(overviewStorageKey(), JSON.stringify({ ...overviewConfig }))
-  await loadStatistics()
 }
 
 async function loadDepartmentTree() {
@@ -211,28 +127,18 @@ function statisticRequest(): HomeStatisticRequest {
   return {
     searchType: searchType.value,
     deptIds: selectedDeptIds.value,
-    userField: overviewConfig.userField,
-    timeField: overviewConfig.timeField,
-    winOrderTimeField: overviewConfig.winOrderTimeField,
-    priorPeriodEnable: overviewConfig.priorPeriodEnable,
   }
 }
 
 async function loadStatistics() {
   statisticLoading.value = true
   try {
-    const request = statisticRequest()
-    const [leadResponse, opportunityResponse, underwayResponse, successResponse] =
-      await Promise.all([
-        hasLeadRead.value ? homeApi.lead(request) : Promise.resolve(null),
-        hasOpportunityRead.value ? homeApi.opportunity(request) : Promise.resolve(null),
-        hasOpportunityRead.value ? homeApi.opportunityUnderway(request) : Promise.resolve(null),
-        hasOpportunityRead.value ? homeApi.opportunitySuccess(request) : Promise.resolve(null),
-      ])
-    leadStatistic.value = leadResponse?.data ?? null
-    opportunityStatistic.value = opportunityResponse?.data ?? null
-    underwayStatistic.value = underwayResponse?.data ?? null
-    successStatistic.value = successResponse?.data ?? null
+    if (!hasLeadRead.value) {
+      analytics.value = null
+      return
+    }
+    const { data } = await homeApi.analytics(statisticRequest())
+    analytics.value = data
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -240,69 +146,250 @@ async function loadStatistics() {
   }
 }
 
-function leadValue(period: HomeStatisticPeriod) {
-  return leadStatistic.value?.[leadPeriodKeys[period]] ?? null
-}
-
-function opportunityValue(
-  source: HomeOpportunityStatistic | null,
-  period: HomeStatisticPeriod,
-  amount = false,
-) {
-  if (!source) return null
-  const key = amount ? opportunityPeriodKeys[period].amount : opportunityPeriodKeys[period].count
-  return source[key]
-}
-
-function formatStatistic(value: HomeStatisticValue | null, currency = false) {
-  if (!value) return '-'
-  if (currency) return `¥${value.value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`
-  return value.value.toLocaleString('zh-CN')
-}
-
-function compareLabel(value: HomeStatisticValue | null) {
-  if (!value || value.priorPeriodCompareRate === null) return '-'
-  const rate = value.priorPeriodCompareRate
-  if (rate === 0) return '0%'
-  return `${rate > 0 ? '↑' : '↓'}${Math.abs(rate).toFixed(2)}%`
-}
-
-function compareClass(value: HomeStatisticValue | null) {
-  const rate = value?.priorPeriodCompareRate
-  if (rate === null || rate === undefined || rate === 0)
-    return 'text-[var(--el-text-color-secondary)]'
-  return rate > 0 ? 'text-[var(--el-color-danger)]' : 'text-[var(--el-color-success)]'
-}
-
-function openStatistic(
-  module: 'lead' | 'opportunity',
-  period: HomeStatisticPeriod,
-  status?: HomeOpportunityFilterStatus,
-) {
-  if (module === 'lead') {
-    if (!hasLeadRead.value || overviewConfig.userField !== 'OWNER') return
-  } else if (!hasOpportunityRead.value) {
-    return
-  }
-
+function openLeadAnalytics(options: {
+  filters?: FilterCondition[]
+  leadStageKey?: string
+  converted?: boolean
+  overdue?: boolean
+} = {}) {
+  if (!hasLeadRead.value) return
   const key = storeHomeFilter({
-    module,
-    period,
+    module: 'lead',
     searchType: searchType.value,
     deptIds: selectedDeptIds.value,
-    ...(module === 'lead' ? { userField: overviewConfig.userField } : {}),
-    ...(module === 'opportunity'
-      ? {
-          timeField:
-            status === 'SUCCESS' ? overviewConfig.winOrderTimeField : overviewConfig.timeField,
-          ...(status ? { status } : {}),
-        }
-      : {}),
+    userField: 'OWNER',
+    ...options,
   })
-  void router.push({
-    path: module === 'lead' ? '/leads' : '/opportunities',
-    query: { homeFilter: key },
+  void router.push({ path: '/leads', query: { homeFilter: key } })
+}
+
+function openCustomerAnalytics(filters: FilterCondition[] = []) {
+  if (!hasCustomerRead.value) return
+  const key = storeHomeFilter({
+    module: 'customer',
+    searchType: searchType.value,
+    deptIds: selectedDeptIds.value,
+    filters,
   })
+  void router.push({ path: '/customers', query: { homeFilter: key } })
+}
+
+const resultSummaryFilters = computed<FilterCondition[]>(() => {
+  const config = analytics.value?.config
+  const field = config?.customerResultField
+  if (!field) return []
+  if (config.customerResultValues.length === 0) return [{ key: field.key, op: 'notEmpty' }]
+  return [
+    {
+      key: field.key,
+      op: config.customerResultValues.length === 1 ? 'eq' : 'in',
+      value:
+        config.customerResultValues.length === 1
+          ? config.customerResultValues[0]
+          : config.customerResultValues,
+    },
+  ]
+})
+
+const resultLabel = computed(
+  () => analytics.value?.config.customerResultField?.label ?? '业务结果',
+)
+
+const funnelOption = computed<Record<string, unknown>>(() => ({
+  tooltip: { trigger: 'item', formatter: '{b}: {c}' },
+  series: [
+    {
+      type: 'funnel',
+      left: '8%',
+      right: '8%',
+      top: 12,
+      bottom: 12,
+      sort: 'none',
+      label: { formatter: '{b}  {c}' },
+      data: (analytics.value?.funnel ?? []).map((item) => ({
+        name: item.name,
+        value: item.count,
+        stageKey: item.stageKey,
+      })),
+    },
+  ],
+}))
+
+const trendOption = computed<Record<string, unknown>>(() => {
+  const trend = analytics.value?.trend
+  const series: Array<Record<string, unknown>> = [
+    { name: '新增线索', type: 'line', smooth: true, data: trend?.leads ?? [] },
+  ]
+  if (trend?.results) {
+    series.push({
+      name: analytics.value?.config.customerResultField?.label ?? '业务结果',
+      type: 'line',
+      smooth: true,
+      data: trend.results,
+    })
+  }
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: series.map((item) => item.name) },
+    grid: { left: 40, right: 20, top: 42, bottom: 30, containLabel: true },
+    xAxis: { type: 'category', data: trend?.months ?? [] },
+    yAxis: { type: 'value', minInterval: 1 },
+    series,
+  }
+})
+
+const channelOption = computed<Record<string, unknown>>(() => ({
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  legend: { data: ['线索', '已转客户', resultLabel.value] },
+  grid: { left: 32, right: 20, top: 42, bottom: 60, containLabel: true },
+  xAxis: {
+    type: 'category',
+    axisLabel: { interval: 0, rotate: 24 },
+    data: (analytics.value?.channels ?? []).map((item) => item.label),
+  },
+  yAxis: { type: 'value', minInterval: 1 },
+  series: [
+    {
+      name: '线索',
+      type: 'bar',
+      data: (analytics.value?.channels ?? []).map((item) => ({
+        value: item.count,
+        channelValue: item.value,
+      })),
+    },
+    {
+      name: '已转客户',
+      type: 'bar',
+      data: (analytics.value?.channels ?? []).map((item) => ({
+        value: item.convertedCount,
+        channelValue: item.value,
+      })),
+    },
+    {
+      name: resultLabel.value,
+      type: 'bar',
+      data: (analytics.value?.channels ?? []).map((item) => ({
+        value: item.resultCount,
+        channelValue: item.value,
+      })),
+    },
+  ],
+}))
+
+const resultOption = computed<Record<string, unknown>>(() => ({
+  tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+  legend: { orient: 'vertical', right: 4, top: 'middle' },
+  series: [
+    {
+      type: 'pie',
+      radius: ['38%', '68%'],
+      center: ['38%', '50%'],
+      data: (analytics.value?.resultDistribution ?? []).map((item) => ({
+        name: item.label,
+        value: item.count,
+        resultValue: item.value,
+      })),
+    },
+  ],
+}))
+
+const performanceOption = computed<Record<string, unknown>>(() => ({
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  legend: {
+    data: analytics.value?.config.customerResultField
+      ? ['线索', '已转客户', resultLabel.value]
+      : ['线索', '已转客户'],
+  },
+  grid: { left: 40, right: 20, top: 42, bottom: 58, containLabel: true },
+  xAxis: {
+    type: 'category',
+    axisLabel: { interval: 0, rotate: 24 },
+    data: (analytics.value?.performance ?? []).map((item) => item.ownerName),
+  },
+  yAxis: { type: 'value', minInterval: 1 },
+  series: [
+    {
+      name: '线索',
+      type: 'bar',
+      data: (analytics.value?.performance ?? []).map((item) => ({
+        value: item.leadCount,
+        ownerId: item.ownerId,
+      })),
+    },
+    {
+      name: '已转客户',
+      type: 'bar',
+      data: (analytics.value?.performance ?? []).map((item) => ({
+        value: item.convertedCount,
+        ownerId: item.ownerId,
+      })),
+    },
+    ...(analytics.value?.config.customerResultField
+      ? [
+          {
+            name: resultLabel.value,
+            type: 'bar',
+            data: (analytics.value?.performance ?? []).map((item) => ({
+              value: item.resultCount,
+              ownerId: item.ownerId,
+            })),
+          },
+        ]
+      : []),
+  ],
+}))
+
+function chartDataValue(event: unknown, key: string): string | null {
+  if (!event || typeof event !== 'object') return null
+  const data = (event as { data?: unknown }).data
+  if (!data || typeof data !== 'object') return null
+  const value = (data as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : null
+}
+
+function handleFunnelClick(event: unknown) {
+  const stageKey = chartDataValue(event, 'stageKey')
+  if (stageKey) openLeadAnalytics({ leadStageKey: stageKey })
+}
+
+function handleChannelClick(event: unknown) {
+  const source = analytics.value?.config.leadSourceField
+  const value = chartDataValue(event, 'channelValue')
+  if (!source || !value) return
+  openLeadAnalytics({
+    filters: [
+      value === '__EMPTY__'
+        ? { key: source.key, op: 'isEmpty' }
+        : { key: source.key, op: 'eq', value },
+    ],
+  })
+}
+
+function handleResultClick(event: unknown) {
+  const field = analytics.value?.config.customerResultField
+  const value = chartDataValue(event, 'resultValue')
+  if (field && value) openCustomerAnalytics([{ key: field.key, op: 'eq', value }])
+}
+
+function handlePerformanceClick(event: unknown) {
+  const ownerId = chartDataValue(event, 'ownerId')
+  if (!ownerId) return
+  openLeadAnalytics({
+    filters: [
+      ownerId === '__UNASSIGNED__'
+        ? { key: 'owner', op: 'isEmpty' }
+        : { key: 'owner', op: 'eq', value: ownerId },
+    ],
+  })
+}
+
+function formatCount(value: number | null | undefined) {
+  return (value ?? 0).toLocaleString('zh-CN')
+}
+
+function formatAmount(value: number | null | undefined) {
+  if (value === null || value === undefined) return '-'
+  return `¥${value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`
 }
 
 // ===== 快捷入口 =====
@@ -311,12 +398,8 @@ type QuickAccessKey =
   | 'customer'
   | 'contact'
   | 'lead'
-  | 'opportunity'
-  | 'contract'
-  | 'invoice'
   | 'followRecord'
   | 'followPlan'
-  | 'order'
 
 interface QuickAccessItem {
   key: QuickAccessKey
@@ -354,52 +437,18 @@ const quickAccessCatalog = computed<QuickAccessItem[]>(() => {
       moduleEnabled: () => moduleConfig.isEnabled('lead'),
     },
     {
-      key: 'opportunity',
-      label: '新建商机',
-      icon: Handshake,
-      permissions: ['opportunity:create'],
-      moduleEnabled: () => moduleConfig.isEnabled('opportunity'),
-    },
-    {
-      key: 'contract',
-      label: '新建合同',
-      icon: FileSignature,
-      permissions: ['contract:create'],
-      moduleEnabled: () => moduleConfig.isEnabled('contract'),
-    },
-    {
-      key: 'invoice',
-      label: '新建发票',
-      icon: ReceiptText,
-      permissions: ['CONTRACT_INVOICE:ADD'],
-      moduleEnabled: () => moduleConfig.isEnabled('contract'),
-    },
-    {
       key: 'followRecord',
       label: '新建跟进记录',
       icon: MessageSquareText,
       permissions: ['customer:update', 'lead:update'],
-      moduleEnabled: () =>
-        moduleConfig.isEnabled('customer') ||
-        moduleConfig.isEnabled('lead') ||
-        moduleConfig.isEnabled('opportunity'),
+      moduleEnabled: () => moduleConfig.isEnabled('customer') || moduleConfig.isEnabled('lead'),
     },
     {
       key: 'followPlan',
       label: '新建跟进计划',
       icon: CalendarClock,
       permissions: ['customer:update', 'lead:update'],
-      moduleEnabled: () =>
-        moduleConfig.isEnabled('customer') ||
-        moduleConfig.isEnabled('lead') ||
-        moduleConfig.isEnabled('opportunity'),
-    },
-    {
-      key: 'order',
-      label: '新建订单',
-      icon: ShoppingCart,
-      permissions: ['ORDER:ADD'],
-      moduleEnabled: () => moduleConfig.isEnabled('order'),
+      moduleEnabled: () => moduleConfig.isEnabled('customer') || moduleConfig.isEnabled('lead'),
     },
   ]
   return catalog.filter((item) => item.moduleEnabled() && hasAnyPermission(item.permissions))
@@ -474,10 +523,6 @@ function handleQuickAccess(key: QuickAccessKey) {
   if (key === 'customer') return routeCreate('/customers')
   if (key === 'contact') return routeCreate('/contacts')
   if (key === 'lead') return routeCreate('/leads')
-  if (key === 'opportunity') return routeCreate('/opportunities')
-  if (key === 'contract') return routeCreate('/contracts')
-  if (key === 'order') return routeCreate('/order/index')
-  if (key === 'invoice') return openInvoiceDialog()
   if (key === 'followRecord') return openFollowTargetDialog()
   followPlanDialogVisible.value = true
 }
@@ -629,7 +674,7 @@ async function savePassword() {
 
 // ===== 跟进记录快捷创建 =====
 
-type FollowTargetType = 'lead' | 'customer' | 'opportunity'
+type FollowTargetType = 'lead' | 'customer'
 const followTargetDialogVisible = ref(false)
 const followDrawerVisible = ref(false)
 const followTargetLoading = ref(false)
@@ -644,11 +689,8 @@ async function loadFollowTargets() {
     if (followTarget.type === 'customer') {
       const { data } = await listCustomerOptions()
       followTargetOptions.value = data
-    } else if (followTarget.type === 'lead') {
-      const { data } = await leadApi.list({ page: 1, pageSize: 100, scope: 'mine' })
-      followTargetOptions.value = data.items.map((item) => ({ id: item.id, name: item.name }))
     } else {
-      const { data } = await opportunityApi.list({ page: 1, pageSize: 100 })
+      const { data } = await leadApi.list({ page: 1, pageSize: 100, scope: 'mine' })
       followTargetOptions.value = data.items.map((item) => ({ id: item.id, name: item.name }))
     }
   } catch (error) {
@@ -674,80 +716,9 @@ function confirmFollowTarget() {
   followDrawerVisible.value = true
 }
 
-// ===== 发票快捷创建 =====
-
-const invoiceDialogVisible = ref(false)
-const invoiceLoading = ref(false)
-const invoiceSaving = ref(false)
-const invoiceContracts = ref<ContractVO[]>([])
-const invoiceTitles = ref<Array<{ id: string; name: string }>>([])
-const invoiceForm = reactive({
-  contractId: '',
-  titleId: '',
-  amount: 0,
-  type: '增值税普通发票',
-})
-
-async function openInvoiceDialog() {
-  invoiceDialogVisible.value = true
-  invoiceLoading.value = true
-  try {
-    const { data } = await contractApi.page({ current: 1, pageSize: 100 })
-    invoiceContracts.value = data.list
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    invoiceLoading.value = false
-  }
-}
-
-async function handleInvoiceContractChange() {
-  const contract = invoiceContracts.value.find((item) => item.id === invoiceForm.contractId)
-  invoiceForm.titleId = ''
-  invoiceForm.amount = contract ? Math.max(0, contract.amount - contract.invoicedAmount) : 0
-  invoiceTitles.value = []
-  if (!contract) return
-  try {
-    const { data } = await businessTitleApi.options()
-    invoiceTitles.value = data.map((item) => ({ id: item.id, name: item.name }))
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function saveInvoice() {
-  if (!invoiceForm.contractId || invoiceForm.amount <= 0) {
-    ElMessage.warning('请选择合同并填写正确的开票金额')
-    return
-  }
-  invoiceSaving.value = true
-  try {
-    const contract = invoiceContracts.value.find((item) => item.id === invoiceForm.contractId)
-    await contractInvoiceApi.create({
-      name: `开票申请-${contract?.name ?? invoiceForm.contractId}`,
-      contractId: invoiceForm.contractId,
-      businessTitleId: invoiceForm.titleId || undefined,
-      amount: invoiceForm.amount,
-      invoiceType: invoiceForm.type || undefined,
-      taxRate: 0,
-      moduleFields: [],
-    })
-    ElMessage.success('发票已创建')
-    invoiceDialogVisible.value = false
-    invoiceForm.contractId = ''
-    invoiceForm.titleId = ''
-    invoiceForm.amount = 0
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    invoiceSaving.value = false
-  }
-}
-
 const pageLoading = ref(true)
 
 onMounted(async () => {
-  loadOverviewConfig()
   showDefaultPasswordMessage()
   try {
     await Promise.all([
@@ -772,8 +743,13 @@ onBeforeUnmount(() => {
 <template>
   <div v-loading="pageLoading" class="w-full min-w-[1000px]" data-testid="home-page">
     <el-card shadow="never" class="mb-4">
-      <div class="flex items-center justify-between gap-4 mb-4">
-        <div class="font-semibold text-base">数据概览</div>
+      <div class="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-base font-semibold">业务工作台</div>
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            指标按当前用户数据范围计算；阶段、渠道和业务结果均来自可配置字段。
+          </div>
+        </div>
         <div class="dashboard-overview-actions flex items-center gap-2">
           <el-tree-select
             v-model="activeDeptId"
@@ -783,58 +759,13 @@ onBeforeUnmount(() => {
             class="!w-60"
             @change="handleDepartmentChange"
           />
-          <el-popover placement="bottom-end" trigger="click" :width="330">
-            <template #reference>
-              <el-button data-testid="home-overview-settings"
-                ><Settings2 :size="16" aria-hidden="true"
-              /></el-button>
-            </template>
-            <el-tabs v-model="overviewSettingTab" stretch>
-              <el-tab-pane label="线索" name="clue">
-                <div class="text-sm mb-2">统计维度</div>
-                <el-select
-                  v-model="overviewConfig.userField"
-                  class="w-full"
-                  @change="persistOverviewConfig"
-                >
-                  <el-option label="负责人" value="OWNER" />
-                  <el-option label="创建人" value="CREATE_USER" />
-                </el-select>
-                <div class="mt-2 text-xs text-[var(--el-text-color-secondary)]">
-                  创建人维度仅展示统计值；与 Cordys 一致，不提供点击跳转。
-                </div>
-              </el-tab-pane>
-              <el-tab-pane label="商机" name="opportunity">
-                <div class="text-sm mb-2">统计时间字段</div>
-                <el-select
-                  v-model="overviewConfig.timeField"
-                  class="w-full"
-                  @change="persistOverviewConfig"
-                >
-                  <el-option label="创建时间" value="CREATE_TIME" />
-                  <el-option label="预计结束时间" value="EXPECTED_END_TIME" />
-                </el-select>
-              </el-tab-pane>
-              <el-tab-pane label="赢单" name="win">
-                <div class="flex items-center justify-between mb-4">
-                  <span class="text-sm">较上期</span>
-                  <el-switch
-                    v-model="overviewConfig.priorPeriodEnable"
-                    @change="persistOverviewConfig"
-                  />
-                </div>
-                <div class="text-sm mb-2">统计时间字段</div>
-                <el-select
-                  v-model="overviewConfig.winOrderTimeField"
-                  class="w-full"
-                  @change="persistOverviewConfig"
-                >
-                  <el-option label="预计结束时间" value="EXPECTED_END_TIME" />
-                  <el-option label="实际结束时间" value="ACTUAL_END_TIME" />
-                </el-select>
-              </el-tab-pane>
-            </el-tabs>
-          </el-popover>
+          <el-button
+            v-if="auth.hasPerm('system:module')"
+            data-testid="home-analytics-settings"
+            @click="router.push('/system/sales-settings')"
+          >
+            <Settings2 :size="16" aria-hidden="true" />
+          </el-button>
           <el-button
             data-testid="home-overview-refresh"
             :loading="statisticLoading"
@@ -845,231 +776,129 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div
-        v-loading="statisticLoading"
-        class="min-w-[1180px] overflow-hidden rounded-[4px] border border-[var(--el-border-color-lighter)]"
-      >
-        <div
-          class="grid min-h-12 grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-light)] last:border-b-0"
+      <div v-loading="statisticLoading" class="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <button
+          type="button"
+          class="min-h-[106px] cursor-pointer rounded-[6px] border border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-4 text-left"
+          @click="openLeadAnalytics()"
         >
-          <div
-            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
-          >
-            类别
+          <div class="text-sm text-[var(--el-text-color-secondary)]">线索总量</div>
+          <div class="mt-3 text-2xl font-semibold text-[var(--el-color-primary)]">
+            {{ formatCount(analytics?.summary.totalLeads) }}
           </div>
-          <div
-            v-for="period in periods"
-            :key="period.key"
-            class="flex items-center border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
-          >
-            {{ period.label }}
-          </div>
-        </div>
+        </button>
 
-        <div
-          class="grid grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] last:border-b-0"
+        <button
+          type="button"
+          class="min-h-[106px] cursor-pointer rounded-[6px] border border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-4 text-left"
+          @click="openLeadAnalytics({ converted: true })"
         >
-          <div
-            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
-          >
-            <div
-              class="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[4px] bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
-            >
-              <Target :size="18" />
-            </div>
-            <span>线索</span>
+          <div class="text-sm text-[var(--el-text-color-secondary)]">已转客户</div>
+          <div class="mt-3 text-2xl font-semibold text-[var(--el-color-primary)]">
+            {{ formatCount(analytics?.summary.convertedLeads) }}
           </div>
-          <div
-            v-for="period in periods"
-            :key="period.key"
-            class="flex items-center gap-1 border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] last:border-r-0"
-          >
-            <div class="text-[13px] text-[var(--el-text-color-secondary)]">新建线索</div>
-            <button
-              type="button"
-              class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
-              :class="
-                hasLeadRead && overviewConfig.userField === 'OWNER'
-                  ? 'cursor-pointer text-[var(--el-color-primary)]'
-                  : 'cursor-default text-[var(--el-text-color-placeholder)]'
-              "
-              @click="openStatistic('lead', period.key)"
-            >
-              {{ hasLeadRead ? formatStatistic(leadValue(period.key)) : '-' }}
-            </button>
-          </div>
-        </div>
+        </button>
 
-        <div
-          class="grid grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] last:border-b-0"
+        <button
+          type="button"
+          class="min-h-[106px] cursor-pointer rounded-[6px] border border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-4 text-left"
+          @click="openLeadAnalytics({ converted: true })"
         >
-          <div
-            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
-          >
-            <div
-              class="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[4px] bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
-            >
-              <Handshake :size="18" />
-            </div>
-            <span>商机</span>
+          <div class="text-sm text-[var(--el-text-color-secondary)]">转化率</div>
+          <div class="mt-3 text-2xl font-semibold">
+            {{ analytics?.summary.conversionRate ?? 0 }}%
           </div>
-          <div
-            v-for="period in periods"
-            :key="period.key"
-            class="grid grid-cols-2 items-center gap-4 border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] last:border-r-0"
-          >
-            <div>
-              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">商机数</div>
-              <button
-                type="button"
-                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
-                :class="
-                  hasOpportunityRead
-                    ? 'cursor-pointer text-[var(--el-color-primary)]'
-                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
-                "
-                @click="openStatistic('opportunity', period.key)"
-              >
-                {{
-                  hasOpportunityRead
-                    ? formatStatistic(opportunityValue(opportunityStatistic, period.key))
-                    : '-'
-                }}
-              </button>
-              <button
-                type="button"
-                class="mt-1 block border-0 bg-transparent p-0 text-left text-xs"
-                :class="
-                  hasOpportunityRead
-                    ? 'cursor-pointer text-[var(--el-color-primary)]'
-                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
-                "
-                @click="openStatistic('opportunity', period.key, 'AFOOT')"
-              >
-                进行中
-                {{
-                  hasOpportunityRead
-                    ? formatStatistic(opportunityValue(underwayStatistic, period.key))
-                    : '-'
-                }}
-              </button>
-            </div>
-            <div>
-              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">金额</div>
-              <button
-                type="button"
-                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
-                :class="
-                  hasOpportunityRead
-                    ? 'cursor-pointer text-[var(--el-color-primary)]'
-                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
-                "
-                @click="openStatistic('opportunity', period.key)"
-              >
-                {{
-                  hasOpportunityRead
-                    ? formatStatistic(
-                        opportunityValue(opportunityStatistic, period.key, true),
-                        true,
-                      )
-                    : '-'
-                }}
-              </button>
-              <button
-                type="button"
-                class="mt-1 block border-0 bg-transparent p-0 text-left text-xs"
-                :class="
-                  hasOpportunityRead
-                    ? 'cursor-pointer text-[var(--el-color-primary)]'
-                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
-                "
-                @click="openStatistic('opportunity', period.key, 'AFOOT')"
-              >
-                进行中
-                {{
-                  hasOpportunityRead
-                    ? formatStatistic(opportunityValue(underwayStatistic, period.key, true), true)
-                    : '-'
-                }}
-              </button>
-            </div>
-          </div>
-        </div>
+        </button>
 
-        <div
-          class="grid grid-cols-[150px_repeat(4,minmax(245px,1fr))] border-b border-[var(--el-border-color-lighter)] last:border-b-0"
+        <button
+          type="button"
+          class="min-h-[106px] cursor-pointer rounded-[6px] border border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-4 text-left"
+          @click="openLeadAnalytics({ overdue: true })"
         >
-          <div
-            class="flex items-center gap-[9px] border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] font-semibold last:border-r-0"
-          >
-            <div
-              class="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[4px] bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
-            >
-              <CheckCheck :size="18" />
-            </div>
-            <span>赢单</span>
+          <div class="text-sm text-[var(--el-text-color-secondary)]">超时未跟进</div>
+          <div class="mt-3 text-2xl font-semibold text-[var(--el-color-danger)]">
+            {{ formatCount(analytics?.summary.overdueLeads) }}
           </div>
-          <div
-            v-for="period in periods"
-            :key="period.key"
-            class="grid grid-cols-2 items-center gap-4 border-r border-[var(--el-border-color-lighter)] px-4 py-[14px] last:border-r-0"
-          >
-            <div>
-              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">赢单数</div>
-              <button
-                type="button"
-                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
-                :class="
-                  hasOpportunityRead
-                    ? 'cursor-pointer text-[var(--el-color-primary)]'
-                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
-                "
-                @click="openStatistic('opportunity', period.key, 'SUCCESS')"
-              >
-                {{
-                  hasOpportunityRead
-                    ? formatStatistic(opportunityValue(successStatistic, period.key))
-                    : '-'
-                }}
-              </button>
-              <div
-                v-if="overviewConfig.priorPeriodEnable"
-                class="mt-1 text-xs"
-                :class="compareClass(opportunityValue(successStatistic, period.key))"
-              >
-                较上期 {{ compareLabel(opportunityValue(successStatistic, period.key)) }}
-              </div>
-            </div>
-            <div>
-              <div class="mb-1 text-[13px] text-[var(--el-text-color-secondary)]">赢单金额</div>
-              <button
-                type="button"
-                class="border-0 bg-transparent p-0 text-left text-[18px] leading-7 font-semibold"
-                :class="
-                  hasOpportunityRead
-                    ? 'cursor-pointer text-[var(--el-color-primary)]'
-                    : 'cursor-default text-[var(--el-text-color-placeholder)]'
-                "
-                @click="openStatistic('opportunity', period.key, 'SUCCESS')"
-              >
-                {{
-                  hasOpportunityRead
-                    ? formatStatistic(opportunityValue(successStatistic, period.key, true), true)
-                    : '-'
-                }}
-              </button>
-              <div
-                v-if="overviewConfig.priorPeriodEnable"
-                class="mt-1 text-xs"
-                :class="compareClass(opportunityValue(successStatistic, period.key, true))"
-              >
-                较上期 {{ compareLabel(opportunityValue(successStatistic, period.key, true)) }}
-              </div>
-            </div>
+        </button>
+
+        <button
+          v-if="analytics?.config.customerResultField"
+          type="button"
+          class="min-h-[106px] cursor-pointer rounded-[6px] border border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-4 text-left"
+          @click="openCustomerAnalytics(resultSummaryFilters)"
+        >
+          <div class="text-sm text-[var(--el-text-color-secondary)]">{{ resultLabel }}人数</div>
+          <div class="mt-3 text-2xl font-semibold text-[var(--el-color-primary)]">
+            {{ formatCount(analytics?.summary.resultCustomers) }}
           </div>
-        </div>
+        </button>
+
+        <button
+          v-if="analytics?.config.customerResultAmountField"
+          type="button"
+          class="min-h-[106px] cursor-pointer rounded-[6px] border border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] p-4 text-left"
+          @click="openCustomerAnalytics(resultSummaryFilters)"
+        >
+          <div class="text-sm text-[var(--el-text-color-secondary)]">{{ resultLabel }}金额</div>
+          <div class="mt-3 text-2xl font-semibold">
+            {{ formatAmount(analytics?.summary.resultAmount) }}
+          </div>
+        </button>
       </div>
     </el-card>
+
+    <div class="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <el-card shadow="never">
+        <div class="mb-2 font-semibold">阶段漏斗</div>
+        <EChart :option="funnelOption" height="320px" @chart-click="handleFunnelClick" />
+      </el-card>
+      <el-card shadow="never">
+        <div class="mb-2 font-semibold">近 6 个月趋势</div>
+        <EChart :option="trendOption" height="320px" />
+      </el-card>
+    </div>
+
+    <div class="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <el-card shadow="never">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="font-semibold">渠道统计</span>
+          <span class="text-xs text-[var(--el-text-color-secondary)]">
+            {{ analytics?.config.leadSourceField?.label ?? '未配置渠道字段' }}
+          </span>
+        </div>
+        <EChart
+          v-if="analytics?.config.leadSourceField"
+          :option="channelOption"
+          height="340px"
+          @chart-click="handleChannelClick"
+        />
+        <el-empty v-else description="请在业务设置中选择线索渠道字段" :image-size="60" />
+      </el-card>
+
+      <el-card shadow="never">
+        <div class="mb-2 font-semibold">人员绩效</div>
+        <EChart
+          :option="performanceOption"
+          height="340px"
+          @chart-click="handlePerformanceClick"
+        />
+      </el-card>
+    </div>
+
+    <el-card
+      v-if="analytics?.config.customerResultField"
+      shadow="never"
+      class="mb-4"
+    >
+      <div class="mb-2 flex items-center justify-between">
+        <span class="font-semibold">{{ resultLabel }}分布</span>
+        <span class="text-xs text-[var(--el-text-color-secondary)]">
+          {{ analytics?.config.customerResultField?.label }}
+        </span>
+      </div>
+      <EChart :option="resultOption" height="300px" @chart-click="handleResultClick" />
+    </el-card>
+
 
     <div class="grid grid-cols-[minmax(0,1fr)_400px] items-stretch gap-4">
       <div class="min-w-0">
@@ -1285,7 +1114,6 @@ onBeforeUnmount(() => {
           <el-radio-group v-model="followTarget.type" @change="loadFollowTargets">
             <el-radio-button value="customer">客户</el-radio-button>
             <el-radio-button value="lead">线索</el-radio-button>
-            <el-radio-button value="opportunity">商机</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="业务对象" required>
@@ -1320,53 +1148,6 @@ onBeforeUnmount(() => {
 
     <FollowUpPlanDialog v-model="followPlanDialogVisible" @saved="loadPlans" />
 
-    <el-dialog v-model="invoiceDialogVisible" title="新建发票" width="560px">
-      <el-form v-loading="invoiceLoading" label-width="92px">
-        <el-form-item label="关联合同" required>
-          <el-select
-            v-model="invoiceForm.contractId"
-            filterable
-            class="w-full"
-            @change="handleInvoiceContractChange"
-          >
-            <el-option
-              v-for="contract in invoiceContracts"
-              :key="contract.id"
-              :label="`${contract.number} · ${contract.name}`"
-              :value="contract.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="开票抬头">
-          <el-select v-model="invoiceForm.titleId" clearable filterable class="w-full">
-            <el-option
-              v-for="title in invoiceTitles"
-              :key="title.id"
-              :label="title.name"
-              :value="title.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="开票金额" required>
-          <el-input-number
-            v-model="invoiceForm.amount"
-            :min="0.01"
-            :precision="2"
-            class="!w-full"
-          />
-        </el-form-item>
-        <el-form-item label="发票类型">
-          <el-select v-model="invoiceForm.type" class="w-full">
-            <el-option label="增值税普通发票" value="增值税普通发票" />
-            <el-option label="增值税专用发票" value="增值税专用发票" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="invoiceDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="invoiceSaving" @click="saveInvoice">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 <style scoped>

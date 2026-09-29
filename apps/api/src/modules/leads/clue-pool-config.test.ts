@@ -4,7 +4,7 @@ import type { AuthUser } from '../../common/auth-user'
 import type { MetadataService } from '../metadata/metadata.service'
 import type { CluePoolRepository } from '../pool-rules/clue-pool.repository'
 import type { ResourcePoolsService } from '../pool-rules/resource-pools.service'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestDepartment,

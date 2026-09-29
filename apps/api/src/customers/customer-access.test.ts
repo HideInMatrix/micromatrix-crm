@@ -4,7 +4,7 @@ import { NotFoundException } from '@nestjs/common'
 import type { AuthUser } from '../common/auth-user'
 import type { DataScopeService } from '../common/services/data-scope.service'
 import type { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
-import type { PrismaService } from '../prisma/prisma.service'
+import type { PrismaService } from '../prisma.service'
 import { createLegacyId32 } from '../common/legacy-id'
 import {
   createPrismaTestTenant,

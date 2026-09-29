@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import { RedisService } from '../../redis/redis.service'
 
 export type CoordinationSlot = 'DAILY' | 'MINUTE'

@@ -26,6 +26,16 @@ const props = defineProps<{
   option: Record<string, unknown>
   height?: string
 }>()
+const emit = defineEmits<{
+  'chart-click': [
+    payload: {
+      name?: string
+      dataIndex?: number
+      data?: unknown
+      value?: unknown
+    },
+  ]
+}>()
 
 const container = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
@@ -35,6 +45,14 @@ onMounted(() => {
   if (!container.value) return
   chart = echarts.init(container.value)
   chart.setOption(props.option)
+  chart.on('click', (params) => {
+    emit('chart-click', {
+      name: params.name,
+      dataIndex: params.dataIndex,
+      data: params.data,
+      value: params.value,
+    })
+  })
   observer = new ResizeObserver(() => chart?.resize())
   observer.observe(container.value)
 })

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { createLegacyId32 } from '../../common/legacy-id'
 import {
   createPrismaTestTenant,
@@ -220,21 +220,7 @@ test(
         [first.id, second.id].sort(),
       )
 
-      const builtinSourceTypes = [
-        'CUSTOMER',
-        'CONTACT',
-        'OPPORTUNITY',
-        'PRODUCT',
-        'CLUE',
-        'PRICE',
-        'CONTRACT',
-        'QUOTATION',
-        'PAYMENT_PLAN',
-        'CONTRACT_PAYMENT_RECORD',
-        'BUSINESS_TITLE',
-        'ORDER',
-        'INVOICE',
-      ] as const
+      const builtinSourceTypes = ['CUSTOMER', 'CONTACT', 'CLUE'] as const
       const emptyOrganizationId = shortId('empty')
       for (const sourceType of builtinSourceTypes) {
         assert.deepEqual(

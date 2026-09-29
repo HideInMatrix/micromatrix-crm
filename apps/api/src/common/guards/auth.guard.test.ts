@@ -7,13 +7,14 @@ import type { ExecutionContext, Type } from '@nestjs/common'
 import type { Reflector } from '@nestjs/core'
 import type { JwtService } from '@nestjs/jwt'
 import type { Request } from 'express'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant, instantFromDate } from '../../prisma/temporal'
 import {
   createPrismaTestTenant,
   createPrismaTestUser,
   openPrismaTestDatabase,
 } from '../../testing/prisma-test-db'
+import { API_KEY_ONLY_KEY } from '../decorators/api-key-only.decorator'
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator'
 import type { AuthContextCacheService } from '../services/auth-context-cache.service'
 import { AuthGuard } from './auth.guard'
@@ -130,3 +131,30 @@ test(
     }
   },
 )
+
+test('AuthGuard 对 ApiKeyOnly 路由拒绝普通 JWT 登录态', async () => {
+  const reflector = {
+    getAllAndOverride: (key: unknown) => {
+      if (key === IS_PUBLIC_KEY) return false
+      if (key === API_KEY_ONLY_KEY) return true
+      return []
+    },
+  } as unknown as Reflector
+  const guard = new AuthGuard(
+    {} as JwtService,
+    reflector,
+    {} as ConfigService,
+    {} as PrismaService,
+    {} as AuthContextCacheService,
+  )
+  const request = {
+    headers: { authorization: 'Bearer token' },
+  } as unknown as Request
+
+  await assert.rejects(
+    () => guard.canActivate(executionContext(request)),
+    (error) =>
+      error instanceof UnauthorizedException &&
+      error.message === '该接口仅支持 API Key 认证',
+  )
+})

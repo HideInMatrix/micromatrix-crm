@@ -1,5 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill'
 
+type TemporalGlobal = typeof globalThis & {
+  Temporal?: typeof Temporal
+}
+
+/** Register the Temporal implementation required by Prisma PostgreSQL codecs. */
+export function ensureTemporalRuntime(): void {
+  const runtimeGlobal = globalThis as TemporalGlobal
+  runtimeGlobal.Temporal ??= Temporal
+}
+
 /**
  * Project time columns represent absolute instants.
  *

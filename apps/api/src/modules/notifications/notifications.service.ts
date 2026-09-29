@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common'
 import { type MessageTaskEvent, NotificationBizType, NotificationVO } from '@micromatrix/shared'
 import { finalize, interval, map, merge, Observable, Subject } from 'rxjs'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 import { RedisService } from '../../redis/redis.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'

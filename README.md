@@ -1,141 +1,130 @@
 # 微矩阵 CRM（MicroMatrix CRM）
 
-以项目内 `CordysCRM/` 作为功能、业务规则和交互行为的参考基准，使用 NestJS + Prisma + Vue 技术栈进行独立实现。当前定位公司内部使用，架构按多租户 SaaS 设计；功能状态见 [`docs/cordys-parity.md`](./docs/cordys-parity.md)，当前执行计划见 [`docs/cordys-graph-completion-plan.md`](./docs/cordys-graph-completion-plan.md)。
+当前 `master` 已收敛为通用招生 CRM：以线索获取、池化分配、跟进、转客户和客户持续跟进为主线，同时保留动态表单、审批、通知、组织权限、企业集成、导入导出和开放 API。
 
-## 功能清单
+项目内 `CordysCRM/` 只作为业务语义和交互参考，不是运行时依赖，也不再要求恢复已从当前产品删除的完整销售交易链。
 
-- **L2C 销售全流程**：线索（线索池/领取/分配/一键转化）→ 客户（公海/团队协作/联系人）→ 商机（可配置阶段/看板/赢单输单）→ 产品 → 报价（明细行）→ 合同（回款计划/回款记录/工商抬头/发票）→ 订单（履约状态机）
-- **元数据引擎**：全对象自定义字段（17 种字段类型含计算字段公式）、表单设计器（拖拽排序/栅格布局/选项配置）、动态列表列、JSONB 高级筛选
-- **可配置审批流**：按对象配置多级节点（指定成员/角色/部门主管/直属上级，会签/或签）、金额触发条件、审批中心（待办/已办/我发起）、通过自动生效业务、挂接报价/合同/订单/回款
-- **标讯**：内置演示源、关键词订阅、每日定时抓取去重、一键转线索、手动录入；不接入商业标讯 API
-- **组织与权限**：部门树、成员管理、角色（菜单/操作权限 + 5 级数据范围）、操作/登录日志
-- **协同**：跟进记录（贯穿线索/客户/商机/合同）、站内通知（SSE 实时推送 + 35 个事件配置，其中 32 个具备真实业务触发链路）、公海/线索池自动回收、报价/合同/回款计划可配置到期提醒
-- **工作台与报表**：销售简报、待办、商机漏斗、业绩排行、趋势/转化率/输单原因（ECharts 自建，替代 DataEase 企业版嵌入）
-- **移动端 H5**：工作台简报、线索（领取/跟进/新建）、客户（跟进/新建）、移动审批（Vant + 移动版动态表单）
-- **其他**：客户/线索/池 xlsx 两阶段导入（新建/更新）+ 字段可选导出任务中心、开放 API（Swagger 文档 + 个人中心 AK/SK）
+## 当前业务范围
 
-明确排除（对应 Cordys 付费/企业版能力）：DataEase 嵌入式 BI、SQLBot/MaxKB/WorkBuddy 等 AI 组件、CRM Skills/MCP、SaaS 计费（表结构已预留未启用）。
+- 线索：线索池、领取/分配、负责人、阶段、判重、SLA、导入导出、转客户。
+- 客户：客户、公海、联系人、负责人历史、跟进记录与跟进计划。
+- 元数据：模块表单、动态字段、字段联动、显隐、唯一性、附件和列表/筛选能力。
+- 首页分析：渠道、阶段漏斗、负责人/部门等招生统计。
+- 外部事件：API Key 调用、幂等 Inbox、严格字段匹配、Customer 更新或 Lead 自动转换。
+- 平台能力：审批、通知/公告、组织/角色/成员、日志、企业设置、企业微信/钉钉/飞书。
+
+商机、产品、报价、合同、回款、发票、订单、标讯等旧交易链已从当前 `master` 的产品入口、生产 API 和 Prisma contract 中退出。
 
 ## 技术栈
 
-| 层         | 选型                                                                      |
-| ---------- | ------------------------------------------------------------------------- |
-| Web 管理端 | Vue 3 + TypeScript + Vite + Element Plus + UnoCSS（presetWind4）+ ECharts |
-| 移动端 H5  | Vue 3 + Vant 4 + UnoCSS                                                   |
-| 后端 API   | NestJS 11 + Prisma 7（驱动适配器）+ PostgreSQL 18 + Redis                 |
-| 认证       | JWT（access + refresh）+ 个人 API Key（AK/SK）+ RBAC + 数据范围           |
-| 工程       | pnpm workspace monorepo + TypeScript 6 + ESLint 9                         |
-
-> UnoCSS 使用 `presetWind4`（Tailwind v4 兼容语法），无需也不应同时安装 `tailwindcss`。
+| 层 | 选型 |
+| --- | --- |
+| PC | Vue 3 + TypeScript + Vite + Element Plus |
+| Mobile | Vue 3 + Vite + Vant 4 + UnoCSS presetWind4 |
+| 前端共享 | `packages/frontend-shared` + `packages/shared` |
+| API | NestJS 11 + Prisma ORM 8 PostgreSQL runtime |
+| 数据库 | PostgreSQL 18 |
+| 缓存/实时/队列 | Redis + Pub/Sub + BullMQ |
+| 工程 | Node `>=25 <26` + pnpm `11.25.0` + TypeScript `7.0.2` |
 
 ## 目录结构
 
-```
+```text
 micromatrix-crm/
 ├── apps/
-│   ├── api/          # NestJS 后端（模块：auth/customers + modules/* 14 个业务模块）
-│   └── web/          # Vue 单前端：桌面/Mobile 路由页面按 views/<模块>/ 分域
-├── packages/shared/  # 前后端共享类型、权限树、公式求值器
-├── docker/           # API/Migration/Web 独立生产镜像与 Nginx runtime 配置
-├── docker-compose.dev.yml     # 本地开发基础设施：PostgreSQL/Redis
-└── docker-compose.yml         # 唯一生产 Compose：PostgreSQL/Redis/Migration/API/Worker/Web
+│   ├── api/                     # NestJS API + worker + Prisma 8 contract/runtime
+│   ├── web/                     # PC Vue 应用
+│   └── mobile/                  # Mobile Vue/Vant 应用，生产路径 /mobile/
+├── packages/
+│   ├── shared/                  # 前后端共享类型/权限/纯领域逻辑
+│   ├── frontend-shared/         # PC/Mobile HTTP、Token、设备等浏览器公共能力
+│   └── migrate/                 # 生产 Migration runtime
+├── docs/
+├── docker/
+├── docker-compose.dev.yml
+└── docker-compose.yml
+```
+
+Prisma 8 的当前结构：
+
+```text
+apps/api/
+├── prisma.config.ts
+├── migrations/
+└── src/
+    ├── prisma/
+    │   ├── contract.prisma
+    │   ├── contract.json
+    │   ├── contract.d.ts
+    │   ├── db.ts
+    │   └── seed*.ts
+    ├── prisma.service.ts
+    └── prisma.module.ts
 ```
 
 ## 快速开始
 
-前置要求：Node ≥ 22（建议 22/24 LTS）、pnpm ≥ 10、Docker。
-
 ```bash
 pnpm install
-cp apps/api/.env.example apps/api/.env              # 首次
-pnpm --filter @micromatrix/shared build
-pnpm prisma:generate                                # 生成与 schema 一致的 Prisma Client
-```
+cp apps/api/.env.example apps/api/.env
 
-### 本地开发
+# 本地 PostgreSQL / Redis
+pnpm dev:infra
 
-首次初始化开发环境、切换到新的 Prisma baseline 后重建空库，或本地 PostgreSQL/Redis 被清理后，按顺序执行下面 3 个步骤：
+# 应用当前 Prisma 8 migration graph
+pnpm db:deploy
 
-```bash
-# 1. 启动本地 PostgreSQL 18 与 Redis 7，并等待健康检查通过
-docker compose -f docker-compose.dev.yml up -d --wait
-
-# 2. 应用当前仓库中的 Prisma migration baseline
-pnpm db:migrate
-
-# 3. 仅在空库中初始化管理员和基础数据；已有用户时 bootstrap 会跳过
+# 空库初始化基础数据；已有用户时 bootstrap 会跳过
 SEED_MODE=bootstrap pnpm --filter @micromatrix/api run db:seed
-```
 
-完成基础设施初始化后启动开发服务：
-
-```bash
+# 启动 API / PC / Mobile
 pnpm dev
 ```
 
-默认端口：API `3000`、Web `5173`、Mobile `5174`。
+默认开发端口：API `3000`、PC `5173`、Mobile `5174`。
 
-> 根 `docker-compose.yml` 只负责完整生产拓扑；本地开发使用 `docker-compose.dev.yml` 单独启动 PostgreSQL 18 与 Redis 7，并通过宿主机 `localhost:5432/6379` 供 `pnpm dev` 连接。开发 Compose 不包含 migrate/API/worker/web，避免本地调试时重复启动整套服务。
+数据库模型发生变化时先修改 `apps/api/src/prisma/contract.prisma`，再按 [Prisma ORM 8 Migration 管理规范](./docs/prisma-migration-policy.md) 生成和验证 forward migration。不要重新引入 Prisma 7 `schema.prisma`、generated Client 或 `db push` 工作流。
 
-> 日常开发只需保持 PostgreSQL/Redis 运行并执行 `pnpm dev`。数据库结构变更遵循 [`docs/prisma-migration-policy.md`](./docs/prisma-migration-policy.md)：正式发布前提交时始终压缩为单一 baseline，不在 Git 中累积开发期 migration 历史。
-
-> API 的 `dev / build / typecheck / test:rules` 已内置 `prisma generate`。如果 Prisma schema 新增字段或模型，正常执行 `pnpm dev` 会先刷新生成客户端；数据库结构的提交方式以 Prisma migration policy 为准。
-
-> 注意：pre-release 阶段会持续重写同一个 baseline。已经执行过旧 baseline 的本地开发库不会自动重放它，因此即使 `prisma migrate status` 显示 `up to date`，仍应在 baseline 变更后执行 database → schema drift 检查，并按 [`docs/prisma-migration-policy.md`](./docs/prisma-migration-policy.md#21-本地开发数据库如何跟随被重写的-baseline) 使用 `prisma db push` 或 `migrate reset --force + seed` 对齐本地库。
-
-### Prisma 类型大量报“字段不存在”
-
-如果同时出现 `poolId / collectedAt / collaborationType` 不存在，或 `resourcePool / savedView / customerRelation` 不存在于 `PrismaService`，通常不是这些业务字段真的缺失，而是 `apps/api/src/generated/prisma` 仍是旧生成结果。按顺序执行：
+## 常用验证
 
 ```bash
-pnpm prisma:generate
-pnpm db:migrate
-pnpm dev
+pnpm typecheck
+pnpm build
+pnpm lint
+pnpm --filter @micromatrix/api test:rules
+pnpm db:verify-migrations
+pnpm db:status
+pnpm db:verify
 ```
 
-- Web（桌面/Mobile 自适应） http://localhost:5173 · API 文档 http://localhost:3000/api/docs
-- 规则与公共底座单测：`pnpm --filter @micromatrix/api test:rules`（当前 **172/172**）
+当前 API rules 基线为 **362/362 pass**。Mobile build/typecheck 会同时执行 Vant + UnoCSS 规范门禁。
 
 ## Docker Release
 
-生产镜像职责分离：API 使用 Node 24，Migration 独立执行 Prisma migration，Web 使用 Nginx；异步导出 worker 复用 API 镜像执行 `node dist/worker.js`。Web 在运行时通过 `API_UPSTREAM` 转发 `/api`，无需为不同 API 地址重新构建前端。
+生产发布使用 API、Migration、Web 三类镜像；worker 复用 API 镜像。Web 镜像同时包含 PC `apps/web/dist` 和 Mobile `apps/mobile/dist`。
 
-创建并推送 Git tag 后，GitHub Actions 自动构建并发布 API/Migration/Web 三个 `linux/amd64` + `linux/arm64` GHCR 镜像；worker 直接复用 API 镜像：
+发布通过 `v*.*.*` Git Tag 触发 GitHub Actions：
 
 ```bash
 git tag v0.0.1
 git push origin v0.0.1
 ```
 
-部署说明、生产 Compose 和镜像标签见 [`docs/docker-release.md`](./docs/docker-release.md)。
+本地完整发布 Smoke：
 
-### 默认/演示账号
+```bash
+pnpm smoke:docker-release
+```
 
-| 账号               | 密码     | 角色     | 数据范围     |
-| ------------------ | -------- | -------- | ------------ |
-| admin@demo.com     | admin123 | 管理员   | 全部数据     |
-| zhangwei@demo.com  | demo123  | 销售主管 | 本部门及下级 |
-| lina@demo.com      | demo123  | 销售专员 | 仅本人       |
-| wangqiang@demo.com | demo123  | 销售专员 | 仅本人       |
+详细说明见 [Docker 发布文档](./docs/docker-release.md)。
 
-Release 首次安装只自动创建 `admin@demo.com / admin123` 默认管理员；其余演示账号和业务样例仅由开发/验收用完整 Seed 创建。
+## 文档
 
-## 架构约定
+- [文档索引](./docs/README.md)
+- [当前架构](./docs/architecture.md)
+- [开发约定](./docs/conventions.md)
+- [Prisma ORM 8 Migration 规范](./docs/prisma-migration-policy.md)
+- [招生 CRM 主线规格](./docs/specs/admissions-crm-transformation/requirements.md)
+- [当前任务与验收](./docs/specs/admissions-crm-transformation/tasks.md)
 
-- **多租户**：除 `plans` 外所有业务表带 `tenantId`，查询必须显式过滤；商业化时开放注册即可
-- **数据范围**：业务表带 `ownerId` + `deptId`，查询统一合并 `DataScopeService.scopeFilter()`
-- **自定义字段**：固定核心列 + `customData` JSONB，`FieldDefinition` 驱动三端动态渲染；系统字段不可删
-- **审批挂接**：启用审批流后，业务对象的直接生效操作被拦截，必须提审；通过后自动生效
-- **标讯**：`BiddingProvider` 适配器 + 内置演示源；商业标讯 API（剑鱼/千里马等）明确不做
-
-## 迁移计划 / 待接入
-
-开发计划已经切换为 **CordysCRM 功能语义迁移路线**，不再以零散功能清单作为主计划。
-
-- 功能一致性总表：[`docs/cordys-parity.md`](./docs/cordys-parity.md)
-- 当前分阶段执行计划：[`docs/cordys-graph-completion-plan.md`](./docs/cordys-graph-completion-plan.md)
-- 架构与迁移原则：[`docs/architecture.md`](./docs/architecture.md)
-
-Wave 1 的 R1-R7、Wave 2 的 W2.1 顶部导航、W2.2 跟进计划、W2.3 消息设置底座和 W2.4 业务消息触发链路均已完成验收。当前 35 个目录事件中 32 个具备真实触发链路；合同归档/作废、发票审批及其他数据模型缺口已登记在 [`docs/cordys-deferred-backlog.md`](./docs/cordys-deferred-backlog.md)，不得在整体复刻验收前遗漏。
-
-明确不迁移：Cordys 自身的产品授权/版本区分机制、DataEase、AI/MCP 商业扩展、商业标讯 API。
+历史执行计划、已删除交易链规格和旧 Prisma 迁移阶段文档已从当前文档树清理；需要历史细节时使用 Git 记录追溯。

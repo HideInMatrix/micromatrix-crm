@@ -20,7 +20,7 @@ import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
 import { createLegacyId32 } from '../../common/legacy-id'
-import { PrismaService } from '../../prisma/prisma.service.js'
+import { PrismaService } from '../../prisma.service.js'
 import {
   ExportTasksService,
   type ExportBuildResult,
@@ -444,15 +444,6 @@ export class ContactsService {
     return this.toSingleVO(user, await this.loadContactWithRelations(user.tenantId, id))
   }
 
-  async checkOpportunity(user: AuthUser, id: string): Promise<{ linked: boolean; count: number }> {
-    await this.ensureReadable(user, id)
-    const aggregate = await this.prisma.client.orm.public.Opportunity.where({
-      organizationId: user.tenantId,
-      contactId: id,
-    }).aggregate((value) => ({ count: value.count() }))
-    return { linked: aggregate.count > 0, count: aggregate.count }
-  }
-
   async remove(user: AuthUser, id: string) {
     const contact = await this.ensureExists(user, id)
     await this.assertWrite(
@@ -460,12 +451,6 @@ export class ContactsService {
       contact,
       this.pickPermission(user, 'contact:delete', 'customer:delete'),
     )
-    const linked = await this.prisma.client.orm.public.Opportunity.where({
-      organizationId: user.tenantId,
-      contactId: id,
-    }).aggregate((value) => ({ count: value.count() }))
-    if (linked.count > 0)
-      throw new BadRequestException('联系人已关联商机，请先在商机中解除联系人关联')
     await this.prisma.client.transaction(async (tx) => {
       await Promise.all([
         tx.orm.public.CustomerContactField.where({ resourceId: id }).deleteAll(),

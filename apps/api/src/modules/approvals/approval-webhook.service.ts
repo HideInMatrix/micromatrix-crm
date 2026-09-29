@@ -1,7 +1,7 @@
 import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common'
 import type { ApprovalModule, ApprovalNodeConfig, ApprovalWebhookConfig } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 
 import { ApprovalResourceService } from './approval-resource.service'

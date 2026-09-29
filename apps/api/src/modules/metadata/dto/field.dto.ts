@@ -1,7 +1,14 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger'
-import type { FieldConfig, FieldType, ModuleFormProp } from '@micromatrix/shared'
+import type {
+  FieldConfig,
+  FieldType,
+  HomeAnalyticsConfig,
+  LeadStageConfig,
+  ModuleFormProp,
+} from '@micromatrix/shared'
 import { Type } from 'class-transformer'
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -185,6 +192,42 @@ export class ReorderFieldsDto {
   orderedIds!: string[]
 }
 
+export class HomeAnalyticsConfigDto implements HomeAnalyticsConfig {
+  @ApiPropertyOptional({ description: 'Lead 渠道维度字段 key' })
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  leadSourceFieldKey?: string
+
+  @ApiPropertyOptional({ description: 'Customer 外部业务结果字段 key' })
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  customerResultFieldKey?: string
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: '结果字段命中值；为空表示该字段非空即算结果',
+  })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @IsOptional()
+  customerResultValues?: string[]
+
+  @ApiPropertyOptional({ description: 'Customer 结果发生时间字段 key，必须为 date/datetime' })
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  customerResultTimeFieldKey?: string
+
+  @ApiPropertyOptional({ description: 'Customer 结果金额字段 key，必须为 number/currency' })
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  customerResultAmountFieldKey?: string
+}
+
 export class UpdateFormPropDto {
   @ApiPropertyOptional({ enum: [1, 2, 3, 4], description: 'PC 表单列布局' })
   @IsIn([1, 2, 3, 4])
@@ -200,6 +243,25 @@ export class UpdateFormPropDto {
   @IsIn(['small', 'medium', 'large'])
   @IsOptional()
   viewSize?: 'small' | 'medium' | 'large'
+
+  @ApiPropertyOptional({
+    enum: ['RESOURCE_POOL', 'ORGANIZATION'],
+    description: 'Lead unique 字段入库校验范围',
+  })
+  @IsIn(['RESOURCE_POOL', 'ORGANIZATION'])
+  @IsOptional()
+  leadUniqueScope?: 'RESOURCE_POOL' | 'ORGANIZATION'
+
+  @ApiPropertyOptional({ description: 'Lead 可配置业务阶段；数组顺序即流程顺序' })
+  @IsArray()
+  @IsOptional()
+  leadStages?: LeadStageConfig[]
+
+  @ApiPropertyOptional({ type: HomeAnalyticsConfigDto, description: '首页业务分析配置' })
+  @ValidateNested()
+  @Type(() => HomeAnalyticsConfigDto)
+  @IsOptional()
+  homeAnalytics?: HomeAnalyticsConfig
 }
 
 export class SaveFormFieldDto extends CreateFieldDto {

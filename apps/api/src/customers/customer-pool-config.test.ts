@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { AuthUser } from '../common/auth-user'
 import type { MetadataService } from '../modules/metadata/metadata.service'
 import type { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
-import type { PrismaService } from '../prisma/prisma.service'
+import type { PrismaService } from '../prisma.service'
 import { createLegacyId32 } from '../common/legacy-id'
 import {
   createPrismaTestTenant,
@@ -15,7 +15,7 @@ import { CustomerPoolConfigService } from './customer-pool-config.service'
 const databaseUrl = process.env['DATABASE_URL']
 
 test(
-  'CustomerPoolConfig 使用 Prisma 保持 noPick、阶段校验与用户名称装配',
+  'CustomerPoolConfig 使用 Prisma 保持 noPick、库容配置与用户名称装配',
   { skip: !databaseUrl },
   async () => {
     assert.ok(databaseUrl)
@@ -70,20 +70,7 @@ test(
         updateUser: userId,
         inSharedPool: true,
       })
-      const stage = await prismaClient.orm.public.OpportunityStageConfig.select('id').create({
-        id: createLegacyId32(),
-        name: '进行中',
-        _type: 'AFOOT',
-        rate: '50',
-        pos: 1n,
-        organizationId,
-        createTime: now,
-        updateTime: now,
-        createUser: userId,
-        updateUser: userId,
-      })
-
-      let savedFilters: unknown = null
+      let savedCapacity: number | null = null
       const repository = {
         listPools: async () => [
           {
@@ -94,8 +81,8 @@ test(
           },
         ],
         listCapacities: async () => [],
-        createCapacity: async (_tenantId: string, _userId: string, input: { filters: unknown }) => {
-          savedFilters = input.filters
+        createCapacity: async (_tenantId: string, _userId: string, input: { capacity: number | null }) => {
+          savedCapacity = input.capacity
         },
       } as unknown as CustomerPoolRepository
       const metadata = {
@@ -122,19 +109,8 @@ test(
       await service.addCapacity(authUser, {
         scopeIds: [user.id],
         capacity: 10,
-        filters: [{ column: 'stage', operator: 'NOT_IN', value: [stage.id] }],
       })
-      assert.deepEqual(savedFilters, [{ column: 'stage', operator: 'NOT_IN', value: [stage.id] }])
-
-      await assert.rejects(
-        () =>
-          service.addCapacity(authUser, {
-            scopeIds: [user.id],
-            capacity: 10,
-            filters: [{ column: 'stage', operator: 'NOT_IN', value: ['missing-stage'] }],
-          }),
-        /客户库容排除条件包含不存在的商机阶段/,
-      )
+      assert.equal(savedCapacity, 10)
 
       const page = await service.page(authUser, { current: 1, pageSize: 20 })
       assert.equal(page.total, 1)
@@ -145,7 +121,6 @@ test(
         const organizationId = tenantId
         await prismaClient.orm.public.Customer.where({ organizationId }).deleteAll()
         await prismaClient.orm.public.CustomerPool.where({ organizationId }).deleteAll()
-        await prismaClient.orm.public.OpportunityStageConfig.where({ organizationId }).deleteAll()
         await prismaClient.orm.public.Users.where({ tenantId }).deleteAll()
         await prismaClient.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }

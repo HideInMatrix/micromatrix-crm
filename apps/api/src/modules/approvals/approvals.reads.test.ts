@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AuthUser } from '../../common/auth-user'
-import type { PrismaService } from '../../prisma/prisma.service'
+import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import {
@@ -9,7 +9,6 @@ import {
   createPrismaTestUser,
   openPrismaTestDatabase,
 } from '../../testing/prisma-test-db'
-import type { ModuleFormsService } from '../metadata/module-forms.service'
 import { ApprovalFlowConfigService } from './approval-flow-config.service'
 import { ApprovalsService } from './approvals.service'
 import type { CreateApprovalFlowDto } from './dto/approval.dto'
@@ -57,8 +56,7 @@ test('ApprovalsService Prisma 读路径保持分页、timeline 与流程图装�
   }
   const ccActor = { ...submitterActor, id: ccUser.id, email: ccUser.email, name: ccUser.name }
 
-  const moduleForms = { listFields: async () => [] } as unknown as ModuleFormsService
-  const flowService = new ApprovalFlowConfigService(prisma, moduleForms)
+  const flowService = new ApprovalFlowConfigService(prisma)
   const createDto: CreateApprovalFlowDto = {
     formType: 'contract',
     name: `Prisma read flow ${suffix}`,
@@ -251,7 +249,6 @@ test('ApprovalsService Prisma 读路径保持分页、timeline 与流程图装�
     const resources = { approvalFields: async () => [] }
     const service = new ApprovalsService(
       prisma,
-      {} as never,
       {} as never,
       resources as never,
       {} as never,

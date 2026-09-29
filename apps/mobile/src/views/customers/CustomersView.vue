@@ -15,7 +15,7 @@ const activeTab = ref<CustomerModuleTab>('customer')
 const tabs = computed<{ name: CustomerModuleTab; title: string }[]>(() => [
   { name: 'customer', title: '客户' },
   ...(auth.hasPerm('contact:read') ? [{ name: 'contact' as const, title: '联系人' }] : []),
-  { name: 'openSea', title: '公海' },
+  ...(auth.hasPerm('customerPool:read') ? [{ name: 'openSea' as const, title: '公海' }] : []),
 ])
 
 watch(

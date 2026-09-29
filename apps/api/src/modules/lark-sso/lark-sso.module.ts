@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { AuthModule } from '../../auth/auth.module'
-import { PrismaModule } from '../../prisma/prisma.module'
+import { PrismaModule } from '../../prisma.module'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
 import { LarkExternalIdentitiesController, LarkSsoController } from './lark-sso.controller'
 import { LarkSsoService } from './lark-sso.service'

@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import type { FieldVO } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 
 import { MetadataService } from '../metadata/metadata.service'
 import { CluePoolRepository } from '../pool-rules/clue-pool.repository'

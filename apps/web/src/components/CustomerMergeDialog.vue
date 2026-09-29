@@ -263,7 +263,7 @@ watch(visible, (open) => {
       <div class="rounded border border-[var(--el-border-color-lighter)] p-4 text-sm leading-7">
         <div class="font-medium">合并规则</div>
         <div>1. 仅保留主客户的基本信息。</div>
-        <div>2. 联系人、商机、报价、合同、跟进、客户附件和协作成员迁移到主客户。</div>
+        <div>2. 联系人、跟进记录、跟进计划、客户附件和协作成员迁移到主客户。</div>
         <div>3. 被合并客户负责人将作为主客户协作成员保留（与最终负责人相同者除外）。</div>
         <div>4. 被合并客户的集团/子公司关系会移除，主客户已有关系保留。</div>
       </div>
@@ -277,9 +277,6 @@ watch(visible, (open) => {
         <el-descriptions-item label="联系人">
           {{ preview.counts.contactsWillMove }} 迁移 / {{ preview.counts.contactsWillSkip }} 唯一去重
         </el-descriptions-item>
-        <el-descriptions-item label="商机">{{ preview.counts.opportunities }}</el-descriptions-item>
-        <el-descriptions-item label="报价">{{ preview.counts.quotes }}</el-descriptions-item>
-        <el-descriptions-item label="合同">{{ preview.counts.contracts }}</el-descriptions-item>
         <el-descriptions-item label="跟进">{{ preview.counts.followUps }}</el-descriptions-item>
         <el-descriptions-item label="跟进计划">{{ preview.counts.followUpPlans }}</el-descriptions-item>
         <el-descriptions-item label="客户附件">{{ preview.counts.attachments }}</el-descriptions-item>

@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { DistributedCoordinatorService } from '../../common/services/distributed-coordinator.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { CluePoolRepository } from './clue-pool.repository'

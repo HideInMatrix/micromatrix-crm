@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { instantFromDate, instantToISOString } from '../../prisma/temporal'
 import type { UpdatePersonalApiKeyDto } from './dto/personal-api-key.dto'
 

@@ -33,7 +33,10 @@ export class MetadataService {
   async updateFormProp(
     organizationId: string,
     module: string,
-    patch: Pick<ModuleFormProp, 'layout' | 'labelPos' | 'viewSize'>,
+    patch: Pick<
+      ModuleFormProp,
+      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics'
+    >,
     actorId: string,
   ) {
     const current = await this.moduleForms.getConfig(organizationId, module)

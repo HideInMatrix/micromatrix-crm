@@ -2,7 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import type { AuthUser } from '../../common/auth-user'
 import { AuthContextCacheService } from '../../common/services/auth-context-cache.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
-import { PrismaService } from '../../prisma/prisma.service'
+import { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { AuthService } from '../../auth/auth.service'
 import { FollowUpPlansService } from '../follow-up-plans/follow-up-plans.service'

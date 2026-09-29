@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { BadRequestException } from '@nestjs/common'
+import type { LeadStageConfig } from '@micromatrix/shared'
 import { buildLeadKeywordWhere, LeadsService } from './leads.service'
 
 test('线索关键词只搜索名称和手机号', () => {
@@ -20,7 +22,7 @@ interface LeadsServiceTestHarness {
   }
   mapLeadCustomData: (
     tenantId: string,
-    module: 'customer' | 'contact' | 'opportunity',
+    module: 'customer' | 'contact',
     lead: never,
     requireAll: boolean,
   ) => Promise<Record<string, unknown>>
@@ -97,13 +99,81 @@ test('线索转换仅保存显式 formLink 解析出的目标自定义字段', a
   })
 })
 
-test('联系人和商机转换使用 Cordys 对应 formLink 场景', async () => {
+test('联系人转换使用 Cordys 对应 formLink 场景', async () => {
   const calls: unknown[][] = []
   const service = serviceForFormLink({ onResolve: (args) => calls.push(args) })
 
   await service.mapLeadCustomData('tenant-1', 'contact', lead, true)
-  await service.mapLeadCustomData('tenant-1', 'opportunity', lead, true)
 
   assert.equal(calls[0]?.[3], 'CLUE_TO_CONTACT')
-  assert.equal(calls[1]?.[3], 'CLUE_TO_OPPORTUNITY')
+})
+
+
+test('Lead 阶段运行时使用租户配置并以第一个启用阶段作为新建默认值', async () => {
+  const stages: LeadStageConfig[] = [
+    { key: 'WAIT', name: '待联系', kind: 'ACTIVE', enabled: false },
+    { key: 'CONTACTED', name: '已联系', kind: 'ACTIVE', enabled: true },
+    { key: 'VISITED', name: '已到访', kind: 'ACTIVE', enabled: true },
+  ]
+  const service = Object.create(LeadsService.prototype) as unknown as {
+    moduleForms: { getConfig: () => Promise<{ formProp: { leadStages: LeadStageConfig[] } }> }
+    resolveInitialLeadStage: (organizationId: string) => Promise<LeadStageConfig>
+    resolveLeadStage: (
+      organizationId: string,
+      stageKey: string,
+      requireEnabled?: boolean,
+    ) => Promise<LeadStageConfig>
+  }
+  service.moduleForms = {
+    getConfig: async () => ({ formProp: { leadStages: stages } }),
+  }
+
+  assert.equal((await service.resolveInitialLeadStage('tenant-1')).key, 'CONTACTED')
+  assert.equal((await service.resolveLeadStage('tenant-1', 'VISITED', true)).name, '已到访')
+  await assert.rejects(
+    () => service.resolveLeadStage('tenant-1', 'WAIT', true),
+    BadRequestException,
+  )
+  await assert.rejects(
+    () => service.resolveLeadStage('tenant-1', 'UNKNOWN', true),
+    BadRequestException,
+  )
+})
+
+test('明确 Lead 转换准备不会调用组织级同名 Customer 猜测逻辑', async () => {
+  let guessed = false
+  const service = Object.create(LeadsService.prototype) as unknown as {
+    assertFunctionalPermission: () => void
+    ensureInScope: () => Promise<Record<string, unknown>>
+    selectTransformCustomer: () => Promise<unknown>
+    mapLeadCustomData: () => Promise<Record<string, unknown>>
+    customers: { prepareCreateForTransaction: (_user: unknown, dto: unknown) => Promise<unknown> }
+    prepareLeadAssociation: () => Promise<unknown>
+    prepareResolvedLeadConversion: LeadsService['prepareResolvedLeadConversion']
+  }
+  service.assertFunctionalPermission = () => undefined
+  service.ensureInScope = async () => ({
+    id: 'lead-1',
+    name: '张三',
+    owner: 'owner-1',
+    transitionId: null,
+    transitionType: null,
+  })
+  service.selectTransformCustomer = async () => {
+    guessed = true
+    return { id: 'customer-other-dept' }
+  }
+  service.mapLeadCustomData = async () => ({ cf_source: '官网' })
+  service.customers = {
+    prepareCreateForTransaction: async (_user, dto) => ({ dto, owner: { id: 'owner-1' } }),
+  }
+  service.prepareLeadAssociation = async () => ({ ownerMap: new Map() })
+
+  const prepared = await service.prepareResolvedLeadConversion(
+    { tenantId: 'tenant-1' } as never,
+    'lead-1',
+    { cf_status: '已缴费' },
+  )
+  assert.equal(guessed, false)
+  assert.deepEqual(prepared.customerCreateDto.customData, { cf_source: '官网', cf_status: '已缴费' })
 })
