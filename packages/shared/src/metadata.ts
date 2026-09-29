@@ -31,6 +31,31 @@ export interface FieldOption {
   color?: string
 }
 
+export type FieldOrigin = 'SYSTEM' | 'PRESET' | 'CUSTOM'
+
+export interface FieldCapabilities {
+  rename: boolean
+  copy: boolean
+  delete: boolean
+  changeType: boolean
+  changeRequired: boolean
+  hide: boolean
+  unique: boolean
+}
+
+export function dynamicFieldCapabilities(type: FieldType, module?: string): FieldCapabilities {
+  const supportsUniqueModule = !module || ['lead', 'customer', 'contact'].includes(module)
+  return {
+    rename: true,
+    copy: true,
+    delete: true,
+    changeType: true,
+    changeRequired: !['formula', 'sub_product'].includes(type),
+    hide: true,
+    unique: supportsUniqueModule && ['text', 'phone', 'email'].includes(type),
+  }
+}
+
 /** Cordys showControlRules：配置在控制字段上，命中任一规则时显示目标字段。 */
 export interface FieldShowControlRule {
   value?: string | number | boolean
@@ -254,11 +279,7 @@ export function isSubTableFieldType(type: FieldType): type is SubTableFieldType 
   return (SUB_TABLE_FIELD_TYPES as readonly string[]).includes(type)
 }
 
-export const BUILTIN_DATA_SOURCE_TYPES = [
-  'CUSTOMER',
-  'CONTACT',
-  'CLUE',
-] as const
+export const BUILTIN_DATA_SOURCE_TYPES = ['CUSTOMER', 'CONTACT', 'CLUE'] as const
 
 export type BuiltinDataSourceType = (typeof BUILTIN_DATA_SOURCE_TYPES)[number]
 export type DataSourceType = BuiltinDataSourceType | string
@@ -302,6 +323,12 @@ export interface FieldVO {
   key: string
   label: string
   type: FieldType
+  /** 字段来源由服务端根据模块字段模板推导，不依赖用户可编辑的显示名称。 */
+  origin?: FieldOrigin
+  /** SYSTEM/PRESET 的初始业务名称，用于设计器解释字段身份。 */
+  templateLabel?: string | null
+  /** 字段设计能力由服务端统一声明；旧数据/离线草稿允许暂时缺省。 */
+  capabilities?: FieldCapabilities
   mobile?: boolean
   required: boolean
   system: boolean

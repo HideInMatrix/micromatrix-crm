@@ -1,4 +1,4 @@
-import type { FieldConfig, FieldOption, FieldType } from '@micromatrix/shared'
+import type { FieldCapabilities, FieldConfig, FieldOption, FieldType } from '@micromatrix/shared'
 
 export interface SystemFieldTemplate {
   key: string
@@ -13,6 +13,7 @@ export interface SystemFieldTemplate {
   span?: number
   showInList?: boolean
   listWidth?: number
+  capabilities?: Partial<FieldCapabilities>
   sort: number
 }
 
@@ -29,8 +30,10 @@ const INDUSTRY_OPTIONS: FieldOption[] = [
 ]
 
 /**
- * 各业务对象的系统字段模板（首次访问时初始化到租户）。
- * key 与业务表列名一一对应；系统字段不可删除、key/type 不可修改。
+ * 各业务对象的默认字段模板。
+ * 未显式 `system: false` 的模板是绑定业务语义的 SYSTEM 字段：持续保证存在，
+ * key 与业务表列名一一对应，不能删除或修改类型。
+ * `system: false` 的模板是 PRESET：仅在表单首次创建时初始化，之后按普通动态字段管理。
  */
 const LEAD_SOURCE_OPTIONS: FieldOption[] = [
   { label: '官网表单', value: '官网表单' },
@@ -55,12 +58,29 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '线索名称',
       type: 'text',
       required: true,
+      capabilities: { unique: true },
       span: 12,
       listWidth: 200,
       sort: 0,
     },
-    { key: 'contact', label: '联系人', type: 'text', span: 12, listWidth: 110, sort: 1 },
-    { key: 'phone', label: '电话', type: 'phone', span: 12, listWidth: 140, sort: 2 },
+    {
+      key: 'contact',
+      label: '联系人',
+      type: 'text',
+      capabilities: { unique: true },
+      span: 12,
+      listWidth: 110,
+      sort: 1,
+    },
+    {
+      key: 'phone',
+      label: '电话',
+      type: 'phone',
+      capabilities: { unique: true },
+      span: 12,
+      listWidth: 140,
+      sort: 2,
+    },
     {
       key: 'cf_source',
       label: '线索来源',
@@ -89,6 +109,7 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '客户名称',
       type: 'text',
       required: true,
+      capabilities: { unique: true },
       span: 12,
       listWidth: 220,
       sort: 0,
@@ -133,9 +154,26 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
     },
   ],
   contact: [
-    { key: 'name', label: '姓名', type: 'text', required: true, span: 12, listWidth: 120, sort: 0 },
+    {
+      key: 'name',
+      label: '姓名',
+      type: 'text',
+      required: true,
+      capabilities: { unique: true },
+      span: 12,
+      listWidth: 120,
+      sort: 0,
+    },
     { key: 'customerId', label: '客户', type: 'text', span: 12, listWidth: 180, sort: 1 },
-    { key: 'phone', label: '电话', type: 'phone', span: 12, listWidth: 150, sort: 2 },
+    {
+      key: 'phone',
+      label: '电话',
+      type: 'phone',
+      capabilities: { unique: true },
+      span: 12,
+      listWidth: 150,
+      sort: 2,
+    },
     { key: 'owner', label: '负责人', type: 'member', span: 12, listWidth: 110, sort: 3 },
     { key: 'enable', label: '状态', type: 'switch', span: 12, listWidth: 90, sort: 4 },
   ],

@@ -59,6 +59,14 @@ test(
 
       const firstSystemField = initial.fields.find((field) => field.system)
       assert.ok(firstSystemField)
+      assert.equal(firstSystemField.origin, 'SYSTEM')
+      assert.equal(firstSystemField.capabilities?.delete, false)
+      assert.equal(firstSystemField.capabilities?.changeType, false)
+      const presetField = initial.fields.find((field) => field.key === 'cf_source')
+      assert.ok(presetField)
+      assert.equal(presetField.origin, 'PRESET')
+      assert.equal(presetField.system, false)
+      assert.equal(presetField.capabilities?.delete, true)
       const initialIds = new Set(initial.fields.map((field) => field.id))
       const saved = await service.saveDesign(
         tenant.id,
@@ -85,15 +93,67 @@ test(
       assert.equal(saved.formProp.viewSize, 'large')
       assert.deepEqual(
         saved.fields.slice(0, initial.fields.length).map((field) => field.id),
-        initial.fields
-          .map((field) => field.id)
-          .reverse(),
+        initial.fields.map((field) => field.id).reverse(),
       )
       const created = saved.fields.find((field) => field.label === '渠道备注')
       assert.ok(created)
       assert.equal(initialIds.has(created.id), false)
       assert.equal(created.config?.placeholder, '请输入渠道备注')
+      assert.equal(created.origin, 'CUSTOM')
+      assert.equal(created.capabilities?.unique, true)
       assert.ok(saved.fields.some((field) => field.id === firstSystemField.id))
+
+      const leadName = saved.fields.find((field) => field.key === 'name')
+      const leadContact = saved.fields.find((field) => field.key === 'contact')
+      const leadPhone = saved.fields.find((field) => field.key === 'phone')
+      assert.ok(leadName)
+      assert.ok(leadContact)
+      assert.ok(leadPhone)
+      assert.equal(leadName.capabilities?.unique, true)
+      assert.equal(leadContact.capabilities?.unique, true)
+      assert.equal(leadPhone.capabilities?.unique, true)
+      const leadUniqueSaved = await service.saveDesign(
+        tenant.id,
+        'lead',
+        saved.fields.map((field) => ({
+          ...toSaveField(field),
+          ...(field.id === leadPhone.id
+            ? { config: { ...(field.config ?? {}), unique: true } }
+            : {}),
+        })),
+        saved.formProp,
+        actor.id,
+      )
+      assert.equal(
+        leadUniqueSaved.fields.find((field) => field.key === 'phone')?.config?.unique,
+        true,
+      )
+
+      const customer = await service.getConfig(tenant.id, 'customer')
+      const customerName = customer.fields.find((field) => field.key === 'name')
+      const customerPhone = customer.fields.find((field) => field.key === 'cf_phone')
+      assert.ok(customerName)
+      assert.ok(customerPhone)
+      assert.equal(customerName.origin, 'SYSTEM')
+      assert.equal(customerName.capabilities?.unique, true)
+      assert.equal(customerPhone.origin, 'PRESET')
+      assert.equal(customerPhone.capabilities?.unique, true)
+
+      const beforePresetDelete = await service.getConfig(tenant.id, 'lead')
+      const leadPreset = beforePresetDelete.fields.find((field) => field.key === 'cf_source')
+      assert.ok(leadPreset)
+      await service.saveDesign(
+        tenant.id,
+        'lead',
+        beforePresetDelete.fields.filter((field) => field.id !== leadPreset.id).map(toSaveField),
+        beforePresetDelete.formProp,
+        actor.id,
+      )
+      const afterPresetDelete = await service.getConfig(tenant.id, 'lead')
+      assert.equal(
+        afterPresetDelete.fields.some((field) => field.key === 'cf_source'),
+        false,
+      )
 
       const beforeRejectedSave = await service.getConfig(tenant.id, 'lead')
       await assert.rejects(

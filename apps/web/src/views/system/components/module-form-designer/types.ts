@@ -1,4 +1,10 @@
-import type { FieldOption, FieldType, FieldVO, ModuleKey } from '@micromatrix/shared'
+import {
+  dynamicFieldCapabilities,
+  type FieldOption,
+  type FieldType,
+  type FieldVO,
+  type ModuleKey,
+} from '@micromatrix/shared'
 
 export interface ModuleFormFieldDraft extends FieldVO {
   draft?: boolean
@@ -46,10 +52,7 @@ function defaultOptions(): FieldOption[] {
   }))
 }
 
-export function createDraftField(
-  module: ModuleKey,
-  item: FieldPaletteItem,
-): ModuleFormFieldDraft {
+export function createDraftField(module: ModuleKey, item: FieldPaletteItem): ModuleFormFieldDraft {
   const id = `draft:${globalThis.crypto.randomUUID()}`
   return {
     id,
@@ -57,6 +60,9 @@ export function createDraftField(
     key: id,
     label: item.label,
     type: item.type,
+    origin: 'CUSTOM',
+    templateLabel: null,
+    capabilities: dynamicFieldCapabilities(item.type, module),
     mobile: true,
     required: false,
     system: false,
@@ -85,6 +91,9 @@ export function cloneDraftField(field: ModuleFormFieldDraft): ModuleFormFieldDra
     id,
     key: id,
     label: `${field.label} 副本`,
+    origin: 'CUSTOM',
+    templateLabel: null,
+    capabilities: dynamicFieldCapabilities(field.type, field.module),
     system: false,
     draft: true,
   }

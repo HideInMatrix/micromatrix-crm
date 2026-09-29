@@ -9,7 +9,10 @@ Form Engine 是当前招生 CRM 的公共元数据能力，负责模块表单、
 ## 2. ModuleForm / Field
 
 - 表单定义使用 `SysModuleForm / SysModuleField` 及对应 Blob 保存布局和扩展属性。
-- 系统字段由各业务模块模板负责，业务代码不得通过字段同名猜测系统语义。
+- 字段来源分为 `SYSTEM / PRESET / CUSTOM`：SYSTEM 是绑定固定业务列/核心业务语义的系统字段；PRESET 是系统初始化的普通动态字段；CUSTOM 是用户新增动态字段。PRESET 与 CUSTOM 在运行时能力上等价，不得因为“系统预置”而获得隐藏的业务语义。
+- 系统字段由各业务模块模板负责，业务代码不得通过显示名称或 `cf_*` 默认命名猜测系统语义。SYSTEM 字段可以修改显示标题，但其底层 key/类型/业务用途保持不变。
+- SYSTEM 身份只约束删除、底层 key/type 等结构能力，不得天然禁止唯一值；可直接录入且具备稳定比较语义的系统字段可以由 capability 声明 `unique=true`，关系、负责人、状态等结构字段则不开放该能力。
+- Metadata API 必须返回字段 capabilities（rename/copy/delete/changeType/changeRequired/hide/unique），PC 设计器只消费能力声明，不得再按 module/key 自行硬编码可编辑规则。
 - 动态字段 key、类型、required、列表展示、Mobile 可见性、字段宽度、唯一性和高级配置由统一 Metadata 服务校验。
 - 表单属性与字段属性分别存储；字段配置不得把整个业务模块状态塞进一个无结构 JSON。
 
@@ -63,6 +66,7 @@ Form Engine 是当前招生 CRM 的公共元数据能力，负责模块表单、
 ## 9. 安全与验收
 
 - 所有字段写入都必须在服务端再次执行类型、required、唯一性、source、联动、附件和 tenant 校验。
+- 字段设计保存同样必须在服务端校验 capabilities；禁止仅靠前端禁用控件保护 SYSTEM 字段或唯一值规则。
 - transaction 内读取字段定义时不得命中 Redis 派生缓存，避免读到事务外旧状态。
 - 跨租户 formId、resourceId、fieldId、附件 ID 和 source ID 必须 fail-closed。
 - Form Engine 改动必须覆盖 shared runtime、API rules、真实 PostgreSQL、PC/Mobile 动态表单和 `git diff --check`。

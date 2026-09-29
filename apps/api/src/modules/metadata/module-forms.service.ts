@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import {
   applyFormLinkScenario,
+  dynamicFieldCapabilities,
   evaluateFormula,
   FORM_LINK_SCENARIO_KEYS,
   formulaVariables,
@@ -11,8 +12,10 @@ import {
   supportsMobileSearchSelect,
   type DataSourceSubFieldLinkField,
   type FieldConfig,
+  type FieldCapabilities,
   type FieldLinkOption,
   type FieldOption,
+  type FieldOrigin,
   type FieldType,
   type FieldVO,
   type FormLinkProp,
@@ -30,11 +33,7 @@ import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
 
 const SYSTEM_ACTOR = 'SYSTEM'
 const CACHE_TTL_SECONDS = 10 * 60
-const HOME_ANALYTICS_DIMENSION_TYPES = new Set<FieldType>([
-  'text',
-  'select',
-  'radio',
-])
+const HOME_ANALYTICS_DIMENSION_TYPES = new Set<FieldType>(['text', 'select', 'radio'])
 const HOME_ANALYTICS_RESULT_TYPES = new Set<FieldType>([
   'text',
   'number',
@@ -214,7 +213,7 @@ export class ModuleFormsService {
     if (new Set(requestedIds).size !== requestedIds.length) {
       throw new BadRequestException('字段 ID 不能重复')
     }
-    fields.forEach((field) => this.validateFieldInput(field))
+    fields.forEach((field) => this.validateFieldInput(field, formKey))
 
     const result = await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
@@ -226,7 +225,9 @@ export class ModuleFormsService {
         if (!currentById.has(fieldId)) throw new BadRequestException('表单包含不存在的字段')
       }
       for (const current of currentFields) {
-        if (this.parseProp(current).system && !requestedIdSet.has(current.id)) {
+        const prop = this.parseProp(current)
+        const key = prop.key || current.internalKey || current.id
+        if (this.fieldOrigin(formKey, key) === 'SYSTEM' && !requestedIdSet.has(current.id)) {
           throw new BadRequestException('系统字段不可删除')
         }
       }
@@ -264,15 +265,14 @@ export class ModuleFormsService {
         const currentField = currentById.get(dto.id)
         if (!currentField) throw new BadRequestException('表单包含不存在的字段')
         const current = this.parseProp(currentField)
-        if (current.system && dto.type !== currentField.type) {
-          throw new BadRequestException('系统字段不可修改类型')
-        }
+        this.validateFieldCapabilityChange(formKey, currentField, current, dto)
         if (
           dto.type !== currentField.type &&
           this.isBlobType(dto.type) !== this.isBlobType(currentField.type as FieldType)
         ) {
           const count = await this.countFieldValues(tx, dto.id)
-          if (count > 0) throw new BadRequestException('字段已有数据，不能切换普通值与大字段存储类型')
+          if (count > 0)
+            throw new BadRequestException('字段已有数据，不能切换普通值与大字段存储类型')
         }
         if (dto.type !== currentField.type && dto.type === 'sub_product') {
           const count = await this.countFieldValues(tx, dto.id)
@@ -330,7 +330,8 @@ export class ModuleFormsService {
           updateUser: actorId,
           updateTime: now,
         }
-        if (!current.system) updateData._type = dto.type
+        const currentKey = current.key || currentField.internalKey || currentField.id
+        if (this.fieldOrigin(formKey, currentKey) !== 'SYSTEM') updateData._type = dto.type
         await tx.orm.public.SysModuleField.where({ id: dto.id }).update(updateData)
         await tx.orm.public.SysModuleFieldBlob.upsert({
           create: { id: dto.id, prop: JSON.stringify(next) },
@@ -342,7 +343,10 @@ export class ModuleFormsService {
       for (const currentField of currentFields) {
         if (requestedIdSet.has(currentField.id)) continue
         const current = this.parseProp(currentField)
-        if (current.system) throw new BadRequestException('系统字段不可删除')
+        const currentKey = current.key || currentField.internalKey || currentField.id
+        if (this.fieldOrigin(formKey, currentKey) === 'SYSTEM') {
+          throw new BadRequestException('系统字段不可删除')
+        }
         if (currentField.type === 'sub_product') {
           const childIds = current.subFields?.map((subField) => subField.id) ?? []
           await Promise.all([
@@ -387,7 +391,7 @@ export class ModuleFormsService {
     dto: CreateFieldDto,
     actorId = SYSTEM_ACTOR,
   ): Promise<FieldVO> {
-    this.validateFieldInput(dto)
+    this.validateFieldInput(dto, formKey)
     const result = await this.prisma.client.transaction(async (tx) => {
       const form = await this.ensureForm(tx, organizationId, formKey, actorId)
       const duplicated = await tx.orm.public.SysModuleField.where({
@@ -458,9 +462,7 @@ export class ModuleFormsService {
         if (duplicated) throw new BadRequestException('字段名称不能重复')
       }
 
-      if (current.system && dto.type && dto.type !== field.type) {
-        throw new BadRequestException('系统字段不可修改类型')
-      }
+      this.validateFieldCapabilityChange(field.form.formKey, field, current, dto)
       if (
         dto.type &&
         dto.type !== field.type &&
@@ -525,7 +527,10 @@ export class ModuleFormsService {
         updateTime: BigInt(Date.now()),
       }
       if (dto.label !== undefined) updateData.name = dto.label.trim()
-      if (!current.system && dto.type !== undefined) updateData._type = dto.type
+      const currentKey = current.key || field.internalKey || field.id
+      if (this.fieldOrigin(field.form.formKey, currentKey) !== 'SYSTEM' && dto.type !== undefined) {
+        updateData._type = dto.type
+      }
       if (dto.mobile !== undefined) updateData.mobile = dto.mobile
       const updatedRow = await tx.orm.public.SysModuleField.where({
         id: id,
@@ -552,13 +557,11 @@ export class ModuleFormsService {
     const deleted = await this.prisma.client.transaction(async (tx) => {
       const field = await this.ensureField(tx, organizationId, id)
       const prop = this.parseProp(field)
-      if (prop.system) throw new BadRequestException('系统字段不可删除')
-      await this.assertHomeAnalyticsFieldNotReferenced(
-        tx,
-        organizationId,
-        field.form.formKey,
-        prop.key || field.internalKey || field.id,
-      )
+      const key = prop.key || field.internalKey || field.id
+      if (this.fieldOrigin(field.form.formKey, key) === 'SYSTEM') {
+        throw new BadRequestException('系统字段不可删除')
+      }
+      await this.assertHomeAnalyticsFieldNotReferenced(tx, organizationId, field.form.formKey, key)
       if (field.type === 'sub_product') {
         const childIds = prop.subFields?.map((subField) => subField.id) ?? []
         await Promise.all([
@@ -612,15 +615,21 @@ export class ModuleFormsService {
 
   toVO(field: FieldWithBlob, formKey: string): FieldVO {
     const prop = this.parseProp(field)
+    const key = prop.key || field.internalKey || field.id
+    const origin = this.fieldOrigin(formKey, key)
+    const template = this.fieldTemplate(formKey, key)
     return {
       id: field.id,
       module: formKey,
-      key: prop.key || field.internalKey || field.id,
+      key,
       label: field.name,
       type: field.type as FieldType,
+      origin,
+      templateLabel: template?.label ?? null,
+      capabilities: this.fieldCapabilities(formKey, key, field.type as FieldType, prop.required),
       mobile: field.mobile,
       required: prop.required,
-      system: prop.system,
+      system: origin === 'SYSTEM',
       hidden: prop.hidden,
       options: prop.options,
       config: prop.config,
@@ -632,6 +641,74 @@ export class ModuleFormsService {
     }
   }
 
+  private fieldTemplate(formKey: string, key: string): SystemFieldTemplate | undefined {
+    return MODULE_SYSTEM_FIELDS[formKey]?.find((template) => template.key === key)
+  }
+
+  private fieldOrigin(formKey: string, key: string): FieldOrigin {
+    const template = this.fieldTemplate(formKey, key)
+    if (!template) return 'CUSTOM'
+    return template.system === false ? 'PRESET' : 'SYSTEM'
+  }
+
+  private fieldCapabilities(
+    formKey: string,
+    key: string,
+    type: FieldType,
+    required = false,
+  ): FieldCapabilities {
+    const origin = this.fieldOrigin(formKey, key)
+    const base = dynamicFieldCapabilities(type, formKey)
+    if (origin !== 'SYSTEM') return base
+
+    const template = this.fieldTemplate(formKey, key)
+    const fixedRequired = template?.required === true
+    const overrides = template?.capabilities ?? {}
+    return {
+      ...base,
+      ...overrides,
+      copy: false,
+      delete: false,
+      changeType: false,
+      changeRequired: overrides.changeRequired ?? !fixedRequired,
+      hide: overrides.hide ?? (!fixedRequired && !required),
+      unique: overrides.unique ?? false,
+    }
+  }
+
+  private validateFieldCapabilityChange(
+    formKey: string,
+    field: FieldWithBlob,
+    current: StoredFieldProp,
+    dto: Partial<CreateFieldDto>,
+  ): void {
+    const key = current.key || field.internalKey || field.id
+    const currentType = field.type as FieldType
+    const currentCapabilities = this.fieldCapabilities(formKey, key, currentType, current.required)
+    const nextType = (dto.type ?? currentType) as FieldType
+    const nextRequired = dto.required ?? current.required
+    const nextHidden = dto.hidden ?? current.hidden
+    const nextCapabilities = this.fieldCapabilities(formKey, key, nextType, nextRequired)
+
+    if (dto.type !== undefined && dto.type !== currentType && !currentCapabilities.changeType) {
+      throw new BadRequestException('系统字段不可修改类型')
+    }
+    if (
+      dto.required !== undefined &&
+      dto.required !== current.required &&
+      !currentCapabilities.changeRequired
+    ) {
+      throw new BadRequestException('该系统字段的必填属性不可修改')
+    }
+    if (nextHidden && !nextCapabilities.hide) {
+      throw new BadRequestException('该系统字段不可隐藏')
+    }
+    const nextUnique = dto.config?.unique ?? current.config?.unique ?? false
+    if (nextUnique && !nextCapabilities.unique) {
+      throw new BadRequestException('当前字段不支持唯一值约束')
+    }
+  }
+
   private async ensureForm(
     tx: PrismaTransaction,
     organizationId: string,
@@ -639,6 +716,7 @@ export class ModuleFormsService {
     actorId = SYSTEM_ACTOR,
   ) {
     const now = BigInt(Date.now())
+    let created = false
     let form = await tx.orm.public.SysModuleForm.where({
       organizationId: organizationId,
       formKey: formKey,
@@ -654,6 +732,7 @@ export class ModuleFormsService {
           createUser: actorId,
           updateUser: actorId,
         })
+        created = true
       } catch (error) {
         if ((error as { sqlState?: string }).sqlState !== '23505') throw error
         form = await tx.orm.public.SysModuleForm.where({
@@ -668,7 +747,7 @@ export class ModuleFormsService {
       update: {},
       conflictOn: { id: form.id },
     })
-    await this.ensureSystemFields(tx, form.id, formKey, actorId)
+    await this.ensureSystemFields(tx, form.id, formKey, actorId, created)
     return form
   }
 
@@ -685,8 +764,11 @@ export class ModuleFormsService {
     formId: string,
     formKey: string,
     actorId: string,
+    includePresets: boolean,
   ): Promise<void> {
-    const templates = MODULE_SYSTEM_FIELDS[formKey]
+    const templates = MODULE_SYSTEM_FIELDS[formKey]?.filter(
+      (template) => includePresets || template.system !== false,
+    )
     if (!templates?.length) return
     const existing = await tx.orm.public.SysModuleField.where({ formId: formId })
       .where((field) => field.internalKey.in(templates.map((template) => template.key)))
@@ -829,7 +911,10 @@ export class ModuleFormsService {
     }
   }
 
-  private validateFieldInput(dto: Partial<CreateFieldDto>): void {
+  private validateFieldInput(dto: Partial<CreateFieldDto>, formKey?: string): void {
+    if (dto.type && dto.config?.unique && !dynamicFieldCapabilities(dto.type, formKey).unique) {
+      throw new BadRequestException('当前字段类型不支持唯一值约束')
+    }
     if (dto.type === 'formula' || dto.config?.formula) this.validateFormula(dto.config?.formula)
     if (dto.type) this.validateFieldSpecificConfig(dto.type, dto.config)
     if (dto.subFields !== undefined && dto.type !== undefined && dto.type !== 'sub_product') {
@@ -1117,7 +1202,9 @@ export class ModuleFormsService {
       for (const stage of formProp.leadStages) {
         if (!stage || typeof stage !== 'object') throw new BadRequestException('线索阶段配置不正确')
         if (typeof stage.key !== 'string' || !/^[A-Za-z0-9_-]{1,30}$/.test(stage.key)) {
-          throw new BadRequestException('线索阶段 key 只能包含字母、数字、下划线或短横线，且最长 30 位')
+          throw new BadRequestException(
+            '线索阶段 key 只能包含字母、数字、下划线或短横线，且最长 30 位',
+          )
         }
         const name = typeof stage.name === 'string' ? stage.name.trim() : ''
         if (!name || name.length > 100) {
@@ -1628,6 +1715,9 @@ export class ModuleFormsService {
       key: subField.key,
       label: subField.label,
       type: subField.type,
+      origin: 'CUSTOM',
+      templateLabel: null,
+      capabilities: { ...dynamicFieldCapabilities(subField.type, formKey), unique: false },
       required: subField.required,
       system: false,
       hidden: false,

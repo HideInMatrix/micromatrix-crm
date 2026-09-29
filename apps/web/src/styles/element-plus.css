@@ -66,13 +66,13 @@ html:not(.dark) {
 }
 
 .el-drawer {
-  --el-drawer-padding-primary: 20px;
+  --el-drawer-padding-primary: 10px;
 }
 
 .el-drawer__header {
-  margin-bottom: 0;
-  padding-bottom: var(--el-drawer-padding-primary);
-  border-bottom: 1px solid var(--el-border-color-light);
+  margin-bottom: 0 !important;
+  padding-bottom: var(--el-drawer-padding-primary) !important;
+  border-bottom: 1px solid var(--el-border-color-light) !important;
 }
 
 .el-drawer__title {

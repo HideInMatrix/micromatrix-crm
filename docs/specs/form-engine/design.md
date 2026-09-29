@@ -22,6 +22,17 @@ resource main table + Field / FieldBlob
 
 缓存只用于事务外读模型：`getConfig/listFields` 可以进入租户派生缓存，`listFieldsInTransaction` 必须直接读取当前 Prisma transaction。
 
+字段身份与展示配置分离，不新增数据库列：`ModuleFormsService` 根据 `formKey + internalKey + MODULE_SYSTEM_FIELDS` 推导 `SYSTEM / PRESET / CUSTOM`，再统一计算字段 capabilities。`system` 仅作为旧存储兼容信息，不再作为 Web 设计器的规则事实源。
+
+```text
+Field
+  ├── identity: SYSTEM / PRESET / CUSTOM
+  ├── presentation: label / span / hidden / mobile / list
+  └── capabilities: rename / copy / delete / changeType / changeRequired / hide / unique
+```
+
+SYSTEM 的模板 label 是底层业务用途说明；用户修改 label 只改变展示。SYSTEM 字段在每次 ensure 时持续保证存在；PRESET 只在模块表单首次创建时初始化一次，之后属于普通动态字段，可按 CUSTOM 规则调整或删除，删除后不得被自动补种。SYSTEM 与 unique 是正交能力：例如 Lead `name/contact/phone`、Customer `name`、Contact `name/phone` 可由模板声明 unique 能力，而 owner、customerId、enable 等结构字段不开放；唯一值是否可配置由后端 capability registry 决定，并在保存时再次校验。
+
 ## 3. 值存储
 
 ```text

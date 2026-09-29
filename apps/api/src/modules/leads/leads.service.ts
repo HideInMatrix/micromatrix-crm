@@ -57,10 +57,7 @@ import {
 } from '../pool-rules/pool-transaction-lock'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
-import {
-  recordLeadStageEvent,
-  type LeadStageEventSource,
-} from './lead-stage-event'
+import { recordLeadStageEvent, type LeadStageEventSource } from './lead-stage-event'
 import {
   ClueAddDto,
   ClueChartDto,
@@ -734,6 +731,11 @@ export class LeadsService {
     const targetPool = toPool ? await this.pools.resolveTargetPool(user, 'lead', poolId) : null
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
     const initialStage = await this.resolveInitialLeadStage(user.tenantId)
+    await this.assertLeadSystemUniqueRules(
+      user.tenantId,
+      { name: dto.name, contactName: dto.contactName, phone: dto.phone },
+      uniqueScope,
+    )
     await this.fieldValues.validate(user.tenantId, 'clue', customData ?? {}, {
       mode: 'create',
       uniqueScope,
@@ -799,6 +801,12 @@ export class LeadsService {
   ): Promise<LeadVO> {
     const { customData, ownerId } = dto
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, existing.poolId)
+    await this.assertLeadSystemUniqueRules(
+      user.tenantId,
+      { name: dto.name, contactName: dto.contactName, phone: dto.phone },
+      uniqueScope,
+      existing.id,
+    )
     await this.fieldValues.validate(user.tenantId, 'clue', customData ?? {}, {
       mode: 'update',
       resourceId: existing.id,
@@ -878,7 +886,19 @@ export class LeadsService {
     await this.dictionaries.validateReason(user.tenantId, 'CLUE_POOL_RS', reasonId)
     const pool = await this.pools.resolveMoveTargetPool(user.tenantId, 'lead', lead.owner, poolId)
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, pool.id)
-    const currentValues = (await this.fieldValues.load(user.tenantId, 'clue', [lead.id])).get(lead.id)
+    await this.assertLeadSystemUniqueRules(
+      user.tenantId,
+      {
+        name: lead.name,
+        contactName: lead.contact ?? undefined,
+        phone: lead.phone ?? undefined,
+      },
+      uniqueScope,
+      lead.id,
+    )
+    const currentValues = (await this.fieldValues.load(user.tenantId, 'clue', [lead.id])).get(
+      lead.id,
+    )
     await this.fieldValues.validate(user.tenantId, 'clue', currentValues ?? {}, {
       mode: 'update',
       resourceId: lead.id,
@@ -1318,10 +1338,7 @@ export class LeadsService {
         message: '线索已转换为非 Customer 资源',
       })
     }
-    if (
-      current.owner !== prepared.lead.owner ||
-      current.updateTime !== prepared.lead.updateTime
-    ) {
+    if (current.owner !== prepared.lead.owner || current.updateTime !== prepared.lead.updateTime) {
       throw new ConflictException({
         code: 'LEAD_CHANGED_RETRY',
         message: '线索在转换前已发生变化，请重新定位后重试',
@@ -1926,11 +1943,7 @@ export class LeadsService {
     }
   }
 
-  private async notifyLeadAssociation(
-    user: AuthUser,
-    leads: Lead[],
-    customerId: string,
-  ) {
+  private async notifyLeadAssociation(user: AuthUser, leads: Lead[], customerId: string) {
     for (const lead of leads) {
       if (!lead.owner) continue
       await this.notifications.send({
@@ -2279,6 +2292,11 @@ export class LeadsService {
     if (importType === 'ADD') {
       const name = typeof dto.name === 'string' ? dto.name.trim() : ''
       if (!name) throw new BadRequestException('线索名称不能为空')
+      await this.assertLeadSystemUniqueRules(
+        user.tenantId,
+        { name: dto.name, contactName: dto.contactName, phone: dto.phone },
+        uniqueScope,
+      )
       if (!poolId)
         await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId ?? user.id)
       return { dto }
@@ -2294,6 +2312,12 @@ export class LeadsService {
         }).first()
       : await this.ensureInScope(user, resourceId, 'lead:import')
     if (!existing) throw new BadRequestException('线索不存在或不属于当前线索池')
+    await this.assertLeadSystemUniqueRules(
+      user.tenantId,
+      { name: dto.name, contactName: dto.contactName, phone: dto.phone },
+      uniqueScope,
+      existing.id,
+    )
     if (dto.ownerId && dto.ownerId !== existing.owner) {
       await this.pools.assertCapacityForOwner(user.tenantId, 'lead', dto.ownerId)
     }
@@ -2334,7 +2358,47 @@ export class LeadsService {
   }
 
   private async leadStageLabelMap(organizationId: string): Promise<Map<string, string>> {
-    return new Map((await this.resolveLeadStages(organizationId)).map((stage) => [stage.key, stage.name]))
+    return new Map(
+      (await this.resolveLeadStages(organizationId)).map((stage) => [stage.key, stage.name]),
+    )
+  }
+
+  private async assertLeadSystemUniqueRules(
+    organizationId: string,
+    values: { name?: string; contactName?: string; phone?: string },
+    uniqueScope?: ResourceFieldUniqueScope,
+    excludeId?: string,
+  ): Promise<void> {
+    const fields = await this.metadata.fieldsMap(organizationId, MODULE)
+    const checks = [
+      ['name', values.name],
+      ['contact', values.contactName],
+      ['phone', values.phone],
+    ] as const
+
+    for (const [key, raw] of checks) {
+      const field = fields.get(key)
+      if (!field?.config?.unique || raw === undefined || raw === null) continue
+      const value = raw.trim()
+      if (!value) continue
+
+      let query = this.prisma.client.orm.public.Clue.where({
+        organizationId,
+      })
+      if (uniqueScope?.type === 'resourcePool') {
+        query = query.where({
+          inSharedPool: true,
+          poolId: uniqueScope.poolId,
+        })
+      }
+      if (excludeId) query = query.where((row) => row.id.neq(excludeId))
+      if (key === 'name') query = query.where((row) => row.name.ilike(value))
+      else if (key === 'contact') query = query.where({ contact: value })
+      else query = query.where({ phone: value })
+
+      const duplicate = await query.select('id').first()
+      if (duplicate) throw new ConflictException(`「${field.label}」的值不能重复`)
+    }
   }
 
   private async resolveLeadUniqueScope(

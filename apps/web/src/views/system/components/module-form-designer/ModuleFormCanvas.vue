@@ -34,6 +34,14 @@ function handleStart(event: { oldIndex?: number }) {
   const field = fields.value[event.oldIndex ?? -1]
   if (field) emit('select', field)
 }
+
+function canCopy(field: ModuleFormFieldDraft) {
+  return field.capabilities?.copy ?? !field.system
+}
+
+function canDelete(field: ModuleFormFieldDraft) {
+  return field.capabilities?.delete ?? !field.system
+}
 </script>
 
 <template>
@@ -66,7 +74,7 @@ function handleStart(event: { oldIndex?: number }) {
               >
                 <el-tooltip content="复制" placement="top">
                   <el-button
-                    v-if="!field.system"
+                    v-if="canCopy(field)"
                     link
                     size="small"
                     class="!m-0 !h-7 !w-7 !p-0"
@@ -77,7 +85,7 @@ function handleStart(event: { oldIndex?: number }) {
                 </el-tooltip>
                 <el-tooltip content="删除" placement="top">
                   <el-button
-                    v-if="!field.system"
+                    v-if="canDelete(field)"
                     link
                     type="danger"
                     size="small"
@@ -96,6 +104,17 @@ function handleStart(event: { oldIndex?: number }) {
                 <GripVertical :size="14" class="text-[var(--el-text-color-placeholder)]" />
                 <span>{{ field.label }}</span>
                 <span v-if="field.required" class="text-[var(--el-color-danger)]">*</span>
+                <el-tag v-if="field.origin === 'SYSTEM'" size="small" type="warning" effect="plain">
+                  系统
+                </el-tag>
+                <el-tag
+                  v-else-if="field.origin === 'PRESET'"
+                  size="small"
+                  type="success"
+                  effect="plain"
+                >
+                  预设
+                </el-tag>
                 <el-tag v-if="field.hidden" size="small" type="warning">隐藏</el-tag>
               </div>
 

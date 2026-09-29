@@ -49,14 +49,33 @@ test(
         matchesDirectOwner: async () => true,
         resolveScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
       }
+      const uniqueSystemFields = new Set<string>()
       const metadata = {
         listFields: async () => [],
+        fieldsMap: async () =>
+          new Map(
+            [
+              ['name', '线索名称'],
+              ['contact', '联系人'],
+              ['phone', '电话'],
+            ].map(([key, label]) => [
+              key,
+              {
+                key,
+                label,
+                system: true,
+                type: key === 'phone' ? 'phone' : 'text',
+                config: uniqueSystemFields.has(key!) ? { unique: true } : null,
+              },
+            ]),
+          ),
         computeFormulas: () => ({}),
       }
       const moduleForms = {
         getConfig: async () => ({
           formKey: 'lead',
           formProp: {
+            leadUniqueScope: 'RESOURCE_POOL',
             leadStages: [
               { key: 'PENDING', name: '待联系', kind: 'ACTIVE', enabled: true },
               { key: 'VISITED', name: '已到访', kind: 'ACTIVE', enabled: true },
@@ -78,6 +97,9 @@ test(
         assertCapacityForOwner: async () => undefined,
         assertPoolMember: async () => undefined,
         options: async () => [],
+        resolveTargetPool: async (_user: AuthUser, _resource: string, poolId?: string) => ({
+          id: poolId!,
+        }),
       }
       const changeLog = { record: async () => undefined }
       const homeFilters = { parse: () => null }
@@ -135,6 +157,64 @@ test(
       assert.equal(detail.name, 'Prisma 线索')
       assert.equal(detail.phone, '13800138000')
 
+      uniqueSystemFields.add('phone')
+      await assert.rejects(
+        () =>
+          service.create(user, {
+            name: '私有重复手机号',
+            phone: '13800138000',
+            ownerId: actor.id,
+          }),
+        /「电话」的值不能重复/,
+      )
+
+      const now = BigInt(Date.now())
+      const poolA = `pa${suffix.slice(0, 30)}`
+      const poolB = `pb${suffix.slice(0, 30)}`
+      for (const [id, name] of [
+        [poolA, '招生池 A'],
+        [poolB, '招生池 B'],
+      ] as const) {
+        await prismaClient.orm.public.CluePool.create({
+          id,
+          name,
+          scopeId: '[]',
+          organizationId: tenant.id,
+          ownerId: '[]',
+          enable: true,
+          auto: false,
+          createTime: now,
+          updateTime: now,
+          createUser: actor.id,
+          updateUser: actor.id,
+        })
+      }
+
+      const poolLeadA = await service.create(user, {
+        name: '池 A 首条',
+        phone: '13800138000',
+        toPool: true,
+        poolId: poolA,
+      })
+      assert.equal(poolLeadA.poolId, poolA)
+      await assert.rejects(
+        () =>
+          service.create(user, {
+            name: '池 A 重复手机号',
+            phone: '13800138000',
+            toPool: true,
+            poolId: poolA,
+          }),
+        /「电话」的值不能重复/,
+      )
+      const poolLeadB = await service.create(user, {
+        name: '池 B 同手机号',
+        phone: '13800138000',
+        toPool: true,
+        poolId: poolB,
+      })
+      assert.equal(poolLeadB.poolId, poolB)
+
       const status = await service.updateStatus(user, { id: created.id, stage: 'VISITED' })
       assert.equal(status.stage, 'VISITED')
       assert.equal(status.lastStage, 'PENDING')
@@ -182,6 +262,7 @@ test(
       if (tenantId) {
         await prismaClient.orm.public.LeadStageEvent.where({ organizationId: tenantId }).deleteAll()
         await prismaClient.orm.public.Clue.where({ organizationId: tenantId }).deleteAll()
+        await prismaClient.orm.public.CluePool.where({ organizationId: tenantId }).deleteAll()
         await prismaClient.orm.public.Users.where({ tenantId }).deleteAll()
         await prismaClient.orm.public.Tenants.where({ id: tenantId }).deleteAll()
       }

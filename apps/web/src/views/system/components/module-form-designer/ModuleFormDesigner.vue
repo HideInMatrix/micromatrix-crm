@@ -12,11 +12,7 @@ import { metadataApi, type SaveModuleFormInput } from '@/api/metadata'
 import ModuleFormCanvas from './ModuleFormCanvas.vue'
 import ModuleFormFieldPalette from './ModuleFormFieldPalette.vue'
 import ModuleFormProperties from './ModuleFormProperties.vue'
-import {
-  cloneDraftField,
-  isDraftField,
-  type ModuleFormFieldDraft,
-} from './types'
+import { cloneDraftField, isDraftField, type ModuleFormFieldDraft } from './types'
 
 const props = defineProps<{
   module: ModuleKey
@@ -64,9 +60,7 @@ function normalizeFormProp(value: ModuleFormProp): ModuleFormProp {
   const cloned = JSON.parse(JSON.stringify(value)) as ModuleFormProp
   return {
     ...cloned,
-    layout: [1, 2, 3, 4].includes(Number(value.layout))
-      ? (value.layout as 1 | 2 | 3 | 4)
-      : 2,
+    layout: [1, 2, 3, 4].includes(Number(value.layout)) ? (value.layout as 1 | 2 | 3 | 4) : 2,
     labelPos: value.labelPos === 'left' ? 'left' : 'top',
     viewSize: ['small', 'medium', 'large'].includes(String(value.viewSize))
       ? value.viewSize
@@ -127,6 +121,7 @@ function handleDraggedField(field: ModuleFormFieldDraft) {
 }
 
 function copyField(field: ModuleFormFieldDraft) {
+  if (!(field.capabilities?.copy ?? !field.system)) return
   const copy = cloneDraftField(field)
   copy.label = nextAvailableLabel(copy.label)
   const index = fields.value.findIndex((candidate) => candidate.id === field.id)
@@ -144,7 +139,7 @@ function changeLayout(layout: 1 | 2 | 3 | 4) {
 }
 
 async function removeField(field: ModuleFormFieldDraft) {
-  if (field.system) return
+  if (!(field.capabilities?.delete ?? !field.system)) return
   if (!isDraftField(field)) {
     const confirmed = await ElMessageBox.confirm(
       `删除字段「${field.label}」后，保存表单时会同时删除该字段已经保存的业务值，且无法恢复。确定删除？`,
@@ -170,7 +165,10 @@ function validateDraft(): boolean {
   for (const field of fields.value) {
     if (['select', 'multiselect', 'radio', 'checkbox'].includes(field.type)) {
       const options = field.options ?? []
-      if (!options.length || options.some((option) => !option.label.trim() || !option.value.trim())) {
+      if (
+        !options.length ||
+        options.some((option) => !option.label.trim() || !option.value.trim())
+      ) {
         ElMessage.warning(`「${field.label}」请至少配置一个完整选项`)
         activeId.value = field.id
         return false
@@ -300,7 +298,6 @@ defineExpose({
     <ModuleFormProperties
       v-model:field="activeField"
       v-model:form-prop="formProp"
-      :module="module"
       :fields="fields"
       @layout-change="changeLayout"
     />

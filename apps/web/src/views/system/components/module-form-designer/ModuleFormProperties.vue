@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import {
   BUILTIN_DATA_SOURCE_OPTIONS,
+  dynamicFieldCapabilities,
   FIELD_TYPE_OPTIONS,
   supportsMobileSearchSelect,
   type FieldConfig,
   type ModuleFormProp,
-  type ModuleKey,
 } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { isDraftField, type ModuleFormFieldDraft } from './types'
@@ -14,7 +14,6 @@ const field = defineModel<ModuleFormFieldDraft | null>('field', { default: null 
 const formProp = defineModel<ModuleFormProp>('formProp', { required: true })
 
 const props = defineProps<{
-  module: ModuleKey
   fields: ModuleFormFieldDraft[]
 }>()
 
@@ -41,14 +40,25 @@ const needOptions = computed(() =>
 const supportsMobileMode = computed(() =>
   field.value ? supportsMobileSearchSelect(field.value.type) : false,
 )
-const supportsUnique = computed(() => {
+const fieldOrigin = computed(
+  () => field.value?.origin ?? (field.value?.system ? 'SYSTEM' : 'CUSTOM'),
+)
+const fieldCapabilities = computed(() => {
   const current = field.value
-  if (!current || !['lead', 'customer', 'contact'].includes(props.module)) return false
-  if (!['text', 'phone', 'email'].includes(current.type)) return false
-  if (!current.system) return true
-  if (props.module === 'customer') return current.key === 'name'
-  if (props.module === 'contact') return ['name', 'phone'].includes(current.key)
-  return false
+  if (!current) return null
+  if (current.capabilities) return current.capabilities
+  const fallback = dynamicFieldCapabilities(current.type, current.module)
+  return current.system
+    ? {
+        ...fallback,
+        copy: false,
+        delete: false,
+        changeType: false,
+        changeRequired: false,
+        hide: !current.required,
+        unique: false,
+      }
+    : fallback
 })
 const duplicateName = computed(() => {
   const current = field.value
@@ -78,6 +88,10 @@ function removeOption(index: number) {
   field.value?.options?.splice(index, 1)
 }
 
+function handleRequiredChange(required: string | number | boolean) {
+  if (required === true && fieldOrigin.value === 'SYSTEM' && field.value) field.value.hidden = false
+}
+
 function changeLayout(layout: 1 | 2 | 3 | 4) {
   formProp.value.layout = layout
   emit('layoutChange', layout)
@@ -92,25 +106,61 @@ function changeLayout(layout: 1 | 2 | 3 | 4) {
           <div class="space-y-6">
             <section>
               <div class="mb-2 flex items-center justify-between">
-                <span class="text-sm font-semibold text-[var(--el-text-color-primary)]">字段标题</span>
-                <el-tag size="small" type="info">{{ typeLabel }}</el-tag>
+                <span class="text-sm font-semibold text-[var(--el-text-color-primary)]"
+                  >字段标题</span
+                >
+                <div class="flex items-center gap-1">
+                  <el-tag
+                    v-if="fieldOrigin === 'SYSTEM'"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    系统字段
+                  </el-tag>
+                  <el-tag
+                    v-else-if="fieldOrigin === 'PRESET'"
+                    size="small"
+                    type="success"
+                    effect="plain"
+                  >
+                    预设字段
+                  </el-tag>
+                  <el-tag size="small" type="info">{{ typeLabel }}</el-tag>
+                </div>
               </div>
-              <el-input v-model="field.label" maxlength="30" show-word-limit />
+              <el-input
+                v-model="field.label"
+                maxlength="30"
+                show-word-limit
+                :disabled="fieldCapabilities?.rename === false"
+              />
               <div v-if="duplicateName" class="mt-1 text-xs text-[var(--el-color-danger)]">
                 字段名称不能重复
+              </div>
+              <div
+                v-if="fieldOrigin === 'SYSTEM'"
+                class="mt-2 rounded-[var(--el-border-radius-base)] bg-[var(--el-fill-color-light)] px-3 py-2 text-xs leading-5 text-[var(--el-text-color-secondary)]"
+              >
+                系统业务字段 · 底层用途：{{ field.templateLabel || field.key }}（{{
+                  field.key
+                }}）。修改标题只影响界面显示，不会改变字段的底层业务用途。
+              </div>
+              <div
+                v-else-if="fieldOrigin === 'PRESET'"
+                class="mt-2 rounded-[var(--el-border-radius-base)] bg-[var(--el-fill-color-light)] px-3 py-2 text-xs leading-5 text-[var(--el-text-color-secondary)]"
+              >
+                预设动态字段 · 默认用途：{{
+                  field.templateLabel || field.label
+                }}。它与自定义字段相同，可以按实际业务调整或删除。
               </div>
             </section>
 
             <section
               v-if="
-                ![
-                  'radio',
-                  'checkbox',
-                  'picture',
-                  'attachment',
-                  'formula',
-                  'sub_product',
-                ].includes(field.type)
+                !['radio', 'checkbox', 'picture', 'attachment', 'formula', 'sub_product'].includes(
+                  field.type,
+                )
               "
             >
               <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
@@ -240,18 +290,35 @@ function changeLayout(layout: 1 | 2 | 3 | 4) {
                   <span class="text-sm text-[var(--el-text-color-regular)]">必填</span>
                   <el-switch
                     v-model="field.required"
-                    :disabled="field.type === 'formula' || field.type === 'sub_product'"
+                    :disabled="fieldCapabilities?.changeRequired === false"
+                    @change="handleRequiredChange"
                   />
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-[var(--el-text-color-regular)]">唯一值</span>
-                  <el-switch v-model="config.unique" :disabled="!supportsUnique" />
+                  <el-switch
+                    v-model="config.unique"
+                    :disabled="fieldCapabilities?.unique !== true"
+                  />
+                </div>
+                <div
+                  v-if="
+                    fieldOrigin === 'SYSTEM' &&
+                    ['text', 'phone', 'email'].includes(field.type) &&
+                    fieldCapabilities?.unique === false
+                  "
+                  class="text-xs leading-5 text-[var(--el-text-color-secondary)]"
+                >
+                  该系统字段的底层业务语义不适合作为独立唯一约束；如需额外判重维度，请使用预设或自定义字段。
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-[var(--el-text-color-regular)]">隐藏</span>
                   <el-switch
                     v-model="field.hidden"
-                    :disabled="Boolean(field.system && field.required)"
+                    :disabled="
+                      fieldCapabilities?.hide === false ||
+                      (fieldOrigin === 'SYSTEM' && field.required)
+                    "
                   />
                 </div>
                 <div class="flex items-center justify-between">
