@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { PrismaModule } from '../../prisma.module'
+import { ModuleFormsModule } from '../metadata/module-forms.module'
 import { PoolRulesModule } from '../pool-rules/pool-rules.module'
 import { HomeAnalyticsService } from './home-analytics.service'
 import { HomeClueStatisticQuery } from './home-clue-statistic.query'
@@ -10,7 +11,7 @@ import { HomeStatisticController } from './home-statistic.controller'
 import { HomeStatisticService } from './home-statistic.service'
 
 @Module({
-  imports: [PrismaModule, PoolRulesModule],
+  imports: [PrismaModule, ModuleFormsModule, PoolRulesModule],
   controllers: [HomeStatisticController],
   providers: [
     HomePeriodService,
