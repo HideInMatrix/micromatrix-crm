@@ -41,7 +41,7 @@ test(
           tenantId: tenant.id,
           discovered: 'ARR',
           source: 'AI',
-          context: '合同分析',
+          context: '客户分析',
           updatedAt: nowInstant(),
         },
       )

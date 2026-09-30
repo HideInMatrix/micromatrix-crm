@@ -265,7 +265,7 @@ async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }
 async function handleBatchDelete() {
   if (selectedRows.value.length === 0) return
   const confirmed = await ElMessageBox.confirm(
-    `确定删除已选择的 ${selectedRows.value.length} 个客户？存在联系人、商机或交易数据的客户会阻止整批删除。`,
+    `确定删除已选择的 ${selectedRows.value.length} 个客户？已关联联系人的客户会阻止整批删除。`,
     '批量删除客户',
     { type: 'warning', confirmButtonText: '删除' },
   ).catch(() => false)

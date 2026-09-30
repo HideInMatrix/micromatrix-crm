@@ -28,9 +28,9 @@ test(
     try {
       const instance = await prismaClient.orm.public.ApprovalInstances.select('id').create({
         tenantId: tenant.id,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma approval action contract',
+        module: 'generic',
+        targetId: `generic-${suffix}`,
+        targetName: 'Prisma approval action generic resource',
         nodesSnapshot: jsonValue([
           {
             nodeId: `node-${suffix}`,
@@ -231,7 +231,7 @@ test(
       const flow = await prismaClient.orm.public.ApprovalFlows.select('id').create({
         tenantId: tenant.id,
         number: `FLOW-${suffix}`,
-        formType: 'CONTRACT',
+        formType: 'GENERIC',
         name: 'Prisma sign flow',
         allowAddSign: true,
         updatedAt: nowInstant(),
@@ -239,9 +239,9 @@ test(
       const instance = await prismaClient.orm.public.ApprovalInstances.select('id').create({
         tenantId: tenant.id,
         flowId: flow.id,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma sign contract',
+        module: 'generic',
+        targetId: `generic-${suffix}`,
+        targetName: 'Prisma sign generic resource',
         nodesSnapshot: jsonValue([]),
         submitterId: sourceApprover.id,
         submitterName: sourceApprover.name,

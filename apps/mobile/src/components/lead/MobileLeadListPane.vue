@@ -215,10 +215,7 @@ onMounted(loadMetadata)
                 @click.stop="openFollow(item)"
               >写跟进</van-button>
               <van-button
-                v-if="
-                  auth.hasPerm('lead:update') &&
-                  !['CUSTOMER', 'OPPORTUNITY'].includes(item.transitionType ?? '')
-                "
+                v-if="auth.hasPerm('lead:update') && item.transitionType !== 'CUSTOMER'"
                 icon="exchange"
                 size="small"
                 type="primary"

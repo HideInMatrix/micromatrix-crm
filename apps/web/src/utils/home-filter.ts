@@ -42,8 +42,6 @@ export function consumeHomeFilter(key: unknown, expectedModule: HomeFilterModule
       return null
     if (value.timeField !== undefined && !HOME_TIME_FIELDS.includes(value.timeField as never))
       return null
-    if (value.status !== undefined && value.status !== 'AFOOT' && value.status !== 'SUCCESS')
-      return null
     if (value.leadStageKey !== undefined && typeof value.leadStageKey !== 'string') return null
     if (value.converted !== undefined && typeof value.converted !== 'boolean') return null
     if (value.overdue !== undefined && typeof value.overdue !== 'boolean') return null

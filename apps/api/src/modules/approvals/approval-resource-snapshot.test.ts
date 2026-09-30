@@ -31,39 +31,39 @@ test(
         name: 'Snapshot User',
       })
       const user = { id: actor.id, tenantId: tenant.id } as AuthUser
-      const resourceId = `contract-${suffix}`
+      const resourceId = `generic-${suffix}`
       const service = new ApprovalResourceSnapshotService({
         client: prismaClient,
       } as PrismaService)
 
-      await service.save(user, 'contract', resourceId, {
-        name: '合同 A',
+      await service.save(user, 'generic', resourceId, {
+        name: '通用资源 A',
         amount: 100,
         nested: { enabled: true },
       })
       const first = await prismaClient.orm.public.ApprovalResourceSnapshots.where({
         tenantId: tenant.id,
-        formType: 'CONTRACT',
+        formType: 'GENERIC',
         resourceId,
       }).first()
       assert.ok(first)
       assert.deepEqual(first.snapshotData, {
-        name: '合同 A',
+        name: '通用资源 A',
         amount: 100,
         nested: { enabled: true },
       })
       assert.equal(first.createdById, actor.id)
       assert.equal(first.updatedById, actor.id)
 
-      await service.save(user, 'contract', resourceId, {
-        name: '合同 B',
+      await service.save(user, 'generic', resourceId, {
+        name: '通用资源 B',
         lines: [{ id: 'line-1', qty: 2 }],
       })
       assert.equal(
         (
           await prismaClient.orm.public.ApprovalResourceSnapshots.where({
             tenantId: tenant.id,
-            formType: 'CONTRACT',
+            formType: 'GENERIC',
             resourceId,
           })
             .select('id')
@@ -74,12 +74,12 @@ test(
       const instance = {
         id: `instance-${suffix}`,
         tenantId: tenant.id,
-        module: 'contract',
+        module: 'generic',
         targetId: resourceId,
         executeTiming: 'UPDATE',
       } as ApprovalResourceInstance
       assert.deepEqual(await service.load(instance), {
-        name: '合同 B',
+        name: '通用资源 B',
         lines: [{ id: 'line-1', qty: 2 }],
       })
 
@@ -88,7 +88,7 @@ test(
         (
           await prismaClient.orm.public.ApprovalResourceSnapshots.where({
             tenantId: tenant.id,
-            formType: 'CONTRACT',
+            formType: 'GENERIC',
             resourceId,
           })
             .select('id')

@@ -40,7 +40,6 @@ const LEAD_SOURCE_OPTIONS: FieldOption[] = [
   { label: '电话咨询', value: '电话咨询' },
   { label: '展会活动', value: '展会活动' },
   { label: '朋友介绍', value: '朋友介绍' },
-  { label: '标讯', value: '标讯' },
   { label: '广告投放', value: '广告投放' },
   { label: '其他', value: '其他' },
 ]

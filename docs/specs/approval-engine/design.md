@@ -45,7 +45,7 @@ Approval Engine 不直接假设 Customer/Lead 或其它业务表结构。需要�
 - reject/cancel/revoke 时必要的资源恢复。
 - 面向审批 UI 的 target info。
 
-当前招生 CRM 没有注册已删除报价、合同、发票、订单资源的产品适配器。历史 `ApprovalFormType` 值仍存在于兼容层时，不应作为恢复这些模块的依据。
+当前存储层仅保留 `GENERIC` 审批资源类型，运行时也只暴露中性的 `generic` 资源槽位。具体业务对象必须通过资源适配器显式接入。
 
 ## 6. Webhook 安全
 
@@ -57,6 +57,6 @@ Webhook 的请求方法、URL、Header 与 body 在保存时校验；发送时�
 
 ## 8. 维护原则
 
-- 引擎测试证明的是通用状态机能力，不代表任何已删除交易模块仍是当前产品。
+- 引擎测试统一使用中性资源，证明的是通用状态机能力。
 - 新增业务适配器必须有独立需求、权限、DataScope、资源快照和端到端测试。
 - 不新增并行审批引擎；继续扩展当前 Flow/Version/Instance/Task/Record 模型。

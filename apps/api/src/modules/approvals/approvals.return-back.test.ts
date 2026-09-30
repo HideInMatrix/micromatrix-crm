@@ -46,9 +46,9 @@ test(
     try {
       const instance = await prismaClient.orm.public.ApprovalInstances.select('id').create({
         tenantId: tenant.id,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma return back contract',
+        module: 'generic',
+        targetId: `generic-${suffix}`,
+        targetName: 'Prisma return back generic resource',
         currentNodeIndex: 1,
         nodesSnapshot: jsonValue([
           {

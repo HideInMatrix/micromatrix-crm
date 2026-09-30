@@ -57,20 +57,20 @@ test(
       )
 
       const created = await service.create(user, {
-        name: '每日商机巡检',
+        name: '每日重点客户巡检',
         triggerType: 'manual',
-        executionCondition: '检查停滞商机',
+        executionCondition: '检查长期未跟进客户',
         executionAction: '给出跟进建议',
         confirmationLevel: 'only_analysis',
         applicableModelId: model.id,
         enable: true,
       })
       assert.equal(created.applicableModelName, model.displayName)
-      assert.equal((await service.list(tenant.id, '商机')).length, 1)
+      assert.equal((await service.list(tenant.id, '重点客户')).length, 1)
 
       const execution = await service.execute(user, created.id)
       assert.equal(execution.status, 'SUCCEEDED')
-      assert.equal((execution.input as { taskName: string }).taskName, '每日商机巡检')
+      assert.equal((execution.input as { taskName: string }).taskName, '每日重点客户巡检')
       assert.equal((execution.output as { analysis: string }).analysis, '分析完成')
       assert.ok(execution.startedAt)
       assert.ok(execution.finishedAt)
@@ -80,14 +80,14 @@ test(
       }).first()
       assert.ok(stored)
       assert.equal(stored.status, 'SUCCEEDED')
-      assert.equal((stored.input as { taskName: string }).taskName, '每日商机巡检')
+      assert.equal((stored.input as { taskName: string }).taskName, '每日重点客户巡检')
       assert.equal((stored.output as { analysis: string }).analysis, '分析完成')
       assert.ok(stored.startedAt)
       assert.ok(stored.finishedAt)
 
       const history = await service.executions(tenant.id, created.id)
       assert.equal(history.length, 1)
-      assert.equal(history[0]?.taskName, '每日商机巡检')
+      assert.equal(history[0]?.taskName, '每日重点客户巡检')
     } finally {
       if (tenantId) {
         await prismaClient.orm.public.EnterpriseGlobalTaskExecutions.where({ tenantId }).deleteAll()

@@ -7,34 +7,21 @@ import type {
 import { normalizeApprovalWebhookConfig } from './approval-webhook.utils'
 
 const ApprovalFormType = {
-  QUOTATION: 'QUOTATION',
-  CONTRACT: 'CONTRACT',
-  INVOICE: 'INVOICE',
-  ORDER: 'ORDER',
-  RECEIVABLE_RECORD_LEGACY: 'RECEIVABLE_RECORD_LEGACY',
+  GENERIC: 'GENERIC',
 } as const
 
 type ApprovalFormType = (typeof ApprovalFormType)[keyof typeof ApprovalFormType]
 
 export const FORM_TYPE_PREFIX: Record<SharedApprovalFormType, string> = {
-  quotation: 'QTE-APV',
-  contract: 'CTR-APV',
-  invoice: 'INV-APV',
-  order: 'ORD-APV',
+  generic: 'GEN-APV',
 }
 
 export const FORM_TYPE_TO_MODULE: Partial<Record<SharedApprovalFormType, ApprovalModule>> = {
-  quotation: 'quote',
-  contract: 'contract',
-  invoice: 'invoice',
-  order: 'order',
+  generic: 'generic',
 }
 
 export const MODULE_TO_FORM_TYPE: Partial<Record<ApprovalModule, SharedApprovalFormType>> = {
-  quote: 'quotation',
-  contract: 'contract',
-  invoice: 'invoice',
-  order: 'order',
+  generic: 'generic',
 }
 
 export type NormalizableFlowNode = Omit<ApprovalFlowNodeInput, 'approverIds' | 'ccUserIds'> & {
@@ -60,20 +47,14 @@ function normalizePostConfig(config: ApprovalFlowNodeInput['passPostConfig']) {
 
 export function toDbFormType(formType: SharedApprovalFormType): ApprovalFormType {
   const mapping: Record<SharedApprovalFormType, ApprovalFormType> = {
-    quotation: ApprovalFormType.QUOTATION,
-    contract: ApprovalFormType.CONTRACT,
-    invoice: ApprovalFormType.INVOICE,
-    order: ApprovalFormType.ORDER,
+    generic: ApprovalFormType.GENERIC,
   }
   return mapping[formType]
 }
 
 export function fromDbFormType(formType: ApprovalFormType): SharedApprovalFormType | null {
   const mapping: Partial<Record<ApprovalFormType, SharedApprovalFormType>> = {
-    [ApprovalFormType.QUOTATION]: 'quotation',
-    [ApprovalFormType.CONTRACT]: 'contract',
-    [ApprovalFormType.INVOICE]: 'invoice',
-    [ApprovalFormType.ORDER]: 'order',
+    [ApprovalFormType.GENERIC]: 'generic',
   }
   return mapping[formType] ?? null
 }

@@ -12,9 +12,9 @@
 - Migration graph：`apps/api/migrations/`
 - 正式 ref：`apps/api/migrations/app/refs/db.json`
 
-当前 storage contract hash：`244779402c6406785cb7478c93e39b89747a96ac9d904795e728dd9b40253db7`。
+当前 storage contract hash：`84a7bfdd8e9ff7e81dee91f5826ae2a9f529450a47db982ccfc5db4cba2b322b`。
 
-当前 graph 共 8 条 migration / 2277 operations：
+当前 graph 共 9 条 migration / 2278 operations：
 
 1. `20260918T0338_baseline`
 2. `20260918T0826_timestamp_absolute_instants`
@@ -24,6 +24,7 @@
 6. `20260928T0309_add_external_event_inbox`
 7. `20260928T0441_remove_bidding`
 8. `20260928T0849_remove_legacy_sales_chain`
+9. `20260930T0211_cleanup_legacy_approval_types`
 
 Prisma 7 `schema.prisma`、generated Client class、`prisma/migrations` 和 `db push` 不再是本项目数据库工作流的一部分。
 

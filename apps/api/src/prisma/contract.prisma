@@ -2307,11 +2307,7 @@ namespace public {
   }
 
   native_enum ApprovalFormType {
-    QUOTATION = "QUOTATION"
-    CONTRACT = "CONTRACT"
-    INVOICE = "INVOICE"
-    ORDER = "ORDER"
-    RECEIVABLE_RECORD_LEGACY = "RECEIVABLE_RECORD_LEGACY"
+    GENERIC = "GENERIC"
   }
 
   native_enum ApprovalInstanceStatus {

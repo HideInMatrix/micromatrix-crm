@@ -252,7 +252,7 @@ export class UpdateFormPropDto {
   @IsOptional()
   leadUniqueScope?: 'RESOURCE_POOL' | 'ORGANIZATION'
 
-  @ApiPropertyOptional({ description: 'Lead 可配置业务阶段；数组顺序即流程顺序' })
+  @ApiPropertyOptional({ description: 'Lead 可配置业务状态；数组顺序即状态顺序' })
   @IsArray()
   @IsOptional()
   leadStages?: LeadStageConfig[]

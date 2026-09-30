@@ -588,7 +588,7 @@ export class CustomersService {
     return rows.map((row) => ({ id: String(row.id), name: String(row.name) }))
   }
 
-  /** 名称模糊 + 电话精确，命中客户/联系人/线索/商机；非数据范围仅露负责人 */
+  /** 名称模糊 + 电话精确，命中客户/联系人/线索；非数据范围仅露负责人 */
   async checkDuplicate(user: AuthUser, query: CheckDuplicateQueryDto): Promise<DuplicateHitVO[]> {
     const name = query.name?.trim()
     const phone = query.phone?.trim()

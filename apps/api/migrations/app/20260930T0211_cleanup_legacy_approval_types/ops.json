@@ -1,0 +1,23 @@
+[
+  {
+    "id": "approval-form-type.collapse-to-generic",
+    "label": "Collapse ApprovalFormType to GENERIC",
+    "operationClass": "destructive",
+    "target": {
+      "id": "public.ApprovalFormType",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalFormType"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Replace legacy approval form enum values with GENERIC",
+        "sql": "CREATE TYPE \"public\".\"ApprovalFormType__generic\" AS ENUM ('GENERIC');\n\nALTER TABLE \"public\".\"approval_flows\"\n  ALTER COLUMN \"formType\" TYPE \"public\".\"ApprovalFormType__generic\"\n  USING 'GENERIC'::\"public\".\"ApprovalFormType__generic\";\n\nALTER TABLE \"public\".\"approval_flow_number_counters\"\n  ALTER COLUMN \"formType\" TYPE \"public\".\"ApprovalFormType__generic\"\n  USING 'GENERIC'::\"public\".\"ApprovalFormType__generic\";\n\nALTER TABLE \"public\".\"approval_resource_snapshots\"\n  ALTER COLUMN \"formType\" TYPE \"public\".\"ApprovalFormType__generic\"\n  USING 'GENERIC'::\"public\".\"ApprovalFormType__generic\";\n\nDROP TYPE \"public\".\"ApprovalFormType\";\nALTER TYPE \"public\".\"ApprovalFormType__generic\" RENAME TO \"ApprovalFormType\";"
+      }
+    ],
+    "postcheck": []
+  }
+]

@@ -58,7 +58,7 @@ test('ApprovalsService Prisma 读路径保持分页、timeline 与流程图装�
 
   const flowService = new ApprovalFlowConfigService(prisma)
   const createDto: CreateApprovalFlowDto = {
-    formType: 'contract',
+    formType: 'generic',
     name: `Prisma read flow ${suffix}`,
     description: '审批读路径 Prisma 真库 gate',
     enabled: false,
@@ -128,9 +128,9 @@ test('ApprovalsService Prisma 读路径保持分页、timeline 与流程图装�
       tenantId: tenant.id,
       flowId: createdFlow.id,
       flowVersionId: flowRow.currentVersionId,
-      module: 'contract',
-      targetId: `contract-${suffix}`,
-      targetName: 'Prisma 读路径合同',
+      module: 'generic',
+      targetId: `generic-${suffix}`,
+      targetName: 'Prisma 读路径通用资源',
       currentNodeIndex: 1,
       nodesSnapshot: jsonValue([
         {
@@ -265,7 +265,7 @@ test('ApprovalsService Prisma 读路径保持分页、timeline 与流程图装�
         } | null
       } | null>
     }
-    const runtimeFlow = await internals.enabledFlow(tenant.id, 'contract', 'CREATE')
+    const runtimeFlow = await internals.enabledFlow(tenant.id, 'generic', 'CREATE')
     assert.ok(runtimeFlow?.currentVersion)
     assert.equal(runtimeFlow.currentVersion.nodes.length, 6)
     assert.equal(runtimeFlow.currentVersion.links.length, 6)

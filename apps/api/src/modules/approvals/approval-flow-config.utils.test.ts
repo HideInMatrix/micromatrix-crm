@@ -10,21 +10,14 @@ import {
 } from './approval-flow-config.utils'
 
 const ApprovalFormType = {
-  QUOTATION: 'QUOTATION',
-  CONTRACT: 'CONTRACT',
-  INVOICE: 'INVOICE',
-  ORDER: 'ORDER',
-  RECEIVABLE_RECORD_LEGACY: 'RECEIVABLE_RECORD_LEGACY',
+  GENERIC: 'GENERIC',
 } as const
 
 test('流程表单类型只在受支持的配置类型与数据库枚举间映射', () => {
-  assert.equal(toDbFormType('quotation'), ApprovalFormType.QUOTATION)
-  assert.equal(toDbFormType('contract'), ApprovalFormType.CONTRACT)
-  assert.equal(toDbFormType('invoice'), ApprovalFormType.INVOICE)
-  assert.equal(toDbFormType('order'), ApprovalFormType.ORDER)
-  assert.equal(FORM_TYPE_TO_MODULE.invoice, 'invoice')
-  assert.equal(MODULE_TO_FORM_TYPE.invoice, 'invoice')
-  assert.equal(fromDbFormType(ApprovalFormType.RECEIVABLE_RECORD_LEGACY), null)
+  assert.equal(toDbFormType('generic'), ApprovalFormType.GENERIC)
+  assert.equal(FORM_TYPE_TO_MODULE.generic, 'generic')
+  assert.equal(MODULE_TO_FORM_TYPE.generic, 'generic')
+  assert.equal(fromDbFormType(ApprovalFormType.GENERIC), 'generic')
 })
 
 test('节点规范化会裁剪名称、去重排序指定对象并保留层级策略默认值', () => {

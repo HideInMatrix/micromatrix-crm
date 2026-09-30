@@ -79,7 +79,7 @@ export class ApprovalFlowConfigService {
     let flows = this.prisma.client.orm.public.ApprovalFlows.where({
       tenantId: user.tenantId,
       deletedAt: null,
-    }).where((row) => row.formType.neq('RECEIVABLE_RECORD_LEGACY'))
+    })
     const keyword = query.keyword?.trim()
     if (keyword)
       flows = flows.where((row) =>
@@ -214,7 +214,6 @@ export class ApprovalFlowConfigService {
     if (!formType) throw new NotFoundException('流程不存在')
     if (enabled) {
       await this.validateRunnable(
-        formType,
         flow.createExecute,
         flow.updateExecute,
         flow.deleteExecute,
@@ -271,9 +270,7 @@ export class ApprovalFlowConfigService {
       id,
       tenantId,
       deletedAt: null,
-    })
-      .where((row) => row.formType.neq('RECEIVABLE_RECORD_LEGACY'))
-      .first()
+    }).first()
     if (!flow?.currentVersionId) throw new NotFoundException('流程不存在')
     const version = await this.prisma.client.orm.public.ApprovalFlowVersions.where({
       id: flow.currentVersionId,
@@ -323,22 +320,8 @@ export class ApprovalFlowConfigService {
     nodes: FlowNodeDto[],
   ) {
     if (!dto.name.trim()) throw new BadRequestException('流程名称不能为空')
-    if (
-      formType === 'quotation' ||
-      formType === 'contract' ||
-      formType === 'invoice' ||
-      formType === 'order'
-    ) {
-      if (!dto.createExecute && !dto.updateExecute && !dto.deleteExecute) {
-        throw new UnprocessableEntityException('当前业务对象审批至少需要开启一种执行时机')
-      }
-    } else {
-      if (!dto.createExecute) {
-        throw new UnprocessableEntityException('当前业务对象至少需要开启新建时审批')
-      }
-      if (dto.updateExecute || dto.deleteExecute) {
-        throw new UnprocessableEntityException('当前业务对象的编辑和删除审批尚未接入')
-      }
+    if (!dto.createExecute && !dto.updateExecute && !dto.deleteExecute) {
+      throw new UnprocessableEntityException('当前业务对象审批至少需要开启一种执行时机')
     }
     if (dto.allowBatchProcess) {
       throw new UnprocessableEntityException('所选高级审批设置尚未接入运行时')
@@ -380,7 +363,6 @@ export class ApprovalFlowConfigService {
     await this.validateReferences(user.tenantId, nodes)
     if (dto.enabled) {
       await this.validateRunnable(
-        formType,
         dto.createExecute,
         dto.updateExecute,
         dto.deleteExecute,
@@ -390,7 +372,6 @@ export class ApprovalFlowConfigService {
   }
 
   private async validateRunnable(
-    formType: SharedApprovalFormType,
     createExecute: boolean,
     updateExecute: boolean,
     deleteExecute: boolean,
@@ -917,7 +898,6 @@ export class ApprovalFlowConfigService {
           FROM approval_flows
           WHERE "tenantId" = ${tenantId}
             AND "deletedAt" IS NULL
-            AND "formType"::text <> 'RECEIVABLE_RECORD_LEGACY'
             AND (${formTypeFilter} = '' OR "formType"::text = ${formTypeFilter})
             AND (${enabledFilter} = '' OR "enabled"::text = ${enabledFilter})
             AND (${keywordPattern} = '' OR "number" ILIKE ${keywordPattern} OR "name" ILIKE ${keywordPattern})
@@ -929,7 +909,6 @@ export class ApprovalFlowConfigService {
           FROM approval_flows
           WHERE "tenantId" = ${tenantId}
             AND "deletedAt" IS NULL
-            AND "formType"::text <> 'RECEIVABLE_RECORD_LEGACY'
             AND (${formTypeFilter} = '' OR "formType"::text = ${formTypeFilter})
             AND (${enabledFilter} = '' OR "enabled"::text = ${enabledFilter})
             AND (${keywordPattern} = '' OR "number" ILIKE ${keywordPattern} OR "name" ILIKE ${keywordPattern})
@@ -1047,8 +1026,7 @@ export class ApprovalFlowConfigService {
     _tenantId: string,
     _instances: Array<{ module: string; targetId: string }>,
   ) {
-    // 旧交易资源已退出。流程停用/删除只处理审批自身状态，
-    // 不再反向写报价、合同、订单等业务表。
+    // 流程停用/删除只处理审批自身状态，不直接反向写业务资源。
   }
 
   private isUniqueError(error: unknown): boolean {

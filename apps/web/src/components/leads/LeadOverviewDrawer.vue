@@ -28,9 +28,7 @@ const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
 const activeTab = ref<'records' | 'plans' | 'history'>('records')
 
-const isConverted = computed(() =>
-  ['CUSTOMER', 'OPPORTUNITY'].includes(props.lead?.transitionType ?? ''),
-)
+const isConverted = computed(() => props.lead?.transitionType === 'CUSTOMER')
 
 function displayValue(field: FieldVO) {
   if (!props.lead) return '-'

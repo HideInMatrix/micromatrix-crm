@@ -592,7 +592,7 @@ test('术语发现只能处理一次，采纳在同一事务创建术语并回�
     tenantId: 'tenant-a',
     discovered: 'GMV',
     source: 'AI',
-    context: '合同分析',
+    context: '客户分析',
     status: 'PENDING',
     adoptedTermId: null,
     createdAt: now,

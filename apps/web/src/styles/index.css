@@ -41,7 +41,7 @@ body {
   --el-menu-active-color: var(--el-color-primary);
   --el-menu-text-color: var(--el-text-color-regular);
   width: 100%;
-  padding: 4px 8px;
+  padding: 4px 8px !important;
   border-right: 0 !important;
   font-weight: 500;
 }

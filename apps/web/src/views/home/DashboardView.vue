@@ -747,7 +747,7 @@ onBeforeUnmount(() => {
         <div>
           <div class="text-base font-semibold">业务工作台</div>
           <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-            指标按当前用户数据范围计算；阶段、渠道和业务结果均来自可配置字段。
+            指标按当前用户数据范围计算；状态、渠道和业务结果均来自可配置字段。
           </div>
         </div>
         <div class="dashboard-overview-actions flex items-center gap-2">
@@ -849,7 +849,7 @@ onBeforeUnmount(() => {
 
     <div class="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
       <el-card shadow="never">
-        <div class="mb-2 font-semibold">阶段漏斗</div>
+        <div class="mb-2 font-semibold">状态漏斗</div>
         <EChart :option="funnelOption" height="320px" @chart-click="handleFunnelClick" />
       </el-card>
       <el-card shadow="never">

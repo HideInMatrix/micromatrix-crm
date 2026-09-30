@@ -24,7 +24,7 @@ test(
       const flow = await prismaClient.orm.public.ApprovalFlows.select('id').create({
         tenantId,
         number: `AF-${suffix}`,
-        formType: 'CONTRACT',
+        formType: 'GENERIC',
         name: 'Prisma withdraw flow',
         allowWithdraw: true,
         updatedAt: nowInstant(),
@@ -38,9 +38,9 @@ test(
       ).create({
         tenantId,
         flowId: flow.id,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma withdraw contract',
+        module: 'generic',
+        targetId: `generic-${suffix}`,
+        targetName: 'Prisma withdraw generic resource',
         currentNodeIndex: 1,
         nodesSnapshot: jsonValue([
           {

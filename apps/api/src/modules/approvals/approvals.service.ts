@@ -756,12 +756,7 @@ export class ApprovalsService {
       instance.tenantId,
       instance.module as ApprovalModule,
       instance.targetId,
-      instance.module === 'quote' ||
-        instance.module === 'contract' ||
-        instance.module === 'invoice' ||
-        instance.module === 'order'
-        ? 'REVOKED'
-        : 'NONE',
+      'NONE',
     )
     await this.restorePreUpdateSnapshot(instance, user.id)
     return { id: instanceId, name: instance.targetName }

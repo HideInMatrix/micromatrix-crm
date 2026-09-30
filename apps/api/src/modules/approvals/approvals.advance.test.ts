@@ -49,7 +49,7 @@ test(
       const flow = await prismaClient.orm.public.ApprovalFlows.select('id').create({
         tenantId: tenant.id,
         number: `FLOW-${suffix}`,
-        formType: 'CONTRACT',
+        formType: 'GENERIC',
         name: 'Prisma advance flow',
         duplicateApproverRule: 'EACH',
         updatedAt: nowInstant(),
@@ -59,9 +59,9 @@ test(
       const instance = await prismaClient.orm.public.ApprovalInstances.select('id').create({
         tenantId: tenant.id,
         flowId: flow.id,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma advance contract',
+        module: 'generic',
+        targetId: `generic-${suffix}`,
+        targetName: 'Prisma advance generic resource',
         currentNodeIndex: -1,
         nodesSnapshot: jsonValue([
           {

@@ -82,7 +82,7 @@ export class ClueStatusUpdateDto {
   @IsNotEmpty()
   id!: string
 
-  @ApiProperty({ description: '线索阶段 key；必须存在于当前租户 Lead 阶段配置中' })
+  @ApiProperty({ description: '线索状态 key；必须存在于当前租户 Lead 状态配置中' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(30)

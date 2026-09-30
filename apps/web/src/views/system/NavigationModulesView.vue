@@ -59,7 +59,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
     more: [
       { label: '线索库容设置', drawer: 'lead-capacity' },
       { label: '移入线索池原因设置', drawer: 'lead-reason' },
-      { label: '线索阶段设置', drawer: 'lead-stage' },
+      { label: '线索状态设置', drawer: 'lead-stage' },
       { label: '首页渠道统计设置', drawer: 'lead-home-analytics' },
     ],
   },

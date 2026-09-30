@@ -60,7 +60,7 @@ test('同意任务写 task action 与独立 ApprovalRecord，意见不再写回 
             where: () => ({
               first: async () => ({
                 id: 'instance-a',
-                targetName: '测试合同',
+                targetName: '测试通用资源',
                 nodesSnapshot: [
                   { name: '主管审批', approverType: 'USER', approverIds: [], mode: 'ALL' },
                 ],
@@ -185,9 +185,9 @@ test('驳回任务与 ApprovalRecord 在同一事务写入并保留 round/node',
               first: async () => ({
                 id: 'instance-r',
                 tenantId: 'tenant-a',
-                module: 'contract',
-                targetId: 'contract-r',
-                targetName: '测试合同',
+                module: 'generic',
+                targetId: 'generic-r',
+                targetName: '测试通用资源',
                 nodesSnapshot: [
                   {
                     nodeId: 'node-before',

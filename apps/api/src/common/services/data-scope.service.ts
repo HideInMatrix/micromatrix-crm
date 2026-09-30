@@ -67,7 +67,7 @@ export class DataScopeService {
       .first())
   }
 
-  /** Cordys 报价等资源按 create_user 所属部门做数据范围，而不是伪造 owner/dept 主表字段。 */
+  /** 无 owner 字段的资源可按 create_user 所属部门应用数据范围。 */
   async directCreatorFilter(
     user: AuthUser,
     permission: string,

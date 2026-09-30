@@ -45,14 +45,11 @@ export const APPROVAL_INSTANCE_STATUS_LABELS: Record<ApprovalInstanceStatus, str
   CANCELED: '已撤回',
 }
 
-/** 可挂接审批的业务对象 */
-export type ApprovalModule = 'quote' | 'contract' | 'invoice' | 'order'
+/** 审批引擎的中性资源槽位；具体业务资源需通过适配器显式接入。 */
+export type ApprovalModule = 'generic'
 
 export const APPROVAL_MODULE_LABELS: Record<ApprovalModule, string> = {
-  quote: '报价',
-  contract: '合同',
-  invoice: '发票',
-  order: '订单',
+  generic: '通用审批',
 }
 
 export interface ApprovalFieldPermission {
@@ -100,7 +97,7 @@ export interface ApprovalNodeConfig {
 
 // ============ 流程设置 ============
 
-export type ApprovalFormType = 'quotation' | 'contract' | 'invoice' | 'order'
+export type ApprovalFormType = 'generic'
 export type ApprovalExecuteTiming = 'CREATE' | 'UPDATE' | 'DELETE'
 export type ApprovalNodeType = 'START' | 'APPROVER' | 'CONDITION' | 'DEFAULT' | 'END'
 export type DuplicateApproverRule = 'FIRST_ONLY' | 'SEQUENTIAL_ALL' | 'EACH'
@@ -139,17 +136,11 @@ export interface ApprovalConditionConfig {
 }
 
 export const APPROVAL_FORM_TYPE_LABELS: Record<ApprovalFormType, string> = {
-  quotation: '报价',
-  contract: '合同',
-  invoice: '发票',
-  order: '订单',
+  generic: '通用审批',
 }
 
 export const APPROVAL_FORM_TYPE_PREFIXES: Record<ApprovalFormType, string> = {
-  quotation: 'QTE-APV',
-  contract: 'CTR-APV',
-  invoice: 'INV-APV',
-  order: 'ORD-APV',
+  generic: 'GEN-APV',
 }
 
 export const APPROVAL_EXECUTE_TIMING_LABELS: Record<ApprovalExecuteTiming, string> = {

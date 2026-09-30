@@ -205,7 +205,7 @@ async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }
 async function handleBatchDelete() {
   if (!selectedPoolId.value || selectedRows.value.length === 0) return
   const confirmed = await ElMessageBox.confirm(
-    `确定删除已选择的 ${selectedRows.value.length} 个公海客户？存在联系人、商机或交易数据时会拒绝删除。`,
+    `确定删除已选择的 ${selectedRows.value.length} 个公海客户？已关联联系人时会拒绝删除。`,
     '批量删除客户',
     { type: 'warning', confirmButtonText: '删除' },
   ).catch(() => false)
@@ -292,7 +292,7 @@ function openDetail(row: CustomerVO) {
 
 async function handleDelete(row: CustomerVO) {
   const confirmed = await ElMessageBox.confirm(
-    `确定删除公海客户「${row.name}」吗？存在联系人、商机或交易数据时会拒绝删除。`,
+    `确定删除公海客户「${row.name}」吗？已关联联系人时会拒绝删除。`,
     '删除公海客户',
     { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
   ).catch(() => false)

@@ -6,7 +6,7 @@ export type HomeSearchType = (typeof HOME_SEARCH_TYPES)[number]
 export const HOME_STATISTIC_PERIODS = ['TODAY', 'THIS_WEEK', 'THIS_MONTH', 'THIS_YEAR'] as const
 export type HomeStatisticPeriod = (typeof HOME_STATISTIC_PERIODS)[number]
 
-export const HOME_TIME_FIELDS = ['CREATE_TIME', 'EXPECTED_END_TIME', 'ACTUAL_END_TIME'] as const
+export const HOME_TIME_FIELDS = ['CREATE_TIME'] as const
 export type HomeTimeField = (typeof HOME_TIME_FIELDS)[number]
 
 export const HOME_USER_FIELDS = ['CREATE_USER', 'OWNER'] as const
@@ -17,7 +17,6 @@ export interface HomeStatisticRequest {
   deptIds: string[]
   timeField?: HomeTimeField
   userField?: HomeUserField
-  winOrderTimeField?: Extract<HomeTimeField, 'EXPECTED_END_TIME' | 'ACTUAL_END_TIME'>
   priorPeriodEnable?: boolean
 }
 
@@ -123,7 +122,7 @@ export interface HomeFilterPayload {
   deptIds: string[]
   userField?: HomeUserField
   timeField?: HomeTimeField
-  /** Dashboard 内部 Lead 阶段筛选，不暴露为通用查询 DSL。 */
+  /** Dashboard 内部 Lead 状态筛选，不暴露为通用查询 DSL。 */
   leadStageKey?: string
   /** Dashboard 内部“已转 Customer”筛选。 */
   converted?: boolean

@@ -30,7 +30,7 @@ async function load() {
 
 function addStage() {
   const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()
-  stages.value.push({ key: `STAGE_${suffix}`, name: '新阶段', kind: 'ACTIVE', enabled: true })
+  stages.value.push({ key: `STAGE_${suffix}`, name: '新状态', kind: 'ACTIVE', enabled: true })
 }
 
 function move(index: number, offset: -1 | 1) {
@@ -45,7 +45,7 @@ function move(index: number, offset: -1 | 1) {
 
 function remove(index: number) {
   if (stages.value.length <= 1) {
-    ElMessage.warning('至少需要保留一个线索阶段')
+    ElMessage.warning('至少需要保留一个线索状态')
     return
   }
   stages.value.splice(index, 1)
@@ -54,17 +54,17 @@ function remove(index: number) {
 async function save() {
   const value = stages.value.map((stage) => ({ ...stage, name: stage.name.trim() }))
   if (value.some((stage) => !stage.name)) {
-    ElMessage.warning('阶段名称不能为空')
+    ElMessage.warning('状态名称不能为空')
     return
   }
   if (!value.some((stage) => stage.enabled !== false)) {
-    ElMessage.warning('至少需要保留一个启用的线索阶段')
+    ElMessage.warning('至少需要保留一个启用的线索状态')
     return
   }
   saving.value = true
   try {
     await metadataApi.updateFormProp('lead', { leadStages: value })
-    ElMessage.success('线索阶段设置已保存')
+    ElMessage.success('线索状态设置已保存')
     visible.value = false
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -79,13 +79,13 @@ watch(visible, (open) => {
 </script>
 
 <template>
-  <el-drawer v-model="visible" title="线索阶段设置" size="860px" destroy-on-close>
+  <el-drawer v-model="visible" title="线索状态设置" size="860px" destroy-on-close>
     <div v-loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <div class="text-sm text-[var(--el-text-color-secondary)]">
-          阶段名称和顺序由租户配置；第一个启用阶段作为新建线索默认阶段。
+          状态名称和顺序由租户配置；第一个启用状态作为新建线索默认状态。
         </div>
-        <el-button type="primary" @click="addStage">新增阶段</el-button>
+        <el-button type="primary" @click="addStage">新增状态</el-button>
       </div>
 
       <el-table :data="stages" border>
@@ -95,10 +95,10 @@ watch(visible, (open) => {
             <el-button link :disabled="$index === stages.length - 1" @click="move($index, 1)">下移</el-button>
           </template>
         </el-table-column>
-        <el-table-column label="阶段名称" min-width="220">
+        <el-table-column label="状态名称" min-width="220">
           <template #default="{ row }"><el-input v-model="row.name" maxlength="30" /></template>
         </el-table-column>
-        <el-table-column label="阶段类型" width="160">
+        <el-table-column label="状态类型" width="160">
           <template #default="{ row }">
             <el-select v-model="row.kind" class="w-full">
               <el-option v-for="item in kindOptions" :key="item.value" :label="item.label" :value="item.value" />

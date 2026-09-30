@@ -245,10 +245,7 @@ onMounted(load)
     <van-action-sheet v-model:show="moreShow" title="更多操作">
       <div class="space-y-3 p-4">
         <van-button
-          v-if="
-            auth.hasPerm('lead:update') &&
-            !['CUSTOMER', 'OPPORTUNITY'].includes(lead?.transitionType ?? '')
-          "
+          v-if="auth.hasPerm('lead:update') && lead?.transitionType !== 'CUSTOMER'"
           block
           @click="goConvert"
         >

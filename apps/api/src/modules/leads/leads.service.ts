@@ -1265,7 +1265,7 @@ export class LeadsService {
     const failureStage = (await this.resolveLeadStages(user.tenantId)).find(
       (stage) => stage.enabled !== false && stage.kind === 'FAILURE',
     )
-    if (!failureStage) throw new BadRequestException('未配置启用的失败阶段')
+    if (!failureStage) throw new BadRequestException('未配置启用的失败状态')
     await this.updateStatus(user, { id, stage: failureStage.key })
     return { id, name: lead.name }
   }
@@ -1379,7 +1379,7 @@ export class LeadsService {
     await this.notifyLeadAssociation(user, [prepared.lead], result.customerId)
   }
 
-  /** Lead → Customer：创建/复用客户并迁移联系人、跟进与附件，不创建传统销售商机。 */
+  /** Lead → Customer：创建/复用客户并迁移联系人、跟进与附件。 */
   async transform(user: AuthUser, dto: TransformClueDto) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
 
@@ -2344,7 +2344,7 @@ export class LeadsService {
     const key = stageKey.trim()
     const stage = (await this.resolveLeadStages(organizationId)).find((item) => item.key === key)
     if (!stage || (requireEnabled && stage.enabled === false)) {
-      throw new BadRequestException('线索阶段不存在或已停用')
+      throw new BadRequestException('线索状态不存在或已停用')
     }
     return stage
   }
@@ -2353,7 +2353,7 @@ export class LeadsService {
     const stage = (await this.resolveLeadStages(organizationId)).find(
       (item) => item.enabled !== false,
     )
-    if (!stage) throw new BadRequestException('请先配置至少一个启用的线索阶段')
+    if (!stage) throw new BadRequestException('请先配置至少一个启用的线索状态')
     return stage
   }
 

@@ -61,7 +61,7 @@ export class HomeFilterService {
       throw new BadRequestException('首页筛选时间字段无效')
     }
     if (candidate.leadStageKey !== undefined && typeof candidate.leadStageKey !== 'string') {
-      throw new BadRequestException('首页阶段筛选无效')
+      throw new BadRequestException('首页状态筛选无效')
     }
     if (candidate.converted !== undefined && typeof candidate.converted !== 'boolean') {
       throw new BadRequestException('首页转化筛选无效')

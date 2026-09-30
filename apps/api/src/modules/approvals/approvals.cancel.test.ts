@@ -27,9 +27,9 @@ test(
         'updatedAt',
       ).create({
         tenantId,
-        module: 'contract',
-        targetId: `contract-${suffix}`,
-        targetName: 'Prisma cancel contract',
+        module: 'generic',
+        targetId: `generic-${suffix}`,
+        targetName: 'Prisma cancel generic resource',
         nodesSnapshot: jsonValue([]),
         submitterId,
         submitterName: 'Submitter',
@@ -95,7 +95,7 @@ test(
         { id: submitterId, tenantId, name: 'Submitter' } as never,
         instance.id,
       )
-      assert.deepEqual(result, { id: instance.id, name: 'Prisma cancel contract' })
+      assert.deepEqual(result, { id: instance.id, name: 'Prisma cancel generic resource' })
 
       const storedInstance = await prismaClient.orm.public.ApprovalInstances.where({
         id: instance.id,
@@ -117,7 +117,7 @@ test(
       assert.equal(byId.get(approved)?.action, 'APPROVE')
       assert.ok(byId.get(approved)?.handledAt)
       assert.deepEqual(resourceCalls, [
-        { action: 'setBizStatus', status: 'REVOKED' },
+        { action: 'setBizStatus', status: 'NONE' },
         { action: 'restore' },
       ])
     } finally {

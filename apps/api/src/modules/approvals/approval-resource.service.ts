@@ -16,9 +16,8 @@ export interface ApprovalTargetInfo {
 /**
  * 审批引擎与业务资源之间的适配边界。
  *
- * 招生 CRM 已退出报价、合同、发票和订单交易域，因此审批核心不再直接访问这些
- * 业务表。保留该服务是为了让流程、实例、任务和 Webhook 等通用审批基础设施继续
- * 具备稳定边界；后续新增可审批资源时，应通过新的通用资源适配器显式接入。
+ * 审批核心不直接访问业务表。保留该服务是为了让流程、实例、任务和 Webhook 等
+ * 通用审批基础设施具备稳定边界；后续新增可审批资源时，应通过资源适配器显式接入。
  */
 @Injectable()
 export class ApprovalResourceService {
@@ -115,8 +114,6 @@ export class ApprovalResourceService {
   }
 
   private unsupported(module: ApprovalModule): never {
-    throw new BadRequestException(
-      `审批业务资源「${module}」已退出当前产品，未注册可用的审批资源适配器`,
-    )
+    throw new BadRequestException(`审批业务资源「${module}」未注册可用的资源适配器`)
   }
 }

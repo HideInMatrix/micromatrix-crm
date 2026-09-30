@@ -956,7 +956,7 @@ export class ModuleFormsService {
     ]
     if (removedInUse.length) {
       throw new BadRequestException(
-        `仍有线索使用阶段 ${removedInUse.join('、')}，请先迁移这些线索或停用阶段，不能直接删除阶段 key`,
+        `仍有线索使用状态 ${removedInUse.join('、')}，请先迁移这些线索或停用状态，不能直接删除状态 key`,
       )
     }
   }
@@ -1193,36 +1193,36 @@ export class ModuleFormsService {
     }
     if (formProp.leadStages !== undefined) {
       if (!Array.isArray(formProp.leadStages) || formProp.leadStages.length === 0) {
-        throw new BadRequestException('线索阶段至少需要配置一项')
+        throw new BadRequestException('线索状态至少需要配置一项')
       }
-      if (formProp.leadStages.length > 50) throw new BadRequestException('线索阶段最多配置 50 项')
+      if (formProp.leadStages.length > 50) throw new BadRequestException('线索状态最多配置 50 项')
       const keys = new Set<string>()
       const names = new Set<string>()
       let enabledCount = 0
       for (const stage of formProp.leadStages) {
-        if (!stage || typeof stage !== 'object') throw new BadRequestException('线索阶段配置不正确')
+        if (!stage || typeof stage !== 'object') throw new BadRequestException('线索状态配置不正确')
         if (typeof stage.key !== 'string' || !/^[A-Za-z0-9_-]{1,30}$/.test(stage.key)) {
           throw new BadRequestException(
-            '线索阶段 key 只能包含字母、数字、下划线或短横线，且最长 30 位',
+            '线索状态 key 只能包含字母、数字、下划线或短横线，且最长 30 位',
           )
         }
         const name = typeof stage.name === 'string' ? stage.name.trim() : ''
         if (!name || name.length > 100) {
-          throw new BadRequestException('线索阶段名称不能为空且最长 100 字')
+          throw new BadRequestException('线索状态名称不能为空且最长 100 字')
         }
         if (!['ACTIVE', 'SUCCESS', 'FAILURE'].includes(stage.kind)) {
-          throw new BadRequestException('线索阶段类型配置不正确')
+          throw new BadRequestException('线索状态类型配置不正确')
         }
         if (stage.enabled !== undefined && typeof stage.enabled !== 'boolean') {
-          throw new BadRequestException('线索阶段启用状态配置不正确')
+          throw new BadRequestException('线索状态启用配置不正确')
         }
-        if (keys.has(stage.key)) throw new BadRequestException('线索阶段 key 不能重复')
-        if (names.has(name)) throw new BadRequestException('线索阶段名称不能重复')
+        if (keys.has(stage.key)) throw new BadRequestException('线索状态 key 不能重复')
+        if (names.has(name)) throw new BadRequestException('线索状态名称不能重复')
         keys.add(stage.key)
         names.add(name)
         if (stage.enabled !== false) enabledCount++
       }
-      if (enabledCount === 0) throw new BadRequestException('至少需要保留一个启用的线索阶段')
+      if (enabledCount === 0) throw new BadRequestException('至少需要保留一个启用的线索状态')
     }
   }
 

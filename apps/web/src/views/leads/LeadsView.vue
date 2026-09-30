@@ -147,7 +147,7 @@ async function handleStageChange(row: LeadVO, stageKey: string) {
   try {
     const { data } = await leadApi.updateStage(row.id, stageKey)
     row.status = data.stage
-    ElMessage.success('线索阶段已更新')
+    ElMessage.success('线索状态已更新')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
@@ -951,7 +951,7 @@ onMounted(async () => {
           </template>
         </template>
       </el-table-column>
-      <el-table-column label="阶段" width="150">
+      <el-table-column label="状态" width="150">
         <template #default="{ row }">
           <el-select
             v-if="!isPoolMode && auth.hasPerm('lead:update') && !row.transitionId"
@@ -1005,7 +1005,7 @@ onMounted(async () => {
               删除
             </el-button>
           </template>
-          <template v-else-if="!['CUSTOMER', 'OPPORTUNITY'].includes(row.transitionType ?? '')">
+          <template v-else-if="row.transitionType !== 'CUSTOMER'">
             <el-button v-if="auth.hasPerm('lead:update')" link @click="openEdit(row as LeadVO)">
               编辑
             </el-button>

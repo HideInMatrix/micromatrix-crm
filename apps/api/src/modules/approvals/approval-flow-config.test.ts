@@ -38,7 +38,7 @@ test('ApprovalFlowConfig 使用 Prisma 保持流程图版本、排序与编号�
   const service = new ApprovalFlowConfigService(prisma)
 
   const createDto = (name: string): CreateApprovalFlowDto => ({
-    formType: 'contract',
+    formType: 'generic',
     name,
     description: 'Prisma 流程',
     enabled: false,
@@ -72,8 +72,8 @@ test('ApprovalFlowConfig 使用 Prisma 保持流程图版本、排序与编号�
   })
 
   try {
-    const first = await service.create(actor, createDto('合同审批 Prisma'))
-    assert.equal(first.number, 'CTR-APV-00001')
+    const first = await service.create(actor, createDto('通用审批 Prisma'))
+    assert.equal(first.number, 'GEN-APV-00001')
     assert.equal(first.currentVersion, 1)
     assert.equal(first.createNodes.length, 3)
     assert.equal(first.createLinks.length, 2)
@@ -92,7 +92,7 @@ test('ApprovalFlowConfig 使用 Prisma 保持流程图版本、排序与编号�
     const approverNode = first.createNodes.find((node) => node.nodeType === 'APPROVER')!
     const endNode = first.createNodes.find((node) => node.nodeType === 'END')!
     const updateDto: UpdateApprovalFlowDto = {
-      name: '合同审批 Prisma v2',
+      name: '通用审批 Prisma v2',
       description: '版本二',
       enabled: false,
       createExecute: true,
@@ -126,7 +126,7 @@ test('ApprovalFlowConfig 使用 Prisma 保持流程图版本、排序与编号�
     }
     const updated = await service.update(actor, first.id, updateDto)
     assert.equal(updated.currentVersion, 2)
-    assert.equal(updated.name, '合同审批 Prisma v2')
+    assert.equal(updated.name, '通用审批 Prisma v2')
 
     await service.updateEnabled(actor, first.id, true)
     assert.equal((await service.detail(actor, first.id)).enabled, true)
@@ -137,11 +137,11 @@ test('ApprovalFlowConfig 使用 Prisma 保持流程图版本、排序与编号�
       .first()
     assert.ok(deleted?.deletedAt)
 
-    const second = await service.create(actor, createDto('合同审批 Prisma 第二条'))
-    assert.equal(second.number, 'CTR-APV-00002')
+    const second = await service.create(actor, createDto('通用审批 Prisma 第二条'))
+    assert.equal(second.number, 'GEN-APV-00002')
     const counter = await prismaClient.orm.public.ApprovalFlowNumberCounters.where({
       tenantId: tenant.id,
-      formType: 'CONTRACT',
+      formType: 'GENERIC',
     }).first()
     assert.ok(counter)
     assert.equal(counter.nextValue, 3)

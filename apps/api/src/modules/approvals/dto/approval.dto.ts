@@ -26,8 +26,8 @@ export const APPROVER_TYPES = [
   'MULTIPLE_DIRECT_LEADER',
 ] as const
 export const APPROVAL_MODES = ['ALL', 'ANY'] as const
-export const APPROVAL_FORM_TYPES = ['quotation', 'contract', 'invoice', 'order'] as const
-export const APPROVAL_MODULES = ['quote', 'contract', 'invoice', 'order'] as const
+export const APPROVAL_FORM_TYPES = ['generic'] as const
+export const APPROVAL_MODULES = ['generic'] as const
 export const DUPLICATE_APPROVER_RULES = ['FIRST_ONLY', 'SEQUENTIAL_ALL', 'EACH'] as const
 export const EMPTY_APPROVER_ACTIONS = ['AUTO_PASS', 'ASSIGN_SPECIFIC', 'ASSIGN_ADMIN'] as const
 export const SAME_SUBMITTER_ACTIONS = ['SKIP', 'ALLOW', 'ASSIGN_SUPERIOR'] as const

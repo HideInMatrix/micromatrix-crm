@@ -29,11 +29,6 @@ export class HomeStatisticSearchDto {
   @IsIn(HOME_USER_FIELDS)
   userField?: HomeUserField
 
-  @ApiPropertyOptional({ enum: ['EXPECTED_END_TIME', 'ACTUAL_END_TIME'] })
-  @IsOptional()
-  @IsIn(['EXPECTED_END_TIME', 'ACTUAL_END_TIME'])
-  winOrderTimeField?: 'EXPECTED_END_TIME' | 'ACTUAL_END_TIME'
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

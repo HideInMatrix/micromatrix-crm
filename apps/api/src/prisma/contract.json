@@ -15768,11 +15768,7 @@
             "ApprovalFormType": {
               "kind": "postgres-enum",
               "members": [
-                "QUOTATION",
-                "CONTRACT",
-                "INVOICE",
-                "ORDER",
-                "RECEIVABLE_RECORD_LEGACY"
+                "GENERIC"
               ],
               "typeName": "ApprovalFormType"
             },
@@ -29717,11 +29713,7 @@
             "ApprovalFormType": {
               "kind": "valueSet",
               "values": [
-                "QUOTATION",
-                "CONTRACT",
-                "INVOICE",
-                "ORDER",
-                "RECEIVABLE_RECORD_LEGACY"
+                "GENERIC"
               ]
             },
             "ApprovalInstanceStatus": {
@@ -29981,7 +29973,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "244779402c6406785cb7478c93e39b89747a96ac9d904795e728dd9b40253db7"
+    "storageHash": "84a7bfdd8e9ff7e81dee91f5826ae2a9f529450a47db982ccfc5db4cba2b322b"
   },
   "execution": {
     "executionHash": "0f6a4d23d57b958cc37aaf84811743c06a734d973fb49f47a9d64f00186ecdb3",

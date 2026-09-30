@@ -95,19 +95,10 @@ test('ModuleConfig cache hit 跳过默认补种与查询，写后版本失效立
   const { cache, invalidations } = createCache()
   const service = new ModuleConfigsService(prisma, cache)
 
-  rows.push({
-    id: 'tenant-a-legacy-opportunity',
-    tenantId: 'tenant-a',
-    key: 'opportunity',
-    enabled: true,
-    sort: 999,
-  })
-
   const first = await service.list('tenant-a')
   const second = await service.list('tenant-a')
   assert.deepEqual(second, first)
   assert.equal(first.length, NAVIGATION_MODULES.length)
-  assert.equal(first.some((item) => (item.moduleKey as string) === 'opportunity'), false)
   assert.equal(createManyCalls, NAVIGATION_MODULES.length)
   assert.equal(findManyCalls, 1)
 

@@ -34,7 +34,7 @@ function serviceForFormLink(options?: {
 }) {
   const service = Object.create(LeadsService.prototype) as unknown as LeadsServiceTestHarness
   service.fieldValues = {
-    load: async () => new Map([['lead-1', { cf_source: '标讯' }]]),
+    load: async () => new Map([['lead-1', { cf_source: '广告投放' }]]),
   }
   service.moduleForms = {
     resolveFormLink: async (...args: unknown[]) => {
@@ -77,7 +77,7 @@ test('线索转客户没有显式 CLUE_TO_CUSTOMER formLink 时不再按同 key 
     contact: '测试联系人',
     phone: '13800138000',
     owner: 'user-1',
-    cf_source: '标讯',
+    cf_source: '广告投放',
   })
 })
 

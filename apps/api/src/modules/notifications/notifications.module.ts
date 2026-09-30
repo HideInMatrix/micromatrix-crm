@@ -9,7 +9,7 @@ import { NotificationsService } from './notifications.service'
 import { MessageDeliveriesController } from './message-deliveries.controller'
 import { MessageDeliveryService } from './message-delivery.service'
 
-/** 全局模块：业务模块（分配/审批/回款提醒等）都会调用通知服务 */
+/** 全局模块：业务模块（分配、审批等）都会调用通知服务 */
 @Global()
 @Module({
   imports: [MessageSettingsModule, EnterpriseIntegrationsModule, PrismaModule],
