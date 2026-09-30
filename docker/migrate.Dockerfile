@@ -28,6 +28,7 @@ COPY apps/api/src/prisma/seed.ts apps/api/src/prisma/seed.ts
 COPY apps/api/src/prisma/seed-bootstrap.ts apps/api/src/prisma/seed-bootstrap.ts
 COPY apps/api/src/prisma/temporal.ts apps/api/src/prisma/temporal.ts
 COPY apps/api/src/prisma/numeric-value.ts apps/api/src/prisma/numeric-value.ts
+COPY apps/api/src/common/tenant-slug.ts apps/api/src/common/tenant-slug.ts
 
 RUN --mount=type=cache,id=pnpm-migrate,target=/pnpm/store \
   pnpm --filter @micromatrix/shared build \
@@ -43,6 +44,7 @@ COPY --from=builder --chown=node:node /opt/micromatrix-migrate ./
 COPY --from=builder --chown=node:node /workspace/apps/api/migrations ./migrations
 COPY --from=builder --chown=node:node /workspace/apps/api/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=node:node /workspace/apps/api/src/prisma ./src/prisma
+COPY --from=builder --chown=node:node /workspace/apps/api/src/common/tenant-slug.ts ./src/common/tenant-slug.ts
 COPY --chown=node:node --chmod=755 docker/release-init.sh ./release-init.sh
 
 RUN node ./prisma-orm.mjs contract emit
