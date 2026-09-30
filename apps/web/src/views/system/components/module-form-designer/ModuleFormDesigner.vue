@@ -202,6 +202,15 @@ function validateDraft(): boolean {
 }
 
 function buildPayload(): SaveModuleFormInput {
+  const savedTargetIds = new Set(
+    fields.value.filter((field) => !isDraftField(field)).map((field) => field.id),
+  )
+  const nextFormProp = JSON.parse(JSON.stringify(formProp.value)) as ModuleFormProp
+  for (const scenarios of Object.values(nextFormProp.linkProp ?? {})) {
+    scenarios?.forEach((scenario) => {
+      scenario.linkFields = scenario.linkFields.filter((link) => savedTargetIds.has(link.current))
+    })
+  }
   return {
     fields: fields.value.map((field) => {
       const config = JSON.parse(JSON.stringify(field.config ?? {})) as NonNullable<
@@ -238,7 +247,7 @@ function buildPayload(): SaveModuleFormInput {
             : undefined,
       }
     }),
-    formProp: JSON.parse(JSON.stringify(formProp.value)) as ModuleFormProp,
+    formProp: nextFormProp,
   }
 }
 
@@ -298,6 +307,7 @@ defineExpose({
     <ModuleFormProperties
       v-model:field="activeField"
       v-model:form-prop="formProp"
+      :module="module"
       :fields="fields"
       @layout-change="changeLayout"
     />

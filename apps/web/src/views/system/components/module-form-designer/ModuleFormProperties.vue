@@ -5,15 +5,19 @@ import {
   FIELD_TYPE_OPTIONS,
   supportsMobileSearchSelect,
   type FieldConfig,
+  type FormLinkScenario,
   type ModuleFormProp,
+  type ModuleKey,
 } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
+import ModuleFormLinkDrawer from './ModuleFormLinkDrawer.vue'
 import { isDraftField, type ModuleFormFieldDraft } from './types'
 
 const field = defineModel<ModuleFormFieldDraft | null>('field', { default: null })
 const formProp = defineModel<ModuleFormProp>('formProp', { required: true })
 
 const props = defineProps<{
+  module: ModuleKey
   fields: ModuleFormFieldDraft[]
 }>()
 
@@ -22,6 +26,14 @@ const emit = defineEmits<{
 }>()
 
 const activeTab = ref<'field' | 'form'>('field')
+const leadLinkVisible = ref(false)
+
+const leadCustomerLinkCount = computed(
+  () =>
+    formProp.value.linkProp?.lead
+      ?.find((scenario) => scenario.key === 'CLUE_TO_CUSTOMER')
+      ?.linkFields.filter((link) => link.enable).length ?? 0,
+)
 
 watch(
   () => field.value?.id,
@@ -95,6 +107,13 @@ function handleRequiredChange(required: string | number | boolean) {
 function changeLayout(layout: 1 | 2 | 3 | 4) {
   formProp.value.layout = layout
   emit('layoutChange', layout)
+}
+
+function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
+  formProp.value.linkProp = {
+    ...(formProp.value.linkProp ?? {}),
+    [sourceFormKey]: scenarios,
+  }
 }
 </script>
 
@@ -444,9 +463,37 @@ function changeLayout(layout: 1 | 2 | 3 | 4) {
                 </button>
               </div>
             </section>
+
+            <section v-if="module === 'customer'">
+              <div class="mb-3 text-sm font-semibold text-[var(--el-text-color-primary)]">
+                表单联动
+              </div>
+              <div class="flex items-center gap-2">
+                <el-button class="!cursor-default">线索</el-button>
+                <el-button class="flex-1" @click="leadLinkVisible = true">
+                  {{ leadCustomerLinkCount ? `已设置 ${leadCustomerLinkCount} 个字段` : '设置' }}
+                </el-button>
+              </div>
+              <div class="mt-2 text-xs leading-5 text-[var(--el-text-color-secondary)]">
+                配置线索转换为客户时，哪些线索字段填充到客户字段。
+              </div>
+            </section>
           </div>
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <ModuleFormLinkDrawer
+      v-if="module === 'customer'"
+      v-model="leadLinkVisible"
+      :target-fields="fields"
+      :link-prop="formProp.linkProp"
+      source-form-key="lead"
+      source-label="线索"
+      scenario-key="CLUE_TO_CUSTOMER"
+      scenario-label="线索转客户"
+      scenario-tip="线索转换客户时，将线索的表单字段内容填充到客户表单字段。"
+      @save="saveLeadLink"
+    />
   </div>
 </template>

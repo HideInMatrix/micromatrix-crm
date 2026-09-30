@@ -190,7 +190,7 @@ export interface ModuleFormProp {
    * Lead formProp 只保存 leadSourceFieldKey；Customer formProp 保存 customerResult*。
    */
   homeAnalytics?: HomeAnalyticsConfig
-  /** 既有跨表单联动配置；PLAN-FORM-001 不新增其设计器 UI。 */
+  /** 跨表单联动配置；客户表单设计器支持配置 Lead → Customer 字段映射。 */
   linkProp?: FormLinkProp
   /** 保留未识别扩展键，避免局部 PATCH 覆盖其它 formProp 能力。 */
   [key: string]: unknown
