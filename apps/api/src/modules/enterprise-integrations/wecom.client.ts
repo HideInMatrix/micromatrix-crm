@@ -40,6 +40,10 @@ export interface WeComOAuthLoginIdentity extends WeComLoginIdentity {
 export interface WeComMessageInput extends WeComConnectionInput {
   toUser: string
   content: string
+  /** 仅企业微信应用通知使用；有可访问的移动端页面时发送 textcard。 */
+  title?: string
+  link?: string | null
+  tenantSlug?: string
 }
 
 export interface WeComMessageResult {
@@ -217,16 +221,39 @@ export class WeComClient {
 
     const url = this.apiUrl('/cgi-bin/message/send')
     url.searchParams.set('access_token', accessToken)
+    const notificationUrl = this.notificationUrl(input.link, input.tenantSlug)
+    const message = notificationUrl
+      ? {
+          touser: input.toUser,
+          agentid: Number(input.agentId),
+          msgtype: 'textcard',
+          textcard: {
+            title: (input.title?.trim() || 'CRM 通知').slice(0, 128),
+            description: (input.content.trim() || input.title?.trim() || '请查看详情')
+              .replaceAll('&', '&amp;')
+              .replaceAll('<', '&lt;')
+              .replaceAll('>', '&gt;')
+              .slice(0, 512),
+            url: notificationUrl,
+            btntxt: '查看详情',
+          },
+        }
+      : {
+          touser: input.toUser,
+          agentid: Number(input.agentId),
+          msgtype: 'text',
+          text: {
+            content: (input.title
+              ? [input.title, input.content].filter(Boolean).join('\n')
+              : input.content
+            ).slice(0, 2_048),
+          },
+        }
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          touser: input.toUser,
-          agentid: Number(input.agentId),
-          msgtype: 'text',
-          text: { content: input.content.slice(0, 2_048) },
-        }),
+        body: JSON.stringify(message),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
       if (!response.ok) {
@@ -267,6 +294,63 @@ export class WeComClient {
           : '企业微信消息服务暂时不可用',
         true,
       )
+    }
+  }
+
+  /**
+   * 将 CRM 内部通知路径映射到已实现的移动端详情页，再通过工作台入口授权跳转。
+   * 不允许外部域名或未知 PC 路由进入企业微信消息卡片。
+   */
+  private notificationUrl(link?: string | null, tenantSlug?: string): string | null {
+    const configured = this.config?.get<string>('WEB_PUBLIC_URL')?.trim()
+    if (!configured || !link?.trim() || !tenantSlug?.trim()) return null
+    try {
+      const publicUrl = new URL(configured)
+      if (!['https:', 'http:'].includes(publicUrl.protocol)) return null
+      const source = new URL(link, publicUrl)
+      if (source.origin !== publicUrl.origin || !link.startsWith('/') || link.startsWith('//')) {
+        return null
+      }
+
+      const mobile = new URL('/mobile/', publicUrl)
+      const id = source.searchParams.get('id')?.trim()
+      if (source.pathname === '/leads') {
+        mobile.pathname = id ? '/mobile/leads/detail' : '/mobile/leads'
+        if (id) mobile.searchParams.set('id', id)
+      } else if (source.pathname === '/customers') {
+        mobile.pathname = id ? '/mobile/customers/detail' : '/mobile/customers'
+        if (id) mobile.searchParams.set('id', id)
+      } else if (/^\/customers\/[^/]+$/.test(source.pathname)) {
+        mobile.pathname = '/mobile/customers/detail'
+        mobile.searchParams.set('id', decodeURIComponent(source.pathname.split('/')[2]!))
+      } else if (source.pathname === '/contacts') {
+        mobile.pathname = '/mobile/customers'
+        mobile.searchParams.set('tab', 'contact')
+      } else if (
+        source.pathname === '/mobile/leads' ||
+        source.pathname === '/mobile/leads/detail' ||
+        source.pathname === '/mobile/leads/pool-detail' ||
+        source.pathname === '/mobile/customers' ||
+        source.pathname === '/mobile/customers/detail'
+      ) {
+        mobile.pathname = source.pathname
+        mobile.search = source.search
+      } else {
+        return null
+      }
+      // 详情页必须有确定的记录 ID，避免点击卡片后被路由送回列表。
+      if (mobile.pathname.endsWith('/detail') || mobile.pathname.endsWith('/pool-detail')) {
+        if (!mobile.searchParams.get('id')?.trim()) return null
+      }
+
+      if (`${mobile.pathname}${mobile.search}`.length > 500) return null
+
+      const entry = new URL('/api/auth/wecom/workbench/entry', publicUrl)
+      entry.searchParams.set('tenant', tenantSlug.trim())
+      entry.searchParams.set('target', `${mobile.pathname}${mobile.search}`)
+      return entry.toString()
+    } catch {
+      return null
     }
   }
 

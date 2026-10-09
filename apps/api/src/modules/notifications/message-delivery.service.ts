@@ -466,10 +466,19 @@ export class MessageDeliveryService {
         message: '企业微信配置已变化，请手工重试',
       }
     }
+    // 企业微信仅使用卡片跳转支持的移动端页面；其他渠道仍保留原有正文格式。
+    const tenant = delivery.link
+      ? await this.prisma.client.orm.public.Tenants.where({ id: delivery.tenantId })
+          .select('slug')
+          .first()
+      : null
     return this.weComClient.sendTextMessage({
       ...runtime.credentials,
       toUser: delivery.externalSubject!,
-      content: this.buildContent(delivery),
+      title: delivery.title,
+      content: delivery.content ?? '',
+      link: delivery.link,
+      tenantSlug: tenant?.slug,
     })
   }
 

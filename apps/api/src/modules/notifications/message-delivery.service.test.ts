@@ -7,7 +7,7 @@ import type {
 } from '../enterprise-integrations/dingtalk.client'
 import type { EnterpriseIntegrationsService } from '../enterprise-integrations/enterprise-integrations.service'
 import type { LarkClient, LarkMessageResult } from '../enterprise-integrations/lark.client'
-import type { WeComClient, WeComMessageResult } from '../enterprise-integrations/wecom.client'
+import type { WeComClient, WeComMessageInput, WeComMessageResult } from '../enterprise-integrations/wecom.client'
 import type { MessageSettingsService } from '../message-settings/message-settings.service'
 import { MessageDeliveryService } from './message-delivery.service'
 
@@ -120,7 +120,16 @@ function workerRows(rows: Map<string, MessageDelivery>): PrismaService {
     first: async () => (id ? (rows.get(id) ?? null) : null),
   })
   return {
-    client: { orm: { public: { MessageDeliveries: collection() } } },
+    client: {
+      orm: {
+        public: {
+          MessageDeliveries: collection(),
+          Tenants: {
+            where: () => ({ select: () => ({ first: async () => ({ slug: 'tenant-a' }) }) }),
+          },
+        },
+      },
+    },
   } as unknown as PrismaService
 }
 
@@ -180,7 +189,7 @@ function installWorkerClaim(
   return service
 }
 
-function createWorker(result: WeComMessageResult) {
+function createWorker(result: WeComMessageResult, onSend?: (input: WeComMessageInput) => void) {
   const rows = new Map<string, MessageDelivery>()
   const settings = {} as MessageSettingsService
   const integrations = {
@@ -189,7 +198,12 @@ function createWorker(result: WeComMessageResult) {
       credentials: { corpId: 'ww-a', agentId: '1000001', appSecret: 'secret' },
     }),
   } as unknown as EnterpriseIntegrationsService
-  const client = { sendTextMessage: async () => result } as unknown as WeComClient
+  const client = {
+    sendTextMessage: async (input: WeComMessageInput) => {
+      onSend?.(input)
+      return result
+    },
+  } as unknown as WeComClient
   return {
     rows,
     service: installWorkerClaim(
@@ -350,6 +364,28 @@ test('企微 outbox 条件认领并记录成功或退避结果', async (t) => {
     assert.ok(row?.nextAttemptAt instanceof Date)
     assert.equal(row?.errorCode, 'WECOM_45009')
   })
+})
+
+test('企微投递传递租户标识与原始业务链接，但不将相对路径放进正文', async () => {
+  const sent: WeComMessageInput[] = []
+  const { rows, service } = createWorker(
+    { success: true, transient: false, providerCode: 0, providerMessageId: 'message-2', message: 'ok' },
+    (input) => sent.push(input),
+  )
+  const assigned = delivery('assigned', 'zhangsan')
+  assigned.event = 'CLUE_DISTRIBUTED'
+  assigned.title = '分配线索通知'
+  assigned.content = '张三已由线索池分配给您'
+  assigned.link = '/leads?id=lead-123'
+  rows.set(assigned.id, assigned)
+
+  await service.processIds([assigned.id])
+  assert.equal(rows.get(assigned.id)?.status, 'SUCCEEDED')
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0]?.tenantSlug, 'tenant-a')
+  assert.equal(sent[0]?.title, assigned.title)
+  assert.equal(sent[0]?.content, assigned.content)
+  assert.equal(sent[0]?.link, assigned.link)
 })
 
 test('钉钉 outbox 使用独立 channel、成员映射与 Provider 状态机', async (t) => {

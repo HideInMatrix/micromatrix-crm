@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { ConfigService } from '@nestjs/config'
 import { WeComClient } from './wecom.client'
 
 test('企微连接测试依次校验 token 和 agent', async (t) => {
@@ -361,6 +362,79 @@ test('企微登录 code 只解析已认证成员 UserId', async (t) => {
       })
       assert.deepEqual(JSON.parse(detailBody), { user_ticket: 'user-ticket' })
     })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('企业微信通知卡片复用工作台 H5 OAuth 入口并跳转到移动详情页', async () => {
+  const originalFetch = globalThis.fetch
+  const payloads: Record<string, unknown>[] = []
+  const client = new WeComClient({
+    get: (key: string) =>
+      key === 'WEB_PUBLIC_URL' ? 'https://crm.shenquanedu.com' : undefined,
+  } as unknown as ConfigService)
+  const base = {
+    corpId: 'ww-a',
+    agentId: '1000001',
+    appSecret: 'secret',
+    toUser: 'zhangsan',
+    tenantSlug: 'tenant-a',
+    title: '分配线索通知',
+    content: '张三已由线索池分配给您，请及时跟进处理！',
+  }
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes('/gettoken')) {
+      return new Response(JSON.stringify({ errcode: 0, access_token: 'temporary-token' }))
+    }
+    payloads.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+    return new Response(JSON.stringify({ errcode: 0, errmsg: 'ok', msgid: 'message-a' }))
+  }
+  try {
+    await client.sendTextMessage({ ...base, link: '/leads?id=lead-123' })
+    const sent = payloads.at(-1)!
+    assert.equal(sent['msgtype'], 'textcard')
+    assert.equal(sent['agentid'], 1000001)
+    const card = sent['textcard'] as Record<string, string>
+    assert.equal(card.title, '分配线索通知')
+    assert.equal(card.description, base.content)
+    assert.equal(card.btntxt, '查看详情')
+    const entry = new URL(card.url)
+    assert.equal(entry.origin, 'https://crm.shenquanedu.com')
+    assert.equal(entry.pathname, '/api/auth/wecom/workbench/entry')
+    assert.equal(entry.searchParams.get('tenant'), 'tenant-a')
+    assert.equal(entry.searchParams.get('target'), '/mobile/leads/detail?id=lead-123')
+
+    await client.sendTextMessage({ ...base, link: '/customers/customer-1' })
+    const customerCard = payloads.at(-1)!['textcard'] as Record<string, string>
+    assert.equal(
+      new URL(customerCard.url).searchParams.get('target'),
+      '/mobile/customers/detail?id=customer-1',
+    )
+
+    await client.sendTextMessage({ ...base, link: '/contacts' })
+    const contactsCard = payloads.at(-1)!['textcard'] as Record<string, string>
+    assert.equal(
+      new URL(contactsCard.url).searchParams.get('target'),
+      '/mobile/customers?tab=contact',
+    )
+
+    await client.sendTextMessage({ ...base, link: '/leads?id=lead-123', content: '<test>&' })
+    const escapedCard = payloads.at(-1)!['textcard'] as Record<string, string>
+    assert.equal(escapedCard.description, '&lt;test&gt;&amp;')
+
+    await client.sendTextMessage({ ...base, link: 'https://untrusted.example/leads?id=1' })
+    assert.equal(payloads.at(-1)!['msgtype'], 'text')
+    assert.deepEqual(payloads.at(-1)!['text'], { content: `${base.title}\n${base.content}` })
+
+    await client.sendTextMessage({ ...base, link: '/approvals' })
+    assert.equal(payloads.at(-1)!['msgtype'], 'text')
+
+    await client.sendTextMessage({ ...base, link: '/leads?id=lead-123', tenantSlug: '' })
+    assert.equal(payloads.at(-1)!['msgtype'], 'text')
+
+    await new WeComClient().sendTextMessage({ ...base, link: '/leads?id=lead-123' })
+    assert.equal(payloads.at(-1)!['msgtype'], 'text')
   } finally {
     globalThis.fetch = originalFetch
   }
