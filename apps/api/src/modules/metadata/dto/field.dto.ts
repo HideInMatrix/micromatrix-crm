@@ -262,6 +262,11 @@ export class UpdateFormPropDto {
   @Type(() => HomeAnalyticsConfigDto)
   @IsOptional()
   homeAnalytics?: HomeAnalyticsConfig
+
+  @ApiPropertyOptional({ description: 'PC 端快捷搜索配置（字段预设、视图/高级搜索入口）' })
+  @IsObject()
+  @IsOptional()
+  quickSearch?: ModuleFormProp['quickSearch']
 }
 
 export class SaveFormFieldDto extends CreateFieldDto {

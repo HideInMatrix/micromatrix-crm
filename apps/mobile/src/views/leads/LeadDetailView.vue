@@ -33,6 +33,7 @@ const moreShow = ref(false)
 const leadId = computed(() => String(route.query.id ?? ''))
 const poolSource = computed(() => route.name === 'mobile-lead-pool-detail')
 const canWrite = computed(() => !poolSource.value && auth.hasPerm('lead:update'))
+const canConvert = computed(() => !poolSource.value && auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'))
 const descriptionFields = computed(() =>
   fields.value.filter((field) => !field.hidden && field.mobile !== false),
 )
@@ -100,6 +101,7 @@ function goEdit() {
 }
 
 function goConvert() {
+  if (!canConvert.value) return
   moreShow.value = false
   router.push('/leads/' + leadId.value + '/convert')
 }
@@ -216,7 +218,7 @@ onMounted(load)
         v-if="
           !poolSource &&
           activeTab === 'info' &&
-          (auth.hasPerm('lead:update') || auth.hasPerm('lead:delete'))
+          (auth.hasPerm('lead:update') || auth.hasPerm('lead:delete') || canConvert)
         "
         class="flex shrink-0 gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
       >
@@ -224,7 +226,7 @@ onMounted(load)
           编辑
         </van-button>
         <van-button
-          v-if="auth.hasPerm('lead:update') || auth.hasPerm('lead:delete')"
+          v-if="auth.hasPerm('lead:delete') || canConvert"
           block
           plain
           @click="moreShow = true"
@@ -245,7 +247,7 @@ onMounted(load)
     <van-action-sheet v-model:show="moreShow" title="更多操作">
       <div class="space-y-3 p-4">
         <van-button
-          v-if="auth.hasPerm('lead:update') && lead?.transitionType !== 'CUSTOMER'"
+          v-if="canConvert && lead?.transitionType !== 'CUSTOMER'"
           block
           @click="goConvert"
         >

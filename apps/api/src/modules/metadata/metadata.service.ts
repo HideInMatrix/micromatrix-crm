@@ -10,6 +10,7 @@ import {
   type FieldVO,
   type ModuleFormProp,
 } from '@micromatrix/shared'
+import { validateQuickSearchGroups } from '../../common/quick-search-groups'
 import { CreateFieldDto, UpdateFieldDto } from './dto/field.dto'
 import type { SaveModuleFormDto } from './dto/field.dto'
 import { ModuleFormsService } from './module-forms.service'
@@ -35,11 +36,66 @@ export class MetadataService {
     module: string,
     patch: Pick<
       ModuleFormProp,
-      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics'
+      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics' | 'quickSearch'
     >,
     actorId: string,
   ) {
     const current = await this.moduleForms.getConfig(organizationId, module)
+    if (patch.quickSearch) {
+      if (!Array.isArray(patch.quickSearch.items) || patch.quickSearch.items.length > 12 ||
+          typeof patch.quickSearch.enabled !== 'boolean' ||
+          typeof patch.quickSearch.showAdvancedFilter !== 'boolean' ||
+          typeof patch.quickSearch.showSavedViews !== 'boolean') {
+        throw new BadRequestException('快捷搜索配置格式错误')
+      }
+      const ids = new Set<string>()
+      for (const item of patch.quickSearch.items) {
+        if (!item || typeof item.id !== 'string' || !/^[\w-]{1,64}$/.test(item.id) || ids.has(item.id) ||
+            typeof item.label !== 'string' || !item.label.trim() || item.label.length > 40 ||
+            !['field', 'preset_select'].includes(item.kind) ||
+            (item.placeholder !== undefined && (typeof item.placeholder !== 'string' || item.placeholder.length > 100))) {
+          throw new BadRequestException('快捷搜索项无效或重复')
+        }
+        ids.add(item.id)
+      }
+      if (module !== 'lead' && module !== 'customer') {
+        throw new BadRequestException('当前模块不支持快捷搜索设置')
+      }
+      const validFields = new Map(current.fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+      for (const item of patch.quickSearch.items) {
+        if (item.kind === 'preset_select') {
+          if (!Array.isArray(item.options) || !item.options.length || item.options.length > 30) {
+            throw new BadRequestException('预设下拉框需要配置 1 至 30 个选项')
+          }
+          const optionIds = new Set<string>()
+          for (const option of item.options) {
+            if (!option || typeof option.id !== 'string' || !/^[\w-]{1,64}$/.test(option.id) ||
+                optionIds.has(option.id) || typeof option.label !== 'string' ||
+                !option.label.trim() || option.label.length > 40 ||
+                !Array.isArray(option.conditions) || !option.conditions.length) {
+              throw new BadRequestException('预设下拉选项配置不正确')
+            }
+            optionIds.add(option.id)
+            validateQuickSearchGroups([{ mode: option.searchMode, conditions: option.conditions }], current.fields)
+          }
+          continue
+        }
+        if (item.kind !== 'field') continue
+        const field = validFields.get(item.fieldKey ?? '')
+        if (!field) throw new BadRequestException(`快捷搜索字段不存在或已隐藏：${item.fieldKey}`)
+        if (!['text', 'textarea', 'phone', 'email', 'number', 'currency', 'percent', 'date', 'datetime', 'select', 'radio'].includes(field.type)) {
+          throw new BadRequestException(`字段「${field.label}」类型暂不支持快捷搜索`)
+        }
+        const supported = ['text', 'textarea', 'phone', 'email'].includes(field.type)
+          ? ['contains', 'eq']
+          : ['date', 'datetime'].includes(field.type)
+            ? ['gte', 'lte']
+            : ['eq']
+        if (!supported.includes(item.operator ?? '')) {
+          throw new BadRequestException(`字段「${field.label}」搜索操作符不支持`)
+        }
+      }
+    }
     return this.moduleForms.saveFormProp(
       organizationId,
       module,

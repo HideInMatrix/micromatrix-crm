@@ -111,6 +111,7 @@ declare module 'vue' {
     LeadTransitionCustomerDrawer: typeof import('./../components/leads/LeadTransitionCustomerDrawer.vue')['default']
     LocationFieldInput: typeof import('./../components/form-engine/LocationFieldInput.vue')['default']
     MemberSelectDialog: typeof import('./../components/MemberSelectDialog.vue')['default']
+    ModuleQuickSearch: typeof import('./../components/ModuleQuickSearch.vue')['default']
     NotificationBell: typeof import('./../components/NotificationBell.vue')['default']
     OwnerHistoryTimeline: typeof import('./../components/OwnerHistoryTimeline.vue')['default']
     PcTopMenu: typeof import('./../components/PcTopMenu.vue')['default']

@@ -5,6 +5,8 @@ import {
   isCustomFieldKey,
   type FieldVO,
   type FilterCondition,
+  type ModuleQuickSearchConfig,
+  type QuickSearchQueryGroup,
   type LeadStageConfig,
   type LeadVO,
 } from '@micromatrix/shared'
@@ -20,6 +22,7 @@ import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import ModuleQuickSearch from '@/components/ModuleQuickSearch.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -51,6 +54,12 @@ const items = ref<LeadVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' })
 const filters = ref<FilterCondition[]>([])
+const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
+const quickFilters = ref<FilterCondition[]>([])
+const quickGroups = ref<QuickSearchQueryGroup[]>([])
+const showLegacySearch = computed(() => !quickSearch.value?.enabled)
+const showAdvanced = computed(() => quickSearch.value?.showAdvancedFilter !== false)
+const showSavedViews = computed(() => quickSearch.value?.showSavedViews !== false)
 const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
@@ -100,6 +109,12 @@ const canImport = computed(() =>
 const canExport = computed(() =>
   isPoolMode.value ? auth.hasPerm('leadPool:export') : auth.hasPerm('lead:export'),
 )
+const canManualConvert = computed(() =>
+  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
+)
+const canAssociateCustomer = computed(() =>
+  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update'),
+)
 const contextFields = computed(() => {
   const hiddenIds = isPoolMode.value
     ? new Set(currentPool.value?.hiddenFieldIds ?? [])
@@ -125,6 +140,10 @@ const listColumns = computed(() => {
 async function loadFields() {
   const { data } = await metadataApi.formConfig('lead')
   fields.value = data.fields
+  quickSearch.value = data.formProp.quickSearch ?? null
+  if (quickSearch.value?.enabled) query.status = ''
+  if (!showSavedViews.value) activeSavedViewId.value = ''
+  if (quickSearch.value && !quickSearch.value.showAdvancedFilter) filters.value = []
   leadStages.value = (data.formProp.leadStages?.length
     ? data.formProp.leadStages
     : DEFAULT_LEAD_STAGES
@@ -178,7 +197,8 @@ function currentListParams(): LeadListParams {
     scope: isPoolMode.value ? 'pool' : 'mine',
     poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
     status: query.status || undefined,
-    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+    quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
     viewId: activeSavedViewId.value || undefined,
     homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
   }
@@ -228,6 +248,18 @@ async function loadData() {
   }
 }
 
+function handleQuickSearch(value: { filters: FilterCondition[]; quickGroups: QuickSearchQueryGroup[] }) {
+  query.keyword = ''
+  quickFilters.value = value.filters
+  quickGroups.value = value.quickGroups
+  handleSearch()
+}
+function resetQuickSearch() {
+  query.keyword = ''
+  quickFilters.value = []
+  quickGroups.value = []
+  handleSearch()
+}
 function handleSearch() {
   query.page = 1
   loadData()
@@ -252,6 +284,9 @@ watch(
     activeSavedViewId.value = ''
     visibleColumnKeys.value = []
     filters.value = []
+    quickFilters.value = []
+    quickGroups.value = []
+    query.keyword = ''
     selectedRows.value = []
     if (isPoolMode.value) await loadPoolOptions()
     if (generation !== routeGeneration) return
@@ -400,7 +435,7 @@ async function handleBatchPoolAssignConfirm(userId: string) {
 }
 
 function handleSavedViewChange(viewId?: string) {
-  activeSavedViewId.value = viewId ?? ''
+  activeSavedViewId.value = showSavedViews.value ? (viewId ?? '') : ''
   query.page = 1
   if (!pageReady.value) return
   loadData()
@@ -530,7 +565,8 @@ function transferParams(): LeadListParams {
     scope: isPoolMode.value ? 'pool' : 'mine',
     poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
     status: query.status || undefined,
-    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+    quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
     viewId: activeSavedViewId.value || undefined,
   }
 }
@@ -636,11 +672,13 @@ function handleOverviewAssign(row: LeadVO) {
 }
 
 function openConvert(row: LeadVO) {
+  if (!canManualConvert.value) return
   convertTarget.value = row
   convertVisible.value = true
 }
 
 function openTransitionCustomer(ids: string[]) {
+  if (!canAssociateCustomer.value) return
   transitionClueIds.value = ids
   transitionCustomerVisible.value = true
 }
@@ -796,11 +834,13 @@ onMounted(async () => {
 
       <div class="flex flex-wrap items-center gap-2">
         <CrmSearchInput
+          v-if="showLegacySearch"
           v-model="query.keyword"
           placeholder="搜索名称 / 手机号"
           @search="handleSearch"
         />
         <el-select
+          v-if="showLegacySearch"
           v-model="query.status"
           clearable
           placeholder="状态"
@@ -815,6 +855,7 @@ onMounted(async () => {
           />
         </el-select>
         <AdvancedFilter
+          v-if="showAdvanced"
           v-model="filters"
           :fields="contextFields"
           :members="fieldRefs.members.value"
@@ -829,7 +870,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <SavedViewBar
+    <ModuleQuickSearch v-if="quickSearch?.enabled" :config="quickSearch" :fields="contextFields" :lead-stages="leadStages" @search="handleQuickSearch" @reset="resetQuickSearch" />
+    <div v-show="showSavedViews">
+      <SavedViewBar
       ref="savedViewBarRef"
       :module="savedViewModule"
       :fields="contextFields"
@@ -840,7 +883,8 @@ onMounted(async () => {
       @change="handleSavedViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
-    />
+      />
+    </div>
 
     <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
       <el-button v-if="canExport" @click="openExport('selected')">
@@ -855,7 +899,7 @@ onMounted(async () => {
           移入线索池
         </el-button>
         <el-button
-          v-if="auth.hasPerm('lead:update')"
+          v-if="canAssociateCustomer"
           @click="openTransitionCustomer(selectedRows.map((row) => row.id))"
         >
           关联客户
@@ -1013,7 +1057,7 @@ onMounted(async () => {
               跟进
             </el-button>
             <el-button
-              v-if="auth.hasPerm('lead:update')"
+              v-if="canManualConvert"
               link
               type="primary"
               @click="openConvert(row as LeadVO)"
@@ -1090,6 +1134,7 @@ onMounted(async () => {
       :fields="contextFields"
       @edit="handleOverviewEdit"
       @convert="handleOverviewConvert"
+      :can-convert="canManualConvert"
       @to-pool="handleOverviewToPool"
       @transfer="handleOverviewTransfer"
       @delete="handleOverviewDelete"

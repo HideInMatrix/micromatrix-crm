@@ -16,7 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator'
 import { Type } from 'class-transformer'
-import type { FilterCondition } from '@micromatrix/shared'
+import type { FilterCondition, QuickSearchQueryGroup } from '@micromatrix/shared'
 import { CreateCustomerDto } from '../../../customers/dto/create-customer.dto'
 
 export class ModuleFieldValueDto {
@@ -131,6 +131,11 @@ export class CluePageDto {
   @IsIn(['AND', 'OR'])
   @IsOptional()
   filterMode?: 'AND' | 'OR'
+
+  @ApiPropertyOptional({ description: 'PC 快捷筛选下拉选项的预设条件组' })
+  @IsArray()
+  @IsOptional()
+  quickGroups?: QuickSearchQueryGroup[]
 
   @ApiPropertyOptional({ description: '首页统计一次性跳转条件 JSON' })
   @IsString()

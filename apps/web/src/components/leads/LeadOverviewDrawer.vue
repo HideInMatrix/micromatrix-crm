@@ -12,6 +12,7 @@ const props = defineProps<{
   mode: 'lead' | 'pool'
   lead: LeadVO | null
   fields: FieldVO[]
+  canConvert?: boolean
 }>()
 const visible = defineModel<boolean>({ required: true })
 const emit = defineEmits<{
@@ -101,7 +102,7 @@ watch(
               >编辑</el-button
             >
             <el-button
-              v-if="auth.hasPerm('lead:update')"
+              v-if="canConvert"
               size="small"
               type="primary"
               @click="action('convert')"

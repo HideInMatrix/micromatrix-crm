@@ -5,6 +5,8 @@ import {
   type CustomerVO,
   type FieldVO,
   type FilterCondition,
+  type ModuleQuickSearchConfig,
+  type QuickSearchQueryGroup,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -33,6 +35,7 @@ import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import ModuleQuickSearch from '@/components/ModuleQuickSearch.vue'
 import CustomerMoveToPoolDialog from '@/components/customer/CustomerMoveToPoolDialog.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
@@ -60,6 +63,12 @@ const items = ref<CustomerVO[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, pageSize: 10, keyword: '' })
 const filters = ref<FilterCondition[]>([])
+const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
+const quickFilters = ref<FilterCondition[]>([])
+const quickGroups = ref<QuickSearchQueryGroup[]>([])
+const showLegacySearch = computed(() => !quickSearch.value?.enabled)
+const showAdvanced = computed(() => quickSearch.value?.showAdvancedFilter !== false)
+const showSavedViews = computed(() => quickSearch.value?.showSavedViews !== false)
 const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
@@ -108,6 +117,10 @@ const listColumns = computed(() => {
 async function loadFields() {
   const { data } = await metadataApi.fields('customer')
   fields.value = data
+  const { data: config } = await metadataApi.formConfig('customer')
+  quickSearch.value = config.formProp.quickSearch ?? null
+  if (!showSavedViews.value) activeSavedViewId.value = ''
+  if (!quickSearch.value?.showAdvancedFilter) filters.value = []
 }
 
 async function loadSystemViews() {
@@ -123,7 +136,9 @@ async function loadSystemViews() {
       !activeSavedViewId.value &&
       (!activeSystemView.value || !next.some((item) => item.id === activeSystemView.value))
     ) {
-      activeSystemView.value = next[0]?.id ?? 'SELF'
+      activeSystemView.value = !showSavedViews.value
+        ? 'SELF'
+        : (next[0]?.id ?? 'SELF')
     }
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -138,7 +153,8 @@ async function loadData() {
       pageSize: query.pageSize,
       keyword: query.keyword.trim() || undefined,
       view: activeSystemView.value || undefined,
-      filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+      filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+      quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
       viewId: activeSavedViewId.value || undefined,
       homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
     })
@@ -158,12 +174,25 @@ function tryInitialLoad() {
   loadData()
 }
 
+function handleQuickSearch(value: { filters: FilterCondition[]; quickGroups: QuickSearchQueryGroup[] }) {
+  query.keyword = ''
+  quickFilters.value = value.filters
+  quickGroups.value = value.quickGroups
+  handleSearch()
+}
+function resetQuickSearch() {
+  query.keyword = ''
+  quickFilters.value = []
+  quickGroups.value = []
+  handleSearch()
+}
 function handleSearch() {
   query.page = 1
   loadData()
 }
 
 function handleSystemViewChange(viewId?: string) {
+  if (!showSavedViews.value) return
   activeSystemView.value = (viewId as CustomerSystemView | undefined) ?? ''
   if (!viewId) return
   query.page = 1
@@ -174,8 +203,8 @@ function handleSystemViewChange(viewId?: string) {
 }
 
 function handleSavedViewChange(viewId?: string) {
-  activeSavedViewId.value = viewId ?? ''
-  if (viewId) activeSystemView.value = ''
+  activeSavedViewId.value = showSavedViews.value ? (viewId ?? '') : ''
+  if (showSavedViews.value && viewId) activeSystemView.value = ''
   query.page = 1
   if (!viewId && activeSystemView.value) return
   if (!initialLoadDone.value) return
@@ -426,7 +455,8 @@ function transferParams() {
   return {
     keyword: query.keyword.trim() || undefined,
     view: activeSystemView.value || undefined,
-    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+    filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+    quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
     viewId: activeSavedViewId.value || undefined,
   }
 }
@@ -484,6 +514,7 @@ onMounted(async () => {
     overviewVisible.value = true
   }
   pageReady.value = true
+  if (!showSavedViews.value) savedViewReady.value = true
   tryInitialLoad()
 })
 </script>
@@ -543,8 +574,9 @@ onMounted(async () => {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <CrmSearchInput v-model="query.keyword" placeholder="搜索客户名称" @search="handleSearch" />
+        <CrmSearchInput v-if="showLegacySearch" v-model="query.keyword" placeholder="搜索客户名称" @search="handleSearch" />
         <AdvancedFilter
+          v-if="showAdvanced"
           v-model="filters"
           :fields="fields"
           :members="fieldRefs.members.value"
@@ -559,7 +591,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <SavedViewBar
+    <ModuleQuickSearch v-if="quickSearch?.enabled" :config="quickSearch" :fields="fields" @search="handleQuickSearch" @reset="resetQuickSearch" />
+    <div v-show="showSavedViews">
+      <SavedViewBar
       ref="savedViewBarRef"
       :module="savedViewModule"
       :fields="fields"
@@ -574,7 +608,8 @@ onMounted(async () => {
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"
       @ready="handleSavedViewReady"
-    />
+      />
+    </div>
 
     <el-table
       v-loading="loading"

@@ -2,6 +2,7 @@ import type {
   ContactVO,
   FieldVO,
   FilterCondition,
+  QuickSearchQueryGroup,
   FollowCommentPageVO,
   FollowCommentVO,
   FollowTargetType,
@@ -31,6 +32,7 @@ export type { ContactVO } from '@micromatrix/shared'
 // ===== 线索 =====
 
 export interface LeadListParams extends PageQuery {
+  quickGroups?: QuickSearchQueryGroup[]
   scope?: 'mine' | 'pool'
   poolId?: string
   status?: string
@@ -69,6 +71,7 @@ function cluePageBody(params: LeadListParams) {
     homeFilter: params.homeFilter,
     filters,
     filterMode: params.filterMode,
+    quickGroups: params.quickGroups,
   }
 }
 

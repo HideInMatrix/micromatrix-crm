@@ -187,7 +187,7 @@ const router = createRouter({
           component: () => import('@/views/leads/LeadConvertView.vue'),
           meta: {
             title: '转换为',
-            perm: 'lead:update',
+            perm: 'lead:convert',
             depth: 2,
             mobileHeader: { back: true },
           },

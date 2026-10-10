@@ -26,10 +26,12 @@ import HomeAnalyticsSettingsDrawer from './components/HomeAnalyticsSettingsDrawe
 import LeadDedupSettingsDrawer from './components/LeadDedupSettingsDrawer.vue'
 import LeadStageSettingsDrawer from './components/LeadStageSettingsDrawer.vue'
 import ModuleFormSettingsDrawer from './components/ModuleFormSettingsDrawer.vue'
+import ModuleSearchSettingsDrawer from './components/ModuleSearchSettingsDrawer.vue'
 
 interface ModuleAction {
   label: string
   formModule?: ModuleKey
+  searchModule?: 'lead' | 'customer'
   deferred?: string
   drawer?:
     | 'lead-pool'
@@ -53,6 +55,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   lead: {
     primary: [
       { label: '线索表单设置', formModule: 'lead' },
+      { label: '搜索设置', searchModule: 'lead' },
       { label: '线索判重设置', drawer: 'lead-dedup' },
       { label: '线索池设置', drawer: 'lead-pool' },
     ],
@@ -66,6 +69,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
   customer: {
     primary: [
       { label: '客户表单设置', formModule: 'customer' },
+      { label: '搜索设置', searchModule: 'customer' },
       { label: '联系人表单设置', formModule: 'contact' },
       { label: '公海设置', drawer: 'customer-pool' },
     ],
@@ -99,6 +103,8 @@ const leadDedupVisible = ref(false)
 const leadStageVisible = ref(false)
 const leadHomeAnalyticsVisible = ref(false)
 const customerHomeAnalyticsVisible = ref(false)
+const searchSettingsVisible = ref(false)
+const searchSettingsModule = ref<'lead' | 'customer'>('lead')
 const formSettingsVisible = ref(false)
 const formSettingsModule = ref<ModuleKey | null>(null)
 const formSettingsTitle = ref('')
@@ -214,6 +220,11 @@ async function handleTopNavigationDragEnd() {
 }
 
 function openAction(action: ModuleAction) {
+  if (action.searchModule) {
+    searchSettingsModule.value = action.searchModule
+    searchSettingsVisible.value = true
+    return
+  }
   if (action.formModule) {
     formSettingsModule.value = action.formModule
     formSettingsTitle.value = action.label
@@ -330,7 +341,7 @@ onMounted(async () => {
                 <el-tooltip
                   v-for="action in actionsOf(item.moduleKey).primary"
                   :key="action.label"
-                  :disabled="Boolean(action.formModule || action.drawer)"
+                  :disabled="Boolean(action.formModule || action.searchModule || action.drawer)"
                   :content="unavailableActionTip(action)"
                   placement="top"
                 >
@@ -338,7 +349,7 @@ onMounted(async () => {
                     <el-button
                       link
                       type="primary"
-                      :disabled="(!action.formModule && !action.drawer) || !canUpdate"
+                      :disabled="(!action.formModule && !action.searchModule && !action.drawer) || !canUpdate"
                       @click="openAction(action)"
                     >
                       {{ action.label }}
@@ -358,7 +369,7 @@ onMounted(async () => {
                         v-for="action in actionsOf(item.moduleKey).more"
                         :key="action.label"
                         :command="action"
-                        :disabled="!action.formModule && !action.drawer"
+                        :disabled="!action.formModule && !action.searchModule && !action.drawer"
                         :title="action.deferred"
                       >
                         {{ action.label }}{{ action.deferred ? '（W3.6.4）' : '' }}
@@ -397,6 +408,7 @@ onMounted(async () => {
     <LeadStageSettingsDrawer v-model="leadStageVisible" />
     <HomeAnalyticsSettingsDrawer v-model="leadHomeAnalyticsVisible" section="lead" />
     <HomeAnalyticsSettingsDrawer v-model="customerHomeAnalyticsVisible" section="customer" />
+    <ModuleSearchSettingsDrawer v-model="searchSettingsVisible" :module="searchSettingsModule" />
     <ModuleFormSettingsDrawer
       v-model="formSettingsVisible"
       :module="formSettingsModule"

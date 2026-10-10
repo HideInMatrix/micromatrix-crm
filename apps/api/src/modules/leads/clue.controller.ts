@@ -106,7 +106,7 @@ export class ClueController {
   }
 
   @Post('transition/account')
-  @RequirePermissions('customer:create')
+  @RequirePermissions('lead:convert', 'customer:create')
   @LogOperation('lead', 'transitionCustomer')
   @ApiOperation({ summary: '新建客户并关联线索' })
   transitionCustomer(@CurrentUser() user: AuthUser, @Body() dto: ClueTransitionCustomerDto) {
@@ -173,6 +173,8 @@ export class ClueController {
         pageSize: dto.pageSize,
         keyword: dto.keyword,
         filters: dto.filters,
+        filterMode: dto.filterMode,
+        quickGroups: dto.quickGroups,
         viewId: dto.viewId,
         homeFilter: dto.homeFilter,
         sort: dto.sort,
@@ -205,7 +207,7 @@ export class ClueController {
   }
 
   @Post('re-transition/account')
-  @RequirePermissions('lead:update')
+  @RequirePermissions('lead:convert', 'lead:update')
   @LogOperation('lead', 'retransitionCustomer')
   @ApiOperation({ summary: '批量关联已有客户' })
   retransitionCustomer(
@@ -216,7 +218,7 @@ export class ClueController {
   }
 
   @Post('transform')
-  @RequirePermissions('lead:update')
+  @RequirePermissions('lead:convert', 'lead:update')
   @LogOperation('lead', 'transform')
   @ApiOperation({ summary: '转换线索' })
   transform(@CurrentUser() user: AuthUser, @Body() dto: TransformClueDto) {

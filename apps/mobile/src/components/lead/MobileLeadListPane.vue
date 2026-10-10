@@ -31,6 +31,7 @@ const viewsReady = ref(false)
 const followShow = ref(false)
 const followTarget = ref<LeadVO | null>(null)
 
+const canConvert = computed(() => auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'))
 const listFields = computed(() =>
   fields.value.filter((field) => field.showInList && !field.hidden),
 )
@@ -96,6 +97,7 @@ function openFollow(lead: LeadVO) {
 }
 
 function openConvert(lead: LeadVO) {
+  if (!canConvert.value) return
   router.push('/leads/' + lead.id + '/convert')
 }
 
@@ -215,7 +217,7 @@ onMounted(loadMetadata)
                 @click.stop="openFollow(item)"
               >写跟进</van-button>
               <van-button
-                v-if="auth.hasPerm('lead:update') && item.transitionType !== 'CUSTOMER'"
+                v-if="canConvert && item.transitionType !== 'CUSTOMER'"
                 icon="exchange"
                 size="small"
                 type="primary"

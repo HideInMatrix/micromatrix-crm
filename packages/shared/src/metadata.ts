@@ -172,6 +172,40 @@ export interface HomeAnalyticsConfig {
   customerResultAmountFieldKey?: string
 }
 
+/** 下拉列表每个可选项对应一组预设的高级搜索条件。 */
+export interface QuickSearchPresetOption {
+  id: string
+  label: string
+  searchMode: 'AND' | 'OR'
+  conditions: FilterCondition[]
+}
+
+/** 普通输入框对应单一查询条件；预设下拉框在选中后应用选项对应的条件组。 */
+export interface QuickSearchItem {
+  id: string
+  kind: 'field' | 'preset_select'
+  label: string
+  fieldKey?: string
+  operator?: 'contains' | 'eq' | 'gte' | 'lte'
+  /** 仅 preset_select 使用：每个选项持有自己的 AND/OR 条件表达式。 */
+  options?: QuickSearchPresetOption[]
+  placeholder?: string
+}
+
+/** 已输入值展开后的查询条件组，供 PC 列表 API 使用。 */
+export interface QuickSearchQueryGroup {
+  mode: 'AND' | 'OR'
+  conditions: FilterCondition[]
+}
+
+export interface ModuleQuickSearchConfig {
+  enabled: boolean
+  showAdvancedFilter: boolean
+  showSavedViews: boolean
+  /** 多个快捷搜索控件之间采用 AND；选项内部可配置 AND/OR。 */
+  items: QuickSearchItem[]
+}
+
 /** MicroMatrix 当前正式消费的表单级 FormDesign 属性。 */
 export interface ModuleFormProp {
   layout?: 1 | 2 | 3 | 4
@@ -190,6 +224,8 @@ export interface ModuleFormProp {
    * Lead formProp 只保存 leadSourceFieldKey；Customer formProp 保存 customerResult*。
    */
   homeAnalytics?: HomeAnalyticsConfig
+  /** PC 端模块快捷搜索与高级能力入口开关；不影响移动端。 */
+  quickSearch?: ModuleQuickSearchConfig
   /** 跨表单联动配置；客户表单设计器支持配置 Lead → Customer 字段映射。 */
   linkProp?: FormLinkProp
   /** 保留未识别扩展键，避免局部 PATCH 覆盖其它 formProp 能力。 */

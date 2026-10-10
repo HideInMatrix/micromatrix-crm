@@ -1,4 +1,4 @@
-import type { FilterCondition } from '@micromatrix/shared'
+import type { FilterCondition, QuickSearchQueryGroup } from '@micromatrix/shared'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { Type } from 'class-transformer'
 import {
@@ -76,6 +76,11 @@ export class AccountPageDto {
   @IsIn(['AND', 'OR'])
   @IsOptional()
   filterMode?: 'AND' | 'OR'
+
+  @ApiPropertyOptional({ description: 'PC 快捷筛选下拉选项的预设条件组' })
+  @IsArray()
+  @IsOptional()
+  quickGroups?: QuickSearchQueryGroup[]
 
   @ApiPropertyOptional({ enum: ['ALL', 'SELF', 'DEPARTMENT', 'COLLABORATION'] })
   @IsIn(['ALL', 'SELF', 'DEPARTMENT', 'COLLABORATION'])

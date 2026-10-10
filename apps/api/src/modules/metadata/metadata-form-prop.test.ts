@@ -1,8 +1,107 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { ModuleFormProp } from '@micromatrix/shared'
+import type { ModuleFormProp, QuickSearchQueryGroup } from '@micromatrix/shared'
+import { resolveQuickSearchGroupIds, validateQuickSearchGroups } from '../../common/quick-search-groups'
 import { MetadataService } from './metadata.service'
 import type { ModuleFormsService } from './module-forms.service'
+
+test('预设下拉选项内部 OR、多个下拉控件之间 AND，结果不错误展平', async () => {
+  const groups: QuickSearchQueryGroup[] = [
+    { mode: 'OR', conditions: [
+      { key: 'name', op: 'contains', value: '张' },
+      { key: 'phone', op: 'contains', value: '138' },
+    ] },
+    { mode: 'AND', conditions: [{ key: 'name', op: 'contains', value: '学生' }] },
+  ]
+  const result = await resolveQuickSearchGroupIds(groups, async (conditions, mode) => {
+    if (mode === 'OR') return ['a', 'b', 'c']
+    assert.equal(conditions[0]?.value, '学生')
+    return ['b', 'd']
+  })
+  assert.deepEqual(result, ['b'])
+  const fieldList = [
+    { key: 'name', type: 'text', hidden: false },
+    { key: 'phone', type: 'phone', hidden: false },
+  ] as import('@micromatrix/shared').FieldVO[]
+  assert.deepEqual(validateQuickSearchGroups(groups, fieldList), groups)
+  assert.throws(() => validateQuickSearchGroups([
+    { mode: 'OR', conditions: [{ key: 'unknown', op: 'eq', value: 'x' }] },
+  ], fieldList), /不存在的字段/)
+})
+
+test('PC 快捷搜索 PATCH 校验字段与操作符且保留其它 formProp', async () => {
+  const original: ModuleFormProp = { layout: 2, futureFlag: { enabled: true } }
+  let saved: ModuleFormProp | undefined
+  const fields = [{ key: 'name', label: '姓名', type: 'text', hidden: false }]
+  const moduleForms = {
+    getConfig: async () => ({ formKey: 'lead', formProp: original, fields }),
+    saveFormProp: async (_tenant: string, _module: string, value: ModuleFormProp) => {
+      saved = value
+      return { formProp: value, fields }
+    },
+  } as unknown as ModuleFormsService
+  const service = new MetadataService(moduleForms)
+  const quickSearch = {
+    enabled: true,
+    showAdvancedFilter: false,
+    showSavedViews: false,
+    items: [{ id: 'name', kind: 'field' as const, label: '姓名', fieldKey: 'name', operator: 'contains' as const }],
+  }
+  await service.updateFormProp('tenant-a', 'lead', { quickSearch }, 'admin')
+  assert.deepEqual(saved, { ...original, quickSearch })
+  await assert.rejects(service.updateFormProp('tenant-a', 'lead', {
+    quickSearch: { ...quickSearch, items: [{ ...quickSearch.items[0]!, fieldKey: 'not_exists' }] },
+  }, 'admin'), /字段不存在/)
+  await assert.rejects(service.updateFormProp('tenant-a', 'lead', {
+    quickSearch: { ...quickSearch, items: [{ ...quickSearch.items[0]!, operator: 'gte' }] },
+  }, 'admin'), /操作符不支持/)
+  await assert.rejects(service.updateFormProp('tenant-a', 'lead', {
+    quickSearch: {
+      ...quickSearch,
+      items: [{ id: 'old-keyword', kind: 'keyword' as unknown as 'field', label: '旧版关键词框' }],
+    },
+  }, 'admin'), /快捷搜索项无效或重复/)
+})
+
+test('一个预设下拉框的选项能保存 AND/OR 多条件组合，非法字段被拒绝', async () => {
+  const current: ModuleFormProp = { layout: 2 }
+  let saved: ModuleFormProp | null = null
+  const fields = [
+    { key: 'name', label: '学生姓名', type: 'text', hidden: false },
+    { key: 'phone', label: '联系电话', type: 'phone', hidden: false },
+  ]
+  const moduleForms = {
+    getConfig: async () => ({ formKey: 'lead', formProp: current, fields }),
+    saveFormProp: async (_tenant: string, _module: string, formProp: ModuleFormProp) => {
+      saved = formProp
+      return { formKey: 'lead', formProp, fields }
+    },
+  } as unknown as ModuleFormsService
+  const service = new MetadataService(moduleForms)
+  const quickSearch = {
+    enabled: true, showAdvancedFilter: false, showSavedViews: false,
+    items: [{
+      id: 'quick-select', kind: 'preset_select' as const, label: '重点学生',
+      options: [{
+        id: 'focus', label: '需要联系', searchMode: 'OR' as const,
+        conditions: [
+          { key: 'name', op: 'contains' as const, value: '张' },
+          { key: 'phone', op: 'contains' as const, value: '138' },
+        ],
+      }],
+    }],
+  }
+  await service.updateFormProp('tenant-a', 'lead', { quickSearch }, 'admin')
+  assert.deepEqual(saved, { ...current, quickSearch })
+  await assert.rejects(service.updateFormProp('tenant-a', 'lead', {
+    quickSearch: { ...quickSearch, items: [{
+      ...quickSearch.items[0]!, options: [{
+        ...quickSearch.items[0]!.options[0]!,
+        conditions: [{ key: 'missing', op: 'eq', value: '1' }],
+      }],
+    }] },
+  }, 'admin'), /不存在的字段/)
+})
 
 test('formProp PATCH 只覆盖提交属性并保留既有 linkProp/扩展键', async () => {
   const original: ModuleFormProp = {

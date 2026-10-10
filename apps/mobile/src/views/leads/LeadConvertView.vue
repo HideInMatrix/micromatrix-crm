@@ -16,7 +16,9 @@ const loading = ref(false)
 const showConvertedSuccess = ref(false)
 const successCustomerId = ref('')
 
-const canCreateCustomer = computed(() => auth.hasPerm('customer:create'))
+const canCreateCustomer = computed(() =>
+  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
+)
 
 const cards = [
   { key: 'contact', label: '联系人', active: true, disabled: true },
@@ -36,7 +38,7 @@ async function load() {
 async function confirmConvert() {
   if (!lead.value) return
   if (!canCreateCustomer.value) {
-    showFailToast('无新建客户权限')
+    showFailToast('无线索转化权限或缺少关联的操作权限')
     return
   }
   loading.value = true

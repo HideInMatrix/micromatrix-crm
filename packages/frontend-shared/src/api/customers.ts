@@ -3,6 +3,7 @@ import type {
   DuplicateHitVO,
   FieldVO,
   PageQuery,
+  QuickSearchQueryGroup,
   PaginatedResult,
 } from '@micromatrix/shared'
 import type { AxiosResponse } from 'axios'
@@ -15,6 +16,7 @@ import {
 } from './import-export'
 
 export interface CustomerListParams extends PageQuery {
+  quickGroups?: QuickSearchQueryGroup[]
   /** FilterCondition[] 的 JSON 字符串 */
   filters?: string
   filterMode?: 'AND' | 'OR'
@@ -112,6 +114,7 @@ function customerPageBody(params: CustomerListParams) {
     viewId: params.viewId,
     filters: parseCustomerFilters(params.filters),
     filterMode: params.filterMode,
+    quickGroups: params.quickGroups,
     homeFilter: params.homeFilter,
   }
 }

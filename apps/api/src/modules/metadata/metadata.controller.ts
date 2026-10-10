@@ -38,7 +38,7 @@ export class MetadataController {
   }
 
   @Patch(':module/form-prop')
-  @RequirePermissions('system:module')
+  @RequirePermissions('system:module:update')
   @LogOperation('metadata', 'updateFormProp')
   @ApiOperation({ summary: '更新模块表单属性' })
   updateFormProp(

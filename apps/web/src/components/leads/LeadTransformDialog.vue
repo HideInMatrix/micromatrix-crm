@@ -18,7 +18,9 @@ const countdown = ref(5)
 const result = ref<{ customerId: string } | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
 
-const canTransform = computed(() => auth.hasPerm('customer:create'))
+const canTransform = computed(() =>
+  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
+)
 
 function stopCountdown() {
   if (timer) clearInterval(timer)
@@ -35,7 +37,7 @@ function startCountdown() {
 }
 
 async function confirm() {
-  if (!props.lead) return
+  if (!props.lead || !canTransform.value) return
   loading.value = true
   try {
     const { data } = await leadApi.transform({

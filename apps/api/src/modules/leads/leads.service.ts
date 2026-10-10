@@ -9,6 +9,7 @@ import {
   DEFAULT_LEAD_STAGES,
   FieldVO,
   type FilterCondition,
+  type QuickSearchQueryGroup,
   ImportResultVO,
   type LeadStageConfig,
   LeadVO,
@@ -25,6 +26,7 @@ import type {
 } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
 import { parseFilters } from '../../common/filter-builder'
+import { validateQuickSearchGroups, resolveQuickSearchGroupIds } from '../../common/quick-search-groups'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
@@ -150,6 +152,7 @@ interface LeadQueryInput {
   status?: string
   filters?: string | FilterCondition[]
   filterMode?: 'AND' | 'OR'
+  quickGroups?: QuickSearchQueryGroup[]
   viewId?: string
   homeFilter?: string
   sort?: { fieldId: string; direction: 'asc' | 'desc' | 'ASC' | 'DESC' }
@@ -198,6 +201,7 @@ export class LeadsService {
       keyword: dto.keyword,
       filters: dto.filters,
       filterMode: dto.filterMode,
+      quickGroups: dto.quickGroups,
       viewId: dto.viewId,
       homeFilter: dto.homeFilter,
       sort: dto.sort,
@@ -220,6 +224,7 @@ export class LeadsService {
       keyword: dto.keyword,
       filters: dto.filters,
       filterMode: dto.filterMode,
+      quickGroups: dto.quickGroups,
       viewId: dto.viewId,
       sort: dto.sort,
       scope: 'pool',
@@ -461,7 +466,12 @@ export class LeadsService {
         ? this.filterIds(user.tenantId, adHocConditions, query.filterMode ?? 'AND')
         : null,
     ])
-    const filteredIds = this.intersectIds(savedIds, adHocIds)
+    const presetGroups = validateQuickSearchGroups(query.quickGroups, fields)
+    const presetIds = await resolveQuickSearchGroupIds(
+      presetGroups,
+      (conditions, mode) => this.filterIds(user.tenantId, conditions, mode),
+    )
+    const filteredIds = this.intersectIds(this.intersectIds(savedIds, adHocIds), presetIds)
 
     let db = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
@@ -1381,6 +1391,7 @@ export class LeadsService {
 
   /** Lead → Customer：创建/复用客户并迁移联系人、跟进与附件。 */
   async transform(user: AuthUser, dto: TransformClueDto) {
+    this.assertFunctionalPermission(user, 'lead:convert', '无线索转化权限')
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
 
     const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
@@ -1462,6 +1473,7 @@ export class LeadsService {
 
   /** Cordys /lead/transition/account：独立路径，不复制 Follow，也不创建协作关系。 */
   async transitionCustomer(user: AuthUser, dto: ClueTransitionCustomerDto) {
+    this.assertFunctionalPermission(user, 'lead:convert', '无线索转化权限')
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
     const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
     if (!lead.owner) throw new BadRequestException('线索暂无负责人，无法关联客户')
@@ -1524,6 +1536,7 @@ export class LeadsService {
 
   /** Cordys /lead/re-transition/account：关联/重新关联已有客户。 */
   async retransitionCustomer(user: AuthUser, dto: ClueRetransitionCustomerDto) {
+    this.assertFunctionalPermission(user, 'lead:convert', '无线索转化权限')
     const customer = await this.assertTransitionCustomerAccessible(user, dto.customerId)
     const poolAdmin = customer.inSharedPool
       ? await this.pools.isPoolManager(user, 'customer', customer.poolId)

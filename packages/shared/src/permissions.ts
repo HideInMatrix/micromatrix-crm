@@ -25,6 +25,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
     children: [
       { code: 'lead:create', label: '新建' },
       { code: 'lead:update', label: '编辑' },
+      { code: 'lead:convert', label: '转化' },
       { code: 'lead:delete', label: '删除' },
       { code: 'lead:transfer', label: '转移' },
       { code: 'lead:recycle', label: '移入线索池' },

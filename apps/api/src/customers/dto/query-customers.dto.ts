@@ -1,6 +1,7 @@
+import type { QuickSearchQueryGroup } from '@micromatrix/shared'
 import { ApiPropertyOptional } from '@nestjs/swagger'
 import { Type } from 'class-transformer'
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { IsArray, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
 
 export class QueryCustomersDto {
   @ApiPropertyOptional({ default: 1 })
@@ -32,6 +33,11 @@ export class QueryCustomersDto {
   @IsIn(['AND', 'OR'])
   @IsOptional()
   filterMode?: 'AND' | 'OR'
+
+  @ApiPropertyOptional({ description: 'PC 端快捷筛选的预设条件组' })
+  @IsArray()
+  @IsOptional()
+  quickGroups?: QuickSearchQueryGroup[]
 
   @ApiPropertyOptional({ description: '保存的用户视图 ID' })
   @IsString()

@@ -11,6 +11,7 @@ import {
   DuplicateHitVO,
   FieldVO,
   type FilterCondition,
+  type QuickSearchQueryGroup,
   ImportResultVO,
   PaginatedResult,
   hasPermission,
@@ -24,6 +25,7 @@ import type {
 } from '../common/dto/resource-batch.dto'
 import { formatForExport } from '../common/export-format'
 import { parseFilters } from '../common/filter-builder'
+import { validateQuickSearchGroups, resolveQuickSearchGroupIds } from '../common/quick-search-groups'
 import { DataScopeService } from '../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../common/services/business-change-log.service'
 import { and, not, or } from '@prisma/orm-postgres/orm-client'
@@ -67,6 +69,7 @@ const MODULE = 'customer'
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 type CustomerQueryInput = Omit<QueryCustomersDto, 'filters'> & {
+  quickGroups?: QuickSearchQueryGroup[]
   filters?: string | FilterCondition[]
   homeFilter?: string
 }
@@ -126,6 +129,7 @@ export class CustomersService {
       view: dto.view,
       filters: dto.filters,
       filterMode: dto.filterMode,
+      quickGroups: dto.quickGroups,
       homeFilter: dto.homeFilter,
     })
     return {
@@ -146,6 +150,7 @@ export class CustomersService {
       viewId: dto.viewId,
       filters: dto.filters,
       filterMode: dto.filterMode,
+      quickGroups: dto.quickGroups,
       scope: 'sea',
       poolId,
     })
@@ -357,7 +362,12 @@ export class CustomersService {
         ? this.filterCustomerIds(user.tenantId, adHocConditions, query.filterMode ?? 'AND')
         : null,
     ])
-    const filteredIds = this.intersectIds(savedIds, adHocIds)
+    const presetGroups = validateQuickSearchGroups(query.quickGroups, fields)
+    const presetIds = await resolveQuickSearchGroupIds(
+      presetGroups,
+      (conditions, mode) => this.filterCustomerIds(user.tenantId, conditions, mode),
+    )
+    const filteredIds = this.intersectIds(this.intersectIds(savedIds, adHocIds), presetIds)
 
     let db = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,

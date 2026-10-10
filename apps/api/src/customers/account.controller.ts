@@ -179,6 +179,8 @@ export class AccountController {
         viewId: dto.viewId,
         view: dto.view,
         filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+        filterMode: dto.filterMode,
+        quickGroups: dto.quickGroups,
       },
       { fileName: dto.fileName, headList: dto.headList },
     )
