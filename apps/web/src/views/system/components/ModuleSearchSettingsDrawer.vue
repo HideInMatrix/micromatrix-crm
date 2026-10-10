@@ -17,9 +17,10 @@ const fieldRefs = useFieldRefs()
 const loading = ref(false)
 const saving = ref(false)
 const fields = ref<FieldVO[]>([])
-const config = ref<ModuleQuickSearchConfig>({
-  enabled: true, showAdvancedFilter: false, showSavedViews: false, items: [],
-})
+function defaultConfig(): ModuleQuickSearchConfig {
+  return { enabled: false, showAdvancedFilter: true, showSavedViews: true, items: [] }
+}
+const config = ref<ModuleQuickSearchConfig>(defaultConfig())
 const conditionFields = computed(() =>
   fields.value.filter((field) => !field.hidden && field.type !== 'formula' && field.type !== 'sub_product'),
 )
@@ -57,7 +58,7 @@ async function load() {
     fields.value = data.fields
     config.value = data.formProp.quickSearch
       ? JSON.parse(JSON.stringify(data.formProp.quickSearch)) as ModuleQuickSearchConfig
-      : { enabled: true, showAdvancedFilter: false, showSavedViews: false, items: [] }
+      : defaultConfig()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -135,8 +136,8 @@ watch(() => props.module, () => { if (visible.value) void load() })
   <el-drawer v-model="visible" :title="module === 'lead' ? '线索搜索设置' : '客户搜索设置'" size="920px" destroy-on-close>
     <div v-loading="loading">
       <el-form label-width="150px">
-        <el-form-item label="启用快捷搜索"><el-switch v-model="config.enabled" /></el-form-item>
-        <el-form-item label="显示高级筛选"><el-switch v-model="config.showAdvancedFilter" /></el-form-item>
+        <el-form-item label="快捷搜索"><el-switch v-model="config.enabled" /></el-form-item>
+        <el-form-item label="高级筛选"><el-switch v-model="config.showAdvancedFilter" /></el-form-item>
         <el-form-item label="显示视图"><el-switch v-model="config.showSavedViews" /></el-form-item>
       </el-form>
       <div class="mb-3 flex items-center justify-between">

@@ -66,7 +66,8 @@ const filters = ref<FilterCondition[]>([])
 const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
 const quickFilters = ref<FilterCondition[]>([])
 const quickGroups = ref<QuickSearchQueryGroup[]>([])
-const showLegacySearch = computed(() => !quickSearch.value?.enabled)
+const showQuickSearchPanel = computed(() => quickSearch.value?.enabled === true)
+const showLegacySearch = computed(() => !showQuickSearchPanel.value)
 const showAdvanced = computed(() => quickSearch.value?.showAdvancedFilter !== false)
 const showSavedViews = computed(() => quickSearch.value?.showSavedViews !== false)
 const activeHomeFilter = ref<HomeFilterPayload | null>(null)
@@ -520,9 +521,42 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <section v-if="quickSearch && showQuickSearchPanel" class="mb-4" data-testid="module-search-panel">
+    <el-card shadow="never">
+      <div class="mb-4 flex items-center gap-2">
+        <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">客户查询</h2>
+        <span class="text-xs text-[var(--el-text-color-secondary)]">按配置条件筛选客户</span>
+      </div>
+      <el-alert
+        v-if="activeHomeFilter"
+        :title="homeFilterSummary"
+        type="info"
+        show-icon
+        closable
+        class="mb-4"
+        @close="clearHomeFilter"
+      />
+      <ModuleQuickSearch
+        :config="quickSearch"
+        :fields="fields"
+        @search="handleQuickSearch"
+        @reset="resetQuickSearch"
+      />
+      <div v-if="showAdvanced" class="mt-3 flex justify-end">
+        <AdvancedFilter
+          v-model="filters"
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          @apply="(c) => ((filters = c), handleSearch())"
+        />
+      </div>
+    </el-card>
+  </section>
+
+  <el-card shadow="never" data-testid="module-table-panel">
     <el-alert
-      v-if="activeHomeFilter"
+      v-if="activeHomeFilter && !showQuickSearchPanel"
       :title="homeFilterSummary"
       type="info"
       show-icon
@@ -576,7 +610,7 @@ onMounted(async () => {
       <div class="flex flex-wrap items-center gap-2">
         <CrmSearchInput v-if="showLegacySearch" v-model="query.keyword" placeholder="搜索客户名称" @search="handleSearch" />
         <AdvancedFilter
-          v-if="showAdvanced"
+          v-if="showAdvanced && !showQuickSearchPanel"
           v-model="filters"
           :fields="fields"
           :members="fieldRefs.members.value"
@@ -591,7 +625,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <ModuleQuickSearch v-if="quickSearch?.enabled" :config="quickSearch" :fields="fields" @search="handleQuickSearch" @reset="resetQuickSearch" />
     <div v-show="showSavedViews">
       <SavedViewBar
       ref="savedViewBarRef"

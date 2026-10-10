@@ -60,7 +60,7 @@ function reset() {
 </script>
 
 <template>
-  <div class="mb-4 flex flex-wrap items-end gap-3 rounded-lg bg-[var(--el-bg-color)] p-4" data-testid="module-quick-search">
+  <div class="flex flex-wrap items-end gap-3" data-testid="module-quick-search">
     <div v-for="item in visibleItems" :key="item.id" class="min-w-[190px] flex-1 max-w-[320px]">
       <div class="mb-1 text-sm text-[var(--el-text-color-regular)]">{{ item.label }}</div>
       <el-select
