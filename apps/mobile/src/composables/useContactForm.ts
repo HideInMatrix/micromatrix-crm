@@ -1,10 +1,10 @@
-import type { FieldVO } from '@micromatrix/shared'
+import type { FieldVO, ModuleFormProp } from '@micromatrix/shared'
 import type { Ref } from 'vue'
 import { computed, ref } from 'vue'
 import { showFailToast } from 'vant'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { fetchFields } from '@/api/mobile'
+import { metadataApi } from '@micromatrix/frontend-shared/api/metadata'
 import { contactApi } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { showSuccessFeedback, wait } from '@/utils/feedback'
@@ -18,6 +18,7 @@ import {
 export function useContactForm(contactId: Readonly<Ref<string | undefined>>) {
   const fieldRefs = useFieldRefs()
   const fields = ref<FieldVO[]>([])
+  const formProp = ref<ModuleFormProp>({})
   const model = ref<Record<string, unknown>>({})
   const customerOptions = ref<Array<{ id: string; name: string }>>([])
   const loading = ref(false)
@@ -30,13 +31,17 @@ export function useContactForm(contactId: Readonly<Ref<string | undefined>>) {
   async function init() {
     loading.value = true
     try {
-      const [{ data: fieldData }, { data: customers }, detail] = await Promise.all([
-        fetchFields('contact'),
+      fields.value = []
+      formProp.value = {}
+      model.value = {}
+      const [{ data: config }, { data: customers }, detail] = await Promise.all([
+        metadataApi.formConfig('contact'),
         listCustomerOptions(),
         contactId.value ? contactApi.get(contactId.value) : Promise.resolve(null),
         fieldRefs.load(),
       ])
-      fields.value = [...fieldData].sort((a, b) => a.sort - b.sort)
+      fields.value = [...config.fields].sort((a, b) => a.sort - b.sort)
+      formProp.value = config.formProp
       customerOptions.value = customers
       model.value = detail
         ? contactToFormModel(detail.data, fields.value)
@@ -50,7 +55,7 @@ export function useContactForm(contactId: Readonly<Ref<string | undefined>>) {
   }
 
   async function save() {
-    const missing = firstMissingRequiredContactField(model.value, fields.value)
+    const missing = firstMissingRequiredContactField(model.value, fields.value, formProp.value)
     if (missing) {
       showFailToast('请填写' + missing.label)
       return false
@@ -75,6 +80,7 @@ export function useContactForm(contactId: Readonly<Ref<string | undefined>>) {
   return {
     fieldRefs,
     fields,
+    formProp,
     model,
     customerOptions,
     loading,
@@ -86,4 +92,3 @@ export function useContactForm(contactId: Readonly<Ref<string | undefined>>) {
     save,
   }
 }
-

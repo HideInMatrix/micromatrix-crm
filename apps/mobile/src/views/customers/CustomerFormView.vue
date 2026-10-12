@@ -50,11 +50,7 @@ async function initialize() {
   }
 }
 
-watch(
-  customerId,
-  initialize,
-  { immediate: true },
-)
+watch(customerId, initialize, { immediate: true })
 
 onBeforeRouteLeave((to) => {
   if (to.name !== 'mobile-search-select') searchSelect.clearDraft(draftKey.value)
@@ -70,6 +66,7 @@ onBeforeRouteLeave((to) => {
         ref="customerFormRef"
         v-model="form.model.value"
         :fields="form.fields.value"
+        :form-prop="form.formProp.value"
         :members="form.fieldRefs.members.value"
         :dept-tree="form.fieldRefs.deptTree.value"
         @search-select="openSearchSelect"

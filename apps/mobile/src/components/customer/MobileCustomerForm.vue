@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
+import type { DepartmentVO, FieldVO, ModuleFormProp } from '@micromatrix/shared'
 import type { FormInstance } from 'vant'
 import { ref } from 'vue'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 
 defineProps<{
   fields: FieldVO[]
+  formProp?: ModuleFormProp
   members: Array<{ id: string; name: string }>
   deptTree: DepartmentVO[]
 }>()
@@ -34,6 +35,7 @@ defineExpose({ validate })
     <MobileDynamicForm
       v-model="model"
       :fields="fields"
+      :form-prop="formProp"
       :members="members"
       :dept-tree="deptTree"
       @search-select="emit('search-select', $event)"

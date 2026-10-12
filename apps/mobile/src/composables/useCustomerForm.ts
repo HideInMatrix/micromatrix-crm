@@ -1,14 +1,10 @@
-import type { FieldVO } from '@micromatrix/shared'
+import type { FieldVO, ModuleFormProp } from '@micromatrix/shared'
 import type { Ref } from 'vue'
 import { computed, ref } from 'vue'
 import { showFailToast } from 'vant'
-import {
-  createCustomer,
-  getCustomer,
-  updateCustomer,
-} from '@/api/customers'
+import { createCustomer, getCustomer, updateCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { fetchFields } from '@/api/mobile'
+import { metadataApi } from '@micromatrix/frontend-shared/api/metadata'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { showSuccessFeedback, wait } from '@/utils/feedback'
 import {
@@ -21,6 +17,7 @@ import {
 export function useCustomerForm(customerId: Readonly<Ref<string | undefined>>) {
   const fieldRefs = useFieldRefs()
   const fields = ref<FieldVO[]>([])
+  const formProp = ref<ModuleFormProp>({})
   const model = ref<Record<string, unknown>>({})
   const loading = ref(false)
   const saving = ref(false)
@@ -33,13 +30,15 @@ export function useCustomerForm(customerId: Readonly<Ref<string | undefined>>) {
     loading.value = true
     try {
       fields.value = []
+      formProp.value = {}
       model.value = {}
-      const [{ data: fieldData }, detail] = await Promise.all([
-        fetchFields('customer'),
+      const [{ data: config }, detail] = await Promise.all([
+        metadataApi.formConfig('customer'),
         customerId.value ? getCustomer(customerId.value) : Promise.resolve(null),
         fieldRefs.load(),
       ])
-      fields.value = [...fieldData].sort((a, b) => a.sort - b.sort)
+      fields.value = [...config.fields].sort((a, b) => a.sort - b.sort)
+      formProp.value = config.formProp
       model.value = detail
         ? customerToFormModel(detail.data, fields.value)
         : createCustomerFormModel(fields.value)
@@ -52,7 +51,7 @@ export function useCustomerForm(customerId: Readonly<Ref<string | undefined>>) {
   }
 
   async function save() {
-    const missing = firstMissingRequiredCustomerField(model.value, fields.value)
+    const missing = firstMissingRequiredCustomerField(model.value, fields.value, formProp.value)
     if (missing) {
       showFailToast(`请填写${missing.label}`)
       return false
@@ -77,6 +76,7 @@ export function useCustomerForm(customerId: Readonly<Ref<string | undefined>>) {
   return {
     fieldRefs,
     fields,
+    formProp,
     model,
     loading,
     saving,
@@ -87,4 +87,3 @@ export function useCustomerForm(customerId: Readonly<Ref<string | undefined>>) {
     save,
   }
 }
-

@@ -1,6 +1,7 @@
 export * from './custom-form'
 export * from './enterprise-settings'
 export * from './form-runtime'
+export * from './form-presentation'
 export * from './home'
 export * from './metadata'
 export * from './location'

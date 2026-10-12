@@ -66,6 +66,7 @@ onBeforeRouteLeave((to) => {
         ref="contactFormRef"
         v-model="form.model.value"
         :fields="form.fields.value"
+        :form-prop="form.formProp.value"
         :members="form.fieldRefs.members.value"
         :dept-tree="form.fieldRefs.deptTree.value"
         :customer-options="form.customerOptions.value"

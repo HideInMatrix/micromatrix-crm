@@ -10,6 +10,7 @@ import {
   type ModuleKey,
 } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
+import { DEFAULT_ALERT_CONFIG } from '@/components/form-engine/form-presentation'
 
 import ModuleFormLinkDrawer from './ModuleFormLinkDrawer.vue'
 import { isDraftField, type ModuleFormFieldDraft } from './types'
@@ -52,6 +53,23 @@ const typeLabel = computed(
     (field.value?.type === 'alert' ? 'Alert 提示' : '-'),
 )
 const config = computed<FieldConfig>(() => field.value?.config ?? {})
+function defaultAlertBackgroundColor(): string {
+  if (typeof document === 'undefined') return DEFAULT_ALERT_CONFIG.backgroundColor
+  return (
+    getComputedStyle(document.documentElement)
+      .getPropertyValue('--el-color-primary-light-9')
+      .trim() || DEFAULT_ALERT_CONFIG.backgroundColor
+  )
+}
+const alertBackgroundColor = computed({
+  get: () => field.value?.config?.alertBackgroundColor ?? defaultAlertBackgroundColor(),
+  set: (value: string) => {
+    if (!field.value) return
+    const nextConfig = (field.value.config ??= {})
+    if (value) nextConfig.alertBackgroundColor = value
+    else delete nextConfig.alertBackgroundColor
+  },
+})
 const needOptions = computed(() =>
   ['select', 'multiselect', 'radio', 'checkbox'].includes(field.value?.type ?? ''),
 )
@@ -219,6 +237,10 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
               <div>
                 <div class="mb-2 text-sm">文字大小（px）</div>
                 <el-input-number v-model="config.alertFontSize" :min="12" :max="24" />
+              </div>
+              <div>
+                <div class="mb-2 text-sm">背景颜色</div>
+                <el-color-picker v-model="alertBackgroundColor" />
               </div>
             </section>
 

@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import {
+  evaluateFormula,
+  evaluateFormRuntime,
   supportsMobileSearchSelect,
+  type ModuleFormProp,
   type DepartmentVO,
   type FieldVO,
 } from '@micromatrix/shared'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import MobileDataSourceFieldInput from './MobileDataSourceFieldInput.vue'
+import MobileFormAlert from './MobileFormAlert.vue'
+import MobileSubTableField from './MobileSubTableField.vue'
+import { visibleMobileFormFields } from '@/utils/mobile-form-fields'
 import MobileSearchPageSelectField from './MobileSearchPageSelectField.vue'
 import MobileVantDateTimeField from './MobileVantDateTimeField.vue'
 
 const props = defineProps<{
   fields: FieldVO[]
+  formProp?: ModuleFormProp
   members?: Array<{ id: string; name: string }>
   deptTree?: DepartmentVO[]
   fieldFilter?: (field: FieldVO) => boolean
@@ -20,15 +27,33 @@ const emit = defineEmits<{
 }>()
 const model = defineModel<Record<string, unknown>>({ required: true })
 
+const runtime = computed(() => evaluateFormRuntime(props.fields, model.value))
 const visibleFields = computed(() =>
-  props.fields.filter(
-    (field) =>
-      !field.hidden &&
-      field.type !== 'formula' &&
-      field.mobile !== false &&
-      (props.fieldFilter?.(field) ?? true),
-  ),
+  visibleMobileFormFields(props.fields, props.formProp, runtime.value.values, props.fieldFilter),
 )
+
+watch(
+  () => runtime.value.values,
+  (values) => {
+    if (
+      Object.entries(values).some(
+        ([key, value]) => JSON.stringify(model.value[key]) !== JSON.stringify(value),
+      )
+    ) {
+      model.value = { ...model.value, ...values }
+    }
+  },
+  { immediate: true, deep: true },
+)
+
+function formulaDisplayValue(field: FieldVO): string {
+  if (!field.config?.formula) return '-'
+  const result = evaluateFormula(field.config.formula, model.value)
+  if (result === null) return '-'
+  return field.config.precision !== undefined
+    ? result.toFixed(field.config.precision)
+    : String(result)
+}
 
 const pickerField = ref<FieldVO | null>(null)
 const showPicker = ref(false)
@@ -59,10 +84,7 @@ function openPicker(field: FieldVO) {
 }
 
 function usesSearchPage(field: FieldVO) {
-  return (
-    supportsMobileSearchSelect(field.type) &&
-    field.config?.mobileSelectMode === 'searchPage'
-  )
+  return supportsMobileSearchSelect(field.type) && field.config?.mobileSelectMode === 'searchPage'
 }
 
 function onPickerConfirm({ selectedValues }: { selectedValues: string[] }) {
@@ -147,8 +169,29 @@ function textInputType(field: FieldVO) {
     class="!mx-4 overflow-hidden rounded-[6px] border border-[var(--text-n8)] bg-[var(--text-n10)] [&_.van-cell]:!px-4 [&_.van-cell]:!py-3 [&_.van-field__control]:text-[var(--text-n1)] [&_.van-field__label]:!w-[84px] [&_.van-field__label]:text-[var(--text-n2)]"
   >
     <template v-for="field in visibleFields" :key="field.key">
+      <MobileFormAlert v-if="field.type === 'alert'" :field="field" />
+      <van-field
+        v-else-if="field.type === 'formula'"
+        :label="field.label"
+        :model-value="formulaDisplayValue(field)"
+        readonly
+      />
+      <MobileSubTableField
+        v-else-if="field.type === 'sub_product'"
+        v-model="model[field.key]"
+        :field="field"
+        :members="members"
+        :dept-tree="deptTree"
+      />
       <slot
-        v-if="field.system && $slots['system-field']"
+        v-else-if="field.key === 'customerId' && $slots['customer-field']"
+        name="customer-field"
+        :field="field"
+        :value="model[field.key]"
+        :set-value="(value: unknown) => setFieldValue(field, value)"
+      />
+      <slot
+        v-else-if="field.system && $slots['system-field']"
         name="system-field"
         :field="field"
         :value="model[field.key]"

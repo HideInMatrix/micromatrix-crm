@@ -1,4 +1,10 @@
-import { isCustomFieldKey, type ContactVO, type FieldVO } from '@micromatrix/shared'
+import {
+  isCustomFieldKey,
+  type ContactVO,
+  type FieldVO,
+  type ModuleFormProp,
+} from '@micromatrix/shared'
+import { visibleMobileFormFields } from './mobile-form-fields'
 
 export function createContactFormModel(fields: FieldVO[]) {
   return Object.fromEntries(
@@ -48,11 +54,10 @@ export function contactFormToPayload(model: Record<string, unknown>) {
 export function firstMissingRequiredContactField(
   model: Record<string, unknown>,
   fields: FieldVO[],
+  formProp?: ModuleFormProp,
 ) {
-  return fields.find((field) => {
-    if (!field.required || field.hidden || field.mobile === false || field.type === 'formula') {
-      return false
-    }
+  return visibleMobileFormFields(fields, formProp, model).find((field) => {
+    if (!field.required || field.type === 'formula' || field.type === 'alert') return false
     const value = model[field.key]
     return (
       value === undefined ||
@@ -62,4 +67,3 @@ export function firstMissingRequiredContactField(
     )
   })
 }
-

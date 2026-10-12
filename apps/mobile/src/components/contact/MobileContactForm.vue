@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
+import type { DepartmentVO, FieldVO, ModuleFormProp } from '@micromatrix/shared'
 import type { FormInstance } from 'vant'
 import { computed, ref } from 'vue'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 
 const props = defineProps<{
   fields: FieldVO[]
+  formProp?: ModuleFormProp
   members: Array<{ id: string; name: string }>
   deptTree: DepartmentVO[]
   customerOptions: Array<{ id: string; name: string }>
@@ -18,19 +19,12 @@ const model = defineModel<Record<string, unknown>>({ required: true })
 const formRef = ref<FormInstance>()
 const customerPickerShow = ref(false)
 
-const customerField = computed(() => props.fields.find((field) => field.key === 'customerId'))
 const customerColumns = computed(() =>
   props.customerOptions.map((item) => ({ text: item.name, value: item.id })),
 )
 const selectedCustomerName = computed(
-  () =>
-    props.customerOptions.find((item) => item.id === model.value.customerId)?.name ??
-    '请选择',
+  () => props.customerOptions.find((item) => item.id === model.value.customerId)?.name ?? '',
 )
-
-function fieldFilter(field: FieldVO) {
-  return field.key !== 'customerId'
-}
 
 function selectCustomer({ selectedValues }: { selectedValues: string[] }) {
   model.value.customerId = selectedValues[0] ?? ''
@@ -52,31 +46,28 @@ defineExpose({ validate })
     class="!py-10"
   />
   <van-form v-else ref="formRef" required="auto">
-    <van-cell-group v-if="customerField">
-      <van-field
-        :model-value="selectedCustomerName"
-        name="customerId"
-        :label="customerField.label"
-        :required="customerField.required"
-        :rules="
-          customerField.required
-            ? [{ required: true, message: '请选择' + customerField.label }]
-            : undefined
-        "
-        readonly
-        is-link
-        @click="customerPickerShow = true"
-      />
-    </van-cell-group>
-
     <MobileDynamicForm
       v-model="model"
       :fields="fields"
+      :form-prop="formProp"
       :members="members"
       :dept-tree="deptTree"
-      :field-filter="fieldFilter"
       @search-select="emit('search-select', $event)"
-    />
+    >
+      <template #customer-field="{ field }">
+        <van-field
+          :model-value="selectedCustomerName"
+          name="customerId"
+          :label="field.label"
+          :placeholder="`请选择${field.label}`"
+          :required="field.required"
+          :rules="field.required ? [{ required: true, message: '请选择' + field.label }] : []"
+          readonly
+          is-link
+          @click="customerPickerShow = true"
+        />
+      </template>
+    </MobileDynamicForm>
   </van-form>
 
   <van-popup v-model:show="customerPickerShow" position="bottom" round>
@@ -87,4 +78,3 @@ defineExpose({ validate })
     />
   </van-popup>
 </template>
-

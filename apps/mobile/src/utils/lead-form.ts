@@ -1,4 +1,10 @@
-import { isCustomFieldKey, type FieldVO, type LeadVO } from '@micromatrix/shared'
+import {
+  isCustomFieldKey,
+  type FieldVO,
+  type LeadVO,
+  type ModuleFormProp,
+} from '@micromatrix/shared'
+import { visibleMobileFormFields } from './mobile-form-fields'
 
 export function createLeadFormModel(fields: FieldVO[]) {
   return Object.fromEntries(
@@ -59,11 +65,10 @@ export function leadFormToPayload(model: Record<string, unknown>, fields: FieldV
 export function firstMissingRequiredLeadField(
   model: Record<string, unknown>,
   fields: FieldVO[],
+  formProp?: ModuleFormProp,
 ) {
-  return fields.find((field) => {
-    if (!field.required || field.hidden || field.mobile === false || field.type === 'formula') {
-      return false
-    }
+  return visibleMobileFormFields(fields, formProp, model).find((field) => {
+    if (!field.required || field.type === 'formula' || field.type === 'alert') return false
     const value = model[field.key]
     return (
       value === undefined ||
@@ -73,4 +78,3 @@ export function firstMissingRequiredLeadField(
     )
   })
 }
-

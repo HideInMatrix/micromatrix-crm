@@ -36,18 +36,21 @@ const iconComponent = computed(() => iconMap[props.field.config?.alertIcon ?? 'i
 const text = computed(() => props.field.config?.alertText || DEFAULT_ALERT_CONFIG.text)
 const color = computed(() => props.field.config?.alertColor || DEFAULT_ALERT_CONFIG.color)
 const fontSize = computed(() => props.field.config?.alertFontSize ?? DEFAULT_ALERT_CONFIG.fontSize)
+const backgroundColor = computed(
+  () => props.field.config?.alertBackgroundColor || 'var(--el-color-primary-light-9)',
+)
 </script>
 
 <template>
   <div
-    class="flex w-full items-center gap-2 rounded-[var(--el-border-radius-base)] border border-[var(--el-color-primary-light-7)] bg-[var(--el-color-primary-light-9)] px-3 py-2.5"
-    :style="{ color, fontSize: `${fontSize}px` }"
+    class="flex w-full items-center gap-2 rounded-[4px] border border-[var(--el-color-primary-light-7)] px-4 py-2"
+    :style="{ color, fontSize: `${fontSize}px`, backgroundColor }"
     role="note"
   >
     <component
       :is="iconComponent"
       class="shrink-0"
-      :size="fontSize + 2"
+      :size="11"
       :stroke-width="1.8"
       aria-hidden="true"
     />

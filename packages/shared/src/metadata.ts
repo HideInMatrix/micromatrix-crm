@@ -235,6 +235,8 @@ export interface FormAlertConfig {
   text: string
   color: string
   fontSize: number
+  /** Alert 背景色；旧配置缺省时继续使用主题默认提示背景。 */
+  backgroundColor?: string
 }
 
 export interface FormLabelStyle {
@@ -276,6 +278,7 @@ export interface FieldConfig {
   alertText?: string
   alertColor?: string
   alertFontSize?: number
+  alertBackgroundColor?: string
   placeholder?: string
   defaultValue?: unknown
   /**

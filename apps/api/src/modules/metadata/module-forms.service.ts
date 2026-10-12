@@ -1323,7 +1323,10 @@ export class ModuleFormsService {
           !/^#[0-9a-fA-F]{6}$/.test(alert.color) ||
           !Number.isInteger(alert.fontSize) ||
           alert.fontSize < 12 ||
-          alert.fontSize > 24
+          alert.fontSize > 24 ||
+          (alert.backgroundColor !== undefined &&
+            (typeof alert.backgroundColor !== 'string' ||
+              !/^#[0-9a-fA-F]{6}$/.test(alert.backgroundColor)))
         ) {
           throw new BadRequestException('Alert 提示组件配置不正确')
         }

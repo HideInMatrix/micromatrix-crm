@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { FieldVO, ModuleFormProp } from '@micromatrix/shared'
-import { DEFAULT_ALERT_TEXT, mergeAlertFields, serializeAlertFields } from '../src/components/form-engine/form-presentation'
+import {
+  DEFAULT_ALERT_TEXT,
+  mergeAlertFields,
+  serializeAlertFields,
+} from '../src/components/form-engine/form-presentation'
 
 function field(id: string): FieldVO {
   return {
@@ -67,6 +71,36 @@ test('新建 Alert 临时 ID 序列化成后端允许的稳定 ID', () => {
   assert.equal(alerts[0]?.icon, 'triangle-alert')
   assert.equal(alerts[0]?.color, '#ff0000')
   assert.equal(alerts[0]?.fontSize, 16)
+  assert.equal(alerts[0]?.backgroundColor, undefined)
+})
+
+test('Alert 背景色在保存与重新加载后保持一致，兼容无背景色的旧配置', () => {
+  const backgroundColor = '#f7f1cc'
+  const newAlert = {
+    ...field('draft:background-alert'),
+    type: 'alert' as const,
+    config: {
+      alertIcon: 'info',
+      alertText: DEFAULT_ALERT_TEXT,
+      alertColor: '#409eff',
+      alertFontSize: 14,
+      alertBackgroundColor: backgroundColor,
+    },
+  }
+  const serialized = serializeAlertFields([newAlert])
+  assert.equal(serialized[0]?.backgroundColor, backgroundColor)
+  const restored = mergeAlertFields([field('student')], { alerts: serialized })
+  assert.equal(restored[0]?.config?.alertBackgroundColor, backgroundColor)
+  assert.deepEqual(serializeAlertFields(restored), serialized)
+
+  const oldConfig: ModuleFormProp = {
+    alerts: [
+      { id: 'old-notice', position: 0, icon: 'info', text: '提示', color: '#409eff', fontSize: 14 },
+    ],
+  }
+  const oldAlert = mergeAlertFields([field('student')], oldConfig)
+  assert.equal(oldAlert[0]?.config?.alertBackgroundColor, undefined)
+  assert.deepEqual(serializeAlertFields(oldAlert), oldConfig.alerts)
 })
 
 test('多 Alert 排序及移除后不会残留旧展示项', () => {
