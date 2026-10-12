@@ -4,7 +4,6 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core'
 import { ScheduleModule } from '@nestjs/schedule'
 import { AuthModule } from './auth/auth.module'
 import { CommonModule } from './common/common.module'
-import { ApprovalsModule } from './modules/approvals/approvals.module'
 import { AnnouncementsModule } from './modules/announcements/announcements.module'
 import { AttachmentsModule } from './modules/attachments/attachments.module'
 import { ImportExportModule } from './modules/import-export/import-export.module'
@@ -53,7 +52,6 @@ import { RedisModule } from './redis/redis.module'
     AnnouncementsModule,
     ModuleFormsModule,
     ModuleConfigsModule,
-    ApprovalsModule,
     CustomersModule,
     ContactsModule,
     LeadsModule,

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { TOP_NAVIGATION_DEFINITIONS } from '@micromatrix/shared'
-import { CalendarClock, CircleHelp, Info, ListTodo } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { CalendarClock, CircleHelp, Info } from 'lucide-vue-next'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { approvalApi } from '@/api/approvals'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
 import NotificationBell from './NotificationBell.vue'
@@ -11,7 +10,6 @@ import NotificationBell from './NotificationBell.vue'
 const router = useRouter()
 const auth = useAuthStore()
 const moduleConfig = useModuleConfigStore()
-const pendingApprovalCount = ref(0)
 
 const actions = computed(() =>
   TOP_NAVIGATION_DEFINITIONS.filter((definition) => {
@@ -23,45 +21,17 @@ const actions = computed(() =>
   ),
 )
 
-async function loadPendingApprovalCount() {
-  if (!auth.hasPerm('menu:approval')) return
-  const { data } = await approvalApi.myPending({ page: 1, pageSize: 1 })
-  pendingApprovalCount.value = data.total
-}
-
 function openHelp() {
   window.open('/api/docs/', '_blank', 'noopener,noreferrer')
 }
 
-onMounted(() => {
-  loadPendingApprovalCount().catch(() => undefined)
-})
 </script>
 
 <template>
   <div class="flex items-center gap-2" data-testid="top-navigation-actions">
     <template v-for="action in actions" :key="action.key">
-      <el-tooltip v-if="action.key === 'task'" content="审批待办" placement="bottom">
-        <el-badge
-          :value="pendingApprovalCount"
-          :hidden="pendingApprovalCount === 0"
-          :max="99"
-          class="cursor-pointer"
-          data-top-navigation-key="task"
-          @click="router.push('/approvals')"
-        >
-          <button
-            type="button"
-            class="h-8 w-8 flex-center border-0 rounded-[var(--border-radius-small)] bg-transparent p-2 text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[var(--el-fill-color-light)]"
-            aria-label="审批待办"
-          >
-            <ListTodo :size="16" :stroke-width="1.8" aria-hidden="true" />
-          </button>
-        </el-badge>
-      </el-tooltip>
-
       <span
-        v-else-if="action.key === 'notify'"
+        v-if="action.key === 'notify'"
         class="inline-flex"
         data-top-navigation-key="notify"
       >

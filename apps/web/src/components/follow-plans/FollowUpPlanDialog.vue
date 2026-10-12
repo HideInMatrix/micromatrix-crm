@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import {
   isFollowUpPlanSystemFieldKey,
   type FieldVO,
@@ -237,7 +238,7 @@ watch(
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     :title="title"
     :width="dialogWidth"
@@ -282,5 +283,5 @@ watch(
         保存
       </el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

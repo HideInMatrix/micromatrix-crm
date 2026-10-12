@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import { isCustomFieldKey, type FieldVO } from '@micromatrix/shared'
 import { ref } from 'vue'
 import { downloadCsv, parseCsv } from '@/utils/csv'
@@ -91,7 +92,7 @@ defineExpose({ reset })
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     :title="`导入${props.moduleLabel}`"
     width="560px"
@@ -130,5 +131,5 @@ defineExpose({ reset })
         开始导入
       </el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

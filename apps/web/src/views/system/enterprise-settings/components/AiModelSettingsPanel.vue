@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type {
   EnterpriseAiModelVO,
   EnterpriseAiProvider,
@@ -369,7 +370,7 @@ onMounted(loadModels)
       </template>
     </el-drawer>
 
-    <el-dialog v-model="routeVisible" title="模型路由策略" width="620px" destroy-on-close>
+    <CrmDialog v-model="routeVisible" title="模型路由策略" width="620px" destroy-on-close>
       <div v-loading="routeLoading">
         <div class="mb-2.5 text-xs text-[var(--el-text-color-secondary)]">
           按顺序尝试可用模型。仅启用状态的模型可以加入路由。
@@ -415,6 +416,6 @@ onMounted(loadModels)
         <el-button @click="routeVisible = false">取消</el-button>
         <el-button type="primary" :loading="routeSaving" @click="saveRoute">保存策略</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </el-card>
 </template>

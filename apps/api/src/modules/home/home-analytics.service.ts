@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common'
+import { BadRequestException, Injectable } from '@nestjs/common'
 import {
   DEFAULT_LEAD_STAGES,
+  hasPermission,
   type FieldVO,
   type HomeAnalyticsChannelItem,
   type HomeAnalyticsPerformanceItem,
   type HomeAnalyticsResultItem,
   type HomeAnalyticsVO,
+  type HomeAnalyticsWidgetResult,
+  type HomeAnalyticsWidgetConfig,
+  type HomeWidgetPeriod,
   type HomeStatisticRequest,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
@@ -39,6 +43,14 @@ export class HomeAnalyticsService {
   ) {}
 
   async overview(user: AuthUser, request: HomeStatisticRequest): Promise<HomeAnalyticsVO> {
+    // 时间筛选由首页视图提供，绝不采用模块配置里曾经保存的 period。
+    const widgetPeriods = request.widgetPeriods ?? {}
+    if (!widgetPeriods || typeof widgetPeriods !== 'object' || Array.isArray(widgetPeriods) ||
+        Object.keys(widgetPeriods).length > 12 ||
+        Object.entries(widgetPeriods).some(([id, period]) =>
+          !/^[\w-]{1,64}$/.test(id) || !['7d', '30d', 'all'].includes(period))) {
+      throw new BadRequestException('首页统计时间范围无效')
+    }
     const [leadConfig, customerConfig, leadScope, customerScope] = await Promise.all([
       this.moduleForms.getConfig(user.tenantId, 'lead'),
       this.moduleForms.getConfig(user.tenantId, 'customer'),
@@ -55,6 +67,30 @@ export class HomeAnalyticsService {
     const sourceField =
       this.fieldByKey(leadConfig.fields, leadAnalytics.leadSourceFieldKey) ??
       this.fieldByKey(leadConfig.fields, 'cf_source')
+    // widgets 缺失时展示一次兼容性默认组件；明确配置 [] 则不展示。
+    const widgetConfigs: HomeAnalyticsWidgetConfig[] = leadAnalytics.widgets ?? (
+      sourceField && !sourceField.system && !sourceField.hidden
+        ? [{
+            id: 'default-lead-source',
+            title: '渠道来源分析',
+            module: 'lead',
+            fieldKey: sourceField.key,
+            chartType: 'donut',
+            period: '7d',
+          }]
+        : []
+    )
+    const canReadCustomers = (user.roles ?? []).some((role) =>
+      hasPermission(role.permissions, 'menu:customer'),
+    )
+    const validWidgets = widgetConfigs.filter((widget) => {
+      if (widget.module === 'customer' && !canReadCustomers) return false
+      const field = this.fieldByKey(
+        widget.module === 'lead' ? leadConfig.fields : customerConfig.fields,
+        widget.fieldKey,
+      )
+      return Boolean(field && !field.system && !field.hidden && ['text', 'select', 'radio'].includes(field.type))
+    })
     const resultField = this.fieldByKey(
       customerConfig.fields,
       customerAnalytics.customerResultFieldKey,
@@ -74,14 +110,14 @@ export class HomeAnalyticsService {
       this.loadStageEvents(user, leadScope),
     ])
     const [leadValues, customerValues] = await Promise.all([
-      sourceField
+      sourceField || validWidgets.some((widget) => widget.module === 'lead')
         ? this.fieldValues.load(
             user.tenantId,
             'clue',
             leads.map((lead) => String(lead.id)),
           )
         : Promise.resolve(new Map<string, Record<string, unknown>>()),
-      resultField || resultTimeField || resultAmountField
+      resultField || resultTimeField || resultAmountField || validWidgets.some((widget) => widget.module === 'customer')
         ? this.fieldValues.load(
             user.tenantId,
             'customer',
@@ -127,7 +163,20 @@ export class HomeAnalyticsService {
       : DEFAULT_LEAD_STAGES
     ).map((stage) => ({ ...stage, enabled: stage.enabled !== false }))
 
+    const widgets = validWidgets.map((widget) => {
+      const fields = widget.module === 'lead' ? leadConfig.fields : customerConfig.fields
+      const field = this.fieldByKey(fields, widget.fieldKey)!
+      return this.widgetDistribution(
+        widget,
+        field,
+        widget.module === 'lead' ? leads : customers,
+        widget.module === 'lead' ? leadValues : customerValues,
+        widgetPeriods[widget.id] ?? '7d',
+      )
+    })
+
     return {
+      widgets,
       config: {
         leadSourceField: this.fieldRef(sourceField),
         customerResultField: this.fieldRef(resultField),
@@ -149,6 +198,43 @@ export class HomeAnalyticsService {
       channels: this.channels(leads, leadValues, sourceField, resultCustomerIds),
       performance: this.performance(leads, ownerNameMap, resultCustomerIds),
       resultDistribution: this.resultDistributionItems(resultDistribution, resultField),
+    }
+  }
+
+  private widgetDistribution(
+    config: HomeAnalyticsWidgetConfig,
+    field: FieldVO,
+    rows: Array<{ id: unknown; createTime: unknown }>,
+    values: Map<string, Record<string, unknown>>,
+    period: HomeWidgetPeriod,
+    now = Date.now(),
+  ): HomeAnalyticsWidgetResult {
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : null
+    const start = days === null ? null : now - days * 24 * 60 * 60 * 1000
+    const groups = new Map<string, number>()
+    // 单选字段保留表单配置的全部选项，未命中的选项也在玫瑰图图例中显示 0 条。
+    // 文本字段没有枚举选项，仍按真实数据分组。
+    if (field.type === 'select' || field.type === 'radio') {
+      for (const option of field.options ?? []) groups.set(option.value, 0)
+    }
+    let total = 0
+    for (const row of rows) {
+      const createdAt = Number(row.createTime)
+      if (start !== null && (!Number.isFinite(createdAt) || createdAt < start || createdAt > now)) continue
+      const key = this.scalarValue(values.get(String(row.id))?.[field.key]) || '__EMPTY__'
+      groups.set(key, (groups.get(key) ?? 0) + 1)
+      total++
+    }
+    return {
+      config: { ...config, period: undefined },
+      period,
+      fieldLabel: field.label,
+      total,
+      items: [...groups].map(([value, count]) => ({
+        value,
+        label: value === '__EMPTY__' ? '未填写' : this.optionLabel(field, value),
+        count,
+      })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
     }
   }
 

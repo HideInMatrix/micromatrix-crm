@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, reactive, ref, watch } from 'vue'
 import {
@@ -134,7 +135,7 @@ watch(
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     :title="title"
     width="680px"
@@ -212,5 +213,5 @@ watch(
         {{ props.dashboardId ? '更新' : '保存' }}
       </el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

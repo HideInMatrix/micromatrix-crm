@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { ImportResultVO } from '@micromatrix/shared'
 import type { UploadFile, UploadUserFile } from 'element-plus'
 import { computed, ref, watch } from 'vue'
@@ -112,7 +113,7 @@ async function handleImport() {
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     :title="`导入${moduleLabel}`"
     width="620px"
@@ -204,5 +205,5 @@ async function handleImport() {
         </el-button>
       </template>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

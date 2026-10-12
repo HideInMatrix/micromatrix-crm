@@ -2,6 +2,7 @@
 import { useDark } from '@vueuse/core'
 import {
   CalendarClock,
+  ChevronDown,
   Download,
   LogOut,
   PanelLeftClose,
@@ -38,7 +39,10 @@ function readSidebarCollapsed() {
 
 const isDark = useDark()
 const sidebarCollapsed = ref(readSidebarCollapsed())
-const sidebarWidth = computed(() => (sidebarCollapsed.value ? '56px' : '180px'))
+const sidebarWidth = computed(() => (sidebarCollapsed.value ? '64px' : '256px'))
+const userRoleLabel = computed(() =>
+  auth.user?.roles.map((role) => role.name).join('、') || '未分配角色',
+)
 const brandInitial = computed(() => enterpriseUi.branding.title.trim().slice(0, 1) || 'M')
 const activeMenu = computed(() => route.meta.activeMenu ?? route.path)
 const isEnterpriseSettings = computed(() => route.path === '/system/settings')
@@ -106,10 +110,10 @@ function handlePersonalCommand(command: string) {
 </script>
 
 <template>
-  <div class="crm-layout h-full min-h-0 flex flex-col overflow-hidden bg-[var(--el-bg-color-page)]">
-    <header class="crm-layout-header h-14 shrink-0 flex bg-[var(--el-bg-color)]">
+  <div class="h-full min-h-0 flex flex-col overflow-hidden bg-[var(--el-bg-color-page)]">
+    <header class="h-16 shrink-0 flex bg-[var(--el-bg-color)] shadow-[inset_0_-1px_0_var(--el-border-color-light)]">
       <div
-        class="crm-layout-brand h-full shrink-0 flex items-center justify-center overflow-hidden border-r border-[var(--el-border-color-light)]"
+        class="h-full shrink-0 flex items-center justify-center overflow-hidden border-r border-white/10 bg-[#223270] text-white transition-[width] duration-[160ms] ease-in-out"
         :class="sidebarCollapsed ? 'px-0' : 'px-4'"
         :style="{ width: sidebarWidth }"
       >
@@ -122,7 +126,7 @@ function handlePersonalCommand(command: string) {
         />
         <span
           v-else-if="!sidebarCollapsed"
-          class="truncate text-[16px] font-semibold text-[var(--el-text-color-primary)]"
+          class="truncate text-[16px] font-semibold text-white"
         >
           {{ enterpriseUi.branding.title }}
         </span>
@@ -139,7 +143,7 @@ function handlePersonalCommand(command: string) {
         <span v-else class="truncate text-sm font-medium text-[var(--el-text-color-primary)]">
           {{ route.meta.title }}
         </span>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <TopNavigationActions />
           <el-switch
             v-model="isDark"
@@ -148,62 +152,33 @@ function handlePersonalCommand(command: string) {
             active-text="暗"
             inactive-text="亮"
           />
-        </div>
-      </div>
-    </header>
-
-    <div class="min-h-0 flex flex-1">
-      <aside
-        class="crm-layout-sider min-h-0 shrink-0 flex flex-col overflow-hidden border-r border-[var(--el-border-color-light)] bg-[var(--el-bg-color)]"
-        :style="{ width: sidebarWidth }"
-      >
-        <el-menu
-          :default-active="activeMenu"
-          :collapse="sidebarCollapsed"
-          :collapse-transition="false"
-          router
-          class="crm-side-menu min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <template v-for="menu in visibleMenus" :key="menu.path">
-            <el-sub-menu v-if="menu.children?.length" :index="menu.path">
-              <template #title>
-                <component :is="moduleIconOf(menu.moduleKey)" :size="18" class="mr-2 shrink-0" />
-                <span>{{ menu.title }}</span>
-              </template>
-              <el-menu-item v-for="child in menu.children" :key="child.path" :index="child.path">
-                {{ child.title }}
-              </el-menu-item>
-            </el-sub-menu>
-            <el-menu-item v-else :index="menu.path">
-              <component :is="moduleIconOf(menu.moduleKey)" :size="18" class="mr-2 shrink-0" />
-              <span>{{ menu.title }}</span>
-            </el-menu-item>
-          </template>
-        </el-menu>
-
-        <div class="shrink-0 p-2">
           <el-dropdown
-            class="w-full"
+            class="ml-2 shrink-0"
             trigger="click"
-            placement="right-end"
+            placement="bottom-end"
             @command="handlePersonalCommand"
           >
             <button
               type="button"
-              class="w-full flex items-center gap-2 rounded-[var(--border-radius-small)] border-0 bg-[var(--el-fill-color-light)] p-2 text-left cursor-pointer hover:bg-[var(--el-color-primary-light-9)]"
-              :class="sidebarCollapsed ? 'justify-center' : ''"
+              class="flex items-center gap-3 rounded-lg border-0 bg-transparent px-2 py-1 text-left cursor-pointer hover:bg-[var(--el-fill-color-light)]"
               data-testid="personal-menu-trigger"
             >
               <el-avatar
-                :size="sidebarCollapsed ? 25 : 40"
+                :size="40"
                 :src="auth.user?.avatarUrl ?? undefined"
-                class="shrink-0 transition-all"
+                class="shrink-0"
               >
                 {{ auth.user?.name?.slice(0, 1) ?? '?' }}
               </el-avatar>
-              <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-                <div class="truncate text-sm font-medium">{{ auth.user?.name ?? '账号' }}</div>
-              </div>
+              <span class="min-w-0 max-w-48 flex flex-col gap-0.5">
+                <span class="truncate text-sm font-semibold leading-5 text-[var(--el-text-color-primary)]">
+                  {{ auth.user?.name ?? '账号' }}
+                </span>
+                <span class="truncate text-xs leading-4 text-[var(--el-text-color-secondary)]">
+                  {{ userRoleLabel }}
+                </span>
+              </span>
+              <ChevronDown :size="16" class="shrink-0 text-[var(--el-text-color-secondary)]" aria-hidden="true" />
             </button>
             <template #dropdown>
               <el-dropdown-menu data-testid="personal-menu-dropdown">
@@ -223,11 +198,83 @@ function handlePersonalCommand(command: string) {
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+        </div>
+      </div>
+    </header>
 
-          <el-divider class="!my-3" />
+    <div class="min-h-0 flex flex-1">
+      <aside
+        class="min-h-0 shrink-0 flex flex-col overflow-hidden bg-[#262D40] text-white transition-[width] duration-[160ms] ease-in-out"
+        :style="{ width: sidebarWidth }"
+      >
+        <el-menu
+          :default-active="activeMenu"
+          :collapse="sidebarCollapsed"
+          :collapse-transition="false"
+          router
+          class="min-h-0 flex-1 !w-full overflow-y-auto !border-r-0 !bg-transparent !pt-[50px] !pb-1 font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          :class="sidebarCollapsed ? '!px-[10px]' : '!px-4'"
+          :style="{
+            '--el-menu-bg-color': 'transparent',
+            '--el-menu-hover-bg-color': 'rgb(255 255 255 / 10%)',
+            '--el-menu-active-color': '#1580FF',
+            '--el-menu-text-color': 'rgb(255 255 255 / 75%)',
+            '--el-menu-hover-text-color': '#FFFFFF',
+            '--el-menu-item-height': '44px',
+            '--el-menu-sub-item-height': '44px',
+            '--el-menu-base-level-padding': sidebarCollapsed ? '0px' : '16px',
+            '--el-menu-icon-width': sidebarCollapsed ? '0px' : '24px',
+            '--el-menu-level-padding': '12px',
+            '--el-menu-border-color': 'transparent',
+          }"
+        >
+          <template v-for="menu in visibleMenus" :key="menu.path">
+            <el-sub-menu
+              v-if="menu.children?.length"
+              :index="menu.path"
+              class="[&>div]:!h-[44px] [&>div]:!leading-[44px] [&>div]:mb-3 [&>div]:rounded-lg"
+            >
+              <template #title>
+                <component
+                  :is="moduleIconOf(menu.moduleKey)"
+                  :size="18"
+                  class="mr-2 shrink-0"
+                  :style="sidebarCollapsed ? { marginLeft: '13px', marginRight: '0' } : undefined"
+                />
+                <span>{{ menu.title }}</span>
+              </template>
+              <el-menu-item
+                v-for="child in menu.children"
+                :key="child.path"
+                :index="child.path"
+                class="!h-[44px] !leading-[44px] mb-3 rounded-lg [&.is-active]:!bg-[#EEF3FF]"
+                :style="sidebarCollapsed ? { justifyContent: 'center', padding: '0' } : undefined"
+              >
+                {{ child.title }}
+              </el-menu-item>
+            </el-sub-menu>
+            <el-menu-item
+              v-else
+              :index="menu.path"
+              class="!h-[44px] !leading-[44px] mb-3 rounded-lg [&.is-active]:!bg-[#EEF3FF]"
+              :style="sidebarCollapsed ? { justifyContent: 'center', padding: '0' } : undefined"
+            >
+              <component
+                :is="moduleIconOf(menu.moduleKey)"
+                :size="18"
+                class="mr-2 shrink-0"
+                :style="sidebarCollapsed ? { marginRight: '0' } : undefined"
+              />
+              <span>{{ menu.title }}</span>
+            </el-menu-item>
+          </template>
+        </el-menu>
+
+        <div class="shrink-0 p-2">
+          <el-divider class="!my-3 !border-white/15" />
           <button
             type="button"
-            class="h-8 w-full flex items-center justify-center rounded-[var(--border-radius-small)] border-0 bg-transparent px-2 text-[var(--el-text-color-secondary)] cursor-pointer hover:bg-[var(--el-fill-color-light)] hover:text-[var(--el-text-color-primary)]"
+            class="h-8 w-full flex items-center justify-center rounded-[var(--border-radius-small)] border-0 bg-transparent px-2 text-white/70 cursor-pointer hover:bg-white/10 hover:text-white"
             :aria-label="sidebarCollapsed ? '展开菜单' : '收起菜单'"
             @click="sidebarCollapsed = !sidebarCollapsed"
           >
@@ -239,7 +286,7 @@ function handlePersonalCommand(command: string) {
 
       <section class="min-w-0 min-h-0 flex-1 overflow-hidden">
         <el-main
-          class="crm-page-main h-full bg-[var(--el-bg-color-page)] !p-4 !pb-0 !overflow-x-hidden"
+          class="h-full bg-[#F0F5FC] !px-5 !pt-5 !pb-7 !overflow-x-hidden [scrollbar-gutter:stable]"
           :class="{
             '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden': isEnterpriseSettings,
           }"

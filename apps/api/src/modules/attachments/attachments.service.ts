@@ -132,7 +132,6 @@ export class AttachmentsService {
     if (!isAdmin && row.uploaderId && row.uploaderId !== user.id) {
       throw new BadRequestException('只能删除自己上传的附件')
     }
-    await this.ensureNotApprovalBound(user.tenantId, id)
     await this.storage.remove(row.path)
     await this.attachments().where({ id }).deleteAndCount()
     return { id, name: row.name }
@@ -145,7 +144,6 @@ export class AttachmentsService {
   async removeFromTarget(tenantId: string, id: string, targetType: string, targetId: string) {
     const row = await this.attachments().where({ id, tenantId, targetType, targetId }).first()
     if (!row) return false
-    await this.ensureNotApprovalBound(tenantId, id)
     await this.storage.remove(row.path)
     await this.attachments().where({ id }).deleteAndCount()
     return true
@@ -160,7 +158,6 @@ export class AttachmentsService {
       .select('id', 'path')
       .all()
     for (const row of rows) {
-      await this.ensureNotApprovalBound(tenantId, row.id)
       await this.storage.remove(row.path)
     }
     if (rows.length) {
@@ -177,7 +174,6 @@ export class AttachmentsService {
       .where({ id, tenantId, targetType: null, targetId: null })
       .first()
     if (!row) return false
-    await this.ensureNotApprovalBound(tenantId, id)
     await this.storage.remove(row.path)
     await this.attachments().where({ id }).deleteAndCount()
     return true
@@ -203,14 +199,6 @@ export class AttachmentsService {
     return (
       DOMAIN_GUARDED_TARGETS.has(targetType) || targetType.startsWith(RESOURCE_FIELD_TARGET_PREFIX)
     )
-  }
-
-  private async ensureNotApprovalBound(tenantId: string, attachmentId: string) {
-    const linked = await this.prisma.client.orm.public.ApprovalInstanceAttachments.where({
-      tenantId,
-      attachmentId,
-    }).aggregate((agg) => ({ count: agg.count() }))
-    if (linked.count > 0) throw new BadRequestException('审批历史附件不能删除')
   }
 
   private attachments() {

@@ -158,6 +158,21 @@ export interface LeadStageConfig {
   enabled?: boolean
 }
 
+export type HomeWidgetModule = 'lead' | 'customer'
+export type HomeWidgetChartType = 'donut' | 'bar' | 'list'
+export type HomeWidgetPeriod = '7d' | '30d' | 'all'
+
+/** 首页可复用的动态字段分布组件：仅保存字段标识，不保存选项或统计结果。 */
+export interface HomeAnalyticsWidgetConfig {
+  id: string
+  title: string
+  module: HomeWidgetModule
+  fieldKey: string
+  chartType: HomeWidgetChartType
+  /** 仅用于读取旧配置；实际筛选范围由首页查询请求决定，不再写入模块配置。 */
+  period?: HomeWidgetPeriod
+}
+
 /**
  * 首页业务分析配置。
  *
@@ -165,6 +180,8 @@ export interface LeadStageConfig {
  * customerResultValues 为空时表示“结果字段非空即计入结果”。
  */
 export interface HomeAnalyticsConfig {
+  /** 集中保存在 Lead 表单首页配置，顺序即页面组件顺序；空数组表示明确不展示。 */
+  widgets?: HomeAnalyticsWidgetConfig[]
   leadSourceFieldKey?: string
   customerResultFieldKey?: string
   customerResultValues?: string[]

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import {
   BUILTIN_DATA_SOURCE_OPTIONS,
   FIELD_TYPE_OPTIONS,
@@ -208,7 +209,7 @@ async function submit() {
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     :title="editingField ? `编辑字段 · ${editingField.label}` : '新增字段'"
     :width="
@@ -397,5 +398,5 @@ async function submit() {
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

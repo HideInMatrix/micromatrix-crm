@@ -6,12 +6,11 @@ import { DataScopeService } from './data-scope.service'
 /**
  * 业务资源权限上下文。
  * 与 Cordys ResourceAccessContext 语义对齐，但保留 deptId，避免重复查询负责人部门。
- * approvalStatus 先作为扩展位保留，Wave 4 接入审批状态权限和待办任务特例。
+ * 资源访问仅管理已接入的业务字段和权限。
  */
 export interface ResourceAccessContext {
   ownerId: string | null
   deptId: string | null
-  approvalStatus?: string | null
 }
 
 @Injectable()

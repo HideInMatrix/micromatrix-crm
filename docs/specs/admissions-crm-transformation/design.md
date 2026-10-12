@@ -78,7 +78,7 @@ Lead / Customer / Contact
 - `orders`
 - `bidding`
 
-删除候选必须先经过调用方审计；被其它核心模块使用的通用组件、金额类型、行项目工具、审批能力等应先抽离，再删除领域模块。
+删除候选必须先经过调用方审计；被其它核心模块使用的通用组件、金额类型、行项目工具等应先抽离，再删除领域模块。
 
 ## 3. 领域关系
 
@@ -708,7 +708,6 @@ Dashboard 点击跳转不直接拼 URL 查询参数，而继续使用一次性 `
   ├─ 角色权限
   ├─ 模块配置
   ├─ 表单/字段配置
-  ├─ 流程/审批
   ├─ 消息设置
   └─ 日志
 ```
@@ -726,7 +725,7 @@ Dashboard 点击跳转不直接拼 URL 查询参数，而继续使用一次性 `
 - Metadata/Form key；
 - Permission code；
 - Home/Search；
-- FollowUp/Approval/Notification；
+- FollowUp/Notification；
 - Import/Export；
 - Seed；
 - Tests/Smoke；

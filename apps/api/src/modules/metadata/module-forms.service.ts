@@ -22,6 +22,7 @@ import {
   type FormLinkScenario,
   type FormLinkScenarioKey,
   type HomeAnalyticsConfig,
+  type HomeAnalyticsWidgetConfig,
   type ModuleFormProp,
 } from '@micromatrix/shared'
 import { TenantDerivedCacheService } from '../../common/services/tenant-derived-cache.service'
@@ -463,6 +464,19 @@ export class ModuleFormsService {
       }
 
       this.validateFieldCapabilityChange(field.form.formKey, field, current, dto)
+      const referencedKey = current.key || field.internalKey || field.id
+      if (
+        (dto.type !== undefined && dto.type !== field.type &&
+          !HOME_ANALYTICS_DIMENSION_TYPES.has(dto.type)) ||
+        (dto.hidden === true && !current.hidden)
+      ) {
+        await this.assertHomeAnalyticsFieldNotReferenced(
+          tx,
+          organizationId,
+          field.form.formKey,
+          referencedKey,
+        )
+      }
       if (
         dto.type &&
         dto.type !== field.type &&
@@ -973,6 +987,42 @@ export class ModuleFormsService {
     }
     const fields = await this.listFields(organizationId, formKey)
     this.validateHomeAnalyticsModuleFields(formKey, config, fields)
+    if (formKey === 'lead' && config.widgets !== undefined) {
+      await this.validateHomeWidgets(organizationId, config.widgets)
+    }
+    if (formKey === 'customer' && config.widgets !== undefined) {
+      throw new BadRequestException('首页统计组件配置请统一保存在线索表单设置')
+    }
+  }
+
+  private async validateHomeWidgets(
+    organizationId: string,
+    widgets: HomeAnalyticsWidgetConfig[],
+  ): Promise<void> {
+    if (!Array.isArray(widgets) || widgets.length > 12) {
+      throw new BadRequestException('首页统计组件最多可配置 12 个')
+    }
+    const keys = new Set<string>()
+    const [leadFields, customerFields] = await Promise.all([
+      this.listFields(organizationId, 'lead'),
+      this.listFields(organizationId, 'customer'),
+    ])
+    for (const item of widgets) {
+      if (!item || typeof item !== 'object' || typeof item.id !== 'string' ||
+          !/^[\w-]{1,64}$/.test(item.id) || keys.has(item.id) ||
+          typeof item.title !== 'string' || !item.title.trim() || item.title.length > 60 ||
+          !['lead', 'customer'].includes(item.module) ||
+          !['donut', 'bar', 'list'].includes(item.chartType) ||
+          (item.period !== undefined && !['7d', '30d', 'all'].includes(item.period))) {
+        throw new BadRequestException('首页统计组件配置不正确或 ID 重复')
+      }
+      keys.add(item.id)
+      const fields = item.module === 'lead' ? leadFields : customerFields
+      const field = fields.find((entry) => entry.key === item.fieldKey)
+      if (!field || field.system || field.hidden || !HOME_ANALYTICS_DIMENSION_TYPES.has(field.type)) {
+        throw new BadRequestException(`首页统计组件「${item.title}」字段不可用，仅支持动态文本、单选或单选框`)
+      }
+    }
   }
 
   private async validateHomeAnalyticsDesignChange(
@@ -987,7 +1037,19 @@ export class ModuleFormsService {
       const legacyLeadConfig = await this.getConfig(organizationId, 'lead')
       config = legacyLeadConfig.formProp.homeAnalytics
     }
-    if (!config) return
+    if (!config && formKey === 'lead') return
+
+    const widgetConfig = formKey === 'lead'
+      ? config
+      : (await this.getConfig(organizationId, 'lead')).formProp.homeAnalytics
+    const widgetFields = (widgetConfig?.widgets ?? [])
+      .filter((widget) => widget.module === formKey)
+      .map((widget) => ({
+        key: widget.fieldKey,
+        label: `统计组件「${widget.title}」`,
+        allowed: HOME_ANALYTICS_DIMENSION_TYPES,
+      }))
+    if (!config && !widgetFields.length) return
 
     const currentFields = await this.listFields(organizationId, formKey)
     const requestedById = new Map(
@@ -1001,28 +1063,29 @@ export class ModuleFormsService {
       formKey === 'lead'
         ? [
             {
-              key: config.leadSourceFieldKey,
+              key: config?.leadSourceFieldKey,
               label: '渠道字段',
               allowed: HOME_ANALYTICS_DIMENSION_TYPES,
             },
           ]
         : [
             {
-              key: config.customerResultFieldKey,
+              key: config?.customerResultFieldKey,
               label: '结果字段',
               allowed: HOME_ANALYTICS_RESULT_TYPES,
             },
             {
-              key: config.customerResultTimeFieldKey,
+              key: config?.customerResultTimeFieldKey,
               label: '结果时间字段',
               allowed: HOME_ANALYTICS_TIME_TYPES,
             },
             {
-              key: config.customerResultAmountFieldKey,
+              key: config?.customerResultAmountFieldKey,
               label: '结果金额字段',
               allowed: HOME_ANALYTICS_AMOUNT_TYPES,
             },
           ]
+    referenced.push(...widgetFields)
 
     for (const item of referenced) {
       if (!item.key) continue
@@ -1034,9 +1097,9 @@ export class ModuleFormsService {
       if (!requested) {
         throw new BadRequestException(`「${current.label}」正在被首页分析使用，不能删除`)
       }
-      if (!item.allowed.has(requested.type)) {
+      if (!item.allowed.has(requested.type) || requested.hidden === true) {
         throw new BadRequestException(
-          `「${current.label}」正在被首页分析使用，不能修改为当前字段类型`,
+          `「${current.label}」正在被首页分析使用，不能隐藏或修改为不兼容的字段类型`,
         )
       }
     }
@@ -1158,7 +1221,14 @@ export class ModuleFormsService {
       const legacy = this.parseObject(leadBlob?.prop)['homeAnalytics']
       config = this.isRecord(legacy) ? legacy : null
     }
-    if (!config) return
+    let widgetAnalytics = config
+    if (formKey === 'customer') {
+      const leadForm = await this.ensureForm(tx, organizationId, 'lead')
+      const leadBlob = await tx.orm.public.SysModuleFormBlob.where({ id: leadForm.id }).first()
+      const rawLead = this.parseObject(leadBlob?.prop)['homeAnalytics']
+      widgetAnalytics = this.isRecord(rawLead) ? rawLead : null
+    }
+    if (!config && !widgetAnalytics) return
     const references =
       formKey === 'lead'
         ? [config?.['leadSourceFieldKey']]
@@ -1167,6 +1237,10 @@ export class ModuleFormsService {
             config?.['customerResultTimeFieldKey'],
             config?.['customerResultAmountFieldKey'],
           ]
+    const widgets = Array.isArray(widgetAnalytics?.['widgets'])
+      ? widgetAnalytics['widgets'] as Array<{ module: string; fieldKey: string }>
+      : []
+    references.push(...widgets.filter((item) => item.module === formKey).map((item) => item.fieldKey))
     if (references.some((value) => value === fieldKey)) {
       throw new BadRequestException('该字段正在被首页分析使用，请先修改首页分析设置')
     }

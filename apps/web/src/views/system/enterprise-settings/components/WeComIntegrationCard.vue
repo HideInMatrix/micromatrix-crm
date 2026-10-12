@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { EnterpriseIntegrationVO, SaveWeComIntegrationInput } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { MessagesSquare } from 'lucide-vue-next'
@@ -387,7 +388,7 @@ onMounted(loadData)
     </template>
   </el-drawer>
 
-  <el-dialog v-model="syncDialogVisible" title="开启同步组织架构" width="480px">
+  <CrmDialog v-model="syncDialogVisible" title="开启同步组织架构" width="480px">
     <el-alert
       title="默认角色只分配给首次从企业微信创建的新成员；已存在成员的角色不会被覆盖。"
       type="info"
@@ -411,5 +412,5 @@ onMounted(loadData)
       <el-button @click="syncDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="syncSaving" @click="enableSync">确认开启</el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

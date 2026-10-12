@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import {
   isCustomFieldKey,
   type CustomerVO,
@@ -617,7 +618,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <el-dialog v-model="editVisible" title="编辑客户" width="680px" destroy-on-close>
+    <CrmDialog v-model="editVisible" title="编辑客户" width="680px" destroy-on-close>
       <DynamicForm
         ref="dynamicFormRef"
         v-model="editForm"
@@ -629,7 +630,7 @@ onMounted(async () => {
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
 
     <MemberSelectDialog
       v-model="transferVisible"
@@ -660,7 +661,7 @@ onMounted(async () => {
       :members="fieldRefs.members.value"
       @confirm="prepareAddTeamMember"
     />
-    <el-dialog
+    <CrmDialog
       v-model="teamTypeVisible"
       :title="teamEditingMember ? '编辑协作设置' : '添加协作人'"
       width="420px"
@@ -682,7 +683,7 @@ onMounted(async () => {
         <el-button @click="teamTypeVisible = false">取消</el-button>
         <el-button type="primary" @click="saveTeamMember">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </div>
 </template>
 

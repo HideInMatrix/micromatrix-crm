@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import type { MemberOption } from '@/api/system'
@@ -53,7 +54,7 @@ async function submit() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="title ?? '批量修改字段'" width="520px" destroy-on-close>
+  <CrmDialog v-model="visible" :title="title ?? '批量修改字段'" width="520px" destroy-on-close>
     <el-alert
       :title="`将同时修改已选择的 ${selectedCount} 条数据`"
       type="warning"
@@ -86,5 +87,5 @@ async function submit() {
         确认修改
       </el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

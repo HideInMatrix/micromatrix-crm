@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { CustomerVO } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
 import {
@@ -169,7 +170,7 @@ watch(visible, (open) => {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="合并客户" width="760px" destroy-on-close>
+  <CrmDialog v-model="visible" title="合并客户" width="760px" destroy-on-close>
     <el-steps :active="step" simple class="mb-5">
       <el-step title="选择主客户" />
       <el-step title="影响预览与确认" />
@@ -326,5 +327,5 @@ watch(visible, (open) => {
         确认合并
       </el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type {
   DepartmentVO,
   ExternalIdentityVO,
@@ -665,7 +666,7 @@ onMounted(() => {
       </div>
     </el-card>
 
-    <el-dialog
+    <CrmDialog
       v-model="dialogVisible"
       :title="editingId ? '编辑成员' : '新建成员'"
       width="520px"
@@ -718,9 +719,9 @@ onMounted(() => {
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
 
-    <el-dialog
+    <CrmDialog
       v-model="identityDialogVisible"
       title="第三方登录身份"
       width="520px"
@@ -799,9 +800,9 @@ onMounted(() => {
           {{ externalIdentity?.status === 'REVOKED' ? '重新绑定' : '绑定身份' }}
         </el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
 
-    <el-dialog
+    <CrmDialog
       v-model="deptDialogVisible"
       :title="deptEditingId ? '编辑部门' : '新建部门'"
       width="460px"
@@ -847,7 +848,7 @@ onMounted(() => {
         <el-button @click="deptDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="deptSaving" @click="handleDeptSave">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </div>
 
   <OrganizationSyncDrawer

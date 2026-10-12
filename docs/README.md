@@ -16,7 +16,7 @@
 
 ## 当前事实源
 
-- 当前业务主线：线索 → 客户，保留联系人、线索池、客户公海、跟进记录/计划、动态表单、首页分析、审批、通知和企业集成。
+- 当前业务主线：线索 → 客户，保留联系人、线索池、客户公海、跟进记录/计划、动态表单、首页分析、通知和企业集成。
 - 已从 `master` 物理删除旧销售交易链：商机、产品、报价、合同、回款、发票、订单、标讯等不再属于当前产品入口或数据库 contract。
 - PC 与 Mobile 是两个独立 Vue 应用：`apps/web` 使用 Element Plus；`apps/mobile` 使用 Vant 4 + UnoCSS presetWind4；浏览器公共能力位于 `packages/frontend-shared`。
 - 数据模型唯一事实源为 `apps/api/src/prisma/contract.prisma`；`contract emit` 生成 `apps/api/src/prisma/contract.json` 与 `contract.d.ts`。

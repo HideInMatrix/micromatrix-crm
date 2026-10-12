@@ -12,10 +12,10 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AdvancedFilter: typeof import('./../components/form-engine/AdvancedFilter.vue')['default']
-    ApprovalActionAttachments: typeof import('./../components/ApprovalActionAttachments.vue')['default']
     AttachmentFieldInput: typeof import('./../components/form-engine/AttachmentFieldInput.vue')['default']
     AttachmentUploader: typeof import('./../components/AttachmentUploader.vue')['default']
     BatchFieldEditDialog: typeof import('./../components/BatchFieldEditDialog.vue')['default']
+    CrmDialog: typeof import('./../components/CrmDialog.vue')['default']
     CrmDisplayModeSwitch: typeof import('./../components/CrmDisplayModeSwitch.vue')['default']
     CrmExportDrawer: typeof import('./../components/CrmExportDrawer.vue')['default']
     CrmImportDialog: typeof import('./../components/CrmImportDialog.vue')['default']
@@ -70,6 +70,7 @@ declare module 'vue' {
     ElOptionGroup: typeof import('element-plus/es')['ElOptionGroup']
     ElPagination: typeof import('element-plus/es')['ElPagination']
     ElPopover: typeof import('element-plus/es')['ElPopover']
+    ElProgress: typeof import('element-plus/es')['ElProgress']
     ElRadio: typeof import('element-plus/es')['ElRadio']
     ElRadioButton: typeof import('element-plus/es')['ElRadioButton']
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']

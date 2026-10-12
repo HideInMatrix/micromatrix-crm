@@ -25,160 +25,11 @@ namespace public {
     @@map("announcements")
   }
 
-  model ApprovalFlows {
-    id                    String                         @id(map: "approval_flows_pkey") @default(cuid(2))
-    tenantId              String
-    number                String
-    formType              pg.enum(ApprovalFormType)
-    currentVersionId      String?
-    name                  String
-    createExecute         Boolean                        @default(true)
-    updateExecute         Boolean                        @default(false)
-    deleteExecute         Boolean                        @default(false)
-    submitterCanRevoke    Boolean                        @default(true)
-    allowBatchProcess     Boolean                        @default(false)
-    allowWithdraw         Boolean                        @default(false)
-    allowAddSign          Boolean                        @default(false)
-    duplicateApproverRule pg.enum(DuplicateApproverRule) @default("FIRST_ONLY")
-    requireComment        Boolean                        @default(false)
-    enabled               Boolean                        @default(false)
-    description           String?
-    condition             Jsonb?
-    deletedAt             Timestamptz(3)?
-    createdById           String?
-    updatedById           String?
-    createdAt             Timestamptz(3)                   @default(now())
-    updatedAt             Timestamptz(3)
-    approvalFlowVersions  ApprovalFlowVersions[]
-    approvalInstances     ApprovalInstances[]
-    currentVersion        ApprovalFlowVersions?          @relation(fields: [currentVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_flows_currentVersionId_fkey", index: false)
 
-    @@index([tenantId, formType], map: "approval_flows_active_form_type_key", where: "(\"deletedAt\" IS NULL)", unique: true)
-    @@index([tenantId, enabled, deletedAt], map: "approval_flows_tenantId_enabled_deletedAt_idx")
-    @@index([tenantId, formType, deletedAt], map: "approval_flows_tenantId_formType_deletedAt_idx")
-    @@index([tenantId, number], map: "approval_flows_tenantId_number_key", unique: true)
-    @@check(expression: "char_length(\"description\") <= 1000", name: "text_len_df94ff2958")
-    @@map("approval_flows")
-  }
 
-  model ApprovalFlowVersions {
-    id                     String                   @id(map: "approval_flow_versions_pkey") @default(cuid(2))
-    flowId                 String
-    tenantId               String
-    version                Int
-    createdById            String?
-    createdAt              Timestamptz(3)             @default(now())
-    approvalFlows          ApprovalFlows[]
-    approvalInstances      ApprovalInstances[]
-    approvalNodeConditions ApprovalNodeConditions[]
-    approvalNodeLinks      ApprovalNodeLinks[]
-    approvalNodes          ApprovalNodes[]
-    flow                   ApprovalFlows            @relation(fields: [flowId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_flow_versions_flowId_fkey", index: false)
 
-    @@index([flowId, version], map: "approval_flow_versions_flowId_version_key", unique: true)
-    @@index([tenantId, flowId], map: "approval_flow_versions_tenantId_flowId_idx")
-    @@map("approval_flow_versions")
-  }
 
-  model ApprovalInstances {
-    id                          String                          @id(map: "approval_instances_pkey") @default(cuid(2))
-    tenantId                    String
-    flowId                      String?
-    flowVersionId               String?
-    executeTiming               pg.enum(ApprovalExecuteTiming)  @default("CREATE")
-    module                      String
-    targetId                    String
-    targetName                  String
-    summary                     String?
-    status                      pg.enum(ApprovalInstanceStatus) @default("PENDING")
-    currentNodeIndex            Int                             @default(0)
-    nodesSnapshot               Jsonb
-    comment                     String?
-    updateFields                String?                  @map("update_fields")
-    submitterId                 String
-    submitterName               String
-    finishedAt                  Timestamptz(3)?
-    createdAt                   Timestamptz(3)                    @default(now())
-    updatedAt                   Timestamptz(3)
-    approvalAddSignTasks        ApprovalAddSignTasks[]
-    approvalInstanceAttachments ApprovalInstanceAttachments[]
-    approvalRecords             ApprovalRecords[]
-    approvalReturnBackRecords   ApprovalReturnBackRecords[]
-    approvalTasks               ApprovalTasks[]
-    approvalWebhookDeliveries   ApprovalWebhookDeliveries[]
-    flow                        ApprovalFlows?                  @relation(fields: [flowId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_instances_flowId_fkey", index: false)
-    flowVersion                 ApprovalFlowVersions?           @relation(fields: [flowVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_instances_flowVersionId_fkey")
 
-    @@index([flowId, status], map: "approval_instances_flowId_status_idx")
-    @@index([flowVersionId], map: "approval_instances_flowVersionId_idx")
-    @@index([tenantId, module, targetId], map: "approval_instances_tenantId_module_targetId_idx")
-    @@index([tenantId, status], map: "approval_instances_tenantId_status_idx")
-    @@index([tenantId, submitterId], map: "approval_instances_tenantId_submitterId_idx")
-    @@check(expression: "char_length(\"update_fields\") <= 2000", name: "text_len_75cf003ed0")
-    @@map("approval_instances")
-  }
-
-  model ApprovalTasks {
-    id                                       String                       @id(map: "approval_tasks_pkey") @default(cuid(2))
-    tenantId                                 String
-    instanceId                               String
-    nodeId                                   String?                      @map("node_id")
-    nodeIndex                                Int
-    nodeRound                                Int                          @default(1) @map("node_round")
-    nodeName                                 String
-    approverId                               String
-    taskType                                 pg.enum(ApprovalTaskType)    @default("APPROVAL") @map("task_type")
-    status                                   pg.enum(ApprovalTaskStatus)  @default("PENDING")
-    action                                   pg.enum(ApprovalTaskAction)?
-    handledAt                                Timestamptz(3)?
-    createdAt                                Timestamptz(3)                 @default(now())
-    updatedAt                                Timestamptz(3)
-    approvalRecords                          ApprovalRecords[]
-    approvalReturnBackRecords                ApprovalReturnBackRecords[]
-    approvalAddSignTasks                     ApprovalAddSignTasks[]       @relation(name: "approval_add_sign_tasks_sign_task_id_fkey")
-    instance                                 ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_tasks_instanceId_fkey")
-
-    @@index([instanceId], map: "approval_tasks_instanceId_idx")
-    @@index([instanceId, nodeIndex, nodeRound], map: "approval_tasks_instanceId_nodeIndex_node_round_idx")
-    @@index([tenantId, approverId, status], map: "approval_tasks_tenantId_approverId_status_idx")
-    @@index([tenantId, approverId, taskType, status], map: "approval_tasks_tenantId_approverId_task_type_status_idx")
-    @@map("approval_tasks")
-  }
-
-  model ApprovalAddSignTasks {
-    id          String                       @id(map: "approval_add_sign_tasks_pkey") @default(cuid(2))
-    tenantId    String
-    instanceId  String
-    taskId      String                       @map("task_id")
-    signTaskId  String                       @map("sign_task_id")
-    _type       pg.enum(ApprovalAddSignType) @map("type")
-    rootTaskId  String                       @map("root_task_id")
-    sort        BigInt
-    comment     String?
-    createdById String                       @map("created_by_id")
-    createdAt   Timestamptz(3)                 @default(now()) @map("created_at")
-    updatedAt   Timestamptz(3)                 @map("updated_at")
-    instance    ApprovalInstances            @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_instanceId_fkey", index: false)
-    signTask    ApprovalTasks                @relation(name: "approval_add_sign_tasks_sign_task_id_fkey", fields: [signTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_sign_task_id_fkey")
-    task        ApprovalTasks                @relation(name: "approval_add_sign_tasks_task_id_fkey", fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_add_sign_tasks_task_id_fkey")
-
-    @@index([rootTaskId, sort], map: "approval_add_sign_tasks_root_task_id_sort_idx")
-    @@index([signTaskId], map: "approval_add_sign_tasks_sign_task_id_idx")
-    @@index([taskId], map: "approval_add_sign_tasks_task_id_key", unique: true)
-    @@index([tenantId, instanceId], map: "approval_add_sign_tasks_tenantId_instanceId_idx")
-    @@map("approval_add_sign_tasks")
-  }
-
-  model ApprovalFlowNumberCounters {
-    id        String                    @id(map: "approval_flow_number_counters_pkey") @default(cuid(2))
-    tenantId  String
-    formType  pg.enum(ApprovalFormType)
-    nextValue Int                       @default(1)
-    updatedAt Timestamptz(3)
-
-    @@index([tenantId, formType], map: "approval_flow_number_counters_tenantId_formType_key", unique: true)
-    @@map("approval_flow_number_counters")
-  }
 
   model Attachments {
     id                          String                        @id(map: "attachments_pkey") @default(cuid(2))
@@ -191,183 +42,19 @@ namespace public {
     targetType                  String?
     targetId                    String?
     createdAt                   Timestamptz(3)                  @default(now())
-    approvalInstanceAttachments ApprovalInstanceAttachments[]
 
     @@index([tenantId, targetType, targetId], map: "attachments_tenantId_targetType_targetId_idx")
     @@map("attachments")
   }
 
-  model ApprovalInstanceAttachments {
-    id           String            @id(map: "approval_instance_attachments_pkey") @default(cuid(2))
-    tenantId     String
-    instanceId   String            @map("instance_id")
-    elementId    String            @map("element_id")
-    attachmentId String            @map("attachment_id")
-    createdAt    Timestamptz(3)      @default(now()) @map("created_at")
-    attachment   Attachments       @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_instance_attachments_attachment_id_fkey")
-    instance     ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_instance_attachments_instance_id_fkey", index: false)
 
-    @@index([attachmentId], map: "approval_instance_attachments_attachment_id_idx")
-    @@index([elementId], map: "approval_instance_attachments_element_id_idx")
-    @@index([instanceId, elementId, attachmentId], map: "approval_instance_attachments_instance_id_element_id_attach_key", unique: true)
-    @@index([tenantId, instanceId, createdAt], map: "approval_instance_attachments_tenantId_instance_id_created__idx")
-    @@map("approval_instance_attachments")
-  }
 
-  model ApprovalNodes {
-    id                                 String                         @id(map: "approval_nodes_pkey") @default(cuid(2))
-    flowVersionId                      String
-    number                             String
-    name                               String
-    nodeType                           pg.enum(ApprovalNodeType)
-    executeTiming                      pg.enum(ApprovalExecuteTiming) @default("CREATE")
-    sort                               Int                            @default(0)
-    approvalNodeConditions             ApprovalNodeConditions?
-    approvalNodeLinks                  ApprovalNodeLinks[]            @relation(name: "approval_node_links_fromNodeId_fkey")
-    approvalNodeLinksApprovalNodeLinks ApprovalNodeLinks[]            @relation(name: "approval_node_links_toNodeId_fkey")
-    flowVersion                        ApprovalFlowVersions           @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_nodes_flowVersionId_fkey", index: false)
 
-    @@index([flowVersionId, executeTiming, sort], map: "approval_nodes_flowVersionId_executeTiming_sort_idx")
-    @@index([flowVersionId, number], map: "approval_nodes_flowVersionId_number_key", unique: true)
-    @@map("approval_nodes")
-  }
 
-  model ApprovalNodeApprovers {
-    id                  String                       @id(map: "approval_node_approvers_pkey") @default(cuid(2))
-    nodeId              String
-    approverType        pg.enum(ApproverType)
-    approverIds         String[]?                    @noCheck(elementNotNull)
-    ccUserIds           String[]?                    @noCheck(elementNotNull) @map("cc_user_ids")
-    mode                pg.enum(ApprovalMode)        @default("ANY")
-    emptyApproverAction pg.enum(EmptyApproverAction) @default("AUTO_PASS") @map("empty_approver_action")
-    fallbackApprover    String?                      @map("fallback_approver")
-    sameSubmitterAction pg.enum(SameSubmitterAction) @default("SKIP") @map("same_submitter_action")
-    approverDirection   pg.enum(ApproverDirection)   @default("BOTTOM_UP") @map("approver_direction")
-    fieldPermissions    Jsonb?                       @map("field_permissions")
-    passPostConfig      Jsonb?                       @map("pass_post_config")
-    rejectPostConfig    Jsonb?                       @map("reject_post_config")
-    node                ApprovalNodes                @relation(fields: [nodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_approvers_nodeId_fkey")
 
-    @@index([nodeId], map: "approval_node_approvers_nodeId_key", unique: true)
-    @@map("approval_node_approvers")
-  }
 
-  model ApprovalNodeConditions {
-    id              String               @id(map: "approval_node_conditions_pkey")
-    flowVersionId   String
-    conditionConfig Jsonb?               @map("condition_config")
-    flowVersion     ApprovalFlowVersions @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_conditions_flowVersionId_fkey")
-    approvalNodes   ApprovalNodes        @relation(fields: [id], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_conditions_id_fkey")
 
-    @@index([flowVersionId], map: "approval_node_conditions_flowVersionId_idx")
-    @@map("approval_node_conditions")
-  }
 
-  model ApprovalNodeLinks {
-    id            String               @id(map: "approval_node_links_pkey") @default(cuid(2))
-    flowVersionId String
-    fromNodeId    String
-    toNodeId      String
-    sort          Int                  @default(0)
-    flowVersion   ApprovalFlowVersions @relation(fields: [flowVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_flowVersionId_fkey", index: false)
-    fromNode      ApprovalNodes        @relation(name: "approval_node_links_fromNodeId_fkey", fields: [fromNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_fromNodeId_fkey")
-    toNode        ApprovalNodes        @relation(name: "approval_node_links_toNodeId_fkey", fields: [toNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "approval_node_links_toNodeId_fkey")
-
-    @@index([flowVersionId, fromNodeId, toNodeId], map: "approval_node_links_flowVersionId_fromNodeId_toNodeId_key", unique: true)
-    @@index([flowVersionId, sort], map: "approval_node_links_flowVersionId_sort_idx")
-    @@index([fromNodeId], map: "approval_node_links_fromNodeId_idx")
-    @@index([toNodeId], map: "approval_node_links_toNodeId_idx")
-    @@map("approval_node_links")
-  }
-
-  model ApprovalRecords {
-    id          String                      @id(map: "approval_records_pkey") @default(cuid(2))
-    tenantId    String
-    instanceId  String
-    taskId      String?
-    nodeId      String?                     @map("node_id")
-    nodeRound   Int                         @default(1) @map("node_round")
-    result      pg.enum(ApprovalTaskAction)
-    comment     String?
-    createdById String                      @map("created_by_id")
-    createdAt   Timestamptz(3)                @default(now()) @map("created_at")
-    updatedAt   Timestamptz(3)                @map("updated_at")
-    instance    ApprovalInstances           @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_instanceId_fkey", index: false)
-    task        ApprovalTasks?              @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_records_taskId_fkey")
-
-    @@index([taskId], map: "approval_records_taskId_idx")
-    @@index([tenantId, instanceId, createdAt], map: "approval_records_tenantId_instanceId_created_at_idx")
-    @@map("approval_records")
-  }
-
-  model ApprovalResourceSnapshots {
-    id           String                    @id(map: "approval_resource_snapshots_pkey") @default(cuid(2))
-    tenantId     String
-    formType     pg.enum(ApprovalFormType)
-    resourceId   String
-    snapshotData Jsonb                     @map("snapshot_data")
-    createdById  String?                   @map("created_by_id")
-    updatedById  String?                   @map("updated_by_id")
-    createdAt    Timestamptz(3)              @default(now()) @map("created_at")
-    updatedAt    Timestamptz(3)              @map("updated_at")
-
-    @@index([tenantId, formType], map: "approval_resource_snapshots_tenantId_formType_idx")
-    @@index([tenantId, formType, resourceId], map: "approval_resource_snapshots_tenantId_formType_resourceId_key", unique: true)
-    @@map("approval_resource_snapshots")
-  }
-
-  model ApprovalReturnBackRecords {
-    id             String            @id(map: "approval_return_back_records_pkey") @default(cuid(2))
-    tenantId       String
-    instanceId     String            @map("instance_id")
-    taskId         String            @map("task_id")
-    returnToNodeId String            @map("return_to_node_id")
-    returnReason   String?           @map("return_reason")
-    returnUserId   String            @map("return_user_id")
-    createdAt      Timestamptz(3)      @default(now()) @map("created_at")
-    updatedAt      Timestamptz(3)      @map("updated_at")
-    instance       ApprovalInstances @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_instance_id_fkey", index: false)
-    task           ApprovalTasks     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "approval_return_back_records_task_id_fkey")
-
-    @@index([instanceId, returnToNodeId], map: "approval_return_back_records_instance_id_return_to_node_id_key", unique: true)
-    @@index([taskId], map: "approval_return_back_records_task_id_idx")
-    @@index([tenantId, instanceId, createdAt], map: "approval_return_back_records_tenantId_instance_id_created_a_idx")
-    @@map("approval_return_back_records")
-  }
-
-  model ApprovalWebhookDeliveries {
-    id            String                                 @id(map: "approval_webhook_deliveries_pkey") @default(cuid(2))
-    tenantId      String                                 @map("tenant_id")
-    instanceId    String?                                @map("instance_id")
-    flowId        String?                                @map("flow_id")
-    flowVersionId String?                                @map("flow_version_id")
-    nodeId        String?                                @map("node_id")
-    nodeIndex     Int?                                   @map("node_index")
-    action        String?
-    source        pg.enum(ApprovalWebhookDeliverySource)
-    method        String
-    targetOrigin  String                                 @map("target_origin")
-    targetPath    String                                 @map("target_path")
-    status        pg.enum(ApprovalWebhookDeliveryStatus) @default("PENDING")
-    httpStatus    Int?                                   @map("http_status")
-    responseBytes Int?                                   @map("response_bytes")
-    durationMs    Int?                                   @map("duration_ms")
-    errorCode     String?                           @map("error_code")
-    errorMessage  String?                          @map("error_message")
-    createdById   String?                                @map("created_by_id")
-    startedAt     Timestamptz(3)?                          @map("started_at")
-    finishedAt    Timestamptz(3)?                          @map("finished_at")
-    createdAt     Timestamptz(3)                           @default(now()) @map("created_at")
-    updatedAt     Timestamptz(3)                           @map("updated_at")
-    instance      ApprovalInstances?                     @relation(fields: [instanceId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "approval_webhook_deliveries_instance_id_fkey", index: false)
-
-    @@index([tenantId, flowId, createdAt], map: "approval_webhook_deliveries_tenant_id_flow_id_created_at_idx")
-    @@index([tenantId, instanceId, createdAt], map: "approval_webhook_deliveries_tenant_id_instance_id_created_a_idx")
-    @@index([tenantId, status, createdAt], map: "approval_webhook_deliveries_tenant_id_status_created_at_idx")
-    @@check(expression: "char_length(\"error_code\") <= 64", name: "text_len_5aa2aeb8b8")
-    @@check(expression: "char_length(\"error_message\") <= 500", name: "text_len_fb9be1e72a")
-    @@map("approval_webhook_deliveries")
-  }
 
 
 
@@ -2295,86 +1982,18 @@ namespace public {
     @@map("user_roles")
   }
 
-  native_enum ApprovalAddSignType {
-    BEFORE = "BEFORE"
-    AFTER = "AFTER"
-  }
 
-  native_enum ApprovalExecuteTiming {
-    CREATE = "CREATE"
-    UPDATE = "UPDATE"
-    DELETE = "DELETE"
-  }
 
-  native_enum ApprovalFormType {
-    GENERIC = "GENERIC"
-  }
 
-  native_enum ApprovalInstanceStatus {
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    CANCELED = "CANCELED"
-  }
 
-  native_enum ApprovalMode {
-    ALL = "ALL"
-    ANY = "ANY"
-  }
 
-  native_enum ApprovalNodeType {
-    START = "START"
-    APPROVER = "APPROVER"
-    CONDITION = "CONDITION"
-    DEFAULT = "DEFAULT"
-    END = "END"
-  }
 
-  native_enum ApprovalTaskAction {
-    APPROVE = "APPROVE"
-    REJECT = "REJECT"
-    SIGN = "SIGN"
-    BACK = "BACK"
-  }
 
-  native_enum ApprovalTaskStatus {
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    SKIPPED = "SKIPPED"
-  }
 
-  native_enum ApprovalTaskType {
-    APPROVAL = "APPROVAL"
-    CC = "CC"
-    SIGN = "SIGN"
-    BACK = "BACK"
-  }
 
-  native_enum ApprovalWebhookDeliverySource {
-    TEST = "TEST"
-    RUNTIME = "RUNTIME"
-  }
 
-  native_enum ApprovalWebhookDeliveryStatus {
-    PENDING = "PENDING"
-    SENT = "SENT"
-    FAILED = "FAILED"
-  }
 
-  native_enum ApproverDirection {
-    BOTTOM_UP = "BOTTOM_UP"
-    TOP_DOWN = "TOP_DOWN"
-  }
 
-  native_enum ApproverType {
-    USER = "USER"
-    ROLE = "ROLE"
-    DEPT_LEADER = "DEPT_LEADER"
-    DIRECT_LEADER = "DIRECT_LEADER"
-    MULTIPLE_DEPT_LEADER = "MULTIPLE_DEPT_LEADER"
-    MULTIPLE_DIRECT_LEADER = "MULTIPLE_DIRECT_LEADER"
-  }
 
   native_enum DataScope {
     ALL = "ALL"
@@ -2384,17 +2003,7 @@ namespace public {
     CUSTOM = "CUSTOM"
   }
 
-  native_enum DuplicateApproverRule {
-    FIRST_ONLY = "FIRST_ONLY"
-    SEQUENTIAL_ALL = "SEQUENTIAL_ALL"
-    EACH = "EACH"
-  }
 
-  native_enum EmptyApproverAction {
-    AUTO_PASS = "AUTO_PASS"
-    ASSIGN_SPECIFIC = "ASSIGN_SPECIFIC"
-    ASSIGN_ADMIN = "ASSIGN_ADMIN"
-  }
 
   native_enum EnterpriseIntegrationProvider {
     WECOM = "WECOM"
@@ -2480,11 +2089,6 @@ namespace public {
     INVALIDATED = "INVALIDATED"
   }
 
-  native_enum SameSubmitterAction {
-    SKIP = "SKIP"
-    ALLOW = "ALLOW"
-    ASSIGN_SUPERIOR = "ASSIGN_SUPERIOR"
-  }
 
   native_enum SubscriptionStatus {
     TRIALING = "TRIALING"

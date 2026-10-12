@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { MessageCircleMore, MessagesSquare } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -196,7 +197,7 @@ async function handleSubmit() {
       </template>
     </el-card>
 
-    <el-dialog
+    <CrmDialog
       v-model="qrDialogVisible"
       width="420px"
       class="wecom-login-dialog"
@@ -209,7 +210,7 @@ async function handleSubmit() {
         :return-path="returnPath"
         @success="handleWeComSuccess"
       />
-    </el-dialog>
+    </CrmDialog>
   </div>
 </template>
 

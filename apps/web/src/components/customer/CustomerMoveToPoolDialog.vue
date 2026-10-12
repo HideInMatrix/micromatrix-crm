@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import { computed, ref, watch } from 'vue'
 import {
   batchMoveCustomersToPool,
@@ -90,7 +91,7 @@ watch(visible, (open) => {
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     :title="title"
     width="520px"
@@ -137,5 +138,5 @@ watch(visible, (open) => {
         确认移入
       </el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

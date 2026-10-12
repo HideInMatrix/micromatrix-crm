@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { FollowUpPlanVO } from '@micromatrix/shared'
 import { KeyRound, Pencil } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -239,7 +240,7 @@ watch([visible, activeTab], ([show, tab]) => {
       <PersonalApiKeyPanel v-else-if="activeTab === 'apiKey'" />
     </div>
 
-    <el-dialog v-model="editVisible" title="编辑个人信息" width="460px" append-to-body>
+    <CrmDialog v-model="editVisible" title="编辑个人信息" width="460px" append-to-body>
       <el-form label-width="80px">
         <el-form-item label="手机号" required
           ><el-input v-model="editForm.phone" maxlength="11"
@@ -256,9 +257,9 @@ watch([visible, activeTab], ([show, tab]) => {
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveInfo">更新</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
 
-    <el-dialog v-model="passwordVisible" title="修改密码" width="460px" append-to-body>
+    <CrmDialog v-model="passwordVisible" title="修改密码" width="460px" append-to-body>
       <el-form label-width="100px">
         <el-form-item label="当前密码" required
           ><el-input v-model="passwordForm.originPassword" type="password" show-password
@@ -274,6 +275,6 @@ watch([visible, activeTab], ([show, tab]) => {
         <el-button @click="passwordVisible = false">取消</el-button>
         <el-button type="primary" :loading="passwordSaving" @click="savePassword">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </el-drawer>
 </template>

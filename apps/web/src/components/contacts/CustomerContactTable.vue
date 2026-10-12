@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import { isCustomFieldKey, type ContactVO, type FieldVO } from '@micromatrix/shared'
 import { computed, onMounted, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
@@ -259,7 +260,7 @@ onMounted(async () => {
       </template>
     </el-drawer>
 
-    <el-dialog
+    <CrmDialog
       v-model="deactivateVisible"
       append-to-body
       width="480px"
@@ -282,6 +283,6 @@ onMounted(async () => {
         <el-button @click="deactivateVisible = false">取消</el-button>
         <el-button type="primary" :loading="deactivateSaving" @click="confirmDeactivate">停用</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </div>
 </template>

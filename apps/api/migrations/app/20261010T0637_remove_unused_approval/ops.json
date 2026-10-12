@@ -1,0 +1,951 @@
+[
+  {
+    "id": "dropConstraint.approval_flows.approval_flows_currentVersionId_fkey",
+    "label": "Drop constraint \"approval_flows_currentVersionId_fkey\" on \"approval_flows\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "approval_flows_currentVersionId_fkey",
+        "table": "approval_flows"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"approval_flows_currentVersionId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "approval_flows_currentVersionId_fkey",
+          "public",
+          "\"public\".\"approval_flows\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop constraint \"approval_flows_currentVersionId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"approval_flows\" DROP CONSTRAINT \"approval_flows_currentVersionId_fkey\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"approval_flows_currentVersionId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "approval_flows_currentVersionId_fkey",
+          "public",
+          "\"public\".\"approval_flows\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_add_sign_tasks",
+    "label": "Drop table \"approval_add_sign_tasks\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_add_sign_tasks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_add_sign_tasks\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_add_sign_tasks\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_add_sign_tasks\"",
+        "sql": "DROP TABLE \"public\".\"approval_add_sign_tasks\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_add_sign_tasks\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_add_sign_tasks\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_flow_number_counters",
+    "label": "Drop table \"approval_flow_number_counters\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_flow_number_counters"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_flow_number_counters\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_flow_number_counters\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_flow_number_counters\"",
+        "sql": "DROP TABLE \"public\".\"approval_flow_number_counters\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_flow_number_counters\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_flow_number_counters\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_instance_attachments",
+    "label": "Drop table \"approval_instance_attachments\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_instance_attachments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_instance_attachments\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_instance_attachments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_instance_attachments\"",
+        "sql": "DROP TABLE \"public\".\"approval_instance_attachments\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_instance_attachments\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_instance_attachments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_node_approvers",
+    "label": "Drop table \"approval_node_approvers\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_node_approvers"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_node_approvers\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_node_approvers\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_node_approvers\"",
+        "sql": "DROP TABLE \"public\".\"approval_node_approvers\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_node_approvers\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_node_approvers\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_node_conditions",
+    "label": "Drop table \"approval_node_conditions\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_node_conditions"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_node_conditions\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_node_conditions\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_node_conditions\"",
+        "sql": "DROP TABLE \"public\".\"approval_node_conditions\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_node_conditions\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_node_conditions\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_node_links",
+    "label": "Drop table \"approval_node_links\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_node_links"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_node_links\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_node_links\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_node_links\"",
+        "sql": "DROP TABLE \"public\".\"approval_node_links\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_node_links\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_node_links\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_records",
+    "label": "Drop table \"approval_records\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_records"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_records\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_records\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_records\"",
+        "sql": "DROP TABLE \"public\".\"approval_records\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_records\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_records\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_return_back_records",
+    "label": "Drop table \"approval_return_back_records\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_return_back_records"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_return_back_records\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_return_back_records\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_return_back_records\"",
+        "sql": "DROP TABLE \"public\".\"approval_return_back_records\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_return_back_records\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_return_back_records\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_webhook_deliveries",
+    "label": "Drop table \"approval_webhook_deliveries\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_webhook_deliveries"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_webhook_deliveries\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_webhook_deliveries\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_webhook_deliveries\"",
+        "sql": "DROP TABLE \"public\".\"approval_webhook_deliveries\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_webhook_deliveries\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_webhook_deliveries\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_resource_snapshots",
+    "label": "Drop table \"approval_resource_snapshots\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_resource_snapshots"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_resource_snapshots\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_resource_snapshots\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_resource_snapshots\"",
+        "sql": "DROP TABLE \"public\".\"approval_resource_snapshots\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_resource_snapshots\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_resource_snapshots\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_tasks",
+    "label": "Drop table \"approval_tasks\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_tasks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_tasks\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_tasks\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_tasks\"",
+        "sql": "DROP TABLE \"public\".\"approval_tasks\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_tasks\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_tasks\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_nodes",
+    "label": "Drop table \"approval_nodes\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_nodes"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_nodes\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_nodes\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_nodes\"",
+        "sql": "DROP TABLE \"public\".\"approval_nodes\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_nodes\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_nodes\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_instances",
+    "label": "Drop table \"approval_instances\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_instances"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_instances\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_instances\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_instances\"",
+        "sql": "DROP TABLE \"public\".\"approval_instances\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_instances\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_instances\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_flow_versions",
+    "label": "Drop table \"approval_flow_versions\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_flow_versions"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_flow_versions\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_flow_versions\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_flow_versions\"",
+        "sql": "DROP TABLE \"public\".\"approval_flow_versions\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_flow_versions\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_flow_versions\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.approval_flows",
+    "label": "Drop table \"approval_flows\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "approval_flows"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"approval_flows\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_flows\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"approval_flows\"",
+        "sql": "DROP TABLE \"public\".\"approval_flows\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"approval_flows\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"approval_flows\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalAddSignType",
+    "label": "Drop enum type \"ApprovalAddSignType\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalAddSignType"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalAddSignType\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalAddSignType\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalExecuteTiming",
+    "label": "Drop enum type \"ApprovalExecuteTiming\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalExecuteTiming"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalExecuteTiming\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalExecuteTiming\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalFormType",
+    "label": "Drop enum type \"ApprovalFormType\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalFormType"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalFormType\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalFormType\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalInstanceStatus",
+    "label": "Drop enum type \"ApprovalInstanceStatus\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalInstanceStatus"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalInstanceStatus\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalInstanceStatus\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalMode",
+    "label": "Drop enum type \"ApprovalMode\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalMode"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalMode\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalMode\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalNodeType",
+    "label": "Drop enum type \"ApprovalNodeType\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalNodeType"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalNodeType\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalNodeType\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalTaskAction",
+    "label": "Drop enum type \"ApprovalTaskAction\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalTaskAction"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalTaskAction\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalTaskAction\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalTaskStatus",
+    "label": "Drop enum type \"ApprovalTaskStatus\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalTaskStatus"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalTaskStatus\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalTaskStatus\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalTaskType",
+    "label": "Drop enum type \"ApprovalTaskType\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalTaskType"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalTaskType\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalTaskType\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalWebhookDeliverySource",
+    "label": "Drop enum type \"ApprovalWebhookDeliverySource\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalWebhookDeliverySource"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalWebhookDeliverySource\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalWebhookDeliverySource\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApprovalWebhookDeliveryStatus",
+    "label": "Drop enum type \"ApprovalWebhookDeliveryStatus\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApprovalWebhookDeliveryStatus"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApprovalWebhookDeliveryStatus\"",
+        "sql": "DROP TYPE \"public\".\"ApprovalWebhookDeliveryStatus\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApproverDirection",
+    "label": "Drop enum type \"ApproverDirection\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApproverDirection"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApproverDirection\"",
+        "sql": "DROP TYPE \"public\".\"ApproverDirection\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.ApproverType",
+    "label": "Drop enum type \"ApproverType\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "ApproverType"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"ApproverType\"",
+        "sql": "DROP TYPE \"public\".\"ApproverType\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.DuplicateApproverRule",
+    "label": "Drop enum type \"DuplicateApproverRule\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "DuplicateApproverRule"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"DuplicateApproverRule\"",
+        "sql": "DROP TYPE \"public\".\"DuplicateApproverRule\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.EmptyApproverAction",
+    "label": "Drop enum type \"EmptyApproverAction\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "EmptyApproverAction"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"EmptyApproverAction\"",
+        "sql": "DROP TYPE \"public\".\"EmptyApproverAction\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropNativeEnumType.SameSubmitterAction",
+    "label": "Drop enum type \"SameSubmitterAction\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "SameSubmitterAction"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "drop enum type \"SameSubmitterAction\"",
+        "sql": "DROP TYPE \"public\".\"SameSubmitterAction\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  }
+]

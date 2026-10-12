@@ -6,8 +6,9 @@ import {
   type HomeSearchType,
   type HomeTimeField,
   type HomeUserField,
+  type HomeWidgetPeriod,
 } from '@micromatrix/shared'
-import { IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator'
+import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString } from 'class-validator'
 
 export class HomeStatisticSearchDto {
   @ApiProperty({ enum: HOME_SEARCH_TYPES })
@@ -33,4 +34,9 @@ export class HomeStatisticSearchDto {
   @IsOptional()
   @IsBoolean()
   priorPeriodEnable?: boolean
+
+  @ApiPropertyOptional({ description: '首页统计组件的临时时间筛选，key 为组件 ID，value 为 7d/30d/all' })
+  @IsOptional()
+  @IsObject()
+  widgetPeriods?: Record<string, HomeWidgetPeriod>
 }

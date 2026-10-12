@@ -23,6 +23,7 @@ import CustomerCapacitySettingsDrawer from './components/CustomerCapacitySetting
 import CustomerPoolReasonSettingsDrawer from './components/CustomerPoolReasonSettingsDrawer.vue'
 import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.vue'
 import HomeAnalyticsSettingsDrawer from './components/HomeAnalyticsSettingsDrawer.vue'
+import HomeAnalyticsWidgetsDrawer from './components/HomeAnalyticsWidgetsDrawer.vue'
 import LeadDedupSettingsDrawer from './components/LeadDedupSettingsDrawer.vue'
 import LeadStageSettingsDrawer from './components/LeadStageSettingsDrawer.vue'
 import ModuleFormSettingsDrawer from './components/ModuleFormSettingsDrawer.vue'
@@ -44,6 +45,7 @@ interface ModuleAction {
     | 'lead-stage'
     | 'lead-home-analytics'
     | 'customer-home-analytics'
+    | 'customer-home-widgets'
 }
 
 interface ModuleActionGroup {
@@ -63,7 +65,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
       { label: '线索库容设置', drawer: 'lead-capacity' },
       { label: '移入线索池原因设置', drawer: 'lead-reason' },
       { label: '线索状态设置', drawer: 'lead-stage' },
-      { label: '首页渠道统计设置', drawer: 'lead-home-analytics' },
+      { label: '首页统计组件设置', drawer: 'lead-home-analytics' },
     ],
   },
   customer: {
@@ -80,6 +82,7 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
         label: '跟进计划表单设置',
         formModule: 'followPlan',
       },
+      { label: '首页统计组件设置', drawer: 'customer-home-widgets' },
       { label: '首页结果统计设置', drawer: 'customer-home-analytics' },
     ],
   },
@@ -103,6 +106,7 @@ const leadDedupVisible = ref(false)
 const leadStageVisible = ref(false)
 const leadHomeAnalyticsVisible = ref(false)
 const customerHomeAnalyticsVisible = ref(false)
+const customerHomeWidgetsVisible = ref(false)
 const searchSettingsVisible = ref(false)
 const searchSettingsModule = ref<'lead' | 'customer'>('lead')
 const formSettingsVisible = ref(false)
@@ -143,6 +147,7 @@ async function load() {
       .map((item) => ({ ...item }))
       .sort((a, b) => a.sort - b.sort)
     orderedTopNavigationConfigs.value = moduleConfig.topNavigationConfigs
+      .filter((item) => topNavigationDefinitionMap.has(item.navigationKey))
       .map((item) => ({ ...item }))
       .sort((a, b) => a.sort - b.sort)
   } catch (error) {
@@ -208,6 +213,7 @@ async function handleTopNavigationDragEnd() {
       orderedTopNavigationConfigs.value.map((item) => item.navigationKey),
     )
     orderedTopNavigationConfigs.value = moduleConfig.topNavigationConfigs
+      .filter((item) => topNavigationDefinitionMap.has(item.navigationKey))
       .map((item) => ({ ...item }))
       .sort((a, b) => a.sort - b.sort)
     ElMessage.success('操作成功')
@@ -241,12 +247,14 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'lead-stage') leadStageVisible.value = true
   if (action.drawer === 'lead-home-analytics') leadHomeAnalyticsVisible.value = true
   if (action.drawer === 'customer-home-analytics') customerHomeAnalyticsVisible.value = true
+  if (action.drawer === 'customer-home-widgets') customerHomeWidgetsVisible.value = true
 }
 
 function openDeepLinkedAction() {
   const action = typeof route.query.action === 'string' ? route.query.action : ''
   if (action === 'lead-home-analytics') leadHomeAnalyticsVisible.value = true
   if (action === 'customer-home-analytics') customerHomeAnalyticsVisible.value = true
+  if (action === 'customer-home-widgets') customerHomeWidgetsVisible.value = true
 }
 
 onMounted(async () => {
@@ -406,7 +414,8 @@ onMounted(async () => {
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
     <LeadDedupSettingsDrawer v-model="leadDedupVisible" />
     <LeadStageSettingsDrawer v-model="leadStageVisible" />
-    <HomeAnalyticsSettingsDrawer v-model="leadHomeAnalyticsVisible" section="lead" />
+    <HomeAnalyticsWidgetsDrawer v-model="leadHomeAnalyticsVisible" module="lead" />
+    <HomeAnalyticsWidgetsDrawer v-model="customerHomeWidgetsVisible" module="customer" />
     <HomeAnalyticsSettingsDrawer v-model="customerHomeAnalyticsVisible" section="customer" />
     <ModuleSearchSettingsDrawer v-model="searchSettingsVisible" :module="searchSettingsModule" />
     <ModuleFormSettingsDrawer

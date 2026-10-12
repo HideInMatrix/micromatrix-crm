@@ -243,7 +243,7 @@ unique = true
 | 组织/成员/角色 | 核心保留 | Owner、Scope、RBAC |
 | 企业微信 | 核心保留 | 当前主要移动工作入口 |
 | 钉钉/飞书 Provider | 保留抽象，默认可关闭 | 不破坏多 Provider 通用能力 |
-| 审批 | 保留底座，非核心入口 | 后续报名/优惠/退款等流程可复用 |
+| 审批 | 已移除 | 原 CordysCRM 审批仅服务已退出的销售交易链；线索和客户不使用审批 |
 | 消息/通知/公告 | 保留 | 工作台提醒和业务触达底座 |
 | 导入导出 | 保留 | 业务数据通用能力 |
 | 日志/审计 | 保留 | 所有关键行为可追踪 |
@@ -287,7 +287,7 @@ unique = true
 
 1. Web 与 Mobile 无路由/组件引用；
 2. API Module 无 Controller/Service 引用；
-3. Home、Search、Notification、Approval、Import/Export 无引用；
+3. Home、Search、Notification、Import/Export 无引用；
 4. Prisma relation 已解耦；
 5. Seed、规则测试、Smoke、Browser 测试不再依赖；
 6. 目标通用能力已迁移；

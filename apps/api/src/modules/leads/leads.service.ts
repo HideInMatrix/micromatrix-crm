@@ -894,7 +894,10 @@ export class LeadsService {
     const lead = await this.ensureInScope(user, id, 'lead:recycle')
     if (lead.transitionId) throw new BadRequestException('已转换线索不能移入线索池')
     await this.dictionaries.validateReason(user.tenantId, 'CLUE_POOL_RS', reasonId)
-    const pool = await this.pools.resolveMoveTargetPool(user.tenantId, 'lead', lead.owner, poolId)
+    // 显式选择时按当前操作人的线索池可见范围校验；未指定才沿用负责人自动匹配。
+    const pool = poolId
+      ? await this.pools.resolveTargetPool(user, 'lead', poolId)
+      : await this.pools.resolveMoveTargetPool(user.tenantId, 'lead', lead.owner)
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, pool.id)
     await this.assertLeadSystemUniqueRules(
       user.tenantId,

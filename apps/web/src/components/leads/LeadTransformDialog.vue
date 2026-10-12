@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { LeadVO } from '@micromatrix/shared'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -77,7 +78,7 @@ onBeforeUnmount(stopCountdown)
 </script>
 
 <template>
-  <el-dialog
+  <CrmDialog
     v-model="visible"
     title="转换线索"
     width="600px"
@@ -115,9 +116,9 @@ onBeforeUnmount(stopCountdown)
         </el-button>
       </div>
     </template>
-  </el-dialog>
+  </CrmDialog>
 
-  <el-dialog
+  <CrmDialog
     v-model="successVisible"
     title="转换成功"
     width="600px"
@@ -141,5 +142,5 @@ onBeforeUnmount(stopCountdown)
         <el-button type="primary" @click="goDetail">查看客户详情</el-button>
       </div>
     </div>
-  </el-dialog>
+  </CrmDialog>
 </template>

@@ -120,7 +120,7 @@ DELETE /roles/{id}
 
 - 部门名称在同一父部门下不区分大小写唯一；每个租户必须且只能有一个组织根部门，根部门不可删除，移动时禁止自身/子孙循环。
 - 部门主管只能是当前租户、启用状态且直属该部门的成员；成员移出或停用后自动清理主管关系。
-- 删除部门会检查下级部门、成员和角色 `scopeDeptIds` 引用；删除成员会检查业务资源、审批、协作和团队引用，且不允许操作自己。
+- 删除部门会检查下级部门、成员和角色 `scopeDeptIds` 引用；删除成员会检查业务资源、协作和团队引用，且不允许操作自己。
 - `GET /members/options` 与 `GET /roles/options` 为已登录业务选择器接口；角色 options 只返回 `id/name`，不暴露 permissions/dataScope/scopeDeptIds。
 - 成员创建/更新使用 `roleIds: string[]` 且至少一个角色；成员列表返回 `roles + roleIds`。角色成员接口支持 Cordys 风格的角色侧批量关联与单人移除。
 - 角色 `dataScope=CUSTOM` 时 `scopeDeptIds` 必填且必须属于当前租户；列表和单资源鉴权均包含所选部门的全部下级部门。
@@ -149,8 +149,8 @@ POST  /module-configs/top-navigation/reorder       body: { navigationKeys: TopNa
 ```
 
 - 顶部导航读取接口对所有登录用户开放；排序接口要求 `system:module:update`。
-- `navigationKeys` 必须一次提交且仅提交八个完整 key：`search / task / event / agent / notify / about / language / help`；缺项、重复或未知 key 返回 `400`。
-- 旧租户首次读取时自动幂等补种默认顺序。Header 使用同一顺序，但只渲染 MicroMatrix 已具备的真实能力；`task` 还要求 `menu:approval`。
+- 顶部导航排序必须一次提交全部当前产品入口：event / notify / help；缺项、重复或未知 key 返回 400。
+- 旧租户首次读取时自动幂等补种默认顺序。Header 使用同一顺序，仅渲染当前产品已具备的入口。
 - Cordys 当前源码只有顶部导航列表与排序 API。虽然数据模型保留 `enabled`，W2.1 不开放启停接口。
 
 ## 跟进计划（W2.2）
@@ -188,24 +188,6 @@ POST  /message-settings/batch             body: { systemEnabled?, emailEnabled? 
 - 商机、报价、合同、回款、发票和订单专属事件已随旧交易链退出；消息基础设施仍保留，后续业务事件通过同一发送链扩展。
 - `NotificationsService` 的业务发送输入可带事件编码；系统消息关闭时不落库且不触发 SSE。`BusinessNotificationsService` 统一处理业务接收人去重、排除操作者、租户/成员状态过滤和发送异常隔离。
 - 当前邮件发送器未接入，Web 明确禁用邮件开关；公告和第三方平台通知不属于本阶段。
-
-## 流程设置管理底座（W2.5）
-
-```text
-GET    /approvals/flows
-GET    /approvals/flows/{id}
-POST   /approvals/flows
-PUT    /approvals/flows/{id}
-PATCH  /approvals/flows/{id}/enabled      body: { enabled: boolean }
-DELETE /approvals/flows/{id}
-```
-
-- Approval Engine、实例、任务、节点、Webhook 与历史流程读取能力保留；招生 CRM 当前未注册报价/合同/发票/订单业务资源适配器，Web 不再暴露“流程设置”入口。
-- API 仍由 `system:process / system:process:add / system:process:update / system:process:delete` 保护，作为后续通用审批资源适配器的基础设施边界。
-- 新建会在事务中生成类型前缀编号、版本 1、开始/审批/结束节点和线性连接；同租户同一表单类型只允许一条未删除流程。
-- 更新锁定表单类型。仅节点定义发生规范化差异时创建新版本；改名、描述或状态不会制造空版本。
-- 旧交易业务字段权限和审批后置字段更新已退出；配置这两类能力会明确拒绝。Webhook 与通用审批节点能力保留。
-- 仅停用流程可软删除；删除会取消该流程仍在处理中的实例、跳过待办并恢复对应业务对象审批状态，已完成实例和历史版本不物理删除。
 
 ## 企业微信集成底座（W3.1）
 

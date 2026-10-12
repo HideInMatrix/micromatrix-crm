@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { EnterpriseIntegrationVO, SaveDingTalkIntegrationInput } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { MessageCircleMore } from 'lucide-vue-next'
@@ -278,7 +279,7 @@ onMounted(loadData)
     </template>
   </el-drawer>
 
-  <el-dialog v-model="syncDialogVisible" title="开启钉钉组织同步" width="480px">
+  <CrmDialog v-model="syncDialogVisible" title="开启钉钉组织同步" width="480px">
     <el-alert
       title="默认角色只分配给首次由钉钉同步创建的新成员；已有成员角色不会被覆盖。"
       type="info"
@@ -302,5 +303,5 @@ onMounted(loadData)
       <el-button @click="syncDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="syncSaving" @click="enableSync">确认开启</el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

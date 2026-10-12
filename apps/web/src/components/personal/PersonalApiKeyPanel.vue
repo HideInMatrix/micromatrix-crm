@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import {
@@ -203,7 +204,7 @@ onMounted(load)
       </div>
     </div>
 
-    <el-dialog v-model="settingsVisible" title="设置有效期" width="480px" append-to-body>
+    <CrmDialog v-model="settingsVisible" title="设置有效期" width="480px" append-to-body>
       <el-form label-width="90px">
         <el-form-item label="时间设置">
           <el-radio-group v-model="settings.forever">
@@ -222,6 +223,6 @@ onMounted(load)
         <el-button @click="settingsVisible = false">取消</el-button>
         <el-button type="primary" :loading="settingsSaving" @click="saveSettings">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </el-card>
 </template>

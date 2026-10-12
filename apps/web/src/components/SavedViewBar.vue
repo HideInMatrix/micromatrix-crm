@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { DepartmentVO, FieldVO, FilterCondition } from '@micromatrix/shared'
 import { Plus } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -505,7 +506,7 @@ watch(
     </div>
   </div>
 
-  <el-dialog
+  <CrmDialog
     v-model="formVisible"
     :title="editingId ? '编辑视图' : '新建视图'"
     width="720px"
@@ -533,7 +534,7 @@ watch(
       <el-button @click="formVisible = false">取消</el-button>
       <el-button type="primary" :loading="formSaving" @click="saveView">保存</el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 
   <el-drawer v-model="manageVisible" title="管理视图" size="680px">
     <div class="flex justify-end mb-3">
@@ -582,7 +583,7 @@ watch(
     </el-table>
   </el-drawer>
 
-  <el-dialog v-model="columnsVisible" title="当前视图列设置" width="520px">
+  <CrmDialog v-model="columnsVisible" title="当前视图列设置" width="520px">
     <div class="text-xs text-[var(--el-text-color-secondary)] mb-3">
       列偏好保存在当前浏览器，并按当前用户、模块和视图区分；不会修改企业级字段配置。
     </div>
@@ -615,5 +616,5 @@ watch(
       <el-button @click="columnsVisible = false">取消</el-button>
       <el-button type="primary" @click="saveColumnPreference">保存</el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import {
   type HomeFilterPayload,
   isCustomFieldKey,
@@ -732,7 +733,7 @@ onMounted(async () => {
       />
     </div>
 
-    <el-dialog
+    <CrmDialog
       v-model="dialogVisible"
       :title="editingId ? '编辑客户' : '新建客户'"
       width="640px"
@@ -749,7 +750,7 @@ onMounted(async () => {
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
 
     <FollowUpDrawer
       v-model="followVisible"

@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'DingBold';
+  src: url('/fonts/din-bold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
 html,
 body,
 #app {
@@ -24,86 +32,4 @@ body {
 *::before,
 *::after {
   box-sizing: border-box;
-}
-
-.crm-layout-header {
-  box-shadow: inset 0 -1px 0 var(--el-border-color-light);
-}
-
-.crm-layout-brand,
-.crm-layout-sider {
-  transition: width 160ms ease;
-}
-
-.crm-side-menu {
-  --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: var(--el-color-primary-light-9);
-  --el-menu-active-color: var(--el-color-primary);
-  --el-menu-text-color: var(--el-text-color-regular);
-  width: 100%;
-  padding: 4px 8px !important;
-  border-right: 0 !important;
-  font-weight: 500;
-}
-
-.crm-side-menu.el-menu--collapse {
-  width: 56px;
-  padding-right: 8px;
-  padding-left: 8px;
-}
-
-.crm-side-menu .el-menu-item,
-.crm-side-menu .el-sub-menu__title {
-  height: 40px;
-  margin: 2px 0;
-  border-radius: var(--border-radius-small);
-  line-height: 40px;
-}
-
-.crm-side-menu .el-menu-item.is-active {
-  background: var(--el-color-primary-light-9);
-}
-
-.crm-side-menu.el-menu--collapse .el-menu-item,
-.crm-side-menu.el-menu--collapse .el-sub-menu__title {
-  justify-content: center;
-  padding: 0 !important;
-}
-
-.crm-side-menu.el-menu--collapse .el-menu-item > svg,
-.crm-side-menu.el-menu--collapse .el-sub-menu__title > svg {
-  margin-right: 0 !important;
-}
-
-.crm-page-main {
-  scrollbar-gutter: stable;
-}
-
-/* PC 表格操作列统一使用同一条垂直基线。
- * el-dropdown 默认按文本基线参与 inline 布局，会让“更多”比相邻 link button 略微下沉。
- */
-.el-table .el-button.is-link {
-  min-height: 24px;
-  padding-top: 2px;
-  padding-bottom: 2px;
-  line-height: 20px;
-  vertical-align: middle;
-}
-
-.el-table .el-dropdown {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  line-height: 1;
-}
-
-.el-table .el-dropdown .el-button.is-link {
-  display: inline-flex;
-  align-items: center;
-  margin: 0;
-}
-
-.el-table .el-dropdown + .el-button.is-link,
-.el-table .el-button.is-link + .el-dropdown {
-  margin-left: 12px;
 }

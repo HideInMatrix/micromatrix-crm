@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import { ref, watch } from 'vue'
 import type { MemberOption } from '@/api/system'
 
@@ -27,7 +28,7 @@ function handleConfirm() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="props.title" width="400px">
+  <CrmDialog v-model="visible" :title="props.title" width="400px">
     <el-select v-model="selected" filterable placeholder="选择成员" class="w-full">
       <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
     </el-select>
@@ -35,5 +36,5 @@ function handleConfirm() {
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" @click="handleConfirm">确定</el-button>
     </template>
-  </el-dialog>
+  </CrmDialog>
 </template>

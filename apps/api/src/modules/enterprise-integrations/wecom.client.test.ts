@@ -427,7 +427,8 @@ test('企业微信通知卡片复用工作台 H5 OAuth 入口并跳转到移动�
     assert.equal(payloads.at(-1)!['msgtype'], 'text')
     assert.deepEqual(payloads.at(-1)!['text'], { content: `${base.title}\n${base.content}` })
 
-    await client.sendTextMessage({ ...base, link: '/approvals' })
+    // 不可映射到现有 H5 页面时退化为普通文字消息。
+    await client.sendTextMessage({ ...base, link: '/unavailable-route' })
     assert.equal(payloads.at(-1)!['msgtype'], 'text')
 
     await client.sendTextMessage({ ...base, link: '/leads?id=lead-123', tenantSlug: '' })

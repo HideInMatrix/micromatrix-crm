@@ -74,13 +74,22 @@ test('顶部导航默认补种幂等并保持 Cordys 最终顺序', async () => 
 
 test('顶部导航忽略已经退出产品的历史配置行', async () => {
   const { service, rows } = createService()
-  rows.push({
-    id: 'tenant-a-search',
-    tenantId: 'tenant-a',
-    key: 'search',
-    enabled: true,
-    sort: 1,
-  })
+  rows.push(
+    {
+      id: 'tenant-a-search',
+      tenantId: 'tenant-a',
+      key: 'search',
+      enabled: true,
+      sort: 1,
+    },
+    {
+      id: 'tenant-a-task',
+      tenantId: 'tenant-a',
+      key: 'task',
+      enabled: true,
+      sort: 2,
+    },
+  )
 
   const result = await service.listTopNavigation('tenant-a')
   const expected = TOP_NAVIGATION_DEFINITIONS.map(({ key }) => key)
@@ -90,6 +99,7 @@ test('顶部导航忽略已经退出产品的历史配置行', async () => {
     expected,
   )
   assert.equal(rows.some(({ key }) => key === 'search'), true)
+  assert.equal(rows.some(({ key }) => key === 'task'), true)
 })
 
 test('顶部导航完整排序在事务后持久化', async () => {

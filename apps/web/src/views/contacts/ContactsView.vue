@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import {
   isCustomFieldKey,
   type ContactVO,
@@ -566,7 +567,7 @@ onMounted(async () => {
     </template>
   </el-drawer>
 
-  <el-dialog
+  <CrmDialog
     v-model="deactivateVisible"
     width="480px"
     :title="`停用原因${deactivateTarget ? `（${deactivateTarget.name}）` : ''}`"
@@ -590,7 +591,7 @@ onMounted(async () => {
         >停用</el-button
       >
     </template>
-  </el-dialog>
+  </CrmDialog>
 
   <BatchFieldEditDialog
     v-model="batchEditVisible"

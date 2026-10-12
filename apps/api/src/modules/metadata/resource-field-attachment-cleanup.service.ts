@@ -52,11 +52,6 @@ export class ResourceFieldAttachmentCleanupService {
              attachment."targetType" IS NULL
              AND attachment."targetId" IS NULL
              AND attachment."createdAt" < ${cutoff}::timestamptz
-             AND NOT EXISTS (
-               SELECT 1
-               FROM approval_instance_attachments AS relation
-               WHERE relation.attachment_id = attachment.id
-             )
            )
         ORDER BY attachment."createdAt" ASC
         LIMIT ${CLEANUP_BATCH_SIZE}`.returnsRow({

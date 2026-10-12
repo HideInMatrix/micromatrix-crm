@@ -24,7 +24,7 @@ export class MembersController {
   }
 
   @Get('options')
-  @ApiOperation({ summary: '成员下拉选项（供负责人/审批人选择）' })
+  @ApiOperation({ summary: '成员下拉选项（供负责人选择）' })
   options(@CurrentUser() user: AuthUser) {
     return this.membersService.options(user.tenantId)
   }

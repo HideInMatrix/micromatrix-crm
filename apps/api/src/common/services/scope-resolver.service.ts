@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma.service'
 /**
  * 通用范围 token 解析器。
  * 当前支持：*、裸 user/dept id、user:<id>、dept:<id>（部门及全部下级）。
- * Pool、Capacity、审批人范围等后续统一复用这里，不在业务模块重复解析组织树。
+ * Pool、Capacity 等模块统一复用这里，不在业务模块重复解析组织树。
  */
 @Injectable()
 export class ScopeResolverService {

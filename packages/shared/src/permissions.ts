@@ -69,10 +69,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
     ],
   },
   {
-    code: 'menu:approval',
-    label: '审批中心',
-  },
-  {
     code: 'menu:customForm',
     label: '自定义表单',
     children: [
@@ -135,15 +131,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
         code: 'system:message',
         label: '消息设置',
         children: [{ code: 'system:message:update', label: '编辑' }],
-      },
-      {
-        code: 'system:process',
-        label: '流程设置',
-        children: [
-          { code: 'system:process:add', label: '新建' },
-          { code: 'system:process:update', label: '编辑/启停' },
-          { code: 'system:process:delete', label: '删除' },
-        ],
       },
       { code: 'system:pool', label: '公海/线索池设置' },
       {

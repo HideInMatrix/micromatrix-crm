@@ -192,7 +192,39 @@ export class ReorderFieldsDto {
   orderedIds!: string[]
 }
 
+export class HomeAnalyticsWidgetDto {
+  @IsString()
+  @MaxLength(64)
+  id!: string
+
+  @IsString()
+  @MaxLength(60)
+  title!: string
+
+  @IsIn(['lead', 'customer'])
+  module!: 'lead' | 'customer'
+
+  @IsString()
+  @MaxLength(100)
+  fieldKey!: string
+
+  @IsIn(['donut', 'bar', 'list'])
+  chartType!: 'donut' | 'bar' | 'list'
+
+  // 接受尚未重存的旧组件数据，新配置不再提供时间范围字段。
+  @IsOptional()
+  @IsIn(['7d', '30d', 'all'])
+  period?: '7d' | '30d' | 'all'
+}
+
 export class HomeAnalyticsConfigDto implements HomeAnalyticsConfig {
+  @ApiPropertyOptional({ type: [HomeAnalyticsWidgetDto], description: '首页动态字段统计组件，最多 12 个' })
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => HomeAnalyticsWidgetDto)
+  @IsOptional()
+  widgets?: HomeAnalyticsWidgetDto[]
   @ApiPropertyOptional({ description: 'Lead 渠道维度字段 key' })
   @IsString()
   @MaxLength(100)

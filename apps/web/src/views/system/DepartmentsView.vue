@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import type { DepartmentVO } from '@micromatrix/shared'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -158,7 +159,7 @@ onMounted(loadData)
       </el-table-column>
     </el-table>
 
-    <el-dialog
+    <CrmDialog
       v-model="dialogVisible"
       :title="editingId ? '编辑部门' : '新建部门'"
       width="460px"
@@ -191,7 +192,7 @@ onMounted(loadData)
             <el-option v-for="m in leaderOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
           <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-            主管用于部门主管审批；成员移出本部门或被停用后会自动清除。
+            主管用于组织管理；成员移出本部门或被停用后会自动清除。
           </div>
         </el-form-item>
         <el-form-item label="排序">
@@ -202,6 +203,6 @@ onMounted(loadData)
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
   </el-card>
 </template>

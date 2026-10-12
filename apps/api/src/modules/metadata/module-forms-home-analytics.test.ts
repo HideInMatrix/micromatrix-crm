@@ -89,3 +89,22 @@ test('首页分析拒绝不适合作为渠道的字段类型和不存在的结�
     BadRequestException,
   )
 })
+
+test('首页组件支持跨线索和客户选择动态字段，并拒绝无效字段、重复 ID 与隐藏字段', async () => {
+  const service = Object.create(ModuleFormsService.prototype) as unknown as {
+    listFields: (_org: string, module: string) => Promise<FieldVO[]>
+    validateHomeWidgets: (org: string, widgets: Array<{
+      id: string; title: string; module: 'lead' | 'customer'; fieldKey: string;
+      chartType: 'donut' | 'bar' | 'list'; period?: '7d' | '30d' | 'all'
+    }>) => Promise<void>
+  }
+  service.listFields = async (_org, module) => module === 'lead'
+    ? [field('source_a', 'select'), { ...field('hidden', 'radio'), hidden: true }]
+    : [field('customer_category', 'radio')]
+  const lead = { id: 'source-widget', title: '渠道', module: 'lead' as const, fieldKey: 'source_a', chartType: 'donut' as const }
+  const customer = { id: 'customer-widget', title: '客户类型', module: 'customer' as const, fieldKey: 'customer_category', chartType: 'bar' as const }
+  await assert.doesNotReject(() => service.validateHomeWidgets('org', [lead, customer]))
+  await assert.rejects(() => service.validateHomeWidgets('org', [lead, { ...lead }]), BadRequestException)
+  await assert.rejects(() => service.validateHomeWidgets('org', [{ ...lead, fieldKey: 'hidden' }]), BadRequestException)
+  await assert.rejects(() => service.validateHomeWidgets('org', [{ ...lead, fieldKey: 'non-existent' }]), BadRequestException)
+})

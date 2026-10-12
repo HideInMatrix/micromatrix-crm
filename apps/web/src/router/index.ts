@@ -166,12 +166,6 @@ const router = createRouter({
           },
         },
         {
-          path: 'approvals',
-          name: 'approvals',
-          component: () => import('@/views/approvals/ApprovalsView.vue'),
-          meta: { title: '审批中心', perm: 'menu:approval' },
-        },
-        {
           path: 'follow-plans',
           name: 'follow-plans',
           component: () => import('@/views/follow-plans/FollowUpPlansView.vue'),

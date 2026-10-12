@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { AuthModule } from './auth/auth.module'
 import { CommonModule } from './common/common.module'
-import { ApprovalsModule } from './modules/approvals/approvals.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
 import { PrismaModule } from './prisma.module.js'
 import { RedisModule } from './redis/redis.module'
@@ -15,7 +14,6 @@ import { ExportWorkerModule } from './workers/export-worker.module'
     PrismaModule,
     RedisModule,
     CommonModule,
-    ApprovalsModule,
     NotificationsModule,
     ExportWorkerModule,
   ],

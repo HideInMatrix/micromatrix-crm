@@ -242,8 +242,6 @@ export class MembersService {
       clues,
       followUps,
       collaborations,
-      approvalInstances,
-      approvalTasks,
     ] = await Promise.all([
       this.prisma.client.orm.public.Customer.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({ count: agg.count() }),
@@ -267,15 +265,6 @@ export class MembersService {
             .where((row) => row.customerId.in(customerIds.map(({ id: customerId }) => customerId)))
             .aggregate((agg) => ({ count: agg.count() }))
         : Promise.resolve({ count: 0 }),
-      this.prisma.client.orm.public.ApprovalInstances.where({
-        tenantId,
-        submitterId: id,
-      }).aggregate((agg) => ({ count: agg.count() })),
-      this.prisma.client.orm.public.ApprovalTasks.where({ tenantId, approverId: id }).aggregate(
-        (agg) => ({
-          count: agg.count(),
-        }),
-      ),
     ])
     const referenceCounts = [
       customers.count,
@@ -283,8 +272,6 @@ export class MembersService {
       clues.count,
       followUps.count,
       collaborations.count,
-      approvalInstances.count,
-      approvalTasks.count,
     ]
     if (referenceCounts.some((count) => count > 0)) {
       throw new BadRequestException('成员仍有关联业务数据，请先转移负责人或停用账号')

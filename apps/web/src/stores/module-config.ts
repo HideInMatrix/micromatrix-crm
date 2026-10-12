@@ -10,6 +10,10 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { moduleConfigApi } from '@/api/system'
 
+const supportedTopNavigationKeys = new Set<string>(
+  TOP_NAVIGATION_DEFINITIONS.map(({ key }) => key),
+)
+
 export const useModuleConfigStore = defineStore('module-config', () => {
   const configs = ref<ModuleConfigVO[]>([])
   const topNavigationConfigs = ref<TopNavigationConfigVO[]>([])
@@ -23,7 +27,10 @@ export const useModuleConfigStore = defineStore('module-config', () => {
     loading = Promise.all([moduleConfigApi.list(), moduleConfigApi.listTopNavigation()])
       .then(([modules, topNavigation]) => {
         configs.value = modules.data
-        topNavigationConfigs.value = topNavigation.data
+        // 历史配置或旧版 API 缓存可能仍包含已下线的导航项（如审批 task）。
+        topNavigationConfigs.value = topNavigation.data.filter(({ navigationKey }) =>
+          supportedTopNavigationKeys.has(navigationKey),
+        )
         loaded.value = true
       })
       .finally(() => {
@@ -77,7 +84,9 @@ export const useModuleConfigStore = defineStore('module-config', () => {
 
   async function reorderTopNavigation(navigationKeys: TopNavigationKey[]) {
     const { data } = await moduleConfigApi.reorderTopNavigation(navigationKeys)
-    topNavigationConfigs.value = data
+    topNavigationConfigs.value = data.filter(({ navigationKey }) =>
+      supportedTopNavigationKeys.has(navigationKey),
+    )
   }
 
   function reset() {

@@ -1,4 +1,4 @@
-import type { FilterCondition } from './metadata'
+import type { FilterCondition, HomeAnalyticsWidgetConfig, HomeWidgetPeriod } from './metadata'
 
 export const HOME_SEARCH_TYPES = ['ALL', 'SELF', 'DEPARTMENT'] as const
 export type HomeSearchType = (typeof HOME_SEARCH_TYPES)[number]
@@ -18,6 +18,8 @@ export interface HomeStatisticRequest {
   timeField?: HomeTimeField
   userField?: HomeUserField
   priorPeriodEnable?: boolean
+  /** 首页统计组件各自的时间范围，按组件 ID 传递，不写入模块配置。 */
+  widgetPeriods?: Record<string, HomeWidgetPeriod>
 }
 
 export interface HomeStatisticValue {
@@ -93,7 +95,16 @@ export interface HomeAnalyticsResultItem {
   count: number
 }
 
+export interface HomeAnalyticsWidgetResult {
+  config: HomeAnalyticsWidgetConfig
+  period: HomeWidgetPeriod
+  fieldLabel: string
+  total: number
+  items: Array<{ value: string; label: string; count: number }>
+}
+
 export interface HomeAnalyticsVO {
+  widgets: HomeAnalyticsWidgetResult[]
   config: HomeAnalyticsResolvedConfig
   summary: HomeAnalyticsSummary
   funnel: HomeAnalyticsFunnelItem[]

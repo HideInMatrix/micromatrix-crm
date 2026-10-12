@@ -369,6 +369,9 @@ export const leadApi = {
   get: (id: string, pool = false) =>
     http.get<LeadVO>(pool ? `/pool/lead/get/${id}` : `/lead/get/${id}`),
   poolOptions: () => resourcePoolApi.options('lead'),
+  // 移池选择不要求线索池列表读取权限，仅返回当前账号所属/管理的可用池。
+  moveTargetOptions: () =>
+    http.get<ResourcePoolVO[]>('/resource-pools/options', { params: { module: 'lead' } }),
   importTemplate: (importType: ImportType, poolId?: string) =>
     http.get<Blob>(poolId ? '/pool/lead/template/download' : '/lead/template/download', {
       params: { importType },

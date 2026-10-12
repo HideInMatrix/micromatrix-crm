@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
+import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import type { PrismaService } from '../../prisma.service'
 
@@ -10,6 +11,8 @@ import {
   openPrismaTestDatabase,
 } from '../../testing/prisma-test-db'
 import { LeadsService } from './leads.service'
+import { CluePoolRepository } from '../pool-rules/clue-pool.repository'
+import { PoolRuleCalculator } from '../pool-rules/pool-rule-calculator.service'
 
 const databaseUrl = process.env['DATABASE_URL']
 
@@ -97,9 +100,13 @@ test(
         assertCapacityForOwner: async () => undefined,
         assertPoolMember: async () => undefined,
         options: async () => [],
-        resolveTargetPool: async (_user: AuthUser, _resource: string, poolId?: string) => ({
-          id: poolId!,
-        }),
+        resolveTargetPool: async (_user: AuthUser, _resource: string, poolId?: string) => {
+          if (poolId === 'not-accessible') throw new ForbiddenException('没有目标线索池访问权限')
+          return { id: poolId! }
+        },
+        resolveMoveTargetPool: async () => {
+          throw new BadRequestException('未找到与原负责人范围匹配的可用池')
+        },
       }
       const changeLog = { record: async () => undefined }
       const homeFilters = { parse: () => null }
@@ -111,7 +118,7 @@ test(
         fieldValues as never,
         notifications as never,
         pools as never,
-        {} as never,
+        new CluePoolRepository(prisma, new PoolRuleCalculator()),
         {} as never,
         changeLog as never,
         { resolveFilters: async () => null } as never,
@@ -119,7 +126,7 @@ test(
         {} as never,
         {} as never,
         homeFilters as never,
-        {} as never,
+        { validateReason: async () => undefined } as never,
       )
 
       const created = await service.create(user, {
@@ -215,6 +222,49 @@ test(
       })
       assert.equal(poolLeadB.poolId, poolB)
 
+      // 自建线索：负责人自动匹配不到池时，手动选择当前用户有权限的池仍能移入。
+      const manual = await service.create(user, {
+        name: '自建线索手动移入',
+        phone: '18800138021',
+        ownerId: actor.id,
+      })
+      await assert.rejects(
+        () => service.moveToPool(user, manual.id),
+        /未找到与原负责人范围匹配的可用池/,
+      )
+      await assert.rejects(
+        () => service.moveToPool(user, manual.id, 'not-accessible'),
+        /没有目标线索池访问权限/,
+      )
+      const moved = await service.moveToPool(user, manual.id, poolB)
+      assert.equal(moved.poolId, poolB)
+      const movedLead = await prismaClient.orm.public.Clue.where({ id: manual.id }).first()
+      assert.equal(movedLead?.inSharedPool, true)
+      assert.equal(movedLead?.poolId, poolB)
+      assert.equal(movedLead?.owner, null)
+      const ownerHistory = await prismaClient.orm.public.ClueOwner.where({ clueId: manual.id }).all()
+      assert.equal(ownerHistory.length, 1)
+      assert.equal(ownerHistory[0]?.owner, actor.id)
+
+      // 批量移入也统一使用手工指定的目标池，失败条目不影响成功条目。
+      const batchLeads = await Promise.all([
+        service.create(user, { name: '批量移池甲', ownerId: actor.id }),
+        service.create(user, { name: '批量移池乙', ownerId: actor.id }),
+      ])
+      const batchResult = await service.batchMoveToPool(
+        user,
+        [...batchLeads.map((item) => item.id), 'missing-lead-id'],
+        poolA,
+      )
+      assert.equal(batchResult.success, 2)
+      assert.equal(batchResult.fail, 1)
+      for (const item of batchLeads) {
+        const row = await prismaClient.orm.public.Clue.where({ id: item.id }).first()
+        assert.equal(row?.poolId, poolA)
+        assert.equal(row?.inSharedPool, true)
+        assert.equal(row?.owner, null)
+      }
+
       const status = await service.updateStatus(user, { id: created.id, stage: 'VISITED' })
       assert.equal(status.stage, 'VISITED')
       assert.equal(status.lastStage, 'PENDING')
@@ -261,6 +311,14 @@ test(
     } finally {
       if (tenantId) {
         await prismaClient.orm.public.LeadStageEvent.where({ organizationId: tenantId }).deleteAll()
+        const clueIds = await prismaClient.orm.public.Clue.where({ organizationId: tenantId })
+          .select('id')
+          .all()
+        if (clueIds.length) {
+          await prismaClient.orm.public.ClueOwner.where((row) =>
+            row.clueId.in(clueIds.map((item) => item.id)),
+          ).deleteAll()
+        }
         await prismaClient.orm.public.Clue.where({ organizationId: tenantId }).deleteAll()
         await prismaClient.orm.public.CluePool.where({ organizationId: tenantId }).deleteAll()
         await prismaClient.orm.public.Users.where({ tenantId }).deleteAll()

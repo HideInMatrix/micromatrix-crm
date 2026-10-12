@@ -151,9 +151,9 @@ T8 验证结果：Prisma focused tests 5/5、API rules 362/362、API typecheck�
 
 - [x] 代码与验收收口后，对 `docs/`、规格任务、历史 audit/acceptance/plan 和专项 Smoke 脚本完成用途审计。
 - [x] 删除已经失去运行、维护、迁移或决策追溯价值的过期文档，以及仅描述已物理删除模块、一次性迁移阶段或旧执行过程的重复文档。
-- [x] 保留生产部署、Prisma 8 migration、开放 API、安全边界、企业集成、Redis/BullMQ、审批、动态表单等仍对应当前代码的文档，并修正过时路径、模块范围和状态描述。
+- [x] 保留生产部署、Prisma 8 migration、开放 API、安全边界、企业集成、Redis/BullMQ、动态表单等仍对应当前代码的文档，并修正过时路径、模块范围和状态描述。
 - [x] 重建根文档索引和规格索引，删除已完成专项的历史 `tasks.md`；最终扫描结果为 Markdown 相对链接 `BROKEN=0`、已删除历史文档引用 `STALE=0`、`git diff --check` 通过；当前只保留 `ADMISSIONS-001/tasks.md` 作为项目主线任务源。
 
-T9 最终清理结果：`docs/` 从审计前 224 个 Markdown 收敛为 30 个当前文档。第一轮删除旧完整销售链、旧 Prisma8/工具链迁移、旧 UI/导航执行规格以及一次性 audit/acceptance/plan；第二轮进一步把仍带 `*-parity`、Wave、VERIFIED/阶段验收语义的完成规格重组为 8 个长期领域：Platform Foundation、Form Engine、Follow-up、Approval Engine、Enterprise Platform、Infrastructure Runtime、Messaging、Operation Log。除 `ADMISSIONS-001/tasks.md` 外不再保留专项任务日志；历史实施过程统一由 Git 追溯。3 个已经完成且无持续维护价值的专项 Browser Smoke 脚本已删除，`scripts/` 只保留仍对应现存能力的 6 个 Smoke/Mock 工具。
+T9 最终清理结果：`docs/` 从审计前 224 个 Markdown 收敛为 30 个当前文档。第一轮删除旧完整销售链、旧 Prisma8/工具链迁移、旧 UI/导航执行规格以及一次性 audit/acceptance/plan；第二轮进一步把仍带 `*-parity`、Wave、VERIFIED/阶段验收语义的完成规格重组为 7 个长期领域：Platform Foundation、Form Engine、Follow-up、Enterprise Platform、Infrastructure Runtime、Messaging、Operation Log。除 `ADMISSIONS-001/tasks.md` 外不再保留专项任务日志；历史实施过程统一由 Git 追溯。3 个已经完成且无持续维护价值的专项 Browser Smoke 脚本已删除，`scripts/` 只保留仍对应现存能力的 6 个 Smoke/Mock 工具。
 
 2026-09-28 配置入口纠偏：删除独立“业务设置”菜单、路由与页面；线索判重、线索阶段、线索池/库容/移池原因和首页渠道统计全部归入“模块配置 → Lead”，客户/联系人/公海/库容/移入公海原因/跟进计划及首页结果统计归入“模块配置 → Customer”。随后继续收敛导航产品边界：主导航只保留 `home / lead / customer / system`，顶部导航只保留 `task / event / notify / about / help`；历史数据库配置行由 API 过滤，不再暴露退出产品的 key。

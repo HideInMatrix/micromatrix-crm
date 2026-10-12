@@ -264,18 +264,10 @@ MicroMatrix 当前 FollowUpPlan API 只提供全量数据范围与 `mine` 过滤
 - `useMobileFollowUpPlanForm.ts` 负责 ModuleForm、目标对象/联系人联动和保存流程。
 - `utils/follow-up-plan.ts` 只放状态选项与纯格式化函数。
 
-## 9. Mobile 审批移除边界
+## 9. 审批模块退出范围
 
-只移除 Mobile 审批，不影响 PC/API：
-
-- 移除 Mobile Tabbar 审批入口。
-- 移除 /mobile/approvals。
-- 移除首页审批区域。
-- 删除 Mobile Approvals View。
-- 删除 Mobile 审批专用附件组件。
-- 删除 Mobile approvals API wrapper。
-
-保留 PC Web 审批、API 审批模块和 Shared 层审批能力。
+原 CordysCRM 审批用于报价、合同、订单、发票，与本项目的线索/客户业务无关。
+当前 PC、Mobile、API、Shared 与数据库 Contract 已整体移除审批模块及其入口；Mobile 不展示待办、审批列表或相关 Tabbar。
 
 ## 10. 验收标准
 

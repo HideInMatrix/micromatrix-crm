@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CrmDialog from '@/components/CrmDialog.vue'
 import {
   DEFAULT_LEAD_STAGES,
   type HomeFilterPayload,
@@ -371,19 +372,19 @@ function handleBatchToPool() {
   moveToPoolVisible.value = true
 }
 
-async function confirmMoveToPool(reasonId?: string) {
+async function confirmMoveToPool(poolId?: string, reasonId?: string) {
   try {
     if (moveToPoolBatch.value) {
       const { data } = await leadApi.batchToPool(
         selectedRows.value.map((row) => row.id),
-        undefined,
+        poolId,
         reasonId,
       )
       if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
       else ElMessage.success(`已将 ${data.success} 条线索移入线索池`)
     } else if (moveToPoolTarget.value) {
-      await leadApi.toPool(moveToPoolTarget.value.id, selectedPoolId.value || undefined, reasonId)
-      ElMessage.success('已退回线索池')
+      await leadApi.toPool(moveToPoolTarget.value.id, poolId, reasonId)
+      ElMessage.success('已移入线索池')
     }
     moveToPoolVisible.value = false
     await loadData()
@@ -780,6 +781,12 @@ onMounted(async () => {
   await loadData()
   if (generation !== routeGeneration) return
   await consumeRouteLeadDeepLink()
+  if (route.query.import === '1' && canImport.value && (!isPoolMode.value || selectedPoolId.value)) {
+    importVisible.value = true
+    const nextQuery = { ...route.query }
+    delete nextQuery.import
+    await router.replace({ path: route.path, query: nextQuery })
+  }
 })
 </script>
 
@@ -1143,7 +1150,7 @@ onMounted(async () => {
       />
     </div>
 
-    <el-dialog
+    <CrmDialog
       v-model="dialogVisible"
       :title="editingId ? '编辑线索' : '新建线索'"
       width="640px"
@@ -1160,7 +1167,7 @@ onMounted(async () => {
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
-    </el-dialog>
+    </CrmDialog>
 
     <LeadOverviewDrawer
       v-model="overviewVisible"
@@ -1231,8 +1238,8 @@ onMounted(async () => {
       :title="moveToPoolBatch ? '批量移入线索池' : '移入线索池'"
       :description="
         moveToPoolBatch
-          ? `确定将已选择的 ${selectedRows.length} 条线索移入匹配的线索池？`
-          : `将「${moveToPoolTarget?.name ?? ''}」退回线索池？`
+          ? `确定将已选择的 ${selectedRows.length} 条线索移入线索池？`
+          : `将「${moveToPoolTarget?.name ?? ''}」移入线索池？`
       "
       @confirm="confirmMoveToPool"
     />

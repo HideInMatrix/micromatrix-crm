@@ -3,7 +3,6 @@ import {
   Bell,
   CalendarDays,
   CircleHelp,
-  ClipboardList,
   House,
   Info,
   Settings,
@@ -20,7 +19,6 @@ const MODULE_ICONS: Record<NavigationModuleKey, Component> = {
 }
 
 const TOP_NAVIGATION_ICONS: Record<TopNavigationKey, Component> = {
-  task: ClipboardList,
   event: CalendarDays,
   notify: Bell,
   about: Info,
