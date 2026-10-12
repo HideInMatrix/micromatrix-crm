@@ -13,6 +13,8 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { computed, ref, watch } from 'vue'
 import type { MemberOption } from '@/api/system'
 import DynamicFormItem from './DynamicFormItem.vue'
+import FormAlert from './FormAlert.vue'
+import { mergeAlertFields } from './form-presentation'
 import SubTableFieldInput from './SubTableFieldInput.vue'
 
 const props = defineProps<{
@@ -33,7 +35,7 @@ const formRef = ref<FormInstance>()
 
 const runtime = computed(() => evaluateFormRuntime(props.fields, model.value))
 const visibleFields = computed(() =>
-  props.fields.filter(
+  mergeAlertFields(props.fields, props.formProp).filter(
     (field) =>
       !field.hidden &&
       runtime.value.visibleByFieldId[field.id] !== false &&
@@ -56,6 +58,7 @@ const rules = computed<FormRules>(() => {
   const result: FormRules = {}
   for (const field of visibleFields.value) {
     const fieldRules = []
+    if (field.type === 'alert') continue
     if (field.required && field.type !== 'formula') {
       fieldRules.push({ required: true, message: `请填写${field.label}`, trigger: 'blur' })
     }
@@ -131,10 +134,19 @@ defineExpose({ validate })
     :rules="rules"
     :label-position="formProp?.labelPos === 'left' ? 'left' : 'top'"
     :label-width="formProp?.labelPos === 'left' ? 'auto' : undefined"
+    class="crm-dynamic-form"
+    :style="{
+      '--crm-form-label-color': formProp?.labelStyle?.color ?? 'var(--el-text-color-regular)',
+      '--crm-form-label-font-size': `${formProp?.labelStyle?.fontSize ?? 14}px`,
+      '--crm-form-label-font-weight': { normal: '400', medium: '500', semibold: '600' }[
+        formProp?.labelStyle?.fontWeight ?? 'normal'
+      ],
+    }"
   >
     <el-row :gutter="16">
       <el-col v-for="field in visibleFields" :key="field.key" :span="field.span">
-        <el-form-item :label="field.label" :prop="field.key">
+        <FormAlert v-if="field.type === 'alert'" :field="field" class="mb-4" />
+        <el-form-item v-else :label="field.label" :prop="field.key">
           <slot
             v-if="field.system && $slots['system-field']"
             name="system-field"
@@ -171,3 +183,11 @@ defineExpose({ validate })
     </el-row>
   </el-form>
 </template>
+
+<style scoped>
+.crm-dynamic-form :deep(.el-form-item__label) {
+  color: var(--crm-form-label-color);
+  font-size: var(--crm-form-label-font-size);
+  font-weight: var(--crm-form-label-font-weight);
+}
+</style>

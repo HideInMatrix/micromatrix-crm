@@ -9,6 +9,7 @@ import {
 import { computed, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi, type SaveModuleFormInput } from '@/api/metadata'
+import { mergeAlertFields, serializeAlertFields } from '@/components/form-engine/form-presentation'
 import ModuleFormCanvas from './ModuleFormCanvas.vue'
 import ModuleFormFieldPalette from './ModuleFormFieldPalette.vue'
 import ModuleFormProperties from './ModuleFormProperties.vue'
@@ -63,6 +64,12 @@ function normalizeFormProp(value: ModuleFormProp): ModuleFormProp {
   return {
     ...cloned,
     labelPos: value.labelPos === 'left' ? 'left' : 'top',
+    labelStyle: {
+      color: '#606266',
+      fontSize: 14,
+      fontWeight: 'normal',
+      ...(value.labelStyle ?? {}),
+    },
     viewSize: ['small', 'medium', 'large'].includes(String(value.viewSize))
       ? value.viewSize
       : 'small',
@@ -83,7 +90,7 @@ async function load() {
   loading.value = true
   try {
     const { data } = await metadataApi.formConfig(props.module)
-    fields.value = data.fields.map(normalizeField)
+    fields.value = mergeAlertFields(data.fields, data.formProp).map(normalizeField)
     formProp.value = normalizeFormProp(data.formProp)
     activeId.value = null
     savedSnapshot.value = snapshot()
@@ -112,13 +119,14 @@ function selectField(field: ModuleFormFieldDraft) {
 }
 
 function addField(field: ModuleFormFieldDraft) {
-  field.label = nextAvailableLabel(field.label)
-  fields.value.push(field)
+  if (field.type !== 'alert') field.label = nextAvailableLabel(field.label)
+  if (field.type === 'alert') fields.value.unshift(field)
+  else fields.value.push(field)
   activeId.value = field.id
 }
 
 function handleDraggedField(field: ModuleFormFieldDraft) {
-  field.label = nextAvailableLabel(field.label, field.id)
+  if (field.type !== 'alert') field.label = nextAvailableLabel(field.label, field.id)
 }
 
 function copyField(field: ModuleFormFieldDraft) {
@@ -132,7 +140,7 @@ function copyField(field: ModuleFormFieldDraft) {
 
 async function removeField(field: ModuleFormFieldDraft) {
   if (!(field.capabilities?.delete ?? !field.system)) return
-  if (!isDraftField(field)) {
+  if (field.type !== 'alert' && !isDraftField(field)) {
     const confirmed = await ElMessageBox.confirm(
       `删除字段「${field.label}」后，保存表单时会同时删除该字段已经保存的业务值，且无法恢复。确定删除？`,
       '删除字段',
@@ -145,7 +153,9 @@ async function removeField(field: ModuleFormFieldDraft) {
 }
 
 function validateDraft(): boolean {
-  const labels = fields.value.map((field) => field.label.trim())
+  const labels = fields.value
+    .filter((field) => field.type !== 'alert')
+    .map((field) => field.label.trim())
   if (labels.some((label) => !label)) {
     ElMessage.warning('字段名称不能为空')
     return false
@@ -195,7 +205,9 @@ function validateDraft(): boolean {
 
 function buildPayload(): SaveModuleFormInput {
   const savedTargetIds = new Set(
-    fields.value.filter((field) => !isDraftField(field)).map((field) => field.id),
+    fields.value
+      .filter((field) => field.type !== 'alert' && !isDraftField(field))
+      .map((field) => field.id),
   )
   const nextFormProp = JSON.parse(JSON.stringify(formProp.value)) as ModuleFormProp
   for (const scenarios of Object.values(nextFormProp.linkProp ?? {})) {
@@ -203,42 +215,46 @@ function buildPayload(): SaveModuleFormInput {
       scenario.linkFields = scenario.linkFields.filter((link) => savedTargetIds.has(link.current))
     })
   }
+  nextFormProp.alerts = serializeAlertFields(fields.value)
   return {
-    fields: fields.value.map((field) => {
-      const config = JSON.parse(JSON.stringify(field.config ?? {})) as NonNullable<
-        ModuleFormFieldDraft['config']
-      >
-      if (!supportsMobileSearchSelect(field.type)) delete config.mobileSelectMode
-      return {
-        ...(isDraftField(field) ? {} : { id: field.id }),
-        label: field.label.trim(),
-        type: field.type,
-        required: field.type === 'formula' || field.type === 'sub_product' ? false : field.required,
-        options: field.options?.map((option) => ({
-          ...option,
-          label: option.label.trim(),
-          value: option.value.trim(),
-        })),
-        config,
-        span: field.type === 'sub_product' ? 24 : field.span,
-        showInList: field.type === 'sub_product' ? false : field.showInList,
-        listWidth: field.type === 'sub_product' ? null : field.listWidth,
-        hidden: field.hidden,
-        mobile: field.mobile ?? true,
-        subFields:
-          field.type === 'sub_product'
-            ? (field.subFields ?? []).map((subField) => ({
-                id: subField.id,
-                key: subField.key,
-                label: subField.label,
-                type: subField.type as SubTableFieldType,
-                required: subField.required,
-                options: subField.options ?? undefined,
-                config: subField.config ?? undefined,
-              }))
-            : undefined,
-      }
-    }),
+    fields: fields.value
+      .filter((field) => field.type !== 'alert')
+      .map((field) => {
+        const config = JSON.parse(JSON.stringify(field.config ?? {})) as NonNullable<
+          ModuleFormFieldDraft['config']
+        >
+        if (!supportsMobileSearchSelect(field.type)) delete config.mobileSelectMode
+        return {
+          ...(isDraftField(field) ? {} : { id: field.id }),
+          label: field.label.trim(),
+          type: field.type,
+          required:
+            field.type === 'formula' || field.type === 'sub_product' ? false : field.required,
+          options: field.options?.map((option) => ({
+            ...option,
+            label: option.label.trim(),
+            value: option.value.trim(),
+          })),
+          config,
+          span: field.type === 'sub_product' ? 24 : field.span,
+          showInList: field.type === 'sub_product' ? false : field.showInList,
+          listWidth: field.type === 'sub_product' ? null : field.listWidth,
+          hidden: field.hidden,
+          mobile: field.mobile ?? true,
+          subFields:
+            field.type === 'sub_product'
+              ? (field.subFields ?? []).map((subField) => ({
+                  id: subField.id,
+                  key: subField.key,
+                  label: subField.label,
+                  type: subField.type as SubTableFieldType,
+                  required: subField.required,
+                  options: subField.options ?? undefined,
+                  config: subField.config ?? undefined,
+                }))
+              : undefined,
+        }
+      }),
     formProp: nextFormProp,
   }
 }
@@ -249,7 +265,7 @@ async function save(): Promise<boolean> {
   saving.value = true
   try {
     const { data } = await metadataApi.saveFormDesign(props.module, buildPayload())
-    fields.value = data.fields.map(normalizeField)
+    fields.value = mergeAlertFields(data.fields, data.formProp).map(normalizeField)
     formProp.value = normalizeFormProp(data.formProp)
     activeId.value = null
     savedSnapshot.value = snapshot()

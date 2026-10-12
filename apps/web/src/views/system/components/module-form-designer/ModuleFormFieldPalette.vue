@@ -2,6 +2,7 @@
 import type { ModuleKey } from '@micromatrix/shared'
 import {
   AlignLeft,
+  Info,
   BadgeDollarSign,
   Building2,
   CalendarDays,
@@ -64,6 +65,7 @@ const iconMap: Record<string, Component> = {
   data_source_multiple: Database,
   sub_product: Table2,
   formula: Calculator,
+  alert: Info,
 }
 
 function cloneItem(item: FieldPaletteItem) {
@@ -73,7 +75,6 @@ function cloneItem(item: FieldPaletteItem) {
 function add(item: FieldPaletteItem) {
   emit('add', cloneItem(item))
 }
-
 </script>
 
 <template>

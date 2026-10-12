@@ -41,6 +41,7 @@ export const ADVANCED_FIELD_PALETTE: FieldPaletteItem[] = [
   { type: 'percent', label: '百分比' },
   { type: 'formula', label: '计算' },
   { type: 'sub_product', label: '子表格' },
+  { type: 'alert', label: 'Alert 提示' },
 ]
 
 const OPTION_FIELD_TYPES = new Set<FieldType>(['select', 'multiselect', 'radio', 'checkbox'])
@@ -73,10 +74,17 @@ export function createDraftField(module: ModuleKey, item: FieldPaletteItem): Mod
         ? { formula: '', precision: 2 }
         : item.type === 'location'
           ? { scope: 'ALL', locationType: 'PCD' }
-          : {},
+          : item.type === 'alert'
+            ? {
+                alertIcon: 'info',
+                alertText: '家长手机号为全局查重主键，重复录入将被拦截并提示归属人。',
+                alertColor: '#409eff',
+                alertFontSize: 14,
+              }
+            : {},
     sort: Number.MAX_SAFE_INTEGER,
-    span: item.type === 'sub_product' ? 24 : 12,
-    showInList: item.type !== 'sub_product',
+    span: ['sub_product', 'alert'].includes(item.type) ? 24 : 12,
+    showInList: !['sub_product', 'alert'].includes(item.type),
     listWidth: null,
     subFields: item.type === 'sub_product' ? [] : null,
     draft: true,

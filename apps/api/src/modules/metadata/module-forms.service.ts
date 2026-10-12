@@ -466,7 +466,8 @@ export class ModuleFormsService {
       this.validateFieldCapabilityChange(field.form.formKey, field, current, dto)
       const referencedKey = current.key || field.internalKey || field.id
       if (
-        (dto.type !== undefined && dto.type !== field.type &&
+        (dto.type !== undefined &&
+          dto.type !== field.type &&
           !HOME_ANALYTICS_DIMENSION_TYPES.has(dto.type)) ||
         (dto.hidden === true && !current.hidden)
       ) {
@@ -926,6 +927,9 @@ export class ModuleFormsService {
   }
 
   private validateFieldInput(dto: Partial<CreateFieldDto>, formKey?: string): void {
+    if (dto.type === 'alert') {
+      throw new BadRequestException('Alert 为展示组件，请通过表单属性配置')
+    }
     if (dto.type && dto.config?.unique && !dynamicFieldCapabilities(dto.type, formKey).unique) {
       throw new BadRequestException('当前字段类型不支持唯一值约束')
     }
@@ -1008,19 +1012,33 @@ export class ModuleFormsService {
       this.listFields(organizationId, 'customer'),
     ])
     for (const item of widgets) {
-      if (!item || typeof item !== 'object' || typeof item.id !== 'string' ||
-          !/^[\w-]{1,64}$/.test(item.id) || keys.has(item.id) ||
-          typeof item.title !== 'string' || !item.title.trim() || item.title.length > 60 ||
-          !['lead', 'customer'].includes(item.module) ||
-          !['donut', 'bar', 'list'].includes(item.chartType) ||
-          (item.period !== undefined && !['7d', '30d', 'all'].includes(item.period))) {
+      if (
+        !item ||
+        typeof item !== 'object' ||
+        typeof item.id !== 'string' ||
+        !/^[\w-]{1,64}$/.test(item.id) ||
+        keys.has(item.id) ||
+        typeof item.title !== 'string' ||
+        !item.title.trim() ||
+        item.title.length > 60 ||
+        !['lead', 'customer'].includes(item.module) ||
+        !['donut', 'bar', 'list'].includes(item.chartType) ||
+        (item.period !== undefined && !['7d', '30d', 'all'].includes(item.period))
+      ) {
         throw new BadRequestException('首页统计组件配置不正确或 ID 重复')
       }
       keys.add(item.id)
       const fields = item.module === 'lead' ? leadFields : customerFields
       const field = fields.find((entry) => entry.key === item.fieldKey)
-      if (!field || field.system || field.hidden || !HOME_ANALYTICS_DIMENSION_TYPES.has(field.type)) {
-        throw new BadRequestException(`首页统计组件「${item.title}」字段不可用，仅支持动态文本、单选或单选框`)
+      if (
+        !field ||
+        field.system ||
+        field.hidden ||
+        !HOME_ANALYTICS_DIMENSION_TYPES.has(field.type)
+      ) {
+        throw new BadRequestException(
+          `首页统计组件「${item.title}」字段不可用，仅支持动态文本、单选或单选框`,
+        )
       }
     }
   }
@@ -1039,9 +1057,10 @@ export class ModuleFormsService {
     }
     if (!config && formKey === 'lead') return
 
-    const widgetConfig = formKey === 'lead'
-      ? config
-      : (await this.getConfig(organizationId, 'lead')).formProp.homeAnalytics
+    const widgetConfig =
+      formKey === 'lead'
+        ? config
+        : (await this.getConfig(organizationId, 'lead')).formProp.homeAnalytics
     const widgetFields = (widgetConfig?.widgets ?? [])
       .filter((widget) => widget.module === formKey)
       .map((widget) => ({
@@ -1238,9 +1257,11 @@ export class ModuleFormsService {
             config?.['customerResultAmountFieldKey'],
           ]
     const widgets = Array.isArray(widgetAnalytics?.['widgets'])
-      ? widgetAnalytics['widgets'] as Array<{ module: string; fieldKey: string }>
+      ? (widgetAnalytics['widgets'] as Array<{ module: string; fieldKey: string }>)
       : []
-    references.push(...widgets.filter((item) => item.module === formKey).map((item) => item.fieldKey))
+    references.push(
+      ...widgets.filter((item) => item.module === formKey).map((item) => item.fieldKey),
+    )
     if (references.some((value) => value === fieldKey)) {
       throw new BadRequestException('该字段正在被首页分析使用，请先修改首页分析设置')
     }
@@ -1264,6 +1285,50 @@ export class ModuleFormsService {
       !['RESOURCE_POOL', 'ORGANIZATION'].includes(formProp.leadUniqueScope)
     ) {
       throw new BadRequestException('线索判重范围配置不正确')
+    }
+    if (formProp.labelStyle !== undefined) {
+      const style = formProp.labelStyle
+      if (
+        !style ||
+        typeof style !== 'object' ||
+        (style.color !== undefined && !/^#[0-9a-fA-F]{6}$/.test(style.color)) ||
+        (style.fontSize !== undefined &&
+          (!Number.isInteger(style.fontSize) || style.fontSize < 12 || style.fontSize > 24)) ||
+        (style.fontWeight !== undefined &&
+          !['normal', 'medium', 'semibold'].includes(style.fontWeight))
+      ) {
+        throw new BadRequestException('字段标题样式配置不正确')
+      }
+    }
+    if (formProp.alerts !== undefined) {
+      if (!Array.isArray(formProp.alerts) || formProp.alerts.length > 30) {
+        throw new BadRequestException('Alert 提示组件最多允许 30 个')
+      }
+      const ids = new Set<string>()
+      for (const alert of formProp.alerts) {
+        if (
+          !alert ||
+          typeof alert !== 'object' ||
+          typeof alert.id !== 'string' ||
+          !/^[a-zA-Z0-9_-]{1,64}$/.test(alert.id) ||
+          ids.has(alert.id) ||
+          !Number.isInteger(alert.position) ||
+          alert.position < 0 ||
+          typeof alert.icon !== 'string' ||
+          !/^[a-z][a-z0-9-]{0,63}$/.test(alert.icon) ||
+          typeof alert.text !== 'string' ||
+          !alert.text.trim() ||
+          alert.text.length > 500 ||
+          typeof alert.color !== 'string' ||
+          !/^#[0-9a-fA-F]{6}$/.test(alert.color) ||
+          !Number.isInteger(alert.fontSize) ||
+          alert.fontSize < 12 ||
+          alert.fontSize > 24
+        ) {
+          throw new BadRequestException('Alert 提示组件配置不正确')
+        }
+        ids.add(alert.id)
+      }
     }
     if (formProp.leadStages !== undefined) {
       if (!Array.isArray(formProp.leadStages) || formProp.leadStages.length === 0) {

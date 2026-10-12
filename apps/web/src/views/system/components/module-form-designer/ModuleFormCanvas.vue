@@ -3,6 +3,7 @@ import { evaluateFormula, type ModuleFormProp } from '@micromatrix/shared'
 import { Copy, GripVertical, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import DynamicFormItem from '@/components/form-engine/DynamicFormItem.vue'
+import FormAlert from '@/components/form-engine/FormAlert.vue'
 import SubTableFieldInput from '@/components/form-engine/SubTableFieldInput.vue'
 import draggable from 'vuedraggable'
 import type { ModuleFormFieldDraft } from './types'
@@ -16,11 +17,14 @@ const props = defineProps<{
 
 // 控件复用业务表单的真实渲染实现，但不允许在设计器里录入/上传数据。
 const previewValues = ref<Record<string, unknown>>({})
-const canvasWidth = computed(() => ({
-  small: '640px',
-  medium: '840px',
-  large: '1080px',
-})[props.formProp.viewSize ?? 'small'])
+const canvasWidth = computed(
+  () =>
+    ({
+      small: '640px',
+      medium: '840px',
+      large: '1080px',
+    })[props.formProp.viewSize ?? 'small'],
+)
 
 function previewFormula(field: ModuleFormFieldDraft) {
   return field.type === 'formula' && field.config?.formula
@@ -64,8 +68,15 @@ function canDelete(field: ModuleFormFieldDraft) {
 <template>
   <div class="h-full overflow-auto bg-[var(--el-fill-color-lighter)] p-4">
     <div
-      class="mx-auto min-h-full bg-[var(--el-bg-color)] p-6"
-      :style="{ width: canvasWidth }"
+      class="module-form-canvas mx-auto min-h-full bg-[var(--el-bg-color)] p-6"
+      :style="{
+        width: canvasWidth,
+        '--crm-form-label-color': formProp.labelStyle?.color ?? 'var(--el-text-color-regular)',
+        '--crm-form-label-font-size': `${formProp.labelStyle?.fontSize ?? 14}px`,
+        '--crm-form-label-font-weight': { normal: '400', medium: '500', semibold: '600' }[
+          formProp.labelStyle?.fontWeight ?? 'normal'
+        ],
+      }"
       data-testid="module-form-preview"
     >
       <draggable
@@ -119,22 +130,46 @@ function canDelete(field: ModuleFormFieldDraft) {
                 </el-tooltip>
               </div>
 
+              <FormAlert v-if="field.type === 'alert'" :field="field" class="mt-4" />
               <div
-                :class="formProp.labelPos === 'left' ? 'grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3' : ''"
+                v-else
+                :class="
+                  formProp.labelPos === 'left'
+                    ? 'grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3'
+                    : ''
+                "
               >
                 <div
                   class="mb-2 flex min-w-0 items-center gap-1.5 text-sm text-[var(--el-text-color-primary)]"
                   :class="formProp.labelPos === 'left' ? 'mb-0 min-h-8' : ''"
                 >
-                  <GripVertical :size="14" class="shrink-0 text-[var(--el-text-color-placeholder)]" />
-                  <span class="truncate">{{ field.label }}</span>
+                  <GripVertical
+                    :size="14"
+                    class="shrink-0 text-[var(--el-text-color-placeholder)]"
+                  />
+                  <span class="truncate form-preview-label">{{ field.label }}</span>
                   <span v-if="field.required" class="text-[var(--el-color-danger)]">*</span>
-                  <el-tag v-if="field.origin === 'SYSTEM'" size="small" type="warning" effect="plain">系统</el-tag>
-                  <el-tag v-else-if="field.origin === 'PRESET'" size="small" type="success" effect="plain">预设</el-tag>
+                  <el-tag
+                    v-if="field.origin === 'SYSTEM'"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                    >系统</el-tag
+                  >
+                  <el-tag
+                    v-else-if="field.origin === 'PRESET'"
+                    size="small"
+                    type="success"
+                    effect="plain"
+                    >预设</el-tag
+                  >
                   <el-tag v-if="field.hidden" size="small" type="warning">隐藏</el-tag>
                 </div>
 
-                <div v-if="field.hidden" class="rounded bg-[var(--el-fill-color-light)] p-2 text-xs text-[var(--el-text-color-secondary)]">
+                <div
+                  v-if="field.hidden"
+                  class="rounded bg-[var(--el-fill-color-light)] p-2 text-xs text-[var(--el-text-color-secondary)]"
+                >
                   此字段在实际表单中隐藏，可选中后在右侧重新开启
                 </div>
                 <div v-else inert class="pointer-events-none min-w-0 select-none">
@@ -171,3 +206,11 @@ function canDelete(field: ModuleFormFieldDraft) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.module-form-canvas .form-preview-label {
+  color: var(--crm-form-label-color);
+  font-size: var(--crm-form-label-font-size);
+  font-weight: var(--crm-form-label-font-weight);
+}
+</style>

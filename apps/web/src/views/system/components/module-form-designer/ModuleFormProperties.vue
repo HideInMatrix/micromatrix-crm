@@ -10,6 +10,7 @@ import {
   type ModuleKey,
 } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
+
 import ModuleFormLinkDrawer from './ModuleFormLinkDrawer.vue'
 import { isDraftField, type ModuleFormFieldDraft } from './types'
 
@@ -21,6 +22,13 @@ const props = defineProps<{
   fields: ModuleFormFieldDraft[]
 }>()
 
+const formLabelStyle = computed({
+  get: () =>
+    formProp.value.labelStyle ?? { color: '#606266', fontSize: 14, fontWeight: 'normal' as const },
+  set: (value) => {
+    formProp.value.labelStyle = value
+  },
+})
 const activeTab = ref<'field' | 'form'>('field')
 const leadLinkVisible = ref(false)
 
@@ -39,7 +47,9 @@ watch(
 )
 
 const typeLabel = computed(
-  () => FIELD_TYPE_OPTIONS.find((item) => item.value === field.value?.type)?.label ?? '-',
+  () =>
+    FIELD_TYPE_OPTIONS.find((item) => item.value === field.value?.type)?.label ??
+    (field.value?.type === 'alert' ? 'Alert 提示' : '-'),
 )
 const config = computed<FieldConfig>(() => field.value?.config ?? {})
 const needOptions = computed(() =>
@@ -114,7 +124,7 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
       <el-tab-pane label="字段属性" name="field" class="h-full">
         <div v-if="field" class="h-full overflow-y-auto p-4">
           <div class="space-y-6">
-            <section>
+            <section v-if="field.type !== 'alert'">
               <div class="mb-2 flex items-center justify-between">
                 <span class="text-sm font-semibold text-[var(--el-text-color-primary)]"
                   >字段标题</span
@@ -166,11 +176,63 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
               </div>
             </section>
 
+            <section v-if="field.type === 'alert'" class="space-y-4">
+              <div class="text-sm font-semibold">Alert 提示设置</div>
+              <div>
+                <div class="mb-2 text-sm">Lucide 图标名</div>
+                <el-select v-model="config.alertIcon" filterable class="w-full">
+                  <el-option
+                    v-for="icon in [
+                      'info',
+                      'badge-info',
+                      'circle-alert',
+                      'triangle-alert',
+                      'circle-check',
+                      'shield-check',
+                      'shield-alert',
+                      'circle-help',
+                      'lightbulb',
+                      'megaphone',
+                      'bell',
+                      'message-circle',
+                    ]"
+                    :key="icon"
+                    :label="icon"
+                    :value="icon"
+                  />
+                </el-select>
+              </div>
+              <div>
+                <div class="mb-2 text-sm">文字描述</div>
+                <el-input
+                  v-model="config.alertText"
+                  type="textarea"
+                  :rows="4"
+                  maxlength="500"
+                  show-word-limit
+                />
+              </div>
+              <div>
+                <div class="mb-2 text-sm">文字和图标颜色</div>
+                <el-color-picker v-model="config.alertColor" />
+              </div>
+              <div>
+                <div class="mb-2 text-sm">文字大小（px）</div>
+                <el-input-number v-model="config.alertFontSize" :min="12" :max="24" />
+              </div>
+            </section>
+
             <section
               v-if="
-                !['radio', 'checkbox', 'picture', 'attachment', 'formula', 'sub_product'].includes(
-                  field.type,
-                )
+                ![
+                  'alert',
+                  'radio',
+                  'checkbox',
+                  'picture',
+                  'attachment',
+                  'formula',
+                  'sub_product',
+                ].includes(field.type)
               "
             >
               <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
@@ -291,7 +353,7 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
               </el-radio-group>
             </section>
 
-            <section>
+            <section v-if="field.type !== 'alert'">
               <div class="mb-3 text-sm font-semibold text-[var(--el-text-color-primary)]">
                 字段状态
               </div>
@@ -342,7 +404,7 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
               </div>
             </section>
 
-            <section>
+            <section v-if="field.type !== 'alert'">
               <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
                 字段宽度
               </div>
@@ -358,7 +420,7 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
               </el-radio-group>
             </section>
 
-            <section v-if="field.showInList && field.type !== 'sub_product'">
+            <section v-if="field.showInList && !['sub_product', 'alert'].includes(field.type)">
               <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
                 列表列宽
               </div>
@@ -437,6 +499,28 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
                   </div>
                   左右
                 </button>
+              </div>
+            </section>
+
+            <section>
+              <div class="mb-3 text-sm font-semibold">字段标题样式</div>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm">文字颜色</span
+                  ><el-color-picker v-model="formLabelStyle.color" />
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm">字体大小（px）</span
+                  ><el-input-number v-model="formLabelStyle.fontSize" :min="12" :max="24" />
+                </div>
+                <div>
+                  <div class="mb-2 text-sm">字体粗细</div>
+                  <el-select v-model="formLabelStyle.fontWeight" class="w-full"
+                    ><el-option label="常规" value="normal" /><el-option
+                      label="中等"
+                      value="medium" /><el-option label="加粗" value="semibold"
+                  /></el-select>
+                </div>
               </div>
             </section>
 

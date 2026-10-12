@@ -24,6 +24,8 @@ export type FieldType =
   | 'data_source_multiple'
   | 'sub_product'
   | 'formula'
+  /** 仅前端展示使用，不写入 SysModuleField 表。 */
+  | 'alert'
 
 export interface FieldOption {
   label: string
@@ -224,11 +226,30 @@ export interface ModuleQuickSearchConfig {
 }
 
 /** MicroMatrix 当前正式消费的表单级 FormDesign 属性。 */
+/** 展示性 Alert 组件存储在 formProp，避免生成业务字段或参与查询。 */
+export interface FormAlertConfig {
+  id: string
+  /** 在完整表单项序列中的位置，从 0 开始。 */
+  position: number
+  icon: string
+  text: string
+  color: string
+  fontSize: number
+}
+
+export interface FormLabelStyle {
+  color?: string
+  fontSize?: number
+  fontWeight?: 'normal' | 'medium' | 'semibold'
+}
+
 export interface ModuleFormProp {
   /** @deprecated 旧表单布局参数，仅用于兼容历史配置；页面排版改由字段 span 决定。 */
   layout?: 1 | 2 | 3 | 4
   labelPos?: 'top' | 'left'
   viewSize?: 'small' | 'medium' | 'large'
+  labelStyle?: FormLabelStyle
+  alerts?: FormAlertConfig[]
   /**
    * Lead 模块 unique 字段的入库校验范围。
    * RESOURCE_POOL：进入具体线索池时只在该池内校验；没有目标池时仍按组织级校验。
@@ -251,6 +272,10 @@ export interface ModuleFormProp {
 }
 
 export interface FieldConfig {
+  alertIcon?: string
+  alertText?: string
+  alertColor?: string
+  alertFontSize?: number
   placeholder?: string
   defaultValue?: unknown
   /**
