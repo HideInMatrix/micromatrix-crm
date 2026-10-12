@@ -26,7 +26,10 @@ import type {
 } from '../../common/dto/resource-batch.dto'
 import { formatForExport } from '../../common/export-format'
 import { parseFilters } from '../../common/filter-builder'
-import { validateQuickSearchGroups, resolveQuickSearchGroupIds } from '../../common/quick-search-groups'
+import {
+  validateQuickSearchGroups,
+  resolveQuickSearchGroupIds,
+} from '../../common/quick-search-groups'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../../common/services/business-change-log.service'
 import { not, or } from '@prisma/orm-postgres/orm-client'
@@ -467,9 +470,8 @@ export class LeadsService {
         : null,
     ])
     const presetGroups = validateQuickSearchGroups(query.quickGroups, fields)
-    const presetIds = await resolveQuickSearchGroupIds(
-      presetGroups,
-      (conditions, mode) => this.filterIds(user.tenantId, conditions, mode),
+    const presetIds = await resolveQuickSearchGroupIds(presetGroups, (conditions, mode) =>
+      this.filterIds(user.tenantId, conditions, mode),
     )
     const filteredIds = this.intersectIds(this.intersectIds(savedIds, adHocIds), presetIds)
 
@@ -1095,7 +1097,10 @@ export class LeadsService {
   }
 
   /** Cordys /lead/batch/transfer：普通线索批量转移，全部资源先鉴权后单事务写入。 */
-  async batchTransfer(user: AuthUser, ids: string[], ownerId: string) {
+  async batchTransfer(user: AuthUser, ids: string[], ownerId: string, note?: string) {
+    const transferNote = note?.trim()
+    if (transferNote && transferNote.length > 500)
+      throw new BadRequestException('转移说明不能超过500字')
     const uniqueIds = [...new Set(ids)]
     if (uniqueIds.length === 0) throw new BadRequestException('请选择线索')
     const [owner, leads] = await Promise.all([
@@ -1110,14 +1115,14 @@ export class LeadsService {
     })
     for (const lead of leads) {
       if (lead.owner === owner.id) continue
-      await this.notifyAssign(user, lead.id, lead.name, owner.id, 'TRANSFER_CLUE')
+      await this.notifyAssign(user, lead.id, lead.name, owner.id, 'TRANSFER_CLUE', transferNote)
       await this.changeLog.record(user, {
         module: 'lead',
         action: 'transfer',
         targetId: lead.id,
         targetName: lead.name,
         before: { owner: lead.owner },
-        after: { owner: owner.id },
+        after: { owner: owner.id, ...(transferNote ? { note: transferNote } : {}) },
       })
     }
     return { count: leads.filter((lead) => lead.owner !== owner.id).length }
@@ -2527,6 +2532,7 @@ export class LeadsService {
     leadName: string,
     ownerId: string,
     event: MessageTaskEvent,
+    note?: string,
   ) {
     await this.notifications.send({
       tenantId: user.tenantId,
@@ -2536,6 +2542,7 @@ export class LeadsService {
       excludeSelf: true,
       type: 'assign',
       templateContext: { name: leadName },
+      ...(note ? { appendContent: `补充说明：${note}` } : {}),
       link: `/leads?id=${leadId}`,
     })
   }

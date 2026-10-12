@@ -19,6 +19,8 @@ export interface BusinessNotificationInput {
   type: NotificationBizType
   title?: string
   content?: string
+  /** 在消息模板渲染完成后追加业务说明，保留既有可配置模板内容。 */
+  appendContent?: string
   link?: string
   templateContext?: Record<string, unknown>
   language?: MessageLanguage
@@ -88,7 +90,11 @@ export class BusinessNotificationsService {
           )
         : null
       const title = input.title ?? rendered?.title
-      const content = input.content ?? rendered?.content
+      const baseContent = input.content ?? rendered?.content
+      const supplement = input.appendContent?.trim()
+      const content = supplement
+        ? [baseContent, supplement].filter(Boolean).join('\n')
+        : baseContent
       if (!title) throw new Error(`消息事件 ${input.event} 缺少标题模板`)
       await this.notifications.notifyMany(input.tenantId, userIds, {
         event: input.event,

@@ -118,7 +118,7 @@ export class ClueController {
   @LogOperation('lead', 'batchTransfer')
   @ApiOperation({ summary: '批量转移线索' })
   batchTransfer(@CurrentUser() user: AuthUser, @Body() dto: ClueBatchTransferDto) {
-    return this.service.batchTransfer(user, dto.ids, dto.owner)
+    return this.service.batchTransfer(user, dto.ids, dto.owner, dto.note)
   }
 
   @Post('batch/update')
@@ -210,10 +210,7 @@ export class ClueController {
   @RequirePermissions('lead:convert', 'lead:update')
   @LogOperation('lead', 'retransitionCustomer')
   @ApiOperation({ summary: '批量关联已有客户' })
-  retransitionCustomer(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: ClueRetransitionCustomerDto,
-  ) {
+  retransitionCustomer(@CurrentUser() user: AuthUser, @Body() dto: ClueRetransitionCustomerDto) {
     return this.service.retransitionCustomer(user, dto)
   }
 

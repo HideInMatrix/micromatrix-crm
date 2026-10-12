@@ -271,6 +271,11 @@ export class UpdateFormPropDto {
   @IsOptional()
   labelPos?: 'top' | 'left'
 
+  @ApiPropertyOptional({ enum: ['left', 'right'], description: 'PC 左右布局字段标题对齐方式' })
+  @IsIn(['left', 'right'])
+  @IsOptional()
+  labelAlign?: 'left' | 'right'
+
   @ApiPropertyOptional({ enum: ['small', 'medium', 'large'], description: 'PC 表单容器尺寸' })
   @IsIn(['small', 'medium', 'large'])
   @IsOptional()

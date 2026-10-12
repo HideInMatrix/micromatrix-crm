@@ -126,7 +126,7 @@ test('formProp PATCH 只覆盖提交属性并保留既有 linkProp/扩展键', a
   await service.updateFormProp(
     'tenant-1',
     'followPlan',
-    { layout: 3, labelPos: 'left', viewSize: 'large' },
+    { layout: 3, labelPos: 'left', labelAlign: 'right', viewSize: 'large' },
     'user-1',
   )
 
@@ -134,6 +134,7 @@ test('formProp PATCH 只覆盖提交属性并保留既有 linkProp/扩展键', a
     ...original,
     layout: 3,
     labelPos: 'left',
+    labelAlign: 'right',
     viewSize: 'large',
   })
 })

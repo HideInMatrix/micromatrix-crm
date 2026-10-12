@@ -522,6 +522,15 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
                   左右
                 </button>
               </div>
+              <div v-if="formProp.labelPos === 'left'" class="mt-4">
+                <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
+                  字段标题对齐方向
+                </div>
+                <el-radio-group v-model="formProp.labelAlign" data-testid="form-label-align">
+                  <el-radio-button value="left">左对齐</el-radio-button>
+                  <el-radio-button value="right">右对齐</el-radio-button>
+                </el-radio-group>
+              </div>
             </section>
 
             <section>

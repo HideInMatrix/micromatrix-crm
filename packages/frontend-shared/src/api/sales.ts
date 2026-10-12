@@ -409,14 +409,19 @@ export const leadApi = {
   toPool: (id: string, poolId?: string, reasonId?: string) =>
     http.post('/lead/to-pool', { id, poolId, reasonId }),
   claim: (id: string, poolId: string) => http.post('/pool/lead/pick', { clueId: id, poolId }),
-  transfer: (id: string, owner: string) => http.post('/lead/batch/transfer', { ids: [id], owner }),
+  transfer: (id: string, owner: string, note?: string) =>
+    http.post('/lead/batch/transfer', { ids: [id], owner, ...(note ? { note } : {}) }),
   poolAssign: (id: string, assignUserId: string) =>
     http.post('/pool/lead/assign', { clueId: id, assignUserId }),
   ownerHistory: (id: string) => http.get<OwnerHistoryVO[]>(`/lead/owner/history/list/${id}`),
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue?: unknown }) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/update', data),
-  batchTransfer: (ids: string[], owner: string) =>
-    http.post<{ count: number }>('/lead/batch/transfer', { ids, owner }),
+  batchTransfer: (ids: string[], owner: string, note?: string) =>
+    http.post<{ count: number }>('/lead/batch/transfer', {
+      ids,
+      owner,
+      ...(note ? { note } : {}),
+    }),
   batchToPool: (ids: string[], poolId?: string, reasonId?: string) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>('/lead/batch/to-pool', {
       ids,

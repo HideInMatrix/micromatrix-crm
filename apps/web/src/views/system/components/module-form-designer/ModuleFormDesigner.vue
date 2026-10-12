@@ -64,6 +64,7 @@ function normalizeFormProp(value: ModuleFormProp): ModuleFormProp {
   return {
     ...cloned,
     labelPos: value.labelPos === 'left' ? 'left' : 'top',
+    labelAlign: value.labelAlign === 'right' ? 'right' : 'left',
     labelStyle: {
       color: '#606266',
       fontSize: 14,

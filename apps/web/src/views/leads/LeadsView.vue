@@ -35,6 +35,7 @@ import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import LeadOverviewDrawer from '@/components/leads/LeadOverviewDrawer.vue'
 import LeadPoolQuickSettingDrawer from '@/components/leads/LeadPoolQuickSettingDrawer.vue'
 import LeadMoveToPoolDialog from '@/components/leads/LeadMoveToPoolDialog.vue'
+import LeadTransferDialog from '@/components/leads/LeadTransferDialog.vue'
 import LeadTransformDialog from '@/components/leads/LeadTransformDialog.vue'
 import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCustomerDrawer.vue'
 import { consumeHomeFilter } from '@/utils/home-filter'
@@ -73,6 +74,9 @@ const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<LeadVO[]>([])
 const batchEditVisible = ref(false)
 const batchTransferVisible = ref(false)
+const transferVisible = ref(false)
+const transferTarget = ref<LeadVO | null>(null)
+const transferSaving = ref(false)
 const batchPoolAssignVisible = ref(false)
 const poolSettingVisible = ref(false)
 const moveToPoolVisible = ref(false)
@@ -107,20 +111,19 @@ const savedViewModule = computed(() => (isPoolMode.value ? 'lead_pool' : 'lead')
 const currentPool = computed(
   () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
 )
-const leadStageByKey = computed(
-  () => new Map(leadStages.value.map((stage) => [stage.key, stage])),
-)
+const leadStageByKey = computed(() => new Map(leadStages.value.map((stage) => [stage.key, stage])))
 const canImport = computed(() =>
   isPoolMode.value ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
 )
 const canExport = computed(() =>
   isPoolMode.value ? auth.hasPerm('leadPool:export') : auth.hasPerm('lead:export'),
 )
-const canManualConvert = computed(() =>
-  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
+const canManualConvert = computed(
+  () =>
+    auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
 )
-const canAssociateCustomer = computed(() =>
-  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update'),
+const canAssociateCustomer = computed(
+  () => auth.hasPerm('lead:convert') && auth.hasPerm('lead:update'),
 )
 const contextFields = computed(() => {
   const hiddenIds = isPoolMode.value
@@ -152,9 +155,8 @@ async function loadFields() {
   if (quickSearch.value?.enabled) query.status = ''
   if (!showSavedViews.value) activeSavedViewId.value = ''
   if (quickSearch.value && !quickSearch.value.showAdvancedFilter) filters.value = []
-  leadStages.value = (data.formProp.leadStages?.length
-    ? data.formProp.leadStages
-    : DEFAULT_LEAD_STAGES
+  leadStages.value = (
+    data.formProp.leadStages?.length ? data.formProp.leadStages : DEFAULT_LEAD_STAGES
   ).map((stage) => ({ ...stage, enabled: stage.enabled !== false }))
 }
 
@@ -205,7 +207,9 @@ function currentListParams(): LeadListParams {
     scope: isPoolMode.value ? 'pool' : 'mine',
     poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
     status: query.status || undefined,
-    filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+    filters: [...filters.value, ...quickFilters.value].length
+      ? JSON.stringify([...filters.value, ...quickFilters.value])
+      : undefined,
     quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
     viewId: activeSavedViewId.value || undefined,
     homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
@@ -256,7 +260,10 @@ async function loadData() {
   }
 }
 
-function handleQuickSearch(value: { filters: FilterCondition[]; quickGroups: QuickSearchQueryGroup[] }) {
+function handleQuickSearch(value: {
+  filters: FilterCondition[]
+  quickGroups: QuickSearchQueryGroup[]
+}) {
   query.keyword = ''
   quickFilters.value = value.filters
   quickGroups.value = value.quickGroups
@@ -356,18 +363,23 @@ function openBatchTransfer() {
   batchTransferVisible.value = true
 }
 
-async function handleBatchTransferConfirm(userId: string) {
-  if (selectedRows.value.length === 0) return
+async function handleBatchTransferConfirm(userId: string, note: string) {
+  if (selectedRows.value.length === 0 || transferSaving.value) return
+  transferSaving.value = true
   try {
+    const count = selectedRows.value.length
     await leadApi.batchTransfer(
       selectedRows.value.map((row) => row.id),
       userId,
+      note,
     )
     batchTransferVisible.value = false
-    ElMessage.success(`已转移 ${selectedRows.value.length} 条线索`)
+    ElMessage.success(`已转移 ${count} 条线索`)
     await loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
+  } finally {
+    transferSaving.value = false
   }
 }
 
@@ -573,7 +585,9 @@ function transferParams(): LeadListParams {
     scope: isPoolMode.value ? 'pool' : 'mine',
     poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
     status: query.status || undefined,
-    filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+    filters: [...filters.value, ...quickFilters.value].length
+      ? JSON.stringify([...filters.value, ...quickFilters.value])
+      : undefined,
     quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
     viewId: activeSavedViewId.value || undefined,
   }
@@ -613,6 +627,11 @@ async function handleExportConfirm(payload: { fileName: string; headList: string
 }
 
 function handleAssign(row: LeadVO) {
+  if (!isPoolMode.value) {
+    transferTarget.value = row
+    transferVisible.value = true
+    return
+  }
   assignTarget.value = row
   assignVisible.value = true
 }
@@ -620,12 +639,26 @@ function handleAssign(row: LeadVO) {
 async function handleAssignConfirm(userId: string) {
   if (!assignTarget.value) return
   try {
-    if (isPoolMode.value) await leadApi.poolAssign(assignTarget.value.id, userId)
-    else await leadApi.transfer(assignTarget.value.id, userId)
+    await leadApi.poolAssign(assignTarget.value.id, userId)
     ElMessage.success('已分配')
-    loadData()
+    await loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleTransferConfirm(userId: string, note: string) {
+  if (!transferTarget.value || transferSaving.value) return
+  transferSaving.value = true
+  try {
+    await leadApi.transfer(transferTarget.value.id, userId, note)
+    transferVisible.value = false
+    ElMessage.success('线索转移成功')
+    await loadData()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    transferSaving.value = false
   }
 }
 
@@ -787,7 +820,11 @@ onMounted(async () => {
   await loadData()
   if (generation !== routeGeneration) return
   await consumeRouteLeadDeepLink()
-  if (route.query.import === '1' && canImport.value && (!isPoolMode.value || selectedPoolId.value)) {
+  if (
+    route.query.import === '1' &&
+    canImport.value &&
+    (!isPoolMode.value || selectedPoolId.value)
+  ) {
     importVisible.value = true
     const nextQuery = { ...route.query }
     delete nextQuery.import
@@ -797,7 +834,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section v-if="quickSearch && showQuickSearchPanel" class="mb-4" data-testid="module-search-panel">
+  <section
+    v-if="quickSearch && showQuickSearchPanel"
+    class="mb-4"
+    data-testid="module-search-panel"
+  >
     <el-card shadow="never">
       <div class="mb-4 flex items-center gap-2">
         <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">
@@ -921,16 +962,16 @@ onMounted(async () => {
 
     <div v-show="showSavedViews">
       <SavedViewBar
-      ref="savedViewBarRef"
-      :module="savedViewModule"
-      :fields="contextFields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      @change="handleSavedViewChange"
-      @clear-filters="clearTemporaryFilters"
-      @columns-change="handleSavedColumns"
+        ref="savedViewBarRef"
+        :module="savedViewModule"
+        :fields="contextFields"
+        :members="fieldRefs.members.value"
+        :dept-tree="fieldRefs.deptTree.value"
+        :current-filters="filters"
+        :default-column-keys="defaultColumnKeys"
+        @change="handleSavedViewChange"
+        @clear-filters="clearTemporaryFilters"
+        @columns-change="handleSavedColumns"
       />
     </div>
 
@@ -1219,10 +1260,19 @@ onMounted(async () => {
       @confirm="handleAssignConfirm"
     />
 
-    <MemberSelectDialog
-      v-model="batchTransferVisible"
-      :title="`批量转移 ${selectedRows.length} 条线索`"
+    <LeadTransferDialog
+      v-model="transferVisible"
+      :count="1"
       :members="fieldRefs.members.value"
+      :loading="transferSaving"
+      @confirm="handleTransferConfirm"
+    />
+
+    <LeadTransferDialog
+      v-model="batchTransferVisible"
+      :count="selectedRows.length"
+      :members="fieldRefs.members.value"
+      :loading="transferSaving"
       @confirm="handleBatchTransferConfirm"
     />
 

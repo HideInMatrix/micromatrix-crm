@@ -103,6 +103,10 @@ html:not(.dark) {
   --el-dialog-border-radius: 16px;
   --el-dialog-bg-color: #FFFFFF;
   --el-dialog-padding-primary: 0px;
+  /* 保留 Header / Footer 的空间，超长内容仅在 Body 内滚动。 */
+  display: flex;
+  flex-direction: column;
+  max-height: 80dvh;
 }
 
 .crm-dialog .el-dialog__header {
@@ -120,7 +124,35 @@ html:not(.dark) {
 }
 
 .crm-dialog .el-dialog__body {
+  /* 内容少时自然撑开；内容多时限制高度并独立滚动。 */
+  flex: 0 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: min(600px, 70dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 16px 20px 20px;
+}
+
+/* 所有 CrmDialog 中的 Element Plus 表单统一采用 12px 纵向间距。 */
+.crm-dialog .el-dialog__body .el-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 栅格表单的字段行由 el-row 排列，不受 el-form 的 gap 直接控制。 */
+.crm-dialog .el-dialog__body .el-form .el-row {
+  row-gap: 12px;
+}
+
+.crm-dialog .el-dialog__body .el-form .el-form-item {
+  margin-bottom: 0;
+}
+
+/* 每个栅格单元格的末尾不再叠加子组件自带的底部间距（含展示性组件）。 */
+.crm-dialog .el-dialog__body .el-form .el-row > .el-col > :last-child {
+  margin-bottom: 0;
 }
 
 .crm-dialog .el-dialog__footer {

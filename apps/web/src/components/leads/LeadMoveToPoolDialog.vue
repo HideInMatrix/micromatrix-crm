@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
+import CrmInfoAlert from '@/components/CrmInfoAlert.vue'
 import { ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { leadApi, type ResourcePoolVO } from '@/api/sales'
@@ -66,10 +67,10 @@ watch(visible, (open) => {
     data-testid="lead-move-to-pool-dialog"
   >
     <div v-loading="loading">
-      <div class="mb-4 text-sm text-[var(--el-text-color-regular)]">
+      <CrmInfoAlert>
         {{ description ?? '确定将线索移入线索池？' }}
-      </div>
-      <el-form label-position="top">
+      </CrmInfoAlert>
+      <el-form class="lead-move-to-pool-form mt-5" label-position="right" label-width="91px">
         <el-form-item label="目标线索池" required>
           <el-select
             v-model="selectedPoolId"
@@ -80,9 +81,6 @@ watch(visible, (open) => {
             <el-option label="自动匹配（按原负责人范围）" value="__auto__" />
             <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
           </el-select>
-          <div class="mt-1 text-xs text-[#8A97AC]">
-            自动匹配失败时，可手动选择当前账号有权访问的线索池。
-          </div>
         </el-form-item>
         <el-form-item v-if="enabled" label="移入线索池原因" required>
           <el-select v-model="reasonId" class="w-full" placeholder="请选择原因">
@@ -92,12 +90,6 @@ watch(visible, (open) => {
             已启用移入原因必填，但尚无可选原因，请先到模块设置中维护。
           </div>
         </el-form-item>
-        <el-alert
-          v-else
-          type="info"
-          :closable="false"
-          title="当前未启用移入线索池原因必填，可直接确认。"
-        />
       </el-form>
     </div>
     <template #footer>
@@ -106,7 +98,26 @@ watch(visible, (open) => {
         type="primary"
         :disabled="loading || (enabled && (!reasonId || !reasons.length))"
         @click="confirm"
-      >确认移入</el-button>
+        >确认移入</el-button
+      >
     </template>
   </CrmDialog>
 </template>
+
+<style scoped>
+.lead-move-to-pool-form :deep(.el-form-item__label) {
+  font-size: 14px;
+  color: #333333;
+}
+
+.lead-move-to-pool-form :deep(.el-select__wrapper) {
+  min-height: 38px;
+  border: 1px solid #e4e7ed;
+  box-shadow: none;
+}
+
+.lead-move-to-pool-form :deep(.el-select__wrapper.is-focused) {
+  border-color: var(--el-color-primary);
+  box-shadow: none;
+}
+</style>

@@ -161,6 +161,12 @@ export class ClueBatchTransferDto {
   @IsString()
   @IsNotEmpty()
   owner!: string
+
+  @ApiPropertyOptional({ description: '转移时通知接收人的补充说明，最多500字' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string
 }
 
 export class ClueExportDto extends CluePageDto {

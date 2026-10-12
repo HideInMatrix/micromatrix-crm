@@ -90,9 +90,12 @@ function canDelete(field: ModuleFormFieldDraft) {
         @start="handleStart"
       >
         <template #item="{ element: field }">
-          <div :style="{ width: fieldWidth(field) }" class="relative self-start p-2">
+          <div
+            :style="{ width: fieldWidth(field) }"
+            class="canvas-field-slot relative self-start p-2"
+          >
             <div
-              class="group relative min-h-[92px] cursor-move rounded-[var(--el-border-radius-base)] border p-4 transition"
+              class="group relative cursor-move rounded-[var(--el-border-radius-base)] border p-1 transition"
               :class="[
                 activeId === field.id
                   ? 'border-[var(--el-color-primary)] bg-[var(--el-color-primary-light-9)]'
@@ -131,24 +134,16 @@ function canDelete(field: ModuleFormFieldDraft) {
               </div>
 
               <FormAlert v-if="field.type === 'alert'" :field="field" class="mt-4" />
-              <div
-                v-else
-                :class="
-                  formProp.labelPos === 'left'
-                    ? 'grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3'
-                    : ''
-                "
-              >
+              <template v-else>
+                <!-- 左右布局：拖拽手柄和字段来源放在独立的一行，不挤占标题及输入框宽度。 -->
                 <div
-                  class="mb-2 flex min-w-0 items-center gap-1.5 text-sm text-[var(--el-text-color-primary)]"
-                  :class="formProp.labelPos === 'left' ? 'mb-0 min-h-8' : ''"
+                  v-if="formProp.labelPos === 'left'"
+                  class="canvas-field-meta mb-2 flex min-w-0 flex-wrap items-center gap-1.5 pr-16"
                 >
                   <GripVertical
                     :size="14"
                     class="shrink-0 text-[var(--el-text-color-placeholder)]"
                   />
-                  <span class="truncate form-preview-label">{{ field.label }}</span>
-                  <span v-if="field.required" class="text-[var(--el-color-danger)]">*</span>
                   <el-tag
                     v-if="field.origin === 'SYSTEM'"
                     size="small"
@@ -165,33 +160,77 @@ function canDelete(field: ModuleFormFieldDraft) {
                   >
                   <el-tag v-if="field.hidden" size="small" type="warning">隐藏</el-tag>
                 </div>
-
                 <div
-                  v-if="field.hidden"
-                  class="rounded bg-[var(--el-fill-color-light)] p-2 text-xs text-[var(--el-text-color-secondary)]"
+                  :class="
+                    formProp.labelPos === 'left'
+                      ? 'canvas-field-horizontal grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3'
+                      : ''
+                  "
                 >
-                  此字段在实际表单中隐藏，可选中后在右侧重新开启
+                  <div
+                    class="flex min-w-0 items-center gap-1.5 text-sm text-[var(--el-text-color-primary)]"
+                    :class="[
+                      formProp.labelPos !== 'left' ? 'mb-2' : '',
+                      formProp.labelPos === 'left' && formProp.labelAlign === 'right'
+                        ? 'justify-end'
+                        : '',
+                    ]"
+                  >
+                    <GripVertical
+                      v-if="formProp.labelPos !== 'left'"
+                      :size="14"
+                      class="shrink-0 text-[var(--el-text-color-placeholder)]"
+                    />
+                    <span v-if="field.required" class="shrink-0 text-[var(--el-color-danger)]"
+                      >*</span
+                    >
+                    <span class="truncate form-preview-label">{{ field.label }}</span>
+                    <template v-if="formProp.labelPos !== 'left'">
+                      <el-tag
+                        v-if="field.origin === 'SYSTEM'"
+                        size="small"
+                        type="warning"
+                        effect="plain"
+                        >系统</el-tag
+                      >
+                      <el-tag
+                        v-else-if="field.origin === 'PRESET'"
+                        size="small"
+                        type="success"
+                        effect="plain"
+                        >预设</el-tag
+                      >
+                      <el-tag v-if="field.hidden" size="small" type="warning">隐藏</el-tag>
+                    </template>
+                  </div>
+
+                  <div
+                    v-if="field.hidden"
+                    class="rounded bg-[var(--el-fill-color-light)] p-2 text-xs text-[var(--el-text-color-secondary)]"
+                  >
+                    此字段在实际表单中隐藏，可选中后在右侧重新开启
+                  </div>
+                  <div v-else inert class="pointer-events-none min-w-0 select-none">
+                    <SubTableFieldInput
+                      v-if="field.type === 'sub_product'"
+                      v-model="previewValues[field.key]"
+                      :field="field"
+                      :members="[]"
+                      :dept-tree="[]"
+                    />
+                    <DynamicFormItem
+                      v-else
+                      v-model="previewValues[field.key]"
+                      :field="field"
+                      :members="[]"
+                      :dept-tree="[]"
+                      :form-fields="fields"
+                      :form-values="previewValues"
+                      :formula-value="previewFormula(field)"
+                    />
+                  </div>
                 </div>
-                <div v-else inert class="pointer-events-none min-w-0 select-none">
-                  <SubTableFieldInput
-                    v-if="field.type === 'sub_product'"
-                    v-model="previewValues[field.key]"
-                    :field="field"
-                    :members="[]"
-                    :dept-tree="[]"
-                  />
-                  <DynamicFormItem
-                    v-else
-                    v-model="previewValues[field.key]"
-                    :field="field"
-                    :members="[]"
-                    :dept-tree="[]"
-                    :form-fields="fields"
-                    :form-values="previewValues"
-                    :formula-value="previewFormula(field)"
-                  />
-                </div>
-              </div>
+              </template>
             </div>
           </div>
         </template>
@@ -208,6 +247,18 @@ function canDelete(field: ModuleFormFieldDraft) {
 </template>
 
 <style scoped>
+.canvas-field-slot {
+  container-type: inline-size;
+}
+
+/* 窄字段卡片不强行挤压输入框；只影响设计器预览，不改变实际表单布局。 */
+@container (max-width: 245px) {
+  .canvas-field-horizontal {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+
 .module-form-canvas .form-preview-label {
   color: var(--crm-form-label-color);
   font-size: var(--crm-form-label-font-size);

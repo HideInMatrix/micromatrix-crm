@@ -1274,6 +1274,9 @@ export class ModuleFormsService {
     if (formProp.labelPos !== undefined && !['top', 'left'].includes(formProp.labelPos)) {
       throw new BadRequestException('字段标题位置配置不正确')
     }
+    if (formProp.labelAlign !== undefined && !['left', 'right'].includes(formProp.labelAlign)) {
+      throw new BadRequestException('字段标题对齐方向配置不正确')
+    }
     if (
       formProp.viewSize !== undefined &&
       !['small', 'medium', 'large'].includes(formProp.viewSize)

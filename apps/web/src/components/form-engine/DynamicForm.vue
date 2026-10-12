@@ -132,7 +132,9 @@ defineExpose({ validate })
     ref="formRef"
     :model="model"
     :rules="rules"
-    :label-position="formProp?.labelPos === 'left' ? 'left' : 'top'"
+    :label-position="
+      formProp?.labelPos === 'left' ? (formProp?.labelAlign === 'right' ? 'right' : 'left') : 'top'
+    "
     :label-width="formProp?.labelPos === 'left' ? 'auto' : undefined"
     class="crm-dynamic-form"
     :style="{

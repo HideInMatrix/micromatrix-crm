@@ -249,6 +249,8 @@ export interface ModuleFormProp {
   /** @deprecated 旧表单布局参数，仅用于兼容历史配置；页面排版改由字段 span 决定。 */
   layout?: 1 | 2 | 3 | 4
   labelPos?: 'top' | 'left'
+  /** 左右布局时的标签文字对齐方式，旧配置默认左对齐。 */
+  labelAlign?: 'left' | 'right'
   viewSize?: 'small' | 'medium' | 'large'
   labelStyle?: FormLabelStyle
   alerts?: FormAlertConfig[]

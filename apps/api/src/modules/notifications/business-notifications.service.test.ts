@@ -129,3 +129,47 @@ test('模板通知按操作者语言渲染，并保证站内与企微投递使�
   assert.equal(external[0]?.title, inSite[0]?.title)
   assert.equal(external[0]?.content, inSite[0]?.content)
 })
+
+test('转移说明追加到原消息模板，站内通知和企微投递保持一致', async () => {
+  const inSite: string[] = []
+  const external: string[] = []
+  const prisma = users({
+    many: [{ id: 'owner-b' }],
+    first: { name: '管理员', language: 'zh-CN' },
+  })
+  const notifications = {
+    notifyMany: async (_tenantId: string, _ids: string[], input: { content?: string }) => {
+      inSite.push(input.content ?? '')
+    },
+  } as unknown as NotificationsService
+  const deliveries = {
+    enqueue: async (input: { content?: string }) => {
+      external.push(input.content ?? '')
+    },
+  } as unknown as MessageDeliveryService
+  const service = new BusinessNotificationsService(
+    prisma,
+    notifications,
+    {} as MessageSettingsService,
+    deliveries,
+    new MessageTemplateService(prisma),
+  )
+
+  const base = {
+    tenantId: 'tenant-a',
+    event: 'TRANSFER_CLUE' as const,
+    operatorId: 'operator',
+    recipientIds: ['owner-b'],
+    excludeSelf: true,
+    type: 'assign' as const,
+    templateContext: { name: '测试线索' },
+  }
+  assert.equal(await service.send({ ...base, appendContent: '补充说明：请尽快回访家长' }), 1)
+  assert.match(inSite[0]!, /管理员将测试线索线索转移给您/)
+  assert.ok(inSite[0]!.endsWith('\n补充说明：请尽快回访家长'))
+  assert.equal(external[0], inSite[0])
+
+  assert.equal(await service.send(base), 1)
+  assert.equal(inSite[1], '请注意！管理员将测试线索线索转移给您，请知悉！')
+  assert.equal(external[1], inSite[1])
+})

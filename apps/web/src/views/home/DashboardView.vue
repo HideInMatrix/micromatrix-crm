@@ -52,6 +52,7 @@ import { metadataApi } from '@/api/metadata'
 import { notificationApi } from '@/api/system'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
+import PasswordFormFields from '@/components/personal/PasswordFormFields.vue'
 import EChart from '@/components/EChart.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
@@ -100,7 +101,6 @@ const stageLabel = (stage: string) =>
     ?? stage
 
 const hasLeadRead = computed(() => auth.hasPerm('menu:lead'))
-const hasCustomerRead = computed(() => auth.hasPerm('menu:customer'))
 
 interface DepartmentSelectNode {
   value: string
@@ -237,17 +237,6 @@ function openLeadAnalytics(options: {
     ...options,
   })
   void router.push({ path: '/leads', query: { homeFilter: key } })
-}
-
-function openCustomerAnalytics(filters: FilterCondition[] = []) {
-  if (!hasCustomerRead.value) return
-  const key = storeHomeFilter({
-    module: 'customer',
-    searchType: searchType.value,
-    deptIds: selectedDeptIds.value,
-    filters,
-  })
-  void router.push({ path: '/customers', query: { homeFilter: key } })
 }
 
 function widgetChartOption(widget: HomeAnalyticsWidgetResult): Record<string, unknown> {
@@ -1192,33 +1181,12 @@ onBeforeUnmount(() => {
       </template>
     </CrmDialog>
 
-    <CrmDialog v-model="passwordDialogVisible" title="修改密码" width="460px">
-      <el-form label-width="92px">
-        <el-form-item label="原密码" required>
-          <el-input
-            v-model="passwordForm.oldPassword"
-            type="password"
-            show-password
-            autocomplete="current-password"
-          />
-        </el-form-item>
-        <el-form-item label="新密码" required>
-          <el-input
-            v-model="passwordForm.newPassword"
-            type="password"
-            show-password
-            autocomplete="new-password"
-          />
-        </el-form-item>
-        <el-form-item label="确认密码" required>
-          <el-input
-            v-model="passwordForm.confirmPassword"
-            type="password"
-            show-password
-            autocomplete="new-password"
-          />
-        </el-form-item>
-      </el-form>
+    <CrmDialog v-model="passwordDialogVisible" title="修改密码" width="352px">
+      <PasswordFormFields
+        v-model:current-password="passwordForm.oldPassword"
+        v-model:new-password="passwordForm.newPassword"
+        v-model:confirm-password="passwordForm.confirmPassword"
+      />
       <template #footer>
         <el-button @click="passwordDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="passwordSaving" @click="savePassword">保存</el-button>

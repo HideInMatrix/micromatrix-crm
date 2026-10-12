@@ -36,7 +36,7 @@ export class MetadataService {
     module: string,
     patch: Pick<
       ModuleFormProp,
-      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics' | 'quickSearch'
+      'layout' | 'labelPos' | 'labelAlign' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics' | 'quickSearch'
     >,
     actorId: string,
   ) {

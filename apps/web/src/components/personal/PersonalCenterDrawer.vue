@@ -14,6 +14,7 @@ import {
 } from '@/api/personal-center'
 import { useAuthStore } from '@/stores/auth'
 import PersonalApiKeyPanel from './PersonalApiKeyPanel.vue'
+import PasswordFormFields from './PasswordFormFields.vue'
 
 const visible = defineModel<boolean>('visible', { required: true })
 const activeTab = defineModel<'info' | 'plan' | 'apiKey'>('activeTab', { default: 'info' })
@@ -259,18 +260,12 @@ watch([visible, activeTab], ([show, tab]) => {
       </template>
     </CrmDialog>
 
-    <CrmDialog v-model="passwordVisible" title="修改密码" width="460px" append-to-body>
-      <el-form label-width="100px">
-        <el-form-item label="当前密码" required
-          ><el-input v-model="passwordForm.originPassword" type="password" show-password
-        /></el-form-item>
-        <el-form-item label="新密码" required
-          ><el-input v-model="passwordForm.password" type="password" show-password
-        /></el-form-item>
-        <el-form-item label="确认新密码" required
-          ><el-input v-model="passwordForm.confirmPassword" type="password" show-password
-        /></el-form-item>
-      </el-form>
+    <CrmDialog v-model="passwordVisible" title="修改密码" width="352px" append-to-body>
+      <PasswordFormFields
+        v-model:current-password="passwordForm.originPassword"
+        v-model:new-password="passwordForm.password"
+        v-model:confirm-password="passwordForm.confirmPassword"
+      />
       <template #footer>
         <el-button @click="passwordVisible = false">取消</el-button>
         <el-button type="primary" :loading="passwordSaving" @click="savePassword">保存</el-button>
