@@ -4,6 +4,7 @@ import {
   isCustomFieldKey,
   type ContactVO,
   type FieldVO,
+  type ModuleFormProp,
   type FilterCondition,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -33,6 +34,8 @@ const homeQuickCreate = useHomeQuickCreate()
 const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
+const formDrawerWidth = computed(() => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'])
 const customerOptions = ref<CustomerOptionVO[]>([])
 const tabConfig = ref({ all: false, dept: false })
 const scopeView = ref<'SELF' | 'DEPT' | 'ALL'>('SELF')
@@ -120,12 +123,13 @@ function requestParams() {
 
 async function loadReferenceData() {
   try {
-    const [{ data: metadata }, { data: customers }, { data: tabs }] = await Promise.all([
-      metadataApi.fields('contact'),
+    const [{ data: config }, { data: customers }, { data: tabs }] = await Promise.all([
+      metadataApi.formConfig('contact'),
       listCustomerOptions(),
       contactApi.tab(),
     ])
-    fields.value = metadata
+    fields.value = config.fields
+    formProp.value = config.formProp
     customerOptions.value = customers
     tabConfig.value = tabs
     if (!tabs.dept && scopeView.value === 'DEPT') scopeView.value = 'SELF'
@@ -550,7 +554,7 @@ onMounted(async () => {
   <el-drawer
     v-model="formVisible"
     :title="editingId ? '编辑联系人' : '新增联系人'"
-    size="560px"
+    :size="formDrawerWidth"
     destroy-on-close
     :close-on-click-modal="false"
   >
@@ -560,6 +564,7 @@ onMounted(async () => {
       :fields="formFields"
       :members="fieldRefs.members.value"
       :dept-tree="fieldRefs.deptTree.value"
+      :form-prop="formProp"
     />
     <template #footer>
       <el-button @click="formVisible = false">取消</el-button>

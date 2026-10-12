@@ -4,6 +4,7 @@ import {
   isCustomFieldKey,
   type CustomerVO,
   type FieldVO,
+  type ModuleFormProp,
   type TeamMemberVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -54,6 +55,10 @@ const fieldRefs = useFieldRefs()
 
 const customer = ref<CustomerVO | null>(null)
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
+const editDialogWidth = computed(
+  () => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'],
+)
 const loading = ref(false)
 const activeTab = ref<TabName>('contact')
 const layout = ref<'horizontal' | 'vertical'>('horizontal')
@@ -155,12 +160,13 @@ function modelToPayload(model: Record<string, unknown>) {
 async function loadBase() {
   loading.value = true
   try {
-    const [{ data: detail }, { data: fieldList }] = await Promise.all([
+    const [{ data: detail }, { data: formConfig }] = await Promise.all([
       getCustomer(props.customerId, props.pool),
-      metadataApi.fields('customer'),
+      metadataApi.formConfig('customer'),
     ])
     customer.value = detail
-    fields.value = fieldList
+    fields.value = formConfig.fields
+    formProp.value = formConfig.formProp
     if (!visibleTabs.value.some((tab) => tab.name === activeTab.value)) {
       activeTab.value = visibleTabs.value[0]?.name ?? 'followRecord'
     }
@@ -618,13 +624,14 @@ onMounted(async () => {
       </div>
     </div>
 
-    <CrmDialog v-model="editVisible" title="编辑客户" width="680px" destroy-on-close>
+    <CrmDialog v-model="editVisible" title="编辑客户" :width="editDialogWidth" destroy-on-close>
       <DynamicForm
         ref="dynamicFormRef"
         v-model="editForm"
         :fields="fields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
+        :form-prop="formProp"
       />
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>

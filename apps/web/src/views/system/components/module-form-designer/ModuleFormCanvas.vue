@@ -1,15 +1,32 @@
 <script setup lang="ts">
-import type { ModuleFormProp } from '@micromatrix/shared'
+import { evaluateFormula, type ModuleFormProp } from '@micromatrix/shared'
 import { Copy, GripVertical, Trash2 } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import DynamicFormItem from '@/components/form-engine/DynamicFormItem.vue'
+import SubTableFieldInput from '@/components/form-engine/SubTableFieldInput.vue'
 import draggable from 'vuedraggable'
 import type { ModuleFormFieldDraft } from './types'
 
 const fields = defineModel<ModuleFormFieldDraft[]>({ required: true })
 
-defineProps<{
+const props = defineProps<{
   activeId: string | null
   formProp: ModuleFormProp
 }>()
+
+// 控件复用业务表单的真实渲染实现，但不允许在设计器里录入/上传数据。
+const previewValues = ref<Record<string, unknown>>({})
+const canvasWidth = computed(() => ({
+  small: '640px',
+  medium: '840px',
+  large: '1080px',
+})[props.formProp.viewSize ?? 'small'])
+
+function previewFormula(field: ModuleFormFieldDraft) {
+  return field.type === 'formula' && field.config?.formula
+    ? evaluateFormula(field.config.formula, previewValues.value)
+    : null
+}
 
 const emit = defineEmits<{
   select: [field: ModuleFormFieldDraft]
@@ -19,7 +36,7 @@ const emit = defineEmits<{
 }>()
 
 function fieldWidth(field: ModuleFormFieldDraft) {
-  return `${Math.max(25, Math.min(100, (field.span / 24) * 100))}%`
+  return `${(Math.max(6, Math.min(24, field.span || 12)) / 24) * 100}%`
 }
 
 function handleAdded(event: { newIndex?: number }) {
@@ -46,7 +63,11 @@ function canDelete(field: ModuleFormFieldDraft) {
 
 <template>
   <div class="h-full overflow-auto bg-[var(--el-fill-color-lighter)] p-4">
-    <div class="mx-auto min-h-full min-w-[640px] max-w-[960px] bg-[var(--el-bg-color)] p-6">
+    <div
+      class="mx-auto min-h-full bg-[var(--el-bg-color)] p-6"
+      :style="{ width: canvasWidth }"
+      data-testid="module-form-preview"
+    >
       <draggable
         v-model="fields"
         item-key="id"
@@ -61,11 +82,12 @@ function canDelete(field: ModuleFormFieldDraft) {
           <div :style="{ width: fieldWidth(field) }" class="relative self-start p-2">
             <div
               class="group relative min-h-[92px] cursor-move rounded-[var(--el-border-radius-base)] border p-4 transition"
-              :class="
+              :class="[
                 activeId === field.id
                   ? 'border-[var(--el-color-primary)] bg-[var(--el-color-primary-light-9)]'
-                  : 'border-transparent hover:bg-[var(--el-fill-color-light)]'
-              "
+                  : 'border-transparent hover:bg-[var(--el-fill-color-light)]',
+                field.hidden ? 'opacity-65' : '',
+              ]"
               @click="emit('select', field)"
             >
               <div
@@ -98,112 +120,42 @@ function canDelete(field: ModuleFormFieldDraft) {
               </div>
 
               <div
-                v-if="formProp.labelPos !== 'left'"
-                class="mb-2 flex items-center gap-2 text-sm text-[var(--el-text-color-primary)]"
+                :class="formProp.labelPos === 'left' ? 'grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3' : ''"
               >
-                <GripVertical :size="14" class="text-[var(--el-text-color-placeholder)]" />
-                <span>{{ field.label }}</span>
-                <span v-if="field.required" class="text-[var(--el-color-danger)]">*</span>
-                <el-tag v-if="field.origin === 'SYSTEM'" size="small" type="warning" effect="plain">
-                  系统
-                </el-tag>
-                <el-tag
-                  v-else-if="field.origin === 'PRESET'"
-                  size="small"
-                  type="success"
-                  effect="plain"
-                >
-                  预设
-                </el-tag>
-                <el-tag v-if="field.hidden" size="small" type="warning">隐藏</el-tag>
-              </div>
-
-              <div
-                :class="
-                  formProp.labelPos === 'left'
-                    ? 'grid grid-cols-[96px_minmax(0,1fr)] items-center gap-3'
-                    : ''
-                "
-              >
-                <span
-                  v-if="formProp.labelPos === 'left'"
-                  class="truncate text-sm text-[var(--el-text-color-regular)]"
-                >
-                  {{ field.label }}
-                </span>
-
-                <el-input
-                  v-if="['text', 'phone', 'email', 'formula'].includes(field.type)"
-                  :placeholder="field.config?.placeholder || '请输入'"
-                  disabled
-                />
-                <el-input
-                  v-else-if="field.type === 'textarea'"
-                  type="textarea"
-                  :rows="2"
-                  :placeholder="field.config?.placeholder || '请输入'"
-                  disabled
-                />
-                <el-input
-                  v-else-if="['number', 'currency', 'percent'].includes(field.type)"
-                  :placeholder="field.config?.placeholder || '请输入'"
-                  disabled
-                />
-                <el-date-picker
-                  v-else-if="['date', 'datetime'].includes(field.type)"
-                  class="!w-full"
-                  :type="field.type === 'date' ? 'date' : 'datetime'"
-                  placeholder="请选择"
-                  disabled
-                />
-                <el-select
-                  v-else-if="
-                    [
-                      'select',
-                      'multiselect',
-                      'member',
-                      'dept',
-                      'data_source',
-                      'data_source_multiple',
-                    ].includes(field.type)
-                  "
-                  class="w-full"
-                  placeholder="请选择"
-                  disabled
-                />
-                <el-radio-group v-else-if="field.type === 'radio'" disabled>
-                  <el-radio
-                    v-for="option in field.options?.slice(0, 3) ?? []"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </el-radio>
-                </el-radio-group>
-                <el-checkbox-group v-else-if="field.type === 'checkbox'" disabled>
-                  <el-checkbox
-                    v-for="option in field.options?.slice(0, 3) ?? []"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </el-checkbox>
-                </el-checkbox-group>
-                <el-switch v-else-if="field.type === 'switch'" disabled />
                 <div
-                  v-else-if="field.type === 'sub_product'"
-                  class="flex h-20 items-center justify-center rounded-[var(--el-border-radius-base)] border border-dashed border-[var(--el-border-color)] text-sm text-[var(--el-text-color-secondary)]"
+                  class="mb-2 flex min-w-0 items-center gap-1.5 text-sm text-[var(--el-text-color-primary)]"
+                  :class="formProp.labelPos === 'left' ? 'mb-0 min-h-8' : ''"
                 >
-                  子表格
+                  <GripVertical :size="14" class="shrink-0 text-[var(--el-text-color-placeholder)]" />
+                  <span class="truncate">{{ field.label }}</span>
+                  <span v-if="field.required" class="text-[var(--el-color-danger)]">*</span>
+                  <el-tag v-if="field.origin === 'SYSTEM'" size="small" type="warning" effect="plain">系统</el-tag>
+                  <el-tag v-else-if="field.origin === 'PRESET'" size="small" type="success" effect="plain">预设</el-tag>
+                  <el-tag v-if="field.hidden" size="small" type="warning">隐藏</el-tag>
                 </div>
-                <el-button
-                  v-else-if="['picture', 'attachment'].includes(field.type)"
-                  disabled
-                  class="!ml-0"
-                >
-                  {{ field.type === 'picture' ? '上传图片' : '上传附件' }}
-                </el-button>
-                <el-input v-else placeholder="请选择" disabled />
+
+                <div v-if="field.hidden" class="rounded bg-[var(--el-fill-color-light)] p-2 text-xs text-[var(--el-text-color-secondary)]">
+                  此字段在实际表单中隐藏，可选中后在右侧重新开启
+                </div>
+                <div v-else inert class="pointer-events-none min-w-0 select-none">
+                  <SubTableFieldInput
+                    v-if="field.type === 'sub_product'"
+                    v-model="previewValues[field.key]"
+                    :field="field"
+                    :members="[]"
+                    :dept-tree="[]"
+                  />
+                  <DynamicFormItem
+                    v-else
+                    v-model="previewValues[field.key]"
+                    :field="field"
+                    :members="[]"
+                    :dept-tree="[]"
+                    :form-fields="fields"
+                    :form-values="previewValues"
+                    :formula-value="previewFormula(field)"
+                  />
+                </div>
               </div>
             </div>
           </div>

@@ -21,10 +21,6 @@ const props = defineProps<{
   fields: ModuleFormFieldDraft[]
 }>()
 
-const emit = defineEmits<{
-  layoutChange: [layout: 1 | 2 | 3 | 4]
-}>()
-
 const activeTab = ref<'field' | 'form'>('field')
 const leadLinkVisible = ref(false)
 
@@ -102,11 +98,6 @@ function removeOption(index: number) {
 
 function handleRequiredChange(required: string | number | boolean) {
   if (required === true && fieldOrigin.value === 'SYSTEM' && field.value) field.value.hidden = false
-}
-
-function changeLayout(layout: 1 | 2 | 3 | 4) {
-  formProp.value.layout = layout
-  emit('layoutChange', layout)
 }
 
 function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
@@ -400,21 +391,6 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
                 <el-radio-button value="large">大</el-radio-button>
                 <el-radio-button value="medium">中</el-radio-button>
                 <el-radio-button value="small">小</el-radio-button>
-              </el-radio-group>
-            </section>
-
-            <section>
-              <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
-                表单布局
-              </div>
-              <el-radio-group
-                :model-value="formProp.layout ?? 2"
-                @update:model-value="changeLayout($event as 1 | 2 | 3 | 4)"
-              >
-                <el-radio-button :value="1">一列</el-radio-button>
-                <el-radio-button :value="2">两列</el-radio-button>
-                <el-radio-button :value="3">三列</el-radio-button>
-                <el-radio-button :value="4">四列</el-radio-button>
               </el-radio-group>
             </section>
 

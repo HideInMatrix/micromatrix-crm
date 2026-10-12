@@ -25,7 +25,7 @@ const emit = defineEmits<{
 const loading = ref(false)
 const saving = ref(false)
 const fields = ref<ModuleFormFieldDraft[]>([])
-const formProp = ref<ModuleFormProp>({ layout: 2, labelPos: 'top', viewSize: 'small' })
+const formProp = ref<ModuleFormProp>({ labelPos: 'top', viewSize: 'small' })
 const activeId = ref<string | null>(null)
 const savedSnapshot = ref('')
 
@@ -58,9 +58,10 @@ function normalizeField(field: FieldVO): ModuleFormFieldDraft {
 
 function normalizeFormProp(value: ModuleFormProp): ModuleFormProp {
   const cloned = JSON.parse(JSON.stringify(value)) as ModuleFormProp
+  // 历史表单可能存有废弃的 layout，排版现在只由每个字段的 span 决定。
+  delete cloned.layout
   return {
     ...cloned,
-    layout: [1, 2, 3, 4].includes(Number(value.layout)) ? (value.layout as 1 | 2 | 3 | 4) : 2,
     labelPos: value.labelPos === 'left' ? 'left' : 'top',
     viewSize: ['small', 'medium', 'large'].includes(String(value.viewSize))
       ? value.viewSize
@@ -127,15 +128,6 @@ function copyField(field: ModuleFormFieldDraft) {
   const index = fields.value.findIndex((candidate) => candidate.id === field.id)
   fields.value.splice(index + 1, 0, copy)
   activeId.value = copy.id
-}
-
-function changeLayout(layout: 1 | 2 | 3 | 4) {
-  formProp.value.layout = layout
-  const span = 24 / layout
-  fields.value.forEach((field) => {
-    if (['attachment', 'sub_product'].includes(field.type)) return
-    field.span = span
-  })
 }
 
 async function removeField(field: ModuleFormFieldDraft) {
@@ -309,7 +301,6 @@ defineExpose({
       v-model:form-prop="formProp"
       :module="module"
       :fields="fields"
-      @layout-change="changeLayout"
     />
   </div>
 </template>

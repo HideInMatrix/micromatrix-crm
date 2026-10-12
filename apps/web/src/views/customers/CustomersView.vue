@@ -5,6 +5,7 @@ import {
   isCustomFieldKey,
   type CustomerVO,
   type FieldVO,
+  type ModuleFormProp,
   type FilterCondition,
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
@@ -59,6 +60,10 @@ type CustomerSystemView = 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION'
 const systemViews = ref<{ id: CustomerSystemView; label: string }[]>([])
 const activeSystemView = ref<CustomerSystemView | ''>('')
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
+const formDialogWidth = computed(
+  () => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'],
+)
 const loading = ref(false)
 const items = ref<CustomerVO[]>([])
 const total = ref(0)
@@ -117,9 +122,9 @@ const listColumns = computed(() => {
 })
 
 async function loadFields() {
-  const { data } = await metadataApi.fields('customer')
-  fields.value = data
   const { data: config } = await metadataApi.formConfig('customer')
+  fields.value = config.fields
+  formProp.value = config.formProp
   quickSearch.value = config.formProp.quickSearch ?? null
   if (!showSavedViews.value) activeSavedViewId.value = ''
   if (!quickSearch.value?.showAdvancedFilter) filters.value = []
@@ -736,7 +741,7 @@ onMounted(async () => {
     <CrmDialog
       v-model="dialogVisible"
       :title="editingId ? '编辑客户' : '新建客户'"
-      width="640px"
+      :width="formDialogWidth"
       destroy-on-close
     >
       <DynamicForm
@@ -745,6 +750,7 @@ onMounted(async () => {
         :fields="fields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
+        :form-prop="formProp"
       />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

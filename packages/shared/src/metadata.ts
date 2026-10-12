@@ -225,6 +225,7 @@ export interface ModuleQuickSearchConfig {
 
 /** MicroMatrix 当前正式消费的表单级 FormDesign 属性。 */
 export interface ModuleFormProp {
+  /** @deprecated 旧表单布局参数，仅用于兼容历史配置；页面排版改由字段 span 决定。 */
   layout?: 1 | 2 | 3 | 4
   labelPos?: 'top' | 'left'
   viewSize?: 'small' | 'medium' | 'large'

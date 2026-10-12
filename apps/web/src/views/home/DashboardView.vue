@@ -958,7 +958,7 @@ onBeforeUnmount(() => {
         </div>
         <div
           v-loading="notificationsLoading"
-          class="max-h-[315px] space-y-2 overflow-y-auto"
+          class="flex max-h-[315px] flex-col gap-[8px] overflow-y-auto"
           data-testid="home-message-list"
         >
           <button

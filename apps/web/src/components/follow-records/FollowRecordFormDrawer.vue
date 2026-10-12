@@ -3,6 +3,7 @@ import {
   FOLLOW_UP_TYPES,
   type AttachmentVO,
   type FieldVO,
+  type ModuleFormProp,
   type FollowTargetType,
   type FollowUpVO,
 } from '@micromatrix/shared'
@@ -35,6 +36,7 @@ const visible = computed({
 
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
 const contacts = ref<Array<{ id: string; name: string }>>([])
 const resolvedCustomerId = ref<string | null>(null)
 const formModel = ref<Record<string, unknown>>({})
@@ -107,6 +109,7 @@ async function reset() {
     )
 
     fields.value = configRes.data.fields
+    formProp.value = configRes.data.formProp
     resolvedCustomerId.value = customerId
     await loadContacts()
     const record = recordRes?.data
@@ -305,6 +308,7 @@ watch(
             :fields="dynamicFields"
             :members="fieldRefs.members.value"
             :dept-tree="fieldRefs.deptTree.value"
+            :form-prop="formProp"
             :attachment-map="attachmentMap"
             :attachment-download="downloadAttachment"
             :attachment-object-url="attachmentObjectUrl"

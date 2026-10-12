@@ -35,7 +35,9 @@ const runtime = computed(() => evaluateFormRuntime(props.fields, model.value))
 const visibleFields = computed(() =>
   props.fields.filter(
     (field) =>
-      runtime.value.visibleByFieldId[field.id] !== false && (props.fieldFilter?.(field) ?? true),
+      !field.hidden &&
+      runtime.value.visibleByFieldId[field.id] !== false &&
+      (props.fieldFilter?.(field) ?? true),
   ),
 )
 

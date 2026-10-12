@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
-import { isCustomFieldKey, type ContactVO, type FieldVO } from '@micromatrix/shared'
+import { isCustomFieldKey, type ContactVO, type FieldVO, type ModuleFormProp } from '@micromatrix/shared'
 import { computed, onMounted, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
@@ -18,6 +18,8 @@ const props = defineProps<{
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
+const formDrawerWidth = computed(() => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'])
 const loading = ref(false)
 const rows = ref<ContactVO[]>([])
 const keyword = ref('')
@@ -183,8 +185,9 @@ function displayValue(field: FieldVO, row: ContactVO) {
 watch(() => props.sourceId, load)
 
 onMounted(async () => {
-  const [{ data }] = await Promise.all([metadataApi.fields('contact'), fieldRefs.load()])
-  fields.value = data
+  const [{ data }] = await Promise.all([metadataApi.formConfig('contact'), fieldRefs.load()])
+  fields.value = data.fields
+  formProp.value = data.formProp
   await load()
 })
 </script>
@@ -242,7 +245,7 @@ onMounted(async () => {
     <el-drawer
       v-model="formVisible"
       :title="editingId ? '编辑联系人' : '新增联系人'"
-      size="560px"
+      :size="formDrawerWidth"
       append-to-body
       destroy-on-close
       :close-on-click-modal="false"
@@ -253,6 +256,7 @@ onMounted(async () => {
         :fields="formFields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
+        :form-prop="formProp"
       />
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>

@@ -5,6 +5,7 @@ import {
   type HomeFilterPayload,
   isCustomFieldKey,
   type FieldVO,
+  type ModuleFormProp,
   type FilterCondition,
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
@@ -49,6 +50,10 @@ const isPoolMode = computed(() => route.name === 'lead-pool')
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
 const fields = ref<FieldVO[]>([])
+const formProp = ref<ModuleFormProp>({})
+const formDialogWidth = computed(
+  () => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'],
+)
 const leadStages = ref<LeadStageConfig[]>([])
 const loading = ref(false)
 const items = ref<LeadVO[]>([])
@@ -142,6 +147,7 @@ const listColumns = computed(() => {
 async function loadFields() {
   const { data } = await metadataApi.formConfig('lead')
   fields.value = data.fields
+  formProp.value = data.formProp
   quickSearch.value = data.formProp.quickSearch ?? null
   if (quickSearch.value?.enabled) query.status = ''
   if (!showSavedViews.value) activeSavedViewId.value = ''
@@ -1153,7 +1159,7 @@ onMounted(async () => {
     <CrmDialog
       v-model="dialogVisible"
       :title="editingId ? '编辑线索' : '新建线索'"
-      width="640px"
+      :width="formDialogWidth"
       destroy-on-close
     >
       <DynamicForm
@@ -1162,6 +1168,7 @@ onMounted(async () => {
         :fields="fields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
+        :form-prop="formProp"
       />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
