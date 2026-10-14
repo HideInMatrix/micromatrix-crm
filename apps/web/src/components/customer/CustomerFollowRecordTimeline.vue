@@ -55,11 +55,8 @@ function formatDate(value: string | null) {
               : 'bg-[#A9A9A9]'
           "
         />
-        <time
-          class="block text-[14px] leading-5 text-[#999999]"
-          :datetime="record.followedAt ?? record.createdAt"
-        >
-          {{ formatDate(record.followedAt ?? record.createdAt) }}
+        <time class="block text-[14px] leading-5 text-[#999999]" :datetime="record.createdAt">
+          {{ formatDate(record.createdAt) }}
         </time>
         <div
           class="mt-[12px] whitespace-pre-wrap break-words text-[14px] leading-[22px] text-[#333333]"

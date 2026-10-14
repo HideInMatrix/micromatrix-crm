@@ -24,6 +24,7 @@ export function useFollowRecords(
         pageSize: 100,
         targetType: targetType(),
         targetId: id,
+        sort: { name: 'createdAt', type: 'desc' },
       })
       records.value = data.items
     } catch (error) {
