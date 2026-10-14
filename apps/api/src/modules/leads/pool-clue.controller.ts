@@ -197,6 +197,26 @@ export class PoolClueController {
     return this.service.precheckImportXlsx(user, file.buffer, importType, poolId)
   }
 
+  @Post('import/error-rows/download')
+  @RequirePermissions('leadPool:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '下载线索池导入校验失败的原始 Excel 数据行' })
+  async downloadImportErrorRows(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body('poolId') poolId: string,
+    @Body('rowNumbers') rowNumbers: string,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    if (!poolId) throw new BadRequestException('请选择线索池')
+    const data = await this.service.exportImportErrorRows(user, file.buffer, rowNumbers, poolId)
+    return new StreamableFile(data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent('线索池导入错误数据.xlsx')}`,
+    })
+  }
+
   @Post('import')
   @RequirePermissions('leadPool:import')
   @LogOperation('leadPool', 'import')

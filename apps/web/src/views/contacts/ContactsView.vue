@@ -7,6 +7,7 @@ import {
   type ModuleFormProp,
   type FilterCondition,
 } from '@micromatrix/shared'
+import { Columns3, Plus, Upload } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { listCustomerOptions, type CustomerOptionVO } from '@/api/customers'
@@ -15,9 +16,9 @@ import { metadataApi } from '@/api/metadata'
 import { contactApi, resourcePoolApi } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
-import CrmImportDialog from '@/components/CrmImportDialog.vue'
+import CrmResourceImportDialog from '@/components/resource-import/CrmResourceImportDialog.vue'
 import CrmSearchInput from '@/components/CrmSearchInput.vue'
-import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
+import CrmListPagination from '@/components/CrmListPagination.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
@@ -35,7 +36,6 @@ const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const fields = ref<FieldVO[]>([])
 const formProp = ref<ModuleFormProp>({})
-const formDrawerWidth = computed(() => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'])
 const customerOptions = ref<CustomerOptionVO[]>([])
 const tabConfig = ref({ all: false, dept: false })
 const scopeView = ref<'SELF' | 'DEPT' | 'ALL'>('SELF')
@@ -48,6 +48,9 @@ const activeSavedViewId = ref('')
 const filters = ref<FilterCondition[]>([])
 const visibleColumnKeys = ref<string[]>([])
 
+const formDrawerWidth = computed(
+  () => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'],
+)
 const loading = ref(false)
 const items = ref<ContactVO[]>([])
 const total = ref(0)
@@ -422,37 +425,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never">
-    <div
-      class="mb-4 flex flex-wrap items-center justify-between gap-3"
-      data-testid="crm-table-primary-toolbar"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <el-button v-if="auth.hasPerm('contact:create')" type="primary" @click="openCreate">
-          新增联系人
-        </el-button>
-        <el-button v-if="auth.hasPerm('contact:import')" @click="importVisible = true"
-          >导入</el-button
-        >
-        <el-button
-          v-if="auth.hasPerm('contact:export')"
-          :disabled="items.length === 0"
-          @click="openExport('all')"
-        >
-          导出全部
-        </el-button>
-        <template v-if="selectedRows.length">
-          <el-divider direction="vertical" />
-          <el-button v-if="auth.hasPerm('contact:export')" @click="openExport('selected')">
-            导出选中（{{ selectedRows.length }}）
-          </el-button>
-          <el-button v-if="auth.hasPerm('contact:update')" @click="batchEditVisible = true">
-            批量编辑
-          </el-button>
-        </template>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
+  <div class="crm-data-list-workspace">
+    <el-card shadow="never" class="crm-data-list-panel">
+      <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
         <CrmSearchInput
           v-model="query.keyword"
           placeholder="搜索联系人姓名、电话"
@@ -465,91 +440,131 @@ onMounted(async () => {
           :dept-tree="fieldRefs.deptTree.value"
           @apply="handleSearch"
         />
-        <CrmTableUtilityActions
-          :refreshing="loading"
-          @columns="savedViewBarRef?.openColumnSettings()"
-          @refresh="loadData"
+      </div>
+
+      <div class="mb-4">
+        <SavedViewBar
+          ref="savedViewBarRef"
+          module="contact"
+          :fields="uiFields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          :current-filters="filters"
+          :default-column-keys="defaultColumnKeys"
+          :system-views="contactSystemViews"
+          :system-view="scopeView"
+          @change="handleSavedViewChange"
+          @system-view-change="handleSystemViewChange"
+          @clear-filters="clearTemporaryFilters"
+          @columns-change="handleSavedColumns"
+          @ready="handleSavedViewReady"
         />
       </div>
-    </div>
 
-    <SavedViewBar
-      ref="savedViewBarRef"
-      module="contact"
-      :fields="uiFields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      :system-views="contactSystemViews"
-      :system-view="scopeView"
-      @change="handleSavedViewChange"
-      @system-view-change="handleSystemViewChange"
-      @clear-filters="clearTemporaryFilters"
-      @columns-change="handleSavedColumns"
-      @ready="handleSavedViewReady"
-    />
-
-    <el-table
-      v-loading="loading"
-      :data="items"
-      border
-      row-key="id"
-      class="mt-3 w-full"
-      @selection-change="handleSelectionChange"
-    >
-      <el-table-column type="selection" width="46" />
-      <template v-for="field in listColumns" :key="field.key">
-        <el-table-column
-          :prop="field.key"
-          :label="field.label"
-          :min-width="field.listWidth ?? 120"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <el-switch
-              v-if="field.key === 'enable'"
-              :model-value="row.enable"
-              :disabled="!auth.hasPerm('contact:update')"
-              @click.stop="handleToggleStatus(row as ContactVO)"
-            />
-            <span v-else>{{ displayValue(field, row as ContactVO) }}</span>
-          </template>
-        </el-table-column>
-      </template>
-      <el-table-column label="操作" width="130" fixed="right">
-        <template #default="{ row }">
+      <div class="crm-data-list-toolbar" data-testid="crm-table-primary-toolbar">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-[14px] text-[#000000]">共{{ total }}条联系人</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
           <el-button
-            v-if="auth.hasPerm('contact:update')"
-            link
+            v-if="auth.hasPerm('contact:export')"
+            :disabled="items.length === 0"
+            @click="openExport('all')"
+            >导出全部</el-button
+          >
+          <el-button
+            v-if="auth.hasPerm('contact:import')"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="importVisible = true"
+          >
+            <Upload :size="14" :stroke-width="1.8" aria-hidden="true" />批量导入
+          </el-button>
+          <el-button
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="savedViewBarRef?.openColumnSettings()"
+          >
+            <Columns3 :size="14" :stroke-width="1.8" aria-hidden="true" />列设置
+          </el-button>
+          <el-button
+            v-if="auth.hasPerm('contact:create')"
             type="primary"
-            @click="openEdit(row as ContactVO)"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__primary"
+            @click="openCreate"
           >
-            编辑
+            <Plus :size="14" :stroke-width="1.8" aria-hidden="true" />新增联系人
           </el-button>
-          <el-button
-            v-if="auth.hasPerm('contact:delete')"
-            link
-            type="danger"
-            @click="handleDelete(row as ContactVO)"
-          >
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        </div>
+      </div>
 
-    <div class="flex justify-end mt-4">
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
-        @change="loadData"
-      />
-    </div>
-  </el-card>
+      <div v-if="selectedRows.length" class="mb-4 flex flex-wrap items-center gap-2">
+        <el-button v-if="auth.hasPerm('contact:export')" @click="openExport('selected')"
+          >导出选中（{{ selectedRows.length }}）</el-button
+        >
+        <el-button v-if="auth.hasPerm('contact:update')" @click="batchEditVisible = true"
+          >批量编辑</el-button
+        >
+      </div>
+
+      <div class="crm-data-list-table">
+        <el-table
+          v-loading="loading"
+          :data="items"
+          row-key="id"
+          height="100%"
+          class="w-full"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="46" />
+          <template v-for="field in listColumns" :key="field.key">
+            <el-table-column
+              :prop="field.key"
+              :label="field.label"
+              :min-width="field.listWidth ?? 120"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                <el-switch
+                  v-if="field.key === 'enable'"
+                  :model-value="row.enable"
+                  :disabled="!auth.hasPerm('contact:update')"
+                  @click.stop="handleToggleStatus(row as ContactVO)"
+                />
+                <span v-else>{{ displayValue(field, row as ContactVO) }}</span>
+              </template>
+            </el-table-column>
+          </template>
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="auth.hasPerm('contact:update')"
+                link
+                type="primary"
+                @click="openEdit(row as ContactVO)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                v-if="auth.hasPerm('contact:delete')"
+                link
+                type="danger"
+                @click="handleDelete(row as ContactVO)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <CrmListPagination
+          v-model:current-page="query.page"
+          v-model:page-size="query.pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          @change="loadData"
+        />
+      </div>
+    </el-card>
+  </div>
 
   <el-drawer
     v-model="formVisible"
@@ -608,10 +623,11 @@ onMounted(async () => {
     @confirm="handleBatchEdit"
   />
 
-  <CrmImportDialog
+  <CrmResourceImportDialog
     v-model="importVisible"
     module-label="联系人"
     :download-template="contactApi.importTemplate"
+    :download-error-rows="contactApi.downloadImportErrorRows"
     :precheck="contactApi.importPrecheck"
     :execute="contactApi.importXlsx"
     @success="loadData"

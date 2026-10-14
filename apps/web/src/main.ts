@@ -9,6 +9,7 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import '@micromatrix/frontend-shared/styles/tokens.css'
 import 'virtual:uno.css'
 import './styles/element-plus.css'
+import './styles/crm-data-list.css'
 import './styles/index.css'
 
 async function bootstrap() {

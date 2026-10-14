@@ -199,12 +199,14 @@ export interface QuickSearchPresetOption {
   conditions: FilterCondition[]
 }
 
-/** 普通输入框对应单一查询条件；预设下拉框在选中后应用选项对应的条件组。 */
+/** 文字搜索默认匹配一个字段，可配置额外文本字段进行 OR 匹配；预设下拉框使用选项条件组。 */
 export interface QuickSearchItem {
   id: string
   kind: 'field' | 'preset_select'
   label: string
   fieldKey?: string
+  /** 额外匹配的文本字段；与 fieldKey 使用同一关键字及操作符，任一命中即可。最多 7 个。 */
+  fieldKeys?: string[]
   operator?: 'contains' | 'eq' | 'gte' | 'lte'
   /** 仅 preset_select 使用：每个选项持有自己的 AND/OR 条件表达式。 */
   options?: QuickSearchPresetOption[]

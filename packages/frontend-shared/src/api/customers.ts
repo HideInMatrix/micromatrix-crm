@@ -300,6 +300,17 @@ export function poolBatchDeleteCustomers(ids: string[]) {
 }
 
 export const customerTransferApi = {
+  downloadImportErrorRows: (file: File, rowNumbers: number[], poolId?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('rowNumbers', JSON.stringify(rowNumbers))
+    if (poolId) form.append('poolId', poolId)
+    return http.post<Blob>(
+      poolId ? '/pool/account/import/error-rows/download' : '/account/import/error-rows/download',
+      form,
+      { responseType: 'blob' },
+    )
+  },
   importTemplate: (importType: ImportType, poolId?: string) =>
     http.get<Blob>(poolId ? '/pool/account/template/download' : '/account/template/download', {
       params: { importType },

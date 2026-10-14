@@ -10,6 +10,7 @@ import {
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
 } from '@micromatrix/shared'
+import { Columns3, Download, Plus, Upload } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -30,9 +31,8 @@ import { metadataApi } from '@/api/metadata'
 import { customerExtraApi } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
-import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CrmSearchInput from '@/components/CrmSearchInput.vue'
-import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
+import CrmResourceImportDialog from '@/components/resource-import/CrmResourceImportDialog.vue'
+import CrmListPagination from '@/components/CrmListPagination.vue'
 import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
@@ -67,13 +67,12 @@ const formDialogWidth = computed(
 const loading = ref(false)
 const items = ref<CustomerVO[]>([])
 const total = ref(0)
-const query = reactive({ page: 1, pageSize: 10, keyword: '' })
+const query = reactive({ page: 1, pageSize: 10 })
 const filters = ref<FilterCondition[]>([])
 const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
 const quickFilters = ref<FilterCondition[]>([])
 const quickGroups = ref<QuickSearchQueryGroup[]>([])
 const showQuickSearchPanel = computed(() => quickSearch.value?.enabled === true)
-const showLegacySearch = computed(() => !showQuickSearchPanel.value)
 const showAdvanced = computed(() => quickSearch.value?.showAdvancedFilter !== false)
 const showSavedViews = computed(() => quickSearch.value?.showSavedViews !== false)
 const activeHomeFilter = ref<HomeFilterPayload | null>(null)
@@ -139,13 +138,14 @@ async function loadSystemViews() {
     if (data.dept) next.push({ id: 'DEPARTMENT', label: '部门客户' })
     next.push({ id: 'COLLABORATION', label: '协作客户' })
     systemViews.value = next
-    if (
+    if (!showSavedViews.value) {
+      // 视图功能关闭时不应静默限定为“我的客户”，仍按当前用户的数据权限查询。
+      activeSystemView.value = ''
+    } else if (
       !activeSavedViewId.value &&
       (!activeSystemView.value || !next.some((item) => item.id === activeSystemView.value))
     ) {
-      activeSystemView.value = !showSavedViews.value
-        ? 'SELF'
-        : (next[0]?.id ?? 'SELF')
+      activeSystemView.value = next[0]?.id ?? 'SELF'
     }
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -158,9 +158,10 @@ async function loadData() {
     const { data } = await listCustomers({
       page: query.page,
       pageSize: query.pageSize,
-      keyword: query.keyword.trim() || undefined,
       view: activeSystemView.value || undefined,
-      filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+      filters: [...filters.value, ...quickFilters.value].length
+        ? JSON.stringify([...filters.value, ...quickFilters.value])
+        : undefined,
       quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
       viewId: activeSavedViewId.value || undefined,
       homeFilter: activeHomeFilter.value ? JSON.stringify(activeHomeFilter.value) : undefined,
@@ -181,14 +182,15 @@ function tryInitialLoad() {
   loadData()
 }
 
-function handleQuickSearch(value: { filters: FilterCondition[]; quickGroups: QuickSearchQueryGroup[] }) {
-  query.keyword = ''
+function handleQuickSearch(value: {
+  filters: FilterCondition[]
+  quickGroups: QuickSearchQueryGroup[]
+}) {
   quickFilters.value = value.filters
   quickGroups.value = value.quickGroups
   handleSearch()
 }
 function resetQuickSearch() {
-  query.keyword = ''
   quickFilters.value = []
   quickGroups.value = []
   handleSearch()
@@ -460,9 +462,10 @@ const importVisible = ref(false)
 
 function transferParams() {
   return {
-    keyword: query.keyword.trim() || undefined,
     view: activeSystemView.value || undefined,
-    filters: [...filters.value, ...quickFilters.value].length ? JSON.stringify([...filters.value, ...quickFilters.value]) : undefined,
+    filters: [...filters.value, ...quickFilters.value].length
+      ? JSON.stringify([...filters.value, ...quickFilters.value])
+      : undefined,
     quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
     viewId: activeSavedViewId.value || undefined,
   }
@@ -527,28 +530,54 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section v-if="quickSearch && showQuickSearchPanel" class="mb-4" data-testid="module-search-panel">
-    <el-card shadow="never">
-      <div class="mb-4 flex items-center gap-2">
-        <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">客户查询</h2>
-        <span class="text-xs text-[var(--el-text-color-secondary)]">按配置条件筛选客户</span>
-      </div>
+  <div class="crm-data-list-workspace">
+    <section v-if="quickSearch && showQuickSearchPanel" data-testid="module-search-panel">
+      <el-card shadow="never">
+        <div class="mb-4 flex items-center gap-2">
+          <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">客户查询</h2>
+          <span class="text-xs text-[var(--el-text-color-secondary)]">按配置条件筛选客户</span>
+        </div>
+        <el-alert
+          v-if="activeHomeFilter"
+          :title="homeFilterSummary"
+          type="info"
+          show-icon
+          closable
+          class="mb-4"
+          @close="clearHomeFilter"
+        />
+        <ModuleQuickSearch
+          :config="quickSearch"
+          :fields="fields"
+          @search="handleQuickSearch"
+          @reset="resetQuickSearch"
+        />
+        <div v-if="showAdvanced" class="mt-3 flex justify-end">
+          <AdvancedFilter
+            v-model="filters"
+            :fields="fields"
+            :members="fieldRefs.members.value"
+            :dept-tree="fieldRefs.deptTree.value"
+            @apply="(c) => ((filters = c), handleSearch())"
+          />
+        </div>
+      </el-card>
+    </section>
+
+    <el-card shadow="never" class="crm-data-list-panel" data-testid="module-table-panel">
       <el-alert
-        v-if="activeHomeFilter"
+        v-if="activeHomeFilter && !showQuickSearchPanel"
         :title="homeFilterSummary"
         type="info"
         show-icon
-        closable
         class="mb-4"
+        closable
         @close="clearHomeFilter"
       />
-      <ModuleQuickSearch
-        :config="quickSearch"
-        :fields="fields"
-        @search="handleQuickSearch"
-        @reset="resetQuickSearch"
-      />
-      <div v-if="showAdvanced" class="mt-3 flex justify-end">
+      <div
+        v-if="showAdvanced && !showQuickSearchPanel"
+        class="mb-4 flex flex-wrap items-center justify-end gap-2"
+      >
         <AdvancedFilter
           v-model="filters"
           :fields="fields"
@@ -557,277 +586,295 @@ onMounted(async () => {
           @apply="(c) => ((filters = c), handleSearch())"
         />
       </div>
-    </el-card>
-  </section>
 
-  <el-card shadow="never" data-testid="module-table-panel">
-    <el-alert
-      v-if="activeHomeFilter && !showQuickSearchPanel"
-      :title="homeFilterSummary"
-      type="info"
-      show-icon
-      class="mb-4"
-      closable
-      @close="clearHomeFilter"
-    />
-    <div
-      class="mb-4 flex flex-wrap items-center justify-between gap-3"
-      data-testid="crm-table-primary-toolbar"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <template v-if="!isCollaborationView && selectedRows.length > 0">
-          <el-button v-if="canExport" @click="openExport('selected')">
-            导出选中（{{ selectedRows.length }}）
-          </el-button>
-          <el-button v-if="auth.hasPerm('customer:transfer')" @click="openBatchTransfer">
-            批量转移
-          </el-button>
-          <el-button v-if="auth.hasPerm('customer:recycle')" @click="openMoveToPool(selectedRows)">
-            批量移入公海
-          </el-button>
-          <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true">
-            批量修改（{{ selectedRows.length }}）
-          </el-button>
-          <el-button v-if="auth.hasPerm('customer:merge')" @click="openMerge">
-            合并客户（{{ selectedRows.length }}）
+      <div v-if="showSavedViews" class="mb-4">
+        <SavedViewBar
+          ref="savedViewBarRef"
+          :module="savedViewModule"
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          :current-filters="filters"
+          :default-column-keys="defaultColumnKeys"
+          :system-views="systemViews"
+          :system-view="activeSystemView"
+          @change="handleSavedViewChange"
+          @system-view-change="handleSystemViewChange"
+          @clear-filters="clearTemporaryFilters"
+          @columns-change="handleSavedColumns"
+          @ready="handleSavedViewReady"
+        />
+      </div>
+
+      <div class="crm-data-list-toolbar" data-testid="crm-table-primary-toolbar">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-[14px] text-[#000000]">共{{ total }}条客户</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <el-button
+            v-if="canExport"
+            :disabled="items.length === 0"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="openExport('all')"
+          >
+            <Download :size="14" :stroke-width="1.8" aria-hidden="true" />导出全部
           </el-button>
           <el-button
-            v-if="auth.hasPerm('customer:delete')"
-            type="danger"
-            plain
-            @click="handleBatchDelete"
+            v-if="canImport"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="importVisible = true"
           >
-            批量删除
+            <Upload :size="14" :stroke-width="1.8" aria-hidden="true" />批量导入
           </el-button>
-        </template>
-        <el-button
-          v-if="!isCollaborationView && auth.hasPerm('customer:create')"
-          type="primary"
-          @click="openCreate"
-        >
-          新建客户
-        </el-button>
-        <el-button v-if="canImport" @click="importVisible = true">导入</el-button>
-        <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">
-          导出全部
-        </el-button>
+          <el-button
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="savedViewBarRef?.openColumnSettings()"
+          >
+            <Columns3 :size="14" :stroke-width="1.8" aria-hidden="true" />列设置
+          </el-button>
+          <el-button
+            v-if="!isCollaborationView && auth.hasPerm('customer:create')"
+            type="primary"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__primary"
+            @click="openCreate"
+          >
+            <Plus :size="14" :stroke-width="1.8" aria-hidden="true" />新建客户
+          </el-button>
+        </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
-        <CrmSearchInput v-if="showLegacySearch" v-model="query.keyword" placeholder="搜索客户名称" @search="handleSearch" />
-        <AdvancedFilter
-          v-if="showAdvanced && !showQuickSearchPanel"
-          v-model="filters"
+      <div
+        v-if="!isCollaborationView && selectedRows.length > 0"
+        class="mb-4 flex flex-wrap items-center gap-2"
+      >
+        <el-button v-if="canExport" @click="openExport('selected')"
+          >导出选中（{{ selectedRows.length }}）</el-button
+        >
+        <el-button v-if="auth.hasPerm('customer:transfer')" @click="openBatchTransfer"
+          >批量转移</el-button
+        >
+        <el-button v-if="auth.hasPerm('customer:recycle')" @click="openMoveToPool(selectedRows)"
+          >批量移入公海</el-button
+        >
+        <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true"
+          >批量修改（{{ selectedRows.length }}）</el-button
+        >
+        <el-button v-if="auth.hasPerm('customer:merge')" @click="openMerge"
+          >合并客户（{{ selectedRows.length }}）</el-button
+        >
+        <el-button
+          v-if="auth.hasPerm('customer:delete')"
+          type="danger"
+          plain
+          @click="handleBatchDelete"
+          >批量删除</el-button
+        >
+      </div>
+
+      <div class="crm-data-list-table">
+        <el-table
+          v-loading="loading"
+          :data="items"
+          row-key="id"
+          height="100%"
+          class="w-full"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column
+            v-if="
+              !isCollaborationView &&
+              (auth.hasPerm('customer:merge') ||
+                auth.hasPerm('customer:transfer') ||
+                auth.hasPerm('customer:recycle') ||
+                auth.hasPerm('customer:update') ||
+                auth.hasPerm('customer:delete') ||
+                canExport)
+            "
+            type="selection"
+            width="46"
+          />
+          <el-table-column
+            v-for="column in listColumns"
+            :key="column.key"
+            :label="column.label"
+            :min-width="column.listWidth ?? 140"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <el-button
+                v-if="column.key === 'name'"
+                link
+                type="primary"
+                @click="openDetail(row as CustomerVO)"
+              >
+                {{
+                  formatFieldValue(column, row, {
+                    memberMap: fieldRefs.memberMap.value,
+                    deptMap: fieldRefs.deptMap.value,
+                  })
+                }}
+              </el-button>
+              <template v-else>
+                {{
+                  formatFieldValue(column, row, {
+                    memberMap: fieldRefs.memberMap.value,
+                    deptMap: fieldRefs.deptMap.value,
+                  })
+                }}
+              </template>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="210" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="!isCollaborationView && auth.hasPerm('customer:update')"
+                link
+                @click="openEdit(row as CustomerVO)"
+              >
+                编辑
+              </el-button>
+              <el-button link @click="openFollow(row as CustomerVO)">跟进</el-button>
+              <el-dropdown
+                v-if="
+                  !isCollaborationView &&
+                  (auth.hasPerm('customer:transfer') ||
+                    auth.hasPerm('customer:recycle') ||
+                    auth.hasPerm('customer:delete'))
+                "
+                trigger="click"
+              >
+                <el-button link>更多</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-if="auth.hasPerm('customer:transfer')"
+                      @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
+                    >
+                      转移
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="auth.hasPerm('customer:recycle')"
+                      @click="openMoveToPool([row as CustomerVO])"
+                    >
+                      移入公海
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="auth.hasPerm('customer:delete')"
+                      :divided="
+                        auth.hasPerm('customer:transfer') || auth.hasPerm('customer:recycle')
+                      "
+                      @click="handleDelete(row as CustomerVO)"
+                    >
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <CrmListPagination
+          v-model:current-page="query.page"
+          v-model:page-size="query.pageSize"
+          :total="total"
+          @current-change="loadData"
+          @size-change="handleSearch"
+        />
+      </div>
+
+      <CrmDialog
+        v-model="dialogVisible"
+        :title="editingId ? '编辑客户' : '新建客户'"
+        :width="formDialogWidth"
+        destroy-on-close
+      >
+        <DynamicForm
+          ref="dynamicFormRef"
+          v-model="formModel"
           :fields="fields"
           :members="fieldRefs.members.value"
           :dept-tree="fieldRefs.deptTree.value"
-          @apply="(c) => ((filters = c), handleSearch())"
+          :form-prop="formProp"
         />
-        <CrmTableUtilityActions
-          :refreshing="loading"
-          @columns="savedViewBarRef?.openColumnSettings()"
-          @refresh="loadData"
-        />
-      </div>
-    </div>
-
-    <div v-show="showSavedViews">
-      <SavedViewBar
-      ref="savedViewBarRef"
-      :module="savedViewModule"
-      :fields="fields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      :system-views="systemViews"
-      :system-view="activeSystemView"
-      @change="handleSavedViewChange"
-      @system-view-change="handleSystemViewChange"
-      @clear-filters="clearTemporaryFilters"
-      @columns-change="handleSavedColumns"
-      @ready="handleSavedViewReady"
-      />
-    </div>
-
-    <el-table
-      v-loading="loading"
-      :data="items"
-      row-key="id"
-      stripe
-      class="w-full"
-      @selection-change="handleSelectionChange"
-    >
-      <el-table-column
-        v-if="
-          !isCollaborationView &&
-          (auth.hasPerm('customer:merge') ||
-            auth.hasPerm('customer:transfer') ||
-            auth.hasPerm('customer:recycle') ||
-            auth.hasPerm('customer:update') ||
-            auth.hasPerm('customer:delete') ||
-            canExport)
-        "
-        type="selection"
-        width="46"
-      />
-      <el-table-column
-        v-for="column in listColumns"
-        :key="column.key"
-        :label="column.label"
-        :min-width="column.listWidth ?? 140"
-        show-overflow-tooltip
-      >
-        <template #default="{ row }">
-          {{
-            formatFieldValue(column, row, {
-              memberMap: fieldRefs.memberMap.value,
-              deptMap: fieldRefs.deptMap.value,
-            })
-          }}
+        <template #footer>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
         </template>
-      </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openDetail(row as CustomerVO)">详情</el-button>
-          <el-button link type="primary" @click="openFollow(row as CustomerVO)">跟进</el-button>
-          <el-dropdown v-if="!isCollaborationView" trigger="click" class="ml-2">
-            <el-button link type="primary">更多</el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item
-                  v-if="auth.hasPerm('customer:update')"
-                  @click="openEdit(row as CustomerVO)"
-                >
-                  编辑
-                </el-dropdown-item>
-                <el-dropdown-item
-                  v-if="auth.hasPerm('customer:transfer')"
-                  @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
-                >
-                  转移
-                </el-dropdown-item>
-                <el-dropdown-item
-                  v-if="auth.hasPerm('customer:recycle')"
-                  @click="openMoveToPool([row as CustomerVO])"
-                >
-                  移入公海
-                </el-dropdown-item>
-                <el-dropdown-item
-                  v-if="auth.hasPerm('customer:delete')"
-                  @click="handleDelete(row as CustomerVO)"
-                >
-                  删除
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-      </el-table-column>
-    </el-table>
+      </CrmDialog>
 
-    <div class="flex justify-end mt-4">
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="loadData"
-        @size-change="handleSearch"
+      <FollowUpDrawer
+        v-model="followVisible"
+        target-type="customer"
+        :target-id="followTarget?.id ?? null"
+        :target-name="followTarget?.name"
+        @followed="loadData"
       />
-    </div>
 
-    <CrmDialog
-      v-model="dialogVisible"
-      :title="editingId ? '编辑客户' : '新建客户'"
-      :width="formDialogWidth"
-      destroy-on-close
-    >
-      <DynamicForm
-        ref="dynamicFormRef"
-        v-model="formModel"
+      <MemberSelectDialog
+        v-model="assignVisible"
+        :title="`转移客户「${assignTarget?.name ?? ''}」`"
+        :members="fieldRefs.members.value"
+        @confirm="handleAssignConfirm"
+      />
+
+      <MemberSelectDialog
+        v-model="batchTransferVisible"
+        :title="`批量转移客户（${selectedRows.length}）`"
+        :members="fieldRefs.members.value"
+        @confirm="handleBatchTransferConfirm"
+      />
+
+      <CustomerMoveToPoolDialog
+        v-model="moveToPoolVisible"
+        :customer-ids="moveToPoolIds"
+        :customer-name="moveToPoolName"
+        @moved="loadData"
+      />
+
+      <CrmResourceImportDialog
+        v-model="importVisible"
+        module-label="客户"
+        :download-template="customerTransferApi.importTemplate"
+        :download-error-rows="customerTransferApi.downloadImportErrorRows"
+        :precheck="customerTransferApi.importPrecheck"
+        :execute="customerTransferApi.importXlsx"
+        @success="loadData"
+      />
+
+      <CrmExportDrawer
+        v-model="exportVisible"
+        module-label="客户"
+        cache-key="customer"
+        :fields="fields"
+        :display-fields="[
+          { key: 'lastFollowedAt', label: '最近跟进' },
+          { key: 'createdAt', label: '创建时间' },
+          { key: 'updatedAt', label: '更新时间' },
+        ]"
+        :mode="exportMode"
+        :selected-count="selectedRows.length"
+        :loading="exportLoading"
+        @confirm="handleExportConfirm"
+      />
+
+      <CustomerMergeDialog
+        v-model="mergeVisible"
+        :selected-rows="selectedRows"
+        @merged="handleMerged"
+      />
+
+      <BatchFieldEditDialog
+        v-model="batchEditVisible"
+        title="批量修改客户"
         :fields="fields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
-        :form-prop="formProp"
+        :selected-count="selectedRows.length"
+        @confirm="handleBatchEdit"
       />
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-      </template>
-    </CrmDialog>
-
-    <FollowUpDrawer
-      v-model="followVisible"
-      target-type="customer"
-      :target-id="followTarget?.id ?? null"
-      :target-name="followTarget?.name"
-      @followed="loadData"
-    />
-
-    <MemberSelectDialog
-      v-model="assignVisible"
-      :title="`转移客户「${assignTarget?.name ?? ''}」`"
-      :members="fieldRefs.members.value"
-      @confirm="handleAssignConfirm"
-    />
-
-    <MemberSelectDialog
-      v-model="batchTransferVisible"
-      :title="`批量转移客户（${selectedRows.length}）`"
-      :members="fieldRefs.members.value"
-      @confirm="handleBatchTransferConfirm"
-    />
-
-    <CustomerMoveToPoolDialog
-      v-model="moveToPoolVisible"
-      :customer-ids="moveToPoolIds"
-      :customer-name="moveToPoolName"
-      @moved="loadData"
-    />
-
-    <CrmImportDialog
-      v-model="importVisible"
-      module-label="客户"
-      :download-template="(type) => customerTransferApi.importTemplate(type)"
-      :precheck="(file, type) => customerTransferApi.importPrecheck(file, type)"
-      :execute="(file, type) => customerTransferApi.importXlsx(file, type)"
-      @success="loadData"
-    />
-
-    <CrmExportDrawer
-      v-model="exportVisible"
-      module-label="客户"
-      cache-key="customer"
-      :fields="fields"
-      :display-fields="[
-        { key: 'lastFollowedAt', label: '最近跟进' },
-        { key: 'createdAt', label: '创建时间' },
-        { key: 'updatedAt', label: '更新时间' },
-      ]"
-      :mode="exportMode"
-      :selected-count="selectedRows.length"
-      :loading="exportLoading"
-      @confirm="handleExportConfirm"
-    />
-
-    <CustomerMergeDialog
-      v-model="mergeVisible"
-      :selected-rows="selectedRows"
-      @merged="handleMerged"
-    />
-
-    <BatchFieldEditDialog
-      v-model="batchEditVisible"
-      title="批量修改客户"
-      :fields="fields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :selected-count="selectedRows.length"
-      @confirm="handleBatchEdit"
-    />
-  </el-card>
+    </el-card>
+  </div>
 
   <CustomerOverviewDrawer
     v-model="overviewVisible"

@@ -450,6 +450,10 @@ export interface ExportTaskVO {
 export interface ImportErrorVO {
   rowNum: number
   errMsg: string
+  /** 可选导入错误分类，仅支持该字段的模块填充 */
+  category?: 'duplicate' | 'invalid'
+  /** 可选原始解析字段，用于预检错误行展示与导出 */
+  values?: Record<string, unknown>
 }
 
 export interface ImportResultVO {

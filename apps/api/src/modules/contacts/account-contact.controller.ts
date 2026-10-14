@@ -100,11 +100,7 @@ export class AccountContactController {
   @Post('disable/:id')
   @RequireAnyPermissions('customer:update', 'contact:update')
   @LogOperation('contact', 'disable')
-  disable(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: DisableContactDto,
-  ) {
+  disable(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DisableContactDto) {
     return this.service.disable(user, id, dto.reason)
   }
 
@@ -171,6 +167,24 @@ export class AccountContactController {
   ) {
     if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
     return this.service.precheckImportXlsx(user, file.buffer, importType)
+  }
+
+  @Post('import/error-rows/download')
+  @RequirePermissions('contact:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '下载联系人导入错误数据（保留 Excel 原始行）' })
+  async downloadImportErrorRows(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body('rowNumbers') rowNumbers: string,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    const data = await this.service.exportImportErrorRows(user, file.buffer, rowNumbers)
+    return new StreamableFile(data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent('联系人导入错误数据.xlsx')}`,
+    })
   }
 
   @Post('import')

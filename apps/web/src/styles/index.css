@@ -6,6 +6,11 @@
   font-display: swap;
 }
 
+:root {
+  /* UnoCSS presetWind4 的 .text-base 默认行高，全站统一为 1 倍。 */
+  --text-base-lineHeight: 1;
+}
+
 html,
 body,
 #app {

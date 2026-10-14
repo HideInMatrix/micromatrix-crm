@@ -18,7 +18,7 @@ const emit = defineEmits<{
 <template>
   <el-drawer
     v-model="visible"
-    size="100%"
+    size="660px"
     :with-header="false"
     destroy-on-close
     class="customer-overview-drawer"
@@ -37,8 +37,13 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-:deep(.customer-overview-drawer .el-drawer__body) {
+:global(.customer-overview-drawer.el-drawer) {
+  max-width: 100vw;
+}
+
+:global(.customer-overview-drawer .el-drawer__body) {
   padding: 0;
+  min-height: 0;
   overflow: hidden;
 }
 </style>

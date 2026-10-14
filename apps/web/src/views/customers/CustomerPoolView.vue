@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { type CustomerVO, type FieldVO, type FilterCondition } from '@micromatrix/shared'
+import {
+  type CustomerVO,
+  type FieldVO,
+  type FilterCondition,
+  type ModuleQuickSearchConfig,
+  type QuickSearchQueryGroup,
+} from '@micromatrix/shared'
+import { Columns3, Download, Upload } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
@@ -12,15 +19,16 @@ import {
   poolDeleteCustomer,
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
+import type { ImportType } from '@/api/import-export'
 import { metadataApi } from '@/api/metadata'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
-import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CrmSearchInput from '@/components/CrmSearchInput.vue'
-import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
+import CrmResourceImportDialog from '@/components/resource-import/CrmResourceImportDialog.vue'
+import CrmListPagination from '@/components/CrmListPagination.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
+import ModuleQuickSearch from '@/components/ModuleQuickSearch.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
@@ -38,13 +46,36 @@ const fields = ref<FieldVO[]>([])
 const loading = ref(false)
 const items = ref<CustomerVO[]>([])
 const total = ref(0)
-const query = reactive({ page: 1, pageSize: 10, keyword: '' })
+const query = reactive({ page: 1, pageSize: 10 })
 const filters = ref<FilterCondition[]>([])
+const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
+const quickFilters = ref<FilterCondition[]>([])
+const quickGroups = ref<QuickSearchQueryGroup[]>([])
+const showQuickSearchPanel = computed(() => quickSearch.value?.enabled === true)
+const showAdvanced = computed(() => quickSearch.value?.showAdvancedFilter !== false)
+const showSavedViews = computed(() => quickSearch.value?.showSavedViews !== false)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<CustomerVO[]>([])
 const batchEditVisible = ref(false)
 const importVisible = ref(false)
+
+function downloadPoolImportTemplate(type: ImportType) {
+  return customerTransferApi.importTemplate(type, selectedPoolId.value || undefined)
+}
+function downloadPoolImportErrorRows(file: File, rowNumbers: number[]) {
+  return customerTransferApi.downloadImportErrorRows(
+    file,
+    rowNumbers,
+    selectedPoolId.value || undefined,
+  )
+}
+function precheckPoolImport(file: File, type: ImportType) {
+  return customerTransferApi.importPrecheck(file, type, selectedPoolId.value || undefined)
+}
+function executePoolImport(file: File, type: ImportType) {
+  return customerTransferApi.importXlsx(file, type, selectedPoolId.value || undefined)
+}
 const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
@@ -85,8 +116,12 @@ const listColumns = computed(() => {
 })
 
 async function loadFields() {
-  const { data } = await metadataApi.fields('customer')
-  fields.value = data
+  // 客户和客户公海共用客户模块的表单字段与搜索设置。
+  const { data } = await metadataApi.formConfig('customer')
+  fields.value = data.fields
+  quickSearch.value = data.formProp.quickSearch ?? null
+  if (!showSavedViews.value) activeSavedViewId.value = ''
+  if (!showAdvanced.value) filters.value = []
 }
 
 async function loadPoolOptions() {
@@ -113,11 +148,13 @@ async function loadData() {
   const params = {
     page: query.page,
     pageSize: query.pageSize,
-    keyword: query.keyword.trim() || undefined,
     scope: 'sea' as const,
     poolId: selectedPoolId.value,
-    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
-    viewId: activeSavedViewId.value || undefined,
+    filters: [...filters.value, ...quickFilters.value].length
+      ? JSON.stringify([...filters.value, ...quickFilters.value])
+      : undefined,
+    quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
+    viewId: showSavedViews.value ? activeSavedViewId.value || undefined : undefined,
   }
   const requestKey = JSON.stringify(params)
   if (activeListRequest && activeListRequestKey === requestKey) return activeListRequest
@@ -157,12 +194,28 @@ function tryInitialLoad() {
   loadData()
 }
 
+function handleQuickSearch(value: {
+  filters: FilterCondition[]
+  quickGroups: QuickSearchQueryGroup[]
+}) {
+  quickFilters.value = value.filters
+  quickGroups.value = value.quickGroups
+  handleSearch()
+}
+
+function resetQuickSearch() {
+  quickFilters.value = []
+  quickGroups.value = []
+  handleSearch()
+}
+
 function handleSearch() {
   query.page = 1
   loadData()
 }
 
 function handleSavedViewChange(viewId?: string) {
+  if (!showSavedViews.value) return
   activeSavedViewId.value = viewId ?? ''
   query.page = 1
   if (!initialLoadDone.value) return
@@ -310,11 +363,13 @@ function transferParams() {
   return {
     page: query.page,
     pageSize: query.pageSize,
-    keyword: query.keyword.trim() || undefined,
     scope: 'sea' as const,
     poolId: selectedPoolId.value || undefined,
-    filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
-    viewId: activeSavedViewId.value || undefined,
+    filters: [...filters.value, ...quickFilters.value].length
+      ? JSON.stringify([...filters.value, ...quickFilters.value])
+      : undefined,
+    quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
+    viewId: showSavedViews.value ? activeSavedViewId.value || undefined : undefined,
   }
 }
 
@@ -364,43 +419,41 @@ onMounted(async () => {
     detailVisible.value = true
   }
   pageReady.value = true
+  if (!showSavedViews.value) savedViewReady.value = true
   tryInitialLoad()
 })
 </script>
 
 <template>
-  <el-card shadow="never">
-    <div
-      class="mb-4 flex flex-wrap items-center justify-between gap-3"
-      data-testid="crm-table-primary-toolbar"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <el-select
-          v-model="selectedPoolId"
-          class="!w-[200px]"
-          placeholder="选择客户公海"
-          @change="handleSearch"
-        >
-          <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
-        </el-select>
-        <el-button v-if="canImport" :disabled="!selectedPoolId" @click="importVisible = true">
-          导入
-        </el-button>
-        <el-button
-          v-if="canExport"
-          :disabled="items.length === 0 || !selectedPoolId"
-          @click="openExport('all')"
-        >
-          导出全部
-        </el-button>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <CrmSearchInput
-          v-model="query.keyword"
-          placeholder="搜索名称 / 电话 / 邮箱"
-          @search="handleSearch"
+  <div class="crm-data-list-workspace">
+    <section v-if="quickSearch && showQuickSearchPanel" data-testid="module-search-panel">
+      <el-card shadow="never">
+        <div class="mb-4 flex items-center gap-2">
+          <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">客户公海查询</h2>
+          <span class="text-xs text-[var(--el-text-color-secondary)]">按配置条件筛选客户</span>
+        </div>
+        <ModuleQuickSearch
+          :config="quickSearch"
+          :fields="fields"
+          @search="handleQuickSearch"
+          @reset="resetQuickSearch"
         />
+        <div v-if="showAdvanced" class="mt-3 flex justify-end">
+          <AdvancedFilter
+            v-model="filters"
+            :fields="fields"
+            :members="fieldRefs.members.value"
+            :dept-tree="fieldRefs.deptTree.value"
+            @apply="(conditions) => ((filters = conditions), handleSearch())"
+          />
+        </div>
+      </el-card>
+    </section>
+    <el-card shadow="never" class="crm-data-list-panel">
+      <div
+        v-if="showAdvanced && !showQuickSearchPanel"
+        class="mb-4 flex flex-wrap items-center justify-end gap-2"
+      >
         <AdvancedFilter
           v-model="filters"
           :fields="fields"
@@ -408,204 +461,232 @@ onMounted(async () => {
           :dept-tree="fieldRefs.deptTree.value"
           @apply="(conditions) => ((filters = conditions), handleSearch())"
         />
-        <CrmTableUtilityActions
-          :refreshing="loading"
-          @columns="savedViewBarRef?.openColumnSettings()"
-          @refresh="loadData"
+      </div>
+
+      <div v-show="showSavedViews" class="mb-4">
+        <SavedViewBar
+          ref="savedViewBarRef"
+          module="customer_pool"
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          :current-filters="filters"
+          :default-column-keys="defaultColumnKeys"
+          @change="handleSavedViewChange"
+          @clear-filters="clearTemporaryFilters"
+          @columns-change="handleSavedColumns"
+          @ready="handleSavedViewReady"
         />
       </div>
-    </div>
 
-    <SavedViewBar
-      ref="savedViewBarRef"
-      module="customer_pool"
-      :fields="fields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :current-filters="filters"
-      :default-column-keys="defaultColumnKeys"
-      @change="handleSavedViewChange"
-      @clear-filters="clearTemporaryFilters"
-      @columns-change="handleSavedColumns"
-      @ready="handleSavedViewReady"
-    />
+      <div class="crm-data-list-toolbar" data-testid="crm-table-primary-toolbar">
+        <div class="flex flex-wrap items-center gap-3">
+          <el-select
+            v-model="selectedPoolId"
+            class="!w-[200px]"
+            placeholder="选择客户公海"
+            @change="handleSearch"
+          >
+            <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
+          </el-select>
+          <span class="text-[14px] text-[#000000]">共{{ total }}条客户</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <el-button
+            v-if="canExport"
+            :disabled="items.length === 0 || !selectedPoolId"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="openExport('all')"
+          >
+            <Download :size="14" :stroke-width="1.8" aria-hidden="true" />导出全部
+          </el-button>
+          <el-button
+            v-if="canImport"
+            :disabled="!selectedPoolId"
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="importVisible = true"
+          >
+            <Upload :size="14" :stroke-width="1.8" aria-hidden="true" />批量导入
+          </el-button>
+          <el-button
+            class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+            @click="savedViewBarRef?.openColumnSettings()"
+          >
+            <Columns3 :size="14" :stroke-width="1.8" aria-hidden="true" />列设置
+          </el-button>
+        </div>
+      </div>
 
-    <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
-      <el-button v-if="canExport" @click="openExport('selected')">
-        导出选中（{{ selectedRows.length }}）
-      </el-button>
-      <el-button v-if="auth.hasPerm('customerPool:pick')" @click="handleBatchClaim">
-        批量领取
-      </el-button>
-      <el-button v-if="auth.hasPerm('customerPool:assign')" @click="batchAssignVisible = true">
-        批量分配
-      </el-button>
-      <el-button v-if="auth.hasPerm('customerPool:update')" @click="batchEditVisible = true">
-        批量修改（{{ selectedRows.length }}）
-      </el-button>
-      <el-button
-        v-if="auth.hasPerm('customerPool:delete')"
-        type="danger"
-        plain
-        @click="handleBatchDelete"
-      >
-        批量删除
-      </el-button>
-    </div>
+      <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
+        <el-button v-if="canExport" @click="openExport('selected')">
+          导出选中（{{ selectedRows.length }}）
+        </el-button>
+        <el-button v-if="auth.hasPerm('customerPool:pick')" @click="handleBatchClaim">
+          批量领取
+        </el-button>
+        <el-button v-if="auth.hasPerm('customerPool:assign')" @click="batchAssignVisible = true">
+          批量分配
+        </el-button>
+        <el-button v-if="auth.hasPerm('customerPool:update')" @click="batchEditVisible = true">
+          批量修改（{{ selectedRows.length }}）
+        </el-button>
+        <el-button
+          v-if="auth.hasPerm('customerPool:delete')"
+          type="danger"
+          plain
+          @click="handleBatchDelete"
+        >
+          批量删除
+        </el-button>
+      </div>
 
-    <el-table
-      v-loading="loading"
-      :data="items"
-      row-key="id"
-      stripe
-      class="w-full"
-      @selection-change="handleSelectionChange"
-    >
-      <el-table-column
-        v-if="
-          auth.hasPerm('customerPool:pick') ||
-          auth.hasPerm('customerPool:assign') ||
-          auth.hasPerm('customerPool:update') ||
-          auth.hasPerm('customerPool:delete') ||
-          canExport
-        "
-        type="selection"
-        width="46"
+      <div class="crm-data-list-table">
+        <el-table
+          v-loading="loading"
+          :data="items"
+          row-key="id"
+          height="100%"
+          class="w-full"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column
+            v-if="
+              auth.hasPerm('customerPool:pick') ||
+              auth.hasPerm('customerPool:assign') ||
+              auth.hasPerm('customerPool:update') ||
+              auth.hasPerm('customerPool:delete') ||
+              canExport
+            "
+            type="selection"
+            width="46"
+          />
+          <el-table-column
+            v-for="column in listColumns"
+            :key="column.key"
+            :label="column.label"
+            :min-width="column.listWidth ?? 140"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <el-button
+                v-if="column.key === 'name'"
+                link
+                type="primary"
+                @click="openDetail(row as CustomerVO)"
+              >
+                {{
+                  formatFieldValue(column, row, {
+                    memberMap: fieldRefs.memberMap.value,
+                    deptMap: fieldRefs.deptMap.value,
+                  })
+                }}
+              </el-button>
+              <template v-else>
+                {{
+                  formatFieldValue(column, row, {
+                    memberMap: fieldRefs.memberMap.value,
+                    deptMap: fieldRefs.deptMap.value,
+                  })
+                }}
+              </template>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="190" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="auth.hasPerm('customerPool:pick')"
+                link
+                type="primary"
+                @click="handleClaim(row as CustomerVO)"
+                >领取</el-button
+              >
+              <el-button
+                v-if="auth.hasPerm('customerPool:assign')"
+                link
+                @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
+              >
+                分配
+              </el-button>
+              <el-button
+                v-if="auth.hasPerm('customerPool:delete')"
+                link
+                type="danger"
+                @click="handleDelete(row as CustomerVO)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <CrmListPagination
+          v-model:current-page="query.page"
+          v-model:page-size="query.pageSize"
+          :total="total"
+          @current-change="loadData"
+          @size-change="handleSearch"
+        />
+      </div>
+
+      <CustomerOverviewDrawer
+        v-model="detailVisible"
+        :customer-id="detailCustomerId"
+        pool
+        :pool-id="selectedPoolId"
+        :hidden-field-ids="currentPool?.hiddenFieldIds ?? []"
+        @changed="loadData"
+        @deleted="loadData"
       />
-      <el-table-column
-        v-for="column in listColumns"
-        :key="column.key"
-        :label="column.label"
-        :min-width="column.listWidth ?? 140"
-        show-overflow-tooltip
-      >
-        <template #default="{ row }">
-          <el-button
-            v-if="column.key === 'name'"
-            link
-            type="primary"
-            @click="openDetail(row as CustomerVO)"
-          >
-            {{
-              formatFieldValue(column, row, {
-                memberMap: fieldRefs.memberMap.value,
-                deptMap: fieldRefs.deptMap.value,
-              })
-            }}
-          </el-button>
-          <template v-else>
-            {{
-              formatFieldValue(column, row, {
-                memberMap: fieldRefs.memberMap.value,
-                deptMap: fieldRefs.deptMap.value,
-              })
-            }}
-          </template>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="190" fixed="right">
-        <template #default="{ row }">
-          <el-button
-            v-if="auth.hasPerm('customerPool:pick')"
-            link
-            type="primary"
-            @click="handleClaim(row as CustomerVO)"
-            >领取</el-button
-          >
-          <el-button
-            v-if="auth.hasPerm('customerPool:assign')"
-            link
-            @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
-          >
-            分配
-          </el-button>
-          <el-button
-            v-if="auth.hasPerm('customerPool:delete')"
-            link
-            type="danger"
-            @click="handleDelete(row as CustomerVO)"
-          >
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
 
-    <div class="flex justify-end mt-4">
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="loadData"
-        @size-change="handleSearch"
+      <MemberSelectDialog
+        v-model="assignVisible"
+        :title="`分配客户「${assignTarget?.name ?? ''}」`"
+        :members="fieldRefs.members.value"
+        @confirm="handleAssignConfirm"
       />
-    </div>
 
-    <CustomerOverviewDrawer
-      v-model="detailVisible"
-      :customer-id="detailCustomerId"
-      pool
-      :pool-id="selectedPoolId"
-      :hidden-field-ids="currentPool?.hiddenFieldIds ?? []"
-      @changed="loadData"
-      @deleted="loadData"
-    />
+      <MemberSelectDialog
+        v-model="batchAssignVisible"
+        :title="`批量分配客户（${selectedRows.length}）`"
+        :members="fieldRefs.members.value"
+        @confirm="handleBatchAssignConfirm"
+      />
 
-    <MemberSelectDialog
-      v-model="assignVisible"
-      :title="`分配客户「${assignTarget?.name ?? ''}」`"
-      :members="fieldRefs.members.value"
-      @confirm="handleAssignConfirm"
-    />
+      <CrmResourceImportDialog
+        v-model="importVisible"
+        module-label="客户公海"
+        :download-template="downloadPoolImportTemplate"
+        :download-error-rows="downloadPoolImportErrorRows"
+        :precheck="precheckPoolImport"
+        :execute="executePoolImport"
+        @success="loadData"
+      />
 
-    <MemberSelectDialog
-      v-model="batchAssignVisible"
-      :title="`批量分配客户（${selectedRows.length}）`"
-      :members="fieldRefs.members.value"
-      @confirm="handleBatchAssignConfirm"
-    />
+      <CrmExportDrawer
+        v-model="exportVisible"
+        module-label="客户公海"
+        :cache-key="`customer-pool:${selectedPoolId}`"
+        :fields="fields"
+        :display-fields="[
+          { key: 'lastFollowedAt', label: '最近跟进' },
+          { key: 'createdAt', label: '创建时间' },
+          { key: 'updatedAt', label: '更新时间' },
+        ]"
+        :mode="exportMode"
+        :selected-count="selectedRows.length"
+        :loading="exportLoading"
+        @confirm="handleExportConfirm"
+      />
 
-    <CrmImportDialog
-      v-model="importVisible"
-      module-label="客户公海"
-      :download-template="
-        (type) => customerTransferApi.importTemplate(type, selectedPoolId || undefined)
-      "
-      :precheck="
-        (file, type) => customerTransferApi.importPrecheck(file, type, selectedPoolId || undefined)
-      "
-      :execute="
-        (file, type) => customerTransferApi.importXlsx(file, type, selectedPoolId || undefined)
-      "
-      @success="loadData"
-    />
-
-    <CrmExportDrawer
-      v-model="exportVisible"
-      module-label="客户公海"
-      :cache-key="`customer-pool:${selectedPoolId}`"
-      :fields="fields"
-      :display-fields="[
-        { key: 'lastFollowedAt', label: '最近跟进' },
-        { key: 'createdAt', label: '创建时间' },
-        { key: 'updatedAt', label: '更新时间' },
-      ]"
-      :mode="exportMode"
-      :selected-count="selectedRows.length"
-      :loading="exportLoading"
-      @confirm="handleExportConfirm"
-    />
-
-    <BatchFieldEditDialog
-      v-model="batchEditVisible"
-      title="批量修改客户公海"
-      :fields="fields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :selected-count="selectedRows.length"
-      @confirm="handleBatchEdit"
-    />
-  </el-card>
+      <BatchFieldEditDialog
+        v-model="batchEditVisible"
+        title="批量修改客户公海"
+        :fields="fields"
+        :members="fieldRefs.members.value"
+        :dept-tree="fieldRefs.deptTree.value"
+        :selected-count="selectedRows.length"
+        @confirm="handleBatchEdit"
+      />
+    </el-card>
+  </div>
 </template>

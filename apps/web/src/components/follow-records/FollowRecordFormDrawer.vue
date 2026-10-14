@@ -8,6 +8,7 @@ import {
   type FollowUpVO,
 } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
+import { X } from 'lucide-vue-next'
 import { attachmentApi } from '@/api/attachments'
 import { extractErrorMessage } from '@/api/http'
 import { contactApi, followUpApi, followUpPlanApi } from '@/api/sales'
@@ -22,6 +23,7 @@ const props = defineProps<{
   customerId?: string | null
   sourcePlanId?: string
   recordId?: string
+  appendToBody?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -235,98 +237,144 @@ watch(
 <template>
   <el-drawer
     v-model="visible"
-    size="50%"
+    size="660px"
+    :with-header="false"
     destroy-on-close
-    :title="recordId ? '编辑跟进记录' : sourcePlanId ? '计划转跟进记录' : '新建跟进记录'"
+    :append-to-body="appendToBody"
+    class="follow-record-form-drawer"
     data-testid="follow-record-form-drawer"
   >
-    <div v-loading="loading" class="min-h-40">
-      <el-form v-if="!loading" label-width="92px">
-        <el-form-item label="关联对象">
-          <el-input :model-value="targetName || targetId" disabled />
-        </el-form-item>
-        <el-form-item v-if="targetType !== 'lead'" label="联系人">
-          <el-select
-            v-model="form.contactId"
-            clearable
-            filterable
-            class="w-full"
-            placeholder="可选"
-          >
-            <el-option
-              v-for="item in contacts"
-              :key="item.id"
-              :label="item.name"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="跟进时间">
-          <el-date-picker
-            v-model="form.followedAt"
-            type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
-            class="!w-full"
-            placeholder="默认当前时间"
-          />
-        </el-form-item>
-        <el-form-item label="跟进方式">
-          <el-select v-model="form.type" clearable class="w-full" placeholder="可选">
-            <el-option v-for="item in FOLLOW_UP_TYPES" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="负责人">
-          <el-select
-            v-model="form.ownerId"
-            clearable
-            filterable
-            class="w-full"
-            :placeholder="sourcePlanId ? '默认来源计划负责人' : '默认当前用户'"
-          >
-            <el-option
-              v-for="item in fieldRefs.members.value"
-              :key="item.id"
-              :label="item.name"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="跟进内容" required>
-          <el-input
-            v-model="form.content"
-            type="textarea"
-            :rows="4"
-            maxlength="3000"
-            show-word-limit
-            data-testid="follow-record-content"
-          />
-        </el-form-item>
-        <div v-if="dynamicFields.length" data-testid="follow-record-dynamic-fields">
-          <DynamicForm
-            ref="formRef"
-            v-model="formModel"
-            :fields="dynamicFields"
-            :members="fieldRefs.members.value"
-            :dept-tree="fieldRefs.deptTree.value"
-            :form-prop="formProp"
-            :attachment-map="attachmentMap"
-            :attachment-download="downloadAttachment"
-            :attachment-object-url="attachmentObjectUrl"
-          />
-        </div>
-      </el-form>
-    </div>
-    <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button
-        type="primary"
-        :loading="saving"
-        :disabled="loading || loadFailed"
-        data-testid="follow-record-save"
-        @click="save"
+    <div class="flex h-full min-h-0 flex-col bg-white text-[#303133]">
+      <header
+        class="flex h-[58px] min-h-[58px] shrink-0 items-center justify-between bg-[#F7F8FA] px-5"
       >
-        保存
-      </el-button>
-    </template>
+        <h2 class="m-0 text-[18px] leading-[26px] font-medium text-black">
+          {{ recordId ? '编辑跟进记录' : sourcePlanId ? '计划转跟进记录' : '新建跟进记录' }}
+        </h2>
+        <button
+          type="button"
+          aria-label="关闭跟进记录表单"
+          class="flex h-[18px] w-[18px] cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-[#999999] hover:text-[var(--el-color-primary)] focus-visible:outline-2 focus-visible:outline-[var(--el-color-primary)] focus-visible:outline-offset-2"
+          @click="visible = false"
+        >
+          <X :size="18" :stroke-width="2" aria-hidden="true" />
+        </button>
+      </header>
+      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5">
+        <div v-loading="loading" class="min-h-40">
+          <el-form v-if="!loading" label-width="92px">
+            <el-form-item label="关联对象">
+              <el-input :model-value="targetName || targetId" disabled />
+            </el-form-item>
+            <el-form-item v-if="targetType !== 'lead'" label="联系人">
+              <el-select
+                v-model="form.contactId"
+                clearable
+                filterable
+                class="w-full"
+                placeholder="可选"
+              >
+                <el-option
+                  v-for="item in contacts"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="跟进时间">
+              <el-date-picker
+                v-model="form.followedAt"
+                type="datetime"
+                value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+                class="!w-full"
+                placeholder="默认当前时间"
+              />
+            </el-form-item>
+            <el-form-item label="跟进方式">
+              <el-select v-model="form.type" clearable class="w-full" placeholder="可选">
+                <el-option
+                  v-for="item in FOLLOW_UP_TYPES"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="负责人">
+              <el-select
+                v-model="form.ownerId"
+                clearable
+                filterable
+                class="w-full"
+                :placeholder="sourcePlanId ? '默认来源计划负责人' : '默认当前用户'"
+              >
+                <el-option
+                  v-for="item in fieldRefs.members.value"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="跟进内容" required>
+              <el-input
+                v-model="form.content"
+                type="textarea"
+                :rows="4"
+                maxlength="3000"
+                show-word-limit
+                data-testid="follow-record-content"
+              />
+            </el-form-item>
+            <div v-if="dynamicFields.length" data-testid="follow-record-dynamic-fields">
+              <DynamicForm
+                ref="formRef"
+                v-model="formModel"
+                :fields="dynamicFields"
+                :members="fieldRefs.members.value"
+                :dept-tree="fieldRefs.deptTree.value"
+                :form-prop="formProp"
+                :attachment-map="attachmentMap"
+                :attachment-download="downloadAttachment"
+                :attachment-object-url="attachmentObjectUrl"
+              />
+            </div>
+          </el-form>
+        </div>
+      </div>
+      <footer
+        class="flex shrink-0 items-center justify-end gap-[10px] border-t border-[#E9EDF2] bg-white px-5 py-[10px]"
+      >
+        <el-button
+          class="!ml-0 !h-[36px] !w-[88px] !rounded-[4px] !p-0 [--el-font-size-base:14px] [--el-button-bg-color:#FFFFFF] [--el-button-border-color:#DCDFE6] [--el-button-text-color:#606266]"
+          @click="visible = false"
+        >
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          class="!ml-0 !h-[36px] !w-[88px] !rounded-[4px] !p-0 [--el-font-size-base:14px] [--el-button-bg-color:var(--el-color-primary)] [--el-button-border-color:var(--el-color-primary)] [--el-button-text-color:#FFFFFF]"
+          :loading="saving"
+          :disabled="loading || loadFailed"
+          data-testid="follow-record-save"
+          @click="save"
+        >
+          保存
+        </el-button>
+      </footer>
+    </div>
   </el-drawer>
 </template>
+
+<style scoped>
+:global(.follow-record-form-drawer.el-drawer) {
+  max-width: 100vw;
+}
+
+:global(.follow-record-form-drawer .el-drawer__body) {
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+</style>

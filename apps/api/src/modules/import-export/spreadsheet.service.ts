@@ -55,6 +55,64 @@ export interface MultiSubTableExportGroup {
 
 @Injectable()
 export class SpreadsheetService {
+  /** 解析浏览器提交的错误行号，拒绝不受控的行号输入。 */
+  parseErrorRowNumbers(json: string): number[] {
+    let numbers: unknown
+    try {
+      numbers = JSON.parse(json)
+    } catch {
+      throw new BadRequestException('异常数据行号格式不正确')
+    }
+    if (!Array.isArray(numbers) || !numbers.every((row) => typeof row === 'number')) {
+      throw new BadRequestException('异常数据行号格式不正确')
+    }
+    return numbers as number[]
+  }
+
+  /** 按预检失败行号提取原始 Excel 的表头与整行数据，保留全部列、数据类型和单元格格式。 */
+  async extractErrorRowsXlsx(buffer: Buffer, rowNumbers: number[]): Promise<Buffer> {
+    if (
+      !Array.isArray(rowNumbers) ||
+      rowNumbers.length === 0 ||
+      rowNumbers.length > 100_000 ||
+      rowNumbers.some((row) => !Number.isSafeInteger(row) || row < 2 || row > 1_048_576)
+    ) {
+      throw new BadRequestException('异常数据行号无效')
+    }
+
+    const sourceBook = new ExcelJS.Workbook()
+    await sourceBook.xlsx.load(buffer as unknown as Parameters<typeof sourceBook.xlsx.load>[0])
+    const sourceSheet = sourceBook.worksheets[0]
+    if (!sourceSheet) throw new BadRequestException('Excel 文件中没有可读取的工作表')
+    const selectedRows = [...new Set(rowNumbers)].sort((left, right) => left - right)
+    if (selectedRows.some((number) => number > sourceSheet.rowCount)) {
+      throw new BadRequestException('异常数据行号超出原始 Excel 范围')
+    }
+
+    const resultBook = new ExcelJS.Workbook()
+    const resultSheet = resultBook.addWorksheet('错误数据')
+    resultSheet.views = [{ state: 'frozen', ySplit: 1 }]
+    for (const [index, sourceColumn] of sourceSheet.columns.entries()) {
+      if (sourceColumn.width) resultSheet.getColumn(index + 1).width = sourceColumn.width
+    }
+
+    for (const [index, sourceRowNumber] of [1, ...selectedRows].entries()) {
+      const sourceRow = sourceSheet.getRow(sourceRowNumber)
+      const targetRow = resultSheet.getRow(index + 1)
+      targetRow.values = sourceRow.values
+      if (sourceRow.height) targetRow.height = sourceRow.height
+      sourceRow.eachCell({ includeEmpty: true }, (sourceCell, column) => {
+        const targetCell = targetRow.getCell(column)
+        targetCell.style = { ...sourceCell.style }
+        if (sourceCell.dataValidation) {
+          targetCell.dataValidation = { ...sourceCell.dataValidation }
+        }
+      })
+    }
+
+    return Buffer.from(await resultBook.xlsx.writeBuffer())
+  }
+
   async buildImportTemplate(
     fields: FieldVO[],
     importType: ImportType,
@@ -121,6 +179,16 @@ export class SpreadsheetService {
     const importFields = this.importFields(fields, options?.excludeKeys)
     const byLabel = new Map(importFields.map((field) => [field.label.trim(), field]))
     const byKey = new Map(importFields.map((field) => [field.key, field]))
+    // 各模块导出可能包含状态、时间、停用原因或其他不可导入的字段；
+    // UPDATE 时识别这些表头，但绝不写入业务数据。
+    const readOnlyHeaders = new Set([
+      '状态',
+      '最近跟进',
+      '创建时间',
+      '更新时间',
+      '停用原因',
+      ...fields.filter((field) => !importFields.includes(field)).map((field) => field.label),
+    ])
     const headerRow = sheet.getRow(1)
     const headers = new Map<number, string>()
     const unknownHeaders: string[] = []
@@ -136,6 +204,7 @@ export class SpreadsheetService {
       }
       const field = byLabel.get(header) ?? byKey.get(header)
       if (!field) {
+        if (importType === 'UPDATE' && readOnlyHeaders.has(header)) return
         unknownHeaders.push(header)
         return
       }

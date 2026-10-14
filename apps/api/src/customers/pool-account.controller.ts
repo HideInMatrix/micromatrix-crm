@@ -120,6 +120,8 @@ export class PoolAccountController {
         keyword: dto.keyword,
         viewId: dto.viewId,
         filters: dto.filters?.length ? JSON.stringify(dto.filters) : undefined,
+        filterMode: dto.filterMode,
+        quickGroups: dto.quickGroups,
         scope: 'sea',
         poolId: dto.poolId,
       },
@@ -171,6 +173,25 @@ export class PoolAccountController {
     if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
     if (!poolId) throw new BadRequestException('请选择客户公海')
     return this.service.precheckImportXlsx(user, file.buffer, importType, poolId)
+  }
+
+  @Post('import/error-rows/download')
+  @RequirePermissions('customerPool:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  async downloadImportErrorRows(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedBufferFile | undefined,
+    @Body('poolId') poolId: string,
+    @Body('rowNumbers') rowNumbers: string,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('请选择 xlsx 文件')
+    if (!poolId) throw new BadRequestException('请选择客户公海')
+    const data = await this.service.exportImportErrorRows(user, file.buffer, rowNumbers, poolId)
+    return new StreamableFile(data, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent('客户公海导入错误数据.xlsx')}`,
+    })
   }
 
   @Post('import')

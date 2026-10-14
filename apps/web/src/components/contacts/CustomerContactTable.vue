@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
-import { isCustomFieldKey, type ContactVO, type FieldVO, type ModuleFormProp } from '@micromatrix/shared'
+import {
+  isCustomFieldKey,
+  type ContactVO,
+  type FieldVO,
+  type ModuleFormProp,
+} from '@micromatrix/shared'
 import { computed, onMounted, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
@@ -15,6 +20,7 @@ const props = defineProps<{
   readonly?: boolean
 }>()
 
+const emit = defineEmits<{ countChange: [count: number] }>()
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
@@ -49,7 +55,8 @@ const filteredRows = computed(() => {
   const text = keyword.value.trim().toLowerCase()
   if (!text) return rows.value
   return rows.value.filter(
-    (row) => row.name.toLowerCase().includes(text) || (row.phone ?? '').toLowerCase().includes(text),
+    (row) =>
+      row.name.toLowerCase().includes(text) || (row.phone ?? '').toLowerCase().includes(text),
   )
 })
 
@@ -59,6 +66,7 @@ async function load() {
   try {
     const { data } = await contactApi.list(props.sourceId)
     rows.value = data
+    emit('countChange', data.length)
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -105,7 +113,11 @@ async function save() {
   try {
     const payload = modelToPayload(formModel.value)
     if (editingId.value) await contactApi.update(editingId.value, payload)
-    else await contactApi.create({ ...payload, customerId: props.sourceId } as { customerId: string; name: string })
+    else
+      await contactApi.create({ ...payload, customerId: props.sourceId } as {
+        customerId: string
+        name: string
+      })
     ElMessage.success(editingId.value ? '联系人已更新' : '联系人已新增')
     formVisible.value = false
     await load()
@@ -182,6 +194,8 @@ function displayValue(field: FieldVO, row: ContactVO) {
   })
 }
 
+defineExpose({ openCreate })
+
 watch(() => props.sourceId, load)
 
 onMounted(async () => {
@@ -203,12 +217,7 @@ onMounted(async () => {
         新增联系人
       </el-button>
       <div v-else />
-      <el-input
-        v-model="keyword"
-        clearable
-        placeholder="搜索联系人姓名、电话"
-        class="!w-[240px]"
-      />
+      <el-input v-model="keyword" clearable placeholder="搜索联系人姓名、电话" class="!w-[240px]" />
     </div>
 
     <el-table :data="filteredRows" border row-key="id" empty-text="暂无联系人">
@@ -232,10 +241,20 @@ onMounted(async () => {
       </template>
       <el-table-column v-if="!readonly" label="操作" width="130" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="auth.hasPerm('contact:update')" link type="primary" @click="openEdit(row as ContactVO)">
+          <el-button
+            v-if="auth.hasPerm('contact:update')"
+            link
+            type="primary"
+            @click="openEdit(row as ContactVO)"
+          >
             编辑
           </el-button>
-          <el-button v-if="auth.hasPerm('contact:delete')" link type="danger" @click="remove(row as ContactVO)">
+          <el-button
+            v-if="auth.hasPerm('contact:delete')"
+            link
+            type="danger"
+            @click="remove(row as ContactVO)"
+          >
             删除
           </el-button>
         </template>
@@ -285,7 +304,9 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="deactivateVisible = false">取消</el-button>
-        <el-button type="primary" :loading="deactivateSaving" @click="confirmDeactivate">停用</el-button>
+        <el-button type="primary" :loading="deactivateSaving" @click="confirmDeactivate"
+          >停用</el-button
+        >
       </template>
     </CrmDialog>
   </div>

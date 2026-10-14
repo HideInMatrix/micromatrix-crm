@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useDark } from '@vueuse/core'
 import {
   CalendarClock,
   ChevronDown,
@@ -37,11 +36,10 @@ function readSidebarCollapsed() {
   }
 }
 
-const isDark = useDark()
 const sidebarCollapsed = ref(readSidebarCollapsed())
 const sidebarWidth = computed(() => (sidebarCollapsed.value ? '64px' : '256px'))
-const userRoleLabel = computed(() =>
-  auth.user?.roles.map((role) => role.name).join('、') || '未分配角色',
+const userRoleLabel = computed(
+  () => auth.user?.roles.map((role) => role.name).join('、') || '未分配角色',
 )
 const brandInitial = computed(() => enterpriseUi.branding.title.trim().slice(0, 1) || 'M')
 const activeMenu = computed(() => route.meta.activeMenu ?? route.path)
@@ -111,7 +109,9 @@ function handlePersonalCommand(command: string) {
 
 <template>
   <div class="h-full min-h-0 flex flex-col overflow-hidden bg-[var(--el-bg-color-page)]">
-    <header class="h-16 shrink-0 flex bg-[var(--el-bg-color)] shadow-[inset_0_-1px_0_var(--el-border-color-light)]">
+    <header
+      class="h-16 shrink-0 flex bg-[var(--el-bg-color)] shadow-[inset_0_-1px_0_var(--el-border-color-light)]"
+    >
       <div
         class="h-full shrink-0 flex items-center justify-center overflow-hidden border-r border-white/10 bg-[#223270] text-white transition-[width] duration-[160ms] ease-in-out"
         :class="sidebarCollapsed ? 'px-0' : 'px-4'"
@@ -124,10 +124,7 @@ function handlePersonalCommand(command: string) {
           class="h-7 shrink-0 object-contain"
           :class="sidebarCollapsed ? 'max-w-7' : 'max-w-[130px]'"
         />
-        <span
-          v-else-if="!sidebarCollapsed"
-          class="truncate text-[16px] font-semibold text-white"
-        >
+        <span v-else-if="!sidebarCollapsed" class="truncate text-[16px] font-semibold text-white">
           {{ enterpriseUi.branding.title }}
         </span>
         <span
@@ -145,13 +142,6 @@ function handlePersonalCommand(command: string) {
         </span>
         <div class="flex shrink-0 items-center gap-2">
           <TopNavigationActions />
-          <el-switch
-            v-model="isDark"
-            size="small"
-            inline-prompt
-            active-text="暗"
-            inactive-text="亮"
-          />
           <el-dropdown
             class="ml-2 shrink-0"
             trigger="click"
@@ -163,22 +153,24 @@ function handlePersonalCommand(command: string) {
               class="flex items-center gap-3 rounded-lg border-0 bg-transparent px-2 py-1 text-left cursor-pointer hover:bg-[var(--el-fill-color-light)]"
               data-testid="personal-menu-trigger"
             >
-              <el-avatar
-                :size="40"
-                :src="auth.user?.avatarUrl ?? undefined"
-                class="shrink-0"
-              >
+              <el-avatar :size="40" :src="auth.user?.avatarUrl ?? undefined" class="shrink-0">
                 {{ auth.user?.name?.slice(0, 1) ?? '?' }}
               </el-avatar>
               <span class="min-w-0 max-w-48 flex flex-col gap-0.5">
-                <span class="truncate text-sm font-semibold leading-5 text-[var(--el-text-color-primary)]">
+                <span
+                  class="truncate text-sm font-semibold leading-5 text-[var(--el-text-color-primary)]"
+                >
                   {{ auth.user?.name ?? '账号' }}
                 </span>
                 <span class="truncate text-xs leading-4 text-[var(--el-text-color-secondary)]">
                   {{ userRoleLabel }}
                 </span>
               </span>
-              <ChevronDown :size="16" class="shrink-0 text-[var(--el-text-color-secondary)]" aria-hidden="true" />
+              <ChevronDown
+                :size="16"
+                class="shrink-0 text-[var(--el-text-color-secondary)]"
+                aria-hidden="true"
+              />
             </button>
             <template #dropdown>
               <el-dropdown-menu data-testid="personal-menu-dropdown">
@@ -217,7 +209,7 @@ function handlePersonalCommand(command: string) {
           :style="{
             '--el-menu-bg-color': 'transparent',
             '--el-menu-hover-bg-color': 'rgb(255 255 255 / 10%)',
-            '--el-menu-active-color': '#1580FF',
+            '--el-menu-active-color': 'var(--el-color-primary)',
             '--el-menu-text-color': 'rgb(255 255 255 / 75%)',
             '--el-menu-hover-text-color': '#FFFFFF',
             '--el-menu-item-height': '44px',
@@ -286,7 +278,7 @@ function handlePersonalCommand(command: string) {
 
       <section class="min-w-0 min-h-0 flex-1 overflow-hidden">
         <el-main
-          class="h-full bg-[#F0F5FC] !px-5 !pt-5 !pb-7 !overflow-x-hidden [scrollbar-gutter:stable]"
+          class="crm-layout-main h-full bg-[#F0F5FC] !overflow-x-hidden"
           :class="{
             '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden': isEnterpriseSettings,
           }"
@@ -300,3 +292,9 @@ function handlePersonalCommand(command: string) {
     <ExportTaskButton ref="exportTasksRef" :show-trigger="false" />
   </div>
 </template>
+
+<style scoped>
+.crm-layout-main {
+  --el-main-padding: 16px 20px;
+}
+</style>

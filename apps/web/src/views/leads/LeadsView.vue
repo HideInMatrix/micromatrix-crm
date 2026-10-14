@@ -17,27 +17,25 @@ import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi, type LeadListParams, type ResourcePoolVO } from '@/api/sales'
+import type { ImportType } from '@/api/import-export'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
-import CrmImportDialog from '@/components/CrmImportDialog.vue'
-import CrmSearchInput from '@/components/CrmSearchInput.vue'
-import CrmTableUtilityActions from '@/components/CrmTableUtilityActions.vue'
+import CrmResourceImportDialog from '@/components/resource-import/CrmResourceImportDialog.vue'
+import LeadListTable from '@/components/leads/LeadListTable.vue'
+import LeadListToolbar from '@/components/leads/LeadListToolbar.vue'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
-import SavedViewBar from '@/components/SavedViewBar.vue'
 import ModuleQuickSearch from '@/components/ModuleQuickSearch.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
-import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useLeadBatchActions } from '@/composables/useLeadBatchActions'
 import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
 import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import LeadOverviewDrawer from '@/components/leads/LeadOverviewDrawer.vue'
-import LeadPoolQuickSettingDrawer from '@/components/leads/LeadPoolQuickSettingDrawer.vue'
 import LeadMoveToPoolDialog from '@/components/leads/LeadMoveToPoolDialog.vue'
 import LeadTransferDialog from '@/components/leads/LeadTransferDialog.vue'
 import LeadTransformDialog from '@/components/leads/LeadTransformDialog.vue'
-import LeadTransitionCustomerDrawer from '@/components/leads/LeadTransitionCustomerDrawer.vue'
 import { consumeHomeFilter } from '@/utils/home-filter'
 
 const auth = useAuthStore()
@@ -45,7 +43,6 @@ const fieldRefs = useFieldRefs()
 const homeQuickCreate = useHomeQuickCreate()
 const route = useRoute()
 const router = useRouter()
-const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 
 const isPoolMode = computed(() => route.name === 'lead-pool')
 const pools = ref<ResourcePoolVO[]>([])
@@ -72,13 +69,14 @@ const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<LeadVO[]>([])
+const batchInvalidLoading = ref(false)
+const leadListTableRef = ref<InstanceType<typeof LeadListTable>>()
 const batchEditVisible = ref(false)
 const batchTransferVisible = ref(false)
 const transferVisible = ref(false)
 const transferTarget = ref<LeadVO | null>(null)
 const transferSaving = ref(false)
 const batchPoolAssignVisible = ref(false)
-const poolSettingVisible = ref(false)
 const moveToPoolVisible = ref(false)
 const moveToPoolTarget = ref<LeadVO | null>(null)
 const moveToPoolBatch = ref(false)
@@ -104,14 +102,11 @@ let listRequestGeneration = 0
 
 const convertVisible = ref(false)
 const convertTarget = ref<LeadVO | null>(null)
-const transitionCustomerVisible = ref(false)
-const transitionClueIds = ref<string[]>([])
 
 const savedViewModule = computed(() => (isPoolMode.value ? 'lead_pool' : 'lead'))
 const currentPool = computed(
   () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
 )
-const leadStageByKey = computed(() => new Map(leadStages.value.map((stage) => [stage.key, stage])))
 const canImport = computed(() =>
   isPoolMode.value ? auth.hasPerm('leadPool:import') : auth.hasPerm('lead:import'),
 )
@@ -121,9 +116,6 @@ const canExport = computed(() =>
 const canManualConvert = computed(
   () =>
     auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
-)
-const canAssociateCustomer = computed(
-  () => auth.hasPerm('lead:convert') && auth.hasPerm('lead:update'),
 )
 const contextFields = computed(() => {
   const hiddenIds = isPoolMode.value
@@ -160,17 +152,6 @@ async function loadFields() {
   ).map((stage) => ({ ...stage, enabled: stage.enabled !== false }))
 }
 
-function leadStageLabel(stageKey: string) {
-  return leadStageByKey.value.get(stageKey)?.name ?? stageKey
-}
-
-function leadStageTagType(stageKey: string): 'primary' | 'success' | 'info' {
-  const kind = leadStageByKey.value.get(stageKey)?.kind
-  if (kind === 'SUCCESS') return 'success'
-  if (kind === 'FAILURE') return 'info'
-  return 'primary'
-}
-
 async function handleStageChange(row: LeadVO, stageKey: string) {
   if (!stageKey || row.status === stageKey) return
   try {
@@ -179,6 +160,56 @@ async function handleStageChange(row: LeadVO, stageKey: string) {
     ElMessage.success('线索状态已更新')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
+  }
+}
+
+async function handleBatchInvalid() {
+  if (batchInvalidLoading.value || isPoolMode.value || !auth.hasPerm('lead:update')) return
+  const selected = [...selectedRows.value]
+  if (!selected.length) return
+
+  // 与服务端 markInvalid 保持一致：状态由租户启用的失败类阶段决定。
+  const invalidStage = leadStages.value.find(
+    (stage) => stage.enabled !== false && stage.kind === 'FAILURE',
+  )
+  if (!invalidStage) {
+    ElMessage.warning('尚未配置启用的失败类线索状态，请先在线索状态设置中配置')
+    return
+  }
+
+  const needUpdate = selected.filter((row) => row.status !== invalidStage.key)
+  if (!needUpdate.length) {
+    ElMessage.info(`已选 ${selected.length} 条线索均处于「${invalidStage.name}」状态`)
+    return
+  }
+
+  const confirmed = await ElMessageBox.confirm(
+    `确定将选中的 ${needUpdate.length} 条线索状态修改为「${invalidStage.name}」？`,
+    '批量无效',
+    { type: 'warning', confirmButtonText: '确认修改', cancelButtonText: '取消' },
+  ).catch(() => false)
+  if (!confirmed) return
+
+  batchInvalidLoading.value = true
+  try {
+    let success = 0
+    let failed = 0
+    // 复用单条更新状态的权限、事件审计及历史记录处理，限制并发避免请求突增。
+    for (let index = 0; index < needUpdate.length; index += 5) {
+      const batch = needUpdate.slice(index, index + 5)
+      const results = await Promise.allSettled(
+        batch.map((row) => leadApi.updateStage(row.id, invalidStage.key)),
+      )
+      for (const result of results) {
+        if (result.status === 'fulfilled') success += 1
+        else failed += 1
+      }
+    }
+    if (failed) ElMessage.warning(`批量无效：成功 ${success} 条，失败 ${failed} 条`)
+    else ElMessage.success(`已将 ${success} 条线索状态修改为「${invalidStage.name}」`)
+    if (success) await loadData()
+  } finally {
+    batchInvalidLoading.value = false
   }
 }
 
@@ -192,11 +223,6 @@ async function loadPoolOptions() {
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
-}
-
-async function handlePoolSettingSaved() {
-  await loadPoolOptions()
-  handleSearch()
 }
 
 function currentListParams(): LeadListParams {
@@ -317,142 +343,33 @@ function handleSelectionChange(rows: LeadVO[]) {
   selectedRows.value = rows
 }
 
-async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }) {
-  if (selectedRows.value.length === 0) return
-  try {
-    const ids = selectedRows.value.map((row) => row.id)
-    if (isPoolMode.value) {
-      if (!selectedPoolId.value) throw new Error('请先选择线索池')
-      await leadApi.poolBatchUpdate({ poolId: selectedPoolId.value, ids, ...payload })
-    } else {
-      await leadApi.batchUpdate({ ids, ...payload })
-    }
-    ElMessage.success(`已修改 ${selectedRows.value.length} 条线索`)
-    batchEditVisible.value = false
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
+function clearSelection() {
+  leadListTableRef.value?.clearSelection()
+  selectedRows.value = []
 }
 
-async function handleBatchDelete() {
-  if (selectedRows.value.length === 0) return
-  const confirmed = await ElMessageBox.confirm(
-    `确定删除已选择的 ${selectedRows.value.length} 条线索？此操作不可恢复。`,
-    '批量删除线索',
-    { type: 'warning', confirmButtonText: '删除' },
-  ).catch(() => false)
-  if (!confirmed) return
-  try {
-    const ids = selectedRows.value.map((row) => row.id)
-    if (isPoolMode.value) {
-      if (!selectedPoolId.value) throw new Error('请先选择线索池')
-      await leadApi.poolBatchDelete(selectedPoolId.value, ids)
-    } else {
-      await leadApi.batchDelete(ids)
-    }
-    ElMessage.success('批量删除成功')
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-function openBatchTransfer() {
-  if (selectedRows.value.length === 0) return
-  batchTransferVisible.value = true
-}
-
-async function handleBatchTransferConfirm(userId: string, note: string) {
-  if (selectedRows.value.length === 0 || transferSaving.value) return
-  transferSaving.value = true
-  try {
-    const count = selectedRows.value.length
-    await leadApi.batchTransfer(
-      selectedRows.value.map((row) => row.id),
-      userId,
-      note,
-    )
-    batchTransferVisible.value = false
-    ElMessage.success(`已转移 ${count} 条线索`)
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    transferSaving.value = false
-  }
-}
-
-function handleBatchToPool() {
-  if (selectedRows.value.length === 0) return
-  moveToPoolTarget.value = null
-  moveToPoolBatch.value = true
-  moveToPoolVisible.value = true
-}
-
-async function confirmMoveToPool(poolId?: string, reasonId?: string) {
-  try {
-    if (moveToPoolBatch.value) {
-      const { data } = await leadApi.batchToPool(
-        selectedRows.value.map((row) => row.id),
-        poolId,
-        reasonId,
-      )
-      if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
-      else ElMessage.success(`已将 ${data.success} 条线索移入线索池`)
-    } else if (moveToPoolTarget.value) {
-      await leadApi.toPool(moveToPoolTarget.value.id, poolId, reasonId)
-      ElMessage.success('已移入线索池')
-    }
-    moveToPoolVisible.value = false
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleBatchPick() {
-  if (!selectedPoolId.value || selectedRows.value.length === 0) return
-  const confirmed = await ElMessageBox.confirm(
-    `确定领取已选择的 ${selectedRows.value.length} 条线索？`,
-    '批量领取',
-    { type: 'warning', confirmButtonText: '领取' },
-  ).catch(() => false)
-  if (!confirmed) return
-  try {
-    const { data } = await leadApi.poolBatchPick(
-      selectedPoolId.value,
-      selectedRows.value.map((row) => row.id),
-    )
-    if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
-    else ElMessage.success(`已领取 ${data.success} 条线索`)
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-function openBatchPoolAssign() {
-  if (!selectedPoolId.value || selectedRows.value.length === 0) return
-  batchPoolAssignVisible.value = true
-}
-
-async function handleBatchPoolAssignConfirm(userId: string) {
-  if (!selectedPoolId.value || selectedRows.value.length === 0) return
-  try {
-    const { data } = await leadApi.poolBatchAssign(
-      selectedPoolId.value,
-      selectedRows.value.map((row) => row.id),
-      userId,
-    )
-    batchPoolAssignVisible.value = false
-    if (data.fail > 0) ElMessage.warning(`成功 ${data.success} 条，失败 ${data.fail} 条`)
-    else ElMessage.success(`已分配 ${data.success} 条线索`)
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
+const {
+  handleBatchEdit,
+  openBatchTransfer,
+  handleBatchTransferConfirm,
+  handleBatchToPool,
+  confirmMoveToPool,
+  handleBatchPick,
+  openBatchPoolAssign,
+  handleBatchPoolAssignConfirm,
+} = useLeadBatchActions({
+  selectedRows,
+  isPoolMode,
+  selectedPoolId,
+  batchEditVisible,
+  batchTransferVisible,
+  transferSaving,
+  moveToPoolTarget,
+  moveToPoolBatch,
+  moveToPoolVisible,
+  batchPoolAssignVisible,
+  loadData,
+})
 
 function handleSavedViewChange(viewId?: string) {
   activeSavedViewId.value = showSavedViews.value ? (viewId ?? '') : ''
@@ -578,6 +495,27 @@ async function handleDelete(row: LeadVO) {
 const assignVisible = ref(false)
 const assignTarget = ref<LeadVO | null>(null)
 const importVisible = ref(false)
+
+/** 将导入接口调用留在 script 中，避免 Vue 模板内联箭头函数的自动解包类型误判。 */
+function currentImportPoolId(): string | undefined {
+  return isPoolMode.value ? selectedPoolId.value || undefined : undefined
+}
+
+function downloadLeadImportTemplate(type: ImportType) {
+  return leadApi.importTemplate(type, currentImportPoolId())
+}
+
+function precheckLeadImport(file: File, type: ImportType) {
+  return leadApi.importPrecheck(file, type, currentImportPoolId())
+}
+
+function downloadLeadImportErrorRows(file: File, rowNumbers: number[]) {
+  return leadApi.downloadImportErrorRows(file, rowNumbers, currentImportPoolId())
+}
+
+function executeLeadImport(file: File, type: ImportType) {
+  return leadApi.importXlsx(file, type, currentImportPoolId())
+}
 
 function transferParams(): LeadListParams {
   return {
@@ -718,12 +656,6 @@ function openConvert(row: LeadVO) {
   convertVisible.value = true
 }
 
-function openTransitionCustomer(ids: string[]) {
-  if (!canAssociateCustomer.value) return
-  transitionClueIds.value = ids
-  transitionCustomerVisible.value = true
-}
-
 const homeFilterSummary = computed(() => {
   if (!activeHomeFilter.value) return ''
   const periodLabel = activeHomeFilter.value.period
@@ -834,515 +766,284 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section
-    v-if="quickSearch && showQuickSearchPanel"
-    class="mb-4"
-    data-testid="module-search-panel"
-  >
-    <el-card shadow="never">
-      <div class="mb-4 flex items-center gap-2">
-        <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">
-          {{ isPoolMode ? '线索池查询' : '招生线索' }}
-        </h2>
-        <span class="text-xs text-[var(--el-text-color-secondary)]">按配置条件筛选线索</span>
-      </div>
+  <div class="lead-list-workspace">
+    <section v-if="quickSearch && showQuickSearchPanel" data-testid="module-search-panel">
+      <el-card shadow="never">
+        <div class="mb-4 flex items-center gap-2">
+          <h2 class="text-base font-semibold text-[var(--el-text-color-primary)]">
+            {{ isPoolMode ? '线索池查询' : '招生线索' }}
+          </h2>
+          <span class="text-xs text-[var(--el-text-color-secondary)]">按配置条件筛选线索</span>
+        </div>
+        <el-alert
+          v-if="activeHomeFilter"
+          :title="homeFilterSummary"
+          type="info"
+          show-icon
+          class="mb-4"
+          @close="clearHomeFilter"
+        />
+        <ModuleQuickSearch
+          :config="quickSearch"
+          :fields="contextFields"
+          :lead-stages="leadStages"
+          @search="handleQuickSearch"
+          @reset="resetQuickSearch"
+        />
+        <div v-if="showAdvanced" class="mt-3 flex justify-end">
+          <AdvancedFilter
+            v-model="filters"
+            :fields="contextFields"
+            :members="fieldRefs.members.value"
+            :dept-tree="fieldRefs.deptTree.value"
+            @apply="(c) => ((filters = c), handleSearch())"
+          />
+        </div>
+      </el-card>
+    </section>
+
+    <el-card shadow="never" class="lead-table-panel" data-testid="module-table-panel">
       <el-alert
-        v-if="activeHomeFilter"
+        v-if="activeHomeFilter && !showQuickSearchPanel"
         :title="homeFilterSummary"
         type="info"
         show-icon
         class="mb-4"
         @close="clearHomeFilter"
       />
-      <ModuleQuickSearch
-        :config="quickSearch"
-        :fields="contextFields"
+
+      <LeadListToolbar
+        v-model:selected-pool-id="selectedPoolId"
+        v-model:keyword-value="query.keyword"
+        v-model:status-value="query.status"
+        v-model:filters-value="filters"
+        :is-pool-mode="isPoolMode"
+        :can-import="canImport"
+        :can-export="canExport"
+        :pools="pools"
+        :items-count="items.length"
+        :total-count="total"
+        :loading="loading"
+        :show-legacy-search="showLegacySearch"
+        :show-advanced="showAdvanced"
+        :show-quick-search-panel="showQuickSearchPanel"
+        :show-saved-views="showSavedViews"
         :lead-stages="leadStages"
-        @search="handleQuickSearch"
-        @reset="resetQuickSearch"
-      />
-      <div v-if="showAdvanced" class="mt-3 flex justify-end">
-        <AdvancedFilter
-          v-model="filters"
-          :fields="contextFields"
-          :members="fieldRefs.members.value"
-          :dept-tree="fieldRefs.deptTree.value"
-          @apply="(c) => ((filters = c), handleSearch())"
-        />
-      </div>
-    </el-card>
-  </section>
-
-  <el-card shadow="never" data-testid="module-table-panel">
-    <el-alert
-      v-if="activeHomeFilter && !showQuickSearchPanel"
-      :title="homeFilterSummary"
-      type="info"
-      show-icon
-      class="mb-4"
-      @close="clearHomeFilter"
-    />
-
-    <div
-      class="mb-4 flex flex-wrap items-center justify-between gap-3"
-      data-testid="crm-table-primary-toolbar"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <template v-if="!isPoolMode">
-          <el-button v-if="auth.hasPerm('lead:create')" type="primary" @click="openCreate">
-            新建线索
-          </el-button>
-          <el-button v-if="canImport" @click="importVisible = true">导入</el-button>
-          <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">
-            导出全部
-          </el-button>
-        </template>
-        <template v-else>
-          <el-select
-            v-model="selectedPoolId"
-            class="!w-52"
-            placeholder="选择线索池"
-            @change="handlePoolChange"
-          >
-            <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
-          </el-select>
-          <el-button
-            v-if="currentPool?.editable"
-            title="设置当前线索池"
-            @click="poolSettingVisible = true"
-          >
-            设置
-          </el-button>
-          <el-button v-if="canImport" :disabled="!selectedPoolId" @click="importVisible = true">
-            导入
-          </el-button>
-          <el-button v-if="canExport" :disabled="items.length === 0" @click="openExport('all')">
-            导出全部
-          </el-button>
-        </template>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <CrmSearchInput
-          v-if="showLegacySearch"
-          v-model="query.keyword"
-          placeholder="搜索名称 / 手机号"
-          @search="handleSearch"
-        />
-        <el-select
-          v-if="showLegacySearch"
-          v-model="query.status"
-          clearable
-          placeholder="状态"
-          class="!w-32"
-          @change="handleSearch"
-        >
-          <el-option
-            v-for="stage in leadStages"
-            :key="stage.key"
-            :label="stage.enabled === false ? stage.name + '（已停用）' : stage.name"
-            :value="stage.key"
-          />
-        </el-select>
-        <AdvancedFilter
-          v-if="showAdvanced && !showQuickSearchPanel"
-          v-model="filters"
-          :fields="contextFields"
-          :members="fieldRefs.members.value"
-          :dept-tree="fieldRefs.deptTree.value"
-          @apply="(c) => ((filters = c), handleSearch())"
-        />
-        <CrmTableUtilityActions
-          :refreshing="loading"
-          @columns="savedViewBarRef?.openColumnSettings()"
-          @refresh="loadData"
-        />
-      </div>
-    </div>
-
-    <div v-show="showSavedViews">
-      <SavedViewBar
-        ref="savedViewBarRef"
-        :module="savedViewModule"
-        :fields="contextFields"
+        :context-fields="contextFields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
-        :current-filters="filters"
+        :saved-view-module="savedViewModule"
         :default-column-keys="defaultColumnKeys"
-        @change="handleSavedViewChange"
-        @clear-filters="clearTemporaryFilters"
-        @columns-change="handleSavedColumns"
+        :selected-rows="selectedRows"
+        :batch-invalid-loading="batchInvalidLoading"
+        @open-import="importVisible = true"
+        @open-create="openCreate"
+        @open-batch-transfer="openBatchTransfer"
+        @open-batch-to-pool="handleBatchToPool"
+        @open-batch-pool-assign="openBatchPoolAssign"
+        @open-export="openExport"
+        @batch-invalid="handleBatchInvalid"
+        @search="handleSearch"
+        @pool-change="handlePoolChange"
+        @refresh="loadData"
+        @saved-view-change="handleSavedViewChange"
+        @clear-temporary-filters="clearTemporaryFilters"
+        @saved-columns="handleSavedColumns"
+        @batch-pick="handleBatchPick"
+        @clear-selection="clearSelection"
       />
-    </div>
 
-    <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
-      <el-button v-if="canExport" @click="openExport('selected')">
-        导出选中（{{ selectedRows.length }}）
-      </el-button>
-
-      <template v-if="!isPoolMode">
-        <el-button v-if="auth.hasPerm('lead:transfer')" @click="openBatchTransfer">
-          批量转移
-        </el-button>
-        <el-button v-if="auth.hasPerm('lead:recycle')" @click="handleBatchToPool">
-          移入线索池
-        </el-button>
-        <el-button
-          v-if="canAssociateCustomer"
-          @click="openTransitionCustomer(selectedRows.map((row) => row.id))"
-        >
-          关联客户
-        </el-button>
-        <el-button v-if="auth.hasPerm('lead:update')" @click="batchEditVisible = true">
-          批量修改
-        </el-button>
-        <el-button
-          v-if="auth.hasPerm('lead:delete')"
-          type="danger"
-          plain
-          @click="handleBatchDelete"
-        >
-          批量删除
-        </el-button>
-      </template>
-
-      <template v-else>
-        <el-button v-if="auth.hasPerm('leadPool:pick')" @click="handleBatchPick"
-          >批量领取</el-button
-        >
-        <el-button v-if="auth.hasPerm('leadPool:assign')" @click="openBatchPoolAssign">
-          批量分配
-        </el-button>
-        <el-button v-if="auth.hasPerm('leadPool:update')" @click="batchEditVisible = true">
-          批量修改
-        </el-button>
-        <el-button
-          v-if="auth.hasPerm('leadPool:delete')"
-          type="danger"
-          plain
-          @click="handleBatchDelete"
-        >
-          批量删除
-        </el-button>
-      </template>
-    </div>
-
-    <el-table
-      v-loading="loading"
-      :data="items"
-      row-key="id"
-      stripe
-      class="w-full"
-      @selection-change="handleSelectionChange"
-    >
-      <el-table-column
-        v-if="
-          (!isPoolMode &&
-            (canExport ||
-              auth.hasPerm('lead:transfer') ||
-              auth.hasPerm('lead:recycle') ||
-              auth.hasPerm('lead:update') ||
-              auth.hasPerm('lead:delete'))) ||
-          (isPoolMode &&
-            (canExport ||
-              auth.hasPerm('leadPool:pick') ||
-              auth.hasPerm('leadPool:assign') ||
-              auth.hasPerm('leadPool:update') ||
-              auth.hasPerm('leadPool:delete')))
-        "
-        type="selection"
-        width="46"
-      />
-      <el-table-column
-        v-for="column in listColumns"
-        :key="column.key"
-        :label="column.label"
-        :min-width="column.listWidth ?? 140"
-        show-overflow-tooltip
-      >
-        <template #default="{ row }">
-          <el-button
-            v-if="column.key === 'name'"
-            link
-            type="primary"
-            @click="openOverview(row as LeadVO)"
-          >
-            {{
-              formatFieldValue(column, row, {
-                memberMap: fieldRefs.memberMap.value,
-                deptMap: fieldRefs.deptMap.value,
-              })
-            }}
-          </el-button>
-          <template v-else>
-            {{
-              formatFieldValue(column, row, {
-                memberMap: fieldRefs.memberMap.value,
-                deptMap: fieldRefs.deptMap.value,
-              })
-            }}
-          </template>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="150">
-        <template #default="{ row }">
-          <el-select
-            v-if="!isPoolMode && auth.hasPerm('lead:update') && !row.transitionId"
-            :model-value="row.status"
-            size="small"
-            class="w-full"
-            @change="handleStageChange(row as LeadVO, String($event))"
-          >
-            <el-option
-              v-for="stage in leadStages"
-              :key="stage.key"
-              :label="stage.name"
-              :value="stage.key"
-              :disabled="stage.enabled === false"
-            />
-          </el-select>
-          <el-tag v-else :type="leadStageTagType(row.status)" size="small">
-            {{ leadStageLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="最近跟进" width="110">
-        <template #default="{ row }">
-          {{ row.lastFollowedAt ? new Date(row.lastFollowedAt).toLocaleDateString() : '-' }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="250" fixed="right">
-        <template #default="{ row }">
-          <template v-if="isPoolMode">
-            <el-button
-              v-if="auth.hasPerm('leadPool:pick')"
-              link
-              type="primary"
-              @click="handleClaim(row as LeadVO)"
-            >
-              领取
-            </el-button>
-            <el-button
-              v-if="auth.hasPerm('leadPool:assign')"
-              link
-              @click="handleAssign(row as LeadVO)"
-            >
-              分配
-            </el-button>
-            <el-button
-              v-if="auth.hasPerm('leadPool:delete')"
-              link
-              type="danger"
-              @click="handleDelete(row as LeadVO)"
-            >
-              删除
-            </el-button>
-          </template>
-          <template v-else-if="row.transitionType !== 'CUSTOMER'">
-            <el-button v-if="auth.hasPerm('lead:update')" link @click="openEdit(row as LeadVO)">
-              编辑
-            </el-button>
-            <el-button v-if="auth.hasPerm('lead:update')" link @click="openFollow(row as LeadVO)">
-              跟进
-            </el-button>
-            <el-button
-              v-if="canManualConvert"
-              link
-              type="primary"
-              @click="openConvert(row as LeadVO)"
-            >
-              转换
-            </el-button>
-            <el-dropdown trigger="click">
-              <el-button link>更多</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('lead:recycle')"
-                    @click="handleToPool(row as LeadVO)"
-                  >
-                    移入线索池
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('lead:transfer')"
-                    @click="handleAssign(row as LeadVO)"
-                  >
-                    转移
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="auth.hasPerm('lead:delete')"
-                    divided
-                    @click="handleDelete(row as LeadVO)"
-                  >
-                    删除
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
-          <span v-else>-</span>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <div class="flex justify-end mt-4">
-      <el-pagination
-        v-model:current-page="query.page"
+      <LeadListTable
+        ref="leadListTableRef"
+        v-model:page="query.page"
         v-model:page-size="query.pageSize"
+        :items="items"
+        :loading="loading"
+        :is-pool-mode="isPoolMode"
+        :can-export="canExport"
+        :can-manual-convert="canManualConvert"
+        :list-columns="listColumns"
+        :lead-stages="leadStages"
+        :member-map="fieldRefs.memberMap.value"
+        :dept-map="fieldRefs.deptMap.value"
         :total="total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="loadData"
+        @selection-change="handleSelectionChange"
+        @stage-change="handleStageChange"
+        @open-overview="openOverview"
+        @claim="handleClaim"
+        @assign="handleAssign"
+        @remove="handleDelete"
+        @edit="openEdit"
+        @follow="openFollow"
+        @convert="openConvert"
+        @to-pool="handleToPool"
+        @page-change="loadData"
         @size-change="handleSearch"
       />
-    </div>
 
-    <CrmDialog
-      v-model="dialogVisible"
-      :title="editingId ? '编辑线索' : '新建线索'"
-      :width="formDialogWidth"
-      destroy-on-close
-    >
-      <DynamicForm
-        ref="dynamicFormRef"
-        v-model="formModel"
-        :fields="fields"
+      <CrmDialog
+        v-model="dialogVisible"
+        :title="editingId ? '编辑线索' : '新建线索'"
+        :width="formDialogWidth"
+        destroy-on-close
+      >
+        <DynamicForm
+          ref="dynamicFormRef"
+          v-model="formModel"
+          :fields="fields"
+          :members="fieldRefs.members.value"
+          :dept-tree="fieldRefs.deptTree.value"
+          :form-prop="formProp"
+        />
+        <template #footer>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        </template>
+      </CrmDialog>
+
+      <LeadOverviewDrawer
+        v-model="overviewVisible"
+        :mode="isPoolMode ? 'pool' : 'lead'"
+        :lead="overviewTarget"
+        :fields="contextFields"
+        :lead-stages="leadStages"
+        :can-convert="canManualConvert"
+        @edit="handleOverviewEdit"
+        @convert="handleOverviewConvert"
+        @to-pool="handleOverviewToPool"
+        @transfer="handleOverviewTransfer"
+        @delete="handleOverviewDelete"
+        @claim="handleOverviewClaim"
+        @assign="handleOverviewAssign"
+        @changed="loadData"
+      />
+
+      <LeadTransformDialog
+        v-model="convertVisible"
+        :lead="convertTarget"
+        @success="loadData"
+        @finish="loadData"
+      />
+
+      <FollowUpDrawer
+        v-model="followVisible"
+        target-type="lead"
+        :target-id="followTarget?.id ?? null"
+        :target-name="followTarget?.name"
+        @followed="loadData"
+      />
+
+      <MemberSelectDialog
+        v-model="assignVisible"
+        :title="`分配线索「${assignTarget?.name ?? ''}」`"
+        :members="fieldRefs.members.value"
+        @confirm="handleAssignConfirm"
+      />
+
+      <LeadTransferDialog
+        v-model="transferVisible"
+        :count="1"
+        :members="fieldRefs.members.value"
+        :loading="transferSaving"
+        @confirm="handleTransferConfirm"
+      />
+
+      <LeadTransferDialog
+        v-model="batchTransferVisible"
+        :count="selectedRows.length"
+        :members="fieldRefs.members.value"
+        :loading="transferSaving"
+        @confirm="handleBatchTransferConfirm"
+      />
+
+      <MemberSelectDialog
+        v-model="batchPoolAssignVisible"
+        :title="`批量分配 ${selectedRows.length} 条线索`"
+        :members="fieldRefs.members.value"
+        @confirm="handleBatchPoolAssignConfirm"
+      />
+
+      <LeadMoveToPoolDialog
+        v-model="moveToPoolVisible"
+        :title="moveToPoolBatch ? '批量移入线索池' : '移入线索池'"
+        :description="
+          moveToPoolBatch
+            ? `确定将已选择的 ${selectedRows.length} 条线索移入线索池？`
+            : `将「${moveToPoolTarget?.name ?? ''}」移入线索池？`
+        "
+        @confirm="confirmMoveToPool"
+      />
+
+      <CrmResourceImportDialog
+        v-model="importVisible"
+        :module-label="isPoolMode ? '线索池' : '线索'"
+        :download-template="downloadLeadImportTemplate"
+        :download-error-rows="downloadLeadImportErrorRows"
+        :precheck="precheckLeadImport"
+        :execute="executeLeadImport"
+        @success="loadData"
+      />
+
+      <CrmExportDrawer
+        v-model="exportVisible"
+        :module-label="isPoolMode ? '线索池' : '线索'"
+        :cache-key="isPoolMode ? `lead-pool:${selectedPoolId}` : 'lead'"
+        :fields="contextFields"
+        :display-fields="[
+          { key: 'status', label: '状态' },
+          { key: 'lastFollowedAt', label: '最近跟进' },
+          { key: 'createdAt', label: '创建时间' },
+          { key: 'updatedAt', label: '更新时间' },
+        ]"
+        :mode="exportMode"
+        :selected-count="selectedRows.length"
+        :loading="exportLoading"
+        @confirm="handleExportConfirm"
+      />
+
+      <BatchFieldEditDialog
+        v-model="batchEditVisible"
+        title="批量修改线索"
+        :fields="contextFields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
-        :form-prop="formProp"
+        :selected-count="selectedRows.length"
+        @confirm="handleBatchEdit"
       />
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-      </template>
-    </CrmDialog>
-
-    <LeadOverviewDrawer
-      v-model="overviewVisible"
-      :mode="isPoolMode ? 'pool' : 'lead'"
-      :lead="overviewTarget"
-      :fields="contextFields"
-      @edit="handleOverviewEdit"
-      @convert="handleOverviewConvert"
-      :can-convert="canManualConvert"
-      @to-pool="handleOverviewToPool"
-      @transfer="handleOverviewTransfer"
-      @delete="handleOverviewDelete"
-      @claim="handleOverviewClaim"
-      @assign="handleOverviewAssign"
-    />
-
-    <LeadTransformDialog
-      v-model="convertVisible"
-      :lead="convertTarget"
-      @success="loadData"
-      @finish="loadData"
-    />
-
-    <LeadTransitionCustomerDrawer
-      v-model="transitionCustomerVisible"
-      :clue-ids="transitionClueIds"
-      @finish="loadData"
-    />
-
-    <FollowUpDrawer
-      v-model="followVisible"
-      target-type="lead"
-      :target-id="followTarget?.id ?? null"
-      :target-name="followTarget?.name"
-      @followed="loadData"
-    />
-
-    <MemberSelectDialog
-      v-model="assignVisible"
-      :title="`分配线索「${assignTarget?.name ?? ''}」`"
-      :members="fieldRefs.members.value"
-      @confirm="handleAssignConfirm"
-    />
-
-    <LeadTransferDialog
-      v-model="transferVisible"
-      :count="1"
-      :members="fieldRefs.members.value"
-      :loading="transferSaving"
-      @confirm="handleTransferConfirm"
-    />
-
-    <LeadTransferDialog
-      v-model="batchTransferVisible"
-      :count="selectedRows.length"
-      :members="fieldRefs.members.value"
-      :loading="transferSaving"
-      @confirm="handleBatchTransferConfirm"
-    />
-
-    <MemberSelectDialog
-      v-model="batchPoolAssignVisible"
-      :title="`批量分配 ${selectedRows.length} 条线索`"
-      :members="fieldRefs.members.value"
-      @confirm="handleBatchPoolAssignConfirm"
-    />
-
-    <LeadPoolQuickSettingDrawer
-      v-model="poolSettingVisible"
-      :pool="currentPool"
-      :fields="fields"
-      @saved="handlePoolSettingSaved"
-    />
-
-    <LeadMoveToPoolDialog
-      v-model="moveToPoolVisible"
-      :title="moveToPoolBatch ? '批量移入线索池' : '移入线索池'"
-      :description="
-        moveToPoolBatch
-          ? `确定将已选择的 ${selectedRows.length} 条线索移入线索池？`
-          : `将「${moveToPoolTarget?.name ?? ''}」移入线索池？`
-      "
-      @confirm="confirmMoveToPool"
-    />
-
-    <CrmImportDialog
-      v-model="importVisible"
-      :module-label="isPoolMode ? '线索池' : '线索'"
-      :download-template="
-        (type) => leadApi.importTemplate(type, isPoolMode ? selectedPoolId || undefined : undefined)
-      "
-      :precheck="
-        (file, type) =>
-          leadApi.importPrecheck(file, type, isPoolMode ? selectedPoolId || undefined : undefined)
-      "
-      :execute="
-        (file, type) =>
-          leadApi.importXlsx(file, type, isPoolMode ? selectedPoolId || undefined : undefined)
-      "
-      @success="loadData"
-    />
-
-    <CrmExportDrawer
-      v-model="exportVisible"
-      :module-label="isPoolMode ? '线索池' : '线索'"
-      :cache-key="isPoolMode ? `lead-pool:${selectedPoolId}` : 'lead'"
-      :fields="contextFields"
-      :display-fields="[
-        { key: 'status', label: '状态' },
-        { key: 'lastFollowedAt', label: '最近跟进' },
-        { key: 'createdAt', label: '创建时间' },
-        { key: 'updatedAt', label: '更新时间' },
-      ]"
-      :mode="exportMode"
-      :selected-count="selectedRows.length"
-      :loading="exportLoading"
-      @confirm="handleExportConfirm"
-    />
-
-    <BatchFieldEditDialog
-      v-model="batchEditVisible"
-      title="批量修改线索"
-      :fields="contextFields"
-      :members="fieldRefs.members.value"
-      :dept-tree="fieldRefs.deptTree.value"
-      :selected-count="selectedRows.length"
-      @confirm="handleBatchEdit"
-    />
-  </el-card>
+    </el-card>
+  </div>
 </template>
+
+<style scoped>
+/* 列表工作区填满 el-main 的可视高度，由表格内部承担纵向滚动。 */
+.lead-list-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: min-content;
+  min-width: 0;
+}
+
+.lead-list-workspace > [data-testid='module-search-panel'] {
+  flex: none;
+}
+
+.lead-table-panel {
+  --el-card-border-radius: 8px;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 260px;
+  border-radius: 8px;
+}
+.lead-table-panel :deep(.el-card__body) {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 20px;
+}
+</style>

@@ -377,6 +377,17 @@ export const leadApi = {
       params: { importType },
       responseType: 'blob',
     }),
+  downloadImportErrorRows: (file: File, rowNumbers: number[], poolId?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('rowNumbers', JSON.stringify(rowNumbers))
+    if (poolId) form.append('poolId', poolId)
+    return http.post<Blob>(
+      poolId ? '/pool/lead/import/error-rows/download' : '/lead/import/error-rows/download',
+      form,
+      { responseType: 'blob' },
+    )
+  },
   importPrecheck: (file: File, importType: ImportType, poolId?: string) =>
     http.post<ImportResult>(
       poolId ? '/pool/lead/import/pre-check' : '/lead/import/pre-check',
@@ -735,6 +746,14 @@ export const contactApi = {
     ),
   importTemplate: (_importType: ImportType) =>
     http.get<Blob>('/account/contact/template/download', { responseType: 'blob' }),
+  downloadImportErrorRows: (file: File, rowNumbers: number[]) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('rowNumbers', JSON.stringify(rowNumbers))
+    return http.post<Blob>('/account/contact/import/error-rows/download', form, {
+      responseType: 'blob',
+    })
+  },
   importPrecheck: (file: File, importType: ImportType) =>
     http.post<ImportResult>(
       '/account/contact/import/pre-check',

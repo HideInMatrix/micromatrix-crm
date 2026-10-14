@@ -25,7 +25,10 @@ import type {
 } from '../common/dto/resource-batch.dto'
 import { formatForExport } from '../common/export-format'
 import { parseFilters } from '../common/filter-builder'
-import { validateQuickSearchGroups, resolveQuickSearchGroupIds } from '../common/quick-search-groups'
+import {
+  validateQuickSearchGroups,
+  resolveQuickSearchGroupIds,
+} from '../common/quick-search-groups'
 import { DataScopeService } from '../common/services/data-scope.service'
 import { BusinessChangeLogService } from '../common/services/business-change-log.service'
 import { and, not, or } from '@prisma/orm-postgres/orm-client'
@@ -363,9 +366,8 @@ export class CustomersService {
         : null,
     ])
     const presetGroups = validateQuickSearchGroups(query.quickGroups, fields)
-    const presetIds = await resolveQuickSearchGroupIds(
-      presetGroups,
-      (conditions, mode) => this.filterCustomerIds(user.tenantId, conditions, mode),
+    const presetIds = await resolveQuickSearchGroupIds(presetGroups, (conditions, mode) =>
+      this.filterCustomerIds(user.tenantId, conditions, mode),
     )
     const filteredIds = this.intersectIds(this.intersectIds(savedIds, adHocIds), presetIds)
 
@@ -700,22 +702,22 @@ export class CustomersService {
       ...contacts.flatMap((contact) => (contact.customerId ? [contact.customerId] : [])),
     ]
     const [inScopeCustomers, inScopeLeads, ownerMap, customerValues] = await Promise.all([
-        this.inScopeCustomerIds(user, customerIds),
-        this.inScopeLeadIds(
-          user,
-          leads.map((lead) => lead.id),
-        ),
-        this.userNames([
-          ...customers.map((customer) => customer.owner),
-          ...contacts.map((contact) => contact.customer?.owner),
-          ...leads.map((lead) => lead.owner),
-        ]),
-        this.fieldValues.load(
-          user.tenantId,
-          'customer',
-          customers.map((customer) => customer.id),
-        ),
-      ])
+      this.inScopeCustomerIds(user, customerIds),
+      this.inScopeLeadIds(
+        user,
+        leads.map((lead) => lead.id),
+      ),
+      this.userNames([
+        ...customers.map((customer) => customer.owner),
+        ...contacts.map((contact) => contact.customer?.owner),
+        ...leads.map((lead) => lead.owner),
+      ]),
+      this.fieldValues.load(
+        user.tenantId,
+        'customer',
+        customers.map((customer) => customer.id),
+      ),
+    ])
 
     const hits: DuplicateHitVO[] = []
     for (const row of customers) {
@@ -908,10 +910,7 @@ export class CustomersService {
     if (entries.length === 0) throw new BadRequestException('至少需要一个客户更新字段')
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
     const fieldMap = new Map(
-      fields.flatMap((field) => [
-        [field.id, field] as const,
-        [field.key, field] as const,
-      ]),
+      fields.flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
     )
     const values: Record<string, unknown> = {}
     for (const [identity, value] of entries) {
@@ -936,11 +935,7 @@ export class CustomersService {
    * 为需要由调用方统一持有事务的集成场景准备 Customer 动态字段更新。
    * 只接受当前 Customer 表单中的非系统可写字段，并把 field id/key 归一成稳定 key。
    */
-  async prepareDynamicFieldUpdate(
-    user: AuthUser,
-    id: string,
-    input: Record<string, unknown>,
-  ) {
+  async prepareDynamicFieldUpdate(user: AuthUser, id: string, input: Record<string, unknown>) {
     const existing = await this.ensureInScope(user, id, 'customer:update')
     const values = await this.normalizeWritableDynamicFields(user, input)
     await this.fieldValues.validate(user.tenantId, 'customer', values, {
@@ -2492,6 +2487,20 @@ export class CustomersService {
     }
   }
 
+  /** 从上传 Excel 中提取校验失败的原始数据行；公海下载遵循现有池成员权限。 */
+  async exportImportErrorRows(
+    user: AuthUser,
+    file: Buffer,
+    rowNumbersJson: string,
+    poolId?: string,
+  ): Promise<Buffer> {
+    if (poolId) await this.pools.assertPoolMember(user, 'customer', poolId)
+    return this.spreadsheet.extractErrorRowsXlsx(
+      file,
+      this.spreadsheet.parseErrorRowNumbers(rowNumbersJson),
+    )
+  }
+
   async precheckImportXlsx(
     user: AuthUser,
     file: Buffer,
@@ -2527,8 +2536,15 @@ export class CustomersService {
           errors.push(error instanceof Error ? error.message : '数据校验失败')
         }
       }
-      if (errors.length > 0) errorMessages.push({ rowNum: row.rowNum, errMsg: errors.join('；') })
-      else successCount++
+      if (errors.length > 0) {
+        errorMessages.push({
+          rowNum: row.rowNum,
+          errMsg: errors.join('；'),
+          category: errors.some((message) => /重复|已存在|不能重复/.test(message))
+            ? 'duplicate'
+            : 'invalid',
+        })
+      } else successCount++
     }
     return { successCount, failCount: errorMessages.length, errorMessages }
   }
@@ -2577,7 +2593,15 @@ export class CustomersService {
           errors.push(error instanceof Error ? error.message : '导入失败')
         }
       }
-      if (errors.length > 0) errorMessages.push({ rowNum: row.rowNum, errMsg: errors.join('；') })
+      if (errors.length > 0) {
+        errorMessages.push({
+          rowNum: row.rowNum,
+          errMsg: errors.join('；'),
+          category: errors.some((message) => /重复|已存在|不能重复/.test(message))
+            ? 'duplicate'
+            : 'invalid',
+        })
+      }
     }
     return { successCount, failCount: errorMessages.length, errorMessages }
   }
@@ -2631,9 +2655,10 @@ export class CustomersService {
       ['updatedAt', '更新时间'],
       ['lastFollowedAt', '最近跟进'],
     ])
-    const columns = input.headList.map((key) => {
+    // 更新导入按系统记录 ID 精确匹配，导出的客户及客户公海数据始终保留该列。
+    const columns = ['id', ...input.headList.filter((key) => key !== 'id')].map((key) => {
       const field = fieldMap.get(key)
-      const extraLabel = extraColumns.get(key)
+      const extraLabel = key === 'id' ? '唯一ID' : extraColumns.get(key)
       if (!field && !extraLabel) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
       return { key, label: field?.label ?? (extraLabel as string) }
     })

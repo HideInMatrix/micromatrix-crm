@@ -555,6 +555,19 @@ export class ContactsService {
     }
   }
 
+  /** 联系人导入错误行沿用与线索相同的原始 Excel 提取逻辑。 */
+  async exportImportErrorRows(
+    user: AuthUser,
+    file: Buffer,
+    rowNumbersJson: string,
+  ): Promise<Buffer> {
+    this.assertIndependentImportPermission(user)
+    return this.spreadsheet.extractErrorRowsXlsx(
+      file,
+      this.spreadsheet.parseErrorRowNumbers(rowNumbersJson),
+    )
+  }
+
   async precheckImportXlsx(
     user: AuthUser,
     file: Buffer,
@@ -576,8 +589,15 @@ export class ContactsService {
           rowErrors.push(error instanceof Error ? error.message : '联系人校验失败')
         }
       }
-      if (rowErrors.length) errors.push({ rowNum: row.rowNum, errMsg: rowErrors.join('；') })
-      else successCount++
+      if (rowErrors.length) {
+        errors.push({
+          rowNum: row.rowNum,
+          errMsg: rowErrors.join('；'),
+          category: rowErrors.some((message) => /重复|已存在|不能重复/.test(message))
+            ? 'duplicate'
+            : 'invalid',
+        })
+      } else successCount++
     }
     return { successCount, failCount: errors.length, errorMessages: errors }
   }
@@ -621,7 +641,15 @@ export class ContactsService {
           rowErrors.push(error instanceof Error ? error.message : '联系人导入失败')
         }
       }
-      if (rowErrors.length) errors.push({ rowNum: row.rowNum, errMsg: rowErrors.join('；') })
+      if (rowErrors.length) {
+        errors.push({
+          rowNum: row.rowNum,
+          errMsg: rowErrors.join('；'),
+          category: rowErrors.some((message) => /重复|已存在|不能重复/.test(message))
+            ? 'duplicate'
+            : 'invalid',
+        })
+      }
     }
     return { successCount, failCount: errors.length, errorMessages: errors }
   }
@@ -670,9 +698,10 @@ export class ContactsService {
       ['createdAt', '创建时间'],
       ['updatedAt', '更新时间'],
     ])
-    const columns = input.headList.map((key) => {
+    // 联系人更新同样以系统唯一ID为准，导出文件保留该列可直接编辑后回传。
+    const columns = ['id', ...input.headList.filter((key) => key !== 'id')].map((key) => {
       const field = fieldMap.get(key) ?? (key === 'ownerId' ? fieldMap.get('owner') : undefined)
-      const extraLabel = extra.get(key)
+      const extraLabel = key === 'id' ? '唯一ID' : extra.get(key)
       if (!field && !extraLabel) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
       return { key, label: field?.label ?? (extraLabel as string) }
     })

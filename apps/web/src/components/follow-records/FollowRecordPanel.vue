@@ -8,6 +8,7 @@ import { useFollowRecords } from '@/composables/useFollowRecords'
 import FollowCommentPanel from './FollowCommentPanel.vue'
 import FollowRecordFormDrawer from './FollowRecordFormDrawer.vue'
 import FollowRecordTimeline from './FollowRecordTimeline.vue'
+import CustomerFollowRecordTimeline from '@/components/customer/CustomerFollowRecordTimeline.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -17,8 +18,16 @@ const props = withDefaults(
     autoLoad?: boolean
     allowCreate?: boolean
     allowManage?: boolean
+    detail?: boolean
+    refreshKey?: number
   }>(),
-  { targetName: '', autoLoad: true, allowCreate: true, allowManage: true },
+  {
+    targetName: '',
+    autoLoad: true,
+    allowCreate: true,
+    allowManage: true,
+    refreshKey: 0,
+  },
 )
 
 const emit = defineEmits<{ changed: [] }>()
@@ -96,7 +105,7 @@ async function handleSaved() {
 }
 
 watch(
-  () => [props.targetType, props.targetId] as const,
+  () => [props.targetType, props.targetId, props.refreshKey] as const,
   () => {
     if (props.autoLoad) void load()
   },
@@ -106,7 +115,7 @@ onMounted(() => {
   if (props.autoLoad) void load()
 })
 
-defineExpose({ refresh })
+defineExpose({ refresh, openCreate })
 </script>
 
 <template>
@@ -115,7 +124,34 @@ defineExpose({ refresh })
     :data-target-type="targetType"
     :data-target-id="targetId ?? undefined"
   >
+    <CustomerFollowRecordTimeline
+      v-if="detail"
+      :records="records"
+      :loading="loading"
+      :allow-manage="allowManage"
+      @edit="openEdit"
+      @remove="removeRecord"
+      @comments="openComments"
+    >
+      <template #comments="{ record }">
+        <el-collapse-transition>
+          <div
+            v-if="commentRecord?.id === record.id"
+            class="mt-3 border-t border-[var(--el-border-color-lighter)] pt-3"
+            data-testid="follow-comment-panel"
+          >
+            <FollowCommentPanel
+              resource-type="record"
+              :resource-id="record.id"
+              :members="fieldRefs.members.value"
+              @count-changed="handleCommentCount"
+            />
+          </div>
+        </el-collapse-transition>
+      </template>
+    </CustomerFollowRecordTimeline>
     <FollowRecordTimeline
+      v-else
       :records="records"
       :loading="loading"
       :allow-create="allowCreate"
@@ -150,6 +186,7 @@ defineExpose({ refresh })
       :target-id="targetId"
       :target-name="targetName"
       :record-id="editingRecordId"
+      :append-to-body="detail"
       @saved="handleSaved"
     />
   </div>

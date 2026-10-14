@@ -101,7 +101,7 @@ html:not(.dark) {
 /* CRM PC 通用弹窗：只约束 CrmDialog 外壳，不影响抽屉、Popconfirm 和普通页面按钮。 */
 .crm-dialog.el-dialog {
   --el-dialog-border-radius: 16px;
-  --el-dialog-bg-color: #FFFFFF;
+  --el-dialog-bg-color: #ffffff;
   --el-dialog-padding-primary: 0px;
   /* 保留 Header / Footer 的空间，超长内容仅在 Body 内滚动。 */
   display: flex;
@@ -114,7 +114,7 @@ html:not(.dark) {
 }
 
 .crm-dialog .el-dialog__header > div {
-  border-bottom: 1px solid #F0F0F0;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .crm-dialog .el-dialog__header .el-dialog__title {
@@ -171,10 +171,12 @@ html:not(.dark) {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .crm-dialog .crm-dialog-actions .el-button {
+  width: 88px;
+  height: 36px;
   border-radius: 4px;
   font-size: 14px;
   font-weight: 400;
@@ -184,16 +186,20 @@ html:not(.dark) {
   margin-left: 0;
 }
 
-.crm-dialog .crm-dialog-actions .el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--success):not(.el-button--warning):not(.el-button--info) {
-  background: #FFFFFF;
-  border-color: #DCDFE6;
+.crm-dialog
+  .crm-dialog-actions
+  .el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--success):not(
+    .el-button--warning
+  ):not(.el-button--info) {
+  background: #ffffff;
+  border: 1px solid #dcdfe6;
   color: #606266;
 }
 
 .crm-dialog .crm-dialog-actions .el-button--primary {
-  background: #1580FF;
-  border-color: #1580FF;
-  color: #FFFFFF;
+  background: var(--el-color-primary);
+  border: 1px solid var(--el-color-primary);
+  color: #ffffff;
 }
 
 /* PC 表格操作列统一使用同一条垂直基线。

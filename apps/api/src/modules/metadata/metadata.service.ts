@@ -36,24 +36,42 @@ export class MetadataService {
     module: string,
     patch: Pick<
       ModuleFormProp,
-      'layout' | 'labelPos' | 'labelAlign' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics' | 'quickSearch'
+      | 'layout'
+      | 'labelPos'
+      | 'labelAlign'
+      | 'viewSize'
+      | 'leadUniqueScope'
+      | 'leadStages'
+      | 'homeAnalytics'
+      | 'quickSearch'
     >,
     actorId: string,
   ) {
     const current = await this.moduleForms.getConfig(organizationId, module)
     if (patch.quickSearch) {
-      if (!Array.isArray(patch.quickSearch.items) || patch.quickSearch.items.length > 12 ||
-          typeof patch.quickSearch.enabled !== 'boolean' ||
-          typeof patch.quickSearch.showAdvancedFilter !== 'boolean' ||
-          typeof patch.quickSearch.showSavedViews !== 'boolean') {
+      if (
+        !Array.isArray(patch.quickSearch.items) ||
+        patch.quickSearch.items.length > 12 ||
+        typeof patch.quickSearch.enabled !== 'boolean' ||
+        typeof patch.quickSearch.showAdvancedFilter !== 'boolean' ||
+        typeof patch.quickSearch.showSavedViews !== 'boolean'
+      ) {
         throw new BadRequestException('快捷搜索配置格式错误')
       }
       const ids = new Set<string>()
       for (const item of patch.quickSearch.items) {
-        if (!item || typeof item.id !== 'string' || !/^[\w-]{1,64}$/.test(item.id) || ids.has(item.id) ||
-            typeof item.label !== 'string' || !item.label.trim() || item.label.length > 40 ||
-            !['field', 'preset_select'].includes(item.kind) ||
-            (item.placeholder !== undefined && (typeof item.placeholder !== 'string' || item.placeholder.length > 100))) {
+        if (
+          !item ||
+          typeof item.id !== 'string' ||
+          !/^[\w-]{1,64}$/.test(item.id) ||
+          ids.has(item.id) ||
+          typeof item.label !== 'string' ||
+          !item.label.trim() ||
+          item.label.length > 40 ||
+          !['field', 'preset_select'].includes(item.kind) ||
+          (item.placeholder !== undefined &&
+            (typeof item.placeholder !== 'string' || item.placeholder.length > 100))
+        ) {
           throw new BadRequestException('快捷搜索项无效或重复')
         }
         ids.add(item.id)
@@ -61,7 +79,9 @@ export class MetadataService {
       if (module !== 'lead' && module !== 'customer') {
         throw new BadRequestException('当前模块不支持快捷搜索设置')
       }
-      const validFields = new Map(current.fields.filter((field) => !field.hidden).map((field) => [field.key, field]))
+      const validFields = new Map(
+        current.fields.filter((field) => !field.hidden).map((field) => [field.key, field]),
+      )
       for (const item of patch.quickSearch.items) {
         if (item.kind === 'preset_select') {
           if (!Array.isArray(item.options) || !item.options.length || item.options.length > 30) {
@@ -69,21 +89,45 @@ export class MetadataService {
           }
           const optionIds = new Set<string>()
           for (const option of item.options) {
-            if (!option || typeof option.id !== 'string' || !/^[\w-]{1,64}$/.test(option.id) ||
-                optionIds.has(option.id) || typeof option.label !== 'string' ||
-                !option.label.trim() || option.label.length > 40 ||
-                !Array.isArray(option.conditions) || !option.conditions.length) {
+            if (
+              !option ||
+              typeof option.id !== 'string' ||
+              !/^[\w-]{1,64}$/.test(option.id) ||
+              optionIds.has(option.id) ||
+              typeof option.label !== 'string' ||
+              !option.label.trim() ||
+              option.label.length > 40 ||
+              !Array.isArray(option.conditions) ||
+              !option.conditions.length
+            ) {
               throw new BadRequestException('预设下拉选项配置不正确')
             }
             optionIds.add(option.id)
-            validateQuickSearchGroups([{ mode: option.searchMode, conditions: option.conditions }], current.fields)
+            validateQuickSearchGroups(
+              [{ mode: option.searchMode, conditions: option.conditions }],
+              current.fields,
+            )
           }
           continue
         }
         if (item.kind !== 'field') continue
         const field = validFields.get(item.fieldKey ?? '')
         if (!field) throw new BadRequestException(`快捷搜索字段不存在或已隐藏：${item.fieldKey}`)
-        if (!['text', 'textarea', 'phone', 'email', 'number', 'currency', 'percent', 'date', 'datetime', 'select', 'radio'].includes(field.type)) {
+        if (
+          ![
+            'text',
+            'textarea',
+            'phone',
+            'email',
+            'number',
+            'currency',
+            'percent',
+            'date',
+            'datetime',
+            'select',
+            'radio',
+          ].includes(field.type)
+        ) {
           throw new BadRequestException(`字段「${field.label}」类型暂不支持快捷搜索`)
         }
         const supported = ['text', 'textarea', 'phone', 'email'].includes(field.type)
@@ -93,6 +137,27 @@ export class MetadataService {
             : ['eq']
         if (!supported.includes(item.operator ?? '')) {
           throw new BadRequestException(`字段「${field.label}」搜索操作符不支持`)
+        }
+        // 同一输入框中的额外字段采用 OR，只允许文本类字段共用同一个关键字。
+        if (item.fieldKeys !== undefined) {
+          if (
+            !Array.isArray(item.fieldKeys) ||
+            item.fieldKeys.length > 7 ||
+            new Set(item.fieldKeys).size !== item.fieldKeys.length ||
+            item.fieldKeys.some((key: unknown) => typeof key !== 'string' || key === item.fieldKey)
+          ) {
+            throw new BadRequestException('快捷搜索的额外匹配字段无效、重复或超过数量限制')
+          }
+          if (
+            item.fieldKeys.length &&
+            (!['text', 'textarea', 'phone', 'email'].includes(field.type) ||
+              item.fieldKeys.some((key: string) => {
+                const other = validFields.get(key)
+                return !other || !['text', 'textarea', 'phone', 'email'].includes(other.type)
+              }))
+          ) {
+            throw new BadRequestException('多字段关键字搜索只能关联未隐藏的文本类字段')
+          }
         }
       }
     }
@@ -225,12 +290,7 @@ export class MetadataService {
     return this.moduleForms.updateField(organizationId, id, dto, actorId)
   }
 
-  saveFormDesign(
-    organizationId: string,
-    module: string,
-    dto: SaveModuleFormDto,
-    actorId: string,
-  ) {
+  saveFormDesign(organizationId: string, module: string, dto: SaveModuleFormDto, actorId: string) {
     return this.moduleForms.saveDesign(organizationId, module, dto.fields, dto.formProp, actorId)
   }
 

@@ -1,0 +1,140 @@
+/* CRM 业务数据列表统一呈现，仅匹配明确接入的页面，不影响其他 Element Plus 表格。 */
+.crm-data-list-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: min-content;
+  min-width: 0;
+}
+
+.crm-data-list-workspace > [data-testid='module-search-panel'] {
+  flex: none;
+}
+
+.crm-data-list-panel.el-card {
+  --el-card-border-radius: 8px;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 260px;
+  border-radius: 8px;
+}
+
+.crm-data-list-panel > .el-card__body {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 20px;
+}
+
+.crm-data-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.crm-data-list-toolbar .el-button + .el-button {
+  margin-left: 0;
+}
+
+.crm-data-list-toolbar .crm-data-list-toolbar__action.el-button {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 36px;
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 400;
+  gap: 6px;
+}
+
+.crm-data-list-toolbar .crm-data-list-toolbar__action.el-button > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-data-list-toolbar .crm-data-list-toolbar__outline.el-button {
+  --el-button-bg-color: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
+  --el-button-border-color: var(--el-color-primary);
+  --el-button-text-color: var(--el-color-primary);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+  --el-button-hover-border-color: var(--el-color-primary);
+  --el-button-hover-text-color: var(--el-color-primary);
+}
+
+.crm-data-list-toolbar .crm-data-list-toolbar__primary.el-button {
+  --el-button-bg-color: var(--el-color-primary);
+  --el-button-border-color: var(--el-color-primary);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--el-color-primary-light-3);
+  --el-button-hover-border-color: var(--el-color-primary-light-3);
+}
+
+/* 仅表格数据区滚动；Element Plus 的 height=100% 保持表头固定。 */
+.crm-data-list-table {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.crm-data-list-table > .el-table {
+  --el-table-header-bg-color: #f5f7fa;
+  --el-table-header-text-color: #606266;
+  --el-table-text-color: #606266;
+  min-height: 0;
+  font-size: 14px;
+}
+
+.crm-data-list-table .el-table__header th.el-table__cell {
+  height: 44px;
+  padding: 0;
+  background-color: #f5f7fa;
+  color: #606266;
+  font-size: 14px;
+}
+
+.crm-data-list-table .el-table__body td.el-table__cell,
+.crm-data-list-table .el-table__body .cell,
+.crm-data-list-table .el-table .el-tag,
+.crm-data-list-table .el-table .el-select__selected-item {
+  font-size: 14px;
+}
+
+.crm-data-list-table .el-table .el-button.is-link,
+.crm-data-list-table .el-table .el-dropdown .el-button.is-link {
+  --el-button-text-color: var(--el-color-primary);
+  --el-button-hover-link-text-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+  font-size: 14px;
+}
+
+.crm-data-list-pagination .el-pagination {
+  --el-pagination-font-size: 14px;
+  --el-pagination-button-color: #606266;
+  --el-pagination-hover-color: var(--el-color-primary);
+  --el-pagination-button-bg-color: transparent;
+  --el-pagination-bg-color: transparent;
+  justify-content: center;
+  gap: 8px;
+  color: #606266;
+  font-size: 14px;
+}
+
+.crm-data-list-pagination .el-pager li.is-active {
+  color: var(--el-color-primary);
+}
+
+.crm-data-list-pagination .el-pagination__jump .el-input {
+  width: 64px;
+}

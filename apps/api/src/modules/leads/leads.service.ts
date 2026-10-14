@@ -2085,6 +2085,26 @@ export class LeadsService {
     }
   }
 
+  /** 从用户原始上传文件中提取预检失败行，不重新拼装业务字段以免丢失原始列。 */
+  async exportImportErrorRows(
+    user: AuthUser,
+    file: Buffer,
+    rowNumbersJson: string,
+    poolId?: string,
+  ): Promise<Buffer> {
+    if (poolId) await this.pools.assertPoolMember(user, 'lead', poolId)
+    let rowNumbers: unknown
+    try {
+      rowNumbers = JSON.parse(rowNumbersJson)
+    } catch {
+      throw new BadRequestException('异常数据行号格式不正确')
+    }
+    if (!Array.isArray(rowNumbers) || !rowNumbers.every((item) => typeof item === 'number')) {
+      throw new BadRequestException('异常数据行号格式不正确')
+    }
+    return this.spreadsheet.extractErrorRowsXlsx(file, rowNumbers as number[])
+  }
+
   async precheckImportXlsx(
     user: AuthUser,
     file: Buffer,
@@ -2107,7 +2127,15 @@ export class LeadsService {
           errors.push(error instanceof Error ? error.message : '数据校验失败')
         }
       }
-      if (errors.length > 0) errorMessages.push({ rowNum: row.rowNum, errMsg: errors.join('；') })
+      if (errors.length > 0)
+        errorMessages.push({
+          rowNum: row.rowNum,
+          errMsg: errors.join('；'),
+          category: errors.some((message) => /重复|已存在|不能重复/.test(message))
+            ? 'duplicate'
+            : 'invalid',
+          values: row.values,
+        })
       else successCount++
     }
     return { successCount, failCount: errorMessages.length, errorMessages }
@@ -2144,19 +2172,24 @@ export class LeadsService {
               ...(poolId ? { toPool: true, poolId } : {}),
               stageEventSource: 'IMPORT',
             } as LeadCreateInput)
-          } else if (poolId) {
-            if (!prepared.existing) throw new BadRequestException('线索不存在或不属于当前线索池')
-            await this.updateExisting(user, prepared.existing, prepared.dto)
           } else {
-            if (!row.resourceId) throw new BadRequestException('唯一ID不能为空')
-            await this.update(user, row.resourceId, prepared.dto)
+            if (!prepared.existing) throw new BadRequestException('未找到可更新的线索')
+            await this.updateExisting(user, prepared.existing, prepared.dto)
           }
           successCount++
         } catch (error) {
           errors.push(error instanceof Error ? error.message : '导入失败')
         }
       }
-      if (errors.length > 0) errorMessages.push({ rowNum: row.rowNum, errMsg: errors.join('；') })
+      if (errors.length > 0)
+        errorMessages.push({
+          rowNum: row.rowNum,
+          errMsg: errors.join('；'),
+          category: errors.some((message) => /重复|已存在|不能重复/.test(message))
+            ? 'duplicate'
+            : 'invalid',
+          values: row.values,
+        })
     }
     return { successCount, failCount: errorMessages.length, errorMessages }
   }
@@ -2215,9 +2248,10 @@ export class LeadsService {
       ['updatedAt', '更新时间'],
       ['lastFollowedAt', '最近跟进'],
     ])
-    const columns = input.headList.map((key) => {
+    // 系统记录 ID 是更新导入的匹配依据，任何导出字段组合都必须带上。
+    const columns = ['id', ...input.headList.filter((key) => key !== 'id')].map((key) => {
       const field = fieldMap.get(key)
-      const extraLabel = extraColumns.get(key)
+      const extraLabel = key === 'id' ? '唯一ID' : extraColumns.get(key)
       if (!field && !extraLabel) throw new BadRequestException(`导出字段「${key}」不存在或不可导出`)
       return { key, label: field?.label ?? (extraLabel as string) }
     })
@@ -2227,7 +2261,12 @@ export class LeadsService {
       return Object.fromEntries(
         columns.map((column) => {
           const field = fieldMap.get(column.key)
-          if (field) return [column.key, formatForExport(field, source)]
+          if (field) {
+            // LeadVO 对外使用 contactName / ownerName，映射到表单字段 contact / owner。
+            if (column.key === 'contact') return [column.key, item.contactName ?? '']
+            if (column.key === 'owner') return [column.key, item.ownerName ?? '']
+            return [column.key, formatForExport(field, source)]
+          }
           if (column.key === 'status') {
             return [column.key, statusLabels.get(item.status) ?? item.status]
           }
@@ -2304,9 +2343,26 @@ export class LeadsService {
       }
     }
     if (Object.keys(customData).length > 0) dto.customData = customData
+
+    let existing: Lead | undefined
+    if (importType === 'UPDATE') {
+      if (!resourceId) throw new BadRequestException('唯一ID不能为空')
+      existing = poolId
+        ? ((await this.prisma.client.orm.public.Clue.where({
+            id: resourceId,
+            organizationId: user.tenantId,
+            inSharedPool: true,
+            poolId,
+          }).first()) ?? undefined)
+        : await this.ensureInScope(user, resourceId, 'lead:update')
+      if (!existing || (!poolId && existing.inSharedPool)) {
+        throw new BadRequestException('线索不存在或不在当前线索数据范围内')
+      }
+    }
+    // 使用系统记录 ID 排除自身，更新的字段仍需遵守用户配置的唯一值约束。
     await this.fieldValues.validate(user.tenantId, 'clue', customData, {
       mode: importType === 'ADD' ? 'create' : 'update',
-      ...(resourceId ? { resourceId } : {}),
+      ...(existing ? { resourceId: existing.id } : {}),
       uniqueScope,
     })
 
@@ -2323,16 +2379,7 @@ export class LeadsService {
       return { dto }
     }
 
-    if (!resourceId) throw new BadRequestException('唯一ID不能为空')
-    const existing = poolId
-      ? await this.prisma.client.orm.public.Clue.where({
-          id: resourceId,
-          organizationId: user.tenantId,
-          inSharedPool: true,
-          poolId: poolId,
-        }).first()
-      : await this.ensureInScope(user, resourceId, 'lead:import')
-    if (!existing) throw new BadRequestException('线索不存在或不属于当前线索池')
+    if (!existing) throw new BadRequestException('未找到可更新的线索')
     await this.assertLeadSystemUniqueRules(
       user.tenantId,
       { name: dto.name, contactName: dto.contactName, phone: dto.phone },

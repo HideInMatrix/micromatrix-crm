@@ -85,20 +85,25 @@ const leadFields = ref<FieldVO[]>([])
 const leadStages = ref<LeadStageConfig[]>([])
 const unreadNotifications = ref(0)
 const canAccessPool = computed(() => auth.hasPerm('leadPool:read'))
-const selectableFields = computed(() => leadFields.value.filter((f) =>
-  !f.system && !f.hidden && ['text', 'select', 'radio', 'multiselect'].includes(f.type),
-))
+const selectableFields = computed(() =>
+  leadFields.value.filter(
+    (f) => !f.system && !f.hidden && ['text', 'select', 'radio', 'multiselect'].includes(f.type),
+  ),
+)
 const homeLeadColumns = computed(() => {
   const candidates = selectableFields.value
   const professional = candidates.find((f) => /专业|意向/.test(f.label))
   const source = candidates.find((f) => /渠道|来源/.test(f.label) && f.key !== professional?.key)
   const selected = [professional, source].filter((f): f is FieldVO => !!f)
-  return [...selected, ...candidates.filter((f) => !selected.some((x) => x.key === f.key))].slice(0, 2)
+  return [...selected, ...candidates.filter((f) => !selected.some((x) => x.key === f.key))].slice(
+    0,
+    2,
+  )
 })
 const stageLabel = (stage: string) =>
-  leadStages.value.find((entry) => entry.key === stage)?.name
-    ?? DEFAULT_LEAD_STAGES.find((entry) => entry.key === stage)?.name
-    ?? stage
+  leadStages.value.find((entry) => entry.key === stage)?.name ??
+  DEFAULT_LEAD_STAGES.find((entry) => entry.key === stage)?.name ??
+  stage
 
 const hasLeadRead = computed(() => auth.hasPerm('menu:lead'))
 
@@ -220,14 +225,16 @@ async function loadStatistics() {
   }
 }
 
-function openLeadAnalytics(options: {
-  searchType?: HomeStatisticRequest['searchType']
-  period?: 'TODAY'
-  filters?: FilterCondition[]
-  leadStageKey?: string
-  converted?: boolean
-  overdue?: boolean
-} = {}) {
+function openLeadAnalytics(
+  options: {
+    searchType?: HomeStatisticRequest['searchType']
+    period?: 'TODAY'
+    filters?: FilterCondition[]
+    leadStageKey?: string
+    converted?: boolean
+    overdue?: boolean
+  } = {},
+) {
   if (!hasLeadRead.value) return
   const key = storeHomeFilter({
     module: 'lead',
@@ -245,7 +252,11 @@ function widgetChartOption(widget: HomeAnalyticsWidgetResult): Record<string, un
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       grid: { left: 30, right: 20, top: 16, bottom: 54, containLabel: true },
-      xAxis: { type: 'category', data: widget.items.map((item) => item.label), axisLabel: { rotate: 20, interval: 0 } },
+      xAxis: {
+        type: 'category',
+        data: widget.items.map((item) => item.label),
+        axisLabel: { rotate: 20, interval: 0 },
+      },
       yAxis: { type: 'value', minInterval: 1 },
       series: [{ type: 'bar', barMaxWidth: 44, data: widget.items.map((item) => item.count) }],
     }
@@ -261,9 +272,17 @@ function widgetChartOption(widget: HomeAnalyticsWidgetResult): Record<string, un
       textStyle: { color: '#FFFFFF', fontSize: 13, lineHeight: 22 },
       formatter: (params: { name: string; value: number; percent: number }) => {
         // 分组名称由用户配置的表单选项生成，插入 HTML Tooltip 前需要转义。
-        const label = params.name.replace(/[&<>"']/g, (char) => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-        })[char] ?? char)
+        const label = params.name.replace(
+          /[&<>"']/g,
+          (char) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[char] ?? char,
+        )
         return `${range}<br/>${label}：${params.value}条 / ${params.percent}%`
       },
     },
@@ -293,20 +312,22 @@ function widgetChartOption(widget: HomeAnalyticsWidgetResult): Record<string, un
         },
       },
     ],
-    series: [{
-      type: 'pie',
-      // 南丁格尔玫瑰图：角度表示占比，半径也随统计数量变化。
-      roseType: 'radius',
-      radius: ['50%', '83%'],
-      center: ['50%', '50%'],
-      startAngle: 90,
-      stillShowZeroSum: false,
-      label: { show: false },
-      labelLine: { show: false },
-      itemStyle: { borderWidth: 0 },
-      emphasis: { scale: true, scaleSize: 5 },
-      data,
-    }],
+    series: [
+      {
+        type: 'pie',
+        // 南丁格尔玫瑰图：角度表示占比，半径也随统计数量变化。
+        roseType: 'radius',
+        radius: ['50%', '83%'],
+        center: ['50%', '50%'],
+        startAngle: 90,
+        stillShowZeroSum: false,
+        label: { show: false },
+        labelLine: { show: false },
+        itemStyle: { borderWidth: 0 },
+        emphasis: { scale: true, scaleSize: 5 },
+        data,
+      },
+    ],
   }
 }
 
@@ -347,8 +368,14 @@ function leadFieldValue(lead: LeadVO, field: FieldVO): string {
   const raw = lead.customData[field.key]
   if (raw === null || raw === undefined || raw === '') return '-'
   const values = Array.isArray(raw) ? raw : [raw]
-  return values.map((value) => field.options?.find((option) => option.value === String(value))?.label
-    ?? String(value)).join('、') || '-'
+  return (
+    values
+      .map(
+        (value) =>
+          field.options?.find((option) => option.value === String(value))?.label ?? String(value),
+      )
+      .join('、') || '-'
+  )
 }
 
 async function loadMyLeads() {
@@ -378,10 +405,17 @@ async function loadPendingPools() {
   if (!canAccessPool.value) return
   try {
     const { data: pools } = await leadApi.poolOptions()
-    const counts = await Promise.all(pools.map(async (pool) => {
-      const { data } = await leadApi.list({ scope: 'pool', poolId: pool.id, page: 1, pageSize: 1 })
-      return data.total
-    }))
+    const counts = await Promise.all(
+      pools.map(async (pool) => {
+        const { data } = await leadApi.list({
+          scope: 'pool',
+          poolId: pool.id,
+          page: 1,
+          pageSize: 1,
+        })
+        return data.total
+      }),
+    )
     pendingPoolCount.value = counts.reduce((sum, count) => sum + count, 0)
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -407,13 +441,7 @@ function openPoolLeads() {
 // ===== 快捷入口 =====
 
 type QuickAccessKey =
-  | 'customer'
-  | 'contact'
-  | 'lead'
-  | 'leadImport'
-  | 'poolImport'
-  | 'followRecord'
-  | 'followPlan'
+  'customer' | 'contact' | 'lead' | 'leadImport' | 'poolImport' | 'followRecord' | 'followPlan'
 
 interface QuickAccessItem {
   key: QuickAccessKey
@@ -511,10 +539,13 @@ function loadQuickAccess() {
   quickAccessKeys.value = valid.length
     ? valid
     : (['lead', 'leadImport', 'poolImport'] as QuickAccessKey[])
-      .filter((key) => allowed.has(key))
-      .concat(quickAccessCatalog.value.map((item) => item.key).filter((key) =>
-        !['lead', 'leadImport', 'poolImport'].includes(key),
-      )).slice(0, 3)
+        .filter((key) => allowed.has(key))
+        .concat(
+          quickAccessCatalog.value
+            .map((item) => item.key)
+            .filter((key) => !['lead', 'leadImport', 'poolImport'].includes(key)),
+        )
+        .slice(0, 3)
 }
 
 const displayedQuickAccess = computed(() =>
@@ -707,7 +738,16 @@ function confirmFollowTarget() {
   followDrawerVisible.value = true
 }
 
-const chartPalette = ['#2185FF', '#FFA04B', '#FF684D', '#36CF92', '#85EFA5', '#586AFF', '#A17CED', '#BCC6D7']
+const chartPalette = [
+  '#2185FF',
+  '#FFA04B',
+  '#FF684D',
+  '#36CF92',
+  '#85EFA5',
+  '#586AFF',
+  '#A17CED',
+  '#BCC6D7',
+]
 const pageLoading = ref(true)
 
 onMounted(async () => {
@@ -733,11 +773,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    v-loading="pageLoading"
-    class="min-h-full min-w-[1030px]"
-    data-testid="home-page"
-  >
+  <div v-loading="pageLoading" class="min-h-full min-w-[1030px]" data-testid="home-page">
     <div class="mb-3 flex items-center justify-end gap-2" data-testid="home-toolbar">
       <el-tree-select
         v-model="activeDeptId"
@@ -760,12 +796,14 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="flex min-h-[128px] cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
-        style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #FFFFFF 100%)"
+        style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #ffffff 100%)"
         :disabled="!hasLeadRead"
         data-testid="home-kpi-today"
         @click="openLeadAnalytics({ period: 'TODAY' })"
       >
-        <span class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#EAF4FF] text-[#2687FF]">
+        <span
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#EAF4FF] text-[#2687FF]"
+        >
           <GitPullRequest :size="35" :stroke-width="2.4" aria-hidden="true" />
         </span>
         <span class="min-w-0 flex flex-col gap-1">
@@ -777,10 +815,13 @@ onBeforeUnmount(() => {
             较昨日
             <span
               class="inline-flex items-center gap-0.5 font-semibold"
-              :class="(todayStatistic?.todayClue.priorPeriodCompareRate ?? 0) > 0
-                ? 'text-[#FF4848]'
-                : (todayStatistic?.todayClue.priorPeriodCompareRate ?? 0) < 0
-                  ? 'text-[#16B87F]' : 'text-[#6B7A99]'"
+              :class="
+                (todayStatistic?.todayClue.priorPeriodCompareRate ?? 0) > 0
+                  ? 'text-[#FF4848]'
+                  : (todayStatistic?.todayClue.priorPeriodCompareRate ?? 0) < 0
+                    ? 'text-[#16B87F]'
+                    : 'text-[#6B7A99]'
+              "
             >
               <TrendingUp
                 v-if="(todayStatistic?.todayClue.priorPeriodCompareRate ?? 0) > 0"
@@ -802,12 +843,14 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="flex min-h-[128px] cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
-        style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #FFFFFF 100%)"
+        style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #ffffff 100%)"
         :disabled="!canAccessPool"
         data-testid="home-kpi-pending"
         @click="openPoolLeads"
       >
-        <span class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#F0EEFF] text-[#8878F6]">
+        <span
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#F0EEFF] text-[#8878F6]"
+        >
           <Layers3 :size="35" :stroke-width="2.3" aria-hidden="true" />
         </span>
         <span class="min-w-0 flex flex-col gap-1">
@@ -821,12 +864,14 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="flex min-h-[128px] cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
-        style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #FFFFFF 100%)"
+        style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #ffffff 100%)"
         :disabled="!hasLeadRead"
         data-testid="home-kpi-overdue"
         @click="openLeadAnalytics({ overdue: true })"
       >
-        <span class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#FEECEC] text-[#F04444]">
+        <span
+          class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#FEECEC] text-[#F04444]"
+        >
           <Clock3 :size="35" :stroke-width="2.4" aria-hidden="true" />
         </span>
         <span class="min-w-0 flex flex-col gap-1">
@@ -840,13 +885,23 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="mb-3 grid grid-cols-2 items-stretch gap-3">
-      <section class="min-h-[390px] min-w-0 rounded-xl bg-white px-5 py-4" data-testid="home-my-leads">
+      <section
+        class="min-h-[390px] min-w-0 rounded-xl bg-white px-5 py-4"
+        data-testid="home-my-leads"
+      >
         <div class="mb-4 flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <CalendarClock :size="18" :stroke-width="2.4" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
+            <CalendarClock
+              :size="18"
+              :stroke-width="2.4"
+              class="shrink-0 text-[#2687FF]"
+              aria-hidden="true"
+            />
             <div class="flex items-end gap-2">
               <span class="text-[18px] font-semibold text-[#1D2129]">我的线索</span>
-              <span v-if="myLeadsTotal" class="text-[12px] leading-[18px] text-[#8A97AC]">待处理{{ myLeadsTotal }}条</span>
+              <span v-if="myLeadsTotal" class="text-[12px] leading-[18px] text-[#8A97AC]"
+                >待处理{{ myLeadsTotal }}条</span
+              >
             </div>
           </div>
           <el-button
@@ -863,10 +918,15 @@ onBeforeUnmount(() => {
           class="flex min-h-[315px] flex-col items-center justify-center"
           data-testid="home-my-leads-empty"
         >
-          <div class="relative flex h-[142px] w-[174px] items-center justify-center" aria-hidden="true">
+          <div
+            class="relative flex h-[142px] w-[174px] items-center justify-center"
+            aria-hidden="true"
+          >
             <span class="absolute top-6 right-2 h-3 w-3 rounded-full bg-[#D6FBE7]" />
             <span class="absolute bottom-4 left-1 h-2.5 w-2.5 rounded-full bg-[#B6D0FF]" />
-            <div class="relative flex h-[108px] w-[118px] items-center justify-center rounded-[24px] bg-[#EFF5FF]">
+            <div
+              class="relative flex h-[108px] w-[118px] items-center justify-center rounded-[24px] bg-[#EFF5FF]"
+            >
               <CalendarDays :size="86" :stroke-width="1.5" class="text-[#5684FF]" />
               <Clock3
                 :size="47"
@@ -876,8 +936,12 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="mt-4 flex flex-col items-center gap-[5px] text-center">
-            <span class="text-[16px] font-medium text-[#000000]">{{ hasLeadRead ? '暂无待跟进线索' : '暂无线索查看权限' }}</span>
-            <span class="text-[14px] text-[#8A97AC]">{{ hasLeadRead ? '新的跟进任务会显示在这里' : '请联系管理员开通线索查看权限' }}</span>
+            <span class="text-[16px] font-medium text-[#000000]">{{
+              hasLeadRead ? '暂无待跟进线索' : '暂无线索查看权限'
+            }}</span>
+            <span class="text-[14px] text-[#8A97AC]">{{
+              hasLeadRead ? '新的跟进任务会显示在这里' : '请联系管理员开通线索查看权限'
+            }}</span>
           </div>
         </div>
         <el-table
@@ -886,14 +950,26 @@ onBeforeUnmount(() => {
           :data="myLeads"
           size="small"
           class="!w-full"
-          :header-cell-style="{ background: '#F5F7FA', color: '#666666', fontSize: '14px', height: '42px', fontWeight: 500 }"
+          :header-cell-style="{
+            background: '#F5F7FA',
+            color: '#666666',
+            fontSize: '14px',
+            height: '42px',
+            fontWeight: 500,
+          }"
           :cell-style="{ height: '43px', color: '#344054', fontSize: '14px' }"
           :empty-text="hasLeadRead ? '暂无属于我的线索' : '暂无线索查看权限'"
           data-testid="home-my-leads-table"
         >
           <el-table-column prop="name" label="学员姓名" min-width="112" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-button link type="primary" class="!text-[14px] !text-[#1580FF]" @click="openMyLead(row as LeadVO)">{{ row.name }}</el-button>
+              <el-button
+                link
+                type="primary"
+                class="!text-[14px] !text-[var(--el-color-primary)]"
+                @click="openMyLead(row as LeadVO)"
+                >{{ row.name }}</el-button
+              >
             </template>
           </el-table-column>
           <el-table-column label="手机号" min-width="117">
@@ -910,7 +986,9 @@ onBeforeUnmount(() => {
           </el-table-column>
           <el-table-column label="当前状态" min-width="94" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-tag size="small" type="warning" effect="light" class="!text-[12px]">{{ stageLabel(row.status) }}</el-tag>
+              <el-tag size="small" type="warning" effect="light" class="!text-[12px]">{{
+                stageLabel(row.status)
+              }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="最近跟进" min-width="85">
@@ -926,20 +1004,31 @@ onBeforeUnmount(() => {
                 link
                 type="primary"
                 :disabled="!auth.hasPerm('lead:update')"
-                class="!text-[14px] !text-[#1580FF]"
+                class="!text-[14px] !text-[var(--el-color-primary)]"
                 @click="followMyLead(row as LeadVO)"
-              >立即跟进</el-button>
+                >立即跟进</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
       </section>
 
-      <section class="min-h-[390px] min-w-0 rounded-xl bg-white px-5 py-4" data-testid="home-message-center">
+      <section
+        class="min-h-[390px] min-w-0 rounded-xl bg-white px-5 py-4"
+        data-testid="home-message-center"
+      >
         <div class="mb-4 flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <Bell :size="18" class="shrink-0 text-[#2687FF]" :stroke-width="2.4" aria-hidden="true" />
+            <Bell
+              :size="18"
+              class="shrink-0 text-[#2687FF]"
+              :stroke-width="2.4"
+              aria-hidden="true"
+            />
             <span class="text-[18px] font-semibold text-[#1D2129]">消息中心</span>
-            <span v-if="unreadNotifications" class="text-xs text-[#A7B2C5]">未读消息 {{ unreadNotifications }} 条</span>
+            <span v-if="unreadNotifications" class="text-xs text-[#A7B2C5]"
+              >未读消息 {{ unreadNotifications }} 条</span
+            >
           </div>
           <el-button link type="primary" @click="router.push('/notifications')">
             查看全部 <ChevronRight :size="15" />
@@ -957,18 +1046,24 @@ onBeforeUnmount(() => {
             class="flex w-full cursor-pointer items-center gap-3 rounded-lg border-0 bg-[#F6F8FB] px-3 py-2 text-left transition-colors hover:bg-[#EEF3FD]"
             @click="openNotification(item)"
           >
-            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E8F3FF] text-[#2788FF]">
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E8F3FF] text-[#2788FF]"
+            >
               <Bell :size="21" aria-hidden="true" />
             </span>
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[13px] font-semibold text-[#434B5B]">
                 <span v-if="!item.readAt" class="mr-1 text-[#F05150]">[未读]</span>{{ item.title }}
               </span>
-              <span class="mt-1 block truncate text-xs text-[#8893A3]">{{ item.content || '查看消息详情' }}</span>
+              <span class="mt-1 block truncate text-xs text-[#8893A3]">{{
+                item.content || '查看消息详情'
+              }}</span>
             </span>
             <span class="shrink-0 text-right text-xs text-[#A3AEC1]">
               <span class="block">{{ new Date(item.createdAt).toLocaleDateString('zh-CN') }}</span>
-              <span class="mt-1 block text-[#2687FF]">{{ item.readAt ? '查看详情' : '标为已读' }}</span>
+              <span class="mt-1 block text-[#2687FF]">{{
+                item.readAt ? '查看详情' : '标为已读'
+              }}</span>
             </span>
           </button>
           <div
@@ -976,7 +1071,10 @@ onBeforeUnmount(() => {
             class="flex min-h-[315px] flex-col items-center justify-center"
             data-testid="home-message-empty"
           >
-            <div class="relative flex h-[142px] w-[174px] items-center justify-center" aria-hidden="true">
+            <div
+              class="relative flex h-[142px] w-[174px] items-center justify-center"
+              aria-hidden="true"
+            >
               <span class="absolute top-5 left-3 h-4 w-4 rounded-full bg-[#D6FBE7]" />
               <span class="absolute top-10 right-2 h-3 w-3 rounded-full bg-[#C9D9FF]" />
               <BellRing :size="110" :stroke-width="1.4" class="text-[#5684FF]" />
@@ -1002,7 +1100,12 @@ onBeforeUnmount(() => {
             <Send :size="18" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
             <span class="text-[18px] font-semibold text-[#1D2129]">快捷入口</span>
           </div>
-          <el-button v-if="quickAccessCatalog.length" link data-testid="home-quick-settings" @click="openQuickAccessSettings">
+          <el-button
+            v-if="quickAccessCatalog.length"
+            link
+            data-testid="home-quick-settings"
+            @click="openQuickAccessSettings"
+          >
             <Settings2 :size="15" class="mr-1" aria-hidden="true" />自定义
           </el-button>
         </div>
@@ -1011,39 +1114,61 @@ onBeforeUnmount(() => {
             v-for="item in displayedQuickAccess"
             :key="item.key"
             class="flex min-w-0 flex-col items-center justify-center rounded-xl border px-3 py-7 text-center"
-            :class="item.theme === 'green'
-              ? 'border-[#D9F4E9] bg-[#F0FBF7]'
-              : item.theme === 'purple'
-                ? 'border-[#EAE2FF] bg-[#F7F4FF]'
-                : 'border-[#E7EEFF] bg-[#F3F6FF]'"
+            :class="
+              item.theme === 'green'
+                ? 'border-[#D9F4E9] bg-[#F0FBF7]'
+                : item.theme === 'purple'
+                  ? 'border-[#EAE2FF] bg-[#F7F4FF]'
+                  : 'border-[#E7EEFF] bg-[#F3F6FF]'
+            "
             :data-testid="`home-quick-${item.key}`"
           >
             <span
               class="flex h-15 w-15 items-center justify-center rounded-full"
-              :class="item.theme === 'green'
-                ? 'bg-[#DDF9EE] text-[#1CB785]'
-                : item.theme === 'purple'
-                  ? 'bg-[#EEE4FF] text-[#8B61F6]'
-                  : 'bg-[#E5ECFF] text-[#5379F9]'"
+              :class="
+                item.theme === 'green'
+                  ? 'bg-[#DDF9EE] text-[#1CB785]'
+                  : item.theme === 'purple'
+                    ? 'bg-[#EEE4FF] text-[#8B61F6]'
+                    : 'bg-[#E5ECFF] text-[#5379F9]'
+              "
             >
               <component :is="item.icon" :size="30" :stroke-width="2" aria-hidden="true" />
             </span>
             <div class="mt-[22px] flex min-w-0 flex-col items-center gap-2">
-              <div class="text-[16px] font-semibold leading-[24px] text-[#1D2939]">{{ item.label }}</div>
-              <div class="max-w-full truncate text-[12px] font-normal leading-[18px] text-[#8A97AC]">{{ item.description || '快速进入相关功能' }}</div>
+              <div class="text-[16px] font-semibold leading-[24px] text-[#1D2939]">
+                {{ item.label }}
+              </div>
+              <div
+                class="max-w-full truncate text-[12px] font-normal leading-[18px] text-[#8A97AC]"
+              >
+                {{ item.description || '快速进入相关功能' }}
+              </div>
             </div>
             <el-button
               class="mt-7 !h-[36px] !w-[96px] !rounded-[4px] !border !border-solid !bg-white !px-[20px] !py-[8px] !text-[14px] !font-medium !leading-[18px]"
-              :class="item.theme === 'green'
-                ? '!border-[#CDF1E3] !text-[#1CB785]'
-                : item.theme === 'purple'
-                  ? '!border-[#E7DCFF] !text-[#8B61F6]'
-                  : '!border-[#DCE5FF] !text-[#4C6FFF]'"
+              :class="
+                item.theme === 'green'
+                  ? '!border-[#CDF1E3] !text-[#1CB785]'
+                  : item.theme === 'purple'
+                    ? '!border-[#E7DCFF] !text-[#8B61F6]'
+                    : '!border-[#DCE5FF] !text-[#4C6FFF]'
+              "
               :data-testid="`home-quick-action-${item.key}`"
               @click="handleQuickAccess(item.key)"
-            >{{ item.key === 'lead' || item.key === 'customer' ? '立即创建' : item.key.includes('Import') ? '选择文件' : '立即进入' }}</el-button>
+              >{{
+                item.key === 'lead' || item.key === 'customer'
+                  ? '立即创建'
+                  : item.key.includes('Import')
+                    ? '选择文件'
+                    : '立即进入'
+              }}</el-button
+            >
           </div>
-          <div v-if="!displayedQuickAccess.length" class="col-span-3 flex items-center justify-center text-sm text-[#99A4B4]">
+          <div
+            v-if="!displayedQuickAccess.length"
+            class="col-span-3 flex items-center justify-center text-sm text-[#99A4B4]"
+          >
             当前账号暂无可用快捷操作
           </div>
         </div>
@@ -1058,7 +1183,9 @@ onBeforeUnmount(() => {
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="flex min-w-0 items-center gap-2">
             <PieChart :size="18" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
-            <span class="truncate text-[18px] font-semibold text-[#1D2129]">{{ widget.config.title }}</span>
+            <span class="truncate text-[18px] font-semibold text-[#1D2129]">{{
+              widget.config.title
+            }}</span>
           </div>
           <el-select
             :model-value="widgetPeriodSelections[widget.config.id] ?? widget.period"
@@ -1078,16 +1205,31 @@ onBeforeUnmount(() => {
           </el-select>
         </div>
         <template v-if="widget.total > 0">
-          <div v-if="widget.config.chartType === 'list'" class="max-h-[255px] space-y-4 overflow-y-auto py-3">
+          <div
+            v-if="widget.config.chartType === 'list'"
+            class="max-h-[255px] space-y-4 overflow-y-auto py-3"
+          >
             <div v-for="item in widget.items" :key="item.value" class="flex items-center gap-3">
-              <span class="w-28 shrink-0 truncate text-[13px] text-[#647087]" :title="item.label">{{ item.label }}</span>
-              <el-progress class="min-w-0 flex-1" :show-text="false" :percentage="Math.round(item.count * 100 / widget.total)" />
+              <span class="w-28 shrink-0 truncate text-[13px] text-[#647087]" :title="item.label">{{
+                item.label
+              }}</span>
+              <el-progress
+                class="min-w-0 flex-1"
+                :show-text="false"
+                :percentage="Math.round((item.count * 100) / widget.total)"
+              />
               <span class="w-12 text-right text-[13px] tabular-nums">{{ item.count }}条</span>
             </div>
           </div>
-          <div v-else-if="widget.config.chartType === 'donut'" class="grid grid-cols-[minmax(0,1.1fr)_minmax(135px,0.9fr)] items-center gap-3">
+          <div
+            v-else-if="widget.config.chartType === 'donut'"
+            class="grid grid-cols-[minmax(0,1.1fr)_minmax(135px,0.9fr)] items-center gap-3"
+          >
             <EChart :option="widgetChartOption(widget)" height="260px" />
-            <div class="max-h-[260px] space-y-3 overflow-y-auto pr-2" data-testid="home-rose-legend">
+            <div
+              class="max-h-[260px] space-y-3 overflow-y-auto pr-2"
+              data-testid="home-rose-legend"
+            >
               <div
                 v-for="(item, index) in widget.items"
                 :key="item.value"
@@ -1101,7 +1243,10 @@ onBeforeUnmount(() => {
                 <span class="max-w-[45%] shrink-0 truncate text-[#555E6E]" :title="item.label">
                   {{ item.label }}
                 </span>
-                <span class="min-w-2 flex-1 border-b border-dashed border-[#D9DFE9]" aria-hidden="true" />
+                <span
+                  class="min-w-2 flex-1 border-b border-dashed border-[#D9DFE9]"
+                  aria-hidden="true"
+                />
                 <span class="shrink-0 tabular-nums text-[#555E6E]">{{ item.count }}条</span>
               </div>
             </div>
@@ -1144,11 +1289,14 @@ onBeforeUnmount(() => {
               class="block h-7 w-7 shrink-0"
             />
           </span>
-          <span class="block w-full text-center">{{ quickAccessCatalog.find((item) => item.key === key)?.label }}</span>
+          <span class="block w-full text-center">{{
+            quickAccessCatalog.find((item) => item.key === key)?.label
+          }}</span>
           <span
             class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--el-color-danger)] text-white"
             aria-label="移除快捷入口"
-          ><Minus :size="14" :stroke-width="2" aria-hidden="true" /></span>
+            ><Minus :size="14" :stroke-width="2" aria-hidden="true"
+          /></span>
         </button>
       </div>
       <div class="font-medium mb-3">待添加功能</div>
@@ -1172,7 +1320,8 @@ onBeforeUnmount(() => {
           <span
             class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--el-color-success)] text-white"
             aria-label="添加快捷入口"
-          ><Plus :size="14" :stroke-width="2" aria-hidden="true" /></span>
+            ><Plus :size="14" :stroke-width="2" aria-hidden="true"
+          /></span>
         </button>
       </div>
       <template #footer>
@@ -1232,6 +1381,5 @@ onBeforeUnmount(() => {
     />
 
     <FollowUpPlanDialog v-model="followPlanDialogVisible" />
-
   </div>
 </template>

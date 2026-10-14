@@ -15,10 +15,10 @@ import { Info } from 'lucide-vue-next'
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border: 1px solid rgba(21, 128, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 20%, transparent);
   border-radius: 4px;
-  background: #ecf5ff;
-  color: #1580ff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
   font-size: 12px;
   line-height: 18px;
 }
