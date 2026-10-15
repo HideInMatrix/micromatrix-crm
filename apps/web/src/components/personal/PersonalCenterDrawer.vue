@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
 import type { FollowUpPlanVO } from '@micromatrix/shared'
-import { KeyRound, Pencil } from 'lucide-vue-next'
+import { UserRound, X } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
@@ -37,6 +37,18 @@ const planPageSize = 10
 const planLoading = ref(false)
 
 const initials = computed(() => (info.value?.userName || auth.user?.name || '?').slice(0, 1))
+
+const profileRows = computed(() => [
+  { label: '用户名', value: info.value?.userName || '-' },
+  { label: '手机号', value: info.value?.phone || '-' },
+  { label: '邮箱', value: info.value?.email || '-' },
+  { label: '所属部门', value: info.value?.departmentName || '-' },
+  {
+    label: '通知语言',
+    value: info.value ? (info.value.language === 'en-US' ? 'English' : '简体中文') : '-',
+  },
+  { label: '账号角色', value: info.value?.roles.map((role) => role.name).join('、') || '-' },
+])
 
 async function loadInfo() {
   loading.value = true
@@ -94,6 +106,11 @@ function openPassword() {
   passwordVisible.value = true
 }
 
+function openPasswordFromEdit() {
+  editVisible.value = false
+  openPassword()
+}
+
 async function savePassword() {
   if (!passwordForm.originPassword) return ElMessage.warning('请输入当前密码')
   if (!passwordForm.password || passwordForm.password.length > 64) {
@@ -138,107 +155,156 @@ function statusLabel(status: FollowUpPlanVO['status']) {
   ]
 }
 
-watch([visible, activeTab], ([show, tab]) => {
+watch([visible, activeTab], ([show, tab], [wasOpen, previousTab]) => {
   if (!show) return
-  if (tab === 'info') void loadInfo()
-  if (tab === 'plan') void loadPlans()
+  // Profile header is shown on every tab, including API Key and My Plans.
+  if (!wasOpen) void loadInfo()
+  if (tab === 'plan' && (!wasOpen || previousTab !== 'plan')) void loadPlans()
 })
 </script>
 
 <template>
   <el-drawer
     v-model="visible"
-    title="个人中心"
-    size="100%"
+    size="660px"
+    :with-header="false"
     destroy-on-close
+    class="personal-center-drawer"
     data-testid="personal-center-drawer"
   >
-    <div class="mx-auto max-w-[1180px]">
-      <el-card shadow="never" class="mb-4">
-        <el-tabs v-model="activeTab">
-          <el-tab-pane label="个人信息" name="info" />
-          <el-tab-pane label="我的计划" name="plan" />
-          <el-tab-pane v-if="auth.hasPerm('PERSONAL_API_KEY:READ')" label="API Key" name="apiKey" />
-        </el-tabs>
-      </el-card>
+    <div class="flex h-full min-h-0 flex-col bg-white text-[#303133]">
+      <header
+        class="flex h-[58px] min-h-[58px] shrink-0 items-center justify-between bg-[#F7F8FA] px-5"
+      >
+        <h2 class="m-0 text-[18px] leading-[26px] font-medium text-black">个人信息</h2>
+        <button
+          type="button"
+          aria-label="关闭个人信息"
+          class="flex h-[18px] w-[18px] cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-[#999999] hover:text-[var(--el-color-primary)] focus-visible:outline-2 focus-visible:outline-[var(--el-color-primary)] focus-visible:outline-offset-2"
+          @click="visible = false"
+        >
+          <X :size="18" :stroke-width="2" aria-hidden="true" />
+        </button>
+      </header>
 
-      <el-card v-if="activeTab === 'info'" v-loading="loading" shadow="never">
-        <div class="font-medium mb-5">基本信息</div>
-        <div class="flex items-center gap-4 py-3">
-          <el-avatar :size="64" :src="info?.avatarUrl ?? undefined">{{ initials }}</el-avatar>
-          <div class="min-w-0">
-            <div class="text-base font-medium">{{ info?.userName ?? '-' }}</div>
-            <div class="flex flex-wrap gap-2 mt-2">
-              <el-tag v-for="role in info?.roles ?? []" :key="role.id" size="small" effect="light">
-                {{ role.name }}
-              </el-tag>
+      <div v-loading="loading" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          class="m-5 flex min-h-[100px] shrink-0 items-center gap-3 rounded-[7px] bg-[#F7F8FA] px-[18px] py-[17px] max-sm:gap-[9px] max-sm:p-3"
+        >
+          <el-avatar
+            :size="62"
+            :src="info?.avatarUrl ?? undefined"
+            class="shrink-0 bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+          >
+            <UserRound v-if="initials === '?'" :size="36" :stroke-width="1.65" />
+            <span v-else class="text-[24px]">{{ initials }}</span>
+          </el-avatar>
+          <div class="flex min-w-0 flex-1 flex-col gap-[6px]">
+            <strong class="truncate text-[20px] leading-[28px] font-medium text-black">
+              {{ info?.userName || auth.user?.name || '-' }}
+            </strong>
+            <div v-if="info?.roles?.length" class="flex flex-wrap gap-2">
+              <span
+                v-for="role in info.roles"
+                :key="role.id"
+                class="rounded-[4px] bg-[var(--el-color-primary-light-9)] px-2 py-[3px] text-[12px] leading-[18px] text-[var(--el-color-primary)]"
+                >{{ role.name }}</span
+              >
             </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-4 gap-4 rounded-md bg-[var(--el-fill-color-light)] p-6 mt-4">
-          <div>
-            <span class="text-[var(--el-text-color-secondary)]">手机号</span
-            ><span class="ml-3">{{ info?.phone || '-' }}</span>
-          </div>
-          <div>
-            <span class="text-[var(--el-text-color-secondary)]">邮箱</span
-            ><span class="ml-3">{{ info?.email || '-' }}</span>
-          </div>
-          <div>
-            <span class="text-[var(--el-text-color-secondary)]">部门</span
-            ><span class="ml-3">{{ info?.departmentName || '-' }}</span>
-          </div>
-          <div>
-            <span class="text-[var(--el-text-color-secondary)]">通知语言</span
-            ><span class="ml-3">{{ info?.language === 'en-US' ? 'English' : '简体中文' }}</span>
-          </div>
-        </div>
+        <el-tabs v-model="activeTab" class="flex min-h-0 flex-1 flex-col">
+          <el-tab-pane label="基本信息" name="info">
+            <div
+              class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5 [scrollbar-gutter:stable]"
+            >
+              <section>
+                <div class="mb-3 flex items-start justify-between gap-3">
+                  <h3
+                    class="m-0 flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+                  >
+                    <span
+                      aria-hidden="true"
+                      class="h-4 w-[3px] shrink-0 rounded-[4px] bg-[var(--el-color-primary)]"
+                    />
+                    账号信息
+                  </h3>
+                  <el-button
+                    type="primary"
+                    plain
+                    class="!ml-0 !h-[36px] !rounded-[4px]"
+                    @click="openEdit"
+                    >编辑资料</el-button
+                  >
+                </div>
 
-        <div class="mt-6 flex gap-3">
-          <el-button type="primary" plain @click="openEdit">
-            <Pencil :size="16" class="mr-1" />编辑
-          </el-button>
-          <el-button v-if="info?.passwordLoginEnabled !== false" @click="openPassword">
-            <KeyRound :size="16" class="mr-1" />修改密码
-          </el-button>
-        </div>
-      </el-card>
+                <dl class="m-0">
+                  <div
+                    v-for="row in profileRows"
+                    :key="row.label"
+                    class="flex items-center gap-4 border-b border-[#E9EDF2] py-[17px] text-[14px] leading-5"
+                  >
+                    <dt class="w-[108px] shrink-0 text-[#999999]">{{ row.label }}</dt>
+                    <dd class="m-0 min-w-0 flex-1 break-words text-[#333333]">{{ row.value }}</dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+          </el-tab-pane>
 
-      <el-card v-else-if="activeTab === 'plan'" shadow="never">
-        <div class="flex items-center justify-between mb-4">
-          <div class="font-medium">我的计划</div>
-          <el-button :loading="planLoading" @click="loadPlans">刷新</el-button>
-        </div>
-        <el-table v-loading="planLoading" :data="plans" empty-text="暂无跟进计划">
-          <el-table-column prop="targetName" label="计划对象" min-width="150" />
-          <el-table-column prop="content" label="计划内容" min-width="260" show-overflow-tooltip />
-          <el-table-column label="状态" width="100">
-            <template #default="{ row }">{{ statusLabel(row.status) }}</template>
-          </el-table-column>
-          <el-table-column label="计划时间" width="180">
-            <template #default="{ row }">{{ formatTime(row.estimatedAt) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="90" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="openPlan(row as FollowUpPlanVO)"
-                >查看</el-button
-              >
-            </template>
-          </el-table-column>
-        </el-table>
-        <div class="flex justify-end mt-4">
-          <el-pagination
-            v-model:current-page="planPage"
-            :page-size="planPageSize"
-            :total="planTotal"
-            layout="total, prev, pager, next"
-            @current-change="loadPlans"
-          />
-        </div>
-      </el-card>
+          <el-tab-pane v-if="auth.hasPerm('PERSONAL_API_KEY:READ')" label="API Key" name="apiKey">
+            <div
+              class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5 [scrollbar-gutter:stable]"
+            >
+              <PersonalApiKeyPanel v-if="activeTab === 'apiKey'" />
+            </div>
+          </el-tab-pane>
 
-      <PersonalApiKeyPanel v-else-if="activeTab === 'apiKey'" />
+          <!-- My Plans remains accessible from the top personal menu. -->
+          <el-tab-pane v-if="activeTab === 'plan'" label="我的计划" name="plan">
+            <div
+              class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5 [scrollbar-gutter:stable]"
+            >
+              <div class="mb-4 flex items-center justify-between">
+                <h3 class="m-0 text-[14px] font-medium">我的计划</h3>
+                <el-button :loading="planLoading" @click="loadPlans">刷新</el-button>
+              </div>
+              <el-table v-loading="planLoading" :data="plans" empty-text="暂无跟进计划">
+                <el-table-column prop="targetName" label="计划对象" min-width="120" />
+                <el-table-column
+                  prop="content"
+                  label="计划内容"
+                  min-width="180"
+                  show-overflow-tooltip
+                />
+                <el-table-column label="状态" width="85">
+                  <template #default="{ row }">{{ statusLabel(row.status) }}</template>
+                </el-table-column>
+                <el-table-column label="计划时间" width="170">
+                  <template #default="{ row }">{{ formatTime(row.estimatedAt) }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="75" fixed="right">
+                  <template #default="{ row }">
+                    <el-button link type="primary" @click="openPlan(row as FollowUpPlanVO)"
+                      >查看</el-button
+                    >
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div class="mt-4 flex justify-end">
+                <el-pagination
+                  v-model:current-page="planPage"
+                  :page-size="planPageSize"
+                  :total="planTotal"
+                  layout="total, prev, pager, next"
+                  @current-change="loadPlans"
+                />
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </div>
 
     <CrmDialog v-model="editVisible" title="编辑个人信息" width="460px" append-to-body>
@@ -255,8 +321,16 @@ watch([visible, activeTab], ([show, tab]) => {
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveInfo">更新</el-button>
+        <div class="flex w-full items-center justify-between gap-3">
+          <el-button v-if="info?.passwordLoginEnabled !== false" link @click="openPasswordFromEdit"
+            >修改密码</el-button
+          >
+          <span v-else />
+          <div class="flex items-center gap-2">
+            <el-button @click="editVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="saveInfo">更新</el-button>
+          </div>
+        </div>
       </template>
     </CrmDialog>
 
@@ -273,3 +347,47 @@ watch([visible, activeTab], ([show, tab]) => {
     </CrmDialog>
   </el-drawer>
 </template>
+
+<style scoped>
+:global(.personal-center-drawer.el-drawer) {
+  max-width: 100vw;
+}
+:global(.personal-center-drawer .el-drawer__body) {
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+:deep(.el-tabs__header) {
+  --el-font-size-base: 16px;
+  --el-text-color-primary: #666666;
+  margin: 0;
+  padding: 10px 20px;
+  flex-shrink: 0;
+}
+:deep(.el-tabs__item) {
+  font-weight: 600;
+}
+:deep(.el-tabs--top > .el-tabs__header .el-tabs__item:nth-child(2)),
+:deep(.el-tabs--top > .el-tabs__header .el-tabs__item:last-child) {
+  padding-inline: 20px;
+}
+:deep(.el-tabs__item.is-active) {
+  background: #e8f3ff;
+  color: var(--el-color-primary);
+  border-radius: 8px 8px 0 0;
+}
+:deep(.el-tabs__content) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+:deep(.el-tab-pane) {
+  height: 100%;
+  min-height: 0;
+}
+@media (max-width: 600px) {
+  :deep(.el-tabs__header) {
+    padding: 10px 14px;
+  }
+}
+</style>
