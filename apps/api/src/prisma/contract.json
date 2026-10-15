@@ -200,6 +200,10 @@
       "model": "ExternalEventInbox",
       "namespace": "public"
     },
+    "external_event_templates": {
+      "model": "ExternalEventTemplates",
+      "namespace": "public"
+    },
     "external_identities": {
       "model": "ExternalIdentities",
       "namespace": "public"
@@ -6886,6 +6890,13 @@
                   "kind": "scalar"
                 }
               },
+              "eventType": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "externalEventId": {
                 "nullable": false,
                 "type": {
@@ -6994,6 +7005,9 @@
                 "errorMessage": {
                   "column": "error_message"
                 },
+                "eventType": {
+                  "column": "event_type"
+                },
                 "externalEventId": {
                   "column": "external_event_id"
                 },
@@ -7030,6 +7044,133 @@
               },
               "namespaceId": "public",
               "table": "external_event_inbox"
+            }
+          },
+          "ExternalEventTemplates": {
+            "fields": {
+              "apiKeyUserId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "config": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "enabled": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
+              "eventType": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "name": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "source": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "tenantId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "updatedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "version": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "apiKeyUserId": {
+                  "column": "api_key_user_id"
+                },
+                "config": {
+                  "column": "config"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "enabled": {
+                  "column": "enabled"
+                },
+                "eventType": {
+                  "column": "event_type"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "name": {
+                  "column": "name"
+                },
+                "source": {
+                  "column": "source"
+                },
+                "tenantId": {
+                  "column": "tenant_id"
+                },
+                "updatedAt": {
+                  "column": "updated_at"
+                },
+                "version": {
+                  "column": "version"
+                }
+              },
+              "namespaceId": "public",
+              "table": "external_event_templates"
             }
           },
           "ExternalIdentities": {
@@ -19349,6 +19490,11 @@
                   "nativeType": "text",
                   "nullable": true
                 },
+                "event_type": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "external_event_id": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -19461,6 +19607,110 @@
                   "id"
                 ],
                 "name": "external_event_inbox_pkey"
+              },
+              "uniques": []
+            },
+            "external_event_templates": {
+              "columns": {
+                "api_key_user_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "config": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": false
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "enabled": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
+                },
+                "event_type": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "name": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "source": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "updated_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "version": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 1
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "tenant_id",
+                    "event_type"
+                  ],
+                  "name": "external_event_templates_tenant_event_key",
+                  "unique": true
+                },
+                {
+                  "columns": [
+                    "tenant_id",
+                    "source",
+                    "enabled"
+                  ],
+                  "name": "external_event_templates_tenant_source_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "external_event_templates_pkey"
               },
               "uniques": []
             },
@@ -24781,10 +25031,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "462205e1036c514a55adfc646f31732f48e0c543ad244006dd99f3f2492bd3ca"
+    "storageHash": "e7ff8583e9210f427e85001683c3508599467c5d9904b1c954cdd686b55379b1"
   },
   "execution": {
-    "executionHash": "fda46be780724e29412545783f67c7284cc640311b410bcf92902416ee9f961d",
+    "executionHash": "4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a",
     "mutations": {
       "defaults": [
         {
@@ -24961,6 +25211,17 @@
             "column": "id",
             "namespace": "public",
             "table": "external_event_inbox"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "cuid2",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "external_event_templates"
           }
         },
         {

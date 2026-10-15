@@ -587,7 +587,7 @@ onMounted(async () => {
         />
       </div>
 
-      <div v-if="showSavedViews" class="mb-4">
+      <div :class="{ 'mb-4': showSavedViews }">
         <SavedViewBar
           ref="savedViewBarRef"
           :module="savedViewModule"
@@ -596,6 +596,7 @@ onMounted(async () => {
           :dept-tree="fieldRefs.deptTree.value"
           :current-filters="filters"
           :default-column-keys="defaultColumnKeys"
+          :show-view-toolbar="showSavedViews"
           :system-views="systemViews"
           :system-view="activeSystemView"
           @change="handleSavedViewChange"

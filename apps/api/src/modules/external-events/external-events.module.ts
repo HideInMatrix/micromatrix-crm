@@ -3,12 +3,18 @@ import { CustomersModule } from '../../customers/customers.module'
 import { PrismaModule } from '../../prisma.module'
 import { LeadsModule } from '../leads/leads.module'
 import { ExternalEventsController } from './external-events.controller'
+import { ExternalEventTemplatesController } from './external-event-templates.controller'
+import { ExternalEventTemplatesService } from './external-event-templates.service'
 import { ExternalResourceResolverService } from './external-resource-resolver.service'
 import { ExternalEventsService } from './external-events.service'
 
 @Module({
   imports: [PrismaModule, CustomersModule, LeadsModule],
-  controllers: [ExternalEventsController],
-  providers: [ExternalResourceResolverService, ExternalEventsService],
+  controllers: [ExternalEventsController, ExternalEventTemplatesController],
+  providers: [
+    ExternalResourceResolverService,
+    ExternalEventTemplatesService,
+    ExternalEventsService,
+  ],
 })
 export class ExternalEventsModule {}

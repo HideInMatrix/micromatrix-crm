@@ -32,9 +32,13 @@ const props = defineProps<{
   deptTree: DepartmentVO[]
   currentFilters: FilterCondition[]
   defaultColumnKeys: string[]
+  /** 视图功能关闭时仍保留列设置弹窗与浏览器列偏好。 */
+  showViewToolbar?: boolean
   systemViews?: { id: string; label: string }[]
   systemView?: string
 }>()
+
+const showViewToolbar = computed(() => props.showViewToolbar !== false)
 
 const emit = defineEmits<{
   change: [viewId: string | undefined]
@@ -109,11 +113,14 @@ function cloneFilters(filters: FilterCondition[]) {
   return filters.map((condition) => ({ ...condition }))
 }
 
+let viewsRequestId = 0
 async function loadViews(emitChange = true) {
-  if (!props.module) return
+  if (!props.module || !showViewToolbar.value) return
+  const requestId = ++viewsRequestId
   loading.value = true
   try {
     const { data } = await userViewApi.list(props.module)
+    if (requestId !== viewsRequestId || !showViewToolbar.value) return
     views.value = data
     const stored = localStorage.getItem(userStorageKey('active')) ?? ''
     const next = data.some((view) => view.id === stored && view.enable) ? stored : ''
@@ -127,10 +134,12 @@ async function loadViews(emitChange = true) {
       }
     }
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+    if (requestId === viewsRequestId) ElMessage.error(extractErrorMessage(error))
   } finally {
-    loading.value = false
-    if (emitChange) emit('ready')
+    if (requestId === viewsRequestId) {
+      loading.value = false
+      if (emitChange) emit('ready')
+    }
   }
 }
 
@@ -436,8 +445,21 @@ defineExpose({
 })
 
 watch(
-  () => props.module,
-  () => loadViews(),
+  [() => props.module, () => showViewToolbar.value],
+  ([module, showViewToolbar]) => {
+    if (!module) return
+    if (!showViewToolbar) {
+      // 隐藏视图不代表禁用列设置；回退默认列偏好，不加载隐藏的个人视图。
+      ++viewsRequestId
+      loading.value = false
+      activeViewId.value = ''
+      views.value = []
+      loadColumnPreference()
+      emit('ready')
+      return
+    }
+    void loadViews()
+  },
   { immediate: true },
 )
 
@@ -450,6 +472,7 @@ watch(
 
 <template>
   <div
+    v-if="showViewToolbar"
     v-loading="loading"
     class="crm-saved-view-bar flex-between gap-3 flex-wrap mb-4"
     data-testid="saved-view-bar"

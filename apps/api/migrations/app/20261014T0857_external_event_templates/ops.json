@@ -1,0 +1,161 @@
+[
+  {
+    "id": "table.external_event_templates",
+    "label": "Create table \"external_event_templates\"",
+    "summary": "Creates table \"external_event_templates\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "external_event_templates"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"external_event_templates\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_templates\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"external_event_templates\"",
+        "sql": "CREATE TABLE \"public\".\"external_event_templates\" (\n  \"api_key_user_id\" text NOT NULL,\n  \"config\" jsonb NOT NULL,\n  \"created_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"enabled\" bool DEFAULT false NOT NULL,\n  \"event_type\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"name\" text NOT NULL,\n  \"source\" text NOT NULL,\n  \"tenant_id\" text NOT NULL,\n  \"updated_at\" timestamptz(3) NOT NULL,\n  \"version\" int4 DEFAULT 1 NOT NULL,\n  CONSTRAINT \"external_event_templates_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"external_event_templates\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_templates\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.external_event_inbox.event_type",
+    "label": "Add column \"event_type\" to \"external_event_inbox\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "event_type",
+        "table": "external_event_inbox"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"event_type\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "external_event_inbox",
+          "event_type"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"event_type\"",
+        "sql": "ALTER TABLE \"public\".\"external_event_inbox\" ADD COLUMN \"event_type\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"event_type\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "external_event_inbox",
+          "event_type"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_templates.external_event_templates_tenant_event_key",
+    "label": "Create index \"external_event_templates_tenant_event_key\" on \"external_event_templates\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_templates_tenant_event_key",
+        "table": "external_event_templates"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_templates_tenant_event_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_templates_tenant_event_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_templates_tenant_event_key\"",
+        "sql": "CREATE UNIQUE INDEX \"external_event_templates_tenant_event_key\" ON \"public\".\"external_event_templates\" (\"tenant_id\", \"event_type\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_templates_tenant_event_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_templates_tenant_event_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_templates.external_event_templates_tenant_source_idx",
+    "label": "Create index \"external_event_templates_tenant_source_idx\" on \"external_event_templates\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_templates_tenant_source_idx",
+        "table": "external_event_templates"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_templates_tenant_source_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_templates_tenant_source_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_templates_tenant_source_idx\"",
+        "sql": "CREATE INDEX \"external_event_templates_tenant_source_idx\" ON \"public\".\"external_event_templates\" (\"tenant_id\", \"source\", \"enabled\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_templates_tenant_source_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_templates_tenant_source_idx\""
+        ]
+      }
+    ]
+  }
+]

@@ -5,8 +5,12 @@ import {
   HttpException,
   Injectable,
   Logger,
+  ForbiddenException,
+  Optional,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
+import { hasPermission, type ExternalEventExecuteInput } from '@micromatrix/shared'
+import { ExternalEventTemplatesService } from './external-event-templates.service'
 import { CustomersService } from '../../customers/customers.service'
 import type { PrismaClient } from '../../prisma/db.js'
 import { PrismaService } from '../../prisma.service'
@@ -41,6 +45,7 @@ export class ExternalEventsService {
     private readonly resolver: ExternalResourceResolverService,
     private readonly customers: CustomersService,
     private readonly leads: LeadsService,
+    @Optional() private readonly templates?: ExternalEventTemplatesService,
   ) {}
 
   async applyCustomerEvent(user: AuthUser, dto: ApplyExternalCustomerEventDto) {
@@ -123,11 +128,94 @@ export class ExternalEventsService {
     }
   }
 
+  /** One API call executes a persisted, enabled template with transactional/idempotent CRM actions. */
+  async executeConfigured(user: AuthUser, dto: ExternalEventExecuteInput) {
+    if (!this.templates) throw new BadRequestException('外部事件配置服务不可用')
+    const template = await this.templates.findEnabled(user, dto.eventType, dto.source)
+    const source = dto.source.trim()
+    const externalEventId = dto.externalEventId?.trim()
+    if (!externalEventId) throw new BadRequestException('externalEventId 不能为空')
+    const requestHash = this.requestHash({ eventType: dto.eventType }, dto.data)
+    const claim = await this.claimInbox(user, source, externalEventId, requestHash, dto.eventType)
+    if (claim.replayed) return this.successResponse(claim.row, true)
+
+    try {
+      const { resolved, set, ownerId } = await this.templates.prepare(user, template, dto.data)
+      if (resolved.kind === 'CUSTOMER') {
+        const prepared =
+          template.config.actions.updateCustomer && Object.keys(set).length
+            ? await this.customers.prepareDynamicFieldUpdate(user, resolved.customerId, set)
+            : null
+        const inbox = await this.prisma.client.transaction(async (tx) => {
+          if (prepared)
+            await this.customers.applyPreparedDynamicFieldUpdateInTransaction(user, prepared, tx)
+          return this.markSuccessInTransaction(tx, {
+            inboxId: claim.row.id,
+            requestHash,
+            resolvedType: resolved.sourceLeadId ? 'LEAD' : 'CUSTOMER',
+            resolvedId: resolved.sourceLeadId ?? resolved.customerId,
+            customerId: resolved.customerId,
+          })
+        })
+        return this.successResponse(inbox, false)
+      }
+
+      if (!template.config.actions.convertLead) {
+        const inbox = await this.prisma.client.transaction((tx) =>
+          this.markSuccessInTransaction(tx, {
+            inboxId: claim.row.id,
+            requestHash,
+            resolvedType: 'LEAD',
+            resolvedId: resolved.leadId,
+            customerId: null,
+          }),
+        )
+        return this.successResponse(inbox, false)
+      }
+
+      if (!hasPermission(user.permissions, 'lead:convert')) {
+        throw new ForbiddenException('外部事件调用账号缺少线索转化权限')
+      }
+      const customerSet = Object.keys(set).length
+        ? await this.customers.normalizeWritableDynamicFields(user, set)
+        : {}
+      const prepared = await this.leads.prepareResolvedLeadConversion(
+        user,
+        resolved.leadId,
+        customerSet,
+        ownerId ?? undefined,
+      )
+      const result = await this.prisma.client.transaction(async (tx) => {
+        const converted = await this.leads.convertResolvedLeadInTransaction(user, prepared, tx)
+        const inbox = await this.markSuccessInTransaction(tx, {
+          inboxId: claim.row.id,
+          requestHash,
+          resolvedType: 'LEAD',
+          resolvedId: resolved.leadId,
+          customerId: converted.customerId,
+        })
+        return { converted, inbox }
+      })
+      await this.leads
+        .notifyResolvedLeadConversion(user, prepared, result.converted)
+        .catch((error: unknown) =>
+          this.logger.warn(`外部事件成功，但通知失败 inbox=${claim.row.id}: ${String(error)}`),
+        )
+      return this.successResponse(result.inbox, false)
+    } catch (error) {
+      await this.markFailed(claim.row.id, requestHash, error).catch((markError: unknown) =>
+        this.logger.error(`外部事件失败状态记录失败 inbox=${claim.row.id}: ${String(markError)}`),
+      )
+      throw error
+    }
+  }
+
   private async claimInbox(
     user: AuthUser,
     source: string,
     externalEventId: string,
     requestHash: string,
+    eventType?: string,
   ) {
     const scope = {
       organizationId: user.tenantId,
@@ -142,6 +230,7 @@ export class ExternalEventsService {
       const row = await this.prisma.client.orm.public.ExternalEventInbox.create({
         ...scope,
         requestHash,
+        eventType: eventType ?? null,
         apiKeyUserId: user.id,
         status: 'PROCESSING',
         startedAt: now,
@@ -156,11 +245,7 @@ export class ExternalEventsService {
     }
   }
 
-  private async claimExisting(
-    existing: InboxClaimRow,
-    userId: string,
-    requestHash: string,
-  ) {
+  private async claimExisting(existing: InboxClaimRow, userId: string, requestHash: string) {
     if (existing.requestHash !== requestHash) {
       throw new ConflictException({
         code: 'IDEMPOTENCY_KEY_REUSED',
@@ -210,7 +295,7 @@ export class ExternalEventsService {
       requestHash: string
       resolvedType: 'CUSTOMER' | 'LEAD'
       resolvedId: string
-      customerId: string
+      customerId: string | null
     },
   ) {
     const now = nowInstant()
@@ -260,11 +345,8 @@ export class ExternalEventsService {
         const body = response as { code?: unknown; message?: unknown }
         return {
           code:
-            typeof body.code === 'string' && body.code
-              ? body.code
-              : `HTTP_${error.getStatus()}`,
-          message:
-            typeof body.message === 'string' && body.message ? body.message : error.message,
+            typeof body.code === 'string' && body.code ? body.code : `HTTP_${error.getStatus()}`,
+          message: typeof body.message === 'string' && body.message ? body.message : error.message,
         }
       }
       return { code: `HTTP_${error.getStatus()}`, message: error.message }

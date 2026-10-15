@@ -1296,6 +1296,7 @@ export class LeadsService {
     user: AuthUser,
     leadId: string,
     customerCustomData: Record<string, unknown> = {},
+    customerOwnerId?: string,
   ) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
     const lead = await this.ensureInScope(user, leadId, 'lead:update')
@@ -1310,7 +1311,7 @@ export class LeadsService {
     const mapped = await this.mapLeadCustomData(user.tenantId, 'customer', lead, true)
     const customerCreateDto = {
       name: lead.name,
-      ownerId: lead.owner,
+      ownerId: customerOwnerId ?? lead.owner,
       customData: { ...mapped, ...customerCustomData },
     }
     const customerPrepared = await this.customers.prepareCreateForTransaction(

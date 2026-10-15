@@ -170,7 +170,7 @@ function openBatchPoolAssign() {
     />
   </div>
 
-  <div v-show="showSavedViews" class="mb-4">
+  <div :class="{ 'mb-4': showSavedViews }">
     <SavedViewBar
       ref="savedViewBarRef"
       :module="savedViewModule"
@@ -179,6 +179,7 @@ function openBatchPoolAssign() {
       :dept-tree="deptTree"
       :current-filters="filters"
       :default-column-keys="defaultColumnKeys"
+      :show-view-toolbar="showSavedViews"
       @change="handleSavedViewChange"
       @clear-filters="clearTemporaryFilters"
       @columns-change="handleSavedColumns"

@@ -47,8 +47,7 @@ export function formatFieldValue(
       const values = Array.isArray(value) ? value : [value]
       return values
         .map(
-          (item) =>
-            field.options?.find((option) => option.value === item)?.label ?? String(item),
+          (item) => field.options?.find((option) => option.value === item)?.label ?? String(item),
         )
         .join('、')
     }
@@ -71,8 +70,13 @@ export function formatFieldValue(
         ? value.toFixed(precision)
         : String(value)
     }
-    case 'datetime':
-      return String(value).replace('T', ' ').slice(0, 16)
+    case 'datetime': {
+      const date = value instanceof Date ? value : new Date(String(value))
+      if (Number.isNaN(date.getTime())) return String(value).replace('T', ' ').slice(0, 16)
+      const pad = (part: number) => String(part).padStart(2, '0')
+      // 后端保存 UTC ISO 字符串，展示时必须转换为浏览器本地时间。
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+    }
     case 'location':
       return (
         formatLocationValue(
@@ -107,4 +111,3 @@ export function formatFieldValue(
       return String(value)
   }
 }
-

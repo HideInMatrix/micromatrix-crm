@@ -463,7 +463,7 @@ onMounted(async () => {
         />
       </div>
 
-      <div v-show="showSavedViews" class="mb-4">
+      <div :class="{ 'mb-4': showSavedViews }">
         <SavedViewBar
           ref="savedViewBarRef"
           module="customer_pool"
@@ -472,6 +472,7 @@ onMounted(async () => {
           :dept-tree="fieldRefs.deptTree.value"
           :current-filters="filters"
           :default-column-keys="defaultColumnKeys"
+          :show-view-toolbar="showSavedViews"
           @change="handleSavedViewChange"
           @clear-filters="clearTemporaryFilters"
           @columns-change="handleSavedColumns"

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger'
-import { IsObject, IsString, MaxLength, MinLength } from 'class-validator'
+import { IsObject, IsString, Matches, MaxLength, MinLength } from 'class-validator'
 
 export class ApplyExternalCustomerEventDto {
   @ApiProperty({ example: 'finance-system' })
@@ -27,4 +27,23 @@ export class ApplyExternalCustomerEventDto {
   })
   @IsObject()
   set!: Record<string, unknown>
+}
+
+/** Template-driven, API Key only. */
+export class ExecuteConfiguredExternalEventDto {
+  @IsString()
+  @Matches(/^[a-z][a-z0-9-]{1,79}$/)
+  source!: string
+
+  @IsString()
+  @Matches(/^[A-Z][A-Z0-9_]{2,79}$/)
+  eventType!: string
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  externalEventId!: string
+
+  @IsObject()
+  data!: Record<string, unknown>
 }

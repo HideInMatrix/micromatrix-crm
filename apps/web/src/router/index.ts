@@ -259,6 +259,19 @@ const router = createRouter({
           },
         },
         {
+          path: 'system/settings/external-events',
+          name: 'enterprise-external-events',
+          component: () => import('@/views/system/enterprise-settings/SettingsView.vue'),
+          meta: {
+            title: '外部事件',
+            perm: 'system:setting',
+            activeMenu: '/system/settings',
+            topMenuGroup: 'enterprise-settings',
+            topMenuLabel: '外部事件',
+            topMenuOrder: 25,
+          },
+        },
+        {
           path: 'system/settings/mail',
           name: 'enterprise-mail-settings',
           component: () => import('@/views/system/enterprise-settings/SettingsView.vue'),

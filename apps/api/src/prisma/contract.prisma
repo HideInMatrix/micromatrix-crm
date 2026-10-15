@@ -1929,11 +1929,30 @@ namespace public {
     @@map("user_key")
   }
 
+  model ExternalEventTemplates {
+    id           String          @id(map: "external_event_templates_pkey") @default(cuid(2))
+    tenantId     String          @map("tenant_id")
+    name         String
+    eventType    String          @map("event_type")
+    source       String
+    apiKeyUserId String          @map("api_key_user_id")
+    enabled      Boolean         @default(false)
+    config       Jsonb
+    version      Int             @default(1)
+    createdAt    Timestamptz(3)  @default(now()) @map("created_at")
+    updatedAt    Timestamptz(3)  @map("updated_at")
+
+    @@index([tenantId, eventType], map: "external_event_templates_tenant_event_key", unique: true)
+    @@index([tenantId, source, enabled], map: "external_event_templates_tenant_source_idx")
+    @@map("external_event_templates")
+  }
+
   model ExternalEventInbox {
     id              String          @id(map: "external_event_inbox_pkey") @default(cuid(2))
     organizationId  String          @map("organization_id")
     source          String
     externalEventId String          @map("external_event_id")
+    eventType       String?         @map("event_type")
     requestHash     String          @map("request_hash")
     apiKeyUserId    String          @map("api_key_user_id")
     status          String          @default("PROCESSING")
