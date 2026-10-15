@@ -1476,26 +1476,50 @@ export class LeadsService {
     customerOwnerId?: string,
   ) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
-    const lead = await this.ensureInScope(user, leadId, 'lead:update')
+    const candidate = await this.prisma.client.orm.public.Clue.where({
+      id: leadId,
+      organizationId: user.tenantId,
+    }).first()
+    if (!candidate) throw new NotFoundException('线索不存在')
+    let lead: Lead
+    if (candidate.inSharedPool) {
+      if (
+        !hasPermission(user.permissions, 'lead:update') ||
+        !hasPermission(user.permissions, 'leadPool:assign')
+      ) {
+        throw new ForbiddenException('外部事件调用账号缺少线索池分配权限')
+      }
+      if (!candidate.poolId) throw new BadRequestException('线索不属于有效线索池')
+      const pool = await this.pools.assertPoolMember(user, 'lead', candidate.poolId)
+      if (!pool.enable) throw new BadRequestException('线索所在池已停用')
+      if (!customerOwnerId)
+        throw new BadRequestException('线索池转化必须在外部事件中指定新记录负责人')
+      lead = candidate as Lead
+    } else {
+      lead = await this.ensureInScope(user, leadId, 'lead:update')
+    }
     if (lead.transitionId || lead.transitionType === 'CUSTOMER') {
       throw new ConflictException({
         code: 'LEAD_ALREADY_TRANSITIONED',
         message: '线索已转客户，请重新定位后继续处理',
       })
     }
-    if (!lead.owner) throw new BadRequestException('线索暂无负责人，无法转换')
+    const conversionOwnerId = customerOwnerId ?? lead.owner
+    if (!conversionOwnerId) throw new BadRequestException('线索暂无负责人，无法转换')
 
     const mapped = await this.mapLeadCustomData(user.tenantId, 'customer', lead, true)
     const customerCreateDto = {
       name: lead.name,
-      ownerId: customerOwnerId ?? lead.owner,
+      ownerId: conversionOwnerId,
       customData: { ...mapped, ...customerCustomData },
     }
     const customerPrepared = await this.customers.prepareCreateForTransaction(
       user,
       customerCreateDto,
     )
-    const associationPrepared = await this.prepareLeadAssociation(user, [lead])
+    const associationPrepared = await this.prepareLeadAssociation(user, [
+      lead.inSharedPool ? { ...lead, owner: conversionOwnerId } : lead,
+    ])
     return { lead, customerCreateDto, customerPrepared, associationPrepared }
   }
 
@@ -1508,7 +1532,9 @@ export class LeadsService {
     prepared: Awaited<ReturnType<LeadsService['prepareResolvedLeadConversion']>>,
     tx: PrismaTransaction,
   ) {
-    const ownerId = prepared.lead.owner
+    const ownerId = prepared.lead.inSharedPool
+      ? prepared.customerPrepared.owner.id
+      : prepared.lead.owner
     if (!ownerId) throw new BadRequestException('线索暂无负责人，无法转换')
     await acquirePoolTransactionLocksPrisma(
       this.prisma.client,
@@ -1518,7 +1544,7 @@ export class LeadsService {
     const current = await tx.orm.public.Clue.where({
       id: prepared.lead.id,
       organizationId: user.tenantId,
-      inSharedPool: false,
+      inSharedPool: prepared.lead.inSharedPool,
     }).first()
     if (!current) throw new NotFoundException('线索不存在或已不在可转换范围')
 
@@ -1534,13 +1560,45 @@ export class LeadsService {
         message: '线索已转换为非 Customer 资源',
       })
     }
-    if (current.owner !== prepared.lead.owner || current.updateTime !== prepared.lead.updateTime) {
+    if (
+      current.owner !== prepared.lead.owner ||
+      current.updateTime !== prepared.lead.updateTime ||
+      current.poolId !== prepared.lead.poolId
+    ) {
       throw new ConflictException({
         code: 'LEAD_CHANGED_RETRY',
         message: '线索在转换前已发生变化，请重新定位后重试',
       })
     }
 
+    let associationLead = current as Lead
+    if (current.inSharedPool) {
+      // Assign the event-mapped owner and leave the pool atomically with customer conversion.
+      if (!current.poolId) throw new ConflictException('线索已不属于有效线索池')
+      const enabledPool = await tx.orm.public.CluePool.where({
+        id: current.poolId,
+        organizationId: user.tenantId,
+        enable: true,
+      }).first()
+      if (!enabledPool) throw new ConflictException('线索所在池已停用，请重新定位')
+      const now = BigInt(Date.now())
+      const assigned = await tx.orm.public.Clue.where({
+        id: current.id,
+        organizationId: user.tenantId,
+        inSharedPool: true,
+        updateTime: current.updateTime,
+      }).update({
+        owner: ownerId,
+        collectionTime: now,
+        inSharedPool: false,
+        poolId: null,
+        reasonId: null,
+        updateTime: now,
+        updateUser: user.id,
+      })
+      if (!assigned) throw new ConflictException('线索已被其他成员领取，请重新定位')
+      associationLead = assigned as Lead
+    }
     const createdCustomer = await this.customers.createPreparedInTransaction(
       user,
       prepared.customerCreateDto,
@@ -1550,7 +1608,7 @@ export class LeadsService {
     const associated = await this.associateLeadsToCustomerInTransaction(
       tx,
       user,
-      [current as unknown as Lead],
+      [associationLead],
       createdCustomer.id,
       { copyFollowArtifacts: true },
       prepared.associationPrepared,

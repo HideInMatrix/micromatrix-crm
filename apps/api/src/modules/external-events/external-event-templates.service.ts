@@ -298,6 +298,8 @@ export class ExternalEventTemplatesService {
             user,
             flow.target,
             this.mappedWhere(template.config, data),
+            false,
+            flow.action === 'convert',
           )
     const target = flow.action === 'convert' ? 'customer' : flow.target
     const memberTargets = new Set(
@@ -308,9 +310,11 @@ export class ExternalEventTemplatesService {
     const set: Record<string, unknown> = {}
     for (const mapping of flow.fields) {
       if (mapping.source === 'leadOwner') {
-        if (!resolved || resolved.kind !== 'LEAD' || !resolved.ownerId)
+        if (!resolved || resolved.kind !== 'LEAD')
           throw new BadRequestException('原线索负责人不存在')
-        set[mapping.fieldKey] = resolved.ownerId
+        // Pool leads have no owner: leave the original-owner field empty, never
+        // misattribute the event-mapped new owner as the historical inviter.
+        if (resolved.ownerId) set[mapping.fieldKey] = resolved.ownerId
       } else {
         const value = requireData(mapping.externalKey)
         const provider =
@@ -449,7 +453,7 @@ export class ExternalEventTemplatesService {
       throw new BadRequestException('data 必须为参数对象')
     if (Object.keys(data).length > 80) throw new BadRequestException('事件参数数量过多')
     const where = this.mappedWhere(template.config, data)
-    const resolved = await this.resolver.resolve(user, where)
+    const resolved = await this.resolver.resolve(user, where, template.config.actions.convertLead)
     const memberTargets = new Set(
       (await this.metadata.listFields(user.tenantId, 'customer'))
         .filter((field) => field.type === 'member')
@@ -458,7 +462,8 @@ export class ExternalEventTemplatesService {
     const set: Record<string, unknown> = {}
     for (const mapping of template.config.fields) {
       if (mapping.source === 'leadOwner') {
-        if (resolved.kind === 'LEAD') set[mapping.customerFieldKey] = resolved.ownerId
+        if (resolved.kind === 'LEAD' && resolved.ownerId)
+          set[mapping.customerFieldKey] = resolved.ownerId
       } else {
         if (!Object.prototype.hasOwnProperty.call(data, mapping.externalKey))
           throw new BadRequestException(`缺少字段参数：${mapping.externalKey}`)

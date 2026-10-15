@@ -65,6 +65,7 @@ test('只有编辑和新建客户权限的普通用户不能调用三条人工�
 test('接待系统自动转化准备流程仍只需要既有权限', async () => {
   // 自动接待走 prepareResolvedLeadConversion，不调用三个人工控制器方法。
   const service = Object.create(LeadsService.prototype) as unknown as {
+    prisma: unknown
     ensureInScope: (_user: AuthUser, _id: string, permission: string) => Promise<unknown>
     mapLeadCustomData: (...args: unknown[]) => Promise<Record<string, unknown>>
     customers: { prepareCreateForTransaction: (...args: unknown[]) => Promise<unknown> }
@@ -72,6 +73,13 @@ test('接待系统自动转化准备流程仍只需要既有权限', async () =>
     prepareResolvedLeadConversion: LeadsService['prepareResolvedLeadConversion']
   }
   let scopePermission: unknown
+  service.prisma = {
+    client: {
+      orm: {
+        public: { Clue: { where: () => ({ first: async () => ({ inSharedPool: false }) }) } },
+      },
+    },
+  }
   service.ensureInScope = async (_user, _id, permission) => {
     scopePermission = permission
     return {

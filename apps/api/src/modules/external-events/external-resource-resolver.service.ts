@@ -5,12 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { filterOpsForType, type FilterCondition } from '@micromatrix/shared'
+import { filterOpsForType, hasPermission, type FilterCondition } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { PrismaService } from '../../prisma.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
+import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 
 export type ExternalResolvedResource =
   | { kind: 'CUSTOMER'; customerId: string; sourceLeadId?: string }
@@ -41,9 +42,14 @@ export class ExternalResourceResolverService {
     private readonly dataScope: DataScopeService,
     private readonly metadata: MetadataService,
     private readonly fieldValues: ResourceFieldValueService,
+    private readonly pools: ResourcePoolsService,
   ) {}
 
-  async resolve(user: AuthUser, where: Record<string, unknown>): Promise<ExternalResolvedResource> {
+  async resolve(
+    user: AuthUser,
+    where: Record<string, unknown>,
+    allowPooledConversion = false,
+  ): Promise<ExternalResolvedResource> {
     const entries = this.validateWhere(where)
     const [customerWhere, leadWhere] = await Promise.all([
       this.prepareWhere(user.tenantId, 'customer', entries),
@@ -65,7 +71,7 @@ export class ExternalResourceResolverService {
     }
 
     if (leadWhere.supported) {
-      const leads = await this.findLeads(user, leadWhere)
+      const leads = await this.findLeads(user, leadWhere, allowPooledConversion)
       if (leads.length > 1) this.nonUnique('LEAD')
       const lead = leads[0]
       if (lead) {
@@ -84,13 +90,13 @@ export class ExternalResourceResolverService {
             sourceLeadId: String(lead.id),
           }
         }
-        if (!lead.owner) {
+        if (!lead.owner && !lead.inSharedPool) {
           throw new ConflictException({
             code: 'LEAD_OWNER_REQUIRED',
             message: '线索尚无负责人，不能自动转换为客户',
           })
         }
-        return { kind: 'LEAD', leadId: String(lead.id), ownerId: String(lead.owner) }
+        return { kind: 'LEAD', leadId: String(lead.id), ownerId: String(lead.owner ?? '') }
       }
     }
 
@@ -103,6 +109,7 @@ export class ExternalResourceResolverService {
     target: TargetResource,
     where: Record<string, unknown>,
     followConversion = false,
+    allowPooledConversion = false,
   ): Promise<ExternalResolvedResource> {
     const prepared = await this.prepareWhere(user.tenantId, target, this.validateWhere(where))
     if (!prepared.supported) {
@@ -118,7 +125,7 @@ export class ExternalResourceResolverService {
       if (!ids.length) this.notFound()
       return { kind: 'CUSTOMER', customerId: ids[0]! }
     }
-    const leads = await this.findLeads(user, prepared)
+    const leads = await this.findLeads(user, prepared, allowPooledConversion)
     if (leads.length > 1) this.nonUnique('LEAD')
     const lead = leads[0]
     if (!lead) this.notFound()
@@ -253,25 +260,43 @@ export class ExternalResourceResolverService {
     return rows.map((row) => String(row.id))
   }
 
-  private async findLeads(user: AuthUser, prepared: PreparedWhere) {
+  private async findLeads(user: AuthUser, prepared: PreparedWhere, allowPooledConversion = false) {
     await this.assertPermission(user, 'lead:update')
     const customIds = prepared.conditions.length
       ? await this.fieldValues.filterResourceIds(user.tenantId, 'clue', prepared.conditions)
       : null
     if (customIds && customIds.length === 0) return []
     const ownerScope = await this.dataScope.directOwnerFilter(user, 'lead:update')
-    let query = this.prisma.client.orm.public.Clue.where({
-      organizationId: user.tenantId,
-      inSharedPool: false,
-    })
-    if (typeof ownerScope.owner === 'string') query = query.where({ owner: ownerScope.owner })
-    else if (ownerScope.owner?.in) {
-      const ownerIds = ownerScope.owner.in
-      query = query.where((row) => row.owner.in(ownerIds))
+    const base = (pooled: boolean) => {
+      let query = this.prisma.client.orm.public.Clue.where({
+        organizationId: user.tenantId,
+        inSharedPool: pooled,
+      })
+      if (!pooled) {
+        if (typeof ownerScope.owner === 'string') query = query.where({ owner: ownerScope.owner })
+        else if (ownerScope.owner?.in) {
+          const ownerIds = ownerScope.owner.in
+          query = query.where((row) => row.owner.in(ownerIds))
+        }
+      }
+      if (customIds) query = query.where((row) => row.id.in(customIds))
+      for (const condition of prepared.system)
+        query = this.applyLeadSystemCondition(query, condition)
+      return query
     }
-    if (customIds) query = query.where((row) => row.id.in(customIds))
-    for (const condition of prepared.system) query = this.applyLeadSystemCondition(query, condition)
-    return query.select('id', 'owner', 'transitionType', 'transitionId').all()
+    const ordinary = await base(false)
+      .select('id', 'owner', 'transitionType', 'transitionId', 'inSharedPool')
+      .all()
+    // Pool lookup is only enabled by a conversion event and requires explicit pool permissions.
+    if (!allowPooledConversion || !hasPermission(user.permissions, 'leadPool:assign'))
+      return ordinary
+    const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
+    if (!poolIds.length) return ordinary
+    const pooled = await base(true)
+      .where((row) => row.poolId.in(poolIds))
+      .select('id', 'owner', 'transitionType', 'transitionId', 'inSharedPool')
+      .all()
+    return [...ordinary, ...pooled]
   }
 
   private applyCustomerSystemCondition(

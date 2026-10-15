@@ -108,7 +108,6 @@ test('联系人转换使用 Cordys 对应 formLink 场景', async () => {
   assert.equal(calls[0]?.[3], 'CLUE_TO_CONTACT')
 })
 
-
 test('Lead 阶段运行时使用租户配置并以第一个启用阶段作为新建默认值', async () => {
   const stages: LeadStageConfig[] = [
     { key: 'WAIT', name: '待联系', kind: 'ACTIVE', enabled: false },
@@ -144,6 +143,7 @@ test('明确 Lead 转换准备不会调用组织级同名 Customer 猜测逻辑'
   let guessed = false
   const service = Object.create(LeadsService.prototype) as unknown as {
     assertFunctionalPermission: () => void
+    prisma: unknown
     ensureInScope: () => Promise<Record<string, unknown>>
     selectTransformCustomer: () => Promise<unknown>
     mapLeadCustomData: () => Promise<Record<string, unknown>>
@@ -152,6 +152,13 @@ test('明确 Lead 转换准备不会调用组织级同名 Customer 猜测逻辑'
     prepareResolvedLeadConversion: LeadsService['prepareResolvedLeadConversion']
   }
   service.assertFunctionalPermission = () => undefined
+  service.prisma = {
+    client: {
+      orm: {
+        public: { Clue: { where: () => ({ first: async () => ({ inSharedPool: false }) }) } },
+      },
+    },
+  }
   service.ensureInScope = async () => ({
     id: 'lead-1',
     name: '张三',
@@ -175,5 +182,8 @@ test('明确 Lead 转换准备不会调用组织级同名 Customer 猜测逻辑'
     { cf_status: '已缴费' },
   )
   assert.equal(guessed, false)
-  assert.deepEqual(prepared.customerCreateDto.customData, { cf_source: '官网', cf_status: '已缴费' })
+  assert.deepEqual(prepared.customerCreateDto.customData, {
+    cf_source: '官网',
+    cf_status: '已缴费',
+  })
 })
