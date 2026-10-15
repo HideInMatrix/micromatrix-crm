@@ -171,6 +171,21 @@ export class SpreadsheetService {
     importType: ImportType,
     options?: { excludeKeys?: string[] },
   ): Promise<ParsedSpreadsheetRow[]> {
+    const result = await this.parseImportWithReport(buffer, fields, importType, options)
+    return result.rows
+  }
+
+  /** 线索及客户导入允许跳过未知表头，其他模块默认继续严格校验；预检与正式导入共用。 */
+  async parseImportWithReport(
+    buffer: Buffer,
+    fields: FieldVO[],
+    importType: ImportType,
+    options?: { excludeKeys?: string[]; ignoreUnknownHeaders?: boolean },
+  ): Promise<{
+    rows: ParsedSpreadsheetRow[]
+    ignoredHeaders: string[]
+    recognizedColumnCount: number
+  }> {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0])
     const sheet = workbook.worksheets[0]
@@ -193,11 +208,13 @@ export class SpreadsheetService {
     const headers = new Map<number, string>()
     const unknownHeaders: string[] = []
     let idColumn: number | null = null
+    const matchedKeys = new Set<string>()
 
     headerRow.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
       const header = this.cellText(cell.value).trim()
       if (!header) return
       if (header === '唯一ID') {
+        if (idColumn !== null) throw new BadRequestException('Excel 中存在重复的「唯一ID」表头')
         idColumn = columnNumber
         headers.set(columnNumber, header)
         return
@@ -208,14 +225,38 @@ export class SpreadsheetService {
         unknownHeaders.push(header)
         return
       }
+      if (matchedKeys.has(field.key)) {
+        throw new BadRequestException(
+          `表头重复映射到字段「${field.label}」，请删除重复列后重新导入`,
+        )
+      }
+      matchedKeys.add(field.key)
       headers.set(columnNumber, field.key)
     })
 
-    if (unknownHeaders.length > 0) {
+    // 仅忽略未知列的数据，不移动列序，也不把它当作某个已识别字段的值。
+    // 空白表头只有在对应列存在实际数据时才需要提醒用户。
+    if (options?.ignoreUnknownHeaders) {
+      const populatedColumns = new Set<number>()
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return
+        row.eachCell({ includeEmpty: false }, (cell, column) => {
+          if (!this.isEmpty(cell.value)) populatedColumns.add(column)
+        })
+      })
+      for (const column of [...populatedColumns].sort((left, right) => left - right)) {
+        if (headers.has(column) || !this.isEmpty(headerRow.getCell(column).value)) continue
+        unknownHeaders.push(`第${column}列（空白表头）`)
+      }
+    }
+    if (unknownHeaders.length > 0 && !options?.ignoreUnknownHeaders) {
       throw new BadRequestException(`存在无法识别的表头：${unknownHeaders.join('、')}`)
     }
     if (importType === 'UPDATE' && idColumn === null) {
       throw new BadRequestException('导入更新必须包含「唯一ID」列')
+    }
+    if (matchedKeys.size === 0) {
+      throw new BadRequestException('Excel 没有可识别的业务字段，请检查表头或下载最新导入模板')
     }
 
     const rows: ParsedSpreadsheetRow[] = []
@@ -254,7 +295,11 @@ export class SpreadsheetService {
     }
 
     if (rows.length === 0) throw new BadRequestException('Excel 文件没有可导入的数据行')
-    return rows
+    return {
+      rows,
+      ignoredHeaders: [...new Set(unknownHeaders)],
+      recognizedColumnCount: matchedKeys.size,
+    }
   }
 
   async buildSubTableImportTemplate(

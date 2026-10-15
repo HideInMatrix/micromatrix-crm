@@ -26,6 +26,14 @@ const failed = computed(() => props.result.failCount - duplicates.value)
       <Check :size="42" :stroke-width="2.8" />
     </div>
     <div class="mb-7 mt-4 text-[20px] font-semibold text-[#333333]">导入完成</div>
+    <el-alert
+      v-if="result.ignoredHeaders?.length"
+      type="warning"
+      :closable="false"
+      class="mb-4 w-full"
+      :title="`已跳过 ${result.ignoredHeaders.length} 列无法识别的表头`"
+      :description="result.ignoredHeaders.join('、')"
+    />
     <div class="w-full overflow-hidden rounded-[4px] border border-[#DCE2EC] bg-white">
       <div class="flex items-center justify-between p-4">
         <span class="text-[15px] text-[#263247]">成功导入</span>

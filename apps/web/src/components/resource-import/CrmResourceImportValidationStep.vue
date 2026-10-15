@@ -58,6 +58,21 @@ const total = computed(() => (props.result?.successCount ?? 0) + (props.result?.
       </div>
     </div>
     <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon />
+    <el-alert
+      v-if="result?.ignoredHeaders?.length"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="`已忽略 ${result.ignoredHeaders.length} 列无法识别的表头`"
+    >
+      <template #default>
+        <p class="my-1">{{ result.ignoredHeaders.join('、') }}</p>
+        <p class="m-0">
+          这些列的数据不会导入，其余
+          {{ result.recognizedColumnCount ?? 0 }} 列已识别字段继续正常检验和导入。
+        </p>
+      </template>
+    </el-alert>
     <el-table
       :data="errors"
       border

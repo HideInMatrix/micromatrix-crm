@@ -460,6 +460,10 @@ export interface ImportResultVO {
   successCount: number
   failCount: number
   errorMessages: ImportErrorVO[]
+  /** Excel 中无法匹配 CRM 字段而被忽略的列，非行级校验错误。 */
+  ignoredHeaders?: string[]
+  /** 实际用于读取数据的业务字段列数，不包括「唯一ID」。 */
+  recognizedColumnCount?: number
 }
 
 export interface NotificationVO {
@@ -475,11 +479,7 @@ export interface NotificationVO {
 
 // ============ 模块（业务对象）标识 ============
 
-export type ModuleKey =
-  | 'lead'
-  | 'customer'
-  | 'contact'
-  | 'followPlan'
+export type ModuleKey = 'lead' | 'customer' | 'contact' | 'followPlan'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   lead: '线索',
@@ -490,11 +490,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
 
 // ============ 主导航模块配置 ============
 
-export type NavigationModuleKey =
-  | 'home'
-  | 'lead'
-  | 'customer'
-  | 'system'
+export type NavigationModuleKey = 'home' | 'lead' | 'customer' | 'system'
 
 export interface NavigationModuleDefinition {
   key: NavigationModuleKey

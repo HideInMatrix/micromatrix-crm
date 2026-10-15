@@ -53,6 +53,7 @@ async function sampleFile(withId = false, phone = 1313131): Promise<Buffer> {
 interface TestHarness {
   service: LeadsService
   updated: Array<{ id: string; name?: string; gender?: unknown }>
+  created: Array<Record<string, unknown>>
   validatedIds: string[]
 }
 
@@ -68,6 +69,7 @@ function harness(options?: { matchingPhones?: string[]; uniquePhone?: boolean })
     poolId: null,
   }))
   const updated: TestHarness['updated'] = []
+  const created: TestHarness['created'] = []
   const validatedIds: string[] = []
   const configuredFields = fields.map((item) =>
     item.key === 'phone'
@@ -128,6 +130,9 @@ function harness(options?: { matchingPhones?: string[]; uniquePhone?: boolean })
     },
   }
   state['spreadsheet'] = new SpreadsheetService()
+  state['create'] = async (_user: AuthUser, input: Record<string, unknown>) => {
+    created.push(input)
+  }
   state['resolveLeadUniqueScope'] = async () => undefined
   state['assertLeadSystemUniqueRules'] = async () => undefined
   state['ensureInScope'] = async (_user: AuthUser, id: string) => {
@@ -145,7 +150,7 @@ function harness(options?: { matchingPhones?: string[]; uniquePhone?: boolean })
   ) => {
     updated.push({ id: target.id, name: dto.name, gender: dto.customData?.['cf_gender'] })
   }
-  return { service: state as unknown as LeadsService, updated, validatedIds }
+  return { service: state as unknown as LeadsService, updated, created, validatedIds }
 }
 
 test('更新模式必须包含唯一ID，即使已设置电话唯一也不能通过电话匹配', async () => {
@@ -270,4 +275,112 @@ test('导出任务自动包含唯一ID，导出的姓名、联系人、自定义
     cf_gender: 'M',
   })
   assert.deepEqual(parsed[0]?.errors, [])
+})
+
+/** 未知列夹在可识别字段之间，不能影响字段对齐或业务更新。 */
+test('预检与正式更新都忽略未知表头，已识别字段按原始列位置准确入库', async () => {
+  const book = new ExcelJS.Workbook()
+  const sheet = book.addWorksheet('混合表头')
+  sheet.addRow(['唯一ID', '线索名称', '历史编号', '电话', '旧系统说明', '性别'])
+  sheet.addRow(['lead-1', '更新姓名', 'Legacy-123', 9999999, '不应入库', '男'])
+  const file = Buffer.from(await book.xlsx.writeBuffer())
+  const { service, updated, validatedIds } = harness()
+
+  const check = await service.precheckImportXlsx(user, file, 'UPDATE')
+  assert.equal(check.successCount, 1)
+  assert.equal(check.failCount, 0)
+  assert.deepEqual(check.ignoredHeaders, ['历史编号', '旧系统说明'])
+  assert.equal(check.recognizedColumnCount, 3)
+
+  const result = await service.importXlsx(user, file, 'UPDATE')
+  assert.equal(result.successCount, 1)
+  assert.equal(result.failCount, 0)
+  assert.deepEqual(result.ignoredHeaders, check.ignoredHeaders)
+  assert.equal(result.recognizedColumnCount, 3)
+  assert.deepEqual(updated, [{ id: 'lead-1', name: '更新姓名', gender: 'M' }])
+  assert.deepEqual(validatedIds, ['lead-1', 'lead-1'])
+})
+
+test('空白表头的数据列也忽略并提示；只有未知列时拒绝导入', async () => {
+  const spreadsheet = new SpreadsheetService()
+  const book = new ExcelJS.Workbook()
+  const sheet = book.addWorksheet('空白表头')
+  sheet.addRow(['线索名称', '', '电话'])
+  sheet.addRow(['王同学', '过期来源', 13812345678])
+  const mixed = Buffer.from(await book.xlsx.writeBuffer())
+  const result = await spreadsheet.parseImportWithReport(mixed, fields, 'ADD', {
+    ignoreUnknownHeaders: true,
+  })
+  assert.deepEqual(result.ignoredHeaders, ['第2列（空白表头）'])
+  assert.deepEqual(result.rows[0]?.values, { name: '王同学', phone: '13812345678' })
+  assert.equal(result.recognizedColumnCount, 2)
+
+  const unknown = new ExcelJS.Workbook()
+  unknown.addWorksheet('未知').addRow(['自建编号', '历史备注'])
+  unknown.worksheets[0]!.addRow(['legacy', '无需导入'])
+  const buffer = Buffer.from(await unknown.xlsx.writeBuffer())
+  await assert.rejects(
+    spreadsheet.parseImportWithReport(buffer, fields, 'ADD', { ignoreUnknownHeaders: true }),
+    /没有可识别的业务字段/,
+  )
+  // 未开启宽容模式的其他模块，仍然对未知表头报错。
+  await assert.rejects(spreadsheet.parseImport(buffer, fields, 'ADD'), /无法识别的表头/)
+})
+
+test('重复命中同一字段的表头不能静默覆盖，更新模式仍强制唯一ID', async () => {
+  const spreadsheet = new SpreadsheetService()
+  const duplicates = new ExcelJS.Workbook()
+  duplicates.addWorksheet('重复字段').addRow(['线索名称', 'name', '电话'])
+  duplicates.worksheets[0]!.addRow(['甲', '乙', 1313131])
+  const source = Buffer.from(await duplicates.xlsx.writeBuffer())
+  await assert.rejects(
+    spreadsheet.parseImportWithReport(source, fields, 'ADD', { ignoreUnknownHeaders: true }),
+    /表头重复映射/,
+  )
+  await assert.rejects(
+    spreadsheet.parseImportWithReport(await sampleFile(), fields, 'UPDATE', {
+      ignoreUnknownHeaders: true,
+    }),
+    /必须包含「唯一ID」/,
+  )
+})
+
+test('未知表头不能替代必填的线索名称：整行校验仍阻止导入', async () => {
+  const book = new ExcelJS.Workbook()
+  const sheet = book.addWorksheet('缺少名称')
+  sheet.addRow(['旧系统姓名', '电话'])
+  sheet.addRow(['无法映射姓名', 9999999])
+  const file = Buffer.from(await book.xlsx.writeBuffer())
+  const { service, updated } = harness()
+  const result = await service.precheckImportXlsx(user, file, 'ADD')
+  assert.equal(result.successCount, 0)
+  assert.equal(result.failCount, 1)
+  assert.deepEqual(result.ignoredHeaders, ['旧系统姓名'])
+  assert.match(result.errorMessages[0]?.errMsg ?? '', /线索名称不能为空/)
+  assert.deepEqual(updated, [])
+})
+
+test('导入新建：陌生表头夹在姓名与电话中间时仍能预检并实际创建线索', async () => {
+  const book = new ExcelJS.Workbook()
+  const sheet = book.addWorksheet('新建混合表头')
+  sheet.addRow(['线索名称', '旧来源代码', '电话', '外部备注', '性别'])
+  sheet.addRow(['测试新线索', 'code-123', 13800001234, '不要保存', '女'])
+  const file = Buffer.from(await book.xlsx.writeBuffer())
+  const { service, created } = harness()
+
+  const preview = await service.precheckImportXlsx(user, file, 'ADD')
+  assert.equal(preview.successCount, 1)
+  assert.equal(preview.failCount, 0)
+  assert.deepEqual(preview.ignoredHeaders, ['旧来源代码', '外部备注'])
+  assert.equal(preview.recognizedColumnCount, 3)
+
+  const done = await service.importXlsx(user, file, 'ADD')
+  assert.equal(done.successCount, 1)
+  assert.equal(done.failCount, 0)
+  assert.deepEqual(done.ignoredHeaders, preview.ignoredHeaders)
+  assert.equal(created.length, 1)
+  assert.equal(created[0]?.name, '测试新线索')
+  assert.equal(created[0]?.phone, '13800001234')
+  assert.deepEqual(created[0]?.customData, { cf_gender: 'F' })
+  assert.equal('旧来源代码' in created[0]!, false)
 })

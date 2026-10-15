@@ -2114,9 +2114,11 @@ export class LeadsService {
   ): Promise<ImportResultVO> {
     if (poolId) await this.pools.assertPoolMember(user, 'lead', poolId)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const rows = await this.spreadsheet.parseImport(file, fields, importType, {
-      excludeKeys: poolId ? ['owner', 'ownerId'] : [],
-    })
+    const { rows, ignoredHeaders, recognizedColumnCount } =
+      await this.spreadsheet.parseImportWithReport(file, fields, importType, {
+        excludeKeys: poolId ? ['owner', 'ownerId'] : [],
+        ignoreUnknownHeaders: true,
+      })
     const errorMessages: ImportResultVO['errorMessages'] = []
     let successCount = 0
     for (const row of rows) {
@@ -2139,7 +2141,13 @@ export class LeadsService {
         })
       else successCount++
     }
-    return { successCount, failCount: errorMessages.length, errorMessages }
+    return {
+      successCount,
+      failCount: errorMessages.length,
+      errorMessages,
+      ignoredHeaders,
+      recognizedColumnCount,
+    }
   }
 
   async importXlsx(
@@ -2150,9 +2158,11 @@ export class LeadsService {
   ): Promise<ImportResultVO> {
     if (poolId) await this.pools.assertPoolMember(user, 'lead', poolId)
     const fields = await this.metadata.listFields(user.tenantId, MODULE)
-    const rows = await this.spreadsheet.parseImport(file, fields, importType, {
-      excludeKeys: poolId ? ['owner', 'ownerId'] : [],
-    })
+    const { rows, ignoredHeaders, recognizedColumnCount } =
+      await this.spreadsheet.parseImportWithReport(file, fields, importType, {
+        excludeKeys: poolId ? ['owner', 'ownerId'] : [],
+        ignoreUnknownHeaders: true,
+      })
     const errorMessages: ImportResultVO['errorMessages'] = []
     let successCount = 0
     for (const row of rows) {
@@ -2192,7 +2202,13 @@ export class LeadsService {
           values: row.values,
         })
     }
-    return { successCount, failCount: errorMessages.length, errorMessages }
+    return {
+      successCount,
+      failCount: errorMessages.length,
+      errorMessages,
+      ignoredHeaders,
+      recognizedColumnCount,
+    }
   }
 
   async exportXlsx(
