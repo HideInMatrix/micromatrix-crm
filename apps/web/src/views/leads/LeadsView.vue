@@ -350,6 +350,7 @@ function clearSelection() {
 
 const {
   handleBatchEdit,
+  handleBatchDelete,
   openBatchTransfer,
   handleBatchTransferConfirm,
   handleBatchToPool,
@@ -843,6 +844,7 @@ onMounted(async () => {
         @open-batch-pool-assign="openBatchPoolAssign"
         @open-export="openExport"
         @batch-invalid="handleBatchInvalid"
+        @batch-delete="handleBatchDelete"
         @search="handleSearch"
         @pool-change="handlePoolChange"
         @refresh="loadData"

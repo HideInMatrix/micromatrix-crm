@@ -52,21 +52,26 @@ export function useLeadBatchActions({
 
   async function handleBatchDelete() {
     if (selectedRows.value.length === 0) return
+    const selected = [...selectedRows.value]
+    const convertedCount = selected.filter((row) => row.transitionType === 'CUSTOMER').length
+    const convertedHint = convertedCount
+      ? `其中 ${convertedCount} 条已转化为客户，将强制删除原线索，但不会删除或修改对应客户。`
+      : ''
     const confirmed = await ElMessageBox.confirm(
-      `确定删除已选择的 ${selectedRows.value.length} 条线索？此操作不可恢复。`,
+      `确定永久删除所选 ${selected.length} 条线索？${convertedHint}此操作不可恢复。`,
       '批量删除线索',
-      { type: 'warning', confirmButtonText: '删除' },
+      { type: 'warning', confirmButtonText: '确认删除', confirmButtonClass: 'el-button--danger' },
     ).catch(() => false)
     if (!confirmed) return
     try {
-      const ids = selectedRows.value.map((row) => row.id)
+      const ids = selected.map((row) => row.id)
       if (isPoolMode.value) {
         if (!selectedPoolId.value) throw new Error('请先选择线索池')
         await leadApi.poolBatchDelete(selectedPoolId.value, ids)
       } else {
         await leadApi.batchDelete(ids)
       }
-      ElMessage.success('批量删除成功')
+      ElMessage.success(`已删除 ${selected.length} 条线索`)
       await loadData()
     } catch (error) {
       ElMessage.error(extractErrorMessage(error))

@@ -23,7 +23,10 @@ test('线索角色权限树仅增加独立的手动转化权限', () => {
   assert.equal(lead?.children?.filter((node) => node.code === 'lead:convert').length, 1)
   assert.equal(lead?.children?.find((node) => node.code === 'lead:convert')?.label, '转化')
   assert.equal(hasPermission(integrationUser.permissions, 'lead:convert'), false)
-  assert.equal(hasPermission([...integrationUser.permissions, 'lead:convert'], 'lead:convert'), true)
+  assert.equal(
+    hasPermission([...integrationUser.permissions, 'lead:convert'], 'lead:convert'),
+    true,
+  )
 })
 
 test('三条人工转化/关联 API 都要求 lead:convert，既有权限仍保留', () => {
@@ -51,7 +54,10 @@ test('只有编辑和新建客户权限的普通用户不能调用三条人工�
     (error: unknown) => error instanceof ForbiddenException && error.message === '无线索转化权限',
   )
   await assert.rejects(
-    service.retransitionCustomer(integrationUser, { clueIds: ['lead-a'], customerId: 'customer-a' }),
+    service.retransitionCustomer(integrationUser, {
+      clueIds: ['lead-a'],
+      customerId: 'customer-a',
+    }),
     (error: unknown) => error instanceof ForbiddenException && error.message === '无线索转化权限',
   )
 })
@@ -68,7 +74,13 @@ test('接待系统自动转化准备流程仍只需要既有权限', async () =>
   let scopePermission: unknown
   service.ensureInScope = async (_user, _id, permission) => {
     scopePermission = permission
-    return { id: 'lead-a', name: '访客测试', owner: 'user-a', transitionId: null, transitionType: null }
+    return {
+      id: 'lead-a',
+      name: '访客测试',
+      owner: 'user-a',
+      transitionId: null,
+      transitionType: null,
+    }
   }
   service.mapLeadCustomData = async () => ({})
   service.customers = { prepareCreateForTransaction: async () => ({ owner: { id: 'user-a' } }) }
@@ -76,4 +88,34 @@ test('接待系统自动转化准备流程仍只需要既有权限', async () =>
   const prepared = await service.prepareResolvedLeadConversion(integrationUser, 'lead-a')
   assert.equal(scopePermission, 'lead:update')
   assert.equal(prepared.customerCreateDto.name, '访客测试')
+})
+
+test('批量强制删除允许已转化线索与普通线索混选，仍逐条校验 lead:delete 数据权限', async () => {
+  const service = Object.create(LeadsService.prototype) as unknown as {
+    ensureInScope: (_user: AuthUser, id: string, permission: string) => Promise<unknown>
+    deleteLeadResources: (_user: AuthUser, leads: unknown[]) => Promise<void>
+    batchDelete: LeadsService['batchDelete']
+  }
+  const checked: string[] = []
+  const removed: unknown[][] = []
+  service.ensureInScope = async (_user, id, permission) => {
+    assert.equal(permission, 'lead:delete')
+    checked.push(id)
+    return {
+      id,
+      name: id,
+      transitionType: id === 'converted-lead' ? 'CUSTOMER' : 'NONE',
+      transitionId: id === 'converted-lead' ? 'customer-1' : null,
+    }
+  }
+  service.deleteLeadResources = async (_user, leads) => {
+    removed.push(leads)
+  }
+  const result = await service.batchDelete(integrationUser, ['converted-lead', 'new-lead'])
+  assert.deepEqual(checked, ['converted-lead', 'new-lead'])
+  assert.deepEqual(
+    removed[0]?.map((item) => (item as { id: string }).id),
+    ['converted-lead', 'new-lead'],
+  )
+  assert.deepEqual(result, { success: 2, fail: 0, failedIds: [] })
 })

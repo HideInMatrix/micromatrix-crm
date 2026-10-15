@@ -6,6 +6,7 @@ import {
   Download,
   FolderInput,
   Plus,
+  Trash2,
   Upload,
   UserRoundCog,
   UserRoundPlus,
@@ -62,6 +63,7 @@ const emit = defineEmits<{
   openBatchPoolAssign: []
   openExport: [mode: 'all' | 'selected']
   batchInvalid: []
+  batchDelete: []
   search: []
   poolChange: []
   refresh: []
@@ -233,6 +235,13 @@ function openBatchPoolAssign() {
               :stroke-width="1.8"
               aria-hidden="true"
             />批量无效
+          </el-button>
+          <el-button
+            v-if="auth.hasPerm('lead:delete')"
+            class="lead-table-toolbar-action lead-table-toolbar-action--outline"
+            @click="emit('batchDelete')"
+          >
+            <Trash2 :size="14" :stroke-width="1.8" aria-hidden="true" />批量删除
           </el-button>
         </template>
         <template v-else>
